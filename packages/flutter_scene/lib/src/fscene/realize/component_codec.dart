@@ -58,25 +58,47 @@ class SerializeContext {
   final Map<Object, LocalId> serializedResources = <Object, LocalId>{};
 }
 
+/// The property every component carries regardless of type: the base
+/// [Component.enabled] flag, applied and serialized by the registry so
+/// individual codecs never re-declare it.
+const List<ComponentPropertyDef> universalComponentProperties = [
+  ComponentPropertyDef(
+    'enabled',
+    ComponentPropertyKind.boolean,
+    defaultValue: BoolValue(true),
+    doc: 'Whether this component updates.',
+  ),
+];
+
 /// Translates between a serialized [ComponentSpec] and a live [Component] of
 /// one type.
 ///
 /// Codecs are registered in a [FsceneComponentRegistry]; the realizer and
 /// serializer dispatch through it. This is the seam that lets the format
-/// carry component types the core does not know about.
+/// carry component types the core does not know about. Flat components are
+/// better served by `DeclarativeComponentCodec`, which derives the schema,
+/// realization, and delta serialization from one field list.
 abstract class ComponentCodec {
   /// The serialized component type name this codec handles (for example
   /// `directionalLight`).
   String get type;
 
+  /// The component's full portable schema. The default wraps [type] and
+  /// [propertySchema]; override to add docs, an icon, or former type names.
+  ComponentSchema get schema =>
+      ComponentSchema(type, properties: propertySchema);
+
+  /// The exact component runtime type this codec serializes, used for O(1)
+  /// serialization dispatch. [Component] (the default) means "unknown, fall
+  /// back to scanning [claims]".
+  Type get componentType => Component;
+
   /// The component's editable properties, in display order. Drives the
-  /// inspector, agent discovery, default-filling on [realize], and the derived
-  /// [serialize]. Empty for codecs that do not declare a schema.
+  /// inspector, agent discovery, and default-filling on [realize]. Empty for
+  /// codecs that do not declare a schema.
   List<ComponentPropertyDef> get propertySchema => const [];
 
-  /// Whether [component] is an instance this codec serializes. Used by the
-  /// derived [serialize]; a codec that overrides [serialize] need not implement
-  /// this.
+  /// Whether [component] is an instance this codec serializes.
   bool claims(Component component) => false;
 
   /// Builds a live component from [spec], or returns null when it cannot be
@@ -84,22 +106,9 @@ abstract class ComponentCodec {
   /// realizer).
   Component? realize(ComponentSpec spec, RealizeContext context);
 
-  /// Serializes [component] to a [ComponentSpec], or returns null if this codec
-  /// does not handle that component instance.
-  ///
-  /// The default implementation derives the spec from [propertySchema]: when
-  /// [claims] accepts the component, each property's value is read through its
-  /// [ComponentPropertyDef.read]. Codecs whose serialization is not a flat
-  /// field read (a mesh recovering resource ids) override this.
-  ComponentSpec? serialize(Component component, SerializeContext context) {
-    if (!claims(component)) return null;
-    return ComponentSpec(
-      type,
-      properties: {
-        for (final def in propertySchema) def.name: def.read!(component),
-      },
-    );
-  }
+  /// Serializes [component] to a [ComponentSpec], or returns null if this
+  /// codec does not handle that component instance.
+  ComponentSpec? serialize(Component component, SerializeContext context);
 
   /// The declared default for property [name], or null when the property has no
   /// default (throws when [name] is undeclared).
@@ -129,29 +138,71 @@ abstract class ComponentCodec {
 
 /// A registry of [ComponentCodec]s, keyed by component type name.
 ///
-/// Realization looks a codec up by [ComponentSpec.type]; serialization tries
-/// each codec until one claims the component. Unknown components are skipped
-/// (with the caller deciding how to report it) rather than failing the load.
+/// Realization looks a codec up by [ComponentSpec.type] (accepting schema
+/// former type names); serialization dispatches by the component's runtime
+/// type, falling back to a [ComponentCodec.claims] scan for codecs that do
+/// not declare one. Unknown components are skipped (with the caller deciding
+/// how to report it) rather than failing the load. The registry applies the
+/// [universalComponentProperties] (`enabled`) around every codec.
 class FsceneComponentRegistry {
   final Map<String, ComponentCodec> _byType = {};
+  final Map<Type, ComponentCodec> _byComponentType = {};
 
   /// Registers [codec], replacing any existing codec for its type.
-  void register(ComponentCodec codec) => _byType[codec.type] = codec;
+  void register(ComponentCodec codec) {
+    _byType[codec.type] = codec;
+    if (codec.componentType != Component) {
+      _byComponentType[codec.componentType] = codec;
+    }
+  }
 
   /// The registered component type names, in registration order.
   Iterable<String> get types => _byType.keys;
 
-  /// The codec for [type], or null when none is registered.
-  ComponentCodec? codecFor(String type) => _byType[type];
+  /// The registered component schemas, in registration order.
+  Iterable<ComponentSchema> get schemas =>
+      _byType.values.map((codec) => codec.schema);
+
+  /// The codec for [type], accepting schemas' former type names.
+  ComponentCodec? codecFor(String type) {
+    final direct = _byType[type];
+    if (direct != null) return direct;
+    for (final codec in _byType.values) {
+      if (codec.schema.formerTypes.contains(type)) return codec;
+    }
+    return null;
+  }
 
   /// Realizes [spec] into a live component, or returns null when no codec is
   /// registered for its type.
-  Component? realize(ComponentSpec spec, RealizeContext context) =>
-      _byType[spec.type]?.realize(spec, context);
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    final component = codecFor(spec.type)?.realize(spec, context);
+    if (component != null) {
+      final enabled = spec.properties['enabled'];
+      if (enabled is BoolValue) component.enabled = enabled.value;
+    }
+    return component;
+  }
 
-  /// Serializes [component] using the first codec that claims it, or returns
-  /// null when none does.
+  /// Serializes [component], dispatching by its runtime type and falling
+  /// back to the first codec that claims it. Returns null when none does.
   ComponentSpec? serialize(Component component, SerializeContext context) {
+    final spec =
+        _byComponentType[component.runtimeType]?.serialize(
+          component,
+          context,
+        ) ??
+        _serializeByScan(component, context);
+    if (spec != null && !component.enabled) {
+      spec.properties['enabled'] = const BoolValue(false);
+    }
+    return spec;
+  }
+
+  ComponentSpec? _serializeByScan(
+    Component component,
+    SerializeContext context,
+  ) {
     for (final codec in _byType.values) {
       final spec = codec.serialize(component, context);
       if (spec != null) return spec;

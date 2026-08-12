@@ -55,9 +55,34 @@ export 'src/fscene/realize/component_codec.dart'
         ComponentCodec,
         FsceneComponentRegistry,
         RealizeContext,
-        SerializeContext;
+        SerializeContext,
+        universalComponentProperties;
 export 'src/fscene/realize/component_schema.dart'
-    show ComponentPropertyDef, ComponentPropertyKind;
+    show
+        AngleRadians,
+        AssetExtensions,
+        ComponentPropertyDef,
+        ComponentPropertyKind,
+        ComponentSchema,
+        IntRange,
+        LayerMask32,
+        MinCount,
+        Multiline,
+        Normalized,
+        PowerOfTwo,
+        PropertyConstraint,
+        Range,
+        RgbColor,
+        SoftRange,
+        SortedDescending,
+        Step,
+        TextPattern,
+        UnknownConstraint,
+        decodeComponentSchemas,
+        encodeComponentSchemas,
+        propertyValuesEqual;
+export 'src/fscene/realize/declarative_codec.dart'
+    show ComponentField, DeclarativeComponentCodec, PropertyReader;
 export 'src/fscene/realize/loader.dart'
     show
         loadFsceneAsset,

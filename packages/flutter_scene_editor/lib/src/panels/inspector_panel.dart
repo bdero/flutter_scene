@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
-import 'package:flutter/material.dart' hide Matrix4;
+import 'package:flutter/material.dart' hide Matrix4, Step;
 import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
@@ -417,31 +417,40 @@ class _SchemaPropertyRow extends StatelessWidget {
     return fallback;
   }
 
-  ({double min, double max, double step, int digits}) _directionalRange(
-    String name,
+  // A slider renders when the schema declares a soft range (or a fully
+  // bounded hard range); otherwise a plain scrub field, clamped by the
+  // command layer against the hard bounds.
+  ({double min, double max, double step, int digits})? _sliderRange(
     double current,
-  ) => switch (name) {
-    'intensity' => (min: 0, max: 20, step: 0.05, digits: 2),
-    'priority' => (min: -10, max: 10, step: 1, digits: 0),
-    'shadowFadeRange' => (min: 0, max: 100, step: 0.1, digits: 2),
-    'shadowSoftness' => (min: 0, max: 2, step: 0.01, digits: 3),
-    'shadowCascadeCount' => (min: 1, max: 4, step: 1, digits: 0),
-    'shadowMaxDistance' => (min: 0, max: 2000, step: 1, digits: 1),
-    'shadowCascadeSplitLambda' => (min: 0, max: 1, step: 0.01, digits: 3),
-    'shadowMapResolution' => (min: 128, max: 4096, step: 128, digits: 0),
-    'shadowDepthBias' ||
-    'shadowNormalBias' => (min: 0, max: 0.2, step: 0.001, digits: 4),
-    'shadowAmbientStrength' => (min: 0, max: 1, step: 0.01, digits: 3),
-    _ => (
-      min: def.min ?? math.min(0, current),
-      max: def.max ?? math.max(1, current.abs() * 4),
-      step: 0.01,
-      digits: 3,
-    ),
-  };
+  ) {
+    final soft = def.constraint<SoftRange>();
+    final min = soft?.min ?? def.hardMin;
+    final max = soft?.max ?? def.hardMax;
+    if (min == null || max == null) return null;
+    final span = max - min;
+    final step =
+        def.constraint<Step>()?.step ?? (span <= 2 ? 0.01 : span / 200);
+    final digits = step >= 1
+        ? 0
+        : step >= 0.1
+        ? 2
+        : step >= 0.01
+        ? 3
+        : 4;
+    return (min: min, max: max, step: step, digits: digits);
+  }
 
-  @override
-  Widget build(BuildContext context) {
+  bool get _degrees => def.constraint<AngleRadians>() != null;
+
+  List<int> _powersOfTwo(PowerOfTwo constraint) {
+    final powers = <int>[];
+    for (var value = 1; value <= (constraint.max ?? 1 << 14); value <<= 1) {
+      if (value >= constraint.min) powers.add(value);
+    }
+    return powers;
+  }
+
+  Widget _buildEditor(BuildContext context) {
     final label = def.name;
     switch (def.kind) {
       case ComponentPropertyKind.boolean:
@@ -451,44 +460,57 @@ class _SchemaPropertyRow extends StatelessWidget {
           onChanged: onChanged,
         );
       case ComponentPropertyKind.integer:
-        if (componentType == 'directionalLight') {
-          final current = _double(0);
-          final range = _directionalRange(label, current);
+        final powerOfTwo = def.constraint<PowerOfTwo>();
+        final current = value is IntValue ? (value as IntValue).value : 0;
+        if (powerOfTwo != null) {
+          final powers = _powersOfTwo(powerOfTwo);
+          return _EnumRow(
+            label: label,
+            value: '$current',
+            options: [for (final power in powers) '$power'],
+            onChanged: (name) => onChanged(int.tryParse(name) ?? current),
+          );
+        }
+        final range = _sliderRange(current.toDouble());
+        if (range != null) {
           return SliderNumberField(
             label: label,
-            value: current,
+            value: current.toDouble(),
             min: range.min,
             max: range.max,
-            scrubStep: range.step,
-            snapStep: range.step,
-            fractionDigits: range.digits,
+            scrubStep: math.max(1, range.step),
+            snapStep: math.max(1, range.step),
+            fractionDigits: 0,
             onPreview: (_) {},
             onCommit: (value) => onChanged(value.round()),
           );
         }
-        return _IntRow(
-          label: label,
-          value: value is IntValue ? (value as IntValue).value : 0,
-          onSubmit: onChanged,
-        );
+        return _IntRow(label: label, value: current, onSubmit: onChanged);
       case ComponentPropertyKind.number:
-        if (componentType == 'directionalLight') {
-          final current = _double(0);
-          final range = _directionalRange(label, current);
+        final scale = _degrees ? 180 / math.pi : 1.0;
+        final current = _double(0) * scale;
+        final suffix = _degrees ? ' (degrees)' : '';
+        final range = _sliderRange(current);
+        if (range != null) {
           return SliderNumberField(
-            label: label,
+            label: '$label$suffix',
             value: current,
-            min: range.min,
-            max: range.max,
-            scrubStep: range.step,
-            snapStep: range.step,
-            fractionDigits: range.digits,
+            min: range.min * scale,
+            max: range.max * scale,
+            scrubStep: _degrees ? 1.0 : range.step,
+            snapStep: _degrees ? 1.0 : range.step,
+            fractionDigits: _degrees ? 1 : range.digits,
             onPreview: (_) {},
-            onCommit: onChanged,
+            onCommit: (value) => onChanged(value / scale),
           );
         }
-        return _DoubleRow(label: label, value: _double(0), onSubmit: onChanged);
+        return _DoubleRow(
+          label: '$label$suffix',
+          value: current,
+          onSubmit: (raw) => onChanged(raw / scale),
+        );
       case ComponentPropertyKind.string:
+      case ComponentPropertyKind.assetRef:
         if (def.options != null) {
           return _EnumRow(
             label: label,
@@ -502,9 +524,17 @@ class _SchemaPropertyRow extends StatelessWidget {
           value: value is StringValue ? (value as StringValue).value : '',
           onSubmit: onChanged,
         );
+      case ComponentPropertyKind.vec2:
+        final v = value is Vec2Value ? (value as Vec2Value).value : null;
+        return _Vec2Row(
+          label: label,
+          x: v?.x ?? 0,
+          y: v?.y ?? 0,
+          onSubmit: onChanged,
+        );
       case ComponentPropertyKind.vec3:
         final v = value is Vec3Value ? (value as Vec3Value).value : null;
-        if (componentType == 'directionalLight' && label == 'color') {
+        if (def.constraint<RgbColor>() != null) {
           return ColorEditor(
             channelBuilder: sliderColorChannel,
             label: label,
@@ -523,6 +553,44 @@ class _SchemaPropertyRow extends StatelessWidget {
           y: v?.y ?? 0,
           z: v?.z ?? 0,
           onSubmit: onChanged,
+        );
+      case ComponentPropertyKind.vec4:
+        final v = value is Vec4Value ? (value as Vec4Value).value : null;
+        return _Vec4Row(
+          label: label,
+          x: v?.x ?? 0,
+          y: v?.y ?? 0,
+          z: v?.z ?? 0,
+          w: v?.w ?? 0,
+          onSubmit: onChanged,
+        );
+      case ComponentPropertyKind.quaternion:
+        final q = value is QuaternionValue
+            ? (value as QuaternionValue).value
+            : Quaternion.identity();
+        final euler = quaternionToEulerXyzDegrees(q);
+        return Vec3Field(
+          label: '$label (euler degrees)',
+          x: euler.x,
+          y: euler.y,
+          z: euler.z,
+          onSubmit: (v) {
+            final rotated = eulerXyzDegreesToQuaternion(
+              Vector3(
+                (v['x'] as num?)?.toDouble() ?? euler.x,
+                (v['y'] as num?)?.toDouble() ?? euler.y,
+                (v['z'] as num?)?.toDouble() ?? euler.z,
+              ),
+            );
+            onChanged({
+              r'$quat': {
+                'x': rotated.x,
+                'y': rotated.y,
+                'z': rotated.z,
+                'w': rotated.w,
+              },
+            });
+          },
         );
       case ComponentPropertyKind.color:
         return _ColorRow(
@@ -557,14 +625,128 @@ class _SchemaPropertyRow extends StatelessWidget {
         return CurveField(label: label, value: value, onChanged: onChanged);
       case ComponentPropertyKind.gradient:
         return GradientEditor(label: label, value: value, onChanged: onChanged);
-      case ComponentPropertyKind.vec2:
-      case ComponentPropertyKind.vec4:
-      case ComponentPropertyKind.quaternion:
+      case ComponentPropertyKind.matrix4:
       case ComponentPropertyKind.list:
       case ComponentPropertyKind.map:
-        // TODO(component-property-editors): vec2/vec4/quaternion/list/map.
+      case ComponentPropertyKind.object:
+      case ComponentPropertyKind.union:
+        // TODO(component-property-editors): matrix4/list/map/object/union
+        // editors (unions and structured lists land with the components that
+        // need them).
         return _ReadOnlyRow(label: label, text: '(${def.kind.name})');
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editor = _buildEditor(context);
+    final doc = def.doc;
+    if (doc == null || doc.isEmpty) return editor;
+    return Tooltip(
+      message: doc,
+      waitDuration: const Duration(milliseconds: 600),
+      child: editor,
+    );
+  }
+}
+
+/// Two scrub fields submitting `{x, y}`.
+class _Vec2Row extends StatelessWidget {
+  const _Vec2Row({
+    required this.label,
+    required this.x,
+    required this.y,
+    required this.onSubmit,
+  });
+
+  final String label;
+  final double x;
+  final double y;
+  final void Function(Object?) onSubmit;
+
+  @override
+  Widget build(BuildContext context) => LabeledControlRow(
+    label: label,
+    control: Row(
+      children: [
+        Expanded(
+          child: ScrubbableNumberField(
+            label: 'X',
+            color: editorAxisColors[0],
+            value: x,
+            scrubStep: 0.01,
+            snapStep: 1,
+            onCommit: (v) => onSubmit({'x': v, 'y': y}),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: ScrubbableNumberField(
+            label: 'Y',
+            color: editorAxisColors[1],
+            value: y,
+            scrubStep: 0.01,
+            snapStep: 1,
+            onCommit: (v) => onSubmit({'x': x, 'y': v}),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Four scrub fields submitting `{x, y, z, w}`.
+class _Vec4Row extends StatelessWidget {
+  const _Vec4Row({
+    required this.label,
+    required this.x,
+    required this.y,
+    required this.z,
+    required this.w,
+    required this.onSubmit,
+  });
+
+  final String label;
+  final double x;
+  final double y;
+  final double z;
+  final double w;
+  final void Function(Object?) onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    Map<String, Object> withComponent(String key, double v) => {
+      'x': key == 'x' ? v : x,
+      'y': key == 'y' ? v : y,
+      'z': key == 'z' ? v : z,
+      'w': key == 'w' ? v : w,
+    };
+    return LabeledControlRow(
+      label: label,
+      control: Row(
+        children: [
+          for (final (key, current) in [('x', x), ('y', y), ('z', z), ('w', w)])
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ScrubbableNumberField(
+                  label: key.toUpperCase(),
+                  color:
+                      editorAxisColors[key == 'x'
+                          ? 0
+                          : key == 'y'
+                          ? 1
+                          : 2],
+                  value: current,
+                  scrubStep: 0.01,
+                  snapStep: 1,
+                  onCommit: (v) => onSubmit(withComponent(key, v)),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

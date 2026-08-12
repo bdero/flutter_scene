@@ -1,159 +1,189 @@
+import 'package:scene/scene.dart';
+
 import 'package:flutter_scene/src/audio/audio_attenuation.dart';
 import 'package:flutter_scene/src/audio/audio_listener.dart';
 import 'package:flutter_scene/src/audio/clip_audio_source.dart';
-import 'package:flutter_scene/src/components/component.dart';
-import 'package:scene/scene.dart';
-import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
-import 'package:flutter_scene/src/fscene/realize/property_read.dart';
+import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 
-/// Codec for [ClipAudioSource]. The clip is carried as a Flutter asset
-/// key; playback needs an `AudioEngine` mounted by the app, and a scene
-/// realized without one keeps the component inert.
+/// The nested attenuation object's field descriptors, shared by the schema
+/// and the codec's read/write bindings.
+const List<ComponentPropertyDef> _attenuationFields = [
+  ComponentPropertyDef(
+    'minDistance',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1.0),
+    doc: 'Distance where attenuation begins.',
+    constraints: [Range.nonNegative()],
+  ),
+  ComponentPropertyDef(
+    'maxDistance',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(500.0),
+    doc: 'Distance beyond which attenuation stops.',
+    constraints: [Range.nonNegative()],
+  ),
+  ComponentPropertyDef(
+    'rolloff',
+    ComponentPropertyKind.string,
+    defaultValue: StringValue('inverse'),
+    doc: 'Distance rolloff model.',
+    options: ['none', 'inverse', 'linear', 'exponential'],
+  ),
+  ComponentPropertyDef(
+    'rolloffFactor',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1.0),
+    doc: 'Steepness multiplier for the rolloff curve.',
+    constraints: [Range.nonNegative()],
+  ),
+  ComponentPropertyDef(
+    'dopplerFactor',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1.0),
+    doc: 'Doppler strength, 0 disables.',
+    constraints: [Range.nonNegative()],
+  ),
+];
+
+/// Reads an [AudioAttenuation] from a spec's properties, accepting the nested
+/// `attenuation` object and the older five flattened sibling keys.
+AudioAttenuation attenuationFromProperties(Map<String, PropertyValue> p) {
+  final nested = p['attenuation'];
+  final values = nested is MapValue ? nested.values : p;
+  double number(String key, double fallback) => switch (values[key]) {
+    DoubleValue(:final value) => value,
+    IntValue(:final value) => value.toDouble(),
+    _ => fallback,
+  };
+  final rolloff = values['rolloff'];
+  return AudioAttenuation(
+    minDistance: number('minDistance', 1.0),
+    maxDistance: number('maxDistance', 500.0),
+    rolloff: rolloff is StringValue
+        ? AudioRolloff.values.asNameMap()[rolloff.value] ?? AudioRolloff.inverse
+        : AudioRolloff.inverse,
+    rolloffFactor: number('rolloffFactor', 1.0),
+    dopplerFactor: number('dopplerFactor', 1.0),
+  );
+}
+
+MapValue _encodeAttenuation(AudioAttenuation attenuation) => MapValue({
+  'minDistance': DoubleValue(attenuation.minDistance),
+  'maxDistance': DoubleValue(attenuation.maxDistance),
+  'rolloff': StringValue(attenuation.rolloff.name),
+  'rolloffFactor': DoubleValue(attenuation.rolloffFactor),
+  'dopplerFactor': DoubleValue(attenuation.dopplerFactor),
+});
+
+final MapValue _defaultAttenuation = _encodeAttenuation(AudioAttenuation());
+
+/// Codec for [ClipAudioSource]. The clip is carried as an asset key;
+/// playback needs an `AudioEngine` mounted by the app, and a scene realized
+/// without one keeps the component inert.
 // TODO(audio): support embedding clip payloads as document resources
 // (an audio ResourceSpec mirroring textures) so a .fsceneb is
 // self-contained without a matching asset bundle.
-class AudioSourceCodec extends ComponentCodec {
+class AudioSourceCodec extends DeclarativeComponentCodec<ClipAudioSource> {
   @override
   String get type => 'audioSource';
 
-  // Empty strings stand in for "unset" on the asset and bus, since the
-  // derived serialize requires a value for every declared property.
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
-      'asset',
-      ComponentPropertyKind.string,
-      const StringValue(''),
-      doc: 'Asset key of the audio file this source plays.',
-      read: (c) => StringValue((c as ClipAudioSource).asset ?? ''),
+  @override
+  List<ComponentField<ClipAudioSource>> get fields => [
+    ComponentField(
+      const ComponentPropertyDef(
+        'asset',
+        ComponentPropertyKind.assetRef,
+        doc: 'Asset key of the audio file this source plays.',
+        constraints: [
+          AssetExtensions(['.wav', '.mp3', '.ogg', '.flac']),
+        ],
+      ),
+      read: (c, _) {
+        final asset = c.asset;
+        // Older documents carried '' for "unset"; absent is the delta form.
+        return asset == null || asset.isEmpty ? null : StringValue(asset);
+      },
+      write: (c, v, _) {
+        if (v is StringValue) c.asset = v.value.isEmpty ? null : v.value;
+      },
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'autoplay',
-      ComponentPropertyKind.boolean,
-      const BoolValue(false),
+      defaultValue: false,
       doc: 'Begin playing as soon as the source mounts.',
-      read: (c) => BoolValue((c as ClipAudioSource).autoplay),
+      get: (c) => c.autoplay,
+      set: (c, v) => c.autoplay = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'looping',
-      ComponentPropertyKind.boolean,
-      const BoolValue(false),
+      defaultValue: false,
       doc: 'Repeat until stopped.',
-      read: (c) => BoolValue((c as ClipAudioSource).looping),
+      get: (c) => c.looping,
+      set: (c, v) => c.looping = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'volume',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Gain, 1.0 is unity.',
-      min: 0,
-      read: (c) => DoubleValue((c as ClipAudioSource).volume),
+      constraints: const [Range.nonNegative(), SoftRange(0, 1)],
+      get: (c) => c.volume,
+      set: (c, v) => c.volume = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'pitch',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Playback rate multiplier.',
-      min: 0,
-      read: (c) => DoubleValue((c as ClipAudioSource).pitch),
+      constraints: const [Range.nonNegative(), SoftRange(0, 2)],
+      get: (c) => c.pitch,
+      set: (c, v) => c.pitch = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'positional',
-      ComponentPropertyKind.boolean,
-      const BoolValue(true),
+      defaultValue: true,
       doc: 'Spatialize at the node, or play flat when false.',
-      read: (c) => BoolValue((c as ClipAudioSource).positional),
+      get: (c) => c.positional,
+      set: (c, v) => c.positional = v,
     ),
-    ComponentPropertyDef(
-      'minDistance',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
-      doc: 'Distance where attenuation begins.',
-      min: 0,
-      read: (c) => DoubleValue((c as ClipAudioSource).attenuation.minDistance),
+    ComponentField(
+      ComponentPropertyDef(
+        'attenuation',
+        ComponentPropertyKind.object,
+        defaultValue: _defaultAttenuation,
+        doc: 'Distance attenuation for positional playback.',
+        objectFields: _attenuationFields,
+      ),
+      read: (c, _) => _encodeAttenuation(c.attenuation),
+      write: (c, v, _) {
+        if (v is MapValue) {
+          c.attenuation = attenuationFromProperties({'attenuation': v});
+        }
+      },
     ),
-    ComponentPropertyDef(
-      'maxDistance',
-      ComponentPropertyKind.number,
-      const DoubleValue(500.0),
-      doc: 'Distance beyond which attenuation stops.',
-      min: 0,
-      read: (c) => DoubleValue((c as ClipAudioSource).attenuation.maxDistance),
-    ),
-    ComponentPropertyDef(
-      'rolloff',
-      ComponentPropertyKind.string,
-      const StringValue('inverse'),
-      doc: 'Distance rolloff model.',
-      options: const ['none', 'inverse', 'linear', 'exponential'],
-      read: (c) => StringValue((c as ClipAudioSource).attenuation.rolloff.name),
-    ),
-    ComponentPropertyDef(
-      'rolloffFactor',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
-      doc: 'Steepness multiplier for the rolloff curve.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as ClipAudioSource).attenuation.rolloffFactor),
-    ),
-    ComponentPropertyDef(
-      'dopplerFactor',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
-      doc: 'Doppler strength, 0 disables.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as ClipAudioSource).attenuation.dopplerFactor),
-    ),
-    ComponentPropertyDef(
-      'bus',
-      ComponentPropertyKind.string,
-      const StringValue(''),
-      doc: 'Name of the engine bus to route through.',
-      read: (c) => StringValue((c as ClipAudioSource).busName ?? ''),
+    ComponentField(
+      const ComponentPropertyDef(
+        'bus',
+        ComponentPropertyKind.string,
+        doc: 'Name of the engine bus to route through.',
+      ),
+      read: (c, _) {
+        final bus = c.busName;
+        return bus == null || bus.isEmpty ? null : StringValue(bus);
+      },
+      write: (c, v, _) {
+        if (v is StringValue) c.busName = v.value.isEmpty ? null : v.value;
+      },
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is ClipAudioSource;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    final asset = readString(p, 'asset', stringDefault('asset'));
-    final bus = readString(p, 'bus', stringDefault('bus'));
+  ClipAudioSource create(PropertyReader props) {
+    final asset = props.string('asset');
+    final bus = props.string('bus');
     return ClipAudioSource(
       asset: asset.isEmpty ? null : asset,
-      autoplay: readBool(p, 'autoplay', boolDefault('autoplay')),
-      looping: readBool(p, 'looping', boolDefault('looping')),
-      volume: readDouble(p, 'volume', numberDefault('volume')),
-      pitch: readDouble(p, 'pitch', numberDefault('pitch')),
-      positional: readBool(p, 'positional', boolDefault('positional')),
-      attenuation: AudioAttenuation(
-        minDistance: readDouble(p, 'minDistance', numberDefault('minDistance')),
-        maxDistance: readDouble(p, 'maxDistance', numberDefault('maxDistance')),
-        rolloff:
-            AudioRolloff.values.asNameMap()[readString(
-              p,
-              'rolloff',
-              stringDefault('rolloff'),
-            )] ??
-            AudioRolloff.inverse,
-        rolloffFactor: readDouble(
-          p,
-          'rolloffFactor',
-          numberDefault('rolloffFactor'),
-        ),
-        dopplerFactor: readDouble(
-          p,
-          'dopplerFactor',
-          numberDefault('dopplerFactor'),
-        ),
-      ),
+      // Accepts the nested object and the legacy flattened sibling keys.
+      attenuation: attenuationFromProperties(props.properties),
       busName: bus.isEmpty ? null : bus,
     );
   }
@@ -161,14 +191,13 @@ class AudioSourceCodec extends ComponentCodec {
 
 /// Codec for [AudioListener]. No properties; the node transform is the
 /// listener pose.
-class AudioListenerCodec extends ComponentCodec {
+class AudioListenerCodec extends DeclarativeComponentCodec<AudioListener> {
   @override
   String get type => 'audioListener';
 
   @override
-  bool claims(Component component) => component is AudioListener;
+  List<ComponentField<AudioListener>> get fields => const [];
 
   @override
-  Component realize(ComponentSpec spec, RealizeContext context) =>
-      AudioListener();
+  AudioListener create(PropertyReader props) => AudioListener();
 }

@@ -440,10 +440,11 @@ void main() {
         (serialized.properties['asset']! as StringValue).value,
         'sounds/fire.ogg',
       );
-      expect(
-        (serialized.properties['rolloff']! as StringValue).value,
-        'linear',
-      );
+      // Attenuation serializes as a nested object (the flattened keys the
+      // spec above uses remain accepted on realize).
+      final attenuation = serialized.properties['attenuation']! as MapValue;
+      expect((attenuation.values['rolloff']! as StringValue).value, 'linear');
+      expect((attenuation.values['maxDistance']! as DoubleValue).value, 42.0);
       expect((serialized.properties['bus']! as StringValue).value, 'sfx');
     });
 

@@ -515,6 +515,10 @@ final class _ThrowingCodec extends ComponentCodec {
   Component? realize(ComponentSpec spec, RealizeContext context) {
     throw StateError('intentional realization failure');
   }
+
+  @override
+  ComponentSpec? serialize(Component component, SerializeContext context) =>
+      null;
 }
 
 final class _DeferredSceneBundle extends CachingAssetBundle {

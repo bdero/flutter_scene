@@ -29,8 +29,8 @@ import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
+import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
-import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/light.dart';
@@ -55,120 +55,83 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(AudioListenerCodec());
 }
 
-// The environment resource each realized volume came from, so serialize can
-// recover the reference (the live component holds only the realized settings).
-final Expando<LocalId> _volumeEnvironmentId = Expando(
-  'environment volume source resource',
-);
-
 /// Codec for [EnvironmentVolumeComponent]. Realizes the look from a referenced
-/// [EnvironmentResource] (preloaded by the resource realizer) and the region
-/// from the local-space shape fields; the node transform places it.
-class EnvironmentVolumeCodec extends ComponentCodec {
+/// [EnvironmentResource] (preloaded by the resource realizer, which stamps the
+/// realized settings with their origin so serialize can recover the
+/// reference) and the region from the local-space shape fields; the node
+/// transform places it.
+class EnvironmentVolumeCodec
+    extends DeclarativeComponentCodec<EnvironmentVolumeComponent> {
   @override
   String get type => 'environmentVolume';
 
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
+  @override
+  List<ComponentField<EnvironmentVolumeComponent>> get fields => [
+    ComponentField.resourceRef(
       'environment',
-      ComponentPropertyKind.resourceRef,
-      null,
-      doc: 'The environment resource this volume blends toward.',
       resourceKind: 'environment',
+      doc: 'The environment resource this volume blends toward.',
+      get: (c, _) => resourceOrigin(c.settings)?.resourceId,
+      set: (c, id, context) {
+        final settings = context.resources?.environment(id);
+        if (settings != null) c.settings = settings;
+      },
     ),
-    ComponentPropertyDef(
+    ComponentField.enumString(
       'shape',
-      ComponentPropertyKind.string,
-      const StringValue('box'),
+      values: EnvironmentVolumeShape.values,
+      defaultValue: EnvironmentVolumeShape.box,
       doc: 'Region shape.',
-      options: const ['box', 'sphere'],
+      get: (c) => c.shape,
+      set: (c, v) => c.shape = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.vec3(
       'extents',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3.all(5)),
+      defaultValue: () => Vector3.all(5),
       doc: 'Box half-size in the node\'s local space.',
+      get: (c) => c.extents,
+      set: (c, v) => c.extents = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'radius',
-      ComponentPropertyKind.number,
-      const DoubleValue(5.0),
+      defaultValue: 5.0,
       doc: 'Sphere radius in the node\'s local space.',
-      min: 0,
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.radius,
+      set: (c, v) => c.radius = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'blendDistance',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Local-space fade band outside the region.',
-      min: 0,
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.blendDistance,
+      set: (c, v) => c.blendDistance = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'priority',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'Blend order; higher applies on top.',
+      get: (c) => c.priority,
+      set: (c, v) => c.priority = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'weight',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Master contribution scale.',
-      min: 0,
-      max: 1,
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.weight,
+      set: (c, v) => c.weight = v,
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is EnvironmentVolumeComponent;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    final envProp = p['environment'];
-    final envId = envProp is ResourceRefValue ? envProp.id : null;
+  EnvironmentVolumeComponent create(PropertyReader props) {
+    final envId = props.resourceId('environment');
     final settings =
-        (envId == null ? null : context.resources?.environment(envId)) ??
+        (envId == null ? null : props.context.resources?.environment(envId)) ??
         EnvironmentSettings();
-    final shape = readString(p, 'shape', stringDefault('shape')) == 'sphere'
-        ? EnvironmentVolumeShape.sphere
-        : EnvironmentVolumeShape.box;
-    final component = EnvironmentVolumeComponent(
-      settings: settings,
-      shape: shape,
-      extents: readVec3(p, 'extents', vec3Default('extents')),
-      radius: readDouble(p, 'radius', numberDefault('radius')),
-      blendDistance: readDouble(
-        p,
-        'blendDistance',
-        numberDefault('blendDistance'),
-      ),
-      priority: readDouble(p, 'priority', numberDefault('priority')),
-      weight: readDouble(p, 'weight', numberDefault('weight')),
-    );
-    if (envId != null) _volumeEnvironmentId[component] = envId;
-    return component;
-  }
-
-  @override
-  ComponentSpec? serialize(Component component, SerializeContext context) {
-    if (component is! EnvironmentVolumeComponent) return null;
-    final envId = _volumeEnvironmentId[component];
-    return ComponentSpec(
-      type,
-      properties: {
-        if (envId != null) 'environment': ResourceRefValue(envId),
-        'shape': StringValue(component.shape.name),
-        'extents': Vec3Value(component.extents.clone()),
-        'radius': DoubleValue(component.radius),
-        'blendDistance': DoubleValue(component.blendDistance),
-        'priority': DoubleValue(component.priority),
-        'weight': DoubleValue(component.weight),
-      },
-    );
+    return EnvironmentVolumeComponent(settings: settings);
   }
 }
 
@@ -183,25 +146,49 @@ class MeshCodec extends ComponentCodec {
   @override
   String get type => 'mesh';
 
-  // The single-primitive form. The multi-primitive `primitives` list is not yet
-  // schema-described; editing it stays a TODO(mesh-multiprimitive).
+  // The single-primitive form, plus the multi-primitive `primitives` list
+  // described as a list of {geometry, material} pairs.
   @override
   List<ComponentPropertyDef> get propertySchema => const [
     ComponentPropertyDef(
       'geometry',
       ComponentPropertyKind.resourceRef,
-      null,
       doc: 'The geometry resource this mesh draws.',
       resourceKind: 'geometry',
     ),
     ComponentPropertyDef(
       'material',
       ComponentPropertyKind.resourceRef,
-      null,
       doc: 'The material the geometry is drawn with.',
       resourceKind: 'material',
     ),
+    ComponentPropertyDef(
+      'primitives',
+      ComponentPropertyKind.list,
+      doc:
+          'Geometry/material pairs for a multi-primitive mesh (replaces the '
+          'single geometry/material form when present).',
+      itemDef: ComponentPropertyDef(
+        'primitive',
+        ComponentPropertyKind.object,
+        objectFields: [
+          ComponentPropertyDef(
+            'geometry',
+            ComponentPropertyKind.resourceRef,
+            resourceKind: 'geometry',
+          ),
+          ComponentPropertyDef(
+            'material',
+            ComponentPropertyKind.resourceRef,
+            resourceKind: 'material',
+          ),
+        ],
+      ),
+    ),
   ];
+
+  @override
+  Type get componentType => MeshComponent;
 
   @override
   bool claims(Component component) => component is MeshComponent;
@@ -726,526 +713,420 @@ class MeshCodec extends ComponentCodec {
 }
 
 /// Codec for [DirectionalLightComponent]. The owning node's rotation aims the
-/// light along native local +Z.
-class DirectionalLightCodec extends ComponentCodec {
+/// light along native local +Z, or along a serialized `localDirection` for
+/// components created with [DirectionalLightComponent.aimed].
+class DirectionalLightCodec
+    extends DeclarativeComponentCodec<DirectionalLightComponent> {
   @override
   String get type => 'directionalLight';
 
-  // Declared in serialize order so the derived serialize matches the format's
-  // existing key order (byte-stable round-trips). Defaults are the single source
-  // for realize's fallbacks.
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
+  // Declared in serialize order so serialization matches the format's
+  // existing key order. Defaults are the single source for realize fallbacks.
+  @override
+  List<ComponentField<DirectionalLightComponent>> get fields => [
+    ComponentField.vec3(
       'color',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3(1, 1, 1)),
+      defaultValue: () => Vector3(1, 1, 1),
       doc: 'Linear RGB light color.',
-      read: (c) =>
-          Vec3Value((c as DirectionalLightComponent).light.color.clone()),
+      constraints: const [RgbColor()],
+      get: (c) => c.light.color,
+      set: (c, v) => c.light.color = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'intensity',
-      ComponentPropertyKind.number,
-      const DoubleValue(3.0),
+      defaultValue: 3.0,
       doc: 'Light brightness.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as DirectionalLightComponent).light.intensity),
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
+      get: (c) => c.light.intensity,
+      set: (c, v) => c.light.intensity = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.integer(
       'priority',
-      ComponentPropertyKind.integer,
-      const IntValue(0),
+      defaultValue: 0,
       doc: 'Priority for primary directional-light features.',
-      read: (c) => IntValue((c as DirectionalLightComponent).light.priority),
+      get: (c) => c.light.priority,
+      set: (c, v) => c.light.priority = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'castsShadow',
-      ComponentPropertyKind.boolean,
-      const BoolValue(false),
+      defaultValue: false,
       doc: 'Whether this light renders a shadow map.',
-      read: (c) =>
-          BoolValue((c as DirectionalLightComponent).light.castsShadow),
+      group: 'Shadows',
+      get: (c) => c.light.castsShadow,
+      set: (c, v) => c.light.castsShadow = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'cacheStaticShadows',
-      ComponentPropertyKind.boolean,
-      const BoolValue(true),
+      defaultValue: true,
       doc: 'Whether static shadow casters are cached between frames.',
-      read: (c) =>
-          BoolValue((c as DirectionalLightComponent).light.cacheStaticShadows),
+      group: 'Shadows',
+      get: (c) => c.light.cacheStaticShadows,
+      set: (c, v) => c.light.cacheStaticShadows = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowFadeRange',
-      ComponentPropertyKind.number,
-      const DoubleValue(2.0),
+      defaultValue: 2.0,
       doc: 'Distance over which shadows fade out.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as DirectionalLightComponent).light.shadowFadeRange),
+      group: 'Shadows',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.shadowFadeRange,
+      set: (c, v) => c.light.shadowFadeRange = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowSoftness',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.08),
+      defaultValue: 0.08,
       doc: 'Shadow edge softness.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as DirectionalLightComponent).light.shadowSoftness),
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 0.5)],
+      get: (c) => c.light.shadowSoftness,
+      set: (c, v) => c.light.shadowSoftness = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.integer(
       'shadowCascadeCount',
-      ComponentPropertyKind.integer,
-      const IntValue(4),
+      defaultValue: 4,
       doc: 'Number of shadow cascades.',
-      min: 1,
-      read: (c) =>
-          IntValue((c as DirectionalLightComponent).light.shadowCascadeCount),
+      group: 'Shadows',
+      constraints: const [IntRange(1, 4)],
+      get: (c) => c.light.shadowCascadeCount,
+      set: (c, v) => c.light.shadowCascadeCount = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowMaxDistance',
-      ComponentPropertyKind.number,
-      const DoubleValue(150.0),
+      defaultValue: 150.0,
       doc: 'Far distance shadows are rendered to.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as DirectionalLightComponent).light.shadowMaxDistance),
+      group: 'Shadows',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.shadowMaxDistance,
+      set: (c, v) => c.light.shadowMaxDistance = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowCascadeSplitLambda',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.6),
+      defaultValue: 0.6,
       doc: 'Blend between uniform and logarithmic cascade splits.',
-      min: 0,
-      max: 1,
-      read: (c) => DoubleValue(
-        (c as DirectionalLightComponent).light.shadowCascadeSplitLambda,
-      ),
+      group: 'Shadows',
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.light.shadowCascadeSplitLambda,
+      set: (c, v) => c.light.shadowCascadeSplitLambda = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.integer(
       'shadowMapResolution',
-      ComponentPropertyKind.integer,
-      const IntValue(1024),
+      defaultValue: 1024,
       doc: 'Shadow map resolution per cascade, in texels.',
-      min: 1,
-      read: (c) =>
-          IntValue((c as DirectionalLightComponent).light.shadowMapResolution),
+      group: 'Shadows',
+      constraints: const [IntRange(1, null), PowerOfTwo(min: 128, max: 8192)],
+      get: (c) => c.light.shadowMapResolution,
+      set: (c, v) => c.light.shadowMapResolution = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowDepthBias',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.02),
+      defaultValue: 0.02,
       doc: 'Depth bias applied when sampling the shadow map.',
-      read: (c) =>
-          DoubleValue((c as DirectionalLightComponent).light.shadowDepthBias),
+      group: 'Shadows',
+      get: (c) => c.light.shadowDepthBias,
+      set: (c, v) => c.light.shadowDepthBias = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowNormalBias',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.02),
+      defaultValue: 0.02,
       doc: 'Normal bias applied when sampling the shadow map.',
-      read: (c) =>
-          DoubleValue((c as DirectionalLightComponent).light.shadowNormalBias),
+      group: 'Shadows',
+      get: (c) => c.light.shadowNormalBias,
+      set: (c, v) => c.light.shadowNormalBias = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowAmbientStrength',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'How strongly shadows darken image-based ambient lighting.',
-      min: 0,
-      max: 1,
-      read: (c) => DoubleValue(
-        (c as DirectionalLightComponent).light.shadowAmbientStrength,
-      ),
+      group: 'Shadows',
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.light.shadowAmbientStrength,
+      set: (c, v) => c.light.shadowAmbientStrength = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.enumString(
       'shadowFilter',
-      ComponentPropertyKind.string,
-      const StringValue('rotatedPoisson'),
+      values: DirectionalShadowFilter.values,
+      defaultValue: DirectionalShadowFilter.rotatedPoisson,
       doc: 'Shadow-map sampling pattern.',
-      options: const ['rotatedPoisson', 'fixedPcf'],
-      read: (c) =>
-          StringValue((c as DirectionalLightComponent).light.shadowFilter.name),
+      group: 'Shadows',
+      get: (c) => c.light.shadowFilter,
+      set: (c, v) => c.light.shadowFilter = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.enumString(
       'shadowCasterFaces',
-      ComponentPropertyKind.string,
-      const StringValue('front'),
+      values: ShadowCasterFaces.values,
+      defaultValue: ShadowCasterFaces.front,
       doc: 'Caster faces rendered into the shadow map.',
-      options: const ['front', 'back', 'both'],
-      read: (c) => StringValue(
-        (c as DirectionalLightComponent).light.shadowCasterFaces.name,
+      group: 'Shadows',
+      get: (c) => c.light.shadowCasterFaces,
+      set: (c, v) => c.light.shadowCasterFaces = v,
+    ),
+    // Constructor-only (DirectionalLightComponent.aimed); absent means the
+    // node's rotation aims the light.
+    ComponentField(
+      const ComponentPropertyDef(
+        'localDirection',
+        ComponentPropertyKind.vec3,
+        doc:
+            'Fixed node-local travel direction for aimed lights; absent '
+            'aims along the node\'s local +Z.',
       ),
+      read: (c, _) {
+        final direction = c.localDirection;
+        return direction == null ? null : Vec3Value(direction);
+      },
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is DirectionalLightComponent;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    return DirectionalLightComponent(
-      DirectionalLight(
-        color: readVec3(p, 'color', vec3Default('color')),
-        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
-        priority: readInt(p, 'priority', intDefault('priority')),
-        castsShadow: readBool(p, 'castsShadow', boolDefault('castsShadow')),
-        cacheStaticShadows: readBool(
-          p,
-          'cacheStaticShadows',
-          boolDefault('cacheStaticShadows'),
-        ),
-        shadowFadeRange: readDouble(
-          p,
-          'shadowFadeRange',
-          numberDefault('shadowFadeRange'),
-        ),
-        shadowSoftness: readDouble(
-          p,
-          'shadowSoftness',
-          numberDefault('shadowSoftness'),
-        ),
-        shadowCascadeCount: readInt(
-          p,
-          'shadowCascadeCount',
-          intDefault('shadowCascadeCount'),
-        ),
-        shadowMaxDistance: readDouble(
-          p,
-          'shadowMaxDistance',
-          numberDefault('shadowMaxDistance'),
-        ),
-        shadowCascadeSplitLambda: readDouble(
-          p,
-          'shadowCascadeSplitLambda',
-          numberDefault('shadowCascadeSplitLambda'),
-        ),
-        shadowMapResolution: readInt(
-          p,
-          'shadowMapResolution',
-          intDefault('shadowMapResolution'),
-        ),
-        shadowDepthBias: readDouble(
-          p,
-          'shadowDepthBias',
-          numberDefault('shadowDepthBias'),
-        ),
-        shadowNormalBias: readDouble(
-          p,
-          'shadowNormalBias',
-          numberDefault('shadowNormalBias'),
-        ),
-        shadowAmbientStrength: readDouble(
-          p,
-          'shadowAmbientStrength',
-          numberDefault('shadowAmbientStrength'),
-        ),
-        shadowFilter: DirectionalShadowFilter.values.byName(
-          readString(p, 'shadowFilter', stringDefault('shadowFilter')),
-        ),
-        shadowCasterFaces: ShadowCasterFaces.values.byName(
-          readString(
-            p,
-            'shadowCasterFaces',
-            stringDefault('shadowCasterFaces'),
-          ),
-        ),
-      ),
-    );
+  DirectionalLightComponent create(PropertyReader props) {
+    final aim = props.value('localDirection');
+    final light = DirectionalLight();
+    return aim is Vec3Value
+        ? DirectionalLightComponent.aimed(light, aim.value)
+        : DirectionalLightComponent(light);
   }
 }
 
 /// Codec for [PointLightComponent].
-class PointLightCodec extends ComponentCodec {
+class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
   @override
   String get type => 'pointLight';
 
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
+  @override
+  List<ComponentField<PointLightComponent>> get fields => [
+    ComponentField.vec3(
       'color',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3(1, 1, 1)),
+      defaultValue: () => Vector3(1, 1, 1),
       doc: 'Linear RGB light color.',
-      read: (c) => Vec3Value((c as PointLightComponent).light.color.clone()),
+      constraints: const [RgbColor()],
+      get: (c) => c.light.color,
+      set: (c, v) => c.light.color = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'intensity',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Light brightness (radiance at unit distance).',
-      min: 0,
-      read: (c) => DoubleValue((c as PointLightComponent).light.intensity),
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
+      get: (c) => c.light.intensity,
+      set: (c, v) => c.light.intensity = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'range',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'Distance the light reaches, or 0 for infinite range.',
-      min: 0,
-      read: (c) => DoubleValue((c as PointLightComponent).light.range),
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.range,
+      set: (c, v) => c.light.range = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'falloffExponent',
-      ComponentPropertyKind.number,
-      const DoubleValue(2.0),
+      defaultValue: 2.0,
       doc: 'Distance falloff exponent.',
-      min: 0,
-      read: (c) =>
-          DoubleValue((c as PointLightComponent).light.falloffExponent),
+      constraints: const [Range.nonNegative(), SoftRange(0, 4)],
+      get: (c) => c.light.falloffExponent,
+      set: (c, v) => c.light.falloffExponent = v,
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is PointLightComponent;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    return PointLightComponent(
-      PointLight(
-        color: readVec3(p, 'color', vec3Default('color')),
-        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
-        range: readDouble(p, 'range', numberDefault('range')),
-        falloffExponent: readDouble(
-          p,
-          'falloffExponent',
-          numberDefault('falloffExponent'),
-        ),
-      ),
-    );
-  }
+  PointLightComponent create(PropertyReader props) =>
+      PointLightComponent(PointLight());
 }
 
 /// Codec for [SpotLightComponent].
-class SpotLightCodec extends ComponentCodec {
+class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
   @override
   String get type => 'spotLight';
 
-  static final List<ComponentPropertyDef> _schema = [
-    ComponentPropertyDef(
+  @override
+  List<ComponentField<SpotLightComponent>> get fields => [
+    ComponentField.vec3(
       'direction',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3(0, -1, 0)),
+      defaultValue: () => Vector3(0, -1, 0),
       doc: 'Cone aim in the node\'s local space.',
-      read: (c) => Vec3Value((c as SpotLightComponent).light.direction.clone()),
+      get: (c) => c.light.direction,
+      set: (c, v) => c.light.direction = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.vec3(
       'color',
-      ComponentPropertyKind.vec3,
-      Vec3Value(Vector3(1, 1, 1)),
+      defaultValue: () => Vector3(1, 1, 1),
       doc: 'Linear RGB light color.',
-      read: (c) => Vec3Value((c as SpotLightComponent).light.color.clone()),
+      constraints: const [RgbColor()],
+      get: (c) => c.light.color,
+      set: (c, v) => c.light.color = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'intensity',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Light brightness (radiance at unit distance).',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.intensity),
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
+      get: (c) => c.light.intensity,
+      set: (c, v) => c.light.intensity = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'range',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'Distance the light reaches, or 0 for infinite range.',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.range),
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.range,
+      set: (c, v) => c.light.range = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'falloffExponent',
-      ComponentPropertyKind.number,
-      const DoubleValue(2.0),
+      defaultValue: 2.0,
       doc: 'Distance falloff exponent.',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.falloffExponent),
+      constraints: const [Range.nonNegative(), SoftRange(0, 4)],
+      get: (c) => c.light.falloffExponent,
+      set: (c, v) => c.light.falloffExponent = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'innerConeAngle',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'Half-angle (radians) of the full-brightness inner cone.',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.innerConeAngle),
+      constraints: const [Range(0, 1.5533430342749532), AngleRadians()],
+      get: (c) => c.light.innerConeAngle,
+      set: (c, v) => c.light.innerConeAngle = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'outerConeAngle',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.7853981633974483),
+      defaultValue: 0.7853981633974483,
       doc: 'Half-angle (radians) at which the cone falls to zero.',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.outerConeAngle),
+      constraints: const [Range(0, 1.5533430342749532), AngleRadians()],
+      get: (c) => c.light.outerConeAngle,
+      set: (c, v) => c.light.outerConeAngle = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.boolean(
       'castsShadow',
-      ComponentPropertyKind.boolean,
-      const BoolValue(false),
+      defaultValue: false,
       doc: 'Whether this light renders a shadow map.',
-      read: (c) => BoolValue((c as SpotLightComponent).light.castsShadow),
+      group: 'Shadows',
+      get: (c) => c.light.castsShadow,
+      set: (c, v) => c.light.castsShadow = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.integer(
       'shadowMapResolution',
-      ComponentPropertyKind.integer,
-      const IntValue(1024),
+      defaultValue: 1024,
       doc: 'Shadow map resolution, in texels.',
-      min: 1,
-      read: (c) =>
-          IntValue((c as SpotLightComponent).light.shadowMapResolution),
+      group: 'Shadows',
+      constraints: const [IntRange(1, null), PowerOfTwo(min: 128, max: 8192)],
+      get: (c) => c.light.shadowMapResolution,
+      set: (c, v) => c.light.shadowMapResolution = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowNear',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.1),
+      defaultValue: 0.1,
       doc: 'Near clip distance of the shadow frustum.',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.shadowNear),
+      group: 'Shadows',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.shadowNear,
+      set: (c, v) => c.light.shadowNear = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowDepthBias',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.0),
+      defaultValue: 0.0,
       doc: 'Depth bias used by shadow sampling.',
-      read: (c) => DoubleValue((c as SpotLightComponent).light.shadowDepthBias),
+      group: 'Shadows',
+      get: (c) => c.light.shadowDepthBias,
+      set: (c, v) => c.light.shadowDepthBias = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowNormalBias',
-      ComponentPropertyKind.number,
-      const DoubleValue(0.1),
+      defaultValue: 0.1,
       doc: 'World-space normal offset used by shadow sampling.',
-      read: (c) =>
-          DoubleValue((c as SpotLightComponent).light.shadowNormalBias),
+      group: 'Shadows',
+      get: (c) => c.light.shadowNormalBias,
+      set: (c, v) => c.light.shadowNormalBias = v,
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'shadowSoftness',
-      ComponentPropertyKind.number,
-      const DoubleValue(1.0),
+      defaultValue: 1.0,
       doc: 'Shadow filter radius, in texels.',
-      min: 0,
-      read: (c) => DoubleValue((c as SpotLightComponent).light.shadowSoftness),
+      group: 'Shadows',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.shadowSoftness,
+      set: (c, v) => c.light.shadowSoftness = v,
+    ),
+    ComponentField.enumString(
+      'shadowCasterFaces',
+      values: ShadowCasterFaces.values,
+      defaultValue: ShadowCasterFaces.front,
+      doc: 'Caster faces rendered into the shadow map.',
+      group: 'Shadows',
+      get: (c) => c.light.shadowCasterFaces,
+      set: (c, v) => c.light.shadowCasterFaces = v,
     ),
   ];
 
   @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
-
-  @override
-  bool claims(Component component) => component is SpotLightComponent;
-
-  @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    return SpotLightComponent(
-      SpotLight(
-        direction: readVec3(p, 'direction', vec3Default('direction')),
-        color: readVec3(p, 'color', vec3Default('color')),
-        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
-        range: readDouble(p, 'range', numberDefault('range')),
-        falloffExponent: readDouble(
-          p,
-          'falloffExponent',
-          numberDefault('falloffExponent'),
-        ),
-        innerConeAngle: readDouble(
-          p,
-          'innerConeAngle',
-          numberDefault('innerConeAngle'),
-        ),
-        outerConeAngle: readDouble(
-          p,
-          'outerConeAngle',
-          numberDefault('outerConeAngle'),
-        ),
-        castsShadow: readBool(p, 'castsShadow', boolDefault('castsShadow')),
-        shadowMapResolution: readInt(
-          p,
-          'shadowMapResolution',
-          intDefault('shadowMapResolution'),
-        ),
-        shadowNear: readDouble(p, 'shadowNear', numberDefault('shadowNear')),
-        shadowDepthBias: readDouble(
-          p,
-          'shadowDepthBias',
-          numberDefault('shadowDepthBias'),
-        ),
-        shadowNormalBias: readDouble(
-          p,
-          'shadowNormalBias',
-          numberDefault('shadowNormalBias'),
-        ),
-        shadowSoftness: readDouble(
-          p,
-          'shadowSoftness',
-          numberDefault('shadowSoftness'),
-        ),
-      ),
-    );
-  }
+  SpotLightComponent create(PropertyReader props) =>
+      SpotLightComponent(SpotLight());
 }
 
 /// Codec for [CameraComponent]. Handles perspective projections; the node
 /// transform supplies the view.
-// TODO(fscene): serialize orthographic and off-axis projections once they
-// exist on CameraProjection.
-class CameraCodec extends ComponentCodec {
+// TODO(camera-projection-union): describe orthographic/off-axis projections
+// as a tagged union once they exist on CameraProjection (the flat keys stay
+// for document compatibility).
+class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
   @override
   String get type => 'camera';
 
-  // Declared in serialize order. Only perspective projections are claimed; an
-  // orthographic projection (none exists yet) is not serialized.
-  // TODO(fscene): describe orthographic/off-axis projections once they exist.
-  static final List<ComponentPropertyDef> _schema = [
-    const ComponentPropertyDef(
+  @override
+  List<ComponentField<CameraComponent>> get fields => [
+    ComponentField.string(
       'projection',
-      ComponentPropertyKind.string,
-      StringValue('perspective'),
+      defaultValue: 'perspective',
       doc: 'The projection model.',
-      options: ['perspective'],
-      read: _readProjection,
+      get: (_) => 'perspective',
     ),
-    ComponentPropertyDef(
+    ComponentField.number(
       'fovRadiansY',
-      ComponentPropertyKind.number,
-      DoubleValue(45 * degrees2Radians),
+      defaultValue: 45 * degrees2Radians,
       doc: 'Vertical field of view, in radians.',
-      min: 0,
-      read: (c) => DoubleValue(_perspective(c).fovRadiansY),
+      constraints: const [Range.nonNegative(), AngleRadians()],
+      get: (c) => _perspective(c).fovRadiansY,
+      set: (c, v) {
+        final projection = c.projection;
+        if (projection is PerspectiveProjection) projection.fovRadiansY = v;
+      },
     ),
-    const ComponentPropertyDef(
+    ComponentField.number(
       'near',
-      ComponentPropertyKind.number,
-      DoubleValue(0.1),
+      defaultValue: 0.1,
       doc: 'Near clip distance.',
-      min: 0,
-      read: _readNear,
+      constraints: const [Range.nonNegative()],
+      get: (c) => _perspective(c).near,
+      set: (c, v) {
+        final projection = c.projection;
+        if (projection is PerspectiveProjection) projection.near = v;
+      },
     ),
-    const ComponentPropertyDef(
+    ComponentField.number(
       'far',
-      ComponentPropertyKind.number,
-      DoubleValue(1000.0),
+      defaultValue: 1000.0,
       doc: 'Far clip distance.',
-      min: 0,
-      read: _readFar,
+      constraints: const [Range.nonNegative()],
+      get: (c) => _perspective(c).far,
+      set: (c, v) {
+        final projection = c.projection;
+        if (projection is PerspectiveProjection) projection.far = v;
+      },
+    ),
+    // Constructor-only; a serialized true restores this camera as the
+    // scene's primary on realize.
+    ComponentField(
+      const ComponentPropertyDef(
+        'activateOnMount',
+        ComponentPropertyKind.boolean,
+        defaultValue: BoolValue(false),
+        doc: 'Whether this camera becomes the primary when it mounts.',
+      ),
+      read: (c, _) => BoolValue(c.active || c.activateOnMount),
     ),
   ];
 
-  static PerspectiveProjection _perspective(Component c) =>
-      (c as CameraComponent).projection as PerspectiveProjection;
-  static PropertyValue _readProjection(Component c) =>
-      const StringValue('perspective');
-  static PropertyValue _readNear(Component c) =>
-      DoubleValue(_perspective(c).near);
-  static PropertyValue _readFar(Component c) =>
-      DoubleValue(_perspective(c).far);
-
-  @override
-  List<ComponentPropertyDef> get propertySchema => _schema;
+  static PerspectiveProjection _perspective(CameraComponent c) =>
+      c.projection as PerspectiveProjection;
 
   @override
   bool claims(Component component) =>
@@ -1253,16 +1134,18 @@ class CameraCodec extends ComponentCodec {
       component.projection is PerspectiveProjection;
 
   @override
-  Component realize(ComponentSpec spec, RealizeContext context) {
-    final p = spec.properties;
-    return CameraComponent(
-      projection: PerspectiveProjection(
-        fovRadiansY: readDouble(p, 'fovRadiansY', numberDefault('fovRadiansY')),
-        near: readDouble(p, 'near', numberDefault('near')),
-        far: readDouble(p, 'far', numberDefault('far')),
-      ),
-    );
-  }
+  ComponentSpec? serialize(Component component, SerializeContext context) =>
+      claims(component) ? super.serialize(component, context) : null;
+
+  @override
+  CameraComponent create(PropertyReader props) => CameraComponent(
+    projection: PerspectiveProjection(
+      fovRadiansY: props.number('fovRadiansY'),
+      near: props.number('near'),
+      far: props.number('far'),
+    ),
+    activateOnMount: props.boolean('activateOnMount'),
+  );
 }
 
 /// Codec for [MaterialsVariantsComponent] (`KHR_materials_variants`).

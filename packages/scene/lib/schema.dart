@@ -11,6 +11,7 @@ export 'src/schema/component_schema.dart'
         ComponentSchema,
         decodeComponentSchemas,
         encodeComponentSchemas;
+export 'src/schema/property_value_equality.dart' show propertyValuesEqual;
 export 'src/schema/property_constraints.dart'
     show
         AngleRadians,
@@ -24,6 +25,7 @@ export 'src/schema/property_constraints.dart'
         PowerOfTwo,
         PropertyConstraint,
         Range,
+        RgbColor,
         SoftRange,
         SortedDescending,
         Step,

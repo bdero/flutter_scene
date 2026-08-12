@@ -24,9 +24,12 @@ import 'package:flutter_scene/src/node.dart';
 /// {@category Scene graph}
 class CameraComponent extends Component {
   /// Creates a camera component with the given [projection] (a
-  /// [PerspectiveProjection] by default).
-  CameraComponent({CameraProjection? projection})
-    : _projection = projection ?? PerspectiveProjection();
+  /// [PerspectiveProjection] by default). With [activateOnMount], the camera
+  /// becomes the scene's primary when its node mounts (the serialized form of
+  /// [makeActive]).
+  CameraComponent({CameraProjection? projection, bool activateOnMount = false})
+    : _projection = projection ?? PerspectiveProjection(),
+      _activateOnMount = activateOnMount;
 
   CameraProjection _projection;
 
@@ -44,7 +47,10 @@ class CameraComponent extends Component {
   // the component is detached, since a new attachment may use a new node.
   NodeCamera? _camera;
 
-  bool _activateOnMount = false;
+  bool _activateOnMount;
+
+  /// Whether a pending [makeActive] applies when the node mounts.
+  bool get activateOnMount => _activateOnMount;
 
   /// Returns a [NodeCamera] backed by the owning node.
   ///

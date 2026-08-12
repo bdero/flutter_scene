@@ -1,21 +1,9 @@
 import 'package:scene/scene.dart';
+import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-bool _propEq(PropertyValue a, PropertyValue b) {
-  if (a is DoubleValue && b is DoubleValue) return a.value == b.value;
-  if (a is IntValue && b is IntValue) return a.value == b.value;
-  if (a is BoolValue && b is BoolValue) return a.value == b.value;
-  if (a is StringValue && b is StringValue) return a.value == b.value;
-  if (a is Vec3Value && b is Vec3Value) {
-    return a.value.x == b.value.x &&
-        a.value.y == b.value.y &&
-        a.value.z == b.value.z;
-  }
-  return false;
-}
 
 void main() {
   final registry = defaultComponentRegistry();
@@ -33,38 +21,138 @@ void main() {
     );
   });
 
-  // For codecs that derive serialize from their schema, realizing an empty
-  // spec and serializing must reproduce exactly the schema's keys (in order)
-  // and default values. This locks schema, realize defaults, and serialize
-  // together so none can drift.
+  // Serialization is delta-vs-default: realizing an empty spec (all defaults)
+  // and serializing must produce an EMPTY property bag, and a component with
+  // one changed value must serialize exactly that key. This locks schema
+  // defaults, realize fallbacks, and serialize together so none can drift.
   for (final type in [
     'directionalLight',
     'pointLight',
     'spotLight',
     'camera',
   ]) {
-    test('$type schema, realize defaults, and serialize agree', () {
+    test('$type round-trips as a delta against schema defaults', () {
       final codec = registry.codecFor(type)!;
       final doc = SceneDocument();
       final realized = codec.realize(ComponentSpec(type), RealizeContext(doc))!;
       final spec = codec.serialize(realized, SerializeContext(doc))!;
 
       expect(
-        spec.properties.keys.toList(),
-        codec.propertySchema.map((d) => d.name).toList(),
-        reason: 'serialized keys must match schema order',
+        spec.properties,
+        isEmpty,
+        reason:
+            'an all-defaults $type must serialize empty (delta persistence); '
+            'got ${spec.properties.keys}',
       );
+
+      // Round-trip one non-default value per declared writable property kind.
       for (final def in codec.propertySchema) {
-        final serialized = spec.properties[def.name];
-        expect(serialized, isNotNull, reason: 'missing ${def.name}');
+        final defaultValue = def.defaultValue;
+        if (defaultValue == null) continue;
+        // Stay inside any hard clamp, or the (correct) write-side clamping
+        // folds the value back to the default.
+        final hardMax = def.hardMax;
+        final hardMin = def.hardMin;
+        final changed = switch (defaultValue) {
+          DoubleValue(:final value) => DoubleValue(
+            hardMax == null || value + 0.25 <= hardMax
+                ? value + 0.25
+                : value - 0.25,
+          ),
+          IntValue(:final value) => IntValue(
+            hardMax == null || value + 1 <= hardMax ? value + 1 : value - 1,
+          ),
+          BoolValue(:final value) => BoolValue(!value),
+          StringValue() when def.options != null => StringValue(
+            def.options!.firstWhere(
+              (option) => option != (defaultValue).value,
+              orElse: () => (defaultValue).value,
+            ),
+          ),
+          _ => null,
+        };
+        if (changed == null) continue;
+        if (changed is StringValue &&
+            changed.value == (defaultValue as StringValue).value) {
+          continue;
+        }
+        if (changed is DoubleValue &&
+            hardMin != null &&
+            changed.value < hardMin) {
+          continue;
+        }
+        final modified = codec.realize(
+          ComponentSpec(type, properties: {def.name: changed}),
+          RealizeContext(doc),
+        )!;
+        final reserialized = codec.serialize(modified, SerializeContext(doc))!;
+        expect(reserialized.properties.keys, [
+          def.name,
+        ], reason: '$type.${def.name} should serialize exactly the delta');
         expect(
-          _propEq(serialized!, def.defaultValue!),
+          propertyValuesEqual(reserialized.properties[def.name], changed),
           isTrue,
-          reason: '$type.${def.name} default does not match realize/serialize',
+          reason: '$type.${def.name} did not round-trip',
         );
       }
     });
   }
+
+  test('registry serialization applies the universal enabled property', () {
+    final codec = registry.codecFor('pointLight')!;
+    final doc = SceneDocument();
+    final realized = registry.realize(
+      ComponentSpec(
+        'pointLight',
+        properties: {'enabled': const BoolValue(false)},
+      ),
+      RealizeContext(doc),
+    )!;
+    expect(realized.enabled, isFalse, reason: 'realize applies enabled');
+
+    final spec = registry.serialize(realized, SerializeContext(doc))!;
+    expect(spec.properties['enabled'], isA<BoolValue>());
+    expect((spec.properties['enabled']! as BoolValue).value, isFalse);
+
+    realized.enabled = true;
+    final enabledSpec = registry.serialize(realized, SerializeContext(doc))!;
+    expect(
+      enabledSpec.properties.containsKey('enabled'),
+      isFalse,
+      reason: 'enabled=true is the default and serializes as a delta',
+    );
+    expect(codec.schema.type, 'pointLight');
+  });
+
+  test('aimed directional lights round-trip their local direction', () {
+    final codec = registry.codecFor('directionalLight')!;
+    final doc = SceneDocument();
+    final aimed = codec.realize(
+      ComponentSpec(
+        'directionalLight',
+        properties: {'localDirection': Vec3Value(Vector3(1, 0, 0))},
+      ),
+      RealizeContext(doc),
+    )!;
+    final spec = codec.serialize(aimed, SerializeContext(doc))!;
+    final direction = spec.properties['localDirection'];
+    expect(direction, isA<Vec3Value>());
+    expect((direction! as Vec3Value).value.x, 1);
+  });
+
+  test('camera activation round-trips', () {
+    final codec = registry.codecFor('camera')!;
+    final doc = SceneDocument();
+    final active = codec.realize(
+      ComponentSpec(
+        'camera',
+        properties: {'activateOnMount': const BoolValue(true)},
+      ),
+      RealizeContext(doc),
+    )!;
+    final spec = codec.serialize(active, SerializeContext(doc))!;
+    expect((spec.properties['activateOnMount']! as BoolValue).value, isTrue);
+  });
 
   test('schema metadata is well-formed', () {
     for (final type in registry.types) {
@@ -78,17 +166,26 @@ void main() {
         if (def.options != null) {
           expect(def.kind, ComponentPropertyKind.string);
         }
+        // Every declared schema must survive the portable JSON round-trip.
+        final reread = ComponentPropertyDef.fromJson(def.toJson());
+        expect(reread.name, def.name);
+        expect(reread.kind, def.kind);
+        expect(reread.constraints.length, def.constraints.length);
       }
     }
   });
 
-  test('mesh declares its single-primitive resource references', () {
+  test('mesh declares its resource references', () {
     final mesh = registry.codecFor('mesh')!;
-    expect(mesh.propertySchema.map((d) => d.name), ['geometry', 'material']);
-    for (final def in mesh.propertySchema) {
-      expect(def.kind, ComponentPropertyKind.resourceRef);
-      expect(def.defaultValue, isNull); // required, no default
-    }
+    expect(mesh.propertySchema.map((d) => d.name), [
+      'geometry',
+      'material',
+      'primitives',
+    ]);
+    expect(mesh.propertySchema[0].kind, ComponentPropertyKind.resourceRef);
+    expect(mesh.propertySchema[0].defaultValue, isNull); // required
+    expect(mesh.propertySchema[2].kind, ComponentPropertyKind.list);
+    expect(mesh.propertySchema[2].itemDef, isNotNull);
   });
 
   test('directional light is rotation-aimed and preserves shadow controls', () {
@@ -106,5 +203,16 @@ void main() {
         'shadowCasterFaces',
       }),
     );
+  });
+
+  test('spot lights declare caster faces and angle constraints', () {
+    final spot = registry.codecFor('spotLight')!;
+    final names = spot.propertySchema.map((d) => d.name).toSet();
+    expect(names, contains('shadowCasterFaces'));
+    final outer = spot.propertySchema.firstWhere(
+      (d) => d.name == 'outerConeAngle',
+    );
+    expect(outer.constraint<AngleRadians>(), isNotNull);
+    expect(outer.hardMin, 0);
   });
 }
