@@ -176,8 +176,9 @@ jobs:
           disable-animations: true
           # Emulator 36.1.9. The 37.1.11 Linux build's SwANGLE host renderer
           # crashes the whole emulator a few frames into the app under
-          # -gpu swangle_indirect; drop the pin once a newer build survives
-          # the gles lane.
+          # -gpu swangle_indirect.
+          # TODO(swangle-crash): minimize a repro and file the upstream
+          # emulator bug (#314), then drop the pin once a fixed build ships.
           emulator-build: 13823996
           emulator-options: ${{ matrix.emulator_options }}
           script: >
