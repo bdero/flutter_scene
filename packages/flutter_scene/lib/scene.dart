@@ -130,6 +130,8 @@ export 'src/components/mesh_component.dart' show MeshComponent;
 export 'src/components/materials_variants_component.dart'
     show MaterialsVariantsComponent;
 export 'src/components/point_light_component.dart' show PointLightComponent;
+export 'src/components/rect_area_light_component.dart'
+    show RectAreaLightComponent;
 export 'src/components/semantics_component.dart' show SemanticsComponent;
 export 'src/components/splat_component.dart' show SplatComponent;
 export 'src/components/spot_light_component.dart' show SpotLightComponent;
@@ -186,6 +188,7 @@ export 'src/light.dart'
         DirectionalShadowFilter,
         Lighting,
         PointLight,
+        RectAreaLight,
         ShadowCascade,
         ShadowCasterFaces,
         SpotLight;

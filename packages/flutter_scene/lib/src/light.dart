@@ -461,6 +461,47 @@ class PointLight {
   double falloffExponent;
 }
 
+/// A rectangle that emits light from its face, shaded with linearly
+/// transformed cosines so the highlight stretches and the falloff follows
+/// the panel's true shape and area.
+///
+/// Attach one by adding a `RectAreaLightComponent` to a node. The rectangle
+/// lies in the node's local XY plane, [width] along local X and [height]
+/// along local Y, emitting along local +Z (matching the directional-light
+/// aim convention). One-sided; the back face emits nothing. Area lights cast
+/// no shadows.
+/// {@category Lighting and environment}
+class RectAreaLight {
+  /// Creates a [RectAreaLight].
+  RectAreaLight({
+    Vector3? color,
+    this.intensity = 1.0,
+    this.width = 1.0,
+    this.height = 1.0,
+    this.range = 0.0,
+  }) : color = color ?? Vector3(1.0, 1.0, 1.0);
+
+  /// Linear RGB color of the light.
+  Vector3 color;
+
+  /// Scalar multiplier applied to [color]; the emitted radiance of the
+  /// panel's surface. The received light also grows with the panel's area.
+  double intensity;
+
+  /// The rectangle's world-space width along the node's local X axis
+  /// (before node scale).
+  double width;
+
+  /// The rectangle's world-space height along the node's local Y axis
+  /// (before node scale).
+  double height;
+
+  /// World-space distance from the panel's center at which its influence
+  /// windows to zero. `0` means infinite range (the form factor's own
+  /// inverse-square falloff still applies).
+  double range;
+}
+
 /// A light that radiates from a world-space point within a cone, combining a
 /// [PointLight]'s distance falloff with an angular falloff between an inner
 /// and outer cone.

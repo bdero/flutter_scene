@@ -359,6 +359,82 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Rect area lights via linearly transformed cosines: a warm wide panel and
+  // a cool tall panel over a glossy plane. Guards the LTC atlas tiles, the
+  // edge integration, and the stretched panel reflections across backends.
+  SmokeScene('area_light', () {
+    final scene = Scene();
+    scene.environmentIntensity = 0.05;
+    // Aims a node's local +Z (the panel emission axis) at [target].
+    vm.Matrix4 aim(vm.Vector3 position, vm.Vector3 target) {
+      final forward = (target - position).normalized();
+      final right = vm.Vector3(0, 1, 0).cross(forward)..normalize();
+      final up = forward.cross(right).normalized();
+      return vm.Matrix4.columns(
+        vm.Vector4(right.x, right.y, right.z, 0),
+        vm.Vector4(up.x, up.y, up.z, 0),
+        vm.Vector4(forward.x, forward.y, forward.z, 0),
+        vm.Vector4(position.x, position.y, position.z, 1),
+      );
+    }
+
+    final floor = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.08, 0.08, 0.09, 1.0)
+      ..metallicFactor = 0.3
+      ..roughnessFactor = 0.2
+      ..vertexColorWeight = 0.0;
+    scene.add(Node(mesh: Mesh(PlaneGeometry(width: 4.4, depth: 3.4), floor)));
+    final subject = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.8, 0.78, 0.75, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.4
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.7, 0.9, 0.7)), subject))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.45, 0)),
+    );
+    scene.add(
+      Node()
+        ..addComponent(
+          RectAreaLightComponent(
+            RectAreaLight(
+              color: vm.Vector3(1.0, 0.7, 0.4),
+              intensity: 8.0,
+              width: 1.6,
+              height: 1.0,
+            ),
+          ),
+        )
+        ..localTransform = aim(
+          vm.Vector3(-1.4, 1.3, 1.0),
+          vm.Vector3(0, 0.45, 0),
+        ),
+    );
+    scene.add(
+      Node()
+        ..addComponent(
+          RectAreaLightComponent(
+            RectAreaLight(
+              color: vm.Vector3(0.35, 0.55, 1.0),
+              intensity: 6.0,
+              width: 0.4,
+              height: 1.8,
+            ),
+          ),
+        )
+        ..localTransform = aim(
+          vm.Vector3(1.5, 1.1, -0.6),
+          vm.Vector3(0, 0.45, 0),
+        ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 1.6, 3.6),
+        target: vm.Vector3(0, 0.4, 0),
+      ),
+    );
+  }),
   // Percentage-closer soft shadows plus screen-space contact shadows. The
   // tall pillar's shadow must sharpen at its base and widen with distance
   // (the PCSS blocker search), and the floating slab must catch a soft

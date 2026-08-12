@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
+import 'package:flutter_scene/src/components/rect_area_light_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/bvh.dart';
@@ -49,6 +50,7 @@ const int _indexTexMaxWidth = 2048;
 const double _typeDirectional = 0.0;
 const double _typePoint = 1.0;
 const double _typeSpot = 2.0;
+const double _typeArea = 3.0;
 
 /// The GPU-side punctual lighting for a frame: the parameters texture holding
 /// every scene light, the per-object light-index texture, and their dimensions
@@ -163,6 +165,7 @@ class PunctualLightBuffer {
     required DirectionalLightComponent? primaryDirectional,
     required List<PointLightComponent> points,
     required List<SpotLightComponent> spots,
+    List<RectAreaLightComponent> areas = const [],
     required List<RenderItem> items,
     required Bvh bvh,
     SpotShadowFrame? spotShadows,
@@ -171,6 +174,7 @@ class PunctualLightBuffer {
       directionals,
       points,
       spots,
+      areas,
       primaryDirectional: primaryDirectional,
     );
     final count = packed.count;
@@ -270,11 +274,13 @@ class PunctualLightBuffer {
     DirectionalLightComponent? primaryDirectional,
     required List<PointLightComponent> points,
     required List<SpotLightComponent> spots,
+    List<RectAreaLightComponent> areas = const [],
   }) {
     final packed = _packLights(
       directionals,
       points,
       spots,
+      areas,
       primaryDirectional:
           primaryDirectional ??
           (directionals.isEmpty ? null : directionals.first),
@@ -285,13 +291,18 @@ class PunctualLightBuffer {
   static _PackedLights _packLights(
     List<DirectionalLightComponent> directionals,
     List<PointLightComponent> points,
-    List<SpotLightComponent> spots, {
+    List<SpotLightComponent> spots,
+    List<RectAreaLightComponent> areas, {
     DirectionalLightComponent? primaryDirectional,
   }) {
     final additionalDirectionalCount = directionals
         .where((d) => !identical(d, primaryDirectional))
         .length;
-    final count = additionalDirectionalCount + points.length + spots.length;
+    final count =
+        additionalDirectionalCount +
+        points.length +
+        spots.length +
+        areas.length;
     final floats = Float32List(count * _floatsPerLight);
     final cullables = <CullableLight>[];
     var row = 0;
@@ -368,6 +379,44 @@ class PunctualLightBuffer {
         CullableLight(
           row,
           lightInfluenceBounds(position, light.range),
+          worldPosition: position,
+        ),
+      );
+      row++;
+    }
+
+    for (final component in areas) {
+      final light = component.light;
+      final base = row * _floatsPerLight;
+      final position = component.worldPosition;
+      floats[base + 0] = position.x;
+      floats[base + 1] = position.y;
+      floats[base + 2] = position.z;
+      floats[base + 3] = _typeArea;
+      floats[base + 4] = light.color.x * light.intensity;
+      floats[base + 5] = light.color.y * light.intensity;
+      floats[base + 6] = light.color.z * light.intensity;
+      floats[base + 7] = light.range > 0.0 ? 1.0 / light.range : 0.0;
+      final right = component.worldRight;
+      final up = component.worldUp;
+      floats[base + 8] = right.x;
+      floats[base + 9] = right.y;
+      floats[base + 10] = right.z;
+      floats[base + 11] = light.width;
+      floats[base + 12] = up.x;
+      floats[base + 13] = up.y;
+      floats[base + 14] = up.z;
+      floats[base + 15] = light.height;
+      // With no explicit range the influence is unbounded (the form factor
+      // fades with distance but never reaches zero), so cull only ranged
+      // panels, padded by the panel's own extent.
+      final reach = light.range > 0.0
+          ? light.range + 0.5 * math.max(light.width, light.height)
+          : 0.0;
+      cullables.add(
+        CullableLight(
+          row,
+          reach > 0.0 ? lightInfluenceBounds(position, reach) : null,
           worldPosition: position,
         ),
       );

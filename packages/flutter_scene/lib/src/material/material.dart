@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -166,7 +167,17 @@ abstract class Material {
   /// Called by the [Scene] constructor; rendering is gated on the returned
   /// [Future] completing. The texture is built once and reused.
   static Future<void> initializeStaticResources() async {
-    _brdfLutTexture ??= buildBrdfLutTexture();
+    if (_brdfLutTexture == null) {
+      final ltc = await rootBundle.load(
+        'packages/flutter_scene/assets/ltc.bin',
+      );
+      _brdfLutTexture = buildBrdfLutTexture(
+        ltcHalfData: ltc.buffer.asUint16List(
+          ltc.offsetInBytes,
+          ltc.lengthInBytes ~/ 2,
+        ),
+      );
+    }
     await PhysicallyBasedMaterial.initializeStaticResources();
   }
 
