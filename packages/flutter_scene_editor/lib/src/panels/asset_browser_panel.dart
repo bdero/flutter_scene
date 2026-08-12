@@ -26,6 +26,8 @@ class AssetBrowserPanel extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onImportModel,
+    this.projectRoot,
+    this.onOpenScene,
   });
 
   final EditorController controller;
@@ -33,6 +35,15 @@ class AssetBrowserPanel extends StatefulWidget {
   /// Imports a raw glTF model file (`.glb`/`.gltf`); the shell shows the import
   /// options dialog. `.fscene`/`.fsceneb` are instantiated directly as prefabs.
   final Future<void> Function(String path) onImportModel;
+
+  /// The open project's root. Set, the browser scans it (every scene and
+  /// resource in the project, regardless of which scene is open); unset, it
+  /// falls back to the open scene's directory.
+  final String? projectRoot;
+
+  /// Opens an `.fscene` file in the editor (the scene rows' open action);
+  /// tapping a scene row still instantiates it as a prefab.
+  final ValueChanged<String>? onOpenScene;
 
   @override
   State<AssetBrowserPanel> createState() => _AssetBrowserPanelState();
@@ -66,6 +77,8 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       _ctrl.addListener(_onDocChanged);
       _ctrl.history.addListener(_onHistoryChanged);
       _rescan();
+    } else if (old.projectRoot != widget.projectRoot) {
+      _rescan();
     }
   }
 
@@ -77,8 +90,12 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     super.dispose();
   }
 
+  // A project open scans the project root (every scene and resource in the
+  // project); otherwise the open scene's directory.
+  String? get _scanRoot => widget.projectRoot ?? _ctrl.baseDirectory;
+
   void _onDocChanged() {
-    if (_ctrl.baseDirectory != _scannedDir) {
+    if (_scanRoot != _scannedDir) {
       _rescan();
     }
   }
@@ -88,7 +105,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   }
 
   Future<void> _rescan() async {
-    final dir = _ctrl.baseDirectory;
+    final dir = _scanRoot;
     _scannedDir = dir;
     if (dir == null) {
       setState(() => _files = const []);
@@ -135,13 +152,13 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _toolbar(context),
-        if (_ctrl.baseDirectory == null)
+        if (_scanRoot == null)
           const Expanded(
             child: Center(
               child: Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'Save the scene to browse project assets.',
+                  'Open a project (or save the scene) to browse assets.',
                   style: TextStyle(fontSize: 12, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
@@ -277,7 +294,12 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         for (final directory in root.sortedDirectories)
           _directoryBranch(context, directory, depth: 0, searching: searching),
         for (final file in root.sortedFiles)
-          _FileListRow(asset: file, depth: 0, onAct: _actOn),
+          _FileListRow(
+            asset: file,
+            depth: 0,
+            onAct: _actOn,
+            onOpenScene: _openSceneAction(file),
+          ),
         const SizedBox(height: 8),
       ],
     );
@@ -314,7 +336,12 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
               searching: searching,
             ),
           for (final file in directory.sortedFiles)
-            _FileListRow(asset: file, depth: depth + 1, onAct: _actOn),
+            _FileListRow(
+              asset: file,
+              depth: depth + 1,
+              onAct: _actOn,
+              onOpenScene: _openSceneAction(file),
+            ),
         ],
       ],
     );
@@ -428,6 +455,15 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
     ),
   );
+
+  // The open-in-editor action for `.fscene` rows (null hides the affordance).
+  VoidCallback? _openSceneAction(FileAsset asset) {
+    final onOpenScene = widget.onOpenScene;
+    if (onOpenScene == null) return null;
+    if (asset.kind != FileAssetKind.scene) return null;
+    if (!asset.name.toLowerCase().endsWith('.fscene')) return null;
+    return () => onOpenScene(asset.path);
+  }
 
   // Acts on a file tile, picking the natural default for its kind.
   Future<void> _actOn(FileAsset asset) async {
@@ -645,11 +681,15 @@ class _FileListRow extends StatelessWidget {
     required this.asset,
     required this.depth,
     required this.onAct,
+    this.onOpenScene,
   });
 
   final FileAsset asset;
   final int depth;
   final Future<void> Function(FileAsset) onAct;
+
+  /// Opens this `.fscene` in the editor (tap still instantiates as a prefab).
+  final VoidCallback? onOpenScene;
 
   @override
   Widget build(BuildContext context) {
@@ -676,6 +716,19 @@ class _FileListRow extends StatelessWidget {
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
+                if (onOpenScene != null)
+                  Tooltip(
+                    message: 'Open scene',
+                    waitDuration: const Duration(milliseconds: 400),
+                    child: InkWell(
+                      onTap: onOpenScene,
+                      borderRadius: BorderRadius.circular(3),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(Icons.open_in_new, size: 13),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
