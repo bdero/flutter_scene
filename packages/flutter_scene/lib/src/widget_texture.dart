@@ -30,6 +30,13 @@ sealed class WidgetUpdatePolicy {
 
   /// Capture only when [WidgetTextureController.requestCapture] is called.
   static const WidgetUpdatePolicy manual = _ManualUpdatePolicy();
+
+  /// The capture interval when this is an [WidgetUpdatePolicy.interval]
+  /// policy, or null for the other policies.
+  Duration? get interval => switch (this) {
+    _IntervalUpdatePolicy(:final duration) => duration,
+    _ => null,
+  };
 }
 
 class _EveryFrameUpdatePolicy extends WidgetUpdatePolicy {

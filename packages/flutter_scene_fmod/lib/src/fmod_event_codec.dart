@@ -15,6 +15,38 @@ void registerFmodComponentCodecs(FsceneComponentRegistry registry) {
   registry.register(FmodEventCodec());
 }
 
+/// Registers the `fmod` audio backend, letting documents whose `audioEngine`
+/// component names it realize an [FmodAudioEngine]. Call once at startup.
+///
+/// Recognized `config` keys are `maxChannels` (int), `liveUpdate` (bool),
+/// and `pauseWhenBackgrounded` (bool).
+void registerFmodAudioBackend() {
+  registerAudioEngineBackend(
+    'fmod',
+    (config) => FmodAudioEngine(
+      maxChannels: _configInt(config, 'maxChannels', 256),
+      liveUpdate: _configBool(config, 'liveUpdate', false),
+      pauseWhenBackgrounded: _configBool(config, 'pauseWhenBackgrounded', true),
+    ),
+  );
+}
+
+int _configInt(Map<String, PropertyValue> config, String key, int fallback) =>
+    switch (config[key]) {
+      IntValue(:final value) => value,
+      DoubleValue(:final value) => value.round(),
+      _ => fallback,
+    };
+
+bool _configBool(
+  Map<String, PropertyValue> config,
+  String key,
+  bool fallback,
+) => switch (config[key]) {
+  BoolValue(:final value) => value,
+  _ => fallback,
+};
+
 /// Codec for [FmodEventSource] (`fmodEvent` components). Scenes using it
 /// realize correctly only with this package's registry (see
 /// [registerFmodComponentCodecs]); other apps skip the component.

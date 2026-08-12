@@ -47,6 +47,39 @@ void main() {
     expect((parameters.values['Intensity']! as DoubleValue).value, 0.5);
   });
 
+  test('registerFmodAudioBackend realizes an engine from its config', () {
+    registerFmodAudioBackend();
+    final registry = defaultComponentRegistry();
+    final document = SceneDocument();
+
+    final spec = ComponentSpec(
+      'audioEngine',
+      properties: {
+        'backend': const StringValue('fmod'),
+        'masterVolume': const DoubleValue(0.5),
+        'config': MapValue({
+          'maxChannels': const IntValue(64),
+          'liveUpdate': const BoolValue(true),
+          'pauseWhenBackgrounded': const BoolValue(false),
+        }),
+      },
+    );
+
+    // Construction is FFI-free (the SDK is looked up lazily on load).
+    final engine =
+        registry.realize(spec, RealizeContext(document)) as FmodAudioEngine;
+    expect(engine.maxChannels, 64);
+    expect(engine.liveUpdate, isTrue);
+    expect(engine.pauseWhenBackgrounded, isFalse);
+    expect(engine.masterVolume, 0.5);
+
+    final serialized = registry.serialize(engine, SerializeContext(document))!;
+    expect(serialized.type, 'audioEngine');
+    expect((serialized.properties['backend']! as StringValue).value, 'fmod');
+    final config = serialized.properties['config']! as MapValue;
+    expect((config.values['maxChannels']! as IntValue).value, 64);
+  });
+
   test('an unmounted FmodEventSource is inert and safe to drive', () {
     final source = FmodEventSource('event:/UI/Click');
     expect(source.isPlaying, isFalse);

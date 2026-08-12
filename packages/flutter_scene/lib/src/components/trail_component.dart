@@ -102,6 +102,9 @@ class TrailComponent extends MeshComponent {
   /// out naturally.
   bool emitting = true;
 
+  /// The recorded path's capacity, fixed at construction.
+  int get maxPoints => _geometry.maxPoints;
+
   final _TrailGeometry _geometry;
   final List<Vector3> _worldPoints = [];
   final List<double> _bornTimes = [];

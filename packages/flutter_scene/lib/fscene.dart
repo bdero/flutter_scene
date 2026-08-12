@@ -46,8 +46,15 @@ export 'package:scene/scene.dart'
         Vec2Value,
         Vec3Value,
         Vec4Value;
+export 'src/fscene/realize/audio_codecs.dart'
+    show
+        AudioEngineBackendFactory,
+        audioEngineBackendFactory,
+        registerAudioEngineBackend;
 export 'src/fscene/realize/builtin_codecs.dart'
     show registerBuiltinComponentCodecs;
+export 'src/fscene/realize/ui_codecs.dart'
+    show WidgetSlotBuilder, registerWidgetSlot, widgetSlotBuilder;
 export 'package:scene/scene.dart' show diffScene, SceneDiff, NodeChange;
 export 'src/fscene/reload/reload.dart' show reloadScene;
 export 'src/fscene/realize/component_codec.dart'

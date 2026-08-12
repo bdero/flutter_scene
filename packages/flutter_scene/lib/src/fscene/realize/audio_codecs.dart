@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:scene/scene.dart';
 
 import 'package:flutter_scene/src/audio/audio_attenuation.dart';
+import 'package:flutter_scene/src/audio/audio_engine.dart';
 import 'package:flutter_scene/src/audio/audio_listener.dart';
 import 'package:flutter_scene/src/audio/clip_audio_source.dart';
+import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 
@@ -200,4 +204,108 @@ class AudioListenerCodec extends DeclarativeComponentCodec<AudioListener> {
 
   @override
   AudioListener create(PropertyReader props) => AudioListener();
+}
+
+// --- Audio engine backend registry ---
+
+/// Creates a fresh [AudioEngine] for a realized `audioEngine` component.
+/// [config] is the spec's open backend-specific configuration bag.
+typedef AudioEngineBackendFactory =
+    AudioEngine Function(Map<String, PropertyValue> config);
+
+final Map<String, AudioEngineBackendFactory> _audioBackends = {};
+
+/// Registers [factory] under backend [id], replacing any existing entry.
+///
+/// A document's `audioEngine` component names its backend by id; backend
+/// packages register their factory at app startup
+/// (`registerFmodAudioBackend()`) so documents authored against them realize.
+/// flutter_scene itself ships no backend, so an app without one skips the
+/// component.
+/// {@category Audio}
+void registerAudioEngineBackend(String id, AudioEngineBackendFactory factory) {
+  _audioBackends[id] = factory;
+}
+
+/// The registered factory for backend [id], or null.
+/// {@category Audio}
+AudioEngineBackendFactory? audioEngineBackendFactory(String id) =>
+    _audioBackends[id];
+
+/// Codec for [AudioEngine] components. The `backend` id names the concrete
+/// engine through the backend registry ([registerAudioEngineBackend]); an
+/// unregistered backend skips the component so the scene still loads,
+/// without audio. The open `config` bag passes through to the factory.
+class AudioEngineCodec extends DeclarativeComponentCodec<AudioEngine> {
+  @override
+  String get type => 'audioEngine';
+
+  // The document backend id and construction config, stamped at realize so
+  // serialize writes the registry key (not the engine's self-reported name)
+  // and keeps the config the factory consumed. Hand-built engines fall back
+  // to backendName and serialize without a config.
+  static final Expando<String> _backendId = Expando('audio engine backend');
+  static final Expando<Map<String, PropertyValue>> _config = Expando(
+    'audio engine config',
+  );
+
+  @override
+  List<ComponentField<AudioEngine>> get fields => [
+    // No default; every audioEngine spec names its backend.
+    ComponentField(
+      const ComponentPropertyDef(
+        'backend',
+        ComponentPropertyKind.string,
+        doc: 'Registered id of the audio backend this engine runs on.',
+      ),
+      read: (c, _) => StringValue(_backendId[c] ?? c.backendName),
+    ),
+    ComponentField.number(
+      'masterVolume',
+      defaultValue: 1.0,
+      doc: 'Gain applied to all playback, 1.0 is unity.',
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.masterVolume,
+      set: (c, v) => c.masterVolume = v,
+    ),
+    // No default; absent means the backend's construction defaults.
+    ComponentField(
+      const ComponentPropertyDef(
+        'config',
+        ComponentPropertyKind.map,
+        doc: 'Backend-specific construction options, passed to the factory.',
+      ),
+      read: (c, _) {
+        final config = _config[c];
+        return config == null || config.isEmpty ? null : MapValue({...config});
+      },
+    ),
+  ];
+
+  @override
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    final backend = spec.properties['backend'];
+    final id = backend is StringValue ? backend.value : '';
+    if (audioEngineBackendFactory(id) == null) {
+      debugPrint(
+        'fscene: audioEngine skipped (backend "$id" is not registered; '
+        'call registerAudioEngineBackend at startup)',
+      );
+      return null;
+    }
+    return super.realize(spec, context);
+  }
+
+  @override
+  AudioEngine create(PropertyReader props) {
+    final id = props.string('backend');
+    final config = switch (props.value('config')) {
+      MapValue(:final values) => Map<String, PropertyValue>.of(values),
+      _ => <String, PropertyValue>{},
+    };
+    final engine = audioEngineBackendFactory(id)!(config);
+    _backendId[engine] = id;
+    if (config.isNotEmpty) _config[engine] = config;
+    return engine;
+  }
 }

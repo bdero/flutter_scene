@@ -64,6 +64,12 @@ class LodComponent extends MeshComponent {
 
   final LodSelection _selection;
 
+  /// The drawable variants, highest detail first (read-only).
+  List<LodLevel> get levels => List.unmodifiable(_selection.levels);
+
+  /// Fractional dead-band around each threshold, fixed at construction.
+  double get hysteresis => _selection.hysteresis;
+
   /// Half-width of the cross-fade band as a fraction of each threshold. `0`
   /// hard-switches between levels; a positive value dither-blends adjacent
   /// levels. Settable to toggle or tune cross-fade at runtime.

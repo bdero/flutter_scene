@@ -18,4 +18,4 @@ export 'src/fmod_audio.dart'
         FmodAudioVoice,
         FmodEventSource;
 export 'src/fmod_event_codec.dart'
-    show FmodEventCodec, registerFmodComponentCodecs;
+    show FmodEventCodec, registerFmodAudioBackend, registerFmodComponentCodecs;

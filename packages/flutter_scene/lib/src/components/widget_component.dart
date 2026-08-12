@@ -135,6 +135,10 @@ class WidgetComponent extends Component {
   /// Texels per logical pixel.
   double get pixelRatio => _pixelRatio;
 
+  /// The owned quad's height in world units (unused with a custom geometry
+  /// or [WidgetComponent.bindOnly]).
+  double get worldHeight => _worldHeight;
+
   /// The capture policy (see [WidgetUpdatePolicy]).
   WidgetUpdatePolicy get updatePolicy => _update;
 
