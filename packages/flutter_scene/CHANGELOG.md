@@ -1,5 +1,11 @@
 ## 0.21.0
 
+* Breaking change, the fscene component codec API is declarative. `ComponentCodec.serialize` is abstract, `ComponentPropertyDef` moved to the `scene` schema model (constraints replace `min`/`max`/`read`), and flat codecs extend `DeclarativeComponentCodec`, deriving schema, realization, and delta serialization from one `ComponentField` list.
+* `.fscene` version 3. Component properties delta-serialize (values equal to their schema default are omitted) and audio attenuation settings nest; version 2 documents read unchanged.
+* `package:flutter_scene/annotations.dart`, `@SceneComponent` and typed property annotations that lower to schema constraints for generated codecs.
+* Unknown component types realize as lossless `ForeignComponent` placeholders and round-trip untouched.
+* `registerPhysicsBackend` is public, so physics backend packages can register simulation factories the way audio backends do.
+* Debug builds launched with `FLUTTER_SCENE_SOURCE_ROOT` read scene sources straight from the project, and `ext.flutter_scene.reloadScene` patches loaded scenes in place.
 * Screen-space contact shadows for the sun via `DirectionalLight.contactShadows`, grounding small contacts that shadow-map resolution and bias miss.
 * Screen-space indirect light via `AmbientOcclusionSettings.indirectLight`, crediting one bounce of scene radiance to newly visible sectors of the occlusion bitmask.
 * Rect area lights via `RectAreaLight` and `RectAreaLightComponent`, shaded with linearly transformed cosines so panel highlights stretch and fall off physically.
