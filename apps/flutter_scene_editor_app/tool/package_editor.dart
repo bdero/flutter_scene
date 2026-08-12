@@ -22,9 +22,7 @@ import 'dart:io';
 
 void main(List<String> args) async {
   final options = _Options.parse(args);
-  final appDir = File(
-    Platform.script.toFilePath(),
-  ).parent.parent.absolute.path;
+  final appDir = File(Platform.script.toFilePath()).parent.parent.absolute.path;
   final version = _pubspecVersion('$appDir/pubspec.yaml');
 
   if (options.build) {
@@ -185,8 +183,9 @@ _Tools _resolveTools(String appDir) {
   if (impellerc == null) {
     // Platform.resolvedExecutable is <sdk>/bin/cache/dart-sdk/bin/dart when
     // run through the Flutter SDK's dart; walk back to the cache.
-    final segments = File(Platform.resolvedExecutable).absolute.uri
-        .pathSegments;
+    final segments = File(
+      Platform.resolvedExecutable,
+    ).absolute.uri.pathSegments;
     final cutoff = segments.lastIndexOf('dart-sdk');
     if (cutoff > 0) {
       final cache = segments.sublist(0, cutoff).join('/');
@@ -206,8 +205,10 @@ _Tools _resolveTools(String appDir) {
     }
   }
   if (impellerc == null) {
-    _fail('impellerc not found; run through the Flutter SDK dart or set '
-        'IMPELLERC.');
+    _fail(
+      'impellerc not found; run through the Flutter SDK dart or set '
+      'IMPELLERC.',
+    );
   }
   final shaderLib = '${File(impellerc).parent.path}/shader_lib';
   final frameworkShaders = Directory(
@@ -331,7 +332,8 @@ void _packageMacos(
     _run('codesign', ['--force', '--deep', '-s', '-', app]);
   }
 
-  final dmg = '${_distDir(appDir)}/'
+  final dmg =
+      '${_distDir(appDir)}/'
       'flutter_scene_editor-$version-macos-${_arch()}.dmg';
   final staging = Directory.systemTemp.createTempSync('editor_dmg_');
   // ditto preserves symlinks, permissions, and signatures inside the app.
@@ -388,7 +390,8 @@ exec ./flutter_scene_editor_app "\$@"
 ''');
   _run('chmod', ['+x', launcher.path]);
 
-  final archive = '${_distDir(appDir)}/'
+  final archive =
+      '${_distDir(appDir)}/'
       'flutter_scene_editor-$version-$platform-${_arch()}.tar.gz';
   if (File(archive).existsSync()) File(archive).deleteSync();
   _run('tar', [
@@ -418,7 +421,8 @@ set FLUTTER_ENGINE_SWITCH_1=enable-impeller=true
 set FLUTTER_ENGINE_SWITCH_2=enable-flutter-gpu=true
 start "" flutter_scene_editor_app.exe %*
 ''');
-  final archive = '${_distDir(appDir)}\\'
+  final archive =
+      '${_distDir(appDir)}\\'
       'flutter_scene_editor-$version-windows-${_arch()}.zip';
   if (File(archive).existsSync()) File(archive).deleteSync();
   _run('powershell', [
