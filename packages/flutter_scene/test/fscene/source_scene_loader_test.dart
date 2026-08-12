@@ -154,13 +154,28 @@ void main() {
     expect(loader.isSourceKey('imported/missing.png'), isFalse);
   });
 
-  test('an access error deactivates source loading for the run', () {
+  test('only a permission denial deactivates source loading for the run', () {
     final loader = activeSceneSourceLoader()!;
     expect(loader.deactivateOnAccessError(StateError('other'), 'x'), isFalse);
     expect(activeSceneSourceLoader(), isNotNull);
+    // A transient failure falls this load back without deactivating.
     expect(
       loader.deactivateOnAccessError(
         const FileSystemException('Cannot open file', 'x'),
+        'x',
+      ),
+      isTrue,
+    );
+    expect(activeSceneSourceLoader(), isNotNull);
+    expect(sceneSourceLoadingActive, isTrue);
+    // A denial (the macOS App Sandbox) deactivates for the run.
+    expect(
+      loader.deactivateOnAccessError(
+        const FileSystemException(
+          'Cannot open file',
+          'x',
+          OSError('Operation not permitted', 1),
+        ),
         'x',
       ),
       isTrue,

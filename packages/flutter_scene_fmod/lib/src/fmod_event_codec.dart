@@ -105,33 +105,23 @@ class FmodEventCodec extends DeclarativeComponentCodec<FmodEventSource> {
       get: (c) => c.overrideDistances,
       set: (c, v) => c.overrideDistances = v,
     ),
-    ComponentField(
-      const ComponentPropertyDef(
-        'minDistance',
-        ComponentPropertyKind.number,
-        defaultValue: DoubleValue(1.0),
-        doc: 'Distance where attenuation begins (with overrideDistances).',
-        constraints: [Range.nonNegative()],
-      ),
-      read: (c, _) => DoubleValue(c.attenuation.minDistance),
-      write: (c, v, _) {
-        if (v is DoubleValue) c.attenuation.minDistance = v.value;
-      },
+    ComponentField.number(
+      'minDistance',
+      defaultValue: 1.0,
+      doc: 'Distance where attenuation begins (with overrideDistances).',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.attenuation.minDistance,
+      set: (c, v) => c.attenuation.minDistance = v,
     ),
-    ComponentField(
-      const ComponentPropertyDef(
-        'maxDistance',
-        ComponentPropertyKind.number,
-        defaultValue: DoubleValue(500.0),
-        doc:
-            'Distance beyond which attenuation stops (with '
-            'overrideDistances).',
-        constraints: [Range.nonNegative()],
-      ),
-      read: (c, _) => DoubleValue(c.attenuation.maxDistance),
-      write: (c, v, _) {
-        if (v is DoubleValue) c.attenuation.maxDistance = v.value;
-      },
+    ComponentField.number(
+      'maxDistance',
+      defaultValue: 500.0,
+      doc:
+          'Distance beyond which attenuation stops (with '
+          'overrideDistances).',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.attenuation.maxDistance,
+      set: (c, v) => c.attenuation.maxDistance = v,
     ),
     ComponentField(
       ComponentPropertyDef(

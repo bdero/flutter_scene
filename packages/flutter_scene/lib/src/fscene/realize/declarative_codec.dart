@@ -4,6 +4,7 @@
 /// flat codecs used to carry.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:scene/scene.dart';
@@ -15,6 +16,7 @@ import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 /// One declared property, the const descriptor plus the runtime bindings
 /// that connect it to a live component. The descriptor travels (schemas,
 /// manifests, MCP); the bindings stay in-process.
+/// {@category Assets and loading}
 final class ComponentField<C extends Component> {
   const ComponentField(this.def, {this.read, this.write});
 
@@ -82,10 +84,13 @@ final class ComponentField<C extends Component> {
       transient: transient,
     ),
     read: get == null ? null : (c, _) => IntValue(get(c)),
+    // Authored values apply verbatim; constraints describe the editing UI
+    // (the editor clamps on edit) and must not mutate legal documents on a
+    // load/save round trip.
     write: set == null
         ? null
         : (c, v, _) {
-            if (v is IntValue) set(c, _clampInt(v.value, constraints));
+            if (v is IntValue) set(c, v.value);
           },
   );
 
@@ -120,7 +125,7 @@ final class ComponentField<C extends Component> {
               IntValue(:final value) => value.toDouble(),
               _ => null,
             };
-            if (number != null) set(c, _clampNumber(number, constraints));
+            if (number != null) set(c, number);
           },
   );
 
@@ -187,6 +192,10 @@ final class ComponentField<C extends Component> {
                 return;
               }
             }
+            debugPrint(
+              'fscene: unrecognized $name value "${v.value}" on '
+              '${c.runtimeType}; keeping ${get?.call(c).name ?? defaultValue.name}.',
+            );
           },
   );
 
@@ -318,37 +327,11 @@ final class ComponentField<C extends Component> {
             if (v is ResourceRefValue) set(c, v.id, context);
           },
   );
-
-  static double _clampNumber(
-    double value,
-    List<PropertyConstraint<num>> constraints,
-  ) {
-    for (final constraint in constraints) {
-      if (constraint is Range) {
-        final min = constraint.min;
-        final max = constraint.max;
-        if (min != null && value < min) value = min;
-        if (max != null && value > max) value = max;
-      }
-    }
-    return value;
-  }
-
-  static int _clampInt(int value, List<PropertyConstraint<int>> constraints) {
-    for (final constraint in constraints) {
-      if (constraint is IntRange) {
-        final min = constraint.min;
-        final max = constraint.max;
-        if (min != null && value < min) value = min;
-        if (max != null && value > max) value = max;
-      }
-    }
-    return value;
-  }
 }
 
 /// Typed access to a component spec's property bag during [realize], with
 /// schema defaults as fallbacks and former names resolved.
+/// {@category Assets and loading}
 final class PropertyReader {
   PropertyReader(this._spec, this._codec, this.context);
 
@@ -441,12 +424,18 @@ final class PropertyReader {
   };
 
   /// The enum value named by string property [name], or the declared default
-  /// (then the first value) when absent or unrecognized.
+  /// (then the first value) when absent or unrecognized. An unrecognized
+  /// name (a newer writer or a typo) is reported, since serialize rebuilds
+  /// from the live value and a save would silently replace it.
   T enumValue<T extends Enum>(String name, List<T> values) {
     final raw = string(name);
     for (final candidate in values) {
       if (candidate.name == raw) return candidate;
     }
+    debugPrint(
+      'fscene: unrecognized $name value "$raw" on ${_spec.type}; '
+      'using ${values.first.name}.',
+    );
     return values.first;
   }
 
@@ -467,9 +456,11 @@ final class PropertyReader {
 /// (construct via [create], then apply writable fields), and delta
 /// serialization (read fields, omit values equal to their defaults) all come
 /// from the same declarations.
+/// {@category Assets and loading}
 abstract class DeclarativeComponentCodec<C extends Component>
     extends ComponentCodec {
-  /// The declared properties, in display and serialize order.
+  /// The declared properties, in display and serialize order. Read once per
+  /// codec (see [resolvedFields]); the getter typically builds a fresh list.
   List<ComponentField<C>> get fields;
 
   /// Constructs the component. Constructor-only configuration reads from
@@ -479,11 +470,17 @@ abstract class DeclarativeComponentCodec<C extends Component>
   @override
   Type get componentType => C;
 
+  List<ComponentField<C>>? _fields;
   List<ComponentPropertyDef>? _schema;
 
+  /// The memoized [fields], so realize/serialize do not rebuild every
+  /// descriptor and closure per call.
+  List<ComponentField<C>> get resolvedFields =>
+      _fields ??= List.unmodifiable(fields);
+
   @override
-  List<ComponentPropertyDef> get propertySchema =>
-      _schema ??= List.unmodifiable([for (final field in fields) field.def]);
+  List<ComponentPropertyDef> get propertySchema => _schema ??=
+      List.unmodifiable([for (final field in resolvedFields) field.def]);
 
   @override
   bool claims(Component component) => component is C;
@@ -492,7 +489,7 @@ abstract class DeclarativeComponentCodec<C extends Component>
   Component? realize(ComponentSpec spec, RealizeContext context) {
     final props = PropertyReader(spec, this, context);
     final component = create(props);
-    for (final field in fields) {
+    for (final field in resolvedFields) {
       final write = field.write;
       if (write == null) continue;
       final value = props.value(field.def.name);
@@ -506,7 +503,7 @@ abstract class DeclarativeComponentCodec<C extends Component>
   ComponentSpec? serialize(Component component, SerializeContext context) {
     if (component is! C) return null;
     final properties = <String, PropertyValue>{};
-    for (final field in fields) {
+    for (final field in resolvedFields) {
       final read = field.read;
       if (read == null || field.def.transient) continue;
       final value = read(component, context);

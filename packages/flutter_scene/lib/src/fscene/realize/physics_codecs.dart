@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
+import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/physics/character_controller.dart';
@@ -26,6 +27,7 @@ import 'package:scene/scene.dart';
 // --- Backend registry ---
 
 /// Creates a fresh simulation backend for a realized [PhysicsWorld].
+/// {@category Physics}
 typedef PhysicsBackendFactory = sim.PhysicsSimulation Function();
 
 final Map<String, PhysicsBackendFactory> _physicsBackends = {
@@ -38,42 +40,16 @@ final Map<String, PhysicsBackendFactory> _physicsBackends = {
 /// packages register their factory at app startup (`registerPhysicsBackend(
 /// 'rapier3d', RapierWorld.new)`) so documents authored against them realize.
 /// The pure-Dart `basic` backend is preregistered.
+/// {@category Physics}
 void registerPhysicsBackend(String id, PhysicsBackendFactory factory) {
   _physicsBackends[id] = factory;
 }
 
 /// The registered factory for backend [id], or null.
+/// {@category Physics}
 PhysicsBackendFactory? physicsBackendFactory(String id) => _physicsBackends[id];
 
 // --- Small tolerant readers over MapValue maps ---
-
-double _num(Map<String, PropertyValue> p, String key, double fallback) {
-  final v = p[key];
-  return v is DoubleValue
-      ? v.value
-      : v is IntValue
-      ? v.value.toDouble()
-      : fallback;
-}
-
-int _int(Map<String, PropertyValue> p, String key, int fallback) {
-  final v = p[key];
-  return v is IntValue
-      ? v.value
-      : v is DoubleValue
-      ? v.value.round()
-      : fallback;
-}
-
-String _str(Map<String, PropertyValue> p, String key, String fallback) {
-  final v = p[key];
-  return v is StringValue ? v.value : fallback;
-}
-
-Vector3 _vec3(Map<String, PropertyValue> p, String key, Vector3 fallback) {
-  final v = p[key];
-  return v is Vec3Value ? v.value.clone() : fallback;
-}
 
 T _enum<T extends Enum>(
   Map<String, PropertyValue> p,
@@ -223,22 +199,22 @@ MapValue encodePhysicsShape(sim.Shape shape, SceneDocument document) {
 sim.Shape? decodePhysicsShape(PropertyValue? value, SceneDocument document) {
   if (value is! MapValue) return null;
   final m = value.values;
-  switch (_str(m, 'kind', '')) {
+  switch (readString(m, 'kind', '')) {
     case 'sphere':
-      return sim.SphereShape(radius: _num(m, 'radius', 0.5));
+      return sim.SphereShape(radius: readDouble(m, 'radius', 0.5));
     case 'box':
       return sim.BoxShape(
-        halfExtents: _vec3(m, 'halfExtents', Vector3.all(0.5)),
+        halfExtents: readVec3(m, 'halfExtents', Vector3.all(0.5)),
       );
     case 'capsule':
       return sim.CapsuleShape(
-        radius: _num(m, 'radius', 0.5),
-        halfHeight: _num(m, 'halfHeight', 0.5),
+        radius: readDouble(m, 'radius', 0.5),
+        halfHeight: readDouble(m, 'halfHeight', 0.5),
       );
     case 'cylinder':
       return sim.CylinderShape(
-        radius: _num(m, 'radius', 0.5),
-        halfHeight: _num(m, 'halfHeight', 0.5),
+        radius: readDouble(m, 'radius', 0.5),
+        halfHeight: readDouble(m, 'halfHeight', 0.5),
       );
     case 'convexHull':
       final points = _readFloatsPayload(document, m['points']);
@@ -252,10 +228,10 @@ sim.Shape? decodePhysicsShape(PropertyValue? value, SceneDocument document) {
       final heights = _readFloatsPayload(document, m['heights']);
       if (heights == null) return null;
       return sim.HeightFieldShape(
-        width: _int(m, 'width', 2),
-        depth: _int(m, 'depth', 2),
+        width: readInt(m, 'width', 2),
+        depth: readInt(m, 'depth', 2),
         heights: heights,
-        scale: _vec3(m, 'scale', Vector3.all(1)),
+        scale: readVec3(m, 'scale', Vector3.all(1)),
       );
     case 'compound':
       final children = m['children'];
@@ -294,9 +270,9 @@ sim.PhysicsMaterial _decodePhysicsMaterial(PropertyValue? value) {
   if (value is! MapValue) return sim.PhysicsMaterial.defaultMaterial;
   final m = value.values;
   return sim.PhysicsMaterial(
-    friction: _num(m, 'friction', 0.5),
-    restitution: _num(m, 'restitution', 0.0),
-    density: _num(m, 'density', 1.0),
+    friction: readDouble(m, 'friction', 0.5),
+    restitution: readDouble(m, 'restitution', 0.0),
+    density: readDouble(m, 'density', 1.0),
     frictionCombine: _enum(
       m,
       'frictionCombine',
@@ -1024,11 +1000,11 @@ MapValue _encodeJointMotor(sim.JointMotor motor) => MapValue({
 
 sim.JointMotor _decodeJointMotor(Map<String, PropertyValue> m) =>
     sim.JointMotor(
-      targetPosition: _num(m, 'targetPosition', 0),
-      targetVelocity: _num(m, 'targetVelocity', 0),
-      stiffness: _num(m, 'stiffness', 0),
-      damping: _num(m, 'damping', 0),
-      maxForce: _num(m, 'maxForce', double.infinity),
+      targetPosition: readDouble(m, 'targetPosition', 0),
+      targetVelocity: readDouble(m, 'targetVelocity', 0),
+      stiffness: readDouble(m, 'stiffness', 0),
+      damping: readDouble(m, 'damping', 0),
+      maxForce: readDouble(m, 'maxForce', double.infinity),
       model: _enum(
         m,
         'model',
@@ -1054,11 +1030,11 @@ sim.JointAxisConfig _decodeAxisConfig(Map<String, PropertyValue> m) {
   final motor = motorValue is MapValue
       ? _decodeJointMotor(motorValue.values)
       : null;
-  return switch (_str(m, 'motion', 'free')) {
+  return switch (readString(m, 'motion', 'free')) {
     'locked' => const sim.JointAxisConfig.locked(),
     'limited' => sim.JointAxisConfig.limited(
-      _num(m, 'lowerLimit', 0),
-      _num(m, 'upperLimit', 0),
+      readDouble(m, 'lowerLimit', 0),
+      readDouble(m, 'upperLimit', 0),
       motor: motor,
     ),
     _ => sim.JointAxisConfig.free(motor: motor),

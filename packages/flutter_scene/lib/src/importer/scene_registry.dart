@@ -217,6 +217,16 @@ final class SceneRegistry {
         // An unreadable source (sandboxed app) turns source loading off and
         // falls through to the bundled DataAsset below.
         if (!source.deactivateOnAccessError(e, sourceKey)) rethrow;
+        if (activeSceneSourceLoader() == null) {
+          // Deactivated. Templates cached under source keys are unreachable
+          // by releaseScene now (it resolves DataAsset keys); drop them so
+          // their claims cannot strand.
+          for (final key
+              in _sceneTemplates.keys.where(source.isSourceKey).toList()) {
+            _sceneTemplates.remove(key);
+            _sceneTemplateHolders.remove(key);
+          }
+        }
       }
     }
 
@@ -386,9 +396,14 @@ final class SceneRegistry {
           );
           current = next;
           currentResources = nextResources;
-          _sceneTemplates[key] = Future.value(
-            _SceneTemplate(next, nextResources, {...seen}),
-          );
+          // Re-cache only while a claim exists; a template released
+          // mid-reload would otherwise be re-inserted with no holder left
+          // to ever evict it.
+          if (_sceneTemplateHolders.containsKey(key)) {
+            _sceneTemplates[key] = Future.value(
+              _SceneTemplate(next, nextResources, {...seen}),
+            );
+          }
           final stageScene = weakStageScene?.target;
           if (diff.stageChanged && stageScene != null) {
             await realizeStage(next, stageScene, bundle: assetBundle);

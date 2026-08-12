@@ -150,6 +150,11 @@ class FsceneComponentRegistry {
 
   /// Registers [codec], replacing any existing codec for its type.
   void register(ComponentCodec codec) {
+    final previous = _byType[codec.type];
+    if (previous != null &&
+        identical(_byComponentType[previous.componentType], previous)) {
+      _byComponentType.remove(previous.componentType);
+    }
     _byType[codec.type] = codec;
     if (codec.componentType != Component) {
       _byComponentType[codec.componentType] = codec;
@@ -193,8 +198,14 @@ class FsceneComponentRegistry {
           context,
         ) ??
         _serializeByScan(component, context);
-    if (spec != null && !component.enabled) {
-      spec.properties['enabled'] = const BoolValue(false);
+    if (spec != null) {
+      if (component.enabled) {
+        // Retained specs (placeholders, deferred loads) can carry a stale
+        // authored value; live state wins.
+        spec.properties.remove('enabled');
+      } else {
+        spec.properties['enabled'] = const BoolValue(false);
+      }
     }
     return spec;
   }

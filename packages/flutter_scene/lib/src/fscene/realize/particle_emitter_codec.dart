@@ -22,6 +22,12 @@ import 'package:flutter_scene/src/particles/particle_system.dart';
 import 'package:flutter_scene/src/particles/spawner.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 
+// Authored texture refs that could not be resolved at realize time (no
+// resource realizer); serialize falls back to these.
+final Expando<ResourceOrigin> _pendingTextureRefs = Expando(
+  'fscene.pendingParticleTexture',
+);
+
 // Defaults shared by the schema (what an absent property falls back to) and
 // the property->system builder, so the two never drift. The lifetime/speed/
 // size/rate defaults intentionally differ from the ParticleSystem constructor
@@ -828,8 +834,9 @@ class ParticleEmitterCodec
       doc: 'Sprite texture sampled per particle (optional).',
       get: (c, context) {
         final source = c.material.colorTexture;
-        if (source is! GpuTextureSource) return null;
-        final origin = resourceOrigin(source.texture);
+        ResourceOrigin? origin;
+        if (source is GpuTextureSource) origin = resourceOrigin(source.texture);
+        origin ??= _pendingTextureRefs[c];
         if (origin == null) return null;
         return copyResourceInto(
           context.document,
@@ -839,7 +846,13 @@ class ParticleEmitterCodec
       },
       set: (c, id, context) {
         final resources = context.resources;
-        if (resources == null) return;
+        if (resources == null) {
+          // Keep the authored reference so a save made while resources are
+          // unavailable does not drop it.
+          _pendingTextureRefs[c] = ResourceOrigin(context.document, id);
+          return;
+        }
+        _pendingTextureRefs[c] = null;
         c.material.colorTexture = GpuTextureSource(resources.texture(id));
       },
     ),
