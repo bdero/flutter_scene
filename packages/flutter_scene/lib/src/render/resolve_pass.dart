@@ -145,6 +145,19 @@ class ResolvePass extends RenderGraphPass {
         heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
       ),
     );
+    // The film-look grading LUT, or a neutral placeholder when no look is
+    // set (lut_params.x stays 0 and the sample is skipped).
+    renderPass.bindTexture(
+      _fragmentShader.getUniformSlot('grading_lut'),
+      _postProcess.colorGrading.lut?.texture ??
+          Material.getWhitePlaceholderTexture(),
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
 

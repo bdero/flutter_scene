@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/ambient_occlusion.dart';
 import 'package:flutter_scene/src/depth_of_field.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/post_process/color_lut.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
 import 'package:flutter_scene/src/skybox.dart';
@@ -61,6 +62,8 @@ class EnvironmentSettings {
     Vector3? lift,
     Vector3? gamma,
     Vector3? gain,
+    this.colorGradingLut,
+    this.colorGradingLutBlend = 1.0,
     this.bloomEnabled = false,
     this.bloomThreshold = 1.0,
     this.bloomIntensity = 0.15,
@@ -173,6 +176,8 @@ class EnvironmentSettings {
   Vector3 lift;
   Vector3 gamma;
   Vector3 gain;
+  ColorLut? colorGradingLut;
+  double colorGradingLutBlend;
 
   // Bloom.
   bool bloomEnabled;
@@ -309,6 +314,8 @@ class EnvironmentSettings {
       lift: cg.lift.clone(),
       gamma: cg.gamma.clone(),
       gain: cg.gain.clone(),
+      colorGradingLut: cg.lut,
+      colorGradingLutBlend: cg.lutBlend,
       bloomEnabled: bloom.enabled,
       bloomThreshold: bloom.threshold,
       bloomIntensity: bloom.intensity,
@@ -427,7 +434,9 @@ class EnvironmentSettings {
       ..tint = tint
       ..lift.setFrom(lift)
       ..gamma.setFrom(gamma)
-      ..gain.setFrom(gain);
+      ..gain.setFrom(gain)
+      ..lut = colorGradingLut
+      ..lutBlend = colorGradingLutBlend;
 
     final bloom = scene.postProcess.bloom;
     bloom
@@ -566,6 +575,12 @@ class EnvironmentSettings {
       lift: _lerpVec3(a.lift, b.lift, t),
       gamma: _lerpVec3(a.gamma, b.gamma, t),
       gain: _lerpVec3(a.gain, b.gain, t),
+      colorGradingLut: d.colorGradingLut,
+      colorGradingLutBlend: _lerp(
+        a.colorGradingLutBlend,
+        b.colorGradingLutBlend,
+        t,
+      ),
       bloomEnabled: d.bloomEnabled,
       bloomThreshold: _lerp(a.bloomThreshold, b.bloomThreshold, t),
       bloomIntensity: _lerp(a.bloomIntensity, b.bloomIntensity, t),

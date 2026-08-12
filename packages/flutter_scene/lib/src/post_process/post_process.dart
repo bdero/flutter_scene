@@ -1,5 +1,6 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/post_process/color_lut.dart';
 import 'package:flutter_scene/src/post_process/post_effect.dart';
 
 /// Built-in post-processing settings for a [Scene].
@@ -69,6 +70,14 @@ class ColorGradingSettings {
 
   /// Per-channel highlight scale (gain). `(1, 1, 1)` is neutral.
   Vector3 gain = Vector3.all(1.0);
+
+  /// A 3D lookup-table film look applied after tone mapping, or null for
+  /// none. Applies independently of [enabled] (the parametric controls
+  /// above), so a look can carry the whole grade by itself.
+  ColorLut? lut;
+
+  /// How strongly [lut] applies, from `0.0` (off) to `1.0` (the full look).
+  double lutBlend = 1.0;
 }
 
 /// Splits the red and blue channels toward the edges, like a simple lens.
