@@ -53,6 +53,7 @@ class SunLight {
     this.shadowFilter = DirectionalShadowFilter.rotatedPoisson,
     this.contactShadows = false,
     this.contactShadowDistance = 0.3,
+    this.angularRadius = 0.005,
     this.shadowCasterFaces = ShadowCasterFaces.front,
   });
 
@@ -120,6 +121,10 @@ class SunLight {
   /// [DirectionalLight.contactShadowDistance].
   double contactShadowDistance;
 
+  /// Light angular radius for soft-shadow penumbras; see
+  /// [DirectionalLight.angularRadius].
+  double angularRadius;
+
   /// Which faces are rendered into the shadow map; see
   /// [DirectionalLight.shadowCasterFaces].
   ShadowCasterFaces shadowCasterFaces;
@@ -152,6 +157,7 @@ class SunLight {
     light.shadowFilter = shadowFilter;
     light.contactShadows = contactShadows;
     light.contactShadowDistance = contactShadowDistance;
+    light.angularRadius = angularRadius;
     light.shadowCasterFaces = shadowCasterFaces;
     return light;
   }

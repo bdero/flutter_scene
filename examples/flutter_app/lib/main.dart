@@ -5,6 +5,7 @@ import 'package:flutter_scene/scene.dart'
         AmbientOcclusionMethod,
         AntiAliasingMode,
         DepthOfFieldQuality,
+        DirectionalShadowFilter,
         Scene,
         PostInsertion,
         ShadowCasterFaces,
@@ -646,6 +647,37 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Softness', settings.shadowSoftness, 0, 0.3, (v) {
           settings.shadowSoftness = v;
         }),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Filter'),
+          trailing: DropdownButton<DirectionalShadowFilter>(
+            value: settings.shadowFilter,
+            onChanged: (filter) => setState(() {
+              settings.shadowFilter =
+                  filter ?? DirectionalShadowFilter.rotatedPoisson;
+            }),
+            items: [
+              for (final filter in DirectionalShadowFilter.values)
+                DropdownMenuItem(value: filter, child: Text(filter.name)),
+            ],
+          ),
+        ),
+        if (settings.shadowFilter == DirectionalShadowFilter.pcss)
+          _slider('Light size', settings.angularRadius, 0.001, 0.05, (v) {
+            settings.angularRadius = v;
+          }),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Contact shadows'),
+          value: settings.contactShadows,
+          onChanged: (value) => setState(() => settings.contactShadows = value),
+        ),
+        if (settings.contactShadows)
+          _slider('Contact distance', settings.contactShadowDistance, 0.05, 2, (
+            v,
+          ) {
+            settings.contactShadowDistance = v;
+          }),
         _slider('Fade range', settings.shadowFadeRange, 0, 20, (v) {
           settings.shadowFadeRange = v;
         }),

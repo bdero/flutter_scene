@@ -359,6 +359,45 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Percentage-closer soft shadows plus screen-space contact shadows. The
+  // tall pillar's shadow must sharpen at its base and widen with distance
+  // (the PCSS blocker search), and the floating slab must catch a soft
+  // screen-space contact patch beneath its near edge. Guards the blocker
+  // search, the penumbra scaling, and the contact march across backends.
+  SmokeScene('soft_shadows', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.55, -1.0, -0.3),
+        DirectionalLight(
+          castsShadow: true,
+          shadowMaxDistance: 20.0,
+          shadowFilter: DirectionalShadowFilter.pcss,
+          angularRadius: 0.025,
+          shadowSoftness: 0.28,
+          contactShadows: true,
+          contactShadowDistance: 0.6,
+        ),
+      ),
+    );
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 4.0, depth: 3.2), material)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.16, 2.2, 0.16)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-0.5, 1.1, 0.2)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1.1, 0.12, 0.8)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.7, 0.1, -0.4)),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
   SmokeScene('pbr_metallic', () {

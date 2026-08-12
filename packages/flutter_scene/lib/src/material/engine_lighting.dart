@@ -164,13 +164,16 @@ class EngineLightingUniforms {
     }
     fragInfo[23] = lighting.tanHalfFovY;
     // camera_right/camera_up [24..31]: the remaining camera basis axes used
-    // to project a world-space refraction exit back into scene-color UV.
+    // to project a world-space refraction exit back into scene-color UV. The
+    // right axis' w slot [27] carries the sun's angular radius for the
+    // percentage-closer soft-shadow penumbra.
     final right = lighting.cameraRight;
     if (right != null) {
       fragInfo[24] = right.x;
       fragInfo[25] = right.y;
       fragInfo[26] = right.z;
     }
+    fragInfo[27] = light?.angularRadius ?? 0.005;
     final up = lighting.cameraUp;
     if (up != null) {
       fragInfo[28] = up.x;

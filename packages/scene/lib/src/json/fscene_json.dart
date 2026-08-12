@@ -358,6 +358,10 @@ Map<String, dynamic> _encodeSunLight(SunLightSpec s) => {
   if (s.shadowAmbientStrength != 0.0)
     'shadowAmbientStrength': s.shadowAmbientStrength,
   if (s.shadowFilter != 'rotatedPoisson') 'shadowFilter': s.shadowFilter,
+  if (s.contactShadows) 'contactShadows': true,
+  if (s.contactShadowDistance != 0.3)
+    'contactShadowDistance': s.contactShadowDistance,
+  if (s.angularRadius != 0.005) 'angularRadius': s.angularRadius,
   if (s.shadowCasterFaces != 'front') 'shadowCasterFaces': s.shadowCasterFaces,
 };
 
@@ -1320,6 +1324,9 @@ SunLightSpec _decodeSunLight(Map<dynamic, dynamic> m) => SunLightSpec(
   shadowCascadeSplitLambda: _d(m['shadowCascadeSplitLambda'] ?? 0.6),
   shadowAmbientStrength: _d(m['shadowAmbientStrength'] ?? 0.0),
   shadowFilter: m['shadowFilter'] as String? ?? 'rotatedPoisson',
+  contactShadows: m['contactShadows'] as bool? ?? false,
+  contactShadowDistance: _d(m['contactShadowDistance'] ?? 0.3),
+  angularRadius: _d(m['angularRadius'] ?? 0.005),
   shadowCasterFaces: m['shadowCasterFaces'] as String? ?? 'front',
 );
 

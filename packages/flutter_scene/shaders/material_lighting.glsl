@@ -43,6 +43,18 @@ vec3 EvaluateDiffuseSH(sampler2D coefficients, vec3 n, float row) {
 
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 // One rotated Poisson-disk PCF tap into a cascade's atlas tile.
+// Samples the caster depth for the soft-shadow blocker search, with the
+// same tile mapping as ShadowTap and no comparison.
+float ShadowTapDepth(vec2 p, float ca, float sa, float radius, vec2 uv,
+                     int cascade, float inv_count) {
+  vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
+  vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+                   vec2(1.0 - frag_info.shadow_texel_size));
+  vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
+  atlas_uv.y = 1.0 - atlas_uv.y;
+  return texture(shadow_map, atlas_uv).r;
+}
+
 float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
                 float inv_count, float receiver_depth) {
   vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
@@ -116,9 +128,6 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // height in every cascade, with no discontinuity where cascades meet.
   float receiver_depth = proj.z - frag_info.shadow_bias / (7.0 * box);
 
-  // World-space penumbra -> this cascade's UV space, floored at a texel.
-  float radius =
-      max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);
   // The atlas also holds spot-shadow tiles after the cascades, so normalize the
   // atlas-x by the total tile count. Spot count 0 leaves this at 1 / cascades.
   float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
@@ -126,13 +135,42 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // Select the tap positions without duplicating the texture samples in both
   // branches. Duplicating both kernels here expands to 33 samples per cascade
   // in the generated GLES source even though the choice is uniform.
-  float fixed_filter = step(0.5, frag_info.directional_light_direction.w);
+  float filter_index = frag_info.directional_light_direction.w;
+  float fixed_filter = step(0.5, filter_index) * (1.0 - step(1.5, filter_index));
   float noise = fract(
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float angle = noise * 6.28318530718 * (1.0 - fixed_filter);
   float ca = cos(angle);
   float sa = sin(angle);
+
+  // World-space penumbra -> this cascade's UV space, floored at a texel.
+  float max_radius =
+      max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);
+  float radius = max_radius;
+  if (filter_index > 1.5) {
+    // Percentage-closer soft shadows: find the mean blocker depth inside the
+    // light's angular cone, then widen the filter with the blocker distance
+    // so shadows sharpen at contact. The cascade's clip depth spans 7 * box
+    // world units, so the cone's projected UV radius is
+    // tan(angular radius) * 7 * depth and the box cancels out of both terms.
+    float cone = tan(frag_info.camera_right.w);
+    float search_radius =
+        max(cone * 7.0 * receiver_depth, frag_info.shadow_texel_size);
+    float blocker_sum = 0.0;
+    float blocker_count = 0.0;
+    for (int i = 0; i < 9; i++) {
+      float caster = ShadowTapDepth(PoissonShadowTap(i), ca, sa, search_radius,
+                                    uv, cascade, inv_count);
+      float hit = step(caster, receiver_depth);
+      blocker_sum += caster * hit;
+      blocker_count += hit;
+    }
+    float mean_blocker =
+        blocker_count > 0.0 ? blocker_sum / blocker_count : receiver_depth;
+    float penumbra = cone * 7.0 * max(receiver_depth - mean_blocker, 0.0);
+    radius = clamp(penumbra, frag_info.shadow_texel_size, max_radius);
+  }
 
   // The Poisson positions are selected when fixed_filter is 0, the stable grid
   // positions when it is 1. The latter preserves the same 17-tap pattern.
