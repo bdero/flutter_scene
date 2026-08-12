@@ -927,7 +927,6 @@ vec4 EvaluateLighting(MaterialInputs material) {
       // texel 3 the up axis and height; the light emits along
       // cross(right, up). The LTC form factor bakes in the cosine lobe and
       // inverse-square falloff, so only the range window applies here.
-      // TODO(area-clearcoat): the clearcoat lobe ignores area lights.
       vec4 a2 = FetchPunctualTexel(light_row, 2);
       vec4 a3 = FetchPunctualTexel(light_row, 3);
       vec3 half_w = a2.xyz * (a2.w * 0.5);
@@ -955,6 +954,25 @@ vec4 EvaluateLighting(MaterialInputs material) {
       direct += radiance * (window * window) * facing *
                 (spec_color * spec_shape * material.specular +
                  albedo * (1.0 - metallic) * diff_shape);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+      // The clearcoat's own LTC lobe over the same rect, with the coat's
+      // normal and roughness and the dielectric F0 of 0.04. The base layer's
+      // coat attenuation is applied once at the final composite.
+      if (material.clearcoat > 0.0) {
+        vec2 coat_ltc_uv = clamp(
+            vec2(coat_roughness, sqrt(1.0 - coat_n_dot_v)), 0.0, 1.0);
+        vec4 ct1 = texture(brdf_lut, LtcLutUv(coat_ltc_uv, 1.0));
+        vec4 ct2 = texture(brdf_lut, LtcLutUv(coat_ltc_uv, 2.0));
+        mat3 coat_inv_m = mat3(
+            vec3(ct1.x, 0.0, ct1.y), vec3(0.0, 1.0, 0.0),
+            vec3(ct1.z, 0.0, ct1.w));
+        float coat_shape = LtcIntegrate(
+            coat_normal, camera_normal, v_position, coat_inv_m,
+            c0, c1, c2, c3);
+        coat_direct += radiance * (window * window) * facing * coat_shape *
+                       (0.04 * ct2.x + 0.96 * ct2.y);
+      }
+#endif
     } else {
     vec3 punctual_light_vector;
     if (type < 0.5) {
