@@ -537,6 +537,41 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // SMAA 1x over thin rotated bars, the classic aliasing torture test. The
+  // edges must resolve smooth (not stair-stepped like none, not smeared
+  // like fxaa). Guards the three-pass chain and the area/search texture
+  // load across backends.
+  SmokeScene('smaa', () {
+    final scene = Scene();
+    scene.antiAliasingMode = AntiAliasingMode.smaa;
+    final dark = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.05, 0.05, 0.07, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.8
+      ..vertexColorWeight = 0.0;
+    final bright = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.92, 0.92, 0.9, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(Node(mesh: Mesh(PlaneGeometry(width: 3.4, depth: 2.8), bright)));
+    for (var i = 0; i < 5; i++) {
+      scene.add(
+        Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1.6, 0.03, 0.05)), dark))
+          ..localTransform =
+              vm.Matrix4.translation(vm.Vector3(0, 0.25 + i * 0.24, 0)) *
+              vm.Matrix4.rotationY(0.35) *
+              vm.Matrix4.rotationZ(0.04 + i * 0.05),
+      );
+    }
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0.5, 1.3, 4.0),
+        target: vm.Vector3(0, 0.7, 0),
+      ),
+    );
+  }),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
   SmokeScene('pbr_metallic', () {

@@ -35,6 +35,7 @@ import 'render/bloom_pass.dart';
 import 'render/custom_render_pass.dart';
 import 'render/depth_prepass.dart';
 import 'render/fxaa_pass.dart';
+import 'render/smaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
@@ -106,6 +107,13 @@ enum AntiAliasingMode {
   /// high-contrast edges, including texture detail, so prefer [msaa]
   /// where it is available.
   fxaa,
+
+  /// Enhanced subpixel morphological anti-aliasing (SMAA 1x), three
+  /// post-process passes over the tone-mapped image. Supported on every
+  /// backend. Reconstructs edge shapes from their neighborhood, so edges
+  /// come out cleaner than [fxaa] with far less blurring of texture
+  /// detail, at roughly three times the anti-aliasing cost.
+  smaa,
 
   /// Selects [msaa] when the backend supports it and [fxaa] otherwise.
   auto,
@@ -222,6 +230,8 @@ base class Scene implements SceneGraph {
         return AntiAliasingMode.none;
       case AntiAliasingMode.fxaa:
         return AntiAliasingMode.fxaa;
+      case AntiAliasingMode.smaa:
+        return AntiAliasingMode.smaa;
       case AntiAliasingMode.msaa:
       case AntiAliasingMode.auto:
         return _offscreenMsaaSupported
@@ -354,6 +364,7 @@ base class Scene implements SceneGraph {
         Future.wait([
               loadBaseShaderLibrary(),
               Material.initializeStaticResources(),
+              SmaaPass.initializeStaticResources(),
             ])
             // Needs the shader library, so it runs after the load and before
             // rendering unblocks (environment radiance builds consult it).
@@ -1519,6 +1530,8 @@ base class Scene implements SceneGraph {
     );
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
     final enableFxaa = effectiveAa == AntiAliasingMode.fxaa;
+    final enableSmaa =
+        effectiveAa == AntiAliasingMode.smaa && SmaaPass.isInitialized;
 
     final light = lightComponent?.light;
     final lightDirection = lightComponent?.worldDirection;
@@ -2054,14 +2067,19 @@ base class Scene implements SceneGraph {
       );
     }
 
-    // FXAA runs after the resolve so custom after-tone-mapping effects
+    // FXAA/SMAA run after the resolve so custom after-tone-mapping effects
     // receive the anti-aliased image. The resolve applies film grain and
     // vignette first, so heavy grain is softened slightly here.
     // TODO(antialiasing): if that softening bothers anyone, move grain
-    // application after the FXAA pass.
+    // application after the anti-aliasing pass.
     if (enableFxaa) {
       displaySteps.add(
         (output) => FxaaPass(output: output, dimensions: pixelSize),
+      );
+    }
+    if (enableSmaa) {
+      displaySteps.add(
+        (output) => SmaaPass(output: output, dimensions: pixelSize),
       );
     }
 

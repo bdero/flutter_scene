@@ -202,5 +202,17 @@
   "CopyFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_copy.frag"
+  },
+  "SmaaEdgesFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_smaa_edges.frag"
+  },
+  "SmaaWeightsFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_smaa_weights.frag"
+  },
+  "SmaaBlendFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_smaa_blend.frag"
   }
 }
