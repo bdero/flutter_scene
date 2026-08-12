@@ -1,0 +1,130 @@
+{
+  "schemas": [
+    {
+      "type": "fmodEvent",
+      "properties": [
+        {
+          "name": "event",
+          "kind": "string",
+          "default": {
+            "s": ""
+          },
+          "doc": "The FMOD Studio event path (event:/...).",
+          "constraints": [
+            {
+              "pattern": "^event:/.+"
+            }
+          ]
+        },
+        {
+          "name": "autoplay",
+          "kind": "boolean",
+          "default": {
+            "b": false
+          },
+          "doc": "Start the event as soon as the source mounts."
+        },
+        {
+          "name": "volume",
+          "kind": "number",
+          "default": {
+            "d": 1.0
+          },
+          "doc": "Gain, 1.0 is unity.",
+          "constraints": [
+            {
+              "range": {
+                "min": 0.0
+              }
+            },
+            {
+              "softRange": {
+                "min": 0.0,
+                "max": 1.0
+              }
+            }
+          ]
+        },
+        {
+          "name": "pitch",
+          "kind": "number",
+          "default": {
+            "d": 1.0
+          },
+          "doc": "Playback rate multiplier.",
+          "constraints": [
+            {
+              "range": {
+                "min": 0.0
+              }
+            },
+            {
+              "softRange": {
+                "min": 0.0,
+                "max": 2.0
+              }
+            }
+          ]
+        },
+        {
+          "name": "positional",
+          "kind": "boolean",
+          "default": {
+            "b": true
+          },
+          "doc": "Spatialize at the node, or play flat when false."
+        },
+        {
+          "name": "overrideDistances",
+          "kind": "boolean",
+          "default": {
+            "b": false
+          },
+          "doc": "Override the event's authored min/max distances with the attenuation settings."
+        },
+        {
+          "name": "minDistance",
+          "kind": "number",
+          "default": {
+            "d": 1.0
+          },
+          "doc": "Distance where attenuation begins (with overrideDistances).",
+          "constraints": [
+            {
+              "range": {
+                "min": 0.0
+              }
+            }
+          ]
+        },
+        {
+          "name": "maxDistance",
+          "kind": "number",
+          "default": {
+            "d": 500.0
+          },
+          "doc": "Distance beyond which attenuation stops (with overrideDistances).",
+          "constraints": [
+            {
+              "range": {
+                "min": 0.0
+              }
+            }
+          ]
+        },
+        {
+          "name": "parameters",
+          "kind": "map",
+          "default": {
+            "map": {}
+          },
+          "doc": "Initial event parameter values by name."
+        }
+      ]
+    }
+  ],
+  "registrar": {
+    "library": "package:flutter_scene_fmod/flutter_scene_fmod.dart",
+    "function": "registerFmodComponentCodecs"
+  }
+}
