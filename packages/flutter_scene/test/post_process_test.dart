@@ -51,7 +51,7 @@ void main() {
       final bloom = BloomSettings();
       expect(bloom.enabled, isFalse);
       expect(bloom.threshold, 1.0);
-      expect(bloom.intensity, 0.3);
+      expect(bloom.intensity, 0.15);
       expect(bloom.scatter, 0.7);
     });
   });
