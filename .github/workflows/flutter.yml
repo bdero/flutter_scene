@@ -5,9 +5,19 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  # Manual runs can pick a Flutter channel. Dispatching on the stable branch
+  # defaults to the stable channel, so it runs the whole suite against the
+  # latest Flutter stable without needing any input.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Flutter channel (empty picks stable on the stable branch, master elsewhere)"
+        required: false
+        default: ""
 
 env:
   FLUTTER_DART_DATA_ASSETS: "true"
+  FLUTTER_CHANNEL: ${{ inputs.channel || (github.ref_name == 'stable' && 'stable' || 'master') }}
 
 jobs:
   lint:
@@ -18,7 +28,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: master
+          channel: ${{ env.FLUTTER_CHANNEL }}
       - run: dart --version
       - run: flutter --version
       - name: Resolve workspace dependencies
@@ -44,7 +54,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: master
+          channel: ${{ env.FLUTTER_CHANNEL }}
       - name: Resolve workspace dependencies
         run: flutter pub get
       - name: Enable asset building
