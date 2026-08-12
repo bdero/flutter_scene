@@ -63,7 +63,7 @@ class EnvironmentSettings {
     Vector3? gain,
     this.bloomEnabled = false,
     this.bloomThreshold = 1.0,
-    this.bloomIntensity = 0.3,
+    this.bloomIntensity = 0.15,
     this.bloomScatter = 0.7,
     this.vignetteEnabled = false,
     this.vignetteIntensity = 0.5,

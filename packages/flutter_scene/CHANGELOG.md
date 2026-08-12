@@ -5,7 +5,7 @@
 * `AmbientOcclusionSettings.bentNormals` steers indirect diffuse along the average unoccluded direction and enables `SpecularAmbientOcclusionMode.bentCone`.
 * Environment resources persist every ambient-occlusion control, including the new method, slice, thickness, bent-normal, and multi-bounce fields.
 * `AmbientOcclusionSettings.intensity` defaults to `1.0` and both methods are calibrated there; the obscurance estimator folds its former 2x, so halve any explicitly set obscurance intensity to keep its look.
-* Retuned enable-time defaults, bloom intensity `0.3`, chromatic aberration `0.2`, and auto-exposure clamps of -4 to +4 EV.
+* Retuned enable-time defaults, bloom intensity `0.15`, chromatic aberration `0.2`, and auto-exposure clamps of -4 to +4 EV.
 * Breaking change, `.fscene` version 2 uses one native coordinate system and offline glTF import bakes source coordinates into it.
 * Removed `Handedness`, `UpAxis`, `StageMetadata.unitsPerMeter`, `NodeSpec.excludeFromWindingParity`, `SkyEnvironmentSpec.castShadows`, and the directional-light component schema's `direction` property.
 * Runtime glTF import keeps source buffers unchanged and resolves coordinate winding in the renderer.

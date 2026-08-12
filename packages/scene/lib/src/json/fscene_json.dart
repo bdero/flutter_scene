@@ -376,7 +376,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   final bloom = <String, dynamic>{
     if (e.bloomEnabled) 'enabled': true,
     if (e.bloomThreshold != 1.0) 'threshold': e.bloomThreshold,
-    if (e.bloomIntensity != 0.3) 'intensity': e.bloomIntensity,
+    if (e.bloomIntensity != 0.15) 'intensity': e.bloomIntensity,
     if (e.bloomScatter != 0.7) 'scatter': e.bloomScatter,
   };
   final vignette = <String, dynamic>{
@@ -980,7 +980,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     gain: _effectVec(cg['gain'], Vector3.all(1.0)),
     bloomEnabled: bloom['enabled'] as bool? ?? false,
     bloomThreshold: _d(bloom['threshold'] ?? 1.0),
-    bloomIntensity: _d(bloom['intensity'] ?? 0.3),
+    bloomIntensity: _d(bloom['intensity'] ?? 0.15),
     bloomScatter: _d(bloom['scatter'] ?? 0.7),
     vignetteEnabled: vignette['enabled'] as bool? ?? false,
     vignetteIntensity: _d(vignette['intensity'] ?? 0.5),
