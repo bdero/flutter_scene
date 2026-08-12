@@ -16,6 +16,7 @@ import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
     show Box3dPhysicsWorld;
 import 'package:example_app/example_animation.dart';
 import 'example_area_lights.dart';
+import 'example_reflection_probes.dart';
 
 import 'example_accessibility.dart';
 import 'example_audio.dart';
@@ -177,6 +178,7 @@ class _MyAppState extends State<MyApp> {
       'Configurator': (context) => const ExampleConfigurator(),
       'Lights': (context) => const ExampleLights(),
       'Area Lights': (context) => const ExampleAreaLights(),
+      'Reflection Probes': (context) => const ExampleReflectionProbes(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Particles': (context) => const ExampleParticles(),
       'Explosions': (context) => const ExampleExplosion(),

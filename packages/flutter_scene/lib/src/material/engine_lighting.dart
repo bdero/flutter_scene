@@ -56,9 +56,34 @@ class EngineLightingUniforms {
         ? const <ShadowCascade>[]
         : lighting.cascades;
 
-    // diffuse_sh0..8 at [8..43] are now unused: the shader samples the
+    // diffuse_sh0..6 at [8..35] are now unused: the shader samples the
     // sh_coefficients texture (bound in bindEngineTextures) instead, so the
     // GPU-computed coefficients of a baked sky need no read-back. Left zero.
+
+    // probe_box [36..39] and probe_extents [40..43] (the retired sh7/sh8
+    // rows): the primary environment's parallax box proxy, when it carries
+    // one. Written unconditionally since the scratch list is shared across
+    // draws with different environments.
+    final parallaxCenter = env.parallaxBoxCenter;
+    final parallaxExtents = env.parallaxBoxHalfExtents;
+    if (parallaxCenter != null && parallaxExtents != null) {
+      fragInfo[36] = parallaxCenter.x;
+      fragInfo[37] = parallaxCenter.y;
+      fragInfo[38] = parallaxCenter.z;
+      fragInfo[39] = 1.0;
+      fragInfo[40] = parallaxExtents.x;
+      fragInfo[41] = parallaxExtents.y;
+      fragInfo[42] = parallaxExtents.z;
+    } else {
+      fragInfo[36] = 0.0;
+      fragInfo[37] = 0.0;
+      fragInfo[38] = 0.0;
+      fragInfo[39] = 0.0;
+      fragInfo[40] = 0.0;
+      fragInfo[41] = 0.0;
+      fragInfo[42] = 0.0;
+    }
+    fragInfo[43] = 0.0;
 
     // directional_light_direction [44..47], directional_light_color [48..51].
     if (light != null) {

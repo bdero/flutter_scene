@@ -243,6 +243,31 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 #undef _TRY_CASCADE
 #endif
 
+// Parallax-corrected reflection for a local environment probe: intersects
+// the reflected ray with the probe's box proxy and re-aims the lookup from
+// the capture point (the box center) at the hit, so reflections track the
+// surfaces the probe captured instead of floating at infinity. Follows
+// Lagarde and Zanuttini 2012, "Local Image-based Lighting With
+// Parallax-corrected Cubemap" (SIGGRAPH). Returns [r] unchanged when no
+// proxy is active.
+vec3 ParallaxCorrectReflection(vec3 world_pos, vec3 r) {
+  vec3 corrected = r;
+  if (frag_info.probe_box.w > 0.5) {
+    vec3 center = frag_info.probe_box.xyz;
+    vec3 half_ext = frag_info.probe_extents.xyz;
+    // Nudge zero components so the slab division stays finite.
+    vec3 safe_r = r + (step(vec3(0.0), r) * 2.0 - 1.0) * 1e-6;
+    vec3 inv_r = vec3(1.0) / safe_r;
+    vec3 t_a = (center + half_ext - world_pos) * inv_r;
+    vec3 t_b = (center - half_ext - world_pos) * inv_r;
+    vec3 t_max = max(t_a, t_b);
+    float t = min(min(t_max.x, t_max.y), t_max.z);
+    vec3 hit = world_pos + r * max(t, 0.0);
+    corrected = normalize(hit - center);
+  }
+  return corrected;
+}
+
 // Tile remaps for the shared brdf_lut atlas: the DFG terms in tile 0, the
 // linearly-transformed-cosine matrix fit in tile 1, and its
 // magnitude/Fresnel fit in tile 2.
@@ -712,7 +737,9 @@ vec4 EvaluateLighting(MaterialInputs material) {
   mat3 environment_transform = mat3(frag_info.environment_transform);
   vec3 env_normal = environment_transform *
                     (ao_bent_valid > 0.5 ? ao_bent_normal : normal);
-  vec3 env_reflection = environment_transform * reflection_normal;
+  vec3 env_reflection =
+      environment_transform *
+      ParallaxCorrectReflection(v_position, reflection_normal);
   vec3 irradiance = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 0.0),
                         vec3(0.0));
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL

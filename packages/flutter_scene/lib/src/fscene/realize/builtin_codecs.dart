@@ -21,6 +21,7 @@ import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/rect_area_light_component.dart';
+import 'package:flutter_scene/src/components/reflection_probe_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:scene/scene.dart';
@@ -59,6 +60,7 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(DirectionalLightCodec())
     ..register(PointLightCodec())
     ..register(RectAreaLightCodec())
+    ..register(ReflectionProbeCodec())
     ..register(SpotLightCodec())
     ..register(CameraCodec())
     ..register(EnvironmentVolumeCodec())
@@ -1500,6 +1502,87 @@ class MaterialsVariantsCodec extends ComponentCodec {
       for (final entry in value.values)
         if (entry is StringValue) entry.value,
   ];
+}
+
+/// Codec for [ReflectionProbeComponent]. The captured environment is not
+/// persisted; a realized probe re-captures on activation.
+class ReflectionProbeCodec
+    extends DeclarativeComponentCodec<ReflectionProbeComponent> {
+  @override
+  String get type => 'reflectionProbe';
+
+  // Violet, distinct from the environment volume's teal.
+  static const _boxColor = GizmoColor(0.71, 0.48, 0.95);
+  static const _blendColor = GizmoColor(0.71, 0.48, 0.95, 0.33);
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'environment',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(color: _boxColor),
+      GizmoWireBox(halfExtentsBind: 'extents', color: _boxColor),
+      GizmoWireBox(
+        halfExtentsBind: 'extents',
+        inflate: GizmoScalar.bind('blendDistance'),
+        color: _blendColor,
+      ),
+    ]),
+  );
+
+  @override
+  List<ComponentField<ReflectionProbeComponent>> get fields => [
+    ComponentField.vec3(
+      'extents',
+      defaultValue: () => Vector3.all(5),
+      doc: 'World-space half-size of the influence and parallax box.',
+      get: (c) => c.extents,
+      set: (c, v) => c.extents = v,
+    ),
+    ComponentField.number(
+      'blendDistance',
+      defaultValue: 1.0,
+      doc: 'Fade band outside the box, in world units.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
+      get: (c) => c.blendDistance,
+      set: (c, v) => c.blendDistance = v,
+    ),
+    ComponentField.number(
+      'priority',
+      defaultValue: 10.0,
+      doc: 'Cross-fade order; higher applies on top.',
+      get: (c) => c.priority,
+      set: (c, v) => c.priority = v,
+    ),
+    ComponentField.number(
+      'weight',
+      defaultValue: 1.0,
+      doc: 'Master contribution scale.',
+      constraints: const [Range(0, 1)],
+      get: (c) => c.weight,
+      set: (c, v) => c.weight = v,
+    ),
+    ComponentField.integer(
+      'faceResolution',
+      defaultValue: 128,
+      doc: 'Resolution of each captured cube face, in pixels.',
+      constraints: const [IntRange(16, null)],
+      get: (c) => c.faceResolution,
+      set: (c, v) => c.faceResolution = v,
+    ),
+    ComponentField.boolean(
+      'captureOnActivate',
+      defaultValue: true,
+      doc: 'Capture automatically before the first rendered frame.',
+      get: (c) => c.captureOnActivate,
+      set: (c, v) => c.captureOnActivate = v,
+    ),
+  ];
+
+  @override
+  ReflectionProbeComponent create(PropertyReader props) =>
+      ReflectionProbeComponent();
 }
 
 /// Codec for [RectAreaLightComponent].

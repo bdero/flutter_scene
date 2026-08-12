@@ -572,6 +572,86 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // A reflection probe inside a three-walled colored room: the glossy
+  // centerpiece must mirror the correct wall color on each face (the
+  // parallax-corrected box projection), not the studio environment.
+  // Guards the scene capture, the prefilter of the captured cube, and the
+  // probe cross-fade across backends.
+  SmokeScene('reflection_probe', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.3, -1.0, -0.4),
+        DirectionalLight(intensity: 2.0),
+      ),
+    );
+    PhysicallyBasedMaterial wall(double r, double g, double b) =>
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = vm.Vector4(r, g, b, 1.0)
+          ..metallicFactor = 0.0
+          ..roughnessFactor = 0.9
+          ..vertexColorWeight = 0.0;
+    // Floor and three walls (left red, right blue, back green).
+    scene.add(
+      Node(
+        mesh: Mesh(PlaneGeometry(width: 4.0, depth: 4.0), wall(0.7, 0.7, 0.7)),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          CuboidGeometry(vm.Vector3(0.1, 2.4, 4.0)),
+          wall(0.8, 0.05, 0.05),
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(-2.0, 1.2, 0)),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          CuboidGeometry(vm.Vector3(0.1, 2.4, 4.0)),
+          wall(0.05, 0.05, 0.8),
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(2.0, 1.2, 0)),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          CuboidGeometry(vm.Vector3(4.0, 2.4, 0.1)),
+          wall(0.05, 0.7, 0.05),
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.2, -2.0)),
+    );
+    // The glossy centerpiece reflecting the room through the probe.
+    final mirror = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.95, 0.95, 0.95, 1.0)
+      ..metallicFactor = 1.0
+      ..roughnessFactor = 0.08
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(SphereGeometry(radius: 0.55), mirror))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.8, 0.3)),
+    );
+    // The influence box stretches to include the exterior camera so the
+    // probe fully applies; the parallax projection stays close enough to
+    // the room that each wall color lands on the correct sphere face.
+    scene.add(
+      Node()
+        ..addComponent(
+          ReflectionProbeComponent(
+            extents: vm.Vector3(2.5, 2.0, 4.6),
+            blendDistance: 2.0,
+          ),
+        )
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 1.2, 1.5)),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0.5, 2.0, 6.0),
+        target: vm.Vector3(0, 1.0, 0),
+      ),
+    );
+  }),
   // Lens flares off the bloom chain: a single intense emissive card in a
   // dim scene must bloom and cast a ghost chain through the screen center
   // plus a halo ring. Guards the whole bloom pyramid (its only golden) and

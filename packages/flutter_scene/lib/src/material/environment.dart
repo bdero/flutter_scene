@@ -66,6 +66,22 @@ base class EnvironmentMap {
     this._diffuseShTexture,
   ) : _diffuseSphericalHarmonics = const <Vector3>[];
 
+  /// World-space center of this environment's parallax box proxy, or null
+  /// when reflections sample the environment at infinity (the default,
+  /// correct for a sky or a distant panorama).
+  ///
+  /// A local environment (a reflection probe's capture of a room) sets both
+  /// this and [parallaxBoxHalfExtents] to the box the capture approximates.
+  /// Reflection lookups then intersect the reflected ray with the box and
+  /// sample toward the hit, so reflections track nearby surfaces instead of
+  /// floating at infinity (parallax-corrected cubemaps). The capture is
+  /// assumed to have been taken from the box center.
+  Vector3? parallaxBoxCenter;
+
+  /// World-space half extents of the parallax box proxy; see
+  /// [parallaxBoxCenter].
+  Vector3? parallaxBoxHalfExtents;
+
   /// A black environment that contributes no image-based lighting.
   ///
   /// Specular reflections are black and the diffuse term is zero, so
