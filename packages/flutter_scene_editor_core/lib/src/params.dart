@@ -8,6 +8,7 @@
 library;
 
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'command.dart';
@@ -141,14 +142,18 @@ AssetRef requireAssetRef(Map<String, Object?> params, String key) =>
 /// when absent.
 Map<String, PropertyValue> optionalPropertyMap(
   Map<String, Object?> params,
-  String key,
-) {
+  String key, {
+  ComponentSchema? schema,
+}) {
   final v = _get(params, key);
   if (v == null) return {};
   if (v is! Map) throw CommandException('Param $key must be an object');
   return {
     for (final entry in v.entries)
-      '${entry.key}': coercePropertyValue(entry.value),
+      '${entry.key}': coercePropertyValue(
+        entry.value,
+        def: schema?.property('${entry.key}'),
+      ),
   };
 }
 
@@ -184,11 +189,22 @@ List<PropertyOverride> optionalOverrides(
 
 /// Coerces a loosely typed JSON value into a [PropertyValue].
 ///
-/// Scalars map directly. Objects are inspected for tagged forms (`{$resource}`,
-/// `{$node}`, `{$quat}`), then color (`{r, g, b, a}`) and vector (`{x, y, z}`
-/// or `{x, y, z, w}`) shapes, otherwise a nested [MapValue]. Lists become a
-/// [ListValue].
-PropertyValue coercePropertyValue(Object? value) {
+/// With a [def], the declared kind drives the conversion (resolving shape
+/// ambiguities such as vec3 versus color channels, and enabling vec2 and
+/// matrix4 which have no guessable shape), hard [Range]/[IntRange]
+/// constraints clamp numeric values, and a mismatched shape throws a
+/// [CommandException] naming the property and expected kind.
+///
+/// Without a [def], shape-guessing applies: scalars map directly, objects
+/// are inspected for tagged forms (`{$resource}`, `{$node}`, `{$quat}`),
+/// then color (`{r, g, b, a}`) and vector (`{x, y, z}` or `{x, y, z, w}`)
+/// shapes, otherwise a nested [MapValue]; lists become a [ListValue].
+PropertyValue coercePropertyValue(Object? value, {ComponentPropertyDef? def}) {
+  if (def != null) return _coerceAgainst(value, def);
+  return _coerceByShape(value);
+}
+
+PropertyValue _coerceByShape(Object? value) {
   switch (value) {
     case bool v:
       return BoolValue(v);
@@ -199,7 +215,7 @@ PropertyValue coercePropertyValue(Object? value) {
     case String v:
       return StringValue(v);
     case List<Object?> v:
-      return ListValue([for (final e in v) coercePropertyValue(e)]);
+      return ListValue([for (final e in v) _coerceByShape(e)]);
     case Map<Object?, Object?> v:
       return _coerceObject(v.map((k, val) => MapEntry('$k', val)));
     case null:
@@ -246,8 +262,201 @@ PropertyValue _coerceObject(Map<String, Object?> m) {
     return Vec3Value(Vector3(x, y, z));
   }
   return MapValue({
-    for (final entry in m.entries) entry.key: coercePropertyValue(entry.value),
+    for (final entry in m.entries) entry.key: _coerceByShape(entry.value),
   });
+}
+
+/// Schema-driven coercion; see [coercePropertyValue].
+PropertyValue _coerceAgainst(Object? value, ComponentPropertyDef def) {
+  CommandException mismatch() => CommandException(
+    'Property ${def.name} expects ${def.kind.name}, got '
+    '${value.runtimeType}',
+  );
+
+  Map<String, Object?>? asMap(Object? v) =>
+      v is Map ? v.map((k, entry) => MapEntry('$k', entry)) : null;
+
+  double clampNumber(double number) {
+    final min = def.hardMin;
+    final max = def.hardMax;
+    if (min != null && number < min) number = min;
+    if (max != null && number > max) number = max;
+    return number;
+  }
+
+  List<double>? components(Object? v, List<String> names) {
+    final m = asMap(v);
+    if (m != null) {
+      final out = <double>[];
+      for (final name in names) {
+        final component = m[name];
+        if (component is! num) return null;
+        out.add(component.toDouble());
+      }
+      return out;
+    }
+    if (v is List && v.length == names.length) {
+      final out = <double>[];
+      for (final component in v) {
+        if (component is! num) return null;
+        out.add(component.toDouble());
+      }
+      return out;
+    }
+    return null;
+  }
+
+  switch (def.kind) {
+    case ComponentPropertyKind.boolean:
+      if (value is bool) return BoolValue(value);
+      throw mismatch();
+    case ComponentPropertyKind.integer:
+      if (value is num) {
+        return IntValue(clampNumber(value.toDouble()).round());
+      }
+      throw mismatch();
+    case ComponentPropertyKind.number:
+      if (value is num) return DoubleValue(clampNumber(value.toDouble()));
+      throw mismatch();
+    case ComponentPropertyKind.string:
+    case ComponentPropertyKind.assetRef:
+      if (value is String) {
+        final options = def.options;
+        if (options != null && !options.contains(value)) {
+          throw CommandException(
+            'Property ${def.name} expects one of $options, got "$value"',
+          );
+        }
+        return StringValue(value);
+      }
+      throw mismatch();
+    case ComponentPropertyKind.vec2:
+      final v = components(value, const ['x', 'y']);
+      if (v != null) return Vec2Value(Vector2(v[0], v[1]));
+      throw mismatch();
+    case ComponentPropertyKind.vec3:
+      final v = components(value, const ['x', 'y', 'z']);
+      if (v != null) return Vec3Value(Vector3(v[0], v[1], v[2]));
+      throw mismatch();
+    case ComponentPropertyKind.vec4:
+      final v = components(value, const ['x', 'y', 'z', 'w']);
+      if (v != null) return Vec4Value(Vector4(v[0], v[1], v[2], v[3]));
+      throw mismatch();
+    case ComponentPropertyKind.quaternion:
+      final tagged = asMap(value)?[r'$quat'];
+      final v = components(tagged ?? value, const ['x', 'y', 'z', 'w']);
+      if (v != null) {
+        return QuaternionValue(Quaternion(v[0], v[1], v[2], v[3]));
+      }
+      throw mismatch();
+    case ComponentPropertyKind.matrix4:
+      if (value is List && value.length == 16) {
+        final storage = <double>[];
+        for (final component in value) {
+          if (component is! num) throw mismatch();
+          storage.add(component.toDouble());
+        }
+        return Matrix4Value(Matrix4.fromList(storage));
+      }
+      throw mismatch();
+    case ComponentPropertyKind.color:
+      var rgba = components(value, const ['r', 'g', 'b', 'a']);
+      if (rgba == null) {
+        final rgb = components(value, const ['r', 'g', 'b']);
+        if (rgb != null) rgba = [...rgb, 1.0];
+      }
+      if (rgba != null) {
+        return ColorValue(rgba[0], rgba[1], rgba[2], rgba[3]);
+      }
+      throw mismatch();
+    case ComponentPropertyKind.resourceRef:
+      final tagged = asMap(value)?[r'$resource'];
+      final token = tagged ?? value;
+      if (token is String) return ResourceRefValue(LocalId.parse(token));
+      throw mismatch();
+    case ComponentPropertyKind.nodeRef:
+      final tagged = asMap(value)?[r'$node'];
+      final token = tagged ?? value;
+      if (token is String) return NodeRefValue(LocalId.parse(token));
+      throw mismatch();
+    case ComponentPropertyKind.list:
+      if (value is List) {
+        final itemDef = def.itemDef;
+        return ListValue([
+          for (final item in value)
+            itemDef == null
+                ? _coerceByShape(item)
+                : _coerceAgainst(item, itemDef),
+        ]);
+      }
+      throw mismatch();
+    case ComponentPropertyKind.object:
+      final m = asMap(value);
+      if (m != null) {
+        final fields = def.objectFields ?? const <ComponentPropertyDef>[];
+        ComponentPropertyDef? fieldDef(String name) {
+          for (final field in fields) {
+            if (field.name == name || field.formerNames.contains(name)) {
+              return field;
+            }
+          }
+          return null;
+        }
+
+        return MapValue({
+          for (final entry in m.entries)
+            entry.key: () {
+              final field = fieldDef(entry.key);
+              return field == null
+                  ? _coerceByShape(entry.value)
+                  : _coerceAgainst(entry.value, field);
+            }(),
+        });
+      }
+      throw mismatch();
+    case ComponentPropertyKind.union:
+      final m = asMap(value);
+      if (m != null) {
+        final tag = m[def.unionTag];
+        final variants = def.unionVariants ?? const {};
+        if (tag is! String || !variants.containsKey(tag)) {
+          throw CommandException(
+            'Property ${def.name} expects a ${def.unionTag} of '
+            '${variants.keys.toList()}, got "$tag"',
+          );
+        }
+        final fields = variants[tag]!;
+        ComponentPropertyDef? fieldDef(String name) {
+          for (final field in fields) {
+            if (field.name == name || field.formerNames.contains(name)) {
+              return field;
+            }
+          }
+          return null;
+        }
+
+        return MapValue({
+          def.unionTag: StringValue(tag),
+          for (final entry in m.entries)
+            if (entry.key != def.unionTag)
+              entry.key: () {
+                final field = fieldDef(entry.key);
+                return field == null
+                    ? _coerceByShape(entry.value)
+                    : _coerceAgainst(entry.value, field);
+              }(),
+        });
+      }
+      throw mismatch();
+    case ComponentPropertyKind.map:
+    case ComponentPropertyKind.distribution:
+    case ComponentPropertyKind.curve:
+    case ComponentPropertyKind.gradient:
+      if (value is Map) {
+        return _coerceByShape(value);
+      }
+      throw mismatch();
+  }
 }
 
 Map<String, Object?> _requireObject(Map<String, Object?> params, String key) {

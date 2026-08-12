@@ -10,6 +10,7 @@
 library;
 
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart';
 
 import 'builtin_commands.dart';
 import 'change.dart';
@@ -51,6 +52,11 @@ class EditorSession {
   /// The command registry this session runs.
   final CommandRegistry registry;
 
+  /// Resolves component types to schemas for property coercion, injected by
+  /// the host (the editor wires its component registry here). Null falls
+  /// back to shape-guessed coercion.
+  ComponentSchema? Function(String type)? componentSchemaLookup;
+
   /// Read-only navigation and lookup over [document].
   final SceneQuery query;
 
@@ -75,7 +81,10 @@ class EditorSession {
   Transaction run(String name, [Map<String, Object?> params = const {}]) {
     final entry = registry.lookup(name);
     if (entry == null) throw ArgumentError('Unknown command: $name');
-    final transaction = entry.execute(CommandContext(document), params);
+    final transaction = entry.execute(
+      CommandContext(document, componentSchema: componentSchemaLookup),
+      params,
+    );
     history.commit(transaction);
     return transaction;
   }
@@ -83,7 +92,11 @@ class EditorSession {
   /// Whether the command named [name] can run with [params] right now.
   bool canRun(String name, [Map<String, Object?> params = const {}]) {
     final entry = registry.lookup(name);
-    return entry != null && entry.applicable(CommandContext(document), params);
+    return entry != null &&
+        entry.applicable(
+          CommandContext(document, componentSchema: componentSchemaLookup),
+          params,
+        );
   }
 
   /// Applies [transaction] without recording it on the history. For transient
