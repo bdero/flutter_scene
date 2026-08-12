@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/collider.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
@@ -61,21 +63,26 @@ class KinematicCharacterController extends Component {
   void onMount() {
     final world = findAncestorWorld(node);
     if (world == null) {
-      throw StateError(
-        'KinematicCharacterController mounted with no PhysicsWorld on an '
-        'ancestor node',
+      // Stay inert (an editor viewport, or a scene assembled before its
+      // world). TODO(physics-remount): register when a world mounts later.
+      debugPrint(
+        'KinematicCharacterController mounted with no PhysicsWorld '
+        'ancestor; inert',
       );
+      return;
     }
     if (!world.simulation.supportsCharacters) {
-      throw UnsupportedError(
-        '${world.backendName} has no character controller',
-      );
+      debugPrint('${world.backendName} has no character controller; inert');
+      return;
     }
     final collider = node.getComponent<Collider>();
     if (collider == null || collider.handles.isEmpty) {
-      throw StateError(
-        'KinematicCharacterController requires a mounted sibling Collider',
+      // TODO(physics-remount): attach when the sibling collider registers.
+      debugPrint(
+        'KinematicCharacterController has no registered sibling Collider; '
+        'inert',
       );
+      return;
     }
     _world = world;
     _collider = collider;

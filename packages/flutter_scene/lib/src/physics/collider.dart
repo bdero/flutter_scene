@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
@@ -124,10 +126,11 @@ class Collider extends Component {
     if (body != null) {
       final handle = body.handle;
       if (handle == null) {
-        throw StateError(
-          'Collider mounted before its sibling RigidBody; add the RigidBody '
-          'component first',
-        );
+        // The sibling body has not registered (mount order, or an inert
+        // body); stay inert rather than failing the whole scene.
+        // TODO(physics-remount): create when the body registers.
+        debugPrint('Collider mounted before its sibling RigidBody; inert');
+        return;
       }
       bodyHandle = handle;
     } else {
@@ -178,9 +181,10 @@ class Collider extends Component {
   void onMount() {
     final world = findAncestorWorld(node);
     if (world == null) {
-      throw StateError(
-        'Collider mounted with no PhysicsWorld on an ancestor node',
-      );
+      // Stay inert (an editor viewport, or a scene assembled before its
+      // world). TODO(physics-remount): register when a world mounts later.
+      debugPrint('Collider mounted with no PhysicsWorld ancestor; inert');
+      return;
     }
     _world = world;
     _create();
