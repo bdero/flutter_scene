@@ -68,3 +68,8 @@ flutter:
     # A bundled sample environment, loadable via EnvironmentMap.fromAssets.
     # (The zero-config default is the procedural EnvironmentMap.studio().)
     - assets/royal_esplanade.png
+    # The fitted linearly-transformed-cosine tables for rect area lights, two
+    # 64x64 RGBA half-float tiles (the inverse-matrix fit and the
+    # magnitude/Fresnel fit). See lib/src/material/dfg_lut.dart for the data's
+    # provenance and license.
+    - assets/ltc.bin

@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
+import 'package:flutter_scene/src/components/rect_area_light_component.dart';
 import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -474,6 +475,22 @@ class RenderScene {
   /// Unregisters [light]. Called when its owning node unmounts.
   void removePointLight(PointLightComponent light) {
     pointLights.remove(light);
+  }
+
+  /// The rect area lights contributed by mounted [RectAreaLightComponent]s,
+  /// in registration order. Collected into the per-frame punctual light
+  /// buffer.
+  final List<RectAreaLightComponent> rectAreaLights = [];
+
+  /// Registers [light] as an active rect area light. Called by a
+  /// [RectAreaLightComponent] when its owning node mounts.
+  void addRectAreaLight(RectAreaLightComponent light) {
+    rectAreaLights.add(light);
+  }
+
+  /// Unregisters [light]. Called when its owning node unmounts.
+  void removeRectAreaLight(RectAreaLightComponent light) {
+    rectAreaLights.remove(light);
   }
 
   /// The spot lights contributed by mounted [SpotLightComponent]s, in

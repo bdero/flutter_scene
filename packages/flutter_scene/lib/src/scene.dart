@@ -1063,6 +1063,7 @@ base class Scene implements SceneGraph {
       primaryDirectional: lightComponent,
       points: renderScene.pointLights,
       spots: renderScene.spotLights,
+      areas: renderScene.rectAreaLights,
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,

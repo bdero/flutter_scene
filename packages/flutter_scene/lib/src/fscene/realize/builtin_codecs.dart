@@ -20,6 +20,7 @@ import 'package:flutter_scene/src/components/materials_variants_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
+import 'package:flutter_scene/src/components/rect_area_light_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:scene/scene.dart';
@@ -46,6 +47,7 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(MaterialsVariantsCodec())
     ..register(DirectionalLightCodec())
     ..register(PointLightCodec())
+    ..register(RectAreaLightCodec())
     ..register(SpotLightCodec())
     ..register(CameraCodec())
     ..register(EnvironmentVolumeCodec())
@@ -1437,4 +1439,72 @@ class MaterialsVariantsCodec extends ComponentCodec {
       for (final entry in value.values)
         if (entry is StringValue) entry.value,
   ];
+}
+
+/// Codec for [RectAreaLightComponent].
+class RectAreaLightCodec extends ComponentCodec {
+  @override
+  String get type => 'rectAreaLight';
+
+  static final List<ComponentPropertyDef> _schema = [
+    ComponentPropertyDef(
+      'color',
+      ComponentPropertyKind.vec3,
+      Vec3Value(Vector3(1, 1, 1)),
+      doc: 'Linear RGB light color.',
+      read: (c) => Vec3Value((c as RectAreaLightComponent).light.color.clone()),
+    ),
+    ComponentPropertyDef(
+      'intensity',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Emitted radiance of the panel surface.',
+      min: 0,
+      read: (c) => DoubleValue((c as RectAreaLightComponent).light.intensity),
+    ),
+    ComponentPropertyDef(
+      'width',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Panel width along the node local X axis.',
+      min: 0,
+      read: (c) => DoubleValue((c as RectAreaLightComponent).light.width),
+    ),
+    ComponentPropertyDef(
+      'height',
+      ComponentPropertyKind.number,
+      const DoubleValue(1.0),
+      doc: 'Panel height along the node local Y axis.',
+      min: 0,
+      read: (c) => DoubleValue((c as RectAreaLightComponent).light.height),
+    ),
+    ComponentPropertyDef(
+      'range',
+      ComponentPropertyKind.number,
+      const DoubleValue(0.0),
+      doc: 'Distance the light reaches, or 0 for infinite range.',
+      min: 0,
+      read: (c) => DoubleValue((c as RectAreaLightComponent).light.range),
+    ),
+  ];
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => _schema;
+
+  @override
+  bool claims(Component component) => component is RectAreaLightComponent;
+
+  @override
+  Component realize(ComponentSpec spec, RealizeContext context) {
+    final p = spec.properties;
+    return RectAreaLightComponent(
+      RectAreaLight(
+        color: readVec3(p, 'color', vec3Default('color')),
+        intensity: readDouble(p, 'intensity', numberDefault('intensity')),
+        width: readDouble(p, 'width', numberDefault('width')),
+        height: readDouble(p, 'height', numberDefault('height')),
+        range: readDouble(p, 'range', numberDefault('range')),
+      ),
+    );
+  }
 }

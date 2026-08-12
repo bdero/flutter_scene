@@ -243,6 +243,57 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 #undef _TRY_CASCADE
 #endif
 
+// Tile remaps for the shared brdf_lut atlas: the DFG terms in tile 0, the
+// linearly-transformed-cosine matrix fit in tile 1, and its
+// magnitude/Fresnel fit in tile 2.
+vec2 DfgLutUv(vec2 uv) { return vec2(uv.x / 3.0, uv.y); }
+
+vec2 LtcLutUv(vec2 uv, float tile) {
+  // Half-texel bias inside a 64-wide tile so bilinear taps interpolate
+  // between fitted samples without crossing tile boundaries.
+  vec2 t = uv * (63.0 / 64.0) + 0.5 / 64.0;
+  return vec2((t.x + tile) / 3.0, t.y);
+}
+
+// Rect area lights via linearly transformed cosines, following "Real-Time
+// Polygonal-Light Shading with Linearly Transformed Cosines" (Heitz, Dupuy,
+// Hill, Neubelt 2016). The edge integral uses the course-notes polynomial
+// fit for theta / sin(theta); the horizon uses the closed-form
+// clipped-sphere approximation, which trades exact clipping for a
+// branch-free evaluation.
+vec3 LtcEdgeVector(vec3 v1, vec3 v2) {
+  float x = dot(v1, v2);
+  float y = abs(x);
+  float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+  float b = 3.4175940 + (4.1616724 + y) * y;
+  float v = a / b;
+  float theta_sintheta =
+      x > 0.0 ? v : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - v;
+  return cross(v1, v2) * theta_sintheta;
+}
+
+float LtcClippedSphere(vec3 f) {
+  float l = length(f);
+  return max((l * l + f.z) / (l + 1.0), 0.0);
+}
+
+// Integrates the transformed clamped-cosine over the rect [c0..c3] (counter
+// clockwise seen from the lit side) as seen from point [p] with normal [n]
+// and view direction [v].
+float LtcIntegrate(vec3 n, vec3 v, vec3 p, mat3 inv_m, vec3 c0, vec3 c1,
+                   vec3 c2, vec3 c3) {
+  vec3 t1 = normalize(v - n * dot(v, n));
+  vec3 t2 = -cross(n, t1);
+  mat3 to_cosine = inv_m * transpose(mat3(t1, t2, n));
+  vec3 l0 = normalize(to_cosine * (c0 - p));
+  vec3 l1 = normalize(to_cosine * (c1 - p));
+  vec3 l2 = normalize(to_cosine * (c2 - p));
+  vec3 l3 = normalize(to_cosine * (c3 - p));
+  vec3 form = LtcEdgeVector(l0, l1) + LtcEdgeVector(l1, l2) +
+              LtcEdgeVector(l2, l3) + LtcEdgeVector(l3, l0);
+  return LtcClippedSphere(form);
+}
+
 // Empirical specular occlusion derived from the diffuse occlusion factor,
 // the view angle, and roughness (Lagarde and de Rousiers 2014, "Physically
 // Based Rendering" course notes). Rough surfaces are returned unchanged;
@@ -696,7 +747,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // the V axis; sampled slightly inside [0, 1] to avoid edge-tap artifacts.
   vec2 f_ab = texture(
                   brdf_lut,
-                  clamp(vec2(n_dot_v_energy, roughness), 0.0, 0.99))
+                  DfgLutUv(clamp(vec2(n_dot_v_energy, roughness), 0.0, 0.99)))
                   .rg;
 
   // Single- and multiple-scattering energy compensation (Fdez-Aguera 2019;
@@ -797,7 +848,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
       coat_prefiltered = mix(coat_prefiltered, coat_prefiltered_b, env_blend);
     }
     vec2 coat_ab = texture(
-        brdf_lut, vec2(coat_n_dot_v, min(coat_roughness, 0.99))).rg;
+        brdf_lut,
+        DfgLutUv(vec2(coat_n_dot_v, min(coat_roughness, 0.99)))).rg;
     coat_ibl = coat_prefiltered *
                (vec3(0.04) * coat_ab.x + coat_ab.y) *
                frag_info.environment_intensity;
@@ -860,6 +912,40 @@ vec4 EvaluateLighting(MaterialInputs material) {
     vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
     float type = l0.w;
     vec3 radiance = l1.rgb;
+    if (type > 2.5) {
+      // Rect area light. Texel 2 carries the world right axis and width,
+      // texel 3 the up axis and height; the light emits along
+      // cross(right, up). The LTC form factor bakes in the cosine lobe and
+      // inverse-square falloff, so only the range window applies here.
+      // TODO(area-clearcoat): the clearcoat lobe ignores area lights.
+      vec4 a2 = FetchPunctualTexel(light_row, 2);
+      vec4 a3 = FetchPunctualTexel(light_row, 3);
+      vec3 half_w = a2.xyz * (a2.w * 0.5);
+      vec3 half_h = a3.xyz * (a3.w * 0.5);
+      vec3 c0 = l0.xyz - half_w - half_h;
+      vec3 c1 = l0.xyz + half_w - half_h;
+      vec3 c2 = l0.xyz + half_w + half_h;
+      vec3 c3 = l0.xyz - half_w + half_h;
+      vec3 to_center = l0.xyz - v_position;
+      float dist_sq = dot(to_center, to_center);
+      float factor = dist_sq * l1.w * l1.w;
+      float window = clamp(1.0 - factor * factor, 0.0, 1.0);
+      float facing =
+          step(0.0, dot(cross(c1 - c0, c3 - c0), v_position - c0));
+      vec2 ltc_uv = clamp(vec2(roughness, sqrt(1.0 - n_dot_v)), 0.0, 1.0);
+      vec4 t1 = texture(brdf_lut, LtcLutUv(ltc_uv, 1.0));
+      vec4 t2 = texture(brdf_lut, LtcLutUv(ltc_uv, 2.0));
+      mat3 inv_m = mat3(
+          vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w));
+      float spec_shape = LtcIntegrate(
+          normal, camera_normal, v_position, inv_m, c0, c1, c2, c3);
+      float diff_shape = LtcIntegrate(
+          normal, camera_normal, v_position, mat3(1.0), c0, c1, c2, c3);
+      vec3 spec_color = reflectance * t2.x + (vec3(1.0) - reflectance) * t2.y;
+      direct += radiance * (window * window) * facing *
+                (spec_color * spec_shape * material.specular +
+                 albedo * (1.0 - metallic) * diff_shape);
+    } else {
     vec3 punctual_light_vector;
     if (type < 0.5) {
       // Directional: the travel direction is in texel 2; no attenuation.
@@ -906,6 +992,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
         punctual_light_vector, radiance, coat_normal, camera_normal,
         coat_roughness);
 #endif
+    }
   }
 
   vec3 emissive = material.emissive;
