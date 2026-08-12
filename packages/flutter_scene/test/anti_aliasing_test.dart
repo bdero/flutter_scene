@@ -46,6 +46,13 @@ void main() {
     }
   });
 
+  test('smaa resolves to itself on every backend', () {
+    final scene = Scene();
+    scene.antiAliasingMode = AntiAliasingMode.smaa;
+    expect(scene.effectiveAntiAliasingMode, AntiAliasingMode.smaa);
+    expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.smaa), isTrue);
+  });
+
   test('auto resolves to msaa exactly when msaa is supported', () {
     final scene = Scene();
     scene.antiAliasingMode = AntiAliasingMode.auto;
