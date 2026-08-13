@@ -97,9 +97,9 @@ final class SceneSourceLoader {
   bool deactivateOnAccessError(Object error, String key) {
     if (error is! FileSystemException) return false;
     final errno = error.osError?.errorCode;
-    // EPERM, EACCES, and Windows ERROR_ACCESS_DENIED.
-    final denied =
-        errno == 1 || errno == 13 || (Platform.isWindows && errno == 5);
+    // POSIX EPERM/EACCES; Windows OSError carries Win32 codes, where 1/13
+    // mean something unrelated and denial is ERROR_ACCESS_DENIED.
+    final denied = Platform.isWindows ? errno == 5 : errno == 1 || errno == 13;
     if (!denied) {
       debugPrint(
         'flutter_scene: failed reading scene source "$key" '

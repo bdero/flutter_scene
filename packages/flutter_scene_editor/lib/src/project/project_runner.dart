@@ -34,6 +34,7 @@ class ProjectRunner extends ChangeNotifier {
 
   final List<ConsoleLine> console = [];
   Process? _build;
+  bool _disposed = false;
   bool _notifyScheduled = false;
 
   bool get building => _build != null;
@@ -52,12 +53,13 @@ class ProjectRunner extends ChangeNotifier {
     if (console.length > maxConsoleLines + _trimSlack) {
       console.removeRange(0, console.length - maxConsoleLines);
     }
-    // One stdout chunk can split into many lines; notify once per burst.
-    if (_notifyScheduled) return;
+    // One stdout chunk can split into many lines; notify once per burst,
+    // and never after dispose (the deferred notify can outlive the runner).
+    if (_notifyScheduled || _disposed) return;
     _notifyScheduled = true;
     scheduleMicrotask(() {
       _notifyScheduled = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     });
   }
 
@@ -211,6 +213,7 @@ class ProjectRunner extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     stopBuild();
     super.dispose();
   }

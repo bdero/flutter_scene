@@ -49,6 +49,11 @@ enum ManagedCheckoutPhase {
 class ManagedCheckoutJob extends ChangeNotifier {
   ManagedCheckoutJob._();
 
+  static const int _maxLogLines = 500;
+  // Trim in chunks; trimming one line per append is O(length) every line
+  // once the buffer is at capacity.
+  static const int _trimSlack = 128;
+
   ManagedCheckoutPhase _phase = ManagedCheckoutPhase.preflight;
   final List<String> log = [];
   String? error;
@@ -56,6 +61,8 @@ class ManagedCheckoutJob extends ChangeNotifier {
   bool cancelled = false;
   FlutterInstallation? result;
   Process? _current;
+  bool _disposed = false;
+  bool _notifyScheduled = false;
 
   ManagedCheckoutPhase get phase => _phase;
 
@@ -66,22 +73,37 @@ class ManagedCheckoutJob extends ChangeNotifier {
 
   void _line(String message) {
     log.add(message);
-    if (log.length > 500) log.removeRange(0, log.length - 500);
-    notifyListeners();
+    if (log.length > _maxLogLines + _trimSlack) {
+      log.removeRange(0, log.length - _maxLogLines);
+    }
+    // A clone/precache burst emits many lines per event; notify once per
+    // burst, and never after dispose.
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    scheduleMicrotask(() {
+      _notifyScheduled = false;
+      if (!_disposed) notifyListeners();
+    });
   }
 
   void _finish({String? error, FlutterInstallation? result}) {
     this.error = error;
     this.result = result;
     done = true;
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   /// Stops the job; the partial checkout directory is removed.
   void cancel() {
     cancelled = true;
     _current?.kill();
-    notifyListeners();
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 
