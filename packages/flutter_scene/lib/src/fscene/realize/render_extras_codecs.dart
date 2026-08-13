@@ -458,8 +458,7 @@ class SplatCodec extends ComponentCodec {
     );
     final tint = properties['tint'];
     if (tint is Vec4Value) component.tint = tint.value.clone();
-    final shDegree = properties['shDegree'];
-    if (shDegree is IntValue) component.shDegree = shDegree.value;
+    component.shDegree = readInt(properties, 'shDegree', component.shDegree);
     final antialiased = properties['antialiased'];
     if (antialiased is BoolValue) component.antialiased = antialiased.value;
     final crop = properties['crop'];

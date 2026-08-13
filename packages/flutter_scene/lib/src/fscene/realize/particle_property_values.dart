@@ -19,13 +19,8 @@ library;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
-
-double _d(PropertyValue? v, [double fallback = 0.0]) => switch (v) {
-  DoubleValue(:final value) => value,
-  IntValue(:final value) => value.toDouble(),
-  _ => fallback,
-};
 
 // --- ParticleCurve ---
 
@@ -45,7 +40,10 @@ ParticleCurve decodeParticleCurve(PropertyValue? value) {
     for (final entry in (value.values['keys']! as ListValue).values) {
       if (entry is MapValue) {
         keys.add(
-          ParticleKeyframe(_d(entry.values['t']), _d(entry.values['v'])),
+          ParticleKeyframe(
+            readDouble(entry.values, 't', 0),
+            readDouble(entry.values, 'v', 0),
+          ),
         );
       }
     }
@@ -77,7 +75,7 @@ ColorGradient decodeColorGradient(PropertyValue? value) {
         final color = c is ColorValue
             ? Vector4(c.r, c.g, c.b, c.a)
             : Vector4(1, 1, 1, 1);
-        stops.add(ColorStop(_d(entry.values['t']), color));
+        stops.add(ColorStop(readDouble(entry.values, 't', 0), color));
       }
     }
   }
@@ -123,16 +121,19 @@ FloatDistribution decodeFloatDistribution(
       ? (m['kind']! as StringValue).value
       : 'constant';
   return switch (kind) {
-    'uniform' => UniformFloat(_d(m['min'], fallback), _d(m['max'], fallback)),
+    'uniform' => UniformFloat(
+      readDouble(m, 'min', fallback),
+      readDouble(m, 'max', fallback),
+    ),
     'curve' => CurveFloat(
       decodeParticleCurve(m['curve']),
-      scale: _d(m['scale'], 1.0),
+      scale: readDouble(m, 'scale', 1.0),
     ),
     'uniformCurve' => UniformCurveFloat(
       decodeParticleCurve(m['min']),
       decodeParticleCurve(m['max']),
     ),
-    _ => ConstantFloat(_d(m['value'], fallback)),
+    _ => ConstantFloat(readDouble(m, 'value', fallback)),
   };
 }
 

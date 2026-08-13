@@ -108,6 +108,11 @@ abstract class ComponentCodec {
 
   /// Serializes [component] to a [ComponentSpec], or returns null if this
   /// codec does not handle that component instance.
+  ///
+  /// The returned spec must be freshly built (or a copy); the registry
+  /// adjusts its properties in place, so a spec aliased by the live
+  /// component (a retained placeholder spec) would see snapshots change
+  /// retroactively.
   ComponentSpec? serialize(Component component, SerializeContext context);
 
   /// The declared default for property [name], or null when the property has no
