@@ -242,6 +242,20 @@ void buildScenes({
         if (payloadAsset != null) {
           inlineExternalPayloadAsset(fsceneDocument, payloadAsset);
         }
+        // `.fmat` refs are authored relative to the document; the built app
+        // resolves them through the DataAssets material registry, which keys
+        // sources package-relative.
+        final documentDirEnd = inputFilePath
+            .replaceAll('\\', '/')
+            .lastIndexOf('/');
+        rebaseFmatMaterialRefs(
+          fsceneDocument,
+          documentDirEnd < 0
+              ? ''
+              : inputFilePath
+                    .replaceAll('\\', '/')
+                    .substring(0, documentDirEnd),
+        );
         File(
           outputSceneUri.toFilePath(),
         ).writeAsBytesSync(writeFsceneb(fsceneDocument));

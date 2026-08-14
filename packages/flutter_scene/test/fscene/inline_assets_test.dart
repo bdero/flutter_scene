@@ -206,6 +206,47 @@ void main() {
     expect((spec as PayloadEnvironment).payload, payload.id);
   });
 
+  test('rebases document-relative fmat refs to package-relative keys', () {
+    final document = SceneDocument();
+    final sibling = document.addResource(
+      MaterialResource(
+        document.newId(),
+        type: 'fmat',
+        asset: AssetRef('../materials/glass.fmat'),
+      ),
+    );
+    final local = document.addResource(
+      MaterialResource(
+        document.newId(),
+        type: 'fmat',
+        asset: AssetRef('inline.fmat'),
+      ),
+    );
+    final escaping = document.addResource(
+      MaterialResource(
+        document.newId(),
+        type: 'fmat',
+        asset: AssetRef('../../../outside.fmat'),
+      ),
+    );
+    final absolute = document.addResource(
+      MaterialResource(
+        document.newId(),
+        type: 'fmat',
+        asset: AssetRef('/abs/other.fmat'),
+      ),
+    );
+
+    rebaseFmatMaterialRefs(document, 'assets/scenes');
+
+    String? keyOf(LocalId id) =>
+        (document.resources[id] as MaterialResource?)?.asset?.key;
+    expect(keyOf(sibling.id), 'assets/materials/glass.fmat');
+    expect(keyOf(local.id), 'assets/scenes/inline.fmat');
+    expect(keyOf(escaping.id), '../../../outside.fmat');
+    expect(keyOf(absolute.id), '/abs/other.fmat');
+  });
+
   test('a missing image is left as a reference, not a build failure', () {
     final document = SceneDocument();
     final texture = document.addResource(

@@ -29,6 +29,48 @@ typedef ExternalImageAsset = ({String key, File file});
 /// A binary scene that supplies bytes for a textual scene's payload manifest.
 typedef ExternalPayloadAsset = ({String key, File file});
 
+/// Rewrites document-relative `.fmat` material references in [document] to
+/// package-relative keys, so the cooked `.fsceneb` resolves them through the
+/// DataAssets material registry (which keys `.fmat` sources by their
+/// package-relative path). [documentDir] is the scene source's directory
+/// relative to the package root, empty when the scene sits at the root.
+/// Absolute references and ones that escape the package root are left
+/// unchanged (they cannot resolve in a built app; the load reports them).
+void rebaseFmatMaterialRefs(SceneDocument document, String documentDir) {
+  for (final entry in document.resources.entries.toList()) {
+    final resource = entry.value;
+    if (resource is! MaterialResource || resource.type != 'fmat') continue;
+    final asset = resource.asset;
+    if (asset == null) continue;
+    final key = asset.key.replaceAll('\\', '/');
+    if (key.startsWith('/') || RegExp(r'^[A-Za-z]:/').hasMatch(key)) continue;
+    final out = <String>[];
+    var escaped = false;
+    for (final segment in [...documentDir.split('/'), ...key.split('/')]) {
+      if (segment.isEmpty || segment == '.') continue;
+      if (segment == '..') {
+        if (out.isEmpty) {
+          escaped = true;
+          break;
+        }
+        out.removeLast();
+        continue;
+      }
+      out.add(segment);
+    }
+    if (escaped || out.isEmpty) continue;
+    final rebased = out.join('/');
+    if (rebased == asset.key) continue;
+    document.resources[entry.key] = MaterialResource(
+      resource.id,
+      type: resource.type,
+      name: resource.name,
+      properties: resource.properties,
+      asset: AssetRef(rebased),
+    );
+  }
+}
+
 /// Resolves the optional payload sidecar referenced by [document].
 ExternalPayloadAsset? resolveExternalPayloadAsset(
   SceneDocument document,
