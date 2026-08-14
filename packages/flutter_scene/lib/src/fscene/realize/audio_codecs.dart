@@ -93,6 +93,27 @@ class AudioSourceCodec extends DeclarativeComponentCodec<ClipAudioSource> {
   String get type => 'audioSource';
 
   @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'audio',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(),
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('attenuation.minDistance'),
+        visibility: GizmoVisibility.selected,
+        when: GizmoCondition('positional', 'true'),
+      ),
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('attenuation.maxDistance'),
+        visibility: GizmoVisibility.selected,
+        color: GizmoColor(1, 1, 1, 0.3),
+        when: GizmoCondition('positional', 'true'),
+      ),
+    ]),
+  );
+
+  @override
   List<ComponentField<ClipAudioSource>> get fields => [
     ComponentField(
       const ComponentPropertyDef(
@@ -198,6 +219,14 @@ class AudioSourceCodec extends DeclarativeComponentCodec<ClipAudioSource> {
 class AudioListenerCodec extends DeclarativeComponentCodec<AudioListener> {
   @override
   String get type => 'audioListener';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'audio-listener',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([GizmoIcon()]),
+  );
 
   @override
   List<ComponentField<AudioListener>> get fields => const [];

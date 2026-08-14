@@ -80,6 +80,43 @@ class EnvironmentVolumeCodec
   @override
   String get type => 'environmentVolume';
 
+  // The teal the editor's old hard-coded volume overlay used, solid for the
+  // region and faint for the blend shell.
+  static const _regionColor = GizmoColor(0.204, 0.839, 0.784);
+  static const _blendColor = GizmoColor(0.204, 0.839, 0.784, 0.33);
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'environment',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(),
+      GizmoWireBox(
+        halfExtentsBind: 'extents',
+        color: _regionColor,
+        when: GizmoCondition('shape', 'box'),
+      ),
+      GizmoWireBox(
+        halfExtentsBind: 'extents',
+        inflate: GizmoScalar.bind('blendDistance'),
+        color: _blendColor,
+        when: GizmoCondition('shape', 'box'),
+      ),
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('radius'),
+        color: _regionColor,
+        when: GizmoCondition('shape', 'sphere'),
+      ),
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('radius'),
+        inflate: GizmoScalar.bind('blendDistance'),
+        color: _blendColor,
+        when: GizmoCondition('shape', 'sphere'),
+      ),
+    ]),
+  );
+
   @override
   List<ComponentField<EnvironmentVolumeComponent>> get fields => [
     ComponentField.resourceRef(
@@ -745,6 +782,31 @@ class DirectionalLightCodec
   @override
   String get type => 'directionalLight';
 
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'light-sun',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(color: GizmoColor.bind('color')),
+      // Travel direction; the node's rotation aims the light along local +Z.
+      // TODO(gizmo-aimed): a code-constructed .aimed light travels along
+      // localDirection instead; bind it once optional binds exist.
+      GizmoArrow(length: GizmoScalar(1.4)),
+      // Eight sun rays in the local XY plane, behind the arrow.
+      GizmoLines([
+        0.30, 0, 0, 0.50, 0, 0, //
+        0.21, 0.21, 0, 0.35, 0.35, 0, //
+        0, 0.30, 0, 0, 0.50, 0, //
+        -0.21, 0.21, 0, -0.35, 0.35, 0, //
+        -0.30, 0, 0, -0.50, 0, 0, //
+        -0.21, -0.21, 0, -0.35, -0.35, 0, //
+        0, -0.30, 0, 0, -0.50, 0, //
+        0.21, -0.21, 0, 0.35, -0.35, 0,
+      ], visibility: GizmoVisibility.selected),
+    ]),
+  );
+
   // Declared in serialize order so serialization matches the format's
   // existing key order. Defaults are the single source for realize fallbacks.
   @override
@@ -920,6 +982,21 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
   String get type => 'pointLight';
 
   @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'light-point',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(color: GizmoColor.bind('color')),
+      // Zero range means infinite and draws nothing.
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('range'),
+        visibility: GizmoVisibility.selected,
+      ),
+    ]),
+  );
+
+  @override
   List<ComponentField<PointLightComponent>> get fields => [
     ComponentField.vec3(
       'color',
@@ -964,6 +1041,31 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
 class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
   @override
   String get type => 'spotLight';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'light-spot',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(color: GizmoColor.bind('color')),
+      GizmoArrow(axisBind: 'direction', length: GizmoScalar(0.8)),
+      // Unranged cones draw a representative reach in the editor.
+      GizmoWireCone(
+        angle: GizmoScalar.bind('outerConeAngle'),
+        range: GizmoScalar.bind('range'),
+        axisBind: 'direction',
+        visibility: GizmoVisibility.selected,
+      ),
+      GizmoWireCone(
+        angle: GizmoScalar.bind('innerConeAngle'),
+        range: GizmoScalar.bind('range'),
+        axisBind: 'direction',
+        visibility: GizmoVisibility.selected,
+        color: GizmoColor(1, 1, 1, 0.35),
+      ),
+    ]),
+  );
 
   @override
   List<ComponentField<SpotLightComponent>> get fields => [
@@ -1100,6 +1202,22 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
 class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
   @override
   String get type => 'camera';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'camera',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(),
+      GizmoFrustum(
+        fovY: GizmoScalar.bind('fovRadiansY'),
+        near: GizmoScalar.bind('near'),
+        far: GizmoScalar.bind('far'),
+        visibility: GizmoVisibility.selected,
+      ),
+    ]),
+  );
 
   @override
   List<ComponentField<CameraComponent>> get fields => [
@@ -1383,6 +1501,23 @@ class RectAreaLightCodec
     extends DeclarativeComponentCodec<RectAreaLightComponent> {
   @override
   String get type => 'rectAreaLight';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'light-area',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(color: GizmoColor.bind('color')),
+      // The emitting panel: width along local X, height along local Y,
+      // radiating along +Z.
+      GizmoWireRect(
+        width: GizmoScalar.bind('width'),
+        height: GizmoScalar.bind('height'),
+      ),
+      GizmoArrow(length: GizmoScalar(0.6)),
+    ]),
+  );
 
   @override
   List<ComponentField<RectAreaLightComponent>> get fields => [

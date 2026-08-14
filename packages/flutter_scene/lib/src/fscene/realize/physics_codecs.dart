@@ -636,6 +636,48 @@ class ColliderCodec extends DeclarativeComponentCodec<Collider> {
   @override
   String get type => 'collider';
 
+  // Collision-shape green.
+  static const _shapeColor = GizmoColor(0.45, 0.89, 0.45, 0.9);
+
+  // TODO(gizmo-local-pose): the wires ignore the collider's localPose;
+  // compose it into the primitive transform once specs can carry it.
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'physics',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('shape.radius'),
+        color: _shapeColor,
+        when: GizmoCondition('shape.kind', 'sphere'),
+      ),
+      GizmoWireBox(
+        halfExtentsBind: 'shape.halfExtents',
+        color: _shapeColor,
+        when: GizmoCondition('shape.kind', 'box'),
+      ),
+      GizmoWireCapsule(
+        radius: GizmoScalar.bind('shape.radius'),
+        halfHeight: GizmoScalar.bind('shape.halfHeight'),
+        color: _shapeColor,
+        when: GizmoCondition('shape.kind', 'capsule'),
+      ),
+      GizmoWireCylinder(
+        radius: GizmoScalar.bind('shape.radius'),
+        halfHeight: GizmoScalar.bind('shape.halfHeight'),
+        color: _shapeColor,
+        when: GizmoCondition('shape.kind', 'cylinder'),
+      ),
+      // Mesh-derived shapes have no declarative wireframe (code tier later);
+      // an icon keeps them findable and clickable.
+      GizmoIcon(when: GizmoCondition('shape.kind', 'convexHull')),
+      GizmoIcon(when: GizmoCondition('shape.kind', 'triMesh')),
+      GizmoIcon(when: GizmoCondition('shape.kind', 'heightField')),
+      GizmoIcon(when: GizmoCondition('shape.kind', 'compound')),
+    ]),
+  );
+
   @override
   List<ComponentField<Collider>> get fields => [
     ComponentField(

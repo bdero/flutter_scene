@@ -169,4 +169,111 @@ void main() {
       expect(schemas.single.type, 'spin');
     });
   });
+
+  group('gizmo specs', () {
+    test('every primitive round-trips through tagged JSON', () {
+      const spec = GizmoSpec([
+        GizmoIcon(
+          glyph: 'light-sun',
+          size: 32,
+          color: GizmoColor.bind('color'),
+        ),
+        GizmoArrow(axis: [0, 0, 1], length: GizmoScalar(1.2)),
+        GizmoLines(
+          [0, 0, 0, 1, 0, 0],
+          visibility: GizmoVisibility.selected,
+          color: GizmoColor(1, 1, 1, 0.35),
+        ),
+        GizmoWireSphere(
+          radius: GizmoScalar.bind('range'),
+          center: [0, 1, 0],
+          xray: false,
+        ),
+        GizmoWireBox(
+          halfExtentsBind: 'shape.halfExtents',
+          inflate: GizmoScalar.bind('blendDistance'),
+        ),
+        GizmoWireBox(halfExtents: [1, 2, 3], center: [0, 0, 1]),
+        GizmoWireRect(
+          width: GizmoScalar.bind('width'),
+          height: GizmoScalar.bind('height'),
+        ),
+        GizmoWireCircle(radius: GizmoScalar(0.25), axis: [0, 1, 0]),
+        GizmoWireCone(
+          angle: GizmoScalar.bind('outerConeAngle'),
+          range: GizmoScalar.bind('range', scale: 0.5),
+          when: GizmoCondition('shape.kind', 'cone'),
+        ),
+        GizmoWireCapsule(
+          radius: GizmoScalar.bind('shape.radius'),
+          halfHeight: GizmoScalar.bind('shape.halfHeight'),
+        ),
+        GizmoFrustum(
+          fovY: GizmoScalar.bind('fovRadiansY'),
+          near: GizmoScalar.bind('near'),
+          far: GizmoScalar.bind('far'),
+          visibility: GizmoVisibility.selected,
+        ),
+      ]);
+      final reread = GizmoSpec.fromJson(spec.toJson())!;
+      expect(reread.primitives, hasLength(spec.primitives.length));
+      for (var i = 0; i < spec.primitives.length; i++) {
+        expect(
+          reread.primitives[i].toJson(),
+          spec.primitives[i].toJson(),
+          reason: spec.primitives[i].kind,
+        );
+        expect(
+          reread.primitives[i].runtimeType,
+          spec.primitives[i].runtimeType,
+        );
+      }
+    });
+
+    test('scalar and color parameters encode compactly', () {
+      expect(const GizmoScalar(2.5).toJson(), 2.5);
+      expect(const GizmoScalar.bind('range').toJson(), {'bind': 'range'});
+      expect(const GizmoScalar.bind('range', scale: 2).toJson(), {
+        'bind': 'range',
+        'scale': 2,
+      });
+      expect(const GizmoColor(1, 0.5, 0, 1).toJson(), [1, 0.5, 0, 1]);
+      expect(const GizmoColor.bind('color').toJson(), {'bind': 'color'});
+      expect(GizmoColor.fromJson([1, 0, 0])!.a, 1);
+    });
+
+    test('unknown primitive kinds are skipped', () {
+      final spec = GizmoSpec.fromJson({
+        'primitives': [
+          {'kind': 'icon'},
+          {'kind': 'holoField', 'wobble': 3},
+          'not a map',
+          {'kind': 'lines', 'points': 'malformed'},
+        ],
+      })!;
+      expect(spec.primitives, hasLength(1));
+      expect(spec.primitives.single, isA<GizmoIcon>());
+    });
+
+    test('component schemas carry the gizmo block', () {
+      const schema = ComponentSchema(
+        'pointLight',
+        gizmo: GizmoSpec([
+          GizmoIcon(color: GizmoColor.bind('color')),
+          GizmoWireSphere(
+            radius: GizmoScalar.bind('range'),
+            visibility: GizmoVisibility.selected,
+          ),
+        ]),
+      );
+      final reread = ComponentSchema.fromJson(schema.toJson());
+      expect(reread.gizmo, isNotNull);
+      expect(reread.gizmo!.primitives, hasLength(2));
+      expect(reread.gizmo!.toJson(), schema.gizmo!.toJson());
+      expect(
+        ComponentSchema.fromJson(const ComponentSchema('bare').toJson()).gizmo,
+        isNull,
+      );
+    });
+  });
 }

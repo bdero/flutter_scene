@@ -6,6 +6,25 @@
 /// codec, schema manifest, and project registrar.
 library;
 
+export 'package:scene/schema.dart'
+    show
+        GizmoArrow,
+        GizmoColor,
+        GizmoCondition,
+        GizmoFrustum,
+        GizmoIcon,
+        GizmoLines,
+        GizmoPrimitive,
+        GizmoScalar,
+        GizmoSpec,
+        GizmoVisibility,
+        GizmoWireBox,
+        GizmoWireCapsule,
+        GizmoWireCircle,
+        GizmoWireCone,
+        GizmoWireCylinder,
+        GizmoWireRect,
+        GizmoWireSphere;
 export 'src/fscene/annotations.dart'
     show
         AngleProperty,
@@ -19,6 +38,7 @@ export 'src/fscene/annotations.dart'
         QuaternionProperty,
         ResourceProperty,
         SceneComponent,
+        SceneGizmo,
         SceneProperty,
         StringProperty,
         Vec2Property,
