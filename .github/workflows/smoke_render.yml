@@ -8,6 +8,13 @@ name: smoke render
 # merge) and the nightly schedule both refresh that baseline, so an approved
 # rendering change lands as soon as it merges instead of waiting for the next
 # night. Notifies Discord when a non-PR run fails.
+#
+# Manually dispatching on the stable branch renders against the Flutter stable
+# channel and uploads under stable_-prefixed build names tracked on the stable
+# reference branch, so stable goldens live in their own shards with their own
+# baselines, fully separate from the master ones.
+# TODO(stable-smoke): the macOS/iOS Codemagic shards only cover master; extend
+# codemagic_smoke.yml with the same stable parameterization to cover them.
 
 on:
   workflow_dispatch:
@@ -29,8 +36,10 @@ jobs:
   smoke_render:
     uses: ./.github/workflows/smoke_render_jobs.yml
     with:
-      flutter_channel: master
-      label: Flutter master
+      flutter_channel: ${{ github.ref_name == 'stable' && 'stable' || 'master' }}
+      label: ${{ github.ref_name == 'stable' && 'Flutter stable' || 'Flutter master' }}
+      argos_prefix: ${{ github.ref_name == 'stable' && 'stable_' || '' }}
+      reference_branch: ${{ github.ref_name == 'stable' && 'stable' || '' }}
       # Upload on master pushes too, so a merge refreshes the Argos baseline
       # immediately (an approved rendering change lands on merge, not only at
       # the next nightly).
