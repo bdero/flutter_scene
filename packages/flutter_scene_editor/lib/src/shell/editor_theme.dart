@@ -9,6 +9,11 @@ const _text = Color(0xFFD4D9DE);
 const _mutedText = Color(0xFF9099A2);
 const _signal = Color(0xFF44B3E7);
 
+// Prefab-linked content accents (outliner member rows, inspector banners),
+// readable on _ink/_graphite and distinct from the _signal selection blue.
+const _prefabTint = Color(0xFF64C2B2);
+const _prefabShade = Color(0xFF1D3B35);
+
 /// Axis colors shared by transform controls and gizmos.
 const editorAxisColors = [
   Color(0xFFE05252),
@@ -114,7 +119,15 @@ class EditorThemeScope extends StatelessWidget {
 /// Existing shell and viewport widgets keep using Material while controls move
 /// behind the editor's Forui-backed component layer.
 ThemeData editorDarkTheme() {
-  return editorForuiDarkTheme.toApproximateMaterialTheme().copyWith(
+  final base = editorForuiDarkTheme.toApproximateMaterialTheme();
+  return base.copyWith(
+    // The Forui approximation maps tertiary to a near-background shade,
+    // which made prefab-member rows unreadable.
+    colorScheme: base.colorScheme.copyWith(
+      tertiary: _prefabTint,
+      tertiaryContainer: _prefabShade,
+      onTertiaryContainer: _text,
+    ),
     visualDensity: VisualDensity.compact,
     splashFactory: InkSparkle.splashFactory,
     scaffoldBackgroundColor: _ink,
