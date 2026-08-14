@@ -11,6 +11,7 @@ library;
 
 import 'package:scene/src/json/property_json.dart';
 import 'package:scene/src/property_value.dart';
+import 'package:scene/src/schema/gizmo_spec.dart';
 import 'package:scene/src/schema/property_constraints.dart';
 
 /// The editable type of one component property, used by the inspector to
@@ -260,6 +261,7 @@ class ComponentSchema {
     this.version = 1,
     this.formerTypes = const [],
     this.properties = const [],
+    this.gizmo,
   });
 
   /// The component type tag used in documents.
@@ -280,6 +282,9 @@ class ComponentSchema {
   /// The declared properties, in display order.
   final List<ComponentPropertyDef> properties;
 
+  /// The optional editor gizmo block; see [GizmoSpec].
+  final GizmoSpec? gizmo;
+
   /// The descriptor for [name], accepting [ComponentPropertyDef.formerNames].
   ComponentPropertyDef? property(String name) {
     for (final def in properties) {
@@ -295,6 +300,7 @@ class ComponentSchema {
     if (version != 1) 'version': version,
     if (formerTypes.isNotEmpty) 'formerTypes': formerTypes,
     'properties': [for (final def in properties) def.toJson()],
+    if (gizmo != null) 'gizmo': gizmo!.toJson(),
   };
 
   static ComponentSchema fromJson(Map<String, Object?> json) {
@@ -315,6 +321,7 @@ class ComponentSchema {
             if (entry is Map)
               ComponentPropertyDef.fromJson(entry.cast<String, Object?>()),
       ],
+      gizmo: GizmoSpec.fromJson(json['gizmo']),
     );
   }
 }

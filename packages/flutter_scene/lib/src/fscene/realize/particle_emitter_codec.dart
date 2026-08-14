@@ -757,6 +757,14 @@ class ParticleEmitterCodec
   String get type => 'particleEmitter';
 
   @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'particles',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([GizmoIcon()]),
+  );
+
+  @override
   List<ComponentField<ParticleEmitterComponent>> get fields => [
     ...particleSystemFields<ParticleEmitterComponent>((c) => c.system),
     ComponentField.enumString(
@@ -872,6 +880,14 @@ class MeshParticleEmitterCodec
     extends DeclarativeComponentCodec<MeshParticleEmitterComponent> {
   @override
   String get type => 'meshParticleEmitter';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'particles',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([GizmoIcon()]),
+  );
 
   // The realized geometries and material, stamped per component at realize
   // time; the component holds them privately, so serialize recovers the

@@ -33,6 +33,20 @@ class SceneComponent {
   final List<String> formerTypes;
 }
 
+/// Attaches a declarative editor gizmo to a `@SceneComponent` class: the
+/// ordered [primitives] the editor draws in its viewport for components of
+/// this type. Primitives must be const constructors from
+/// `package:scene/schema.dart` ([GizmoIcon], [GizmoArrow], wire shapes...),
+/// with scalar and color parameters either literal or bound to a property by
+/// dotted path ([GizmoScalar.bind], [GizmoColor.bind]).
+/// {@category Scene graph}
+class SceneGizmo {
+  const SceneGizmo(this.primitives);
+
+  /// The gizmo's primitives, in draw order.
+  final List<GizmoPrimitive> primitives;
+}
+
 /// Marks a field as an editable component property.
 ///
 /// The bare form derives the property kind from the field's declared type;

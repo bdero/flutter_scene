@@ -11,6 +11,25 @@ export 'src/schema/component_schema.dart'
         ComponentSchema,
         decodeComponentSchemas,
         encodeComponentSchemas;
+export 'src/schema/gizmo_spec.dart'
+    show
+        GizmoArrow,
+        GizmoColor,
+        GizmoCondition,
+        GizmoFrustum,
+        GizmoIcon,
+        GizmoLines,
+        GizmoPrimitive,
+        GizmoScalar,
+        GizmoSpec,
+        GizmoVisibility,
+        GizmoWireBox,
+        GizmoWireCapsule,
+        GizmoWireCircle,
+        GizmoWireCone,
+        GizmoWireCylinder,
+        GizmoWireRect,
+        GizmoWireSphere;
 export 'src/schema/property_value_equality.dart' show propertyValuesEqual;
 export 'src/schema/property_constraints.dart'
     show

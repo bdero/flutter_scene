@@ -228,4 +228,36 @@ void main() {
     expect(fov.hardMin, greaterThan(0));
     expect(fov.hardMax, lessThan(3.15));
   });
+
+  test('builtin visual components declare gizmos that survive JSON', () {
+    for (final type in [
+      'directionalLight',
+      'pointLight',
+      'spotLight',
+      'rectAreaLight',
+      'camera',
+      'environmentVolume',
+      'audioSource',
+      'audioListener',
+      'collider',
+      'particleEmitter',
+      'meshParticleEmitter',
+    ]) {
+      final schema = registry.codecFor(type)!.schema;
+      expect(schema.gizmo, isNotNull, reason: type);
+      expect(schema.gizmo!.primitives, isNotEmpty, reason: type);
+      final reread = ComponentSchema.fromJson(schema.toJson());
+      expect(reread.gizmo!.toJson(), schema.gizmo!.toJson(), reason: type);
+    }
+    expect(registry.codecFor('mesh')!.schema.gizmo, isNull);
+  });
+
+  test('the spot cone binds its aim to the direction property', () {
+    final gizmo = registry.codecFor('spotLight')!.schema.gizmo!;
+    final cones = gizmo.primitives.whereType<GizmoWireCone>().toList();
+    expect(cones, hasLength(2));
+    for (final cone in cones) {
+      expect(cone.axisBind, 'direction');
+    }
+  });
 }
