@@ -19,13 +19,19 @@ class ProjectGenerationResult {
     required this.diagnostics,
     required this.filesWritten,
     Map<String, String>? sourcePaths,
-  }) : sourcePaths = sourcePaths ?? const {};
+    List<String>? filesDeleted,
+  }) : sourcePaths = sourcePaths ?? const {},
+       filesDeleted = filesDeleted ?? const [];
 
   /// Every extracted component schema, in source order.
   final List<ComponentSchema> schemas;
 
   /// The absolute source file declaring each component, keyed by type.
   final Map<String, String> sourcePaths;
+
+  /// Stale generated outputs removed this sweep (a `.fscene.dart` whose
+  /// source no longer declares components).
+  final List<String> filesDeleted;
 
   /// Extraction diagnostics across all files.
   final List<ExtractionDiagnostic> diagnostics;
@@ -41,10 +47,11 @@ class ProjectGenerationResult {
 /// components, writes `<file>.fscene.dart` beside each source declaring any,
 /// `lib/src/fscene_registrar.g.dart` (wiring dependency registrars found via
 /// the package-config manifest scan), and `flutter_scene_components.json` at
-/// the root. Idempotent, only changed files are rewritten. Throws
-/// [ArgumentError] when `lib/` is missing.
-// TODO(stale-outputs): remove .fscene.dart files whose source no longer
-// declares components.
+/// the root. Idempotent, only changed files are rewritten; a `.fscene.dart`
+/// whose source no longer declares components is deleted, and the registrar
+/// and manifest refresh even when the last component disappears, so a
+/// deleted component stops being registered instead of breaking the build.
+/// Throws [ArgumentError] when `lib/` is missing.
 ProjectGenerationResult generateProjectComponents(String projectRoot) {
   final root = Directory(projectRoot).absolute;
   final libDir = Directory('${root.path}/lib');
@@ -66,6 +73,7 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
   final codecLibraries = <({String importUri, List<String> codecClassNames})>[];
   final schemas = <ComponentSchema>[];
   final sourcePaths = <String, String>{};
+  final expectedOutputs = <String>{};
   final packageName = _packageName(root.path);
 
   for (final file in sources) {
@@ -98,6 +106,18 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
     for (final component in result.components) {
       sourcePaths[component.schema.type] = file.absolute.path;
     }
+    expectedOutputs.add(outPath);
+  }
+
+  // A generated codec whose source stopped declaring components (or was
+  // deleted outright) is stale; leaving it breaks the build once its
+  // component class is gone.
+  final deleted = <String>[];
+  for (final file in libDir.listSync(recursive: true).whereType<File>()) {
+    if (!file.path.endsWith('.fscene.dart')) continue;
+    if (expectedOutputs.contains(file.path)) continue;
+    file.deleteSync();
+    deleted.add(file.path);
   }
 
   final dependencyRegistrars = <({String importUri, String functionName})>[];
@@ -118,12 +138,19 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
   final registrarLibrary = packageName == null
       ? null
       : 'package:$packageName/$registrarPathUnderLib';
-  if (codecLibraries.isNotEmpty || dependencyRegistrars.isNotEmpty) {
+  // The registrar and manifest also refresh when they exist with nothing
+  // left to register (the last component was deleted): an emptied registrar
+  // keeps the app's registerProjectComponents() call compiling while
+  // registering nothing.
+  final registrarPath = '${libDir.path}/$registrarPathUnderLib';
+  final manifestPath = '${root.path}/$componentManifestFileName';
+  if (codecLibraries.isNotEmpty ||
+      dependencyRegistrars.isNotEmpty ||
+      File(registrarPath).existsSync()) {
     final registrar = generateProjectRegistrar(
       codecLibraries: codecLibraries,
       dependencyRegistrars: dependencyRegistrars,
     );
-    final registrarPath = '${libDir.path}/$registrarPathUnderLib';
     Directory('${libDir.path}/src').createSync(recursive: true);
     if (_writeIfChanged(registrarPath, registrar)) written.add(registrarPath);
     final manifest = encodeComponentManifest(
@@ -131,7 +158,6 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
       registrarLibrary: registrarLibrary,
       registrarFunction: registrarLibrary == null ? null : registrarFunction,
     );
-    final manifestPath = '${root.path}/$componentManifestFileName';
     if (_writeIfChanged(manifestPath, '$manifest\n')) {
       written.add(manifestPath);
     }
@@ -142,6 +168,7 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
     diagnostics: diagnostics,
     filesWritten: written,
     sourcePaths: sourcePaths,
+    filesDeleted: deleted,
   );
 }
 

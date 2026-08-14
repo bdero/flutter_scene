@@ -113,6 +113,30 @@ void main() {
     expect(File(path).existsSync(), isTrue);
   });
 
+  test('deletes stale codecs and empties the registrar on removal', () {
+    generateProjectComponents(tmp.path);
+    final codec = File('${tmp.path}/lib/components/spinner.fscene.dart');
+    final registrar = File('${tmp.path}/lib/src/fscene_registrar.g.dart');
+    expect(codec.existsSync(), isTrue);
+    expect(registrar.readAsStringSync(), contains('SpinnerCodec'));
+
+    // The component's class is deleted; the next sweep must retire every
+    // trace instead of leaving a codec referencing a missing class.
+    File(
+      '${tmp.path}/lib/components/spinner.dart',
+    ).writeAsStringSync('class Spinner {}\n');
+    final result = generateProjectComponents(tmp.path);
+    expect(result.filesDeleted, [codec.path]);
+    expect(result.schemas, isEmpty);
+    expect(codec.existsSync(), isFalse);
+    expect(registrar.existsSync(), isTrue);
+    expect(registrar.readAsStringSync(), isNot(contains('SpinnerCodec')));
+    final manifest = File(
+      '${tmp.path}/$componentManifestFileName',
+    ).readAsStringSync();
+    expect(manifest, isNot(contains('spinner')));
+  });
+
   test('is idempotent, a second run rewrites nothing', () {
     expect(run().exitCode, 0);
     final second = run();

@@ -233,6 +233,23 @@ class _EditorHomeState extends State<_EditorHome> {
         final schemas = await _session.fetchComponentSchemas();
         if (schemas == null || schemas.isEmpty) continue;
         if (!mounted) return;
+        // The app's registry is authoritative for app-derived types: a
+        // cache/live-provenance type absent from the fetch was deleted from
+        // the project (its stale cache entry would otherwise resurrect it
+        // every open). Source and package types re-derive locally.
+        final fetched = {for (final schema in schemas) schema.type};
+        final stale = [
+          for (final entry in _foreignSchemaProvenance.entries)
+            if ((entry.value == 'cache' || entry.value == 'live') &&
+                !fetched.contains(entry.key))
+              entry.key,
+        ];
+        for (final type in stale) {
+          _foreignSchemas.remove(type);
+          _foreignSchemaProvenance.remove(type);
+          _componentSourcePaths.remove(type);
+        }
+        if (stale.isNotEmpty) _controller?.retireForeignSchemas(stale);
         for (final schema in schemas) {
           _foreignSchemas[schema.type] = schema;
           _foreignSchemaProvenance[schema.type] = 'live';
@@ -422,6 +439,32 @@ class _EditorHomeState extends State<_EditorHome> {
         ConsoleLineKind.status,
       );
     }
+    for (final path in result.filesDeleted) {
+      _runner.addLine(
+        'Removed ${path.substring(root.length + 1)}',
+        ConsoleLineKind.status,
+      );
+    }
+    // Source-provenance types the sweep stopped yielding were deleted from
+    // the project; retire them everywhere (a type the running Play app still
+    // registers re-adopts as live until its next restart).
+    final current = {for (final schema in result.schemas) schema.type};
+    final gone = [
+      for (final entry in _foreignSchemaProvenance.entries)
+        if (entry.value == 'source' && !current.contains(entry.key)) entry.key,
+    ];
+    if (gone.isNotEmpty) {
+      for (final type in gone) {
+        _foreignSchemas.remove(type);
+        _foreignSchemaProvenance.remove(type);
+        _componentSourcePaths.remove(type);
+      }
+      _controller?.retireForeignSchemas(gone);
+      _pruneSchemaCache(project, gone);
+      for (final type in gone) {
+        _runner.addLine('Retired component "$type"', ConsoleLineKind.status);
+      }
+    }
     if (result.schemas.isEmpty) return;
     for (final schema in result.schemas) {
       _foreignSchemas[schema.type] = schema;
@@ -430,6 +473,21 @@ class _EditorHomeState extends State<_EditorHome> {
     _componentSourcePaths.addAll(result.sourcePaths);
     _controller?.componentSourcePaths.addAll(result.sourcePaths);
     _controller?.adoptForeignSchemas(result.schemas, provenance: 'source');
+  }
+
+  /// Drops [types] from the on-disk schema cache so a deleted component does
+  /// not resurrect from it at the next project open.
+  void _pruneSchemaCache(FProject project, List<String> types) {
+    try {
+      final file = File(_schemaCachePath(project));
+      if (!file.existsSync()) return;
+      final schemas = decodeComponentSchemas(
+        jsonDecode(file.readAsStringSync()),
+      ).where((schema) => !types.contains(schema.type)).toList();
+      file.writeAsStringSync(jsonEncode(encodeComponentSchemas(schemas)));
+    } catch (_) {
+      // A stale or corrupt cache regenerates on the next live fetch.
+    }
   }
 
   Future<void> _openProject() async {
