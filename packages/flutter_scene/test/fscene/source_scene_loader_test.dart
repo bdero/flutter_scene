@@ -154,6 +154,45 @@ void main() {
     expect(loader.isSourceKey('imported/missing.png'), isFalse);
   });
 
+  test(
+    'rebases fmat material references, healing under-root absolutes',
+    () async {
+      write('materials/glass.fmat', [1]);
+
+      final document = SceneDocument();
+      final relative = document.addResource(
+        MaterialResource(
+          document.newId(),
+          type: 'fmat',
+          asset: AssetRef('../materials/glass.fmat'),
+        ),
+      );
+      final absolute = document.addResource(
+        MaterialResource(
+          document.newId(),
+          type: 'fmat',
+          asset: AssetRef('${root.path}/materials/glass.fmat'),
+        ),
+      );
+      final external = document.addResource(
+        MaterialResource(
+          document.newId(),
+          type: 'fmat',
+          asset: AssetRef('/elsewhere/other.fmat'),
+        ),
+      );
+      writeText('scenes/level.fscene', writeFscene(document));
+
+      final loader = activeSceneSourceLoader()!;
+      final read = await loader.readDocument('scenes/level.fscene', {});
+      String? keyOf(LocalId id) =>
+          (read.resources[id] as MaterialResource?)?.asset?.key;
+      expect(keyOf(relative.id), 'materials/glass.fmat');
+      expect(keyOf(absolute.id), 'materials/glass.fmat');
+      expect(keyOf(external.id), '/elsewhere/other.fmat');
+    },
+  );
+
   test('only a permission denial deactivates source loading for the run', () {
     final loader = activeSceneSourceLoader()!;
     expect(loader.deactivateOnAccessError(StateError('other'), 'x'), isFalse);

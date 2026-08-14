@@ -161,16 +161,46 @@ Future<String?> pickFmatPath() async {
 /// directory, absolute otherwise. The source is referenced in place, never
 /// copied, since editing the original (and hot swapping the compiled shaders)
 /// is the point of an fmat material.
+/// Returns a document-relative ref for the `.fmat` at [path] (`../materials/
+/// glass.fmat` style, matching prefab refs) whenever the file lies inside the
+/// scene's enclosing Flutter project, else [path] unchanged. Absolute refs do
+/// not survive outside the authoring machine and the runtime material
+/// registry cannot resolve them, so relative is the persistent form; a file
+/// outside the project stays absolute (session-only) rather than climbing
+/// across the disk.
 String referenceFmatAsset(String? sceneDir, String path) {
-  if (sceneDir != null) {
-    final prefix = '$sceneDir${Platform.pathSeparator}';
-    if (path.startsWith(prefix)) {
-      return path
-          .substring(prefix.length)
-          .replaceAll(Platform.pathSeparator, '/');
+  if (sceneDir == null) return path;
+  final sep = Platform.pathSeparator;
+  final from = Directory(sceneDir).absolute.path;
+  final target = File(path).absolute.path;
+  var probe = Directory(from);
+  String? projectRoot;
+  while (true) {
+    if (File('${probe.path}${sep}pubspec.yaml').existsSync()) {
+      projectRoot = probe.path;
+      break;
     }
+    final parent = probe.parent;
+    if (parent.path == probe.path) break;
+    probe = parent;
   }
-  return path;
+  if (projectRoot == null) return path;
+  final rootPrefix = projectRoot.endsWith(sep)
+      ? projectRoot
+      : '$projectRoot$sep';
+  if (!target.startsWith(rootPrefix)) return path;
+  final fromParts = from.split(sep).where((s) => s.isNotEmpty).toList();
+  final targetParts = target.split(sep).where((s) => s.isNotEmpty).toList();
+  var common = 0;
+  while (common < fromParts.length &&
+      common < targetParts.length &&
+      fromParts[common] == targetParts[common]) {
+    common++;
+  }
+  return [
+    for (var i = common; i < fromParts.length; i++) '..',
+    ...targetParts.sublist(common),
+  ].join('/');
 }
 
 /// Creates an fmat material resource referencing the `.fmat` at [path] and
