@@ -34,6 +34,77 @@ class Blackboard {
   void _clear() => _entries.clear();
 }
 
+/// Observes one [RenderGraph.execute] run: pass boundaries with CPU times,
+/// every blackboard read/write, and every transient-texture acquisition.
+///
+/// Attached only for capture frames (the render graph inspector); steady
+/// state frames pay nothing. Reads and writes made while a pass executes
+/// belong to that pass; acquisitions made while the graph is being built
+/// (before execute) arrive with no current pass.
+abstract interface class RenderGraphObserver {
+  void onPassBegin(RenderGraphPass pass, int indexInGraph);
+  void onPassEnd(RenderGraphPass pass, int elapsedMicros);
+  void onBlackboardRead(Object key, Object? value);
+  void onBlackboardWrite(Object key, Object? value);
+  void onTextureAcquired(
+    TransientTextureDescriptor descriptor,
+    gpu.Texture texture,
+  );
+}
+
+/// A [Blackboard] view that reports every access to an observer while
+/// delegating storage to the wrapped board.
+class _RecordingBlackboard extends Blackboard {
+  _RecordingBlackboard(this._inner, this._observer);
+
+  final Blackboard _inner;
+  final RenderGraphObserver _observer;
+
+  @override
+  T? get<T>(Object key) {
+    final value = _inner.get<T>(key);
+    _observer.onBlackboardRead(key, value);
+    return value;
+  }
+
+  @override
+  T require<T>(Object key) {
+    final value = _inner.require<T>(key);
+    _observer.onBlackboardRead(key, value);
+    return value;
+  }
+
+  @override
+  void set(Object key, Object? value) {
+    _inner.set(key, value);
+    _observer.onBlackboardWrite(key, value);
+  }
+}
+
+/// A [TransientTexturePool] view that reports acquisitions to an observer
+/// while delegating to the wrapped pool (which owns all texture state).
+/// {@category Rendering}
+class ObservedTexturePool extends TransientTexturePool {
+  ObservedTexturePool(this._inner, this._observer)
+    : super(framesInFlight: _inner.framesInFlight);
+
+  final TransientTexturePool _inner;
+  final RenderGraphObserver _observer;
+
+  @override
+  void beginFrame() => _inner.beginFrame();
+
+  @override
+  gpu.Texture acquire(TransientTextureDescriptor descriptor) {
+    final texture = _inner.acquire(descriptor);
+    _observer.onTextureAcquired(descriptor, texture);
+    return texture;
+  }
+
+  @override
+  void clear() => _inner.clear();
+}
+
 /// Description of a transient GPU texture requested from a
 /// [TransientTexturePool].
 ///
@@ -236,16 +307,34 @@ class RenderGraph {
   /// uniforms and [texturePool] for transient attachments. Each pass
   /// creates and submits its own command buffer. Clears the blackboard
   /// first so state never leaks between frames.
+  ///
+  /// With an [observer] attached (a capture frame), passes run against a
+  /// recording blackboard, each pass is stopwatched, and boundaries are
+  /// reported; without one the steady-state path is unchanged.
   void execute({
     required TransientWriter transientsBuffer,
     required TransientTexturePool texturePool,
+    RenderGraphObserver? observer,
   }) {
     _blackboard._clear();
     final context = RenderGraphContext(
       transientsBuffer: transientsBuffer,
       texturePool: texturePool,
-      blackboard: _blackboard,
+      blackboard: observer == null
+          ? _blackboard
+          : _RecordingBlackboard(_blackboard, observer),
     );
+    if (observer != null) {
+      for (var i = 0; i < _passes.length; i++) {
+        final pass = _passes[i];
+        observer.onPassBegin(pass, i);
+        final stopwatch = Stopwatch()..start();
+        pass.execute(context);
+        stopwatch.stop();
+        observer.onPassEnd(pass, stopwatch.elapsedMicroseconds);
+      }
+      return;
+    }
     for (final pass in _passes) {
       if (!profileRendering) {
         pass.execute(context);

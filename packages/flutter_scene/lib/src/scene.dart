@@ -1,3 +1,4 @@
+import 'dart:async' show Completer;
 import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -35,6 +36,7 @@ import 'render/depth_prepass.dart';
 import 'render/fxaa_pass.dart';
 import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
+import 'render/render_graph_capture.dart';
 import 'render/render_scene.dart';
 import 'render/punctual_lights.dart';
 import 'render/spot_shadow.dart';
@@ -688,6 +690,55 @@ base class Scene implements SceneGraph {
   /// {@category Rendering}
   bool removeRenderPass(CustomRenderPass pass) => _renderPasses.remove(pass);
 
+  /// Opt-in for [captureRenderGraph] and the render-graph debug hooks.
+  /// False (the shipping default) keeps the capture branch tree-shakeable;
+  /// an editor or debugging host sets it at startup.
+  /// {@category Rendering}
+  static bool get debugAllowRenderGraphCapture => RenderGraphDebug.enabled;
+  static set debugAllowRenderGraphCapture(bool value) =>
+      RenderGraphDebug.enabled = value;
+
+  ({
+    int viewIndex,
+    RenderGraphCaptureRequest request,
+    Completer<RenderGraphCaptureResult> completer,
+  })?
+  _pendingGraphCapture;
+
+  /// Captures the next rendered frame of screen view [viewIndex]: the pass
+  /// list with CPU timings, the blackboard data flow, and (per [request])
+  /// GPU copies of the textures each pass wrote. Resolves after that frame's
+  /// graph executes; the caller must ensure a frame renders (schedule one).
+  ///
+  /// Requires [debugAllowRenderGraphCapture]. A second call before the
+  /// pending one resolves replaces it (the first future completes with an
+  /// error).
+  /// {@category Rendering}
+  Future<RenderGraphCaptureResult> captureRenderGraph({
+    int viewIndex = 0,
+    RenderGraphCaptureRequest request = const RenderGraphCaptureRequest(),
+  }) {
+    if (!debugAllowRenderGraphCapture) {
+      throw StateError(
+        'Render graph capture is disabled; set '
+        'Scene.debugAllowRenderGraphCapture first.',
+      );
+    }
+    final pending = _pendingGraphCapture;
+    if (pending != null) {
+      pending.completer.completeError(
+        StateError('Superseded by a newer render graph capture'),
+      );
+    }
+    final completer = Completer<RenderGraphCaptureResult>();
+    _pendingGraphCapture = (
+      viewIndex: viewIndex,
+      request: request,
+      completer: completer,
+    );
+    return completer.future;
+  }
+
   Iterable<CustomRenderPass> _passesAt(RenderStage stage) =>
       _renderPasses.where((p) => p.enabled && p.stage == stage);
 
@@ -1207,6 +1258,14 @@ base class Scene implements SceneGraph {
       return;
     }
 
+    // Consume a pending render-graph capture aimed at this screen view.
+    RenderGraphCapturer? capturer;
+    final pendingCapture = _pendingGraphCapture;
+    if (pendingCapture != null && pendingCapture.viewIndex == viewIndex) {
+      _pendingGraphCapture = null;
+      capturer = RenderGraphCapturer(request: pendingCapture.request);
+    }
+
     final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
       viewIndex,
@@ -1221,7 +1280,16 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      capturer: capturer,
     );
+    if (capturer != null) {
+      pendingCapture!.completer.complete(
+        capturer.finish(
+          pixelWidth: pixelSize.width.toInt(),
+          pixelHeight: pixelSize.height.toInt(),
+        ),
+      );
+    }
 
     final image = swapchainColor.asImage();
     final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
@@ -1244,7 +1312,14 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    RenderGraphCapturer? capturer,
   }) {
+    // A capture frame observes the pool from graph construction on, so
+    // display-chain and custom-pass destinations acquired before execute are
+    // attributed and identified by their descriptor debug names.
+    if (capturer != null) {
+      pool = ObservedTexturePool(pool, capturer);
+    }
     final camera = view.camera;
     final effectiveAa = _resolveAntiAliasingMode(
       view.antiAliasingMode ?? _antiAliasingMode,
@@ -1830,7 +1905,11 @@ base class Scene implements SceneGraph {
       graph.addPass(displaySteps[i](output));
     }
 
-    graph.execute(transientsBuffer: transientsBuffer, texturePool: pool);
+    graph.execute(
+      transientsBuffer: transientsBuffer,
+      texturePool: pool,
+      observer: capturer,
+    );
   }
 
   // Inserts the enabled custom HDR passes registered for [stage], each
