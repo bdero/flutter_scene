@@ -23,6 +23,12 @@ import 'package:flutter_scene/src/render/instance_batching.dart';
 /// the red channel, with the far value where no geometry was drawn.
 const String kLinearDepthBlackboardKey = 'linear_depth';
 
+/// Render-graph blackboard key under which [DepthPrepass] publishes its
+/// hardware depth-stencil attachment, only when constructed with
+/// `keepDepthStencil`. [TranslucentDepthPatchPass] loads it to depth-test
+/// translucent surfaces against the opaque scene.
+const String kPrepassDepthStencilBlackboardKey = 'prepass_depth_stencil';
+
 /// Renders the opaque scene's depth from the camera into a linear-depth
 /// color target and publishes it on the render-graph blackboard.
 ///
@@ -44,6 +50,7 @@ class DepthPrepass extends RenderGraphPass {
     required double farDepth,
     int layerMask = kRenderLayerAll,
     bool writeNormals = false,
+    bool keepDepthStencil = false,
     Vector3? cameraRight,
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
@@ -55,6 +62,7 @@ class DepthPrepass extends RenderGraphPass {
        _layerMask = layerMask,
        _cullingPlanes = cullingPlanes,
        _writeNormals = writeNormals,
+       _keepDepthStencil = keepDepthStencil,
        _cameraRight = cameraRight ?? Vector3.zero(),
        _cameraUp = cameraUp ?? Vector3.zero();
 
@@ -72,6 +80,12 @@ class DepthPrepass extends RenderGraphPass {
   // shader (the depth-only position path carries no normal), so it is left
   // off when only ambient occlusion needs the prepass.
   final bool _writeNormals;
+
+  // When set, the depth-stencil attachment is stored (instead of the default
+  // discard) and published, so [TranslucentDepthPatchPass] can test against
+  // it later in the frame. Off unless a patch will actually run; the extra
+  // store costs bandwidth on tiled GPUs.
+  final bool _keepDepthStencil;
   final Vector3 _cameraRight;
   final Vector3 _cameraUp;
 
@@ -97,13 +111,24 @@ class DepthPrepass extends RenderGraphPass {
         debugName: 'linear_depth',
       ),
     );
+    // A kept depth-stencil cannot live in transient tile memory (storing a
+    // deviceTransient attachment is invalid); allocate it device-private so
+    // the patch pass can reload it later in the frame.
     final depth = context.texturePool.acquire(
-      TransientTextureDescriptor.depth(
-        width: width,
-        height: height,
-        format: gpu.gpuContext.defaultDepthStencilFormat,
-        debugName: 'depth_prepass_depth',
-      ),
+      _keepDepthStencil
+          ? TransientTextureDescriptor(
+              width: width,
+              height: height,
+              format: gpu.gpuContext.defaultDepthStencilFormat,
+              enableShaderReadUsage: false,
+              debugName: 'depth_prepass_depth',
+            )
+          : TransientTextureDescriptor.depth(
+              width: width,
+              height: height,
+              format: gpu.gpuContext.defaultDepthStencilFormat,
+              debugName: 'depth_prepass_depth',
+            ),
     );
     final target = gpu.RenderTarget.singleColor(
       gpu.ColorAttachment(
@@ -115,6 +140,9 @@ class DepthPrepass extends RenderGraphPass {
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
         depthClearValue: 1.0,
+        depthStoreAction: _keepDepthStencil
+            ? gpu.StoreAction.store
+            : gpu.StoreAction.dontCare,
       ),
     );
 
@@ -141,6 +169,114 @@ class DepthPrepass extends RenderGraphPass {
     rendererSubmissions.submit(commandBuffer);
 
     context.blackboard.set(kLinearDepthBlackboardKey, linearDepth);
+    if (_keepDepthStencil) {
+      context.blackboard.set(kPrepassDepthStencilBlackboardKey, depth);
+    }
+  }
+}
+
+/// Patches translucent depth-carrying surfaces into the prepass linear
+/// depth, after the passes that need opaque-only depth (ambient occlusion,
+/// reflections) and before the ones that want the visible surface (depth of
+/// field).
+///
+/// Draws items whose material is translucent but declares
+/// [Material.translucentDepthWrite] (fmat `depth_write: true`, or a
+/// transmissive [PhysicallyBasedMaterial]), depth-tested against the opaque
+/// scene through the prepass depth-stencil. Without this, depth of field
+/// reads the backdrop's depth at a glass surface's pixels and smears the
+/// backdrop's blur across it. Content seen through the surface inherits the
+/// surface's depth, the same tradeoff every depth-writing translucency
+/// scheme accepts.
+///
+/// Requires [DepthPrepass] to have run with `keepDepthStencil`; does
+/// nothing when either blackboard texture is absent or no visible item
+/// qualifies. The patch overwrites the target's green/blue/alpha channels
+/// (view-space normals when reflections requested them), so it must run
+/// after every consumer of those channels.
+class TranslucentDepthPatchPass extends RenderGraphPass {
+  TranslucentDepthPatchPass({
+    required Camera camera,
+    required RenderScene renderScene,
+    required Vector3 cameraForward,
+    int layerMask = kRenderLayerAll,
+    List<Plane> cullingPlanes = const [],
+  }) : _camera = camera,
+       _renderScene = renderScene,
+       _cameraForward = cameraForward,
+       _layerMask = layerMask,
+       _cullingPlanes = cullingPlanes;
+
+  final Camera _camera;
+  final RenderScene _renderScene;
+  final Vector3 _cameraForward;
+  final int _layerMask;
+  final List<Plane> _cullingPlanes;
+
+  @override
+  String get name => 'TranslucentDepthPatchPass';
+
+  static bool _qualifies(RenderItem item) =>
+      !item.material.isOpaque() && item.material.translucentDepthWrite;
+
+  @override
+  void execute(RenderGraphContext context) {
+    final linearDepth = context.blackboard.get<gpu.Texture>(
+      kLinearDepthBlackboardKey,
+    );
+    final depthStencil = context.blackboard.get<gpu.Texture>(
+      kPrepassDepthStencilBlackboardKey,
+    );
+    if (linearDepth == null || depthStencil == null) return;
+
+    // Collect qualifying items before opening a render pass, so a scene with
+    // no depth-carrying translucents pays only this walk.
+    final dimensions = ui.Size(
+      linearDepth.width.toDouble(),
+      linearDepth.height.toDouble(),
+    );
+    final viewTransform = _camera.getViewTransform(dimensions);
+    final frustum = Frustum.matrix(viewTransform);
+    final records = <RenderItem>[];
+    _renderScene.cull(frustum, (item) {
+      if (!item.visible) return;
+      if ((item.layers & _layerMask) == 0) return;
+      if (!_qualifies(item)) return;
+      if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
+      records.add(item);
+    }, additionalPlanes: _cullingPlanes);
+    if (records.isEmpty) return;
+
+    final target = gpu.RenderTarget.singleColor(
+      gpu.ColorAttachment(
+        texture: linearDepth,
+        loadAction: gpu.LoadAction.load,
+      ),
+      depthStencilAttachment: gpu.DepthStencilAttachment(
+        texture: depthStencil,
+        depthLoadAction: gpu.LoadAction.load,
+      ),
+    );
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final renderPass = commandBuffer.createRenderPass(target);
+    final encoder = _DepthPrepassEncoder(
+      renderPass,
+      context.transientsBuffer,
+      viewTransform,
+      _camera.position,
+      _cameraForward,
+      _layerMask,
+      _cullingPlanes,
+      writeNormals: false,
+      cameraRight: Vector3.zero(),
+      cameraUp: Vector3.zero(),
+      translucentPatch: true,
+    );
+    for (final item in records) {
+      encoder.submit(item);
+    }
+    encoder.flush();
+    rendererSubmissions.submit(commandBuffer);
   }
 }
 
@@ -163,7 +299,9 @@ class _DepthPrepassEncoder {
     required bool writeNormals,
     required Vector3 cameraRight,
     required Vector3 cameraUp,
-  }) : _writeNormals = writeNormals {
+    bool translucentPatch = false,
+  }) : _writeNormals = writeNormals,
+       _translucentPatch = translucentPatch {
     frustum = Frustum.matrix(_cameraTransform);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
@@ -202,6 +340,10 @@ class _DepthPrepassEncoder {
   final int _layerMask;
   final List<Plane> _cullingPlanes;
   final bool _writeNormals;
+
+  // Flips the item filter from the prepass's opaque set to the translucent
+  // depth-carrying set drawn by [TranslucentDepthPatchPass].
+  final bool _translucentPatch;
   late final Float32List _depthInfo;
 
   static final gpu.Shader _depthShader =
@@ -237,12 +379,18 @@ class _DepthPrepassEncoder {
   gpu.RenderPipeline? _boundPipeline;
   final List<RenderItem> _records = [];
 
-  /// Records [item]'s depth, unless it is hidden, translucent (no depth
-  /// contribution), or rejected by its layer mask.
+  /// Records [item]'s depth, unless it is hidden, rejected by its layer
+  /// mask, or outside this encoder's set (opaque items normally; translucent
+  /// depth-writing items in the patch mode).
   void submit(RenderItem item) {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
-    if (!item.material.isOpaque()) return;
+    final opaque = item.material.isOpaque();
+    if (_translucentPatch
+        ? (opaque || !item.material.translucentDepthWrite)
+        : !opaque) {
+      return;
+    }
     if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
     _records.add(item);
   }

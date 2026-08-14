@@ -14,6 +14,7 @@
 * Film-look color grading via `ColorGradingSettings.lut`, loading Adobe `.cube` tables with `ColorLut.fromCubeAsset` and blending with `lutBlend`.
 * Environments persist the grading LUT (`.cube` reference and blend) in `.fscene` documents, and `ColorLut.sourceAsset` reports where a table was loaded from.
 * Percentage-closer soft shadows via `DirectionalShadowFilter.pcss`, sharpening shadows at contact and widening them with caster distance scaled by `DirectionalLight.angularRadius`.
+* Depth of field focuses on translucent depth-writing surfaces (fmat `depth_write: true`, transmissive `PhysicallyBasedMaterial`) instead of the backdrop seen through them.
 
 * Ground-truth ambient occlusion via `AmbientOcclusionSettings.method`, integrating horizon-slice visibility with `sliceCount`/`stepsPerSlice` controls and an optional constant-thickness `visibilityBitmask` mode.
 * `AmbientOcclusionSettings.multiBounce` keeps albedo-tinted bounce light in occluded creases instead of darkening them to gray.

@@ -1473,6 +1473,9 @@ base class Scene implements SceneGraph {
             farDepth: perspectiveCamera.far,
             layerMask: view.layerMask,
             writeNormals: wantSsr || wantCustomNormals,
+            // Depth of field patches translucent surfaces into the linear
+            // depth later; the patch depth-tests against this attachment.
+            keepDepthStencil: depthOfField.enabled,
             cameraRight: cameraRight,
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
@@ -1633,6 +1636,18 @@ base class Scene implements SceneGraph {
     // still bloom). Needs the perspective camera's FOV for the thin-lens
     // math and camera depth.
     if (depthOfField.enabled && perspectiveCamera != null) {
+      // Translucent depth-writing surfaces (glass) join the linear depth
+      // here, after the opaque-only consumers above, so depth of field
+      // focuses on the visible surface instead of the backdrop behind it.
+      graph.addPass(
+        TranslucentDepthPatchPass(
+          camera: camera,
+          renderScene: renderScene,
+          cameraForward: camera.forward,
+          layerMask: view.layerMask,
+          cullingPlanes: view.cullingPlanes,
+        ),
+      );
       graph.addPass(
         DofPass(
           settings: depthOfField,
