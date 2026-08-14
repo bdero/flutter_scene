@@ -463,8 +463,10 @@ class _Extraction {
         if (min != null || max != null) constraints.add(Range(min, max));
         final softMin = _numLit(args.named['softMin'])?.toDouble();
         final softMax = _numLit(args.named['softMax'])?.toDouble();
-        if (softMin != null && softMax != null) {
-          constraints.add(SoftRange(softMin, softMax));
+        if (softMax != null) {
+          // softMax alone is the common authoring shape; the slider floor
+          // falls back to the hard minimum, then zero.
+          constraints.add(SoftRange(softMin ?? min ?? 0, softMax));
         }
         final step = _numLit(args.named['step'])?.toDouble();
         if (step != null) constraints.add(Step(step));

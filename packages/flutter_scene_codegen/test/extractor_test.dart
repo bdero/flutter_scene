@@ -249,6 +249,25 @@ class C extends Component {
       expect(def.constraint<Step>()!.step, 0.5);
     });
 
+    test('softMax alone lowers a SoftRange floored at min, then zero', () {
+      final component = _single('''
+@SceneComponent('c')
+class C extends Component {
+  @NumberProperty(min: 2, softMax: 10)
+  double speed = 3.0;
+
+  @NumberProperty(softMax: 5)
+  double drift = 0.0;
+}
+''');
+      final speed = _prop(component, 'speed');
+      expect(speed.constraint<SoftRange>()!.min, 2);
+      expect(speed.constraint<SoftRange>()!.max, 10);
+      final drift = _prop(component, 'drift');
+      expect(drift.constraint<SoftRange>()!.min, 0);
+      expect(drift.constraint<SoftRange>()!.max, 5);
+    });
+
     test('StringProperty lowers Multiline and TextPattern', () {
       final component = _single('''
 @SceneComponent('c')
