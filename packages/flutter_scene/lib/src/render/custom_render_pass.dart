@@ -11,6 +11,8 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/object_filter.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/render_graph_capture.dart'
+    show RenderGraphDebug;
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
@@ -311,6 +313,16 @@ class RenderPassContext {
   /// `input_color` automatically; this getter is for sampling it explicitly.
   gpu.Texture get currentColor =>
       _context.blackboard.require<gpu.Texture>(_chainKey);
+
+  /// A raw pipeline texture by blackboard [key] (`ssao_texture`,
+  /// `bloom_texture`, `selection_mask`, ...), for debug visualization
+  /// overlays. Null when the frame did not produce it, or unless the host
+  /// opted into render-graph debugging (`Scene.debugAllowRenderGraphCapture`);
+  /// the named getters above remain the supported surface for real effects.
+  gpu.Texture? debugBlackboardTexture(String key) {
+    if (!RenderGraphDebug.enabled) return null;
+    return _context.blackboard.get<gpu.Texture>(key);
+  }
 
   /// Draws a filtered set of the scene's geometry flat into a returned mask
   /// texture, each object filled with a color (coverage in alpha), with its
