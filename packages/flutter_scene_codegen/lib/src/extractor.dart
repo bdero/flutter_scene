@@ -181,10 +181,13 @@ class _Extraction {
     Map<String, List<String>> enums,
   ) {
     Annotation? componentAnnotation;
+    Annotation? gizmoAnnotation;
     for (final annotation in declaration.metadata) {
-      if (_annotationName(annotation) == 'SceneComponent') {
-        componentAnnotation = annotation;
-        break;
+      switch (_annotationName(annotation)) {
+        case 'SceneComponent':
+          componentAnnotation ??= annotation;
+        case 'SceneGizmo':
+          gizmoAnnotation ??= annotation;
       }
     }
     if (componentAnnotation == null) return null;
@@ -221,6 +224,7 @@ class _Extraction {
       icon: _stringLit(args.named['icon']),
       formerTypes: _stringListLit(args.named['formerTypes']) ?? const [],
       properties: [for (final property in properties) property.def],
+      gizmo: gizmoAnnotation == null ? null : _lowerGizmo(gizmoAnnotation),
     );
     return ExtractedComponent(
       schema: schema,
@@ -315,6 +319,34 @@ class _Extraction {
       );
     }
     return extracted;
+  }
+
+  /// Lowers an `@SceneGizmo([...])` annotation to a [GizmoSpec], skipping
+  /// (with a warning) primitives the syntax evaluator cannot read.
+  GizmoSpec? _lowerGizmo(Annotation annotation) {
+    final args = _Args(annotation.arguments);
+    final list = args.positional.isEmpty ? null : args.positional.first;
+    if (list is! ListLiteral) {
+      _error(
+        annotation.offset,
+        '@SceneGizmo needs a literal list of gizmo primitives',
+      );
+      return null;
+    }
+    final primitives = <GizmoPrimitive>[];
+    for (final element in list.elements) {
+      if (element is! Expression) continue;
+      final primitive = _gizmoPrimitiveFromExpression(element);
+      if (primitive == null) {
+        _warn(
+          element.offset,
+          'unrecognized gizmo primitive ${element.toSource()}',
+        );
+        continue;
+      }
+      primitives.add(primitive);
+    }
+    return GizmoSpec(primitives);
   }
 
   _ResolvedKind? _resolveKind(
@@ -702,6 +734,247 @@ PropertyConstraint<Object?>? _constraintFromExpression(Expression expression) {
     case 'SortedDescending':
       final field = positional.isEmpty ? null : _stringLit(positional[0]);
       return field == null ? null : SortedDescending(field);
+  }
+  return null;
+}
+
+List<double>? _numberListLit(Expression? expression) {
+  if (expression is! ListLiteral) return null;
+  final out = <double>[];
+  for (final element in expression.elements) {
+    if (element is! Expression) return null;
+    final value = _numLit(element);
+    if (value == null) return null;
+    out.add(value.toDouble());
+  }
+  return out;
+}
+
+GizmoScalar? _gizmoScalarFromExpression(Expression? expression) {
+  if (expression == null) return null;
+  final literal = _numLit(expression);
+  if (literal != null) return GizmoScalar(literal.toDouble());
+  final split = _splitInvocation(expression);
+  if (split == null) return null;
+  final (typeName, constructorName, args) = split;
+  if (typeName != 'GizmoScalar') return null;
+  final parsed = _Args(args);
+  if (constructorName == null) {
+    final value = parsed.positional.isEmpty
+        ? null
+        : _numLit(parsed.positional.first);
+    return value == null ? null : GizmoScalar(value.toDouble());
+  }
+  if (constructorName == 'bind') {
+    final path = parsed.positional.isEmpty
+        ? null
+        : _stringLit(parsed.positional.first);
+    if (path == null) return null;
+    return GizmoScalar.bind(
+      path,
+      scale: _numLit(parsed.named['scale'])?.toDouble() ?? 1,
+    );
+  }
+  return null;
+}
+
+GizmoColor? _gizmoColorFromExpression(Expression? expression) {
+  if (expression == null) return null;
+  final split = _splitInvocation(expression);
+  if (split == null) return null;
+  final (typeName, constructorName, args) = split;
+  if (typeName != 'GizmoColor') return null;
+  final parsed = _Args(args);
+  if (constructorName == 'bind') {
+    final path = parsed.positional.isEmpty
+        ? null
+        : _stringLit(parsed.positional.first);
+    return path == null ? null : GizmoColor.bind(path);
+  }
+  if (constructorName != null) return null;
+  final channels = <double>[];
+  for (final argument in parsed.positional) {
+    final value = _numLit(argument);
+    if (value == null) return null;
+    channels.add(value.toDouble());
+  }
+  if (channels.length < 3) return null;
+  return GizmoColor(
+    channels[0],
+    channels[1],
+    channels[2],
+    channels.length > 3 ? channels[3] : 1,
+  );
+}
+
+GizmoCondition? _gizmoConditionFromExpression(Expression? expression) {
+  if (expression == null) return null;
+  final split = _splitInvocation(expression);
+  if (split == null) return null;
+  final (typeName, constructorName, args) = split;
+  if (typeName != 'GizmoCondition' || constructorName != null) return null;
+  final parsed = _Args(args);
+  if (parsed.positional.length != 2) return null;
+  final path = _stringLit(parsed.positional[0]);
+  final equals = _stringLit(parsed.positional[1]);
+  if (path == null || equals == null) return null;
+  return GizmoCondition(path, equals);
+}
+
+GizmoVisibility _gizmoVisibilityFromExpression(Expression? expression) {
+  if (expression is PrefixedIdentifier &&
+      expression.prefix.name == 'GizmoVisibility') {
+    return GizmoVisibility.values.asNameMap()[expression.identifier.name] ??
+        GizmoVisibility.always;
+  }
+  return GizmoVisibility.always;
+}
+
+GizmoPrimitive? _gizmoPrimitiveFromExpression(Expression expression) {
+  final split = _splitInvocation(expression);
+  if (split == null) return null;
+  final (typeName, constructorName, args) = split;
+  if (constructorName != null) return null;
+  final parsed = _Args(args);
+  final visibility = _gizmoVisibilityFromExpression(parsed.named['visibility']);
+  final color = _gizmoColorFromExpression(parsed.named['color']);
+  final xray = _boolLit(parsed.named['xray']) ?? true;
+  final when = _gizmoConditionFromExpression(parsed.named['when']);
+  GizmoScalar? scalar(String name) =>
+      _gizmoScalarFromExpression(parsed.named[name]);
+  List<double>? numbers(String name) => _numberListLit(parsed.named[name]);
+  switch (typeName) {
+    case 'GizmoIcon':
+      return GizmoIcon(
+        glyph: _stringLit(parsed.named['glyph']),
+        size: _numLit(parsed.named['size'])?.toDouble() ?? 28,
+        color: color,
+        when: when,
+      );
+    case 'GizmoArrow':
+      return GizmoArrow(
+        axis: numbers('axis') ?? const [0, 0, 1],
+        axisBind: _stringLit(parsed.named['axisBind']),
+        length: scalar('length') ?? const GizmoScalar(1),
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoLines':
+      final points = parsed.positional.isEmpty
+          ? null
+          : _numberListLit(parsed.positional.first);
+      if (points == null) return null;
+      return GizmoLines(
+        points,
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireSphere':
+      final radius = scalar('radius');
+      if (radius == null) return null;
+      return GizmoWireSphere(
+        radius: radius,
+        center: numbers('center') ?? const [0, 0, 0],
+        inflate: scalar('inflate') ?? const GizmoScalar(0),
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireBox':
+      return GizmoWireBox(
+        halfExtents: numbers('halfExtents'),
+        halfExtentsBind: _stringLit(parsed.named['halfExtentsBind']),
+        center: numbers('center') ?? const [0, 0, 0],
+        inflate: scalar('inflate') ?? const GizmoScalar(0),
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireRect':
+      final width = scalar('width');
+      final height = scalar('height');
+      if (width == null || height == null) return null;
+      return GizmoWireRect(
+        width: width,
+        height: height,
+        axis: numbers('axis') ?? const [0, 0, 1],
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireCircle':
+      final radius = scalar('radius');
+      if (radius == null) return null;
+      return GizmoWireCircle(
+        radius: radius,
+        axis: numbers('axis') ?? const [0, 0, 1],
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireCone':
+      final angle = scalar('angle');
+      final range = scalar('range');
+      if (angle == null || range == null) return null;
+      return GizmoWireCone(
+        angle: angle,
+        range: range,
+        axis: numbers('axis') ?? const [0, 0, 1],
+        axisBind: _stringLit(parsed.named['axisBind']),
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireCapsule':
+      final radius = scalar('radius');
+      final halfHeight = scalar('halfHeight');
+      if (radius == null || halfHeight == null) return null;
+      return GizmoWireCapsule(
+        radius: radius,
+        halfHeight: halfHeight,
+        axis: numbers('axis') ?? const [0, 1, 0],
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoWireCylinder':
+      final radius = scalar('radius');
+      final halfHeight = scalar('halfHeight');
+      if (radius == null || halfHeight == null) return null;
+      return GizmoWireCylinder(
+        radius: radius,
+        halfHeight: halfHeight,
+        axis: numbers('axis') ?? const [0, 1, 0],
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
+    case 'GizmoFrustum':
+      final fovY = scalar('fovY');
+      final near = scalar('near');
+      final far = scalar('far');
+      if (fovY == null || near == null || far == null) return null;
+      return GizmoFrustum(
+        fovY: fovY,
+        near: near,
+        far: far,
+        aspect: scalar('aspect'),
+        visibility: visibility,
+        color: color,
+        xray: xray,
+        when: when,
+      );
   }
   return null;
 }

@@ -100,6 +100,30 @@ void main() {
       expect(generated, contains('Spins the node around an axis.'));
     });
 
+    test('emits the gizmo block through its JSON form', () {
+      final result = extractComponents('''
+@SceneComponent('pickup')
+@SceneGizmo([
+  GizmoIcon(),
+  GizmoWireSphere(radius: GizmoScalar.bind('radius')),
+])
+class Pickup extends Component {}
+''');
+      final source = generateCodecLibrary(
+        components: result.components,
+        sourceImport: 'pickup.dart',
+      );
+      expect(source, contains('gizmo: GizmoSpec.fromJson(const {'));
+      expect(source, contains("'kind': 'wireSphere'"));
+      expect(source, contains("'radius': {'bind': 'radius'}"));
+      // The emitted literal decodes back to the extracted spec.
+      final match = RegExp(
+        r'GizmoSpec\.fromJson\(\s*const\s(\{.*?\}),?\s*\)',
+        dotAll: true,
+      ).firstMatch(source);
+      expect(match, isNotNull);
+    });
+
     test('imports only what the fields need', () {
       expect(
         generated,

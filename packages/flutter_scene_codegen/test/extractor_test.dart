@@ -565,4 +565,78 @@ class C extends Component {
       expect(component.schema.properties.single.name, 'speed');
     });
   });
+
+  group('@SceneGizmo lowering', () {
+    test('lowers primitives, binds, conditions, and visibility', () {
+      final component = _single('''
+@SceneComponent('pickup', icon: 'heart')
+@SceneGizmo([
+  GizmoIcon(),
+  GizmoWireSphere(
+    radius: GizmoScalar.bind('radius', scale: 2),
+    color: GizmoColor.bind('tint'),
+    visibility: GizmoVisibility.selected,
+  ),
+  GizmoArrow(axis: [0, 1, 0], length: GizmoScalar(0.5), xray: false),
+  GizmoWireBox(
+    halfExtentsBind: 'bounds',
+    when: GizmoCondition('shape', 'box'),
+    color: GizmoColor(1, 0.5, 0),
+  ),
+])
+class Pickup extends Component {
+  @NumberProperty(min: 0)
+  double radius = 1.0;
+}
+''');
+      final gizmo = component.schema.gizmo;
+      expect(gizmo, isNotNull);
+      expect(gizmo!.primitives, hasLength(4));
+      expect(gizmo.primitives[0], isA<GizmoIcon>());
+      final sphere = gizmo.primitives[1] as GizmoWireSphere;
+      expect(sphere.radius.bind, 'radius');
+      expect(sphere.radius.scale, 2);
+      expect(sphere.color!.bind, 'tint');
+      expect(sphere.visibility, GizmoVisibility.selected);
+      final arrow = gizmo.primitives[2] as GizmoArrow;
+      expect(arrow.axis, [0, 1, 0]);
+      expect(arrow.length.value, 0.5);
+      expect(arrow.xray, isFalse);
+      final box = gizmo.primitives[3] as GizmoWireBox;
+      expect(box.halfExtentsBind, 'bounds');
+      expect(box.when!.path, 'shape');
+      expect(box.when!.equals, 'box');
+      expect(box.color!.r, 1);
+      expect(box.color!.a, 1);
+    });
+
+    test('unreadable primitives are skipped with a warning', () {
+      final result = extractComponents('''
+@SceneComponent('c')
+@SceneGizmo([
+  GizmoIcon(),
+  GizmoWireSphere(radius: someDynamicValue),
+])
+class C extends Component {}
+''');
+      final gizmo = result.components.single.schema.gizmo;
+      expect(gizmo!.primitives, hasLength(1));
+      expect(
+        result.diagnostics.any(
+          (d) =>
+              d.severity == ExtractionSeverity.warning &&
+              d.message.contains('gizmo primitive'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('a component without the annotation has no gizmo', () {
+      final component = _single('''
+@SceneComponent('c')
+class C extends Component {}
+''');
+      expect(component.schema.gizmo, isNull);
+    });
+  });
 }
