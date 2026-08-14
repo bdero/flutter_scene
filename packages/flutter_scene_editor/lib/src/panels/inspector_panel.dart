@@ -69,10 +69,13 @@ class _NodeInspector extends StatelessWidget {
     final instanceId = isMember
         ? controller.memberOrigin(node.id)!.instanceId
         : (isInstance ? node.id : null);
-    // Adding and removing whole components is only wired for plain scene nodes;
-    // prefab content edits property values in place (structural component edits
-    // on prefab content are a TODO(prefab-member-components)).
-    final isPrefabContent = isMember || isInstance;
+    // A component is removable when it lives on the source document node's
+    // own list, which covers plain nodes and components added onto a prefab
+    // instance. Prefab-authored components (merged in from the prefab, or on
+    // a member node absent from the source document) stay locked; removing
+    // those needs the removedComponentTypes override machinery
+    // (TODO(prefab-member-components)).
+    final sourceComponents = controller.document.nodes[node.id]?.components;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8),
@@ -107,7 +110,9 @@ class _NodeInspector extends StatelessWidget {
               node: node,
               component: component,
               controller: controller,
-              canRemove: !isPrefabContent,
+              canRemove:
+                  sourceComponents != null &&
+                  sourceComponents.any((c) => c.type == component.type),
             ),
             // A mesh's material is a resource; edit it inline below the mesh.
             if (component.type == 'mesh' &&
@@ -129,7 +134,10 @@ class _NodeInspector extends StatelessWidget {
                         .id,
               ),
           ],
-          if (!isPrefabContent) ...[
+          // Components add onto any source-document node (a prefab instance
+          // included, where they ride the host node next to the prefab's
+          // own); only prefab members lack a source node to carry them.
+          if (sourceComponents != null) ...[
             const SizedBox(height: 8),
             _AddComponentBar(node: node, controller: controller),
           ],
