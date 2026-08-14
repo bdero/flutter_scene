@@ -138,4 +138,13 @@ PrefabInstanceSpec _copyInstance(
     for (final c in i.addedComponents) _copyComponent(c, remap),
   ],
   removedComponentTypes: List.of(i.removedComponentTypes),
+  // Member targets are prefab-local ids, untouched by the remap; the carried
+  // components deep-copy like the root-added ones.
+  memberComponents: [
+    for (final mc in i.memberComponents)
+      MemberComponent(
+        member: mc.member,
+        component: _copyComponent(mc.component, remap),
+      ),
+  ],
 );

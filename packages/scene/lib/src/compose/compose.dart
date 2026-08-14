@@ -328,6 +328,19 @@ void _applyDelta(
   PrefabInstanceSpec spec,
   LocalId Function(LocalId) remapId,
 ) {
+  // Components the instance adds to prefab member nodes, applied before the
+  // overrides so an override can address their properties. Replaces a
+  // same-type prefab component, matching addComponent's semantics.
+  for (final add in spec.memberComponents) {
+    final node = out.node(remapId(add.member));
+    if (node == null) {
+      sceneLog('fscene: member component target ${add.member} not found');
+      continue;
+    }
+    node.components
+      ..removeWhere((c) => c.type == add.component.type)
+      ..add(add.component);
+  }
   for (final override in spec.overrides) {
     final node = out.node(remapId(override.target));
     if (node == null) {

@@ -278,6 +278,45 @@ void main() {
     expect(node.children.map((c) => composed.node(c)!.name), contains('extra'));
   });
 
+  test('adds member components before overrides so overrides address them', () {
+    final host = SceneDocument();
+    final prefab = _prefab();
+    final bodyId = prefab.rootNodes.single.id;
+    final wheelId = prefab.rootNodes.single.children.single;
+    final instance = host.createNode(root: true)
+      ..instance = PrefabInstanceSpec(
+        source: const AssetRef('p'),
+        memberComponents: [
+          MemberComponent(
+            member: wheelId,
+            component: ComponentSpec(
+              'turntable',
+              properties: {'speed': const DoubleValue(0.5)},
+            ),
+          ),
+          // A same-type add replaces the prefab's own component.
+          MemberComponent(member: bodyId, component: ComponentSpec('mesh')),
+        ],
+        overrides: [
+          PropertyOverride(
+            target: wheelId,
+            path: 'components.turntable.speed',
+            value: const DoubleValue(2.0),
+          ),
+        ],
+      );
+
+    final composed = composeScene(host, resolve: _resolveTo(prefab));
+    final wheel = composed.nodes.values.firstWhere((n) => n.name == 'wheel');
+    final turntable = wheel.components.singleWhere(
+      (c) => c.type == 'turntable',
+    );
+    expect(turntable.properties['speed'], const DoubleValue(2.0));
+    final root = composed.node(instance.id)!;
+    final mesh = root.components.singleWhere((c) => c.type == 'mesh');
+    expect(mesh.properties, isEmpty);
+  });
+
   test('records member origins for composed prefab nodes', () {
     final host = SceneDocument();
     final prefab = _prefab();

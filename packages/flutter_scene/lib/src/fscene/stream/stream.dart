@@ -70,11 +70,5 @@ void unloadSubtree(Node node) {
 }
 
 // The same instance, but eager, so composeScene expands it.
-PrefabInstanceSpec _eager(PrefabInstanceSpec spec) => PrefabInstanceSpec(
-  source: spec.source,
-  overrides: spec.overrides,
-  attachments: spec.attachments,
-  removedNodes: spec.removedNodes,
-  addedComponents: spec.addedComponents,
-  removedComponentTypes: spec.removedComponentTypes,
-);
+PrefabInstanceSpec _eager(PrefabInstanceSpec spec) =>
+    spec.copyWith(load: LoadPolicy.eager);
