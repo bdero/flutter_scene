@@ -1260,18 +1260,33 @@ class MaterialsVariantsCodec extends ComponentCodec {
             );
             continue;
           }
-          // The serialized default keeps authored defaults stable across
-          // saves and reloads made while a variant was selected; older
-          // documents without one fall back to the realized mesh material.
-          final defaultMaterial = defaultRef is ResourceRefValue
-              ? realizer.material(defaultRef.id)
-              : mesh.primitives[primitiveIndex.value].material;
           final materialsByVariant = <int, Material>{};
+          final variantIds = <LocalId>{};
           for (final mapping in materials.values.entries) {
             final variantIndex = int.tryParse(mapping.key);
             final ref = mapping.value;
             if (variantIndex == null || ref is! ResourceRefValue) continue;
+            variantIds.add(ref.id);
             materialsByVariant[variantIndex] = realizer.material(ref.id);
+          }
+          // The serialized default keeps authored defaults stable across
+          // saves and reloads made while a variant was selected; older
+          // documents without one fall back to the realized mesh material.
+          // An explicitly assigned mesh material (one that is neither the
+          // recorded default nor any variant mapping) wins over the recorded
+          // default, so assigning a material to a variants-carrying mesh is
+          // not silently reverted; the binding rebases onto it.
+          final current = mesh.primitives[primitiveIndex.value].material;
+          final currentId = resourceOrigin(current)?.resourceId;
+          final Material defaultMaterial;
+          if (defaultRef is! ResourceRefValue) {
+            defaultMaterial = current;
+          } else if (currentId != null &&
+              currentId != defaultRef.id &&
+              !variantIds.contains(currentId)) {
+            defaultMaterial = current;
+          } else {
+            defaultMaterial = realizer.material(defaultRef.id);
           }
           bindings.add(
             MaterialsVariantBinding(

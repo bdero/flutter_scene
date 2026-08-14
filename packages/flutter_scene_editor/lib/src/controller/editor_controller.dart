@@ -175,8 +175,11 @@ class EditorController extends ChangeNotifier {
       onError: (message) => controller.lastError.value = message,
       onStructuralChange: controller.recompose,
     );
-    // Keep prefab-internal nodes selectable across source edits.
-    session.selectionValidId = controller.displayDocument.nodes.containsKey;
+    // Keep prefab-internal nodes selectable across source edits. Evaluated
+    // per check; a tear-off would bind the nodes map captured before the
+    // first compose and prune every prefab-member selection on each commit.
+    session.selectionValidId = (id) =>
+        controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
     return controller;
@@ -1192,7 +1195,21 @@ class EditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    final realizer = _composed == null ? _resourceRealizer : null;
+    // The composed document holds the resource objects captured at compose
+    // time, and a material edit replaces the host document's object; refresh
+    // the composed copies (host resource ids pass through composition
+    // unchanged) so the realizer reloads the fresh values in place instead
+    // of a full re-realize per slider commit.
+    final composed = _composed;
+    if (composed != null) {
+      for (final id in ids) {
+        final updated = document.resource(id);
+        if (updated != null && composed.resources.containsKey(id)) {
+          composed.resources[id] = updated;
+        }
+      }
+    }
+    final realizer = _resourceRealizer;
     if (realizer == null) {
       await _realizeAll();
       return;

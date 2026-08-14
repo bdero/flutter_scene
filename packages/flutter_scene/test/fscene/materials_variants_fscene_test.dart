@@ -302,6 +302,66 @@ void main() {
       expect(identical(primitive.material, defaultMaterial), isTrue);
     });
 
+    test('an explicitly assigned material wins over the recorded default', () {
+      final document = SceneDocument();
+      final nodeId = document.newId();
+      final defaultId = document.newId();
+      final betaId = document.newId();
+      final assignedId = document.newId();
+
+      final defaultMaterial = _FakeMaterial('default');
+      final betaMaterial = _FakeMaterial('beta');
+      // The mesh was realized with an explicit assignment (an override or a
+      // direct edit), not the binding's recorded default.
+      final assigned = tagResourceOrigin(
+        _FakeMaterial('assigned'),
+        document,
+        assignedId,
+      );
+      final primitive = MeshPrimitive(_FakeGeometry(), assigned);
+      final liveNode = tagNodeId(
+        Node(name: 'tri')..mesh = Mesh.primitives(primitives: [primitive]),
+        nodeId,
+      );
+
+      final context = RealizeContext(
+        document,
+        resources: _FakeRealizer({
+          defaultId: defaultMaterial,
+          betaId: betaMaterial,
+        }),
+      );
+      context.resolveNode = (id) => id == nodeId ? liveNode : null;
+
+      final spec = ComponentSpec(
+        'materialsVariants',
+        properties: {
+          'variants': ListValue([StringValue('alpha'), StringValue('beta')]),
+          'bindings': ListValue([
+            MapValue({
+              'node': NodeRefValue(nodeId),
+              'primitive': const IntValue(0),
+              'default': ResourceRefValue(defaultId),
+              'materials': MapValue({'1': ResourceRefValue(betaId)}),
+            }),
+          ]),
+        },
+      );
+
+      final component =
+          MaterialsVariantsCodec().realize(spec, context)
+              as MaterialsVariantsComponent;
+      context.runAfterRealize();
+      // The re-applied default is the assignment, not the recorded default.
+      expect(identical(primitive.material, assigned), isTrue);
+      // Variant switching still works, and deselecting returns to the
+      // assignment.
+      component.select('beta');
+      expect(identical(primitive.material, betaMaterial), isTrue);
+      component.select(null);
+      expect(identical(primitive.material, assigned), isTrue);
+    });
+
     test('a serialized selection re-applies after realize', () {
       final document = SceneDocument();
       final nodeId = document.newId();
