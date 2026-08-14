@@ -37,6 +37,7 @@ export 'src/specs.dart'
         PayloadSpec,
         PhysicalSkySpec,
         PlaneGeometrySpec,
+        MemberComponent,
         PrefabInstanceSpec,
         ProceduralGeometry,
         PropertyOverride,

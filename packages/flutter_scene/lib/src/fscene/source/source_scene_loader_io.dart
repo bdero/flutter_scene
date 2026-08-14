@@ -229,15 +229,7 @@ final class SceneSourceLoader {
       if (instance == null) continue;
       final rebased = _resolveFromDir(dir, instance.source.key);
       if (rebased == null || rebased == instance.source.key) continue;
-      node.instance = PrefabInstanceSpec(
-        source: AssetRef(rebased),
-        load: instance.load,
-        overrides: instance.overrides,
-        attachments: instance.attachments,
-        removedNodes: instance.removedNodes,
-        addedComponents: instance.addedComponents,
-        removedComponentTypes: instance.removedComponentTypes,
-      );
+      node.instance = instance.copyWith(source: AssetRef(rebased));
     }
     for (final entry in document.resources.entries.toList()) {
       final resource = entry.value;

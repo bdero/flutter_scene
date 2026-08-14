@@ -135,11 +135,13 @@ class PrefabInstanceSpec {
     List<LocalId>? removedNodes,
     List<ComponentSpec>? addedComponents,
     List<String>? removedComponentTypes,
+    List<MemberComponent>? memberComponents,
   }) : overrides = overrides ?? [],
        attachments = attachments ?? [],
        removedNodes = removedNodes ?? [],
        addedComponents = addedComponents ?? [],
-       removedComponentTypes = removedComponentTypes ?? [];
+       removedComponentTypes = removedComponentTypes ?? [],
+       memberComponents = memberComponents ?? [];
 
   /// The referenced prefab `.fscene`.
   final AssetRef source;
@@ -164,6 +166,46 @@ class PrefabInstanceSpec {
 
   /// Prefab component types suppressed on this instance's root.
   final List<String> removedComponentTypes;
+
+  /// Components added to prefab member nodes on this instance, targeted by
+  /// the member's id in the prefab's own id space. Composed in before the
+  /// [overrides], so an override can address their properties.
+  final List<MemberComponent> memberComponents;
+
+  /// A copy with the given fields replaced. Copy sites must use this (not a
+  /// field-by-field reconstruction) so a new delta field is never dropped.
+  PrefabInstanceSpec copyWith({
+    AssetRef? source,
+    LoadPolicy? load,
+    List<PropertyOverride>? overrides,
+    List<Attachment>? attachments,
+    List<LocalId>? removedNodes,
+    List<ComponentSpec>? addedComponents,
+    List<String>? removedComponentTypes,
+    List<MemberComponent>? memberComponents,
+  }) => PrefabInstanceSpec(
+    source: source ?? this.source,
+    load: load ?? this.load,
+    overrides: overrides ?? this.overrides,
+    attachments: attachments ?? this.attachments,
+    removedNodes: removedNodes ?? this.removedNodes,
+    addedComponents: addedComponents ?? this.addedComponents,
+    removedComponentTypes: removedComponentTypes ?? this.removedComponentTypes,
+    memberComponents: memberComponents ?? this.memberComponents,
+  );
+}
+
+/// One component an instance adds to a prefab member node.
+/// {@category Documents}
+class MemberComponent {
+  /// Creates a member-component record.
+  MemberComponent({required this.member, required this.component});
+
+  /// The target node's id in the prefab's own id space.
+  final LocalId member;
+
+  /// The component carried onto that member.
+  final ComponentSpec component;
 }
 
 /// A node in the document's scene graph.

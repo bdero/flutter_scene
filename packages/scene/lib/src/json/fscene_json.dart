@@ -741,6 +741,14 @@ Map<String, dynamic> _encodeInstance(
     ],
   if (p.removedComponentTypes.isNotEmpty)
     'removedComponentTypes': p.removedComponentTypes,
+  if (p.memberComponents.isNotEmpty)
+    'memberComponents': [
+      for (final mc in p.memberComponents)
+        {
+          'member': idKey(mc.member),
+          'component': _encodeComponent(mc.component, idKey),
+        },
+    ],
 };
 
 Map<String, dynamic> _encodeSkin(SkinSpec s, String Function(LocalId) idKey) =>
@@ -949,6 +957,15 @@ PrefabInstanceSpec _decodeInstance(Map<String, dynamic> json) =>
       ],
       removedComponentTypes:
           (json['removedComponentTypes'] as List?)?.cast<String>() ?? const [],
+      memberComponents: [
+        for (final mc in (json['memberComponents'] as List? ?? const []))
+          MemberComponent(
+            member: LocalId.parse((mc as Map)['member'] as String),
+            component: _decodeComponent(
+              Map<String, dynamic>.from(mc['component'] as Map),
+            ),
+          ),
+      ],
     );
 
 Attachment _decodeAttachment(Map<String, dynamic> json) => Attachment(

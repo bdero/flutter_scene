@@ -799,6 +799,56 @@ class EditorController extends ChangeNotifier {
     'value': value,
   });
 
+  /// Adds component [type] to node [id], routed: a source-document node gets
+  /// a plain component; a prefab member records it on the enclosing instance.
+  Future<void> addComponentRouted(LocalId id, String type) {
+    if (document.nodes.containsKey(id)) {
+      return run('addComponent', {
+        'nodeId': id.toToken(),
+        'componentType': type,
+      });
+    }
+    final origin = memberOrigin(id);
+    if (origin == null) return Future.value();
+    return run('addPrefabMemberComponent', {
+      'nodeId': origin.instanceId.toToken(),
+      'memberId': origin.prefabLocalId.toToken(),
+      'componentType': type,
+    });
+  }
+
+  /// Removes component [type] from node [id], routed like
+  /// [addComponentRouted]. On a member this removes only an instance-added
+  /// component; prefab-authored components are not removable here.
+  Future<void> removeComponentRouted(LocalId id, String type) {
+    if (document.nodes.containsKey(id)) {
+      return run('removeComponent', {
+        'nodeId': id.toToken(),
+        'componentType': type,
+      });
+    }
+    final origin = memberOrigin(id);
+    if (origin == null) return Future.value();
+    return run('removePrefabMemberComponent', {
+      'nodeId': origin.instanceId.toToken(),
+      'memberId': origin.prefabLocalId.toToken(),
+      'componentType': type,
+    });
+  }
+
+  /// The component types the enclosing instance has added to member [id]
+  /// (empty for source-document nodes), the set removable in the inspector.
+  Set<String> memberAddedComponentTypes(LocalId id) {
+    final origin = memberOrigin(id);
+    if (origin == null) return const {};
+    final instance = document.nodes[origin.instanceId]?.instance;
+    if (instance == null) return const {};
+    return {
+      for (final mc in instance.memberComponents)
+        if (mc.member == origin.prefabLocalId) mc.component.type,
+    };
+  }
+
   /// Undoes the last edit, reflecting it onto the live scene.
   Future<void> undo() async {
     if (!history.canUndo) return;
@@ -1835,15 +1885,7 @@ class EditorController extends ChangeNotifier {
       final instance = node.instance;
       if (instance == null) continue;
       final path = _resolveFilePath(instance.source.key, directory)!;
-      node.instance = PrefabInstanceSpec(
-        source: AssetRef(path),
-        load: instance.load,
-        overrides: instance.overrides,
-        attachments: instance.attachments,
-        removedNodes: instance.removedNodes,
-        addedComponents: instance.addedComponents,
-        removedComponentTypes: instance.removedComponentTypes,
-      );
+      node.instance = instance.copyWith(source: AssetRef(path));
     }
     for (final entry in prefab.resources.entries.toList()) {
       final resource = entry.value;

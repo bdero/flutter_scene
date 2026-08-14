@@ -531,15 +531,7 @@ final class SceneRegistry {
         instance.source.key,
         host.package,
       );
-      node.instance = PrefabInstanceSpec(
-        source: AssetRef(source),
-        load: instance.load,
-        overrides: instance.overrides,
-        attachments: instance.attachments,
-        removedNodes: instance.removedNodes,
-        addedComponents: instance.addedComponents,
-        removedComponentTypes: instance.removedComponentTypes,
-      );
+      node.instance = instance.copyWith(source: AssetRef(source));
     }
     return document;
   }

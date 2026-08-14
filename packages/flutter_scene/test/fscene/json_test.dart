@@ -124,6 +124,29 @@ void _expectSameStructure(SceneDocument a, SceneDocument b) {
 }
 
 void main() {
+  test('prefab member components round-trip', () {
+    final doc = SceneDocument();
+    doc.createNode(root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p.fscene'),
+      memberComponents: [
+        MemberComponent(
+          member: const LocalId(7, 2),
+          component: ComponentSpec(
+            'turntable',
+            properties: {'speed': const DoubleValue(0.8)},
+          ),
+        ),
+      ],
+    );
+
+    final back = readFscene(writeFscene(doc));
+    final instance = back.rootNodes.single.instance!;
+    final mc = instance.memberComponents.single;
+    expect(mc.member, const LocalId(7, 2));
+    expect(mc.component.type, 'turntable');
+    expect((mc.component.properties['speed'] as DoubleValue).value, 0.8);
+  });
+
   test('environment rendering effects round-trip', () {
     final document = SceneDocument();
     final environment = document.addResource(

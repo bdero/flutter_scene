@@ -69,13 +69,14 @@ class _NodeInspector extends StatelessWidget {
     final instanceId = isMember
         ? controller.memberOrigin(node.id)!.instanceId
         : (isInstance ? node.id : null);
-    // A component is removable when it lives on the source document node's
-    // own list, which covers plain nodes and components added onto a prefab
-    // instance. Prefab-authored components (merged in from the prefab, or on
-    // a member node absent from the source document) stay locked; removing
-    // those needs the removedComponentTypes override machinery
-    // (TODO(prefab-member-components)).
+    // A component is removable when the document authored it here: on the
+    // source node's own list (plain nodes and components added onto a prefab
+    // instance), or in the enclosing instance's member-component delta (a
+    // component added to this prefab member). Prefab-authored components
+    // stay locked; suppressing those needs the removedComponentTypes
+    // machinery (TODO(prefab-member-components)).
     final sourceComponents = controller.document.nodes[node.id]?.components;
+    final memberAddedTypes = controller.memberAddedComponentTypes(node.id);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8),
@@ -110,9 +111,9 @@ class _NodeInspector extends StatelessWidget {
               node: node,
               component: component,
               controller: controller,
-              canRemove:
-                  sourceComponents != null &&
-                  sourceComponents.any((c) => c.type == component.type),
+              canRemove: sourceComponents != null
+                  ? sourceComponents.any((c) => c.type == component.type)
+                  : memberAddedTypes.contains(component.type),
             ),
             // A mesh's material is a resource; edit it inline below the mesh.
             if (component.type == 'mesh' &&
@@ -134,13 +135,11 @@ class _NodeInspector extends StatelessWidget {
                         .id,
               ),
           ],
-          // Components add onto any source-document node (a prefab instance
-          // included, where they ride the host node next to the prefab's
-          // own); only prefab members lack a source node to carry them.
-          if (sourceComponents != null) ...[
-            const SizedBox(height: 8),
-            _AddComponentBar(node: node, controller: controller),
-          ],
+          // Components add onto any editable node: a source-document node
+          // carries them directly (a prefab instance included), and a prefab
+          // member records them on the enclosing instance's delta.
+          const SizedBox(height: 8),
+          _AddComponentBar(node: node, controller: controller),
           // Prefab actions (apply/revert) for the enclosing instance.
           if (instanceId != null) ...[
             const SizedBox(height: 8),
@@ -322,10 +321,8 @@ class _ComponentSection extends StatelessWidget {
               ? _IconAction(
                   icon: Icons.close,
                   tooltip: 'Remove component',
-                  onPressed: () => controller.run('removeComponent', {
-                    'nodeId': node.id.toToken(),
-                    'componentType': component.type,
-                  }),
+                  onPressed: () =>
+                      controller.removeComponentRouted(node.id, component.type),
                 )
               : null,
         ),
@@ -1009,10 +1006,7 @@ class _AddComponentBar extends StatelessWidget {
       child: PopupMenuButton<String>(
         enabled: available.isNotEmpty,
         tooltip: 'Add a component',
-        onSelected: (type) => controller.run('addComponent', {
-          'nodeId': node.id.toToken(),
-          'componentType': type,
-        }),
+        onSelected: (type) => controller.addComponentRouted(node.id, type),
         itemBuilder: (_) => [
           for (final type in available)
             PopupMenuItem<String>(

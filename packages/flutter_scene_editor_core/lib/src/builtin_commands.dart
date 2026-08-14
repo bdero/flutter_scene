@@ -2381,14 +2381,12 @@ PrefabInstanceSpec _withDelta(
   List<PropertyOverride>? overrides,
   List<Attachment>? attachments,
   List<LocalId>? removedNodes,
-}) => PrefabInstanceSpec(
-  source: i.source,
-  load: i.load,
-  overrides: overrides ?? i.overrides,
-  attachments: attachments ?? i.attachments,
-  removedNodes: removedNodes ?? i.removedNodes,
-  addedComponents: i.addedComponents,
-  removedComponentTypes: i.removedComponentTypes,
+  List<MemberComponent>? memberComponents,
+}) => i.copyWith(
+  overrides: overrides,
+  attachments: attachments,
+  removedNodes: removedNodes,
+  memberComponents: memberComponents,
 );
 
 PrefabInstanceSpec _withOverrides(
@@ -2405,6 +2403,99 @@ ChangeRecord _instanceRecord(
   slot: ChangeSlot.instance,
   oldValue: PrefabInstanceChange(from),
   newValue: PrefabInstanceChange(to),
+);
+
+/// Attaches a component to a prefab member node, recorded on the enclosing
+/// instance's delta, so it composes onto the member and survives saves.
+/// Replaces an existing record for the same member and type, matching
+/// `addComponent`.
+final addPrefabMemberComponent = CommandEntry(
+  name: 'addPrefabMemberComponent',
+  doc: 'Attach a component to a prefab member node.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+    ParamSpec(name: 'memberId', type: ParamType.nodeRef, label: 'Member'),
+    ParamSpec(name: 'componentType', type: ParamType.string, label: 'Type'),
+    ParamSpec(
+      name: 'properties',
+      type: ParamType.propertyMap,
+      label: 'Properties',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    final member = requireNodeId(params, 'memberId');
+    final type = requireString(params, 'componentType');
+    final component = ComponentSpec(
+      type,
+      properties: optionalPropertyMap(
+        params,
+        'properties',
+        schema: ctx.componentSchema?.call(type),
+      ),
+    );
+    final next = [
+      for (final mc in instance.memberComponents)
+        if (!(mc.member == member && mc.component.type == type)) mc,
+      MemberComponent(member: member, component: component),
+    ];
+    return Transaction(
+      name: 'Add component ($type)',
+      records: [
+        _instanceRecord(
+          id,
+          instance,
+          _withDelta(instance, memberComponents: next),
+        ),
+      ],
+    );
+  },
+);
+
+/// Removes a component this instance added to a prefab member node.
+final removePrefabMemberComponent = CommandEntry(
+  name: 'removePrefabMemberComponent',
+  doc: 'Remove a component added to a prefab member node.',
+  category: 'Prefab',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Instance'),
+    ParamSpec(name: 'memberId', type: ParamType.nodeRef, label: 'Member'),
+    ParamSpec(name: 'componentType', type: ParamType.string, label: 'Type'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final instance = node.instance;
+    if (instance == null) {
+      throw const CommandException('Node is not a prefab instance');
+    }
+    final member = requireNodeId(params, 'memberId');
+    final type = requireString(params, 'componentType');
+    final next = [
+      for (final mc in instance.memberComponents)
+        if (!(mc.member == member && mc.component.type == type)) mc,
+    ];
+    if (next.length == instance.memberComponents.length) {
+      return Transaction(name: 'Remove component ($type)', records: _empty);
+    }
+    return Transaction(
+      name: 'Remove component ($type)',
+      records: [
+        _instanceRecord(
+          id,
+          instance,
+          _withDelta(instance, memberComponents: next),
+        ),
+      ],
+    );
+  },
 );
 
 final instantiatePrefab = CommandEntry(
@@ -2803,6 +2894,8 @@ final List<CommandEntry> builtinCommands = [
   instantiatePrefab,
   setPrefabOverride,
   removePrefabOverride,
+  addPrefabMemberComponent,
+  removePrefabMemberComponent,
   clearPrefabOverrides,
   removePrefabMember,
   attachToPrefabMember,

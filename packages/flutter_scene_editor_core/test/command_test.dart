@@ -206,6 +206,45 @@ void main() {
       expect(h.doc.node(id)!.instance!.overrides, isEmpty);
     });
 
+    test('member components add, replace, and remove on the instance', () {
+      final h = _harness();
+      _run(h, 'instantiatePrefab', {
+        'prefabAsset': 'assets/enemy.fscene',
+        'name': 'Enemy',
+      });
+      final id = h.doc.roots.single;
+      const member = 'id:0100000000002';
+      _run(h, 'addPrefabMemberComponent', {
+        'nodeId': id.toToken(),
+        'memberId': member,
+        'componentType': 'turntable',
+        'properties': {'speed': 0.8},
+      });
+      var instance = h.doc.node(id)!.instance!;
+      expect(instance.memberComponents, hasLength(1));
+      expect(instance.memberComponents.single.component.type, 'turntable');
+
+      // A same member and type add replaces instead of duplicating.
+      _run(h, 'addPrefabMemberComponent', {
+        'nodeId': id.toToken(),
+        'memberId': member,
+        'componentType': 'turntable',
+      });
+      instance = h.doc.node(id)!.instance!;
+      expect(instance.memberComponents, hasLength(1));
+      expect(instance.memberComponents.single.component.properties, isEmpty);
+
+      _run(h, 'removePrefabMemberComponent', {
+        'nodeId': id.toToken(),
+        'memberId': member,
+        'componentType': 'turntable',
+      });
+      expect(h.doc.node(id)!.instance!.memberComponents, isEmpty);
+
+      h.history.undo();
+      expect(h.doc.node(id)!.instance!.memberComponents, hasLength(1));
+    });
+
     test('clearPrefabOverrides empties the delta, undo restores overrides', () {
       final h = _harness();
       _run(h, 'instantiatePrefab', {
