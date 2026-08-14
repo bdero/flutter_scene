@@ -1249,6 +1249,10 @@ class EditorController extends ChangeNotifier {
     if (_reflectRemovedNodes(transaction)) return;
     if (_reflectAddedNode(transaction)) return;
     if (_reflectComponents(transaction)) return;
+    if (transaction.records.every((r) => r.slot == ChangeSlot.instance) &&
+        _reflectInstanceDelta(transaction)) {
+      return;
+    }
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -1448,7 +1452,7 @@ class EditorController extends ChangeNotifier {
   // Component codecs are synchronous once the retained resource realizer has
   // loaded the document, so this avoids rebuilding unrelated nodes/resources.
   bool _reflectComponents(Transaction transaction) {
-    if (_composed != null || _resourceRealizer == null) return false;
+    if (_resourceRealizer == null) return false;
     if (!transaction.records.every(
       (record) => record.slot == ChangeSlot.components,
     )) {
@@ -1477,6 +1481,133 @@ class EditorController extends ChangeNotifier {
       for (final component in entry.value) {
         entry.key.addComponent(component);
       }
+    }
+    // Mirror onto the composed document (the display tree), which holds its
+    // own node copies when the scene has prefab instances; without this the
+    // inspector shows stale values after the in-place edit.
+    if (_composed != null) {
+      for (final id in ids) {
+        final composedNode = _composed!.nodes[id];
+        final spec = document.nodes[id];
+        if (composedNode == null || spec == null || composedNode == spec) {
+          continue;
+        }
+        composedNode.components
+          ..clear()
+          ..addAll(spec.components);
+      }
+    }
+    context.runAfterRealize();
+    return true;
+  }
+
+  // A prefab-instance edit that only adds or updates override values (the
+  // routed member property commit) patches the composed document and the
+  // affected live member in place. Anything structural (a removed override,
+  // changed attachments or member components, a different source) returns
+  // false for the full realize. Override objects pass through unchanged
+  // rebuilds by identity, so identity comparison finds the delta.
+  bool _reflectInstanceDelta(Transaction transaction) {
+    final composed = _composed;
+    if (composed == null || _resourceRealizer == null) return false;
+    final changes = <(LocalId, PropertyOverride)>[];
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.instance) return false;
+      final old = (record.oldValue as PrefabInstanceChange).value;
+      final next = (record.newValue as PrefabInstanceChange).value;
+      if (old == null || next == null) return false;
+      if (old.source.key != next.source.key ||
+          old.load != next.load ||
+          !identical(old.attachments, next.attachments) ||
+          !identical(old.removedNodes, next.removedNodes) ||
+          !identical(old.addedComponents, next.addedComponents) ||
+          !identical(old.removedComponentTypes, next.removedComponentTypes) ||
+          !identical(old.memberComponents, next.memberComponents)) {
+        return false;
+      }
+      final previous = <(LocalId, String), PropertyOverride>{
+        for (final o in old.overrides) (o.target, o.path): o,
+      };
+      for (final o in next.overrides) {
+        final before = previous.remove((o.target, o.path));
+        if (before == null || !identical(before.value, o.value)) {
+          changes.add((record.targetId, o));
+        }
+      }
+      // A leftover means an override was removed; its value reverts to the
+      // prefab's own, which only a recompose can recover.
+      if (previous.isNotEmpty) return false;
+    }
+    for (final (instanceId, override) in changes) {
+      final composedId = _composedMemberId(instanceId, override.target);
+      if (composedId == null) return false;
+      applyPrefabOverride(
+        composed,
+        PropertyOverride(
+          target: composedId,
+          path: override.path,
+          value: override.value,
+        ),
+      );
+      if (!_reapplyComposedNode(composedId, override.path)) return false;
+    }
+    return true;
+  }
+
+  // The composed-document node the member [prefabLocalId] of [instanceId]
+  // expanded to (the instance node itself for the merged prefab root).
+  LocalId? _composedMemberId(LocalId instanceId, LocalId prefabLocalId) {
+    if (_memberOrigins[instanceId]?.prefabLocalId == prefabLocalId) {
+      return instanceId;
+    }
+    for (final entry in _memberOrigins.entries) {
+      if (entry.value.instanceId == instanceId &&
+          entry.value.prefabLocalId == prefabLocalId) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  // Refreshes the slice of live node [id] that composed-document property
+  // [path] feeds: components re-realize from the composed spec for a
+  // component path, the transform and flags copy directly. Unknown paths
+  // return false so the caller falls back to the full realize.
+  bool _reapplyComposedNode(LocalId id, String path) {
+    final composed = _composed;
+    final realizer = _resourceRealizer;
+    final spec = composed?.nodes[id];
+    final live = _liveById[id];
+    if (composed == null || realizer == null || spec == null || live == null) {
+      return false;
+    }
+    if (path == 'visible') {
+      live.visible = spec.visible;
+      return true;
+    }
+    if (path == 'layers') {
+      live.layers = spec.layers;
+      return true;
+    }
+    if (path == 'name') return true;
+    if (path == 'transform.matrix' || path.startsWith('transform.trs.')) {
+      live.localTransform = spec.transform.toMatrix4();
+      return true;
+    }
+    if (!path.startsWith('components.')) return false;
+    final context = RealizeContext(composed, resources: realizer)
+      ..resolveNode = (nodeId) => _liveById[nodeId];
+    final components = <Component>[];
+    for (final componentSpec in spec.components) {
+      final component = _componentRegistry.realize(componentSpec, context);
+      if (component == null) return false;
+      components.add(component);
+    }
+    for (final component in live.getComponents<Component>().toList()) {
+      live.removeComponent(component);
+    }
+    for (final component in components) {
+      live.addComponent(component);
     }
     context.runAfterRealize();
     return true;
