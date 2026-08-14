@@ -168,7 +168,9 @@ String _resourceLabel(ResourceSpec spec) {
   return switch (spec) {
     EnvironmentResource(:final name) when name.isNotEmpty => name,
     EnvironmentResource() => 'Environment $tail',
+    MaterialResource(:final name) when name.isNotEmpty => name,
     MaterialResource(:final type) => '$type material $tail',
+    TextureResource(:final asset?) => asset.key.split('/').last,
     GeometryResource() => 'Geometry $tail',
     TextureResource() => 'Texture $tail',
     _ => 'Resource $tail',
