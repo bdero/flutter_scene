@@ -419,9 +419,6 @@ $read$write    ),
       'texture' => 'resources.texture(id)',
       _ => null,
     };
-    // TODO(resource-ref-read): recover the source resource id from the live
-    // object (the realizer's origin stamp is not public API yet), so this
-    // reference round-trips through serialization.
     final set = realizeCall == null
         // TODO(resource-kind): only geometry/material/texture resources have
         // a public realizer entry point; other kinds get no write binding.
@@ -437,19 +434,18 @@ $read$write    ),
     ComponentField.resourceRef(
       ${_str(name)},
       resourceKind: ${_str(resourceKind)},
-${_commonFactoryLines(def, withConstraints: false)}$set    ),
+${_commonFactoryLines(def, withConstraints: false)}      get: (c, context) => resourceRefOf(c.$name, context)?.id,
+$set    ),
 ''';
   }
 
   String _nodeField(ExtractedProperty property) {
     final def = property.def;
     final name = def.name;
-    // TODO(node-ref-read): recover the source node id from the live node
-    // (the realizer's id stamp is not public API yet), so this reference
-    // round-trips through serialization.
     return '''
     ComponentField(
       ${_def(def)},
+      read: (c, _) => nodeRefOf(c.$name),
       write: (c, v, context) {
         if (v is! NodeRefValue) return;
         context.afterRealize.add(() {
