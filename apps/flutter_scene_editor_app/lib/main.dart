@@ -117,6 +117,11 @@ class _EditorHomeState extends State<_EditorHome> {
   // the settings.
   final GizmoPreferences _gizmoPreferences = GizmoPreferences();
 
+  // Render graph inspection over MCP, bound to the live controller's scene.
+  late final RenderGraphMcp _renderGraphMcp = RenderGraphMcp(
+    () => _controller?.scene,
+  );
+
   // TODO(path-provider): resolve through path_provider if this app ever
   // targets more than macOS; only macos/ scaffolding is committed today.
   Directory _settingsDirectory() {
@@ -1244,6 +1249,16 @@ class _EditorHomeState extends State<_EditorHome> {
                 line.text,
             ],
           },
+          renderGraphCapture: ({required bool thumbnails, int? maxDimension}) =>
+              _renderGraphMcp.capture(
+                thumbnails: thumbnails,
+                maxDimension: maxDimension,
+              ),
+          renderGraphImage: _renderGraphMcp.passOutput,
+          renderGraphPixel: _renderGraphMcp.readPixel,
+          renderGraphScan: _renderGraphMcp.scanForNans,
+          listDebugModes: _renderGraphMcp.listModes,
+          setDebugMode: _renderGraphMcp.setMode,
         ),
       );
       debugPrint('Editor MCP server listening on 127.0.0.1:7007');

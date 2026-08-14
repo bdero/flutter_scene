@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart';
@@ -354,6 +356,87 @@ void documentTests() {
         throwsA(
           isA<ToolError>().having((e) => e.message, 'message', 'never saved'),
         ),
+      );
+    });
+  });
+
+  group('render graph tools', () {
+    test('hidden without providers, offered with them', () async {
+      final bare = _surface().bootstrapTools().map((t) => t.name).toSet();
+      expect(bare, isNot(contains('list_render_passes')));
+      expect(bare, isNot(contains('set_viewport_debug_mode')));
+
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(
+        () => session,
+        renderGraphCapture: ({required thumbnails, maxDimension}) async => {
+          'thumbnails': thumbnails,
+          'maxDimension': maxDimension,
+        },
+        renderGraphImage: (key, options) async =>
+            ScreenshotResult(pngBytes: Uint8List(0), width: 1, height: 1),
+        renderGraphPixel: (key, x, y) async => {'key': key, 'x': x, 'y': y},
+        renderGraphScan: () async => {'offenders': const []},
+        listDebugModes: () => [
+          {'id': 'final', 'label': 'Final output', 'active': true},
+        ],
+        setDebugMode: (id) async {},
+      );
+      final names = surface.bootstrapTools().map((t) => t.name).toSet();
+      expect(
+        names,
+        containsAll({
+          'list_render_passes',
+          'capture_render_graph',
+          'get_pass_output',
+          'read_pass_pixel',
+          'scan_for_nans',
+          'list_viewport_debug_modes',
+          'set_viewport_debug_mode',
+        }),
+      );
+      final imageTools = {
+        for (final def in surface.bootstrapTools())
+          if (def.returnsImage) def.name,
+      };
+      expect(imageTools, contains('get_pass_output'));
+
+      final metadata = await surface.dispatch('list_render_passes', {});
+      expect(metadata['thumbnails'], isFalse);
+      final capture = await surface.dispatch('capture_render_graph', {
+        'maxDimension': 128,
+      });
+      expect(capture['thumbnails'], isTrue);
+      expect(capture['maxDimension'], 128);
+      final pixel = await surface.dispatch('read_pass_pixel', {
+        'key': 'scene_color',
+        'x': 3,
+        'y': 4,
+      });
+      expect(pixel['x'], 3);
+      final modes = await surface.dispatch('list_viewport_debug_modes', {});
+      expect((modes['modes'] as List), hasLength(1));
+      final set = await surface.dispatch('set_viewport_debug_mode', {
+        'mode': 'final',
+      });
+      expect(set['ok'], isTrue);
+      final image = await surface.dispatchImage('get_pass_output', {
+        'key': 'scene_color',
+      });
+      expect(image['mimeType'], 'image/png');
+    });
+
+    test('image dispatch rejects non-image tools and vice versa', () {
+      final surface = _surface();
+      expect(
+        () => surface.dispatch('screenshot_viewport', {}),
+        throwsA(isA<ToolError>()),
+      );
+      expect(
+        () => surface.dispatchImage('describe_scene', {}),
+        throwsA(isA<ToolError>()),
       );
     });
   });
