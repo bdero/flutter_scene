@@ -17,7 +17,9 @@ class EditorSettings {
     Map<String, String>? selectedDevices,
     Map<String, bool>? restartOnSceneSave,
     Map<String, String>? lastScenes,
-  }) : namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
+    String? editorCommand,
+  }) : editorCommand = editorCommand ?? defaultEditorCommand,
+       namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
        recentScenes = List.of(recentScenes ?? const []),
        flutterInstallations = List.of(flutterInstallations ?? const []),
        recentProjects = List.of(recentProjects ?? const []),
@@ -31,6 +33,9 @@ class EditorSettings {
   static const int currentVersion = 1;
   static const int maximumRecentScenes = 10;
   static const int maximumRecentProjects = 10;
+
+  /// The out-of-the-box source-editor launch command (VS Code's CLI).
+  static const String defaultEditorCommand = 'code \${SOURCE_FILE}';
 
   factory EditorSettings.fromJsonString(String source) {
     final decoded = jsonDecode(source);
@@ -66,6 +71,7 @@ class EditorSettings {
               FlutterInstallation.fromJson(entry.cast<String, Object?>()),
       ],
       selectedInstallationId: json['selectedInstallationId'] as String?,
+      editorCommand: json['editorCommand'] as String?,
       recentProjects: [
         if (json['recentProjects'] is List)
           for (final path in json['recentProjects'] as List)
@@ -142,6 +148,11 @@ class EditorSettings {
   /// project's committed defaultScene when resuming.
   final Map<String, String> lastScenes;
 
+  /// Command that opens a source file in the user's editor. `${SOURCE_FILE}`
+  /// is replaced with the file's shell-quoted absolute path, appended when
+  /// the placeholder is absent.
+  String editorCommand;
+
   static String? _decodeLayout(Object? value) {
     return value is Map ? jsonEncode(value) : null;
   }
@@ -160,6 +171,7 @@ class EditorSettings {
       ],
     if (selectedInstallationId != null)
       'selectedInstallationId': selectedInstallationId,
+    if (editorCommand != defaultEditorCommand) 'editorCommand': editorCommand,
     if (recentProjects.isNotEmpty) 'recentProjects': recentProjects,
     if (selectedBuildConfigurations.isNotEmpty ||
         selectedDevices.isNotEmpty ||

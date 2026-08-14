@@ -362,6 +362,14 @@ class EditorController extends ChangeNotifier {
   /// a package name. Types absent from this map are compiled in.
   final Map<String, String> foreignTypeProvenance = {};
 
+  /// Absolute source file declaring each component type, from project source
+  /// extraction; empty for compiled-in and package components.
+  final Map<String, String> componentSourcePaths = {};
+
+  /// Opens a source file in the user's editor. Wired by the host, which owns
+  /// the editor-command setting.
+  Future<void> Function(String path)? sourceFileOpener;
+
   /// Registers placeholder codecs for [schemas] whose types have no codec in
   /// this controller's registry, so documents carrying them realize as inert
   /// data bags, the inspector edits them from the schema, and Add Component

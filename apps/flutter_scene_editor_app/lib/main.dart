@@ -178,11 +178,17 @@ class _EditorHomeState extends State<_EditorHome> {
       if (schemas == null || schemas.isEmpty) continue;
       controller.adoptForeignSchemas(schemas, provenance: provenance);
     }
+    controller.componentSourcePaths.addAll(_componentSourcePaths);
+    controller.sourceFileOpener = (path) =>
+        openSourceInEditor(_settings.editorCommand, path);
   }
 
   // The latest foreign component schemas by type, with their provenance.
   final Map<String, ComponentSchema> _foreignSchemas = {};
   final Map<String, String> _foreignSchemaProvenance = {};
+
+  // Absolute source file per component type, from source extraction.
+  final Map<String, String> _componentSourcePaths = {};
   AppSessionState _lastSessionState = AppSessionState.idle;
 
   String _schemaCachePath(FProject project) =>
@@ -421,6 +427,8 @@ class _EditorHomeState extends State<_EditorHome> {
       _foreignSchemas[schema.type] = schema;
       _foreignSchemaProvenance[schema.type] = 'source';
     }
+    _componentSourcePaths.addAll(result.sourcePaths);
+    _controller?.componentSourcePaths.addAll(result.sourcePaths);
     _controller?.adoptForeignSchemas(result.schemas, provenance: 'source');
   }
 

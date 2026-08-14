@@ -83,6 +83,16 @@ void main() {
     expect(settings.recentScenes, removed);
   });
 
+  test('editor command defaults, round trips, and omits the default', () {
+    final settings = EditorSettings();
+    expect(settings.editorCommand, EditorSettings.defaultEditorCommand);
+    expect(settings.toJsonString(), isNot(contains('editorCommand')));
+
+    settings.editorCommand = r'subl ${SOURCE_FILE}';
+    final reloaded = EditorSettings.fromJsonString(settings.toJsonString());
+    expect(reloaded.editorCommand, r'subl ${SOURCE_FILE}');
+  });
+
   test('restart-on-scene-save round trips per project and forgets', () {
     final settings = EditorSettings(
       restartOnSceneSave: {'/p/a.fproject': true},

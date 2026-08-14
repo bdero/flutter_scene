@@ -1,5 +1,6 @@
-/// The editor settings window. One section for now, Flutter Installations,
-/// a JetBrains-style list plus detail form over the global installation
+/// The editor settings window, a category rail on the left with a General
+/// tab (the source-editor launch command) and Flutter Installations, a
+/// JetBrains-style list plus detail form over the global installation
 /// registry, with per-row health badges, async identity probes, and hooks the
 /// host wires for managed checkout creation/deletion and toolchain reloads.
 library;
@@ -11,6 +12,7 @@ import 'package:forui/forui.dart' hide FTheme;
 import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
 import 'editor_settings.dart';
+import 'open_in_editor.dart';
 
 /// Shows the settings window. Callbacks mutate/persist through the host.
 Future<void> showSettingsDialog(
@@ -81,6 +83,11 @@ class SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<SettingsDialog> {
+  /// The category shown on the right, an index into [_categories].
+  int _category = 0;
+
+  static const _categories = ['General', 'Flutter Installations'];
+
   /// The row highlighted in the list (not the globally active selection).
   String? _highlightedId;
 
@@ -191,26 +198,25 @@ class _SettingsDialogState extends State<SettingsDialog> {
               'Settings',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Flutter Installations',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
             const SizedBox(height: 8),
             Expanded(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(width: 270, child: _installationList(context)),
-                  const SizedBox(width: 12),
-                  Expanded(child: _detailPane(context)),
+                  SizedBox(width: 170, child: _categoryRail(context)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _category == 0
+                        ? _generalTab(context)
+                        : _installationsTab(context),
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 10),
             Row(
               children: [
-                if (widget.onCreateManaged != null)
+                if (_category == 1 && widget.onCreateManaged != null)
                   FButton(
                     variant: .outline,
                     size: .xs,
@@ -232,6 +238,108 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _categoryRail(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: ListView(
+        children: [
+          for (var i = 0; i < _categories.length; i++)
+            ListTile(
+              dense: true,
+              selected: _category == i,
+              selectedTileColor: scheme.primary.withValues(alpha: 0.12),
+              title: Text(_categories[i], style: const TextStyle(fontSize: 12)),
+              onTap: () => setState(() => _category = i),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _generalTab(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'General',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+        const Text('Source editor', style: TextStyle(fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(
+          'Command that opens component source files. '
+          '$kSourceFilePlaceholder is replaced with the file path, appended '
+          'when absent.',
+          style: TextStyle(
+            fontSize: 11,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _EditorCommandField(
+                value: _settings.editorCommand,
+                onCommit: (value) => _mutate(
+                  () => _settings.editorCommand = value.trim().isEmpty
+                      ? EditorSettings.defaultEditorCommand
+                      : value.trim(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FButton(
+              variant: .outline,
+              size: .xs,
+              mainAxisSize: .min,
+              onPress: () => _browseEditorProgram(context),
+              child: const Text('Browse…'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _browseEditorProgram(BuildContext context) async {
+    final file = await openFile();
+    final path = file?.path;
+    if (path == null || !mounted) return;
+    // Quote a picked program path so spaces survive the shell; the source
+    // file rides the placeholder.
+    final quoted = path.contains(' ') ? "'$path'" : path;
+    _mutate(() => _settings.editorCommand = '$quoted $kSourceFilePlaceholder');
+  }
+
+  Widget _installationsTab(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Flutter Installations',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(width: 270, child: _installationList(context)),
+              const SizedBox(width: 12),
+              Expanded(child: _detailPane(context)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -644,6 +752,61 @@ class _InfoPanel extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The editor-command text field, committing on submit or focus loss.
+class _EditorCommandField extends StatefulWidget {
+  const _EditorCommandField({required this.value, required this.onCommit});
+
+  final String value;
+  final ValueChanged<String> onCommit;
+
+  @override
+  State<_EditorCommandField> createState() => _EditorCommandFieldState();
+}
+
+class _EditorCommandFieldState extends State<_EditorCommandField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.value,
+  );
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) widget.onCommit(_controller.text);
+    });
+  }
+
+  @override
+  void didUpdateWidget(_EditorCommandField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      focusNode: _focus,
+      style: const TextStyle(fontSize: 12),
+      decoration: const InputDecoration(
+        isDense: true,
+        border: OutlineInputBorder(),
+      ),
+      onSubmitted: widget.onCommit,
     );
   }
 }
