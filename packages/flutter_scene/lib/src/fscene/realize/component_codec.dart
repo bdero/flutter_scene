@@ -166,6 +166,18 @@ class FsceneComponentRegistry {
     }
   }
 
+  /// Removes the codec registered for [type], returning it (null when
+  /// absent). Documents carrying the type afterwards realize it as a
+  /// lossless foreign placeholder, the same as any unknown type.
+  ComponentCodec? unregister(String type) {
+    final removed = _byType.remove(type);
+    if (removed != null &&
+        identical(_byComponentType[removed.componentType], removed)) {
+      _byComponentType.remove(removed.componentType);
+    }
+    return removed;
+  }
+
   /// The registered component type names, in registration order.
   Iterable<String> get types => _byType.keys;
 

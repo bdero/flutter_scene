@@ -6,6 +6,7 @@
 * Unknown component types realize as lossless `ForeignComponent` placeholders and round-trip untouched.
 * Physics components register in any mount order. A rigid body, collider, joint, or character controller added before its world (or its sibling dependency) registers when the dependency arrives instead of staying inert.
 * `registerPhysicsBackend` is public, so physics backend packages can register simulation factories the way audio backends do.
+* `FsceneComponentRegistry.unregister` removes a registered codec; documents carrying the type realize it as a lossless unknown-type placeholder.
 * `nodeRefOf` and `resourceRefOf` recover document references from live nodes and realized resources, so custom codecs (generated ones included) round-trip them.
 * Debug builds launched with `FLUTTER_SCENE_SOURCE_ROOT` read scene sources straight from the project, and `ext.flutter_scene.reloadScene` patches loaded scenes in place.
 * Screen-space contact shadows for the sun via `DirectionalLight.contactShadows`, grounding small contacts that shadow-map resolution and bias miss.

@@ -405,6 +405,26 @@ class EditorController extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Forgets foreign component types whose declarations were deleted:
+  /// unregisters their placeholder codecs so Add Component and the schema
+  /// lookups stop knowing them. Documents still carrying one keep it as a
+  /// lossless unknown-type placeholder. Compiled-in codecs are never
+  /// touched.
+  void retireForeignSchemas(Iterable<String> types) {
+    var changed = false;
+    for (final type in types) {
+      if (!foreignTypeProvenance.containsKey(type)) continue;
+      if (_componentRegistry.codecFor(type) is! PlaceholderComponentCodec) {
+        continue;
+      }
+      _componentRegistry.unregister(type);
+      foreignTypeProvenance.remove(type);
+      componentSourcePaths.remove(type);
+      changed = true;
+    }
+    if (changed) notifyListeners();
+  }
+
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
 
