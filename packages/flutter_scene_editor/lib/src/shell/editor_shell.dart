@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_scene/scene.dart' show Scene;
 import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
@@ -12,6 +13,8 @@ import '../panels/console_panel.dart';
 import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
+import '../panels/render_graph_panel.dart';
+import '../render_graph/render_graph_inspector.dart';
 import '../project/app_session.dart';
 import '../project/project_runner.dart';
 import '../viewport/component_gizmos.dart';
@@ -31,6 +34,7 @@ const Map<String, String> _panelTitles = {
   'assets': 'Assets',
   'history': 'History',
   'console': 'Console',
+  'render_graph': 'Render Graph',
 };
 
 List<String> get _panelIds => _panelTitles.keys.toList();
@@ -237,6 +241,9 @@ class EditorShell extends StatefulWidget {
 
 class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   bool _paletteOpen = false;
+  // Shared by the Render Graph panel across controller replacements; the
+  // panel rebinds its scene each build.
+  final RenderGraphInspector _renderGraphInspector = RenderGraphInspector();
   late String? _currentPath = widget.currentPath;
   final FileDialogHistory _dialogHistory = FileDialogHistory();
   // Whether a "source changed on disk" banner is currently shown, so a window
@@ -539,6 +546,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _ctrl.lastError.addListener(_showError);
+    // The Render Graph panel and viewport debug modes need the engine's
+    // capture hooks; opting in editor-wide keeps shipping apps unaffected.
+    Scene.debugAllowRenderGraphCapture = true;
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -827,6 +837,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'history',
                             title: 'History',
                             child: HistoryPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
+                            id: 'render_graph',
+                            title: 'Render Graph',
+                            child: RenderGraphPanel(
+                              controller: _ctrl,
+                              inspector: _renderGraphInspector,
+                            ),
                           ),
                           if (widget.projectRunner != null)
                             DockPanel(

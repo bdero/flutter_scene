@@ -9,8 +9,10 @@ import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
+import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
+import 'debug_visualize.dart';
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
@@ -1058,6 +1060,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
                       preferences: _gizmoPrefs,
                     ),
                     const SizedBox(height: 4),
+                    _DebugOutputButton(controller: _ctrl, onChanged: _bumpView),
+                    const SizedBox(height: 4),
                     AnimatedBuilder(
                       animation: _viewEpoch,
                       builder: (context, _) => Column(
@@ -1310,6 +1314,68 @@ class _GizmoMenuButton extends StatelessWidget {
           const SizedBox(width: 4),
           Text(label),
         ],
+      ),
+    );
+  }
+}
+
+/// Debug-output selector: renders one of the engine's intermediate buffers
+/// (depth, normals, AO, shadow atlas...) full-viewport instead of the final
+/// image. Mode state lives on the scene's shared debug pass, so every
+/// viewport of that scene shows the same output.
+class _DebugOutputButton extends StatefulWidget {
+  const _DebugOutputButton({required this.controller, required this.onChanged});
+
+  final EditorController controller;
+  final VoidCallback onChanged;
+
+  @override
+  State<_DebugOutputButton> createState() => _DebugOutputButtonState();
+}
+
+class _DebugOutputButtonState extends State<_DebugOutputButton> {
+  @override
+  Widget build(BuildContext context) {
+    final pass = debugVisualizePassFor(widget.controller.scene);
+    final active = pass.mode.resolve != null;
+    return PopupMenuButton<ViewportDebugMode>(
+      tooltip: 'Debug output',
+      padding: EdgeInsets.zero,
+      onSelected: (mode) async {
+        // The remap shader loads lazily on the first non-passthrough use.
+        if (mode.resolve != null) await loadEditorDebugShaders();
+        pass.mode = mode;
+        if (mounted) setState(() {});
+        widget.onChanged();
+      },
+      itemBuilder: (_) => [
+        for (final mode in viewportDebugModes)
+          PopupMenuItem<ViewportDebugMode>(
+            value: mode,
+            height: editorMenuItemHeight,
+            child: Row(
+              children: [
+                editorMenuCheckmark(pass.mode.id == mode.id),
+                const SizedBox(width: 4),
+                Text(mode.label),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        width: 28,
+        height: 24,
+        decoration: BoxDecoration(
+          color: active
+              ? Theme.of(context).colorScheme.primary
+              : Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(
+          Icons.layers_outlined,
+          size: 15,
+          color: active ? Colors.black : Colors.white,
+        ),
       ),
     );
   }

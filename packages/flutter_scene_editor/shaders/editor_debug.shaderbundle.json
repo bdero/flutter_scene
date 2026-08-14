@@ -1,0 +1,10 @@
+{
+  "EditorFullscreenVertex": {
+    "type": "vertex",
+    "file": "shaders/editor_fullscreen.vert"
+  },
+  "EditorDebugRemapFragment": {
+    "type": "fragment",
+    "file": "shaders/editor_debug_remap.frag"
+  }
+}
