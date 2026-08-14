@@ -813,6 +813,12 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 'ambientOcclusionBentNormals',
                 e.ambientOcclusionBentNormals,
               ),
+              _slider(
+                'Indirect light',
+                'ambientOcclusionIndirectLight',
+                e.ambientOcclusionIndirectLight,
+                max: 4,
+              ),
               _toggle(
                 'Half resolution',
                 'ambientOcclusionHalfResolution',
