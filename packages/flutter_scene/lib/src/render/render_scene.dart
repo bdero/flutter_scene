@@ -392,6 +392,8 @@ class RenderScene {
     var bestPriority = 0;
     var bestStrength = 0.0;
     for (final component in directionalLights) {
+      // A hidden node's light does not contribute.
+      if (!component.node.internalEffectiveVisible) continue;
       final light = component.light;
       final strength =
           light.intensity *
