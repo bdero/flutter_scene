@@ -50,6 +50,7 @@ class ToolDefinition {
     required this.name,
     required this.description,
     required this.inputSchema,
+    this.returnsImage = false,
   });
 
   /// The tool name.
@@ -60,6 +61,10 @@ class ToolDefinition {
 
   /// The JSON Schema (draft-07) for the tool's arguments.
   final Map<String, Object?> inputSchema;
+
+  /// Whether calls route through [EditorToolSurface.dispatchImage] and
+  /// return image content instead of JSON.
+  final bool returnsImage;
 }
 
 /// Thrown when a tool call has bad arguments or targets something missing.
@@ -77,6 +82,34 @@ class ToolError implements Exception {
 /// Runs one command through the host and returns the applied transaction.
 typedef CommandRunner =
     Future<Transaction> Function(String command, Map<String, Object?> params);
+
+/// Captures the next frame's render graph as a JSON-shaped summary
+/// (passes, timings, data flow, resources). [thumbnails] false is a
+/// metadata-only capture.
+typedef RenderGraphCapture =
+    Future<Map<String, Object?>> Function({
+      required bool thumbnails,
+      int? maxDimension,
+    });
+
+/// Renders one captured resource through the host's display remap into a
+/// PNG. [options] carries `maxDimension`, `rangeMin`, `rangeMax`,
+/// `channel`, and `highlightNonFinite` when given.
+typedef RenderGraphImage =
+    Future<ScreenshotResult> Function(String key, Map<String, Object?> options);
+
+/// Reads one pixel's exact float values from a captured resource.
+typedef RenderGraphPixel =
+    Future<Map<String, Object?>> Function(String key, int x, int y);
+
+/// Captures a frame and scans every float target for NaN/Inf.
+typedef RenderGraphScan = Future<Map<String, Object?>> Function();
+
+/// Lists the viewport debug outputs (`[{id, label, active}]`).
+typedef DebugModesList = List<Map<String, Object?>> Function();
+
+/// Selects the viewport debug output by id.
+typedef DebugModeSet = Future<void> Function(String id);
 
 /// The pose of the host's primary viewport camera (an orbit camera), so
 /// agents can compose their own screenshots. Angles are radians.
@@ -236,6 +269,12 @@ class EditorToolSurface {
     this.readConsole,
     this.listDevices,
     this.selectDevice,
+    this.renderGraphCapture,
+    this.renderGraphImage,
+    this.renderGraphPixel,
+    this.renderGraphScan,
+    this.listDebugModes,
+    this.setDebugMode,
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
@@ -331,6 +370,24 @@ class EditorToolSurface {
   final DeviceLister? listDevices;
   final DeviceSelector? selectDevice;
 
+  /// Render graph inspection; null in sessions without a live renderer.
+  final RenderGraphCapture? renderGraphCapture;
+
+  /// Remapped image of one captured resource; see [dispatchImage].
+  final RenderGraphImage? renderGraphImage;
+
+  /// Exact float pixel values from a captured resource.
+  final RenderGraphPixel? renderGraphPixel;
+
+  /// The whole-frame non-finite scan.
+  final RenderGraphScan? renderGraphScan;
+
+  /// The viewport debug-output registry.
+  final DebugModesList? listDebugModes;
+
+  /// Selects a viewport debug output.
+  final DebugModeSet? setDebugMode;
+
   SceneQuery get _query => session.query;
 
   /// The curated tools an agent is offered up front. The full command set is
@@ -345,6 +402,7 @@ class EditorToolSurface {
         description:
             'Capture the current editor viewport as a PNG image, so you can '
             'see the rendered scene exactly as the user does.',
+        returnsImage: true,
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (windowScreenshot != null)
@@ -354,6 +412,7 @@ class EditorToolSurface {
             'Capture the whole editor window as a PNG image, including the '
             'panels around the viewport (outliner, inspector, asset browser), '
             'so you can see the editor UI exactly as the user does.',
+        returnsImage: true,
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (readCamera != null) ..._cameraTools,
@@ -630,6 +689,115 @@ class EditorToolSurface {
           'additionalProperties': false,
         },
       ),
+    if (renderGraphCapture != null) ...[
+      const ToolDefinition(
+        name: 'list_render_passes',
+        description:
+            'Capture the next frame\'s render graph metadata: the executed '
+            'passes in order with CPU timings and the blackboard keys each '
+            'read and wrote, plus every render target\'s format and size. '
+            'No images; use capture_render_graph or get_pass_output for '
+            'those.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+      const ToolDefinition(
+        name: 'capture_render_graph',
+        description:
+            'Capture the next frame\'s render graph with thumbnails, '
+            'refreshing the capture get_pass_output and read_pass_pixel '
+            'read from. Returns the same graph JSON as list_render_passes.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'maxDimension': {
+              'type': 'integer',
+              'description': 'Longest thumbnail edge in pixels (default 256).',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+      const ToolDefinition(
+        name: 'get_pass_output',
+        description:
+            'Render one captured resource (a blackboard key from '
+            'list_render_passes, e.g. "scene_color", "linear_depth") as a '
+            'PNG through the display remap, so you can see any intermediate '
+            'buffer. Non-finite highlighting paints NaN magenta, Inf '
+            'yellow, negative blue.',
+        returnsImage: true,
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'key': {'type': 'string'},
+            'maxDimension': {
+              'type': 'integer',
+              'description': 'Longest output edge (default full size).',
+            },
+            'rangeMin': {'type': 'number'},
+            'rangeMax': {'type': 'number'},
+            'channel': {
+              'type': 'string',
+              'description': 'r, g, b, or a for single-channel grayscale.',
+            },
+            'highlightNonFinite': {'type': 'boolean'},
+          },
+          'required': ['key'],
+          'additionalProperties': false,
+        },
+      ),
+      const ToolDefinition(
+        name: 'read_pass_pixel',
+        description:
+            'Read one pixel\'s exact float RGBA values from a captured '
+            'resource, including NaN/Inf flags. Coordinates are texels from '
+            'the top-left of the full-resolution target.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'key': {'type': 'string'},
+            'x': {'type': 'integer'},
+            'y': {'type': 'integer'},
+          },
+          'required': ['key', 'x', 'y'],
+          'additionalProperties': false,
+        },
+      ),
+      const ToolDefinition(
+        name: 'scan_for_nans',
+        description:
+            'Capture a frame and scan every float render target for '
+            'NaN/Inf, in pass execution order. The first offending pass is '
+            'where non-finite values originate; everything downstream is '
+            'contamination.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    ],
+    if (listDebugModes != null) ...[
+      const ToolDefinition(
+        name: 'list_viewport_debug_modes',
+        description:
+            'List the viewport debug outputs (final output, HDR color, '
+            'linear depth, normals, AO, shadow atlas, ...) and which is '
+            'active.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+      const ToolDefinition(
+        name: 'set_viewport_debug_mode',
+        description:
+            'Render one debug output full-viewport instead of the final '
+            'image (pair with screenshot_viewport to eyeball any buffer). '
+            'Set "final" to restore normal rendering.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'mode': {'type': 'string'},
+          },
+          'required': ['mode'],
+          'additionalProperties': false,
+        },
+      ),
+    ],
   ];
 
   static const List<ToolDefinition> _cameraTools = [
@@ -1084,13 +1252,96 @@ class EditorToolSurface {
           );
         }
         return _cameraResult();
-      case 'screenshot_viewport' || 'screenshot_window':
+      case 'list_render_passes':
+        final capture = renderGraphCapture;
+        if (capture == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        return capture(thumbnails: false);
+      case 'capture_render_graph':
+        final capture = renderGraphCapture;
+        if (capture == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        return capture(
+          thumbnails: true,
+          maxDimension: (args['maxDimension'] as num?)?.toInt(),
+        );
+      case 'read_pass_pixel':
+        final reader = renderGraphPixel;
+        if (reader == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        final key = args['key'];
+        final x = args['x'];
+        final y = args['y'];
+        if (key is! String || x is! num || y is! num) {
+          throw const ToolError('read_pass_pixel needs key, x, and y');
+        }
+        return reader(key, x.toInt(), y.toInt());
+      case 'scan_for_nans':
+        final scanner = renderGraphScan;
+        if (scanner == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        return scanner();
+      case 'list_viewport_debug_modes':
+        final lister = listDebugModes;
+        if (lister == null) {
+          throw const ToolError('No viewport debug modes in this session');
+        }
+        return {'modes': lister()};
+      case 'set_viewport_debug_mode':
+        final setter = setDebugMode;
+        final lister = listDebugModes;
+        if (setter == null || lister == null) {
+          throw const ToolError('No viewport debug modes in this session');
+        }
+        final mode = args['mode'];
+        if (mode is! String) {
+          throw const ToolError('set_viewport_debug_mode needs a mode id');
+        }
+        await setter(mode);
+        return {'ok': true, 'modes': lister()};
+      case 'screenshot_viewport' || 'screenshot_window' || 'get_pass_output':
         throw ToolError(
-          '$tool is asynchronous; call capture()/captureWindow() instead of '
+          '$tool returns image content; call dispatchImage() instead of '
           'dispatch()',
         );
       default:
         throw ToolError('Unknown tool: $tool');
+    }
+  }
+
+  /// Dispatches an image-returning tool (see [ToolDefinition.returnsImage]),
+  /// returning `{mimeType, width, height, base64}`.
+  Future<Map<String, Object?>> dispatchImage(
+    String tool,
+    Map<String, Object?> args,
+  ) async {
+    switch (tool) {
+      case 'screenshot_viewport':
+        return capture();
+      case 'screenshot_window':
+        return captureWindow();
+      case 'get_pass_output':
+        final fetch = renderGraphImage;
+        if (fetch == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        final key = args['key'];
+        if (key is! String) {
+          throw const ToolError('get_pass_output needs a resource key');
+        }
+        final shot = await fetch(key, args);
+        return {
+          'mimeType': 'image/png',
+          'width': shot.width,
+          'height': shot.height,
+          'base64': base64Encode(shot.pngBytes),
+        };
+      default:
+        throw ToolError('$tool does not return image content');
     }
   }
 

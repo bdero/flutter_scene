@@ -47,20 +47,21 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
         // The surface validates and reports its own errors as ToolErrors, so
         // skip dart_mcp's schema validation (the schemas are hand-written
         // JSON, not built ObjectSchemas).
-        (request) => _call(def.name, request),
+        (request) => _call(def, request),
         validateArguments: false,
       );
     }
     return super.initialize(request);
   }
 
-  FutureOr<CallToolResult> _call(String name, CallToolRequest request) async {
+  FutureOr<CallToolResult> _call(
+    ToolDefinition def,
+    CallToolRequest request,
+  ) async {
     final args = request.arguments ?? const <String, Object?>{};
     try {
-      if (name == 'screenshot_viewport' || name == 'screenshot_window') {
-        final result = name == 'screenshot_viewport'
-            ? await surface.capture()
-            : await surface.captureWindow();
+      if (def.returnsImage) {
+        final result = await surface.dispatchImage(def.name, args);
         return CallToolResult(
           content: [
             ImageContent(
@@ -70,7 +71,7 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
           ],
         );
       }
-      final result = await surface.dispatch(name, args);
+      final result = await surface.dispatch(def.name, args);
       return CallToolResult(content: [TextContent(text: jsonEncode(result))]);
     } on ToolError catch (e) {
       return CallToolResult(
