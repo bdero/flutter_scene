@@ -93,6 +93,18 @@ void main() {
     expect(reloaded.editorCommand, r'subl ${SOURCE_FILE}');
   });
 
+  test('gizmo visibility round trips and omits the defaults', () {
+    final settings = EditorSettings();
+    expect(settings.gizmosEnabled, isTrue);
+    expect(settings.toJsonString(), isNot(contains('gizmos')));
+
+    settings.gizmosEnabled = false;
+    settings.hiddenGizmoTypes.add('collider');
+    final reloaded = EditorSettings.fromJsonString(settings.toJsonString());
+    expect(reloaded.gizmosEnabled, isFalse);
+    expect(reloaded.hiddenGizmoTypes, {'collider'});
+  });
+
   test('restart-on-scene-save round trips per project and forgets', () {
     final settings = EditorSettings(
       restartOnSceneSave: {'/p/a.fproject': true},

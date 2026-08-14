@@ -113,6 +113,10 @@ class _EditorHomeState extends State<_EditorHome> {
   late final EditorSettingsStore _settingsStore;
   late final EditorSettings _settings;
 
+  // Component-gizmo visibility, shared by every viewport and persisted with
+  // the settings.
+  final GizmoPreferences _gizmoPreferences = GizmoPreferences();
+
   // TODO(path-provider): resolve through path_provider if this app ever
   // targets more than macOS; only macos/ scaffolding is committed today.
   Directory _settingsDirectory() {
@@ -140,6 +144,11 @@ class _EditorHomeState extends State<_EditorHome> {
       legacyDockLayoutFile: File('${directory.path}/dock_layout.json'),
     );
     _settings = _settingsStore.load();
+    _gizmoPreferences.load(
+      enabled: _settings.gizmosEnabled,
+      hiddenTypes: _settings.hiddenGizmoTypes,
+    );
+    _gizmoPreferences.addListener(_persistGizmoPreferences);
     unawaited(
       EditorBuildInfo.load(
         'packages/flutter_scene_editor_app/editor_build_info.json',
@@ -813,6 +822,14 @@ class _EditorHomeState extends State<_EditorHome> {
     _persistSettings();
   }
 
+  void _persistGizmoPreferences() {
+    _settings.gizmosEnabled = _gizmoPreferences.enabled;
+    _settings.hiddenGizmoTypes
+      ..clear()
+      ..addAll(_gizmoPreferences.hiddenTypes);
+    _persistSettings();
+  }
+
   void _persistSettings() {
     try {
       _settingsStore.save(_settings);
@@ -1254,6 +1271,7 @@ class _EditorHomeState extends State<_EditorHome> {
         controller: ctrl,
         viewportRepaintBoundaryKey: _viewportKey,
         viewportCameraHandle: _cameraHandle,
+        gizmoPreferences: _gizmoPreferences,
         currentPath: _scenePath,
         onDocumentPathChanged: _setScenePath,
         recentScenePaths: _settings.recentScenes,

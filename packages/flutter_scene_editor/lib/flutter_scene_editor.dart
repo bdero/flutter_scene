@@ -87,5 +87,6 @@ export 'src/toolchains/flutter_installation.dart'
 export 'src/shell/editor_shell.dart' show EditorShell;
 export 'src/shell/editor_theme.dart'
     show EditorThemeScope, editorDarkTheme, editorForuiDarkTheme;
+export 'src/viewport/component_gizmos.dart' show GizmoPreferences;
 export 'src/viewport/viewport_camera_handle.dart' show ViewportCameraHandle;
 export 'src/viewport/viewport_panel.dart' show ViewportPanel;
