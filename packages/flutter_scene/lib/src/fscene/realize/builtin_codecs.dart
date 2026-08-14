@@ -435,7 +435,9 @@ class MeshCodec extends ComponentCodec {
         'diffuseTransmission': DoubleValue(m.diffuseTransmission),
         'diffuseTransmissionColor': _color(m.diffuseTransmissionColor),
         'thickness': DoubleValue(m.thickness),
-        'attenuationDistance': DoubleValue(m.attenuationDistance),
+        // Infinity (no attenuation) cannot encode; absent means infinity.
+        if (m.attenuationDistance.isFinite)
+          'attenuationDistance': DoubleValue(m.attenuationDistance),
         'attenuationColor': _color(m.attenuationColor),
         'dispersion': DoubleValue(m.dispersion),
         'iridescence': DoubleValue(m.iridescence),

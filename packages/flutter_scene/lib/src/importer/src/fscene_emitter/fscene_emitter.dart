@@ -784,7 +784,13 @@ LocalId _buildMaterial(
   final volume = material.volume;
   if (volume != null) {
     properties['thickness'] = DoubleValue(volume.thicknessFactor);
-    properties['attenuationDistance'] = DoubleValue(volume.attenuationDistance);
+    // The glTF default is +infinity (no attenuation), which JSON cannot
+    // carry; absent means infinity on realize.
+    if (volume.attenuationDistance.isFinite) {
+      properties['attenuationDistance'] = DoubleValue(
+        volume.attenuationDistance,
+      );
+    }
     properties['attenuationColor'] = _color3(volume.attenuationColor, 1.0);
     _addTexture(
       properties,
