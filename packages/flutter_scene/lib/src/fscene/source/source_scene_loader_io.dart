@@ -249,12 +249,21 @@ final class SceneSourceLoader {
           asset: AssetRef(rebased),
           content: resource.content,
         );
-      } else if (resource is EnvironmentResource &&
-          resource.environment is AssetEnvironment) {
-        final environment = resource.environment as AssetEnvironment;
-        final rebased = rebase(environment.asset.key);
-        if (rebased == null) continue;
-        resource.environment = AssetEnvironment(AssetRef(rebased));
+      } else if (resource is EnvironmentResource) {
+        if (resource.environment is AssetEnvironment) {
+          final environment = resource.environment as AssetEnvironment;
+          final rebased = rebase(environment.asset.key);
+          if (rebased != null) {
+            resource.environment = AssetEnvironment(AssetRef(rebased));
+          }
+        }
+        final lut = resource.effects.colorGradingLut;
+        if (lut != null) {
+          final rebased = rebase(lut.key);
+          if (rebased != null) {
+            resource.effects.colorGradingLut = AssetRef(rebased);
+          }
+        }
       }
     }
   }

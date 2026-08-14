@@ -14,7 +14,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show AssetBundle;
+import 'package:flutter/services.dart' show AssetBundle, rootBundle;
+import 'package:flutter_scene/src/post_process/color_lut.dart';
 import 'package:vector_math/vector_math.dart' show Matrix3;
 
 import 'package:flutter_scene/src/ambient_occlusion.dart';
@@ -176,6 +177,7 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
     environmentTransform: Matrix3.rotationY(environmentRotationY),
   );
   _applyEffectSpec(settings, effects ?? EnvironmentEffectsSpec());
+  await _applyColorGradingLut(settings, effects, bundle);
 
   final realized = <String, SkySource?>{};
   Future<SkySource?> sourceFor(SkySourceSpec s) async =>
@@ -234,6 +236,33 @@ Future<EnvironmentSettings> realizeEnvironmentSettings({
   return settings;
 }
 
+/// Loads the effect spec's `.cube` LUT into [settings] through [bundle],
+/// reusing the live table when the reference is unchanged. A failed load
+/// keeps the scene rendering without the look.
+Future<void> _applyColorGradingLut(
+  EnvironmentSettings settings,
+  EnvironmentEffectsSpec? effects,
+  AssetBundle? bundle,
+) async {
+  final ref = effects?.colorGradingLut;
+  if (ref == null) {
+    settings.colorGradingLut = null;
+    return;
+  }
+  if (settings.colorGradingLut?.sourceAsset == ref.key) return;
+  try {
+    final content = await (bundle ?? rootBundle).loadString(ref.key);
+    settings.colorGradingLut = tagColorLutSource(
+      ColorLut.fromCubeString(content),
+      ref.key,
+    );
+  } catch (e) {
+    debugPrint(
+      'flutter_scene: color grading LUT "${ref.key}" failed to load: $e',
+    );
+  }
+}
+
 void _applyEffectSpec(
   EnvironmentSettings settings,
   EnvironmentEffectsSpec effects,
@@ -248,6 +277,9 @@ void _applyEffectSpec(
     ..lift.setFrom(effects.lift)
     ..gamma.setFrom(effects.gamma)
     ..gain.setFrom(effects.gain)
+    // The LUT itself loads asynchronously (_applyColorGradingLut); the
+    // in-place path reports not-reusable when the reference changed.
+    ..colorGradingLutBlend = effects.colorGradingLutBlend
     ..bloomEnabled = effects.bloomEnabled
     ..bloomThreshold = effects.bloomThreshold
     ..bloomIntensity = effects.bloomIntensity
@@ -380,6 +412,12 @@ bool reapplyEnvironmentSettingsInPlace({
     return false;
   }
   if (!_skyboxReusable(target.skybox, skybox)) return false;
+  // A changed LUT reference needs an asynchronous load; only scalar edits
+  // (blend included) reuse the live settings.
+  if (effects != null &&
+      effects.colorGradingLut?.key != target.colorGradingLut?.sourceAsset) {
+    return false;
+  }
   // The static environment is only live when no sky binding owns it.
   if (skyEnvironment == null &&
       !_environmentReusable(target.environment, environment)) {
@@ -615,6 +653,12 @@ EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
       lift: s.lift.clone(),
       gamma: s.gamma.clone(),
       gain: s.gain.clone(),
+      // A LUT built from a string has no asset to reference; the look stays
+      // live but does not persist.
+      colorGradingLut: s.colorGradingLut?.sourceAsset == null
+          ? null
+          : AssetRef(s.colorGradingLut!.sourceAsset!),
+      colorGradingLutBlend: s.colorGradingLutBlend,
       bloomEnabled: s.bloomEnabled,
       bloomThreshold: s.bloomThreshold,
       bloomIntensity: s.bloomIntensity,

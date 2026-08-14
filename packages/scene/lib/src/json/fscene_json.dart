@@ -385,6 +385,8 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.lift != Vector3.zero()) 'lift': _vec3Json(e.lift),
     if (e.gamma != Vector3.all(1.0)) 'gamma': _vec3Json(e.gamma),
     if (e.gain != Vector3.all(1.0)) 'gain': _vec3Json(e.gain),
+    if (e.colorGradingLut != null) 'lut': e.colorGradingLut!.key,
+    if (e.colorGradingLutBlend != 1.0) 'lutBlend': e.colorGradingLutBlend,
   };
   final bloom = <String, dynamic>{
     if (e.bloomEnabled) 'enabled': true,
@@ -993,6 +995,8 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     lift: _effectVec(cg['lift'], Vector3.zero()),
     gamma: _effectVec(cg['gamma'], Vector3.all(1.0)),
     gain: _effectVec(cg['gain'], Vector3.all(1.0)),
+    colorGradingLut: cg['lut'] is String ? AssetRef(cg['lut'] as String) : null,
+    colorGradingLutBlend: _d(cg['lutBlend'] ?? 1.0),
     bloomEnabled: bloom['enabled'] as bool? ?? false,
     bloomThreshold: _d(bloom['threshold'] ?? 1.0),
     bloomIntensity: _d(bloom['intensity'] ?? 0.15),

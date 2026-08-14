@@ -10,6 +10,7 @@
 * Screen-space indirect light via `AmbientOcclusionSettings.indirectLight`, crediting one bounce of scene radiance to newly visible sectors of the occlusion bitmask.
 * Rect area lights via `RectAreaLight` and `RectAreaLightComponent`, shaded with linearly transformed cosines so panel highlights stretch and fall off physically.
 * Film-look color grading via `ColorGradingSettings.lut`, loading Adobe `.cube` tables with `ColorLut.fromCubeAsset` and blending with `lutBlend`.
+* Environments persist the grading LUT (`.cube` reference and blend) in `.fscene` documents, and `ColorLut.sourceAsset` reports where a table was loaded from.
 * Percentage-closer soft shadows via `DirectionalShadowFilter.pcss`, sharpening shadows at contact and widening them with caster distance scaled by `DirectionalLight.angularRadius`.
 
 * Ground-truth ambient occlusion via `AmbientOcclusionSettings.method`, integrating horizon-slice visibility with `sliceCount`/`stepsPerSlice` controls and an optional constant-thickness `visibilityBitmask` mode.
