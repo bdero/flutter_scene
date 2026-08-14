@@ -1407,11 +1407,16 @@ class EditorController extends ChangeNotifier {
   // Copies the renderable fields of the freshly realized [from] onto the live
   // [into], in place. Only same-type materials are reconciled (a material's
   // type does not change through setMaterialProperties).
+  // Copies every property the realizer's _pbr reads from the document; a
+  // field missed here silently never reaches the live material on commit
+  // (the slider preview writes it directly, so the miss shows up as edits
+  // capped at the slider's reach).
   static void _applyMaterialInto(Material from, Material into) {
     if (from is PhysicallyBasedMaterial && into is PhysicallyBasedMaterial) {
       into
         ..baseColorFactor = from.baseColorFactor
         ..emissiveFactor = from.emissiveFactor
+        ..emissiveStrength = from.emissiveStrength
         ..metallicFactor = from.metallicFactor
         ..roughnessFactor = from.roughnessFactor
         ..occlusionStrength = from.occlusionStrength
@@ -1420,10 +1425,22 @@ class EditorController extends ChangeNotifier {
         ..alphaMode = from.alphaMode
         ..alphaCutoff = from.alphaCutoff
         ..baseColorTexture = from.baseColorTexture
+        ..baseColorTextureTransform = from.baseColorTextureTransform
+        ..baseColorTextureTexCoord = from.baseColorTextureTexCoord
         ..metallicRoughnessTexture = from.metallicRoughnessTexture
+        ..metallicRoughnessTextureTransform =
+            from.metallicRoughnessTextureTransform
+        ..metallicRoughnessTextureTexCoord =
+            from.metallicRoughnessTextureTexCoord
         ..normalTexture = from.normalTexture
+        ..normalTextureTransform = from.normalTextureTransform
+        ..normalTextureTexCoord = from.normalTextureTexCoord
         ..occlusionTexture = from.occlusionTexture
-        ..emissiveTexture = from.emissiveTexture;
+        ..occlusionTextureTransform = from.occlusionTextureTransform
+        ..occlusionTextureTexCoord = from.occlusionTextureTexCoord
+        ..emissiveTexture = from.emissiveTexture
+        ..emissiveTextureTransform = from.emissiveTextureTransform
+        ..emissiveTextureTexCoord = from.emissiveTextureTexCoord;
     } else if (from is UnlitMaterial && into is UnlitMaterial) {
       into
         ..baseColorFactor = from.baseColorFactor
