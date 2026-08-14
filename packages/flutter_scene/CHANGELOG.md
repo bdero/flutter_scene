@@ -5,6 +5,7 @@
 * `package:flutter_scene/annotations.dart`, `@SceneComponent` and typed property annotations that lower to schema constraints for generated codecs.
 * Unknown component types realize as lossless `ForeignComponent` placeholders and round-trip untouched.
 * `registerPhysicsBackend` is public, so physics backend packages can register simulation factories the way audio backends do.
+* `nodeRefOf` and `resourceRefOf` recover document references from live nodes and realized resources, so custom codecs (generated ones included) round-trip them.
 * Debug builds launched with `FLUTTER_SCENE_SOURCE_ROOT` read scene sources straight from the project, and `ext.flutter_scene.reloadScene` patches loaded scenes in place.
 * Screen-space contact shadows for the sun via `DirectionalLight.contactShadows`, grounding small contacts that shadow-map resolution and bias miss.
 * Screen-space indirect light via `AmbientOcclusionSettings.indirectLight`, crediting one bounce of scene radiance to newly visible sectors of the occlusion bitmask.

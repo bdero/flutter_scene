@@ -125,6 +125,14 @@ void main() {
       expect(generated, contains('transient: true'));
     });
 
+    test('node and resource references serialize back', () {
+      expect(generated, contains('read: (c, _) => nodeRefOf(c.lookTarget)'));
+      expect(
+        generated,
+        contains('get: (c, context) => resourceRefOf(c.shape, context)?.id'),
+      );
+    });
+
     test('emits the enum field through enumString', () {
       expect(generated, contains('ComponentField.enumString('));
       expect(generated, contains('values: SpinMode.values'));

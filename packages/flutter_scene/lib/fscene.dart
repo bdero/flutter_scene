@@ -103,6 +103,7 @@ export 'src/fscene/realize/loader.dart'
         loadFscenebBytesAsync;
 export 'src/fscene/realize/property_read.dart'
     show readBool, readColor, readDouble, readInt, readString, readVec3;
+export 'src/fscene/realize/ref_read.dart' show nodeRefOf, resourceRefOf;
 export 'src/fscene/realize/realize.dart'
     show
         defaultComponentRegistry,
