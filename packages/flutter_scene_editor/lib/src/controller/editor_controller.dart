@@ -1005,6 +1005,21 @@ class EditorController extends ChangeNotifier {
     );
   }
 
+  /// Live-previews one sun-light property of the stage's global environment
+  /// during a slider drag, without touching the document or history; commit
+  /// with `setEnvironmentSunLightProperties` on release. Ignores non-global
+  /// environments and ones without an analytic sun.
+  void previewEnvironmentSunProperty(LocalId id, String key, Object value) {
+    if (document.stage.environmentRef != id) return;
+    final resource = document.resource(id);
+    if (resource is! EnvironmentResource) return;
+    final preview = environmentResourceWithSunProperties(resource, {
+      key: value,
+    });
+    if (preview == null) return;
+    _reapplyGlobalEnvironmentInPlace(preview);
+  }
+
   /// Live-previews scene-wide settings on the live scene without touching the
   /// document or history (for stage slider drags). Commit with
   /// `setStageProperties` on release.

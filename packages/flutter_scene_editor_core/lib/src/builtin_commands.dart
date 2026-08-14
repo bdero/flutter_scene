@@ -2317,6 +2317,24 @@ final setEnvironmentSkyParameters = CommandEntry(
 );
 
 /// Tunes a sky-driven sun and its cascaded shadows.
+/// A copy of [base] with sun-light [properties] applied, using the same
+/// coercion and key set as `setEnvironmentSunLightProperties`; null when the
+/// environment has no analytic sun. For previewing slider drags on the live
+/// scene without a document transaction.
+EnvironmentResource? environmentResourceWithSunProperties(
+  EnvironmentResource base,
+  Map<String, Object?> properties,
+) {
+  final next = _copyEnvironmentResource(base);
+  final sun = next.skyEnvironment?.sunLight;
+  if (sun == null) return null;
+  _applySunLightProperties(sun, {
+    for (final entry in properties.entries)
+      entry.key: coercePropertyValue(entry.value),
+  });
+  return next;
+}
+
 final setEnvironmentSunLightProperties = CommandEntry(
   name: 'setEnvironmentSunLightProperties',
   doc: 'Tune an environment resource sun light.',
