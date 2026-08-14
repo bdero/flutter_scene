@@ -18,7 +18,10 @@ class EditorSettings {
     Map<String, bool>? restartOnSceneSave,
     Map<String, String>? lastScenes,
     String? editorCommand,
-  }) : editorCommand = editorCommand ?? defaultEditorCommand,
+    this.gizmosEnabled = true,
+    Set<String>? hiddenGizmoTypes,
+  }) : hiddenGizmoTypes = Set.of(hiddenGizmoTypes ?? const {}),
+       editorCommand = editorCommand ?? defaultEditorCommand,
        namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
        recentScenes = List.of(recentScenes ?? const []),
        flutterInstallations = List.of(flutterInstallations ?? const []),
@@ -114,6 +117,14 @@ class EditorSettings {
               entry.key as String:
                   (entry.value as Map)['lastScenePath'] as String,
       },
+      gizmosEnabled:
+          json['gizmos'] is! Map || (json['gizmos'] as Map)['enabled'] != false,
+      hiddenGizmoTypes: {
+        if (json['gizmos'] is Map &&
+            (json['gizmos'] as Map)['hiddenTypes'] is List)
+          for (final type in (json['gizmos'] as Map)['hiddenTypes'] as List)
+            if (type is String) type,
+      },
     );
   }
 
@@ -153,6 +164,14 @@ class EditorSettings {
   /// the placeholder is absent.
   String editorCommand;
 
+  /// The viewport component-gizmo master toggle.
+  bool gizmosEnabled;
+
+  /// Component types whose gizmos are hidden. Encoding the hidden set (not
+  /// the shown set) keeps newly installed component types visible by
+  /// default.
+  final Set<String> hiddenGizmoTypes;
+
   static String? _decodeLayout(Object? value) {
     return value is Map ? jsonEncode(value) : null;
   }
@@ -172,6 +191,12 @@ class EditorSettings {
     if (selectedInstallationId != null)
       'selectedInstallationId': selectedInstallationId,
     if (editorCommand != defaultEditorCommand) 'editorCommand': editorCommand,
+    if (!gizmosEnabled || hiddenGizmoTypes.isNotEmpty)
+      'gizmos': {
+        if (!gizmosEnabled) 'enabled': false,
+        if (hiddenGizmoTypes.isNotEmpty)
+          'hiddenTypes': hiddenGizmoTypes.toList()..sort(),
+      },
     if (recentProjects.isNotEmpty) 'recentProjects': recentProjects,
     if (selectedBuildConfigurations.isNotEmpty ||
         selectedDevices.isNotEmpty ||

@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
+import 'component_gizmos.dart';
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
@@ -30,6 +31,7 @@ class ViewportPanel extends StatefulWidget {
     required this.controller,
     this.repaintBoundaryKey,
     this.cameraHandle,
+    this.gizmoPreferences,
   });
 
   final EditorController controller;
@@ -41,6 +43,10 @@ class ViewportPanel extends StatefulWidget {
   /// Optional remote control this viewport attaches its camera to (the MCP
   /// camera tools).
   final ViewportCameraHandle? cameraHandle;
+
+  /// Shared component-gizmo visibility preferences; null uses a private
+  /// per-viewport default (everything visible).
+  final GizmoPreferences? gizmoPreferences;
 
   @override
   State<ViewportPanel> createState() => _ViewportPanelState();
@@ -56,6 +62,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     edgeMargin: 24,
   );
   final _gizmo = GizmoController();
+  final _componentGizmoHits = ComponentGizmoHitCache();
+  final _fallbackGizmoPrefs = GizmoPreferences();
   final _viewEpoch = ValueNotifier<int>(0);
   final _fps = ValueNotifier<double>(0);
   // Holds keyboard focus while the viewport is the active surface, so the
@@ -92,12 +100,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   EditorController get _ctrl => widget.controller;
 
+  GizmoPreferences get _gizmoPrefs =>
+      widget.gizmoPreferences ?? _fallbackGizmoPrefs;
+
   @override
   void initState() {
     super.initState();
     _ctrl.addListener(_onControllerChanged);
     // Repaint overlays while a drag in any viewport previews a transform.
     _ctrl.previewEpoch.addListener(_onControllerChanged);
+    _gizmoPrefs.addListener(_onControllerChanged);
     widget.cameraHandle?.attach(_camera, _bumpView);
   }
 
@@ -111,6 +123,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _ctrl.previewEpoch.addListener(_onControllerChanged);
       _bumpView();
     }
+    if (oldWidget.gizmoPreferences != widget.gizmoPreferences) {
+      (oldWidget.gizmoPreferences ?? _fallbackGizmoPrefs).removeListener(
+        _onControllerChanged,
+      );
+      _gizmoPrefs.addListener(_onControllerChanged);
+      _bumpView();
+    }
     if (oldWidget.cameraHandle != widget.cameraHandle) {
       oldWidget.cameraHandle?.detach(_camera);
       widget.cameraHandle?.attach(_camera, _bumpView);
@@ -122,6 +141,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     widget.cameraHandle?.detach(_camera);
     _ctrl.removeListener(_onControllerChanged);
     _ctrl.previewEpoch.removeListener(_onControllerChanged);
+    _gizmoPrefs.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
     _focusNode.dispose();
@@ -750,6 +770,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _performRaycast(Offset position, Size viewSize) {
+    // Component gizmos win over the scene raycast: a gizmo is often a
+    // meshless node's only clickable presence, and screen-space slop is what
+    // users expect when clicking thin lines.
+    final gizmoHit = _componentGizmoHits.hitTest(position);
+    if (gizmoHit != null) {
+      _ctrl.selection.selectOnly(gizmoHit);
+      _bumpView();
+      return;
+    }
     final ray = _camera.camera.screenPointToRay(position, viewSize);
     final hit = _ctrl.scene.raycast(ray);
     if (hit == null) {
@@ -876,23 +905,17 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             ),
                           ),
                         ),
-                        if (_ctrl
-                            .scene
-                            .renderScene
-                            .environmentVolumeComponents
-                            .isNotEmpty)
-                          IgnorePointer(
-                            child: CustomPaint(
-                              painter: EnvironmentVolumeComponentPainter(
-                                volumes: _ctrl
-                                    .scene
-                                    .renderScene
-                                    .environmentVolumeComponents,
-                                camera: cam,
-                              ),
-                              size: size,
+                        IgnorePointer(
+                          child: CustomPaint(
+                            painter: ComponentGizmoPainter(
+                              controller: _ctrl,
+                              camera: cam,
+                              preferences: _gizmoPrefs,
+                              hits: _componentGizmoHits,
                             ),
+                            size: size,
                           ),
+                        ),
                         if (live != null)
                           IgnorePointer(
                             child: CustomPaint(
@@ -1028,6 +1051,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
                       onToggleFps: (value) => setState(() => _showFps = value),
                       transformSpace: _transformSpace,
                       onTransformSpaceChanged: _setTransformSpace,
+                    ),
+                    const SizedBox(height: 4),
+                    _GizmoMenuButton(
+                      controller: _ctrl,
+                      preferences: _gizmoPrefs,
                     ),
                     const SizedBox(height: 4),
                     AnimatedBuilder(
@@ -1209,6 +1237,82 @@ class _AxisGuidePainter extends CustomPainter {
       pivot != oldDelegate.pivot ||
       direction != oldDelegate.direction ||
       color != oldDelegate.color;
+}
+
+/// Component-gizmo visibility menu: the master toggle plus one checkbox per
+/// component type that declares a gizmo. Preferences are shared across
+/// viewports and persisted with the editor settings.
+class _GizmoMenuButton extends StatelessWidget {
+  const _GizmoMenuButton({required this.controller, required this.preferences});
+
+  final EditorController controller;
+  final GizmoPreferences preferences;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: preferences,
+      builder: (context, _) {
+        final schemas = controller.gizmoComponentSchemas();
+        return PopupMenuButton<VoidCallback>(
+          tooltip: 'Gizmos',
+          padding: EdgeInsets.zero,
+          onSelected: (action) => action(),
+          itemBuilder: (_) => [
+            _checkedItem(
+              label: 'Show gizmos',
+              checked: preferences.enabled,
+              action: () => preferences.enabled = !preferences.enabled,
+            ),
+            if (schemas.isNotEmpty) const PopupMenuDivider(height: 8),
+            for (final schema in schemas)
+              _checkedItem(
+                label: schema.type,
+                checked: !preferences.hiddenTypes.contains(schema.type),
+                enabled: preferences.enabled,
+                action: () => preferences.setTypeHidden(
+                  schema.type,
+                  !preferences.hiddenTypes.contains(schema.type),
+                ),
+              ),
+          ],
+          child: Container(
+            width: 28,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(
+              Icons.place_outlined,
+              size: 15,
+              color: preferences.enabled ? Colors.white : Colors.white38,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  PopupMenuItem<VoidCallback> _checkedItem({
+    required String label,
+    required bool checked,
+    required VoidCallback action,
+    bool enabled = true,
+  }) {
+    return PopupMenuItem<VoidCallback>(
+      value: action,
+      enabled: enabled,
+      height: editorMenuItemHeight,
+      child: Row(
+        children: [
+          editorMenuCheckmark(checked),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+    );
+  }
 }
 
 /// Per-viewport settings, popped from the gear button in the corner.

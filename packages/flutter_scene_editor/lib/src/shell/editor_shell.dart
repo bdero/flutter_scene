@@ -14,6 +14,7 @@ import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
 import '../project/app_session.dart';
 import '../project/project_runner.dart';
+import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
@@ -135,6 +136,7 @@ class EditorShell extends StatefulWidget {
     this.projectRunner,
     this.appSession,
     this.onDocumentSaved,
+    this.gizmoPreferences,
   });
 
   final EditorController controller;
@@ -187,6 +189,11 @@ class EditorShell extends StatefulWidget {
   /// Optional remote control attached to the primary viewport's camera (the
   /// MCP camera tools).
   final ViewportCameraHandle? viewportCameraHandle;
+
+  /// Shared component-gizmo visibility preferences, forwarded to every
+  /// viewport; the host persists them with the editor settings. Null gives
+  /// each viewport an unpersisted default.
+  final GizmoPreferences? gizmoPreferences;
 
   /// A dock layout previously emitted through [onDockLayoutChanged]. Invalid
   /// or missing layouts fall back to the default arrangement.
@@ -787,6 +794,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                               repaintBoundaryKey:
                                   widget.viewportRepaintBoundaryKey,
                               cameraHandle: widget.viewportCameraHandle,
+                              gizmoPreferences: widget.gizmoPreferences,
                             ),
                           ),
                           DockPanel(
@@ -834,7 +842,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                               id: id,
                               title: 'Viewport ${id.substring(8)}',
                               closable: true,
-                              child: ViewportPanel(controller: _ctrl),
+                              child: ViewportPanel(
+                                controller: _ctrl,
+                                gizmoPreferences: widget.gizmoPreferences,
+                              ),
                             ),
                         ],
                       ),

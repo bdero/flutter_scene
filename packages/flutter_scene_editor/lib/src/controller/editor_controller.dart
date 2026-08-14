@@ -357,6 +357,36 @@ class EditorController extends ChangeNotifier {
   ComponentSchema? componentSchemaFor(String type) =>
       _componentRegistry.codecFor(type)?.schema;
 
+  // Claims-scan memo for [codecForLiveComponent]; entries are re-validated
+  // with claims() before use, so a replaced registration cannot go stale.
+  final Map<Type, ComponentCodec> _codecByRuntimeType = {};
+
+  /// The codec whose type claims live [component], or null. Foreign
+  /// components dispatch on their retained spec type; other components scan
+  /// the registry in registration order (memoized by runtime type).
+  ComponentCodec? codecForLiveComponent(Component component) {
+    if (component is ForeignComponent) {
+      return _componentRegistry.codecFor(component.spec.type);
+    }
+    final cached = _codecByRuntimeType[component.runtimeType];
+    if (cached != null && cached.claims(component)) return cached;
+    for (final type in _componentRegistry.types) {
+      final codec = _componentRegistry.codecFor(type);
+      if (codec != null && codec.claims(component)) {
+        _codecByRuntimeType[component.runtimeType] = codec;
+        return codec;
+      }
+    }
+    return null;
+  }
+
+  /// The registered component schemas that declare gizmos, for the
+  /// viewport's per-type visibility menu.
+  List<ComponentSchema> gizmoComponentSchemas() => [
+    for (final schema in _componentRegistry.schemas)
+      if (schema.gizmo != null) schema,
+  ];
+
   /// Where each foreign (schema-only) component type came from, keyed by
   /// type: `live` (fetched from the running app), `cache` (a prior fetch), or
   /// a package name. Types absent from this map are compiled in.
