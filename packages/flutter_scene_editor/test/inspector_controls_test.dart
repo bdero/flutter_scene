@@ -67,6 +67,38 @@ void main() {
     expect(commits, [2.5]);
   });
 
+  testWidgets('slider number field commits typed values past the slider max', (
+    tester,
+  ) async {
+    final commits = <double>[];
+    await tester.pumpWidget(
+      themed(
+        SizedBox(
+          width: 360,
+          child: SliderNumberField(
+            label: 'Emissive strength',
+            value: 1,
+            min: 0,
+            max: 10,
+            onPreview: (_) {},
+            onCommit: commits.add,
+            enableInfiniteDrag: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(ScrubbableNumberField));
+    await tester.pump();
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    editable.controller.text = '1000';
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    // The slider track is bounded; the committed value must not be.
+    expect(commits, [1000.0]);
+    expect(find.text('1000.000'), findsOneWidget);
+  });
+
   testWidgets('inspector switch uses Forui', (tester) async {
     await tester.pumpWidget(
       themed(
