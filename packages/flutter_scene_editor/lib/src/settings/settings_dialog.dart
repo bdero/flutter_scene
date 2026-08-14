@@ -9,6 +9,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart' hide FTheme;
 
+import '../shell/editor_theme.dart';
 import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
 import 'editor_settings.dart';
@@ -29,6 +30,7 @@ Future<void> showSettingsDialog(
   return showDialog<void>(
     context: context,
     builder: (context) => Dialog(
+      backgroundColor: editorSurfaceColor,
       child: SettingsDialog(
         settings: settings,
         inspector: inspector,
@@ -194,10 +196,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Settings',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
+            const Text('Settings', style: editorDialogTitleText),
             const SizedBox(height: 8),
             Expanded(
               child: Row(
@@ -242,20 +241,16 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Widget _categoryRail(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(5),
-      ),
+      decoration: editorPanelBox(),
       child: ListView(
         children: [
           for (var i = 0; i < _categories.length; i++)
             ListTile(
               dense: true,
               selected: _category == i,
-              selectedTileColor: scheme.primary.withValues(alpha: 0.12),
-              title: Text(_categories[i], style: const TextStyle(fontSize: 12)),
+              selectedTileColor: editorAccentColor.withValues(alpha: 0.12),
+              title: Text(_categories[i], style: editorMenuItemText),
               onTap: () => setState(() => _category = i),
             ),
         ],
@@ -267,21 +262,15 @@ class _SettingsDialogState extends State<SettingsDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'General',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 12),
-        const Text('Source editor', style: TextStyle(fontSize: 12)),
+        const EditorSectionHeader(label: 'General'),
+        const SizedBox(height: 8),
+        const Text('Source editor', style: editorBodyText),
         const SizedBox(height: 4),
-        Text(
+        const Text(
           'Command that opens component source files. '
           '$kSourceFilePlaceholder is replaced with the file path, appended '
           'when absent.',
-          style: TextStyle(
-            fontSize: 11,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
+          style: editorDetailText,
         ),
         const SizedBox(height: 8),
         Row(
@@ -324,10 +313,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text(
-          'Flutter Installations',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
+        const EditorSectionHeader(label: 'Flutter Installations'),
         const SizedBox(height: 8),
         Expanded(
           child: Row(
@@ -344,12 +330,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Widget _installationList(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(5),
-      ),
+      decoration: editorPanelBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -728,15 +710,10 @@ class _InfoPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(5),
-      ),
+      decoration: editorPanelBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
