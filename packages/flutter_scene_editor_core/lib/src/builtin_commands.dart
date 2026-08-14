@@ -1494,6 +1494,11 @@ bool _applyEnvironmentEffects(
     'ambientOcclusionBentNormals',
     (v) => e.ambientOcclusionBentNormals = v,
   );
+  number(
+    'ambientOcclusionIndirectLight',
+    e.ambientOcclusionIndirectLight,
+    (v) => e.ambientOcclusionIndirectLight = v,
+  );
   boolean(
     'ambientOcclusionHalfResolution',
     (v) => e.ambientOcclusionHalfResolution = v,

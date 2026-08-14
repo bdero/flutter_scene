@@ -200,6 +200,7 @@ void main() {
         'bloomEnabled': true,
         'bloomIntensity': 1.4,
         'ambientOcclusionSampleCount': 32,
+        'ambientOcclusionIndirectLight': 2.0,
         'screenSpaceReflectionsEnabled': true,
         'fogColor': {'x': 0.1, 'y': 0.2, 'z': 0.3},
         'godRaysStepCount': 48,
@@ -214,6 +215,7 @@ void main() {
     expect(environment.effects.bloomEnabled, isTrue);
     expect(environment.effects.bloomIntensity, 1.4);
     expect(environment.effects.ambientOcclusionSampleCount, 32);
+    expect(environment.effects.ambientOcclusionIndirectLight, 2.0);
     expect(environment.effects.screenSpaceReflectionsEnabled, isTrue);
     expect(environment.effects.fogColor, Vector3(0.1, 0.2, 0.3));
     expect(environment.effects.godRaysStepCount, 48);
