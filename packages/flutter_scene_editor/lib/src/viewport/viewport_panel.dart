@@ -804,6 +804,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
                     final cam = _freeLookActive
                         ? _freeLook.camera
                         : _camera.camera;
+                    // Picture-in-picture preview of the selected node's camera
+                    // component, rendered by the same SceneView as a second
+                    // view into a bottom-left sub-rect. Hidden when the panel
+                    // is too small to fit it alongside the badges.
+                    final cameraComponents = live
+                        ?.getComponents<CameraComponent>();
+                    final pipCamera =
+                        (cameraComponents == null || cameraComponents.isEmpty)
+                        ? null
+                        : cameraComponents.first.toCamera();
+                    Rect? pipRect;
+                    if (pipCamera != null) {
+                      final pipWidth = (size.width * 0.3).clamp(160.0, 420.0);
+                      final pipHeight = pipWidth * 9 / 16;
+                      if (size.width >= pipWidth * 2 &&
+                          size.height >= pipHeight * 2) {
+                        pipRect = Rect.fromLTWH(
+                          12,
+                          size.height - pipHeight - 40,
+                          pipWidth,
+                          pipHeight,
+                        );
+                      }
+                    }
                     return Stack(
                       fit: StackFit.expand,
                       children: [
@@ -833,7 +857,20 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               onPointerSignal: _onPointerSignal,
                               child: SceneView(
                                 _ctrl.scene,
-                                camera: cam,
+                                viewsBuilder: (_) => [
+                                  RenderView(camera: cam),
+                                  if (pipCamera != null && pipRect != null)
+                                    RenderView(
+                                      camera: pipCamera,
+                                      viewport: Rect.fromLTWH(
+                                        pipRect.left / size.width,
+                                        pipRect.top / size.height,
+                                        pipRect.width / size.width,
+                                        pipRect.height / size.height,
+                                      ),
+                                      order: 1,
+                                    ),
+                                ],
                                 onTick: _onTick,
                               ),
                             ),
@@ -869,6 +906,35 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                 activeAxis: _gizmo.activeAxis,
                               ),
                               size: size,
+                            ),
+                          ),
+                        if (pipRect != null)
+                          Positioned.fromRect(
+                            rect: pipRect,
+                            child: IgnorePointer(
+                              child: Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.white70),
+                                    ),
+                                    child: const SizedBox.expand(),
+                                  ),
+                                  Positioned(
+                                    top: -24,
+                                    left: 0,
+                                    child: _InfoBadge(
+                                      text: () {
+                                        final name = live?.name ?? '';
+                                        return name.isEmpty
+                                            ? 'Camera preview'
+                                            : name;
+                                      }(),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         Positioned(
