@@ -550,6 +550,8 @@ class EnvironmentEffectsSpec {
     Vector3? lift,
     Vector3? gamma,
     Vector3? gain,
+    this.colorGradingLut,
+    this.colorGradingLutBlend = 1.0,
     this.bloomEnabled = false,
     this.bloomThreshold = 1.0,
     this.bloomIntensity = 0.15,
@@ -650,6 +652,8 @@ class EnvironmentEffectsSpec {
         lift: other.lift.clone(),
         gamma: other.gamma.clone(),
         gain: other.gain.clone(),
+        colorGradingLut: other.colorGradingLut,
+        colorGradingLutBlend: other.colorGradingLutBlend,
         bloomEnabled: other.bloomEnabled,
         bloomThreshold: other.bloomThreshold,
         bloomIntensity: other.bloomIntensity,
@@ -749,6 +753,14 @@ class EnvironmentEffectsSpec {
   Vector3 lift;
   Vector3 gamma;
   Vector3 gain;
+
+  /// A `.cube` lookup-table film look, or null for none. Applies
+  /// independently of [colorGradingEnabled].
+  AssetRef? colorGradingLut;
+
+  /// How strongly [colorGradingLut] applies, `0.0` to `1.0`.
+  double colorGradingLutBlend;
+
   bool bloomEnabled;
   double bloomThreshold;
   double bloomIntensity;

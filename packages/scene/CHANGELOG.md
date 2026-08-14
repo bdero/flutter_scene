@@ -5,6 +5,7 @@
 - `package:scene/schema.dart`, the portable component schema model (`ComponentSchema`, `ComponentPropertyDef`, the tagged constraint taxonomy, `formerNames`/`formerTypes`).
 - `.fscene` version 3, component properties delta-serialize and audio attenuation settings nest; version 2 documents migrate as-is.
 - Sun lights carry `contactShadows`, `contactShadowDistance`, and `angularRadius`.
+- Environment effects carry `colorGradingLut` (a `.cube` asset reference) and `colorGradingLutBlend`.
 
 - Ambient-occlusion effects carry `indirectLight`, `method`, `sliceCount`, `stepsPerSlice`, `visibilityBitmask`, `thickness`, `thicknessHeuristic`, `bentNormals`, and `multiBounce`.
 - Retuned effect defaults, ambient-occlusion intensity `1.0`, bloom intensity `0.15`, chromatic aberration `0.2`, auto-exposure clamps `-4`/`4` EV.

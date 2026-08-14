@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -97,6 +97,10 @@ class ColorLut {
   /// The cube's edge length.
   final int size;
 
+  /// The asset path this table was loaded from, or null for one built from
+  /// a string. Scene serialization persists the reference.
+  String? get sourceAsset => _sourceAssets[this];
+
   /// Parses the text of a `.cube` file and uploads the table.
   ///
   /// Supports 3D tables up to edge length 64. `TITLE` and domain lines are
@@ -115,5 +119,18 @@ class ColorLut {
 
   /// Loads and parses a `.cube` asset.
   static Future<ColorLut> fromCubeAsset(String assetPath) async =>
-      fromCubeString(await rootBundle.loadString(assetPath));
+      tagColorLutSource(
+        fromCubeString(await rootBundle.loadString(assetPath)),
+        assetPath,
+      );
+}
+
+final Expando<String> _sourceAssets = Expando('ColorLut source asset');
+
+/// Stamps [lut] with the [assetPath] it was loaded from (the scene realizer
+/// loads through its own bundle) and returns it.
+@internal
+ColorLut tagColorLutSource(ColorLut lut, String assetPath) {
+  _sourceAssets[lut] = assetPath;
+  return lut;
 }

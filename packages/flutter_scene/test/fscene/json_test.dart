@@ -134,6 +134,8 @@ void main() {
           colorGradingEnabled: true,
           saturation: 1.4,
           lift: Vector3(0.1, 0.2, 0.3),
+          colorGradingLut: const AssetRef('looks/teal.cube'),
+          colorGradingLutBlend: 0.6,
           bloomEnabled: true,
           bloomIntensity: 1.7,
           vignetteEnabled: true,
@@ -165,6 +167,8 @@ void main() {
     expect(effects.colorGradingEnabled, isTrue);
     expect(effects.saturation, 1.4);
     expect(effects.lift, Vector3(0.1, 0.2, 0.3));
+    expect(effects.colorGradingLut, const AssetRef('looks/teal.cube'));
+    expect(effects.colorGradingLutBlend, 0.6);
     expect(effects.bloomEnabled, isTrue);
     expect(effects.bloomIntensity, 1.7);
     expect(effects.vignetteEnabled, isTrue);
