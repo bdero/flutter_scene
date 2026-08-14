@@ -193,12 +193,10 @@ Future<LocalId?> assignFmatMaterial(
   );
   if (added.isEmpty) return null;
   final materialId = added.first;
-  await controller.run('setComponentProperties', {
-    'nodeId': nodeId.toToken(),
-    'componentType': 'mesh',
-    'properties': {
-      'material': {'\$resource': materialId.toToken()},
-    },
+  // Routed, so assigning to a prefab-internal mesh records an override on
+  // the enclosing instance instead of failing on the missing source node.
+  await controller.setComponentPropertyRouted(nodeId, 'mesh', 'material', {
+    '\$resource': materialId.toToken(),
   });
   return materialId;
 }

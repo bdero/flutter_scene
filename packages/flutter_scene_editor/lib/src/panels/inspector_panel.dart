@@ -1500,11 +1500,20 @@ class _ResourceRefRow extends StatelessWidget {
     }
   }
 
-  // A friendly label for the dropdown: a named environment shows its name.
+  // A friendly label for the dropdown: named resources show their name and
+  // file-backed textures their basename, with the id token as the last
+  // resort. The display document also covers prefab-owned resources.
   String _label(LocalId id) {
-    final r = controller.document.resource(id);
-    if (r is EnvironmentResource && r.name.isNotEmpty) return r.name;
-    return id.toToken();
+    final r =
+        controller.displayDocument.resource(id) ??
+        controller.document.resource(id);
+    final name = switch (r) {
+      MaterialResource(:final name) => name,
+      EnvironmentResource(:final name) => name,
+      TextureResource(:final asset?) => asset.key.split('/').last,
+      _ => '',
+    };
+    return name.isEmpty ? id.toToken() : name;
   }
 
   Future<void> _createEnvironment() async {

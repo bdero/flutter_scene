@@ -117,8 +117,38 @@ class MaterialSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resource = controller.document.resources[materialId];
-    if (resource is! MaterialResource) return const SizedBox.shrink();
+    final source = controller.document.resources[materialId];
+    final composed = source ?? controller.displayDocument.resources[materialId];
+    if (composed is! MaterialResource) return const SizedBox.shrink();
+    if (source == null) {
+      // Owned by an instanced prefab (or an imported model inside one), so
+      // there is no source resource to edit; show what it is instead of
+      // nothing. TODO(material-extract): offer extract-to-document per the
+      // asset provenance design.
+      return Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Material', style: Theme.of(context).textTheme.labelMedium),
+            const SizedBox(height: 4),
+            Text(
+              composed.name.isEmpty
+                  ? _typeLabel(composed.type)
+                  : '${composed.name} (${_typeLabel(composed.type)})',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Owned by the instanced prefab; assign a scene material to '
+              'replace it.',
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      );
+    }
+    final resource = source as MaterialResource;
     final type = resource.type;
     final isFmat = type == 'fmat';
     final assetKey = resource.asset?.key;
