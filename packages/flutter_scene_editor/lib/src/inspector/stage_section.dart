@@ -1231,8 +1231,15 @@ class SkySection extends StatelessWidget {
       'setEnvironmentSunLightProperties',
       {'properties': properties, ...target()},
     );
-    // TODO(sun-preview): update the realized sun during slider drags without
-    // adding history entries, matching the sky-parameter preview path.
+    // Preview a sun tweak on the realized global environment during a drag;
+    // a volume's sun stays commit-only (the global preview path would
+    // restyle the whole scene).
+    void previewSun(String key, Object raw) {
+      final env = environment;
+      if (env == null || volumeNodeId != null) return;
+      controller.previewEnvironmentSunProperty(env.id, key, raw);
+    }
+
     void preview(String key, Object raw) {
       final node = volumeNodeId;
       if (node != null) {
@@ -1389,7 +1396,7 @@ class SkySection extends StatelessWidget {
                         value: sunLight.intensityScale,
                         min: 0,
                         max: 10,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('intensityScale', v),
                         onCommit: (v) => runSun({'intensityScale': v}),
                       ),
                       SliderNumberField(
@@ -1400,7 +1407,7 @@ class SkySection extends StatelessWidget {
                         scrubStep: 1,
                         snapStep: 1,
                         fractionDigits: 0,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('priority', v.round()),
                         onCommit: (v) => runSun({'priority': v.round()}),
                       ),
                       InspectorSwitch(
@@ -1414,7 +1421,7 @@ class SkySection extends StatelessWidget {
                         value: sunLight.shadowMaxDistance,
                         min: 1,
                         max: 1000,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('shadowMaxDistance', v),
                         onCommit: (v) => runSun({'shadowMaxDistance': v}),
                       ),
                       SliderNumberField(
@@ -1422,7 +1429,7 @@ class SkySection extends StatelessWidget {
                         value: sunLight.shadowFadeRange,
                         min: 0,
                         max: 100,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('shadowFadeRange', v),
                         onCommit: (v) => runSun({'shadowFadeRange': v}),
                       ),
                       SliderNumberField(
@@ -1430,13 +1437,14 @@ class SkySection extends StatelessWidget {
                         value: sunLight.shadowSoftness,
                         min: 0,
                         max: 2,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('shadowSoftness', v),
                         onCommit: (v) => runSun({'shadowSoftness': v}),
                       ),
                       SliderNumberField(
                         label: 'Cascade distribution',
                         value: sunLight.shadowCascadeSplitLambda,
-                        onPreview: (_) {},
+                        onPreview: (v) =>
+                            previewSun('shadowCascadeSplitLambda', v),
                         onCommit: (v) =>
                             runSun({'shadowCascadeSplitLambda': v}),
                       ),
@@ -1445,7 +1453,7 @@ class SkySection extends StatelessWidget {
                         value: sunLight.shadowDepthBias,
                         min: 0,
                         max: 0.2,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('shadowDepthBias', v),
                         onCommit: (v) => runSun({'shadowDepthBias': v}),
                       ),
                       SliderNumberField(
@@ -1453,13 +1461,14 @@ class SkySection extends StatelessWidget {
                         value: sunLight.shadowNormalBias,
                         min: 0,
                         max: 0.2,
-                        onPreview: (_) {},
+                        onPreview: (v) => previewSun('shadowNormalBias', v),
                         onCommit: (v) => runSun({'shadowNormalBias': v}),
                       ),
                       SliderNumberField(
                         label: 'Ambient shadow strength',
                         value: sunLight.shadowAmbientStrength,
-                        onPreview: (_) {},
+                        onPreview: (v) =>
+                            previewSun('shadowAmbientStrength', v),
                         onCommit: (v) => runSun({'shadowAmbientStrength': v}),
                       ),
                       SliderNumberField(
@@ -1470,7 +1479,8 @@ class SkySection extends StatelessWidget {
                         scrubStep: 1,
                         snapStep: 1,
                         fractionDigits: 0,
-                        onPreview: (_) {},
+                        onPreview: (v) =>
+                            previewSun('shadowCascadeCount', v.round()),
                         onCommit: (v) =>
                             runSun({'shadowCascadeCount': v.round()}),
                       ),
@@ -1482,7 +1492,8 @@ class SkySection extends StatelessWidget {
                         scrubStep: 128,
                         snapStep: 128,
                         fractionDigits: 0,
-                        onPreview: (_) {},
+                        onPreview: (v) =>
+                            previewSun('shadowMapResolution', v.round()),
                         onCommit: (v) =>
                             runSun({'shadowMapResolution': v.round()}),
                       ),

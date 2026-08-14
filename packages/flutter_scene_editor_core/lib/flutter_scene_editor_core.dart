@@ -82,6 +82,7 @@ export 'src/builtin_commands.dart'
     show
         builtinCommands,
         environmentResourceWithProperties,
+        environmentResourceWithSunProperties,
         registerBuiltinCommands;
 
 // Subtree cloning (duplicate, copy, paste).
