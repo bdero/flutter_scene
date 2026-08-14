@@ -189,6 +189,11 @@ class _EditorHomeState extends State<_EditorHome> {
 
   // Absolute source file per component type, from source extraction.
   final Map<String, String> _componentSourcePaths = {};
+
+  // Types the project's source extraction has yielded this session, the
+  // ownership record sweep-retirement keys on (provenance labels flip to
+  // `live` after a Play fetch, so they cannot carry ownership).
+  final Set<String> _sourceOwnedTypes = {};
   AppSessionState _lastSessionState = AppSessionState.idle;
 
   String _schemaCachePath(FProject project) =>
@@ -445,14 +450,16 @@ class _EditorHomeState extends State<_EditorHome> {
         ConsoleLineKind.status,
       );
     }
-    // Source-provenance types the sweep stopped yielding were deleted from
-    // the project; retire them everywhere (a type the running Play app still
-    // registers re-adopts as live until its next restart).
+    // Types this project's source has yielded before but the sweep stopped
+    // yielding were deleted; retire them everywhere. Ownership is tracked in
+    // [_sourceOwnedTypes] rather than read from the provenance label, which
+    // a Play session's schema fetch overwrites to `live` (the running app
+    // keeps the class compiled until its next restart).
     final current = {for (final schema in result.schemas) schema.type};
-    final gone = [
-      for (final entry in _foreignSchemaProvenance.entries)
-        if (entry.value == 'source' && !current.contains(entry.key)) entry.key,
-    ];
+    final gone = _sourceOwnedTypes.difference(current).toList();
+    _sourceOwnedTypes
+      ..removeAll(gone)
+      ..addAll(current);
     if (gone.isNotEmpty) {
       for (final type in gone) {
         _foreignSchemas.remove(type);
