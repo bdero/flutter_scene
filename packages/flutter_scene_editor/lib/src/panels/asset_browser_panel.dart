@@ -12,12 +12,14 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_thumbnail.dart';
 import '../inspector/resource_origin.dart';
+import '../io/file_browser.dart';
 import '../io/scene_io.dart';
 
 /// The asset browser panel.
@@ -299,10 +301,73 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
             depth: 0,
             onAct: _actOn,
             onOpenScene: _openSceneAction(file),
+            onContextMenu: _showFileMenu,
           ),
         const SizedBox(height: 8),
       ],
     );
+  }
+
+  // Text formats the source-editor action opens.
+  static const _textExtensions = {
+    '.fmat',
+    '.fscene',
+    '.fproject',
+    '.json',
+    '.glsl',
+    '.frag',
+    '.vert',
+    '.dart',
+    '.cube',
+    '.md',
+    '.txt',
+    '.yaml',
+  };
+
+  static bool _isTextAsset(FileAsset asset) {
+    final name = asset.name.toLowerCase();
+    return _textExtensions.any(name.endsWith);
+  }
+
+  // The per-file right-click menu: clipboard path, the platform file
+  // browser's reveal verb, and the source editor for text formats.
+  Future<void> _showFileMenu(FileAsset asset, Offset position) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    const itemStyle = TextStyle(fontSize: 12);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem(
+          value: 'copy',
+          height: 34,
+          child: Text('Copy path', style: itemStyle),
+        ),
+        PopupMenuItem(
+          value: 'reveal',
+          height: 34,
+          child: Text(revealInFileBrowserLabel, style: itemStyle),
+        ),
+        if (_isTextAsset(asset))
+          const PopupMenuItem(
+            value: 'open',
+            height: 34,
+            child: Text('Open source in editor', style: itemStyle),
+          ),
+      ],
+    );
+    switch (action) {
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: asset.path));
+      case 'reveal':
+        await revealInFileBrowser(asset.path);
+      case 'open':
+        await _ctrl.sourceFileOpener?.call(asset.path);
+    }
   }
 
   Widget _directoryBranch(
@@ -341,6 +406,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
               depth: depth + 1,
               onAct: _actOn,
               onOpenScene: _openSceneAction(file),
+              onContextMenu: _showFileMenu,
             ),
         ],
       ],
@@ -361,7 +427,12 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final f in items) _FileThumbnailTile(asset: f, onAct: _actOn),
+            for (final f in items)
+              _FileThumbnailTile(
+                asset: f,
+                onAct: _actOn,
+                onContextMenu: _showFileMenu,
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -681,12 +752,14 @@ class _FileListRow extends StatelessWidget {
     required this.asset,
     required this.depth,
     required this.onAct,
+    required this.onContextMenu,
     this.onOpenScene,
   });
 
   final FileAsset asset;
   final int depth;
   final Future<void> Function(FileAsset) onAct;
+  final void Function(FileAsset, Offset) onContextMenu;
 
   /// Opens this `.fscene` in the editor (tap still instantiates as a prefab).
   final VoidCallback? onOpenScene;
@@ -697,39 +770,42 @@ class _FileListRow extends StatelessWidget {
     return Tooltip(
       message: asset.relativePath,
       waitDuration: const Duration(milliseconds: 600),
-      child: InkWell(
-        onTap: () => onAct(asset),
-        child: SizedBox(
-          height: 26,
-          child: Padding(
-            padding: EdgeInsets.only(left: depth * 14.0 + 19, right: 4),
-            child: Row(
-              children: [
-                Icon(_fileIcon(asset.kind), size: 15, color: scheme.primary),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    asset.name,
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-                if (onOpenScene != null)
-                  Tooltip(
-                    message: 'Open scene',
-                    waitDuration: const Duration(milliseconds: 400),
-                    child: InkWell(
-                      onTap: onOpenScene,
-                      borderRadius: BorderRadius.circular(3),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: Icon(Icons.open_in_new, size: 13),
-                      ),
+      child: GestureDetector(
+        onSecondaryTapUp: (d) => onContextMenu(asset, d.globalPosition),
+        child: InkWell(
+          onTap: () => onAct(asset),
+          child: SizedBox(
+            height: 26,
+            child: Padding(
+              padding: EdgeInsets.only(left: depth * 14.0 + 19, right: 4),
+              child: Row(
+                children: [
+                  Icon(_fileIcon(asset.kind), size: 15, color: scheme.primary),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      asset.name,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
                     ),
                   ),
-              ],
+                  if (onOpenScene != null)
+                    Tooltip(
+                      message: 'Open scene',
+                      waitDuration: const Duration(milliseconds: 400),
+                      child: InkWell(
+                        onTap: onOpenScene,
+                        borderRadius: BorderRadius.circular(3),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.open_in_new, size: 13),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -739,10 +815,15 @@ class _FileListRow extends StatelessWidget {
 }
 
 class _FileThumbnailTile extends StatelessWidget {
-  const _FileThumbnailTile({required this.asset, required this.onAct});
+  const _FileThumbnailTile({
+    required this.asset,
+    required this.onAct,
+    required this.onContextMenu,
+  });
 
   final FileAsset asset;
   final Future<void> Function(FileAsset) onAct;
+  final void Function(FileAsset, Offset) onContextMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -750,44 +831,47 @@ class _FileThumbnailTile extends StatelessWidget {
     return Tooltip(
       message: asset.relativePath,
       waitDuration: const Duration(milliseconds: 600),
-      child: InkWell(
-        onTap: () => onAct(asset),
-        borderRadius: BorderRadius.circular(4),
-        child: SizedBox(
-          width: 80,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: scheme.outlineVariant),
+      child: GestureDetector(
+        onSecondaryTapUp: (d) => onContextMenu(asset, d.globalPosition),
+        child: InkWell(
+          onTap: () => onAct(asset),
+          borderRadius: BorderRadius.circular(4),
+          child: SizedBox(
+            width: 80,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: asset.kind == FileAssetKind.environmentImage
+                      ? EnvironmentThumbnail(path: asset.path)
+                      : asset.kind == FileAssetKind.image
+                      ? Image.file(
+                          File(asset.path),
+                          fit: BoxFit.cover,
+                          cacheWidth: 144,
+                          errorBuilder: (_, _, _) =>
+                              Icon(_fileIcon(asset.kind), size: 28),
+                        )
+                      : Icon(_fileIcon(asset.kind), size: 28),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: asset.kind == FileAssetKind.environmentImage
-                    ? EnvironmentThumbnail(path: asset.path)
-                    : asset.kind == FileAssetKind.image
-                    ? Image.file(
-                        File(asset.path),
-                        fit: BoxFit.cover,
-                        cacheWidth: 144,
-                        errorBuilder: (_, _, _) =>
-                            Icon(_fileIcon(asset.kind), size: 28),
-                      )
-                    : Icon(_fileIcon(asset.kind), size: 28),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                asset.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 10),
-              ),
-            ],
+                const SizedBox(height: 2),
+                Text(
+                  asset.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 10),
+                ),
+              ],
+            ),
           ),
         ),
       ),
