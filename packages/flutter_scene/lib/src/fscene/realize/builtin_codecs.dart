@@ -119,7 +119,7 @@ class EnvironmentVolumeCodec
       'blendDistance',
       defaultValue: 1.0,
       doc: 'Local-space fade band outside the region.',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
       get: (c) => c.blendDistance,
       set: (c, v) => c.blendDistance = v,
     ),
@@ -793,7 +793,7 @@ class DirectionalLightCodec
       defaultValue: 2.0,
       doc: 'Distance over which shadows fade out.',
       group: 'Shadows',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(0, 20)],
       get: (c) => c.light.shadowFadeRange,
       set: (c, v) => c.light.shadowFadeRange = v,
     ),
@@ -820,7 +820,7 @@ class DirectionalLightCodec
       defaultValue: 150.0,
       doc: 'Far distance shadows are rendered to.',
       group: 'Shadows',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(10, 500)],
       get: (c) => c.light.shadowMaxDistance,
       set: (c, v) => c.light.shadowMaxDistance = v,
     ),
@@ -847,6 +847,7 @@ class DirectionalLightCodec
       defaultValue: 0.02,
       doc: 'Depth bias applied when sampling the shadow map.',
       group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 0.2), Step(0.001)],
       get: (c) => c.light.shadowDepthBias,
       set: (c, v) => c.light.shadowDepthBias = v,
     ),
@@ -855,6 +856,7 @@ class DirectionalLightCodec
       defaultValue: 0.02,
       doc: 'Normal bias applied when sampling the shadow map.',
       group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 0.2), Step(0.001)],
       get: (c) => c.light.shadowNormalBias,
       set: (c, v) => c.light.shadowNormalBias = v,
     ),
@@ -969,6 +971,7 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       'direction',
       defaultValue: () => Vector3(0, -1, 0),
       doc: 'Cone aim in the node\'s local space.',
+      constraints: const [Normalized()],
       get: (c) => c.light.direction,
       set: (c, v) => c.light.direction = v,
     ),
@@ -1051,6 +1054,7 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       defaultValue: 0.0,
       doc: 'Depth bias used by shadow sampling.',
       group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 0.1), Step(0.001)],
       get: (c) => c.light.shadowDepthBias,
       set: (c, v) => c.light.shadowDepthBias = v,
     ),
@@ -1059,6 +1063,7 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       defaultValue: 0.1,
       doc: 'World-space normal offset used by shadow sampling.',
       group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 1), Step(0.01)],
       get: (c) => c.light.shadowNormalBias,
       set: (c, v) => c.light.shadowNormalBias = v,
     ),
@@ -1067,7 +1072,7 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       defaultValue: 1.0,
       doc: 'Shadow filter radius, in texels.',
       group: 'Shadows',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(0, 8)],
       get: (c) => c.light.shadowSoftness,
       set: (c, v) => c.light.shadowSoftness = v,
     ),
@@ -1098,17 +1103,26 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
 
   @override
   List<ComponentField<CameraComponent>> get fields => [
-    ComponentField.string(
-      'projection',
-      defaultValue: 'perspective',
-      doc: 'The projection model.',
-      get: (_) => 'perspective',
+    // Single-option until orthographic exists (the projection-union TODO
+    // above); options render as a dropdown rather than free text.
+    ComponentField(
+      const ComponentPropertyDef(
+        'projection',
+        ComponentPropertyKind.string,
+        defaultValue: StringValue('perspective'),
+        doc: 'The projection model.',
+        options: ['perspective'],
+      ),
+      read: (c, _) => const StringValue('perspective'),
     ),
     ComponentField.number(
       'fovRadiansY',
       defaultValue: 45 * degrees2Radians,
       doc: 'Vertical field of view, in radians.',
-      constraints: const [Range.nonNegative(), AngleRadians()],
+      constraints: [
+        Range(1 * degrees2Radians, 179 * degrees2Radians),
+        const AngleRadians(),
+      ],
       get: (c) => _perspective(c).fovRadiansY,
       set: (c, v) {
         final projection = c.projection;
@@ -1119,7 +1133,7 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
       'near',
       defaultValue: 0.1,
       doc: 'Near clip distance.',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range(0.0001, null)],
       get: (c) => _perspective(c).near,
       set: (c, v) {
         final projection = c.projection;
@@ -1130,7 +1144,7 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
       'far',
       defaultValue: 1000.0,
       doc: 'Far clip distance.',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range(0.0001, null)],
       get: (c) => _perspective(c).far,
       set: (c, v) {
         final projection = c.projection;
@@ -1392,7 +1406,7 @@ class RectAreaLightCodec
       'width',
       defaultValue: 1.0,
       doc: 'Panel width along the node local X axis.',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
       get: (c) => c.light.width,
       set: (c, v) => c.light.width = v,
     ),
@@ -1400,7 +1414,7 @@ class RectAreaLightCodec
       'height',
       defaultValue: 1.0,
       doc: 'Panel height along the node local Y axis.',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(0, 10)],
       get: (c) => c.light.height,
       set: (c, v) => c.light.height = v,
     ),

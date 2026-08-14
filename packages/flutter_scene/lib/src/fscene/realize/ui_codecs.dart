@@ -122,7 +122,7 @@ class WidgetCodec extends DeclarativeComponentCodec<WidgetComponent> {
       'pixelRatio',
       defaultValue: 1.0,
       doc: 'Texels per logical pixel.',
-      constraints: const [Range.nonNegative()],
+      constraints: const [Range.nonNegative(), SoftRange(0.25, 4)],
       get: (c) => c.pixelRatio,
     ),
     ComponentField.number(

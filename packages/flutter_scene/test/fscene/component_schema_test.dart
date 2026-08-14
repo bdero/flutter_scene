@@ -215,4 +215,17 @@ void main() {
     expect(outer.constraint<AngleRadians>(), isNotNull);
     expect(outer.hardMin, 0);
   });
+
+  test('the camera projection renders as a fixed-option dropdown', () {
+    final camera = registry.codecFor('camera')!;
+    final projection = camera.propertySchema.firstWhere(
+      (d) => d.name == 'projection',
+    );
+    expect(projection.options, ['perspective']);
+    final fov = camera.propertySchema.firstWhere(
+      (d) => d.name == 'fovRadiansY',
+    );
+    expect(fov.hardMin, greaterThan(0));
+    expect(fov.hardMax, lessThan(3.15));
+  });
 }

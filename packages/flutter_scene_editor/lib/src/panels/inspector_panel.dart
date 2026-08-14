@@ -1405,7 +1405,8 @@ class _EnumRow extends StatelessWidget {
                 },
               ),
               size: FTextFieldSizeVariant.sm,
-              expands: true,
+              // expands would trip the framework's expands-with-maxLines
+              // text-field assertion (the select's field keeps maxLines 1).
             ),
           ),
         ],
