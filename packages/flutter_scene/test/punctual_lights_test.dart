@@ -211,6 +211,22 @@ void main() {
       expect(renderScene.primaryDirectionalLight, same(bright));
     });
 
+    test('a hidden node\'s directional light stops contributing', () {
+      final visible = _directional(DirectionalLight(intensity: 1));
+      final hidden = _directional(DirectionalLight(intensity: 100));
+      hidden.node.visible = false;
+      final renderScene = RenderScene()
+        ..addDirectionalLight(visible)
+        ..addDirectionalLight(hidden);
+
+      expect(renderScene.primaryDirectionalLight, same(visible));
+
+      // Hiding an ancestor hides the light too.
+      final parent = Node()..visible = false;
+      parent.add(visible.node);
+      expect(renderScene.primaryDirectionalLight, isNull);
+    });
+
     test('node rotation aims native local forward', () {
       final node = Node(localTransform: Matrix4.rotationY(math.pi / 2));
       final component = DirectionalLightComponent(DirectionalLight());

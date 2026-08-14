@@ -1053,22 +1053,40 @@ base class Scene implements SceneGraph {
     // scene, before the views' render passes query it.
     renderScene.rebuildIfDirty();
 
+    // A hidden node's lights stop contributing, matching its meshes.
+    final visibleDirectionals = [
+      for (final light in renderScene.directionalLights)
+        if (light.node.internalEffectiveVisible) light,
+    ];
+    final visiblePoints = [
+      for (final light in renderScene.pointLights)
+        if (light.node.internalEffectiveVisible) light,
+    ];
+    final visibleSpots = [
+      for (final light in renderScene.spotLights)
+        if (light.node.internalEffectiveVisible) light,
+    ];
+    final visibleAreas = [
+      for (final light in renderScene.rectAreaLights)
+        if (light.node.internalEffectiveVisible) light,
+    ];
+
     // Cascaded shadows and other single-sun features use the selected primary.
     // All other directional lights remain in the additional-light buffer.
     final lightComponent = renderScene.primaryDirectionalLight;
 
     // Select this frame's shadow-casting spots (view-independent).
-    final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final spotShadowFrame = collectSpotShadows(visibleSpots);
 
     // The additional analytic lights (point, spot, and directional lights past
     // the first) are view-independent, so build their shared data texture once
     // per frame here rather than per view.
     final punctualLighting = _punctualLightBuffer.build(
-      directionals: renderScene.directionalLights,
+      directionals: visibleDirectionals,
       primaryDirectional: lightComponent,
-      points: renderScene.pointLights,
-      spots: renderScene.spotLights,
-      areas: renderScene.rectAreaLights,
+      points: visiblePoints,
+      spots: visibleSpots,
+      areas: visibleAreas,
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,

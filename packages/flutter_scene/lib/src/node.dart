@@ -299,6 +299,18 @@ base class Node implements SceneGraph {
   // frame by [scenePrePass].
   bool _effectiveVisible = false;
 
+  /// Whether this node and every ancestor is visible right now. Light
+  /// collection reads it so a hidden node's lights stop contributing the
+  /// way its meshes stop drawing. Walks ancestors rather than reading the
+  /// pre-pass cache so it holds before the first frame too.
+  @internal
+  bool get internalEffectiveVisible {
+    for (Node? current = this; current != null; current = current.parent) {
+      if (!current.visible) return false;
+    }
+    return true;
+  }
+
   // The components attached to this node, in attach order.
   final List<Component> _components = [];
 
