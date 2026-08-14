@@ -21,6 +21,72 @@ const editorAxisColors = [
   Color(0xFF4E86DE),
 ];
 
+/// Panel and dialog chrome tokens, so dialogs (settings, build
+/// configurations, managed checkouts) match the docked panels' look instead
+/// of falling back to approximated Material colors (whose outlineVariant
+/// reads near-white against this palette).
+const Color editorSurfaceColor = _ink;
+const Color editorPanelColor = _graphite;
+const Color editorRaisedColor = _raised;
+const Color editorLineColor = _line;
+const Color editorTextColor = _text;
+const Color editorMutedTextColor = _mutedText;
+const Color editorAccentColor = _signal;
+
+/// The bordered-box chrome panel lists and detail panes share.
+BoxDecoration editorPanelBox({Color color = _graphite}) => BoxDecoration(
+  color: color,
+  border: Border.all(color: _line),
+  borderRadius: BorderRadius.circular(5),
+);
+
+/// Dialog text metrics matching the inspector's rows.
+const TextStyle editorDialogTitleText = TextStyle(
+  fontSize: 15,
+  fontWeight: FontWeight.w600,
+);
+const TextStyle editorBodyText = TextStyle(fontSize: 12);
+const TextStyle editorDetailText = TextStyle(fontSize: 11, color: _mutedText);
+
+/// The accent-barred section header the inspector's sections use, shared so
+/// dialog sections read as the same chrome.
+class EditorSectionHeader extends StatelessWidget {
+  const EditorSectionHeader({super.key, required this.label, this.trailing});
+
+  final String label;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 5, top: 2),
+      padding: const EdgeInsets.fromLTRB(7, 4, 2, 4),
+      decoration: const BoxDecoration(
+        border: Border(
+          left: BorderSide(color: _signal, width: 2),
+          bottom: BorderSide(color: _line),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.15,
+                color: _text,
+              ),
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
 /// Shared menu metrics so every dropdown and context menu spaces identically.
 const double editorMenuItemHeight = 28;
 const EdgeInsets editorMenuItemPadding = EdgeInsets.symmetric(horizontal: 10);

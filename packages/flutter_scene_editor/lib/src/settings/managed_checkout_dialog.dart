@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart' hide FTheme;
 
 import '../toolchains/managed_checkout.dart';
+import '../shell/editor_theme.dart';
 
 /// Shows [job]'s progress. Resolves when the dialog closes; the job's result
 /// (or error) is on the job itself.
@@ -27,7 +28,6 @@ class _ManagedCheckoutProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: 560,
       height: 420,
@@ -60,7 +60,7 @@ class _ManagedCheckoutProgress extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 11,
                             color: phase.index > job.phase.index
-                                ? scheme.onSurfaceVariant
+                                ? editorMutedTextColor
                                 : null,
                           ),
                         ),
@@ -124,14 +124,9 @@ class _ManagedCheckoutProgress extends StatelessWidget {
   }
 
   Widget _logView(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(5),
-      ),
+      decoration: editorPanelBox(color: editorSurfaceColor),
       child: SingleChildScrollView(
         reverse: true,
         child: SelectableText(

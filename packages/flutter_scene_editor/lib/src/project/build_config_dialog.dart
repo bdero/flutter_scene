@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart' hide FTheme;
 
 import 'fproject.dart';
+import '../shell/editor_theme.dart';
 
 const _modes = ['debug', 'profile', 'release'];
 
@@ -158,7 +159,6 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: 820,
       height: 560,
@@ -180,7 +180,7 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
                     width: 240,
                     child: Container(
                       decoration: BoxDecoration(
-                        border: Border.all(color: scheme.outlineVariant),
+                        border: Border.all(color: editorLineColor),
                         borderRadius: BorderRadius.circular(5),
                       ),
                       child: Column(
@@ -279,12 +279,11 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
   /// Free-form command templates, runnable from the toolbar's configuration
   /// menu as raw subprocesses.
   Widget _tasksSection(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
       constraints: const BoxConstraints(maxHeight: 120),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
+        border: Border.all(color: editorLineColor),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Column(
@@ -299,7 +298,10 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
               const SizedBox(width: 6),
               Text(
                 'free-form commands, run from the configuration menu',
-                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: editorMutedTextColor,
+                ),
               ),
               const Spacer(),
               IconButton(
@@ -542,10 +544,7 @@ class _ConfigFormState extends State<_ConfigForm> {
             '\${DEVICE} and \${BUILD_TARGET}. Commands run without a shell '
             '(double quotes group arguments). Play launches an editor-managed '
             'flutter run session composed from the run fields.',
-            style: TextStyle(
-              fontSize: 10,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+            style: TextStyle(fontSize: 10, color: editorMutedTextColor),
           ),
           const SizedBox(height: 8),
           _variablePreview(context),
@@ -567,7 +566,6 @@ class _ConfigFormState extends State<_ConfigForm> {
   Widget _variablePreview(BuildContext context) {
     final provider = widget.previewVariables;
     if (provider == null) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
     final variables = provider(_current);
     const known = [
       'FLUTTER_CLI',
@@ -582,11 +580,7 @@ class _ConfigFormState extends State<_ConfigForm> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(5),
-      ),
+      decoration: editorPanelBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -622,7 +616,7 @@ class _ConfigFormState extends State<_ConfigForm> {
                         fontFamily: 'monospace',
                         color: variables.containsKey(name)
                             ? null
-                            : scheme.onSurfaceVariant,
+                            : editorMutedTextColor,
                       ),
                     ),
                   ),

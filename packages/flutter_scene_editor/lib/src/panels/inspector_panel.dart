@@ -89,7 +89,7 @@ class _NodeInspector extends StatelessWidget {
               isMember: isMember,
               source: _instanceSource(instanceId),
             ),
-          _SectionHeader(label: 'Node'),
+          EditorSectionHeader(label: 'Node'),
           // Name field.
           _StringRow(
             label: 'Name',
@@ -103,7 +103,7 @@ class _NodeInspector extends StatelessWidget {
             onChanged: (v) => controller.setNodeVisibleRouted(node.id, v),
           ),
           const SizedBox(height: 8),
-          _SectionHeader(label: 'Transform'),
+          EditorSectionHeader(label: 'Transform'),
           _TransformEditor(node: node, controller: controller),
           // Components.
           for (final component in node.components) ...[
@@ -365,7 +365,7 @@ class _ComponentSection extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onSecondaryTapUp: (details) =>
               _showContextMenu(context, details.globalPosition),
-          child: _SectionHeader(
+          child: EditorSectionHeader(
             label: 'Component: ${component.type}',
             trailing: canRemove
                 ? _IconAction(
@@ -1181,7 +1181,7 @@ class _PrefabActions extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionHeader(label: 'Prefab'),
+        EditorSectionHeader(label: 'Prefab'),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Row(
@@ -1306,48 +1306,6 @@ class _SmallButton extends StatelessWidget {
 
 // ---- helpers ----------------------------------------------------------------
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label, this.trailing});
-  final String label;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 5, top: 2),
-      padding: const EdgeInsets.fromLTRB(7, 4, 2, 4),
-      decoration: BoxDecoration(
-        border: Border(
-          left: BorderSide(
-            color: Theme.of(context).colorScheme.primary,
-            width: 2,
-          ),
-          bottom: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.4),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.15,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-            ),
-          ),
-          if (trailing != null) trailing!,
-        ],
-      ),
-    );
-  }
-}
-
-/// A compact icon button for section headers.
 class _IconAction extends StatelessWidget {
   const _IconAction({
     required this.icon,
