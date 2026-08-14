@@ -1196,17 +1196,16 @@ class EditorController extends ChangeNotifier {
       return;
     }
     // The composed document holds the resource objects captured at compose
-    // time, and a material edit replaces the host document's object; refresh
-    // the composed copies (host resource ids pass through composition
-    // unchanged) so the realizer reloads the fresh values in place instead
-    // of a full re-realize per slider commit.
+    // time, and a material edit replaces (or creates) the host document's
+    // object; refresh the composed copies (host resource ids pass through
+    // composition unchanged, so inserting a newly created one is safe) so
+    // the realizer reloads the fresh values in place instead of a full
+    // re-realize per slider commit.
     final composed = _composed;
     if (composed != null) {
       for (final id in ids) {
         final updated = document.resource(id);
-        if (updated != null && composed.resources.containsKey(id)) {
-          composed.resources[id] = updated;
-        }
+        if (updated != null) composed.resources[id] = updated;
       }
     }
     final realizer = _resourceRealizer;
