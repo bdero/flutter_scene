@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/physics/pending_registration.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
 import 'package:scene/physics.dart' as sim;
@@ -10,9 +11,10 @@ import 'package:vector_math/vector_math.dart';
 /// A constraint between this node's [RigidBody] and [otherNode]'s (or the
 /// world, when [otherNode] is null).
 ///
-/// Add after both bodies. Property setters reconfigure the live joint.
+/// Registers once both bodies have (in any add order). Property setters
+/// reconfigure the live joint.
 /// {@category Physics}
-abstract class Joint extends Component {
+abstract class Joint extends Component implements PendingPhysicsRegistration {
   Joint({this.otherNode, bool collisionsEnabled = false})
     : _collisionsEnabled = collisionsEnabled;
 
@@ -59,12 +61,16 @@ abstract class Joint extends Component {
     );
   }
 
-  int? _resolveBody(Node bodyNode, String side) {
+  int? _resolveBody(Node bodyNode, String side, {required bool silent}) {
     final body = bodyNode.getComponent<RigidBody>();
     final handle = body?.handle;
     if (handle == null) {
-      // TODO(physics-remount): connect when the body registers.
-      debugPrint('Joint has no registered RigidBody on its $side node; inert');
+      if (!silent) {
+        debugPrint(
+          'Joint has no registered RigidBody on its $side node; waiting '
+          'for it',
+        );
+      }
       return null;
     }
     return handle;
@@ -72,25 +78,36 @@ abstract class Joint extends Component {
 
   @override
   void onMount() {
+    if (!_register(silent: false)) addPendingPhysicsRegistration(this);
+  }
+
+  @override
+  bool internalRetryPhysicsRegistration() => _register(silent: true);
+
+  bool _register({required bool silent}) {
+    if (_handle != null) return true;
+    if (!isAttached) return true;
     final world = findAncestorWorld(node);
     if (world == null) {
-      // Stay inert (an editor viewport, or a scene assembled before its
-      // world). TODO(physics-remount): register when a world mounts later.
-      debugPrint('Joint mounted with no PhysicsWorld ancestor; inert');
-      return;
+      if (!silent) {
+        debugPrint(
+          'Joint mounted with no PhysicsWorld ancestor; waiting for one',
+        );
+      }
+      return false;
     }
     if (!world.simulation.supportsJoints) {
       debugPrint('${world.backendName} has no joints; joint is inert');
-      return;
+      return true;
     }
-    final bodyA = _resolveBody(node, 'own');
-    if (bodyA == null) return;
+    final bodyA = _resolveBody(node, 'own', silent: silent);
+    if (bodyA == null) return false;
     final other = otherNode;
     final int bodyB;
     int? anchorHandle;
     if (other != null) {
-      final resolved = _resolveBody(other, 'other');
-      if (resolved == null) return;
+      final resolved = _resolveBody(other, 'other', silent: silent);
+      if (resolved == null) return false;
       bodyB = resolved;
     } else {
       bodyB = anchorHandle = world.simulation.createAnchorBody();
@@ -102,10 +119,12 @@ abstract class Joint extends Component {
     _handle = world.simulation.createJoint(
       buildDesc(_bodyA, _bodyB, _collisionsEnabled),
     );
+    return true;
   }
 
   @override
   void onUnmount() {
+    removePendingPhysicsRegistration(this);
     final world = _world;
     if (world != null) {
       final handle = _handle;

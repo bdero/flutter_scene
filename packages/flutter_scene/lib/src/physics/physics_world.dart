@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/physics/collider.dart';
 import 'package:flutter_scene/src/physics/events.dart';
+import 'package:flutter_scene/src/physics/pending_registration.dart';
 import 'package:flutter_scene/src/physics/queries.dart';
 import 'package:scene/physics.dart' as sim;
 import 'package:vector_math/vector_math.dart';
@@ -61,6 +62,13 @@ class PhysicsWorld extends Component {
 
   /// The backend this world drives.
   final sim.PhysicsSimulation simulation;
+
+  @override
+  void onMount() {
+    // Descendant physics components mounted before this world (mount order
+    // is realize order) are waiting on an ancestor; wake them.
+    retryPendingPhysicsRegistrations();
+  }
 
   final Map<int, Collider> _collidersByHandle = {};
   StreamController<CollisionEvent>? _events;

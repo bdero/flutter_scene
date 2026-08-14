@@ -1,6 +1,7 @@
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, internal;
 
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/physics/pending_registration.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:flutter_scene/src/physics/rigid_body.dart';
 import 'package:scene/physics.dart' as sim;
@@ -10,11 +11,11 @@ import 'package:vector_math/vector_math.dart';
 ///
 /// Pairs a [shape] with a [material] and a local pose; a node may carry
 /// several colliders forming a compound. When the node also carries a
-/// [RigidBody] the collider attaches to it (add the body first); without
-/// one it becomes static environment geometry through an implicit fixed
-/// body.
+/// [RigidBody] the collider attaches to it (in any add order; the collider
+/// waits for the body); without one it becomes static environment geometry
+/// through an implicit fixed body.
 /// {@category Physics}
-class Collider extends Component {
+class Collider extends Component implements PendingPhysicsRegistration {
   Collider({
     required sim.Shape shape,
     sim.PhysicsMaterial material = sim.PhysicsMaterial.defaultMaterial,
@@ -119,19 +120,21 @@ class Collider extends Component {
     _create();
   }
 
+  /// Rebuilds onto the sibling [RigidBody] that just registered, when this
+  /// collider mounted first and fell back to an implicit static body.
+  @internal
+  void internalAdoptSiblingBody() {
+    if (_implicitBodyHandle == null) return;
+    _rebuild();
+  }
+
   void _create() {
     final world = _world!;
     final body = node.getComponent<RigidBody>();
     final int bodyHandle;
     if (body != null) {
       final handle = body.handle;
-      if (handle == null) {
-        // The sibling body has not registered (mount order, or an inert
-        // body); stay inert rather than failing the whole scene.
-        // TODO(physics-remount): create when the body registers.
-        debugPrint('Collider mounted before its sibling RigidBody; inert');
-        return;
-      }
+      if (handle == null) return;
       bodyHandle = handle;
     } else {
       // Static environment geometry, an implicit fixed body at the node.
@@ -179,19 +182,47 @@ class Collider extends Component {
 
   @override
   void onMount() {
-    final world = findAncestorWorld(node);
+    if (_register(silent: false)) {
+      // A character controller that mounted first is waiting on these
+      // handles.
+      retryPendingPhysicsRegistrations();
+    } else {
+      addPendingPhysicsRegistration(this);
+    }
+  }
+
+  @override
+  bool internalRetryPhysicsRegistration() => _register(silent: true);
+
+  bool _register({required bool silent}) {
+    if (_handles.isNotEmpty || _implicitBodyHandle != null) return true;
+    if (!isAttached) return true;
+    final world = _world ?? findAncestorWorld(node);
     if (world == null) {
-      // Stay inert (an editor viewport, or a scene assembled before its
-      // world). TODO(physics-remount): register when a world mounts later.
-      debugPrint('Collider mounted with no PhysicsWorld ancestor; inert');
-      return;
+      if (!silent) {
+        debugPrint(
+          'Collider mounted with no PhysicsWorld ancestor; waiting for one',
+        );
+      }
+      return false;
+    }
+    final body = node.getComponent<RigidBody>();
+    if (body != null && body.handle == null) {
+      if (!silent) {
+        debugPrint(
+          'Collider mounted before its sibling RigidBody; waiting for it',
+        );
+      }
+      return false;
     }
     _world = world;
     _create();
+    return _handles.isNotEmpty || _implicitBodyHandle != null;
   }
 
   @override
   void onUnmount() {
+    removePendingPhysicsRegistration(this);
     _destroy();
     _world = null;
   }
