@@ -125,7 +125,8 @@ class _CodecEmitter {
       ..writeln();
     if (schema.doc != null ||
         schema.icon != null ||
-        schema.formerTypes.isNotEmpty) {
+        schema.formerTypes.isNotEmpty ||
+        schema.gizmo != null) {
       out
         ..writeln('  @override')
         ..writeln('  ComponentSchema get schema => ComponentSchema(')
@@ -135,8 +136,16 @@ class _CodecEmitter {
       if (schema.formerTypes.isNotEmpty) {
         out.writeln('    formerTypes: ${_strList(schema.formerTypes)},');
       }
+      out.writeln('    properties: propertySchema,');
+      if (schema.gizmo != null) {
+        // Emitted through the JSON form so the generated code stays a plain
+        // literal regardless of which primitives the spec uses.
+        out.writeln(
+          '    gizmo: GizmoSpec.fromJson(const '
+          '${_jsonLiteral(schema.gizmo!.toJson())}),',
+        );
+      }
       out
-        ..writeln('    properties: propertySchema,')
         ..writeln('  );')
         ..writeln();
     }
@@ -626,3 +635,17 @@ String _escape(String value) => value
 String _str(String value) => "'${_escape(value)}'";
 
 String _strList(List<String> values) => '[${values.map(_str).join(', ')}]';
+
+/// A JSON-shaped value (maps, lists, strings, numbers, bools) as a Dart
+/// const-literal source string.
+String _jsonLiteral(Object? value) => switch (value) {
+  null => 'null',
+  final String text => _str(text),
+  final bool flag => '$flag',
+  final num number => '$number',
+  final List<Object?> list => '[${list.map(_jsonLiteral).join(', ')}]',
+  final Map<Object?, Object?> map =>
+    '{${map.entries.map((entry) => '${_str(entry.key! as String)}: '
+        '${_jsonLiteral(entry.value)}').join(', ')}}',
+  _ => 'null',
+};
