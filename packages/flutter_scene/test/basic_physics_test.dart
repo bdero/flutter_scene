@@ -273,6 +273,89 @@ void main() {
       await sub.cancel();
     });
   });
+
+  group('mount order independence', () {
+    test('components register when the world mounts after them', () {
+      final root = Node();
+      final node = Node();
+      root.add(node);
+      final body = RigidBody(type: BodyType.kinematic);
+      node.addComponent(body);
+      body.mount();
+      final collider = Collider(shape: SphereShape(radius: 1));
+      node.addComponent(collider);
+      collider.mount();
+      expect(body.handle, isNull);
+      expect(collider.handles, isEmpty);
+
+      final world = PhysicsWorld(BasicSimulation());
+      root.addComponent(world);
+      world.mount();
+
+      expect(body.handle, isNotNull);
+      expect(collider.handles, isNotEmpty);
+      expect(body.world, world);
+    });
+
+    test('a collider mounted before its sibling body registers with it', () {
+      final root = _bootWorld();
+      final node = Node();
+      root.add(node);
+      final collider = Collider(shape: SphereShape(radius: 1));
+      node.addComponent(collider);
+      collider.mount();
+      // No sibling body yet, so it is static environment geometry.
+      final staticHandles = collider.handles;
+      expect(staticHandles, isNotEmpty);
+
+      final body = RigidBody(type: BodyType.kinematic);
+      node.addComponent(body);
+      body.mount();
+
+      // The collider rebuilt onto the body (fresh handles).
+      expect(body.handle, isNotNull);
+      expect(collider.handles, isNotEmpty);
+      expect(collider.handles, isNot(equals(staticHandles)));
+    });
+
+    test('an unsupported joint drops out instead of waiting forever', () {
+      // The basic backend has no joints; once a world exists the joint
+      // resolves to permanently inert rather than staying pending.
+      final root = Node();
+      final jointNode = Node();
+      root.add(jointNode);
+      final body = RigidBody(type: BodyType.kinematic);
+      jointNode.addComponent(body);
+      body.mount();
+      final joint = FixedJoint();
+      jointNode.addComponent(joint);
+      joint.mount();
+      expect(joint.handle, isNull);
+
+      final world = PhysicsWorld(BasicSimulation());
+      root.addComponent(world);
+      world.mount();
+
+      expect(body.handle, isNotNull);
+      expect(joint.handle, isNull);
+    });
+
+    test('an unmounted pending component drops out of the retry set', () {
+      final root = Node();
+      final node = Node();
+      root.add(node);
+      final body = RigidBody(type: BodyType.kinematic);
+      node.addComponent(body);
+      body.mount();
+      expect(body.handle, isNull);
+      node.removeComponent(body);
+
+      final world = PhysicsWorld(BasicSimulation());
+      root.addComponent(world);
+      world.mount();
+      expect(body.handle, isNull);
+    });
+  });
 }
 
 // Builds a root node with a mounted basic-simulation world. Children added

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/physics/collider.dart';
+import 'package:flutter_scene/src/physics/pending_registration.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:scene/physics.dart' show CharacterMovement;
 import 'package:vector_math/vector_math.dart';
@@ -17,7 +18,8 @@ export 'package:scene/physics.dart' show CharacterMovement;
 /// [move] once per fixed step; the corrected translation is applied to
 /// the node and returned.
 /// {@category Physics}
-class KinematicCharacterController extends Component {
+class KinematicCharacterController extends Component
+    implements PendingPhysicsRegistration {
   KinematicCharacterController({
     Vector3? up,
     this.offset = 0.01,
@@ -61,35 +63,47 @@ class KinematicCharacterController extends Component {
 
   @override
   void onMount() {
+    if (!_register(silent: false)) addPendingPhysicsRegistration(this);
+  }
+
+  @override
+  bool internalRetryPhysicsRegistration() => _register(silent: true);
+
+  bool _register({required bool silent}) {
+    if (_world != null) return true;
+    if (!isAttached) return true;
     final world = findAncestorWorld(node);
     if (world == null) {
-      // Stay inert (an editor viewport, or a scene assembled before its
-      // world). TODO(physics-remount): register when a world mounts later.
-      debugPrint(
-        'KinematicCharacterController mounted with no PhysicsWorld '
-        'ancestor; inert',
-      );
-      return;
+      if (!silent) {
+        debugPrint(
+          'KinematicCharacterController mounted with no PhysicsWorld '
+          'ancestor; waiting for one',
+        );
+      }
+      return false;
     }
     if (!world.simulation.supportsCharacters) {
       debugPrint('${world.backendName} has no character controller; inert');
-      return;
+      return true;
     }
     final collider = node.getComponent<Collider>();
     if (collider == null || collider.handles.isEmpty) {
-      // TODO(physics-remount): attach when the sibling collider registers.
-      debugPrint(
-        'KinematicCharacterController has no registered sibling Collider; '
-        'inert',
-      );
-      return;
+      if (!silent) {
+        debugPrint(
+          'KinematicCharacterController has no registered sibling Collider; '
+          'waiting for it',
+        );
+      }
+      return false;
     }
     _world = world;
     _collider = collider;
+    return true;
   }
 
   @override
   void onUnmount() {
+    removePendingPhysicsRegistration(this);
     _world = null;
     _collider = null;
   }

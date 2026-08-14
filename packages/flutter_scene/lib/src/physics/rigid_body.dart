@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/physics/collider.dart';
+import 'package:flutter_scene/src/physics/pending_registration.dart';
 import 'package:flutter_scene/src/physics/physics_world.dart';
 import 'package:scene/physics.dart' as sim;
 import 'package:vector_math/vector_math.dart';
@@ -13,7 +15,7 @@ import 'package:vector_math/vector_math.dart';
 /// [sim.BodyType]); mutating a dynamic body's node transform is treated
 /// as a teleport.
 /// {@category Physics}
-class RigidBody extends Component {
+class RigidBody extends Component implements PendingPhysicsRegistration {
   RigidBody({
     sim.BodyType type = sim.BodyType.dynamic_,
     double? mass,
@@ -230,12 +232,31 @@ class RigidBody extends Component {
 
   @override
   void onMount() {
+    if (_register(silent: false)) {
+      // Dependents that mounted first (a sibling collider, a joint on any
+      // node referencing this body) are waiting on this handle.
+      retryPendingPhysicsRegistrations();
+    } else {
+      addPendingPhysicsRegistration(this);
+    }
+  }
+
+  @override
+  bool internalRetryPhysicsRegistration() => _register(silent: true);
+
+  bool _register({required bool silent}) {
+    if (_handle != null) return true;
+    // Detached while pending (removeComponent outside a live scene skips
+    // unmount); nothing to register.
+    if (!isAttached) return true;
     final world = findAncestorWorld(node);
     if (world == null) {
-      // Stay inert (an editor viewport, or a scene assembled before its
-      // world). TODO(physics-remount): register when a world mounts later.
-      debugPrint('RigidBody mounted with no PhysicsWorld ancestor; inert');
-      return;
+      if (!silent) {
+        debugPrint(
+          'RigidBody mounted with no PhysicsWorld ancestor; waiting for one',
+        );
+      }
+      return false;
     }
     _world = world;
     final handle = world.simulation.createBody(
@@ -259,10 +280,17 @@ class RigidBody extends Component {
         _angularAxisLocks != Vector3(1, 1, 1)) {
       _pushAxisLocks();
     }
+    // A sibling collider that mounted first attached to an implicit static
+    // body; move it onto this one.
+    for (final collider in node.getComponents<Collider>()) {
+      collider.internalAdoptSiblingBody();
+    }
+    return true;
   }
 
   @override
   void onUnmount() {
+    removePendingPhysicsRegistration(this);
     final handle = _handle;
     if (handle != null) _sim?.destroyBody(handle);
     _handle = null;
