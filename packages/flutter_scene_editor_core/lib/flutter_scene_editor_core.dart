@@ -79,7 +79,10 @@ export 'src/params.dart'
 
 // The built-in command set.
 export 'src/builtin_commands.dart'
-    show builtinCommands, registerBuiltinCommands;
+    show
+        builtinCommands,
+        environmentResourceWithProperties,
+        registerBuiltinCommands;
 
 // Subtree cloning (duplicate, copy, paste).
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;

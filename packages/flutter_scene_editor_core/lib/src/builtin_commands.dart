@@ -2113,6 +2113,21 @@ final createEnvironmentResource = CommandEntry(
 /// Updates an environment resource's scalar look (exposure, environment
 /// intensity, tone mapping, the environment kind, reflection size). Only the
 /// keys present in `properties` change.
+/// A copy of [base] with look [properties] applied, using the same coercion
+/// and key set as `setEnvironmentProperties`; for previewing a slider drag
+/// on the live scene without a document transaction.
+EnvironmentResource environmentResourceWithProperties(
+  EnvironmentResource base,
+  Map<String, Object?> properties,
+) {
+  final next = _copyEnvironmentResource(base);
+  _applyLookProperties(_EnvResourceLook(next), {
+    for (final entry in properties.entries)
+      entry.key: coercePropertyValue(entry.value),
+  });
+  return next;
+}
+
 final setEnvironmentProperties = CommandEntry(
   name: 'setEnvironmentProperties',
   doc: 'Update an environment resource look.',

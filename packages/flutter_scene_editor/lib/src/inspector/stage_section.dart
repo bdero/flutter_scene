@@ -363,6 +363,12 @@ class ColorManagementControls extends StatelessWidget {
   final EnvironmentResource? environment;
   final LocalId? volumeNodeId;
 
+  void _preview(String key, Object value) {
+    final env = environment;
+    if (env == null) return;
+    controller.previewEnvironmentProperty(env.id, key, value);
+  }
+
   void _set(String key, Object value) {
     final env = environment;
     if (env == null) return;
@@ -413,7 +419,7 @@ class ColorManagementControls extends StatelessWidget {
             value: env.agxWhite,
             min: 1,
             max: 64,
-            onPreview: (_) {},
+            onPreview: (v) => _preview('agxWhite', v),
             onCommit: (v) => _set('agxWhite', v),
           ),
           SliderNumberField(
@@ -421,7 +427,7 @@ class ColorManagementControls extends StatelessWidget {
             value: env.agxContrast,
             min: 0.5,
             max: 2,
-            onPreview: (_) {},
+            onPreview: (v) => _preview('agxContrast', v),
             onCommit: (v) => _set('agxContrast', v),
           ),
         ],
@@ -503,6 +509,12 @@ class EnvironmentEffectsControls extends StatelessWidget {
     });
   }
 
+  void _preview(String key, Object value) {
+    final env = environment;
+    if (env == null) return;
+    controller.previewEnvironmentProperty(env.id, key, value);
+  }
+
   Widget _slider(
     String label,
     String key,
@@ -514,7 +526,7 @@ class EnvironmentEffectsControls extends StatelessWidget {
     value: value,
     min: min,
     max: max,
-    onPreview: (_) {},
+    onPreview: (v) => _preview(key, v),
     onCommit: (v) => _set(key, v),
   );
 
@@ -532,7 +544,7 @@ class EnvironmentEffectsControls extends StatelessWidget {
     scrubStep: 1,
     snapStep: 1,
     fractionDigits: 0,
-    onPreview: (_) {},
+    onPreview: (v) => _preview(key, v.round()),
     onCommit: (v) => _set(key, v.round()),
   );
 

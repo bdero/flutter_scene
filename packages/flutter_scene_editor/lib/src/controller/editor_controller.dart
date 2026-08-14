@@ -991,6 +991,20 @@ class EditorController extends ChangeNotifier {
     return null;
   }
 
+  /// Live-previews one look property of the stage's global environment
+  /// resource during a slider drag (effects included), without touching the
+  /// document or history; commit with `setEnvironmentProperties` on release.
+  /// A non-global environment (a volume's) is ignored, its preview path
+  /// would wrongly restyle the whole scene.
+  void previewEnvironmentProperty(LocalId id, String key, Object value) {
+    if (document.stage.environmentRef != id) return;
+    final resource = document.resource(id);
+    if (resource is! EnvironmentResource) return;
+    _reapplyGlobalEnvironmentInPlace(
+      environmentResourceWithProperties(resource, {key: value}),
+    );
+  }
+
   /// Live-previews scene-wide settings on the live scene without touching the
   /// document or history (for stage slider drags). Commit with
   /// `setStageProperties` on release.
