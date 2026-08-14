@@ -7,6 +7,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
@@ -46,7 +47,10 @@ String _typeLabel(String type) => switch (type) {
 
 String _fileName(String key) => key.replaceAll('\\', '/').split('/').last;
 
-enum _Kind { factor, color, boolean, choice }
+// `strength` is a nonnegative multiplier with a soft slider range; typing or
+// scrubbing past the slider max is allowed (HDR emission wants values like
+// 1000, only the slider track is bounded).
+enum _Kind { factor, strength, color, boolean, choice }
 
 class _Field {
   const _Field(this.key, this.label, this.kind, {this.options});
@@ -61,6 +65,7 @@ const _physicallyBased = [
   _Field('metallic', 'Metallic', _Kind.factor),
   _Field('roughness', 'Roughness', _Kind.factor),
   _Field('emissive', 'Emissive', _Kind.color),
+  _Field('emissiveStrength', 'Emissive strength', _Kind.strength),
   _Field(
     'alphaMode',
     'Alpha mode',
@@ -479,15 +484,20 @@ class MaterialSection extends StatelessWidget {
           IntValue(:final value) => value.toDouble(),
           _ => defaultValue is num ? defaultValue.toDouble() : 0.0,
         };
-        // TODO(fmat-inspector-number): an unranged float clamps to a 0-1
-        // slider; offer a free numeric field instead.
-        return LiveSlider(
-          label: name,
-          value: current.clamp(min, max),
-          min: min,
-          max: max,
-          onPreview: (v) => _preview(name, isInt ? v.round() : v),
-          onCommit: (v) => _set(name, isInt ? v.round() : v),
+        // The slider track is bounded by the range hint (or 0-1 when
+        // unranged), but the numeric field accepts any typed or scrubbed
+        // value; a hint bounds the ergonomic range, not the parameter.
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: SliderNumberField(
+            label: name,
+            value: current,
+            min: min,
+            max: max,
+            fractionDigits: isInt ? 0 : 3,
+            onPreview: (v) => _preview(name, isInt ? v.round() : v),
+            onCommit: (v) => _set(name, isInt ? v.round() : v),
+          ),
         );
       case 'vec4' when hint?['kind'] == 'source_color':
         final fallback = defaultValue is List && defaultValue.length == 4
@@ -546,6 +556,22 @@ class MaterialSection extends StatelessWidget {
           value: current.clamp(0.0, 1.0),
           onPreview: (v) => _preview(field.key, v),
           onCommit: (v) => _set(field.key, v),
+        );
+      case _Kind.strength:
+        final current = switch (value) {
+          DoubleValue(:final value) => value,
+          IntValue(:final value) => value.toDouble(),
+          _ => effective is num ? effective.toDouble() : 1.0,
+        };
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: SliderNumberField(
+            label: field.label,
+            value: current,
+            max: 10,
+            onPreview: (v) => _preview(field.key, math.max(v, 0.0)),
+            onCommit: (v) => _set(field.key, math.max(v, 0.0)),
+          ),
         );
       case _Kind.boolean:
         final current = value is BoolValue && value.value;

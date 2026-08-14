@@ -860,6 +860,10 @@ class EditorController extends ChangeNotifier {
           if (material is PhysicallyBasedMaterial) {
             material.emissiveFactor = color;
           }
+        case 'emissiveStrength' when raw is num:
+          if (material is PhysicallyBasedMaterial) {
+            material.emissiveStrength = raw.toDouble();
+          }
         case 'metallic' when raw is num:
           if (material is PhysicallyBasedMaterial) {
             material.metallicFactor = raw.toDouble();
@@ -899,6 +903,7 @@ class EditorController extends ChangeNotifier {
         'alphaCutoff' => material.alphaCutoff,
         'baseColor' => rgba(material.baseColorFactor),
         'emissive' => rgba(material.emissiveFactor),
+        'emissiveStrength' => material.emissiveStrength,
         _ => null,
       };
     }
