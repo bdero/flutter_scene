@@ -4,6 +4,7 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter/material.dart' hide Matrix4, Step;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
@@ -310,21 +311,73 @@ class _ComponentSection extends StatelessWidget {
   final EditorController controller;
   final bool canRemove;
 
+  // The header's right-click menu: source-file actions (enabled when the
+  // component came from project source extraction) and removal (mirroring
+  // the header's close button).
+  Future<void> _showContextMenu(BuildContext context, Offset position) async {
+    final sourcePath = controller.componentSourcePaths[component.type];
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    const itemStyle = TextStyle(fontSize: 12);
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'copy',
+          enabled: sourcePath != null,
+          height: 34,
+          child: const Text('Copy source path', style: itemStyle),
+        ),
+        PopupMenuItem(
+          value: 'open',
+          enabled: sourcePath != null,
+          height: 34,
+          child: const Text('Open source in editor', style: itemStyle),
+        ),
+        PopupMenuItem(
+          value: 'remove',
+          enabled: canRemove,
+          height: 34,
+          child: const Text('Remove component', style: itemStyle),
+        ),
+      ],
+    );
+    switch (action) {
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: sourcePath!));
+      case 'open':
+        await controller.sourceFileOpener?.call(sourcePath!);
+      case 'remove':
+        await controller.removeComponentRouted(node.id, component.type);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionHeader(
-          label: 'Component: ${component.type}',
-          trailing: canRemove
-              ? _IconAction(
-                  icon: Icons.close,
-                  tooltip: 'Remove component',
-                  onPressed: () =>
-                      controller.removeComponentRouted(node.id, component.type),
-                )
-              : null,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapUp: (details) =>
+              _showContextMenu(context, details.globalPosition),
+          child: _SectionHeader(
+            label: 'Component: ${component.type}',
+            trailing: canRemove
+                ? _IconAction(
+                    icon: Icons.close,
+                    tooltip: 'Remove component',
+                    onPressed: () => controller.removeComponentRouted(
+                      node.id,
+                      component.type,
+                    ),
+                  )
+                : null,
+          ),
         ),
         _ComponentEditor(
           node: node,

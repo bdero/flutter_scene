@@ -106,6 +106,13 @@ void main() {
     expect(decoded.registrarFunction, 'registerProjectComponents');
   });
 
+  test('reports the declaring source file per extracted type', () {
+    final result = generateProjectComponents(tmp.path);
+    final path = result.sourcePaths['spinner']!;
+    expect(path.replaceAll('\\', '/'), endsWith('lib/components/spinner.dart'));
+    expect(File(path).existsSync(), isTrue);
+  });
+
   test('is idempotent, a second run rewrites nothing', () {
     expect(run().exitCode, 0);
     final second = run();

@@ -18,10 +18,14 @@ class ProjectGenerationResult {
     required this.schemas,
     required this.diagnostics,
     required this.filesWritten,
-  });
+    Map<String, String>? sourcePaths,
+  }) : sourcePaths = sourcePaths ?? const {};
 
   /// Every extracted component schema, in source order.
   final List<ComponentSchema> schemas;
+
+  /// The absolute source file declaring each component, keyed by type.
+  final Map<String, String> sourcePaths;
 
   /// Extraction diagnostics across all files.
   final List<ExtractionDiagnostic> diagnostics;
@@ -61,6 +65,7 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
   final diagnostics = <ExtractionDiagnostic>[];
   final codecLibraries = <({String importUri, List<String> codecClassNames})>[];
   final schemas = <ComponentSchema>[];
+  final sourcePaths = <String, String>{};
   final packageName = _packageName(root.path);
 
   for (final file in sources) {
@@ -90,6 +95,9 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
     schemas.addAll([
       for (final component in result.components) component.schema,
     ]);
+    for (final component in result.components) {
+      sourcePaths[component.schema.type] = file.absolute.path;
+    }
   }
 
   final dependencyRegistrars = <({String importUri, String functionName})>[];
@@ -133,6 +141,7 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
     schemas: schemas,
     diagnostics: diagnostics,
     filesWritten: written,
+    sourcePaths: sourcePaths,
   );
 }
 

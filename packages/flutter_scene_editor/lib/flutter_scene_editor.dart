@@ -65,6 +65,8 @@ export 'src/settings/editor_settings.dart'
     show EditorSettings, EditorSettingsStore;
 export 'src/settings/managed_checkout_dialog.dart'
     show showManagedCheckoutDialog;
+export 'src/settings/open_in_editor.dart'
+    show buildEditorInvocation, openSourceInEditor;
 export 'src/settings/settings_dialog.dart'
     show SettingsDialog, showSettingsDialog;
 export 'src/toolchains/managed_checkout.dart'
