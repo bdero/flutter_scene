@@ -644,10 +644,19 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void _showError() {
     final message = _ctrl.lastError.value;
     if (message == null || !mounted) return;
+    final text = 'Command failed, $message';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Command failed, $message'),
+        content: SelectableText(text),
         backgroundColor: Theme.of(context).colorScheme.error,
+        // Errors stick around long enough to read and copy; Copy puts the
+        // full text on the clipboard in one click.
+        duration: const Duration(seconds: 10),
+        showCloseIcon: true,
+        action: SnackBarAction(
+          label: 'Copy',
+          onPressed: () => Clipboard.setData(ClipboardData(text: text)),
+        ),
       ),
     );
     _ctrl.lastError.value = null;
