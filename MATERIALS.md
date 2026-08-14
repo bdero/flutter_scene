@@ -125,6 +125,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `shading_model` | `lit`, `unlit` | `lit` | `lit` runs the engine's PBR lighting; `unlit` outputs your color directly. |
 | `blending` | `opaque`, `alpha` | `opaque` | `alpha` routes the material through the depth-sorted translucent pass. |
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
+| `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
 | `engine_inputs` | list of `scene_color`, `scene_depth` | `[]` | Per-frame engine textures the shader samples (see below). Lit surface materials only. |
 
