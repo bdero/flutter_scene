@@ -195,6 +195,12 @@ export 'src/light.dart'
 export 'src/render/custom_render_pass.dart'
     show CustomRenderPass, RenderInput, RenderPassContext, RenderStage;
 export 'src/render/frame_transients.dart' show TransientWriter;
+export 'src/render/render_graph_capture.dart'
+    show
+        CapturedPass,
+        CapturedResource,
+        RenderGraphCaptureRequest,
+        RenderGraphCaptureResult;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;
