@@ -330,7 +330,10 @@ void _applyDelta(
 ) {
   // Components the instance adds to prefab member nodes, applied before the
   // overrides so an override can address their properties. Replaces a
-  // same-type prefab component, matching addComponent's semantics.
+  // same-type prefab component, matching addComponent's semantics. Deep-copy
+  // on entry (ids kept): overrides mutate composed component properties in
+  // place, and an aliased spec would write those into the host document's
+  // own delta, breaking undo.
   for (final add in spec.memberComponents) {
     final node = out.node(remapId(add.member));
     if (node == null) {
@@ -339,7 +342,7 @@ void _applyDelta(
     }
     node.components
       ..removeWhere((c) => c.type == add.component.type)
-      ..add(add.component);
+      ..add(_remapComponent(add.component, (id) => id));
   }
   for (final override in spec.overrides) {
     final node = out.node(remapId(override.target));
@@ -367,7 +370,11 @@ void _applyDelta(
     final parentNode = parent == null ? instance : out.node(remapId(parent));
     (parentNode ?? instance).children.add(child);
   }
-  instance.components.addAll(spec.addedComponents);
+  // Same deep copy as member components, for the same aliasing reason.
+  instance.components.addAll([
+    for (final component in spec.addedComponents)
+      _remapComponent(component, (id) => id),
+  ]);
   if (spec.removedComponentTypes.isNotEmpty) {
     instance.components.removeWhere(
       (c) => spec.removedComponentTypes.contains(c.type),
@@ -398,6 +405,52 @@ void applyPrefabOverride(SceneDocument document, PropertyOverride override) {
     return;
   }
   _setProperty(node, override.path, override.value);
+}
+
+/// The node aspect a prefab override [path] addresses. The compose layer
+/// owns the override path grammar (see [applyPrefabOverride]); consumers
+/// that mirror an already-applied override onto live state dispatch on this
+/// instead of re-parsing paths.
+/// {@category Documents}
+enum PrefabOverrideAspect {
+  /// `name`.
+  name,
+
+  /// `visible`.
+  visible,
+
+  /// `layers`.
+  layers,
+
+  /// `transform.matrix` or `transform.trs.<field>`.
+  transform,
+
+  /// `components.<type>.<property>[...]`.
+  components,
+
+  /// A path this grammar does not know.
+  unsupported,
+}
+
+/// Classifies override [path] per the grammar [applyPrefabOverride] applies.
+/// {@category Documents}
+PrefabOverrideAspect prefabOverrideAspect(String path) {
+  switch (path) {
+    case 'name':
+      return PrefabOverrideAspect.name;
+    case 'visible':
+      return PrefabOverrideAspect.visible;
+    case 'layers':
+      return PrefabOverrideAspect.layers;
+  }
+  final parts = path.split('.');
+  if (parts.length >= 2 && parts[0] == 'transform') {
+    return PrefabOverrideAspect.transform;
+  }
+  if (parts.length >= 3 && parts[0] == 'components') {
+    return PrefabOverrideAspect.components;
+  }
+  return PrefabOverrideAspect.unsupported;
 }
 
 void _setProperty(NodeSpec node, String path, PropertyValue value) {

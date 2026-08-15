@@ -317,6 +317,68 @@ void main() {
     expect(mesh.properties, isEmpty);
   });
 
+  test('member and added components enter the composed doc as copies', () {
+    final host = SceneDocument();
+    final prefab = _prefab();
+    final wheelId = prefab.rootNodes.single.children.single;
+    final memberSpec = ComponentSpec(
+      'turntable',
+      properties: {'speed': const DoubleValue(0.5)},
+    );
+    final addedSpec = ComponentSpec(
+      'audioSource',
+      properties: {'volume': const DoubleValue(1.0)},
+    );
+    host.createNode(root: true).instance = PrefabInstanceSpec(
+      source: const AssetRef('p'),
+      memberComponents: [
+        MemberComponent(member: wheelId, component: memberSpec),
+      ],
+      addedComponents: [addedSpec],
+      overrides: [
+        PropertyOverride(
+          target: wheelId,
+          path: 'components.turntable.speed',
+          value: const DoubleValue(2.0),
+        ),
+      ],
+    );
+
+    composeScene(host, resolve: _resolveTo(prefab));
+    // The override applied to the composed copy, never back into the host
+    // document's own delta spec; an aliased spec would double-apply the
+    // value and break undo.
+    expect(memberSpec.properties['speed'], const DoubleValue(0.5));
+    expect(addedSpec.properties['volume'], const DoubleValue(1.0));
+  });
+
+  test('overrideAspect classifies the grammar applyPrefabOverride owns', () {
+    expect(prefabOverrideAspect('name'), PrefabOverrideAspect.name);
+    expect(prefabOverrideAspect('visible'), PrefabOverrideAspect.visible);
+    expect(prefabOverrideAspect('layers'), PrefabOverrideAspect.layers);
+    expect(
+      prefabOverrideAspect('transform.matrix'),
+      PrefabOverrideAspect.transform,
+    );
+    expect(
+      prefabOverrideAspect('transform.trs.translation'),
+      PrefabOverrideAspect.transform,
+    );
+    expect(
+      prefabOverrideAspect('components.turntable.speed'),
+      PrefabOverrideAspect.components,
+    );
+    expect(
+      prefabOverrideAspect('components.collider.shape.radius'),
+      PrefabOverrideAspect.components,
+    );
+    expect(
+      prefabOverrideAspect('components.x'),
+      PrefabOverrideAspect.unsupported,
+    );
+    expect(prefabOverrideAspect('nonsense'), PrefabOverrideAspect.unsupported);
+  });
+
   test('records member origins for composed prefab nodes', () {
     final host = SceneDocument();
     final prefab = _prefab();

@@ -1525,6 +1525,11 @@ class EditorController extends ChangeNotifier {
       final spec = document.nodes[id];
       final live = _liveById[id];
       if (spec == null || live == null) return false;
+      // A prefab instance's composed node merges prefab-authored components
+      // with the host spec's, so realizing from the host spec alone would
+      // wipe the authored ones (and the composed mirror below would bake the
+      // wipe in). Instance edits take the full realize path.
+      if (spec.instance != null) return false;
       final components = <Component>[];
       for (final componentSpec in spec.components) {
         final component = _componentRegistry.realize(componentSpec, context);
@@ -1632,6 +1637,9 @@ class EditorController extends ChangeNotifier {
   // [path] feeds: components re-realize from the composed spec for a
   // component path, the transform and flags copy directly. Unknown paths
   // return false so the caller falls back to the full realize.
+  // Mirrors an override the compose layer already applied to the composed
+  // spec onto the live node, dispatching on the compose layer's own path
+  // classification so the grammar lives in one place.
   bool _reapplyComposedNode(LocalId id, String path) {
     final composed = _composed;
     final realizer = _resourceRealizer;
@@ -1640,20 +1648,23 @@ class EditorController extends ChangeNotifier {
     if (composed == null || realizer == null || spec == null || live == null) {
       return false;
     }
-    if (path == 'visible') {
-      live.visible = spec.visible;
-      return true;
+    switch (prefabOverrideAspect(path)) {
+      case PrefabOverrideAspect.name:
+        return true;
+      case PrefabOverrideAspect.visible:
+        live.visible = spec.visible;
+        return true;
+      case PrefabOverrideAspect.layers:
+        live.layers = spec.layers;
+        return true;
+      case PrefabOverrideAspect.transform:
+        live.localTransform = spec.transform.toMatrix4();
+        return true;
+      case PrefabOverrideAspect.unsupported:
+        return false;
+      case PrefabOverrideAspect.components:
+        break;
     }
-    if (path == 'layers') {
-      live.layers = spec.layers;
-      return true;
-    }
-    if (path == 'name') return true;
-    if (path == 'transform.matrix' || path.startsWith('transform.trs.')) {
-      live.localTransform = spec.transform.toMatrix4();
-      return true;
-    }
-    if (!path.startsWith('components.')) return false;
     final context = RealizeContext(composed, resources: realizer)
       ..resolveNode = (nodeId) => _liveById[nodeId];
     final components = <Component>[];
