@@ -264,7 +264,10 @@ class _CommandFormState extends State<_CommandForm> {
       params[d.field] = switch (d.type) {
         ParamType.boolean => text == 'true',
         ParamType.integer => int.tryParse(text) ?? 0,
-        ParamType.number => double.tryParse(text) ?? 0.0,
+        ParamType.number => switch (double.tryParse(text)) {
+          final v? when v.isFinite => v,
+          _ => 0.0,
+        },
         _ => text,
       };
     }
