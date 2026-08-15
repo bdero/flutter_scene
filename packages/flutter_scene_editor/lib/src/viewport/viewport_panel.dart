@@ -65,6 +65,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   );
   final _gizmo = GizmoController();
   final _componentGizmoHits = ComponentGizmoHitCache();
+  final _componentGizmoCache = ComponentGizmoRenderCache();
   final _fallbackGizmoPrefs = GizmoPreferences();
   final _viewEpoch = ValueNotifier<int>(0);
   final _fps = ValueNotifier<double>(0);
@@ -151,7 +152,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
     super.dispose();
   }
 
-  void _onControllerChanged() => _bumpView();
+  void _onControllerChanged() {
+    // Document commits and previews can change gizmo-bound component
+    // properties; camera movement alone does not reach this handler, so the
+    // gizmo snapshot cache survives orbit drags.
+    _componentGizmoCache.invalidate();
+    _bumpView();
+  }
 
   void _bumpView() => _viewEpoch.value++;
 
@@ -914,6 +921,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               camera: cam,
                               preferences: _gizmoPrefs,
                               hits: _componentGizmoHits,
+                              cache: _componentGizmoCache,
                             ),
                             size: size,
                           ),

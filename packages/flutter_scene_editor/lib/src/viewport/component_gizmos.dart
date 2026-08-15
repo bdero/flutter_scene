@@ -167,27 +167,69 @@ IconData? gizmoGlyph(String? name) => switch (name) {
   _ => null,
 };
 
+/// Cross-repaint state for the gizmo painter: component serialize snapshots
+/// (collider codecs run their full shape encoding, so re-serializing every
+/// orbit-drag repaint is real cost) and laid-out icon text. Owned by the
+/// viewport state; snapshots invalidate on document or preview changes and
+/// survive pure camera movement.
+class ComponentGizmoRenderCache {
+  final Map<Component, Map<String, doc.PropertyValue>> _snapshots = {};
+  final Map<(String, int, double), TextPainter> _iconText = {};
+
+  /// Drops the property snapshots (a commit or preview changed component
+  /// state). Laid-out icon text is content-keyed and stays.
+  void invalidate() => _snapshots.clear();
+
+  Map<String, doc.PropertyValue> _propertiesFor(
+    Component component,
+    ComponentCodec codec,
+    SerializeContext scratch,
+  ) => _snapshots[component] ??=
+      codec.serialize(component, scratch)?.properties ?? const {};
+
+  TextPainter _textFor(String text, TextStyle style, Color color, double size) {
+    return _iconText[(text, color.toARGB32(), size)] ??= TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout();
+  }
+}
+
 /// Paints every visible component gizmo and fills [hits] with the projected
 /// geometry for click-to-select. One painter per viewport, re-run on view
 /// epoch bumps (exactly like the transform gizmo and environment-volume
-/// overlays).
+/// overlays). Wire strokes batch into one path per color/width and icons
+/// draw last (on top of wires), so a repaint issues a handful of draw calls
+/// rather than one per segment.
 class ComponentGizmoPainter extends CustomPainter {
   ComponentGizmoPainter({
     required this.controller,
     required this.camera,
     required this.preferences,
     required this.hits,
+    required this.cache,
   });
 
   final EditorController controller;
   final Camera camera;
   final GizmoPreferences preferences;
   final ComponentGizmoHitCache hits;
+  final ComponentGizmoRenderCache cache;
 
   late Size _size;
   late Canvas _canvas;
   late SerializeContext _scratch;
   late vm.Matrix4 _viewProjection;
+
+  // Batched geometry for this paint: stroked segments per (color, width),
+  // filled arrow heads per color, icons deferred to draw above the wires.
+  final Map<(int, double), Path> _strokes = {};
+  final Map<int, Path> _fills = {};
+  final List<(GizmoIcon, ComponentCodec, Offset, Color, bool)> _icons = [];
+
+  static const double _wireWidth = 1.5;
+  static const double _arrowWidth = 2.0;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -196,10 +238,35 @@ class ComponentGizmoPainter extends CustomPainter {
     _canvas = canvas;
     _size = size;
     _viewProjection = camera.getViewTransform(size);
+    _strokes.clear();
+    _fills.clear();
+    _icons.clear();
     // Serialize snapshots write scratch resources (collider payloads, copied
     // environment refs) into a throwaway document, discarded per paint.
     _scratch = SerializeContext(doc.SceneDocument());
     _visit(controller.scene.root);
+    for (final entry in _strokes.entries) {
+      canvas.drawPath(
+        entry.value,
+        Paint()
+          ..color = Color(entry.key.$1)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = entry.key.$2
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+    for (final entry in _fills.entries) {
+      canvas.drawPath(entry.value, Paint()..color = Color(entry.key));
+    }
+    for (final (primitive, codec, center, color, selected) in _icons) {
+      _paintIcon(primitive, codec, center, color, selected);
+    }
+  }
+
+  void _addStroke(Offset a, Offset b, Color color, double width) {
+    (_strokes[(color.toARGB32(), width)] ??= Path())
+      ..moveTo(a.dx, a.dy)
+      ..lineTo(b.dx, b.dy);
   }
 
   void _visit(Node node) {
@@ -225,7 +292,10 @@ class ComponentGizmoPainter extends CustomPainter {
     final sourceId = controller.sourceIdForLiveNode(node);
     final selected =
         sourceId != null && controller.selection.contains(sourceId);
-    final snapshot = _Snapshot(component, codec, _scratch);
+    final snapshot = _Snapshot(
+      codec,
+      cache._propertiesFor(component, codec, _scratch),
+    );
     final transform = node.globalTransform;
     final origin = transform.getTranslation();
     final originScreen = projectToScreen(origin, camera, _size);
@@ -248,7 +318,7 @@ class ComponentGizmoPainter extends CustomPainter {
       switch (primitive) {
         case GizmoIcon():
           if (originScreen != null && sourceId != null) {
-            _drawIcon(primitive, codec, originScreen, color, selected);
+            _icons.add((primitive, codec, originScreen, color, selected));
             hits.addDisc(sourceId, originScreen, primitive.size / 2, depth);
           }
         case GizmoArrow():
@@ -463,7 +533,7 @@ class ComponentGizmoPainter extends CustomPainter {
 
   // --- primitive helpers ---------------------------------------------------
 
-  void _drawIcon(
+  void _paintIcon(
     GizmoIcon primitive,
     ComponentCodec codec,
     Offset center,
@@ -488,37 +558,28 @@ class ComponentGizmoPainter extends CustomPainter {
     }
     final name = primitive.glyph ?? codec.schema.icon;
     final glyph = gizmoGlyph(name);
-    final TextSpan span;
+    final String text;
+    final TextStyle style;
     if (glyph != null) {
-      span = TextSpan(
-        text: String.fromCharCode(glyph.codePoint),
-        style: TextStyle(
-          fontFamily: glyph.fontFamily,
-          package: glyph.fontPackage,
-          fontSize: size * 0.68,
-          color: color,
-        ),
+      text = String.fromCharCode(glyph.codePoint);
+      style = TextStyle(
+        fontFamily: glyph.fontFamily,
+        package: glyph.fontPackage,
+        fontSize: size * 0.68,
+        color: color,
       );
     } else if (name != null && name.isNotEmpty) {
-      span = TextSpan(
-        text: name,
-        style: TextStyle(fontSize: size * 0.58),
-      );
+      text = name;
+      style = TextStyle(fontSize: size * 0.58);
     } else {
-      span = TextSpan(
-        text: String.fromCharCode(Icons.circle_outlined.codePoint),
-        style: TextStyle(
-          fontFamily: Icons.circle_outlined.fontFamily,
-          fontSize: size * 0.6,
-          color: color,
-        ),
+      text = String.fromCharCode(Icons.circle_outlined.codePoint);
+      style = TextStyle(
+        fontFamily: Icons.circle_outlined.fontFamily,
+        fontSize: size * 0.6,
+        color: color,
       );
     }
-    final painter = TextPainter(
-      text: span,
-      textDirection: TextDirection.ltr,
-      textAlign: TextAlign.center,
-    )..layout();
+    final painter = cache._textFor(text, style, color, size);
     painter.paint(
       _canvas,
       center - Offset(painter.width / 2, painter.height / 2),
@@ -536,11 +597,7 @@ class ComponentGizmoPainter extends CustomPainter {
     final tipWorld = origin + direction * length;
     final tip = projectToScreen(tipWorld, camera, _size);
     if (tip == null) return;
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..strokeCap = StrokeCap.round;
-    _canvas.drawLine(originScreen, tip, paint);
+    _addStroke(originScreen, tip, color, _arrowWidth);
     segments.add((originScreen, tip));
     final dir = tip - originScreen;
     final len = dir.distance;
@@ -548,19 +605,20 @@ class ComponentGizmoPainter extends CustomPainter {
     final norm = dir / len;
     final perp = Offset(-norm.dy, norm.dx);
     final base = tip - norm * math.min(10, len * 0.3);
-    _canvas.drawPath(
-      Path()
-        ..moveTo(tip.dx, tip.dy)
-        ..lineTo(base.dx + perp.dx * 3.5, base.dy + perp.dy * 3.5)
-        ..lineTo(base.dx - perp.dx * 3.5, base.dy - perp.dy * 3.5)
-        ..close(),
-      Paint()..color = color,
-    );
+    (_fills[color.toARGB32()] ??= Path())
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(base.dx + perp.dx * 3.5, base.dy + perp.dy * 3.5)
+      ..lineTo(base.dx - perp.dx * 3.5, base.dy - perp.dy * 3.5)
+      ..close();
   }
 
-  // Strokes a world-space segment, clipping against the camera's eye plane
-  // so a segment reaching behind the camera draws its visible part instead
-  // of vanishing (frustum far corners, large boxes up close).
+  // Batches a world-space segment for stroking, clipping against the
+  // camera's eye plane so a segment reaching behind the camera draws its
+  // visible part instead of vanishing (frustum far corners, large boxes up
+  // close).
+  // TODO(gizmo-xray): GizmoPrimitive.xray is carried through the schema but
+  // not honored here; the v1 painter draws everything on top. It applies
+  // once depth-aware drawing exists (the custom-pass upgrade path).
   void _strokeWorldSegment(
     vm.Vector3 a,
     vm.Vector3 b,
@@ -587,13 +645,7 @@ class ComponentGizmoPainter extends CustomPainter {
     }
     final sa = _screenOf(clipA);
     final sb = _screenOf(clipB);
-    _canvas.drawLine(
-      sa,
-      sb,
-      Paint()
-        ..color = color
-        ..strokeWidth = 1.5,
-    );
+    _addStroke(sa, sb, color, _wireWidth);
     segments.add((sa, sb));
   }
 
@@ -829,9 +881,7 @@ class ComponentGizmoPainter extends CustomPainter {
 /// is exactly what the codec would persist (delta form), overlaid on the
 /// schema defaults.
 class _Snapshot {
-  _Snapshot(Component component, this._codec, SerializeContext scratch)
-    : _properties =
-          _codec.serialize(component, scratch)?.properties ?? const {};
+  _Snapshot(this._codec, this._properties);
 
   final ComponentCodec _codec;
   final Map<String, doc.PropertyValue> _properties;
