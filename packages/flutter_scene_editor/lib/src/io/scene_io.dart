@@ -15,6 +15,7 @@ import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../controller/editor_controller.dart';
+import '../project/fproject.dart' show findSceneProjectContext;
 import 'glb_import_options.dart';
 
 const _fsceneTypeGroup = XTypeGroup(
@@ -163,31 +164,26 @@ Future<String?> pickFmatPath() async {
 /// is the point of an fmat material.
 /// Returns a document-relative ref for the `.fmat` at [path] (`../materials/
 /// glass.fmat` style, matching prefab refs) whenever the file lies inside the
-/// scene's enclosing Flutter project, else [path] unchanged. Absolute refs do
-/// not survive outside the authoring machine and the runtime material
-/// registry cannot resolve them, so relative is the persistent form; a file
-/// outside the project stays absolute (session-only) rather than climbing
-/// across the disk.
+/// scene's enclosing project, else [path] unchanged. Absolute refs do not
+/// survive outside the authoring machine and the runtime material registry
+/// cannot resolve them, so relative is the persistent form; a file outside
+/// the project stays absolute (session-only) rather than climbing across the
+/// disk. The project root comes from the same bounded, `.fproject`-aware
+/// ancestor discovery the rest of the editor uses.
 String referenceFmatAsset(String? sceneDir, String path) {
   if (sceneDir == null) return path;
   final sep = Platform.pathSeparator;
-  final from = Directory(sceneDir).absolute.path;
-  final target = File(path).absolute.path;
-  var probe = Directory(from);
-  String? projectRoot;
-  while (true) {
-    if (File('${probe.path}${sep}pubspec.yaml').existsSync()) {
-      projectRoot = probe.path;
-      break;
-    }
-    final parent = probe.parent;
-    if (parent.path == probe.path) break;
-    probe = parent;
-  }
+  final from = _normalizePath(Directory(sceneDir).absolute.path);
+  final target = _normalizePath(File(path).absolute.path);
+  final context = findSceneProjectContext('$from${sep}scene.fscene');
+  final projectRoot = context.fprojectPath != null
+      ? File(context.fprojectPath!).absolute.parent.path
+      : context.pubspecDirectory;
   if (projectRoot == null) return path;
-  final rootPrefix = projectRoot.endsWith(sep)
-      ? projectRoot
-      : '$projectRoot$sep';
+  final normalizedRoot = _normalizePath(projectRoot);
+  final rootPrefix = normalizedRoot.endsWith(sep)
+      ? normalizedRoot
+      : '$normalizedRoot$sep';
   if (!target.startsWith(rootPrefix)) return path;
   final fromParts = from.split(sep).where((s) => s.isNotEmpty).toList();
   final targetParts = target.split(sep).where((s) => s.isNotEmpty).toList();
@@ -201,6 +197,26 @@ String referenceFmatAsset(String? sceneDir, String path) {
     for (var i = common; i < fromParts.length; i++) '..',
     ...targetParts.sublist(common),
   ].join('/');
+}
+
+/// Folds `.` and `..` segments so prefix and segment comparisons see
+/// canonical paths (keys resolved against a scene directory carry `..`).
+String _normalizePath(String path) {
+  final sep = Platform.pathSeparator;
+  final normalized = path.replaceAll('/', sep).replaceAll('\\', sep);
+  final root = normalized.startsWith(sep)
+      ? sep
+      : RegExp(r'^[A-Za-z]:').matchAsPrefix(normalized)?.group(0) ?? '';
+  final out = <String>[];
+  for (final segment in normalized.substring(root.length).split(sep)) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (out.isNotEmpty) out.removeLast();
+      continue;
+    }
+    out.add(segment);
+  }
+  return '$root${root == sep ? '' : sep}${out.join(sep)}';
 }
 
 /// Creates an fmat material resource referencing the `.fmat` at [path] and
@@ -328,8 +344,72 @@ Future<EditorController> importModel(
 ///
 /// Throws an [IOException] on write failure.
 Future<void> saveFscene(EditorController controller, String path) async {
+  // Document-relative `.fmat` refs were authored against the scene's
+  // previous directory; re-relativize them against the destination so Save
+  // As stays portable, and fold in absolute refs recorded while the scene
+  // was unsaved (the session-only form).
+  _rewriteFmatRefsForSave(controller, File(path).absolute.parent.path);
   await File(path).writeAsString(controller.session.toFscene());
 }
+
+void _rewriteFmatRefsForSave(EditorController controller, String directory) {
+  final oldBase = controller.baseDirectory;
+  final sep = Platform.pathSeparator;
+
+  String? rewritten(String key) {
+    final absolute = _isAbsolutePath(key)
+        ? _normalizePath(key)
+        : oldBase == null
+        ? null
+        : _normalizePath('${Directory(oldBase).absolute.path}$sep$key');
+    if (absolute == null) return null;
+    final next = referenceFmatAsset(directory, absolute);
+    return next == key ? null : next;
+  }
+
+  final document = controller.document;
+  for (final entry in document.resources.entries.toList()) {
+    final resource = entry.value;
+    if (resource is MaterialResource &&
+        resource.type == 'fmat' &&
+        resource.asset != null) {
+      final next = rewritten(resource.asset!.key);
+      if (next != null) {
+        document.resources[entry.key] = resource.copyWith(
+          asset: AssetRef(next),
+        );
+      }
+    } else if (resource is EnvironmentResource) {
+      final skybox = resource.skybox;
+      if (skybox != null && skybox.source is FmatSkySpec) {
+        final sky = skybox.source as FmatSkySpec;
+        final next = rewritten(sky.asset.key);
+        if (next != null) {
+          skybox.source = FmatSkySpec(
+            AssetRef(next),
+            properties: sky.properties,
+          );
+        }
+      }
+      final skyEnvironment = resource.skyEnvironment;
+      if (skyEnvironment != null && skyEnvironment.source is FmatSkySpec) {
+        final sky = skyEnvironment.source as FmatSkySpec;
+        final next = rewritten(sky.asset.key);
+        if (next != null) {
+          skyEnvironment.source = FmatSkySpec(
+            AssetRef(next),
+            properties: sky.properties,
+          );
+        }
+      }
+    }
+  }
+}
+
+bool _isAbsolutePath(String path) =>
+    path.startsWith('/') ||
+    path.startsWith('\\') ||
+    RegExp(r'^[A-Za-z]:[/\\]').hasMatch(path);
 
 /// Reads a `.fscene` file from [path] and returns a fresh [EditorController].
 /// The file's directory becomes the base for resolving prefab references.

@@ -224,6 +224,19 @@ final class SceneSourceLoader {
       return joined;
     }
 
+    // The DataAssets material registry keys `.fmat` sources (materials and
+    // shader skies) by their project-relative path, so document-relative
+    // refs rebase like the other asset kinds. An absolute path under the
+    // root (written by older editor saves) heals to project-relative.
+    String? rebaseFmat(String rawKey) {
+      final key = rawKey.replaceAll('\\', '/');
+      final rootPrefix = '${root.replaceAll('\\', '/')}/';
+      final rebased = key.startsWith(rootPrefix)
+          ? key.substring(rootPrefix.length)
+          : rebase(key);
+      return rebased == null || rebased == rawKey ? null : rebased;
+    }
+
     for (final node in document.nodes.values) {
       final instance = node.instance;
       if (instance == null) continue;
@@ -244,24 +257,9 @@ final class SceneSourceLoader {
       } else if (resource is MaterialResource &&
           resource.type == 'fmat' &&
           resource.asset != null) {
-        // The DataAssets material registry keys `.fmat` sources by their
-        // project-relative path, so document-relative refs rebase like the
-        // other asset kinds. An absolute path under the root (written by
-        // older editor saves) is healed to project-relative the same way.
-        // TODO(fmat-cooked-refs): buildScenes leaves document-relative fmat
-        // refs unrebased in cooked .fsceneb; rewrite them project-relative
-        // there too so release builds resolve them.
-        final key = resource.asset!.key.replaceAll('\\', '/');
-        final rootPrefix = '${root.replaceAll('\\', '/')}/';
-        final rebased = key.startsWith(rootPrefix)
-            ? key.substring(rootPrefix.length)
-            : rebase(key);
-        if (rebased != null && rebased != resource.asset!.key) {
-          document.resources[entry.key] = MaterialResource(
-            resource.id,
-            type: resource.type,
-            name: resource.name,
-            properties: resource.properties,
+        final rebased = rebaseFmat(resource.asset!.key);
+        if (rebased != null) {
+          document.resources[entry.key] = resource.copyWith(
             asset: AssetRef(rebased),
           );
         }
@@ -278,6 +276,29 @@ final class SceneSourceLoader {
           final rebased = rebase(lut.key);
           if (rebased != null) {
             resource.effects.colorGradingLut = AssetRef(rebased);
+          }
+        }
+        // Shader skies reference `.fmat` sources the same way materials do.
+        final skybox = resource.skybox;
+        if (skybox != null && skybox.source is FmatSkySpec) {
+          final sky = skybox.source as FmatSkySpec;
+          final rebased = rebaseFmat(sky.asset.key);
+          if (rebased != null) {
+            skybox.source = FmatSkySpec(
+              AssetRef(rebased),
+              properties: sky.properties,
+            );
+          }
+        }
+        final skyEnvironment = resource.skyEnvironment;
+        if (skyEnvironment != null && skyEnvironment.source is FmatSkySpec) {
+          final sky = skyEnvironment.source as FmatSkySpec;
+          final rebased = rebaseFmat(sky.asset.key);
+          if (rebased != null) {
+            skyEnvironment.source = FmatSkySpec(
+              AssetRef(rebased),
+              properties: sky.properties,
+            );
           }
         }
       }
