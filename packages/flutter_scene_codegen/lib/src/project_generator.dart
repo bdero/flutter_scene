@@ -20,8 +20,10 @@ class ProjectGenerationResult {
     required this.filesWritten,
     Map<String, String>? sourcePaths,
     List<String>? filesDeleted,
+    List<String>? parseFailedPaths,
   }) : sourcePaths = sourcePaths ?? const {},
-       filesDeleted = filesDeleted ?? const [];
+       filesDeleted = filesDeleted ?? const [],
+       parseFailedPaths = parseFailedPaths ?? const [];
 
   /// Every extracted component schema, in source order.
   final List<ComponentSchema> schemas;
@@ -32,6 +34,11 @@ class ProjectGenerationResult {
   /// Stale generated outputs removed this sweep (a `.fscene.dart` whose
   /// source no longer declares components).
   final List<String> filesDeleted;
+
+  /// Absolute paths of sources that failed to parse this sweep (mid-edit
+  /// syntax errors). Their outputs are preserved and consumers must not
+  /// retire the components they last declared.
+  final List<String> parseFailedPaths;
 
   /// Extraction diagnostics across all files.
   final List<ExtractionDiagnostic> diagnostics;
@@ -76,10 +83,22 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
   final expectedOutputs = <String>{};
   final packageName = _packageName(root.path);
 
+  final parseFailedPaths = <String>[];
   for (final file in sources) {
     final relative = _relative(file.path, root.path);
     final result = extractComponents(file.readAsStringSync(), path: relative);
     diagnostics.addAll(result.diagnostics);
+    if (result.parseFailed) {
+      // A mid-edit syntax error says nothing about what the file declares;
+      // keep its previous output (and let consumers keep its schemas) until
+      // it parses again.
+      parseFailedPaths.add(file.absolute.path);
+      final outPath =
+          '${file.path.substring(0, file.path.length - '.dart'.length)}'
+          '.fscene.dart';
+      if (File(outPath).existsSync()) expectedOutputs.add(outPath);
+      continue;
+    }
     if (result.components.isEmpty) continue;
     final basename = file.uri.pathSegments.last;
     final generated = generateCodecLibrary(
@@ -169,6 +188,7 @@ ProjectGenerationResult generateProjectComponents(String projectRoot) {
     filesWritten: written,
     sourcePaths: sourcePaths,
     filesDeleted: deleted,
+    parseFailedPaths: parseFailedPaths,
   );
 }
 

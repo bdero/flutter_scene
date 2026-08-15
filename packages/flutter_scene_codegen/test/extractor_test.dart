@@ -639,4 +639,60 @@ class C extends Component {}
       expect(component.schema.gizmo, isNull);
     });
   });
+
+  group('parse failures', () {
+    test('flag the result instead of reading as component-free', () {
+      final result = extractComponents('''
+@SceneComponent('c')
+class C extends Component {
+  double speed = 1.0
+}
+''');
+      expect(result.parseFailed, isTrue);
+      expect(
+        result.diagnostics.any(
+          (d) =>
+              d.severity == ExtractionSeverity.error &&
+              d.message.startsWith('syntax error'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('a clean source is not flagged', () {
+      final result = extractComponents('''
+@SceneComponent('c')
+class C extends Component {}
+''');
+      expect(result.parseFailed, isFalse);
+    });
+  });
+
+  test('softMin without softMax warns instead of silently dropping', () {
+    final result = extractComponents('''
+@SceneComponent('c')
+class C extends Component {
+  @NumberProperty(softMin: 1)
+  double speed = 2.0;
+}
+''');
+    expect(
+      result.diagnostics.any(
+        (d) =>
+            d.severity == ExtractionSeverity.warning &&
+            d.message.contains('softMin'),
+      ),
+      isTrue,
+    );
+    expect(
+      _single('''
+@SceneComponent('c')
+class C extends Component {
+  @NumberProperty(softMin: 1, softMax: 5)
+  double speed = 2.0;
+}
+''').schema.property('speed')!.constraint<SoftRange>(),
+      isNotNull,
+    );
+  });
 }
