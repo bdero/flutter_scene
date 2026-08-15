@@ -51,8 +51,11 @@ vec3 EquirectangularToSpherical(vec2 uv) {
 ///    textureLod (hardware trilinear between bands).
 ///  * legacy band atlas: the bands stacked vertically in one texture,
 ///    sampled with a manual two-band lerp.
+///  * cube layout: a roughness-mip cubemap, mip level i is band i, with no
+///    pole distortion. Selected by FLUTTER_SCENE_RADIANCE_CUBE, which also
+///    picks the prefiltered_radiance sampler type (see RadianceSampler).
 /// The engine binds RadianceLayoutInfo alongside the prefiltered_radiance
-/// sampler to select the bound texture's layout.
+/// sampler to tell the two 2D layouts apart.
 ///
 
 const float kPrefilterBands = 8.0;
@@ -61,13 +64,22 @@ const float kPrefilterBandHeight = 256.0;
 // in-band V to one texel from each edge (legacy band-atlas layout only).
 const float kPrefilterBandEdgeClamp = 1.0 / kPrefilterBandHeight;
 
+// The prefiltered radiance sampler type for the layout this backend builds.
+// The engine defines FLUTTER_SCENE_RADIANCE_CUBE on backends that can render
+// into mip levels (see EnvironmentMap.effectiveMipRadianceLayout); the rest
+// build a 2D equirect. Declaring only one keeps a dead sampler off the
+// per-stage texture-unit budget.
+#ifdef FLUTTER_SCENE_RADIANCE_CUBE
+#define RadianceSampler samplerCube
+#else
+#define RadianceSampler sampler2D
+#endif
+
 uniform RadianceLayoutInfo {
   // 1.0 when the bound prefiltered_radiance stores its roughness bands as
-  // mip levels; 0.0 for the legacy stacked-band atlas.
+  // mip levels; 0.0 for the legacy stacked-band atlas. Unread by the cube
+  // variant, whose bands are always mip levels.
   float mip_layout;
-  // 1.0 when the radiance is a roughness-mip cubemap (sample the bound
-  // samplerCube); 0.0 to sample the 2D prefiltered_radiance instead.
-  float cube_layout;
 }
 radiance_layout_info;
 
@@ -110,13 +122,15 @@ vec3 SamplePrefilteredRadianceCube(samplerCube radiance, vec3 direction,
   return textureLod(radiance, direction, lod).rgb;
 }
 
-// Samples the prefiltered radiance for `direction`, dispatching on the bound
-// layout (see RadianceLayoutInfo): the cubemap when present, otherwise the 2D
-// equirect atlas. Both samplers are always bound; only one is read.
-vec3 SampleRadianceEnv(sampler2D atlas, samplerCube cube, vec3 direction,
+// Samples the prefiltered radiance for `direction` at the given perceptual
+// `roughness`. FLUTTER_SCENE_RADIANCE_CUBE selects the roughness-mip cubemap
+// layout; without it the 2D equirect atlas is read. Only the selected layout's
+// sampler is declared, so the other costs no texture unit.
+vec3 SampleRadianceEnv(RadianceSampler radiance, vec3 direction,
                        float roughness) {
-  if (radiance_layout_info.cube_layout > 0.5) {
-    return SamplePrefilteredRadianceCube(cube, direction, roughness);
-  }
-  return SamplePrefilteredRadiance(atlas, direction, roughness);
+#ifdef FLUTTER_SCENE_RADIANCE_CUBE
+  return SamplePrefilteredRadianceCube(radiance, direction, roughness);
+#else
+  return SamplePrefilteredRadiance(radiance, direction, roughness);
+#endif
 }

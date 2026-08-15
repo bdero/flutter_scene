@@ -8,6 +8,7 @@ import 'package:hooks/hooks.dart';
 import 'package:flutter_scene/src/importer/build_cache.dart';
 
 import 'fmat.dart';
+import 'fmat_emitter.dart' show kRadianceCubeDefine, materialSamplesEnvironment;
 import 'target_shader_bundle.dart';
 
 /// Controls how [buildMaterials] exposes generated `.fmat` shader assets.
@@ -500,19 +501,38 @@ Map<String, String> emitFragmentShaderVariants(
   FmatCompilation compiled, {
   required bool generateShadowVariant,
 }) {
-  final entryName = compiled.material.name;
-  if (!generateShadowVariant) {
-    return {entryName: compiled.glsl};
-  }
+  final material = compiled.material;
+  final entryName = material.name;
   // The unsuffixed entry is the no-shadow fast path. The Shadow entry keeps
   // the complete sampler layout used when the scene binds a shadow atlas.
-  return {
-    entryName: emitFragmentGlsl(
-      compiled.material,
-      defines: const ['FLUTTER_SCENE_SKIP_SHADOWS'],
-    ),
-    '${entryName}Shadow': compiled.glsl,
-  };
+  final byShadow = generateShadowVariant
+      ? <String, String>{
+          entryName: emitFragmentGlsl(
+            material,
+            defines: const ['FLUTTER_SCENE_SKIP_SHADOWS'],
+          ),
+          '${entryName}Shadow': compiled.glsl,
+        }
+      : <String, String>{entryName: compiled.glsl};
+  if (!materialSamplesEnvironment(material)) {
+    return byShadow;
+  }
+  // Backends build the prefiltered radiance in one of two layouts and each
+  // entry declares only its own sampler, so every entry gets a Cube twin that
+  // the runtime picks from the bound environment.
+  final variants = <String, String>{};
+  byShadow.forEach((name, glsl) {
+    variants[name] = glsl;
+    variants['${name}Cube'] = emitFragmentGlsl(
+      material,
+      defines: [
+        if (generateShadowVariant && !name.endsWith('Shadow'))
+          'FLUTTER_SCENE_SKIP_SHADOWS',
+        kRadianceCubeDefine,
+      ],
+    );
+  });
+  return variants;
 }
 
 bool _sameBytes(List<int> a, List<int> b) {

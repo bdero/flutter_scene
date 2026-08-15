@@ -1,5 +1,7 @@
 ## 0.21.0
 
+* The lit shaders declare one prefiltered-radiance sampler instead of one per layout, freeing two fragment texture units so a skinned shadow-casting draw fits GLES drivers reporting the 16-unit minimum.
+* Breaking change for raw `ShaderMaterial` shaders that sample the environment, they declare `prefiltered_radiance` as `RadianceSampler` and supply a `radianceCubeFragmentShader` variant built with `FLUTTER_SCENE_RADIANCE_CUBE`. `.fmat` materials are unaffected.
 * Breaking change, the fscene component codec API is declarative. `ComponentCodec.serialize` is abstract, `ComponentPropertyDef` moved to the `scene` schema model (constraints replace `min`/`max`/`read`), and flat codecs extend `DeclarativeComponentCodec`, deriving schema, realization, and delta serialization from one `ComponentField` list.
 * `.fscene` version 3. Component properties delta-serialize (values equal to their schema default are omitted) and audio attenuation settings nest; version 2 documents read unchanged.
 * `package:flutter_scene/annotations.dart`, `@SceneComponent` and typed property annotations that lower to schema constraints for generated codecs.

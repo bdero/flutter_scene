@@ -64,6 +64,8 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   Set<RenderInput> _sceneInputs;
   gpu.Shader? _shadowFragmentShader;
+  gpu.Shader? _cubeFragmentShader;
+  gpu.Shader? _cubeShadowFragmentShader;
 
   /// Sets the fragment shader used when a shadow atlas is active.
   @internal
@@ -71,11 +73,36 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _shadowFragmentShader = shader;
   }
 
+  /// Sets the variants compiled for a cubemap prefiltered radiance, used when
+  /// the bound environment carries that layout. [shadow] is the twin for a
+  /// draw that also binds a shadow atlas.
+  @internal
+  void setRadianceCubeFragmentShaders(gpu.Shader shader, {gpu.Shader? shadow}) {
+    _cubeFragmentShader = shader;
+    _cubeShadowFragmentShader = shadow;
+  }
+
   @override
-  gpu.Shader fragmentShaderForLighting(Lighting lighting) =>
-      lighting.shadowMap == null
-      ? fragmentShader
-      : (_shadowFragmentShader ?? fragmentShader);
+  gpu.Shader? get radianceCubeFragmentShader =>
+      _cubeFragmentShader ?? super.radianceCubeFragmentShader;
+
+  @override
+  gpu.Shader fragmentShaderForLighting(Lighting lighting) {
+    final shadow = lighting.shadowMap != null;
+    // A layout mismatch binds a cube to a 2D sampler, so the layout variant
+    // wins over the shadow one when a material somehow carries only the
+    // latter. Materials that sample the environment ship all four.
+    if (lighting.environmentMap.usesCubeRadianceLayout) {
+      if (shadow) {
+        return _cubeShadowFragmentShader ??
+            _cubeFragmentShader ??
+            _shadowFragmentShader ??
+            fragmentShader;
+      }
+      return _cubeFragmentShader ?? fragmentShader;
+    }
+    return shadow ? (_shadowFragmentShader ?? fragmentShader) : fragmentShader;
+  }
 
   static final Float32List _fragInfoScratch = Float32List(
     EngineLightingUniforms.fragInfoFloatCount,

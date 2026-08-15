@@ -56,9 +56,12 @@ void encodeSkybox(
   final vertexShader = baseShaderLibrary['SkyboxVertex']!;
   final gpu.Shader fragmentShader;
   if (source is EnvironmentSkySource) {
-    fragmentShader = baseShaderLibrary['SkyboxEnvironmentFragment']!;
+    // The variant declaring the sampler type of the bound radiance layout.
+    fragmentShader = environment.usesCubeRadianceLayout
+        ? baseShaderLibrary['SkyboxEnvironmentCubeFragment']!
+        : baseShaderLibrary['SkyboxEnvironmentFragment']!;
   } else if (source is ShaderSkySource) {
-    fragmentShader = source.fragmentShader;
+    fragmentShader = source.shaderForEnvironment(environment);
   } else {
     return;
   }
@@ -217,6 +220,7 @@ void _bindEnvironmentSource(
     renderPass,
     fragmentShader,
     environmentB,
+    primary: environment,
   );
   // The full-res source equirect for a sharp background (a dummy when the
   // environment has none; the SkyboxInfo flag gates its use).

@@ -31,6 +31,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_standard.frag"
   },
+  "StandardCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_cube.frag"
+  },
   "DepthOnlyFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_only.frag"
@@ -162,6 +166,10 @@
   "SkyboxEnvironmentFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_skybox_environment.frag"
+  },
+  "SkyboxEnvironmentCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_skybox_environment_cube.frag"
   },
   "CubeToEquirectFragment": {
     "type": "fragment",

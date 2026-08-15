@@ -85,6 +85,7 @@ class ShaderSkySource extends SkySource {
   ShaderSkySource({
     gpu.Shader? fragmentShader,
     String? fragmentShaderName,
+    this.radianceCubeFragmentShader,
     this.useEnvironment = false,
   }) : assert(
          (fragmentShader == null) != (fragmentShaderName == null),
@@ -95,6 +96,23 @@ class ShaderSkySource extends SkySource {
 
   gpu.Shader? _fragmentShader;
   final String? _fragmentShaderName;
+
+  /// The variant of [fragmentShader] built with `FLUTTER_SCENE_RADIANCE_CUBE`,
+  /// used when the active environment's radiance is a cubemap.
+  ///
+  /// Required only for a [useEnvironment] sky, whose `prefiltered_radiance`
+  /// sampler is a `sampler2D` or a `samplerCube` depending on the layout the
+  /// backend builds. Without it such a sky samples nothing on a cube backend.
+  gpu.Shader? radianceCubeFragmentShader;
+
+  /// The shader to draw with against [environment], picking the variant whose
+  /// radiance sampler matches the layout of the environment actually sampled
+  /// ([sampledEnvironment] when set). The encoder builds the pipeline from
+  /// this, and [bind] fills that pipeline's slots, so both must agree.
+  gpu.Shader shaderForEnvironment(EnvironmentMap environment) =>
+      (sampledEnvironment ?? environment).usesCubeRadianceLayout
+      ? (radianceCubeFragmentShader ?? fragmentShader)
+      : fragmentShader;
 
   /// The full-screen sky fragment shader, typically loaded from a
   /// `.shaderbundle`. When the source was constructed by name, the shader is
@@ -171,15 +189,18 @@ class ShaderSkySource extends SkySource {
     TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
+    // The variant the sky is drawn with, matching the pipeline the encoder
+    // built for this environment's radiance layout.
+    final shader = shaderForEnvironment(environment);
     for (final entry in _uniformBlocks.entries) {
       pass.bindUniform(
-        fragmentShader.getUniformSlot(entry.key),
+        shader.getUniformSlot(entry.key),
         transientsBuffer.emplace(entry.value),
       );
     }
     for (final entry in _textures.entries) {
       pass.bindTexture(
-        fragmentShader.getUniformSlot(entry.key),
+        shader.getUniformSlot(entry.key),
         entry.value.texture,
         sampler: entry.value.sampler ?? gpu.SamplerOptions(),
       );
@@ -187,11 +208,11 @@ class ShaderSkySource extends SkySource {
     if (useEnvironment) {
       EngineLightingUniforms.bindPrefilteredRadiance(
         pass,
-        fragmentShader,
+        shader,
         sampledEnvironment ?? environment,
       );
       pass.bindTexture(
-        fragmentShader.getUniformSlot('brdf_lut'),
+        shader.getUniformSlot('brdf_lut'),
         Material.getBrdfLutTexture(),
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,

@@ -59,26 +59,29 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
+    // The variant the sky is drawn with, which differs from [fragmentShader]
+    // when the environment's radiance is a cubemap.
+    final shader = shaderForEnvironment(environment);
     // Parameters (the MaterialParams block plus any declared samplers) carry
     // the sky's inputs; the raw uniform-block path is unused here.
-    parameters.bind(pass, fragmentShader, transientsBuffer);
+    parameters.bind(pass, shader, transientsBuffer);
     // Zero keep-alive, mirroring PreprocessedMaterial; the generated sky
     // references every declared parameter resource through it so none can be
     // optimized out. Environment skies always declare the block (it keeps
     // the radiance samplers live even when the author never samples them).
     if (parameters.hasAnyParameters || useEnvironment) {
       pass.bindUniform(
-        fragmentShader.getUniformSlot('FragmentKeepAlive'),
+        shader.getUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),
       );
     }
     // A `requires: [environment]` sky samples the prefiltered radiance
     // through SampleEnvironment, bound the same way the standard material
-    // binds it (both layout samplers plus the layout selector block).
+    // binds it (the layout's sampler plus the layout selector block).
     if (useEnvironment) {
       EngineLightingUniforms.bindPrefilteredRadiance(
         pass,
-        fragmentShader,
+        shader,
         sampledEnvironment ?? environment,
       );
     }

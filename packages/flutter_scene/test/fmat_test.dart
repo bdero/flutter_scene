@@ -658,8 +658,8 @@ sky {
       final m = parseFmat(envSky);
       expect(m.useEnvironment, isTrue);
       final glsl = emitFragmentGlsl(m);
-      expect(glsl, contains('uniform sampler2D prefiltered_radiance;'));
-      expect(glsl, contains('uniform samplerCube prefiltered_radiance_cube;'));
+      expect(glsl, contains('uniform RadianceSampler prefiltered_radiance;'));
+      expect(glsl, isNot(contains('prefiltered_radiance_cube')));
       expect(glsl, contains('vec3 SampleEnvironment('));
       expect(buildSidecar(m)['use_environment'], isTrue);
     });
@@ -679,7 +679,7 @@ sky { vec3 Sky(vec3 direction) { return vec3(0.0); } }
       expect(m.useEnvironment, isFalse);
       expect(
         emitFragmentGlsl(m),
-        isNot(contains('uniform sampler2D prefiltered_radiance;')),
+        isNot(contains('uniform RadianceSampler prefiltered_radiance;')),
       );
       expect(buildSidecar(m).containsKey('use_environment'), isFalse);
     });
