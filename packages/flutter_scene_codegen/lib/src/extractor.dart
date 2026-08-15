@@ -96,13 +96,23 @@ class ExtractedComponent {
 
 /// The result of extracting one source string.
 class ExtractionResult {
-  const ExtractionResult({required this.components, required this.diagnostics});
+  const ExtractionResult({
+    required this.components,
+    required this.diagnostics,
+    this.parseFailed = false,
+  });
 
   /// The extracted components, in declaration order.
   final List<ExtractedComponent> components;
 
   /// Problems encountered, in source order.
   final List<ExtractionDiagnostic> diagnostics;
+
+  /// Whether the source failed to parse. An unparseable file (mid-edit) is
+  /// indistinguishable from a component-free one by [components] alone, so
+  /// sweeps must not treat it as "declares nothing" (deleting outputs or
+  /// retiring schemas).
+  final bool parseFailed;
 }
 
 const Set<String> _propertyAnnotationNames = {
@@ -132,6 +142,10 @@ ExtractionResult extractComponents(String source, {String? path}) {
     throwIfDiagnostics: false,
   );
   final extraction = _Extraction(path, parse.lineInfo);
+  final parseFailed = parse.errors.isNotEmpty;
+  for (final error in parse.errors) {
+    extraction._error(error.offset, 'syntax error: ${error.message}');
+  }
   final enums = <String, List<String>>{};
   for (final declaration in parse.unit.declarations) {
     if (declaration is EnumDeclaration) {
@@ -149,6 +163,7 @@ ExtractionResult extractComponents(String source, {String? path}) {
   return ExtractionResult(
     components: components,
     diagnostics: extraction.diagnostics,
+    parseFailed: parseFailed,
   );
 }
 
@@ -269,7 +284,11 @@ class _Extraction {
     );
     if (resolved == null) return const [];
 
-    final constraints = _lowerConstraints(annotationName, args);
+    final constraints = _lowerConstraints(
+      annotationName,
+      args,
+      propertyAnnotation.offset,
+    );
     final normalized = constraints.any(
       (constraint) => constraint is Normalized,
     );
@@ -482,6 +501,7 @@ class _Extraction {
   List<PropertyConstraint<Object?>> _lowerConstraints(
     String annotationName,
     _Args args,
+    int offset,
   ) {
     final constraints = <PropertyConstraint<Object?>>[];
     switch (annotationName) {
@@ -499,6 +519,11 @@ class _Extraction {
           // softMax alone is the common authoring shape; the slider floor
           // falls back to the hard minimum, then zero.
           constraints.add(SoftRange(softMin ?? min ?? 0, softMax));
+        } else if (softMin != null) {
+          _warn(
+            offset,
+            'softMin without softMax lowers no slider range; add softMax',
+          );
         }
         final step = _numLit(args.named['step'])?.toDouble();
         if (step != null) constraints.add(Step(step));

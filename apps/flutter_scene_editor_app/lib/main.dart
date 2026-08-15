@@ -257,10 +257,15 @@ class _EditorHomeState extends State<_EditorHome> {
         // the project (its stale cache entry would otherwise resurrect it
         // every open). Source and package types re-derive locally.
         final fetched = {for (final schema in schemas) schema.type};
+        // Source-owned types are excluded by ownership, not the provenance
+        // label (a Play fetch stamps them 'live'): a fetch from a stale
+        // build whose registrar predates the type must not retire a
+        // component whose .dart source is intact on disk.
         final stale = [
           for (final entry in _foreignSchemaProvenance.entries)
             if ((entry.value == 'cache' || entry.value == 'live') &&
-                !fetched.contains(entry.key))
+                !fetched.contains(entry.key) &&
+                !_sourceOwnedTypes.contains(entry.key))
               entry.key,
         ];
         for (final type in stale) {
@@ -468,9 +473,15 @@ class _EditorHomeState extends State<_EditorHome> {
     // yielding were deleted; retire them everywhere. Ownership is tracked in
     // [_sourceOwnedTypes] rather than read from the provenance label, which
     // a Play session's schema fetch overwrites to `live` (the running app
-    // keeps the class compiled until its next restart).
+    // keeps the class compiled until its next restart). Types declared by a
+    // file that failed to parse this sweep (a mid-edit syntax error) are
+    // held, not retired; the next parsing sweep settles them.
+    final parseFailed = result.parseFailedPaths.toSet();
     final current = {for (final schema in result.schemas) schema.type};
-    final gone = _sourceOwnedTypes.difference(current).toList();
+    final gone = _sourceOwnedTypes
+        .difference(current)
+        .where((type) => !parseFailed.contains(_componentSourcePaths[type]))
+        .toList();
     _sourceOwnedTypes
       ..removeAll(gone)
       ..addAll(current);
