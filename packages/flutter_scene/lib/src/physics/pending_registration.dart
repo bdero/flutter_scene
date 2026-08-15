@@ -17,16 +17,28 @@ abstract interface class PendingPhysicsRegistration {
   bool internalRetryPhysicsRegistration();
 }
 
-final Set<PendingPhysicsRegistration> _pending = {};
+// Weak entries: the wait list is process-global, so a strong set would
+// retain a discarded scene's components (and through them the whole scene
+// graph) forever when the scene is dropped without detaching. Collected
+// entries are swept opportunistically.
+final List<WeakReference<PendingPhysicsRegistration>> _pending = [];
 bool _retrying = false;
 
 /// Parks [component] until the next retry.
-void addPendingPhysicsRegistration(PendingPhysicsRegistration component) =>
-    _pending.add(component);
+void addPendingPhysicsRegistration(PendingPhysicsRegistration component) {
+  for (final entry in _pending) {
+    if (identical(entry.target, component)) return;
+  }
+  _pending.add(WeakReference(component));
+}
 
 /// Forgets [component] (it unmounted while waiting).
-void removePendingPhysicsRegistration(PendingPhysicsRegistration component) =>
-    _pending.remove(component);
+void removePendingPhysicsRegistration(PendingPhysicsRegistration component) {
+  _pending.removeWhere((entry) {
+    final target = entry.target;
+    return target == null || identical(target, component);
+  });
+}
 
 /// Retries every waiting component until a pass makes no progress. Called
 /// when a world mounts and when a body or collider registers; reentrant
@@ -38,12 +50,19 @@ void retryPendingPhysicsRegistrations() {
     var progressed = true;
     while (progressed) {
       progressed = false;
-      for (final component in _pending.toList()) {
+      final registered = <PendingPhysicsRegistration>{};
+      for (final entry in _pending.toList()) {
+        final component = entry.target;
+        if (component == null) continue;
         if (component.internalRetryPhysicsRegistration()) {
-          _pending.remove(component);
+          registered.add(component);
           progressed = true;
         }
       }
+      _pending.removeWhere((entry) {
+        final target = entry.target;
+        return target == null || registered.contains(target);
+      });
     }
   } finally {
     _retrying = false;
