@@ -3,6 +3,7 @@
 ## 0.2.0
 
 - `package:scene/schema.dart`, the portable component schema model (`ComponentSchema`, `ComponentPropertyDef`, the tagged constraint taxonomy, `formerNames`/`formerTypes`).
+- Component schemas carry declarative editor gizmos (`ComponentSchema.gizmo`, the `GizmoSpec` primitive model with property-bound scalars, colors, and axes).
 - `.fscene` version 3, component properties delta-serialize and audio attenuation settings nest; version 2 documents migrate as-is.
 - Sun lights carry `contactShadows`, `contactShadowDistance`, and `angularRadius`.
 - Environment effects carry `colorGradingLut` (a `.cube` asset reference) and `colorGradingLutBlend`.
