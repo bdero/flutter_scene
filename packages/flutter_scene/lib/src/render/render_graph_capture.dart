@@ -89,8 +89,7 @@ class CapturedResource {
   final gpu.PixelFormat? format;
   final int sampleCount;
 
-  /// Null when the texture did not come from the transient pool (swapchain
-  /// or retained targets).
+  /// The texture's storage mode (null only for non-texture entries).
   final gpu.StorageMode? storageMode;
 
   /// False for non-texture blackboard entries (see [byteLength]).
@@ -291,17 +290,22 @@ class RenderGraphCapturer implements RenderGraphObserver {
       width: texture.width,
       height: texture.height,
       format: texture.format,
-      sampleCount: descriptor?.sampleCount ?? 1,
-      storageMode: descriptor?.storageMode,
+      sampleCount: texture.sampleCount,
+      storageMode: texture.storageMode,
     );
     _resources.add(resource);
     if (!request.captureImages) return;
     final only = request.onlyKeys;
     if (only != null && !only.contains(key)) return;
-    if (descriptor != null &&
-        (descriptor.storageMode == gpu.StorageMode.deviceTransient ||
-            !descriptor.enableShaderReadUsage ||
-            descriptor.sampleCount > 1)) {
+    // The texture's own properties gate the copy, so descriptor-less
+    // textures (retained or swapchain-backed) get the same protection as
+    // pool transients. Submit-time failures are asynchronous and cannot be
+    // caught here; this keeps the blit from ever being recorded against a
+    // source it cannot sample.
+    if (texture.storageMode == gpu.StorageMode.deviceTransient ||
+        !texture.enableShaderReadUsage ||
+        texture.sampleCount > 1) {
+      resource.snapshotFailed = true;
       return;
     }
     try {
@@ -309,7 +313,7 @@ class RenderGraphCapturer implements RenderGraphObserver {
       if (thumbnailDim != null) {
         resource.thumbnail = _copy(texture, maxDim: thumbnailDim);
       }
-      if (request.fullResolution || only != null) {
+      if (request.fullResolution) {
         resource.snapshot = _copy(texture, maxDim: null);
       }
     } catch (_) {

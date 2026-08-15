@@ -192,8 +192,13 @@ class DepthPrepass extends RenderGraphPass {
 /// Requires [DepthPrepass] to have run with `keepDepthStencil`; does
 /// nothing when either blackboard texture is absent or no visible item
 /// qualifies. The patch overwrites the target's green/blue/alpha channels
-/// (view-space normals when reflections requested them), so it must run
-/// after every consumer of those channels.
+/// (view-space normals when reflections requested them), so it runs after
+/// the built-in consumers of those channels (ambient occlusion,
+/// reflections). Custom render passes at the later stages read the same
+/// blackboard texture and therefore see patched depth and normals at
+/// depth-writing translucent pixels; that is the visible-surface semantics
+/// depth of field wants, and the accepted tradeoff for any pass wanting
+/// opaque-only geometry.
 class TranslucentDepthPatchPass extends RenderGraphPass {
   TranslucentDepthPatchPass({
     required Camera camera,

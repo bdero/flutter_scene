@@ -120,17 +120,15 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
                         '${report.offenders.first.passName}',
               style: editorDetailText.copyWith(
                 color: report.offenders.isEmpty
-                    ? const Color(0xFF7BC67E)
-                    : const Color(0xFFE57373),
+                    ? editorSuccessColor
+                    : editorErrorColor,
               ),
             ),
           if (!busy && _inspector.lastError != null)
             Expanded(
               child: Text(
                 _inspector.lastError!,
-                style: editorDetailText.copyWith(
-                  color: const Color(0xFFE57373),
-                ),
+                style: editorDetailText.copyWith(color: editorErrorColor),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -195,7 +193,7 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
           borderRadius: BorderRadius.circular(5),
           border: Border.all(
             color: offending
-                ? const Color(0xFFE57373)
+                ? editorErrorColor
                 : selected
                 ? editorAccentColor
                 : editorLineColor,

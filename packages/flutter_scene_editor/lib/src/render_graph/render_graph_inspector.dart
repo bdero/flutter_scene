@@ -9,8 +9,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-// ignore: implementation_imports
-import 'package:flutter_scene/src/render/render_graph_capture.dart';
 
 import 'debug_shaders.dart';
 
@@ -62,6 +60,84 @@ class NonFiniteReport {
   final int scannedCount;
 }
 
+/// Arms a capture on [scene] and schedules the frame that fulfills it (the
+/// engine times the arm out if no frame renders). The one capture path the
+/// panel and the MCP tools share. The primary screen view (index 0) of
+/// whichever SceneView renders first wins; the editor's main viewport is
+/// that view.
+/// TODO(render-graph-multiview): a view selector for extra viewports and
+/// RenderTexture targets.
+Future<RenderGraphCaptureResult> armRenderGraphCapture(
+  Scene scene,
+  RenderGraphCaptureRequest request,
+) async {
+  if (!editorDebugShadersLoaded) await loadEditorDebugShaders();
+  final future = scene.captureRenderGraph(request: request);
+  WidgetsBinding.instance.scheduleFrame();
+  return future;
+}
+
+/// Whether [format] can carry non-finite values worth scanning.
+bool isFloatRenderFormat(gpu.PixelFormat? format) =>
+    format == gpu.PixelFormat.r16g16b16a16Float ||
+    format == gpu.PixelFormat.r32g32b32a32Float ||
+    format == gpu.PixelFormat.r32Float;
+
+/// Scans [capture]'s float-format full-resolution snapshots for NaN/Inf, in
+/// execution order. Shared by the panel and the `scan_for_nans` MCP tool so
+/// the two cannot drift.
+Future<NonFiniteReport> scanCaptureForNonFinite(
+  RenderGraphCaptureResult capture,
+) async {
+  final offenders = <NonFiniteEntry>[];
+  final unscanned = <String>[];
+  var scanned = 0;
+  for (final resource in capture.resources) {
+    if (!isFloatRenderFormat(resource.format)) continue;
+    final snapshot = resource.snapshot;
+    if (snapshot == null) {
+      unscanned.add(resource.key);
+      continue;
+    }
+    final floats = await readbackFloats(snapshot);
+    if (floats == null) {
+      unscanned.add(resource.key);
+      continue;
+    }
+    scanned++;
+    var nans = 0;
+    var infs = 0;
+    for (final value in floats) {
+      if (value.isNaN) {
+        nans++;
+      } else if (value.isInfinite) {
+        infs++;
+      }
+    }
+    if (nans > 0 || infs > 0) {
+      offenders.add(
+        NonFiniteEntry(
+          key: resource.key,
+          passIndex: resource.passIndex,
+          passName:
+              resource.passIndex >= 0 &&
+                  resource.passIndex < capture.passes.length
+              ? capture.passes[resource.passIndex].name
+              : '(build)',
+          nanCount: nans,
+          infCount: infs,
+        ),
+      );
+    }
+  }
+  offenders.sort((a, b) => a.passIndex.compareTo(b.passIndex));
+  return NonFiniteReport(
+    offenders: offenders,
+    unscanned: unscanned,
+    scannedCount: scanned,
+  );
+}
+
 /// Drives captures for one live [Scene] and holds the latest result for the
 /// panel. Exactly one capture is retained; a new one replaces it.
 class RenderGraphInspector extends ChangeNotifier {
@@ -92,6 +168,9 @@ class RenderGraphInspector extends ChangeNotifier {
         for (final resource in capture.resources)
           InspectedResource(resource, _thumbnailImage(resource)),
       ];
+      // The replaced thumbnails are GPU-backed images; without an explicit
+      // dispose every Capture press would strand dozens until GC.
+      _disposeThumbnails();
       _result = capture;
       _resources = resources;
       _nonFinite = null;
@@ -131,53 +210,7 @@ class RenderGraphInspector extends ChangeNotifier {
           fullResolution: true,
         ),
       );
-      final offenders = <NonFiniteEntry>[];
-      final unscanned = <String>[];
-      var scanned = 0;
-      for (final resource in capture.resources) {
-        if (!_isFloatFormat(resource.format)) continue;
-        final snapshot = resource.snapshot;
-        if (snapshot == null) {
-          unscanned.add(resource.key);
-          continue;
-        }
-        final floats = await readbackFloats(snapshot);
-        if (floats == null) {
-          unscanned.add(resource.key);
-          continue;
-        }
-        scanned++;
-        var nans = 0;
-        var infs = 0;
-        for (final value in floats) {
-          if (value.isNaN) {
-            nans++;
-          } else if (value.isInfinite) {
-            infs++;
-          }
-        }
-        if (nans > 0 || infs > 0) {
-          offenders.add(
-            NonFiniteEntry(
-              key: resource.key,
-              passIndex: resource.passIndex,
-              passName:
-                  resource.passIndex >= 0 &&
-                      resource.passIndex < capture.passes.length
-                  ? capture.passes[resource.passIndex].name
-                  : '(build)',
-              nanCount: nans,
-              infCount: infs,
-            ),
-          );
-        }
-      }
-      offenders.sort((a, b) => a.passIndex.compareTo(b.passIndex));
-      _nonFinite = NonFiniteReport(
-        offenders: offenders,
-        unscanned: unscanned,
-        scannedCount: scanned,
-      );
+      _nonFinite = await scanCaptureForNonFinite(capture);
     });
     return _nonFinite;
   }
@@ -197,11 +230,6 @@ class RenderGraphInspector extends ChangeNotifier {
     }
   }
 
-  // Arms a capture and schedules the frame that fulfills it. The primary
-  // screen view (index 0) of whichever SceneView renders first wins; the
-  // editor's main viewport is that view.
-  // TODO(render-graph-multiview): a view selector for extra viewports and
-  // RenderTexture targets.
   Future<RenderGraphCaptureResult> _arm(
     RenderGraphCaptureRequest request,
   ) async {
@@ -209,10 +237,7 @@ class RenderGraphInspector extends ChangeNotifier {
     if (scene == null) {
       throw StateError('No scene is bound to the render graph inspector');
     }
-    if (!editorDebugShadersLoaded) await loadEditorDebugShaders();
-    final future = scene.captureRenderGraph(request: request);
-    WidgetsBinding.instance.scheduleFrame();
-    return future;
+    return armRenderGraphCapture(scene, request);
   }
 
   ui.Image? _thumbnailImage(CapturedResource resource) {
@@ -228,8 +253,16 @@ class RenderGraphInspector extends ChangeNotifier {
     }
   }
 
-  static bool _isFloatFormat(gpu.PixelFormat? format) =>
-      format == gpu.PixelFormat.r16g16b16a16Float ||
-      format == gpu.PixelFormat.r32g32b32a32Float ||
-      format == gpu.PixelFormat.r32Float;
+  void _disposeThumbnails() {
+    for (final resource in _resources) {
+      resource.thumbnail?.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeThumbnails();
+    _resources = const [];
+    super.dispose();
+  }
 }

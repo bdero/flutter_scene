@@ -8,14 +8,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-// ignore: implementation_imports
-import 'package:flutter_scene/src/render/render_graph_capture.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
     show ScreenshotResult, ToolError;
 
 import '../render_graph/debug_shaders.dart';
+import '../render_graph/render_graph_inspector.dart'
+    show armRenderGraphCapture, scanCaptureForNonFinite;
 import '../viewport/debug_visualize.dart';
 
 /// Render graph inspection over MCP, bound to a scene provider so one
@@ -24,6 +22,10 @@ class RenderGraphMcp {
   RenderGraphMcp(this._sceneProvider);
 
   final Scene? Function() _sceneProvider;
+
+  // Serializes captures: the engine holds one pending arm, so a concurrent
+  // second call would fail the first with "superseded".
+  Future<void> _queue = Future<void>.value();
 
   Scene get _scene {
     final scene = _sceneProvider();
@@ -61,7 +63,11 @@ class RenderGraphMcp {
       ),
     );
     final resource = _findCaptured(result, key);
-    final texture = resource.snapshot ?? resource.thumbnail;
+    // With a maxDimension the reduced copy is the product; a full-resolution
+    // base64 PNG of a large HDR target would swamp the model context.
+    final texture = maxDimension != null
+        ? (resource.thumbnail ?? resource.snapshot)
+        : (resource.snapshot ?? resource.thumbnail);
     if (texture == null) {
       throw ToolError(
         'Resource "$key" carries no image (not shader-readable this frame)',
@@ -164,7 +170,8 @@ class RenderGraphMcp {
     };
   }
 
-  /// Captures a frame and scans every float target for NaN/Inf.
+  /// Captures a frame and scans every float target for NaN/Inf, through the
+  /// same scan core as the panel.
   Future<Map<String, Object?>> scanForNans() async {
     final result = await _arm(
       const RenderGraphCaptureRequest(
@@ -172,51 +179,23 @@ class RenderGraphMcp {
         fullResolution: true,
       ),
     );
-    final offenders = <Map<String, Object?>>[];
-    final unscanned = <String>[];
-    var scanned = 0;
-    for (final resource in result.resources) {
-      if (!_isFloatFormat(resource.format)) continue;
-      final snapshot = resource.snapshot;
-      if (snapshot == null) {
-        unscanned.add(resource.key);
-        continue;
-      }
-      final floats = await readbackFloats(snapshot);
-      if (floats == null) {
-        unscanned.add(resource.key);
-        continue;
-      }
-      scanned++;
-      var nans = 0;
-      var infs = 0;
-      for (final value in floats) {
-        if (value.isNaN) {
-          nans++;
-        } else if (value.isInfinite) {
-          infs++;
-        }
-      }
-      if (nans > 0 || infs > 0) {
-        offenders.add({
-          'key': resource.key,
-          'passIndex': resource.passIndex,
-          'pass': resource.passIndex >= 0
-              ? result.passes[resource.passIndex].name
-              : '(build)',
-          'nanCount': nans,
-          'infCount': infs,
-        });
-      }
-    }
-    offenders.sort(
-      (a, b) => (a['passIndex']! as int).compareTo(b['passIndex']! as int),
-    );
+    final report = await scanCaptureForNonFinite(result);
     return {
-      'firstOffendingPass': offenders.isEmpty ? null : offenders.first['pass'],
-      'offenders': offenders,
-      'unscanned': unscanned,
-      'scannedCount': scanned,
+      'firstOffendingPass': report.offenders.isEmpty
+          ? null
+          : report.offenders.first.passName,
+      'offenders': [
+        for (final entry in report.offenders)
+          {
+            'key': entry.key,
+            'passIndex': entry.passIndex,
+            'pass': entry.passName,
+            'nanCount': entry.nanCount,
+            'infCount': entry.infCount,
+          },
+      ],
+      'unscanned': report.unscanned,
+      'scannedCount': report.scannedCount,
     };
   }
 
@@ -245,13 +224,10 @@ class RenderGraphMcp {
     WidgetsBinding.instance.scheduleFrame();
   }
 
-  Future<RenderGraphCaptureResult> _arm(
-    RenderGraphCaptureRequest request,
-  ) async {
-    if (!editorDebugShadersLoaded) await loadEditorDebugShaders();
-    final future = _scene.captureRenderGraph(request: request);
-    WidgetsBinding.instance.scheduleFrame();
-    return future;
+  Future<RenderGraphCaptureResult> _arm(RenderGraphCaptureRequest request) {
+    final run = _queue.then((_) => armRenderGraphCapture(_scene, request));
+    _queue = run.then((_) {}, onError: (_) {});
+    return run;
   }
 
   CapturedResource _findCaptured(RenderGraphCaptureResult result, String key) {
@@ -299,9 +275,4 @@ class RenderGraphMcp {
         },
     ],
   };
-
-  static bool _isFloatFormat(gpu.PixelFormat? format) =>
-      format == gpu.PixelFormat.r16g16b16a16Float ||
-      format == gpu.PixelFormat.r32g32b32a32Float ||
-      format == gpu.PixelFormat.r32Float;
 }

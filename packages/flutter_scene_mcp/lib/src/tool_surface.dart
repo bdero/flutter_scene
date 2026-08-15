@@ -1265,7 +1265,7 @@ class EditorToolSurface {
         }
         return capture(
           thumbnails: true,
-          maxDimension: (args['maxDimension'] as num?)?.toInt(),
+          maxDimension: _optionalInt(args, 'maxDimension'),
         );
       case 'read_pass_pixel':
         final reader = renderGraphPixel;
@@ -1333,6 +1333,18 @@ class EditorToolSurface {
         if (key is! String) {
           throw const ToolError('get_pass_output needs a resource key');
         }
+        // Tools register with schema validation off (the surface owns its
+        // errors), so mistyped options must become ToolErrors here rather
+        // than escaping as TypeErrors from the host callback.
+        _optionalInt(args, 'maxDimension');
+        _optionalNum(args, 'rangeMin');
+        _optionalNum(args, 'rangeMax');
+        if (args['channel'] is! String?) {
+          throw const ToolError('channel must be a string (r, g, b, or a)');
+        }
+        if (args['highlightNonFinite'] is! bool?) {
+          throw const ToolError('highlightNonFinite must be a boolean');
+        }
         final shot = await fetch(key, args);
         return {
           'mimeType': 'image/png',
@@ -1343,6 +1355,20 @@ class EditorToolSurface {
       default:
         throw ToolError('$tool does not return image content');
     }
+  }
+
+  static int? _optionalInt(Map<String, Object?> args, String name) {
+    final value = args[name];
+    if (value == null) return null;
+    if (value is! num) throw ToolError('$name must be a number');
+    return value.toInt();
+  }
+
+  static num? _optionalNum(Map<String, Object?> args, String name) {
+    final value = args[name];
+    if (value == null) return null;
+    if (value is! num) throw ToolError('$name must be a number');
+    return value;
   }
 
   /// Captures the viewport as a base64 PNG, for the `screenshot_viewport`
