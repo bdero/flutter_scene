@@ -303,9 +303,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
     final file = await openFile();
     final path = file?.path;
     if (path == null || !mounted) return;
-    // Quote a picked program path so spaces survive the shell; the source
-    // file rides the placeholder.
-    final quoted = path.contains(' ') ? "'$path'" : path;
+    // Quote a picked program path so spaces survive the shell (single quotes
+    // are literal in both sh and PowerShell); the source file rides the
+    // placeholder.
+    final quoted = path.contains(' ') ? quoteEditorCommandPath(path) : path;
     _mutate(() => _settings.editorCommand = '$quoted $kSourceFilePlaceholder');
   }
 
