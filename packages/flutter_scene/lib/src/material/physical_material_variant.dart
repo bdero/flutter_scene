@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show debugPrint, internal;
 import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:vector_math/vector_math.dart';
 
+import '../fmat/fmat_emitter.dart' show radianceCubeEntryName;
 import '../gpu/gpu.dart' as gpu;
 import 'physical_material.dart';
 import 'physically_based_material.dart' show AlphaMode, TextureTransform;
@@ -95,22 +96,26 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
         'Scene.initializeStaticResources() before preparing materials.',
       );
     }
-    final shader = assets.library[entry];
-    if (shader == null) {
-      throw StateError('Physical shader entry "$entry" is missing.');
+    gpu.Shader require(String name) {
+      final shader = assets.library[name];
+      if (shader == null) {
+        throw StateError('Physical shader entry "$name" is missing.');
+      }
+      return shader;
     }
-    final shadowShader = assets.library['${entry}Shadow'];
-    if (shadowShader == null) {
-      throw StateError(
-        'Physical shadow shader entry "${entry}Shadow" is missing.',
-      );
-    }
+
     final metadata = (assets.metadata[entry] as Map).cast<String, Object?>();
-    final material = PhysicalMaterialVariant._(
-      fragmentShader: shader,
-      metadata: metadata,
-      transmissive: transmissive,
-    )..setShadowFragmentShader(shadowShader);
+    final material =
+        PhysicalMaterialVariant._(
+            fragmentShader: require(entry),
+            metadata: metadata,
+            transmissive: transmissive,
+          )
+          ..setShadowFragmentShader(require('${entry}Shadow'))
+          ..setRadianceCubeFragmentShaders(
+            require(radianceCubeEntryName(entry)),
+            shadow: require(radianceCubeEntryName('${entry}Shadow')),
+          );
     material.updateDescriptor(descriptor);
     return material;
   }

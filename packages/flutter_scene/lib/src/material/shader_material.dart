@@ -92,6 +92,7 @@ class ShaderMaterial extends Material {
   /// names.
   ShaderMaterial({
     gpu.Shader? fragmentShader,
+    gpu.Shader? radianceCubeFragmentShader,
     gpu.Shader? vertexShader,
     gpu.Shader? skinnedVertexShader,
     gpu.Shader? depthVertexShader,
@@ -103,6 +104,7 @@ class ShaderMaterial extends Material {
     if (fragmentShader != null) {
       setFragmentShader(fragmentShader);
     }
+    setRadianceCubeFragmentShader(radianceCubeFragmentShader);
     setVertexShader(vertexShader);
     setVertexShader(skinnedVertexShader, variant: MeshVariant.skinned);
     setVertexShader(depthVertexShader, variant: MeshVariant.depth);
@@ -335,8 +337,13 @@ class ShaderMaterial extends Material {
     pass.setCullMode(cullingMode);
     pass.setWindingOrder(windingOrder);
 
+    // The variant the pipeline was built from, which differs from
+    // [fragmentShader] when an environment-sampling material supplied a
+    // cube-layout twin and the bound environment uses that layout.
+    final shader = fragmentShaderForLighting(lighting);
+
     for (final entry in _uniformBlocks.entries) {
-      final slot = fragmentShader.getUniformSlot(entry.key);
+      final slot = shader.getUniformSlot(entry.key);
       assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.fragment));
       pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
     }
@@ -346,7 +353,7 @@ class ShaderMaterial extends Material {
       // placeholder so the sampler slot is never left dangling.
       final resolved = _resolveShaderTexture(entry.value.source);
       pass.bindTexture(
-        fragmentShader.getUniformSlot(entry.key),
+        shader.getUniformSlot(entry.key),
         Material.whitePlaceholder(resolved),
         sampler:
             entry.value.sampler ??
@@ -356,7 +363,7 @@ class ShaderMaterial extends Material {
     }
 
     if (useEnvironment) {
-      _bindEnvironmentTextures(pass, lighting);
+      _bindEnvironmentTextures(pass, shader, lighting);
     }
   }
 
@@ -384,14 +391,18 @@ class ShaderMaterial extends Material {
     }
   }
 
-  void _bindEnvironmentTextures(gpu.RenderPass pass, Lighting lighting) {
+  void _bindEnvironmentTextures(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    Lighting lighting,
+  ) {
     EngineLightingUniforms.bindPrefilteredRadiance(
       pass,
-      fragmentShader,
+      shader,
       lighting.environmentMap,
     );
     pass.bindTexture(
-      fragmentShader.getUniformSlot('brdf_lut'),
+      shader.getUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,

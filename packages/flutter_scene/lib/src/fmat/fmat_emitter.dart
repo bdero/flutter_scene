@@ -75,6 +75,25 @@ void _writeVaryings(StringBuffer sb, FmatMaterial material, String direction) {
 ///
 /// [defines] are written after the generated-file banner and before framework
 /// includes.
+/// Selects the cubemap prefiltered-radiance layout. Only the selected
+/// layout's sampler is declared, so a material that samples the environment
+/// ships one entry per layout and the runtime picks the one matching the
+/// bound environment.
+const String kRadianceCubeDefine = 'FLUTTER_SCENE_RADIANCE_CUBE';
+
+/// Whether [material] declares the prefiltered-radiance sampler, and so needs
+/// an entry per radiance layout.
+bool materialSamplesEnvironment(FmatMaterial material) =>
+    material.shadingModel != FmatShadingModel.unlit || material.useEnvironment;
+
+/// The bundle entry name of [entryName]'s cubemap-radiance twin.
+String radianceCubeEntryName(String entryName) => '${entryName}Cube';
+
+/// Whether the material described by sidecar [metadata] samples the
+/// environment, and so ships a [radianceCubeEntryName] twin.
+bool sidecarSamplesEnvironment(Map<String, Object?> metadata) =>
+    metadata['shading_model'] != 'unlit' || metadata['use_environment'] == true;
+
 String emitFragmentGlsl(
   FmatMaterial material, {
   Iterable<String> defines = const [],
@@ -435,12 +454,12 @@ String _emitSkyGlsl(
       '// whichever layout it uses (2D equirect or cube). Sample through',
     );
     sb.writeln('// SampleEnvironment(direction, roughness).');
-    sb.writeln('uniform sampler2D prefiltered_radiance;');
-    sb.writeln('uniform samplerCube prefiltered_radiance_cube;');
+    sb.writeln('uniform RadianceSampler prefiltered_radiance;');
     sb.writeln();
     sb.writeln('vec3 SampleEnvironment(vec3 direction, float roughness) {');
-    sb.writeln('  return SampleRadianceEnv(prefiltered_radiance,');
-    sb.writeln('      prefiltered_radiance_cube, direction, roughness);');
+    sb.writeln(
+      '  return SampleRadianceEnv(prefiltered_radiance, direction, roughness);',
+    );
     sb.writeln('}');
     sb.writeln();
   }

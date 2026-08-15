@@ -584,6 +584,35 @@ name (`frag_info`). Set `ShaderMaterial.useEnvironment = true` to have the engin
 bind `prefiltered_radiance` and `brdf_lut` if your shader declares them (the
 diffuse-irradiance SH coefficients are not bound generically).
 
+### The prefiltered radiance layout
+
+Backends differ in the radiance layout they can build, a roughness-mip cubemap
+where the engine can render into mip levels and a 2D equirect elsewhere, so
+`prefiltered_radiance` is declared as `RadianceSampler` (from `texture.glsl`),
+which is `samplerCube` under `FLUTTER_SCENE_RADIANCE_CUBE` and `sampler2D`
+without it. Declaring one sampler instead of one per layout keeps a dead
+sampler off the per-stage texture-unit budget, which the lit framework sits
+close to.
+
+A `.fmat` material needs no action; the build hook emits both variants and the
+runtime picks the one matching the bound environment. A raw `ShaderMaterial`
+that samples the environment has to build both itself, adding a second bundle
+entry that defines `FLUTTER_SCENE_RADIANCE_CUBE` ahead of its includes, and
+pass it as `radianceCubeFragmentShader`:
+
+```dart
+final material = ShaderMaterial(
+  fragmentShader: library['MyEffect']!,
+  radianceCubeFragmentShader: library['MyEffectCube']!,
+  useEnvironment: true,
+);
+```
+
+Sample through `SampleRadianceEnv(prefiltered_radiance, direction, roughness)`
+so the same source compiles either way. Without the cube variant the material
+samples a 2D slot on a backend that binds a cubemap, and reflections come out
+wrong.
+
 ## std140 packing (raw `ShaderMaterial` only)
 
 With `ShaderMaterial` you fill a single byte buffer per uniform block, and its
@@ -813,6 +842,10 @@ packing mismatch; declare blocks without `vec3` members to rule it out. With a
 environment and/or a directional light. For raw `ShaderMaterial`, check
 `useEnvironment` and that all declared samplers are bound (unbound samplers read
 garbage on some backends).
+
+**Wrong reflections on one backend only (raw `ShaderMaterial`).** The material
+is probably missing its `radianceCubeFragmentShader`, so it samples the 2D
+radiance slot where the backend builds a cubemap.
 
 ---
 

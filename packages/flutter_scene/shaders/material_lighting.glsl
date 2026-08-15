@@ -720,7 +720,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
       EvaluateDiffuseSH(sh_coefficients, -env_normal, 0.0), vec3(0.0));
 #endif
   vec3 prefiltered_color =
-      SampleRadianceEnv(prefiltered_radiance, prefiltered_radiance_cube,
+      SampleRadianceEnv(prefiltered_radiance,
                         env_reflection, roughness);
   // Cross-fade a secondary environment in (area transitions) when active. Both
   // share the bound layout, so the same samplers' _b pair is read.
@@ -729,7 +729,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     vec3 irradiance_b = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 1.0),
                             vec3(0.0));
     vec3 prefiltered_b =
-        SampleRadianceEnv(prefiltered_radiance_b, prefiltered_radiance_cube_b,
+        SampleRadianceEnv(prefiltered_radiance_b,
                           env_reflection, roughness);
     irradiance = mix(irradiance, irradiance_b, env_blend);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
@@ -850,12 +850,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
              transmitted_irradiance * occlusion * ambient_shadow;
   if (material.clearcoat > 0.0) {
     vec3 coat_reflection = reflect(-camera_normal, coat_normal);
-    vec3 coat_prefiltered = SampleRadianceEnv(
-        prefiltered_radiance, prefiltered_radiance_cube,
+    vec3 coat_prefiltered = SampleRadianceEnv(prefiltered_radiance,
         environment_transform * coat_reflection, coat_roughness);
     if (env_blend > 0.0) {
-      vec3 coat_prefiltered_b = SampleRadianceEnv(
-          prefiltered_radiance_b, prefiltered_radiance_cube_b,
+      vec3 coat_prefiltered_b = SampleRadianceEnv(prefiltered_radiance_b,
           environment_transform * coat_reflection, coat_roughness);
       coat_prefiltered = mix(coat_prefiltered, coat_prefiltered_b, env_blend);
     }
@@ -1039,13 +1037,12 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // extra roughness blur on top of the bake.
     const float kSkyFogRoughness = 0.0;
     vec3 sky_dir = environment_transform * normalize(-v_viewvector);
-    sky_fog_color = SampleRadianceEnv(
-        prefiltered_radiance, prefiltered_radiance_cube, sky_dir,
+    sky_fog_color = SampleRadianceEnv(prefiltered_radiance, sky_dir,
         kSkyFogRoughness);
     if (env_blend > 0.0) {
       sky_fog_color = mix(
           sky_fog_color,
-          SampleRadianceEnv(prefiltered_radiance_b, prefiltered_radiance_cube_b,
+          SampleRadianceEnv(prefiltered_radiance_b,
                             sky_dir, kSkyFogRoughness),
           env_blend);
     }

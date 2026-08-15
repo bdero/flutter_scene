@@ -855,17 +855,10 @@ base class EnvironmentMap {
   bool get usesCubeRadianceLayout =>
       _prefilteredRadianceTexture.textureType == gpu.TextureType.textureCube;
 
-  /// The 2D prefiltered radiance for the equirect layouts, or a dummy when the
-  /// radiance is a cube (the material's `samplerCube` is used instead). Both
-  /// the 2D and cube samplers are always bound; the layout flag selects one.
-  gpu.Texture get prefilteredRadianceTexture => usesCubeRadianceLayout
-      ? Material.getBlackPlaceholderTexture()
-      : _prefilteredRadianceTexture;
-
-  /// The prefiltered radiance cubemap (roughness band per mip), or a dummy
-  /// when the radiance is the equirect 2D layout.
-  gpu.Texture get prefilteredRadianceCube =>
-      usesCubeRadianceLayout ? _prefilteredRadianceTexture : _blackCube();
+  /// The prefiltered radiance, in whichever layout it was built. Bound to the
+  /// single `prefiltered_radiance` sampler of the shader variant matching
+  /// [usesCubeRadianceLayout].
+  gpu.Texture get prefilteredRadiance => _prefilteredRadianceTexture;
 
   /// Whether this environment has a full-resolution source equirect for its
   /// background (image environments do; sky-baked / GPU-supplied ones do not).
@@ -880,7 +873,7 @@ base class EnvironmentMap {
   /// than sRGB-encoded color.
   bool get backgroundIsLinear => _backgroundIsLinear;
 
-  /// Whether the 2D [prefilteredRadianceTexture] stores its roughness bands as
+  /// Whether the 2D [prefilteredRadiance] stores its roughness bands as
   /// mip levels (see [useMipRadianceLayout]). Always false for the cube layout.
   bool get usesMipRadianceLayout =>
       !usesCubeRadianceLayout && _prefilteredRadianceTexture.mipLevelCount > 1;
@@ -902,20 +895,6 @@ base class EnvironmentMap {
           sourceIsLinear: sourceIsLinear,
           mipLayout: false,
         );
-
-  // A 1x1 black cube bound to the material's samplerCube when the active
-  // radiance is the 2D layout (the sampler must be complete even though the
-  // layout flag makes the shader ignore it).
-  static gpu.Texture? _blackCubeTexture;
-  static gpu.Texture _blackCube() =>
-      _blackCubeTexture ??= gpu.gpuContext.createTexture(
-        gpu.StorageMode.devicePrivate,
-        1,
-        1,
-        format: gpu.PixelFormat.r16g16b16a16Float,
-        textureType: gpu.TextureType.textureCube,
-        enableShaderReadUsage: true,
-      );
 
   /// The [kDiffuseShCoefficientCount] RGB L2 spherical-harmonic
   /// coefficients describing the diffuse (Lambertian) irradiance.

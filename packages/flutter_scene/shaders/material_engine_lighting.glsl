@@ -131,10 +131,9 @@ uniform FragInfo {
 }
 frag_info;
 
-uniform sampler2D prefiltered_radiance; // PMREM-style roughness-band atlas
-// Roughness-mip prefiltered radiance cubemap (sampled instead of the 2D atlas
-// when RadianceLayoutInfo.cube_layout is set; no pole distortion).
-uniform samplerCube prefiltered_radiance_cube;
+// The prefiltered radiance in whichever layout this backend builds, a
+// roughness-mip cubemap or the 2D equirect atlas (see RadianceSampler).
+uniform RadianceSampler prefiltered_radiance;
 uniform sampler2D brdf_lut;
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 uniform sampler2D shadow_map;
@@ -147,11 +146,10 @@ uniform sampler2D shadow_map;
 // row coordinates land on its single row.
 uniform sampler2D sh_coefficients;
 // The secondary environment cross-faded in by frag_info.radiance_blend.x: its
-// prefiltered radiance (2D atlas and cubemap, the same layout pair as the
-// primary). Its diffuse SH rides in sh_coefficients row 1. A dummy is bound
-// when no cross-fade is active.
-uniform sampler2D prefiltered_radiance_b;
-uniform samplerCube prefiltered_radiance_cube_b;
+// prefiltered radiance, in the same layout as the primary. Its diffuse SH
+// rides in sh_coefficients row 1. A dummy is bound when no cross-fade is
+// active.
+uniform RadianceSampler prefiltered_radiance_b;
 // Screen-space ambient occlusion (occlusion factor in .r). A white
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.

@@ -81,7 +81,12 @@ void main() {
     );
     expect(
       variants.keys,
-      unorderedEquals({'PhysicalOpaque', 'PhysicalOpaqueShadow'}),
+      unorderedEquals({
+        'PhysicalOpaque',
+        'PhysicalOpaqueShadow',
+        'PhysicalOpaqueCube',
+        'PhysicalOpaqueShadowCube',
+      }),
     );
     final temp = Directory.systemTemp.createTempSync('physical_variants');
     try {
@@ -103,6 +108,101 @@ void main() {
     } finally {
       temp.deleteSync(recursive: true);
     }
+  });
+
+  // The GLES backend allocates fragment texture units after the vertex
+  // stage's, so a skinned draw (which spends one on joints_texture) leaves 15
+  // for the fragment stage on a driver reporting the ES 3.0 minimum of 16.
+  // Engines older than the combined-limit fix reject the draw outright, so
+  // every lit variant has to fit.
+  const maxFragmentSamplers = 15;
+
+  test('lit material variants fit the fragment texture-unit budget', () async {
+    final temp = Directory.systemTemp.createTempSync('sampler_budget');
+    try {
+      final impellerc = await findImpellerC();
+      for (final name in ['physical_opaque', 'physical_transmission']) {
+        final variants = emitFragmentShaderVariants(
+          _compile(name),
+          generateShadowVariant: true,
+        );
+        for (final variant in variants.entries) {
+          final reflection =
+              await _compileReflection(
+                    impellerc,
+                    temp,
+                    variant.key,
+                    variant.value,
+                  )
+                  as Map<String, Object?>;
+          final samplers = reflection['sampled_images']! as List<Object?>;
+          expect(
+            samplers,
+            hasLength(lessThanOrEqualTo(maxFragmentSamplers)),
+            reason:
+                '${variant.key} declares ${samplers.length} fragment '
+                'samplers, over the $maxFragmentSamplers budget.',
+          );
+        }
+      }
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('base lit shaders fit the fragment texture-unit budget', () async {
+    final temp = Directory.systemTemp.createTempSync('base_sampler_budget');
+    try {
+      final impellerc = await findImpellerC();
+      for (final entry in [
+        'flutter_scene_standard',
+        'flutter_scene_standard_cube',
+      ]) {
+        final reflection =
+            await _compileReflection(
+                  impellerc,
+                  temp,
+                  entry,
+                  File('shaders/$entry.frag').readAsStringSync(),
+                )
+                as Map<String, Object?>;
+        final samplers = reflection['sampled_images']! as List<Object?>;
+        expect(
+          samplers,
+          hasLength(lessThanOrEqualTo(maxFragmentSamplers)),
+          reason:
+              '$entry declares ${samplers.length} fragment samplers, over '
+              'the $maxFragmentSamplers budget.',
+        );
+      }
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('lit variants select their radiance layout by define', () {
+    final variants = emitFragmentShaderVariants(
+      _compile('physical_opaque'),
+      generateShadowVariant: true,
+    );
+    variants.forEach((entry, glsl) {
+      expect(
+        glsl.contains('#define FLUTTER_SCENE_RADIANCE_CUBE'),
+        entry.endsWith('Cube'),
+        reason: '$entry should define the cube layout only when named Cube.',
+      );
+    });
+    // One sampler, whose type the define picks, so the layout the backend
+    // does not build costs no texture unit.
+    final lighting = File(
+      'shaders/material_engine_lighting.glsl',
+    ).readAsStringSync();
+    expect(lighting, contains('uniform RadianceSampler prefiltered_radiance;'));
+    expect(
+      lighting,
+      contains('uniform RadianceSampler prefiltered_radiance_b;'),
+    );
+    expect(lighting, isNot(contains('prefiltered_radiance_cube')));
   });
 
   test('lit materials reverse normals on back-facing fragments', () {

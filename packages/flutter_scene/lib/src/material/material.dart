@@ -255,14 +255,46 @@ abstract class Material {
   /// material can be constructed before [Scene.initializeStaticResources]
   /// has loaded the base shader bundle. The shader is only needed at render
   /// time, which the engine already defers until the bundle is ready.
-  void setFragmentShaderName(String name) {
+  ///
+  /// [cubeName] is the twin built for the cubemap radiance layout, needed by
+  /// any shader that samples the environment (see [radianceCubeFragmentShader]).
+  void setFragmentShaderName(String name, {String? cubeName}) {
     _fragmentShaderName = name;
     _fragmentShader = null;
+    _radianceCubeFragmentShaderName = cubeName;
+    _radianceCubeFragmentShader = null;
   }
+
+  gpu.Shader? _radianceCubeFragmentShader;
+  String? _radianceCubeFragmentShaderName;
+
+  /// Assigns the already-loaded variant built with
+  /// `FLUTTER_SCENE_RADIANCE_CUBE`, the counterpart of [setFragmentShader]
+  /// for a material that samples the environment.
+  void setRadianceCubeFragmentShader(gpu.Shader? shader) {
+    _radianceCubeFragmentShader = shader;
+    _radianceCubeFragmentShaderName = null;
+  }
+
+  /// The variant compiled for a cubemap prefiltered radiance, or null when
+  /// this material does not sample the environment.
+  ///
+  /// Backends differ in the radiance layout they can build and each variant
+  /// declares only its own sampler type, so a material that reads the
+  /// environment carries one shader per layout and picks by the environment
+  /// bound for the draw.
+  @internal
+  gpu.Shader? get radianceCubeFragmentShader =>
+      _radianceCubeFragmentShader ??= _radianceCubeFragmentShaderName == null
+      ? null
+      : baseShaderLibrary[_radianceCubeFragmentShaderName!];
 
   /// Selects this material's fragment shader for the frame lighting state.
   @internal
-  gpu.Shader fragmentShaderForLighting(Lighting lighting) => fragmentShader;
+  gpu.Shader fragmentShaderForLighting(Lighting lighting) =>
+      lighting.environmentMap.usesCubeRadianceLayout
+      ? (radianceCubeFragmentShader ?? fragmentShader)
+      : fragmentShader;
 
   /// The vertex shader this material supplies for a geometry's [variant]
   /// (`'unskinned'` / `'skinned'` for the color pass, `'depth'` for the

@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
@@ -253,22 +255,17 @@ class EngineLightingUniforms {
     );
   }
 
-  // Tiny constant uniform blocks (std140, 16 bytes) selecting the bound
-  // prefiltered radiance's layout in the shader (RadianceLayoutInfo in
-  // texture.glsl); device-resident so binding needs no per-frame buffer.
-  // (mip_layout, cube_layout). Cube: read the samplerCube. Mip: the 2D mip
-  // equirect. Atlas: the legacy 2D stacked-band equirect.
-  static final gpu.BufferView _layoutCube = _layoutFlagBuffer(0.0, 1.0);
-  static final gpu.BufferView _layoutMip = _layoutFlagBuffer(1.0, 0.0);
-  static final gpu.BufferView _layoutAtlas = _layoutFlagBuffer(0.0, 0.0);
+  // Tiny constant uniform blocks (std140, 16 bytes) telling the two 2D
+  // radiance layouts apart in the shader (RadianceLayoutInfo in texture.glsl);
+  // device-resident so binding needs no per-frame buffer. Mip: the 2D mip
+  // equirect. Atlas: the legacy 2D stacked-band equirect. The cube layout has
+  // its own shader variant and reads neither.
+  static final gpu.BufferView _layoutMip = _layoutFlagBuffer(1.0);
+  static final gpu.BufferView _layoutAtlas = _layoutFlagBuffer(0.0);
 
-  static gpu.BufferView _layoutFlagBuffer(double mip, double cube) {
+  static gpu.BufferView _layoutFlagBuffer(double mip) {
     final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
-      ByteData.sublistView(
-        Float32List(4)
-          ..[0] = mip
-          ..[1] = cube,
-      ),
+      ByteData.sublistView(Float32List(4)..[0] = mip),
     );
     return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: 16);
   }
@@ -331,26 +328,25 @@ class EngineLightingUniforms {
   ) {
     final cubeLayout = env.usesCubeRadianceLayout;
     final mipLayout = env.usesMipRadianceLayout;
-    // 2D atlas (real on the equirect layouts, a dummy on the cube layout).
-    // Horizontal repeat (longitude wraps), vertical clamp. The mip layout
-    // needs a linear mip filter for textureLod to take effect; the legacy
-    // band atlas has a single level, where the mip filter is inert.
+    // The cube wants mip-linear for the roughness textureLod and clamped
+    // faces. The 2D mip equirect needs the linear mip filter too; the legacy
+    // band atlas has a single level, where the mip filter is inert, and both
+    // repeat horizontally (longitude wraps) and clamp vertically.
     pass.bindTexture(
       shader.getUniformSlot('prefiltered_radiance'),
-      env.prefilteredRadianceTexture,
-      sampler: _radianceSampler(mipLayout),
+      env.prefilteredRadiance,
+      sampler: cubeLayout ? _cubeSampler : _radianceSampler(mipLayout),
     );
-    // Radiance cubemap (real on the cube layout, a dummy otherwise). Mip-linear
-    // for the roughness textureLod; clamp the faces.
-    pass.bindTexture(
-      shader.getUniformSlot('prefiltered_radiance_cube'),
-      env.prefilteredRadianceCube,
-      sampler: _cubeSampler,
-    );
-    pass.bindUniform(
-      shader.getUniformSlot('RadianceLayoutInfo'),
-      cubeLayout ? _layoutCube : (mipLayout ? _layoutMip : _layoutAtlas),
-    );
+    // Only the 2D variants read the layout flag, to tell the mip equirect from
+    // the legacy band atlas. The cube variant declares the block through the
+    // shared include but never samples it, so it has no live binding to fill
+    // and binding one anyway is rejected.
+    if (!cubeLayout) {
+      pass.bindUniform(
+        shader.getUniformSlot('RadianceLayoutInfo'),
+        mipLayout ? _layoutMip : _layoutAtlas,
+      );
+    }
   }
 
   // Pass-scoped memo for the engine-constant bind set. Bindings persist
@@ -430,7 +426,12 @@ class EngineLightingUniforms {
     // When no cross-fade is active the primary is bound here too (a valid
     // no-op, since frag_info.radiance_blend.x is 0 and the shader never
     // reads it).
-    bindSecondaryRadiance(pass, shader, lighting.environmentMapB ?? env);
+    bindSecondaryRadiance(
+      pass,
+      shader,
+      lighting.environmentMapB ?? env,
+      primary: env,
+    );
     // Punctual light parameters (all scene lights) and the per-object light
     // index buffer, both RGBA32F data textures, point-sampled (each texel is
     // packed data). White placeholders are bound when there are no lights or no
@@ -494,25 +495,39 @@ class EngineLightingUniforms {
   }
 
   /// Binds the secondary cross-fade environment's prefiltered radiance to the
-  /// `prefiltered_radiance_b` / `prefiltered_radiance_cube_b` samplers (the
-  /// specular pair only, no diffuse SH). Shared by the lit material and the
-  /// environment skybox; both share the primary's [RadianceLayoutInfo], so the
-  /// layout flag is not re-bound here.
+  /// `prefiltered_radiance_b` sampler (the specular term only, no diffuse SH).
+  /// Shared by the lit material and the environment skybox; both share the
+  /// primary's [RadianceLayoutInfo], so the layout flag is not re-bound here.
+  ///
+  /// [primary] selects the shader variant in use, so a secondary built in the
+  /// other layout cannot be bound. It falls back to [primary], which leaves
+  /// the cross-fade sampling one environment instead of binding a cube to a 2D
+  /// sampler.
   static void bindSecondaryRadiance(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    EnvironmentMap env,
-  ) {
-    final mipLayout = env.usesMipRadianceLayout;
+    EnvironmentMap env, {
+    required EnvironmentMap primary,
+  }) {
+    final source = env.usesCubeRadianceLayout == primary.usesCubeRadianceLayout
+        ? env
+        : primary;
+    assert(() {
+      if (!identical(source, env)) {
+        debugPrint(
+          'flutter_scene: the cross-faded environment uses a different '
+          'prefiltered radiance layout than the primary; its specular '
+          'contribution is skipped.',
+        );
+      }
+      return true;
+    }());
     pass.bindTexture(
       shader.getUniformSlot('prefiltered_radiance_b'),
-      env.prefilteredRadianceTexture,
-      sampler: _radianceSampler(mipLayout),
-    );
-    pass.bindTexture(
-      shader.getUniformSlot('prefiltered_radiance_cube_b'),
-      env.prefilteredRadianceCube,
-      sampler: _cubeSampler,
+      source.prefilteredRadiance,
+      sampler: source.usesCubeRadianceLayout
+          ? _cubeSampler
+          : _radianceSampler(source.usesMipRadianceLayout),
     );
   }
 }

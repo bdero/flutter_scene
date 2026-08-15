@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
+import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
+    show radianceCubeEntryName, sidecarSamplesEnvironment;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
@@ -203,6 +205,13 @@ final class FmatMaterialRegistry {
           metadata: metadata,
           vertexShaders: vertexShaders,
         );
+    _applyRadianceCubeShader(
+      material,
+      metadata,
+      resolution.entry.entryName,
+      shaderLibrary,
+      index.shaderBundleAssetKey,
+    );
     _fmatSourcePaths[material] = sourcePath;
     // Track for in-place hot reload: a `.fmat` edit refreshes this material
     // from its regenerated sidecar without rebuilding the scene. Debug-only.
@@ -270,6 +279,17 @@ final class FmatMaterialRegistry {
       );
     }
     final sky = PreprocessedSky(fragmentShader: shader, metadata: metadata);
+    if (sidecarSamplesEnvironment(metadata)) {
+      final cubeEntry = radianceCubeEntryName(resolution.entry.entryName);
+      final cubeShader = shaderLibrary[cubeEntry];
+      if (cubeShader == null) {
+        throw StateError(
+          'Radiance cube shader entry "$cubeEntry" was missing from '
+          '${index.shaderBundleAssetKey}. Rebuild the material bundle.',
+        );
+      }
+      sky.radianceCubeFragmentShader = cubeShader;
+    }
     _fmatSourcePaths[sky] = sourcePath;
     HotReloadCoordinator.instance.registerFmat(
       sky,
@@ -381,4 +401,26 @@ final class FmatMaterialResolution {
 
   final FmatMaterialBundleIndex index;
   final FmatMaterialIndexEntry entry;
+}
+
+/// Resolves the cubemap-radiance twin of [entryName] and attaches it, so a
+/// draw against a cube environment picks a shader declaring the matching
+/// sampler type. Materials that do not sample the environment have none.
+void _applyRadianceCubeShader(
+  PreprocessedMaterial material,
+  Map<String, Object?> metadata,
+  String entryName,
+  gpu.ShaderLibrary shaderLibrary,
+  String shaderBundleAssetKey,
+) {
+  if (!sidecarSamplesEnvironment(metadata)) return;
+  final cubeEntry = radianceCubeEntryName(entryName);
+  final shader = shaderLibrary[cubeEntry];
+  if (shader == null) {
+    throw StateError(
+      'Radiance cube shader entry "$cubeEntry" was missing from '
+      '$shaderBundleAssetKey. Rebuild the material bundle.',
+    );
+  }
+  material.setRadianceCubeFragmentShaders(shader);
 }

@@ -9,6 +9,8 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
+    show radianceCubeEntryName, sidecarSamplesEnvironment;
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
@@ -82,6 +84,11 @@ final class FmatBytesLibrary {
       metadata: metadata,
       vertexShaders: _vertexShaders(metadata),
     );
+    if (sidecarSamplesEnvironment(metadata)) {
+      material.setRadianceCubeFragmentShaders(
+        _shaderFor(radianceCubeEntryName(entryName)),
+      );
+    }
     if (sourcePath != null) setFmatSourcePath(material, sourcePath);
     _instances.add((entryName: entryName, instance: WeakReference(material)));
     return material;
@@ -98,6 +105,11 @@ final class FmatBytesLibrary {
       fragmentShader: _shaderFor(entryName),
       metadata: metadata,
     );
+    if (sidecarSamplesEnvironment(metadata)) {
+      sky.radianceCubeFragmentShader = _shaderFor(
+        radianceCubeEntryName(entryName),
+      );
+    }
     if (sourcePath != null) setFmatSourcePath(sky, sourcePath);
     _instances.add((entryName: entryName, instance: WeakReference(sky)));
     return sky;
