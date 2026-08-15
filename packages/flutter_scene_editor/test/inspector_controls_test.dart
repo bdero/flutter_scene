@@ -99,6 +99,41 @@ void main() {
     expect(find.text('1000.000'), findsOneWidget);
   });
 
+  testWidgets('slider number field rejects non-finite typed values', (
+    tester,
+  ) async {
+    final commits = <double>[];
+    await tester.pumpWidget(
+      themed(
+        SizedBox(
+          width: 360,
+          child: SliderNumberField(
+            label: 'Emissive strength',
+            value: 1,
+            min: 0,
+            max: 10,
+            onPreview: (_) {},
+            onCommit: commits.add,
+            enableInfiniteDrag: false,
+          ),
+        ),
+      ),
+    );
+
+    // tryParse accepts all three spellings; a committed non-finite value
+    // would poison the document (canonical JSON refuses it on save).
+    for (final text in ['NaN', 'Infinity', '1e999']) {
+      await tester.tap(find.byType(ScrubbableNumberField));
+      await tester.pump();
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      editable.controller.text = text;
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+    }
+    expect(commits, isEmpty);
+    expect(find.text('1.000'), findsOneWidget);
+  });
+
   testWidgets('inspector switch uses Forui', (tester) async {
     await tester.pumpWidget(
       themed(

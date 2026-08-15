@@ -1747,7 +1747,7 @@ class _MiniNumberState extends State<_MiniNumber> {
   void _commit() {
     if (_ctrl.text == widget.value.toStringAsFixed(2)) return;
     final v = double.tryParse(_ctrl.text);
-    if (v != null) widget.onSubmit(v);
+    if (v != null && v.isFinite) widget.onSubmit(v);
   }
 
   @override
@@ -2019,7 +2019,7 @@ class _DoubleRowState extends State<_DoubleRow> {
     // Skip when the text still matches the current value's canonical rendering.
     if (_ctrl.text == widget.value.toStringAsFixed(3)) return;
     final v = double.tryParse(_ctrl.text);
-    if (v != null) widget.onSubmit(v);
+    if (v != null && v.isFinite) widget.onSubmit(v);
   }
 
   @override

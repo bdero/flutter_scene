@@ -243,8 +243,10 @@ class _NumberFieldState extends State<_NumberField> {
       final v = int.tryParse(text);
       if (v != null) widget.onSubmit(v);
     } else {
+      // tryParse accepts "NaN"/"Infinity"/overflow; a non-finite value would
+      // poison the document (canonical JSON refuses to encode it on save).
       final v = double.tryParse(text);
-      if (v != null) widget.onSubmit(v);
+      if (v != null && v.isFinite) widget.onSubmit(v);
     }
   }
 
@@ -500,15 +502,18 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
 
   void _finishTextEditing({required bool commit}) {
     if (!_editing) return;
+    // Reject "NaN"/"Infinity"/overflow, which tryParse accepts; a non-finite
+    // value would poison the document (canonical JSON refuses it on save).
     final parsed = double.tryParse(_text.text);
-    final next = commit && parsed != null ? parsed : _editStartValue;
+    final valid = parsed != null && parsed.isFinite;
+    final next = commit && valid ? parsed : _editStartValue;
     final changed = next != _editStartValue;
     setState(() {
       _editing = false;
       _displayValue = next;
       _text.text = _format(next);
     });
-    if (commit && parsed != null && changed) widget.onCommit(next);
+    if (commit && valid && changed) widget.onCommit(next);
   }
 
   void _onPointerDown(PointerDownEvent event) {

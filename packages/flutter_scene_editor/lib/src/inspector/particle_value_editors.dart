@@ -509,7 +509,7 @@ class _InlineNumberState extends State<_InlineNumber> {
   void _commit() {
     if (_ctrl.text == widget.value.toStringAsFixed(3)) return;
     final v = double.tryParse(_ctrl.text);
-    if (v != null) widget.onChanged(v);
+    if (v != null && v.isFinite) widget.onChanged(v);
   }
 
   @override

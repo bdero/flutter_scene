@@ -83,7 +83,9 @@ class _GlbImportDialogState extends State<_GlbImportDialog> {
 
   void _import() {
     final parsed = double.tryParse(_scale.text.trim());
-    final scale = (parsed == null || parsed <= 0) ? 1.0 : parsed;
+    final scale = (parsed == null || !parsed.isFinite || parsed <= 0)
+        ? 1.0
+        : parsed;
     Navigator.of(context).pop(
       GlbImportOptions(
         compressTextures: _compressTextures,
