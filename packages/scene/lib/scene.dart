@@ -106,6 +106,8 @@ export 'src/compose/compose.dart'
         composeScene,
         composeSceneAsync,
         PrefabMemberOrigin,
+        PrefabOverrideAspect,
+        prefabOverrideAspect,
         PrefabResolver;
 
 // Physics is an optional contract, exported from `package:scene/physics.dart`.
