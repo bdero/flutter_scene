@@ -93,5 +93,15 @@ void main() {
   }
 
   vec4 base = texture(input_color, v_uv);
-  frag_color = mix(base, vec4(color, 1.0), remap_info.params.w);
+  float weight = remap_info.params.w;
+  // mix() evaluates base * (1 - weight) even at weight 1, and NaN times
+  // zero is NaN, so a non-finite chain texel would defeat the highlight
+  // exactly where it matters. Select outright at the endpoints.
+  if (weight >= 1.0) {
+    frag_color = vec4(color, 1.0);
+  } else if (weight <= 0.0) {
+    frag_color = base;
+  } else {
+    frag_color = mix(base, vec4(color, 1.0), weight);
+  }
 }

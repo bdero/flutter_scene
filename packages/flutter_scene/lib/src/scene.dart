@@ -1,4 +1,4 @@
-import 'dart:async' show Completer;
+import 'dart:async' show Completer, Timer;
 import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -711,12 +711,15 @@ base class Scene implements SceneGraph {
   /// graph executes; the caller must ensure a frame renders (schedule one).
   ///
   /// Requires [debugAllowRenderGraphCapture]. A second call before the
-  /// pending one resolves replaces it (the first future completes with an
-  /// error).
+  /// pending one resolves replaces it, and a capture no frame fulfills
+  /// within [timeout] (the view hidden, zero-sized, or the scene not ready)
+  /// fails instead of hanging its caller; either way the first future
+  /// completes with an error.
   /// {@category Rendering}
   Future<RenderGraphCaptureResult> captureRenderGraph({
     int viewIndex = 0,
     RenderGraphCaptureRequest request = const RenderGraphCaptureRequest(),
+    Duration timeout = const Duration(seconds: 5),
   }) {
     if (!debugAllowRenderGraphCapture) {
       throw StateError(
@@ -726,16 +729,28 @@ base class Scene implements SceneGraph {
     }
     final pending = _pendingGraphCapture;
     if (pending != null) {
+      _pendingGraphCapture = null;
       pending.completer.completeError(
         StateError('Superseded by a newer render graph capture'),
       );
     }
     final completer = Completer<RenderGraphCaptureResult>();
-    _pendingGraphCapture = (
+    final armed = (
       viewIndex: viewIndex,
       request: request,
       completer: completer,
     );
+    _pendingGraphCapture = armed;
+    Timer(timeout, () {
+      if (!identical(_pendingGraphCapture, armed)) return;
+      _pendingGraphCapture = null;
+      completer.completeError(
+        StateError(
+          'Render graph capture timed out; no frame rendered view '
+          '$viewIndex (is the viewport visible and the scene ready?)',
+        ),
+      );
+    });
     return completer.future;
   }
 
@@ -1550,6 +1565,8 @@ base class Scene implements SceneGraph {
             writeNormals: wantSsr || wantCustomNormals,
             // Depth of field patches translucent surfaces into the linear
             // depth later; the patch depth-tests against this attachment.
+            // Storing it (a non-transient attachment plus store bandwidth)
+            // is paid whenever depth of field is on, patch or no patch.
             keepDepthStencil: depthOfField.enabled,
             cameraRight: cameraRight,
             cameraUp: cameraUp,

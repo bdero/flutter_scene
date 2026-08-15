@@ -92,17 +92,14 @@ class RemapSettings {
     highlightNonFinite: highlightNonFinite ?? this.highlightNonFinite,
   );
 
-  /// A sensible default per source format and resource key.
+  /// A sensible default per resource key; everything else displays as
+  /// clamped color.
   static RemapSettings defaultsFor(gpu.PixelFormat? format, String key) {
     if (key.contains('linear_depth')) {
       return const RemapSettings(mode: RemapMode.depth, near: 0, far: 50);
     }
     if (key.contains('shadow')) {
       return const RemapSettings(mode: RemapMode.singleChannel, channel: 0);
-    }
-    if (format == gpu.PixelFormat.r16g16b16a16Float ||
-        format == gpu.PixelFormat.r32g32b32a32Float) {
-      return const RemapSettings(mode: RemapMode.color);
     }
     return const RemapSettings(mode: RemapMode.color);
   }

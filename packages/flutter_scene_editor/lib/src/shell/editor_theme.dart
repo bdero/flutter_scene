@@ -33,6 +33,11 @@ const Color editorTextColor = _text;
 const Color editorMutedTextColor = _mutedText;
 const Color editorAccentColor = _signal;
 
+/// Status accents for error and success text/borders, readable on the panel
+/// palette; use these over ad-hoc reds and greens.
+const Color editorErrorColor = Color(0xFFE57373);
+const Color editorSuccessColor = Color(0xFF7BC67E);
+
 /// The bordered-box chrome panel lists and detail panes share.
 BoxDecoration editorPanelBox({Color color = _graphite}) => BoxDecoration(
   color: color,
