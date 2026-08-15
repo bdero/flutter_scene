@@ -1407,18 +1407,24 @@ class MaterialsVariantsCodec extends ComponentCodec {
           // An explicitly assigned mesh material (one that is neither the
           // recorded default nor any variant mapping) wins over the recorded
           // default, so assigning a material to a variants-carrying mesh is
-          // not silently reverted; the binding rebases onto it.
+          // not silently reverted; the binding rebases onto it. That
+          // includes untagged code-assigned materials, and the id match is
+          // document-aware (ids from another document's space, a
+          // prefab-realized material, can collide numerically).
           final current = mesh.primitives[primitiveIndex.value].material;
-          final currentId = resourceOrigin(current)?.resourceId;
+          final currentOrigin = resourceOrigin(current);
           final Material defaultMaterial;
           if (defaultRef is! ResourceRefValue) {
             defaultMaterial = current;
-          } else if (currentId != null &&
-              currentId != defaultRef.id &&
-              !variantIds.contains(currentId)) {
-            defaultMaterial = current;
           } else {
-            defaultMaterial = realizer.material(defaultRef.id);
+            final matchesRecorded =
+                currentOrigin != null &&
+                identical(currentOrigin.document, context.document) &&
+                (currentOrigin.resourceId == defaultRef.id ||
+                    variantIds.contains(currentOrigin.resourceId));
+            defaultMaterial = matchesRecorded
+                ? realizer.material(defaultRef.id)
+                : current;
           }
           bindings.add(
             MaterialsVariantBinding(
