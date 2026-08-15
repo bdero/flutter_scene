@@ -29,46 +29,69 @@ typedef ExternalImageAsset = ({String key, File file});
 /// A binary scene that supplies bytes for a textual scene's payload manifest.
 typedef ExternalPayloadAsset = ({String key, File file});
 
-/// Rewrites document-relative `.fmat` material references in [document] to
-/// package-relative keys, so the cooked `.fsceneb` resolves them through the
-/// DataAssets material registry (which keys `.fmat` sources by their
-/// package-relative path). [documentDir] is the scene source's directory
-/// relative to the package root, empty when the scene sits at the root.
-/// Absolute references and ones that escape the package root are left
-/// unchanged (they cannot resolve in a built app; the load reports them).
+/// Rewrites document-relative `.fmat` references in [document] (materials,
+/// skyboxes, and sky-driven lighting) to package-relative keys, so the
+/// cooked `.fsceneb` resolves them through the DataAssets material registry
+/// (which keys `.fmat` sources by their package-relative path).
+/// [documentDir] is the scene source's directory relative to the package
+/// root, empty when the scene sits at the root. Absolute references and ones
+/// that escape the package root are left unchanged (they cannot resolve in a
+/// built app; the load reports them).
 void rebaseFmatMaterialRefs(SceneDocument document, String documentDir) {
   for (final entry in document.resources.entries.toList()) {
     final resource = entry.value;
-    if (resource is! MaterialResource || resource.type != 'fmat') continue;
-    final asset = resource.asset;
-    if (asset == null) continue;
-    final key = asset.key.replaceAll('\\', '/');
-    if (key.startsWith('/') || RegExp(r'^[A-Za-z]:/').hasMatch(key)) continue;
-    final out = <String>[];
-    var escaped = false;
-    for (final segment in [...documentDir.split('/'), ...key.split('/')]) {
-      if (segment.isEmpty || segment == '.') continue;
-      if (segment == '..') {
-        if (out.isEmpty) {
-          escaped = true;
-          break;
-        }
-        out.removeLast();
-        continue;
+    if (resource is MaterialResource && resource.type == 'fmat') {
+      final asset = resource.asset;
+      if (asset == null) continue;
+      final rebased = _rebaseFmatKey(asset.key, documentDir);
+      if (rebased == null) continue;
+      document.resources[entry.key] = resource.copyWith(
+        asset: AssetRef(rebased),
+      );
+    } else if (resource is EnvironmentResource) {
+      final skybox = resource.skybox;
+      if (skybox != null) {
+        skybox.source = _rebaseSkySource(skybox.source, documentDir);
       }
-      out.add(segment);
+      final skyEnvironment = resource.skyEnvironment;
+      if (skyEnvironment != null) {
+        skyEnvironment.source = _rebaseSkySource(
+          skyEnvironment.source,
+          documentDir,
+        );
+      }
     }
-    if (escaped || out.isEmpty) continue;
-    final rebased = out.join('/');
-    if (rebased == asset.key) continue;
-    document.resources[entry.key] = MaterialResource(
-      resource.id,
-      type: resource.type,
-      name: resource.name,
-      properties: resource.properties,
-      asset: AssetRef(rebased),
-    );
   }
+}
+
+SkySourceSpec _rebaseSkySource(SkySourceSpec source, String documentDir) {
+  if (source is! FmatSkySpec) return source;
+  final rebased = _rebaseFmatKey(source.asset.key, documentDir);
+  if (rebased == null) return source;
+  return FmatSkySpec(AssetRef(rebased), properties: source.properties);
+}
+
+/// [key] joined onto [documentDir] with `..` folding, or null when the key
+/// is absolute, escapes the package root, or is already package-relative.
+String? _rebaseFmatKey(String key, String documentDir) {
+  final normalized = key.replaceAll('\\', '/');
+  if (normalized.startsWith('/') ||
+      RegExp(r'^[A-Za-z]:/').hasMatch(normalized)) {
+    return null;
+  }
+  final out = <String>[];
+  for (final segment in [...documentDir.split('/'), ...normalized.split('/')]) {
+    if (segment.isEmpty || segment == '.') continue;
+    if (segment == '..') {
+      if (out.isEmpty) return null;
+      out.removeLast();
+      continue;
+    }
+    out.add(segment);
+  }
+  if (out.isEmpty) return null;
+  final rebased = out.join('/');
+  return rebased == key ? null : rebased;
 }
 
 /// Resolves the optional payload sidecar referenced by [document].

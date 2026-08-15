@@ -504,6 +504,21 @@ class MaterialResource extends ResourceSpec {
 
   /// For `fmat` materials, the `.fmat` source asset; otherwise null.
   final AssetRef? asset;
+
+  /// A copy with the given fields replaced, so rewriters carry every other
+  /// field (including ones added later) without listing them.
+  MaterialResource copyWith({
+    String? type,
+    String? name,
+    Map<String, PropertyValue>? properties,
+    AssetRef? asset,
+  }) => MaterialResource(
+    id,
+    type: type ?? this.type,
+    name: name ?? this.name,
+    properties: properties ?? this.properties,
+    asset: asset ?? this.asset,
+  );
 }
 
 /// A reusable image-based-lighting environment in the resource pool, referenced
