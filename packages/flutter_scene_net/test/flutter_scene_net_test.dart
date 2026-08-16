@@ -105,6 +105,42 @@ void main() {
     await room.stop();
   });
 
+  test('interpolation settings reach the spawned component', () async {
+    final room = Room(registry: _registry());
+    final (clientEnd, serverEnd) = LoopbackConnection.pair();
+    final admitted = room.admit(serverEnd);
+    final session = await connectSession(
+      clientEnd,
+      schemaHash: _registry().schemaHash,
+      pingInterval: const Duration(seconds: 10),
+    );
+    await admitted;
+
+    final replication = SceneReplication(
+      registry: _registry(),
+      session: session,
+      root: Node(),
+      builders: {'pawn': (replica) => Node()},
+      interpolationDelay: const Duration(milliseconds: 80),
+      minInterpolationDelay: const Duration(milliseconds: 40),
+      adaptiveInterpolation: false,
+    );
+
+    final id = room.host.spawn(_Pawn());
+    room.advance(1 / 30);
+    await _pump();
+
+    final transform = replication
+        .nodeFor(id)!
+        .getComponent<NetworkTransformComponent>()!;
+    expect(transform.delay, const Duration(milliseconds: 80));
+    expect(transform.minDelay, const Duration(milliseconds: 40));
+    expect(transform.adaptive, isFalse);
+
+    await replication.close();
+    await room.stop();
+  });
+
   test('SceneHost serves loopback and WebSocket joiners', () async {
     if (!SceneHost.isSupported) {
       markTestSkipped('in-app hosting requires dart:io');
