@@ -213,6 +213,7 @@ void _bindEnvironmentSource(
     renderPass,
     fragmentShader,
     environment,
+    cubeShader: environment.usesCubeRadianceLayout,
   );
   // The secondary cross-fade environment (the `_b` specular pair). The visible
   // sky mixes toward it by radiance_blend, matching the lit IBL cross-fade.

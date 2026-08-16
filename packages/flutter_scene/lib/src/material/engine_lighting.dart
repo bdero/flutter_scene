@@ -324,10 +324,38 @@ class EngineLightingUniforms {
   static void bindPrefilteredRadiance(
     gpu.RenderPass pass,
     gpu.Shader shader,
-    EnvironmentMap env,
-  ) {
-    final cubeLayout = env.usesCubeRadianceLayout;
+    EnvironmentMap env, {
+    bool? cubeShader,
+  }) {
+    final cubeLayout = cubeShader ?? env.usesCubeRadianceLayout;
     final mipLayout = env.usesMipRadianceLayout;
+    // A material built without the cube variant keeps its 2D sampler, which
+    // cannot read a cubemap. Bind a 2D placeholder rather than a texture the
+    // sampler would misread, and say so once.
+    if (cubeLayout != env.usesCubeRadianceLayout) {
+      assert(() {
+        if (!_warnedLayoutMismatch) {
+          _warnedLayoutMismatch = true;
+          debugPrint(
+            'flutter_scene: a material that samples the environment has no '
+            'cubemap-radiance variant, so it contributes no image-based '
+            'specular. Pass radianceCubeFragmentShader (the entry built with '
+            'FLUTTER_SCENE_RADIANCE_CUBE) when constructing it.',
+          );
+        }
+        return true;
+      }());
+      pass.bindTexture(
+        shader.getUniformSlot('prefiltered_radiance'),
+        Material.getBlackPlaceholderTexture(),
+        sampler: _radianceSampler(false),
+      );
+      pass.bindUniform(
+        shader.getUniformSlot('RadianceLayoutInfo'),
+        _layoutAtlas,
+      );
+      return;
+    }
     // The cube wants mip-linear for the roughness textureLod and clamped
     // faces. The 2D mip equirect needs the linear mip filter too; the legacy
     // band atlas has a single level, where the mip filter is inert, and both
@@ -385,6 +413,7 @@ class EngineLightingUniforms {
     EnvironmentMap env, {
     bool bindSsao = true,
     bool bindShadows = true,
+    bool? cubeShader,
   }) {
     if (_memoPassIs(pass)) {
       final previous = _texturesMemo[shader];
@@ -395,7 +424,7 @@ class EngineLightingUniforms {
       }
     }
     _texturesMemo[shader] = (lighting, env);
-    bindPrefilteredRadiance(pass, shader, env);
+    bindPrefilteredRadiance(pass, shader, env, cubeShader: cubeShader);
     pass.bindTexture(
       shader.getUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),
@@ -431,6 +460,7 @@ class EngineLightingUniforms {
       shader,
       lighting.environmentMapB ?? env,
       primary: env,
+      cubeShader: cubeShader,
     );
     // Punctual light parameters (all scene lights) and the per-object light
     // index buffer, both RGBA32F data textures, point-sampled (each texel is
@@ -503,12 +533,23 @@ class EngineLightingUniforms {
   /// other layout cannot be bound. It falls back to [primary], which leaves
   /// the cross-fade sampling one environment instead of binding a cube to a 2D
   /// sampler.
+  static bool _warnedLayoutMismatch = false;
+
   static void bindSecondaryRadiance(
     gpu.RenderPass pass,
     gpu.Shader shader,
     EnvironmentMap env, {
     required EnvironmentMap primary,
+    bool? cubeShader,
   }) {
+    if (cubeShader != null && cubeShader != primary.usesCubeRadianceLayout) {
+      pass.bindTexture(
+        shader.getUniformSlot('prefiltered_radiance_b'),
+        Material.getBlackPlaceholderTexture(),
+        sampler: _radianceSampler(false),
+      );
+      return;
+    }
     final source = env.usesCubeRadianceLayout == primary.usesCubeRadianceLayout
         ? env
         : primary;

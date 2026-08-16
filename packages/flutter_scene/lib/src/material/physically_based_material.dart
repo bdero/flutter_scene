@@ -1484,7 +1484,13 @@ class PhysicallyBasedMaterial extends Material {
     // PreprocessedMaterial: the sampler choices (radiance repeat/clamp, LUT
     // clamp/clamp, shadow nearest/clamp) and the white shadow placeholder
     // live in EngineLightingUniforms.
-    EngineLightingUniforms.bindEngineTextures(pass, shader, lighting, env);
+    EngineLightingUniforms.bindEngineTextures(
+      pass,
+      shader,
+      lighting,
+      env,
+      cubeShader: usesRadianceCubeVariant(lighting),
+    );
     EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
   }
 

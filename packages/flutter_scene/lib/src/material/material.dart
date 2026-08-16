@@ -289,11 +289,22 @@ abstract class Material {
       ? null
       : baseShaderLibrary[_radianceCubeFragmentShaderName!];
 
+  /// Whether this material draws with its cubemap-radiance variant for
+  /// [lighting], which is also what decides the radiance texture bound to it.
+  ///
+  /// False when the material carries no cube variant, so a material that was
+  /// built without one keeps its 2D sampler and is bound a 2D texture rather
+  /// than a mismatched cubemap.
+  @internal
+  bool usesRadianceCubeVariant(Lighting lighting) =>
+      lighting.environmentMap.usesCubeRadianceLayout &&
+      radianceCubeFragmentShader != null;
+
   /// Selects this material's fragment shader for the frame lighting state.
   @internal
   gpu.Shader fragmentShaderForLighting(Lighting lighting) =>
-      lighting.environmentMap.usesCubeRadianceLayout
-      ? (radianceCubeFragmentShader ?? fragmentShader)
+      usesRadianceCubeVariant(lighting)
+      ? radianceCubeFragmentShader!
       : fragmentShader;
 
   /// The vertex shader this material supplies for a geometry's [variant]

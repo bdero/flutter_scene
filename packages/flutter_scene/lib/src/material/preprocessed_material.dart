@@ -35,7 +35,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     required gpu.Shader fragmentShader,
     required Map<String, Object?> metadata,
     Map<String, gpu.Shader>? vertexShaders,
-  }) : _shadingModel = _parseShadingModel(metadata['shading_model']),
+    gpu.Shader? radianceCubeFragmentShader,
+  }) : _cubeFragmentShader = radianceCubeFragmentShader,
+       _shadingModel = _parseShadingModel(metadata['shading_model']),
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
        _depthWrite = metadata['depth_write'] == true,
@@ -89,17 +91,13 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   gpu.Shader fragmentShaderForLighting(Lighting lighting) {
     final shadow = lighting.shadowMap != null;
-    // A layout mismatch binds a cube to a 2D sampler, so the layout variant
-    // wins over the shadow one when a material somehow carries only the
-    // latter. Materials that sample the environment ship all four.
-    if (lighting.environmentMap.usesCubeRadianceLayout) {
-      if (shadow) {
-        return _cubeShadowFragmentShader ??
-            _cubeFragmentShader ??
-            _shadowFragmentShader ??
-            fragmentShader;
-      }
-      return _cubeFragmentShader ?? fragmentShader;
+    // The layout variant wins over the shadow one: a shadow variant in the
+    // wrong layout would be handed a texture its sampler cannot read, while
+    // dropping the shadow variant only loses the shadow term.
+    if (usesRadianceCubeVariant(lighting)) {
+      return shadow
+          ? (_cubeShadowFragmentShader ?? _cubeFragmentShader!)
+          : _cubeFragmentShader!;
     }
     return shadow ? (_shadowFragmentShader ?? fragmentShader) : fragmentShader;
   }
@@ -249,6 +247,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         env,
         bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
         bindShadows: lighting.shadowMap != null,
+        cubeShader: usesRadianceCubeVariant(lighting),
       );
       if (_sceneInputs.isNotEmpty) {
         EngineLightingUniforms.bindSceneInputTextures(

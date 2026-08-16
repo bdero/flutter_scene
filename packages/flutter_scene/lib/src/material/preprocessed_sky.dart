@@ -83,6 +83,7 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
         pass,
         shader,
         sampledEnvironment ?? environment,
+        cubeShader: usesRadianceCubeVariant(environment),
       );
     }
   }
