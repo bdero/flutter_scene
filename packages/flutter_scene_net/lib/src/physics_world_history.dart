@@ -35,16 +35,29 @@ final class PhysicsWorldHistory {
     _snapshots.removeWhere((t, _) => _newestTick - t > maxRewindTicks);
   }
 
-  /// Runs [query] against the world as recorded at [tick] and returns its
-  /// result, or null when [tick] is outside the retained window. The present
-  /// world is restored before returning.
-  T? rewind<T>(int tick, T Function(PhysicsSimulation simulation) query) {
+  /// Runs [query] against the world as recorded at [tick], restoring the
+  /// present before returning.
+  ///
+  /// `rewound` is false when [tick] is outside the retained window, which a
+  /// null `result` alone cannot distinguish from a query that legitimately
+  /// found nothing (no raycast hit against a peer too far behind to
+  /// compensate, say).
+  ///
+  /// The present it restores is the newest recording, so apply world
+  /// mutations after a tick's rewinds rather than between them, or [record]
+  /// again first.
+  ({bool rewound, T? result}) rewind<T>(
+    int tick,
+    T Function(PhysicsSimulation simulation) query,
+  ) {
     final past = _snapshots[tick];
-    if (past == null) return null;
-    final present = simulation.snapshot();
+    final present = _snapshots[_newestTick];
+    if (past == null || present == null) {
+      return (rewound: false, result: null);
+    }
     simulation.restore(past);
     try {
-      return query(simulation);
+      return (rewound: true, result: query(simulation));
     } finally {
       simulation.restore(present);
     }
