@@ -284,6 +284,112 @@ void main() {
     await room.stop();
   });
 
+  test('a starved snapshot does not tug the prediction backward', () async {
+    const tickRate = 30;
+    const dt = 1 / tickRate;
+
+    // A budget that fits about one replica per tick, so the decoys below
+    // crowd the owned pawn out of most snapshots. Its pose then lands many
+    // ticks behind the per-tick input ack, which is the case separating
+    // reconciling at the pose's own tick from reconciling at the ack's.
+    late final Room room;
+    final players = <int, _Pawn>{};
+    final serverX = <int, double>{};
+    room = Room(
+      registry: _registry(),
+      tickRate: tickRate,
+      config: const HostConfig(snapshotBytesPerTick: 20),
+      onJoin: (session) {
+        final pawn = _Pawn();
+        room.host.spawn(pawn, owner: session.peerId);
+        players[session.peerId] = pawn;
+        serverX[session.peerId] = 0;
+      },
+      onTick: (tick) {
+        for (final entry in players.entries) {
+          final command = room.input(entry.key, tick);
+          if (command == null) continue;
+          final x = serverX[entry.key]! + _decodeVel(command) * _testSpeed * dt;
+          serverX[entry.key] = x;
+          entry.value.position.value = (x, 0.0, 0.0);
+        }
+      },
+    );
+
+    final (clientEnd, serverEnd) = LoopbackConnection.pair();
+    final admitted = room.admit(serverEnd);
+    final session = await connectSession(
+      clientEnd,
+      schemaHash: _registry().schemaHash,
+      pingInterval: const Duration(milliseconds: 20),
+    );
+    await admitted;
+
+    final replication = SceneReplication(
+      registry: _registry(),
+      session: session,
+      root: Node(),
+      builders: {'pawn': (replica) => Node()},
+    );
+
+    final spawned = Stopwatch()..start();
+    while (replication.replicas.isEmpty && spawned.elapsedMilliseconds < 2000) {
+      room.advance(dt);
+      await _pump(1);
+    }
+    final pawn = replication.replicas.whereType<_Pawn>().first;
+    // No correction smoothing, so the node carries the raw prediction rather
+    // than the eased visual offset that exists to hide exactly this.
+    final component = PredictedTransformComponent(
+      pawn,
+      controller: _ConstantController(),
+      client: replication.client,
+      tickRate: tickRate,
+      smoothing: Duration.zero,
+    );
+    replication.nodeFor(pawn.id!)!.addComponent(component);
+
+    // Decoys that change every tick and crowd the pawn out of the budget.
+    final decoys = [for (var i = 0; i < 6; i++) _Pawn()];
+    for (final decoy in decoys) {
+      room.host.spawn(decoy);
+    }
+
+    // One server tick per real tick interval, so the server's tick counter
+    // tracks the clock the client derives its own target tick from.
+    final run = Stopwatch()..start();
+    var moved = 0.0;
+    while (run.elapsedMilliseconds < 2000) {
+      moved += 1;
+      for (final decoy in decoys) {
+        decoy.position.value = (moved, 0.0, 0.0);
+      }
+      component.update(dt);
+      room.advance(dt);
+      await Future<void>.delayed(const Duration(milliseconds: 33));
+    }
+
+    // The pawn really was starved, its pose is older than the acked input.
+    expect(
+      pawn.snapshotTick,
+      lessThan(replication.client.lastAppliedInputTick),
+    );
+
+    final predictedX = replication
+        .nodeFor(pawn.id!)!
+        .localTransform
+        .getTranslation()
+        .x;
+    final authoritativeX = serverX[replication.localPeerId]!;
+    // The prediction still leads authority by roughly the send-ahead. Pinning
+    // that stale pose to the ack's tick instead discards the travel between
+    // the two, which drags the lead to zero on every snapshot.
+    expect(predictedX - authoritativeX, greaterThan(_testSpeed * dt));
+
+    await replication.close();
+    await room.stop();
+  });
+
   test(
     'a stalled client snaps forward instead of replaying every tick',
     () async {
