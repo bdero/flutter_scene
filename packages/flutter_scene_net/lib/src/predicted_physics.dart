@@ -209,9 +209,12 @@ final class PredictedPhysicsComponent extends Component {
     // dropped, so the replica's pose is often older than the ack; adopting it
     // at the ack's tick would discard the motion in between and re-predict
     // it, tugging backward on every snapshot.
+    // Before the first snapshot the pose is the spawn's, belonging to no tick
+    // the predictor knows, so a zero snapshot tick skips reconciliation
+    // through the guard below rather than anchoring it to the ack.
     final applied = client.lastAppliedInputTick;
     final carried = replica.snapshotTick;
-    final acked = carried > 0 && carried < applied ? carried : applied;
+    final acked = carried < applied ? carried : applied;
     if (acked > _reconciledTick &&
         acked > 0 &&
         acked <= _predictor.currentTick) {
