@@ -2,7 +2,7 @@ name: flutter_scene_net
 description: dashwire multiplayer for flutter_scene. Replica-to-node binding, interpolated transform sync, and in-app hosting.
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
-version: 0.1.0
+version: 0.2.0
 
 topics:
   - multiplayer
@@ -28,6 +28,8 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_scene: ^0.21.0
+  # The physics contract, whose types this package's own API exposes.
+  scene: ^0.2.0
   vector_math: ^2.1.4
 dev_dependencies:
   flutter_lints: ^5.0.0
