@@ -196,9 +196,15 @@ final class PredictedPhysicsComponent extends Component {
       _predictor.reset(target - 1, _capture());
     }
 
-    // Reconcile against the authoritative pose the server has confirmed
-    // applying input through.
-    final acked = client.lastAppliedInputTick;
+    // Reconcile against the authoritative pose, at the tick that pose
+    // actually belongs to. The input ack goes out every tick while snapshots
+    // are priority-packed against a byte budget and can be deferred or
+    // dropped, so the replica's pose is often older than the ack; adopting it
+    // at the ack's tick would discard the motion in between and re-predict
+    // it, tugging backward on every snapshot.
+    final applied = client.lastAppliedInputTick;
+    final carried = replica.snapshotTick;
+    final acked = carried > 0 && carried < applied ? carried : applied;
     if (acked > _reconciledTick &&
         acked > 0 &&
         acked <= _predictor.currentTick) {
