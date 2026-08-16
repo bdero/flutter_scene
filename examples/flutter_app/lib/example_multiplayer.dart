@@ -462,6 +462,14 @@ class _PlayerController implements PredictedPhysicsController {
   _PlayerController(this._pressed, this.player, this._remotePoses)
     : simulation = buildArenaWorld() {
     bodyHandle = createPlayerBody(simulation, player.positionVector);
+    // Allocate every proxy up front, before the first world snapshot, so no
+    // body is ever created or destroyed afterward. A restore rewinds to the
+    // body set its snapshot captured, so a proxy created later would be
+    // reconciled away mid-replay and leave the rollback colliding with
+    // nothing.
+    for (var i = 0; i < _proxySlots; i++) {
+      _proxyPool.add(createPlayerProxy(simulation, _parked));
+    }
   }
 
   final Set<LogicalKeyboardKey> _pressed;
@@ -477,53 +485,66 @@ class _PlayerController implements PredictedPhysicsController {
   /// per-player identity.
   final Iterable<(Object, vm.Vector3)> Function() _remotePoses;
 
+  /// Remote players other than this one that the arena mirrors at once.
+  /// TODO(prediction): size this from the room's player cap once one exists,
+  /// instead of a constant the arena can outgrow.
+  static const int _proxySlots = 8;
+
+  /// The fixed proxy bodies, parked out of reach until a player claims one.
+  final List<int> _proxyPool = [];
+
+  /// Pool slot driving each remote player.
   final Map<Object, int> _proxies = {};
 
-  /// Every proxy handle ever created. A rollback restore resurrects
-  /// whatever proxies the retained snapshot held, so a rebuild destroys
-  /// all of these (dead handles no-op) before recreating the current set.
-  /// TODO(prediction): replace with a body-aliveness or lifecycle API on
-  /// the seam instead of this bookkeeping.
-  final List<int> _everCreated = [];
-  bool _proxiesStale = false;
-
   @override
-  void onWorldRestored() => _proxiesStale = true;
+  void onWorldRestored() {
+    // Nothing to do. The proxy pool is allocated before the first snapshot
+    // and never changes, so a restore leaves it intact.
+  }
 
-  // Mirrors the other players as kinematic proxies at their rendered
-  // poses. Runs on fresh ticks only; world snapshots retain the proxies,
-  // so rollback replays collide against their historical poses.
+  // Mirrors the other players onto pool proxies at their rendered poses.
+  // Runs on fresh ticks only; world snapshots retain the proxies, so
+  // rollback replays collide against their historical poses.
   void _syncProxies() {
-    if (_proxiesStale) {
-      _proxiesStale = false;
-      for (final handle in _everCreated) {
-        simulation.destroyBody(handle);
-      }
-      _proxies.clear();
-    }
     final present = <Object>{};
     for (final (id, position) in _remotePoses()) {
+      var slot = _proxies[id];
+      if (slot == null) {
+        slot = _freeSlot();
+        // Out of proxies, so this player is not mirrored locally and its
+        // bumps wait for the server.
+        if (slot == null) continue;
+        _proxies[id] = slot;
+        // Teleport into place, so claiming a parked slot does not read as a
+        // tick of travel from under the arena.
+        simulation.setBodyPose(_proxyPool[slot], position, _noRotation);
+      }
       present.add(id);
-      var proxy = _proxies[id];
-      if (proxy == null) {
-        proxy = createPlayerProxy(simulation, position);
-        _proxies[id] = proxy;
-        _everCreated.add(proxy);
-        if (_everCreated.length > 256) _everCreated.removeAt(0);
-      }
-      simulation.setBodyKinematicTargetPose(proxy, position, _noRotation);
+      simulation.setBodyKinematicTargetPose(
+        _proxyPool[slot],
+        position,
+        _noRotation,
+      );
     }
-    // A leaver's proxy parks out of reach; destroying it here would let an
-    // older snapshot resurrect it unmanaged.
-    for (final entry in _proxies.entries) {
-      if (!present.contains(entry.key)) {
-        simulation.setBodyKinematicTargetPose(
-          entry.value,
-          _parked,
-          _noRotation,
-        );
-      }
+    // Park a leaver's proxy and release its slot for the next joiner.
+    _proxies.removeWhere((id, slot) {
+      if (present.contains(id)) return false;
+      simulation.setBodyPose(_proxyPool[slot], _parked, _noRotation);
+      simulation.setBodyKinematicTargetPose(
+        _proxyPool[slot],
+        _parked,
+        _noRotation,
+      );
+      return true;
+    });
+  }
+
+  int? _freeSlot() {
+    final taken = _proxies.values.toSet();
+    for (var i = 0; i < _proxyPool.length; i++) {
+      if (!taken.contains(i)) return i;
     }
+    return null;
   }
 
   static final vm.Quaternion _noRotation = vm.Quaternion.identity();

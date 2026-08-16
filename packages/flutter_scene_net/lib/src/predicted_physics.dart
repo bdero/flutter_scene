@@ -35,10 +35,15 @@ abstract interface class PredictedPhysicsController
   void applyInput(Uint8List input, double dt);
 
   /// Called after a rollback correction restores a retained world snapshot,
-  /// before pending inputs replay. Bodies the controller created after that
-  /// snapshot no longer exist (their handles dangle silently), so mark any
-  /// dynamically managed bodies, remote-player proxies, say, for recreation
-  /// on the next fresh tick.
+  /// before pending inputs replay.
+  ///
+  /// A restore rewinds to the body set its snapshot captured, so bodies
+  /// created since are gone and their handles dangle. Recreating them here or
+  /// on the next fresh tick does not hold, since the next correction restores
+  /// an older snapshot that knows only the previous handles and reconciles
+  /// both sets away. Allocate a fixed pool before the first snapshot instead,
+  /// parking unused bodies out of reach, so the body set never changes and
+  /// this hook has nothing to repair.
   void onWorldRestored();
 
   Vector3? get authoritativeLinearVelocity;
