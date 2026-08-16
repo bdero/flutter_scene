@@ -159,13 +159,11 @@ void main() {
       );
       await admitted;
 
-      _FakeController? controller;
       final replication = SceneReplication(
         registry: _registry(),
         session: session,
         root: Node(),
         builders: {'pawn': (replica) => Node()},
-        localPrediction: (replica) => controller = _FakeController(_FakeSim()),
       );
 
       final sw = Stopwatch()..start();
@@ -174,12 +172,31 @@ void main() {
         await _pump(1);
       }
       final pawn = replication.replicas.whereType<_Pawn>().first;
-      final component = replication
-          .nodeFor(pawn.id!)!
-          .getComponent<PredictedPhysicsComponent>()!;
 
+      // Drive the prediction from a clock held a few ticks ahead of the
+      // server. A correction only replays when unacked inputs remain, so a
+      // client that happens to sit level with the server would adopt the
+      // authoritative pose without ever restoring a world, which is what the
+      // send-ahead lead exists to prevent.
+      const aheadTicks = 4;
+      final controller = _FakeController(_FakeSim());
+      final component = PredictedPhysicsComponent(
+        pawn,
+        controller: controller,
+        client: replication.client,
+        tickRate: tickRate,
+        now: () => defaultNowMicros() + aheadTicks * 1000000 ~/ tickRate,
+      );
+      replication.nodeFor(pawn.id!)!.addComponent(component);
+
+      // Drive the client render loop and the server tick until the shove has
+      // been applied and the rollback correction it forces has landed. Waiting
+      // on the outcome rather than on a fixed wall-clock window keeps the run
+      // off the scheduler's timing.
       final run = Stopwatch()..start();
-      while (run.elapsedMilliseconds < 800) {
+      while (run.elapsedMilliseconds < 800 ||
+          (run.elapsedMilliseconds < 5000 &&
+              !(shoved && controller.worldRestores > 0))) {
         component.update(1 / 60);
         room.advance(dt);
         await Future<void>.delayed(const Duration(milliseconds: 16));
@@ -197,7 +214,7 @@ void main() {
       // the restore hook told the controller about the rollback.
       expect(shoved, isTrue);
       expect((predictedX - pawn.position.value.$1).abs(), lessThan(3));
-      expect(controller!.worldRestores, greaterThan(0));
+      expect(controller.worldRestores, greaterThan(0));
 
       await replication.close();
       await room.stop();
