@@ -18,7 +18,7 @@ dependencies:
   # Multiplayer example.
   dashwire: ^0.1.0
   dashwire_replication: ^0.2.1
-  flutter_scene_net: ^0.1.0
+  flutter_scene_net: ^0.2.0
   # The physics contract, used headlessly by the multiplayer arena sim.
   scene: ^0.2.0
   # Native Rapier physics backend, used by the Physics example. Pulls
