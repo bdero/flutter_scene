@@ -190,7 +190,14 @@ final class PredictedPhysicsComponent extends Component {
   void update(double deltaSeconds) {
     final clock = client.session.clock;
     if (!clock.isSynchronized) return;
-    final target = clock.inputTickAt(_now());
+    // Pace the send-ahead from the client's adaptive lead. Passing an
+    // explicit tick to sendInput bypasses the sender's own pacing, so
+    // sampling the lead here is what keeps the server's buffer-depth control
+    // loop closed and lets the lead deepen under jitter.
+    final target = clock.inputTickAt(
+      _now(),
+      marginTicks: client.inputLeadTicks.toDouble(),
+    );
 
     if (!_predictor.isSeeded) {
       _predictor.reset(target - 1, _capture());
