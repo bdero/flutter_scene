@@ -115,6 +115,10 @@ void main() {
   // for the fragment stage on a driver reporting the ES 3.0 minimum of 16.
   // Engines older than the combined-limit fix reject the draw outright, so
   // every lit variant has to fit.
+  //
+  // Raising this needs the engine fix in every supported stable; see the
+  // TODO(radiance-layout) in shaders/texture.glsl. Until then, a new engine
+  // sampler has to displace an existing one rather than extend the set.
   const maxFragmentSamplers = 15;
 
   test('lit material variants fit the fragment texture-unit budget', () async {

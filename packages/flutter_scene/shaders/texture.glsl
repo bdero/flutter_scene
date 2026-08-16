@@ -69,6 +69,15 @@ const float kPrefilterBandEdgeClamp = 1.0 / kPrefilterBandHeight;
 // into mip levels (see EnvironmentMap.effectiveMipRadianceLayout); the rest
 // build a 2D equirect. Declaring only one keeps a dead sampler off the
 // per-stage texture-unit budget.
+//
+// TODO(radiance-layout): drop the define and declare both samplers again,
+// selecting the layout at runtime, once every supported Flutter stable
+// carries the engine's combined-limit validation
+// (https://github.com/flutter/flutter/pull/189332, first stable 3.49). Older
+// engines reject a skinned shadow-casting draw at 16 fragment samplers
+// because they compare the running unit index, which starts after the vertex
+// stage's, against the per-stage limit. Reverting collapses the per-material
+// entry count back by half.
 #ifdef FLUTTER_SCENE_RADIANCE_CUBE
 #define RadianceSampler samplerCube
 #else
