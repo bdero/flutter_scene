@@ -24,8 +24,13 @@ Uint8List _encodeVel(double v) => (ByteWriter(4)..writeF32(v)).toBytes();
 double _decodeVel(Uint8List b) => ByteReader(b).readF32();
 
 class _ConstantController implements PredictedController {
+  int samples = 0;
+
   @override
-  Uint8List sampleInput() => _encodeVel(1);
+  Uint8List sampleInput() {
+    samples++;
+    return _encodeVel(1);
+  }
 
   @override
   (vm.Vector3, vm.Quaternion) step(
@@ -247,4 +252,54 @@ void main() {
     await replication.close();
     await room.stop();
   });
+
+  test(
+    'a stalled client snaps forward instead of replaying every tick',
+    () async {
+      const tickRate = 30;
+      final room = Room(registry: _registry(), tickRate: tickRate);
+      final (clientEnd, serverEnd) = LoopbackConnection.pair();
+      final admitted = room.admit(serverEnd);
+      final session = await connectSession(
+        clientEnd,
+        schemaHash: _registry().schemaHash,
+        pingInterval: const Duration(milliseconds: 20),
+      );
+      await admitted;
+      await _pump();
+
+      final client = ReplicationClient(registry: _registry(), session: session);
+      final pawn = _Pawn()
+        ..id = NetId(1, 1)
+        ..owner = client.localPeerId;
+      final controller = _ConstantController();
+      var now = defaultNowMicros();
+      final component = PredictedTransformComponent(
+        pawn,
+        controller: controller,
+        client: client,
+        tickRate: tickRate,
+        maxCatchUpTicks: 8,
+        now: () => now,
+      );
+      Node().addComponent(component);
+
+      // Seed the prediction, then stall for ten seconds of wall clock (300
+      // ticks at this rate) before the next frame.
+      component.update(1 / 60);
+      controller.samples = 0;
+      now += const Duration(seconds: 10).inMicroseconds;
+      component.update(1 / 60);
+
+      // Only the clamp's worth of ticks is sampled and sent, not the 300 the
+      // clock skipped.
+      expect(controller.samples, lessThanOrEqualTo(8));
+
+      // Drain the inputs this test sent before tearing the room down.
+      await _pump();
+      await session.close();
+      await _pump();
+      await room.stop();
+    },
+  );
 }

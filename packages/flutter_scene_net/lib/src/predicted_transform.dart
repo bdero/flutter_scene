@@ -44,6 +44,7 @@ final class PredictedTransformComponent extends Component {
     required int tickRate,
     this.smoothing = const Duration(milliseconds: 120),
     this.correctionThreshold = 0.05,
+    this.maxCatchUpTicks = 32,
     NowMicros now = defaultNowMicros,
   }) : _dt = 1 / tickRate,
        _now = now {
@@ -65,6 +66,16 @@ final class PredictedTransformComponent extends Component {
   /// Positional divergence (metres) beyond which a snapshot triggers a replay
   /// correction.
   final double correctionThreshold;
+
+  /// Most ticks predicted in one [update] before the prediction snaps to
+  /// authority instead of catching up.
+  ///
+  /// The target tick comes from the wall clock, so a stall (a backgrounded
+  /// tab, a long hitch, a resume from pause) would otherwise sample, step and
+  /// send every missed tick in a single frame. The server's input buffer
+  /// drops commands older than its window anyway, so most of that catch-up is
+  /// discarded on arrival.
+  final int maxCatchUpTicks;
 
   final double _dt;
   final NowMicros _now;
@@ -99,6 +110,16 @@ final class PredictedTransformComponent extends Component {
       ));
       _reconciledTick = acked;
       if (corrected) _error.setFrom(rendered - _predictor.current.$1);
+    }
+
+    // Too far behind to catch up tick by tick, so snap to the newest
+    // authoritative pose and resume predicting from there.
+    if (target - _predictor.currentTick > maxCatchUpTicks) {
+      _predictor.reset(target - 1, (
+        replica.positionVector,
+        replica.rotationQuaternion,
+      ));
+      _error.setZero();
     }
 
     // Predict forward to the target tick, one input sampled and sent per tick.
