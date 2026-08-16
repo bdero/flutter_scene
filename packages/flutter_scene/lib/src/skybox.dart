@@ -110,9 +110,16 @@ class ShaderSkySource extends SkySource {
   /// ([sampledEnvironment] when set). The encoder builds the pipeline from
   /// this, and [bind] fills that pipeline's slots, so both must agree.
   gpu.Shader shaderForEnvironment(EnvironmentMap environment) =>
-      (sampledEnvironment ?? environment).usesCubeRadianceLayout
-      ? (radianceCubeFragmentShader ?? fragmentShader)
+      usesRadianceCubeVariant(environment)
+      ? radianceCubeFragmentShader!
       : fragmentShader;
+
+  /// Whether [shaderForEnvironment] picks the cube variant, which is also what
+  /// decides the radiance texture bound to it. False without a cube variant,
+  /// so a sky built with only the 2D entry is never handed a cubemap.
+  bool usesRadianceCubeVariant(EnvironmentMap environment) =>
+      (sampledEnvironment ?? environment).usesCubeRadianceLayout &&
+      radianceCubeFragmentShader != null;
 
   /// The full-screen sky fragment shader, typically loaded from a
   /// `.shaderbundle`. When the source was constructed by name, the shader is
@@ -210,6 +217,7 @@ class ShaderSkySource extends SkySource {
         pass,
         shader,
         sampledEnvironment ?? environment,
+        cubeShader: usesRadianceCubeVariant(environment),
       );
       pass.bindTexture(
         shader.getUniformSlot('brdf_lut'),

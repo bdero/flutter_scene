@@ -186,6 +186,7 @@ PreprocessedMaterial _fmatMaterial(String name) {
         };
   return PreprocessedMaterial(
     fragmentShader: _materialsLibrary![name]!,
+    radianceCubeFragmentShader: _materialsLibrary!['${name}Cube'],
     metadata: metadata,
     vertexShaders: vertexShaders,
   );

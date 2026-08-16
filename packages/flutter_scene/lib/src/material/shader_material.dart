@@ -400,6 +400,7 @@ class ShaderMaterial extends Material {
       pass,
       shader,
       lighting.environmentMap,
+      cubeShader: usesRadianceCubeVariant(lighting),
     );
     pass.bindTexture(
       shader.getUniformSlot('brdf_lut'),
