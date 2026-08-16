@@ -277,6 +277,101 @@ void main() {
     });
   });
 
+  group('transformed', () {
+    test('places positions and carries indices through', () {
+      final moved = _quad().transformed(
+        Matrix4.translation(Vector3(1, 2, 3))..scaleByDouble(2, 1, 1, 1),
+      );
+      expect(moved.positions.sublist(0, 3), [1, 2, 3]);
+      expect(moved.positions.sublist(3, 6), [3, 2, 3]);
+      expect(moved.indices, _quad().indices);
+      expect(moved.texCoords, _quad().texCoords);
+    });
+
+    test('carries normals by the inverse transpose', () {
+      // A triangle in the x = y plane, so its normal is not axis aligned and
+      // a non-uniform scale moves it somewhere the plain matrix would not.
+      final data = MeshData.build(
+        positions: Float32List.fromList([
+          0, 0, 0, //
+          1, 1, 0, //
+          0, 0, 1,
+        ]),
+      );
+      final scaled = data.transformed(Matrix4.diagonal3(Vector3(2, 1, 1)));
+
+      // Recompute the face normal from the transformed corners; the carried
+      // normal has to agree with it.
+      final p = scaled.positions;
+      final edge1 = Vector3(p[3] - p[0], p[4] - p[1], p[5] - p[2]);
+      final edge2 = Vector3(p[6] - p[0], p[7] - p[1], p[8] - p[2]);
+      final face = edge1.cross(edge2)..normalize();
+
+      final carried = Vector3(
+        scaled.normals![0],
+        scaled.normals![1],
+        scaled.normals![2],
+      );
+      expect(carried.dot(face).abs(), closeTo(1.0, 1e-5));
+    });
+
+    test('flips tangent handedness through a mirror', () {
+      final data = MeshData(
+        positions: Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        vertexCount: 3,
+        tangents: Float32List.fromList([
+          1, 0, 0, 1, //
+          1, 0, 0, 1, //
+          1, 0, 0, -1,
+        ]),
+      );
+      final mirrored = data.transformed(Matrix4.diagonal3(Vector3(1, 1, -1)));
+      expect(mirrored.tangents![3], -1);
+      expect(mirrored.tangents![11], 1);
+
+      final plain = data.transformed(Matrix4.diagonal3(Vector3(1, 1, 2)));
+      expect(plain.tangents![3], 1);
+    });
+
+    test('leaves a singular transform without NaN normals', () {
+      final flattened = _quad().transformed(
+        Matrix4.diagonal3(Vector3(1, 1, 0)),
+      );
+      expect(flattened.normals!.every((v) => v.isFinite), isTrue);
+    });
+  });
+
+  group('collision shapes', () {
+    test('toTriMeshShape copies positions and flattens indices', () {
+      final shape = _quad().toTriMeshShape();
+      expect(shape.vertices, hasLength(12));
+      expect(shape.indices, [0, 1, 2, 0, 2, 3]);
+    });
+
+    test('toTriMeshShape synthesizes indices for a triangle soup', () {
+      final soup = MeshData.build(
+        positions: Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+      );
+      expect(soup.toTriMeshShape().indices, [0, 1, 2]);
+    });
+
+    test('toTriMeshShape rejects meshes with no triangles', () {
+      final points = MeshData(
+        positions: Float32List.fromList([0, 0, 0]),
+        vertexCount: 1,
+        primitiveType: gpu.PrimitiveType.point,
+      );
+      expect(points.toTriMeshShape, throwsStateError);
+    });
+
+    test('toConvexHullShape copies the positions', () {
+      final hull = _quad().toConvexHullShape();
+      expect(hull.points, hasLength(12));
+      hull.points[0] = 99;
+      expect(_quad().positions[0], 0);
+    });
+  });
+
   group('readback', () {
     test('isReadable is false with no retained data, and extract throws', () {
       final stub = _StubGeometry();

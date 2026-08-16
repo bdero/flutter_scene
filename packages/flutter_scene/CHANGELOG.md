@@ -1,5 +1,7 @@
 ## 0.21.0
 
+* `Node.extractMeshData` flattens a subtree's geometry into one `MeshData` with the descendant transforms baked in, and `MeshData.toTriMeshShape`/`toConvexHullShape` turn that into a collider, so an imported model no longer needs a hand-written walk to collide.
+* `MeshData.transformed` places a snapshot by a matrix, carrying normals by the inverse transpose and flipping tangent handedness through a mirror.
 * The lit shaders declare one prefiltered-radiance sampler instead of one per layout, freeing two fragment texture units so a skinned shadow-casting draw fits GLES drivers reporting the 16-unit minimum.
 * Breaking change for raw `ShaderMaterial` shaders that sample the environment, they declare `prefiltered_radiance` as `RadianceSampler` and supply a `radianceCubeFragmentShader` variant built with `FLUTTER_SCENE_RADIANCE_CUBE`. `.fmat` materials are unaffected.
 * A material or sky that samples the environment without a cubemap-radiance variant now keeps its 2D sampler and is bound a placeholder instead of a mismatched cubemap, and says so in debug builds. `PreprocessedMaterial` takes `radianceCubeFragmentShader` for code that builds one directly rather than through a loader.

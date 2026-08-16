@@ -7,6 +7,8 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
+import 'package:flutter_scene/src/geometry/mesh_data.dart';
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
@@ -474,6 +476,140 @@ base class Node implements SceneGraph {
     for (final child in children) {
       yield* child.meshNodes;
     }
+  }
+
+  /// This subtree's geometry flattened into one snapshot, with every
+  /// descendant transform baked into the vertices.
+  ///
+  /// [transform] places the result. The default identity leaves the data in
+  /// this node's local space, which is the frame a collider attached to this
+  /// node expects; pass [globalTransform] for world space instead, which is
+  /// the frame for a collider on a node that has none of its own.
+  ///
+  /// Baking matters because physics does not simulate scale, so a collider
+  /// can never pick up a scale from the graph the way a mesh does. Pick the
+  /// frame so that whatever the collider ends up on carries only a
+  /// translation and a rotation. Runtime glTF import is the case to watch,
+  /// since [fromGlbAsset] roots its model under the source handedness flip,
+  /// which has to go into the vertices rather than onto the collider:
+  ///
+  /// ```dart
+  /// final model = await Node.fromGlbAsset('assets/ground.glb');
+  /// final ground = Node(name: 'ground')..add(model);
+  /// ground.addComponent(
+  ///   Collider(
+  ///     shape: model
+  ///         .extractMeshData(transform: model.localTransform)
+  ///         .toTriMeshShape(),
+  ///   ),
+  /// );
+  /// ```
+  ///
+  /// Scenes from [loadScene] carry that flip in their vertices already, so
+  /// there the default frame is the one to use.
+  ///
+  /// An attribute missing from any one primitive is dropped from the whole
+  /// result, since the merged mesh carries a single attribute set. Skinned
+  /// geometry contributes its bind pose.
+  ///
+  /// Throws a [StateError] when the subtree holds no triangles, or holds
+  /// geometry this cannot read: caller-managed vertex buffers
+  /// (`Geometry.isReadable` is false), non-triangle primitives, or instanced
+  /// meshes, none of which can be flattened into a single mesh.
+  /// {@category Geometry}
+  MeshData extractMeshData({Matrix4? transform}) {
+    final parts = <MeshData>[];
+    _collectMeshData(transform ?? Matrix4.identity(), parts);
+    if (parts.isEmpty) {
+      throw StateError(
+        'Node "$name" has no triangle geometry in its subtree to extract',
+      );
+    }
+    return MeshData.merge(_reduceToSharedAttributes(parts));
+  }
+
+  void _collectMeshData(Matrix4 worldTransform, List<MeshData> parts) {
+    if (_instancedMeshComponents.isNotEmpty) {
+      throw StateError(
+        'Node "$name" carries an instanced mesh, which extractMeshData '
+        'cannot flatten; build the per-instance meshes yourself',
+      );
+    }
+    for (final component in _meshComponents) {
+      for (final primitive in component.mesh.primitives) {
+        final geometry = primitive.geometry;
+        if (!geometry.isReadable) {
+          throw StateError(
+            'Node "$name" has geometry with no readable CPU data; it was '
+            'built from a caller-managed vertex buffer',
+          );
+        }
+        final data = geometry.extractMeshData();
+        if (data.primitiveType != gpu.PrimitiveType.triangle) {
+          throw StateError(
+            'Node "$name" has ${data.primitiveType.name} geometry; '
+            'extractMeshData flattens triangles only',
+          );
+        }
+        if (data.triangleCount == 0) continue;
+        parts.add(
+          worldTransform.isIdentity() ? data : data.transformed(worldTransform),
+        );
+      }
+    }
+    for (final child in children) {
+      child._collectMeshData(
+        worldTransform.multiplied(child.localTransform),
+        parts,
+      );
+    }
+  }
+
+  /// Strips each part down to the attributes every part carries, so
+  /// [MeshData.merge] (which requires one shared attribute set) accepts them.
+  static List<MeshData> _reduceToSharedAttributes(List<MeshData> parts) {
+    if (parts.length == 1) return parts;
+    final normals = parts.every((p) => p.normals != null);
+    final texCoords = parts.every((p) => p.texCoords != null);
+    final texCoords1 = parts.every((p) => p.texCoords1 != null);
+    final colors = parts.every((p) => p.colors != null);
+    final tangents = parts.every((p) => p.tangents != null);
+    final shared = <String, int>{};
+    for (final entry in parts.first.customAttributes.entries) {
+      final components = entry.value.components;
+      final inAll = parts.every(
+        (p) => p.customAttributes[entry.key]?.components == components,
+      );
+      if (inAll) shared[entry.key] = components;
+    }
+
+    if (normals &&
+        texCoords &&
+        texCoords1 &&
+        colors &&
+        tangents &&
+        shared.length == parts.first.customAttributes.length &&
+        parts.every((p) => p.customAttributes.length == shared.length)) {
+      return parts;
+    }
+
+    return [
+      for (final part in parts)
+        MeshData(
+          positions: part.positions,
+          vertexCount: part.vertexCount,
+          normals: normals ? part.normals : null,
+          texCoords: texCoords ? part.texCoords : null,
+          texCoords1: texCoords1 ? part.texCoords1 : null,
+          colors: colors ? part.colors : null,
+          tangents: tangents ? part.tangents : null,
+          indices: part.indices,
+          primitiveType: part.primitiveType,
+          customAttributes: {
+            for (final name in shared.keys) name: part.customAttributes[name]!,
+          },
+        ),
+    ];
   }
 
   /// Whether this node's subtree would survive frustum culling against

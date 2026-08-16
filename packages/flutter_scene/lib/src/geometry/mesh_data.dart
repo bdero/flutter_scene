@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:scene/physics.dart' show ConvexHullShape, TriMeshShape;
 
 /// One named per-vertex attribute stream carried by a [MeshData], matching a
 /// custom material's `attributes` entry (see `Geometry.setCustomAttribute`).
@@ -245,6 +246,133 @@ class MeshData {
       final c = _cornerIndex(t * 3 + 2);
       yield MeshTriangle(t, a, b, c, _position(a), _position(b), _position(c));
     }
+  }
+
+  /// This mesh placed by [transform].
+  ///
+  /// Positions move as points. [normals] are carried by the inverse
+  /// transpose, so a non-uniform scale leaves them perpendicular to the
+  /// surface, and [tangents] by [transform] itself; both are renormalized,
+  /// and a mirroring transform flips the tangent handedness. Indices and
+  /// every other attribute carry through untouched.
+  MeshData transformed(vm.Matrix4 transform) {
+    final m = transform.storage;
+    final outPositions = Float32List(vertexCount * 3);
+    for (var v = 0; v < vertexCount; v++) {
+      final i = v * 3;
+      final x = positions[i];
+      final y = positions[i + 1];
+      final z = positions[i + 2];
+      outPositions[i] = m[0] * x + m[4] * y + m[8] * z + m[12];
+      outPositions[i + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+      outPositions[i + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+    }
+
+    final linear = transform.getRotation();
+    final mirrored = linear.determinant() < 0;
+
+    Float32List? outNormals;
+    final srcNormals = normals;
+    if (srcNormals != null) {
+      // A singular linear part has no inverse transpose; carrying normals
+      // through unchanged beats emitting NaNs.
+      final normalMatrix = vm.Matrix3.copy(linear);
+      if (normalMatrix.invert() == 0.0) {
+        normalMatrix.setFrom(linear);
+      } else {
+        normalMatrix.transpose();
+      }
+      outNormals = _transformVectors(srcNormals, normalMatrix, 3);
+    }
+
+    Float32List? outTangents;
+    final srcTangents = tangents;
+    if (srcTangents != null) {
+      outTangents = _transformVectors(srcTangents, linear, 4);
+      if (mirrored) {
+        for (var v = 0; v < vertexCount; v++) {
+          outTangents[v * 4 + 3] = -outTangents[v * 4 + 3];
+        }
+      }
+    }
+
+    return MeshData(
+      positions: outPositions,
+      vertexCount: vertexCount,
+      normals: outNormals,
+      texCoords: texCoords,
+      texCoords1: texCoords1,
+      colors: colors,
+      tangents: outTangents,
+      indices: indices,
+      primitiveType: primitiveType,
+      customAttributes: customAttributes,
+    );
+  }
+
+  /// A collision triangle mesh over this mesh's triangles.
+  ///
+  /// The shape holds its own copy of the positions and indices, so the
+  /// snapshot can be discarded afterwards. Triangle meshes are hollow and
+  /// carry no volume, so they collide as static environment geometry; use
+  /// [toConvexHullShape] for a dynamic body.
+  ///
+  /// Throws a [StateError] when this snapshot is not a triangle list or
+  /// has no triangles.
+  TriMeshShape toTriMeshShape() {
+    _requireTriangles('toTriMeshShape');
+    final count = triangleCount;
+    if (count == 0) {
+      throw StateError('toTriMeshShape requires at least one triangle');
+    }
+    final outIndices = Uint32List(count * 3);
+    for (var corner = 0; corner < outIndices.length; corner++) {
+      outIndices[corner] = _cornerIndex(corner);
+    }
+    return TriMeshShape(
+      vertices: Float32List.fromList(positions),
+      indices: outIndices,
+    );
+  }
+
+  /// A collision convex hull enclosing this mesh's vertices.
+  ///
+  /// The backend computes the hull from the positions, so concave detail is
+  /// filled in. Unlike [toTriMeshShape] the result is solid and works on a
+  /// dynamic body.
+  ConvexHullShape toConvexHullShape() {
+    if (vertexCount == 0) {
+      throw StateError('toConvexHullShape requires at least one vertex');
+    }
+    return ConvexHullShape(points: Float32List.fromList(positions));
+  }
+
+  Float32List _transformVectors(
+    Float32List source,
+    vm.Matrix3 matrix,
+    int stride,
+  ) {
+    final m = matrix.storage;
+    final out = Float32List.fromList(source);
+    for (var v = 0; v < vertexCount; v++) {
+      final i = v * stride;
+      final x = source[i];
+      final y = source[i + 1];
+      final z = source[i + 2];
+      var nx = m[0] * x + m[3] * y + m[6] * z;
+      var ny = m[1] * x + m[4] * y + m[7] * z;
+      var nz = m[2] * x + m[5] * y + m[8] * z;
+      final length = math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (length > 0) {
+        nx /= length;
+        ny /= length;
+        nz /= length;
+      }
+      out[i] = nx;
+      out[i + 1] = ny;
+      out[i + 2] = nz;
+    }
+    return out;
   }
 
   /// A flat-shaded triangle soup derived from this mesh.
