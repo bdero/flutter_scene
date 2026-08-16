@@ -15,9 +15,9 @@ import 'transform_replica.dart';
 /// delay sizes itself from the measured arrival cadence and jitter, easing
 /// between [minDelay] and [delay] (the ceiling and starting value), so a
 /// clean local link renders barely behind while a jittery one buffers deep.
-// TODO(prediction): owned replicas currently render on the same delayed
-// timeline as everything else; input-replay prediction needs the tick
-// infrastructure wired through here.
+///
+/// An owned, predicted entity uses `PredictedTransformComponent` instead, so
+/// local input renders instantly rather than a delay in the past.
 final class NetworkTransformComponent extends Component {
   NetworkTransformComponent(
     this.replica, {

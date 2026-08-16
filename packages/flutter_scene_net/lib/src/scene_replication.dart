@@ -33,6 +33,8 @@ final class SceneReplication {
     required this.root,
     required Map<String, ReplicaNodeBuilder> builders,
     this.interpolationDelay = const Duration(milliseconds: 100),
+    this.minInterpolationDelay = const Duration(milliseconds: 25),
+    this.adaptiveInterpolation = true,
     int inputTargetDepth = 2,
     LocalPredictionBuilder? localPrediction,
     void Function(Replica replica, Node node)? onSpawn,
@@ -60,6 +62,13 @@ final class SceneReplication {
   /// Ceiling for the remote-pose render delay; the interpolation buffer
   /// sizes itself below this from measured arrival cadence and jitter.
   final Duration interpolationDelay;
+
+  /// Floor the adaptive interpolation delay eases down to.
+  final Duration minInterpolationDelay;
+
+  /// Whether the interpolation delay adapts at all. False holds it at
+  /// [interpolationDelay].
+  final bool adaptiveInterpolation;
   final LocalPredictionBuilder? _localPrediction;
   final void Function(Replica, Node)? _onSpawn;
   final void Function(Replica, Node)? _onDespawn;
@@ -106,7 +115,12 @@ final class SceneReplication {
           client: client,
           tickRate: session.tickRate,
         ),
-        _ => NetworkTransformComponent(replica, delay: interpolationDelay),
+        _ => NetworkTransformComponent(
+          replica,
+          delay: interpolationDelay,
+          minDelay: minInterpolationDelay,
+          adaptive: adaptiveInterpolation,
+        ),
       });
     }
     root.add(node);
