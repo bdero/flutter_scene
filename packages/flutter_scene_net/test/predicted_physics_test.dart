@@ -216,11 +216,16 @@ void main() {
     expect(history.depth, 9); // ticks 4..12 retained
 
     final rewound = history.rewind(9, (s) => (s as _FakeSim).x);
-    expect(rewound, 9);
+    expect(rewound.rewound, isTrue);
+    expect(rewound.result, 9);
     expect(sim.x, 12); // present restored
     expect(sim.v, 1);
 
-    expect(history.rewind(3, (s) => 0), isNull); // beyond the cap
-    expect(history.rewind(99, (s) => 0), isNull); // never recorded
+    // A miss reports itself rather than looking like a null query result.
+    expect(history.rewind(3, (s) => 0).rewound, isFalse); // beyond the cap
+    expect(history.rewind(99, (s) => 0).rewound, isFalse); // never recorded
+    final empty = history.rewind(9, (s) => null);
+    expect(empty.rewound, isTrue);
+    expect(empty.result, isNull);
   });
 }
