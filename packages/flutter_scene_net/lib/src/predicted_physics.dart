@@ -88,6 +88,7 @@ final class PredictedPhysicsComponent extends Component {
     this.smoothing = const Duration(milliseconds: 120),
     this.correctionThreshold = 0.05,
     int historyTicks = 64,
+    this.maxCatchUpTicks = 16,
     NowMicros now = defaultNowMicros,
   }) : _dt = 1 / tickRate,
        _now = now {
@@ -110,6 +111,16 @@ final class PredictedPhysicsComponent extends Component {
   /// Positional divergence (metres) beyond which a snapshot triggers a replay
   /// correction.
   final double correctionThreshold;
+
+  /// Most ticks predicted in one [update] before the prediction snaps to
+  /// authority instead of catching up.
+  ///
+  /// The target tick comes from the wall clock, so a stall (a backgrounded
+  /// tab, a long hitch, a resume from pause) would otherwise step and snapshot
+  /// the world once per missed tick in a single frame. Lower than the
+  /// transform component's cap because each tick here costs a world step plus
+  /// a full snapshot.
+  final int maxCatchUpTicks;
 
   final double _dt;
   final NowMicros _now;
@@ -190,6 +201,24 @@ final class PredictedPhysicsComponent extends Component {
       final corrected = _predictor.reconcile(acked, _authoritativeState(acked));
       _reconciledTick = acked;
       if (corrected) _error.setFrom(rendered - _predictor.current.position);
+    }
+
+    // Too far behind to catch up tick by tick, so teleport the owned body to
+    // the newest authoritative pose and resume predicting from there.
+    if (target - _predictor.currentTick > maxCatchUpTicks) {
+      final sim = controller.simulation;
+      final handle = controller.bodyHandle;
+      sim.setBodyPose(
+        handle,
+        replica.positionVector,
+        replica.rotationQuaternion,
+      );
+      final linear = controller.authoritativeLinearVelocity;
+      final angular = controller.authoritativeAngularVelocity;
+      if (linear != null) sim.setBodyLinearVelocity(handle, linear);
+      if (angular != null) sim.setBodyAngularVelocity(handle, angular);
+      _predictor.reset(target - 1, _capture());
+      _error.setZero();
     }
 
     // Predict forward to the target tick, one input sampled and sent per tick.
