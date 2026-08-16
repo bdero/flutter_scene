@@ -79,6 +79,11 @@ void _writeVaryings(StringBuffer sb, FmatMaterial material, String direction) {
 /// layout's sampler is declared, so a material that samples the environment
 /// ships one entry per layout and the runtime picks the one matching the
 /// bound environment.
+///
+/// This doubles the entries a material that samples the environment
+/// contributes. TODO(radiance-layout): remove it with the define in
+/// `texture.glsl` once the engine's combined-limit validation is in every
+/// supported stable, which halves those entries again.
 const String kRadianceCubeDefine = 'FLUTTER_SCENE_RADIANCE_CUBE';
 
 /// Whether [material] declares the prefiltered-radiance sampler, and so needs

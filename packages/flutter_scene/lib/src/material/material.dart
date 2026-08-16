@@ -295,6 +295,12 @@ abstract class Material {
   /// False when the material carries no cube variant, so a material that was
   /// built without one keeps its 2D sampler and is bound a 2D texture rather
   /// than a mismatched cubemap.
+  ///
+  /// Both decisions must come from here. Picking the shader and the texture
+  /// separately lets a material fall back to its 2D sampler while the bound
+  /// environment hands it a cubemap, which no sampler can read; it then
+  /// samples whatever texture the unit still held, which is silent on
+  /// backends that leave nothing there and garbage on the ones that do.
   @internal
   bool usesRadianceCubeVariant(Lighting lighting) =>
       lighting.environmentMap.usesCubeRadianceLayout &&
