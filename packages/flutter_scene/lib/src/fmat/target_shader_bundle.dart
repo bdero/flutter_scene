@@ -28,6 +28,20 @@ enum TargetShaderBundleAssetMode {
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
+
+  /// Removed. Kept so an upgraded hook fails with instructions instead
+  /// of an undefined name.
+  @Deprecated(
+    'Removed in 0.21.0. Generated assets go into flutter_scene_generated/ and load by source path on every channel. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  legacyOnly,
+
+  /// Removed. Kept so an upgraded hook fails with instructions instead
+  /// of an undefined name.
+  @Deprecated(
+    'Removed in 0.21.0. Generated assets go into flutter_scene_generated/ and load by source path on every channel. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  dataAssetsIfAvailable,
 }
 
 /// Builds a shader bundle and removes backends the target cannot use.
@@ -61,6 +75,20 @@ Future<void> buildTargetShaderBundleJson({
   String? stamp,
   String? fileVariant,
 }) async {
+  // ignore: deprecated_member_use_from_same_package
+  if (assetMode == TargetShaderBundleAssetMode.legacyOnly) {
+    throwRemovedAssetMode(
+      'TargetShaderBundleAssetMode.legacyOnly',
+      'TargetShaderBundleAssetMode.generatedTree',
+    );
+  }
+  // ignore: deprecated_member_use_from_same_package
+  if (assetMode == TargetShaderBundleAssetMode.dataAssetsIfAvailable) {
+    throwRemovedAssetMode(
+      'TargetShaderBundleAssetMode.dataAssetsIfAvailable',
+      'TargetShaderBundleAssetMode.generatedTree',
+    );
+  }
   final emitDataAssets =
       buildInput.config.buildDataAssets &&
       assetMode == TargetShaderBundleAssetMode.dataAssetsRequired;
@@ -74,6 +102,8 @@ Future<void> buildTargetShaderBundleJson({
         ShaderBundleAssetMode.legacyOnly,
       TargetShaderBundleAssetMode.dataAssetsRequired =>
         ShaderBundleAssetMode.dataAssetsRequired,
+      // Rejected above, before anything is compiled.
+      _ => ShaderBundleAssetMode.legacyOnly,
     },
     dataAssetName: dataAssetName,
     glesLanguageVersion: glesLanguageVersion,

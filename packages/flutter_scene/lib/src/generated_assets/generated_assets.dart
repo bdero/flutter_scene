@@ -201,3 +201,16 @@ final class GeneratedAssetManifest {
     }
   }
 }
+
+/// Thrown for the build-hook asset modes 0.21.0 removed, naming the fix rather
+/// than leaving a hook that silently writes somewhere else.
+Never throwRemovedAssetMode(String mode, String replacement) =>
+    throw UnsupportedError(
+      'flutter_scene: $mode was removed in 0.21.0. Generated assets now go '
+      'into $generatedAssetsEntry and load by source path on every Flutter '
+      'channel, so the mode that picked an output location no longer applies. '
+      'Use $replacement, then run `dart run flutter_scene:init` to add the '
+      'pubspec assets entry that directory needs. An app loading by explicit '
+      'asset key (loadFscenebAsset and friends) reads its new keys from '
+      "${generatedAssetsEntry}manifest.json.",
+    );

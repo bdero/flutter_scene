@@ -6,7 +6,19 @@
 library;
 
 /// Web/wasm placeholder for the native build-hook enum.
-enum SceneAssetMode { generatedTree, dataAssetsRequired }
+enum SceneAssetMode {
+  generatedTree,
+  dataAssetsRequired,
+
+  @Deprecated(
+    'Removed in 0.21.0. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  legacyOnly,
+  @Deprecated(
+    'Removed in 0.21.0. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  dataAssetsIfAvailable,
+}
 
 /// Throws on web/wasm; see the library doc above. The native signature takes a
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses

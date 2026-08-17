@@ -24,6 +24,20 @@ enum MaterialAssetMode {
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
+
+  /// Removed. Kept so an upgraded hook fails with instructions instead
+  /// of an undefined name.
+  @Deprecated(
+    'Removed in 0.21.0. Generated assets go into flutter_scene_generated/ and load by source path on every channel. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  legacyOnly,
+
+  /// Removed. Kept so an upgraded hook fails with instructions instead
+  /// of an undefined name.
+  @Deprecated(
+    'Removed in 0.21.0. Generated assets go into flutter_scene_generated/ and load by source path on every channel. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  dataAssetsIfAvailable,
 }
 
 const String _dataAssetsUnavailableMessage =
@@ -197,6 +211,20 @@ Future<void> _buildMaterials({
   bool pruneGeneratedTree = true,
   String? fileVariant,
 }) async {
+  // ignore: deprecated_member_use_from_same_package
+  if (assetMode == MaterialAssetMode.legacyOnly) {
+    throwRemovedAssetMode(
+      'MaterialAssetMode.legacyOnly',
+      'MaterialAssetMode.generatedTree',
+    );
+  }
+  // ignore: deprecated_member_use_from_same_package
+  if (assetMode == MaterialAssetMode.dataAssetsIfAvailable) {
+    throwRemovedAssetMode(
+      'MaterialAssetMode.dataAssetsIfAvailable',
+      'MaterialAssetMode.generatedTree',
+    );
+  }
   final emitDataAssets = assetMode == MaterialAssetMode.dataAssetsRequired;
   if (emitDataAssets && !buildInput.config.buildDataAssets) {
     throw UnsupportedError(_dataAssetsUnavailableMessage);
