@@ -24,6 +24,19 @@ on:
   workflow_run:
     workflows: ["Flutter CI"]
     types: [in_progress]
+  # A release check renders the Apple shards against a stable Flutter. Dispatch
+  # needs write access, so it carries its own gate; the fork approval below is
+  # only about pull requests.
+  workflow_dispatch:
+    inputs:
+      flutter_channel:
+        description: "Flutter channel for the Apple shards"
+        required: false
+        default: master
+      argos_prefix:
+        description: "Argos name prefix, keeps a non-master run off the baseline"
+        required: false
+        default: ""
 
 concurrency:
   group: >-
@@ -48,6 +61,7 @@ jobs:
     # is re-checked because the trigger alone is not the gate.
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.event == 'pull_request' &&
        github.event.workflow_run.status == 'in_progress')
     outputs:
@@ -71,7 +85,7 @@ jobs:
           HEAD_REF: ${{ github.event.workflow_run.head_branch }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # The pushed branch already exists on the remote, so Codemagic can
             # resolve it and no mirror is needed.
             echo "branch=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
@@ -120,7 +134,7 @@ jobs:
           echo "base_ref=$base" >> "$GITHUB_OUTPUT"
 
   render:
-    name: ${{ matrix.build_name }} (Flutter master)
+    name: ${{ inputs.argos_prefix || '' }}${{ matrix.build_name }} (Flutter ${{ inputs.flutter_channel || 'master' }})
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -140,11 +154,20 @@ jobs:
           CODEMAGIC_APP_ID: ${{ secrets.CODEMAGIC_APP_ID }}
         run: |
           set -euo pipefail
+          # The usual master render sends the payload it always sent. Only a
+          # channel override adds the environment block, so a wrong guess about
+          # that field cannot take the whole matrix down with it.
+          channel="${{ inputs.flutter_channel || 'master' }}"
           body=$(jq -nc \
             --arg appId "$CODEMAGIC_APP_ID" \
             --arg workflowId "${{ matrix.workflow_id }}" \
             --arg branch "${{ needs.prepare.outputs.branch }}" \
             '{appId: $appId, workflowId: $workflowId, branch: $branch}')
+          if [ "$channel" != "master" ]; then
+            body=$(printf '%s' "$body" | jq -c \
+              --arg channel "$channel" \
+              '. + {environment: {variables: {FLUTTER_CHANNEL: $channel}}}')
+          fi
           out=$(curl -sS -X POST https://api.codemagic.io/builds \
             -H "Content-Type: application/json" \
             -H "x-auth-token: $CODEMAGIC_API_TOKEN" \
@@ -244,7 +267,7 @@ jobs:
           status=0
           npx --yes @argos-ci/cli upload smoke \
             --project "$ARGOS_PROJECT" \
-            --build-name "${{ matrix.build_name }}" > argos.log 2>&1 || status=$?
+            --build-name "${{ inputs.argos_prefix || '' }}${{ matrix.build_name }}" > argos.log 2>&1 || status=$?
           cat argos.log
           grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' argos.log \
             | head -1 >> "$GITHUB_STEP_SUMMARY" || true
