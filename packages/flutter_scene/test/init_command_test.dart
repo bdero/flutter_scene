@@ -43,8 +43,8 @@ void main() {
     );
     expect(
       parsePubspecAssets(
-        File.fromUri(temp.uri.resolve('pubspec.yaml')).readAsLinesSync(),
-      ).entries,
+        File.fromUri(temp.uri.resolve('pubspec.yaml')).readAsStringSync(),
+      ),
       contains(normalizeAssetEntry(generatedAssetsEntry)),
     );
   });
@@ -150,14 +150,19 @@ $hookEndMarker
     },
   );
 
-  test('asks for a hand edit when the assets list is inline', () async {
+  test('adds the entry to an inline assets list', () async {
     File.fromUri(
       temp.uri.resolve('pubspec.yaml'),
     ).writeAsStringSync('name: app\nflutter:\n  assets: [assets/logo.png]\n');
 
     final result = await installFlutterSceneBuildHook(projectRoot: temp);
 
-    expect(result.status, InitHookStatus.needsManualInstall);
-    expect(result.message, contains('by hand'));
+    expect(result.status, InitHookStatus.created);
+    expect(
+      parsePubspecAssets(
+        File.fromUri(temp.uri.resolve('pubspec.yaml')).readAsStringSync(),
+      ),
+      contains(normalizeAssetEntry(generatedAssetsEntry)),
+    );
   });
 }

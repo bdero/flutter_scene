@@ -9,6 +9,9 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:yaml/yaml.dart';
+import 'package:yaml_edit/yaml_edit.dart';
+
 import '../importer/build_cache.dart';
 import 'generated_assets.dart';
 import 'generated_file_names.dart';
@@ -23,17 +26,10 @@ const String generatedAssetsPubspecSnippet =
 /// `flutter.assets`, so the build fails instead of producing an app that dies
 /// at the first load.
 final class MissingGeneratedAssetEntryException implements Exception {
-  MissingGeneratedAssetEntryException(
-    this.package, {
-    this.flowStyleAssets = false,
-  });
+  MissingGeneratedAssetEntryException(this.package);
 
   /// The package whose pubspec is missing the entry.
   final String package;
-
-  /// Whether the pubspec has a flow-style `assets: [...]` list, which the
-  /// line-based reader cannot see into.
-  final bool flowStyleAssets;
 
   @override
   String toString() {
@@ -44,13 +40,6 @@ final class MissingGeneratedAssetEntryException implements Exception {
       'the app, or add these lines to pubspec.yaml by hand:\n\n'
       '$generatedAssetsPubspecSnippet\n',
     );
-    if (flowStyleAssets) {
-      buffer.write(
-        '\nThe pubspec writes its assets as an inline list '
-        '(`assets: [ ... ]`), which cannot be read or edited automatically. '
-        'Add the entry by hand, or rewrite the list one item per line.\n',
-      );
-    }
     // TODO(package-generated-assets): a third-party package that generates
     // assets for its consumers has no supported path yet. flutter_scene builds
     // its own engine shaders into its own tree (its pubspec lists the
@@ -213,13 +202,8 @@ final class GeneratedAssetTree {
     final assets = readPubspecAssets(
       File.fromUri(packageRoot.resolve('pubspec.yaml')),
     );
-    if (assets.entries.contains(normalizeAssetEntry(generatedAssetsEntry))) {
-      return;
-    }
-    throw MissingGeneratedAssetEntryException(
-      packageName,
-      flowStyleAssets: assets.style == PubspecAssetsStyle.flow,
-    );
+    if (assets.contains(normalizeAssetEntry(generatedAssetsEntry))) return;
+    throw MissingGeneratedAssetEntryException(packageName);
   }
 
   /// The absolute location [family]/[nameId] is written to. [extension]
@@ -368,122 +352,39 @@ final class GeneratedAssetTree {
   }
 }
 
-/// How a pubspec writes its `flutter: assets:` list.
-enum PubspecAssetsStyle {
-  /// No `assets:` key under the top-level `flutter:` key.
-  absent,
-
-  /// One `- entry` per line, the form this package reads and edits.
-  block,
-
-  /// An inline `assets: [a, b]` list, which the line-based reader cannot see
-  /// into and reports rather than treating as empty.
-  flow,
-}
-
-/// The `flutter: assets:` list of a pubspec, as written.
-final class PubspecAssets {
-  const PubspecAssets(this.style, this.entries);
-
-  static const PubspecAssets none = PubspecAssets(
-    PubspecAssetsStyle.absent,
-    <String>[],
-  );
-
-  final PubspecAssetsStyle style;
-
-  /// The listed paths, normalized by [normalizeAssetEntry]. Always empty for
-  /// [PubspecAssetsStyle.flow].
-  final List<String> entries;
-}
-
-/// Reads the `flutter: assets:` list of [pubspec].
-///
-/// Line-based so a hand-maintained pubspec keeps its comments and ordering;
-/// `dart run flutter_scene:init` edits it the same way.
-PubspecAssets readPubspecAssets(File pubspec) {
-  if (!pubspec.existsSync()) return PubspecAssets.none;
-  return parsePubspecAssets(pubspec.readAsLinesSync());
-}
-
-/// [readPubspecAssets] over already-read [lines].
-PubspecAssets parsePubspecAssets(List<String> lines) {
-  final flutter = pubspecFlutterBlock(lines);
-  if (flutter == null) return PubspecAssets.none;
-  final assets = _assetsKeyLine(lines, flutter);
-  if (assets == null) return PubspecAssets.none;
-  if (assets.flow) {
-    return const PubspecAssets(PubspecAssetsStyle.flow, <String>[]);
-  }
-  final entries = <String>[];
-  for (var i = assets.line + 1; i < flutter.end; i++) {
-    final trimmed = lines[i].trimLeft();
-    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-    final indent = lines[i].length - trimmed.length;
-    if (indent <= flutter.childIndent) break;
-    if (!trimmed.startsWith('- ')) continue;
-    final value = _stripInlineComment(trimmed.substring(2)).trim();
-    final unquoted = value.replaceAll('"', '').replaceAll("'", '');
-    if (unquoted.isNotEmpty) entries.add(normalizeAssetEntry(unquoted));
-  }
-  return PubspecAssets(PubspecAssetsStyle.block, entries);
-}
-
 /// A directory entry compares equal with or without its trailing slash.
 String normalizeAssetEntry(String entry) =>
     entry.endsWith('/') ? entry.substring(0, entry.length - 1) : entry;
 
-/// The extent of the top-level `flutter:` mapping in [lines].
-///
-/// [start] is its key line, [end] is one past its block, and [childIndent] is
-/// the indent of its direct children (2 when the block is empty).
-final class PubspecFlutterBlock {
-  const PubspecFlutterBlock(this.start, this.end, this.childIndent);
-
-  final int start;
-  final int end;
-  final int childIndent;
+/// The `flutter: assets:` entries of [pubspec], normalized by
+/// [normalizeAssetEntry]. A missing or unparseable pubspec reads as none.
+List<String> readPubspecAssets(File pubspec) {
+  if (!pubspec.existsSync()) return const <String>[];
+  return parsePubspecAssets(pubspec.readAsStringSync());
 }
 
-/// Locates the top-level `flutter:` mapping in [lines], or null when absent.
-PubspecFlutterBlock? pubspecFlutterBlock(List<String> lines) {
-  for (var i = 0; i < lines.length; i++) {
-    if (lines[i] != 'flutter:') continue;
-    var end = lines.length;
-    var childIndent = -1;
-    for (var j = i + 1; j < lines.length; j++) {
-      final trimmed = lines[j].trimLeft();
-      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-      final indent = lines[j].length - trimmed.length;
-      if (indent == 0) {
-        end = j;
-        break;
-      }
-      if (childIndent < 0) childIndent = indent;
-    }
-    return PubspecFlutterBlock(i, end, childIndent < 0 ? 2 : childIndent);
+/// [readPubspecAssets] over already-read [contents].
+List<String> parsePubspecAssets(String contents) {
+  final Object? document;
+  try {
+    document = loadYaml(contents);
+  } on YamlException {
+    return const <String>[];
   }
-  return null;
-}
-
-/// The `assets:` key line inside [flutter], and whether it holds an inline
-/// list.
-({int line, bool flow})? _assetsKeyLine(
-  List<String> lines,
-  PubspecFlutterBlock flutter,
-) {
-  for (var i = flutter.start + 1; i < flutter.end; i++) {
-    final trimmed = lines[i].trimLeft();
-    if (!trimmed.startsWith('assets:')) continue;
-    // Only a direct child of `flutter:` is the asset list; a deeper `assets:`
-    // belongs to something else (a deferred component, another tool's block).
-    if (lines[i].length - trimmed.length != flutter.childIndent) continue;
-    final rest = _stripInlineComment(
-      trimmed.substring('assets:'.length),
-    ).trim();
-    return (line: i, flow: rest.isNotEmpty);
-  }
-  return null;
+  if (document is! YamlMap) return const <String>[];
+  final flutter = document['flutter'];
+  if (flutter is! YamlMap) return const <String>[];
+  final assets = flutter['assets'];
+  if (assets is! YamlList) return const <String>[];
+  return <String>[
+    for (final entry in assets)
+      // An entry is either a path or a map whose `path` key holds one (the
+      // form that also declares asset transformers).
+      if (entry is String)
+        normalizeAssetEntry(entry)
+      else if (entry is YamlMap && entry['path'] is String)
+        normalizeAssetEntry(entry['path'] as String),
+  ];
 }
 
 /// What [ensureGeneratedAssetsEntry] did to a pubspec.
@@ -501,123 +402,72 @@ final class PubspecEditResult {
 /// every comment and the surrounding order. Idempotent.
 PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
   if (!pubspec.existsSync()) {
-    return PubspecEditResult(
+    return const PubspecEditResult(
       PubspecEditStatus.missingPubspec,
       'No pubspec.yaml here. Run this from the app directory.',
     );
   }
-  final lines = pubspec.readAsStringSync().split('\n');
-  final assets = parsePubspecAssets(lines);
-  if (assets.entries.contains(normalizeAssetEntry(generatedAssetsEntry))) {
-    return PubspecEditResult(
+  final contents = pubspec.readAsStringSync();
+  if (parsePubspecAssets(
+    contents,
+  ).contains(normalizeAssetEntry(generatedAssetsEntry))) {
+    return const PubspecEditResult(
       PubspecEditStatus.alreadyPresent,
       'pubspec.yaml already lists $generatedAssetsEntry under `flutter: '
       'assets:`.',
     );
   }
-  if (assets.style == PubspecAssetsStyle.flow) {
+
+  final YamlEditor editor;
+  try {
+    editor = YamlEditor(contents);
+    if (editor.parseAt(<Object>[]) is! YamlMap) {
+      return const PubspecEditResult(
+        PubspecEditStatus.unsupported,
+        'pubspec.yaml is not a YAML mapping, so it cannot be edited '
+        'automatically. Add these lines by hand:\n\n'
+        '$generatedAssetsPubspecSnippet',
+      );
+    }
+    final flutter = editor.parseAt(<Object>[
+      'flutter',
+    ], orElse: () => wrapAsYamlNode(null));
+    if (flutter.value == null) {
+      // Appended as text: an inserted mapping key lands at the top of the
+      // document, above `name:`.
+      final separator = contents.endsWith('\n') ? '' : '\n';
+      pubspec.writeAsStringSync(
+        '$contents$separator\n$generatedAssetsPubspecSnippet\n',
+      );
+      return const PubspecEditResult(
+        PubspecEditStatus.added,
+        'Added a `flutter: assets:` section listing $generatedAssetsEntry to '
+        'pubspec.yaml.',
+      );
+    } else if (editor.parseAt(<Object>[
+          'flutter',
+          'assets',
+        ], orElse: () => wrapAsYamlNode(null))
+        is YamlList) {
+      editor.appendToList(<Object>['flutter', 'assets'], generatedAssetsEntry);
+    } else {
+      editor.update(
+        <Object>['flutter', 'assets'],
+        <String>[generatedAssetsEntry],
+      );
+    }
+  } on YamlException catch (error) {
     return PubspecEditResult(
       PubspecEditStatus.unsupported,
-      'pubspec.yaml writes its assets as an inline list (`assets: [ ... ]`), '
-      'which cannot be edited automatically. Add "$generatedAssetsEntry" to '
-      'that list by hand.',
+      'pubspec.yaml could not be parsed ($error), so it cannot be edited '
+      'automatically. Add these lines by hand:\n\n'
+      '$generatedAssetsPubspecSnippet',
     );
   }
 
-  final flutter = pubspecFlutterBlock(lines);
-  if (flutter == null) {
-    final trailing = lines.isNotEmpty && lines.last.trim().isEmpty ? '' : '\n';
-    pubspec.writeAsStringSync(
-      '${lines.join('\n')}$trailing\n$generatedAssetsPubspecSnippet\n',
-    );
-    return PubspecEditResult(
-      PubspecEditStatus.added,
-      'Added a `flutter: assets:` section listing $generatedAssetsEntry to '
-      'pubspec.yaml.',
-    );
-  }
-
-  final assetsKey = _assetsKeyLine(lines, flutter);
-  final int insertAt;
-  final List<String> inserted;
-  if (assetsKey == null) {
-    insertAt = _lastContentLine(lines, flutter.start + 1, flutter.end) + 1;
-    inserted = [
-      '${' ' * flutter.childIndent}assets:',
-      '${' ' * (flutter.childIndent + 2)}- $generatedAssetsEntry',
-    ];
-  } else {
-    // Stop at the next key of the same depth, so the entry lands inside the
-    // asset list rather than after whatever follows it.
-    final assetsEnd = _blockEnd(
-      lines,
-      assetsKey.line,
-      flutter.end,
-      flutter.childIndent,
-    );
-    insertAt = _lastContentLine(lines, assetsKey.line + 1, assetsEnd) + 1;
-    final itemIndent = _firstItemIndent(lines, assetsKey.line + 1, assetsEnd);
-    inserted = [
-      '${' ' * (itemIndent ?? flutter.childIndent + 2)}'
-          '- $generatedAssetsEntry',
-    ];
-  }
-  lines.insertAll(insertAt, inserted);
-  pubspec.writeAsStringSync(lines.join('\n'));
-  return PubspecEditResult(
+  pubspec.writeAsStringSync(editor.toString());
+  return const PubspecEditResult(
     PubspecEditStatus.added,
     'Added $generatedAssetsEntry to `flutter: assets:` in pubspec.yaml.',
   );
-}
-
-/// One past the block opened at [start], the first line in `[start, limit)`
-/// whose indent is at most [indent].
-int _blockEnd(List<String> lines, int start, int limit, int indent) {
-  for (var i = start + 1; i < limit && i < lines.length; i++) {
-    final trimmed = lines[i].trimLeft();
-    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-    if (lines[i].length - trimmed.length <= indent) return i;
-  }
-  return limit;
-}
-
-/// The last non-blank, non-comment line index in `[from, end)`, or [from] - 1
-/// when the range holds none.
-int _lastContentLine(List<String> lines, int from, int end) {
-  var last = from - 1;
-  for (var i = from; i < end && i < lines.length; i++) {
-    final trimmed = lines[i].trimLeft();
-    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-    last = i;
-  }
-  return last;
-}
-
-/// The indent of the first `- ` item in `[from, end)`, or null when there is
-/// none.
-int? _firstItemIndent(List<String> lines, int from, int end) {
-  for (var i = from; i < end && i < lines.length; i++) {
-    final trimmed = lines[i].trimLeft();
-    if (!trimmed.startsWith('- ')) continue;
-    return lines[i].length - trimmed.length;
-  }
-  return null;
-}
-
-/// [text] up to its first `#` outside a quoted run.
-String _stripInlineComment(String text) {
-  var quote = '';
-  for (var i = 0; i < text.length; i++) {
-    final char = text[i];
-    if (quote.isEmpty && (char == '"' || char == "'")) {
-      quote = char;
-      continue;
-    }
-    if (quote == char) {
-      quote = '';
-      continue;
-    }
-    if (quote.isEmpty && char == '#') return text.substring(0, i);
-  }
-  return text;
 }

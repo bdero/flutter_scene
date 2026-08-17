@@ -56,6 +56,9 @@ dependencies:
   vector_math: ^2.1.4
   # WebGL2 bindings for the web GPU backend.
   web: ^1.1.0
+  # Reads and edits the app's pubspec asset list. Build-time only.
+  yaml: ^3.1.2
+  yaml_edit: ^2.2.1
 
 dev_dependencies:
   flutter_test:
