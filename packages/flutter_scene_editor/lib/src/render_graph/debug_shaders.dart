@@ -14,10 +14,11 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
-// TODO(legacy-package-assets): a dependency cannot write into the app's
-// flutter_scene_generated/ tree, so this bundle only exists where Dart data
-// assets are available. Editor hosts need an app-side entry point that converts
-// a dependency's declared sources into the app tree.
+// TODO(package-generated-assets): this bundle only exists where Dart data
+// assets are available. The fix is the pattern flutter_scene uses for its own
+// engine shaders, a generated directory inside this package that its pubspec
+// lists under flutter.assets, written by this package's hook and stamped with
+// the engine identity (lib/src/generated_assets/build_engine_assets.dart).
 /// The data-asset key the build hook registers the bundle under.
 const String _kBundleKey =
     'packages/flutter_scene_editor/flutter_gpu_shaders/shaderbundles/'
