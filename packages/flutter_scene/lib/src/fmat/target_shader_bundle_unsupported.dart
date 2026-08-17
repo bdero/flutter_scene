@@ -1,8 +1,4 @@
-enum TargetShaderBundleAssetMode {
-  generatedTree,
-  dataAssetsIfAvailable,
-  dataAssetsRequired,
-}
+enum TargetShaderBundleAssetMode { generatedTree, dataAssetsRequired }
 
 Never buildTargetShaderBundleJson({
   required Object buildInput,

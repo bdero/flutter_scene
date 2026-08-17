@@ -18,14 +18,13 @@ enum SceneAssetMode {
   /// every Flutter channel.
   generatedTree,
 
-  /// Register generated `.fsceneb` files as Dart data assets when the current
-  /// toolchain supports them, and otherwise fall back to [generatedTree].
-  dataAssetsIfAvailable,
-
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
 }
+
+// Where a data-asset build stages its files before registering them.
+const String _dataAssetStagingDirectory = 'build/scenes/';
 
 const String _dataAssetsUnavailableMessage =
     'flutter_scene: SceneAssetMode.dataAssetsRequired needs Flutter support for '
@@ -97,9 +96,9 @@ List<String> discoverSceneSources(
 /// retriggers the build (and hot reload). Conversion runs in-process (no
 /// subprocess, no native binary).
 ///
-/// Outputs land in the app's `flutter_scene_generated/` directory. The DataAssets
-/// modes write them under [outputDirectory] instead and register them as data
-/// assets keyed `packages/<package>/flutter_scene/scene/<name>.fsceneb`.
+/// Outputs land in the app's `flutter_scene_generated/` directory.
+/// [SceneAssetMode.dataAssetsRequired] registers them as data assets keyed
+/// `packages/<package>/flutter_scene/scene/<name>.fsceneb` instead.
 ///
 /// Set [compressTextures] to store embedded images as supercompressed block
 /// payloads that transcode to the device's format at load, shrinking the
@@ -110,18 +109,15 @@ void buildScenes({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   List<String>? inputFilePaths,
-  String outputDirectory = 'build/scenes/',
   String discoveryRoot = 'assets/',
   SceneAssetMode assetMode = SceneAssetMode.generatedTree,
   bool compressTextures = false,
   bool alignForCompression = false,
 }) {
-  final dataAssetsAvailable = buildInput.config.buildDataAssets;
-  if (assetMode == SceneAssetMode.dataAssetsRequired && !dataAssetsAvailable) {
+  final emitDataAssets = assetMode == SceneAssetMode.dataAssetsRequired;
+  if (emitDataAssets && !buildInput.config.buildDataAssets) {
     throw UnsupportedError(_dataAssetsUnavailableMessage);
   }
-  final emitDataAssets =
-      assetMode != SceneAssetMode.generatedTree && dataAssetsAvailable;
 
   final options = HookOptions.of(buildInput);
   final packageRoot = buildInput.packageRoot;
@@ -173,7 +169,7 @@ void buildScenes({
     return;
   }
 
-  final scenesRoot = packageRoot.resolve(outputDirectory);
+  final scenesRoot = packageRoot.resolve(_dataAssetStagingDirectory);
 
   for (final inputFilePath in inputs) {
     final extension = _sceneSourceExtensions.firstWhere(

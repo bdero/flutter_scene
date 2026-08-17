@@ -7,11 +7,7 @@
 library;
 
 /// Web/wasm placeholder for the native build-hook enum.
-enum MaterialAssetMode {
-  generatedTree,
-  dataAssetsIfAvailable,
-  dataAssetsRequired,
-}
+enum MaterialAssetMode { generatedTree, dataAssetsRequired }
 
 /// Throws on web/wasm; see the library doc above. The native signature takes
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses

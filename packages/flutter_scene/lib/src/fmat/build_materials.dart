@@ -21,10 +21,6 @@ enum MaterialAssetMode {
   /// channel.
   generatedTree,
 
-  /// Register the generated files as Dart data assets when the current toolchain
-  /// supports them, and otherwise fall back to [generatedTree].
-  dataAssetsIfAvailable,
-
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
@@ -198,9 +194,8 @@ Future<void> _buildMaterials({
   String? owner,
   bool pruneGeneratedTree = true,
 }) async {
-  final dataAssetsAvailable = buildInput.config.buildDataAssets;
-  if (assetMode == MaterialAssetMode.dataAssetsRequired &&
-      !dataAssetsAvailable) {
+  final emitDataAssets = assetMode == MaterialAssetMode.dataAssetsRequired;
+  if (emitDataAssets && !buildInput.config.buildDataAssets) {
     throw UnsupportedError(_dataAssetsUnavailableMessage);
   }
 
@@ -224,8 +219,6 @@ Future<void> _buildMaterials({
   if (materialPaths.isEmpty) {
     return;
   }
-  final emitDataAssets =
-      dataAssetsAvailable && assetMode != MaterialAssetMode.generatedTree;
   if (emitDataAssets && pruneGeneratedTree) {
     // A tree left by an earlier build would ship the same bundle twice.
     GeneratedAssetTree.openExisting(packageRoot, buildInput.packageName)

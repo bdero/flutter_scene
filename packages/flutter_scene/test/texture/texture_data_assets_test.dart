@@ -40,7 +40,7 @@ void main() {
         buildInput: input,
         buildOutput: outputBuilder,
         textures: ['assets/checker.png'],
-        assetMode: TextureAssetMode.dataAssetsIfAvailable,
+        assetMode: TextureAssetMode.dataAssetsRequired,
       );
 
       final fstexPath = temp.uri.resolve('build/textures/assets/checker.fstex');
@@ -77,7 +77,7 @@ void main() {
           buildInput: _buildInput(packageRoot: temp.uri, buildDataAssets: true),
           buildOutput: BuildOutputBuilder(),
           textures: ['assets/odd.png'],
-          assetMode: TextureAssetMode.dataAssetsIfAvailable,
+          assetMode: TextureAssetMode.dataAssetsRequired,
         ),
         throwsA(predicate((e) => e.toString().contains('multiples of 4'))),
       );
@@ -107,7 +107,7 @@ void main() {
         buildOutput: BuildOutputBuilder(),
         textures: ['assets/bump.png'],
         contents: {'assets/bump.png': TextureContent.normal},
-        assetMode: TextureAssetMode.dataAssetsIfAvailable,
+        assetMode: TextureAssetMode.dataAssetsRequired,
       );
 
       final texture = readKtx2(
