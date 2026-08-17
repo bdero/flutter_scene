@@ -31,3 +31,6 @@ flutter:
     # Skinned animated test model (assets_src is a symlink into
     # examples/assets_src), for the skinned_animation scene.
     - assets_src/two_triangles.glb
+    # Everything hook/build.dart generates, loaded by source path. Added by
+    # `dart run flutter_scene:init`.
+    - flutter_scene_generated/

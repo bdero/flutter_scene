@@ -7,6 +7,7 @@ import 'package:flutter_gpu_shaders/build.dart';
 import 'package:hooks/hooks.dart';
 
 import '../generated_assets/generated_assets.dart';
+import '../generated_assets/generated_file_names.dart';
 import '../generated_assets/generated_tree.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 

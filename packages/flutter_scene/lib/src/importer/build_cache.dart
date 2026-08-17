@@ -10,6 +10,8 @@ library;
 
 import 'dart:io';
 
+import 'package:hooks/hooks.dart';
+
 /// Bump when the hooks' generated output changes for the same inputs (the
 /// importer, the scene emitter, or the material pipeline), so outputs cached
 /// by an older flutter_scene revision are rebuilt.
@@ -33,24 +35,63 @@ const String kStrictHashEnv = 'FLUTTER_SCENE_STRICT_HASH';
 /// surprises for hand-edited `.fscene`, `.fmat`, and `.glsl` files.
 const int kSmallSourceBytes = 1 << 20;
 
+/// The two build-hook switches, read from the app's user defines with an
+/// environment fallback.
+///
+/// The build system passes a hook a **filtered** environment (an allowlist for
+/// compiler discovery), so an environment variable set on a `flutter build` never
+/// reaches the hook. The switch that works there is the app pubspec:
+///
+/// ```yaml
+/// hooks:
+///   user_defines:
+///     my_app:
+///       flutter_scene_strict_hashing: true
+/// ```
+///
+/// The environment forms still work when the builders are driven directly, from
+/// a test or a script.
+final class HookOptions {
+  const HookOptions({
+    this.strictHashing = false,
+    this.rebuildEverything = false,
+  });
+
+  /// Reads the options declared for the package [input] is building.
+  factory HookOptions.of(BuildInput input) => HookOptions(
+    strictHashing: _flag(input, 'flutter_scene_strict_hashing', kStrictHashEnv),
+    rebuildEverything: _flag(
+      input,
+      'flutter_scene_rebuild_assets',
+      kDisableBuildCacheEnv,
+    ),
+  );
+
+  static bool _flag(BuildInput input, String define, String environment) =>
+      input.userDefines[define] == true ||
+      Platform.environment.containsKey(environment);
+
+  /// Content-hash every source, however large.
+  final bool strictHashing;
+
+  /// Redo every conversion, whatever the stamps say.
+  final bool rebuildEverything;
+}
+
 /// Whether the cache is disabled via [kDisableBuildCacheEnv].
 bool get buildCacheDisabled =>
     Platform.environment.containsKey(kDisableBuildCacheEnv);
 
-/// Whether [kStrictHashEnv] is set.
-bool get strictSourceHashing =>
-    Platform.environment.containsKey(kStrictHashEnv);
-
 /// A build-stamp fingerprint of [file]: its content hash when it is small (or
-/// under [kStrictHashEnv]), and its size plus modification time otherwise.
+/// under strict hashing), and its size plus modification time otherwise.
 ///
 /// Hashing a multi-gigabyte source costs seconds per build; a stat costs
 /// microseconds. The stat form misses only a rewrite that keeps both the size
 /// and the timestamp, which no ordinary tool produces (git and every editor move
 /// the timestamp forward).
-String sourceFingerprint(File file) {
+String sourceFingerprint(File file, {bool strict = false}) {
   final stat = file.statSync();
-  if (strictSourceHashing || stat.size <= kSmallSourceBytes) {
+  if (strict || stat.size <= kSmallSourceBytes) {
     return contentHash(file.readAsBytesSync());
   }
   return '${stat.size}@${stat.modified.microsecondsSinceEpoch}';

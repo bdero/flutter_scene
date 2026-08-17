@@ -98,13 +98,15 @@ Future<void> _buildBaseShaderBundle({
     buildOutput.dependencies.add(file.uri);
   }
 
+  final options = HookOptions.of(buildInput);
   final stampBuffer = StringBuffer(
     'rev=$buildCacheRevision engine bundle=base '
     'target=${shaderBundleTargetKey(buildInput)}',
   );
   for (final file in sources) {
     stampBuffer.write(
-      ' ${file.uri.pathSegments.last}=${sourceFingerprint(file)}',
+      ' ${file.uri.pathSegments.last}='
+      '${sourceFingerprint(file, strict: options.strictHashing)}',
     );
   }
   final stamp = stampBuffer.toString();
@@ -112,6 +114,7 @@ Future<void> _buildBaseShaderBundle({
   final tree = GeneratedAssetTree.open(
     buildInput.packageRoot,
     buildInput.packageName,
+    options: options,
   )..requireAssetEntry();
   final outputUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,

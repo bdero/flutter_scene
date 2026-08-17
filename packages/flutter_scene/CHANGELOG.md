@@ -1,5 +1,12 @@
 ## 0.21.0
 
+* Assets are generated into `flutter_scene_generated/` at the app root and loaded by source path, the same way on every Flutter channel. `dart run flutter_scene:init` installs the hook, creates the directory with a `.gitignore` for its outputs, and adds the one pubspec assets entry it needs.
+* Breaking change, the app's `hook/build.dart` must call `buildEngineAssets`, which compiles the shaders and physical material bundle flutter_scene itself needs. Without it nothing renders. `dart run flutter_scene:init` writes the call for you.
+* Breaking change, `legacyOnly` is now `generatedTree` in `SceneAssetMode`, `TextureAssetMode`, `MaterialAssetMode`, and `TargetShaderBundleAssetMode`, it is the default everywhere, and it writes the generated tree instead of loose files under `build/`. The Dart data assets modes remain as explicit opt-ins and prune the tree entries they replace.
+* A build with no generated assets now fails with the exact pubspec lines to add instead of producing an app that dies at its first load.
+* `resolveShaderBundleKey` resolves a shader bundle built by `buildTargetShaderBundleJson` (or `flutter_gpu_shaders`) by name, for `loadShaderLibraryAsync`.
+* Build stamps fingerprint a source over a megabyte by size and modification time instead of reading it, cutting about 5 seconds per gigabyte off every build. Set `flutter_scene_strict_hashing: true` under `hooks: user_defines:` in the app pubspec to content-hash everything.
+* Switching asset modes needs a clean build. Nothing prunes assets from a previous mode out of an app bundle.
 * `Node.extractMeshData` flattens a subtree's geometry into one `MeshData` with the descendant transforms baked in, and `MeshData.toTriMeshShape`/`toConvexHullShape` turn that into a collider, so an imported model no longer needs a hand-written walk to collide.
 * `MeshData.transformed` places a snapshot by a matrix, carrying normals by the inverse transpose and, through a mirror, flipping both tangent handedness and triangle winding.
 * The lit shaders declare one prefiltered-radiance sampler instead of one per layout, freeing two fragment texture units so a skinned shadow-casting draw fits GLES drivers reporting the 16-unit minimum.

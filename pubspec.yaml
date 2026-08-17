@@ -22,3 +22,10 @@ workspace:
   - examples/stress_bench
   - examples/editor_example
   - apps/flutter_scene_editor_app
+
+# The smoke-render app has a data-assets lane (see examples/smoke_render/README.md).
+# User defines are read from the workspace root, so the switch lives here.
+# hooks:
+#   user_defines:
+#     smoke_render:
+#       data_assets: true

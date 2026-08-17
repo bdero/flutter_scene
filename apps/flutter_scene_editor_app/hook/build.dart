@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:data_assets/data_assets.dart';
+import 'package:flutter_scene/build_hooks.dart';
 import 'package:hooks/hooks.dart';
 
 /// Bakes the building SDK's identity and the flutter_scene version into an
@@ -13,6 +14,8 @@ import 'package:hooks/hooks.dart';
 /// `tool_manifest.json` (describes the bundled toolchain, packaged only).
 void main(List<String> args) {
   build(args, (input, output) async {
+    // The shaders and material bundle flutter_scene itself needs.
+    await buildEngineAssets(buildInput: input, buildOutput: output);
     if (!input.config.buildDataAssets) {
       return;
     }

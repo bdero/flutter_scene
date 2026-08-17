@@ -1,17 +1,35 @@
 # smoke_render
 
-A new Flutter project.
+A headless cross-backend smoke-render harness. It draws a set of deterministic
+scenes and asserts each one produced a sane frame (center coverage, clear
+corners), which is the cheapest way to catch "nothing drew", "unlit", or
+"wrong backend" regressions.
 
-## Getting Started
+Run one shard:
 
-This project is a starting point for a Flutter application.
+```sh
+flutter drive --driver=test_driver/integration_test.dart \
+  --target=integration_test/smoke_test.dart \
+  -d macos --enable-impeller --enable-flutter-gpu
+```
 
-A few resources to get you started if this is your first Flutter project:
+Every platform's recipe (Metal, GLES, Vulkan, WebGL2, Android, Windows) lives in
+the repo's `notes/ci/local_smoke_render_matrix.md`.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Asset modes
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+By default the build hook writes every generated asset into
+`flutter_scene_generated/`, which is what consumers get.
+
+To run the Dart data assets lane instead, uncomment the `hooks: user_defines:`
+block in the **workspace root** `pubspec.yaml` (user defines are read from the
+workspace root, not from a member package), then clear the hook cache so the
+change takes effect:
+
+```sh
+rm -rf ../../.dart_tool/hooks_runner/smoke_render .dart_tool/flutter_build build
+```
+
+The app's own materials and shader bundle then arrive as data assets, and the
+tree keeps only flutter_scene's engine assets. Clean the app bundle when
+switching either way, since nothing prunes assets from a previous mode.
