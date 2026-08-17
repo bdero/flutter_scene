@@ -23,6 +23,10 @@ final class GeneratedAssetSource {
 
   /// The asset key of [entry]'s output.
   String keyOf(GeneratedAssetEntry entry) => '$keyPrefix${entry.file}';
+
+  /// Whether this tree belongs to a dependency rather than the app. A package's
+  /// keys are prefixed `packages/<name>/`, which an app's own tree cannot be.
+  bool get isPackageOwned => keyPrefix.startsWith('packages/');
 }
 
 /// The generated manifests reachable from an asset bundle, resolved by source
@@ -57,6 +61,23 @@ final class GeneratedAssetIndex {
       for (final entry in source.manifest.ofFamily(family))
         (key: source.keyOf(entry), entry: entry),
   ];
+
+  /// The asset key for [family]/[id] from the first tree that has it, or null.
+  ///
+  /// Sources are ordered app tree first, so an app that builds flutter_scene's
+  /// engine shaders itself gets its own copy and the one in flutter_scene's
+  /// package directory is ignored. Only assets a package and the app can both
+  /// provide use this; everything else goes through [resolveKey], which reports
+  /// the ambiguity instead of picking.
+  String? resolveFirstKey(
+    GeneratedAssetFamily family,
+    String id, {
+    String? package,
+  }) {
+    final matches = lookup(family, id, package: package);
+    if (matches.isEmpty) return null;
+    return matches.first.source.keyOf(matches.first.entry);
+  }
 
   /// The single asset key for [family]/[id], or null when it is absent.
   /// Throws when more than one package provides it and [package] does not
@@ -132,7 +153,14 @@ Future<GeneratedAssetIndex> _load(AssetBundle bundle) async {
       // A manifest that cannot be read contributes nothing.
     }
   }
-  sources.sort((a, b) => a.keyPrefix.compareTo(b.keyPrefix));
+  // The app's own tree first, so it wins over a dependency's copy of the same
+  // asset; alphabetical within each group for a stable order.
+  sources.sort((a, b) {
+    final byOwner = (a.isPackageOwned ? 1 : 0).compareTo(
+      b.isPackageOwned ? 1 : 0,
+    );
+    return byOwner != 0 ? byOwner : a.keyPrefix.compareTo(b.keyPrefix);
+  });
   return GeneratedAssetIndex(sources);
 }
 

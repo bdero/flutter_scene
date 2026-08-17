@@ -120,12 +120,20 @@ final class FmatMaterialRegistry {
       // Evict so a hot reload re-reads a regenerated index.
       if (kDebugMode) assetBundle.evict(key);
       final json = jsonDecode(await assetBundle.loadString(key));
-      indexes.add(
-        FmatMaterialBundleIndex.fromJson(
-          (json as Map).cast<String, Object?>(),
-          assetKey: key,
-        ),
+      final index = FmatMaterialBundleIndex.fromJson(
+        (json as Map).cast<String, Object?>(),
+        assetKey: key,
       );
+      // The app's own tree comes first, so its copy of a bundle a dependency
+      // also ships (flutter_scene's physical materials) wins.
+      if (indexes.any(
+        (other) =>
+            other.package == index.package &&
+            other.bundleName == index.bundleName,
+      )) {
+        continue;
+      }
+      indexes.add(index);
     }
     return FmatMaterialRegistry._(assetBundle, indexes);
   }

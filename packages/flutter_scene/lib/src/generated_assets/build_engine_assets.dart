@@ -1,21 +1,28 @@
-/// Builds flutter_scene's own engine assets (the base shader bundle and the
-/// physical material bundle) into the app's generated tree.
+/// Builds flutter_scene's own engine assets, the base shader bundle and the
+/// physical material bundle.
 ///
-/// These are compiled outputs tied to the Flutter engine that built them, so
-/// flutter_scene cannot ship them prebuilt, and it cannot write them into its
-/// own directory either (that directory is published to pub.dev and shared
-/// across every project through the pub cache). The app's hook therefore builds
-/// them from flutter_scene's committed GLSL and `.fmat` sources into the app's
-/// own `flutter_scene_generated/`.
+/// flutter_scene's own `hook/build.dart` calls [buildOwnEngineAssets], so a
+/// consumer needs no hook of their own. It registers data assets where the
+/// toolchain has them, and otherwise writes into flutter_scene's own
+/// `flutter_scene_generated/`, which its pubspec lists. Every output is stamped
+/// with the identity of the engine that compiled it, because a shader bundle is
+/// only valid for that engine, so one pub cache shared by projects on different
+/// Flutter versions rebuilds on each switch instead of loading a bundle the
+/// engine cannot read.
+///
+/// [buildEngineAssets] is the app-side override: the same build, into the app's
+/// own tree, from the app's hook.
 library;
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
-import '../fmat/build_materials.dart' show buildBundledPhysicalMaterials;
+import '../fmat/build_materials.dart'
+    show MaterialAssetMode, buildBundledPhysicalMaterials;
 import '../fmat/target_shader_bundle.dart';
 import '../importer/build_cache.dart';
 import 'generated_assets.dart';
@@ -34,27 +41,51 @@ const String _baseBundleManifest = 'shaders/base.shaderbundle.json';
 /// ES 3.0.
 const int _glesLanguageVersion = 300;
 
-/// Builds the engine assets flutter_scene needs at runtime into the app's
-/// generated tree. Call this from the app's `hook/build.dart` (which
-/// `dart run flutter_scene:init` writes for you).
+/// Builds the engine's shaders from flutter_scene's own hook, into whichever
+/// place this toolchain can ship them from.
+Future<void> buildOwnEngineAssets({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+}) => _build(
+  buildInput: buildInput,
+  buildOutput: buildOutput,
+  // Data assets are the tidiest home when they exist: no writes into the
+  // package directory at all.
+  dataAssets: buildInput.config.buildDataAssets,
+);
+
+/// Builds the engine's shaders into the app's generated tree, from the app's
+/// `hook/build.dart` (which `dart run flutter_scene:init` writes for you).
 ///
-/// Without this, `Scene.initializeStaticResources` has no shaders to load and
-/// nothing renders.
+/// Optional. flutter_scene's own hook already builds them; this puts the
+/// outputs in the app's tree instead, which is what an app wants when it
+/// prefers to own every generated asset it ships.
 Future<void> buildEngineAssets({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
+}) =>
+    _build(buildInput: buildInput, buildOutput: buildOutput, dataAssets: false);
+
+Future<void> _build({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+  required bool dataAssets,
 }) async {
   final root = await _flutterSceneRoot();
   await _buildBaseShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
+    dataAssets: dataAssets,
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
     owner: _engineOwner,
+    assetMode: dataAssets
+        ? MaterialAssetMode.dataAssetsRequired
+        : MaterialAssetMode.generatedTree,
   );
 }
 
@@ -76,6 +107,7 @@ Future<void> _buildBaseShaderBundle({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
+  required bool dataAssets,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
   final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
@@ -100,8 +132,7 @@ Future<void> _buildBaseShaderBundle({
 
   final options = HookOptions.of(buildInput);
   final stampBuffer = StringBuffer(
-    'rev=$buildCacheRevision engine bundle=base '
-    'target=${shaderBundleTargetKey(buildInput)}',
+    await shaderBundleStamp(buildInput, 'engine bundle=base'),
   );
   for (final file in sources) {
     stampBuffer.write(
@@ -111,59 +142,74 @@ Future<void> _buildBaseShaderBundle({
   }
   final stamp = stampBuffer.toString();
 
-  final tree = GeneratedAssetTree.open(
-    buildInput.packageRoot,
-    buildInput.packageName,
-    options: options,
-  )..requireAssetEntry();
-  final outputUri = tree.fileUri(
-    GeneratedAssetFamily.shaderBundle,
-    nameId: 'base',
-    extension: '.shaderbundle',
-  );
-  if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
-    outputUri,
-  ])) {
-    tree
-      ..recordFile(
-        family: GeneratedAssetFamily.shaderBundle,
-        id: 'base',
-        uri: outputUri,
-        stamp: stamp,
-        owner: _engineOwner,
-      )
-      ..save();
-    return;
+  final assetMode = dataAssets
+      ? TargetShaderBundleAssetMode.dataAssetsRequired
+      : TargetShaderBundleAssetMode.generatedTree;
+  if (!dataAssets) {
+    final tree = GeneratedAssetTree.open(
+      buildInput.packageRoot,
+      buildInput.packageName,
+      options: options,
+    )..requireAssetEntry();
+    final outputUri = tree.fileUri(
+      GeneratedAssetFamily.shaderBundle,
+      nameId: 'base',
+      extension: '.shaderbundle',
+    );
+    if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
+      outputUri,
+    ])) {
+      tree
+        ..recordFile(
+          family: GeneratedAssetFamily.shaderBundle,
+          id: 'base',
+          uri: outputUri,
+          stamp: stamp,
+          owner: _engineOwner,
+        )
+        ..save();
+      return;
+    }
   }
 
   // The compiler resolves a manifest entry's `file` against its own working
-  // directory, which is the app's root, so rewrite flutter_scene's relative
-  // entries to absolute paths and compile that copy.
-  final manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
-      .cast<String, Object?>();
-  final rebased = <String, Object?>{
-    for (final MapEntry(:key, :value) in manifest.entries)
-      key: {
-        ...(value as Map).cast<String, Object?>(),
-        'file': sourceRoot
-            .resolve((value['file'] as String))
-            .toFilePath(windows: false),
-      },
-  };
-  final rebasedPath = 'build/flutter_scene_engine/base.shaderbundle.json';
-  final rebasedFile = File.fromUri(buildInput.packageRoot.resolve(rebasedPath));
-  rebasedFile.parent.createSync(recursive: true);
-  rebasedFile.writeAsStringSync(
-    const JsonEncoder.withIndent('  ').convert(rebased),
-  );
+  // directory, the building package's root. That is flutter_scene's own root
+  // for its own hook; an app's hook building these needs the entries rebased to
+  // absolute paths first.
+  var manifestPath = _baseBundleManifest;
+  if (buildInput.packageRoot != sourceRoot) {
+    final manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
+        .cast<String, Object?>();
+    final rebased = <String, Object?>{
+      for (final MapEntry(:key, :value) in manifest.entries)
+        key: {
+          ...(value as Map).cast<String, Object?>(),
+          'file': sourceRoot
+              .resolve((value['file'] as String))
+              .toFilePath(windows: false),
+        },
+    };
+    manifestPath = 'build/flutter_scene_engine/base.shaderbundle.json';
+    final rebasedFile = File.fromUri(
+      buildInput.packageRoot.resolve(manifestPath),
+    );
+    guardGeneratedWrite(rebasedFile.uri, () {
+      rebasedFile.parent.createSync(recursive: true);
+    });
+    writeGeneratedString(
+      rebasedFile.uri,
+      const JsonEncoder.withIndent('  ').convert(rebased),
+    );
+  }
 
   stdout.writeln('flutter_scene: compiling the engine shader bundle');
   await buildTargetShaderBundleJson(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    manifestFileName: rebasedPath,
+    manifestFileName: manifestPath,
     includeDirectories: [shaders],
     glesLanguageVersion: _glesLanguageVersion,
+    assetMode: assetMode,
     owner: _engineOwner,
     stamp: stamp,
   );

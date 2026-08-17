@@ -226,9 +226,7 @@ void buildScenes({
       if (!tree.isFresh(GeneratedAssetFamily.scene, sceneId, stamp, [
         copyUri,
       ])) {
-        File(
-          copyUri.toFilePath(),
-        ).writeAsBytesSync(sourceFile.readAsBytesSync());
+        writeGeneratedBytes(copyUri, sourceFile.readAsBytesSync());
         stdout.writeln('flutter_scene: copied $inputFilePath');
       }
       tree.recordFile(
@@ -343,9 +341,7 @@ void buildScenes({
                     .replaceAll('\\', '/')
                     .substring(0, documentDirEnd),
         );
-        File(
-          outputSceneUri.toFilePath(),
-        ).writeAsBytesSync(writeFsceneb(fsceneDocument));
+        writeGeneratedBytes(outputSceneUri, writeFsceneb(fsceneDocument));
       }
       if (tree == null) stampFile.writeAsStringSync(stamp);
     }

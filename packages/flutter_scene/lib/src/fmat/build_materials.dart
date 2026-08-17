@@ -303,9 +303,11 @@ Future<void> _buildMaterials({
   // error always forces a rebuild (the marker must clear once the source is
   // fixed). Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always compile.
   final stampBuffer = StringBuffer(
-    'rev=$buildCacheRevision fmat package=$assetOwner '
-    'bundle=$bundleName shadows=$generateShadowVariants '
-    'target=${shaderBundleTargetKey(buildInput)}',
+    await shaderBundleStamp(
+      buildInput,
+      'fmat package=$assetOwner bundle=$bundleName '
+      'shadows=$generateShadowVariants',
+    ),
   );
   for (final materialPath in materialPaths) {
     final hash = sourceFingerprint(
@@ -474,10 +476,11 @@ Future<void> _buildMaterials({
 
     // Publish the freshly compiled bundle into the tree that ships it.
     if (tree != null) {
-      shippedBundleFile.writeAsBytesSync(bundleFile.readAsBytesSync());
+      writeGeneratedBytes(shippedBundleFile.uri, bundleFile.readAsBytesSync());
     }
     // Write the combined parameter sidecar next to the produced bundle.
-    sidecarFile.writeAsStringSync(
+    writeGeneratedString(
+      sidecarFile.uri,
       const JsonEncoder.withIndent('  ').convert(sidecars),
     );
     if (tree == null) stampFile.writeAsStringSync(stamp);
@@ -510,7 +513,8 @@ Future<void> _buildMaterials({
       // failed reloads do not churn the file's timestamp.
       if (lastGood['#compile_error'] != '$error') {
         lastGood['#compile_error'] = '$error';
-        sidecarFile.writeAsStringSync(
+        writeGeneratedString(
+          sidecarFile.uri,
           const JsonEncoder.withIndent('  ').convert(lastGood),
         );
       }
@@ -652,7 +656,8 @@ void _registerOutputs({
           key: {'entryName': key, 'source': materialSources[key]},
       },
     };
-    indexFile.writeAsStringSync(
+    writeGeneratedString(
+      indexFile.uri,
       const JsonEncoder.withIndent('  ').convert(index),
     );
   }

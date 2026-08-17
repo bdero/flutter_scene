@@ -5,12 +5,7 @@ import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
-/// The bundle's key when a package listed it as a plain pubspec asset. Kept as a
-/// last resort so an app with no asset manifest still resolves something.
-const String _kBaseShaderBundlePath =
-    'packages/flutter_scene/build/shaderbundles/base.shaderbundle';
-
-/// The key `buildEngineAssets` registers when the app opted into Dart data
+/// The key flutter_scene's own hook registers when the toolchain has Dart data
 /// assets. Follows `flutter_gpu_shaders`' data-asset naming; a test guards the
 /// two against drifting apart.
 const String _kBaseShaderBundleDataAssetPath =
@@ -42,10 +37,11 @@ gpu.ShaderLibrary get baseShaderLibrary {
   return cached;
 }
 
-/// Resolves the asset key the base shader bundle shipped under: a data-asset
-/// registration when the app opted into one, then the app's generated tree.
+/// Resolves the asset key the base shader bundle shipped under: the data asset
+/// when the toolchain registered one, then the app's own generated tree, then
+/// flutter_scene's, which its own hook always fills.
 @visibleForTesting
-Future<String> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
+Future<String?> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
   try {
     final manifest = await AssetManifest.loadFromAssetBundle(
       bundle ?? rootBundle,
@@ -54,14 +50,13 @@ Future<String> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
       return _kBaseShaderBundleDataAssetPath;
     }
   } catch (_) {
-    // Fall through to the generated tree, then to the pubspec-asset key.
+    // Nothing to scan; the generated trees below are the only source.
   }
-  final generated = (await loadGeneratedAssetIndex(bundle)).resolveKey(
+  return (await loadGeneratedAssetIndex(bundle)).resolveFirstKey(
     GeneratedAssetFamily.shaderBundle,
     'base',
     package: 'flutter_scene',
   );
-  return generated ?? _kBaseShaderBundlePath;
 }
 
 /// Asynchronously loads and caches the base shader bundle. Idempotent.
@@ -74,6 +69,9 @@ Future<void> loadBaseShaderLibrary() async {
     return;
   }
   final key = await resolveBaseShaderBundleKey();
+  if (key == null) {
+    throw Exception(baseShaderBundleMissingMessage);
+  }
   final lib = await gpu.loadShaderLibraryAsync(key);
   if (lib == null) {
     throw Exception(baseShaderBundleLoadFailureMessage(key));
@@ -81,9 +79,18 @@ Future<void> loadBaseShaderLibrary() async {
   _baseShaderLibrary = lib;
 }
 
+/// Nothing built the bundle at all, which means flutter_scene's own build hook
+/// did not run.
+@visibleForTesting
+const String baseShaderBundleMissingMessage =
+    'The engine shader bundle is missing. flutter_scene\'s build hook compiles '
+    'it during the build, so this is a build that ran without hooks. Rebuild '
+    'with a Flutter version that runs package build hooks, and clean the build '
+    'directory if the app was built before.';
+
 @visibleForTesting
 String baseShaderBundleLoadFailureMessage(String key) =>
-    'Failed to load the engine shader bundle ($key). The app\'s '
-    'hook/build.dart must call buildEngineAssets, which compiles it into '
-    '$generatedAssetsEntry. Run `dart run flutter_scene:init` in the app to '
-    'install the hook and list that directory, then rebuild.';
+    'Failed to load the engine shader bundle ($key). It is compiled for the '
+    'engine that built the app, so rebuild after changing Flutter versions. '
+    'A clean build ($generatedAssetsEntry and the app bundle) resolves a stale '
+    'copy.';
