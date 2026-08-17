@@ -7,7 +7,8 @@ Future<void> main(List<String> args) async {
     stdout.writeln('Usage: dart run flutter_scene:init');
     stdout.writeln('');
     stdout.writeln(
-      'Installs a hook/build.dart that builds .fmat materials with DataAssets.',
+      'Sets this project up for flutter_scene: installs hook/build.dart, '
+      'creates flutter_scene_generated/, and lists it in pubspec.yaml.',
     );
     stdout.writeln('');
     stdout.writeln(manualInstallInstructions);
@@ -19,21 +20,15 @@ Future<void> main(List<String> args) async {
       ? stderr
       : stdout;
   sink.writeln(result.message);
-  if (result.status != InitHookStatus.needsManualInstall) {
-    stdout.writeln('');
-    stdout.writeln(
-      'DataAssets are experimental. On supported Flutter master builds, run:',
-    );
-    stdout.writeln('');
-    stdout.writeln('  flutter config --enable-dart-data-assets');
-    stdout.writeln('');
-    stdout.writeln(
-      'The hook imports .glb models (under assets/) and .fmat materials (under '
-      'materials/) as DataAssets. Load them by source path with loadModel / '
-      'loadFmatMaterial and render with SceneView; edits hot reload in place.',
-    );
-  }
   if (result.status == InitHookStatus.needsManualInstall) {
     exitCode = 1;
+    return;
   }
+  stdout.writeln('');
+  stdout.writeln(
+    'The hook converts .glb and .fscene models, .fmat materials, and loose '
+    'images under assets/ at build time. Load them by source path with '
+    'loadScene / loadFmatMaterial / loadTexture, render with SceneView, and '
+    'edits hot reload in place.',
+  );
 }
