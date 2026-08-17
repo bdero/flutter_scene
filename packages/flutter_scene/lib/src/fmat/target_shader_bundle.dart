@@ -25,10 +25,6 @@ enum TargetShaderBundleAssetMode {
   /// default, and identical on every Flutter channel.
   generatedTree,
 
-  /// Register the bundle as a Dart data asset when the current toolchain
-  /// supports them, and otherwise fall back to [generatedTree].
-  dataAssetsIfAvailable,
-
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
@@ -66,7 +62,7 @@ Future<void> buildTargetShaderBundleJson({
 }) async {
   final emitDataAssets =
       buildInput.config.buildDataAssets &&
-      assetMode != TargetShaderBundleAssetMode.generatedTree;
+      assetMode == TargetShaderBundleAssetMode.dataAssetsRequired;
   final result = await buildShaderBundleJson(
     buildInput: buildInput,
     buildOutput: buildOutput,
@@ -75,8 +71,6 @@ Future<void> buildTargetShaderBundleJson({
     assetMode: switch (assetMode) {
       TargetShaderBundleAssetMode.generatedTree =>
         ShaderBundleAssetMode.legacyOnly,
-      TargetShaderBundleAssetMode.dataAssetsIfAvailable =>
-        ShaderBundleAssetMode.dataAssetsIfAvailable,
       TargetShaderBundleAssetMode.dataAssetsRequired =>
         ShaderBundleAssetMode.dataAssetsRequired,
     },

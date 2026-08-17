@@ -20,14 +20,13 @@ enum TextureAssetMode {
   /// source path. The default, and identical on every Flutter channel.
   generatedTree,
 
-  /// Register generated `.fstex` files as Dart data assets when the current
-  /// toolchain supports them, and otherwise fall back to [generatedTree].
-  dataAssetsIfAvailable,
-
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
 }
+
+// Where a data-asset build stages its files before registering them.
+const String _dataAssetStagingDirectory = 'build/textures/';
 
 const String _dataAssetsUnavailableMessage =
     'flutter_scene: TextureAssetMode.dataAssetsRequired needs Flutter support '
@@ -51,8 +50,9 @@ String textureDataAssetName(String relativeTexturePath) =>
 ///
 /// Each path in [textures] (relative to the package root, any format
 /// `package:image` decodes) is encoded as a supercompressed block payload with
-/// a full mip chain, written under [outputDirectory] with its extension
-/// swapped to `.fstex`, and (in a DataAssets mode) registered as a DataAsset.
+/// a full mip chain, written into the app's `flutter_scene_generated/`
+/// directory with its extension swapped to `.fstex`, or registered as a
+/// DataAsset under [TextureAssetMode.dataAssetsRequired].
 /// At load time the payload transcodes to the device's supported block format
 /// or decodes to rgba8 where none is supported.
 ///
@@ -87,7 +87,6 @@ void buildTextures({
   required BuildOutputBuilder buildOutput,
   required List<String> textures,
   Map<String, TextureContent> contents = const {},
-  String outputDirectory = 'build/textures/',
   TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
 }) {
@@ -103,17 +102,14 @@ void buildTextures({
     );
   }
 
-  final dataAssetsAvailable = buildInput.config.buildDataAssets;
-  if (assetMode == TextureAssetMode.dataAssetsRequired &&
-      !dataAssetsAvailable) {
+  final emitDataAssets = assetMode == TextureAssetMode.dataAssetsRequired;
+  if (emitDataAssets && !buildInput.config.buildDataAssets) {
     throw UnsupportedError(_dataAssetsUnavailableMessage);
   }
-  final emitDataAssets =
-      assetMode != TextureAssetMode.generatedTree && dataAssetsAvailable;
 
   final options = HookOptions.of(buildInput);
   final packageRoot = buildInput.packageRoot;
-  final texturesRoot = packageRoot.resolve(outputDirectory);
+  final texturesRoot = packageRoot.resolve(_dataAssetStagingDirectory);
 
   if (emitDataAssets) {
     // A tree left by an earlier build would ship the same textures twice, so
