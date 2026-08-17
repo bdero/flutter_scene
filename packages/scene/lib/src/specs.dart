@@ -709,6 +709,21 @@ class EnvironmentEffectsSpec {
     this.screenSpaceReflectionsBlur = 0.3,
     this.screenSpaceReflectionsDistanceFadeStart = 0.0,
     this.screenSpaceReflectionsResolutionScale = 1.0,
+    this.globalIlluminationEnabled = false,
+    this.globalIlluminationVolumeMode = 'followCamera',
+    Vector3? globalIlluminationResolution,
+    Vector3? globalIlluminationExtents,
+    this.globalIlluminationIntensity = 1.0,
+    this.globalIlluminationHysteresis = 0.95,
+    this.globalIlluminationShadowBias = 0.3,
+    this.globalIlluminationVisibility = 0.7,
+    this.globalIlluminationVisibilityBias = 0.08,
+    this.globalIlluminationProbeUpdateBudget = 0,
+    this.globalIlluminationInjectionResolution = 'eighth',
+    this.globalIlluminationFireflyClamp = 8.0,
+    this.globalIlluminationEmissiveBoost = 1.0,
+    this.globalIlluminationUpdateWhenIdleOnly = false,
+    this.globalIlluminationBakeOnly = false,
     this.fogEnabled = false,
     this.fogMode = 'exponential',
     Vector3? fogColor,
@@ -752,6 +767,10 @@ class EnvironmentEffectsSpec {
   }) : lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),
        gain = gain ?? Vector3.all(1.0),
+       globalIlluminationResolution =
+           globalIlluminationResolution ?? Vector3(16, 8, 16),
+       globalIlluminationExtents =
+           globalIlluminationExtents ?? Vector3(20, 10, 20),
        fogColor = fogColor ?? Vector3(0.6, 0.7, 0.8),
        godRaysColor = godRaysColor ?? Vector3.all(1.0);
 
@@ -824,6 +843,26 @@ class EnvironmentEffectsSpec {
             other.screenSpaceReflectionsDistanceFadeStart,
         screenSpaceReflectionsResolutionScale:
             other.screenSpaceReflectionsResolutionScale,
+        globalIlluminationEnabled: other.globalIlluminationEnabled,
+        globalIlluminationVolumeMode: other.globalIlluminationVolumeMode,
+        globalIlluminationResolution: other.globalIlluminationResolution
+            .clone(),
+        globalIlluminationExtents: other.globalIlluminationExtents.clone(),
+        globalIlluminationIntensity: other.globalIlluminationIntensity,
+        globalIlluminationHysteresis: other.globalIlluminationHysteresis,
+        globalIlluminationShadowBias: other.globalIlluminationShadowBias,
+        globalIlluminationVisibility: other.globalIlluminationVisibility,
+        globalIlluminationVisibilityBias:
+            other.globalIlluminationVisibilityBias,
+        globalIlluminationProbeUpdateBudget:
+            other.globalIlluminationProbeUpdateBudget,
+        globalIlluminationInjectionResolution:
+            other.globalIlluminationInjectionResolution,
+        globalIlluminationFireflyClamp: other.globalIlluminationFireflyClamp,
+        globalIlluminationEmissiveBoost: other.globalIlluminationEmissiveBoost,
+        globalIlluminationUpdateWhenIdleOnly:
+            other.globalIlluminationUpdateWhenIdleOnly,
+        globalIlluminationBakeOnly: other.globalIlluminationBakeOnly,
         fogEnabled: other.fogEnabled,
         fogMode: other.fogMode,
         fogColor: other.fogColor.clone(),
@@ -937,6 +976,24 @@ class EnvironmentEffectsSpec {
   double screenSpaceReflectionsResolutionScale;
   bool fogEnabled;
   String fogMode;
+
+  /// World-space global illumination. See `GlobalIlluminationSettings`.
+  bool globalIlluminationEnabled;
+  String globalIlluminationVolumeMode;
+  Vector3 globalIlluminationResolution;
+  Vector3 globalIlluminationExtents;
+  double globalIlluminationIntensity;
+  double globalIlluminationHysteresis;
+  double globalIlluminationShadowBias;
+  double globalIlluminationVisibility;
+  double globalIlluminationVisibilityBias;
+  int globalIlluminationProbeUpdateBudget;
+  String globalIlluminationInjectionResolution;
+  double globalIlluminationFireflyClamp;
+  double globalIlluminationEmissiveBoost;
+  bool globalIlluminationUpdateWhenIdleOnly;
+  bool globalIlluminationBakeOnly;
+
   Vector3 fogColor;
   double fogSkyColorInfluence;
   double fogDensity;

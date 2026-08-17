@@ -391,4 +391,55 @@ void main() {
       );
     });
   });
+
+  test('global illumination settings survive the document round trip', () {
+    final document = _envDocument((environment) {
+      environment.effects = EnvironmentEffectsSpec(
+        globalIlluminationEnabled: true,
+        globalIlluminationVolumeMode: 'fitScene',
+        globalIlluminationResolution: Vector3(12, 6, 12),
+        globalIlluminationExtents: Vector3(30, 12, 30),
+        globalIlluminationIntensity: 1.5,
+        globalIlluminationHysteresis: 0.88,
+        globalIlluminationShadowBias: 0.42,
+        globalIlluminationVisibility: 0.25,
+        globalIlluminationVisibilityBias: 0.11,
+        globalIlluminationProbeUpdateBudget: 256,
+        globalIlluminationInjectionResolution: 'quarter',
+        globalIlluminationFireflyClamp: 4.0,
+        globalIlluminationEmissiveBoost: 2.5,
+        globalIlluminationUpdateWhenIdleOnly: true,
+        globalIlluminationBakeOnly: true,
+      );
+    });
+
+    final decoded = decodeDocument(encodeDocument(document));
+    final effects =
+        (decoded.resources[decoded.stage.environmentRef!]!
+                as EnvironmentResource)
+            .effects;
+    expect(effects.globalIlluminationEnabled, isTrue);
+    expect(effects.globalIlluminationVolumeMode, 'fitScene');
+    expect(effects.globalIlluminationResolution, Vector3(12, 6, 12));
+    expect(effects.globalIlluminationExtents, Vector3(30, 12, 30));
+    expect(effects.globalIlluminationIntensity, 1.5);
+    expect(effects.globalIlluminationHysteresis, 0.88);
+    expect(effects.globalIlluminationShadowBias, 0.42);
+    expect(effects.globalIlluminationVisibility, 0.25);
+    expect(effects.globalIlluminationVisibilityBias, 0.11);
+    expect(effects.globalIlluminationProbeUpdateBudget, 256);
+    expect(effects.globalIlluminationInjectionResolution, 'quarter');
+    expect(effects.globalIlluminationFireflyClamp, 4.0);
+    expect(effects.globalIlluminationEmissiveBoost, 2.5);
+    expect(effects.globalIlluminationUpdateWhenIdleOnly, isTrue);
+    expect(effects.globalIlluminationBakeOnly, isTrue);
+  });
+
+  test('a document with default global illumination writes no section', () {
+    final document = _envDocument((environment) {
+      environment.effects = EnvironmentEffectsSpec();
+    });
+    final json = encodeDocument(document);
+    expect(json.toString().contains('globalIllumination'), isFalse);
+  });
 }
