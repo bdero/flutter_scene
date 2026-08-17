@@ -198,6 +198,7 @@ Future<void> _buildBaseShaderBundle({
       (jsonDecode(manifestFile.readAsStringSync()) as Map)
           .cast<String, Object?>(),
       sourceRoot,
+      packageRoot: buildInput.packageRoot,
     );
     manifestPath = 'build/flutter_scene_engine/base.shaderbundle.json';
     final rebasedFile = File.fromUri(
@@ -227,19 +228,47 @@ Future<void> _buildBaseShaderBundle({
   );
 }
 
-/// Rewrites a shader-bundle manifest's `file` entries to absolute paths under
-/// [sourceRoot], for a hook whose working directory is a different package.
+/// Rewrites a shader-bundle manifest's `file` entries so they resolve from
+/// [packageRoot], for a hook whose working directory is a different package
+/// from the [sourceRoot] holding the sources.
 ///
-/// The paths stay in the host's own convention, since the compiler opens them.
-/// Forcing posix separators yields `/C:/...` on Windows, which no Windows tool
-/// can open.
+/// Entries stay relative, because they have two consumers that want opposite
+/// things from an absolute path. The compiler opens the value as a path, so it
+/// would need the host's own separators, while `collectShaderBundleDependencies`
+/// feeds it to `Uri.resolve`, where a Windows path's drive letter parses as a
+/// scheme. A relative path with posix separators is correct for both on every
+/// platform. Falls back to a file URI when no relative path exists, which on
+/// Windows means the two roots are on different drives.
 Map<String, Object?> rebaseShaderBundleManifest(
   Map<String, Object?> manifest,
-  Uri sourceRoot,
-) => <String, Object?>{
+  Uri sourceRoot, {
+  required Uri packageRoot,
+}) => <String, Object?>{
   for (final MapEntry(:key, :value) in manifest.entries)
     key: {
       ...(value as Map).cast<String, Object?>(),
-      'file': sourceRoot.resolve(value['file'] as String).toFilePath(),
+      'file': _relativeFile(
+        sourceRoot.resolve(value['file'] as String),
+        packageRoot,
+      ),
     },
 };
+
+String _relativeFile(Uri file, Uri from) {
+  final target = file.pathSegments;
+  final base = from.pathSegments.where((s) => s.isNotEmpty).toList();
+  if (file.scheme != from.scheme) return file.toString();
+  var common = 0;
+  while (common < base.length &&
+      common < target.length - 1 &&
+      base[common] == target[common]) {
+    common++;
+  }
+  // Nothing shared past the root means no usable relative path (on Windows,
+  // different drives), so hand back a URI both consumers can still read.
+  if (common == 0) return file.toString();
+  return [
+    ...List.filled(base.length - common, '..'),
+    ...target.sublist(common),
+  ].join('/');
+}
