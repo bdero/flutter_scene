@@ -19,32 +19,14 @@
 #include <lightmap.glsl>
 #endif
 
-// Evaluates the L2 diffuse-irradiance SH polynomial in direction `n`.
-// The coefficients already include the cosine convolution and 1/pi, so
-// the result is E(n)/pi. Must use the same real-SH basis the CPU-side
-// projection in EnvironmentMap.computeDiffuseSphericalHarmonics uses.
-// Fetches SH coefficient i (0..8) from the coefficient texture's row `v`.
-vec3 DiffuseShCoefficient(sampler2D coefficients, float i, float v) {
-  return texture(coefficients, vec2((i + 0.5) / 9.0, v)).xyz;
-}
-
-// `row` selects the environment in the composite coefficient texture (0
-// primary, 1 secondary). A 9x1 single-environment texture reads the same
-// row either way.
-vec3 EvaluateDiffuseSH(sampler2D coefficients, vec3 n, float row) {
-  float v = (row + 0.5) / 2.0;
-  return DiffuseShCoefficient(coefficients, 0.0, v) * 0.282095 +
-         DiffuseShCoefficient(coefficients, 1.0, v) * (0.488603 * n.y) +
-         DiffuseShCoefficient(coefficients, 2.0, v) * (0.488603 * n.z) +
-         DiffuseShCoefficient(coefficients, 3.0, v) * (0.488603 * n.x) +
-         DiffuseShCoefficient(coefficients, 4.0, v) * (1.092548 * n.x * n.y) +
-         DiffuseShCoefficient(coefficients, 5.0, v) * (1.092548 * n.y * n.z) +
-         DiffuseShCoefficient(coefficients, 6.0, v) *
-             (0.315392 * (3.0 * n.z * n.z - 1.0)) +
-         DiffuseShCoefficient(coefficients, 7.0, v) * (1.092548 * n.x * n.z) +
-         DiffuseShCoefficient(coefficients, 8.0, v) *
-             (0.546274 * (n.x * n.x - n.y * n.y));
-}
+// Diffuse-irradiance spherical harmonics, fetched from rows 0 and 1 of the
+// irradiance_field texture.
+#include <diffuse_sh.glsl>
+#ifndef FLUTTER_SCENE_LIGHTMAP
+// The world-space irradiance field's atlas addressing and its receiver.
+#include <irradiance_field.glsl>
+#include <irradiance_receiver.glsl>
+#endif
 
 #include <material_shadow_sampling.glsl>
 
@@ -474,11 +456,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 transmitted_irradiance = irradiance;
 #endif
 #else
-  vec3 irradiance = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 0.0),
+  vec3 irradiance = max(EvaluateDiffuseSH(irradiance_field, env_normal, 0),
                         vec3(0.0));
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   vec3 transmitted_irradiance = max(
-      EvaluateDiffuseSH(sh_coefficients, -env_normal, 0.0), vec3(0.0));
+      EvaluateDiffuseSH(irradiance_field, -env_normal, 0), vec3(0.0));
 #endif
 #endif
   vec3 prefiltered_color =
@@ -489,7 +471,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float env_blend = frag_info.radiance_blend.x;
   if (env_blend > 0.0) {
 #ifndef FLUTTER_SCENE_LIGHTMAP
-    vec3 irradiance_b = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 1.0),
+    vec3 irradiance_b = max(EvaluateDiffuseSH(irradiance_field, env_normal, 1),
                             vec3(0.0));
 #endif
     // env_reflection is box-corrected for the primary probe; the secondary
@@ -506,7 +488,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     irradiance = mix(irradiance, irradiance_b, env_blend);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     vec3 transmitted_irradiance_b = max(
-        EvaluateDiffuseSH(sh_coefficients, -env_normal, 1.0), vec3(0.0));
+        EvaluateDiffuseSH(irradiance_field, -env_normal, 1), vec3(0.0));
     transmitted_irradiance = mix(
         transmitted_irradiance, transmitted_irradiance_b, env_blend);
 #endif
@@ -522,6 +504,32 @@ vec4 EvaluateLighting(MaterialInputs material) {
 #endif
 #endif
   prefiltered_color *= frag_info.environment_intensity;
+
+#ifndef FLUTTER_SCENE_LIGHTMAP
+  // The world-space irradiance field replaces the environment's diffuse term
+  // inside its volume, so bounce light persists for surfaces off screen and
+  // colored bleed reads correctly, and fades back to it across the outermost
+  // cell. The field's own empty content is the environment, so an unfilled
+  // field is exactly the image above and the transition is continuous.
+  //
+  // The lookup direction is the camera-invariant shading normal, never the
+  // screen-derived bent normal: the visibility select is a hard boundary, so
+  // a camera-dependent normal makes it flicker like z-fighting. The field's
+  // stored radiance already carries the environment intensity, so it is not
+  // scaled again here.
+  float gi_coverage = IrradianceFieldCoverage(v_position);
+  if (gi_coverage > 0.0) {
+    vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
+    irradiance = mix(irradiance, gi, gi_coverage);
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+    // TODO(gi-transmission): the transmitted direction repeats the whole
+    // eight-tap cage. The weights only depend on the normal through the wrap
+    // term, so one pass could return both lobes.
+    vec3 gi_back = SampleIrradianceField(v_position, -normal, camera_normal);
+    transmitted_irradiance = mix(transmitted_irradiance, gi_back, gi_coverage);
+#endif
+  }
+#endif
 
   // Split-sum DFG terms (Karis '13) from the RGBA16F environment-BRDF LUT
   // (scale in R, bias in G), indexed by (n_dot_v, roughness) with roughness up

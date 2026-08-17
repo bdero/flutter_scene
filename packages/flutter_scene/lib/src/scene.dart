@@ -12,11 +12,13 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart'
     show Frustum, Matrix3, Matrix4, Plane, Ray, Vector3;
 import 'ambient_occlusion.dart';
+import 'global_illumination.dart';
 import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
+import 'components/irradiance_volume_component.dart';
 import 'components/planar_reflector_component.dart';
 import 'components/reflection_probe_component.dart';
 import 'fog.dart';
@@ -46,6 +48,8 @@ import 'render/sky_bake.dart'
         cubeFaceOverscan;
 import 'render/smaa_pass.dart';
 import 'render/post_effect_pass.dart';
+import 'render/irradiance_field.dart';
+import 'render/irradiance_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
 import 'render/render_scene.dart';
@@ -1084,6 +1088,21 @@ base class Scene implements SceneGraph {
   final ScreenSpaceReflectionsSettings screenSpaceReflections =
       ScreenSpaceReflectionsSettings();
 
+  /// World-space global illumination settings. Off by default; set
+  /// [GlobalIlluminationSettings.enabled] to turn the irradiance field on.
+  /// Requires a [PerspectiveCamera] (the injection scatter reconstructs world
+  /// positions from the camera's perspective depth); it is skipped for other
+  /// camera types, and it forces the depth prepass with normals on.
+  final GlobalIlluminationSettings globalIllumination =
+      GlobalIlluminationSettings();
+
+  final IrradianceFieldState _irradianceField = IrradianceFieldState();
+
+  /// Discards the accumulated irradiance field so it refills from scratch,
+  /// for a hard camera cut or a wholesale lighting change that should not
+  /// converge in over the hysteresis tail.
+  void invalidateGlobalIllumination() => _irradianceField.invalidate();
+
   /// Distance fog. Off by default; set [Fog.enabled] and a [Fog.mode] to turn it
   /// on. Applied per-fragment by every material in linear HDR before tone
   /// mapping, so it works on any camera type.
@@ -2097,6 +2116,13 @@ base class Scene implements SceneGraph {
     final wantIndirectLight =
         !captureLinearColor &&
         ambientOcclusionCarriesIndirectLight(ambientOcclusion);
+    // The irradiance field scatters from the depth prepass' normals and from
+    // the previous frame's lit color, so it forces both on.
+    final wantIrradianceField =
+        !captureLinearColor &&
+        perspectiveCamera != null &&
+        globalIllumination.enabled;
+    final wantSceneColorHistory = wantIndirectLight || wantIrradianceField;
     // The occlusion texture's channels carry radiance while indirect light
     // is on, so the contact-shadow term has nowhere to ride.
     // TODO(sampler-budget): lift this exclusivity with a dedicated sampler
@@ -2110,9 +2136,11 @@ base class Scene implements SceneGraph {
         bindSceneDepth ||
         wantCustomNormals ||
         wantSsr ||
+        wantIrradianceField ||
         ambientOcclusion.enabled ||
         wantContactShadows ||
         wantCustomDepth;
+    IrradianceFieldBinding? irradianceBinding;
     if (perspectiveCamera != null) {
       // The occlusion chain also carries the sun contact-shadow term, so it
       // runs (with occlusion sampling zeroed) when only contact shadows ask
@@ -2144,7 +2172,7 @@ base class Scene implements SceneGraph {
             cameraForward: cameraForward,
             farDepth: perspectiveCamera.far,
             layerMask: view.layerMask,
-            writeNormals: wantSsr || wantCustomNormals,
+            writeNormals: wantSsr || wantCustomNormals || wantIrradianceField,
             // Depth of field patches translucent surfaces into the linear
             // depth later; the patch depth-tests against this attachment.
             // Storing it (a non-transient attachment plus store bandwidth)
@@ -2215,6 +2243,18 @@ base class Scene implements SceneGraph {
           SsaoBlurPass(dimensions: pixelSize, settings: ambientOcclusion),
         );
       }
+      if (wantIrradianceField) {
+        irradianceBinding = _addIrradianceFieldPasses(
+          graph: graph,
+          camera: camera,
+          pixelSize: pixelSize,
+          cameraForward: cameraForward,
+          cameraRight: cameraRight,
+          cameraUp: cameraUp,
+          perspectiveCamera: perspectiveCamera,
+          environmentMap: environmentMap,
+        );
+      }
     }
     graph.addPass(
       ScenePass(
@@ -2247,6 +2287,7 @@ base class Scene implements SceneGraph {
         ssaoBentNormals: ambientOcclusionCarriesBentNormals(ambientOcclusion),
         ssaoContactShadows: wantContactShadows && perspectiveCamera != null,
         ssaoIndirectLight: wantIndirectLight && perspectiveCamera != null,
+        irradianceField: irradianceBinding,
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,
@@ -2257,7 +2298,7 @@ base class Scene implements SceneGraph {
         includeOffscreen: _warmUpIncludeOffscreen,
       ),
     );
-    if (wantIndirectLight) {
+    if (wantSceneColorHistory) {
       graph.addPass(
         SceneColorHistoryPass(
           current: _ssgiHistoryColor,
@@ -2555,6 +2596,176 @@ base class Scene implements SceneGraph {
       texturePool: pool,
       observer: capturer,
     );
+  }
+
+  // Places the irradiance volume for this frame, adds the scatter, blend, and
+  // filter passes, and returns what the lit draws bind. Returns null when the
+  // field could not be built (no atlas yet, or no scene color to scatter).
+  IrradianceFieldBinding? _addIrradianceFieldPasses({
+    required RenderGraph graph,
+    required Camera camera,
+    required ui.Size pixelSize,
+    required Vector3 cameraForward,
+    required Vector3 cameraRight,
+    required Vector3 cameraUp,
+    required PerspectiveProjection perspectiveCamera,
+    required EnvironmentMap environmentMap,
+  }) {
+    final settings = globalIllumination;
+    final (center, extents) = _planIrradianceVolume(settings, camera);
+    if (!_irradianceField.update(
+      settings: settings,
+      center: center,
+      extents: extents,
+    )) {
+      return null;
+    }
+
+    // An inspect-style viewer can hold the field static while the camera
+    // moves and let it resume once the camera rests, which is near-lossless
+    // there and takes the whole per-frame cost to zero.
+    final cameraMoved =
+        _irradianceCameraPosition == null ||
+        (_irradianceCameraPosition! - camera.position).length2 > 1e-8 ||
+        (_irradianceCameraForward! - cameraForward).length2 > 1e-10;
+    _irradianceCameraPosition = camera.position.clone();
+    _irradianceCameraForward = cameraForward.clone();
+    final solve =
+        !settings.bakeOnly && !(settings.updateWhenIdleOnly && cameraMoved);
+
+    if (solve) {
+      final shStrip = _crossfadeEnvironment == null || _crossfadeBlend <= 0.0
+          ? environmentMap.diffuseShTexture
+          : null;
+      graph.addPass(
+        IrradianceInjectPass(
+          state: _irradianceField,
+          settings: settings,
+          dimensions: pixelSize,
+          cameraPosition: camera.position,
+          cameraRight: cameraRight,
+          cameraUp: cameraUp,
+          cameraForward: cameraForward,
+          tanHalfFovX:
+              math.tan(perspectiveCamera.fovRadiansY * 0.5) *
+              (pixelSize.height <= 0
+                  ? 1.0
+                  : pixelSize.width / pixelSize.height),
+          tanHalfFovY: math.tan(perspectiveCamera.fovRadiansY * 0.5),
+          far: perspectiveCamera.far,
+          sceneRadiance: _ssgiHistoryColor,
+        ),
+      );
+      graph.addPass(
+        IrradianceBlendPass(
+          state: _irradianceField,
+          settings: settings,
+          // The blend's fallback content is the environment, so a cross-fade
+          // needs the composited pair. The scene pass builds that composite,
+          // which runs later, so a cross-fading frame falls back to the
+          // primary until it settles.
+          // TODO(gi-crossfade): hoist the coefficient composite ahead of the
+          // field so a cross-fade feeds the fallback exactly.
+          shStrip: shStrip ?? environmentMap.diffuseShTexture,
+          environmentTransform: environmentTransform,
+          environmentBlend: 0.0,
+          environmentIntensity: environmentIntensity,
+        ),
+      );
+      graph.addPass(
+        IrradianceFilterPass(
+          state: _irradianceField,
+          settings: settings,
+          shStrip: shStrip ?? environmentMap.diffuseShTexture,
+        ),
+      );
+    }
+
+    final atlas = _irradianceField.sampledAtlas;
+    if (atlas == null) return null;
+    return IrradianceFieldBinding(
+      atlas: atlas,
+      layout: _irradianceField.layout!,
+      placement: _irradianceField.placement!,
+      intensity: settings.intensity,
+      shadowBias: settings.shadowBias,
+      visibility: settings.visibility.clamp(0.0, 1.0),
+      visibilityBias: settings.visibilityBias,
+    );
+  }
+
+  Vector3? _irradianceCameraPosition;
+  Vector3? _irradianceCameraForward;
+  IrradianceVolumeComponent? _activeIrradianceVolume;
+
+  // Where the irradiance volume sits this frame, as a center and a full size.
+  (Vector3, Vector3) _planIrradianceVolume(
+    GlobalIlluminationSettings settings,
+    Camera camera,
+  ) {
+    switch (settings.volumeMode) {
+      case IrradianceVolumeMode.followCamera:
+        return (camera.position.clone(), settings.extents.clone());
+      case IrradianceVolumeMode.component:
+        // Exactly one volume is active per frame. Among those containing the
+        // camera the highest priority wins; with none containing it the
+        // highest-priority volume overall keeps the field somewhere sane
+        // rather than snapping it to the camera.
+        IrradianceVolumeComponent? chosen;
+        var chosenContains = false;
+        for (final volume in renderScene.irradianceVolumeComponents) {
+          final contains = volume.contains(camera.position);
+          if (chosen != null) {
+            if (chosenContains && !contains) continue;
+            if (contains == chosenContains &&
+                volume.priority <= chosen.priority) {
+              continue;
+            }
+          }
+          chosen = volume;
+          chosenContains = contains;
+        }
+        if (chosen != null) {
+          if (!identical(chosen, _activeIrradianceVolume) ||
+              chosen.consumeInvalidation()) {
+            _activeIrradianceVolume = chosen;
+            _irradianceField.invalidate();
+          }
+          settings.resolution.setFrom(chosen.resolution);
+          return (chosen.worldCenter, chosen.extents * 2.0);
+        }
+        _activeIrradianceVolume = null;
+        return (camera.position.clone(), settings.extents.clone());
+      case IrradianceVolumeMode.fitScene:
+        Vector3? low;
+        Vector3? high;
+        for (final item in renderScene.items) {
+          final bounds = item.worldBounds;
+          if (bounds == null || !item.visible) continue;
+          if (low == null) {
+            low = bounds.min.clone();
+            high = bounds.max.clone();
+            continue;
+          }
+          Vector3.min(low, bounds.min, low);
+          Vector3.max(high!, bounds.max, high);
+        }
+        if (low == null || high == null) {
+          return (camera.position.clone(), settings.extents.clone());
+        }
+        // Pad by a probe spacing so surfaces on the bounds are inside the
+        // cage rather than on its outermost plane.
+        final size = (high - low)
+          ..scale(1.0)
+          ..add(
+            Vector3(
+              (high.x - low.x) / math.max(2.0, settings.resolution.x),
+              (high.y - low.y) / math.max(2.0, settings.resolution.y),
+              (high.z - low.z) / math.max(2.0, settings.resolution.z),
+            ),
+          );
+        return ((low + high)..scale(0.5), size);
+    }
   }
 
   // Inserts the enabled custom HDR passes registered for [stage], each

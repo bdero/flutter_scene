@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
+import 'package:flutter_scene/src/components/irradiance_volume_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/rect_area_light_component.dart';
 import 'package:flutter_scene/src/components/planar_reflector_component.dart';
@@ -572,6 +573,22 @@ class RenderScene {
   /// Unregisters [volume]. Called when its owning node unmounts.
   void removeEnvironmentVolumeComponent(EnvironmentVolumeComponent volume) {
     environmentVolumeComponents.remove(volume);
+  }
+
+  /// The irradiance volumes contributed by mounted
+  /// [IrradianceVolumeComponent]s, in registration order. At most one is
+  /// active per frame, chosen by priority among those containing the camera.
+  final List<IrradianceVolumeComponent> irradianceVolumeComponents = [];
+
+  /// Registers [volume] as an active irradiance volume. Called by an
+  /// [IrradianceVolumeComponent] when its owning node mounts.
+  void addIrradianceVolumeComponent(IrradianceVolumeComponent volume) {
+    irradianceVolumeComponents.add(volume);
+  }
+
+  /// Unregisters [volume]. Called when its owning node unmounts.
+  void removeIrradianceVolumeComponent(IrradianceVolumeComponent volume) {
+    irradianceVolumeComponents.remove(volume);
   }
 
   /// The reflection probes contributed by mounted

@@ -126,6 +126,11 @@ export 'src/ambient_occlusion.dart'
 export 'src/auto_exposure.dart' show AutoExposureSettings;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
 export 'src/fog.dart' show Fog, FogMode;
+export 'src/global_illumination.dart'
+    show
+        GlobalIlluminationSettings,
+        IrradianceInjectionResolution,
+        IrradianceVolumeMode;
 export 'src/god_rays.dart' show GodRaysSettings;
 export 'src/screen_space_reflections.dart'
     show ScreenSpaceReflectionsSettings, SsrDebugView;
@@ -150,6 +155,8 @@ export 'src/components/directional_light_component.dart'
     show DirectionalLightComponent;
 export 'src/components/environment_volume_component.dart'
     show EnvironmentVolumeComponent, EnvironmentVolumeShape;
+export 'src/components/irradiance_volume_component.dart'
+    show IrradianceVolumeComponent;
 export 'src/components/planar_reflector_component.dart'
     show PlanarReflectorComponent;
 export 'src/components/reflection_probe_component.dart'

@@ -254,5 +254,33 @@
   "LensFlareFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_lens_flare.frag"
+  },
+  "IrradianceInjectVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_irradiance_inject.vert"
+  },
+  "IrradianceInjectFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_inject.frag"
+  },
+  "IrradianceInjectDepthFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_inject_depth.frag"
+  },
+  "IrradianceBlendFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_blend.frag"
+  },
+  "IrradianceBlendDepthFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_blend_depth.frag"
+  },
+  "IrradianceFilterFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_filter.frag"
+  },
+  "IrradianceStripFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_strip.frag"
   }
 }

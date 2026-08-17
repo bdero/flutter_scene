@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/material/physically_based_material.dart'
     show TextureTransform;
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/irradiance_field.dart';
 
 /// Packs the engine lighting half of the shared `FragInfo` uniform block and
 /// binds the image-based-lighting and shadow samplers.
@@ -24,12 +25,13 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (704 bytes / 176 floats:
+  /// The float count of the full `FragInfo` block (784 bytes / 196 floats:
   /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
   /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
-  /// 160..163, `ssao_lighting` at 164..167, `model_scale` at 168..171, and
-  /// `dielectric_f0` at 172..175). See the layout map in the implementation.
-  static const fragInfoFloatCount = 176;
+  /// 160..163, `ssao_lighting` at 164..167, `model_scale` at 168..171,
+  /// `dielectric_f0` at 172..175, and the five irradiance-field vec4s at
+  /// 176..195). See the layout map in the implementation.
+  static const fragInfoFloatCount = 196;
 
   /// Index of the `dielectric_f0` vec4 in `FragInfo`. [packInto] writes the
   /// standard 0.04 dielectric reflectance; a material with a non-default
@@ -39,6 +41,9 @@ class EngineLightingUniforms {
   /// The dielectric F0 of a default material (ior 1.5, specular 1, white
   /// specular color), the value the standard shader used to hard-code.
   static const defaultDielectricF0 = 0.04;
+
+  /// Index of the first irradiance-field vec4 (`gi_grid`).
+  static const irradianceFieldIndex = 176;
 
   /// Index of the LOD cross-fade `fade` field in `FragInfo`, occupying std140
   /// padding before `environment_transform` (so the block size is unchanged).
@@ -198,6 +203,41 @@ class EngineLightingUniforms {
     fragInfo[dielectricF0Index] = defaultDielectricF0;
     fragInfo[dielectricF0Index + 1] = defaultDielectricF0;
     fragInfo[dielectricF0Index + 2] = defaultDielectricF0;
+    // The irradiance field at [176..195]. A zero intensity in gi_grid.w
+    // disables the whole receiver, so a scene without the field pays nothing
+    // beyond these writes.
+    const gi = irradianceFieldIndex;
+    final field = lighting.irradianceField;
+    if (field == null) {
+      for (var i = gi; i < gi + 20; i++) {
+        fragInfo[i] = 0.0;
+      }
+    } else {
+      final placement = field.placement;
+      final layout = field.layout;
+      fragInfo[gi] = placement.spacing.x;
+      fragInfo[gi + 1] = placement.spacing.y;
+      fragInfo[gi + 2] = placement.spacing.z;
+      fragInfo[gi + 3] = field.intensity;
+      fragInfo[gi + 4] = placement.anchor.x;
+      fragInfo[gi + 5] = placement.anchor.y;
+      fragInfo[gi + 6] = placement.anchor.z;
+      fragInfo[gi + 7] = field.shadowBias;
+      fragInfo[gi + 8] = layout.resolution.x;
+      fragInfo[gi + 9] = layout.resolution.y;
+      fragInfo[gi + 10] = layout.resolution.z;
+      fragInfo[gi + 11] = layout.tilesPerRow.toDouble();
+      fragInfo[gi + 12] = layout.irradianceOriginY.toDouble();
+      fragInfo[gi + 13] = layout.depthOriginY.toDouble();
+      fragInfo[gi + 14] = 1.0 / layout.atlasWidth;
+      fragInfo[gi + 15] = 1.0 / layout.atlasHeight;
+      fragInfo[gi + 16] = field.visibility;
+      // The visibility bias is authored relative to the cell edge, so one
+      // default holds across scene scales.
+      fragInfo[gi + 17] = field.visibilityBias * placement.minCellEdge;
+      fragInfo[gi + 18] = placement.maxProbeDistance;
+      fragInfo[gi + 19] = IrradianceFieldBinding.boundaryFadeCells;
+    }
     // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
     // dimensions the shader needs to normalize its punctual-light fetches.
     // x: parameters-texture row count (all scene lights). y/z: the light-index
@@ -507,17 +547,19 @@ class EngineLightingUniforms {
         sampler: _nearestSampler,
       );
     }
-    // Diffuse irradiance SH coefficients, point-sampled (each texel is one
-    // coefficient). During a cross-fade [Lighting.diffuseShTexture] carries a
-    // 9x2 composite holding both environments' rows; otherwise the primary's
-    // own 9x1 texture is bound and both shader row coordinates land on its
-    // single row. Sampled in EvaluateDiffuseSH. A baked-lightmap variant reads
-    // its diffuse ambient from the lightmap and declares no such sampler.
+    // The environment's diffuse SH coefficients, or the irradiance field's
+    // atlas (whose first two rows are that same strip) when the field is on.
+    // During a cross-fade [Lighting.diffuseShTexture] carries a 9x2 composite
+    // holding both environments' rows; otherwise the primary's own 9x1
+    // texture is bound and both shader row coordinates land on its single
+    // row. Sampled in EvaluateDiffuseSH. A baked-lightmap variant reads its
+    // diffuse ambient from the lightmap and declares no such sampler.
     if (bindDiffuseSh) {
+      final field = lighting.irradianceField;
       pass.bindTexture(
-        shader.getUniformSlot('sh_coefficients'),
-        lighting.diffuseShTexture ?? env.diffuseShTexture,
-        sampler: _nearestClampSampler,
+        shader.getUniformSlot('irradiance_field'),
+        field?.atlas ?? lighting.diffuseShTexture ?? env.diffuseShTexture,
+        sampler: field != null ? _clampLinearSampler : _nearestClampSampler,
       );
     }
     // The secondary cross-fade environment's radiance (the *_b samplers).

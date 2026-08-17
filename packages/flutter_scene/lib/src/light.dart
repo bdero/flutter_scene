@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/render/irradiance_field.dart';
 
 /// Which faces of a shadow caster are rendered into the shadow map (the
 /// others are culled). Trades the two shadow-map failure modes (self-shadow
@@ -801,6 +802,7 @@ class Lighting {
     this.environmentIntensity = 1.0,
     Matrix3? environmentTransform,
     this.diffuseShTexture,
+    this.irradianceField,
     this.directionalLight,
     this.directionalLightDirection,
     this.punctualParamsTexture,
@@ -865,6 +867,12 @@ class Lighting {
   /// [environmentMapB]); otherwise null, and [environmentMap]'s own 9x1
   /// texture is bound.
   final gpu.Texture? diffuseShTexture;
+
+  /// The world-space irradiance field in effect for this draw, or null when
+  /// it is off. Its atlas carries the diffuse-SH strip in its first two rows,
+  /// so it is bound in place of [diffuseShTexture] when present and the field
+  /// costs no additional sampler.
+  final IrradianceFieldBinding? irradianceField;
 
   /// The scene's directional light, or null when there isn't one.
   final DirectionalLight? directionalLight;
