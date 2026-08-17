@@ -2,6 +2,12 @@
 
 * Added `package:flutter_scene/kit.dart`, high-level gameplay, camera boom, character controller, day/night cycle, water surface, audio, pooling, and debug visualization components.
 * Standardized model-space front-face winding to Counter-Clockwise (CCW) across primitives, procedural builders, materials, and `.fscene` version 5.
+* World-space global illumination via `Scene.globalIllumination`, a grid of octahedral irradiance probes fed by scattering the visible surfaces' shaded radiance, so bounce light persists for geometry the camera is not looking at and colored bleed reads correctly. Off by default.
+* Probe visibility via `GlobalIlluminationSettings.visibility`, per-direction depth moments and a Chebyshev bound so the field does not leak through walls.
+* Emissive surfaces light the probe field, scaled by `GlobalIlluminationSettings.emissiveGiBoost` so a small bright emitter can light a room without brightening the direct image.
+* `IrradianceVolumeComponent` places the irradiance volume on a node, for authored placement instead of fitting the scene or following the camera.
+* `Scene.invalidateGlobalIllumination` discards the accumulated field so it refills from scratch after a hard camera cut.
+* The lit shaders read the environment's diffuse coefficients with `texelFetch` from a texture the probe atlas extends, so global illumination costs no additional fragment sampler.
 * Update `flutter_scene-procedural` skill (v2) with natural formation recipes (rock fractures, incised trails, pebble scatter, Gerstner waves, tree branching, and procedural island topographies).
 * Update `flutter_scene-looks` skill (v4) with micro-surface and anti-waxiness tuning guidance.
 * Update `flutter_scene-verification-loop` skill (v2) with empirical verification disciplines and blind-pairwise review rules.
