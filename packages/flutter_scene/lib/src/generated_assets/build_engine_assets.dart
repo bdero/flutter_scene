@@ -257,18 +257,29 @@ Map<String, Object?> rebaseShaderBundleManifest(
 String _relativeFile(Uri file, Uri from) {
   final target = file.pathSegments;
   final base = from.pathSegments.where((s) => s.isNotEmpty).toList();
-  if (file.scheme != from.scheme) return file.toString();
+  // Only a genuinely different root has no relative path. Sharing no first
+  // directory is an ordinary posix layout (a workdir and a pub cache under
+  // different top-level directories) that walks up fine.
+  if (file.scheme != from.scheme || _drive(target) != _drive(base)) {
+    return file.toString();
+  }
   var common = 0;
   while (common < base.length &&
       common < target.length - 1 &&
       base[common] == target[common]) {
     common++;
   }
-  // Nothing shared past the root means no usable relative path (on Windows,
-  // different drives), so hand back a URI both consumers can still read.
-  if (common == 0) return file.toString();
   return [
     ...List.filled(base.length - common, '..'),
     ...target.sublist(common),
   ].join('/');
+}
+
+/// The `C:` of a Windows file URI's segments, or null for a posix path.
+String? _drive(List<String> segments) {
+  final first = segments.where((s) => s.isNotEmpty).firstOrNull;
+  if (first == null || first.length != 2 || !first.endsWith(':')) return null;
+  final letter = first.codeUnitAt(0) | 0x20;
+  if (letter < 0x61 || letter > 0x7a) return null;
+  return String.fromCharCode(letter);
 }
