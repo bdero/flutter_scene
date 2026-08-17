@@ -81,7 +81,7 @@ jobs:
           fi
           dart tool/package_editor.dart "${ARGS[@]}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: editor-${{ matrix.platform }}
           path: apps/flutter_scene_editor_app/build/dist/*
