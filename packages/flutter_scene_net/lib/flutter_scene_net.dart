@@ -11,7 +11,10 @@ export 'src/hosting/hosting.dart' show SceneHost;
 export 'src/network_transform_codec.dart'
     show NetworkTransformCodec, registerNetComponentCodecs;
 export 'src/network_transform.dart' show NetworkTransformComponent;
-export 'src/physics_world_history.dart' show PhysicsWorldHistory;
+// TODO(lagcomp): export PhysicsWorldHistory once something consumes it. The
+// server-side rewind needs the peer's last acked tick, which the host does
+// not record yet, and rewind lands on whole ticks where hit registration
+// wants the two bracketing snapshots interpolated.
 export 'src/predicted_physics.dart'
     show PredictedPhysicsComponent, PredictedPhysicsController;
 export 'src/predicted_transform.dart'
