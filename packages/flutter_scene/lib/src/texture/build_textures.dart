@@ -6,36 +6,34 @@ import 'package:image/image.dart' as img;
 
 import 'package:scene/scene.dart' show sceneLog;
 
+import '../generated_assets/generated_assets.dart';
+import '../generated_assets/generated_tree.dart';
 import '../importer/build_cache.dart';
 import 'block_alignment.dart';
 import 'ktx2_image.dart';
 import 'mipmap.dart';
 
-/// Controls how [buildTextures] exposes generated `.fstex` assets.
+/// Controls where [buildTextures] puts generated `.fstex` assets.
 enum TextureAssetMode {
-  /// Only write the generated `.fstex` files under `build/textures/`. The app
-  /// lists them in `flutter.assets` and loads them by explicit asset key;
-  /// `loadTexture` (source-path resolution) needs a DataAssets mode.
-  legacyOnly,
+  /// Cook the `.fstex` files into the app's `flutter_scene_generated/`
+  /// directory and record them in its manifest, which `loadTexture` resolves by
+  /// source path. The default, and identical on every Flutter channel.
+  generatedTree,
 
-  /// Register generated `.fstex` files as DataAssets when the current
-  /// toolchain supports them, and otherwise fall back to [legacyOnly].
+  /// Register generated `.fstex` files as Dart data assets when the current
+  /// toolchain supports them, and otherwise fall back to [generatedTree].
   dataAssetsIfAvailable,
 
-  /// Require DataAssets support and fail the build with a targeted migration
-  /// message when the current toolchain did not enable data assets for hooks.
+  /// Require Dart data assets and fail the build when the current toolchain did
+  /// not enable them for hooks.
   dataAssetsRequired,
 }
 
 const String _dataAssetsUnavailableMessage =
-    'flutter_scene DataAssets mode requires Flutter support for Dart data '
-    'assets. This feature is currently experimental and available on supported '
-    'Flutter master builds. Run `flutter config --enable-dart-data-assets` or '
-    'set `FLUTTER_DART_DATA_ASSETS=true`, then rebuild. If your Flutter '
-    'toolchain does not recognize that setting, switch to a Flutter master '
-    'channel build, or use TextureAssetMode.legacyOnly, list the generated '
-    '`build/textures/*.fstex` files in `flutter.assets`, and load them by '
-    'asset key.';
+    'flutter_scene: TextureAssetMode.dataAssetsRequired needs Flutter support '
+    'for Dart data assets, which this toolchain does not have enabled. Use '
+    'TextureAssetMode.generatedTree (the default), which cooks the same '
+    'textures into $generatedAssetsEntry on every channel.';
 
 /// The extension of a cooked loose texture. The container is the engine's own
 /// compressed block payload (a KTX2 wrapper around a format standard KTX2
@@ -90,7 +88,7 @@ void buildTextures({
   required List<String> textures,
   Map<String, TextureContent> contents = const {},
   String outputDirectory = 'build/textures/',
-  TextureAssetMode assetMode = TextureAssetMode.legacyOnly,
+  TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
 }) {
   // A typo here would silently cook a normal map with the sRGB color
@@ -111,10 +109,29 @@ void buildTextures({
     throw UnsupportedError(_dataAssetsUnavailableMessage);
   }
   final emitDataAssets =
-      assetMode != TextureAssetMode.legacyOnly && dataAssetsAvailable;
+      assetMode != TextureAssetMode.generatedTree && dataAssetsAvailable;
 
   final packageRoot = buildInput.packageRoot;
   final texturesRoot = packageRoot.resolve(outputDirectory);
+
+  if (emitDataAssets) {
+    // A tree left by an earlier build would ship the same textures twice, so
+    // the data assets this run registers replace it.
+    GeneratedAssetTree.openExisting(packageRoot, buildInput.packageName)
+      ?..dropOwned(GeneratedAssetFamily.texture, owner: buildInput.packageName)
+      ..save();
+  }
+
+  // The outputs go into the app's persistent flutter_scene_generated/ tree,
+  // whose manifest maps each source path to its cooked texture (and stores the
+  // build stamp).
+  final tree = emitDataAssets
+      ? null
+      : GeneratedAssetTree.open(packageRoot, buildInput.packageName);
+  if (tree != null &&
+      (textures.isNotEmpty || tree.hasFamily(GeneratedAssetFamily.texture))) {
+    tree.requireAssetEntry();
+  }
 
   for (final inputFilePath in textures) {
     if (inputFilePath.startsWith('../') || inputFilePath.contains('/../')) {
@@ -138,7 +155,13 @@ void buildTextures({
     final slash = inputFilePath.lastIndexOf('/');
     final stem = dot > slash ? inputFilePath.substring(0, dot) : inputFilePath;
     final relativeTexturePath = '$stem$textureOutputExtension';
-    final outputTextureUri = texturesRoot.resolve(relativeTexturePath);
+    final outputTextureUri =
+        tree?.fileUri(
+          GeneratedAssetFamily.texture,
+          nameId: stem,
+          extension: textureOutputExtension,
+        ) ??
+        texturesRoot.resolve(relativeTexturePath);
     Directory.fromUri(
       outputTextureUri.resolve('.'),
     ).createSync(recursive: true);
@@ -148,9 +171,17 @@ void buildTextures({
         'rev=$buildCacheRevision texture content=${content.name} '
         'src=${contentHash(sourceBytes)}';
     final stampFile = File('${outputTextureUri.toFilePath()}.inputs');
-    if (!isBuildCacheFresh(stampFile, stamp, [
-      File(outputTextureUri.toFilePath()),
-    ])) {
+    // The generated tree ships every file in it, so the stamp lives in the
+    // manifest there rather than in a sidecar next to the output.
+    final fresh = tree != null
+        ? tree.isFresh(GeneratedAssetFamily.texture, stem, stamp, [
+            outputTextureUri,
+          ])
+        : isBuildCacheFresh(stampFile, stamp, [
+            File(outputTextureUri.toFilePath()),
+          ]);
+    if (!fresh) {
+      stdout.writeln('flutter_scene: cooking $inputFilePath');
       final decoded = img.decodeImage(sourceBytes);
       if (decoded == null) {
         throw Exception('Could not decode image: $inputFilePath');
@@ -184,8 +215,15 @@ void buildTextures({
           supercompress: true,
         ),
       );
-      stampFile.writeAsStringSync(stamp);
+      if (tree == null) stampFile.writeAsStringSync(stamp);
     }
+    tree?.recordFile(
+      family: GeneratedAssetFamily.texture,
+      id: stem,
+      uri: outputTextureUri,
+      stamp: stamp,
+      source: inputFilePath,
+    );
 
     buildOutput.dependencies.add(sourceUri);
     if (emitDataAssets) {
@@ -197,5 +235,11 @@ void buildTextures({
         ),
       );
     }
+  }
+
+  if (tree != null) {
+    tree
+      ..pruneMissingSources()
+      ..save();
   }
 }

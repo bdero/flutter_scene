@@ -9,6 +9,7 @@ import 'package:scene/schema.dart' show encodeComponentSchemas;
 import 'package:flutter_scene/src/fscene/realize/realize.dart'
     show defaultComponentRegistry;
 import 'package:flutter_scene/src/fscene/source/source_scene_loader.dart';
+import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/fingerprinted_bundle.dart';
 import 'package:flutter_scene/src/hot_reload/hot_reloadable_fmat.dart';
@@ -277,6 +278,9 @@ class HotReloadCoordinator {
   Future<void> _refreshChain = Future.value();
 
   Future<void> _refresh() async {
+    // A regenerated source can repoint the manifest, so the cached index must
+    // not outlive a reload.
+    clearGeneratedAssetIndexCache();
     _materials.removeWhere((r) => r.material.target == null);
     _scenes.removeWhere((r) => r.root.target == null);
     _textures.removeWhere((r) => r.source.target == null);

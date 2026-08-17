@@ -1,11 +1,13 @@
-/// Resolves and loads `.fstex` compressed textures registered through
-/// DataAssets by the `buildTextures` build hook, keyed by source path (the
-/// texture counterpart of `loadScene` / `loadFmatMaterial`).
+/// Resolves and loads the `.fstex` compressed textures the `buildTextures` build
+/// hook cooked, keyed by source path (the texture counterpart of `loadScene` /
+/// `loadFmatMaterial`).
 library;
 
 import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
 
+import '../generated_assets/generated_asset_lookup.dart';
+import '../generated_assets/generated_assets.dart';
 import '../gpu/gpu.dart' as gpu;
 import '../hot_reload/hot_reload_coordinator.dart';
 import 'compressed_texture.dart';
@@ -14,7 +16,7 @@ import 'texture2d.dart';
 const String _textureAssetMarker = 'flutter_scene/texture/';
 const String _textureAssetSuffix = '.fstex';
 
-/// One resolved `.fstex` DataAsset.
+/// One resolved cooked `.fstex`.
 final class TextureEntry {
   TextureEntry({
     required this.assetKey,
@@ -120,27 +122,49 @@ final class _SampledTextureView implements TextureSource {
   gpu.SamplerOptions get sampledSampler => _sampler;
 }
 
-/// Resolves DataAssets-backed `.fstex` textures by source path.
+/// Resolves generated `.fstex` textures by source path.
 final class TextureRegistry {
   TextureRegistry._(this._entries);
 
   final List<TextureEntry> _entries;
 
-  /// Loads the registry by scanning the asset manifest for `.fstex`
-  /// DataAssets.
+  /// Loads the registry by scanning the asset manifest for `.fstex` data
+  /// assets, then the generated tree's manifest for everything else.
   static Future<TextureRegistry> load({
     AssetBundle? bundle,
     Iterable<String>? assetKeys,
   }) async {
     final assetBundle = bundle ?? rootBundle;
     final keys = assetKeys ?? await _loadAssetManifestKeys(assetBundle);
-    final entries =
-        keys.map(TextureEntry.tryParse).whereType<TextureEntry>().toList()
-          ..sort((a, b) => a.assetKey.compareTo(b.assetKey));
+    final entries = keys
+        .map(TextureEntry.tryParse)
+        .whereType<TextureEntry>()
+        .toList();
+    if (assetKeys == null) {
+      final generated = await loadGeneratedAssetIndex(bundle);
+      for (final match in generated.entriesOf(GeneratedAssetFamily.texture)) {
+        // A data asset wins over a tree entry for the same texture.
+        if (entries.any(
+          (entry) =>
+              entry.textureId == match.entry.id &&
+              entry.package == match.entry.owner,
+        )) {
+          continue;
+        }
+        entries.add(
+          TextureEntry(
+            assetKey: match.key,
+            package: match.entry.owner,
+            textureId: match.entry.id,
+          ),
+        );
+      }
+    }
+    entries.sort((a, b) => a.assetKey.compareTo(b.assetKey));
     return TextureRegistry._(entries);
   }
 
-  /// Returns true when [assetKey] is a generated `.fstex` DataAsset.
+  /// Returns true when [assetKey] is a generated `.fstex` data asset.
   static bool isTextureAssetKey(String assetKey) =>
       assetKey.startsWith('packages/') &&
       assetKey.contains('/$_textureAssetMarker') &&
@@ -159,18 +183,16 @@ final class TextureRegistry {
         .toList();
     if (matches.isEmpty) {
       throw StateError(
-        'No DataAssets-backed .fstex for source "$sourcePath" was found. '
-        'Make sure the build hook calls buildTextures in a DataAssets mode '
-        'with this source listed, that Dart data assets are enabled (flutter '
-        'config --enable-dart-data-assets), and that the app has been '
-        'rebuilt.',
+        'No cooked .fstex for source "$sourcePath" was found. Make sure '
+        'buildTextures lists this source. '
+        '${generatedAssetFixHint('textures')}',
       );
     }
     if (matches.length > 1) {
       final choices = matches.map((match) => match.package).join(', ');
       throw StateError(
-        'Multiple DataAssets-backed .fstex files for source "$sourcePath" '
-        'were found in packages: $choices. Pass package to disambiguate.',
+        'Multiple cooked .fstex files for source "$sourcePath" were found in '
+        'packages: $choices. Pass package to disambiguate.',
       );
     }
     return matches.single.assetKey;
@@ -195,8 +217,8 @@ String _textureId(String sourcePath) {
 /// package's root (for example `assets/shadow_plane.png`), ready to assign to
 /// a material texture slot.
 ///
-/// The texture must have been cooked by the `buildTextures` build hook in a
-/// DataAssets mode. The payload transcodes to a device-supported block format
+/// The texture must have been cooked by the `buildTextures` build hook. The
+/// payload transcodes to a device-supported block format
 /// (or decodes to rgba8) off the main isolate, uploads with its full mip
 /// chain, and is cached, so repeated loads of the same source share one GPU
 /// texture. In debug builds the texture hot reloads: editing the source image

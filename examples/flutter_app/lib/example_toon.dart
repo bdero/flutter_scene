@@ -60,8 +60,7 @@ class _ExampleToonState extends State<ExampleToon> {
     // Use the async loader: shader bundles can't be read synchronously on
     // web (gpu.ShaderLibrary.fromAsset throws there).
     final shaderLibrary = await gpu.loadShaderLibraryAsync(
-      'packages/example_app/flutter_gpu_shaders/shaderbundles/'
-      'example.shaderbundle',
+      await gpu.resolveShaderBundleKey('example'),
     );
     final toonShader = shaderLibrary?['ToonFragment'];
     if (toonShader == null) {

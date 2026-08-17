@@ -7,7 +7,11 @@
 library;
 
 /// Web/wasm placeholder for the native build-hook enum.
-enum MaterialAssetMode { legacyOnly, dataAssetsIfAvailable, dataAssetsRequired }
+enum MaterialAssetMode {
+  generatedTree,
+  dataAssetsIfAvailable,
+  dataAssetsRequired,
+}
 
 /// Throws on web/wasm; see the library doc above. The native signature takes
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses
@@ -17,7 +21,7 @@ Never buildMaterials({
   required Object buildOutput,
   List<String>? materials,
   String bundleName = 'materials',
-  MaterialAssetMode assetMode = MaterialAssetMode.legacyOnly,
+  MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
 }) => throw UnsupportedError(
   'buildMaterials runs at build time on native platforms only.',
 );

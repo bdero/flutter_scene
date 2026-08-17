@@ -6,6 +6,8 @@ import 'package:flutter/services.dart' show AssetManifest, rootBundle;
 import 'package:vector_math/vector_math.dart';
 
 import '../fmat/fmat_emitter.dart' show radianceCubeEntryName;
+import '../generated_assets/generated_asset_lookup.dart';
+import '../generated_assets/generated_assets.dart';
 import '../gpu/gpu.dart' as gpu;
 import 'physical_material.dart';
 import 'physically_based_material.dart' show AlphaMode, TextureTransform;
@@ -15,9 +17,9 @@ const _dataBundleKey =
     'packages/flutter_scene/flutter_scene/fmat/physical/physical.shaderbundle';
 const _dataSidecarKey =
     'packages/flutter_scene/flutter_scene/fmat/physical/physical.fmat.json';
-const _legacyBundleKey =
+const _fallbackBundleKey =
     'packages/flutter_scene/build/shaderbundles/physical.shaderbundle';
-const _legacySidecarKey =
+const _fallbackSidecarKey =
     'packages/flutter_scene/build/shaderbundles/physical.fmat.json';
 
 Future<_PhysicalAssets>? _physicalAssetsFuture;
@@ -46,20 +48,44 @@ Future<_PhysicalAssets> _loadPhysicalAssetsAndResetOnFailure() async {
 }
 
 Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
-  var bundleKey = _legacyBundleKey;
-  var sidecarKey = _legacySidecarKey;
+  var bundleKey = _fallbackBundleKey;
+  var sidecarKey = _fallbackSidecarKey;
+  var resolved = false;
   try {
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     if (manifest.listAssets().contains(_dataBundleKey)) {
       bundleKey = _dataBundleKey;
       sidecarKey = _dataSidecarKey;
+      resolved = true;
     }
   } catch (_) {
-    // The legacy assets remain available without an asset manifest.
+    // Nothing to scan; the generated tree below is the only source.
+  }
+  if (!resolved) {
+    // Built into the app's generated tree by buildEngineAssets.
+    final index = await loadGeneratedAssetIndex();
+    final generatedBundle = index.resolveKey(
+      GeneratedAssetFamily.material,
+      'physical#shaderbundle',
+      package: 'flutter_scene',
+    );
+    final generatedSidecar = index.resolveKey(
+      GeneratedAssetFamily.material,
+      'physical#sidecar',
+      package: 'flutter_scene',
+    );
+    if (generatedBundle != null && generatedSidecar != null) {
+      bundleKey = generatedBundle;
+      sidecarKey = generatedSidecar;
+    }
   }
   final library = await gpu.loadShaderLibraryAsync(bundleKey);
   if (library == null) {
-    throw StateError('Could not load physical shader bundle "$bundleKey".');
+    throw StateError(
+      'Could not load the physical shader bundle "$bundleKey". The app\'s '
+      'hook/build.dart must call buildEngineAssets; '
+      '`dart run flutter_scene:init` sets that up.',
+    );
   }
   final sidecar = jsonDecode(await rootBundle.loadString(sidecarKey));
   return _PhysicalAssets(library, (sidecar as Map).cast<String, Object?>());

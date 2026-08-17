@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import 'package:scene/scene.dart';
 import '../fscene/realize/component_codec.dart';
+import '../generated_assets/generated_asset_lookup.dart';
+import '../generated_assets/generated_assets.dart';
 import '../fscene/realize/realize.dart';
 import '../fscene/realize/resource_realizer.dart';
 import '../fscene/realize/stage.dart';
@@ -60,8 +62,8 @@ class _SceneTemplate {
   final Set<String> dependencies;
 }
 
-/// Resolves and loads `.fsceneb` scene packages registered through DataAssets
-/// by the [buildScenes] build hook.
+/// Resolves and loads the `.fsceneb` scene packages the [buildScenes] build hook
+/// produced.
 ///
 /// Scenes are keyed by their source path relative to the owning package's root
 /// (for example `assets/levels/forest.glb`), so two scenes that share a file
@@ -101,29 +103,52 @@ final class SceneEntry {
   }
 }
 
-/// Resolves DataAssets-backed `.fsceneb` files by source path, the `.fscene`
-/// counterpart of `ModelRegistry`.
+/// Resolves generated `.fsceneb` files by source path, the `.fscene` counterpart
+/// of `ModelRegistry`.
 /// {@category Assets and loading}
 final class SceneRegistry {
   SceneRegistry._(this._entries);
 
   final List<SceneEntry> _entries;
 
-  /// Loads the registry by scanning the asset manifest for `.fsceneb`
-  /// DataAssets.
+  /// Loads the registry by scanning the asset manifest for `.fsceneb` data
+  /// assets, then the generated tree's manifest for everything else.
   static Future<SceneRegistry> load({
     AssetBundle? bundle,
     Iterable<String>? assetKeys,
   }) async {
     final assetBundle = bundle ?? rootBundle;
     final keys = assetKeys ?? await _loadAssetManifestKeys(assetBundle);
-    final entries =
-        keys.map(SceneEntry.tryParse).whereType<SceneEntry>().toList()
-          ..sort((a, b) => a.assetKey.compareTo(b.assetKey));
+    final entries = keys
+        .map(SceneEntry.tryParse)
+        .whereType<SceneEntry>()
+        .toList();
+    if (assetKeys == null) {
+      final generated = await loadGeneratedAssetIndex(bundle);
+      for (final match in generated.entriesOf(GeneratedAssetFamily.scene)) {
+        // A data asset wins over a tree entry for the same scene, so a project
+        // switching modes without a clean asset bundle still resolves once.
+        if (entries.any(
+          (entry) =>
+              entry.sceneId == match.entry.id &&
+              entry.package == match.entry.owner,
+        )) {
+          continue;
+        }
+        entries.add(
+          SceneEntry(
+            assetKey: match.key,
+            package: match.entry.owner,
+            sceneId: match.entry.id,
+          ),
+        );
+      }
+    }
+    entries.sort((a, b) => a.assetKey.compareTo(b.assetKey));
     return SceneRegistry._(entries);
   }
 
-  /// Returns true when [assetKey] is a generated `.fsceneb` DataAsset.
+  /// Returns true when [assetKey] is a generated `.fsceneb` data asset.
   static bool isSceneAssetKey(String assetKey) =>
       assetKey.startsWith('packages/') &&
       assetKey.contains('/$_sceneAssetMarker') &&
@@ -142,17 +167,15 @@ final class SceneRegistry {
         .toList();
     if (matches.isEmpty) {
       throw StateError(
-        'No DataAssets-backed .fsceneb for source "$sourcePath" was found. '
-        'Make sure the build hook calls buildScenes in a DataAssets mode, that '
-        'Dart data assets are enabled (flutter config '
-        '--enable-dart-data-assets), and that the app has been rebuilt.',
+        'No generated .fsceneb for source "$sourcePath" was found. '
+        '${generatedAssetFixHint('scenes')}',
       );
     }
     if (matches.length > 1) {
       final choices = matches.map((match) => match.package).join(', ');
       throw StateError(
-        'Multiple DataAssets-backed .fsceneb files for source "$sourcePath" '
-        'were found in packages: $choices. Pass package to disambiguate.',
+        'Multiple generated .fsceneb files for source "$sourcePath" were found '
+        'in packages: $choices. Pass package to disambiguate.',
       );
     }
     return matches.single.assetKey;
@@ -283,7 +306,7 @@ final class SceneRegistry {
           return source.readDocument(refKey, seen);
         }
         // No source file (a .glb import, or a prefab from another package):
-        // fall back to the built DataAsset. A relative reference resolves
+        // fall back to the built asset. A relative reference resolves
         // against the host scene's directory; nested source prefabs already
         // rebased their references, so the host approximation only matters
         // for references that are missing from the project anyway.
@@ -519,8 +542,8 @@ final class SceneRegistry {
     }
     if (host == null) {
       throw StateError(
-        'Scene asset "$hostKey" is not registered. Rebuild the app so its '
-        'DataAssets manifest includes every referenced scene.',
+        'Scene asset "$hostKey" is not registered. Rebuild the app so every '
+        'referenced scene is generated.',
       );
     }
     for (final node in document.nodes.values) {
@@ -582,8 +605,8 @@ String _sceneId(String sourcePath) {
   return sourcePath;
 }
 
-/// Loads a DataAssets-backed `.fsceneb` scene by its source path relative to
-/// the owning package's root (for example `assets/levels/forest.glb`).
+/// Loads a generated `.fsceneb` scene by its source path relative to the owning
+/// package's root (for example `assets/levels/forest.glb`).
 ///
 /// Loading the same scene again instantiates a fresh node graph that shares
 /// the first load's GPU resources, so per-instance loads are cheap.

@@ -1,16 +1,18 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart'
     show AssetBundle, AssetManifest, rootBundle;
+import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
+import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
-/// The hook-generated bundle declared as a pubspec asset.
+/// The bundle's key when a package listed it as a plain pubspec asset. Kept as a
+/// last resort so an app with no asset manifest still resolves something.
 const String _kBaseShaderBundlePath =
     'packages/flutter_scene/build/shaderbundles/base.shaderbundle';
 
-/// The key the build hook registers instead when the consuming project has
-/// Dart data assets enabled (`flutter config --enable-dart-data-assets`).
-/// Follows `flutter_gpu_shaders`' data-asset naming; a test guards the two
-/// against drifting apart.
+/// The key `buildEngineAssets` registers when the app opted into Dart data
+/// assets. Follows `flutter_gpu_shaders`' data-asset naming; a test guards the
+/// two against drifting apart.
 const String _kBaseShaderBundleDataAssetPath =
     'packages/flutter_scene/flutter_gpu_shaders/shaderbundles/base.shaderbundle';
 
@@ -40,10 +42,8 @@ gpu.ShaderLibrary get baseShaderLibrary {
   return cached;
 }
 
-/// Resolves the asset key the base shader bundle shipped under, preferring
-/// the data-asset registration over the legacy pubspec asset. Any problem
-/// reading the manifest falls back to the legacy key, preserving the
-/// pre-data-assets behavior in environments without a manifest.
+/// Resolves the asset key the base shader bundle shipped under: a data-asset
+/// registration when the app opted into one, then the app's generated tree.
 @visibleForTesting
 Future<String> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
   try {
@@ -54,9 +54,14 @@ Future<String> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
       return _kBaseShaderBundleDataAssetPath;
     }
   } catch (_) {
-    // Fall through to the legacy key.
+    // Fall through to the generated tree, then to the pubspec-asset key.
   }
-  return _kBaseShaderBundlePath;
+  final generated = (await loadGeneratedAssetIndex(bundle)).resolveKey(
+    GeneratedAssetFamily.shaderBundle,
+    'base',
+    package: 'flutter_scene',
+  );
+  return generated ?? _kBaseShaderBundlePath;
 }
 
 /// Asynchronously loads and caches the base shader bundle. Idempotent.
@@ -78,5 +83,7 @@ Future<void> loadBaseShaderLibrary() async {
 
 @visibleForTesting
 String baseShaderBundleLoadFailureMessage(String key) =>
-    'Failed to load base shader bundle ($key). Run '
-    '`flutter config --enable-dart-data-assets`, then rebuild the app.';
+    'Failed to load the engine shader bundle ($key). The app\'s '
+    'hook/build.dart must call buildEngineAssets, which compiles it into '
+    '$generatedAssetsEntry. Run `dart run flutter_scene:init` in the app to '
+    'install the hook and list that directory, then rebuild.';

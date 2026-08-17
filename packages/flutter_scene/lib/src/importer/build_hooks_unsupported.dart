@@ -6,7 +6,7 @@
 library;
 
 /// Web/wasm placeholder for the native build-hook enum.
-enum SceneAssetMode { legacyOnly, dataAssetsIfAvailable, dataAssetsRequired }
+enum SceneAssetMode { generatedTree, dataAssetsIfAvailable, dataAssetsRequired }
 
 /// Throws on web/wasm; see the library doc above. The native signature takes a
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses
@@ -17,7 +17,7 @@ Never buildScenes({
   List<String>? inputFilePaths,
   String outputDirectory = 'build/scenes/',
   String discoveryRoot = 'assets/',
-  SceneAssetMode assetMode = SceneAssetMode.legacyOnly,
+  SceneAssetMode assetMode = SceneAssetMode.generatedTree,
   bool compressTextures = false,
   bool alignForCompression = false,
 }) => throw UnsupportedError(
