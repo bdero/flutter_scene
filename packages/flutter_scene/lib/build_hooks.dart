@@ -1,13 +1,14 @@
 /// Build-hook helpers for flutter_scene.
 ///
-/// Call these from your app's `hook/build.dart` at build time. [buildEngineAssets]
-/// compiles the shaders flutter_scene itself needs, [buildScenes] converts glTF
-/// (`.glb`) and authored `.fscene` sources into flutter_scene's `.fsceneb`
-/// package format, [buildMaterials] compiles `.fmat` custom-material files into
-/// a Flutter GPU shader bundle plus a parameter sidecar, [buildTextures] cooks
-/// loose images into the engine's compressed `.fstex` container, and
-/// [buildTargetShaderBundleJson] compiles raw shader manifests without unused
-/// platform backends.
+/// Call these from your app's `hook/build.dart` at build time. [buildScenes]
+/// converts glTF (`.glb`) and authored `.fscene` sources into flutter_scene's
+/// `.fsceneb` package format, [buildMaterials] compiles `.fmat`
+/// custom-material files into a Flutter GPU shader bundle plus a parameter
+/// sidecar, [buildTextures] cooks loose images into the engine's compressed
+/// `.fstex` container, and [buildTargetShaderBundleJson] compiles raw shader
+/// manifests without unused platform backends. [buildEngineAssets] is
+/// optional, putting the shaders flutter_scene itself needs in this app's
+/// generated assets rather than in flutter_scene's own.
 ///
 /// Everything lands in the app's `flutter_scene_generated/` directory and is
 /// loaded by source path through `loadScene`/`loadFmatMaterial`/`loadTexture`.
@@ -20,7 +21,6 @@
 ///
 /// void main(List<String> args) {
 ///   build(args, (input, output) async {
-///     await buildEngineAssets(buildInput: input, buildOutput: output);
 ///     buildScenes(buildInput: input, buildOutput: output);
 ///     await buildMaterials(buildInput: input, buildOutput: output);
 ///   });
