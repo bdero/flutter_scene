@@ -198,8 +198,7 @@ void main() {
 
   group('pubspec assets', () {
     test('reads a block list, ignoring comments and quotes', () {
-      final assets = parsePubspecAssets(
-        '''
+      final assets = parsePubspecAssets('''
 name: app
 
 flutter:
@@ -211,60 +210,47 @@ flutter:
     - $generatedAssetsEntry
   fonts:
     - family: X
-'''
-            .split('\n'),
-      );
-      expect(assets.style, PubspecAssetsStyle.block);
-      expect(assets.entries, [
+''');
+      expect(assets, [
         'assets/one.png',
         'assets/two.png',
         normalizeAssetEntry(generatedAssetsEntry),
       ]);
     });
 
-    test('reports a flow list rather than calling it absent', () {
-      final assets = parsePubspecAssets(
-        '''
+    test('reads a flow list', () {
+      final assets = parsePubspecAssets('''
 flutter:
   assets: [assets/one.png, $generatedAssetsEntry]
-'''
-            .split('\n'),
-      );
-      expect(assets.style, PubspecAssetsStyle.flow);
-      expect(assets.entries, isEmpty);
+''');
+      expect(assets, [
+        'assets/one.png',
+        normalizeAssetEntry(generatedAssetsEntry),
+      ]);
     });
 
     test('ignores an assets key that is not a direct child of flutter', () {
-      final assets = parsePubspecAssets(
-        '''
+      final assets = parsePubspecAssets('''
 flutter:
   deferred-components:
     - name: one
       assets:
         - assets/one.png
-'''
-            .split('\n'),
-      );
-      expect(assets.style, PubspecAssetsStyle.absent);
+''');
+      expect(assets, isEmpty);
     });
 
     test('ignores a top-level assets key outside flutter', () {
-      final assets = parsePubspecAssets(
-        '''
+      final assets = parsePubspecAssets('''
 some_tool:
   assets:
     - assets/one.png
-'''
-            .split('\n'),
-      );
-      expect(assets.style, PubspecAssetsStyle.absent);
+''');
+      expect(assets, isEmpty);
     });
 
     test('reads an empty flutter block', () {
-      expect(
-        parsePubspecAssets('name: app\nflutter:\n'.split('\n')).style,
-        PubspecAssetsStyle.absent,
-      );
+      expect(parsePubspecAssets('name: app\nflutter:\n'), isEmpty);
     });
   });
 
@@ -338,9 +324,9 @@ flutter:
       expect(pubspec.readAsStringSync(), '''
 name: app
 flutter:
-  uses-material-design: true
   assets:
     - $generatedAssetsEntry
+  uses-material-design: true
 ''');
     });
 
@@ -377,12 +363,23 @@ flutter:
       );
     });
 
-    test('refuses a flow list', () {
+    test('appends to a flow list', () {
       final pubspec = write(
         'name: app\nflutter:\n  assets: [assets/one.png]\n',
       );
       expect(
         ensureGeneratedAssetsEntry(pubspec).status,
+        PubspecEditStatus.added,
+      );
+      expect(parsePubspecAssets(pubspec.readAsStringSync()), [
+        'assets/one.png',
+        normalizeAssetEntry(generatedAssetsEntry),
+      ]);
+    });
+
+    test('reports a pubspec that is not a mapping', () {
+      expect(
+        ensureGeneratedAssetsEntry(write('- just\n- a list\n')).status,
         PubspecEditStatus.unsupported,
       );
     });
