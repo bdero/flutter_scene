@@ -8,10 +8,10 @@ From the repo root:
 
 ```sh
 flutter pub get                              # resolves the workspace
-flutter config --enable-native-assets        # one-time setup
 
 cd examples/flutter_app
-flutter run --enable-flutter-gpu             # add `-d <device>` as needed
+flutter create . --platforms=macos           # gitignored platform stubs
+flutter run --enable-flutter-gpu --enable-impeller
 ```
 
-The build hook (`hook/build.dart`) compiles shader bundles and imports the example glTF assets in `assets_src/` to `.fsceneb` scene packages on the fly.
+The build hook (`hook/build.dart`) compiles the engine's shaders, cooks the loose textures, compiles the `.fmat` materials, and converts the glTF assets in `assets_src/` into `.fsceneb` scene packages, all into `flutter_scene_generated/`.

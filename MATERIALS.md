@@ -31,9 +31,8 @@ their source files. It is portable input to the build hook.
 
 The generated `.shaderbundle` is different. It is compiled by the `impellerc`
 that ships with the active Flutter engine and must be rebuilt by that same
-toolchain. Register it as a DataAsset from `hook/build.dart`. Do not commit it,
-copy it into an assets directory, or list it under `flutter.assets` in
-`pubspec.yaml`.
+toolchain, so the build hook writes it into `flutter_scene_generated/` and
+gitignores it for you. Do not commit it or copy it anywhere else.
 
 ---
 
@@ -76,18 +75,16 @@ fragment {
 }
 ```
 
-Install the DataAssets build hook once from your app root.
+Set the project up once from your app root.
 
 ```sh
 dart run flutter_scene:init
-flutter config --enable-dart-data-assets
 ```
 
-The generated hook auto-discovers `assets/**/*.fmat`, compiles the materials,
-and registers the generated `.shaderbundle`, `.fmat.json` sidecar, and runtime
-index as DataAssets. This path requires a Flutter toolchain with Dart DataAssets
-support; while the feature is experimental, that means a supported Flutter
-master build with `enable-dart-data-assets` enabled.
+The generated hook auto-discovers `assets/**/*.fmat` and compiles each material
+into `flutter_scene_generated/`, alongside its `.fmat.json` sidecar and a runtime
+index. `init` adds that directory to `flutter.assets` and gitignores its
+contents.
 
 Then load the material by its source path (relative to the package root, so
 two materials that share a `name` in different directories do not collide):
@@ -104,14 +101,9 @@ toon.parameters
 node.mesh!.primitives[0].material = toon;
 ```
 
-No generated files belong in `flutter.assets`. Materials loaded this way **hot
-reload**. Render the scene with a `SceneView` and editing `assets/toon.fmat`
-updates the running app in place
+Materials loaded this way **hot reload**. Render the scene with a `SceneView` and
+editing `assets/toon.fmat` updates the running app in place
 (see [Hot reload](#hot-reload)).
-
-`MaterialAssetMode.legacyOnly` remains available only for older Flutter
-toolchains without DataAssets. It requires manual `flutter.assets` entries and
-does not provide the managed source-path loading and hot-reload workflow.
 
 The bundle entry name and the sidecar key are the material's `name`
 (`"Toon"` above). One `buildMaterials` call can compile several `.fmat` files
@@ -473,11 +465,10 @@ managed outputs:
 `buildMaterials` discovers `assets/**/*.fmat` automatically; pass
 `discoveryRoot` to search a directory other than `assets/`.
 
-Use `MaterialAssetMode.dataAssetsRequired`, which fails early with setup
-guidance when DataAssets are unavailable. This is what
-`dart run flutter_scene:init` installs. `dataAssetsIfAvailable` and
-`legacyOnly` exist for compatibility with older toolchains and should not be
-used by new applications.
+`assetMode` defaults to `MaterialAssetMode.generatedTree`, which is what
+`dart run flutter_scene:init` installs and what every app should use. The two
+Dart data assets modes are an advanced opt-in, for a package that ships materials
+to its own consumers.
 
 The generated shaders `#include` flutter_scene's framework GLSL; the hook puts
 that directory on `impellerc`'s include path for you, so nothing is copied into
@@ -767,8 +758,7 @@ encoder-controlled.
 
 # Hot reload
 
-A `.fmat` material loaded with `loadFmatMaterial` (the DataAssets workflow) hot
-reloads in place. Render the scene through a `SceneView`; on hot reload it asks
+A `.fmat` material loaded with `loadFmatMaterial` hot reloads in place. Render the scene through a `SceneView`; on hot reload it asks
 the framework's hot-reload coordinator to refresh any `.fmat` whose source
 changed. Every part of a `.fmat` reloads with no app-side code and no restart:
 
@@ -783,10 +773,9 @@ changed. Every part of a `.fmat` reloads with no app-side code and no restart:
   generated shaders' structure; that reloads too, but a new custom attribute
   only takes effect once the geometry supplies it via `setCustomAttribute`.)
 
-Requirements: the DataAssets workflow (`dart run flutter_scene:init` +
-`--enable-dart-data-assets`), so the build hook re-runs on a `.fmat` edit and
-re-syncs the regenerated assets; and a `SceneView` (or its `reassemble` hook)
-displaying the scene. A `.fmat` edit re-runs the build hook, so the reload takes
+Requirements: the build hook `dart run flutter_scene:init` installs, so a `.fmat`
+edit re-runs it and re-syncs the regenerated assets, and a `SceneView` (or its
+`reassemble` hook) displaying the scene. A `.fmat` edit re-runs the build hook, so the reload takes
 a moment while the shader recompiles. Hot reload is debug-only and tree-shaken
 from release builds. (`ShaderMaterial`, the raw escape hatch below, does not
 participate; it carries no sidecar.)
@@ -817,12 +806,12 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
 
 # Troubleshooting
 
-**`loadShaderLibraryAsync` returns null.** Confirm that the hook uses
-`ShaderBundleAssetMode.dataAssetsRequired`, DataAssets are enabled, and the key
-uses `packages/<app_package>/flutter_gpu_shaders/shaderbundles/<name>.shaderbundle`.
-For `.fmat`, use `loadFmatMaterial` with the source `.fmat` path instead of
-loading generated files directly. If a shader edit does not take effect, clear
-the app's `.dart_tool` and `build` directories and rebuild.
+**`loadShaderLibraryAsync` returns null.** Resolve the key with
+`resolveShaderBundleKey('<name>')` rather than writing it out, and confirm the
+hook builds that bundle. For `.fmat`, use `loadFmatMaterial` with the source
+`.fmat` path instead of loading generated files directly. If a shader edit does
+not take effect, clear the app's `.dart_tool` and `build` directories and
+rebuild.
 
 **A `MaterialParameters` setter throws.** You used an unknown parameter name or a
 type that doesn't match the declared type. The message names the parameter and

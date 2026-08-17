@@ -74,13 +74,40 @@ The goal has always been to pave the way for advanced graphics in Flutter. In li
 
 Scene is built by a former core Flutter engine team member who spent four years on Flutter, most of it building Impeller and Flutter GPU.
 
+## Getting started
+
+```sh
+flutter pub add flutter_scene
+dart run flutter_scene:init
+```
+
+`init` sets the project up in one pass. It writes a `hook/build.dart` that converts
+your assets at build time, creates `flutter_scene_generated/` with a `.gitignore`
+for its outputs, and adds that one directory to `flutter.assets` in your
+`pubspec.yaml`. Run it once; it is safe to run again.
+
+From then on, drop sources under `assets/` and load them by source path:
+
+```dart
+final level = await loadScene('assets/level.glb');
+final toon = await loadFmatMaterial('assets/toon.fmat');
+final ground = await loadTexture('assets/ground.png');
+```
+
+`.glb` and `.fscene` models, `.fmat` materials, and loose images are picked up
+automatically. Editing one reconverts just that source, and the change lands in
+the running app on hot reload. Render with `SceneView`.
+
+Keep your sources in version control. The generated directory holds compiled
+output tied to the Flutter engine that built it, which is why the hook manages
+its `.gitignore` for you.
+
 ## Requirements
 
 Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking changes, and every change is documented in the [CHANGELOG](https://github.com/bdero/flutter_scene/blob/master/packages/flutter_scene/CHANGELOG.md).
 
-- Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), which hasn't shipped to the stable channel yet, so Flutter Scene requires the Flutter [master channel](https://docs.flutter.dev/release/upgrade#other-channels). Version 0.19.0 needs a master build from 2026-06-09 or later, which is when render-to-mip-level Flutter GPU support landed (flutter/flutter#187685). The `flutter` lower bound in `pubspec.yaml` is set to the latest stable instead (so pub.dev can resolve and score the package), which is looser than the real requirement, so a recent master is what you actually want.
-- On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), which is Flutter's default renderer on iOS and Android and enabled with a flag on desktop. The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
-- Build automation compiles shaders and converts scenes, materials, and textures into managed DataAssets. Enable DataAssets once with `flutter config --enable-dart-data-assets`. Generated `.shaderbundle`, `.fsceneb`, and `.fstex` files are engine-coupled intermediates. Keep their source files in version control, but never commit the generated files or list them in `flutter.assets`.
+- Flutter 3.47 (stable) or newer. Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), and there is nothing to configure or opt into beyond the two lines above.
+- On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), which is Flutter's default renderer on iOS and Android and enabled with a flag on desktop (`--enable-impeller --enable-flutter-gpu`). The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
 
 ## Features
 
@@ -102,7 +129,7 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 
 ### Assets and animation
 
-* glTF (`.glb`) import at runtime, or pre-converted at build time into the engine's `.fsceneb` format through build hooks.
+* glTF (`.glb`) import at runtime, or pre-converted at build time into the engine's `.fsceneb` format through build hooks, loaded by source path.
 * The `.fscene`/`.fsceneb` scene description format, human-readable as text and fast to load as binary, with prefab support.
 * KTX2 compressed textures with full mip chains, `.fstex` texture builds, and HDR/EXR environment decoding.
 * Skinned meshes and a blended animation system, with declarative per-clip playback control.
@@ -178,7 +205,6 @@ To run the example app from a fresh clone:
 
 ```sh
 flutter pub get                                             # resolves the workspace
-flutter config --enable-dart-data-assets                    # one-time setup for build-hook outputs
 
 cd examples/flutter_app
 flutter create . --platforms=macos,ios,android,linux,windows,web  # generate gitignored platform stubs
