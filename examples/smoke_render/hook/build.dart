@@ -3,9 +3,9 @@ import 'package:hooks/hooks.dart';
 
 /// Builds this app's own assets as Dart data assets instead of into the generated
 /// tree when the workspace pubspec declares `hooks: user_defines: smoke_render:
-/// data_assets: true`, so the opt-in path stays covered by the smoke matrix. The
-/// engine's own assets always ride the tree, since a dependency cannot register
-/// them.
+/// data_assets: true`, so the opt-in path stays covered by the smoke matrix.
+/// buildEngineAssets keeps the engine's own shaders in this app's tree, which
+/// is the app-side override of what flutter_scene's hook builds by default.
 void main(List<String> args) {
   build(args, (input, output) async {
     final dataAssetsLane = input.userDefines['data_assets'] == true;

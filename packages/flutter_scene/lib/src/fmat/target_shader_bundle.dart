@@ -45,6 +45,11 @@ enum TargetShaderBundleAssetMode {
 /// from. [copyToGeneratedTree] turns that off for a caller that publishes the
 /// bundle itself (`buildMaterials`), and [owner] names the package the bundle
 /// belongs to when the app's hook builds a dependency's shaders.
+///
+/// [pruneGeneratedTree] drops a tree copy the data-asset registration replaces.
+/// flutter_scene's own hook turns that off: one build runs it several times
+/// with different asset types, so its tree copy is the fallback for the runs
+/// that have no data assets, not a leftover.
 Future<void> buildTargetShaderBundleJson({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
@@ -55,6 +60,7 @@ Future<void> buildTargetShaderBundleJson({
   String? dataAssetName,
   int? glesLanguageVersion,
   bool copyToGeneratedTree = true,
+  bool pruneGeneratedTree = true,
   String? owner,
   String? stamp,
 }) async {
@@ -94,6 +100,7 @@ Future<void> buildTargetShaderBundleJson({
         )
       : bundleFileName;
   if (emitDataAssets) {
+    if (!pruneGeneratedTree) return;
     // A tree left by an earlier build would ship the same bundle twice.
     GeneratedAssetTree.openExisting(
         buildInput.packageRoot,

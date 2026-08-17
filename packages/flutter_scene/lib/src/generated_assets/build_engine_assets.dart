@@ -49,9 +49,12 @@ Future<void> buildOwnEngineAssets({
 }) => _build(
   buildInput: buildInput,
   buildOutput: buildOutput,
-  // Data assets are the tidiest home when they exist: no writes into the
-  // package directory at all.
+  // Data assets are the tidiest home when they exist, no writes into the
+  // package directory at all. One build runs this hook several times with
+  // different asset types though, so a run that has them must not delete the
+  // tree copy a run without them wrote.
   dataAssets: buildInput.config.buildDataAssets,
+  prune: false,
 );
 
 /// Builds the engine's shaders into the app's generated tree, from the app's
@@ -70,6 +73,7 @@ Future<void> _build({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   required bool dataAssets,
+  bool prune = true,
 }) async {
   final root = await _flutterSceneRoot();
   await _buildBaseShaderBundle(
@@ -77,6 +81,7 @@ Future<void> _build({
     buildOutput: buildOutput,
     sourceRoot: root,
     dataAssets: dataAssets,
+    prune: prune,
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
@@ -86,6 +91,7 @@ Future<void> _build({
     assetMode: dataAssets
         ? MaterialAssetMode.dataAssetsRequired
         : MaterialAssetMode.generatedTree,
+    pruneGeneratedTree: prune,
   );
 }
 
@@ -108,6 +114,7 @@ Future<void> _buildBaseShaderBundle({
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
   required bool dataAssets,
+  required bool prune,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
   final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
@@ -210,6 +217,7 @@ Future<void> _buildBaseShaderBundle({
     includeDirectories: [shaders],
     glesLanguageVersion: _glesLanguageVersion,
     assetMode: assetMode,
+    pruneGeneratedTree: prune,
     owner: _engineOwner,
     stamp: stamp,
   );
