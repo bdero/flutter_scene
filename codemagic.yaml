@@ -14,12 +14,32 @@ definitions:
     flutter: master
     vars:
       FLUTTER_DART_DATA_ASSETS: "true"
+      # The channel to render on. Codemagic's `flutter:` key takes a literal,
+      # so the image installs master and the channel script below switches when
+      # a build asks for another one. Overridden per build through the API by
+      # .github/workflows/codemagic_smoke.yml.
+      FLUTTER_CHANNEL: "master"
 
   cache: &smoke_cache
     cache_paths:
       - ~/.pub-cache
 
   scripts:
+    - &script_select_channel
+      name: Select the Flutter channel
+      # A release check renders against stable; everything else stays on the
+      # master the image ships, so this is a no-op on the usual path.
+      script: |
+        set -eu
+        channel="${FLUTTER_CHANNEL:-master}"
+        if [ "$channel" = "master" ]; then
+          echo "Staying on the image's master Flutter."
+          exit 0
+        fi
+        echo "Switching to the $channel channel."
+        flutter channel "$channel"
+        flutter upgrade --force
+
     - &script_versions
       name: Flutter and engine revision
       script: flutter --version
@@ -65,6 +85,7 @@ workflows:
     environment: *smoke_environment
     cache: *smoke_cache
     scripts:
+      - *script_select_channel
       - *script_versions
       - *script_assert_no_credentials
       - name: Enable the macOS desktop target
@@ -98,6 +119,7 @@ workflows:
         SMOKE_SIM_DEVICE: iPhone 17 Pro
     cache: *smoke_cache
     scripts:
+      - *script_select_channel
       - *script_versions
       - *script_assert_no_credentials
       - name: Generate the iOS project
