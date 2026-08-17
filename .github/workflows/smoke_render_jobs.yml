@@ -380,12 +380,8 @@ jobs:
         # falls back to the D3D11 WARP software rasterizer when no hardware
         # adapter is present, so no extra graphics setup is needed (unlike the
         # Linux job, which installs Mesa's software GL/Vulkan).
-        # TODO(windows-hook-diagnostics): drop --verbose once the build-hook
-        # failure here is understood. The tool reports only "Building native
-        # assets failed. See the logs for more details." without it.
         run: >
           flutter drive
-          --verbose
           --driver=test_driver/integration_test.dart
           --target=integration_test/smoke_test.dart
           -d windows --enable-impeller --enable-flutter-gpu
