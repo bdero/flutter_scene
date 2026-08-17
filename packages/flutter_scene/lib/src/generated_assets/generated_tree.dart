@@ -325,8 +325,18 @@ final class GeneratedAssetTree {
 
   /// Writes the manifest and removes generated files no entry references (an
   /// output renamed by a source move, or left by an older flutter_scene).
+  ///
+  /// A file that is another variant of a referenced name is kept, since a
+  /// concurrent build on a different engine is named by it and would otherwise
+  /// lose its asset between its hook and asset bundling. That leaks at most one
+  /// file per engine an output was ever compiled by, which a source move or a
+  /// removed source still clears through the explicit deletes.
   void save() {
     final referenced = {for (final entry in _manifest.entries) entry.file};
+    final variantsOfReferenced = referenced
+        .map(generatedNameWithoutTag)
+        .nonNulls
+        .toSet();
     final directory = Directory.fromUri(_root);
     if (directory.existsSync()) {
       for (final file in directory.listSync(followLinks: false)) {
@@ -336,6 +346,9 @@ final class GeneratedAssetTree {
         // keeper file in the tree survives.
         if (!isGeneratedFileName(name)) continue;
         if (referenced.contains(name)) continue;
+        if (variantsOfReferenced.contains(generatedNameWithoutTag(name))) {
+          continue;
+        }
         file.deleteSync();
       }
     }

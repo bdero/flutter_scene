@@ -22,7 +22,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    # Everything hook/build.dart generates, loaded by source path. Added
-    # by `dart run flutter_scene:init`.
-    - flutter_scene_generated/

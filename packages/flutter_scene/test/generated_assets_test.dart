@@ -91,6 +91,39 @@ void main() {
       expect(isGeneratedFileName('scene.a.fsceneb'), isFalse);
     });
 
+    test('a variant changes the file but not the id it maps', () {
+      final a = generatedFileName(
+        GeneratedAssetFamily.shaderBundle,
+        'base',
+        '.shaderbundle',
+        variant: 'engine=aaaa',
+      );
+      final b = generatedFileName(
+        GeneratedAssetFamily.shaderBundle,
+        'base',
+        '.shaderbundle',
+        variant: 'engine=bbbb',
+      );
+      expect(a, isNot(b));
+      expect(isGeneratedFileName(a), isTrue);
+      // Both are variants of one output, which the sweep keys on.
+      expect(generatedNameWithoutTag(a), generatedNameWithoutTag(b));
+      expect(
+        generatedNameWithoutTag(a),
+        isNot(
+          generatedNameWithoutTag(
+            generatedFileName(
+              GeneratedAssetFamily.shaderBundle,
+              'other',
+              '.shaderbundle',
+              variant: 'engine=aaaa',
+            ),
+          ),
+        ),
+      );
+      expect(generatedNameWithoutTag('manifest.json'), isNull);
+    });
+
     test('fnv1aHex is 16 unsigned hex digits', () {
       expect(fnv1aHex(const [1, 2, 3]), matches(RegExp(r'^[0-9a-f]{16}$')));
       expect(fnv1aHex(const []), matches(RegExp(r'^[0-9a-f]{16}$')));
@@ -397,6 +430,54 @@ flutter:
     tearDown(() => temp.deleteSync(recursive: true));
 
     Uri treeUri() => temp.uri.resolve('$generatedAssetsDirectory/');
+
+    test('a save keeps another engine variant of a live output', () {
+      GeneratedAssetTree writeVariant(String engine) {
+        final tree = GeneratedAssetTree.open(temp.uri, 'app');
+        final uri = tree.fileUri(
+          GeneratedAssetFamily.shaderBundle,
+          nameId: 'base',
+          extension: '.shaderbundle',
+          variant: engine,
+        );
+        File.fromUri(uri).writeAsStringSync(engine);
+        tree
+          ..recordFile(
+            family: GeneratedAssetFamily.shaderBundle,
+            id: 'base',
+            uri: uri,
+            stamp: engine,
+          )
+          ..save();
+        return tree;
+      }
+
+      writeVariant('engine=X');
+      writeVariant('engine=Y');
+
+      final left =
+          Directory.fromUri(treeUri())
+              .listSync()
+              .whereType<File>()
+              .map((f) => f.uri.pathSegments.last)
+              .where(isGeneratedFileName)
+              .toList()
+            ..sort();
+      // The concurrent build named by the other variant keeps its asset.
+      expect(left, hasLength(2));
+    });
+
+    test('a save still sweeps an unrelated orphan', () {
+      final tree = GeneratedAssetTree.open(temp.uri, 'app');
+      final orphan = tree.fileUri(
+        GeneratedAssetFamily.scene,
+        nameId: 'gone',
+        extension: '.fsceneb',
+      );
+      File.fromUri(orphan).writeAsStringSync('x');
+      tree.save();
+      expect(File.fromUri(orphan).existsSync(), isFalse);
+    });
 
     test('creates the directory and its gitignore, and requires the entry', () {
       final tree = GeneratedAssetTree.open(temp.uri, 'app');

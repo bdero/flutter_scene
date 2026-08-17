@@ -77,3 +77,13 @@ final RegExp _generatedFileNamePattern = RegExp(
   '^(${GeneratedAssetFamily.values.map((f) => f.prefix).join('|')})'
   r'\.[A-Za-z0-9_\-]+\.[0-9a-f]{8}\..+$',
 );
+
+/// [fileName] with its hash tag removed, identifying every variant of one
+/// generated output, or null when it is not a generated name.
+String? generatedNameWithoutTag(String fileName) {
+  final match = _generatedFileNamePattern.firstMatch(fileName);
+  if (match == null) return null;
+  final parts = fileName.split('.');
+  // `<prefix>.<stem>.<tag>.<extension...>`, so the tag is the third field.
+  return [...parts.sublist(0, 2), ...parts.sublist(3)].join('.');
+}
