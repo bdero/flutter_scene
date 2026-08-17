@@ -17,14 +17,16 @@ import 'package:hooks/hooks.dart';
 /// by an older flutter_scene revision are rebuilt.
 const int buildCacheRevision = 6;
 
-/// Setting this environment variable (to any value) disables the per-input
-/// build cache, so every source is reconverted on each hook run.
+/// Disables the per-input build cache, so every source is reconverted. Only
+/// reaches a builder driven directly; see [HookOptions] for the pubspec form a
+/// `flutter build` respects.
 const String kDisableBuildCacheEnv = 'FLUTTER_SCENE_DISABLE_BUILD_CACHE';
 
-/// Setting this environment variable (to any value) content-hashes every source
-/// in a build stamp instead of taking its size and modification time.
+/// Content-hashes every source in a build stamp instead of taking its size and
+/// modification time. Only reaches a builder driven directly; see [HookOptions]
+/// for the pubspec form a `flutter build` respects.
 ///
-/// Slower (roughly 4.7 s per GiB), and worth it in two cases: a filesystem whose
+/// Slower (roughly 5 s per GiB), and worth it in two cases: a filesystem whose
 /// timestamps are too coarse to see a same-size rewrite, and CI that restores a
 /// build cache across fresh checkouts, where every file has a new mtime and a
 /// stat fingerprint invalidates everything.
