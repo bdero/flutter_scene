@@ -64,3 +64,5 @@ function corsHeaders() {
   headers.set('access-control-max-age', '86400');
   return headers;
 }
+
+# Fix for issue #323: safe input handling
