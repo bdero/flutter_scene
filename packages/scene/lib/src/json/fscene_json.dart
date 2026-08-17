@@ -484,6 +484,35 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.screenSpaceReflectionsResolutionScale != 1.0)
       'resolutionScale': e.screenSpaceReflectionsResolutionScale,
   };
+  final gi = <String, dynamic>{
+    if (e.globalIlluminationEnabled) 'enabled': true,
+    if (e.globalIlluminationVolumeMode != 'followCamera')
+      'volumeMode': e.globalIlluminationVolumeMode,
+    if (e.globalIlluminationResolution != Vector3(16, 8, 16))
+      'resolution': _vec3Json(e.globalIlluminationResolution),
+    if (e.globalIlluminationExtents != Vector3(20, 10, 20))
+      'extents': _vec3Json(e.globalIlluminationExtents),
+    if (e.globalIlluminationIntensity != 1.0)
+      'intensity': e.globalIlluminationIntensity,
+    if (e.globalIlluminationHysteresis != 0.95)
+      'hysteresis': e.globalIlluminationHysteresis,
+    if (e.globalIlluminationShadowBias != 0.3)
+      'shadowBias': e.globalIlluminationShadowBias,
+    if (e.globalIlluminationVisibility != 0.7)
+      'visibility': e.globalIlluminationVisibility,
+    if (e.globalIlluminationVisibilityBias != 0.08)
+      'visibilityBias': e.globalIlluminationVisibilityBias,
+    if (e.globalIlluminationProbeUpdateBudget != 0)
+      'probeUpdateBudget': e.globalIlluminationProbeUpdateBudget,
+    if (e.globalIlluminationInjectionResolution != 'eighth')
+      'injectionResolution': e.globalIlluminationInjectionResolution,
+    if (e.globalIlluminationFireflyClamp != 8.0)
+      'fireflyClamp': e.globalIlluminationFireflyClamp,
+    if (e.globalIlluminationEmissiveBoost != 1.0)
+      'emissiveBoost': e.globalIlluminationEmissiveBoost,
+    if (e.globalIlluminationUpdateWhenIdleOnly) 'updateWhenIdleOnly': true,
+    if (e.globalIlluminationBakeOnly) 'bakeOnly': true,
+  };
   final fog = <String, dynamic>{
     if (e.fogEnabled) 'enabled': true,
     if (e.fogMode != 'exponential') 'mode': e.fogMode,
@@ -552,6 +581,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (filmGrain.isNotEmpty) 'filmGrain': filmGrain,
     if (ao.isNotEmpty) 'ambientOcclusion': ao,
     if (ssr.isNotEmpty) 'screenSpaceReflections': ssr,
+    if (gi.isNotEmpty) 'globalIllumination': gi,
     if (fog.isNotEmpty) 'fog': fog,
     if (godRays.isNotEmpty) 'godRays': godRays,
     if (dof.isNotEmpty) 'depthOfField': dof,
@@ -1035,6 +1065,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
   final grain = _map(effects['filmGrain']);
   final ao = _map(effects['ambientOcclusion']);
   final ssr = _map(effects['screenSpaceReflections']);
+  final gi = _map(effects['globalIllumination']);
   final fog = _map(effects['fog']);
   final rays = _map(effects['godRays']);
   final dof = _map(effects['depthOfField']);
@@ -1092,6 +1123,27 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     ambientOcclusionHalfResolution: ao['halfResolution'] as bool? ?? true,
     ambientOcclusionDepthMipChain: ao['depthMipChain'] as bool? ?? false,
     ambientOcclusionSpecularMode: ao['specularMode'] as String? ?? 'none',
+    globalIlluminationEnabled: gi['enabled'] as bool? ?? false,
+    globalIlluminationVolumeMode: gi['volumeMode'] as String? ?? 'followCamera',
+    globalIlluminationResolution: _effectVec(
+      gi['resolution'],
+      Vector3(16, 8, 16),
+    ),
+    globalIlluminationExtents: _effectVec(gi['extents'], Vector3(20, 10, 20)),
+    globalIlluminationIntensity: _d(gi['intensity'] ?? 1.0),
+    globalIlluminationHysteresis: _d(gi['hysteresis'] ?? 0.95),
+    globalIlluminationShadowBias: _d(gi['shadowBias'] ?? 0.3),
+    globalIlluminationVisibility: _d(gi['visibility'] ?? 0.7),
+    globalIlluminationVisibilityBias: _d(gi['visibilityBias'] ?? 0.08),
+    globalIlluminationProbeUpdateBudget:
+        (gi['probeUpdateBudget'] as num?)?.toInt() ?? 0,
+    globalIlluminationInjectionResolution:
+        gi['injectionResolution'] as String? ?? 'eighth',
+    globalIlluminationFireflyClamp: _d(gi['fireflyClamp'] ?? 8.0),
+    globalIlluminationEmissiveBoost: _d(gi['emissiveBoost'] ?? 1.0),
+    globalIlluminationUpdateWhenIdleOnly:
+        gi['updateWhenIdleOnly'] as bool? ?? false,
+    globalIlluminationBakeOnly: gi['bakeOnly'] as bool? ?? false,
     screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
     screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
     screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),
