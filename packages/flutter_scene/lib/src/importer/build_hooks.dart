@@ -127,6 +127,16 @@ void buildScenes({
   final inputs =
       inputFilePaths ??
       discoverSceneSources(packageRoot, discoveryRoot: discoveryRoot);
+  if (inputFilePaths == null) {
+    // A directory dependency is hashed as the names of its direct children, so
+    // it costs nothing and catches an added or removed source. Edits are caught
+    // by each source's own declared dependency below.
+    buildOutput.dependencies.add(
+      packageRoot.resolve(
+        discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/',
+      ),
+    );
+  }
 
   if (emitDataAssets) {
     // A tree left by an earlier build would ship the same scenes twice, so the
@@ -196,10 +206,10 @@ void buildScenes({
         );
         continue;
       }
-      final bytes = File(sourceUri.toFilePath()).readAsBytesSync();
+      final sourceFile = File(sourceUri.toFilePath());
       final stamp =
           'rev=$buildCacheRevision scene kind=.fsceneb '
-          'src=${contentHash(bytes)}';
+          'src=${sourceFingerprint(sourceFile)}';
       final copyUri = tree!.fileUri(
         GeneratedAssetFamily.scene,
         nameId: sceneId,
@@ -208,7 +218,9 @@ void buildScenes({
       if (!tree.isFresh(GeneratedAssetFamily.scene, sceneId, stamp, [
         copyUri,
       ])) {
-        File(copyUri.toFilePath()).writeAsBytesSync(bytes);
+        File(
+          copyUri.toFilePath(),
+        ).writeAsBytesSync(sourceFile.readAsBytesSync());
         stdout.writeln('flutter_scene: copied $inputFilePath');
       }
       tree.recordFile(
@@ -251,20 +263,17 @@ void buildScenes({
     // Skip the work when the source and settings are unchanged since the
     // output was produced, so a hook rerun for an unrelated edit does not
     // reconvert every scene. Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always
-    // run.
-    final sourceHash = contentHash(
-      File(sourceUri.toFilePath()).readAsBytesSync(),
-    );
-    // Fold each referenced image's content hash into the stamp, so editing an
-    // embedded image (not just the scene text) invalidates the cache and
-    // rebuilds the dependent `.fsceneb`.
+    // run, or FLUTTER_SCENE_STRICT_HASH to content-hash every source.
+    final sourceHash = sourceFingerprint(File(sourceUri.toFilePath()));
+    // Fold each referenced image into the stamp, so editing an embedded image
+    // (not just the scene text) invalidates the cache and rebuilds the
+    // dependent `.fsceneb`.
     final assetHashes = imageAssets
-        .map((a) => '${a.key}=${contentHash(a.file.readAsBytesSync())}')
+        .map((a) => '${a.key}=${sourceFingerprint(a.file)}')
         .toList();
     if (payloadAsset != null) {
       assetHashes.add(
-        '${payloadAsset.key}='
-        '${contentHash(payloadAsset.file.readAsBytesSync())}',
+        '${payloadAsset.key}=${sourceFingerprint(payloadAsset.file)}',
       );
     }
     final assetStamp = (assetHashes..sort()).join(',');
@@ -335,12 +344,12 @@ void buildScenes({
     buildOutput.dependencies.add(sourceUri);
     // Declare each embedded image as a dependency every run (not only when the
     // cache is stale), so editing it retriggers the hook and the dependent
-    // scene's hot reload.
+    // scene's hot reload. The payload sidecar is deliberately not declared: the
+    // build system hashes every declared dependency in full, the payload is the
+    // largest file in the project, and the `.fscene` text carries its manifest,
+    // so any payload change rewrites the text that is declared.
     for (final asset in imageAssets) {
       buildOutput.dependencies.add(asset.file.uri);
-    }
-    if (payloadAsset != null) {
-      buildOutput.dependencies.add(payloadAsset.file.uri);
     }
 
     if (emitDataAssets) {

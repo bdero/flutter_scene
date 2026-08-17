@@ -149,8 +149,6 @@ void buildTextures({
         '${sourceFile.path})',
       );
     }
-    final sourceBytes = sourceFile.readAsBytesSync();
-
     final dot = inputFilePath.lastIndexOf('.');
     final slash = inputFilePath.lastIndexOf('/');
     final stem = dot > slash ? inputFilePath.substring(0, dot) : inputFilePath;
@@ -169,7 +167,7 @@ void buildTextures({
     final content = contents[inputFilePath] ?? TextureContent.color;
     final stamp =
         'rev=$buildCacheRevision texture content=${content.name} '
-        'src=${contentHash(sourceBytes)}';
+        'src=${sourceFingerprint(sourceFile)}';
     final stampFile = File('${outputTextureUri.toFilePath()}.inputs');
     // The generated tree ships every file in it, so the stamp lives in the
     // manifest there rather than in a sidecar next to the output.
@@ -182,7 +180,7 @@ void buildTextures({
           ]);
     if (!fresh) {
       stdout.writeln('flutter_scene: cooking $inputFilePath');
-      final decoded = img.decodeImage(sourceBytes);
+      final decoded = img.decodeImage(sourceFile.readAsBytesSync());
       if (decoded == null) {
         throw Exception('Could not decode image: $inputFilePath');
       }
