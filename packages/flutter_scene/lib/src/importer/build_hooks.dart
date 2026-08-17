@@ -123,6 +123,7 @@ void buildScenes({
   final emitDataAssets =
       assetMode != SceneAssetMode.generatedTree && dataAssetsAvailable;
 
+  final options = HookOptions.of(buildInput);
   final packageRoot = buildInput.packageRoot;
   final inputs =
       inputFilePaths ??
@@ -151,7 +152,11 @@ void buildScenes({
   // build stamp).
   final tree = emitDataAssets
       ? null
-      : GeneratedAssetTree.open(packageRoot, buildInput.packageName);
+      : GeneratedAssetTree.open(
+          packageRoot,
+          buildInput.packageName,
+          options: options,
+        );
   if (tree != null &&
       (inputs.isNotEmpty || tree.hasFamily(GeneratedAssetFamily.scene))) {
     tree.requireAssetEntry();
@@ -209,7 +214,7 @@ void buildScenes({
       final sourceFile = File(sourceUri.toFilePath());
       final stamp =
           'rev=$buildCacheRevision scene kind=.fsceneb '
-          'src=${sourceFingerprint(sourceFile)}';
+          'src=${sourceFingerprint(sourceFile, strict: options.strictHashing)}';
       final copyUri = tree!.fileUri(
         GeneratedAssetFamily.scene,
         nameId: sceneId,
@@ -264,16 +269,24 @@ void buildScenes({
     // output was produced, so a hook rerun for an unrelated edit does not
     // reconvert every scene. Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always
     // run, or FLUTTER_SCENE_STRICT_HASH to content-hash every source.
-    final sourceHash = sourceFingerprint(File(sourceUri.toFilePath()));
+    final sourceHash = sourceFingerprint(
+      File(sourceUri.toFilePath()),
+      strict: options.strictHashing,
+    );
     // Fold each referenced image into the stamp, so editing an embedded image
     // (not just the scene text) invalidates the cache and rebuilds the
     // dependent `.fsceneb`.
     final assetHashes = imageAssets
-        .map((a) => '${a.key}=${sourceFingerprint(a.file)}')
+        .map(
+          (a) =>
+              '${a.key}='
+              '${sourceFingerprint(a.file, strict: options.strictHashing)}',
+        )
         .toList();
     if (payloadAsset != null) {
       assetHashes.add(
-        '${payloadAsset.key}=${sourceFingerprint(payloadAsset.file)}',
+        '${payloadAsset.key}='
+        '${sourceFingerprint(payloadAsset.file, strict: options.strictHashing)}',
       );
     }
     final assetStamp = (assetHashes..sort()).join(',');

@@ -130,18 +130,18 @@ PhysicallyBasedMaterial? _transmissionPhysicalMaterial;
 /// before pumping a scene that uses a custom material.
 Future<void> loadSmokeMaterials() async {
   if (_materialsLibrary != null) return;
+  // These scenes build their materials by hand, so they resolve the compiled
+  // bundle and its sidecar through the registry instead of loadFmatMaterial.
+  final index = (await FmatMaterialRegistry.load())
+      .resolve('assets/custom_material.fmat')
+      .index;
   _materialsLibrary = await gpu.loadShaderLibraryAsync(
-    'packages/smoke_render/flutter_scene/fmat/materials/'
-    'materials.shaderbundle',
+    index.shaderBundleAssetKey,
   );
-  final sidecar = await rootBundle.loadString(
-    'packages/smoke_render/flutter_scene/fmat/materials/'
-    'materials.fmat.json',
-  );
+  final sidecar = await rootBundle.loadString(index.sidecarAssetKey);
   _materialsMetadata = (jsonDecode(sidecar) as Map).cast<String, Object?>();
   _rawPairLibrary = await gpu.loadShaderLibraryAsync(
-    'packages/smoke_render/flutter_gpu_shaders/shaderbundles/'
-    'smoke.shaderbundle',
+    await gpu.resolveShaderBundleKey('smoke'),
   );
   _layeredPhysicalMaterial = PhysicallyBasedMaterial()
     ..baseColorFactor = vm.Vector4(0.45, 0.08, 0.03, 1.0)
@@ -173,8 +173,8 @@ Future<void> loadSmokeMaterials() async {
 gpu.ShaderLibrary? _rawPairLibrary;
 
 /// Builds a `PreprocessedMaterial` for the named `.fmat`, resolving its
-/// generated vertex variants from the sidecar's variant map (as the DataAssets
-/// loader does), since these scenes build the material by hand.
+/// generated vertex variants from the sidecar's variant map (as
+/// `loadFmatMaterial` does), since these scenes build the material by hand.
 PreprocessedMaterial _fmatMaterial(String name) {
   final metadata = (_materialsMetadata![name] as Map).cast<String, Object?>();
   final vertexMeta = (metadata['vertex'] as Map?)?.cast<String, Object?>();

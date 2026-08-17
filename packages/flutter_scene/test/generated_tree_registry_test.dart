@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
+import 'package:flutter_scene/src/generated_assets/generated_file_names.dart';
 import 'package:flutter_scene/src/importer/scene_registry.dart';
 import 'package:flutter_scene/src/texture/texture_registry.dart';
 import 'package:flutter_test/flutter_test.dart';

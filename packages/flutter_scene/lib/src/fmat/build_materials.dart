@@ -201,6 +201,7 @@ Future<void> _buildMaterials({
     throw UnsupportedError(_dataAssetsUnavailableMessage);
   }
 
+  final options = HookOptions.of(buildInput);
   final packageRoot = buildInput.packageRoot;
   // Sources come from the owning package, outputs go to the building package.
   final materialRoot = sourceRoot ?? packageRoot;
@@ -233,8 +234,11 @@ Future<void> _buildMaterials({
   // stamp).
   final tree = emitDataAssets
       ? null
-      : (GeneratedAssetTree.open(packageRoot, buildInput.packageName)
-          ..requireAssetEntry());
+      : (GeneratedAssetTree.open(
+          packageRoot,
+          buildInput.packageName,
+          options: options,
+        )..requireAssetEntry());
 
   // Locate flutter_scene's framework shader directory. flutter_scene has no
   // top-level `flutter_scene.dart` library, so resolve through this package's
@@ -306,12 +310,14 @@ Future<void> _buildMaterials({
   for (final materialPath in materialPaths) {
     final hash = sourceFingerprint(
       File(materialRoot.resolve(materialPath).toFilePath()),
+      strict: options.strictHashing,
     );
     stampBuffer.write(' $materialPath=$hash');
   }
   for (final name in _frameworkShaderFiles) {
     final hash = sourceFingerprint(
       File(frameworkShaders.resolve(name).toFilePath()),
+      strict: options.strictHashing,
     );
     stampBuffer.write(' $name=$hash');
   }

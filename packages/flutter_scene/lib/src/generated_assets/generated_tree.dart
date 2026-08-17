@@ -9,7 +9,9 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import '../importer/build_cache.dart';
 import 'generated_assets.dart';
+import 'generated_file_names.dart';
 
 /// The `flutter.assets` YAML the app needs, ready to paste.
 const String generatedAssetsPubspecSnippet =
@@ -84,27 +86,42 @@ void createGeneratedAssetsDirectory(Uri packageRoot) {
 /// accumulates across builders within a run and persists across runs, so it
 /// doubles as the incremental-build stamp store.
 final class GeneratedAssetTree {
-  GeneratedAssetTree._(this.packageRoot, this.packageName, this._manifest);
+  GeneratedAssetTree._(
+    this.packageRoot,
+    this.packageName,
+    this._manifest,
+    this.options,
+  );
 
   /// Opens (or starts) the generated tree of the package rooted at
   /// [packageRoot], creating the directory and its `.gitignore`.
-  factory GeneratedAssetTree.open(Uri packageRoot, String packageName) {
+  factory GeneratedAssetTree.open(
+    Uri packageRoot,
+    String packageName, {
+    HookOptions options = const HookOptions(),
+  }) {
     final tree = GeneratedAssetTree._(
       packageRoot,
       packageName,
       _readManifest(packageRoot, packageName) ??
           GeneratedAssetManifest(package: packageName),
+      options,
     );
     tree._createDirectory();
     return tree;
   }
 
-  /// Opens the tree only when one already exists, so a build that emits
-  /// DataAssets can prune a tree left by an earlier build without creating one.
+  /// Opens the tree only when one already exists, so a build that registers data
+  /// assets can prune a tree left by an earlier build without creating one.
   static GeneratedAssetTree? openExisting(Uri packageRoot, String packageName) {
     final manifest = _readManifest(packageRoot, packageName);
     if (manifest == null) return null;
-    return GeneratedAssetTree._(packageRoot, packageName, manifest);
+    return GeneratedAssetTree._(
+      packageRoot,
+      packageName,
+      manifest,
+      const HookOptions(),
+    );
   }
 
   static GeneratedAssetManifest? _readManifest(
@@ -130,6 +147,7 @@ final class GeneratedAssetTree {
   final Uri packageRoot;
   final String packageName;
   final GeneratedAssetManifest _manifest;
+  final HookOptions options;
 
   Uri get _root => packageRoot.resolve('$generatedAssetsDirectory/');
 
@@ -171,9 +189,7 @@ final class GeneratedAssetTree {
     String stamp,
     List<Uri> outputs,
   ) {
-    if (Platform.environment.containsKey('FLUTTER_SCENE_DISABLE_BUILD_CACHE')) {
-      return false;
-    }
+    if (options.rebuildEverything) return false;
     final entry = _manifest.find(family, id);
     if (entry == null || entry.stamp != _digest(stamp)) return false;
     return outputs.every((uri) => File.fromUri(uri).existsSync());

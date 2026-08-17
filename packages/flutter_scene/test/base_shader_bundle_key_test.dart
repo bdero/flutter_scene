@@ -7,6 +7,8 @@ import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/generated_assets/generated_file_names.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_test/flutter_test.dart';
 

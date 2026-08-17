@@ -1,6 +1,6 @@
 // Guards the runtime library's dependency graph. `lib/scene.dart` must stay
-// free of `dart:io` (and of the hook-only sources that use it) so the package
-// keeps compiling to wasm.
+// free of `dart:io` and of the hook-only sources, so the package keeps compiling
+// for web (dart2js rejects the 64-bit hash constants) and for wasm.
 
 import 'dart:io';
 
@@ -50,13 +50,14 @@ void main() {
     expect(closure.sdk, isNot(contains('dart:io')));
     for (final hookOnly in [
       'src/generated_assets/generated_tree.dart',
+      'src/generated_assets/generated_file_names.dart',
       'src/generated_assets/build_engine_assets.dart',
       'src/importer/build_cache.dart',
     ]) {
       expect(
         closure.files,
         isNot(contains(lib.resolve(hookOnly).toFilePath())),
-        reason: '$hookOnly is hook-only and uses dart:io',
+        reason: '$hookOnly is hook-only; it uses dart:io or 64-bit literals',
       );
     }
   });

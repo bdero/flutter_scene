@@ -111,6 +111,7 @@ void buildTextures({
   final emitDataAssets =
       assetMode != TextureAssetMode.generatedTree && dataAssetsAvailable;
 
+  final options = HookOptions.of(buildInput);
   final packageRoot = buildInput.packageRoot;
   final texturesRoot = packageRoot.resolve(outputDirectory);
 
@@ -127,7 +128,11 @@ void buildTextures({
   // build stamp).
   final tree = emitDataAssets
       ? null
-      : GeneratedAssetTree.open(packageRoot, buildInput.packageName);
+      : GeneratedAssetTree.open(
+          packageRoot,
+          buildInput.packageName,
+          options: options,
+        );
   if (tree != null &&
       (textures.isNotEmpty || tree.hasFamily(GeneratedAssetFamily.texture))) {
     tree.requireAssetEntry();
@@ -167,7 +172,7 @@ void buildTextures({
     final content = contents[inputFilePath] ?? TextureContent.color;
     final stamp =
         'rev=$buildCacheRevision texture content=${content.name} '
-        'src=${sourceFingerprint(sourceFile)}';
+        'src=${sourceFingerprint(sourceFile, strict: options.strictHashing)}';
     final stampFile = File('${outputTextureUri.toFilePath()}.inputs');
     // The generated tree ships every file in it, so the stamp lives in the
     // manifest there rather than in a sidecar next to the output.

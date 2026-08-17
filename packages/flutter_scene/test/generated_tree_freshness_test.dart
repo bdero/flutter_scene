@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
+import 'package:flutter_scene/src/generated_assets/generated_file_names.dart';
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_scene/src/importer/build_hooks.dart';
 import 'package:flutter_test/flutter_test.dart';
