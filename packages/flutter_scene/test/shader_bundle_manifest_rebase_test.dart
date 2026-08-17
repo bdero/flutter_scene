@@ -41,6 +41,53 @@ void main() {
     expect(file, isNot(matches(RegExp(r'^/?[A-Za-z]:'))));
   });
 
+  test('a posix split root still relativizes', () {
+    // A container workdir and a pub cache under different top-level
+    // directories share no first segment but walk up fine.
+    for (final (source, package, expected) in [
+      (
+        'file:///root/.pub-cache/fs/',
+        'file:///app/',
+        '../root/.pub-cache/fs/shaders/one.frag',
+      ),
+      (
+        'file:///opt/pub-cache/fs/',
+        'file:///builds/proj/',
+        '../../opt/pub-cache/fs/shaders/one.frag',
+      ),
+      (
+        'file:///Users/me/.pub-cache/fs/',
+        'file:///Users/me/app/',
+        '../.pub-cache/fs/shaders/one.frag',
+      ),
+    ]) {
+      final rebased = rebaseShaderBundleManifest(
+        {
+          'Fragment': {'file': 'shaders/one.frag'},
+        },
+        Uri.parse(source),
+        packageRoot: Uri.parse(package),
+      );
+      final file = (rebased['Fragment']! as Map)['file'] as String;
+      expect(file, expected);
+      expect(
+        Uri.parse(package).resolve(file),
+        Uri.parse(source).resolve('shaders/one.frag'),
+      );
+    }
+  });
+
+  test('one windows drive relativizes across directories', () {
+    final rebased = rebaseShaderBundleManifest(
+      {
+        'Fragment': {'file': 'shaders/one.frag'},
+      },
+      Uri.parse('file:///C:/pkg/fs/'),
+      packageRoot: Uri.parse('file:///C:/app/'),
+    );
+    expect((rebased['Fragment']! as Map)['file'], '../pkg/fs/shaders/one.frag');
+  });
+
   test('roots sharing nothing fall back to a readable URI', () {
     final rebased = rebaseShaderBundleManifest(
       {

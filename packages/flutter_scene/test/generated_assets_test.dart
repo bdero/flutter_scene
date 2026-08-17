@@ -467,6 +467,38 @@ flutter:
       expect(left, hasLength(2));
     });
 
+    test('a save drops a variant left by a retired engine', () {
+      final tree = GeneratedAssetTree.open(temp.uri, 'app');
+      final live = tree.fileUri(
+        GeneratedAssetFamily.shaderBundle,
+        nameId: 'base',
+        extension: '.shaderbundle',
+        variant: 'engine=current',
+      );
+      final stale = tree.fileUri(
+        GeneratedAssetFamily.shaderBundle,
+        nameId: 'base',
+        extension: '.shaderbundle',
+        variant: 'engine=retired',
+      );
+      File.fromUri(live).writeAsStringSync('live');
+      File.fromUri(stale)
+        ..writeAsStringSync('stale')
+        ..setLastModifiedSync(DateTime.now().subtract(variantRetention * 2));
+      tree
+        ..recordFile(
+          family: GeneratedAssetFamily.shaderBundle,
+          id: 'base',
+          uri: live,
+          stamp: 'current',
+        )
+        ..save();
+
+      expect(File.fromUri(live).existsSync(), isTrue);
+      // Past the window, so it is weight rather than a build in flight.
+      expect(File.fromUri(stale).existsSync(), isFalse);
+    });
+
     test('a save still sweeps an unrelated orphan', () {
       final tree = GeneratedAssetTree.open(temp.uri, 'app');
       final orphan = tree.fileUri(

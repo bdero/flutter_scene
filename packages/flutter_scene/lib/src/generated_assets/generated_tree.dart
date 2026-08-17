@@ -123,6 +123,10 @@ void createGeneratedAssetsDirectory(Uri packageRoot) {
 /// Each builder opens it, records what it wrote, and saves; the manifest
 /// accumulates across builders within a run and persists across runs, so it
 /// doubles as the incremental-build stamp store.
+/// How long an unreferenced variant of a live output is kept, covering a build
+/// racing this one without keeping a variant from an engine long retired.
+const Duration variantRetention = Duration(hours: 1);
+
 final class GeneratedAssetTree {
   GeneratedAssetTree._(
     this.packageRoot,
@@ -326,11 +330,13 @@ final class GeneratedAssetTree {
   /// Writes the manifest and removes generated files no entry references (an
   /// output renamed by a source move, or left by an older flutter_scene).
   ///
-  /// A file that is another variant of a referenced name is kept, since a
-  /// concurrent build on a different engine is named by it and would otherwise
-  /// lose its asset between its hook and asset bundling. That leaks at most one
-  /// file per engine an output was ever compiled by, which a source move or a
-  /// removed source still clears through the explicit deletes.
+  /// A recently written file that is another variant of a referenced name is
+  /// kept, since a concurrent build on a different engine is named by it and
+  /// would otherwise lose its asset between its hook and asset bundling. The
+  /// window bounds that, because a build racing this one wrote its file moments
+  /// ago while a variant left by a Flutter version retired weeks back is only
+  /// weight in a directory that ships, survives `flutter clean`, and for a
+  /// pub-cache consumer is shared with every project on the machine.
   void save() {
     final referenced = {for (final entry in _manifest.entries) entry.file};
     final variantsOfReferenced = referenced
@@ -339,6 +345,7 @@ final class GeneratedAssetTree {
         .toSet();
     final directory = Directory.fromUri(_root);
     if (directory.existsSync()) {
+      final keepAfter = DateTime.now().subtract(variantRetention);
       for (final file in directory.listSync(followLinks: false)) {
         if (file is! File) continue;
         final name = file.uri.pathSegments.last;
@@ -346,7 +353,8 @@ final class GeneratedAssetTree {
         // keeper file in the tree survives.
         if (!isGeneratedFileName(name)) continue;
         if (referenced.contains(name)) continue;
-        if (variantsOfReferenced.contains(generatedNameWithoutTag(name))) {
+        if (variantsOfReferenced.contains(generatedNameWithoutTag(name)) &&
+            file.statSync().modified.isAfter(keepAfter)) {
           continue;
         }
         file.deleteSync();
