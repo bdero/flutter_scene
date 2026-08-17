@@ -169,6 +169,7 @@ Future<void> buildBundledPhysicalMaterials({
   Uri? sourceRoot,
   String? owner,
   MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
+  bool pruneGeneratedTree = true,
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -182,6 +183,7 @@ Future<void> buildBundledPhysicalMaterials({
   generateShadowVariants: true,
   sourceRoot: sourceRoot,
   owner: owner,
+  pruneGeneratedTree: pruneGeneratedTree,
 );
 
 Future<void> _buildMaterials({
@@ -194,6 +196,7 @@ Future<void> _buildMaterials({
   bool generateShadowVariants = false,
   Uri? sourceRoot,
   String? owner,
+  bool pruneGeneratedTree = true,
 }) async {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == MaterialAssetMode.dataAssetsRequired &&
@@ -223,7 +226,7 @@ Future<void> _buildMaterials({
   }
   final emitDataAssets =
       dataAssetsAvailable && assetMode != MaterialAssetMode.generatedTree;
-  if (emitDataAssets) {
+  if (emitDataAssets && pruneGeneratedTree) {
     // A tree left by an earlier build would ship the same bundle twice.
     GeneratedAssetTree.openExisting(packageRoot, buildInput.packageName)
       ?..dropOwned(GeneratedAssetFamily.material, owner: assetOwner)
