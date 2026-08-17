@@ -69,7 +69,10 @@ jobs:
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
             xvfb libgl1-mesa-dri libegl-mesa0 libgles2 mesa-vulkan-drivers
-      - run: flutter config --enable-linux-desktop --enable-native-assets --enable-dart-data-assets
+      # No data assets here. These shards render what a consumer gets, where
+      # flutter_scene's hook compiles the engine's shaders into its own
+      # generated tree. The Apple shards keep the data-assets opt-in covered.
+      - run: flutter config --enable-linux-desktop --enable-native-assets
       - run: flutter pub get
       - name: Render smoke scenes
         working-directory: examples/smoke_render
@@ -156,7 +159,7 @@ jobs:
           channel: ${{ inputs.flutter_channel }}
       - name: Flutter and engine revision
         run: flutter --version
-      - run: flutter config --enable-native-assets --enable-dart-data-assets
+      - run: flutter config --enable-native-assets
       - run: flutter pub get
       - name: Enable KVM access
         run: |
@@ -300,7 +303,7 @@ jobs:
           channel: ${{ inputs.flutter_channel }}
       - name: Flutter and engine revision
         run: flutter --version
-      - run: flutter config --enable-native-assets --enable-dart-data-assets
+      - run: flutter config --enable-native-assets
       - run: flutter pub get
       - uses: nanasess/setup-chromedriver@v3
       - name: Render smoke scenes
@@ -372,7 +375,7 @@ jobs:
           channel: ${{ inputs.flutter_channel }}
       - name: Flutter and engine revision
         run: flutter --version
-      - run: flutter config --enable-windows-desktop --enable-native-assets --enable-dart-data-assets
+      - run: flutter config --enable-windows-desktop --enable-native-assets
       - run: flutter pub get
       - name: Render smoke scenes
         working-directory: examples/smoke_render
