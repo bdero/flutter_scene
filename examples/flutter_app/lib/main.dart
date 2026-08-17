@@ -29,6 +29,7 @@ import 'example_cloth.dart';
 import 'example_configurator.dart';
 import 'example_dicom.dart';
 import 'example_kit.dart';
+import 'example_global_illumination.dart';
 import 'example_lights.dart';
 import 'example_spot_shadow.dart';
 import 'example_fscene.dart';
@@ -244,6 +245,7 @@ class _MyAppState extends State<MyApp> {
       'Area Lights': (context) => const ExampleAreaLights(),
       'Reflection Probes': (context) => const ExampleReflectionProbes(),
       'Planar Mirror': (context) => const ExamplePlanarMirror(),
+      'Global Illumination': (context) => const ExampleGlobalIllumination(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Cloth': (context) => const ExampleCloth(),
       'Gameplay Kit': (context) => const ExampleKit(),
