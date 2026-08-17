@@ -252,9 +252,14 @@ class MeshData {
   ///
   /// Positions move as points. [normals] are carried by the inverse
   /// transpose, so a non-uniform scale leaves them perpendicular to the
-  /// surface, and [tangents] by [transform] itself; both are renormalized,
-  /// and a mirroring transform flips the tangent handedness. Indices and
-  /// every other attribute carry through untouched.
+  /// surface, and [tangents] by [transform] itself; both are renormalized.
+  /// Every other attribute carries through untouched.
+  ///
+  /// A mirroring [transform] reverses orientation, so it flips the tangent
+  /// handedness and reverses triangle winding to match. The renderer flips
+  /// winding per node for a mirrored node transform, which cannot help once
+  /// the mirror lives in the vertices. An unindexed triangle list comes back
+  /// indexed, since that is where its winding lives.
   MeshData transformed(vm.Matrix4 transform) {
     final m = transform.storage;
     final outPositions = Float32List(vertexCount * 3);
@@ -304,10 +309,28 @@ class MeshData {
       texCoords1: texCoords1,
       colors: colors,
       tangents: outTangents,
-      indices: indices,
+      indices: mirrored ? _reversedWinding() : indices,
       primitiveType: primitiveType,
       customAttributes: customAttributes,
     );
+  }
+
+  /// This mesh's triangle corners with each triangle's last two swapped, or
+  /// [indices] unchanged when winding does not apply. Synthesizes the corners
+  /// for an unindexed list, which has no other place to carry winding.
+  List<int>? _reversedWinding() {
+    if (primitiveType != gpu.PrimitiveType.triangle) return indices;
+    final source = indices;
+    final cornerCount = source?.length ?? vertexCount;
+    // A partial triangle has no winding to preserve; leave it as it came.
+    if (cornerCount == 0 || cornerCount % 3 != 0) return indices;
+    final out = List<int>.filled(cornerCount, 0);
+    for (var t = 0; t < cornerCount; t += 3) {
+      out[t] = source?[t] ?? t;
+      out[t + 1] = source?[t + 2] ?? t + 2;
+      out[t + 2] = source?[t + 1] ?? t + 1;
+    }
+    return out;
   }
 
   /// A collision triangle mesh over this mesh's triangles.

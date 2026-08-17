@@ -29,6 +29,25 @@ class _StubGeometry extends Geometry {
   }
 }
 
+/// The first triangle's normal implied by its corner order.
+Vector3 _windingNormal(MeshData data) {
+  Vector3 corner(int c) {
+    final v = data.indices?[c] ?? c;
+    return Vector3(
+      data.positions[v * 3],
+      data.positions[v * 3 + 1],
+      data.positions[v * 3 + 2],
+    );
+  }
+
+  final a = corner(0);
+  return (corner(1) - a).cross(corner(2) - a)..normalize();
+}
+
+/// The first vertex's carried normal.
+Vector3 _firstNormal(MeshData data) =>
+    Vector3(data.normals![0], data.normals![1], data.normals![2]);
+
 /// A unit quad, two triangles sharing the diagonal 0-2.
 MeshData _quad() {
   return MeshData.build(
@@ -331,6 +350,69 @@ void main() {
 
       final plain = data.transformed(Matrix4.diagonal3(Vector3(1, 1, 2)));
       expect(plain.tangents![3], 1);
+    });
+
+    test('reverses triangle winding through a mirror', () {
+      // The winding normal and the carried normal have to keep agreeing, or
+      // the mesh renders inside out and collides against its own back faces.
+      final data = MeshData.build(
+        positions: Float32List.fromList([
+          0, 0, 0, //
+          1, 0, 0, //
+          0, 0, 1,
+        ]),
+        // Matching the corner order's own normal, (0, -1, 0).
+        normals: Float32List.fromList([
+          0, -1, 0, //
+          0, -1, 0, //
+          0, -1, 0,
+        ]),
+        indices: [0, 1, 2],
+      );
+      expect(_windingNormal(data).dot(_firstNormal(data)), greaterThan(0));
+
+      // The handedness flip a glTF model carries at its root.
+      final mirrored = data.transformed(Matrix4.diagonal3(Vector3(1, 1, -1)));
+      expect(mirrored.indices, [0, 2, 1]);
+      expect(
+        _windingNormal(mirrored).dot(_firstNormal(mirrored)),
+        greaterThan(0),
+      );
+    });
+
+    test('indexes an unindexed triangle list to carry the flip', () {
+      final soup = MeshData.build(
+        positions: Float32List.fromList([
+          0, 0, 0, //
+          1, 0, 0, //
+          0, 0, 1, //
+          2, 0, 0, //
+          3, 0, 0, //
+          2, 0, 1,
+        ]),
+      );
+      expect(soup.indices, isNull);
+
+      final mirrored = soup.transformed(Matrix4.diagonal3(Vector3(1, 1, -1)));
+      expect(mirrored.indices, [0, 2, 1, 3, 5, 4]);
+    });
+
+    test('leaves winding alone without a mirror', () {
+      final scaled = _quad().transformed(Matrix4.diagonal3(Vector3(2, 3, 4)));
+      expect(scaled.indices, _quad().indices);
+
+      final points = MeshData(
+        positions: Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]),
+        vertexCount: 3,
+        indices: [0, 1, 2],
+        primitiveType: gpu.PrimitiveType.point,
+      );
+      // Winding is meaningless off a triangle list, mirror or not.
+      expect(points.transformed(Matrix4.diagonal3(Vector3(1, 1, -1))).indices, [
+        0,
+        1,
+        2,
+      ]);
     });
 
     test('leaves a singular transform without NaN normals', () {
