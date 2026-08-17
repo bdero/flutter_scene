@@ -42,7 +42,11 @@ definitions:
 
     - &script_versions
       name: Flutter and engine revision
-      script: flutter --version
+      # Recorded as an artifact too, so the GitHub side can show which channel
+      # a build actually rendered on instead of trusting that the request took.
+      script: |
+        mkdir -p "$CM_BUILD_DIR/examples/smoke_render/build"
+        flutter --version | tee "$CM_BUILD_DIR/examples/smoke_render/build/flutter-version.txt"
 
     - &script_assert_no_credentials
       name: Assert the build holds no credentials
@@ -106,6 +110,7 @@ workflows:
     artifacts:
       - examples/smoke_render/build/smoke/*.png
       - examples/smoke_render/build/smoke-status.txt
+      - examples/smoke_render/build/flutter-version.txt
 
   smoke-ios:
     name: Smoke render (iOS simulator, Metal)
@@ -164,3 +169,4 @@ workflows:
     artifacts:
       - examples/smoke_render/build/smoke/*.png
       - examples/smoke_render/build/smoke-status.txt
+      - examples/smoke_render/build/flutter-version.txt

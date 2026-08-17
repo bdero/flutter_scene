@@ -239,6 +239,13 @@ jobs:
           find staging -type f -name '*.png' -exec cp {} smoke/ \;
           status_file=$(find staging -type f -name 'smoke-status.txt' | head -1)
           [ -n "$status_file" ] && cp "$status_file" smoke-status.txt
+          version_file=$(find staging -type f -name 'flutter-version.txt' | head -1)
+          if [ -n "$version_file" ]; then
+            echo "Rendered with:"
+            cat "$version_file"
+          else
+            echo "The build published no Flutter version file."
+          fi
 
           count=$(find smoke -type f -name '*.png' | wc -l | tr -d ' ')
           echo "frames: $count"
