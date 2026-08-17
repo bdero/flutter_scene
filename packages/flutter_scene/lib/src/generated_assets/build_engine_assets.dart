@@ -25,6 +25,7 @@ import '../fmat/build_materials.dart'
     show MaterialAssetMode, buildBundledPhysicalMaterials;
 import '../fmat/target_shader_bundle.dart';
 import '../importer/build_cache.dart';
+import 'engine_identity.dart';
 import 'generated_assets.dart';
 import 'generated_tree.dart';
 
@@ -158,10 +159,16 @@ Future<void> _buildBaseShaderBundle({
       buildInput.packageName,
       options: options,
     )..requireAssetEntry();
+    // The compiled bundle is valid only for the engine that produced it, so
+    // the engine identity is part of the file name. Two builds on different
+    // Flutter versions sharing this directory then write different files
+    // instead of racing on one, and the sweep drops the one no longer named
+    // by the manifest.
     final outputUri = tree.fileUri(
       GeneratedAssetFamily.shaderBundle,
       nameId: 'base',
       extension: '.shaderbundle',
+      variant: await engineIdentity(),
     );
     if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
       outputUri,
@@ -185,17 +192,11 @@ Future<void> _buildBaseShaderBundle({
   // absolute paths first.
   var manifestPath = _baseBundleManifest;
   if (buildInput.packageRoot != sourceRoot) {
-    final manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
-        .cast<String, Object?>();
-    final rebased = <String, Object?>{
-      for (final MapEntry(:key, :value) in manifest.entries)
-        key: {
-          ...(value as Map).cast<String, Object?>(),
-          'file': sourceRoot
-              .resolve((value['file'] as String))
-              .toFilePath(windows: false),
-        },
-    };
+    final rebased = rebaseShaderBundleManifest(
+      (jsonDecode(manifestFile.readAsStringSync()) as Map)
+          .cast<String, Object?>(),
+      sourceRoot,
+    );
     manifestPath = 'build/flutter_scene_engine/base.shaderbundle.json';
     final rebasedFile = File.fromUri(
       buildInput.packageRoot.resolve(manifestPath),
@@ -220,5 +221,23 @@ Future<void> _buildBaseShaderBundle({
     pruneGeneratedTree: prune,
     owner: _engineOwner,
     stamp: stamp,
+    fileVariant: await engineIdentity(),
   );
 }
+
+/// Rewrites a shader-bundle manifest's `file` entries to absolute paths under
+/// [sourceRoot], for a hook whose working directory is a different package.
+///
+/// The paths stay in the host's own convention, since the compiler opens them.
+/// Forcing posix separators yields `/C:/...` on Windows, which no Windows tool
+/// can open.
+Map<String, Object?> rebaseShaderBundleManifest(
+  Map<String, Object?> manifest,
+  Uri sourceRoot,
+) => <String, Object?>{
+  for (final MapEntry(:key, :value) in manifest.entries)
+    key: {
+      ...(value as Map).cast<String, Object?>(),
+      'file': sourceRoot.resolve(value['file'] as String).toFilePath(),
+    },
+};
