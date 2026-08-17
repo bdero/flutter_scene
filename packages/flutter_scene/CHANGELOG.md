@@ -1,7 +1,9 @@
 ## 0.21.0
 
 * Assets are generated into `flutter_scene_generated/` at the app root and loaded by source path, the same way on every Flutter channel. `dart run flutter_scene:init` installs the hook, creates the directory with a `.gitignore` for its outputs, and adds the one pubspec assets entry it needs.
-* Breaking change, the app's `hook/build.dart` must call `buildEngineAssets`, which compiles the shaders and physical material bundle flutter_scene itself needs. Without it nothing renders. `dart run flutter_scene:init` writes the call for you.
+* `flutter pub add flutter_scene` is the whole setup. flutter_scene's own build hook compiles the engine's shaders for the app being built, on every channel, so an app with no hook of its own renders a runtime-imported `.glb` everywhere including web.
+* Compiled shader bundles record the engine that built them and are rebuilt when it changes, so switching Flutter versions cannot leave a bundle the new engine refuses to read.
+* `buildEngineAssets` is optional, and puts the engine's shaders in the app's own generated tree instead of flutter_scene's. `dart run flutter_scene:init` writes the call.
 * Breaking change, `legacyOnly` is now `generatedTree` in `SceneAssetMode`, `TextureAssetMode`, `MaterialAssetMode`, and `TargetShaderBundleAssetMode`, it is the default everywhere, and it writes the generated tree instead of loose files under `build/`. The Dart data assets modes remain as explicit opt-ins and prune the tree entries they replace.
 * A build with no generated assets now fails with the exact pubspec lines to add instead of producing an app that dies at its first load.
 * `resolveShaderBundleKey` resolves a shader bundle built by `buildTargetShaderBundleJson` (or `flutter_gpu_shaders`) by name, for `loadShaderLibraryAsync`.

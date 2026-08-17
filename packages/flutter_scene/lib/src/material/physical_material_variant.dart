@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show debugPrint, internal;
-import 'package:flutter/services.dart' show AssetManifest, rootBundle;
+import 'package:flutter/foundation.dart'
+    show debugPrint, internal, visibleForTesting;
+import 'package:flutter/services.dart'
+    show AssetBundle, AssetManifest, rootBundle;
 import 'package:vector_math/vector_math.dart';
 
 import '../fmat/fmat_emitter.dart' show radianceCubeEntryName;
@@ -17,10 +19,12 @@ const _dataBundleKey =
     'packages/flutter_scene/flutter_scene/fmat/physical/physical.shaderbundle';
 const _dataSidecarKey =
     'packages/flutter_scene/flutter_scene/fmat/physical/physical.fmat.json';
-const _fallbackBundleKey =
-    'packages/flutter_scene/build/shaderbundles/physical.shaderbundle';
-const _fallbackSidecarKey =
-    'packages/flutter_scene/build/shaderbundles/physical.fmat.json';
+
+/// Nothing generated the bundle, which means the build ran without hooks.
+const _missingMessage =
+    'The physical material shaders are missing. flutter_scene\'s build hook '
+    'compiles them during the build, so this is a build that ran without '
+    'hooks. Rebuild with a Flutter version that runs package build hooks.';
 
 Future<_PhysicalAssets>? _physicalAssetsFuture;
 _PhysicalAssets? _physicalAssets;
@@ -47,47 +51,52 @@ Future<_PhysicalAssets> _loadPhysicalAssetsAndResetOnFailure() async {
   }
 }
 
-Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
-  var bundleKey = _fallbackBundleKey;
-  var sidecarKey = _fallbackSidecarKey;
-  var resolved = false;
+/// The physical bundle's keys: the data asset when the toolchain registered
+/// one, then the app's own generated tree, then flutter_scene's, which its own
+/// hook always fills. Null when nothing built it.
+@visibleForTesting
+Future<({String bundle, String sidecar})?> resolvePhysicalBundleKeys({
+  AssetBundle? bundle,
+}) async {
   try {
-    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final manifest = await AssetManifest.loadFromAssetBundle(
+      bundle ?? rootBundle,
+    );
     if (manifest.listAssets().contains(_dataBundleKey)) {
-      bundleKey = _dataBundleKey;
-      sidecarKey = _dataSidecarKey;
-      resolved = true;
+      return (bundle: _dataBundleKey, sidecar: _dataSidecarKey);
     }
   } catch (_) {
-    // Nothing to scan; the generated tree below is the only source.
+    // Nothing to scan; the generated trees below are the only source.
   }
-  if (!resolved) {
-    // Built into the app's generated tree by buildEngineAssets.
-    final index = await loadGeneratedAssetIndex();
-    final generatedBundle = index.resolveKey(
-      GeneratedAssetFamily.material,
-      'physical#shaderbundle',
-      package: 'flutter_scene',
-    );
-    final generatedSidecar = index.resolveKey(
-      GeneratedAssetFamily.material,
-      'physical#sidecar',
-      package: 'flutter_scene',
-    );
-    if (generatedBundle != null && generatedSidecar != null) {
-      bundleKey = generatedBundle;
-      sidecarKey = generatedSidecar;
-    }
+  final index = await loadGeneratedAssetIndex(bundle);
+  final generatedBundle = index.resolveFirstKey(
+    GeneratedAssetFamily.material,
+    'physical#shaderbundle',
+    package: 'flutter_scene',
+  );
+  final generatedSidecar = index.resolveFirstKey(
+    GeneratedAssetFamily.material,
+    'physical#sidecar',
+    package: 'flutter_scene',
+  );
+  if (generatedBundle == null || generatedSidecar == null) return null;
+  return (bundle: generatedBundle, sidecar: generatedSidecar);
+}
+
+Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
+  final keys = await resolvePhysicalBundleKeys();
+  if (keys == null) {
+    throw StateError(_missingMessage);
   }
-  final library = await gpu.loadShaderLibraryAsync(bundleKey);
+  final library = await gpu.loadShaderLibraryAsync(keys.bundle);
   if (library == null) {
     throw StateError(
-      'Could not load the physical shader bundle "$bundleKey". The app\'s '
-      'hook/build.dart must call buildEngineAssets; '
-      '`dart run flutter_scene:init` sets that up.',
+      'Could not load the physical shader bundle "${keys.bundle}". It is '
+      'compiled for the engine that built the app, so rebuild after changing '
+      'Flutter versions.',
     );
   }
-  final sidecar = jsonDecode(await rootBundle.loadString(sidecarKey));
+  final sidecar = jsonDecode(await rootBundle.loadString(keys.sidecar));
   return _PhysicalAssets(library, (sidecar as Map).cast<String, Object?>());
 }
 

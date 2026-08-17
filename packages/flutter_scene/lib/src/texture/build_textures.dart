@@ -208,7 +208,8 @@ void buildTextures({
         );
       }
       final rgba = source.convert(numChannels: 4, format: img.Format.uint8);
-      File(outputTextureUri.toFilePath()).writeAsBytesSync(
+      writeGeneratedBytes(
+        outputTextureUri,
         encodeImageToKtx2Bytes(
           rgba.getBytes(order: img.ChannelOrder.rgba),
           rgba.width,

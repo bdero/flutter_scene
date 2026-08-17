@@ -6,10 +6,12 @@ import 'package:data_assets/data_assets.dart';
 import 'package:flutter_gpu_shaders/build.dart';
 import 'package:hooks/hooks.dart';
 
+import '../generated_assets/engine_identity.dart';
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_file_names.dart';
 import '../generated_assets/generated_tree.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
+import '../importer/build_cache.dart' show buildCacheRevision;
 
 /// Shader backends stored in a Flutter GPU shader bundle.
 // TODO(shader-bundle): add desktop OpenGL selection when Flutter GPU exposes
@@ -114,7 +116,7 @@ Future<void> buildTargetShaderBundleJson({
     nameId: id,
     extension: '.shaderbundle',
   );
-  File.fromUri(copyUri).writeAsBytesSync(bytes);
+  writeGeneratedBytes(copyUri, bytes);
   tree
     ..recordFile(
       family: GeneratedAssetFamily.shaderBundle,
@@ -137,6 +139,17 @@ Set<ShaderBundleBackend> shaderBundleBackendsForBuild(BuildInput buildInput) {
   if (os == OS.fuchsia) return const {ShaderBundleBackend.vulkan};
   return const {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan};
 }
+
+/// The leading part of a compiled bundle's build stamp, before its shader
+/// sources: the format revision, the backends this target needs, and the
+/// engine the bundle is being compiled for.
+///
+/// The engine belongs in the stamp because a shader bundle is only valid for
+/// the engine that consumes it, so switching Flutter versions must recompile
+/// even when every shader source is untouched. [what] names the bundle.
+Future<String> shaderBundleStamp(BuildInput buildInput, String what) async =>
+    'rev=$buildCacheRevision $what target=${shaderBundleTargetKey(buildInput)} '
+    '${await engineIdentity()}';
 
 /// Stable build-cache key for the selected shader backends.
 String shaderBundleTargetKey(BuildInput buildInput) =>

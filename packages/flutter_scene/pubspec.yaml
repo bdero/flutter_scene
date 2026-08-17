@@ -73,3 +73,9 @@ flutter:
     # magnitude/Fresnel fit). See lib/src/material/dfg_lut.dart for the data's
     # provenance and license.
     - assets/ltc.bin
+    # The engine's own shader bundles, compiled by this package's build hook for
+    # the engine that consumes them (a bundle is only valid for that engine, so
+    # nothing here is published, the archive carries the directory and its
+    # .gitignore alone). An app that runs its own buildEngineAssets ships
+    # its copy instead.
+    - flutter_scene_generated/

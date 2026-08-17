@@ -9,7 +9,9 @@ const String hookEndMarker = '// flutter_scene:init:end';
 const String _hookSnippet =
     '''
 $hookStartMarker
-    // The shaders and material bundle flutter_scene itself needs.
+    // Puts the engine's own shaders in this app's generated assets rather than
+    // in flutter_scene's. Optional; flutter_scene's hook builds them either
+    // way.
     await buildEngineAssets(buildInput: input, buildOutput: output);
     // Import .glb and .fscene sources under assets/, loadable by source path
     // with loadScene (and hot-reloadable). A no-op when there are no scenes.

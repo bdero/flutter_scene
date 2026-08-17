@@ -51,25 +51,74 @@ final class MissingGeneratedAssetEntryException implements Exception {
         'Add the entry by hand, or rewrite the list one item per line.\n',
       );
     }
-    // TODO(legacy-package-assets): a package that is not the app cannot ship
-    // generated assets this way (its tree would be published to pub.dev and
-    // shared across projects through the pub cache). Such a package needs the
-    // DataAssets opt-in modes until the app-side hook can convert a
-    // dependency's declared sources into the app tree.
+    // TODO(package-generated-assets): a third-party package that generates
+    // assets for its consumers has no supported path yet. flutter_scene builds
+    // its own engine shaders into its own tree (its pubspec lists the
+    // directory, and only a keeper file is published), which another package
+    // could copy, but nothing packages that as reusable API.
     buffer.write(
-      '\nOnly the app can ship generated assets this way. A package that '
-      'generates assets for its consumers needs a DataAssets asset mode.\n',
+      '\nA package that generates assets for its consumers must list its own '
+      'generated directory the same way, or use a DataAssets asset mode.\n',
     );
     return buffer.toString();
   }
 }
+
+/// Thrown when the generated tree cannot be written, which for flutter_scene's
+/// own tree means a read-only package directory (a locked-down pub cache).
+final class GeneratedAssetsNotWritableException implements Exception {
+  GeneratedAssetsNotWritableException(this.path, this.cause);
+
+  final String path;
+  final Object cause;
+
+  @override
+  String toString() =>
+      'flutter_scene: could not write generated assets into $path ($cause). '
+      'Make that directory writable, or enable Dart data assets '
+      '(`flutter config --enable-dart-data-assets`), or call buildEngineAssets '
+      'from the app\'s own hook/build.dart (`dart run flutter_scene:init`) so '
+      'the engine shaders are built into the app instead.';
+}
+
+/// Runs [write], reporting a read-only destination as an actionable failure
+/// rather than a raw filesystem error.
+T guardGeneratedWrite<T>(Uri target, T Function() write) {
+  try {
+    return write();
+  } on FileSystemException catch (e) {
+    throw GeneratedAssetsNotWritableException(
+      target.toFilePath(windows: false),
+      e.osError ?? e.message,
+    );
+  }
+}
+
+/// Writes [bytes] to [uri] through a temporary sibling.
+///
+/// Two builds can share one generated tree (the same pub cache backs every
+/// project), so a file must never be visible half-written. The rename is
+/// last-writer-wins, and the loser's next build finds a stamp that does not
+/// match and rewrites it.
+void writeGeneratedBytes(Uri uri, List<int> bytes) =>
+    guardGeneratedWrite(uri, () {
+      final temp = File.fromUri(Uri.file('${uri.toFilePath()}.$pid.tmp'))
+        ..writeAsBytesSync(bytes);
+      temp.renameSync(uri.toFilePath());
+    });
+
+/// [writeGeneratedBytes] for text.
+void writeGeneratedString(Uri uri, String contents) =>
+    writeGeneratedBytes(uri, utf8.encode(contents));
 
 /// Creates the generated tree under [packageRoot] and writes its `.gitignore`,
 /// so the listed asset directory is present in a fresh clone whose contents are
 /// ignored. Writes no manifest.
 void createGeneratedAssetsDirectory(Uri packageRoot) {
   final root = packageRoot.resolve('$generatedAssetsDirectory/');
-  Directory.fromUri(root).createSync(recursive: true);
+  guardGeneratedWrite(root, () {
+    Directory.fromUri(root).createSync(recursive: true);
+  });
   final gitignore = File.fromUri(
     root.resolve(generatedAssetsGitignoreFileName),
   );
@@ -77,7 +126,7 @@ void createGeneratedAssetsDirectory(Uri packageRoot) {
       gitignore.readAsStringSync() == generatedAssetsGitignore) {
     return;
   }
-  gitignore.writeAsStringSync(generatedAssetsGitignore);
+  writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
 }
 
 /// The app's generated tree, opened for a hook run.
@@ -298,7 +347,9 @@ final class GeneratedAssetTree {
     }
     if (_manifest.entries.isEmpty && !directory.existsSync()) return;
     final manifestFile = File.fromUri(_root.resolve(generatedManifestFileName));
-    manifestFile.parent.createSync(recursive: true);
+    guardGeneratedWrite(manifestFile.uri, () {
+      manifestFile.parent.createSync(recursive: true);
+    });
     final contents = _manifest.encode();
     // Rewriting an identical manifest changes its timestamp, which the tool
     // reads as a modified file and reruns the build for.
@@ -306,7 +357,7 @@ final class GeneratedAssetTree {
         manifestFile.readAsStringSync() == contents) {
       return;
     }
-    manifestFile.writeAsStringSync(contents);
+    writeGeneratedString(manifestFile.uri, contents);
   }
 
   static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));

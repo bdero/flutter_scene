@@ -78,13 +78,35 @@ Scene is built by a former core Flutter engine team member who spent four years 
 
 ```sh
 flutter pub add flutter_scene
+```
+
+That is the whole setup. List a `.glb` under `flutter: assets:` like any other
+asset (or fetch one at runtime), import it, and render it:
+
+```dart
+final model = await Node.fromGlbAsset('assets/model.glb');
+scene.add(model);
+// ...
+SceneView(scene, cameraBuilder: (elapsed) => PerspectiveCamera(...));
+```
+
+No project configuration, no flags, and the same code runs on web. The engine's
+shaders are compiled for you during the build, by flutter_scene's own build
+hook.
+
+### The asset pipeline
+
+Converting assets ahead of time is the upgrade, not the entry fee. Run it once
+when you want it:
+
+```sh
 dart run flutter_scene:init
 ```
 
-`init` sets the project up in one pass. It writes a `hook/build.dart` that converts
-your assets at build time, creates `flutter_scene_generated/` with a `.gitignore`
-for its outputs, and adds that one directory to `flutter.assets` in your
-`pubspec.yaml`. Run it once; it is safe to run again.
+`init` writes a `hook/build.dart` that converts your assets at build time,
+creates `flutter_scene_generated/` with a `.gitignore` for its outputs, and adds
+that one directory to `flutter.assets` in your `pubspec.yaml`. It is safe to run
+again.
 
 From then on, drop sources under `assets/` and load them by source path:
 
@@ -94,9 +116,10 @@ final toon = await loadFmatMaterial('assets/toon.fmat');
 final ground = await loadTexture('assets/ground.png');
 ```
 
-`.glb` and `.fscene` models, `.fmat` materials, and loose images are picked up
-automatically. Editing one reconverts just that source, and the change lands in
-the running app on hot reload. Render with `SceneView`.
+What that buys over runtime import: `.glb` and `.fscene` models pre-converted to
+the `.fsceneb` format that loads far faster, `.fmat` custom materials,
+block-compressed textures with full mip chains, and hot reload, editing a source
+reconverts just that source and the change lands in the running app.
 
 Keep your sources in version control. The generated directory holds compiled
 output tied to the Flutter engine that built it, which is why the hook manages
@@ -106,7 +129,7 @@ its `.gitignore` for you.
 
 Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking changes, and every change is documented in the [CHANGELOG](https://github.com/bdero/flutter_scene/blob/master/packages/flutter_scene/CHANGELOG.md).
 
-- Flutter 3.47 (stable) or newer. Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), and there is nothing to configure or opt into beyond the two lines above.
+- Flutter 3.47 (stable) or newer. Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), and there is nothing to configure or opt into beyond `flutter pub add`.
 - On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), which is Flutter's default renderer on iOS and Android and enabled with a flag on desktop (`--enable-impeller --enable-flutter-gpu`). The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
 
 ## Features
