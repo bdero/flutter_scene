@@ -108,6 +108,12 @@ creates `flutter_scene_generated/` with a `.gitignore` for its outputs, and adds
 that one directory to `flutter.assets` in your `pubspec.yaml`. It is safe to run
 again.
 
+Upgrading from an earlier version, run it again. Generated assets used to be
+Dart data assets, which only master-channel toolchains build, and they now go
+into that directory on every channel. Re-running `init` migrates the hook it
+wrote and adds the pubspec entry; a hook still asking for a removed asset mode
+fails the build and names its replacement.
+
 From then on, drop sources under `assets/` and load them by source path:
 
 ```dart

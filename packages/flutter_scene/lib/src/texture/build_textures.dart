@@ -23,6 +23,20 @@ enum TextureAssetMode {
   /// Require Dart data assets and fail the build when the current toolchain did
   /// not enable them for hooks.
   dataAssetsRequired,
+
+  /// Removed. Kept so an upgraded hook fails with instructions instead
+  /// of an undefined name.
+  @Deprecated(
+    'Removed in 0.21.0. Generated assets go into flutter_scene_generated/ and load by source path on every channel. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  legacyOnly,
+
+  /// Removed. Kept so an upgraded hook fails with instructions instead
+  /// of an undefined name.
+  @Deprecated(
+    'Removed in 0.21.0. Generated assets go into flutter_scene_generated/ and load by source path on every channel. Use generatedTree, then run `dart run flutter_scene:init`.',
+  )
+  dataAssetsIfAvailable,
 }
 
 // Where a data-asset build stages its files before registering them.
@@ -102,6 +116,20 @@ void buildTextures({
     );
   }
 
+  // ignore: deprecated_member_use_from_same_package
+  if (assetMode == TextureAssetMode.legacyOnly) {
+    throwRemovedAssetMode(
+      'TextureAssetMode.legacyOnly',
+      'TextureAssetMode.generatedTree',
+    );
+  }
+  // ignore: deprecated_member_use_from_same_package
+  if (assetMode == TextureAssetMode.dataAssetsIfAvailable) {
+    throwRemovedAssetMode(
+      'TextureAssetMode.dataAssetsIfAvailable',
+      'TextureAssetMode.generatedTree',
+    );
+  }
   final emitDataAssets = assetMode == TextureAssetMode.dataAssetsRequired;
   if (emitDataAssets && !buildInput.config.buildDataAssets) {
     throw UnsupportedError(_dataAssetsUnavailableMessage);
