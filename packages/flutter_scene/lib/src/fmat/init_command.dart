@@ -9,10 +9,6 @@ const String hookEndMarker = '// flutter_scene:init:end';
 const String _hookSnippet =
     '''
 $hookStartMarker
-    // Puts the engine's own shaders in this app's generated assets rather than
-    // in flutter_scene's. Optional; flutter_scene's hook builds them either
-    // way.
-    await buildEngineAssets(buildInput: input, buildOutput: output);
     // Import .glb and .fscene sources under assets/, loadable by source path
     // with loadScene (and hot-reloadable). A no-op when there are no scenes.
     buildScenes(buildInput: input, buildOutput: output);
@@ -117,10 +113,12 @@ InitHookResult _installHook(Directory root) {
     );
   }
 
-  if (contents.contains('buildEngineAssets(')) {
+  if (contents.contains('buildScenes(') ||
+      contents.contains('buildMaterials(') ||
+      contents.contains('buildEngineAssets(')) {
     return const InitHookResult(
       InitHookStatus.alreadyConfigured,
-      'hook/build.dart already calls buildEngineAssets.',
+      'hook/build.dart already calls the flutter_scene builders.',
     );
   }
 

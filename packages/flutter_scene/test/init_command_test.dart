@@ -24,9 +24,11 @@ void main() {
     expect(result.status, InitHookStatus.created);
     final contents = hookFile().readAsStringSync();
     expect(contents, contains(hookStartMarker));
-    expect(contents, contains('buildEngineAssets('));
     expect(contents, contains('buildScenes('));
     expect(contents, contains('buildMaterials('));
+    // flutter_scene's own hook builds the engine's shaders, so an app's hook
+    // does not have to.
+    expect(contents, isNot(contains('buildEngineAssets(')));
     // Nothing in the normal path mentions data assets.
     expect(contents.toLowerCase(), isNot(contains('dataassets')));
     expect(contents, isNot(contains('enable-dart-data-assets')));
@@ -109,7 +111,7 @@ $hookEndMarker
     expect(result.status, InitHookStatus.updated);
     final contents = hookFile().readAsStringSync();
     expect(contents, isNot(contains('stale contents')));
-    expect(contents, contains('buildEngineAssets('));
+    expect(contents, contains('buildScenes('));
   });
 
   test('leaves a foreign hook alone and prints what to paste', () async {
