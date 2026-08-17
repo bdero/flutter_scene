@@ -135,7 +135,7 @@ import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 
 final library = await gpu.loadShaderLibraryAsync(
-  'build/shaderbundles/my_bundle.shaderbundle',
+  await gpu.resolveShaderBundleKey('my_bundle'),
 );
 
 final effect = PostEffect(
