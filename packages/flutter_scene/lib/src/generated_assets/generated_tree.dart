@@ -61,6 +61,22 @@ final class MissingGeneratedAssetEntryException implements Exception {
   }
 }
 
+/// Creates the generated tree under [packageRoot] and writes its `.gitignore`,
+/// so the listed asset directory is present in a fresh clone whose contents are
+/// ignored. Writes no manifest.
+void createGeneratedAssetsDirectory(Uri packageRoot) {
+  final root = packageRoot.resolve('$generatedAssetsDirectory/');
+  Directory.fromUri(root).createSync(recursive: true);
+  final gitignore = File.fromUri(
+    root.resolve(generatedAssetsGitignoreFileName),
+  );
+  if (gitignore.existsSync() &&
+      gitignore.readAsStringSync() == generatedAssetsGitignore) {
+    return;
+  }
+  gitignore.writeAsStringSync(generatedAssetsGitignore);
+}
+
 /// The app's generated tree, opened for a hook run.
 ///
 /// Each builder opens it, records what it wrote, and saves; the manifest
@@ -116,19 +132,7 @@ final class GeneratedAssetTree {
 
   Uri get _root => packageRoot.resolve('$generatedAssetsDirectory/');
 
-  /// Creates the tree and writes its `.gitignore`, so a fresh clone whose tree
-  /// is ignored still has the listed asset directory the tool expects.
-  void _createDirectory() {
-    Directory.fromUri(_root).createSync(recursive: true);
-    final gitignore = File.fromUri(
-      _root.resolve(generatedAssetsGitignoreFileName),
-    );
-    if (gitignore.existsSync() &&
-        gitignore.readAsStringSync() == generatedAssetsGitignore) {
-      return;
-    }
-    gitignore.writeAsStringSync(generatedAssetsGitignore);
-  }
+  void _createDirectory() => createGeneratedAssetsDirectory(packageRoot);
 
   /// Whether the tree already holds outputs of [family], so a run that now
   /// discovers no sources still has stale outputs to prune.

@@ -1,34 +1,97 @@
 import 'dart:io';
 
 import 'package:flutter_scene/src/fmat/init_command.dart';
+import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
+import 'package:flutter_scene/src/generated_assets/generated_tree.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('creates a DataAssets build hook in a project without one', () async {
-    final temp = Directory.systemTemp.createTempSync('flutter_scene_init');
-    try {
-      final result = await installFlutterSceneBuildHook(projectRoot: temp);
-      final hook = File.fromUri(temp.uri.resolve('hook/build.dart'));
+  late Directory temp;
 
-      expect(result.status, InitHookStatus.created);
-      expect(hook.existsSync(), isTrue);
-      final contents = hook.readAsStringSync();
-      expect(contents, contains(hookStartMarker));
-      expect(contents, contains('MaterialAssetMode.dataAssetsRequired'));
-      expect(contents, contains('buildScenes('));
-      expect(contents, contains('SceneAssetMode.dataAssetsRequired'));
-      expect(contents, isNot(contains('flutter.assets')));
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+  setUp(() {
+    temp = Directory.systemTemp.createTempSync('flutter_scene_init');
+    File.fromUri(temp.uri.resolve('pubspec.yaml')).writeAsStringSync(
+      'name: app\n\nflutter:\n  uses-material-design: true\n',
+    );
+  });
+  tearDown(() => temp.deleteSync(recursive: true));
+
+  File hookFile() => File.fromUri(temp.uri.resolve('hook/build.dart'));
+
+  test('sets up a project that has nothing yet', () async {
+    final result = await installFlutterSceneBuildHook(projectRoot: temp);
+
+    expect(result.status, InitHookStatus.created);
+    final contents = hookFile().readAsStringSync();
+    expect(contents, contains(hookStartMarker));
+    expect(contents, contains('buildEngineAssets('));
+    expect(contents, contains('buildScenes('));
+    expect(contents, contains('buildMaterials('));
+    // Nothing in the normal path mentions data assets.
+    expect(contents.toLowerCase(), isNot(contains('dataassets')));
+    expect(contents, isNot(contains('enable-dart-data-assets')));
+
+    expect(
+      File.fromUri(
+        temp.uri.resolve(
+          '$generatedAssetsDirectory/$generatedAssetsGitignoreFileName',
+        ),
+      ).existsSync(),
+      isTrue,
+    );
+    expect(
+      parsePubspecAssets(
+        File.fromUri(temp.uri.resolve('pubspec.yaml')).readAsLinesSync(),
+      ).entries,
+      contains(normalizeAssetEntry(generatedAssetsEntry)),
+    );
   });
 
-  test('updates the managed block in an existing generated hook', () async {
-    final temp = Directory.systemTemp.createTempSync('flutter_scene_init');
-    try {
-      final hook = File.fromUri(temp.uri.resolve('hook/build.dart'));
-      hook.createSync(recursive: true);
-      hook.writeAsStringSync('''
+  test('is idempotent', () async {
+    await installFlutterSceneBuildHook(projectRoot: temp);
+    final hook = hookFile().readAsStringSync();
+    final pubspec = File.fromUri(
+      temp.uri.resolve('pubspec.yaml'),
+    ).readAsStringSync();
+
+    final again = await installFlutterSceneBuildHook(projectRoot: temp);
+
+    expect(again.status, InitHookStatus.alreadyConfigured);
+    expect(hookFile().readAsStringSync(), hook);
+    expect(
+      File.fromUri(temp.uri.resolve('pubspec.yaml')).readAsStringSync(),
+      pubspec,
+    );
+  });
+
+  test('keeps pubspec comments when adding the entry', () async {
+    File.fromUri(temp.uri.resolve('pubspec.yaml')).writeAsStringSync('''
+name: app
+
+flutter:
+  assets:
+    # my own assets
+    - assets/logo.png
+''');
+    await installFlutterSceneBuildHook(projectRoot: temp);
+    expect(
+      File.fromUri(temp.uri.resolve('pubspec.yaml')).readAsStringSync(),
+      '''
+name: app
+
+flutter:
+  assets:
+    # my own assets
+    - assets/logo.png
+    - $generatedAssetsEntry
+''',
+    );
+  });
+
+  test('refreshes the managed block in a generated hook', () async {
+    hookFile()
+      ..createSync(recursive: true)
+      ..writeAsStringSync('''
 import 'package:flutter_scene/build_hooks.dart';
 import 'package:hooks/hooks.dart';
 
@@ -41,40 +104,58 @@ $hookEndMarker
 }
 ''');
 
-      final result = await installFlutterSceneBuildHook(projectRoot: temp);
+    final result = await installFlutterSceneBuildHook(projectRoot: temp);
 
-      expect(result.status, InitHookStatus.updated);
-      final contents = hook.readAsStringSync();
-      expect(contents, isNot(contains('stale contents')));
-      expect(
-        contents,
-        contains('assetMode: MaterialAssetMode.dataAssetsRequired'),
-      );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+    expect(result.status, InitHookStatus.updated);
+    final contents = hookFile().readAsStringSync();
+    expect(contents, isNot(contains('stale contents')));
+    expect(contents, contains('buildEngineAssets('));
+  });
+
+  test('leaves a foreign hook alone and prints what to paste', () async {
+    hookFile()
+      ..createSync(recursive: true)
+      ..writeAsStringSync('void main() {}\n');
+
+    final result = await installFlutterSceneBuildHook(projectRoot: temp);
+
+    expect(result.status, InitHookStatus.needsManualInstall);
+    expect(hookFile().readAsStringSync(), 'void main() {}\n');
+    expect(
+      result.message,
+      allOf(
+        contains('Add this call to your existing hook/build.dart'),
+        contains(generatedAssetsEntry),
+      ),
+    );
   });
 
   test(
-    'leaves custom hooks untouched and prints manual instructions',
+    'recognizes a hand-written hook that already calls the builders',
     () async {
-      final temp = Directory.systemTemp.createTempSync('flutter_scene_init');
-      try {
-        final hook = File.fromUri(temp.uri.resolve('hook/build.dart'));
-        hook.createSync(recursive: true);
-        hook.writeAsStringSync('void main() {}\n');
-
-        final result = await installFlutterSceneBuildHook(projectRoot: temp);
-
-        expect(result.status, InitHookStatus.needsManualInstall);
-        expect(hook.readAsStringSync(), 'void main() {}\n');
-        expect(
-          result.message,
-          contains('Add this call to your existing hook/build.dart'),
+      hookFile()
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          "import 'package:flutter_scene/build_hooks.dart';\n"
+          'void main(List<String> args) async {\n'
+          '  await buildEngineAssets(buildInput: i, buildOutput: o);\n'
+          '}\n',
         );
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
+
+      final result = await installFlutterSceneBuildHook(projectRoot: temp);
+
+      expect(result.status, InitHookStatus.alreadyConfigured);
     },
   );
+
+  test('asks for a hand edit when the assets list is inline', () async {
+    File.fromUri(
+      temp.uri.resolve('pubspec.yaml'),
+    ).writeAsStringSync('name: app\nflutter:\n  assets: [assets/logo.png]\n');
+
+    final result = await installFlutterSceneBuildHook(projectRoot: temp);
+
+    expect(result.status, InitHookStatus.needsManualInstall);
+    expect(result.message, contains('by hand'));
+  });
 }
