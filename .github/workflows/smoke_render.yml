@@ -10,7 +10,19 @@ name: smoke render
 # night. Notifies Discord when a non-PR run fails.
 
 on:
+  # A manual run can pick a channel. Pass an argos_prefix for anything other
+  # than master, since manual runs always upload and an unprefixed one would
+  # overwrite the master baseline with frames from a different engine.
   workflow_dispatch:
+    inputs:
+      flutter_channel:
+        description: "Flutter channel to render against"
+        required: false
+        default: master
+      argos_prefix:
+        description: "Argos name prefix, keeps a non-master run off the baseline"
+        required: false
+        default: ""
   schedule:
     - cron: "0 7 * * *" # daily, 07:00 UTC
   push:
@@ -29,8 +41,9 @@ jobs:
   smoke_render:
     uses: ./.github/workflows/smoke_render_jobs.yml
     with:
-      flutter_channel: master
-      label: Flutter master
+      flutter_channel: ${{ inputs.flutter_channel || 'master' }}
+      label: ${{ format('Flutter {0}', inputs.flutter_channel || 'master') }}
+      argos_prefix: ${{ inputs.argos_prefix || '' }}
       # Upload on master pushes too, so a merge refreshes the Argos baseline
       # immediately (an approved rendering change lands on merge, not only at
       # the next nightly).
