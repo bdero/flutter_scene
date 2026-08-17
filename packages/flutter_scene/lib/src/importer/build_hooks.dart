@@ -132,6 +132,9 @@ void buildScenes({
     // A directory dependency is hashed as the names of its direct children, so
     // it costs nothing and catches an added or removed source. Edits are caught
     // by each source's own declared dependency below.
+    // TODO(hook-dep-cost): the hash covers direct children only, so a source
+    // added in a subdirectory is not seen until something else reruns the hook.
+    // Declaring each subdirectory found during discovery would close that.
     buildOutput.dependencies.add(
       packageRoot.resolve(
         discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/',

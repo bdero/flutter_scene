@@ -34,6 +34,10 @@ enum TargetShaderBundleAssetMode {
 
 /// Builds a shader bundle and removes backends the target cannot use.
 ///
+/// TODO(shader-bundle-cache): the compiler runs on every hook rerun, since only
+/// [stamp] callers skip it. Stamping the manifest and its sources here would let
+/// an unrelated asset edit skip the compile.
+///
 /// In [TargetShaderBundleAssetMode.generatedTree] the trimmed bundle is copied
 /// into the app's generated tree, recorded under the manifest name it was built
 /// from. [copyToGeneratedTree] turns that off for a caller that publishes the
