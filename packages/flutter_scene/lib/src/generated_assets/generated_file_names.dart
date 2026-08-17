@@ -47,18 +47,25 @@ const int _maxStemLength = 48;
 /// recursive, so a source path's directories collapse into a hash tag rather
 /// than nested output directories. The readable stem keeps the directory
 /// browsable and the tag keeps two same-named sources apart.
+///
+/// [variant] changes the file name without changing the id the manifest maps,
+/// so outputs that are only valid for one toolchain (an engine-compiled shader
+/// bundle) cannot collide when two builds share a directory.
 String generatedFileName(
   GeneratedAssetFamily family,
   String nameId,
-  String extension,
-) {
+  String extension, {
+  String? variant,
+}) {
   final slash = nameId.lastIndexOf('/');
   final rawStem = slash < 0 ? nameId : nameId.substring(slash + 1);
   var stem = rawStem.replaceAll(RegExp(r'[^A-Za-z0-9_\-]'), '_');
   if (stem.isEmpty) stem = 'asset';
   if (stem.length > _maxStemLength) stem = stem.substring(0, _maxStemLength);
-  return '${family.prefix}.$stem.${shortHash('${family.name}/$nameId')}'
-      '$extension';
+  final key = variant == null
+      ? '${family.name}/$nameId'
+      : '${family.name}/$nameId@$variant';
+  return '${family.prefix}.$stem.${shortHash(key)}$extension';
 }
 
 /// Whether [fileName] looks like a [generatedFileName] output, so a sweep of

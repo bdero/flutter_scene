@@ -10,7 +10,10 @@ Never buildTargetShaderBundleJson({
   String? dataAssetName,
   int? glesLanguageVersion,
   bool copyToGeneratedTree = true,
+  bool pruneGeneratedTree = true,
   String? owner,
+  String? stamp,
+  String? fileVariant,
 }) => throw UnsupportedError(
   'buildTargetShaderBundleJson runs at build time on native hosts only.',
 );

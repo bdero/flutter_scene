@@ -77,7 +77,7 @@ T guardGeneratedWrite<T>(Uri target, T Function() write) {
     return write();
   } on FileSystemException catch (e) {
     throw GeneratedAssetsNotWritableException(
-      target.toFilePath(windows: false),
+      target.toFilePath(),
       e.osError ?? e.message,
     );
   }
@@ -212,7 +212,10 @@ final class GeneratedAssetTree {
     GeneratedAssetFamily family, {
     required String nameId,
     required String extension,
-  }) => _root.resolve(generatedFileName(family, nameId, extension));
+    String? variant,
+  }) => _root.resolve(
+    generatedFileName(family, nameId, extension, variant: variant),
+  );
 
   /// Whether the recorded stamp for [family]/[id] matches [stamp] and every
   /// file in [outputs] still exists, meaning the conversion can be skipped.
@@ -277,9 +280,16 @@ final class GeneratedAssetTree {
   /// Only entries this package owns are considered; a dependency's sources
   /// resolve against that package's root, not the app's.
   ///
-  /// TODO(legacy-prune): entries of a family whose builder was removed from
-  /// the hook outlive it as long as their sources exist. Recording the set of
-  /// builders that ran would let a save prune those too.
+  /// TODO(legacy-prune): an entry outlives the builder that wrote it, whether
+  /// its family's builder left the hook or a `buildEngineAssets` call did.
+  /// A foreign-owned leftover is the one that bites, since the app's tree
+  /// resolves ahead of the owning package's, so a stale engine bundle keeps
+  /// winning after a Flutter switch. Dropping foreign entries a run did not
+  /// re-record needs a per-process run marker rather than per-instance
+  /// tracking (each builder opens its own tree), and it must not fire while
+  /// the run emits data assets, since one `flutter run` invokes the hook under
+  /// several asset-type configs and the data-asset invocation records nothing
+  /// into the tree.
   void pruneMissingSources() {
     for (final entry in [..._manifest.entries]) {
       final source = entry.source;

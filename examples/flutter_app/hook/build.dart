@@ -3,8 +3,6 @@ import 'package:hooks/hooks.dart';
 
 void main(List<String> args) {
   build(args, (input, output) async {
-    // The engine's own shaders and physical material bundle.
-    await buildEngineAssets(buildInput: input, buildOutput: output);
     // Reference the shared corpus through the in-package `assets_src` symlink
     // so each asset is keyed by a path relative to the package root.
     const corpus = [

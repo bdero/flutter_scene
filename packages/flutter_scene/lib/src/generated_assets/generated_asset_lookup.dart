@@ -193,26 +193,29 @@ Future<String> resolveShaderBundleKey(
       : bundleName;
   final dataAssetSuffix =
       '/flutter_gpu_shaders/shaderbundles/$name.shaderbundle';
+  // Collected inside the guard, judged outside it, so an ambiguity is reported
+  // rather than swallowed by the missing-manifest fallback.
+  var matches = const <String>[];
   try {
     final keys = (await AssetManifest.loadFromAssetBundle(
       bundle ?? rootBundle,
     )).listAssets();
-    final matches = keys
+    matches = keys
         .where(
           (key) =>
               key.endsWith(dataAssetSuffix) &&
               (package == null || key.startsWith('packages/$package/')),
         )
         .toList();
-    if (matches.length == 1) return matches.single;
-    if (matches.length > 1) {
-      throw StateError(
-        'Multiple shader bundles named "$name" were found: '
-        '${matches.join(', ')}. Pass package to disambiguate.',
-      );
-    }
   } catch (_) {
     // No manifest here; the generated index below is the only source.
+  }
+  if (matches.length == 1) return matches.single;
+  if (matches.length > 1) {
+    throw StateError(
+      'Multiple shader bundles named "$name" were found: '
+      '${matches.join(', ')}. Pass package to disambiguate.',
+    );
   }
   final index = await loadGeneratedAssetIndex(bundle);
   final key = index.resolveKey(

@@ -59,6 +59,7 @@ Future<void> buildTargetShaderBundleJson({
   bool pruneGeneratedTree = true,
   String? owner,
   String? stamp,
+  String? fileVariant,
 }) async {
   final emitDataAssets =
       buildInput.config.buildDataAssets &&
@@ -116,6 +117,7 @@ Future<void> buildTargetShaderBundleJson({
     GeneratedAssetFamily.shaderBundle,
     nameId: id,
     extension: '.shaderbundle',
+    variant: fileVariant,
   );
   writeGeneratedBytes(copyUri, bytes);
   tree
