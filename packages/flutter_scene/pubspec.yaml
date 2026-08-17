@@ -24,11 +24,11 @@ resolution: workspace
 
 environment:
   sdk: ^3.10.0
-  # Pinned to the latest stable so pub.dev (which analyzes on stable) can
-  # resolve and score the package. The real requirement is newer, a Flutter
-  # master build from 2026-06-09 or later (render-to-mip-level GPU support,
-  # flutter/flutter#187685). See the README and the version-pinning note.
-  flutter: ">=3.44.0"
+  # 3.47.0 is the first stable carrying the Flutter GPU support this package
+  # needs (render-to-mip-level, flutter/flutter#187685), so the floor is a
+  # truthful minimum rather than the pana-scoring compromise it used to be.
+  # Master builds numbered 3.47.0-1.0.pre.N sort below it and are excluded.
+  flutter: ">=3.47.0"
 
 dependencies:
   code_assets: ^1.2.1
