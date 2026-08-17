@@ -36,7 +36,15 @@ jobs:
       - name: Enable asset building
         run: flutter config --enable-native-assets --enable-dart-data-assets
       - name: Lint analysis
-        run: dart analyze packages examples
+        # The editor UI builds on Flutter master-only APIs (multi-window,
+        # ScrollCacheExtent), so a stable run analyzes everything else rather
+        # than failing on a package stable was never expected to compile.
+        run: |
+          if [ "$FLUTTER_CHANNEL" = "stable" ]; then
+            dart analyze $(ls -d packages/* | grep -v 'flutter_scene_editor$') examples
+          else
+            dart analyze packages examples
+          fi
       - name: Dart format
         run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -path '*/build/*')
 
