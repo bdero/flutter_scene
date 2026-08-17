@@ -65,29 +65,26 @@ void main() {
       }
     });
 
-    test(
-      'required DataAssets mode fails before legacy fallback work',
-      () async {
-        final input = _buildInput(buildDataAssets: false);
-        final output = BuildOutputBuilder();
+    test('the required data-assets mode fails before any work', () async {
+      final input = _buildInput(buildDataAssets: false);
+      final output = BuildOutputBuilder();
 
-        await expectLater(
-          buildMaterials(
-            buildInput: input,
-            buildOutput: output,
-            materials: const ['materials/toon.fmat'],
-            assetMode: MaterialAssetMode.dataAssetsRequired,
+      await expectLater(
+        buildMaterials(
+          buildInput: input,
+          buildOutput: output,
+          materials: const ['materials/toon.fmat'],
+          assetMode: MaterialAssetMode.dataAssetsRequired,
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            contains('MaterialAssetMode.generatedTree'),
           ),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (error) => error.message,
-              'message',
-              contains('flutter config --enable-dart-data-assets'),
-            ),
-          ),
-        );
-      },
-    );
+        ),
+      );
+    });
   });
 
   group('FmatMaterialRegistry', () {
@@ -107,8 +104,17 @@ void main() {
         final resolution = registry.resolve(query);
         expect(resolution.index.package, 'example_app');
         expect(resolution.index.bundleName, 'materials');
-        expect(resolution.index.shaderBundleAssetKey, 'shader.key');
-        expect(resolution.index.sidecarAssetKey, 'sidecar.key');
+        // The bundle and sidecar resolve as siblings of the index's own key.
+        expect(
+          resolution.index.shaderBundleAssetKey,
+          'packages/example_app/flutter_scene/fmat/materials/'
+          'materials.shaderbundle',
+        );
+        expect(
+          resolution.index.sidecarAssetKey,
+          'packages/example_app/flutter_scene/fmat/materials/'
+          'materials.fmat.json',
+        );
         expect(resolution.entry.entryName, 'FmatToon');
         expect(resolution.entry.source, 'materials/toon.fmat');
       }
@@ -167,11 +173,11 @@ void main() {
 // An index whose two materials share the entry-name-keyed map but live at
 // different source paths (and have distinct entry names).
 String _twoMaterialIndexJson() => jsonEncode({
-  'schema': 1,
+  'schema': 2,
   'package': 'example_app',
   'bundleName': 'materials',
-  'shaderBundleAssetKey': 'shader.key',
-  'sidecarAssetKey': 'sidecar.key',
+  'shaderBundleFileName': 'materials.shaderbundle',
+  'sidecarFileName': 'materials.fmat.json',
   'materials': {
     'Toon': {'entryName': 'Toon', 'source': 'a/toon.fmat'},
     'ToonB': {'entryName': 'ToonB', 'source': 'b/toon.fmat'},
@@ -197,11 +203,11 @@ BuildInput _buildInput({required bool buildDataAssets}) {
 
 String _indexJson({required String package, required String bundleName}) =>
     jsonEncode({
-      'schema': 1,
+      'schema': 2,
       'package': package,
       'bundleName': bundleName,
-      'shaderBundleAssetKey': 'shader.key',
-      'sidecarAssetKey': 'sidecar.key',
+      'shaderBundleFileName': '$bundleName.shaderbundle',
+      'sidecarFileName': '$bundleName.fmat.json',
       'materials': {
         'FmatToon': {'entryName': 'FmatToon', 'source': 'materials/toon.fmat'},
       },

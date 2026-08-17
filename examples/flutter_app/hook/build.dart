@@ -1,12 +1,10 @@
-import 'package:data_assets/data_assets.dart';
-import 'package:hooks/hooks.dart';
 import 'package:flutter_scene/build_hooks.dart';
+import 'package:hooks/hooks.dart';
 
 void main(List<String> args) {
-  build(args, (config, output) async {
-    if (!config.config.buildDataAssets) {
-      return;
-    }
+  build(args, (input, output) async {
+    // The engine's own shaders and physical material bundle.
+    await buildEngineAssets(buildInput: input, buildOutput: output);
     // Reference the shared corpus through the in-package `assets_src` symlink
     // so each asset is keyed by a path relative to the package root.
     const corpus = [
@@ -18,10 +16,9 @@ void main(List<String> args) {
     // The corpus as `.fsceneb` packages, loaded by source path through
     // loadScene.
     buildScenes(
-      buildInput: config,
+      buildInput: input,
       buildOutput: output,
       inputFilePaths: corpus,
-      assetMode: SceneAssetMode.dataAssetsRequired,
       // Store imported textures as compressed KTX2 block payloads so the
       // import -> compress -> render path is exercised in the app (dash's
       // textures shrink the most).
@@ -31,28 +28,23 @@ void main(List<String> args) {
     // container, loaded by source path through loadTexture (the Logo
     // example's ground).
     buildTextures(
-      buildInput: config,
+      buildInput: input,
       buildOutput: output,
       textures: ['assets/ground_grid.png'],
-      assetMode: TextureAssetMode.dataAssetsRequired,
     );
+    // The hand-written shaders the Raw shader and Toon examples draw with,
+    // resolved by bundle name with resolveShaderBundleKey.
     await buildTargetShaderBundleJson(
-      buildInput: config,
+      buildInput: input,
       buildOutput: output,
       manifestFileName: 'shaders/example.shaderbundle.json',
-      assetMode: TargetShaderBundleAssetMode.dataAssetsRequired,
-      // Match the engine bundle's GLES dialect (see the flutter_scene hook).
+      // Match the engine bundle's GLES dialect.
       glesLanguageVersion: 300,
     );
     // Compile .fmat custom materials into a bundle plus a parameter sidecar,
     // consumed by the "Toon (.fmat)" example through loadFmatMaterial. With no
     // explicit list, assets/**/*.fmat is auto-discovered (assets/toon.fmat
-    // here). The generated bundle, sidecar, and index are DataAssets, so
-    // materials resolve by source path and hot reload without pubspec entries.
-    await buildMaterials(
-      buildInput: config,
-      buildOutput: output,
-      assetMode: MaterialAssetMode.dataAssetsRequired,
-    );
+    // here), and materials resolve by source path and hot reload.
+    await buildMaterials(buildInput: input, buildOutput: output);
   });
 }

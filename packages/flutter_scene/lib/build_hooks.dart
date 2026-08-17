@@ -1,33 +1,28 @@
 /// Build-hook helpers for flutter_scene.
 ///
-/// Call these from your app's `hook/build.dart` at build time: [buildScenes]
-/// converts glTF (`.glb`) source assets into flutter_scene's `.fsceneb`
-/// package format (loaded by source path with `loadScene`), [buildMaterials]
-/// compiles `.fmat` custom-material files into a Flutter GPU shader bundle
-/// plus a parameter sidecar, [buildTargetShaderBundleJson] compiles raw shader
-/// manifests without unused platform backends, and [buildTextures] cooks loose
-/// images into the engine's compressed `.fstex` texture container. In
-/// DataAssets mode, the outputs are registered with the Flutter asset bundle
-/// and can be loaded by source path through `loadScene`/`loadFmatMaterial`/
-/// `loadTexture`.
+/// Call these from your app's `hook/build.dart` at build time. [buildEngineAssets]
+/// compiles the shaders flutter_scene itself needs, [buildScenes] converts glTF
+/// (`.glb`) and authored `.fscene` sources into flutter_scene's `.fsceneb`
+/// package format, [buildMaterials] compiles `.fmat` custom-material files into
+/// a Flutter GPU shader bundle plus a parameter sidecar, [buildTextures] cooks
+/// loose images into the engine's compressed `.fstex` container, and
+/// [buildTargetShaderBundleJson] compiles raw shader manifests without unused
+/// platform backends.
+///
+/// Everything lands in the app's `flutter_scene_generated/` directory and is
+/// loaded by source path through `loadScene`/`loadFmatMaterial`/`loadTexture`.
+/// `dart run flutter_scene:init` writes this hook and the one pubspec entry the
+/// directory needs.
 ///
 /// ```dart
 /// import 'package:hooks/hooks.dart';
 /// import 'package:flutter_scene/build_hooks.dart';
 ///
 /// void main(List<String> args) {
-///   build(args, (config, output) async {
-///     buildScenes(
-///       buildInput: config,
-///       buildOutput: output,
-///       assetMode: SceneAssetMode.dataAssetsRequired,
-///     );
-///     await buildMaterials(
-///       buildInput: config,
-///       buildOutput: output,
-///       materials: ['materials/toon.fmat'],
-///       assetMode: MaterialAssetMode.dataAssetsRequired,
-///     );
+///   build(args, (input, output) async {
+///     await buildEngineAssets(buildInput: input, buildOutput: output);
+///     buildScenes(buildInput: input, buildOutput: output);
+///     await buildMaterials(buildInput: input, buildOutput: output);
 ///   });
 /// }
 /// ```
@@ -36,6 +31,9 @@ library;
 // Native uses the real dart:io implementations; web/wasm resolves to stubs so
 // dart:io (and package:hooks) stay off the wasm dependency graph, keeping the
 // package WASM-compatible. Build hooks only ever run on the native host.
+export 'src/generated_assets/build_engine_assets.dart'
+    if (dart.library.js_interop) 'src/generated_assets/build_engine_assets_unsupported.dart'
+    show buildEngineAssets;
 export 'src/importer/build_hooks.dart'
     if (dart.library.js_interop) 'src/importer/build_hooks_unsupported.dart'
     show SceneAssetMode, buildScenes;

@@ -11,11 +11,14 @@
 /// import 'package:flutter_scene/gpu.dart' as gpu;
 ///
 /// final library = await gpu.loadShaderLibraryAsync(
-///   'packages/my_app/flutter_gpu_shaders/shaderbundles/my.shaderbundle',
+///   await gpu.resolveShaderBundleKey('my'),
 /// );
 /// final material = ShaderMaterial(fragmentShader: library!['MyFragment']!);
 /// ```
 library;
+
+export 'src/generated_assets/generated_asset_lookup.dart'
+    show resolveShaderBundleKey;
 
 export 'src/gpu/gpu.dart'
     show

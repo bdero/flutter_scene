@@ -9,7 +9,11 @@ library;
 import 'mipmap.dart';
 
 /// Web/wasm placeholder for the native build-hook enum.
-enum TextureAssetMode { legacyOnly, dataAssetsIfAvailable, dataAssetsRequired }
+enum TextureAssetMode {
+  generatedTree,
+  dataAssetsIfAvailable,
+  dataAssetsRequired,
+}
 
 /// Throws on web/wasm; see the library doc above. The native signature takes a
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses
@@ -20,7 +24,7 @@ Never buildTextures({
   required List<String> textures,
   Map<String, TextureContent> contents = const {},
   String outputDirectory = 'build/textures/',
-  TextureAssetMode assetMode = TextureAssetMode.legacyOnly,
+  TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
 }) => throw UnsupportedError(
   'buildTextures runs at build time on native platforms only.',

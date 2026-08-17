@@ -1,11 +1,13 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter/foundation.dart' show internal, kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show radianceCubeEntryName, sidecarSamplesEnvironment;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
+import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
 
@@ -21,7 +23,7 @@ typedef FmatMaterialFactory =
       Map<String, gpu.Shader>? vertexShaders,
     });
 
-/// A generated index describing one DataAssets-backed `.fmat` bundle.
+/// A generated index describing one compiled `.fmat` bundle.
 final class FmatMaterialBundleIndex {
   FmatMaterialBundleIndex({
     required this.package,
@@ -37,17 +39,25 @@ final class FmatMaterialBundleIndex {
   final String sidecarAssetKey;
   final Map<String, FmatMaterialIndexEntry> materials;
 
-  factory FmatMaterialBundleIndex.fromJson(Map<String, Object?> json) {
+  /// Parses the index at [assetKey]. The bundle and its sidecar always sit in
+  /// the same bundle directory as the index, so their keys come from the
+  /// index's own key plus the file names it records.
+  factory FmatMaterialBundleIndex.fromJson(
+    Map<String, Object?> json, {
+    required String assetKey,
+  }) {
     final schema = json['schema'];
-    if (schema != 1) {
+    if (schema != 2) {
       throw FormatException('Unsupported flutter_scene fmat schema: $schema');
     }
     final materialsJson = (json['materials'] as Map).cast<String, Object?>();
+    final directory = assetKey.substring(0, assetKey.lastIndexOf('/') + 1);
     return FmatMaterialBundleIndex(
       package: json['package'] as String,
       bundleName: json['bundleName'] as String,
-      shaderBundleAssetKey: json['shaderBundleAssetKey'] as String,
-      sidecarAssetKey: json['sidecarAssetKey'] as String,
+      shaderBundleAssetKey:
+          '$directory${json['shaderBundleFileName'] as String}',
+      sidecarAssetKey: '$directory${json['sidecarFileName'] as String}',
       materials: {
         for (final MapEntry(:key, :value) in materialsJson.entries)
           key: FmatMaterialIndexEntry.fromJson(
@@ -72,7 +82,8 @@ final class FmatMaterialIndexEntry {
       );
 }
 
-/// Resolves and loads `.fmat` materials registered through DataAssets.
+/// Resolves and loads the `.fmat` materials the `buildMaterials` build hook
+/// compiled.
 ///
 /// Materials are keyed by their `.fmat` source path relative to the owning
 /// package's root, so two materials that share a name in different directories
@@ -86,7 +97,8 @@ final class FmatMaterialRegistry {
   final Map<String, gpu.ShaderLibrary> _shaderLibraries = {};
   final Map<String, Map<String, Object?>> _sidecars = {};
 
-  /// Loads all generated flutter_scene `.fmat` DataAssets indexes.
+  /// Loads every generated flutter_scene `.fmat` bundle index the app ships,
+  /// whether it arrived as a data asset or through the generated tree.
   static Future<FmatMaterialRegistry> load({
     AssetBundle? bundle,
     Iterable<String>? assetKeys,
@@ -94,17 +106,31 @@ final class FmatMaterialRegistry {
     final assetBundle = bundle ?? rootBundle;
     final keys = assetKeys ?? await _loadAssetManifestKeys(assetBundle);
     final indexKeys = keys.where(isFmatIndexAssetKey).toList()..sort();
+    if (assetKeys == null) {
+      // A bundle index recorded in the generated tree, keyed by the bundle name
+      // rather than by a data-asset path.
+      final generated = await loadGeneratedAssetIndex(bundle);
+      for (final match in generated.entriesOf(GeneratedAssetFamily.material)) {
+        if (match.entry.id.contains('#')) continue;
+        indexKeys.add(match.key);
+      }
+    }
     final indexes = <FmatMaterialBundleIndex>[];
     for (final key in indexKeys) {
+      // Evict so a hot reload re-reads a regenerated index.
+      if (kDebugMode) assetBundle.evict(key);
       final json = jsonDecode(await assetBundle.loadString(key));
       indexes.add(
-        FmatMaterialBundleIndex.fromJson((json as Map).cast<String, Object?>()),
+        FmatMaterialBundleIndex.fromJson(
+          (json as Map).cast<String, Object?>(),
+          assetKey: key,
+        ),
       );
     }
     return FmatMaterialRegistry._(assetBundle, indexes);
   }
 
-  /// Returns true when [assetKey] is a generated `.fmat` DataAssets index.
+  /// Returns true when [assetKey] is a generated `.fmat` data-asset index.
   static bool isFmatIndexAssetKey(String assetKey) =>
       assetKey.startsWith('packages/') &&
       assetKey.contains(_indexAssetPrefix) &&
@@ -139,9 +165,8 @@ final class FmatMaterialRegistry {
     }
     if (matches.isEmpty) {
       throw StateError(
-        'No DataAssets-backed .fmat material for source "$sourcePath" was '
-        'found. Run `dart run flutter_scene:init`, enable Dart data assets on '
-        'a supported Flutter master build, and rebuild the app.',
+        'No generated .fmat material for source "$sourcePath" was found. '
+        '${generatedAssetFixHint('.fmat materials')}',
       );
     }
     if (matches.length > 1) {
@@ -149,8 +174,8 @@ final class FmatMaterialRegistry {
           .map((match) => '${match.index.package}/${match.index.bundleName}')
           .join(', ');
       throw StateError(
-        'Multiple DataAssets-backed .fmat materials for source "$sourcePath" '
-        'were found: $choices. Pass package and/or bundleName to disambiguate.',
+        'Multiple generated .fmat materials for source "$sourcePath" were '
+        'found: $choices. Pass package and/or bundleName to disambiguate.',
       );
     }
     return matches.single;
@@ -325,8 +350,8 @@ final class FmatMaterialRegistry {
   }
 }
 
-/// Loads a DataAssets-backed `.fmat` material by its source path relative to
-/// the owning package's root (for example `materials/toon.fmat`).
+/// Loads a generated `.fmat` material by its source path relative to the owning
+/// package's root (for example `materials/toon.fmat`).
 ///
 /// Pass [package] and/or [bundleName] to disambiguate when the same source path
 /// is provided by more than one bundle.
@@ -366,8 +391,8 @@ Future<PreprocessedMaterial> loadFmatMaterial(
   );
 }
 
-/// Loads a DataAssets-backed `.fmat` sky by its source path relative to the
-/// owning package's root (for example `assets/gradient_sky.fmat`).
+/// Loads a generated `.fmat` sky by its source path relative to the owning
+/// package's root (for example `assets/gradient_sky.fmat`).
 ///
 /// The `.fmat` must declare a `sky { vec3 Sky(vec3 direction) }` block. Assign
 /// the result to `Scene.skybox` via a `Skybox`. Pass [package] and/or

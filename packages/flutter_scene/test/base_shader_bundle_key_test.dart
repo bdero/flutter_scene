@@ -1,19 +1,32 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_gpu_shaders/build.dart' as gpu_shaders;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const String _legacyKey =
+const String _pubspecAssetKey =
     'packages/flutter_scene/build/shaderbundles/base.shaderbundle';
 const String _dataAssetKey =
     'packages/flutter_scene/flutter_gpu_shaders/shaderbundles/base.shaderbundle';
+final String _treeFileName = generatedFileName(
+  GeneratedAssetFamily.shaderBundle,
+  'base',
+  '.shaderbundle',
+);
 
-/// Serves a synthesized `AssetManifest.bin` listing [assetKeys].
+/// Serves a synthesized `AssetManifest.bin` listing [assetKeys], plus any
+/// string assets in [strings].
 class _ManifestAssetBundle extends CachingAssetBundle {
-  _ManifestAssetBundle(this.assetKeys);
+  _ManifestAssetBundle(this.assetKeys, {this.strings = const {}});
 
   final List<String> assetKeys;
+  final Map<String, String> strings;
 
   @override
   Future<ByteData> load(String key) async {
@@ -22,6 +35,9 @@ class _ManifestAssetBundle extends CachingAssetBundle {
         for (final asset in assetKeys) asset: <Object>[],
       };
       return const StandardMessageCodec().encodeMessage(manifest)!;
+    }
+    if (strings[key] case final contents?) {
+      return ByteData.sublistView(utf8.encode(contents));
     }
     throw StateError('Unknown asset: $key');
   }
@@ -35,28 +51,53 @@ class _EmptyAssetBundle extends CachingAssetBundle {
   }
 }
 
+String _manifestJson() => GeneratedAssetManifest(
+  package: 'example_app',
+  entries: [
+    GeneratedAssetEntry(
+      family: GeneratedAssetFamily.shaderBundle,
+      id: 'base',
+      owner: 'flutter_scene',
+      file: _treeFileName,
+      stamp: 'stamp',
+    ),
+  ],
+).encode();
+
 void main() {
+  tearDown(clearGeneratedAssetIndexCache);
+
   test('prefers the data-asset key when the manifest lists it', () async {
-    final bundle = _ManifestAssetBundle([_legacyKey, _dataAssetKey]);
+    final bundle = _ManifestAssetBundle([_pubspecAssetKey, _dataAssetKey]);
     expect(await resolveBaseShaderBundleKey(bundle: bundle), _dataAssetKey);
   });
 
-  test('falls back to the legacy key on a legacy-only manifest', () async {
-    final bundle = _ManifestAssetBundle([_legacyKey]);
-    expect(await resolveBaseShaderBundleKey(bundle: bundle), _legacyKey);
-  });
-
-  test('falls back to the legacy key without a manifest', () async {
+  test('resolves the generated tree when there is no data asset', () async {
+    final manifestKey = '$generatedAssetsDirectory/$generatedManifestFileName';
+    final bundle = _ManifestAssetBundle(
+      [manifestKey, '$generatedAssetsDirectory/$_treeFileName'],
+      strings: {manifestKey: _manifestJson()},
+    );
+    addTearDown(() => clearGeneratedAssetIndexCache(bundle));
     expect(
-      await resolveBaseShaderBundleKey(bundle: _EmptyAssetBundle()),
-      _legacyKey,
+      await resolveBaseShaderBundleKey(bundle: bundle),
+      '$generatedAssetsDirectory/$_treeFileName',
     );
   });
 
-  test('the data-asset key matches what the build hook registers', () {
-    // The hook (hook/build.dart) registers the bundle through
-    // flutter_gpu_shaders' data-asset naming; the runtime constant must
-    // resolve to the same flutter asset key.
+  test('falls back to the pubspec-asset key with nothing else', () async {
+    final bundle = _ManifestAssetBundle([_pubspecAssetKey]);
+    addTearDown(() => clearGeneratedAssetIndexCache(bundle));
+    expect(await resolveBaseShaderBundleKey(bundle: bundle), _pubspecAssetKey);
+  });
+
+  test('falls back to the pubspec-asset key without a manifest', () async {
+    final bundle = _EmptyAssetBundle();
+    addTearDown(() => clearGeneratedAssetIndexCache(bundle));
+    expect(await resolveBaseShaderBundleKey(bundle: bundle), _pubspecAssetKey);
+  });
+
+  test('the data-asset key matches what the shader hook registers', () {
     expect(
       gpu_shaders.flutterDataAssetKey(
         package: 'flutter_scene',
@@ -66,10 +107,10 @@ void main() {
     );
   });
 
-  test('a missing bundle names the data-assets setup step', () {
+  test('a missing bundle names the setup step', () {
     expect(
-      baseShaderBundleLoadFailureMessage(_legacyKey),
-      contains('flutter config --enable-dart-data-assets'),
+      baseShaderBundleLoadFailureMessage(_pubspecAssetKey),
+      allOf(contains('buildEngineAssets'), contains('flutter_scene:init')),
     );
   });
 }

@@ -5,35 +5,33 @@ import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:hooks/hooks.dart';
 
 import 'package:scene/scene.dart';
+import '../generated_assets/generated_assets.dart';
+import '../generated_assets/generated_tree.dart';
 import 'inline_assets.dart';
 import 'offline_import.dart';
 
-/// Controls how [buildScenes] exposes generated `.fsceneb` assets.
+/// Controls where [buildScenes] puts generated `.fsceneb` assets.
 enum SceneAssetMode {
-  /// Only write the generated `.fsceneb` files under `build/scenes/`. The app
-  /// lists them in `flutter.assets` and loads them by explicit asset key with
-  /// `loadFscenebAsset`; `loadScene` (source-path resolution) needs a
-  /// DataAssets mode.
-  legacyOnly,
+  /// Write the generated `.fsceneb` files into the app's
+  /// `flutter_scene_generated/` directory and record them in its manifest,
+  /// which `loadScene` resolves by source path. The default, and identical on
+  /// every Flutter channel.
+  generatedTree,
 
-  /// Register generated `.fsceneb` files as DataAssets when the current
-  /// toolchain supports them, and otherwise fall back to [legacyOnly].
+  /// Register generated `.fsceneb` files as Dart data assets when the current
+  /// toolchain supports them, and otherwise fall back to [generatedTree].
   dataAssetsIfAvailable,
 
-  /// Require DataAssets support and fail the build with a targeted migration
-  /// message when the current toolchain did not enable data assets for hooks.
+  /// Require Dart data assets and fail the build when the current toolchain did
+  /// not enable them for hooks.
   dataAssetsRequired,
 }
 
 const String _dataAssetsUnavailableMessage =
-    'flutter_scene DataAssets mode requires Flutter support for Dart data '
-    'assets. This feature is currently experimental and available on supported '
-    'Flutter master builds. Run `flutter config --enable-dart-data-assets` or '
-    'set `FLUTTER_DART_DATA_ASSETS=true`, then rebuild. If your Flutter '
-    'toolchain does not recognize that setting, switch to a Flutter master '
-    'channel build, or use SceneAssetMode.legacyOnly, list the generated '
-    '`build/scenes/*.fsceneb` files in `flutter.assets`, and load them with '
-    'loadFscenebAsset.';
+    'flutter_scene: SceneAssetMode.dataAssetsRequired needs Flutter support for '
+    'Dart data assets, which this toolchain does not have enabled. Use '
+    'SceneAssetMode.generatedTree (the default), which writes the same scenes '
+    'into $generatedAssetsEntry on every channel.';
 
 /// Returns the DataAsset name for a generated `.fsceneb` output, where
 /// [relativeScenePath] is the source path relative to the package root with its
@@ -73,14 +71,12 @@ List<String> discoverSceneSources(
   return sources;
 }
 
-/// Registers scene assets so an app loads them by source path with `loadScene`
+/// Converts scene assets so an app loads them by source path with `loadScene`
 /// without hand-editing the asset manifest. Discovers three source kinds under
 /// [discoveryRoot]: `.glb` (converted to `.fsceneb`), authored `.fscene`
 /// (compiled to `.fsceneb`, with referenced images embedded and prefab instances
 /// intact for runtime compose), and already-built `.fsceneb` (an editor's
-/// `imported/` assets, registered as-is).
-/// Generated outputs go under [outputDirectory] (relative to
-/// [BuildInput.packageRoot]); a passthrough `.fsceneb` is registered in place.
+/// `imported/` assets, copied in as-is).
 ///
 /// Call this from a consuming app's `hook/build.dart`:
 ///
@@ -90,21 +86,20 @@ List<String> discoverSceneSources(
 ///
 /// void main(List<String> args) {
 ///   build(args, (config, output) async {
-///     buildScenes(
-///       buildInput: config,
-///       buildOutput: output,
-///       assetMode: SceneAssetMode.dataAssetsRequired,
-///     );
+///     buildScenes(buildInput: config, buildOutput: output);
 ///   });
 /// }
 /// ```
 ///
 /// When [inputFilePaths] is omitted, every `.glb`/`.fscene`/`.fsceneb` under
 /// [discoveryRoot] (default `assets/`, relative to the package root) is
-/// discovered; in a DataAssets mode each is registered as a DataAsset (key
-/// `packages/<package>/flutter_scene/scene/<name>.fsceneb`), and each source is
-/// declared as a build dependency so changing it retriggers the build (and hot
-/// reload). Conversion runs in-process (no subprocess, no native binary).
+/// discovered, and each source is declared as a build dependency so changing it
+/// retriggers the build (and hot reload). Conversion runs in-process (no
+/// subprocess, no native binary).
+///
+/// Outputs land in the app's `flutter_scene_generated/` directory. The DataAssets
+/// modes write them under [outputDirectory] instead and register them as data
+/// assets keyed `packages/<package>/flutter_scene/scene/<name>.fsceneb`.
 ///
 /// Set [compressTextures] to store embedded images as supercompressed block
 /// payloads that transcode to the device's format at load, shrinking the
@@ -117,7 +112,7 @@ void buildScenes({
   List<String>? inputFilePaths,
   String outputDirectory = 'build/scenes/',
   String discoveryRoot = 'assets/',
-  SceneAssetMode assetMode = SceneAssetMode.legacyOnly,
+  SceneAssetMode assetMode = SceneAssetMode.generatedTree,
   bool compressTextures = false,
   bool alignForCompression = false,
 }) {
@@ -126,13 +121,37 @@ void buildScenes({
     throw UnsupportedError(_dataAssetsUnavailableMessage);
   }
   final emitDataAssets =
-      assetMode != SceneAssetMode.legacyOnly && dataAssetsAvailable;
+      assetMode != SceneAssetMode.generatedTree && dataAssetsAvailable;
 
   final packageRoot = buildInput.packageRoot;
   final inputs =
       inputFilePaths ??
       discoverSceneSources(packageRoot, discoveryRoot: discoveryRoot);
+
+  if (emitDataAssets) {
+    // A tree left by an earlier build would ship the same scenes twice, so the
+    // data assets this run registers replace it.
+    GeneratedAssetTree.openExisting(packageRoot, buildInput.packageName)
+      ?..dropOwned(GeneratedAssetFamily.scene, owner: buildInput.packageName)
+      ..save();
+  }
+
+  // The outputs go into the app's persistent flutter_scene_generated/ tree,
+  // whose manifest maps each source path to its generated asset (and stores the
+  // build stamp).
+  final tree = emitDataAssets
+      ? null
+      : GeneratedAssetTree.open(packageRoot, buildInput.packageName);
+  if (tree != null &&
+      (inputs.isNotEmpty || tree.hasFamily(GeneratedAssetFamily.scene))) {
+    tree.requireAssetEntry();
+  }
   if (inputs.isEmpty) {
+    if (tree != null) {
+      tree
+        ..pruneMissingSources()
+        ..save();
+    }
     return;
   }
 
@@ -155,8 +174,16 @@ void buildScenes({
 
     final sourceUri = packageRoot.resolve(inputFilePath);
 
-    // An already-built `.fsceneb` (an editor's imported asset) is registered
-    // as-is, from its source location, with no conversion or output copy.
+    // The source path without its extension, which `loadScene` resolves by.
+    final sceneId = inputFilePath.substring(
+      0,
+      inputFilePath.length - extension.length,
+    );
+
+    // An already-built `.fsceneb` (an editor's imported asset) needs no
+    // conversion. A DataAsset registers it from its source location; the
+    // generated tree has to hold a copy, since only that tree is a listed
+    // asset directory.
     if (extension == '.fsceneb') {
       buildOutput.dependencies.add(sourceUri);
       if (emitDataAssets) {
@@ -167,15 +194,42 @@ void buildScenes({
             file: sourceUri,
           ),
         );
+        continue;
       }
+      final bytes = File(sourceUri.toFilePath()).readAsBytesSync();
+      final stamp =
+          'rev=$buildCacheRevision scene kind=.fsceneb '
+          'src=${contentHash(bytes)}';
+      final copyUri = tree!.fileUri(
+        GeneratedAssetFamily.scene,
+        nameId: sceneId,
+        extension: '.fsceneb',
+      );
+      if (!tree.isFresh(GeneratedAssetFamily.scene, sceneId, stamp, [
+        copyUri,
+      ])) {
+        File(copyUri.toFilePath()).writeAsBytesSync(bytes);
+        stdout.writeln('flutter_scene: copied $inputFilePath');
+      }
+      tree.recordFile(
+        family: GeneratedAssetFamily.scene,
+        id: sceneId,
+        uri: copyUri,
+        stamp: stamp,
+        source: inputFilePath,
+      );
       continue;
     }
 
-    // `.glb` and `.fscene` produce a generated `.fsceneb` under the output dir.
-    final relativeScenePath =
-        '${inputFilePath.substring(0, inputFilePath.length - extension.length)}'
-        '.fsceneb';
-    final outputSceneUri = scenesRoot.resolve(relativeScenePath);
+    // `.glb` and `.fscene` produce a generated `.fsceneb`.
+    final relativeScenePath = '$sceneId.fsceneb';
+    final outputSceneUri =
+        tree?.fileUri(
+          GeneratedAssetFamily.scene,
+          nameId: sceneId,
+          extension: '.fsceneb',
+        ) ??
+        scenesRoot.resolve(relativeScenePath);
     Directory.fromUri(outputSceneUri.resolve('.')).createSync(recursive: true);
 
     // An authored `.fscene` references its imported images by path; read it up
@@ -218,9 +272,17 @@ void buildScenes({
         'rev=$buildCacheRevision scene compress=$compressTextures '
         'kind=$extension src=$sourceHash assets=[$assetStamp]';
     final stampFile = File('${outputSceneUri.toFilePath()}.inputs');
-    if (!isBuildCacheFresh(stampFile, stamp, [
-      File(outputSceneUri.toFilePath()),
-    ])) {
+    // The generated tree ships every file in it, so the stamp lives in the
+    // manifest there rather than in a sidecar next to the output.
+    final fresh = tree != null
+        ? tree.isFresh(GeneratedAssetFamily.scene, sceneId, stamp, [
+            outputSceneUri,
+          ])
+        : isBuildCacheFresh(stampFile, stamp, [
+            File(outputSceneUri.toFilePath()),
+          ]);
+    if (!fresh) {
+      stdout.writeln('flutter_scene: converting $inputFilePath');
       if (extension == '.glb') {
         importGltfToFsceneb(
           inputFilePath,
@@ -260,8 +322,15 @@ void buildScenes({
           outputSceneUri.toFilePath(),
         ).writeAsBytesSync(writeFsceneb(fsceneDocument));
       }
-      stampFile.writeAsStringSync(stamp);
+      if (tree == null) stampFile.writeAsStringSync(stamp);
     }
+    tree?.recordFile(
+      family: GeneratedAssetFamily.scene,
+      id: sceneId,
+      uri: outputSceneUri,
+      stamp: stamp,
+      source: inputFilePath,
+    );
 
     buildOutput.dependencies.add(sourceUri);
     // Declare each embedded image as a dependency every run (not only when the
@@ -283,5 +352,11 @@ void buildScenes({
         ),
       );
     }
+  }
+
+  if (tree != null) {
+    tree
+      ..pruneMissingSources()
+      ..save();
   }
 }

@@ -7,34 +7,34 @@ import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/src/importer/build_cache.dart';
 
+import '../generated_assets/generated_assets.dart';
+import '../generated_assets/generated_tree.dart';
 import 'fmat.dart';
 import 'fmat_emitter.dart' show kRadianceCubeDefine, materialSamplesEnvironment;
 import 'target_shader_bundle.dart';
 
-/// Controls how [buildMaterials] exposes generated `.fmat` shader assets.
+/// Controls where [buildMaterials] puts generated `.fmat` shader assets.
 enum MaterialAssetMode {
-  /// Preserve the historical behavior: write generated files under
-  /// `build/shaderbundles/` and let users list those files in `flutter.assets`.
-  legacyOnly,
+  /// Write the compiled bundle, its parameter sidecar, and its index into the
+  /// app's `flutter_scene_generated/` directory, which `loadFmatMaterial`
+  /// resolves by source path. The default, and identical on every Flutter
+  /// channel.
+  generatedTree,
 
-  /// Register generated files as DataAssets when the current toolchain supports
-  /// them, and otherwise fall back to [legacyOnly].
+  /// Register the generated files as Dart data assets when the current toolchain
+  /// supports them, and otherwise fall back to [generatedTree].
   dataAssetsIfAvailable,
 
-  /// Require DataAssets support and fail the build with a targeted migration
-  /// message when the current toolchain did not enable data assets for hooks.
+  /// Require Dart data assets and fail the build when the current toolchain did
+  /// not enable them for hooks.
   dataAssetsRequired,
 }
 
 const String _dataAssetsUnavailableMessage =
-    'flutter_scene DataAssets mode requires Flutter support for Dart data '
-    'assets. This feature is currently experimental and available on supported '
-    'Flutter master builds. Run `flutter config --enable-dart-data-assets` or '
-    'set `FLUTTER_DART_DATA_ASSETS=true`, then rebuild. If your Flutter '
-    'toolchain does not recognize that setting, switch to a Flutter master '
-    'channel build or use MaterialAssetMode.legacyOnly and list the generated '
-    '`build/shaderbundles/*.shaderbundle` and `.fmat.json` files in '
-    '`flutter.assets`.';
+    'flutter_scene: MaterialAssetMode.dataAssetsRequired needs Flutter support '
+    'for Dart data assets, which this toolchain does not have enabled. Use '
+    'MaterialAssetMode.generatedTree (the default), which compiles the same '
+    'materials into $generatedAssetsEntry on every channel.';
 
 /// Returns the DataAsset name for a generated `.fmat` output.
 String fmatDataAssetName(String bundleName, String fileName) =>
@@ -132,14 +132,10 @@ const _frameworkShaderFiles = <String>[
 /// `assets/`, the same root `buildScenes` discovers `.glb` sources under) are
 /// discovered automatically; set [discoveryRoot] to search a different
 /// directory.
-/// The produced bundle is written to
-/// `build/shaderbundles/[bundleName].shaderbundle` (one fragment entry per
-/// material, named by the material's `name`), and the combined parameter
-/// sidecar to `build/shaderbundles/[bundleName].fmat.json`. In
-/// [MaterialAssetMode.legacyOnly], list both as assets in the app's pubspec.
-/// In DataAssets modes, the generated files are registered as DataAssets when
-/// the toolchain supports them. [MaterialAssetMode.dataAssetsIfAvailable] is
-/// the default.
+/// The bundle carries one fragment entry per material, named by the material's
+/// `name`, alongside a combined parameter sidecar and an index. They are written
+/// into the app's `flutter_scene_generated/` directory, and `loadFmatMaterial`
+/// resolves them by source path.
 ///
 /// The generated shaders `#include` flutter_scene's framework GLSL; this hook
 /// puts flutter_scene's `shaders/` directory on `impellerc`'s include path (via
@@ -151,7 +147,7 @@ Future<void> buildMaterials({
   List<String>? materials,
   String bundleName = 'materials',
   String discoveryRoot = 'assets/',
-  MaterialAssetMode assetMode = MaterialAssetMode.dataAssetsIfAvailable,
+  MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -162,9 +158,17 @@ Future<void> buildMaterials({
 );
 
 /// Builds flutter_scene's bundled physical material shaders.
+///
+/// [sourceRoot] is flutter_scene's own package root, which the `.fmat` sources
+/// resolve against; it defaults to the building package's root (flutter_scene's
+/// own hook). The app's hook passes flutter_scene's root so the outputs land in
+/// the app's generated tree while the inputs come from the package.
 Future<void> buildBundledPhysicalMaterials({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
+  Uri? sourceRoot,
+  String? owner,
+  MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -174,8 +178,10 @@ Future<void> buildBundledPhysicalMaterials({
   ],
   bundleName: 'physical',
   discoveryRoot: 'assets/',
-  assetMode: MaterialAssetMode.dataAssetsIfAvailable,
+  assetMode: assetMode,
   generateShadowVariants: true,
+  sourceRoot: sourceRoot,
+  owner: owner,
 );
 
 Future<void> _buildMaterials({
@@ -186,6 +192,8 @@ Future<void> _buildMaterials({
   required String discoveryRoot,
   required MaterialAssetMode assetMode,
   bool generateShadowVariants = false,
+  Uri? sourceRoot,
+  String? owner,
 }) async {
   final dataAssetsAvailable = buildInput.config.buildDataAssets;
   if (assetMode == MaterialAssetMode.dataAssetsRequired &&
@@ -194,26 +202,30 @@ Future<void> _buildMaterials({
   }
 
   final packageRoot = buildInput.packageRoot;
+  // Sources come from the owning package, outputs go to the building package.
+  final materialRoot = sourceRoot ?? packageRoot;
+  final assetOwner = owner ?? buildInput.packageName;
   final materialPaths =
       materials ??
-      discoverFmatMaterials(packageRoot, discoveryRoot: discoveryRoot);
+      discoverFmatMaterials(materialRoot, discoveryRoot: discoveryRoot);
   if (materialPaths.isEmpty) {
     return;
   }
-  if (assetMode == MaterialAssetMode.legacyOnly) {
-    stderr.writeln(
-      'flutter_scene warning, buildMaterials is using legacy generated '
-      'assets. Shader bundles are tied to the active Flutter engine. Use '
-      'MaterialAssetMode.dataAssetsRequired instead of committing generated '
-      'files or listing them in flutter.assets.',
-    );
-  } else if (!dataAssetsAvailable) {
-    stderr.writeln(
-      'flutter_scene warning, DataAssets are unavailable, so buildMaterials '
-      'is falling back to legacy generated assets. Enable DataAssets or use '
-      'MaterialAssetMode.dataAssetsRequired to fail instead.',
-    );
+  final emitDataAssets =
+      dataAssetsAvailable && assetMode != MaterialAssetMode.generatedTree;
+  if (emitDataAssets) {
+    // A tree left by an earlier build would ship the same bundle twice.
+    GeneratedAssetTree.openExisting(packageRoot, buildInput.packageName)
+      ?..dropOwned(GeneratedAssetFamily.material, owner: assetOwner)
+      ..save();
   }
+  // The outputs go into the app's persistent flutter_scene_generated/ tree,
+  // whose manifest records them for the runtime registry (and stores the build
+  // stamp).
+  final tree = emitDataAssets
+      ? null
+      : (GeneratedAssetTree.open(packageRoot, buildInput.packageName)
+          ..requireAssetEntry());
 
   // Locate flutter_scene's framework shader directory. flutter_scene has no
   // top-level `flutter_scene.dart` library, so resolve through this package's
@@ -235,20 +247,38 @@ Future<void> _buildMaterials({
   );
   generatedDir.createSync(recursive: true);
 
+  // impellerc always writes the compiled bundle under build/shaderbundles/;
+  // the generated tree gets a copy of it, and the sidecar and index are written
+  // straight into whichever tree ships them.
   final bundleFile = File(
     packageRoot
         .resolve('build/shaderbundles/$bundleName.shaderbundle')
         .toFilePath(),
   );
-  final sidecarFile = File(
-    packageRoot
-        .resolve('build/shaderbundles/$bundleName.fmat.json')
-        .toFilePath(),
+  final shippedBundleFile = tree == null
+      ? bundleFile
+      : File.fromUri(
+          tree.fileUri(
+            GeneratedAssetFamily.material,
+            nameId: bundleName,
+            extension: '.shaderbundle',
+          ),
+        );
+  final sidecarFile = File.fromUri(
+    tree?.fileUri(
+          GeneratedAssetFamily.material,
+          nameId: bundleName,
+          extension: '.fmat.json',
+        ) ??
+        packageRoot.resolve('build/shaderbundles/$bundleName.fmat.json'),
   );
-  final indexFile = File(
-    packageRoot
-        .resolve('build/shaderbundles/$bundleName.index.json')
-        .toFilePath(),
+  final indexFile = File.fromUri(
+    tree?.fileUri(
+          GeneratedAssetFamily.material,
+          nameId: bundleName,
+          extension: '.index.json',
+        ) ??
+        packageRoot.resolve('build/shaderbundles/$bundleName.index.json'),
   );
 
   final sidecars = <String, Object?>{};
@@ -260,13 +290,13 @@ Future<void> _buildMaterials({
   // error always forces a rebuild (the marker must clear once the source is
   // fixed). Set FLUTTER_SCENE_DISABLE_BUILD_CACHE to always compile.
   final stampBuffer = StringBuffer(
-    'rev=$buildCacheRevision fmat package=${buildInput.packageName} '
+    'rev=$buildCacheRevision fmat package=$assetOwner '
     'bundle=$bundleName shadows=$generateShadowVariants '
     'target=${shaderBundleTargetKey(buildInput)}',
   );
   for (final materialPath in materialPaths) {
     final hash = contentHash(
-      File(packageRoot.resolve(materialPath).toFilePath()).readAsBytesSync(),
+      File(materialRoot.resolve(materialPath).toFilePath()).readAsBytesSync(),
     );
     stampBuffer.write(' $materialPath=$hash');
   }
@@ -280,13 +310,15 @@ Future<void> _buildMaterials({
   final stampFile = File(
     packageRoot.resolve('build/shaderbundles/$bundleName.inputs').toFilePath(),
   );
-  final wantIndex =
-      dataAssetsAvailable && assetMode != MaterialAssetMode.legacyOnly;
-  var fresh = isBuildCacheFresh(stampFile, stamp, [
-    bundleFile,
-    sidecarFile,
-    if (wantIndex) indexFile,
-  ]);
+  final outputs = [shippedBundleFile, sidecarFile, indexFile];
+  var fresh = tree != null
+      ? tree.isFresh(
+          GeneratedAssetFamily.material,
+          bundleName,
+          stamp,
+          outputs.map((file) => file.uri).toList(),
+        )
+      : isBuildCacheFresh(stampFile, stamp, outputs);
   if (fresh) {
     try {
       fresh = !sidecarFile.readAsStringSync().contains('#compile_error');
@@ -298,16 +330,17 @@ Future<void> _buildMaterials({
     _registerOutputs(
       buildInput: buildInput,
       buildOutput: buildOutput,
-      assetMode: assetMode,
-      dataAssetsAvailable: dataAssetsAvailable,
       bundleName: bundleName,
-      bundleFile: bundleFile,
+      bundleFile: shippedBundleFile,
       sidecarFile: sidecarFile,
       indexFile: indexFile,
+      tree: tree,
+      stamp: stamp,
+      owner: assetOwner,
       writeIndex: false,
       sidecars: const {},
       materialSources: const {},
-      packageRoot: packageRoot,
+      packageRoot: materialRoot,
       materialPaths: materialPaths,
       frameworkShaders: frameworkShaders,
     );
@@ -325,7 +358,7 @@ Future<void> _buildMaterials({
       if (!materialPath.endsWith('.fmat')) {
         throw Exception('Material files must end with ".fmat": $materialPath');
       }
-      final materialUri = packageRoot.resolve(materialPath);
+      final materialUri = materialRoot.resolve(materialPath);
       final source = File(materialUri.toFilePath()).readAsStringSync();
       final compiled = compileFmat(source, fileName: materialPath);
       final entryName = compiled.material.name;
@@ -408,6 +441,9 @@ Future<void> _buildMaterials({
         // framework radiance sampling these materials can `#include` uses
         // textureLod, which is not available in 1.00 without an extension.
         glesLanguageVersion: 300,
+        // The material bundle ships under materials/ next to its sidecar and
+        // index, not as a standalone shader bundle.
+        copyToGeneratedTree: false,
       );
     } catch (_) {
       // Roll back only when the failed compile actually disturbed the bundle;
@@ -421,18 +457,25 @@ Future<void> _buildMaterials({
       rethrow;
     }
 
+    // Publish the freshly compiled bundle into the tree that ships it.
+    if (tree != null) {
+      shippedBundleFile.writeAsBytesSync(bundleFile.readAsBytesSync());
+    }
     // Write the combined parameter sidecar next to the produced bundle.
     sidecarFile.writeAsStringSync(
       const JsonEncoder.withIndent('  ').convert(sidecars),
     );
-    stampFile.writeAsStringSync(stamp);
+    if (tree == null) stampFile.writeAsStringSync(stamp);
+    stdout.writeln(
+      'flutter_scene: compiled ${materialPaths.length} .fmat '
+      '${materialPaths.length == 1 ? 'material' : 'materials'} into '
+      '"$bundleName"',
+    );
   } catch (error) {
-    final shouldRegisterIndex =
-        dataAssetsAvailable && assetMode != MaterialAssetMode.legacyOnly;
     final haveLastGood =
-        bundleFile.existsSync() &&
+        shippedBundleFile.existsSync() &&
         sidecarFile.existsSync() &&
-        (!shouldRegisterIndex || indexFile.existsSync());
+        indexFile.existsSync();
     if (!haveLastGood) {
       rethrow;
     }
@@ -462,16 +505,17 @@ Future<void> _buildMaterials({
     _registerOutputs(
       buildInput: buildInput,
       buildOutput: buildOutput,
-      assetMode: assetMode,
-      dataAssetsAvailable: dataAssetsAvailable,
       bundleName: bundleName,
-      bundleFile: bundleFile,
+      bundleFile: shippedBundleFile,
       sidecarFile: sidecarFile,
       indexFile: indexFile,
+      tree: tree,
+      stamp: stamp,
+      owner: assetOwner,
       writeIndex: false,
       sidecars: const {},
       materialSources: const {},
-      packageRoot: packageRoot,
+      packageRoot: materialRoot,
       materialPaths: materialPaths,
       frameworkShaders: frameworkShaders,
     );
@@ -481,16 +525,17 @@ Future<void> _buildMaterials({
   _registerOutputs(
     buildInput: buildInput,
     buildOutput: buildOutput,
-    assetMode: assetMode,
-    dataAssetsAvailable: dataAssetsAvailable,
     bundleName: bundleName,
-    bundleFile: bundleFile,
+    bundleFile: shippedBundleFile,
     sidecarFile: sidecarFile,
     indexFile: indexFile,
+    tree: tree,
+    stamp: stamp,
+    owner: assetOwner,
     writeIndex: true,
     sidecars: sidecars,
     materialSources: materialSources,
-    packageRoot: packageRoot,
+    packageRoot: materialRoot,
     materialPaths: materialPaths,
     frameworkShaders: frameworkShaders,
   );
@@ -550,12 +595,13 @@ bool _sameBytes(List<int> a, List<int> b) {
 void _registerOutputs({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-  required MaterialAssetMode assetMode,
-  required bool dataAssetsAvailable,
   required String bundleName,
   required File bundleFile,
   required File sidecarFile,
   required File indexFile,
+  required GeneratedAssetTree? tree,
+  required String stamp,
+  required String owner,
   required bool writeIndex,
   required Map<String, Object?> sidecars,
   required Map<String, String> materialSources,
@@ -563,56 +609,69 @@ void _registerOutputs({
   required List<String> materialPaths,
   required Uri frameworkShaders,
 }) {
-  final shouldRegisterDataAssets =
-      dataAssetsAvailable && assetMode != MaterialAssetMode.legacyOnly;
-  if (shouldRegisterDataAssets) {
-    final shaderBundleFile = bundleFile.uri;
-    final shaderBundleAssetName = fmatDataAssetName(
-      bundleName,
-      '$bundleName.shaderbundle',
+  final shaderBundleAssetName = fmatDataAssetName(
+    bundleName,
+    '$bundleName.shaderbundle',
+  );
+  final sidecarAssetName = fmatDataAssetName(
+    bundleName,
+    '$bundleName.fmat.json',
+  );
+  final indexAssetName = fmatDataAssetName(
+    bundleName,
+    '$bundleName.index.json',
+  );
+  if (writeIndex) {
+    // The bundle and its sidecar always sit in the same directory as the index,
+    // so the registry resolves them from the index's own asset key by file name.
+    // That holds for data assets (one directory per bundle) and for the
+    // generated tree (one flat directory) alike.
+    final index = <String, Object?>{
+      'schema': 2,
+      'package': owner,
+      'bundleName': bundleName,
+      'shaderBundleFileName': bundleFile.uri.pathSegments.last,
+      'sidecarFileName': sidecarFile.uri.pathSegments.last,
+      'materials': {
+        for (final key in sidecars.keys)
+          key: {'entryName': key, 'source': materialSources[key]},
+      },
+    };
+    indexFile.writeAsStringSync(
+      const JsonEncoder.withIndent('  ').convert(index),
     );
-    final sidecarAssetName = fmatDataAssetName(
-      bundleName,
-      '$bundleName.fmat.json',
-    );
-    final indexAssetName = fmatDataAssetName(
-      bundleName,
-      '$bundleName.index.json',
-    );
-    final shaderBundleAssetKey = fmatFlutterAssetKey(
-      package: buildInput.packageName,
-      name: shaderBundleAssetName,
-    );
-    final sidecarAssetKey = fmatFlutterAssetKey(
-      package: buildInput.packageName,
-      name: sidecarAssetName,
-    );
-    final indexAssetKey = fmatFlutterAssetKey(
-      package: buildInput.packageName,
-      name: indexAssetName,
-    );
-    if (writeIndex) {
-      final index = <String, Object?>{
-        'schema': 1,
-        'package': buildInput.packageName,
-        'bundleName': bundleName,
-        'shaderBundleAssetKey': shaderBundleAssetKey,
-        'sidecarAssetKey': sidecarAssetKey,
-        'materials': {
-          for (final key in sidecars.keys)
-            key: {'entryName': key, 'source': materialSources[key]},
-        },
-      };
-      indexFile.writeAsStringSync(
-        const JsonEncoder.withIndent('  ').convert(index),
-      );
-    }
+  }
 
+  if (tree != null) {
+    tree
+      ..recordFile(
+        family: GeneratedAssetFamily.material,
+        id: bundleName,
+        uri: indexFile.uri,
+        stamp: stamp,
+        owner: owner,
+      )
+      ..recordFile(
+        family: GeneratedAssetFamily.material,
+        id: '$bundleName#shaderbundle',
+        uri: bundleFile.uri,
+        stamp: stamp,
+        owner: owner,
+      )
+      ..recordFile(
+        family: GeneratedAssetFamily.material,
+        id: '$bundleName#sidecar',
+        uri: sidecarFile.uri,
+        stamp: stamp,
+        owner: owner,
+      )
+      ..save();
+  } else {
     buildOutput.assets.data.addAll([
       DataAsset(
         package: buildInput.packageName,
         name: shaderBundleAssetName,
-        file: shaderBundleFile,
+        file: bundleFile.uri,
       ),
       DataAsset(
         package: buildInput.packageName,
@@ -626,7 +685,10 @@ void _registerOutputs({
       ),
     ]);
     buildOutput.metadata['flutter_scene.fmat.$bundleName.indexAssetKey'] =
-        indexAssetKey;
+        fmatFlutterAssetKey(
+          package: buildInput.packageName,
+          name: indexAssetName,
+        );
   }
 
   // Declare the real inputs as dependencies. buildShaderBundleJson declares the

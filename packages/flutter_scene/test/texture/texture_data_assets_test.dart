@@ -77,6 +77,7 @@ void main() {
           buildInput: _buildInput(packageRoot: temp.uri, buildDataAssets: true),
           buildOutput: BuildOutputBuilder(),
           textures: ['assets/odd.png'],
+          assetMode: TextureAssetMode.dataAssetsIfAvailable,
         ),
         throwsA(predicate((e) => e.toString().contains('multiples of 4'))),
       );
@@ -106,6 +107,7 @@ void main() {
         buildOutput: BuildOutputBuilder(),
         textures: ['assets/bump.png'],
         contents: {'assets/bump.png': TextureContent.normal},
+        assetMode: TextureAssetMode.dataAssetsIfAvailable,
       );
 
       final texture = readKtx2(
