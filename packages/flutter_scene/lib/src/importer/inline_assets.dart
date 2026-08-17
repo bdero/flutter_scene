@@ -37,13 +37,22 @@ typedef ExternalPayloadAsset = ({String key, File file});
 /// root, empty when the scene sits at the root. Absolute references and ones
 /// that escape the package root are left unchanged (they cannot resolve in a
 /// built app; the load reports them).
-void rebaseFmatMaterialRefs(SceneDocument document, String documentDir) {
+///
+/// [exists] reports whether a package-relative key is a file on disk. A ref
+/// that does not resolve next to its document is left alone, so a ref authored
+/// against the package root keeps working, which is how the source-root loader
+/// reads the same documents.
+void rebaseFmatMaterialRefs(
+  SceneDocument document,
+  String documentDir, {
+  bool Function(String key)? exists,
+}) {
   for (final entry in document.resources.entries.toList()) {
     final resource = entry.value;
     if (resource is MaterialResource && resource.type == 'fmat') {
       final asset = resource.asset;
       if (asset == null) continue;
-      final rebased = _rebaseFmatKey(asset.key, documentDir);
+      final rebased = _rebaseFmatKey(asset.key, documentDir, exists);
       if (rebased == null) continue;
       document.resources[entry.key] = resource.copyWith(
         asset: AssetRef(rebased),
@@ -51,29 +60,38 @@ void rebaseFmatMaterialRefs(SceneDocument document, String documentDir) {
     } else if (resource is EnvironmentResource) {
       final skybox = resource.skybox;
       if (skybox != null) {
-        skybox.source = _rebaseSkySource(skybox.source, documentDir);
+        skybox.source = _rebaseSkySource(skybox.source, documentDir, exists);
       }
       final skyEnvironment = resource.skyEnvironment;
       if (skyEnvironment != null) {
         skyEnvironment.source = _rebaseSkySource(
           skyEnvironment.source,
           documentDir,
+          exists,
         );
       }
     }
   }
 }
 
-SkySourceSpec _rebaseSkySource(SkySourceSpec source, String documentDir) {
+SkySourceSpec _rebaseSkySource(
+  SkySourceSpec source,
+  String documentDir,
+  bool Function(String key)? exists,
+) {
   if (source is! FmatSkySpec) return source;
-  final rebased = _rebaseFmatKey(source.asset.key, documentDir);
+  final rebased = _rebaseFmatKey(source.asset.key, documentDir, exists);
   if (rebased == null) return source;
   return FmatSkySpec(AssetRef(rebased), properties: source.properties);
 }
 
 /// [key] joined onto [documentDir] with `..` folding, or null when the key
 /// is absolute, escapes the package root, or is already package-relative.
-String? _rebaseFmatKey(String key, String documentDir) {
+String? _rebaseFmatKey(
+  String key,
+  String documentDir,
+  bool Function(String key)? exists,
+) {
   final normalized = key.replaceAll('\\', '/');
   if (normalized.startsWith('/') ||
       RegExp(r'^[A-Za-z]:/').hasMatch(normalized)) {
@@ -91,7 +109,10 @@ String? _rebaseFmatKey(String key, String documentDir) {
   }
   if (out.isEmpty) return null;
   final rebased = out.join('/');
-  return rebased == key ? null : rebased;
+  if (rebased == key) return null;
+  // Nothing next to the document, so the ref is package-relative already.
+  if (exists != null && !exists(rebased)) return null;
+  return rebased;
 }
 
 /// Resolves the optional payload sidecar referenced by [document].

@@ -247,6 +247,37 @@ void main() {
     expect(keyOf(absolute.id), '/abs/other.fmat');
   });
 
+  test('a ref with nothing beside the document stays package-relative', () {
+    final document = SceneDocument();
+    // Authored against the package root, which is how the source-root loader
+    // reads it, so the build must not bind it to a path that holds no file.
+    final rootRelative = document.addResource(
+      MaterialResource(
+        document.newId(),
+        type: 'fmat',
+        asset: AssetRef('assets/light_shafts.fmat'),
+      ),
+    );
+    final beside = document.addResource(
+      MaterialResource(
+        document.newId(),
+        type: 'fmat',
+        asset: AssetRef('local.fmat'),
+      ),
+    );
+
+    rebaseFmatMaterialRefs(
+      document,
+      'assets_src/level/models',
+      exists: (key) => key == 'assets_src/level/models/local.fmat',
+    );
+
+    String? keyOf(LocalId id) =>
+        (document.resources[id] as MaterialResource?)?.asset?.key;
+    expect(keyOf(rootRelative.id), 'assets/light_shafts.fmat');
+    expect(keyOf(beside.id), 'assets_src/level/models/local.fmat');
+  });
+
   test('a missing image is left as a reference, not a build failure', () {
     final document = SceneDocument();
     final texture = document.addResource(
