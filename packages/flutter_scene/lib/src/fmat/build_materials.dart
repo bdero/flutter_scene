@@ -208,6 +208,15 @@ Future<void> _buildMaterials({
   final materialPaths =
       materials ??
       discoverFmatMaterials(materialRoot, discoveryRoot: discoveryRoot);
+  if (materials == null) {
+    // Hashed as the names of its direct children, so an added or removed
+    // material reruns the hook for nothing.
+    buildOutput.dependencies.add(
+      materialRoot.resolve(
+        discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/',
+      ),
+    );
+  }
   if (materialPaths.isEmpty) {
     return;
   }
@@ -295,14 +304,14 @@ Future<void> _buildMaterials({
     'target=${shaderBundleTargetKey(buildInput)}',
   );
   for (final materialPath in materialPaths) {
-    final hash = contentHash(
-      File(materialRoot.resolve(materialPath).toFilePath()).readAsBytesSync(),
+    final hash = sourceFingerprint(
+      File(materialRoot.resolve(materialPath).toFilePath()),
     );
     stampBuffer.write(' $materialPath=$hash');
   }
   for (final name in _frameworkShaderFiles) {
-    final hash = contentHash(
-      File(frameworkShaders.resolve(name).toFilePath()).readAsBytesSync(),
+    final hash = sourceFingerprint(
+      File(frameworkShaders.resolve(name).toFilePath()),
     );
     stampBuffer.write(' $name=$hash');
   }

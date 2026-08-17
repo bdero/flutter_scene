@@ -104,7 +104,7 @@ Future<void> _buildBaseShaderBundle({
   );
   for (final file in sources) {
     stampBuffer.write(
-      ' ${file.uri.pathSegments.last}=${contentHash(file.readAsBytesSync())}',
+      ' ${file.uri.pathSegments.last}=${sourceFingerprint(file)}',
     );
   }
   final stamp = stampBuffer.toString();

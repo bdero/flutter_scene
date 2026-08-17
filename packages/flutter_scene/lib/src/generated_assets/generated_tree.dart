@@ -6,6 +6,7 @@
 /// registries share.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'generated_assets.dart';
@@ -174,7 +175,7 @@ final class GeneratedAssetTree {
       return false;
     }
     final entry = _manifest.find(family, id);
-    if (entry == null || entry.stamp != stamp) return false;
+    if (entry == null || entry.stamp != _digest(stamp)) return false;
     return outputs.every((uri) => File.fromUri(uri).existsSync());
   }
 
@@ -193,7 +194,9 @@ final class GeneratedAssetTree {
       id: id,
       owner: owner ?? packageName,
       file: file,
-      stamp: stamp,
+      // Digested, not stored verbatim: a stamp naming every input runs to
+      // kilobytes, and the manifest ships in the app bundle.
+      stamp: _digest(stamp),
       source: source,
     ),
   );
@@ -289,6 +292,8 @@ final class GeneratedAssetTree {
     }
     manifestFile.writeAsStringSync(contents);
   }
+
+  static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));
 
   void _deleteIfPresent(Uri uri) {
     final file = File.fromUri(uri);
