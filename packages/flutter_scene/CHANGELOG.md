@@ -1,5 +1,6 @@
 ## 0.21.0
 
+* Requires Flutter 3.47.0 or newer. That is the first stable carrying the Flutter GPU support this package needs, so the constraint is a real minimum rather than the loose value earlier releases carried. A master build numbered `3.47.0-1.0.pre.N` sorts below it and will not resolve.
 * Assets are generated into `flutter_scene_generated/` at the app root and loaded by source path, the same way on every Flutter channel. `dart run flutter_scene:init` installs the hook, creates the directory with a `.gitignore` for its outputs, and adds the one pubspec assets entry it needs.
 * `flutter pub add flutter_scene` is the whole setup. flutter_scene's own build hook compiles the engine's shaders for the app being built, on every channel, so an app with no hook of its own renders a runtime-imported `.glb` everywhere including web.
 * Compiled shader bundles record the engine that built them and are rebuilt when it changes, so switching Flutter versions cannot leave a bundle the new engine refuses to read.
@@ -9,6 +10,8 @@
 * `resolveShaderBundleKey` resolves a shader bundle built by `buildTargetShaderBundleJson` (or `flutter_gpu_shaders`) by name, for `loadShaderLibraryAsync`.
 * Build stamps fingerprint a source over a megabyte by size and modification time instead of reading it, cutting about 5 seconds per gigabyte off every build. Set `flutter_scene_strict_hashing: true` under `hooks: user_defines:` in the app pubspec to content-hash everything.
 * Switching asset modes needs a clean build. Nothing prunes assets from a previous mode out of an app bundle.
+* Breaking change, `buildScenes` and `buildTextures` no longer take `outputDirectory`. Outputs go to the app's generated tree, so a hook passing it fails to compile; drop the argument.
+* Breaking change, `FmatMaterialBundleIndex.fromJson` requires `assetKey`. The bundle and its sidecar resolve from the index's own key, so a direct caller passes the key it parsed.
 * `Node.extractMeshData` flattens a subtree's geometry into one `MeshData` with the descendant transforms baked in, and `MeshData.toTriMeshShape`/`toConvexHullShape` turn that into a collider, so an imported model no longer needs a hand-written walk to collide.
 * `MeshData.transformed` places a snapshot by a matrix, carrying normals by the inverse transpose and, through a mirror, flipping both tangent handedness and triangle winding.
 * The lit shaders declare one prefiltered-radiance sampler instead of one per layout, freeing two fragment texture units so a skinned shadow-casting draw fits GLES drivers reporting the 16-unit minimum.
