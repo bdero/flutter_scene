@@ -7,7 +7,6 @@
 - `.fscene` version 3, component properties delta-serialize and audio attenuation settings nest; version 2 documents migrate as-is.
 - Sun lights carry `contactShadows`, `contactShadowDistance`, and `angularRadius`.
 - Environment effects carry `colorGradingLut` (a `.cube` asset reference) and `colorGradingLutBlend`.
-
 - Ambient-occlusion effects carry `indirectLight`, `method`, `sliceCount`, `stepsPerSlice`, `visibilityBitmask`, `thickness`, `thicknessHeuristic`, `bentNormals`, and `multiBounce`.
 - Retuned effect defaults, ambient-occlusion intensity `1.0`, bloom intensity `0.15`, chromatic aberration `0.2`, auto-exposure clamps `-4`/`4` EV.
 - `.fscene` version 2 fixes every document to the native coordinate system and migrates left-handed version 1 documents.
@@ -15,6 +14,12 @@
 - Documents must declare their `.fscene` version.
 - `SunLightSpec` stores sky-driven analytic sun and cascaded-shadow settings.
 - `payloadSource` links a text manifest to a binary payload sidecar.
+- `TorusGeometrySpec` and `IcosphereGeometrySpec` procedural geometry, a torus around the Y axis and a geodesic sphere from a subdivided icosahedron.
+- Prefab instances add components to individual member nodes (`MemberComponent`, `PrefabInstanceSpec.memberComponents`), and `PrefabOverrideAspect` addresses one aspect of an override without re-parsing paths.
+- `ConstantEnvironment`, a reflection-free environment with uniform diffuse ambient radiance.
+- `EnvironmentResource` carries `agxWhite`, `agxContrast`, `environmentRotationY`, and `overridesEffects`.
+- `encodeComponentSchemas`/`decodeComponentSchemas` move a schema list through a manifest or cache payload, and `propertyValuesEqual` compares property values structurally.
+- `copyWith` on `MaterialResource` and `PrefabInstanceSpec`.
 
 ## 0.1.1
 
