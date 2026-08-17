@@ -147,6 +147,24 @@ uniform FragInfo {
   // specular_color * specular_factor, 0, 1), 0.04 for a default material.
   // The physical path derives its own from material inputs. w unused.
   vec4 dielectric_f0;
+  // World-space irradiance field. gi_grid.xyz is the probe spacing and
+  // gi_grid.w the field's intensity, 0 disabling the whole receiver.
+  vec4 gi_grid;
+  // gi_anchor.xyz is the lattice index of the volume's minimum-corner probe
+  // (probes sit on an infinite lattice through the world origin, so the
+  // volume can scroll without moving a probe that stayed inside it).
+  // gi_anchor.w is the self-shadow bias as a fraction of the cell edge.
+  vec4 gi_anchor;
+  // gi_counts.xyz is the probe count per axis; gi_counts.w the probe tiles
+  // per atlas row.
+  vec4 gi_counts;
+  // gi_atlas.x/y are the irradiance and depth regions' first atlas rows;
+  // gi_atlas.zw the reciprocal atlas dimensions.
+  vec4 gi_atlas;
+  // gi_visibility.x is the Chebyshev strength (0 compiles the depth fetches
+  // out), .y its world-space bias, .z the distance normalization the stored
+  // moments were divided by, and .w the boundary fade width in cells.
+  vec4 gi_visibility;
 }
 frag_info;
 
@@ -168,18 +186,20 @@ uniform sampler2D brdf_lut;
 uniform sampler2D shadow_map;
 #endif
 #ifndef FLUTTER_SCENE_SHADOW_CATCHER
-// Diffuse irradiance SH coefficients, coefficient i at texel i (RGB). Sampled
-// instead of read from a uniform so a sky's coefficients, computed on the GPU,
-// need no read-back (the diffuse_sh* uniform fields above are unused). Rows
-// select the environment: row 0 primary, row 1 the cross-fade secondary. When
-// no cross-fade is active the primary's 9x1 texture is bound directly and both
-// row coordinates land on its single row.
+// The environment's diffuse SH coefficients and, when the world-space
+// irradiance field is on, that field's probe atlas. Coefficient i sits at
+// texel (i, row), row 0 the primary environment and row 1 the cross-fade
+// secondary; a scene with no cross-fade binds the primary's 9x1 texture and
+// both rows land on it. Fetched (never sampled) so a bilinear filter cannot
+// smear a neighbouring probe texel into a coefficient, which is what lets the
+// probe atlas extend this same texture downward and cost no extra sampler.
+// Declared highp because the probe regions carry distances.
 //
 // A baked-lightmap variant supplies its diffuse ambient from the lightmap
 // instead, so the coefficients are not declared there and the lightmap sampler
 // costs no extra texture unit.
 #ifndef FLUTTER_SCENE_LIGHTMAP
-uniform sampler2D sh_coefficients;
+uniform highp sampler2D irradiance_field;
 #endif
 // The secondary environment cross-faded in by frag_info.radiance_blend.x: its
 // prefiltered radiance, in the same layout as the primary. Its diffuse SH

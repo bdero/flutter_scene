@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
 /// Widest atlas edge the irradiance field will build.
@@ -251,6 +252,49 @@ double _cellEdge(double extent, double count) {
   final span = count > 1.0 ? count - 1.0 : 1.0;
   final edge = extent.abs() / span;
   return edge > 1e-6 ? edge : 1e-6;
+}
+
+/// Everything a lit draw needs to read one frame's irradiance field.
+///
+/// Null on [Lighting] when the field is off, which is what gates the
+/// receiver's whole cost.
+class IrradianceFieldBinding {
+  const IrradianceFieldBinding({
+    required this.atlas,
+    required this.layout,
+    required this.placement,
+    required this.intensity,
+    required this.shadowBias,
+    required this.visibility,
+    required this.visibilityBias,
+  });
+
+  /// The atlas the lit shader samples. Rows 0 and 1 hold the environment's
+  /// coefficient strip, so this texture also stands in for the standalone
+  /// spherical-harmonic texture.
+  final gpu.Texture atlas;
+
+  /// Where each quantity sits in [atlas].
+  final IrradianceFieldLayout layout;
+
+  /// Where the probe lattice sits in the world this frame.
+  final IrradianceGridPlacement placement;
+
+  /// Scales the field's contribution to indirect diffuse.
+  final double intensity;
+
+  /// Self-shadow bias as a fraction of the smallest cell edge.
+  final double shadowBias;
+
+  /// Chebyshev visibility strength.
+  final double visibility;
+
+  /// Chebyshev depth bias as a fraction of the smallest cell edge.
+  final double visibilityBias;
+
+  /// Width, in cells, of the band the field fades back to the environment
+  /// over at the volume boundary.
+  static const double boundaryFadeCells = 1.0;
 }
 
 /// Wraps a lattice index into its storage slot, the modulo that gives the
