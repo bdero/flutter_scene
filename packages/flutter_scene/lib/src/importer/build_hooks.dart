@@ -364,6 +364,7 @@ void buildScenes({
               : inputFilePath
                     .replaceAll('\\', '/')
                     .substring(0, documentDirEnd),
+          exists: (key) => File.fromUri(packageRoot.resolve(key)).existsSync(),
         );
         writeGeneratedBytes(outputSceneUri, writeFsceneb(fsceneDocument));
       }
