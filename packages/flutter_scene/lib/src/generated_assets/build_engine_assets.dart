@@ -93,6 +93,8 @@ Future<void> _build({
         ? MaterialAssetMode.dataAssetsRequired
         : MaterialAssetMode.generatedTree,
     pruneGeneratedTree: prune,
+    // Engine-compiled like the base bundle, so its name separates engines too.
+    fileVariant: await engineIdentity(),
   );
 }
 

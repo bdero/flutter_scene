@@ -166,6 +166,7 @@ Future<void> buildBundledPhysicalMaterials({
   String? owner,
   MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
   bool pruneGeneratedTree = true,
+  String? fileVariant,
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -180,6 +181,7 @@ Future<void> buildBundledPhysicalMaterials({
   sourceRoot: sourceRoot,
   owner: owner,
   pruneGeneratedTree: pruneGeneratedTree,
+  fileVariant: fileVariant,
 );
 
 Future<void> _buildMaterials({
@@ -193,6 +195,7 @@ Future<void> _buildMaterials({
   Uri? sourceRoot,
   String? owner,
   bool pruneGeneratedTree = true,
+  String? fileVariant,
 }) async {
   final emitDataAssets = assetMode == MaterialAssetMode.dataAssetsRequired;
   if (emitDataAssets && !buildInput.config.buildDataAssets) {
@@ -271,6 +274,7 @@ Future<void> _buildMaterials({
             GeneratedAssetFamily.material,
             nameId: bundleName,
             extension: '.shaderbundle',
+            variant: fileVariant,
           ),
         );
   final sidecarFile = File.fromUri(
@@ -278,6 +282,7 @@ Future<void> _buildMaterials({
           GeneratedAssetFamily.material,
           nameId: bundleName,
           extension: '.fmat.json',
+          variant: fileVariant,
         ) ??
         packageRoot.resolve('build/shaderbundles/$bundleName.fmat.json'),
   );
@@ -286,6 +291,7 @@ Future<void> _buildMaterials({
           GeneratedAssetFamily.material,
           nameId: bundleName,
           extension: '.index.json',
+          variant: fileVariant,
         ) ??
         packageRoot.resolve('build/shaderbundles/$bundleName.index.json'),
   );
