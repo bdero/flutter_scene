@@ -70,14 +70,34 @@ Future<void> loadBaseShaderLibrary() async {
   }
   final key = await resolveBaseShaderBundleKey();
   if (key == null) {
-    throw Exception(baseShaderBundleMissingMessage);
+    final built = (await loadGeneratedAssetIndex()).targetsOf(
+      GeneratedAssetFamily.shaderBundle,
+      'base',
+      package: 'flutter_scene',
+    );
+    throw Exception(
+      built.isEmpty
+          ? baseShaderBundleMissingMessage
+          : baseShaderBundleWrongTargetMessage(built),
+    );
   }
   final lib = await gpu.loadShaderLibraryAsync(key);
   if (lib == null) {
     throw Exception(baseShaderBundleLoadFailureMessage(key));
   }
+  // A bundle the engine cannot unpack still loads; every lookup in it just
+  // returns null, which without this check leaves the scene "ready" and drawing
+  // nothing. Probe one shader that is always present.
+  if (lib[baseShaderBundleProbeName] == null) {
+    throw Exception(baseShaderBundleUnusableMessage(key));
+  }
   _baseShaderLibrary = lib;
 }
+
+/// A base-bundle entry every build contains, used to tell a bundle this engine
+/// can read from one it cannot.
+@visibleForTesting
+const String baseShaderBundleProbeName = 'UnskinnedVertex';
 
 /// Nothing built the bundle at all, which means flutter_scene's own build hook
 /// did not run.
@@ -87,6 +107,31 @@ const String baseShaderBundleMissingMessage =
     'it during the build, so this is a build that ran without hooks. Rebuild '
     'with a Flutter version that runs package build hooks, and clean the build '
     'directory if the app was built before.';
+
+/// The bundle was built, but only for other platforms. A tree shared by builds
+/// for several platforms (the pub cache is shared by every project on the
+/// machine) holds one bundle per target, and none of them is this one.
+@visibleForTesting
+String baseShaderBundleWrongTargetMessage(List<String> built) =>
+    'The engine shader bundle was built for ${built.join(', ')}, but this app '
+    'runs on $currentShaderTarget, and a bundle compiled for one graphics '
+    'backend cannot be read by another. The build that should have produced it '
+    'did not run or did not finish. Rebuild the app, and delete '
+    '$generatedAssetsEntry first if it was written by an older flutter_scene.';
+
+/// The bundle loaded, but this engine cannot unpack anything in it, which the
+/// engine also reports per lookup as `Failed to unpack shader "..." from
+/// bundle`.
+@visibleForTesting
+String baseShaderBundleUnusableMessage(String key) =>
+    'The engine shader bundle ($key) loaded but holds no shader this build can '
+    'read, so every draw would silently produce nothing. Two things cause '
+    'that. It was compiled for a different graphics backend than the one '
+    'running (this app needs $currentShaderTarget), which happens when one '
+    '$generatedAssetsEntry tree is shared by builds for different platforms. '
+    'Or it was compiled by a different Flutter engine, which the bundle format '
+    'is also tied to. Both are fixed by rebuilding, so run `flutter clean`, '
+    'delete $generatedAssetsEntry, and build again.';
 
 @visibleForTesting
 String baseShaderBundleLoadFailureMessage(String key) =>

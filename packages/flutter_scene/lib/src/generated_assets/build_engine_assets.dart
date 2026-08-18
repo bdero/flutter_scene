@@ -161,20 +161,22 @@ Future<void> _buildBaseShaderBundle({
       buildInput.packageName,
       options: options,
     )..requireAssetEntry();
-    // The compiled bundle is valid only for the engine that produced it, so
-    // the engine identity is part of the file name. Two builds on different
-    // Flutter versions sharing this directory then write different files
-    // instead of racing on one, and the sweep drops the one no longer named
-    // by the manifest.
+    // The compiled bundle is valid only for the engine that produced it and
+    // only for the backends it was trimmed to, so both are part of the file
+    // name. Builds on different Flutter versions, or for different platforms,
+    // sharing this directory then write different files instead of racing on
+    // one, and the sweep drops the one no longer named by the manifest.
+    final target = shaderBundleTargetKey(buildInput);
     final outputUri = tree.fileUri(
       GeneratedAssetFamily.shaderBundle,
       nameId: 'base',
       extension: '.shaderbundle',
       variant: await engineIdentity(),
+      target: target,
     );
     if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
       outputUri,
-    ])) {
+    ], target: target)) {
       tree
         ..recordFile(
           family: GeneratedAssetFamily.shaderBundle,
@@ -182,6 +184,7 @@ Future<void> _buildBaseShaderBundle({
           uri: outputUri,
           stamp: stamp,
           owner: _engineOwner,
+          target: target,
         )
         ..save();
       return;

@@ -26,6 +26,25 @@ const _missingMessage =
     'compiles them during the build, so this is a build that ran without '
     'hooks. Rebuild with a Flutter version that runs package build hooks.';
 
+/// A physical-bundle entry every build contains, used to tell a bundle this
+/// engine can read from one it cannot.
+@visibleForTesting
+const String physicalBundleProbeName = 'PhysicalOpaque';
+
+/// The bundle loaded, but this engine cannot unpack anything in it, which the
+/// engine also reports per lookup as `Failed to unpack shader "..." from
+/// bundle`.
+@visibleForTesting
+String physicalBundleUnusableMessage(String key) =>
+    'The physical material shader bundle ($key) loaded but holds no shader this '
+    'build can read, so every physically based material would silently draw '
+    'nothing. Two things cause that. It was compiled for a different graphics '
+    'backend than the one running (this app needs $currentShaderTarget), which '
+    'happens when one $generatedAssetsEntry tree is shared by builds for '
+    'different platforms. Or it was compiled by a different Flutter engine, '
+    'which the bundle format is also tied to. Both are fixed by rebuilding, so '
+    'run `flutter clean`, delete $generatedAssetsEntry, and build again.';
+
 Future<_PhysicalAssets>? _physicalAssetsFuture;
 _PhysicalAssets? _physicalAssets;
 
@@ -86,7 +105,21 @@ Future<({String bundle, String sidecar})?> resolvePhysicalBundleKeys({
 Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
   final keys = await resolvePhysicalBundleKeys();
   if (keys == null) {
-    throw StateError(_missingMessage);
+    final built = (await loadGeneratedAssetIndex()).targetsOf(
+      GeneratedAssetFamily.material,
+      'physical#shaderbundle',
+      package: 'flutter_scene',
+    );
+    throw StateError(
+      built.isEmpty
+          ? _missingMessage
+          : 'The physical material shaders were built for ${built.join(', ')}, '
+                'but this app runs on $currentShaderTarget, and a bundle '
+                'compiled for one graphics backend cannot be read by another. '
+                'The build that should have produced it did not run or did not '
+                'finish. Rebuild the app, and delete $generatedAssetsEntry '
+                'first if it was written by an older flutter_scene.',
+    );
   }
   final library = await gpu.loadShaderLibraryAsync(keys.bundle);
   if (library == null) {
@@ -95,6 +128,12 @@ Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
       'compiled for the engine that built the app, so rebuild after changing '
       'Flutter versions.',
     );
+  }
+  // A bundle this engine cannot unpack still loads, with every lookup in it
+  // returning null. Fail here rather than let the scene report itself ready and
+  // then draw nothing.
+  if (library[physicalBundleProbeName] == null) {
+    throw StateError(physicalBundleUnusableMessage(keys.bundle));
   }
   final sidecar = jsonDecode(await rootBundle.loadString(keys.sidecar));
   return _PhysicalAssets(library, (sidecar as Map).cast<String, Object?>());
