@@ -245,6 +245,51 @@ void main() {
       expect(h.doc.node(id)!.instance!.memberComponents, hasLength(1));
     });
 
+    test('removing a member component drops overrides that addressed it', () {
+      final h = _harness();
+      _run(h, 'instantiatePrefab', {
+        'prefabAsset': 'assets/enemy.fscene',
+        'name': 'Enemy',
+      });
+      final id = h.doc.roots.single;
+      const member = 'id:0100000000002';
+      _run(h, 'addPrefabMemberComponent', {
+        'nodeId': id.toToken(),
+        'memberId': member,
+        'componentType': 'turntable',
+      });
+      // A property edit on the member component is stored as an override.
+      _run(h, 'setPrefabOverride', {
+        'nodeId': id.toToken(),
+        'target': member,
+        'path': 'components.turntable.speed',
+        'value': 3.0,
+      });
+      // An unrelated override on the same member survives the removal.
+      _run(h, 'setPrefabOverride', {
+        'nodeId': id.toToken(),
+        'target': member,
+        'path': 'visible',
+        'value': true,
+      });
+      expect(h.doc.node(id)!.instance!.overrides, hasLength(2));
+
+      _run(h, 'removePrefabMemberComponent', {
+        'nodeId': id.toToken(),
+        'memberId': member,
+        'componentType': 'turntable',
+      });
+      final instance = h.doc.node(id)!.instance!;
+      expect(instance.memberComponents, isEmpty);
+      expect(instance.overrides, hasLength(1));
+      expect(instance.overrides.single.path, 'visible');
+
+      h.history.undo();
+      final restored = h.doc.node(id)!.instance!;
+      expect(restored.memberComponents, hasLength(1));
+      expect(restored.overrides, hasLength(2));
+    });
+
     test('clearPrefabOverrides empties the delta, undo restores overrides', () {
       final h = _harness();
       _run(h, 'instantiatePrefab', {

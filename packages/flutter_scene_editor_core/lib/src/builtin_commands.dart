@@ -2518,13 +2518,23 @@ final removePrefabMemberComponent = CommandEntry(
     if (next.length == instance.memberComponents.length) {
       return Transaction(name: 'Remove component ($type)', records: _empty);
     }
+    // Drop overrides that addressed the removed component. Left behind, a
+    // "components.<type>.<prop>" override targets a component that no longer
+    // composes, so compose logs it as unresolved on every load.
+    final prefix = 'components.$type';
+    final overrides = [
+      for (final o in instance.overrides)
+        if (!(o.target == member &&
+            (o.path == prefix || o.path.startsWith('$prefix.'))))
+          o,
+    ];
     return Transaction(
       name: 'Remove component ($type)',
       records: [
         _instanceRecord(
           id,
           instance,
-          _withDelta(instance, memberComponents: next),
+          _withDelta(instance, memberComponents: next, overrides: overrides),
         ),
       ],
     );
