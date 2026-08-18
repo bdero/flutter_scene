@@ -154,15 +154,37 @@ base class Node implements SceneGraph {
   /// The transform of this node relative to its parent: position,
   /// rotation, and scale.
   ///
-  /// Assigning marks this node and its descendants' cached world
-  /// transforms stale, and this node and its ancestors' cached bounds
-  /// stale. Mutating the returned matrix in place does not, so call
-  /// [markTransformDirty] after an in-place edit. [position], [rotation],
-  /// and [scale] read and write the same transform one component at a
-  /// time.
+  /// Prefer [position], [rotation], and [scale] for the common case, or
+  /// assign a whole matrix. Both mark this node and its descendants' cached
+  /// world transforms stale, and this node and its ancestors' cached bounds
+  /// stale.
+  ///
+  /// The getter returns the live matrix, so editing it in place does NOT
+  /// mark anything stale and the node silently will not move (debug builds
+  /// throw on the next read). To edit in place, use [mutateLocalTransform],
+  /// which dirties for you, or assign a fresh matrix
+  /// (`node.localTransform = node.localTransform.clone()..translateByVector3(...)`).
   Matrix4 get localTransform => _localTransform;
   set localTransform(Matrix4 value) {
     _localTransform = value;
+    _localTransformTrs = null;
+    markTransformDirty();
+  }
+
+  /// Edits [localTransform] in place through [edit], then marks the node
+  /// stale.
+  ///
+  /// The correct way to reach for the raw matrix, since a bare
+  /// `localTransform.translateByVector3(...)` mutates the live matrix without
+  /// dirtying the cache and the node silently will not move. [position],
+  /// [rotation], and [scale] cover most edits without a matrix.
+  ///
+  /// ```dart
+  /// node.mutateLocalTransform((m) => m.translateByVector3(Vector3(0.0, 1.0, 0.0)));
+  /// ```
+  /// {@category Scene graph}
+  void mutateLocalTransform(void Function(Matrix4 transform) edit) {
+    edit(_localTransform);
     _localTransformTrs = null;
     markTransformDirty();
   }
