@@ -1,15 +1,17 @@
 /// One `flutter run` invokes the hook twice, once with the target's code-asset
-/// config and once with no asset types at all, and a pub-cache tree is shared
-/// by every project on the machine. So several builds write one generated tree
-/// with different graphics backends in mind, and an output compiled for one
-/// backend is unreadable on another. Every such output is separated by target,
-/// in its file name and in the manifest, and the runtime reads back only the
-/// target it runs on.
+/// config and once with only data assets and no target OS, and a pub-cache tree
+/// is shared by every project on the machine. So several builds write one
+/// generated tree with different graphics backends in mind, and an output
+/// compiled for one backend is unreadable on another. Every such output is
+/// separated by target, in its file name and in the manifest, and the runtime
+/// reads back only the target it runs on.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:data_assets/data_assets.dart';
 import 'package:flutter_scene/src/fmat/target_shader_bundle.dart';
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
@@ -47,6 +49,24 @@ BuildInput _input(Uri packageRoot, {OS? targetOS}) {
   return builder.build();
 }
 
+/// The data-asset-only hook input `flutter run` makes for both a native
+/// build's second pass (code assets off) and a web build. flutter_tools reduces
+/// `MacOSAssetTarget` (with no code assets) and `WebAssetTarget` to this same
+/// single data-asset extension, so the two inputs are constructed identically.
+BuildInput _dataOnlyInput(Uri packageRoot) {
+  final builder = BuildInputBuilder()
+    ..setupShared(
+      packageRoot: packageRoot,
+      packageName: 'app',
+      outputDirectoryShared: packageRoot.resolve('.dart_tool/hook/'),
+      outputFile: packageRoot.resolve('.dart_tool/hook/output.json'),
+    );
+  DataAssetsExtension().setupBuildInput(builder);
+  builder.config.setupBuild(linkingEnabled: false);
+  builder.setupBuildInput();
+  return builder.build();
+}
+
 GeneratedAssetTree _tree(Directory temp) =>
     GeneratedAssetTree.open(temp.uri, 'app');
 
@@ -73,6 +93,38 @@ void main() {
       isNot(shaderBundleTargetKey(_input(temp.uri))),
     );
   });
+
+  test(
+    'a native build\'s data-only pass is indistinguishable from a web build',
+    () {
+      // The wasteful native GLES compile cannot be skipped at this layer. The
+      // data-asset-only input carries no target OS, so it resolves to GLES
+      // exactly like a web build, which genuinely needs that set. Nothing the
+      // hook can read separates the two. If a Flutter release starts naming the
+      // platform on a data-only input, this flips and the skip becomes possible.
+      final dataOnly = _dataOnlyInput(temp.uri);
+      expect(dataOnly.config.buildCodeAssets, isFalse);
+      expect(shaderBundleBackendsForBuild(dataOnly), {
+        ShaderBundleBackend.openglEs,
+      });
+      final config = jsonEncode(dataOnly.config.json).toLowerCase();
+      for (final os in const [
+        'macos',
+        'ios',
+        'android',
+        'linux',
+        'windows',
+        'web',
+        'fuchsia',
+      ]) {
+        expect(
+          config,
+          isNot(contains(os)),
+          reason: 'a data-only input naming $os would let the native pass skip',
+        );
+      }
+    },
+  );
 
   test('two targets write different files in one tree', () {
     final tree = _tree(temp);
