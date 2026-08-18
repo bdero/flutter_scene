@@ -11,6 +11,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart'
     show PreprocessedMaterial, PreprocessedSky;
 import 'package:flutter_scene/src/fmat/fmat_bytes_library.dart';
@@ -457,7 +458,9 @@ class EditorFmatLibrary {
         ..lastError = null;
       _watch(path, result.includeDependencies);
       return entry;
-    } on Exception catch (e) {
+    } catch (e) {
+      // Broad on purpose. Compile failures are Exceptions but the bundle load
+      // throws StateError, which `on Exception` would let escape unreported.
       _fail(entry, '$e');
       // Watch the broken source too, so fixing it triggers a reload even
       // though nothing loaded yet.
@@ -486,7 +489,8 @@ class EditorFmatLibrary {
         cacheDirectory: cacheDir,
       );
       return _compiler;
-    } on Exception catch (e) {
+    } catch (e) {
+      // findFmatToolchain throws StateError, which is not an Exception.
       _toolchainError = '$e';
       _report('$e');
       return null;
@@ -555,7 +559,7 @@ class EditorFmatLibrary {
     final FmatCompileResult result;
     try {
       result = await compiler.compile(source, fileName: path);
-    } on Exception catch (e) {
+    } catch (e) {
       _fail(entry, '$e');
       return;
     }
@@ -564,15 +568,20 @@ class EditorFmatLibrary {
       // First successful compile of a previously broken source, or a renamed
       // material (whose bundle entry changed, which an in-place refresh
       // cannot follow). Load fresh and rebuild the scene's materials.
-      entry
-        ..library = await FmatBytesLibrary.load(
-          result.shaderBundle,
-          result.sidecar,
-        )
-        ..entryName = result.entryName
-        ..metadata = (result.sidecar[result.entryName] as Map?)
-            ?.cast<String, Object?>()
-        ..lastError = null;
+      try {
+        entry
+          ..library = await FmatBytesLibrary.load(
+            result.shaderBundle,
+            result.sidecar,
+          )
+          ..entryName = result.entryName
+          ..metadata = (result.sidecar[result.entryName] as Map?)
+              ?.cast<String, Object?>()
+          ..lastError = null;
+      } catch (e) {
+        _fail(entry, '$e');
+        return;
+      }
       _watch(path, result.includeDependencies);
       await onStructuralChange?.call();
       return;
@@ -595,7 +604,13 @@ class EditorFmatLibrary {
     _report(message);
   }
 
-  void _report(String message) => onError?.call(message);
+  void _report(String message) {
+    // Also to the console. A material that fails to load renders as flat
+    // white, which is easy to mistake for a shading bug when the only report
+    // is a transient banner.
+    debugPrint('fmat: $message');
+    onError?.call(message);
+  }
 
   void dispose() {
     _disposed = true;
