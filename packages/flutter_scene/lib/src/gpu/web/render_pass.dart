@@ -558,7 +558,19 @@ base class RenderPass {
       throw StateError('bindUniform called before bindPipeline');
     }
     final struct = slot.shader._uniformStructs[slot.uniformName];
-    if (struct == null) return;
+    if (struct == null) {
+      // Match the native backend, which throws when the shader has no uniform
+      // slot of this name. Swallowing it silently binds nothing and the draw
+      // reads stale uniform state, wrong only on web and only for some draw
+      // orders. The lookup reads the shader's live reflection, so it stays
+      // correct across hot reload.
+      throw StateError(
+        'Failed to bind uniform. This shader declares no uniform block named '
+        '"${slot.uniformName}". A block binds by its type name, not its '
+        'instance name, and a block nothing in the shader reads is optimized '
+        'out by the compiler and reflects as absent.',
+      );
+    }
 
     final gl = _gpuContext._gl;
 
@@ -680,7 +692,20 @@ base class RenderPass {
       throw StateError('bindTexture called before bindPipeline');
     }
     final unit = pipeline._samplerUnits[slot.uniformName];
-    if (unit == null) return;
+    if (unit == null) {
+      // Match the native backend, which throws when the shader has no sampler
+      // of this name. Swallowing it silently leaves the unit unbound and the
+      // draw samples whatever texture that unit last held, wrong only on web
+      // and varying with draw order. _samplerUnits comes from the shader's
+      // live reflection, not GL introspection, so a reflected-but-unused
+      // sampler still resolves and only a truly absent name throws.
+      throw StateError(
+        'Failed to bind texture. This shader declares no texture named '
+        '"${slot.uniformName}". Check the sampler name spelling, and note '
+        'that a sampler nothing in the shader reads is optimized out by the '
+        'compiler and reflects as absent.',
+      );
+    }
 
     final gl = _gpuContext._gl;
     final target = texture.glTarget;
