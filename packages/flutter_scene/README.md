@@ -133,6 +133,68 @@ project.set_enable_flutter_gpu(true);
 
 On 3.47.0 there is no such setting, so desktop takes the command-line flags per run, and release builds compile the engine's environment switches out, meaning a shipped Windows or Linux release needs 3.47.1.
 
+### A scene with no assets
+
+The built-in geometry needs no asset pipeline, so a cube renders straight after `flutter pub add flutter_scene`:
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_scene/scene.dart';
+import 'package:vector_math/vector_math.dart' as vm;
+
+void main() => runApp(const MaterialApp(home: CubeView()));
+
+class CubeView extends StatefulWidget {
+  const CubeView({super.key});
+
+  @override
+  State<CubeView> createState() => _CubeViewState();
+}
+
+class _CubeViewState extends State<CubeView> {
+  final Scene scene = Scene();
+  bool ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Geometry and materials touch the shader bundle, so build them once the
+    // engine's static resources are up.
+    Scene.initializeStaticResources().then((_) {
+      scene.add(
+        Node(
+          mesh: Mesh(
+            CuboidGeometry(vm.Vector3(1, 1, 1)),
+            PhysicallyBasedMaterial(),
+          ),
+        ),
+      );
+      if (mounted) setState(() => ready = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!ready) return const SizedBox.expand();
+    return SceneView(
+      scene,
+      camera: PerspectiveCamera(position: vm.Vector3(2, 2, -4)),
+    );
+  }
+}
+```
+
+The scene's default studio environment lights it, so there is nothing else to set up.
+
+### Built-in geometry
+
+Every class below builds vertex data for you and drops into a `Mesh` the same way `CuboidGeometry` does above.
+
+- Primitives: `CuboidGeometry`, `SphereGeometry`, `IcosphereGeometry`, `CapsuleGeometry`, `CylinderGeometry`, `TorusGeometry`, `PlaneGeometry`, `DiscGeometry`, `RingGeometry`, `WedgeGeometry`.
+- Swept along a path or profile: `ExtrudeGeometry`, `TubeGeometry`, `RibbonGeometry`.
+- Lines and camera-facing quads: `PolylineGeometry`, `LineSegmentsGeometry`, `BillboardGeometry`.
+- Your own vertex data: `MeshGeometry` and `GeometryBuilder`.
+
 ### The asset pipeline
 
 `init` writes a `hook/build.dart` that converts your assets at build time,
@@ -310,7 +372,7 @@ flutter pub get                                             # resolves the works
 
 cd examples/flutter_app
 flutter create . --platforms=macos,ios,android,linux,windows,web  # generate gitignored platform stubs
-flutter run --enable-flutter-gpu --enable-impeller            # native; add `-d <device>` if needed
+flutter run --enable-flutter-gpu                              # native; add `-d <device>` if needed
 flutter run -d chrome                                         # web
 ```
 

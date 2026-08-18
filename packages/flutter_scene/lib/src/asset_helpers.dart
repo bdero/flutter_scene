@@ -6,10 +6,12 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// Uploads a decoded `dart:ui` [ui.Image] to a Flutter GPU texture.
 ///
 /// The image is read as raw RGBA bytes and copied into a host-visible
-/// GPU texture matching the image's dimensions. The returned texture is
-/// suitable for binding to materials such as [UnlitMaterial.baseColorTexture]
-/// or [PhysicallyBasedMaterial.baseColorTexture], or for building an
-/// [EnvironmentMap].
+/// GPU texture matching the image's dimensions. No mip chain is built, so a
+/// minified texture shimmers; prefer `Texture2D.fromImage` for anything a
+/// material samples, and reach for this only when a raw `gpu.Texture` is what
+/// you need (building an `EnvironmentMap`, interop with a custom pipeline).
+/// A material texture slot takes a `TextureSource`, so wrap the result in
+/// `GpuTextureSource` to bind it.
 ///
 /// Throws if the image can't be read as RGBA.
 /// {@category Assets and loading}
@@ -90,8 +92,9 @@ Future<ui.Image> imageFromBytes(Uint8List bytes, {int? maxWidth}) async {
 /// a Flutter GPU texture.
 ///
 /// The asset is decoded with [imageFromAsset] and then uploaded via
-/// [gpuTextureFromImage]. Throws if the asset is not present in the
-/// bundle or cannot be decoded.
+/// [gpuTextureFromImage], mipless like that path. Prefer
+/// `Texture2D.fromAsset` for material textures. Throws if the asset is not
+/// present in the bundle or cannot be decoded.
 /// {@category Assets and loading}
 Future<gpu.Texture> gpuTextureFromAsset(String assetPath) async {
   return await gpuTextureFromImage(await imageFromAsset(assetPath));

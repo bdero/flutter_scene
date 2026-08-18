@@ -2,22 +2,24 @@
 ///
 /// The entry points most applications need are:
 ///
-///  * [Scene] — the scene graph root and renderer. Construct one, attach
-///    [Node]s, and call [Scene.render] from a `CustomPainter` (or any
-///    `dart:ui` [Canvas]).
-///  * [Node] — a transform in the scene graph that may carry a [Mesh] and
+///  * [Scene], the scene graph root and renderer. Construct one, attach
+///    [Node]s, and display it with the [SceneView] widget, which drives the
+///    per-frame render loop for you. [Scene.render] is the lower-level path
+///    for drawing into a `dart:ui` [Canvas] yourself.
+///  * [Node], a transform in the scene graph that may carry a [Mesh] and
 ///    child nodes. Load 3D content with [loadScene] (preprocessed
 ///    `.fsceneb` packages, by source path) or [Node.fromGlbBytes] /
 ///    [Node.fromGlbAsset] (runtime glTF binary).
-///  * [Camera] / [PerspectiveCamera] — view configuration passed to
-///    [Scene.render].
-///  * [Material], [PhysicallyBasedMaterial], [UnlitMaterial],
-///    [Environment] — shading.
-///  * [Animation], [AnimationClip], [AnimationPlayer] — playback and
+///  * [Camera] / [PerspectiveCamera], view configuration passed to
+///    [SceneView] or [Scene.render].
+///  * [Material], [PhysicallyBasedMaterial], [UnlitMaterial] and
+///    [EnvironmentMap], shading.
+///  * [Animation], [AnimationClip], [AnimationPlayer], playback and
 ///    blending of imported animations.
 ///
-/// Flutter Scene currently requires the Flutter master channel because it
-/// depends on the Flutter GPU API.
+/// Flutter Scene needs Flutter 3.47 (stable) or newer. Rendering goes through
+/// the Flutter GPU API, which every platform except the web turns on once per
+/// project (see the package README).
 library;
 
 export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
@@ -272,5 +274,6 @@ export 'src/widgets/scene_view.dart'
         SceneLoadingBuilder,
         SceneScope,
         SceneTickCallback,
-        SceneView;
+        SceneView,
+        SceneViewsBuilder;
 export 'src/tone_mapping.dart' show ToneMappingMode;
