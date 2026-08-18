@@ -84,6 +84,25 @@ List<String> discoverSceneSources(
   return sources;
 }
 
+/// The directory a hook declares to notice sources appearing under
+/// [discoveryRoot]. The build system lists every declared directory, so a
+/// discovery root that does not exist yet (a fresh `flutter create` app has no
+/// `assets/`) would fail the build. The nearest existing ancestor stands in,
+/// and creating the root changes that ancestor's children, so the hook still
+/// reruns.
+Uri discoveryDependencyDirectory(Uri packageRoot, String discoveryRoot) {
+  var dir = discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/';
+  while (dir.isNotEmpty) {
+    final candidate = packageRoot.resolve(dir);
+    if (Directory.fromUri(candidate).existsSync()) {
+      return candidate;
+    }
+    final parentEnd = dir.lastIndexOf('/', dir.length - 2);
+    dir = parentEnd < 0 ? '' : dir.substring(0, parentEnd + 1);
+  }
+  return packageRoot;
+}
+
 /// Converts scene assets so an app loads them by source path with `loadScene`
 /// without hand-editing the asset manifest. Discovers three source kinds under
 /// [discoveryRoot]: `.glb` (converted to `.fsceneb`), authored `.fscene`
@@ -160,9 +179,7 @@ void buildScenes({
     // added in a subdirectory is not seen until something else reruns the hook.
     // Declaring each subdirectory found during discovery would close that.
     buildOutput.dependencies.add(
-      packageRoot.resolve(
-        discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/',
-      ),
+      discoveryDependencyDirectory(packageRoot, discoveryRoot),
     );
   }
 
