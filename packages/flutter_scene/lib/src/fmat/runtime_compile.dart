@@ -17,6 +17,12 @@ import 'package:flutter_gpu_shaders/build.dart'
         shaderBundleImpellercArguments;
 
 import 'package:flutter_scene/src/fmat/fmat.dart';
+import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
+    show
+        emitFragmentGlsl,
+        kRadianceCubeDefine,
+        materialSamplesEnvironment,
+        radianceCubeEntryName;
 import 'package:flutter_scene/src/importer/build_cache.dart';
 
 /// A failed `.fmat` runtime compile. A parse error surfaces as the underlying
@@ -62,6 +68,10 @@ final class FmatCompileResult {
 /// Results are cached on disk under [cacheDirectory], keyed by the source
 /// content, the tracked include files, and the tool binary, so reopening a
 /// scene skips recompiles.
+// Folded into cache keys so bundles written by an older layout are never
+// served. Bump when the emitted entry set changes.
+const int _cacheFormat = 2;
+
 final class FmatRuntimeCompiler {
   FmatRuntimeCompiler({
     required this.impellerc,
@@ -101,7 +111,7 @@ final class FmatRuntimeCompiler {
     final sourceHash = contentHash(utf8.encode(source));
     final key = contentHash(
       utf8.encode(
-        '$_toolStamp\n$shaderLibDirectory\n'
+        '$_cacheFormat\n$_toolStamp\n$shaderLibDirectory\n'
         '${includeDirectories.join(' ')}\n$sourceHash',
       ),
     );
@@ -128,11 +138,30 @@ final class FmatRuntimeCompiler {
       ..createSync(recursive: true);
     final entryName = compiled.material.name;
 
+    // An environment-sampling material needs the cubemap-radiance twin the
+    // offline build emits, because each entry declares only its own sampler
+    // type and createMaterial resolves the twin whenever the sidecar says the
+    // material samples the environment.
+    final cubeEntry = radianceCubeEntryName(entryName);
+    final needsCube = materialSamplesEnvironment(compiled.material);
+
     final manifest = <String, Object?>{
       entryName: {
         'type': 'fragment',
         'file': _writeShader(genDir, '$entryName.frag', compiled.glsl),
       },
+      if (needsCube)
+        cubeEntry: {
+          'type': 'fragment',
+          'file': _writeShader(
+            genDir,
+            '$cubeEntry.frag',
+            emitFragmentGlsl(
+              compiled.material,
+              defines: const [kRadianceCubeDefine],
+            ),
+          ),
+        },
       for (final MapEntry(key: vertexEntry, value: vertexGlsl)
           in compiled.vertexGlsl.entries)
         vertexEntry: {
