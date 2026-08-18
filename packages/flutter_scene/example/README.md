@@ -49,8 +49,7 @@ For an animated camera, pass `cameraBuilder: (elapsed) => ...` instead of a
 fixed `camera`.
 
 To preprocess models offline and hot reload them (and `.fmat` materials) in
-place, load by source path with `loadModel` / `loadFmatMaterial` and a
-DataAssets build hook. For a full runnable app exercising materials,
-skinning/animation, custom shaders, and hot reload, see
+place, run `dart run flutter_scene:init` to set up the build hook, then load by
+source path with `loadScene` / `loadFmatMaterial`. For a full runnable app
+exercising materials, skinning/animation, custom shaders, and hot reload, see
 [`examples/flutter_app`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app).
-```

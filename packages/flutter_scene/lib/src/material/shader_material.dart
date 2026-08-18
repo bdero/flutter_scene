@@ -48,16 +48,22 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// in vec2 v_texture_coords;
 /// in vec2 v_texture_coords_1;
 /// in vec4 v_color;           // per-vertex color, white when absent
+/// in vec3 v_model_scale;     // rotation-independent world scale
+/// in vec4 v_tangent;         // world tangent + bitangent sign, zero when absent
 /// ```
 ///
 /// Setting [useEnvironment] to `true` makes the engine bind the active
 /// environment's IBL textures by their standard names when your fragment
-/// shader declares them: `prefiltered_radiance` (the PMREM-style
-/// roughness-band atlas; sample it with `SamplePrefilteredRadiance` from
-/// `texture.glsl`) and `brdf_lut` (both as `sampler2D`). The diffuse
-/// irradiance SH coefficients are not bound generically; declare them in
-/// your own uniform block if you need them. Useful when a custom shader
-/// still wants the engine's image-based lighting.
+/// shader declares them, `prefiltered_radiance` and `brdf_lut`. Declare
+/// `brdf_lut` as `sampler2D`, and `prefiltered_radiance` as `RadianceSampler`
+/// (from `texture.glsl`), whose type follows the environment layout the
+/// backend built. Sample it with
+/// `SampleRadianceEnv(prefiltered_radiance, direction, roughness)`, and build a
+/// second bundle entry defining `FLUTTER_SCENE_RADIANCE_CUBE` to pass as
+/// `radianceCubeFragmentShader`, or a cubemap environment binds to a sampler
+/// type the shader cannot read. See `MATERIALS.md` for the full contract. The
+/// diffuse irradiance SH coefficients are not bound generically; declare them
+/// in your own uniform block if you need them.
 ///
 /// ## Uniform block packing
 ///
