@@ -1,14 +1,14 @@
 ## 0.21.2
 
-* Fixed the second and every later `flutter run` rendering nothing. The build trims each shader bundle to the backends its target needs, and one build invokes the hook twice with different targets. Both wrote the same bundle filenames, so the GLES trim overwrote the native one and the engine failed to unpack every shader. Generated assets now key on the graphics target as well as the engine, so the two coexist. The manifest schema bumped, so a stale generated tree rebuilds itself.
-* `Scene.initializeStaticResources()` no longer reports ready when the shader bundle loaded but yielded no usable shaders. It now fails, and the error names a backend mismatch or an engine change and what to do about it, instead of the per-frame message repeating advice the caller already followed.
-* Fixed `dart run flutter_scene:init` followed by `flutter run` failing on a new app with "Flutter failed to list directory". The hooks declared a dependency on `assets/` before anything created it. They now declare the nearest existing directory, so a source added later still reruns the hook.
-* Fixed `Node.clone()` sharing the original's transform matrix, so mutating either moved both.
-* Fixed the skinning joints texture sizing to a width the shader can read for small joint counts. One matrix spans four texels on a row, and a narrower texture folded the last two back onto the first, duplicating matrix columns.
-* Fixed `ParticleSystem.reset()` not restarting its random stream, so a reset run did not replay.
-* Mutating `Node.localTransform` in place without calling `markTransformDirty()` now throws in debug builds instead of silently doing nothing. This surfaces existing bugs as errors; assign a new matrix or mark the node dirty after an in-place edit. Release builds are unaffected.
-* `SceneViewsBuilder` is exported. The `viewsBuilder` parameter was public but its type was not.
-* Documentation fixes for names that no longer exist. The library doc no longer requires the master channel or names the removed `Environment`, and points at `SceneView` over `Scene.render`. The example no longer calls `loadModel`. `ShaderMaterial`'s IBL notes match the shaders, so a custom material samples the environment correctly on every backend. The readme gains a scene that needs no asset files and a list of the built-in geometry.
+* Fixed the second and every later `flutter run` rendering nothing, from two hook invocations writing the same shader bundle filenames with different backend trims.
+* Fixed `Scene.initializeStaticResources()` reporting ready when the shader bundle loaded but held nothing this engine can read.
+* Fixed `dart run flutter_scene:init` then `flutter run` failing on a new app with "Flutter failed to list directory".
+* Fixed `Node.clone()` sharing the original's transform matrix.
+* Fixed the skinning joints texture being too narrow for small joint counts, which duplicated matrix columns.
+* Fixed `ParticleSystem.reset()` not restarting its random stream.
+* Mutating `Node.localTransform` in place without `markTransformDirty()` now throws in debug builds instead of silently doing nothing.
+* `SceneViewsBuilder` is now exported.
+* Documentation fixes for names that no longer exist (`Environment`, `loadModel`, the master channel requirement), plus a readme scene that needs no asset files and a list of the built-in geometry.
 
 ## 0.21.1
 
