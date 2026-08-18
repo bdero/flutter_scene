@@ -27,10 +27,7 @@ void main(List<String> args) async {
 
   if (options.build) {
     _assertWindowingEnabled();
-    // TODO(editor-dist-rebuild): once Gatekeeper assesses a signed bundle,
-    // macOS stamps restricted com.apple.provenance xattrs on it and the next
-    // incremental build dies in rsync with "Operation not permitted". Delete
-    // build/macos before rebuilding, or clear the stale product here.
+    _clearStaleProduct(appDir, options.platform);
     _run('flutter', [
       'build',
       options.platform,
@@ -119,6 +116,27 @@ void _assertWindowingEnabled() {
     'at startup. Apply tool/patches/windowing_stable.patch to the SDK, then '
     'run "flutter config --enable-windowing".',
   );
+}
+
+// Once Gatekeeper assesses a signed bundle, macOS stamps restricted
+// com.apple.provenance xattrs on it that rsync cannot rewrite, so the next
+// build fails copying into the stale bundle. Xcode reassembles the product
+// from its cached objects, so dropping it costs a relink rather than a
+// recompile.
+void _clearStaleProduct(String appDir, String platform) {
+  if (platform != 'macos') {
+    return;
+  }
+  final products = Directory('$appDir/build/macos/Build/Products/Release');
+  if (!products.existsSync()) {
+    return;
+  }
+  for (final entity in products.listSync()) {
+    if (entity is Directory && entity.path.endsWith('.app')) {
+      stdout.writeln('- ${entity.path}');
+      entity.deleteSync(recursive: true);
+    }
+  }
 }
 
 Never _fail(String message) {
