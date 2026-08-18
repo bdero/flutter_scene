@@ -138,7 +138,32 @@ On 3.47.0 there is no such setting, so desktop takes the command-line flags per 
 `init` writes a `hook/build.dart` that converts your assets at build time,
 creates `flutter_scene_generated/` with a `.gitignore` for its outputs, and adds
 that one directory to `flutter.assets` in your `pubspec.yaml`. It is safe to run
-again.
+again, and it will not overwrite a `hook/build.dart` you wrote yourself. It
+prints a block to paste into your existing `build()` callback instead.
+
+The hook it writes discovers `.glb` and `.fscene` models, `.fmat` materials, and
+loose images under `assets/`, and converts each one:
+
+```dart
+// hook/build.dart
+import 'package:flutter_scene/build_hooks.dart';
+import 'package:hooks/hooks.dart';
+
+void main(List<String> args) async {
+  await build(args, (input, output) async {
+    buildScenes(buildInput: input, buildOutput: output);
+    await buildMaterials(buildInput: input, buildOutput: output);
+  });
+}
+```
+
+The one line it adds to your `pubspec.yaml`:
+
+```yaml
+flutter:
+  assets:
+    - flutter_scene_generated/
+```
 
 Upgrading from an earlier version, run it again. Generated assets now go into
 that directory on every Flutter release, so re-running `init` migrates the hook
@@ -168,6 +193,18 @@ For a model that only exists once the app is running, because you download it or
 the user supplies it, import the `.glb` directly with
 `Node.fromGlbAsset('assets/model.glb')`. That needs no hook, and it parses the
 glTF on every load, so prefer the pipeline whenever the model ships with you.
+
+### Where to go next
+
+[fscene.dev](https://fscene.dev) carries the full documentation. [Your first
+scene](https://fscene.dev/getting-started/your-first-scene/) renders something on
+screen from here, and the [guides](https://fscene.dev/guides/) cover each
+subsystem in depth with live demos, including [assets and
+loading](https://fscene.dev/guides/assets-and-loading/), [materials](https://fscene.dev/guides/materials/),
+[lighting and environment](https://fscene.dev/guides/lighting-and-environment/),
+[animation](https://fscene.dev/guides/animation/), and [cameras](https://fscene.dev/guides/cameras/).
+The [API reference](https://fscene.dev/api/flutter_scene/latest/) documents every
+public symbol.
 
 ## Requirements
 
