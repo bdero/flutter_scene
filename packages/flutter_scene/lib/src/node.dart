@@ -157,7 +157,9 @@ base class Node implements SceneGraph {
   /// Assigning marks this node and its descendants' cached world
   /// transforms stale, and this node and its ancestors' cached bounds
   /// stale. Mutating the returned matrix in place does not, so call
-  /// [markTransformDirty] after an in-place edit.
+  /// [markTransformDirty] after an in-place edit. [position], [rotation],
+  /// and [scale] read and write the same transform one component at a
+  /// time.
   Matrix4 get localTransform => _localTransform;
   set localTransform(Matrix4 value) {
     _localTransform = value;
@@ -181,6 +183,89 @@ base class Node implements SceneGraph {
     _localTransform = trs.toMatrix4();
     _localTransformTrs = trs;
     markTransformDirty();
+  }
+
+  /// This node's position relative to its parent.
+  ///
+  /// The getter returns a copy, so editing it does not move the node, and
+  /// debug builds throw on such an edit. Assign to move the node
+  /// (`node.position = Vector3(0, 1, 0)`, or `node.position += ...`).
+  /// Setting leaves [rotation] and [scale] alone.
+  /// {@category Scene graph}
+  Vector3 get position {
+    assert(_debugCheckTransformHandouts());
+    final trs = _localTransformTrs;
+    final value = trs != null
+        ? trs.translation.clone()
+        : _localTransform.getTranslation();
+    assert(_debugRecordHandout('position', value, value.clone()));
+    return value;
+  }
+
+  set position(Vector3 value) {
+    assert(_debugForgetHandout('position'));
+    _localTransformTrs?.translation.setFrom(value);
+    _localTransform.setTranslation(value);
+    markTransformDirty();
+  }
+
+  /// This node's rotation relative to its parent.
+  ///
+  /// Same copy rules as [position]. Setting leaves the position and scale
+  /// alone, and records the decomposition, so all three read back what was
+  /// set.
+  /// {@category Scene graph}
+  Quaternion get rotation {
+    assert(_debugCheckTransformHandouts());
+    final value = _decomposedLocalTransform().rotation.clone();
+    assert(_debugRecordHandout('rotation', value, value.clone()));
+    return value;
+  }
+
+  set rotation(Quaternion value) {
+    assert(_debugForgetHandout('rotation'));
+    final trs = _decomposedLocalTransform();
+    trs.rotation.setFrom(value);
+    setLocalTransformTrs(trs);
+  }
+
+  /// This node's scale relative to its parent.
+  ///
+  /// Same copy rules as [position]. Setting leaves the position and
+  /// rotation alone. A scale set here, or recorded by an importer, reads
+  /// back exactly; on a node whose transform arrived as a matrix the
+  /// getter decomposes it, which reports a mirror on X whichever axis the
+  /// matrix actually mirrored.
+  /// {@category Scene graph}
+  Vector3 get scale {
+    assert(_debugCheckTransformHandouts());
+    final value = _decomposedLocalTransform().scale.clone();
+    assert(_debugRecordHandout('scale', value, value.clone()));
+    return value;
+  }
+
+  set scale(Vector3 value) {
+    assert(_debugForgetHandout('scale'));
+    final trs = _decomposedLocalTransform();
+    trs.scale.setFrom(value);
+    setLocalTransformTrs(trs);
+  }
+
+  // The decomposition of [localTransform], the authored one when the node
+  // carries it and a fresh decompose otherwise. A derived result is not
+  // stored, so reading never promotes a decomposed mirror to authored data.
+  DecomposedTransform _decomposedLocalTransform() {
+    final authored = _localTransformTrs;
+    if (authored != null) return authored;
+    final translation = Vector3.zero();
+    final rotation = Quaternion.identity();
+    final scale = Vector3.zero();
+    _localTransform.decompose(translation, rotation, scale);
+    return DecomposedTransform(
+      translation: translation,
+      rotation: rotation,
+      scale: scale,
+    );
   }
 
   // Cached world-space transform, valid while _worldTransformDirty is
@@ -230,6 +315,7 @@ base class Node implements SceneGraph {
   /// Cached: O(1) when the cache is current, recomputed up the parent
   /// chain only after a transform change.
   Matrix4 get globalTransform {
+    assert(_debugCheckTransformHandouts());
     if (!_worldTransformDirty) {
       assert(_debugCheckLocalTransformUnmutated());
       return _worldTransform;
@@ -256,6 +342,42 @@ base class Node implements SceneGraph {
   // Records _localTransform alongside the world transform just cached.
   bool _debugSnapshotLocalTransform() {
     (_debugLocalTransformShadow ??= Matrix4.zero()).setFrom(_localTransform);
+    return true;
+  }
+
+  // Debug-only record of what each of the position/rotation/scale getters
+  // last handed out, as a check that the copy still holds the value it was
+  // given. Only assert-invoked helpers write it, so it stays null in release
+  // builds and costs nothing there.
+  Map<String, bool Function()>? _debugTransformHandouts;
+
+  bool _debugRecordHandout(String property, Object value, Object snapshot) {
+    (_debugTransformHandouts ??= {})[property] = () => value == snapshot;
+    return true;
+  }
+
+  // Drops the record for [property]. Read, edit the copy, assign it back is
+  // the supported way to move a node, so assigning clears the suspicion.
+  bool _debugForgetHandout(String property) {
+    _debugTransformHandouts?.remove(property);
+    return true;
+  }
+
+  // Throws when a copy handed out by position, rotation, or scale was edited
+  // in place, an edit that cannot reach the node.
+  bool _debugCheckTransformHandouts() {
+    final handouts = _debugTransformHandouts;
+    if (handouts == null) return true;
+    for (final entry in handouts.entries) {
+      if (entry.value()) continue;
+      final property = entry.key;
+      handouts.clear();
+      throw StateError(
+        'Node "$name": node.$property returns a copy, and that copy was '
+        'edited in place, so the node did not move. Assign the value instead '
+        '(node.$property = ...), or clone it first when you want scratch.',
+      );
+    }
     return true;
   }
 

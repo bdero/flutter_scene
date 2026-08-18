@@ -6,8 +6,9 @@
 ///    [Node]s, and display it with the [SceneView] widget, which drives the
 ///    per-frame render loop for you. [Scene.render] is the lower-level path
 ///    for drawing into a `dart:ui` [Canvas] yourself.
-///  * [Node], a transform in the scene graph that may carry a [Mesh] and
-///    child nodes. Load 3D content with [loadScene] (preprocessed
+///  * [Node], a transform in the scene graph (`position`, `rotation`,
+///    `scale`, or the whole `localTransform` matrix) that may carry a [Mesh]
+///    and child nodes. Load 3D content with [loadScene] (preprocessed
 ///    `.fsceneb` packages, by source path) or [Node.fromGlbBytes] /
 ///    [Node.fromGlbAsset] (runtime glTF binary).
 ///  * [Camera] / [PerspectiveCamera], view configuration passed to

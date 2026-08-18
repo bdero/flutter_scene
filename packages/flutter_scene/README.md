@@ -186,6 +186,22 @@ class _CubeViewState extends State<CubeView> {
 
 The scene's default studio environment lights it, so there is nothing else to set up.
 
+### Moving a node
+
+Every `Node` carries a transform relative to its parent. Read and write it one
+component at a time, or as a whole matrix through `node.localTransform`.
+
+```dart
+node.position = vm.Vector3(0, 1, 0);
+node.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), 0.5);
+node.scale = vm.Vector3.all(2);
+node.position += vm.Vector3(0, 0.1, 0);
+```
+
+Each getter returns a copy, so `node.position.y = 1` moves nothing. Assign the
+value back instead. Debug builds throw on an edit that cannot reach the node,
+whether it is to a returned copy or to `localTransform` in place.
+
 ### Built-in geometry
 
 Every class below builds vertex data for you and drops into a `Mesh` the same way `CuboidGeometry` does above.

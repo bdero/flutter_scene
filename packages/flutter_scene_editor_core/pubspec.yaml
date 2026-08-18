@@ -17,6 +17,6 @@ dependencies:
   vector_math: ^2.1.4
 
 dev_dependencies:
-  flutter_scene: ^0.21.0
+  flutter_scene: ^0.22.0
   lints: ^5.1.0
   test: ^1.25.0

@@ -1,5 +1,6 @@
 ## 0.22.0
 
+* `Node.position`, `Node.rotation`, and `Node.scale` read and write the local transform one component at a time, and editing a returned copy in place throws in debug builds rather than silently doing nothing.
 * Fixed the second and every later `flutter run` rendering nothing, from two hook invocations writing the same shader bundle filenames with different backend trims.
 * Fixed `Scene.initializeStaticResources()` reporting ready when the shader bundle loaded but held nothing this engine can read.
 * Fixed `dart run flutter_scene:init` then `flutter run` failing on a new app with "Flutter failed to list directory".
