@@ -95,12 +95,15 @@ the build by flutter_scene's own build hook. Rendering goes through Flutter GPU,
 which is off by default, so enable it once per platform (below). The web needs
 nothing.
 
+Impeller, which Flutter GPU builds on, is the default renderer on every native
+platform as of 3.47, so there is nothing to do for it.
+
 ### Enable Flutter GPU
 
 While developing, pass the flags on the command line:
 
 ```sh
-flutter run --enable-flutter-gpu --enable-impeller
+flutter run --enable-flutter-gpu
 ```
 
 To turn it on permanently, for every run and for the app you ship, edit the
@@ -110,24 +113,20 @@ platform file:
 | --- | --- | --- |
 | iOS | `ios/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` |
 | Android | `android/app/src/main/AndroidManifest.xml`, in `<application>` | `<meta-data android:name="io.flutter.embedding.android.EnableFlutterGPU" android:value="true" />` |
-| macOS | `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` and `<key>FLTEnableImpeller</key><true/>` |
+| macOS | `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` |
 | Web | nothing | |
 
-Impeller is already the default on iOS and Android, so those need only the one entry.
-
-Windows and Linux set it on the `DartProject` their runner builds, alongside Impeller, which is not the default on desktop either. This needs Flutter 3.47.1.
+Windows and Linux set it on the `DartProject` their runner builds. This needs Flutter 3.47.1.
 
 ```c
 // linux/runner/my_application.cc
 g_autoptr(FlDartProject) project = fl_dart_project_new();
-fl_dart_project_set_enable_impeller(project, TRUE);
 fl_dart_project_set_enable_flutter_gpu(project, TRUE);
 ```
 
 ```cpp
 // windows/runner/main.cpp
 flutter::DartProject project(L"data");
-project.set_enable_impeller(true);
 project.set_enable_flutter_gpu(true);
 ```
 
@@ -174,7 +173,7 @@ its `.gitignore` for you.
 Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking changes, and every change is documented in the [CHANGELOG](https://github.com/bdero/flutter_scene/blob/master/packages/flutter_scene/CHANGELOG.md).
 
 - Flutter 3.47 (stable) or newer. Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), which every platform except the web needs turned on once (see [Enable Flutter GPU](#enable-flutter-gpu)). A master build numbered `3.47.0-1.0.pre.N` sorts below `3.47.0` and will not resolve, so use the 3.48 development series or later.
-- On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), which is Flutter's default renderer on iOS and Android and enabled with a flag on desktop (`--enable-impeller --enable-flutter-gpu`). The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
+- On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), Flutter's default renderer on every native platform as of 3.47. The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
 
 ## Features
 
@@ -223,7 +222,7 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 
 On native platforms `flutter_scene` runs anywhere [Impeller](https://docs.flutter.dev/perf/impeller#availability) does. On the web it runs on a built-in WebGL2 backend.
 
-Every native platform needs Flutter GPU turned on, and the desktop ones need Impeller turned on with it, since Impeller is only the default on iOS and Android. [Enable Flutter GPU](#enable-flutter-gpu) has the file and the key for each.
+Every native platform needs Flutter GPU turned on. Impeller, which it builds on, is already the default everywhere. [Enable Flutter GPU](#enable-flutter-gpu) has the file and the key for each.
 
 On the web, no flags are needed; it works under both the CanvasKit and Skwasm renderers.
 
