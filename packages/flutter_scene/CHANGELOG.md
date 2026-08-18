@@ -1,3 +1,15 @@
+## 0.21.2
+
+* Fixed the second and every later `flutter run` rendering nothing. One build invokes the hook twice with different backend sets, and both wrote the same shader bundle filenames, so the GLES pass overwrote the native one and the engine failed to unpack every shader. Generated assets now key on the graphics target as well as the engine, so the two coexist. The manifest schema bumped, so a stale generated tree rebuilds itself.
+* `Scene.initializeStaticResources()` no longer reports ready when the shader bundle loaded but yielded no usable shaders. It now fails, and the error names a backend mismatch or an engine change and what to do about it, instead of the per-frame message repeating advice the caller already followed.
+* Fixed `dart run flutter_scene:init` followed by `flutter run` failing on a new app with "Flutter failed to list directory". The hooks declared a dependency on `assets/` before anything created it. They now declare the nearest existing directory, so a source added later still reruns the hook.
+* Fixed `Node.clone()` sharing the original's transform matrix, so mutating either moved both.
+* Fixed the skinning joints texture sizing to a width the shader can read for small joint counts. One matrix spans four texels on a row, and a narrower texture folded the last two back onto the first, duplicating matrix columns.
+* Fixed `ParticleSystem.reset()` not restarting its random stream, so a reset run did not replay.
+* Mutating `Node.localTransform` in place without calling `markTransformDirty()` now throws in debug builds instead of silently doing nothing. This surfaces existing bugs as errors; assign a new matrix or mark the node dirty after an in-place edit. Release builds are unaffected.
+* `SceneViewsBuilder` is exported. The `viewsBuilder` parameter was public but its type was not.
+* Documentation fixes for names that no longer exist. The library doc no longer requires the master channel or names the removed `Environment`, and points at `SceneView` over `Scene.render`. The example no longer calls `loadModel`. `ShaderMaterial`'s IBL notes match the shaders, so a custom material samples the environment correctly on every backend. The readme gains a scene that needs no asset files and a list of the built-in geometry.
+
 ## 0.21.1
 
 * Documentation only. The readme spells out how to turn Flutter GPU on for each platform, shows the build hook and the pubspec entry `dart run flutter_scene:init` writes, recommends converting assets ahead of time over importing glTF at runtime, and links the guides at fscene.dev.
