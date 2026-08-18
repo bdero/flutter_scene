@@ -10,6 +10,14 @@ import 'package:flutter/foundation.dart' show internal, kDebugMode;
 import 'package:flutter/services.dart';
 
 import 'generated_assets.dart';
+import 'runtime_target.dart';
+
+/// The [shaderTargetKey] this build's outputs were compiled for. Generated
+/// outputs recorded for any other target belong to a build for a different
+/// platform that shared the same tree, and are skipped.
+final String currentShaderTarget = shaderTargetKey(
+  shaderBundleBackendsForOS(runtimeOperatingSystem),
+);
 
 /// One generated manifest, plus where its assets are keyed from.
 final class GeneratedAssetSource {
@@ -40,25 +48,44 @@ final class GeneratedAssetIndex {
 
   bool get isEmpty => sources.isEmpty;
 
-  /// Every match for [id] in [family], optionally narrowed to the assets
-  /// [package] owns.
+  /// Every match for [id] in [family] usable on this build's target, optionally
+  /// narrowed to the assets [package] owns.
   List<({GeneratedAssetSource source, GeneratedAssetEntry entry})> lookup(
     GeneratedAssetFamily family,
     String id, {
     String? package,
   }) => [
     for (final source in sources)
-      if (source.manifest.find(family, id) case final entry?)
+      if (source.manifest.findForTarget(family, id, currentShaderTarget)
+          case final entry?)
         if (package == null || entry.owner == package)
           (source: source, entry: entry),
   ];
 
-  /// Every entry of [family], with the key its output is bundled under.
+  /// Every target [family]/[id] was built for, whether or not this build can
+  /// use it, so a "not found" can say a bundle is present but for another
+  /// platform.
+  List<String> targetsOf(
+    GeneratedAssetFamily family,
+    String id, {
+    String? package,
+  }) => [
+    for (final source in sources)
+      for (final entry in source.manifest.entries)
+        if (entry.family == family && entry.id == id)
+          if (package == null || entry.owner == package) entry.target ?? 'any',
+  ];
+
+  /// Every entry of [family] usable on this build's target, with the key its
+  /// output is bundled under.
   List<({String key, GeneratedAssetEntry entry})> entriesOf(
     GeneratedAssetFamily family,
   ) => [
     for (final source in sources)
-      for (final entry in source.manifest.ofFamily(family))
+      for (final entry in source.manifest.ofFamilyForTarget(
+        family,
+        currentShaderTarget,
+      ))
         (key: source.keyOf(entry), entry: entry),
   ];
 

@@ -6,6 +6,8 @@ import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/src/importer/build_cache.dart';
+import 'package:flutter_scene/src/importer/build_hooks.dart'
+    show discoveryDependencyDirectory;
 
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
@@ -242,9 +244,7 @@ Future<void> _buildMaterials({
     // Hashed as the names of its direct children, so an added or removed
     // material reruns the hook for nothing.
     buildOutput.dependencies.add(
-      materialRoot.resolve(
-        discoveryRoot.endsWith('/') ? discoveryRoot : '$discoveryRoot/',
-      ),
+      discoveryDependencyDirectory(materialRoot, discoveryRoot),
     );
   }
   if (materialPaths.isEmpty) {
@@ -266,6 +266,9 @@ Future<void> _buildMaterials({
           buildInput.packageName,
           options: options,
         )..requireAssetEntry());
+  // The compiled bundle only runs on the backends it was trimmed to, so every
+  // output keyed to it is separated by target. Several builds share one tree.
+  final target = shaderBundleTargetKey(buildInput);
 
   // Locate flutter_scene's framework shader directory. flutter_scene has no
   // top-level `flutter_scene.dart` library, so resolve through this package's
@@ -303,6 +306,7 @@ Future<void> _buildMaterials({
             nameId: bundleName,
             extension: '.shaderbundle',
             variant: fileVariant,
+            target: target,
           ),
         );
   final sidecarFile = File.fromUri(
@@ -311,6 +315,7 @@ Future<void> _buildMaterials({
           nameId: bundleName,
           extension: '.fmat.json',
           variant: fileVariant,
+          target: target,
         ) ??
         packageRoot.resolve('build/shaderbundles/$bundleName.fmat.json'),
   );
@@ -320,6 +325,7 @@ Future<void> _buildMaterials({
           nameId: bundleName,
           extension: '.index.json',
           variant: fileVariant,
+          target: target,
         ) ??
         packageRoot.resolve('build/shaderbundles/$bundleName.index.json'),
   );
@@ -364,6 +370,7 @@ Future<void> _buildMaterials({
           bundleName,
           stamp,
           outputs.map((file) => file.uri).toList(),
+          target: target,
         )
       : isBuildCacheFresh(stampFile, stamp, outputs);
   if (fresh) {
@@ -384,6 +391,7 @@ Future<void> _buildMaterials({
       tree: tree,
       stamp: stamp,
       owner: assetOwner,
+      target: target,
       writeIndex: false,
       sidecars: const {},
       materialSources: const {},
@@ -561,6 +569,7 @@ Future<void> _buildMaterials({
       tree: tree,
       stamp: stamp,
       owner: assetOwner,
+      target: target,
       writeIndex: false,
       sidecars: const {},
       materialSources: const {},
@@ -581,6 +590,7 @@ Future<void> _buildMaterials({
     tree: tree,
     stamp: stamp,
     owner: assetOwner,
+    target: target,
     writeIndex: true,
     sidecars: sidecars,
     materialSources: materialSources,
@@ -651,6 +661,7 @@ void _registerOutputs({
   required GeneratedAssetTree? tree,
   required String stamp,
   required String owner,
+  required String target,
   required bool writeIndex,
   required Map<String, Object?> sidecars,
   required Map<String, String> materialSources,
@@ -700,6 +711,7 @@ void _registerOutputs({
         uri: indexFile.uri,
         stamp: stamp,
         owner: owner,
+        target: target,
       )
       ..recordFile(
         family: GeneratedAssetFamily.material,
@@ -707,6 +719,7 @@ void _registerOutputs({
         uri: bundleFile.uri,
         stamp: stamp,
         owner: owner,
+        target: target,
       )
       ..recordFile(
         family: GeneratedAssetFamily.material,
@@ -714,6 +727,7 @@ void _registerOutputs({
         uri: sidecarFile.uri,
         stamp: stamp,
         owner: owner,
+        target: target,
       )
       ..save();
   } else {

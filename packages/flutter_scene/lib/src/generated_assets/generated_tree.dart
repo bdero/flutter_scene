@@ -212,25 +212,37 @@ final class GeneratedAssetTree {
 
   /// The absolute location [family]/[nameId] is written to. [extension]
   /// includes the leading dot.
+  ///
+  /// [target] names the build target an output is only valid for, and separates
+  /// the file names of two builds sharing this tree the same way [variant] does
+  /// for two engines.
   Uri fileUri(
     GeneratedAssetFamily family, {
     required String nameId,
     required String extension,
     String? variant,
+    String? target,
   }) => _root.resolve(
-    generatedFileName(family, nameId, extension, variant: variant),
+    generatedFileName(
+      family,
+      nameId,
+      extension,
+      variant: _variantKey(variant, target),
+    ),
   );
 
-  /// Whether the recorded stamp for [family]/[id] matches [stamp] and every
-  /// file in [outputs] still exists, meaning the conversion can be skipped.
+  /// Whether the recorded stamp for [family]/[id] on [target] matches [stamp]
+  /// and every file in [outputs] still exists, meaning the conversion can be
+  /// skipped.
   bool isFresh(
     GeneratedAssetFamily family,
     String id,
     String stamp,
-    List<Uri> outputs,
-  ) {
+    List<Uri> outputs, {
+    String? target,
+  }) {
     if (options.rebuildEverything) return false;
-    final entry = _manifest.find(family, id);
+    final entry = _manifest.find(family, id, target: target);
     if (entry == null || entry.stamp != _digest(stamp)) return false;
     return outputs.every((uri) => File.fromUri(uri).existsSync());
   }
@@ -244,6 +256,7 @@ final class GeneratedAssetTree {
     required String stamp,
     String? owner,
     String? source,
+    String? target,
   }) => _manifest.put(
     GeneratedAssetEntry(
       family: family,
@@ -254,6 +267,7 @@ final class GeneratedAssetTree {
       // kilobytes, and the manifest ships in the app bundle.
       stamp: _digest(stamp),
       source: source,
+      target: target,
     ),
   );
 
@@ -265,6 +279,7 @@ final class GeneratedAssetTree {
     required String stamp,
     String? owner,
     String? source,
+    String? target,
   }) {
     final rootPath = _root.toFilePath(windows: false);
     final path = uri.toFilePath(windows: false);
@@ -275,6 +290,7 @@ final class GeneratedAssetTree {
       stamp: stamp,
       owner: owner,
       source: source,
+      target: target,
     );
   }
 
@@ -376,6 +392,11 @@ final class GeneratedAssetTree {
   }
 
   static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));
+
+  static String? _variantKey(String? variant, String? target) {
+    if (target == null) return variant;
+    return variant == null ? 'target=$target' : '$variant target=$target';
+  }
 
   void _deleteIfPresent(Uri uri) {
     final file = File.fromUri(uri);

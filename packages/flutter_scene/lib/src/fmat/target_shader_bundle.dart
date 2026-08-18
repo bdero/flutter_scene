@@ -13,10 +13,7 @@ import '../generated_assets/generated_tree.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 import '../importer/build_cache.dart' show buildCacheRevision;
 
-/// Shader backends stored in a Flutter GPU shader bundle.
-// TODO(shader-bundle): add desktop OpenGL selection when Flutter GPU exposes
-// that target.
-enum ShaderBundleBackend { metalIos, metalDesktop, openglEs, vulkan }
+export '../generated_assets/generated_assets.dart' show ShaderBundleBackend;
 
 /// Controls where a target-specific shader bundle is published.
 enum TargetShaderBundleAssetMode {
@@ -143,11 +140,13 @@ Future<void> buildTargetShaderBundleJson({
     buildInput.packageRoot,
     buildInput.packageName,
   )..requireAssetEntry();
+  final target = shaderBundleTargetKey(buildInput);
   final copyUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
     nameId: id,
     extension: '.shaderbundle',
     variant: fileVariant,
+    target: target,
   );
   writeGeneratedBytes(copyUri, bytes);
   tree
@@ -157,21 +156,28 @@ Future<void> buildTargetShaderBundleJson({
       uri: copyUri,
       stamp: stamp ?? fnv1aHex(bytes),
       owner: owner,
+      target: target,
     )
     ..save();
 }
 
 /// Returns the backend set needed by [buildInput].
-Set<ShaderBundleBackend> shaderBundleBackendsForBuild(BuildInput buildInput) {
-  if (!buildInput.config.buildCodeAssets) {
-    return const {ShaderBundleBackend.openglEs};
-  }
-  final os = buildInput.config.code.targetOS;
-  if (os == OS.iOS) return const {ShaderBundleBackend.metalIos};
-  if (os == OS.macOS) return const {ShaderBundleBackend.metalDesktop};
-  if (os == OS.fuchsia) return const {ShaderBundleBackend.vulkan};
-  return const {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan};
-}
+///
+/// A config with no code assets names no target OS, which is web and also the
+/// second invocation `flutter run` makes for a native target. Both resolve to
+/// GLES, so the native one must never overwrite the target build's outputs;
+/// [shaderBundleTargetKey] is what keeps them apart in the tree.
+///
+/// TODO(hook-target-invocations): that second invocation still compiles and
+/// ships a GLES set no native app loads, roughly 1.5 MB in the bundle, because
+/// nothing in one hook input distinguishes it from a web build. Skipping it
+/// needs the invoker to say which it is.
+Set<ShaderBundleBackend> shaderBundleBackendsForBuild(BuildInput buildInput) =>
+    shaderBundleBackendsForOS(
+      buildInput.config.buildCodeAssets
+          ? buildInput.config.code.targetOS.name
+          : null,
+    );
 
 /// The leading part of a compiled bundle's build stamp, before its shader
 /// sources: the format revision, the backends this target needs, and the
@@ -184,11 +190,11 @@ Future<String> shaderBundleStamp(BuildInput buildInput, String what) async =>
     'rev=$buildCacheRevision $what target=${shaderBundleTargetKey(buildInput)} '
     '${await engineIdentity()}';
 
-/// Stable build-cache key for the selected shader backends.
+/// Stable build-cache key for the selected shader backends. Recorded on every
+/// output that is only valid for them, and matched against
+/// `currentShaderTarget` at runtime.
 String shaderBundleTargetKey(BuildInput buildInput) =>
-    shaderBundleBackendsForBuild(
-      buildInput,
-    ).map((backend) => backend.name).join(',');
+    shaderTargetKey(shaderBundleBackendsForBuild(buildInput));
 
 /// Rebuilds [bytes] with only [backends].
 Uint8List trimShaderBundle(Uint8List bytes, Set<ShaderBundleBackend> backends) {

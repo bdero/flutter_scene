@@ -41,6 +41,33 @@ const String generatedAssetsGitignore =
 !$generatedAssetsGitignoreFileName
 ''';
 
+/// Shader backends stored in a Flutter GPU shader bundle.
+// TODO(shader-bundle): add desktop OpenGL selection when Flutter GPU exposes
+// that target.
+enum ShaderBundleBackend { metalIos, metalDesktop, openglEs, vulkan }
+
+/// The backends an app running on [os] needs, spelled the way both
+/// `OS.name` (build) and `Platform.operatingSystem` (runtime) spell it. Null is
+/// web, or a hook invocation whose config names no target OS.
+///
+/// The build and the runtime both resolve through here, so what an output is
+/// recorded as and what the app looks for cannot drift apart. Drift is silent,
+/// it renders a black frame.
+Set<ShaderBundleBackend> shaderBundleBackendsForOS(String? os) => switch (os) {
+  null => const {ShaderBundleBackend.openglEs},
+  'ios' => const {ShaderBundleBackend.metalIos},
+  'macos' => const {ShaderBundleBackend.metalDesktop},
+  'fuchsia' => const {ShaderBundleBackend.vulkan},
+  _ => const {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan},
+};
+
+/// The manifest target naming [backends], in enum order so two builds that pick
+/// the same set write the same key.
+String shaderTargetKey(Set<ShaderBundleBackend> backends) =>
+    (backends.toList()..sort((a, b) => a.index.compareTo(b.index)))
+        .map((backend) => backend.name)
+        .join(',');
+
 /// One family of generated assets. The name prefixes every output file, so
 /// families share one flat directory without colliding.
 enum GeneratedAssetFamily {
@@ -71,6 +98,7 @@ final class GeneratedAssetEntry {
     required this.file,
     required this.stamp,
     this.source,
+    this.target,
   });
 
   /// Which builder produced this output.
@@ -97,6 +125,13 @@ final class GeneratedAssetEntry {
   /// An app-owned entry whose source no longer exists is pruned.
   final String? source;
 
+  /// The [shaderTargetKey] this output is only usable on, or null when it works
+  /// everywhere. One tree holds an entry per target, because several builds
+  /// share it (one `flutter run` invokes the hook both with and without a
+  /// target OS, and a pub-cache tree is shared by every project on the
+  /// machine), and a Metal bundle is unreadable on GLES.
+  final String? target;
+
   Map<String, Object?> toJson(String manifestPackage) => {
     'family': family.name,
     'id': id,
@@ -104,6 +139,7 @@ final class GeneratedAssetEntry {
     'file': file,
     'stamp': stamp,
     if (source != null) 'source': source,
+    if (target != null) 'target': target,
   };
 
   static GeneratedAssetEntry? fromJson(
@@ -121,6 +157,7 @@ final class GeneratedAssetEntry {
       file: file,
       stamp: json['stamp'] as String? ?? '',
       source: json['source'] as String?,
+      target: json['target'] as String?,
     );
   }
 }
@@ -136,29 +173,54 @@ final class GeneratedAssetManifest {
 
   /// The manifest schema this build of flutter_scene writes. A manifest with
   /// any other schema is discarded and rebuilt.
-  static const int schema = 2;
+  static const int schema = 3;
 
   /// The app package the tree belongs to.
   final String package;
 
   final List<GeneratedAssetEntry> entries;
 
-  GeneratedAssetEntry? find(GeneratedAssetFamily family, String id) {
+  /// The entry recorded for [family]/[id] built for exactly [target]. Writers
+  /// use this, so a build only ever replaces its own target's entry.
+  GeneratedAssetEntry? find(
+    GeneratedAssetFamily family,
+    String id, {
+    String? target,
+  }) {
     for (final entry in entries) {
-      if (entry.family == family && entry.id == id) return entry;
+      if (entry.family == family && entry.id == id && entry.target == target) {
+        return entry;
+      }
     }
     return null;
   }
 
-  /// Replaces (or adds) the entry for [entry]'s family and id.
+  /// The entry for [family]/[id] a build for [target] can load, preferring one
+  /// compiled for it over a target-agnostic one. Readers use this.
+  GeneratedAssetEntry? findForTarget(
+    GeneratedAssetFamily family,
+    String id,
+    String target,
+  ) => find(family, id, target: target) ?? find(family, id);
+
+  /// Replaces (or adds) the entry for [entry]'s family, id, and target.
   void put(GeneratedAssetEntry entry) {
-    entries.removeWhere((e) => e.family == entry.family && e.id == entry.id);
+    entries.removeWhere(
+      (e) =>
+          e.family == entry.family &&
+          e.id == entry.id &&
+          e.target == entry.target,
+    );
     entries.add(entry);
   }
 
-  /// Removes the entry for [family]/[id], returning it.
-  GeneratedAssetEntry? remove(GeneratedAssetFamily family, String id) {
-    final entry = find(family, id);
+  /// Removes the entry for [family]/[id] built for [target], returning it.
+  GeneratedAssetEntry? remove(
+    GeneratedAssetFamily family,
+    String id, {
+    String? target,
+  }) {
+    final entry = find(family, id, target: target);
     if (entry != null) entries.remove(entry);
     return entry;
   }
@@ -166,11 +228,21 @@ final class GeneratedAssetManifest {
   Iterable<GeneratedAssetEntry> ofFamily(GeneratedAssetFamily family) =>
       entries.where((entry) => entry.family == family);
 
+  /// [ofFamily] narrowed to what a build for [target] can load.
+  Iterable<GeneratedAssetEntry> ofFamilyForTarget(
+    GeneratedAssetFamily family,
+    String target,
+  ) => ofFamily(
+    family,
+  ).where((entry) => entry.target == null || entry.target == target);
+
   String encode() {
     final sorted = [...entries]
       ..sort((a, b) {
         final byFamily = a.family.index.compareTo(b.family.index);
-        return byFamily != 0 ? byFamily : a.id.compareTo(b.id);
+        if (byFamily != 0) return byFamily;
+        final byId = a.id.compareTo(b.id);
+        return byId != 0 ? byId : (a.target ?? '').compareTo(b.target ?? '');
       });
     final json = const JsonEncoder.withIndent('  ').convert({
       'schema': schema,
