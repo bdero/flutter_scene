@@ -443,12 +443,18 @@ class _EditorHomeState extends State<_EditorHome> {
     });
   }
 
+  // The tier-1 parse is CPU-bound, so it runs on its own isolate. The closure
+  // lives in a static method so it captures only [root]; built inline in an
+  // instance method it drags `this` into the isolate message, and the MCP
+  // server socket `this` holds is unsendable.
+  static Future<ProjectGenerationResult> _extractComponents(String root) =>
+      Isolate.run(() => generateProjectComponents(root));
+
   Future<void> _runComponentGeneration(FProject project) async {
     final root = project.resolvedProjectRoot;
     final ProjectGenerationResult result;
     try {
-      // The tier-1 parse is CPU-bound; keep it off the UI isolate.
-      result = await Isolate.run(() => generateProjectComponents(root));
+      result = await _extractComponents(root);
     } catch (e) {
       _runner.addLine('Component extraction failed, $e', ConsoleLineKind.error);
       return;
