@@ -113,12 +113,25 @@ platform file:
 | macOS | `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` and `<key>FLTEnableImpeller</key><true/>` |
 | Web | nothing | |
 
-Impeller is already the default on iOS and Android, so those need only the one
-entry. Windows and Linux have no project setting on 3.47, so they take the
-command-line flags per run; release builds compile the engine's environment
-switches out, so a shipped Windows or Linux release cannot enable Flutter GPU on
-this version. The project-level setting for both is merged upstream and lands in
-a later stable.
+Impeller is already the default on iOS and Android, so those need only the one entry.
+
+Windows and Linux set it on the `DartProject` their runner builds, alongside Impeller, which is not the default on desktop either. This needs Flutter 3.47.1.
+
+```c
+// linux/runner/my_application.cc
+g_autoptr(FlDartProject) project = fl_dart_project_new();
+fl_dart_project_set_enable_impeller(project, TRUE);
+fl_dart_project_set_enable_flutter_gpu(project, TRUE);
+```
+
+```cpp
+// windows/runner/main.cpp
+flutter::DartProject project(L"data");
+project.set_enable_impeller(true);
+project.set_enable_flutter_gpu(true);
+```
+
+On 3.47.0 there is no such setting, so desktop takes the command-line flags per run, and release builds compile the engine's environment switches out, meaning a shipped Windows or Linux release needs 3.47.1.
 
 ### The asset pipeline
 
@@ -220,8 +233,8 @@ On the web, no flags are needed; it works under both the CanvasKit and Skwasm re
 |          Android | 🟢 Supported                     |
 |              Web | 🟢 Supported                     |
 |            MacOS | 🟢 Supported                     |
-|          Windows | 🟢 Supported (no project setting yet) |
-|            Linux | 🟢 Supported (no project setting yet) |
+|          Windows | 🟢 Supported (3.47.1 to ship a release) |
+|            Linux | 🟢 Supported (3.47.1 to ship a release) |
 | Custom embedders | 🟢 Supported                     |
 
 ### **Q:** How does web support work?
