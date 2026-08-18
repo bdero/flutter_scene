@@ -173,6 +173,11 @@ base class Scene implements SceneGraph {
   AntiAliasingMode _antiAliasingMode = AntiAliasingMode.auto;
   bool _warnedUnsupportedAntiAliasing = false;
 
+  // Latches the "nothing was drawn" diagnostic so a one-frame layout transient
+  // does not spam. Reset whenever a frame draws, so a later regression prints
+  // again. See _reportBlankFrame.
+  bool _warnedBlankFrame = false;
+
   /// The requested anti-aliasing strategy for this [Scene].
   ///
   /// Defaults to [AntiAliasingMode.auto]. The requested mode is always
@@ -1038,6 +1043,14 @@ base class Scene implements SceneGraph {
 
     final drawArea = region ?? canvas.getLocalClipBounds();
     if (drawArea.isEmpty || views.isEmpty) {
+      assert(() {
+        _reportBlankFrame(
+          const <RenderView>[],
+          regionEmpty: drawArea.isEmpty,
+          noViews: views.isEmpty,
+        );
+        return true;
+      }());
       return;
     }
 
@@ -1221,7 +1234,166 @@ base class Scene implements SceneGraph {
     // A frame has now been submitted; the next one runs on a warm context (see
     // the rebuild near the environment resolution above).
     _hasPresentedFrame = true;
+
+    assert(() {
+      _reportBlankFrame(ordered, regionEmpty: false, noViews: false);
+      return true;
+    }());
   }
+
+  // Debug-only. Detects a frame that issued zero draw calls and, once per
+  // occurrence, prints a message naming the causes it can tell apart, so a
+  // blank frame is not left unexplained. The latch resets whenever a frame
+  // draws, so a later regression prints again. Called only inside asserts, so
+  // it never runs in a release build; even in debug it stops at the first
+  // visible on-layer node, doing no extra work on a frame that draws.
+  void _reportBlankFrame(
+    List<RenderView> screenViews, {
+    required bool regionEmpty,
+    required bool noViews,
+  }) {
+    // Cheap draw test. A skybox fills the frame; otherwise a frame draws when
+    // some on-screen view has a visible node on its layer mask. A blank frame
+    // from a degenerate camera basis or a frustum-excluded camera aim is left
+    // to the camera asserts (a per-frame frustum cull here would tax the
+    // drawing path), so this test intentionally ignores the frustum.
+    var drewSomething = false;
+    if (!regionEmpty && !noViews && screenViews.isNotEmpty) {
+      if (skybox != null) {
+        drewSomething = true;
+      } else {
+        outer:
+        for (final view in screenViews) {
+          if (view.layerMask == 0) continue;
+          for (final item in renderScene.items) {
+            if (item.visible && (item.layers & view.layerMask) != 0) {
+              drewSomething = true;
+              break outer;
+            }
+          }
+        }
+      }
+    }
+
+    // Only tallied when nothing drew (the broken case); skipped entirely on a
+    // frame that drew.
+    var visibleMeshCount = 0;
+    var visibleLayersUnion = 0;
+    if (!drewSomething) {
+      for (final item in renderScene.items) {
+        if (item.visible) {
+          visibleMeshCount++;
+          visibleLayersUnion |= item.layers;
+        }
+      }
+    }
+
+    final result = debugEmptyFrameDiagnosis(
+      warned: _warnedBlankFrame,
+      drewSomething: drewSomething,
+      regionEmpty: regionEmpty,
+      noViews: noViews,
+      noScreenViews: !regionEmpty && !noViews && screenViews.isEmpty,
+      meshCount: renderScene.items.length,
+      visibleMeshCount: visibleMeshCount,
+      anyLayerMaskZero: screenViews.any((v) => v.layerMask == 0),
+      screenViewMasks: [for (final v in screenViews) v.layerMask],
+      visibleLayersUnion: visibleLayersUnion,
+    );
+    _warnedBlankFrame = result.warned;
+    final message = result.message;
+    if (message != null) debugPrint(message);
+  }
+
+  /// Diagnoses a frame that issued zero draw calls, for [renderViews].
+  ///
+  /// Returns the message to print (null when nothing should print) and the
+  /// next state of the once-only latch. A frame that drew ([drewSomething])
+  /// clears the latch so a later regression prints again; a blank frame prints
+  /// one message the first time and stays silent until a frame draws. The
+  /// caller invokes this inside an assert, so neither it nor the scan feeding
+  /// it costs anything in a release build.
+  @visibleForTesting
+  static ({String? message, bool warned}) debugEmptyFrameDiagnosis({
+    required bool warned,
+    required bool drewSomething,
+    required bool regionEmpty,
+    required bool noViews,
+    required bool noScreenViews,
+    required int meshCount,
+    required int visibleMeshCount,
+    required bool anyLayerMaskZero,
+    required List<int> screenViewMasks,
+    required int visibleLayersUnion,
+  }) {
+    if (drewSomething) return (message: null, warned: false);
+    if (warned) return (message: null, warned: true);
+    final cause = _blankFrameCause(
+      regionEmpty: regionEmpty,
+      noViews: noViews,
+      noScreenViews: noScreenViews,
+      meshCount: meshCount,
+      visibleMeshCount: visibleMeshCount,
+      anyLayerMaskZero: anyLayerMaskZero,
+      screenViewMasks: screenViewMasks,
+      visibleLayersUnion: visibleLayersUnion,
+    );
+    return (
+      message: 'Flutter Scene rendered a blank frame (zero draw calls). $cause',
+      warned: true,
+    );
+  }
+
+  // Names the most specific blank-frame cause that the given facts pin down.
+  // Every rung is a fact the diagnostic actually checked, in priority order,
+  // so the message never guesses. A degenerate camera basis and a
+  // frustum-excluded camera aim are handled by the camera asserts, not here.
+  static String _blankFrameCause({
+    required bool regionEmpty,
+    required bool noViews,
+    required bool noScreenViews,
+    required int meshCount,
+    required int visibleMeshCount,
+    required bool anyLayerMaskZero,
+    required List<int> screenViewMasks,
+    required int visibleLayersUnion,
+  }) {
+    if (noViews) {
+      return 'No RenderViews were supplied. Pass at least one RenderView to '
+          'renderViews, or use render for the single-camera case.';
+    }
+    if (regionEmpty) {
+      return 'The draw region is zero-sized, so there is nowhere to draw. Pass '
+          'an explicit region to renderViews, or check the widget constraints '
+          '(a collapsed or unconstrained layout gives an empty canvas clip).';
+    }
+    if (noScreenViews) {
+      return 'Every RenderView has a target, so nothing composites to the '
+          'screen. Add a RenderView whose target is null for the on-screen '
+          'view.';
+    }
+    if (meshCount == 0) {
+      return 'The scene graph holds no meshes. Add a Node with a Mesh under '
+          'the scene root before rendering.';
+    }
+    if (visibleMeshCount == 0) {
+      return 'Every mesh in the scene is hidden. Node.visible is false on each '
+          'mesh or on an ancestor; set visible to true on the nodes to draw.';
+    }
+    if (anyLayerMaskZero) {
+      return 'A RenderView.layerMask is 0, which matches no Node.layers, so '
+          'that view draws nothing. Use kRenderLayerAll to see every layer, or '
+          'a bitmask such as (1 << 2) to select layer 2.';
+    }
+    final masks = screenViewMasks.map(_hexMask).join(', ');
+    return 'No visible node is on any view layerMask (view masks $masks, node '
+        'layers ${_hexMask(visibleLayersUnion)}). Node.layers is not inherited '
+        'by children, so set it on each node the view should see, or widen the '
+        'view mask.';
+  }
+
+  static String _hexMask(int mask) =>
+      '0x${(mask & 0xFFFFFFFF).toRadixString(16)}';
 
   // Whether at least one frame has been rendered and presented, so the web
   // GL context is warm enough for a correct radiance prefilter.

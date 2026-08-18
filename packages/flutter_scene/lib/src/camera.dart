@@ -135,7 +135,21 @@ abstract class Camera {
 }
 
 Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
-  Vector3 forward = (target - position).normalized();
+  final Vector3 viewDirection = target - position;
+  assert(
+    viewDirection.length2 > 1e-12,
+    'Camera target equals its position, so the view direction is undefined and '
+    'the scene renders empty. Move target away from position.',
+  );
+  assert(
+    up.cross(viewDirection).length2 > 1e-12,
+    'Camera up is parallel to the view direction (position toward target), so '
+    'the view basis is degenerate and the scene renders empty. Use an up vector '
+    'that is not parallel to the view direction; for a top-down or bottom-up '
+    'camera use Vector3(0, 0, 1) or Vector3(0, 0, -1) in place of '
+    'Vector3(0, 1, 0).',
+  );
+  Vector3 forward = viewDirection.normalized();
   Vector3 right = up.cross(forward).normalized();
   up = forward.cross(right).normalized();
 
@@ -165,6 +179,18 @@ Matrix4 _matrix4Perspective(
   double zNear,
   double zFar,
 ) {
+  assert(
+    fovRadiansY > 0 && fovRadiansY < pi,
+    'fovRadiansY is $fovRadiansY, which is not a valid vertical field of view '
+    'in RADIANS (it must be between 0 and pi). A value like 60 is degrees; pass '
+    '60 * degrees2Radians instead.',
+  );
+  assert(
+    zNear > 0 && zFar > zNear,
+    'The camera frustum is degenerate (near $zNear, far $zFar). near must be '
+    'greater than 0 and far must be greater than near, or the depth mapping '
+    'collapses and the scene renders empty or Z-fights.',
+  );
   double height = tan(fovRadiansY * 0.5);
   double width = height * aspectRatio;
 
