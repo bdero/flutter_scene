@@ -90,9 +90,35 @@ scene.add(model);
 SceneView(scene, cameraBuilder: (elapsed) => PerspectiveCamera(...));
 ```
 
-No project configuration, no flags, and the same code runs on web. The engine's
-shaders are compiled for you during the build, by flutter_scene's own build
-hook.
+The same code runs on web, and the engine's shaders are compiled for you during
+the build by flutter_scene's own build hook. Rendering goes through Flutter GPU,
+which is off by default, so enable it once per platform (below). The web needs
+nothing.
+
+### Enable Flutter GPU
+
+While developing, pass the flags on the command line:
+
+```sh
+flutter run --enable-flutter-gpu --enable-impeller
+```
+
+To turn it on permanently, for every run and for the app you ship, edit the
+platform file:
+
+| Platform | File | Add |
+| --- | --- | --- |
+| iOS | `ios/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` |
+| Android | `android/app/src/main/AndroidManifest.xml`, in `<application>` | `<meta-data android:name="io.flutter.embedding.android.EnableFlutterGPU" android:value="true" />` |
+| macOS | `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` and `<key>FLTEnableImpeller</key><true/>` |
+| Web | nothing | |
+
+Impeller is already the default on iOS and Android, so those need only the one
+entry. Windows and Linux have no project setting on 3.47, so they take the
+command-line flags per run; release builds compile the engine's environment
+switches out, so a shipped Windows or Linux release cannot enable Flutter GPU on
+this version. The project-level setting for both is merged upstream and lands in
+a later stable.
 
 ### The asset pipeline
 
@@ -134,7 +160,7 @@ its `.gitignore` for you.
 
 Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking changes, and every change is documented in the [CHANGELOG](https://github.com/bdero/flutter_scene/blob/master/packages/flutter_scene/CHANGELOG.md).
 
-- Flutter 3.47 (stable) or newer. Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), and there is nothing to configure or opt into beyond `flutter pub add`. A master build numbered `3.47.0-1.0.pre.N` sorts below `3.47.0` and will not resolve, so use the 3.48 development series or later.
+- Flutter 3.47 (stable) or newer. Rendering is built on [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md), which every platform except the web needs turned on once (see [Enable Flutter GPU](#enable-flutter-gpu)). A master build numbered `3.47.0-1.0.pre.N` sorts below `3.47.0` and will not resolve, so use the 3.48 development series or later.
 - On native platforms rendering runs on [Impeller](https://docs.flutter.dev/perf/impeller#availability), which is Flutter's default renderer on iOS and Android and enabled with a flag on desktop (`--enable-impeller --enable-flutter-gpu`). The web has no Impeller, so the package ships its own WebGL2 backend and runs there without flags.
 
 ## Features
@@ -184,9 +210,7 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 
 On native platforms `flutter_scene` runs anywhere [Impeller](https://docs.flutter.dev/perf/impeller#availability) does. On the web it runs on a built-in WebGL2 backend.
 
-On iOS and Android, Impeller is Flutter's default production renderer. So on these platforms, `flutter_scene` works without any additional project configuration.
-
-On MacOS, Windows, and Linux, Impeller is able to run, but is not on by default and must be enabled. When invoking `flutter run`, Impeller can be enabled by passing the `--enable-impeller` flag.
+Every native platform needs Flutter GPU turned on, and the desktop ones need Impeller turned on with it, since Impeller is only the default on iOS and Android. [Enable Flutter GPU](#enable-flutter-gpu) has the file and the key for each.
 
 On the web, no flags are needed; it works under both the CanvasKit and Skwasm renderers.
 
@@ -195,9 +219,9 @@ On the web, no flags are needed; it works under both the CanvasKit and Skwasm re
 |              iOS | 🟢 Supported                     |
 |          Android | 🟢 Supported                     |
 |              Web | 🟢 Supported                     |
-|            MacOS | 🟢 Supported (enable Impeller)   |
-|          Windows | 🟢 Supported (enable Impeller)   |
-|            Linux | 🟢 Supported (enable Impeller)   |
+|            MacOS | 🟢 Supported                     |
+|          Windows | 🟢 Supported (no project setting yet) |
+|            Linux | 🟢 Supported (no project setting yet) |
 | Custom embedders | 🟢 Supported                     |
 
 ### **Q:** How does web support work?
