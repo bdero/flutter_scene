@@ -170,6 +170,32 @@ class AnimationClip {
       if (channelTarget == null) continue;
       _bindings.add(_ChannelBinding(channel, channelTarget));
     }
+    assert(_checkAnyChannelBound(target));
+  }
+
+  // Debug-only. Fires when the bind resolves zero channels against a
+  // non-empty animation, which almost always means the clip was bound to the
+  // wrong node (the mesh instead of the scene root) or the node names do not
+  // match the animation's targets. A partial bind (some channels hit, some
+  // miss) is a supported retarget onto a subset of the rig, so it stays
+  // silent rather than risk a false positive on a legitimate use.
+  bool _checkAnyChannelBound(Node target) {
+    if (_bindings.isNotEmpty || _animation.channels.isEmpty) {
+      return true;
+    }
+    final wanted = <String>{
+      for (final channel in _animation.channels) channel.bindTarget.nodeName,
+    };
+    final sample = wanted.take(5).join(', ');
+    final more = wanted.length > 5 ? ', and ${wanted.length - 5} more' : '';
+    throw StateError(
+      'AnimationClip bound 0 of ${_animation.channels.length} channels against '
+      '"${target.name}", so the clip will play and nothing will move. None of '
+      'the nodes this animation targets exist in that subtree; bind to the '
+      'subtree root that holds the animated nodes (usually the imported scene '
+      'root, not the mesh node), and check the names match. Nodes wanted: '
+      '$sample$more.',
+    );
   }
 
   /// Evaluates each bound channel at [playbackTime] and accumulates the

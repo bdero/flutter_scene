@@ -35,6 +35,21 @@ AnimationClip _makeEmptyClip(Node node) {
   return node.createAnimationClip(animation);
 }
 
+/// A translation channel targeting the node named [nodeName].
+AnimationChannel _translationChannel(String nodeName) => AnimationChannel(
+  bindTarget: BindKey(nodeName: nodeName),
+  resolver: PropertyResolver.makeTranslationTimeline(
+    [0.0, 1.0],
+    [Vector3.zero(), Vector3(1, 0, 0)],
+  ),
+);
+
+/// An animation whose channels target [nodeNames].
+Animation _animationTargeting(List<String> nodeNames) => Animation(
+  name: 'test',
+  channels: [for (final name in nodeNames) _translationChannel(name)],
+);
+
 void main() {
   group('initial state', () {
     test('clip starts paused at time 0 with weight 1', () {
@@ -234,6 +249,53 @@ void main() {
       clip.play();
       clip.advance(0.5);
       expect(clip.playbackTime, 0);
+    });
+  });
+
+  group('zero-bind diagnostic', () {
+    test('throws when every channel targets a missing node', () {
+      final root = Node(name: 'root')..add(Node(name: 'hip'));
+      final animation = _animationTargeting(['spine', 'head', 'tail']);
+      expect(
+        () => AnimationClip(animation, root),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('bound 0 of 3 channels'),
+              contains('spine'),
+              contains('root'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('does not throw on a legitimate partial bind', () {
+      final root = Node(name: 'root')..add(Node(name: 'hip'));
+      final animation = _animationTargeting(['hip', 'spine', 'head']);
+      expect(() => AnimationClip(animation, root), returnsNormally);
+    });
+
+    test('is silent on a full successful bind', () {
+      final root = Node(name: 'root')
+        ..add(Node(name: 'hip'))
+        ..add(Node(name: 'spine'));
+      final animation = _animationTargeting(['hip', 'spine']);
+      expect(() => AnimationClip(animation, root), returnsNormally);
+    });
+
+    test('is silent on an empty animation', () {
+      final animation = Animation(name: 'empty', channels: []);
+      expect(() => AnimationClip(animation, Node(name: 'n')), returnsNormally);
+    });
+
+    test('rebind onto a wrong subtree throws', () {
+      final good = Node(name: 'root')..add(Node(name: 'hip'));
+      final clip = AnimationClip(_animationTargeting(['hip']), good);
+      final wrong = Node(name: 'mesh');
+      expect(() => clip.rebind(wrong), throwsA(isA<StateError>()));
     });
   });
 }
