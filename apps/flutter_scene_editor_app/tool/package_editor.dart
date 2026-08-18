@@ -26,6 +26,7 @@ void main(List<String> args) async {
   final version = _pubspecVersion('$appDir/pubspec.yaml');
 
   if (options.build) {
+    _assertWindowingEnabled();
     _run('flutter', [
       'build',
       options.platform,
@@ -93,6 +94,27 @@ final class _Options {
       notarizeProfile: notarizeProfile,
     );
   }
+}
+
+// The editor exits at startup without windowing, and `flutter config
+// --enable-windowing` is a silent no-op on a channel where the feature is
+// unavailable, so an unguarded build would package cleanly and be dead.
+void _assertWindowingEnabled() {
+  final result = _run('flutter', ['config', '--list']);
+  final line = const LineSplitter()
+      .convert(result.stdout as String)
+      .firstWhere(
+        (l) => l.trim().startsWith('enable-windowing:'),
+        orElse: () => '',
+      );
+  if (line.contains('true') && !line.contains('Unavailable')) {
+    return;
+  }
+  _fail(
+    'Windowing is not enabled for this Flutter SDK, so the editor would exit '
+    'at startup. Apply tool/patches/windowing_stable.patch to the SDK, then '
+    'run "flutter config --enable-windowing".',
+  );
 }
 
 Never _fail(String message) {
