@@ -1,6 +1,12 @@
 ## 0.22.0
 
 * `Node.position`, `Node.rotation`, and `Node.scale` read and write the local transform one component at a time, and editing a returned copy in place throws in debug builds rather than silently doing nothing.
+* A frame that draws nothing now prints once in debug builds naming the likely cause (not ready, empty region, no views composite to screen, no visible meshes, or a layer mask matching nothing).
+* Degenerate cameras now assert in debug builds, catching a view direction of zero length, an `up` parallel to it, and a field of view passed in degrees.
+* The web backend now throws on a bind to a shader uniform or texture name that does not exist, matching native, instead of silently sampling whatever was bound last.
+* `SkinnedGeometry.uploadVertexData` and `setCustomAttribute` now throw on a buffer whose length does not match the vertex count, instead of rendering garbage.
+* A `Mesh` whose primitive geometry is replaced now recomputes its bounds on its own, rather than over-culling until `markLocalBoundsDirty` is called.
+* An `AnimationClip` that binds zero of its channels now asserts in debug builds, naming the wanted nodes, since it otherwise plays while nothing moves.
 * Fixed the second and every later `flutter run` rendering nothing, from two hook invocations writing the same shader bundle filenames with different backend trims.
 * Fixed `Scene.initializeStaticResources()` reporting ready when the shader bundle loaded but held nothing this engine can read.
 * Fixed `dart run flutter_scene:init` then `flutter run` failing on a new app with "Flutter failed to list directory".
