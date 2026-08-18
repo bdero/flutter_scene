@@ -1,3 +1,7 @@
+## 0.21.1
+
+* Documentation only. The readme spells out how to turn Flutter GPU on for each platform, shows the build hook and the pubspec entry `dart run flutter_scene:init` writes, recommends converting assets ahead of time over importing glTF at runtime, and links the guides at fscene.dev.
+
 ## 0.21.0
 
 * Requires Flutter 3.47.0 or newer. That is the first stable carrying the Flutter GPU support this package needs, so the constraint is a real minimum rather than the loose value earlier releases carried. A master build numbered `3.47.0-1.0.pre.N` sorts below it and will not resolve.
