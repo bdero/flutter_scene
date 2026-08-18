@@ -81,7 +81,7 @@ jobs:
       # registers the notary profile the packager signs and notarizes with. No
       # certificate secret -> the build stays unsigned and still produces a DMG.
       - name: Set up macOS signing
-        if: matrix.platform == 'macos' && secrets.MACOS_CERTIFICATE_P12 != ''
+        if: matrix.platform == 'macos'
         env:
           CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -90,6 +90,12 @@ jobs:
           NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
           NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
         run: |
+          # The secrets context is not allowed in a step `if`, so the skip is
+          # here. No certificate -> unsigned build that still produces a DMG.
+          if [ -z "$CERTIFICATE_P12" ]; then
+            echo "No signing certificate configured; building unsigned."
+            exit 0
+          fi
           KEYCHAIN="$RUNNER_TEMP/editor-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
