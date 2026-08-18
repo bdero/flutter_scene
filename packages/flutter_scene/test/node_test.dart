@@ -141,6 +141,25 @@ void main() {
       expect(() => child.globalTransform, returnsNormally);
       expect(() => parent.globalTransform, throwsStateError);
     });
+
+    test('mutateLocalTransform edits in place and marks dirty', () {
+      final node = Node();
+      node.globalTransform; // Fill the cache.
+      node.mutateLocalTransform(
+        (m) => m.translateByVector3(Vector3(0.0, 1.0, 0.0)),
+      );
+
+      // No throw, and the edit is reflected, so the cache was invalidated.
+      expect(node.globalTransform.getTranslation(), Vector3(0.0, 1.0, 0.0));
+    });
+
+    test('mutateLocalTransform clears the authored decomposition', () {
+      final node = Node()..scale = Vector3(2.0, 2.0, 2.0);
+      expect(node.localTransformTrs, isNotNull);
+      node.mutateLocalTransform((m) => m.setTranslationRaw(1.0, 0.0, 0.0));
+
+      expect(node.localTransformTrs, isNull);
+    });
   });
 
   group('position, rotation, and scale', () {

@@ -1,6 +1,7 @@
 ## 0.22.0
 
 * `Node.position`, `Node.rotation`, and `Node.scale` read and write the local transform one component at a time, and editing a returned copy in place throws in debug builds rather than silently doing nothing.
+* `Node.mutateLocalTransform` edits the local matrix in place through a callback and marks the node dirty, the correct way to reach for the raw matrix.
 * A frame that draws nothing now prints once in debug builds naming the likely cause (not ready, empty region, no views composite to screen, no visible meshes, or a layer mask matching nothing).
 * Degenerate cameras now assert in debug builds, catching a view direction of zero length, an `up` parallel to it, and a field of view passed in degrees.
 * The web backend now throws on a bind to a shader uniform or texture name that does not exist, matching native, instead of silently sampling whatever was bound last.
