@@ -164,14 +164,22 @@ Future<void> buildTargetShaderBundleJson({
 /// Returns the backend set needed by [buildInput].
 ///
 /// A config with no code assets names no target OS, which is web and also the
-/// second invocation `flutter run` makes for a native target. Both resolve to
-/// GLES, so the native one must never overwrite the target build's outputs;
-/// [shaderBundleTargetKey] is what keeps them apart in the tree.
+/// data-asset-only invocation `flutter run` makes for a native target. Both
+/// resolve to GLES, so the native one must never overwrite the target build's
+/// outputs; [shaderBundleTargetKey] is what keeps them apart in the tree.
 ///
-/// TODO(hook-target-invocations): that second invocation still compiles and
-/// ships a GLES set no native app loads, roughly 1.5 MB in the bundle, because
-/// nothing in one hook input distinguishes it from a web build. Skipping it
-/// needs the invoker to say which it is.
+/// That native data-only pass still compiles and ships a GLES set no native app
+/// loads, roughly 1.5 MB. It cannot be dropped here. Its hook input is
+/// byte-identical to a real web build's (both just `data_assets/data`, no code
+/// config, no target OS), and web genuinely needs the GLES set, so nothing the
+/// hook can read tells the wasteful native pass from the required web one. The
+/// invoker knows the target platform but never puts it on a data-asset-only
+/// input. `generated_target_isolation_test.dart` locks that indistinguishability.
+///
+/// TODO(hook-target-invocations): dropping the waste needs an upstream change,
+/// the invoker naming the target platform (or final artifact) on data-asset-only
+/// inputs, or flutter_tools not making the redundant native data pass. Revisit
+/// if a Flutter release adds such a field.
 Set<ShaderBundleBackend> shaderBundleBackendsForBuild(BuildInput buildInput) =>
     shaderBundleBackendsForOS(
       buildInput.config.buildCodeAssets
