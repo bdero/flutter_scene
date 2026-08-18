@@ -1,4 +1,4 @@
-## 0.21.2
+## 0.22.0
 
 * Fixed the second and every later `flutter run` rendering nothing, from two hook invocations writing the same shader bundle filenames with different backend trims.
 * Fixed `Scene.initializeStaticResources()` reporting ready when the shader bundle loaded but held nothing this engine can read.
