@@ -120,7 +120,8 @@ void main() {
       physicalBundleUnusableMessage('some.shaderbundle'),
     ]) {
       expect(message, contains('some.shaderbundle'));
-      expect(message, contains('graphics backend'), reason: 'first cause');
+      // Names our own trim step, not impellerc, which compiles every backend.
+      expect(message, contains('trimmed'), reason: 'first cause');
       expect(message, contains('different Flutter engine'), reason: 'second');
       expect(message, contains(currentShaderTarget));
       expect(message, contains('flutter clean'), reason: 'the fix');
