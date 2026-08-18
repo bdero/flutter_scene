@@ -58,6 +58,11 @@ jobs:
       - name: Configure Flutter
         run: |
           flutter config --no-analytics
+          # TODO(editor-dist-windowing): windowing is master-only in
+          # flutter_tools (features.dart declares no stable channel setting),
+          # so this is a no-op on the pinned stable revision and the editor
+          # exits at startup. Patch the pinned checkout to mark the feature
+          # available on stable before configuring it.
           flutter config --enable-windowing
           flutter config --enable-${{ matrix.platform }}-desktop
           flutter doctor -v

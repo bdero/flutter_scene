@@ -10,7 +10,9 @@ resolution: workspace
 
 environment:
   sdk: ^3.10.0
-  flutter: '>=3.29.0-1.0.pre.242'
+  # Master builds sort below 3.47.0 and are excluded deliberately; the
+  # windowing API the shell uses was renamed after stable.
+  flutter: '>=3.47.0'
 
 dependencies:
   flutter:

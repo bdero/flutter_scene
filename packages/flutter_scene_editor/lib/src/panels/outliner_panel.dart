@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter/material.dart';
+// Not re-exported through material.dart on 3.47 stable.
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
 import '../controller/editor_controller.dart';
