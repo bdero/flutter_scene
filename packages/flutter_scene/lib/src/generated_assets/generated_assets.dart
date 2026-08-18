@@ -129,7 +129,8 @@ final class GeneratedAssetEntry {
   /// everywhere. One tree holds an entry per target, because several builds
   /// share it (one `flutter run` invokes the hook both with and without a
   /// target OS, and a pub-cache tree is shared by every project on the
-  /// machine), and a Metal bundle is unreadable on GLES.
+  /// machine). impellerc compiles every backend; the build then trims each
+  /// bundle to its target's, so two targets' outputs are not interchangeable.
   final String? target;
 
   Map<String, Object?> toJson(String manifestPackage) => {

@@ -113,9 +113,9 @@ const String baseShaderBundleMissingMessage =
 /// machine) holds one bundle per target, and none of them is this one.
 @visibleForTesting
 String baseShaderBundleWrongTargetMessage(List<String> built) =>
-    'The engine shader bundle was built for ${built.join(', ')}, but this app '
-    'runs on $currentShaderTarget, and a bundle compiled for one graphics '
-    'backend cannot be read by another. The build that should have produced it '
+    'The engine shader bundle was trimmed for ${built.join(', ')}, but this '
+    'app runs on $currentShaderTarget, and a bundle trimmed to one set of '
+    'backends cannot be read by another. The build that should have produced it '
     'did not run or did not finish. Rebuild the app, and delete '
     '$generatedAssetsEntry first if it was written by an older flutter_scene.';
 
@@ -126,12 +126,13 @@ String baseShaderBundleWrongTargetMessage(List<String> built) =>
 String baseShaderBundleUnusableMessage(String key) =>
     'The engine shader bundle ($key) loaded but holds no shader this build can '
     'read, so every draw would silently produce nothing. Two things cause '
-    'that. It was compiled for a different graphics backend than the one '
-    'running (this app needs $currentShaderTarget), which happens when one '
+    'that. The build trims every bundle to the backends its target needs, and '
+    'this one was trimmed for a different target than the one running (this '
+    'app needs $currentShaderTarget), which happens when one '
     '$generatedAssetsEntry tree is shared by builds for different platforms. '
     'Or it was compiled by a different Flutter engine, which the bundle format '
-    'is also tied to. Both are fixed by rebuilding, so run `flutter clean`, '
-    'delete $generatedAssetsEntry, and build again.';
+    'is tied to. Both are fixed by rebuilding, so run `flutter clean`, delete '
+    '$generatedAssetsEntry, and build again.';
 
 @visibleForTesting
 String baseShaderBundleLoadFailureMessage(String key) =>
