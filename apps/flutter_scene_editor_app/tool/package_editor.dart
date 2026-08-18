@@ -27,6 +27,10 @@ void main(List<String> args) async {
 
   if (options.build) {
     _assertWindowingEnabled();
+    // TODO(editor-dist-rebuild): once Gatekeeper assesses a signed bundle,
+    // macOS stamps restricted com.apple.provenance xattrs on it and the next
+    // incremental build dies in rsync with "Operation not permitted". Delete
+    // build/macos before rebuilding, or clear the stale product here.
     _run('flutter', [
       'build',
       options.platform,
@@ -354,6 +358,14 @@ void _packageMacos(
     _run('codesign', ['--force', '--deep', '-s', '-', app]);
   }
 
+  // Staple the app before it is packaged, so a copy dragged out of the DMG
+  // carries its own ticket and launches without asking Apple. Stapling only
+  // the DMG leaves the installed app dependent on a network lookup.
+  final profile = options.notarizeProfile;
+  if (profile != null) {
+    _notarize(app, profile, archiveFirst: true);
+  }
+
   final dmg =
       '${_distDir(appDir)}/'
       'flutter_scene_editor-$version-macos-${_arch()}.dmg';
@@ -374,19 +386,38 @@ void _packageMacos(
   ]);
   staging.deleteSync(recursive: true);
 
-  final profile = options.notarizeProfile;
+  // hdiutil output is unsigned, so the DMG is signed after it exists.
+  if (identity != null) {
+    _run('codesign', ['--force', '--timestamp', '-s', identity, dmg]);
+  }
   if (profile != null) {
-    _run('xcrun', [
-      'notarytool',
-      'submit',
-      dmg,
-      '--keychain-profile',
-      profile,
-      '--wait',
-    ]);
-    _run('xcrun', ['stapler', 'staple', dmg]);
+    _notarize(dmg, profile);
   }
   _printSha256(dmg);
+}
+
+// Submits [path] to the notary service and staples the returned ticket to it.
+// notarytool takes an archive rather than a bundle, so an .app is zipped for
+// submission while the ticket still staples to the bundle itself.
+void _notarize(String path, String profile, {bool archiveFirst = false}) {
+  var submission = path;
+  Directory? staging;
+  if (archiveFirst) {
+    staging = Directory.systemTemp.createTempSync('editor_notarize_');
+    submission = '${staging.path}/${path.split('/').last}.zip';
+    // keepParent keeps the .app wrapper the notary service expects.
+    _run('ditto', ['-c', '-k', '--keepParent', path, submission]);
+  }
+  _run('xcrun', [
+    'notarytool',
+    'submit',
+    submission,
+    '--keychain-profile',
+    profile,
+    '--wait',
+  ]);
+  _run('xcrun', ['stapler', 'staple', path]);
+  staging?.deleteSync(recursive: true);
 }
 
 void _packagePosixBundle(
