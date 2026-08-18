@@ -2004,18 +2004,12 @@ class EditorController extends ChangeNotifier {
   }
 
   Future<PreprocessedMaterial> _loadDiskFmatMaterial(AssetRef asset) async {
-    final projectRoot = _findProjectRoot(asset.key);
-    if (projectRoot == null) {
-      throw StateError('Could not find source material "${asset.key}"');
-    }
-    final outputDirectory = Directory(
-      '$projectRoot${Platform.pathSeparator}build${Platform.pathSeparator}'
-      'shaderbundles',
-    );
-    if (!outputDirectory.existsSync()) {
+    final outputDirectory = _findMaterialOutputDirectory();
+    if (outputDirectory == null) {
       // TODO(fmat-editor): Compile source materials when cooked output is absent.
       throw StateError(
-        'No compiled material output exists under "${outputDirectory.path}"',
+        'No compiled material output for "${asset.key}"; no '
+        'build/shaderbundles exists at or above "$baseDirectory"',
       );
     }
     final indexFiles =
@@ -2062,15 +2056,20 @@ class EditorController extends ChangeNotifier {
     throw StateError('No compiled material entry exists for "${asset.key}"');
   }
 
-  String? _findProjectRoot(String relativePath) {
+  // The nearest cooked material output at or above the scene. Searching for
+  // the output itself rather than for where the asset key resolves, since a
+  // "../" key resolves against the scene's own directory and would stop the
+  // walk there.
+  Directory? _findMaterialOutputDirectory() {
     var directory = baseDirectory == null
         ? null
         : Directory(baseDirectory!).absolute;
     while (directory != null) {
-      final candidate = File(
-        '${directory.path}${Platform.pathSeparator}$relativePath',
+      final candidate = Directory(
+        '${directory.path}${Platform.pathSeparator}build'
+        '${Platform.pathSeparator}shaderbundles',
       );
-      if (candidate.existsSync()) return directory.path;
+      if (candidate.existsSync()) return candidate;
       final parent = directory.parent;
       directory = parent.path == directory.path ? null : parent;
     }
