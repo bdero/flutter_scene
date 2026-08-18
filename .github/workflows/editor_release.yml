@@ -10,9 +10,12 @@ name: flutter_scene_editor distribution
 # input. A tag whose name contains "citest" builds the whole matrix but skips
 # the release step, so the packaging can be validated without publishing.
 #
-# macOS signing/notarization run only when the MACOS_SIGN_IDENTITY secret is
-# configured (plus MACOS_NOTARY_PROFILE for notarization); unsigned builds
-# still package and release.
+# macOS signing/notarization run only when MACOS_CERTIFICATE_P12 is set.
+# Signing needs: MACOS_CERTIFICATE_P12 (base64 of a Developer ID Application
+# .p12), MACOS_CERTIFICATE_PASSWORD (its export password), MACOS_SIGN_IDENTITY
+# (the identity string). Notarization also needs MACOS_NOTARY_PROFILE (any
+# handle), MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_PASSWORD (an app-specific
+# password), and MACOS_NOTARY_TEAM_ID. Missing the cert -> unsigned build.
 
 on:
   push:
@@ -73,6 +76,42 @@ jobs:
 
       - name: Resolve dependencies
         run: flutter pub get
+
+      # Imports the Developer ID certificate into a throwaway keychain and
+      # registers the notary profile the packager signs and notarizes with. No
+      # certificate secret -> the build stays unsigned and still produces a DMG.
+      - name: Set up macOS signing
+        if: matrix.platform == 'macos' && secrets.MACOS_CERTIFICATE_P12 != ''
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
+          NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/editor-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          # Let codesign use the imported key without an interactive prompt.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Add the keychain to the search list and make it default so codesign
+          # finds the identity and notarytool finds the profile in later steps.
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed 's/[" ]//g')
+          security default-keychain -s "$KEYCHAIN"
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --keychain "$KEYCHAIN"
 
       - name: Package
         working-directory: apps/flutter_scene_editor_app
