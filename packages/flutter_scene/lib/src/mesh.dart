@@ -61,17 +61,17 @@ base class Mesh {
   vm.Aabb3? _localBoundsCache;
   bool _localBoundsCached = false;
   List<int>? _cachedBoundsVersions;
+  List<Geometry>? _cachedGeometries;
 
   /// Local-space union of every primitive's [Geometry.localBounds], or
   /// `null` when no primitive has computable bounds.
   ///
-  /// Cached. The cache refreshes itself when a primitive's geometry
-  /// reports a new [Geometry.localBoundsVersion], so an updatable
-  /// geometry that is mutated in place stays correct without an explicit
-  /// invalidation. Call [markLocalBoundsDirty] after replacing a
-  /// primitive's geometry.
+  /// Cached. The cache refreshes itself when a primitive's geometry is
+  /// replaced, or reports a new [Geometry.localBoundsVersion], so swapping
+  /// or mutating a primitive's geometry stays correct without an explicit
+  /// invalidation.
   vm.Aabb3? get localBounds {
-    if (_localBoundsCached && _boundsVersionsUnchanged()) {
+    if (_localBoundsCached && _boundsCacheStillValid()) {
       return _localBoundsCache;
     }
     vm.Aabb3? result;
@@ -89,27 +89,40 @@ base class Mesh {
     _cachedBoundsVersions = <int>[
       for (final p in primitives) p.geometry.localBoundsVersion,
     ];
+    _cachedGeometries = <Geometry>[for (final p in primitives) p.geometry];
     return result;
   }
 
-  bool _boundsVersionsUnchanged() {
-    final snapshot = _cachedBoundsVersions;
-    if (snapshot == null || snapshot.length != primitives.length) {
+  // Valid only if the primitive list still holds the same geometry instances
+  // (identity) at the same bounds versions the cache was built from. The
+  // identity compare is what catches a replaced primitive geometry, whose
+  // fresh instance can share the old one's version number.
+  bool _boundsCacheStillValid() {
+    final versions = _cachedBoundsVersions;
+    final geometries = _cachedGeometries;
+    if (versions == null ||
+        geometries == null ||
+        versions.length != primitives.length) {
       return false;
     }
     for (var i = 0; i < primitives.length; i++) {
-      if (snapshot[i] != primitives[i].geometry.localBoundsVersion) {
+      final geometry = primitives[i].geometry;
+      if (!identical(geometries[i], geometry) ||
+          versions[i] != geometry.localBoundsVersion) {
         return false;
       }
     }
     return true;
   }
 
-  /// Invalidate the cached [localBounds]. Call this after replacing a
-  /// primitive's geometry.
+  /// Invalidate the cached [localBounds]. Rarely needed, since the cache
+  /// already detects a replaced primitive geometry and a bumped
+  /// [Geometry.localBoundsVersion]; call this only after mutating a
+  /// geometry's bounds through a path that leaves its version unchanged.
   void markLocalBoundsDirty() {
     _localBoundsCache = null;
     _localBoundsCached = false;
     _cachedBoundsVersions = null;
+    _cachedGeometries = null;
   }
 }

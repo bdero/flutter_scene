@@ -124,19 +124,30 @@ void main() {
       expect(m.localBounds!.max, Vector3(2, 2, 2));
     });
 
-    test('caches the result and rebuilds on markLocalBoundsDirty', () {
+    test('self-invalidates when a primitive geometry is replaced', () {
       final p = _primWithBounds(_aabb(Vector3(0, 0, 0), Vector3(1, 1, 1)));
       final m = Mesh.primitives(primitives: [p]);
       // Prime the cache.
       expect(m.localBounds!.max, Vector3(1, 1, 1));
-      // Swap in a different geometry; without invalidation, the cache
-      // would still report the old extents.
+      // Swap in a different geometry instance. Both stubs report the same
+      // localBoundsVersion (1), so identity is what invalidates the cache;
+      // no markLocalBoundsDirty call is needed.
       p.geometry = _StubGeometry(
         aabb: _aabb(Vector3(0, 0, 0), Vector3(5, 5, 5)),
       );
-      expect(m.localBounds!.max, Vector3(1, 1, 1), reason: 'cache hit');
+      expect(m.localBounds!.max, Vector3(5, 5, 5));
+    });
+
+    test('markLocalBoundsDirty still forces a rebuild', () {
+      final p = _primWithBounds(_aabb(Vector3(0, 0, 0), Vector3(1, 1, 1)));
+      final m = Mesh.primitives(primitives: [p]);
+      expect(m.localBounds!.max, Vector3(1, 1, 1));
+      p.geometry.setLocalBounds(
+        _aabb(Vector3(0, 0, 0), Vector3(9, 9, 9)),
+        Sphere.centerRadius(Vector3.zero(), 1),
+      );
       m.markLocalBoundsDirty();
-      expect(m.localBounds!.max, Vector3(5, 5, 5), reason: 'after dirty');
+      expect(m.localBounds!.max, Vector3(9, 9, 9));
     });
 
     test('refreshes when a geometry mutates its bounds in place', () {

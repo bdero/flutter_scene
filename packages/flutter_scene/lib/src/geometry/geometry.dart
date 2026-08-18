@@ -301,6 +301,18 @@ abstract class Geometry {
         'must be between 1 and 4',
       );
     }
+    // _vertexCount is 0 until the first vertex upload, so a mismatch can only
+    // be judged once the count is known. Setting the attribute first is a
+    // legitimate ordering, covered by the message clause below.
+    if (_vertexCount > 0 && data.length != _vertexCount * components) {
+      throw ArgumentError(
+        'Custom attribute "$name" has ${data.length} floats, but this geometry '
+        'has $_vertexCount vertices at $components components each, so it needs '
+        '${_vertexCount * components}. Set the attribute after uploading '
+        'vertices, and re-set it after any rebuild that changes the vertex '
+        'count.',
+      );
+    }
     final bytes = ByteData.sublistView(data);
     final buffer = gpu.gpuContext.createDeviceBuffer(
       gpu.StorageMode.hostVisible,
@@ -350,6 +362,20 @@ abstract class Geometry {
     ByteData? indices, {
     gpu.IndexType indexType = gpu.IndexType.int16,
   }) {
+    final stride = _expectedVertexStrideInBytes;
+    if (stride != null && vertices.lengthInBytes != vertexCount * stride) {
+      throw ArgumentError(
+        'uploadVertexData got ${vertices.lengthInBytes} bytes for $vertexCount '
+        'vertices, but $runtimeType packs a $stride-byte vertex, so it needs '
+        '${vertexCount * stride} bytes. Repack at $stride bytes per vertex '
+        '(position 3, normal 3, tex_coords_0 2, tex_coords_1 2, color 4, '
+        'tangent 4'
+        '${stride == kSkinnedPerVertexSize ? ', joints 4, weights 4' : ''}, '
+        'all float32, in that order), or supply attributes as separate arrays '
+        'with MeshGeometry.fromArrays.',
+      );
+    }
+
     _cpuVertices = vertices;
     _cpuIndices = indices;
 
@@ -644,6 +670,11 @@ abstract class Geometry {
   /// importer didn't bake one (notably the runtime GLB importer).
   bool get _autoScanBoundsOnUpload => true;
 
+  /// The exact interleaved vertex stride [uploadVertexData] expects, or
+  /// null for a caller-defined layout it does not police. The unskinned
+  /// and skinned subclasses override it with their fixed strides.
+  int? get _expectedVertexStrideInBytes => null;
+
   /// Scan the position attribute (the first 12 bytes of each vertex,
   /// shared across the unskinned and skinned layouts)
   /// to populate [_localBounds] and [_localBoundingSphere].
@@ -930,6 +961,9 @@ class UnskinnedGeometry extends Geometry {
   bool get _isDeInterleaved => _vertexStreams.length >= 2;
 
   @override
+  int get _expectedVertexStrideInBytes => kUnskinnedPerVertexSize;
+
+  @override
   List<ByteData> _vertexStreamBytes(ByteData vertices, int vertexCount) {
     final streams = InterleavedLayoutAdapter.splitUnskinnedAttributes(
       vertices,
@@ -1151,6 +1185,9 @@ class SkinnedGeometry extends Geometry {
 
   @override
   bool get _autoScanBoundsOnUpload => false;
+
+  @override
+  int get _expectedVertexStrideInBytes => kSkinnedPerVertexSize;
 
   @override
   void setJointsTexture(gpu.Texture? texture, int width) {
