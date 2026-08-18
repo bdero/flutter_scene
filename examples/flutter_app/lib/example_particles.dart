@@ -1057,6 +1057,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
         _groundHeight(x, z) + halfHeight,
         z,
       );
+      node.markTransformDirty();
     }
   }
 

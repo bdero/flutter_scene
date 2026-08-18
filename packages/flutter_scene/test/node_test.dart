@@ -94,6 +94,50 @@ void main() {
       final clone = root.clone();
       expect(clone.windingFlipped, isTrue);
     });
+
+    test('clone owns its own transform matrix', () {
+      final source = Node(
+        localTransform: Matrix4.translation(Vector3(1.0, 2.0, 3.0)),
+      );
+      final clone = source.clone();
+      expect(identical(clone.localTransform, source.localTransform), isFalse);
+
+      clone.localTransform.setTranslationRaw(9.0, 9.0, 9.0);
+      clone.markTransformDirty();
+
+      expect(source.localTransform.getTranslation(), Vector3(1.0, 2.0, 3.0));
+    });
+  });
+
+  group('in-place transform edits', () {
+    test('mutating localTransform without marking dirty throws', () {
+      final node = Node();
+      node.globalTransform; // Fill the cache.
+      node.localTransform.setTranslationRaw(1.0, 2.0, 3.0);
+
+      expect(() => node.globalTransform, throwsStateError);
+    });
+
+    test('marking dirty after an in-place edit is accepted', () {
+      final node = Node();
+      node.globalTransform;
+      node.localTransform.setTranslationRaw(1.0, 2.0, 3.0);
+      node.markTransformDirty();
+
+      expect(node.globalTransform.getTranslation(), Vector3(1.0, 2.0, 3.0));
+    });
+
+    test('the check is per node, so an edit is caught at its own read', () {
+      final parent = Node();
+      final child = Node();
+      parent.add(child);
+      child.globalTransform;
+      parent.localTransform.setTranslationRaw(1.0, 0.0, 0.0);
+
+      // The child's own matrix is untouched, so only the parent reports.
+      expect(() => child.globalTransform, returnsNormally);
+      expect(() => parent.globalTransform, throwsStateError);
+    });
   });
 }
 

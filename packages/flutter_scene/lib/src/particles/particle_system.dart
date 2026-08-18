@@ -127,7 +127,7 @@ class ParticleSystem {
   /// The seed for all spawn randomness.
   final int seed;
 
-  final math.Random _random;
+  math.Random _random;
   double _accumulator = 0.0;
   double _systemTime = 0.0;
   final Vector4 _tmpColor = Vector4.zero();
@@ -150,9 +150,12 @@ class ParticleSystem {
 
   /// Removes every live particle and rewinds the clock (the seed stream and
   /// fractional spawn accumulator reset, so a restart replays identically).
+  ///
+  /// [prewarm] is not replayed; a reset system starts empty at time zero.
   void reset() {
     storage.clear();
     spawner.reset();
+    _random = math.Random(seed);
     _accumulator = 0.0;
     _systemTime = 0.0;
   }

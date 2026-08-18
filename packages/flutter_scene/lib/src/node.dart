@@ -189,6 +189,12 @@ base class Node implements SceneGraph {
   bool _worldTransformDirty = true;
   int _worldTransformVersion = 0;
 
+  // Copy of _localTransform as it stood when _worldTransform was last
+  // computed, so a cache hit can catch an in-place edit that skipped
+  // markTransformDirty. Only the asserts below write it, so it stays null in
+  // release builds and costs nothing there.
+  Matrix4? _debugLocalTransformShadow;
+
   // Whether this node's accumulated transform reverses triangle winding (an
   // odd number of negative-determinant transforms up the chain). Cached
   // alongside _worldTransform and invalidated by the same dirty flag.
@@ -224,7 +230,10 @@ base class Node implements SceneGraph {
   /// Cached: O(1) when the cache is current, recomputed up the parent
   /// chain only after a transform change.
   Matrix4 get globalTransform {
-    if (!_worldTransformDirty) return _worldTransform;
+    if (!_worldTransformDirty) {
+      assert(_debugCheckLocalTransformUnmutated());
+      return _worldTransform;
+    }
     final parent = _parent;
     final selfFlip = _localTransform.determinant() < 0;
     if (parent == null) {
@@ -240,7 +249,27 @@ base class Node implements SceneGraph {
     }
     _worldTransformDirty = false;
     _worldTransformVersion++;
+    assert(_debugSnapshotLocalTransform());
     return _worldTransform;
+  }
+
+  // Records _localTransform alongside the world transform just cached.
+  bool _debugSnapshotLocalTransform() {
+    (_debugLocalTransformShadow ??= Matrix4.zero()).setFrom(_localTransform);
+    return true;
+  }
+
+  // Throws when _localTransform changed without the cache being invalidated,
+  // which only an in-place edit can do.
+  bool _debugCheckLocalTransformUnmutated() {
+    final shadow = _debugLocalTransformShadow;
+    if (shadow == null || shadow == _localTransform) return true;
+    throw StateError(
+      'Node "$name": localTransform was mutated in place, so its cached world '
+      'transform is stale and the node will not move. Assign a new matrix '
+      '(node.localTransform = ...) or call node.markTransformDirty() after an '
+      'in-place edit.',
+    );
   }
 
   /// Changes whenever this node's world transform is recomputed.
@@ -1021,7 +1050,7 @@ base class Node implements SceneGraph {
     // reskinned independently); the geometry and materials stay shared.
     Node result = Node(
       name: name,
-      localTransform: localTransform,
+      localTransform: localTransform.clone(),
       mesh: mesh?.clone(),
     );
     result.isJoint = isJoint;
