@@ -22,6 +22,17 @@ int _getNextPowerOfTwoSize(int x) {
   return x + 1;
 }
 
+/// The edge length of the square joints texture holding [jointCount] matrices.
+///
+/// One matrix spans four consecutive texels, and the vertex shader reads all
+/// four from the same row, so the edge must be a multiple of four; the next
+/// power of two at or above 4 satisfies both that and GPU sizing.
+int _jointsTextureEdge(int jointCount) {
+  // 1 matrix = 16 floats, 1 texel = 4 floats, so 4 texels per joint.
+  final int requiredTexels = jointCount * 4;
+  return max(4, _getNextPowerOfTwoSize(sqrt(requiredTexels).ceil()));
+}
+
 /// A skeletal binding used by skinned meshes for animation.
 ///
 /// A `Skin` pairs an ordered list of [joints] (scene-graph [Node]s acting as
@@ -66,19 +77,13 @@ base class Skin {
   /// a square `RGBA32F` GPU texture.
   ///
   /// Each joint occupies four texels (one matrix). The texture's edge
-  /// length is rounded up to the next power of two to satisfy GPU sampling
-  /// requirements; unused slots are initialized to identity.
+  /// length is rounded up to the next power of two, with a floor of four so
+  /// a matrix never straddles a row; unused slots are initialized to identity.
   ///
   /// The companion [getTextureWidth] returns the same edge length so the
   /// vertex shader can index into the texture.
   gpu.Texture getJointsTexture() {
-    // Each joint has a matrix. 1 matrix = 16 floats. 1 pixel = 4 floats.
-    // Therefore, each joint needs 4 pixels.
-    int requiredPixels = joints.length * 4;
-    int dimensionSize = max(
-      2,
-      _getNextPowerOfTwoSize(sqrt(requiredPixels).ceil()),
-    );
+    final int dimensionSize = _jointsTextureEdge(joints.length);
 
     // Drop the ring if the texture size changed (joint count is fixed
     // after construction, so this normally never triggers).
@@ -139,7 +144,5 @@ base class Skin {
 
   /// The edge length, in texels, of the joints texture produced by
   /// [getJointsTexture].
-  int getTextureWidth() {
-    return _getNextPowerOfTwoSize(sqrt(joints.length * 4).ceil());
-  }
+  int getTextureWidth() => _jointsTextureEdge(joints.length);
 }

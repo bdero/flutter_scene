@@ -203,6 +203,23 @@ void main() {
       fixedStep: _fixed,
     );
 
+    test('reset rewinds the random stream so a replay matches', () {
+      final system = build();
+      for (var i = 0; i < 60; i++) {
+        system.step(_fixed);
+      }
+      expect(system.storage.aliveCount, greaterThan(0));
+      final first = _snapshot(system.storage);
+
+      system.reset();
+      expect(system.storage.aliveCount, 0);
+      for (var i = 0; i < 60; i++) {
+        system.step(_fixed);
+      }
+
+      expect(_snapshot(system.storage), first);
+    });
+
     test('same seed and steps reproduce identical state', () {
       final a = build();
       final b = build();
