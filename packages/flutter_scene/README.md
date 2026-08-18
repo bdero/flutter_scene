@@ -78,14 +78,15 @@ Scene is built by a former core Flutter engine team member who spent four years 
 
 ```sh
 flutter pub add flutter_scene
+dart run flutter_scene:init
 ```
 
-That is the whole setup. List a `.glb` under `flutter: assets:` like any other
-asset (or fetch one at runtime), import it, and render it:
+`init` sets up the asset pipeline, which is the recommended way to use Scene.
+Drop sources under `assets/`, load them by their source path, and render:
 
 ```dart
-final model = await Node.fromGlbAsset('assets/model.glb');
-scene.add(model);
+final level = await loadScene('assets/level.glb');
+scene.add(level);
 // ...
 SceneView(scene, cameraBuilder: (elapsed) => PerspectiveCamera(...));
 ```
@@ -134,13 +135,6 @@ On 3.47.0 there is no such setting, so desktop takes the command-line flags per 
 
 ### The asset pipeline
 
-Converting assets ahead of time is the upgrade, not the entry fee. Run it once
-when you want it:
-
-```sh
-dart run flutter_scene:init
-```
-
 `init` writes a `hook/build.dart` that converts your assets at build time,
 creates `flutter_scene_generated/` with a `.gitignore` for its outputs, and adds
 that one directory to `flutter.assets` in your `pubspec.yaml`. It is safe to run
@@ -159,14 +153,21 @@ final toon = await loadFmatMaterial('assets/toon.fmat');
 final ground = await loadTexture('assets/ground.png');
 ```
 
-What that buys over runtime import: `.glb` and `.fscene` models pre-converted to
-the `.fsceneb` format that loads far faster, `.fmat` custom materials,
-block-compressed textures with full mip chains, and hot reload, editing a source
-reconverts just that source and the change lands in the running app.
+A `.glb` has to be parsed and unpacked into GPU-ready form every time the app
+loads it. The pipeline does that work once, at build time, into the `.fsceneb`
+format the engine reads directly, so loading a model at runtime costs far less.
+Prefer it for anything that ships with your app. It is also how `.fmat` custom
+materials and block-compressed textures with full mip chains reach you, and
+editing any source reconverts just that source and hot reloads it.
 
 Keep your sources in version control. The generated directory holds compiled
 output tied to the Flutter engine that built it, which is why the hook manages
 its `.gitignore` for you.
+
+For a model that only exists once the app is running, because you download it or
+the user supplies it, import the `.glb` directly with
+`Node.fromGlbAsset('assets/model.glb')`. That needs no hook, and it parses the
+glTF on every load, so prefer the pipeline whenever the model ships with you.
 
 ## Requirements
 
