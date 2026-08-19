@@ -70,6 +70,7 @@ export 'src/settings/open_in_editor.dart'
     show buildEditorInvocation, openSourceInEditor;
 export 'src/settings/settings_dialog.dart'
     show SettingsDialog, showSettingsDialog;
+export 'src/shell/editor_dialog.dart' show showEditorDialog;
 export 'src/toolchains/managed_checkout.dart'
     show
         ManagedCheckoutJob,

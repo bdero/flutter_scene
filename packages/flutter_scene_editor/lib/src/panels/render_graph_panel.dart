@@ -16,6 +16,7 @@ import '../controller/editor_controller.dart';
 import '../render_graph/debug_shaders.dart';
 import '../render_graph/render_graph_inspector.dart';
 import '../shell/editor_theme.dart';
+import '../shell/editor_dialog.dart';
 
 /// The dockable Render Graph inspector.
 class RenderGraphPanel extends StatefulWidget {
@@ -331,8 +332,8 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
   Future<void> _openViewer(InspectedResource resource) async {
     final snapshot = await _inspector.captureFullResolution(resource.key);
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
+    await showEditorDialog<void>(
+      context,
       builder: (context) => Dialog(
         child: SizedBox(
           width: 900,

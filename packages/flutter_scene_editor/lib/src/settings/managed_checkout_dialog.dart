@@ -7,6 +7,7 @@ import 'package:forui/forui.dart' hide FTheme;
 
 import '../toolchains/managed_checkout.dart';
 import '../shell/editor_theme.dart';
+import '../shell/editor_dialog.dart';
 
 /// Shows [job]'s progress. Resolves when the dialog closes; the job's result
 /// (or error) is on the job itself.
@@ -14,8 +15,8 @@ Future<void> showManagedCheckoutDialog(
   BuildContext context,
   ManagedCheckoutJob job,
 ) {
-  return showDialog<void>(
-    context: context,
+  return showEditorDialog<void>(
+    context,
     barrierDismissible: false,
     builder: (context) => Dialog(child: _ManagedCheckoutProgress(job: job)),
   );
