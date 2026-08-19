@@ -4,6 +4,7 @@ import 'package:forui/forui.dart';
 import '../io/scene_io.dart';
 import 'asset_index.dart';
 import 'environment_thumbnail.dart';
+import '../shell/editor_dialog.dart';
 
 /// Picks an existing project environment image or imports one from disk.
 Future<String?> showEnvironmentImagePicker(
@@ -17,8 +18,8 @@ Future<String?> showEnvironmentImagePicker(
             .where((asset) => asset.kind == FileAssetKind.environmentImage)
             .toList();
   if (!context.mounted) return null;
-  return showDialog<String>(
-    context: context,
+  return showEditorDialog<String>(
+    context,
     builder: (context) => Dialog(
       child: _EnvironmentImagePickerDialog(
         assets: assets,

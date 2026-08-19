@@ -24,6 +24,7 @@ import 'command_palette.dart';
 import 'dock_layout.dart';
 import 'docking_shell.dart';
 import 'editor_theme.dart';
+import 'editor_dialog.dart';
 
 /// The panels [EditorShell] registers with its [DockingShell], id to the
 /// title shown on tabs and in the View menu.
@@ -283,8 +284,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         toolchain?.describe() ??
         library.toolchainError ??
         'Not resolved yet; the toolchain resolves on the first .fmat load.';
-    showDialog<void>(
-      context: context,
+    showEditorDialog<void>(
+      context,
       builder: (context) => AlertDialog(
         title: const Text('Shader toolchain', style: TextStyle(fontSize: 14)),
         content: SelectableText(

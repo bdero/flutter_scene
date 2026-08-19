@@ -14,6 +14,7 @@ import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
 import 'editor_settings.dart';
 import 'open_in_editor.dart';
+import '../shell/editor_dialog.dart';
 
 /// Shows the settings window. Callbacks mutate/persist through the host.
 Future<void> showSettingsDialog(
@@ -27,8 +28,8 @@ Future<void> showSettingsDialog(
   Future<bool> Function(BuildContext context, FlutterInstallation installation)?
   onDeleteManaged,
 }) {
-  return showDialog<void>(
-    context: context,
+  return showEditorDialog<void>(
+    context,
     builder: (context) => Dialog(
       backgroundColor: editorSurfaceColor,
       child: SettingsDialog(

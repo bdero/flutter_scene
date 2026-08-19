@@ -9,6 +9,7 @@ import 'package:forui/forui.dart' hide FTheme;
 
 import 'fproject.dart';
 import '../shell/editor_theme.dart';
+import '../shell/editor_dialog.dart';
 
 const _modes = ['debug', 'profile', 'release'];
 
@@ -23,8 +24,8 @@ Future<void> showBuildConfigDialog(
   Map<String, String> Function(BuildConfiguration configuration)?
   previewVariables,
 }) {
-  return showDialog<void>(
-    context: context,
+  return showEditorDialog<void>(
+    context,
     builder: (context) => Dialog(
       child: _BuildConfigEditor(
         project: project,
