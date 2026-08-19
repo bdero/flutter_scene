@@ -140,13 +140,14 @@ fragment { void Surface(inout MaterialInputs material) {} }
         'filtered_scene_color',
         'scene_depth',
       ]);
+      // The samplers and accessors compile in through the shared include,
+      // gated by what the material declared.
       final glsl = emitFragmentGlsl(m);
-      expect(glsl, contains('uniform sampler2D scene_opaque_color;'));
-      expect(glsl, contains('uniform sampler2D scene_depth;'));
-      expect(glsl, contains('vec3 GetSceneColor(vec2 uv_offset)'));
+      expect(glsl, contains('#define FLUTTER_SCENE_SCENE_COLOR'));
+      expect(glsl, contains('#define FLUTTER_SCENE_SCENE_DEPTH'));
+      expect(glsl, contains('#include <material_engine_lighting.glsl>'));
       expect(glsl, contains('#include <filtered_scene_color.glsl>'));
       expect(glsl, isNot(contains('TransmissionWeight0')));
-      expect(glsl, contains('float GetSceneDepth(vec2 uv_offset)'));
 
       // Unknown entries are rejected.
       expect(
@@ -155,15 +156,6 @@ material { name: "X", engine_inputs: [shadow_map] }
 fragment { void Surface(inout MaterialInputs material) {} }
 '''),
         _throwsFmat('Unknown `engine_inputs` entry'),
-      );
-      // Unlit materials cannot declare engine inputs (the samplers ride the
-      // engine lighting frame data).
-      expect(
-        () => parseFmat('''
-material { name: "X", shading_model: unlit, engine_inputs: [scene_color] }
-fragment { void Surface(inout MaterialInputs material) {} }
-'''),
-        _throwsFmat('requires a lit shading model'),
       );
       expect(
         () => parseFmat('''
@@ -187,8 +179,68 @@ fragment { void Surface(inout MaterialInputs material) {} }
       final glsl = emitFragmentGlsl(material);
       expect(glsl, contains('#define FLUTTER_SCENE_PHYSICAL_MATERIAL'));
       expect(glsl, contains('#include <material_lighting.glsl>'));
-      expect(glsl, contains('uniform sampler2D scene_opaque_color;'));
+      expect(glsl, contains('#define FLUTTER_SCENE_SCENE_COLOR'));
       expect(buildSidecar(material)['shading_model'], 'physical');
+    });
+
+    test('unlit materials may declare engine inputs', () {
+      final m = parseFmat('''
+material {
+  name: "Haze",
+  shading_model: unlit,
+  blending: additive,
+  engine_inputs: [scene_color],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(GetSceneColor(vec2(0.01, 0.0)), 1.0);
+  }
+}
+''');
+      expect(m.shadingModel, FmatShadingModel.unlit);
+      expect(m.engineInputs, ['scene_color']);
+      expect(buildSidecar(m)['engine_inputs'], ['scene_color']);
+    });
+
+    test('parses scene_color_reach into the AST and the sidecar', () {
+      final m = parseFmat('''
+material {
+  name: "Reach",
+  shading_model: unlit,
+  engine_inputs: [scene_color],
+  scene_color_reach: 0.25,
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(GetSceneColor(vec2(0.0)), 1.0);
+  }
+}
+''');
+      expect(m.sceneColorReach, 0.25);
+      expect(buildSidecar(m)['scene_color_reach'], 0.25);
+
+      // Omitted means unbounded, so nothing lands in the sidecar.
+      final unbounded = parseFmat('''
+material { name: "Unbounded", engine_inputs: [scene_color] }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(unbounded.sceneColorReach, isNull);
+      expect(buildSidecar(unbounded).containsKey('scene_color_reach'), isFalse);
+
+      expect(
+        () => parseFmat('''
+material { name: "X", engine_inputs: [scene_color], scene_color_reach: -1.0 }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must not be negative'),
+      );
+      expect(
+        () => parseFmat('''
+material { name: "X", scene_color_reach: 0.5 }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('requires `engine_inputs`'),
+      );
     });
 
     test('materials without engine_inputs get no scene-input samplers', () {
@@ -274,6 +326,68 @@ fragment { void Surface(inout MaterialInputs material) {} }
 ''');
       expect(c.glsl, contains('vec4 lit = EvaluateLighting(material);'));
       expect(c.glsl, contains('frag_color = vec4(lit.rgb, 0.0);'));
+    });
+
+    test(
+      'unlit engine inputs pull in the scene-input include, not lighting',
+      () {
+        final c = compileFmat('''
+material {
+  name: "UHaze",
+  shading_model: unlit,
+  blending: additive,
+  engine_inputs: [scene_color, scene_depth],
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    float behind = GetSceneDepth(vec2(0.0)) - GetFragmentViewDepth();
+    material.base_color =
+        vec4(GetSceneColor(vec2(0.01, 0.0)) * behind, 1.0);
+  }
+}
+''');
+        expect(c.glsl, contains('#define FLUTTER_SCENE_SCENE_COLOR'));
+        expect(c.glsl, contains('#define FLUTTER_SCENE_SCENE_DEPTH'));
+        expect(c.glsl, contains('#include <material_scene_inputs.glsl>'));
+        expect(c.glsl, isNot(contains('material_engine_lighting.glsl')));
+        expect(c.glsl, isNot(contains('material_lighting.glsl')));
+        // FragInfo is bound for this material, so the block must survive
+        // compilation even though the accessors are all the shader reads of it.
+        expect(
+          c.glsl,
+          contains('uniform FragmentKeepAlive { vec4 keep_alive; }'),
+        );
+        expect(c.glsl, contains('frag_info.scene_inputs.x'));
+      },
+    );
+
+    test('an unlit material without engine inputs declares no FragInfo', () {
+      final c = compileFmat('''
+material { name: "UPlain", shading_model: unlit }
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(c.glsl, isNot(contains('material_scene_inputs.glsl')));
+      expect(c.glsl, isNot(contains('material_engine_lighting.glsl')));
+      expect(c.glsl, isNot(contains('frag_info')));
+      expect(c.glsl, isNot(contains('FragmentKeepAlive')));
+    });
+
+    test('an unread engine input stays live through the keep-alive', () {
+      // A material that declares an input its Surface() never samples still
+      // has the sampler bound, so a zero-multiplied fetch keeps it live.
+      final c = compileFmat('''
+material { name: "UUnread", shading_model: unlit, engine_inputs: [scene_color] }
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(c.glsl, contains('texture(scene_opaque_color, vec2(0.0)).x'));
     });
 
     test('keeps MaterialParams live when the fragment reads no parameter', () {

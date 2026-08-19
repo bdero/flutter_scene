@@ -119,7 +119,8 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
-| `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Lit surface materials only. |
+| `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Surface materials, `lit` or `unlit` (`planar_reflection` is lit only). |
+| `scene_color_reach` | number | unbounded | How far past its own surface the shader samples, in local units. Lets readers whose screen rects are disjoint share one scene-color capture. Requires `engine_inputs`. |
 
 ## Engine inputs (`engine_inputs`)
 
@@ -133,8 +134,10 @@ cost nothing when unused:
   resolve in between. Use it for refraction and translucent compositing.
 - `scene_depth` binds `scene_depth`, the opaque geometry's linear
   (planar view-space) depth in world units. Requesting it forces the depth
-  prepass (already produced when SSAO or reflections are on). Use it for
-  depth-fade absorption, shoreline foam, and soft-particle edges.
+  prepass (already produced when SSAO or reflections are on) and renders it at
+  full resolution, so a depth-driven edge is not stair-stepped by a
+  reduced-resolution occlusion chain. Use it for depth-fade absorption,
+  shoreline foam, and soft-particle edges.
 - `planar_reflection` binds the mirrored scene capture a
   `PlanarReflectorComponent` renders for the surface each frame, plus the
   capture's view-projection for projective sampling. Use it for mirrors and
@@ -150,10 +153,16 @@ Declaring an input emits the sampler and these accessors into your shader:
 vec2  GetScreenUv();                  // this fragment's screen UV
 vec3  GetSceneColor(vec2 uv_offset);  // opaque scene color behind the fragment
 float GetSceneDepth(vec2 uv_offset);  // opaque linear depth behind the fragment
+vec3  GetSceneWorldPosition(vec2 uv_offset);  // that surface's world position
 float GetFragmentViewDepth();         // this fragment's own linear depth
 float GetTime();                      // engine seconds, for animation
 vec4  GetPlanarReflection();          // mirrored capture at this fragment
 ```
+
+`GetSceneWorldPosition` unprojects the opaque surface behind the fragment (it
+needs `scene_depth`), for contact softening, curved-surface thickness, and
+projecting onto whatever is back there. It falls back to this fragment's own
+world position when depth is unavailable or the camera is not perspective.
 
 `GetPlanarReflection()` returns the mirrored scene color in rgb with `a` 1
 when a capture is bound this draw and 0 otherwise (no reflector routed one,
@@ -180,11 +189,53 @@ vec3 refracted = GetSceneColor(normal_offset * refraction_strength);
 vec3 absorbed = refracted * exp(-absorption * thickness);         // Beer-Lambert
 ```
 
-Only `lit` surface materials may declare engine inputs (the gates and screen
-mapping ride the engine lighting data). Budget note: the lit framework is
-close to Metal's 16-sampler limit, so with both inputs declared keep the
-material's own samplers to two or fewer; prefer in-shader procedural noise
-over noise textures.
+Both `lit` and `unlit` surface materials may declare engine inputs (a sky may
+not; it draws before any of them exist). An `unlit` reader is the right shape
+for refraction and heat haze, where the background is already lit and nothing
+wants shading:
+
+```
+material {
+  name: "HeatHaze",
+  shading_model: unlit,
+  blending: alpha,
+  engine_inputs: [scene_color],
+  scene_color_reach: 0.5,
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(GetSceneColor(wobble), mask);
+    PrepareMaterial(material);
+  }
+}
+```
+
+Budget note: the lit framework is close to Metal's 16-sampler limit, so with
+both inputs declared keep the material's own samplers to two or fewer; prefer
+in-shader procedural noise over noise textures. An `unlit` reader carries none
+of the lighting samplers, so it has the whole budget and compiles to one bundle
+entry instead of four.
+
+## Sharing a scene-color capture (`scene_color_reach`)
+
+Every material that reads `scene_color` needs a snapshot of the scene taken
+before it draws. The engine takes one snapshot per batch of readers, and two
+readers can share a batch only when neither samples into the other's screen
+rect. It cannot know how far a shader samples, so by default a reader is
+treated as sampling anywhere and gets its own snapshot (a full-viewport copy
+plus a render pass each).
+
+Declare the distance the shader actually samples past its own surface, in local
+units, and disjoint readers collapse into one snapshot:
+
+```
+scene_color_reach: 0.25,
+```
+
+The engine scales it by the node's largest world-scale axis and inflates the
+projected screen rect. Author it generously: too small a reach reads stale
+color at the edges, while too large only costs a shared batch. Omit it when the
+shader really can sample anywhere (a full-screen warp).
 
 ## Parameters
 

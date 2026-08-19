@@ -2298,14 +2298,18 @@ base class Scene implements SceneGraph {
         // so its behavior is unchanged; reflections sample whatever resolution
         // is published. With only reflections on, use full resolution. The
         // depth-mip-chain path (SsaoPass builds the reduced levels) wants a
-        // full-resolution base, so it also renders the prepass full size.
+        // full-resolution base, so it also renders the prepass full size. A
+        // material sampling scene depth reads it as an image, so it also gets
+        // full resolution; a reduced prepass stair-steps every depth-driven
+        // edge it draws.
         final depthDimensions =
             (wantAo &&
                 !ambientOcclusion.depthMipChain &&
                 !enableTaa &&
                 !wantSsr &&
                 !wantCustomNormals &&
-                !wantIrradianceField)
+                !wantIrradianceField &&
+                !bindSceneDepth)
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
         // Reflections need the interpolated view-space normal, so the prepass

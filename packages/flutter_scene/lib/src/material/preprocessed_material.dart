@@ -47,6 +47,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _usesPlanarReflection = parsePlanarReflectionInput(
          metadata['engine_inputs'],
        ),
+       _sceneColorReach = _parseSceneColorReach(metadata['scene_color_reach']),
        _vertexShaders = vertexShaders,
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
     setFragmentShader(fragmentShader);
@@ -74,8 +75,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   static bool parsePlanarReflectionInput(Object? value) =>
       value is List && value.contains('planar_reflection');
 
+  /// Reads the sidecar's `scene_color_reach` (local units), or null for a
+  /// material that may sample anywhere on screen.
+  static double? _parseSceneColorReach(Object? value) =>
+      value is num ? value.toDouble() : null;
+
   Set<RenderInput> _sceneInputs;
   bool _usesPlanarReflection;
+  double? _sceneColorReach;
   gpu.Shader? _shadowFragmentShader;
   gpu.Shader? _cubeFragmentShader;
   gpu.Shader? _cubeShadowFragmentShader;
@@ -171,6 +178,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   @internal
   bool get usesPlanarReflection => _usesPlanarReflection;
+
+  @override
+  double? get sceneColorSampleBoundsExpansion => _sceneColorReach;
 
   /// The material's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
@@ -279,6 +289,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _usesPlanarReflection = parsePlanarReflectionInput(
       metadata['engine_inputs'],
     );
+    _sceneColorReach = _parseSceneColorReach(metadata['scene_color_reach']);
     markMaterialSceneInputsChanged();
     setFragmentShader(fragmentShader);
     parameters.updateFromMetadata(fragmentShader, metadata);
@@ -309,52 +320,65 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       // The radiance/BRDF/SH samplers and the fog block are compiled out of
       // it, and binding an absent slot fails, so it takes its own bind set.
       EngineLightingUniforms.bindShadowCatcherTextures(pass, shader, lighting);
-    } else if (shadingModel != FmatShadingModel.unlit) {
+    } else {
+      final lit = shadingModel != FmatShadingModel.unlit;
       final env = environment ?? lighting.environmentMap;
-      _packEngineFragInfo(lighting, env);
-      pass.bindUniform(
-        shader.getUniformSlot('FragInfo'),
-        transientsBuffer.emplace(_fragInfoBytes),
-      );
-      // TODO(material-permutations): add an SSAO sampler to filtered scene
-      // color permutations without exceeding the backend sampler limit.
-      EngineLightingUniforms.bindEngineTextures(
-        pass,
-        shader,
-        lighting,
-        env,
-        bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
-        bindShadows: lighting.shadowMap != null,
-        bindDiffuseSh: !usesLightmapVariant,
-        cubeShader: usesRadianceCubeVariant(lighting),
-      );
-      if (usesLightmapVariant) {
-        bindLightmap(pass, shader, transientsBuffer);
+      // An unlit material that declares engine inputs carries the FragInfo
+      // block too (the screen-UV mapping, the input gates, and the camera
+      // basis its accessors unproject with), but none of the lighting
+      // samplers, so it costs no texture unit. The generated shader declares
+      // the block only in that case, so this condition must match the
+      // emitter's.
+      if (lit || _sceneInputs.isNotEmpty) {
+        _packEngineFragInfo(lighting, env);
+        pass.bindUniform(
+          shader.getUniformSlot('FragInfo'),
+          transientsBuffer.emplace(_fragInfoBytes),
+        );
+        if (_sceneInputs.isNotEmpty) {
+          EngineLightingUniforms.bindSceneInputTextures(
+            pass,
+            shader,
+            lighting,
+            _sceneInputs,
+          );
+        }
       }
-      if (_sceneInputs.isNotEmpty) {
-        EngineLightingUniforms.bindSceneInputTextures(
+      if (lit) {
+        // TODO(material-permutations): add an SSAO sampler to filtered scene
+        // color permutations without exceeding the backend sampler limit.
+        EngineLightingUniforms.bindEngineTextures(
           pass,
           shader,
           lighting,
-          _sceneInputs,
+          env,
+          bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
+          bindShadows: lighting.shadowMap != null,
+          bindDiffuseSh: !usesLightmapVariant,
+          cubeShader: usesRadianceCubeVariant(lighting),
         );
+        if (usesLightmapVariant) {
+          bindLightmap(pass, shader, transientsBuffer);
+        }
+        if (_usesPlanarReflection) {
+          _bindPlanarReflection(pass, shader, transientsBuffer, lighting);
+        }
+        // Lit `.fmat` shaders include the lighting framework (and thus
+        // fog.glsl), so they carry the FogInfo block. Unlit `.fmat` shaders do
+        // not; fog on those is a TODO(fog): give the unlit `.fmat` template
+        // the fog block.
+        EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
       }
-      if (_usesPlanarReflection) {
-        _bindPlanarReflection(pass, shader, transientsBuffer, lighting);
-      }
-      // Lit `.fmat` shaders include the lighting framework (and thus fog.glsl),
-      // so they carry the FogInfo block. Unlit `.fmat` shaders do not; fog on
-      // those is a TODO(fog): give the unlit `.fmat` template the fog block.
-      EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
     }
 
     parameters.bind(pass, shader, transientsBuffer);
     // Bind the fragment keep-alive block (name matches kFragmentKeepAliveBlock
     // in the emitter) to zero. The generated fragment references every
-    // declared parameter resource through it (the MaterialParams block and
-    // any unreferenced samplers) so none can be optimized out; the emitter
-    // declares it whenever the material has any parameter.
-    if (parameters.hasAnyParameters) {
+    // declared resource through it (the MaterialParams block, any unreferenced
+    // sampler, and the engine scene inputs) so none can be optimized out; the
+    // emitter declares it whenever the material has a parameter or an engine
+    // input, so this condition must match.
+    if (parameters.hasAnyParameters || _sceneInputs.isNotEmpty) {
       pass.bindUniform(
         shader.getUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),
