@@ -666,16 +666,16 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..scatter = 0.6;
     scene.postProcess.bloom.lensFlare
       ..enabled = true
-      ..intensity = 2.0
+      ..intensity = 1.0
       ..ghostCount = 5
       ..ghostSpacing = 0.35
       ..haloRadius = 0.3
-      ..haloIntensity = 1.5
-      ..chromaticAberration = 0.01;
+      ..haloIntensity = 0.5
+      ..chromaticAberration = 0.02;
     final emissive = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.0, 0.0, 0.0, 1.0)
       ..emissiveFactor = vm.Vector4(1.0, 0.9, 0.7, 1.0)
-      ..emissiveStrength = 40.0
+      ..emissiveStrength = 16.0
       ..vertexColorWeight = 0.0;
     scene.add(
       Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.3, 0.3, 0.05)), emissive))
