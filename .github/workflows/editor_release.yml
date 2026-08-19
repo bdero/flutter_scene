@@ -117,7 +117,9 @@ jobs:
               --password "$NOTARY_PASSWORD" \
               --keychain "$KEYCHAIN"
             security find-identity -v -p codesigning "$KEYCHAIN"
-            ARGS+=(--sign-identity "$SIGN_IDENTITY" --notarize-profile "$NOTARY_PROFILE")
+            ARGS+=(--sign-identity "$SIGN_IDENTITY" \
+                   --notarize-profile "$NOTARY_PROFILE" \
+                   --keychain "$KEYCHAIN")
           fi
           dart tool/package_editor.dart "${ARGS[@]}"
 

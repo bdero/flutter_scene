@@ -65,6 +65,7 @@ final class _Options {
     required this.build,
     this.signIdentity,
     this.notarizeProfile,
+    this.keychain,
   });
 
   final String platform;
@@ -72,11 +73,16 @@ final class _Options {
   final String? signIdentity;
   final String? notarizeProfile;
 
+  /// A keychain to search for the signing identity, so signing does not depend
+  /// on the default search list (which a build can reset). CI passes this.
+  final String? keychain;
+
   static _Options parse(List<String> args) {
     String? platform;
     var build = true;
     String? signIdentity;
     String? notarizeProfile;
+    String? keychain;
     for (var i = 0; i < args.length; i++) {
       switch (args[i]) {
         case '--platform':
@@ -87,6 +93,8 @@ final class _Options {
           signIdentity = args[++i];
         case '--notarize-profile':
           notarizeProfile = args[++i];
+        case '--keychain':
+          keychain = args[++i];
         default:
           _fail('Unknown argument "${args[i]}"');
       }
@@ -103,6 +111,7 @@ final class _Options {
       build: build,
       signIdentity: signIdentity,
       notarizeProfile: notarizeProfile,
+      keychain: keychain,
     );
   }
 }
@@ -358,6 +367,11 @@ void _packageMacos(
   );
 
   final identity = options.signIdentity;
+  // Pin codesign to a specific keychain when given one; the default search
+  // list can be reset by the build before signing runs.
+  final keychainArgs = options.keychain != null
+      ? ['--keychain', options.keychain!]
+      : const <String>[];
   if (identity != null) {
     // Inner executables first, then the bundle, with the hardened runtime
     // notarization requires.
@@ -366,6 +380,7 @@ void _packageMacos(
       '--options',
       'runtime',
       '--timestamp',
+      ...keychainArgs,
       '-s',
       identity,
       '$app/Contents/Helpers/impellerc',
@@ -376,6 +391,7 @@ void _packageMacos(
       'runtime',
       '--timestamp',
       '--deep',
+      ...keychainArgs,
       '-s',
       identity,
       app,
@@ -416,7 +432,14 @@ void _packageMacos(
 
   // hdiutil output is unsigned, so the DMG is signed after it exists.
   if (identity != null) {
-    _run('codesign', ['--force', '--timestamp', '-s', identity, dmg]);
+    _run('codesign', [
+      '--force',
+      '--timestamp',
+      ...keychainArgs,
+      '-s',
+      identity,
+      dmg,
+    ]);
   }
   if (profile != null) {
     _notarize(dmg, profile);
