@@ -154,7 +154,7 @@ class LensFlareSettings {
   double intensity = 1.0;
 
   /// Number of internal-reflection ghosts along the line through the
-  /// screen center, at most 8.
+  /// screen center. Values above 8 are clamped to 8 when rendered.
   int ghostCount = 4;
 
   /// Spacing between successive ghosts, as a fraction of the distance from

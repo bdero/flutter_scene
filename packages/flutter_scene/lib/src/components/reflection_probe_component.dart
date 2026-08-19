@@ -104,6 +104,12 @@ class ReflectionProbeComponent extends Component {
     capture
       ..parallaxBoxCenter = worldCenter
       ..parallaxBoxHalfExtents = Vector3.copy(extents);
+    // Replacing a prior capture drops its GPU textures (six faces + equirect +
+    // SH + prefiltered atlas) to native finalizers, since EnvironmentMap has no
+    // dispose. Fine for the occasional recapture this targets; a tight
+    // requestCapture() loop leans on GC and can spike memory before collection.
+    // TODO(probe-recapture-churn): dispose the outgoing capture explicitly once
+    // EnvironmentMap gains a dispose.
     _environment = capture;
     _crossfadeSettings = EnvironmentSettings(environment: capture);
     _capturePending = false;

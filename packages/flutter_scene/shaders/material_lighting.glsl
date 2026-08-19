@@ -755,6 +755,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
   if (env_blend > 0.0) {
     vec3 irradiance_b = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 1.0),
                             vec3(0.0));
+    // env_reflection is box-corrected for the primary probe; the secondary
+    // reuses it, so a probe->environment crossfade samples the secondary with
+    // the probe's parallax vector. Transient and weight-blended, so
+    // effectively invisible. TODO(probe-crossfade-parallax): box-correct the
+    // secondary against its own volume.
     vec3 prefiltered_b =
         SampleRadianceEnv(prefiltered_radiance_b,
                           env_reflection, roughness);
