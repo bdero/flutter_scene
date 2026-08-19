@@ -4,7 +4,9 @@ import 'dart:math';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_scene/scene.dart';
+// The editor's own OrbitCameraController (a viewport widget) predates the
+// engine's; hide the engine one here to keep using the local widget.
+import 'package:flutter_scene/scene.dart' hide OrbitCameraController;
 import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
