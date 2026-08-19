@@ -164,10 +164,11 @@ class BloomPass extends RenderGraphPass {
 
     var result = up[0]!;
 
-    // Lens flares generate from a well-blurred mip and composite over the
-    // finished bloom into another fresh cleared target, for the same
-    // write-once reason as the upsample.
-    if (_settings.lensFlare.enabled && down.length > 2) {
+    // Lens flares generate from a well-blurred mip (up[2]) and composite over
+    // the finished bloom into another fresh cleared target, for the same
+    // write-once reason as the upsample. _kMipCount (>= 3) guarantees that
+    // source mip exists.
+    if (_settings.lensFlare.enabled) {
       final composite = context.texturePool.acquire(
         TransientTextureDescriptor.color(
           width: sizes[0].width.toInt(),
