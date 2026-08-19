@@ -11,11 +11,12 @@ name: flutter_scene_editor distribution
 # the release step, so the packaging can be validated without publishing.
 #
 # macOS signing/notarization run only when MACOS_CERTIFICATE_P12 is set.
-# Signing needs: MACOS_CERTIFICATE_P12 (base64 of a Developer ID Application
-# .p12), MACOS_CERTIFICATE_PASSWORD (its export password), MACOS_SIGN_IDENTITY
-# (the identity string). Notarization also needs MACOS_NOTARY_PROFILE (any
-# handle), MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_PASSWORD (an app-specific
-# password), and MACOS_NOTARY_TEAM_ID. Missing the cert -> unsigned build.
+# Signing needs MACOS_CERTIFICATE_P12 (base64 of a Developer ID Application
+# .p12) and MACOS_CERTIFICATE_PASSWORD (its export password); the identity is
+# resolved from the imported certificate by its hash. Notarization also needs
+# MACOS_NOTARY_PROFILE (any handle), MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_PASSWORD
+# (an app-specific password), and MACOS_NOTARY_TEAM_ID. Missing the cert ->
+# unsigned build.
 
 on:
   push:
@@ -92,7 +93,6 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
           NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
           NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
