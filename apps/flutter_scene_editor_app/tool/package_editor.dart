@@ -28,11 +28,21 @@ void main(List<String> args) async {
   if (options.build) {
     _assertWindowingEnabled();
     _clearStaleProduct(appDir, options.platform);
-    _run('flutter', [
-      'build',
-      options.platform,
-      options.platform == 'macos' ? '--release' : '--profile',
-    ], cwd: appDir);
+    // The source tracks the master SDK's windowing names; the pinned stable
+    // uses the older ones. Rename for the build and reverse after, so a local
+    // build never leaves the tree on stable names.
+    final repoRoot = Directory('$appDir/../..').absolute.path;
+    final namePatch = '$appDir/tool/patches/window_names_stable.patch';
+    _run('git', ['apply', namePatch], cwd: repoRoot);
+    try {
+      _run('flutter', [
+        'build',
+        options.platform,
+        options.platform == 'macos' ? '--release' : '--profile',
+      ], cwd: appDir);
+    } finally {
+      _run('git', ['apply', '-R', namePatch], cwd: repoRoot);
+    }
   }
 
   final bundle = _builtBundle(appDir, options.platform);
