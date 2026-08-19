@@ -165,4 +165,169 @@ $hookEndMarker
       contains(normalizeAssetEntry(generatedAssetsEntry)),
     );
   });
+
+  group('skill install', () {
+    late Uri skillSource;
+
+    // Writes a fake bundled skill (versioned frontmatter plus a reference) to
+    // [dir] and returns its uri.
+    Uri writeSkill(String dir, int version) {
+      final src = Directory.fromUri(temp.uri.resolve('$dir/'))
+        ..createSync(recursive: true);
+      File.fromUri(src.uri.resolve('SKILL.md')).writeAsStringSync(
+        '---\nname: $flutterSceneSkillName\nversion: $version\n---\n# skill\n',
+      );
+      Directory.fromUri(src.uri.resolve('references/')).createSync();
+      File.fromUri(
+        src.uri.resolve('references/what-exists.md'),
+      ).writeAsStringSync('x\n');
+      return src.uri;
+    }
+
+    setUp(() => skillSource = writeSkill('_src/$flutterSceneSkillName', 1));
+
+    File installed(String parent) => File.fromUri(
+      temp.uri.resolve('$parent/skills/$flutterSceneSkillName/SKILL.md'),
+    );
+
+    test('defaults to .claude when no agent home is present', () async {
+      final plan = await planFlutterSceneSkillInstall(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+      expect(plan.action, SkillInstallAction.install);
+      expect(plan.bundledVersion, 1);
+      expect(plan.installedVersion, isNull);
+
+      final result = await installFlutterSceneSkills(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+
+      expect(result.status, InitSkillStatus.installed);
+      expect(installed('.claude').existsSync(), isTrue);
+      // The references subtree comes along.
+      expect(
+        File.fromUri(
+          temp.uri.resolve(
+            '.claude/skills/$flutterSceneSkillName/references/what-exists.md',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+    });
+
+    test('installs into every agent home already present', () async {
+      Directory.fromUri(temp.uri.resolve('.cursor/')).createSync();
+      Directory.fromUri(temp.uri.resolve('.codex/')).createSync();
+
+      await installFlutterSceneSkills(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+
+      expect(installed('.cursor').existsSync(), isTrue);
+      expect(installed('.codex').existsSync(), isTrue);
+      // No .claude home existed, so it is not created when others are.
+      expect(installed('.claude').existsSync(), isFalse);
+    });
+
+    test('an installed matching version reports up to date', () async {
+      await installFlutterSceneSkills(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+
+      final plan = await planFlutterSceneSkillInstall(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+      expect(plan.action, SkillInstallAction.upToDate);
+      expect(plan.installedVersion, 1);
+    });
+
+    test('a newer bundled version reports an update', () async {
+      // Install v1, then point at a v2 source.
+      await installFlutterSceneSkills(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+      final v2 = writeSkill('_src2/$flutterSceneSkillName', 2);
+
+      final plan = await planFlutterSceneSkillInstall(
+        projectRoot: temp,
+        skillSource: v2,
+      );
+      expect(plan.action, SkillInstallAction.update);
+      expect(plan.installedVersion, 1);
+      expect(plan.bundledVersion, 2);
+
+      await installFlutterSceneSkills(projectRoot: temp, skillSource: v2);
+      expect(
+        await planFlutterSceneSkillInstall(projectRoot: temp, skillSource: v2),
+        isA<SkillInstallPlan>().having(
+          (p) => p.action,
+          'action',
+          SkillInstallAction.upToDate,
+        ),
+      );
+    });
+
+    test('a pre-versioning install reads as stale', () async {
+      // A skill with no version frontmatter counts as 0, below any bundle.
+      final home = Directory.fromUri(
+        temp.uri.resolve('.claude/skills/$flutterSceneSkillName/'),
+      )..createSync(recursive: true);
+      File.fromUri(home.uri.resolve('SKILL.md')).writeAsStringSync('# old\n');
+
+      final plan = await planFlutterSceneSkillInstall(
+        projectRoot: temp,
+        skillSource: skillSource,
+      );
+      expect(plan.action, SkillInstallAction.update);
+      expect(plan.installedVersion, 0);
+    });
+
+    test('reports a missing source instead of throwing', () async {
+      final plan = await planFlutterSceneSkillInstall(
+        projectRoot: temp,
+        skillSource: temp.uri.resolve('_nope/'),
+      );
+      expect(plan.action, SkillInstallAction.sourceMissing);
+
+      final result = await installFlutterSceneSkills(
+        projectRoot: temp,
+        skillSource: temp.uri.resolve('_nope/'),
+      );
+      expect(result.status, InitSkillStatus.sourceMissing);
+    });
+
+    test('describeSkillPlan names the action and how to act', () {
+      expect(
+        describeSkillPlan(
+          const SkillInstallPlan(
+            SkillInstallAction.update,
+            installedVersion: 1,
+            bundledVersion: 3,
+          ),
+        ),
+        allOf(contains('v1'), contains('v3'), contains('flutter_scene:skills')),
+      );
+      expect(
+        describeSkillPlan(
+          const SkillInstallPlan(SkillInstallAction.install, bundledVersion: 3),
+        ),
+        contains('not installed'),
+      );
+      expect(
+        describeSkillPlan(
+          const SkillInstallPlan(
+            SkillInstallAction.upToDate,
+            bundledVersion: 3,
+          ),
+        ),
+        contains('up to date'),
+      );
+    });
+  });
 }
