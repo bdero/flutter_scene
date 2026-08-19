@@ -1,3 +1,7 @@
+## 0.22.2
+
+* Three new agent skills alongside `flutter_scene-idioms`: `flutter_scene-verification-loop` (the run-settle-capture-correct visual loop and the blind-pairwise judgment rule), `flutter_scene-looks` (copy-paste `EnvironmentSettings` presets for a deliberate look), and `flutter_scene-procedural` (terrain, noise, and instancing from code). `dart run flutter_scene:init` and `dart run flutter_scene:skills` now install every bundled skill.
+
 ## 0.22.1
 
 * Camera controllers `OrbitCameraController`, `FlyCameraController`, and `FollowCameraController` drive a camera node from drag, scroll, and keyboard input with frame-rate-independent smoothing and clamped pitch. The `CameraControls` widget wires Flutter input to a controller; controllers also expose intent methods (`orbitBy`, `dollyBy`, `look`, ...) for driving them from any source.

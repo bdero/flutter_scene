@@ -167,41 +167,43 @@ $hookEndMarker
   });
 
   group('skill install', () {
-    late Uri skillSource;
+    late Uri skillsRoot;
 
-    // Writes a fake bundled skill (versioned frontmatter plus a reference) to
-    // [dir] and returns its uri.
-    Uri writeSkill(String dir, int version) {
-      final src = Directory.fromUri(temp.uri.resolve('$dir/'))
+    // Writes a fake bundled skill (versioned frontmatter plus a reference)
+    // named [name] under [root], and returns [root].
+    Uri writeSkill(Uri root, String name, int version) {
+      final src = Directory.fromUri(root.resolve('$name/'))
         ..createSync(recursive: true);
       File.fromUri(src.uri.resolve('SKILL.md')).writeAsStringSync(
-        '---\nname: $flutterSceneSkillName\nversion: $version\n---\n# skill\n',
+        '---\nname: $name\nversion: $version\n---\n# skill\n',
       );
       Directory.fromUri(src.uri.resolve('references/')).createSync();
       File.fromUri(
         src.uri.resolve('references/what-exists.md'),
       ).writeAsStringSync('x\n');
-      return src.uri;
+      return root;
     }
 
-    setUp(() => skillSource = writeSkill('_src/$flutterSceneSkillName', 1));
+    setUp(() {
+      skillsRoot = temp.uri.resolve('_src/');
+      writeSkill(skillsRoot, 'flutter_scene-idioms', 1);
+    });
 
-    File installed(String parent) => File.fromUri(
-      temp.uri.resolve('$parent/skills/$flutterSceneSkillName/SKILL.md'),
-    );
+    File installed(String parent, [String name = 'flutter_scene-idioms']) =>
+        File.fromUri(temp.uri.resolve('$parent/skills/$name/SKILL.md'));
 
     test('defaults to .claude when no agent home is present', () async {
       final plan = await planFlutterSceneSkillInstall(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
       expect(plan.action, SkillInstallAction.install);
-      expect(plan.bundledVersion, 1);
-      expect(plan.installedVersion, isNull);
+      expect(plan.installCount, 1);
+      expect(plan.skillNames, ['flutter_scene-idioms']);
 
       final result = await installFlutterSceneSkills(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
 
       expect(result.status, InitSkillStatus.installed);
@@ -210,7 +212,7 @@ $hookEndMarker
       expect(
         File.fromUri(
           temp.uri.resolve(
-            '.claude/skills/$flutterSceneSkillName/references/what-exists.md',
+            '.claude/skills/flutter_scene-idioms/references/what-exists.md',
           ),
         ).existsSync(),
         isTrue,
@@ -223,7 +225,7 @@ $hookEndMarker
 
       await installFlutterSceneSkills(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
 
       expect(installed('.cursor').existsSync(), isTrue);
@@ -232,39 +234,58 @@ $hookEndMarker
       expect(installed('.claude').existsSync(), isFalse);
     });
 
+    test('discovers and installs every bundled skill', () async {
+      writeSkill(skillsRoot, 'flutter_scene-looks', 1);
+
+      final plan = await planFlutterSceneSkillInstall(
+        projectRoot: temp,
+        skillsRoot: skillsRoot,
+      );
+      expect(plan.skillNames, ['flutter_scene-idioms', 'flutter_scene-looks']);
+      expect(plan.installCount, 2);
+
+      await installFlutterSceneSkills(
+        projectRoot: temp,
+        skillsRoot: skillsRoot,
+      );
+      expect(installed('.claude', 'flutter_scene-idioms').existsSync(), isTrue);
+      expect(installed('.claude', 'flutter_scene-looks').existsSync(), isTrue);
+    });
+
     test('an installed matching version reports up to date', () async {
       await installFlutterSceneSkills(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
 
       final plan = await planFlutterSceneSkillInstall(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
       expect(plan.action, SkillInstallAction.upToDate);
-      expect(plan.installedVersion, 1);
+      expect(plan.installCount, 0);
+      expect(plan.updateCount, 0);
     });
 
     test('a newer bundled version reports an update', () async {
-      // Install v1, then point at a v2 source.
       await installFlutterSceneSkills(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
-      final v2 = writeSkill('_src2/$flutterSceneSkillName', 2);
+      // Bump the bundled skill to v2 in a fresh source root.
+      final v2 = temp.uri.resolve('_src2/');
+      writeSkill(v2, 'flutter_scene-idioms', 2);
 
       final plan = await planFlutterSceneSkillInstall(
         projectRoot: temp,
-        skillSource: v2,
+        skillsRoot: v2,
       );
       expect(plan.action, SkillInstallAction.update);
-      expect(plan.installedVersion, 1);
-      expect(plan.bundledVersion, 2);
+      expect(plan.updateCount, 1);
 
-      await installFlutterSceneSkills(projectRoot: temp, skillSource: v2);
+      await installFlutterSceneSkills(projectRoot: temp, skillsRoot: v2);
       expect(
-        await planFlutterSceneSkillInstall(projectRoot: temp, skillSource: v2),
+        await planFlutterSceneSkillInstall(projectRoot: temp, skillsRoot: v2),
         isA<SkillInstallPlan>().having(
           (p) => p.action,
           'action',
@@ -276,28 +297,28 @@ $hookEndMarker
     test('a pre-versioning install reads as stale', () async {
       // A skill with no version frontmatter counts as 0, below any bundle.
       final home = Directory.fromUri(
-        temp.uri.resolve('.claude/skills/$flutterSceneSkillName/'),
+        temp.uri.resolve('.claude/skills/flutter_scene-idioms/'),
       )..createSync(recursive: true);
       File.fromUri(home.uri.resolve('SKILL.md')).writeAsStringSync('# old\n');
 
       final plan = await planFlutterSceneSkillInstall(
         projectRoot: temp,
-        skillSource: skillSource,
+        skillsRoot: skillsRoot,
       );
       expect(plan.action, SkillInstallAction.update);
-      expect(plan.installedVersion, 0);
+      expect(plan.updateCount, 1);
     });
 
     test('reports a missing source instead of throwing', () async {
       final plan = await planFlutterSceneSkillInstall(
         projectRoot: temp,
-        skillSource: temp.uri.resolve('_nope/'),
+        skillsRoot: temp.uri.resolve('_nope/'),
       );
       expect(plan.action, SkillInstallAction.sourceMissing);
 
       final result = await installFlutterSceneSkills(
         projectRoot: temp,
-        skillSource: temp.uri.resolve('_nope/'),
+        skillsRoot: temp.uri.resolve('_nope/'),
       );
       expect(result.status, InitSkillStatus.sourceMissing);
     });
@@ -307,15 +328,19 @@ $hookEndMarker
         describeSkillPlan(
           const SkillInstallPlan(
             SkillInstallAction.update,
-            installedVersion: 1,
-            bundledVersion: 3,
+            updateCount: 2,
+            skillNames: ['a', 'b'],
           ),
         ),
-        allOf(contains('v1'), contains('v3'), contains('flutter_scene:skills')),
+        allOf(contains('2'), contains('flutter_scene:skills')),
       );
       expect(
         describeSkillPlan(
-          const SkillInstallPlan(SkillInstallAction.install, bundledVersion: 3),
+          const SkillInstallPlan(
+            SkillInstallAction.install,
+            installCount: 3,
+            skillNames: ['a', 'b', 'c'],
+          ),
         ),
         contains('not installed'),
       );
@@ -323,7 +348,7 @@ $hookEndMarker
         describeSkillPlan(
           const SkillInstallPlan(
             SkillInstallAction.upToDate,
-            bundledVersion: 3,
+            skillNames: ['a', 'b', 'c'],
           ),
         ),
         contains('up to date'),
