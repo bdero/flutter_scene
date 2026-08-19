@@ -81,15 +81,13 @@ Future<InitHookResult> installFlutterSceneBuildHook({
   );
 }
 
-/// The bundled agent skill teaching correct flutter_scene usage.
-///
-/// When you change the skill content under `skills/flutter_scene-idioms/`,
-/// bump the `version:` field in its SKILL.md, or an already-installed copy is
-/// not detected as stale and never offered an update.
-const String flutterSceneSkillName = 'flutter_scene-idioms';
-
-// Agent skill homes. The skill installs under `<parent>/skills/` for every
-// parent already present in the project, defaulting to `.claude` when none is.
+// The bundled agent skills teaching correct flutter_scene usage each live at
+// `skills/<name>/` with a SKILL.md. When you change a skill's content, bump the
+// `version:` field in its SKILL.md, or an already-installed copy is not detected
+// as stale and never offered an update.
+//
+// Each skill installs under `<parent>/skills/<name>/` for every agent parent
+// already present in the project, defaulting to `.claude` when none is.
 const List<String> _agentSkillParents = <String>[
   '.claude',
   '.cursor',
@@ -121,21 +119,25 @@ enum SkillInstallAction {
 final class SkillInstallPlan {
   const SkillInstallPlan(
     this.action, {
-    this.bundledVersion,
-    this.installedVersion,
+    this.skillNames = const [],
     this.homes = const [],
+    this.installCount = 0,
+    this.updateCount = 0,
   });
 
   final SkillInstallAction action;
 
-  /// The version shipped with this package.
-  final int? bundledVersion;
+  /// The bundled skill names, sorted.
+  final List<String> skillNames;
 
-  /// The lowest version found across target homes, or null when absent.
-  final int? installedVersion;
-
-  /// The agent-home skill paths that a write would create or refresh.
+  /// The agent skill-home dirs a write touches (e.g. `.claude/skills`).
   final List<String> homes;
+
+  /// Bundled skills missing from at least one home.
+  final int installCount;
+
+  /// Bundled skills with an older copy in at least one home.
+  final int updateCount;
 }
 
 /// Inspects the skill state without writing. Callers use [SkillInstallPlan.action]
@@ -143,37 +145,54 @@ final class SkillInstallPlan {
 /// [installFlutterSceneSkills].
 Future<SkillInstallPlan> planFlutterSceneSkillInstall({
   Directory? projectRoot,
-  Uri? skillSource,
+  Uri? skillsRoot,
 }) async {
   final root = projectRoot ?? Directory.current;
-  final source = skillSource ?? await _resolveBundledSkill();
-  if (source == null || !Directory.fromUri(source).existsSync()) {
+  final rootUri = skillsRoot ?? await _resolveBundledSkillsRoot();
+  final bundled = rootUri == null
+      ? const <({String name, Uri dir})>[]
+      : _bundledSkills(rootUri);
+  if (bundled.isEmpty) {
     return const SkillInstallPlan(SkillInstallAction.sourceMissing);
   }
 
-  final bundled = _skillVersion(File.fromUri(source.resolve('SKILL.md')));
-  final homes = _skillHomes(root);
-
-  int? installed;
-  for (final home in homes) {
-    final file = File.fromUri(root.uri.resolve('$home/SKILL.md'));
-    if (!file.existsSync()) continue;
-    final version = _skillVersion(file);
-    installed = installed == null
-        ? version
-        : (version < installed ? version : installed);
+  final homes = _presentSkillHomes(root);
+  var installCount = 0;
+  var updateCount = 0;
+  for (final skill in bundled) {
+    final bundledVersion = _skillVersion(
+      File.fromUri(skill.dir.resolve('SKILL.md')),
+    );
+    var missingSomewhere = false;
+    var staleSomewhere = false;
+    for (final home in homes) {
+      final file = File.fromUri(
+        root.uri.resolve('$home/${skill.name}/SKILL.md'),
+      );
+      if (!file.existsSync()) {
+        missingSomewhere = true;
+      } else if (_skillVersion(file) < bundledVersion) {
+        staleSomewhere = true;
+      }
+    }
+    if (missingSomewhere) {
+      installCount++;
+    } else if (staleSomewhere) {
+      updateCount++;
+    }
   }
 
-  final action = installed == null
+  final action = installCount > 0
       ? SkillInstallAction.install
-      : (bundled > installed
+      : (updateCount > 0
             ? SkillInstallAction.update
             : SkillInstallAction.upToDate);
   return SkillInstallPlan(
     action,
-    bundledVersion: bundled,
-    installedVersion: installed,
+    skillNames: [for (final s in bundled) s.name],
     homes: homes,
+    installCount: installCount,
+    updateCount: updateCount,
   );
 }
 
@@ -182,20 +201,19 @@ Future<SkillInstallPlan> planFlutterSceneSkillInstall({
 String describeSkillPlan(SkillInstallPlan plan) {
   switch (plan.action) {
     case SkillInstallAction.sourceMissing:
-      return 'Could not locate the bundled flutter_scene skill. This package '
-          'version may predate it, or it is a git dependency published '
-          'without it.';
+      return 'Could not locate the bundled flutter_scene skills. This package '
+          'version may predate them, or it is a git dependency published '
+          'without them.';
     case SkillInstallAction.upToDate:
-      return 'The flutter_scene agent skill is up to date '
-          '(v${plan.bundledVersion}).';
+      return 'The flutter_scene agent skills are up to date '
+          '(${plan.skillNames.length} installed).';
     case SkillInstallAction.install:
-      return 'The flutter_scene agent skill (v${plan.bundledVersion}) is not '
-          'installed. Install it with: dart run flutter_scene:skills';
+      return '${plan.installCount} of the flutter_scene agent skills '
+          '(${plan.skillNames.length} total) are not installed. Install them '
+          'with: dart run flutter_scene:skills';
     case SkillInstallAction.update:
-      return 'A newer flutter_scene agent skill is available (installed '
-          'v${plan.installedVersion}, this package ships '
-          'v${plan.bundledVersion}). Update it with: '
-          'dart run flutter_scene:skills';
+      return '${plan.updateCount} flutter_scene agent skill(s) have a newer '
+          'version available. Update with: dart run flutter_scene:skills';
   }
 }
 
@@ -208,41 +226,68 @@ final class InitSkillResult {
   final String message;
 }
 
-/// Copies the bundled `flutter_scene-idioms` skill into the project's agent
-/// skill homes. Writes into every known agent home already present, or `.claude`
-/// by default, and overwrites so an upgrade refreshes the skill. Never called
-/// without the caller having established consent (a prompt or a flag).
+/// Copies every bundled skill into the project's agent skill homes. Writes
+/// `<home>/skills/<skill>/` into every known agent home already present, or
+/// `.claude` by default, and overwrites so an upgrade refreshes each skill.
+/// Never called without the caller having established consent (a prompt or a
+/// flag).
 Future<InitSkillResult> installFlutterSceneSkills({
   Directory? projectRoot,
-  Uri? skillSource,
+  Uri? skillsRoot,
 }) async {
   final root = projectRoot ?? Directory.current;
-  final source = skillSource ?? await _resolveBundledSkill();
-  if (source == null || !Directory.fromUri(source).existsSync()) {
+  final rootUri = skillsRoot ?? await _resolveBundledSkillsRoot();
+  final bundled = rootUri == null
+      ? const <({String name, Uri dir})>[]
+      : _bundledSkills(rootUri);
+  if (bundled.isEmpty) {
     return const InitSkillResult(
       InitSkillStatus.sourceMissing,
-      'Could not locate the bundled flutter_scene skill; skipped skill install.',
+      'Could not locate the bundled flutter_scene skills; skipped skill '
+      'install.',
     );
   }
 
-  final homes = _skillHomes(root);
+  final homes = _presentSkillHomes(root);
   for (final home in homes) {
-    _copyDirectory(source, root.uri.resolve('$home/'));
+    for (final skill in bundled) {
+      _copyDirectory(skill.dir, root.uri.resolve('$home/${skill.name}/'));
+    }
   }
+  final count = bundled.length;
   return InitSkillResult(
     InitSkillStatus.installed,
-    'Installed the flutter_scene agent skill into ${homes.join(', ')}.',
+    'Installed $count flutter_scene agent skill${count == 1 ? '' : 's'} into '
+    '${homes.join(', ')}.',
   );
 }
 
-// The agent-home skill paths to write to: `<parent>/skills/<skill>` for every
-// known parent already present, or `.claude` when none is.
-List<String> _skillHomes(Directory root) {
+// The agent skill-home dirs to write into: `<parent>/skills` for every known
+// parent already present, or `.claude/skills` when none is. Each bundled skill
+// lands in a `<name>/` subdirectory under one of these.
+List<String> _presentSkillHomes(Directory root) {
   final present = _agentSkillParents
       .where((p) => Directory.fromUri(root.uri.resolve('$p/')).existsSync())
       .toList();
   if (present.isEmpty) present.add('.claude');
-  return [for (final p in present) '$p/skills/$flutterSceneSkillName'];
+  return [for (final p in present) '$p/skills'];
+}
+
+// The bundled skills: every `skills/<name>/` directory holding a SKILL.md,
+// sorted by name.
+List<({String name, Uri dir})> _bundledSkills(Uri skillsRoot) {
+  final dir = Directory.fromUri(skillsRoot);
+  if (!dir.existsSync()) return const [];
+  final skills = <({String name, Uri dir})>[];
+  for (final entity in dir.listSync()) {
+    if (entity is! Directory) continue;
+    final skillDir = Uri.directory(entity.path);
+    if (!File.fromUri(skillDir.resolve('SKILL.md')).existsSync()) continue;
+    final segments = skillDir.pathSegments;
+    skills.add((name: segments[segments.length - 2], dir: skillDir));
+  }
+  skills.sort((a, b) => a.name.compareTo(b.name));
+  return skills;
 }
 
 // Reads the `version:` field from a SKILL.md frontmatter. A skill installed
@@ -264,13 +309,13 @@ int _skillVersion(File skill) {
   return 0;
 }
 
-// The bundled skill lives at the package root next to lib/, so resolve a
+// The bundled skills live at the package root next to lib/, so resolve a
 // library file and step up out of lib/.
-Future<Uri?> _resolveBundledSkill() async {
+Future<Uri?> _resolveBundledSkillsRoot() async {
   final lib = await Isolate.resolvePackageUri(
     Uri.parse('package:flutter_scene/scene.dart'),
   );
-  return lib?.resolve('../skills/$flutterSceneSkillName/');
+  return lib?.resolve('../skills/');
 }
 
 void _copyDirectory(Uri from, Uri to) {

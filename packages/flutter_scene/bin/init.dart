@@ -12,7 +12,7 @@ Future<void> main(List<String> args) async {
     );
     stdout.writeln('');
     stdout.writeln(
-      'By default it also offers to install the flutter_scene agent skill '
+      'By default it also offers to install the flutter_scene agent skills '
       '(correct-usage guidance for coding agents) into this project. It asks '
       'first at a terminal. Pass --skills to install or update without asking '
       '(for CI), or --no-skills to skip it. To manage the skill on its own '
@@ -56,13 +56,13 @@ Future<void> _handleSkill(List<String> args) async {
     case SkillInstallAction.sourceMissing:
       if (forced) {
         stdout.writeln(
-          'Could not locate the bundled flutter_scene skill to install.',
+          'Could not locate the bundled flutter_scene skills to install.',
         );
       }
       return;
     case SkillInstallAction.upToDate:
       if (forced) {
-        stdout.writeln('The flutter_scene agent skill is up to date.');
+        stdout.writeln('The flutter_scene agent skills are up to date.');
       }
       return;
     case SkillInstallAction.install:
@@ -74,8 +74,8 @@ Future<void> _handleSkill(List<String> args) async {
   var go = forced;
   if (!go) {
     void skip() => stdout.writeln(
-      'Skipping the flutter_scene agent skill. Run with --skills to install '
-      'or update it, or --no-skills to silence this.',
+      'Skipping the flutter_scene agent skills. Run with --skills to install '
+      'or update them, or --no-skills to silence this.',
     );
     if (!stdin.hasTerminal) {
       skip();
@@ -84,9 +84,8 @@ Future<void> _handleSkill(List<String> args) async {
     final where = plan.homes.join(', ');
     stdout.write(
       update
-          ? 'Update the flutter_scene agent skill (v${plan.installedVersion} '
-                'to v${plan.bundledVersion}) in $where? [Y/n] '
-          : 'Install the flutter_scene agent skill (correct-usage guidance '
+          ? 'Update the flutter_scene agent skills in $where? [Y/n] '
+          : 'Install the flutter_scene agent skills (correct-usage guidance '
                 'for coding agents) into $where? [y/N] ',
     );
     // Closed stdin (a misdetected terminal, or piped input in CI) reads as

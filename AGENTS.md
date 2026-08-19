@@ -47,22 +47,29 @@ They do not exist here, or they break the build.
 
 Cold assumptions undersell the engine. Before hand-rolling any of these, know they exist: **directional, point, spot, and area lights, shadows (PCSS and contact shadows), GTAO ambient occlusion, screen-space reflections, SSGI, depth of field, god rays, fog, auto exposure, LUT color grading, bloom, anti-aliasing, tone mapping, instancing, and LOD**, plus ten built-in primitive geometries and `GeometryBuilder` for custom meshes. Custom `ShaderMaterial` output is linear HDR premultiplied by alpha; the engine applies exposure, tone mapping, and the display transform afterward.
 
-## The agent skill
+## The agent skills
 
-This repo ships an on-demand skill with the full correct-usage guidance, at `packages/flutter_scene/skills/flutter_scene-idioms/`. Install it into a project so a coding assistant loads it when relevant:
+This repo ships a set of on-demand skills under `packages/flutter_scene/skills/`, each loaded by a coding assistant when its topic comes up:
+
+- `flutter_scene-idioms` correct usage and the traps that fail silently (the depth behind this file).
+- `flutter_scene-verification-loop` the closed run-settle-capture-correct loop for seeing your own output.
+- `flutter_scene-looks` copy-paste presets that make a scene look deliberate (lighting plus post).
+- `flutter_scene-procedural` building content from code (terrain, noise, instancing) instead of asset files.
+
+Install them into a project:
 
 ```sh
-dart run flutter_scene:skills          # install or update
-dart run flutter_scene:skills --check  # report whether a newer skill ships
+dart run flutter_scene:skills          # install or update every bundled skill
+dart run flutter_scene:skills --check  # report whether newer skills ship
 ```
 
-`dart run flutter_scene:init` also offers to install it. The skill also installs through the standard Dart skills tool, which discovers it from your dependency tree along with any other package's skills:
+`dart run flutter_scene:init` also offers to install them. They also install through the standard Dart skills tool, which discovers them from your dependency tree along with any other package's skills:
 
 ```sh
 dart run skills@ get   # install skills shipped by your dependencies
 ```
 
-Either path installs the same skill. The skill carries the false-absence inventory and the full trap list that this file only summarizes.
+Either path installs the same skills.
 
 ## Running things in this repo
 

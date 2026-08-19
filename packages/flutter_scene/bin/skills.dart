@@ -10,7 +10,7 @@ Future<void> main(List<String> args) async {
     stdout.writeln('Usage: dart run flutter_scene:skills [--check]');
     stdout.writeln('');
     stdout.writeln(
-      'Installs or updates the flutter_scene agent skill (correct-usage '
+      'Installs or updates the flutter_scene agent skills (correct-usage '
       'guidance for coding agents) into this project. Unlike '
       'flutter_scene:init it does not modify hook/build.dart or pubspec.yaml, '
       'so it is safe to run after customizing those.',

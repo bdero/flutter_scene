@@ -101,12 +101,13 @@ platform as of 3.47, so there is nothing to do for it.
 
 ### Coding agents
 
-This package ships an agent skill, correct-usage guidance so a coding assistant
-writes idiomatic Scene instead of guessing from other 3D engines. `dart run
-flutter_scene:init` offers to install it, and `dart run flutter_scene:skills`
-installs, updates, or checks it on its own without touching your build hook.
-Upgrading Scene can carry a newer revision of the skill; `dart run
-flutter_scene:skills --check` reports whether one is available.
+This package ships a set of agent skills so a coding assistant writes idiomatic
+Scene instead of guessing: correct usage and traps, the run-settle-capture
+verification loop, copy-paste look presets, and procedural content. `dart run
+flutter_scene:init` offers to install them, and `dart run flutter_scene:skills`
+installs, updates, or checks them on their own without touching your build hook.
+Upgrading Scene can carry newer revisions; `dart run flutter_scene:skills
+--check` reports whether any are available.
 
 ### Enable Flutter GPU
 
