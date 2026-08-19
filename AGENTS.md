@@ -17,7 +17,7 @@ The ecosystem is organized around `scene`, an engine-agnostic contract. Renderin
 | `flutter_scene_net` | Networking: replication, client-side prediction, and reconciliation. |
 | `flutter_scene_fmod` | Audio backend over FMOD (needs a user-supplied FMOD SDK). |
 | `flutter_scene_soloud` | Audio backend over SoLoud (via `flutter_soloud`). |
-| `flutter_scene_editor`, `flutter_scene_mcp` | The scene editor and its MCP server for agent-driven editing. In development, not yet on pub.dev. |
+| `flutter_scene_editor`, `flutter_scene_mcp` | The Flutter Scene Editor, a distributed desktop application (not a pub.dev library, you run it rather than depend on it), and its MCP server for agent-driven editing. In active development. |
 
 Because the physics backends depend on `scene` rather than `flutter_scene`, they are version-independent from the renderer: a `flutter_scene` release does not force a rapier or box3d release. Pick one physics backend and one audio backend as needed; do not add both of a kind.
 
