@@ -124,6 +124,7 @@ const _frameworkShaderFiles = <String>[
   'material_engine_lighting.glsl',
   'material_inputs.glsl',
   'material_lighting.glsl',
+  'material_scene_inputs.glsl',
   'material_shadow_sampling.glsl',
   'material_varyings.glsl',
   'material_vertex.glsl',

@@ -72,6 +72,29 @@ fragment {
 }
 ''';
 
+const _sceneInputs = '''
+material {
+  name: "RuntimeSceneInputs",
+  shading_model: unlit,
+  blending: additive,
+  engine_inputs: [scene_color, scene_depth],
+  scene_color_reach: 0.25,
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 offset = vec2(0.01, 0.0) * GetTime();
+    float thickness = GetSceneDepth(offset) - GetFragmentViewDepth();
+    vec3 behind = GetSceneWorldPosition(offset);
+    vec2 projected = ProjectWorldOffsetToScreenUv(vec3(0.0, 0.1, 0.0));
+    vec3 refracted = GetSceneColor(projected - GetScreenUv());
+    material.base_color =
+        vec4(refracted * clamp(thickness, 0.0, 1.0) + behind * 0.001, 1.0);
+    PrepareMaterial(material);
+  }
+}
+''';
+
 const _broken = '''
 material {
   name: "RuntimeBroken",
@@ -181,6 +204,18 @@ void main() async {
       utf8.decode(Uint8List.sublistView(result.shaderBundle, 4, 8)),
       'IPSB',
     );
+  }, skip: skip);
+
+  test('compiles an unlit material with engine inputs', () async {
+    final result = await compiler.compile(
+      _sceneInputs,
+      fileName: 'scene_inputs.fmat',
+    );
+    expect(result.entryName, 'RuntimeSceneInputs');
+    final metadata = (result.sidecar['RuntimeSceneInputs'] as Map)
+        .cast<String, Object?>();
+    expect(metadata['engine_inputs'], ['scene_color', 'scene_depth']);
+    expect(metadata['scene_color_reach'], 0.25);
   }, skip: skip);
 
   test('reports GLSL errors as FmatCompileException', () async {

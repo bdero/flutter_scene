@@ -249,6 +249,7 @@ class FmatMaterial {
     this.attributes = const [],
     this.instanceAttributes = const [],
     this.engineInputs = const [],
+    this.sceneColorReach,
   });
 
   final String name;
@@ -312,9 +313,15 @@ class FmatMaterial {
   /// `filtered_scene_color` (its roughness-filtered atlas), and `scene_depth`
   /// (the opaque linear depth). Filtered color requires `scene_color`. The
   /// emitter declares matching samplers and accessors only when listed, and
-  /// the engine produces textures only when a visible material asks. Lit
-  /// surface materials only.
+  /// the engine produces textures only when a visible material asks. Surface
+  /// materials only.
   final List<String> engineInputs;
+
+  /// How far beyond its own surface the shader samples the scene color, in
+  /// local units (`scene_color_reach:`). Null means it may sample anywhere on
+  /// screen, so it can never share a capture with another reader. A declared
+  /// reach lets readers whose inflated screen rects are disjoint share one.
+  final double? sceneColorReach;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
   /// order.

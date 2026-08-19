@@ -569,6 +569,7 @@ FmatMaterial _build(
     'instance_attributes',
     'requires',
     'engine_inputs',
+    'scene_color_reach',
   };
   for (final key in tree.keys) {
     if (!knownKeys.contains(key)) {
@@ -660,8 +661,7 @@ FmatMaterial _build(
   // `scene_color` (the accumulated background), `filtered_scene_color` (its
   // roughness-filtered atlas), `scene_depth` (the opaque linear depth), and
   // `planar_reflection` (a PlanarReflectorComponent's mirrored capture).
-  // Lit surface materials only: the samplers and their gates ride the engine-
-  // lighting frame data, which unlit shaders and skies do not carry.
+  // Surface materials only; a sky draws before any of them exist.
   final engineInputs = <String>[];
   final engineInputsRaw = tree['engine_inputs'];
   if (engineInputsRaw != null) {
@@ -700,13 +700,30 @@ FmatMaterial _build(
         fileName: fileName,
       );
     }
-    if (engineInputs.isNotEmpty && shadingModel == FmatShadingModel.unlit) {
-      throw FmatException(
-        '`engine_inputs` requires a lit shading model (the samplers ride the '
-        'engine lighting frame data).',
-        fileName: fileName,
-      );
-    }
+  }
+
+  // `scene_color_reach` is how far past its own surface the shader samples the
+  // scene color, in local units. Omitting it means unbounded, so the draw can
+  // never share a scene-color capture with another reader.
+  final reachValue = tree['scene_color_reach'];
+  if (reachValue != null && reachValue is! num) {
+    throw FmatException(
+      '`scene_color_reach` must be a number.',
+      fileName: fileName,
+    );
+  }
+  final sceneColorReach = (reachValue as num?)?.toDouble();
+  if (sceneColorReach != null && sceneColorReach < 0) {
+    throw FmatException(
+      '`scene_color_reach` must not be negative.',
+      fileName: fileName,
+    );
+  }
+  if (sceneColorReach != null && engineInputs.isEmpty) {
+    throw FmatException(
+      '`scene_color_reach` requires `engine_inputs`.',
+      fileName: fileName,
+    );
   }
 
   // Loose check: the code block must define the expected entry function. We do
@@ -795,6 +812,7 @@ FmatMaterial _build(
     attributes: attributes,
     instanceAttributes: instanceAttributes,
     engineInputs: engineInputs,
+    sceneColorReach: sceneColorReach,
   );
 }
 
