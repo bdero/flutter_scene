@@ -476,8 +476,11 @@ FmatShadingModel _parseShadingModel(Object? value) => switch (value) {
   _ => FmatShadingModel.lit,
 };
 
-FmatBlending _parseBlending(Object? value) =>
-    value == 'alpha' ? FmatBlending.alpha : FmatBlending.opaque;
+FmatBlending _parseBlending(Object? value) => switch (value) {
+  'alpha' => FmatBlending.alpha,
+  'additive' => FmatBlending.additive,
+  _ => FmatBlending.opaque,
+};
 
 FmatCulling _parseCulling(Object? value) => switch (value) {
   'front' => FmatCulling.front,

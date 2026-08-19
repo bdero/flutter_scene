@@ -407,9 +407,18 @@ class MeshData {
   /// the names in [UnweldAttribute], ready for a custom material's
   /// `attributes` list.
   ///
+  /// [keepVertexNormals] carries each corner's source vertex normal through
+  /// instead of the face normal, so the unwelded mesh still shades smooth
+  /// (needed when the same geometry has to render as an ordinary solid, not
+  /// just a shattered/faceted one). Has no effect when this mesh has no
+  /// source normals.
+  ///
   /// Triples the vertex data of an indexed mesh; run it on a background
   /// isolate for large inputs (the whole derivation is pure CPU work).
-  MeshData unweld({Set<UnweldAttribute> attributes = const {}}) {
+  MeshData unweld({
+    Set<UnweldAttribute> attributes = const {},
+    bool keepVertexNormals = false,
+  }) {
     _requireTriangles('unweld');
     final count = triangleCount;
     final outCount = count * 3;
@@ -513,9 +522,15 @@ class MeshData {
         outPositions[v * 3] = positions[src * 3];
         outPositions[v * 3 + 1] = positions[src * 3 + 1];
         outPositions[v * 3 + 2] = positions[src * 3 + 2];
-        outNormals[v * 3] = nx;
-        outNormals[v * 3 + 1] = ny;
-        outNormals[v * 3 + 2] = nz;
+        if (keepVertexNormals && srcNormals != null) {
+          outNormals[v * 3] = srcNormals[src * 3];
+          outNormals[v * 3 + 1] = srcNormals[src * 3 + 1];
+          outNormals[v * 3 + 2] = srcNormals[src * 3 + 2];
+        } else {
+          outNormals[v * 3] = nx;
+          outNormals[v * 3 + 1] = ny;
+          outNormals[v * 3 + 2] = nz;
+        }
         if (outTexCoords != null) {
           outTexCoords[v * 2] = srcTexCoords![src * 2];
           outTexCoords[v * 2 + 1] = srcTexCoords[src * 2 + 1];

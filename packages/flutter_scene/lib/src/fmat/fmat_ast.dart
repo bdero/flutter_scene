@@ -44,6 +44,11 @@ enum FmatBlending {
   /// Drawn in the depth-sorted translucent pass with premultiplied
   /// source-over blending.
   alpha,
+
+  /// Drawn in the depth-sorted translucent pass with additive blending
+  /// (the output alpha is forced to zero, so the destination is never
+  /// darkened). Allowed on `lit` and `unlit` alike.
+  additive,
 }
 
 /// Which triangle faces are culled.

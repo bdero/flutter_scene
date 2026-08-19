@@ -159,6 +159,46 @@ void main() {
       expect(out.normals![2], -1);
     });
 
+    test('keepVertexNormals carries source normals through per corner', () {
+      final quad = MeshData(
+        positions: _quad().positions,
+        vertexCount: 4,
+        normals: Float32List.fromList([
+          0, 0, 1, //
+          0.1, 0, 1, //
+          0, 0.1, 1, //
+          -0.1, 0, 1,
+        ]),
+        indices: [0, 1, 2, 0, 2, 3],
+      );
+
+      // Default (false): every corner still gets the shared face normal,
+      // faceted, not smooth.
+      final faceted = quad.unweld();
+      expect(faceted.normals!.sublist(0, 3), faceted.normals!.sublist(3, 6));
+      expect(faceted.normals!.sublist(0, 3), faceted.normals!.sublist(6, 9));
+
+      // keepVertexNormals: true carries each corner's own source vertex
+      // normal, so the two triangles disagree at the shared corners.
+      final smooth = quad.unweld(keepVertexNormals: true);
+      expect(smooth.normals!.sublist(0, 3), quad.normals!.sublist(0, 3));
+      expect(smooth.normals!.sublist(3, 6), quad.normals!.sublist(3, 6));
+      expect(smooth.normals!.sublist(6, 9), quad.normals!.sublist(6, 9));
+      // Second triangle, corners 0/2/3 -> source vertices 0, 2, 3.
+      expect(smooth.normals!.sublist(9, 12), quad.normals!.sublist(0, 3));
+      expect(smooth.normals!.sublist(12, 15), quad.normals!.sublist(6, 9));
+      expect(smooth.normals!.sublist(15, 18), quad.normals!.sublist(9, 12));
+    });
+
+    test('keepVertexNormals has no effect without source normals', () {
+      final out = _quad().unweld(keepVertexNormals: true);
+      for (var v = 0; v < out.vertexCount; v++) {
+        expect(out.normals![v * 3], 0);
+        expect(out.normals![v * 3 + 1], 0);
+        expect(out.normals![v * 3 + 2].abs(), 1);
+      }
+    });
+
     test('attaches the canned per-triangle attributes', () {
       final out = _quad().unweld(
         attributes: {
