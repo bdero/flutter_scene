@@ -116,6 +116,21 @@ abstract class Camera {
     );
   }
 
+  /// Maps a world-space point to screen UV (origin top-left, `0..1` across
+  /// [viewport]), the same projection as [worldToScreen] normalized instead
+  /// of scaled to pixels. Returns null when [worldPoint] is at or behind the
+  /// camera plane. Values outside `0..1` are a point off screen; callers
+  /// decide whether to clamp or cull.
+  Vector2? projectToScreenUv(Vector3 worldPoint, ui.Size viewport) {
+    final clip = getViewTransform(
+      viewport,
+    ).transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
+    if (clip.w <= 0) {
+      return null;
+    }
+    return Vector2((clip.x / clip.w + 1) / 2, (1 - clip.y / clip.w) / 2);
+  }
+
   /// Returns the combined projection-and-view transform for a render target
   /// of the given [dimensions].
   ///

@@ -1,7 +1,8 @@
-// Covers scene accessibility: Camera.worldToScreen and the AABB screen
-// projection (pure math, no GPU), and the SceneView semantics tree built
-// from SemanticsComponents and widget surfaces (labels, focus rects,
-// actions, visibility and occlusion filtering, traversal order).
+// Covers scene accessibility: Camera.worldToScreen, Camera.projectToScreenUv,
+// and the AABB screen projection (pure math, no GPU), and the SceneView
+// semantics tree built from SemanticsComponents and widget surfaces (labels,
+// focus rects, actions, visibility and occlusion filtering, traversal
+// order).
 //
 // Scene construction touches the Flutter GPU context, so the widget-level
 // tests skip cleanly when it is absent (matching the rest of the suite).
@@ -134,6 +135,45 @@ void main() {
       );
       expect(
         camera.worldToScreen(Vector3(0, 0, -10), const Size(100, 100)),
+        isNull,
+      );
+    });
+  });
+
+  group('Camera.projectToScreenUv', () {
+    test('matches worldToScreen normalized by the viewport', () {
+      final camera = PerspectiveCamera(
+        position: Vector3(1, 2, -6),
+        target: Vector3(0.5, 0, 1),
+      );
+      const viewport = Size(320, 240);
+      final world = Vector3(0.2, -0.3, 1.5);
+      final uv = camera.projectToScreenUv(world, viewport);
+      final pixels = camera.worldToScreen(world, viewport);
+      expect(uv, isNotNull);
+      expect(pixels, isNotNull);
+      expect(uv!.x, closeTo(pixels!.dx / viewport.width, 1e-6));
+      expect(uv.y, closeTo(pixels.dy / viewport.height, 1e-6));
+    });
+
+    test('the camera target projects to the center of the viewport', () {
+      final camera = PerspectiveCamera(
+        position: Vector3(0, 0, -5),
+        target: Vector3.zero(),
+      );
+      final uv = camera.projectToScreenUv(Vector3.zero(), const Size(200, 100));
+      expect(uv, isNotNull);
+      expect(uv!.x, closeTo(0.5, 1e-9));
+      expect(uv.y, closeTo(0.5, 1e-9));
+    });
+
+    test('returns null behind the camera', () {
+      final camera = PerspectiveCamera(
+        position: Vector3(0, 0, -5),
+        target: Vector3.zero(),
+      );
+      expect(
+        camera.projectToScreenUv(Vector3(0, 0, -10), const Size(100, 100)),
         isNull,
       );
     });
