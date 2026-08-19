@@ -56,7 +56,13 @@ dart run flutter_scene:skills          # install or update
 dart run flutter_scene:skills --check  # report whether a newer skill ships
 ```
 
-`dart run flutter_scene:init` also offers to install it. The skill carries the false-absence inventory and the full trap list that this file only summarizes.
+`dart run flutter_scene:init` also offers to install it. The skill also installs through the standard Dart skills tool, which discovers it from your dependency tree along with any other package's skills:
+
+```sh
+dart run skills@ get   # install skills shipped by your dependencies
+```
+
+Either path installs the same skill. The skill carries the false-absence inventory and the full trap list that this file only summarizes.
 
 ## Running things in this repo
 
