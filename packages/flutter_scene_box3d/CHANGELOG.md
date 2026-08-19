@@ -1,3 +1,10 @@
+## 0.2.0
+
+* BREAKING: the backend now implements the `PhysicsSimulation` contract from `package:scene`; the runtime dependency moved from `flutter_scene` to `scene`.
+* BREAKING: removed the `Box3dRigidBody`, `Box3dCollider`, and `Box3dJoint` types; construct only `Box3dPhysicsWorld` and attach flutter_scene's generic `RigidBody`, `Collider`, and joint components.
+* BREAKING: wrap the world in flutter_scene's `PhysicsWorld` now, `PhysicsWorld(Box3dPhysicsWorld(...))`, instead of adding the concrete components directly.
+* Require `box3d` `^0.1.1` for the Android native load fix.
+
 ## 0.1.0
 
 - Initial release. Implements the physics simulation contract from
