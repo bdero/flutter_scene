@@ -73,6 +73,13 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
 - There is NO `OrthographicCamera`. Implement `CameraProjection`/`Camera` for other projections.
 - Node-driven: `CameraComponent({CameraProjection? projection, activateOnMount = false})` ->
   `toCamera()` gives a `NodeCamera`. Camera node must not be scaled.
+- Interactive cameras: `CameraController` components attached to the camera node. `OrbitCameraController`
+  (turntable around `target`; `orbitBy`/`dollyBy`/`panBy`/`frame`), `FlyCameraController` (WASD + drag
+  free flight; `moveVertical: false` = grounded first-person; `look`), `FollowCameraController`
+  (third-person easing behind `followTarget` node; `orbitBy`/`dollyBy`). All ease with frame-rate
+  independent `smoothing` (settle seconds), clamp pitch short of vertical, and write the node via
+  `lookAtFrom`. Wire input with the `CameraControls({required controller, enabled, autofocus, child})`
+  widget (Focus + gestures + wheel); `SceneView` has no camera-input params by design.
 
 ---
 

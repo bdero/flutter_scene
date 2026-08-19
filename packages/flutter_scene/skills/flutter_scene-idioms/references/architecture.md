@@ -182,6 +182,35 @@ the `NodeCamera` reads the node's world transform live each frame. Aim it with `
 the forward axis, so the same helpers aim lights and imported models. A follow-cam is then a one-line
 component that calls `node.lookAtFrom(...)` in `update` each frame.
 
+### Camera controllers (interactive cameras)
+
+For a user-controlled camera, do not hand-roll the drag/scroll/key math: attach a camera controller
+component to the camera node. `OrbitCameraController` (turntable around a target, drag rotates, scroll
+dollies), `FlyCameraController` (WASD + drag free flight, `moveVertical: false` gives grounded
+first-person), and `FollowCameraController` (third-person that eases behind a target node). Each holds
+the camera state, eases toward it with frame-rate-independent smoothing, clamps pitch so the view
+never flips, and writes the node via `lookAtFrom`.
+
+Wire input with the `CameraControls` widget wrapping the view; it forwards Flutter gestures and keys
+to the controller. `SceneView` itself has no camera-input knobs, so nothing camera-specific leaks into
+it.
+
+```dart
+final camera = Node()
+  ..addComponent(CameraComponent(activateOnMount: true))
+  ..addComponent(OrbitCameraController(target: vm.Vector3.zero(), distance: 8));
+scene.add(camera);
+
+// In build:
+return CameraControls(
+  controller: camera.getComponent<OrbitCameraController>()!,
+  child: SceneView(scene),
+);
+```
+
+The controllers also expose intent methods (`orbitBy`, `dollyBy`, `panBy`, `look`), so an app with its
+own input handling can drive them without the widget.
+
 ### Behavior lives in components, not in the tick
 
 The bulk of per-object logic should be custom `Component`s, not a giant `onTick`. A component is
