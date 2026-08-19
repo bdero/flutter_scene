@@ -136,6 +136,7 @@ const _frameworkShaderFiles = <String>[
   'ssao_geometry.glsl',
   'texture.glsl',
   'tone_mapping.glsl',
+  'wireframe.glsl',
 ];
 
 /// Compiles `.fmat` custom-material files into a Flutter GPU shader bundle plus

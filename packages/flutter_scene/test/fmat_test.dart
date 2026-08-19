@@ -101,6 +101,24 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(buildSidecar(m)['depth_write'], isTrue);
     });
 
+    test('parses blending: additive on lit and unlit alike', () {
+      final lit = parseFmat('''
+material { name: "AddLit", shading_model: lit, blending: additive }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(lit.blending, FmatBlending.additive);
+
+      final unlit = parseFmat('''
+material { name: "AddUnlit", shading_model: unlit, blending: additive }
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(unlit.blending, FmatBlending.additive);
+    });
+
     test('parses engine_inputs and rejects invalid combinations', () {
       final m = parseFmat('''
 material {
@@ -229,6 +247,33 @@ fragment {
         c.glsl,
         contains('vec4(material.base_color.rgb, 1.0) * material.base_color.a'),
       );
+    });
+
+    test('additive unlit zeroes output alpha, keeps premultiplied rgb', () {
+      final c = compileFmat('''
+material { name: "AddU", shading_model: unlit, blending: additive }
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(
+        c.glsl,
+        contains(
+          'frag_color = vec4(material.base_color.rgb * '
+          'material.base_color.a, 0.0);',
+        ),
+      );
+    });
+
+    test('additive lit zeroes output alpha, keeps lit rgb', () {
+      final c = compileFmat('''
+material { name: "AddL", shading_model: lit, blending: additive }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(c.glsl, contains('vec4 lit = EvaluateLighting(material);'));
+      expect(c.glsl, contains('frag_color = vec4(lit.rgb, 0.0);'));
     });
 
     test('keeps MaterialParams live when the fragment reads no parameter', () {
@@ -482,6 +527,18 @@ sky {
       final samplers = (s['samplers'] as List).cast<Map<String, Object?>>();
       expect(samplers.single['name'], 'detail_texture');
       expect((samplers.single['hint'] as Map)['kind'], 'default_white');
+    });
+
+    test('records additive blending', () {
+      final c = compileFmat('''
+material { name: "Add", shading_model: unlit, blending: additive }
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(1.0);
+  }
+}
+''');
+      expect(c.sidecar['blending'], 'additive');
     });
   });
 

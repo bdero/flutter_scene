@@ -326,6 +326,7 @@ String emitFragmentGlsl(
       '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
   }
+  final additive = material.blending == FmatBlending.additive;
   if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     sb.writeln(
       '  // Shadow catcher: the surface color is the composed overlay,',
@@ -336,13 +337,27 @@ String emitFragmentGlsl(
       'material.base_color.a;',
     );
   } else if (lit) {
-    sb.writeln('  frag_color = EvaluateLighting(material);');
+    if (additive) {
+      // Additive: zero the output alpha so the destination is never
+      // darkened, keeping the premultiplied color.
+      sb.writeln('  vec4 lit = EvaluateLighting(material);');
+      sb.writeln('  frag_color = vec4(lit.rgb, 0.0);');
+    } else {
+      sb.writeln('  frag_color = EvaluateLighting(material);');
+    }
   } else {
     sb.writeln('  // Unlit: output the surface color, premultiplied by alpha.');
-    sb.writeln(
-      '  frag_color = vec4(material.base_color.rgb, 1.0) * '
-      'material.base_color.a;',
-    );
+    if (additive) {
+      sb.writeln(
+        '  frag_color = vec4(material.base_color.rgb * '
+        'material.base_color.a, 0.0);',
+      );
+    } else {
+      sb.writeln(
+        '  frag_color = vec4(material.base_color.rgb, 1.0) * '
+        'material.base_color.a;',
+      );
+    }
   }
   sb.writeln('}');
 

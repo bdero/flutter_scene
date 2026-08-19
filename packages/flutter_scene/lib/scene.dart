@@ -92,6 +92,7 @@ export 'src/material/exr_decoder.dart' show ExrFormatException, decodeOpenExr;
 export 'src/material/hdr_decoder.dart'
     show DecodedHdr, HdrFormatException, decodeRadianceHdr;
 export 'src/material/material.dart' show Material;
+export 'src/material/material_group.dart' show MaterialGroup;
 export 'src/material/material_parameters.dart' show MaterialParameters;
 export 'src/material/physically_based_material.dart'
     show AlphaMode, PhysicallyBasedMaterial, TextureTransform;

@@ -115,7 +115,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | --- | --- | --- | --- |
 | `name` | string (required) | | The bundle entry name and sidecar key. |
 | `shading_model` | `lit`, `unlit` | `lit` | `lit` runs the engine's PBR lighting; `unlit` outputs your color directly. |
-| `blending` | `opaque`, `alpha` | `opaque` | `alpha` routes the material through the depth-sorted translucent pass. |
+| `blending` | `opaque`, `alpha`, `additive` | `opaque` | `alpha` and `additive` both route the material through the depth-sorted translucent pass. `additive` forces the output alpha to zero, so the destination is never darkened, only brightened; allowed on `lit` and `unlit` alike. |
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
@@ -360,12 +360,13 @@ Supply the data on the geometry, one value per vertex, matching by name:
 geometry.setCustomAttribute('phase', phaseValues, components: 1);
 ```
 
-Custom attributes require the described-layout (unskinned) geometry path
-(`MeshGeometry` and the built-in primitives use it; skinned meshes do not
-support custom attributes yet). The depth/shadow pass fetches only position, so
-an attribute reads zero there: a displacement driven by a custom attribute is
-not reflected in the shadow, while one driven by `world_position` / a parameter
-is (world position is available in every pass).
+Custom attributes work on both static and skinned meshes; attaching one to a
+skinned mesh switches its vertex layout to a described one, since reflection
+cannot know which slot the stream was bound to (`Geometry.setCustomAttribute`).
+The depth/shadow pass fetches only position, so an attribute reads zero there:
+a displacement driven by a custom attribute is not reflected in the shadow,
+while one driven by `world_position` / a parameter is (world position is
+available in every pass).
 
 ## Custom instance attributes (instance to vertex and fragment)
 
@@ -499,6 +500,70 @@ functions compiles to a large shader. That is fine on real GPU drivers, but a
 software compiler (a device emulator, some headless CI) can run out of memory
 on it; a material that uses one or two functions stays small. Bake to a
 texture when a single field would do.
+
+---
+
+# Barycentric wireframes, `#include <wireframe.glsl>`
+
+A single-pass fragment wireframe reads a per-corner barycentric coordinate
+and measures screen-space distance to the nearest edge with `fwidth`. The
+attribute comes from `MeshData.unweld(attributes: {UnweldAttribute.barycentric})`,
+which triples the mesh into an unindexed soup and writes `(1,0,0)`/`(0,1,0)`/
+`(0,0,1)` per corner under the name `barycentric`.
+
+`unweld` also assigns each corner the flat face normal by default (correct
+for shattering into shards, wrong for a surface that should keep shading
+smooth). Pass `keepVertexNormals: true` to carry the source vertex normals
+through instead:
+
+```dart
+final wired = source.unweld(
+  attributes: {UnweldAttribute.barycentric},
+  keepVertexNormals: true,
+);
+primitive.geometry = MeshGeometry.fromMeshData(wired);
+```
+
+`wireframe.glsl` is an opt-in include, like `noise.glsl`:
+
+```glsl
+float WireframeCoverage(vec3 bary, float width_px); // 1 on an edge, 0 inside
+float EdgeDistancePixels(vec3 bary);                // distance to nearest edge, in px
+```
+
+A worked material, a cyan wire over an otherwise normal lit surface:
+
+```
+material {
+  name: "Wireframe",
+  shading_model: lit,
+  attributes: [ { type: vec3, name: barycentric } ],
+  varyings: [ { type: vec3, name: bary } ],
+  parameters: [
+    { type: vec4, name: wire_color, hint: source_color, default: [0.25, 0.85, 1.0, 1] },
+    { type: float, name: wire_width, hint: range(0.5, 6, 0.1), default: 1.4 },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) { bary = barycentric; }
+}
+
+fragment {
+#include <wireframe.glsl>
+
+  void Surface(inout MaterialInputs material) {
+    float coverage = WireframeCoverage(bary, material_params.wire_width);
+    material.base_color.rgb = mix(material.base_color.rgb,
+                                   material_params.wire_color.rgb, coverage);
+    material.emissive = material_params.wire_color.rgb * coverage;
+    PrepareMaterial(material);
+  }
+}
+```
+
+No loops, no early returns, no integer math, so it is portable to every
+backend without further care.
 
 # The engine contract (both paths)
 
@@ -675,6 +740,27 @@ its declared type.
 
 For a `lit` material, set `PreprocessedMaterial.environment` to override the
 scene-wide image-based-lighting environment for that material.
+
+## Broadcasting a parameter to many materials, `MaterialGroup`
+
+A parameter lives per `PreprocessedMaterial` instance, so driving it across
+every affected object (every enemy caught in a blast radius, say) means
+setting it on each one yourself. `MaterialGroup` does the broadcast:
+
+```dart
+final affected = MaterialGroup(enemiesInRadius.map((e) => e.pulseMaterial));
+// or, to grab every PreprocessedMaterial under a node:
+final affected = MaterialGroup.of(sceneRoot);
+
+// Once per frame.
+affected
+  ..setVec4('wave_origin', origin)
+  ..setFloat('wave_radius', radius);
+```
+
+Unlike `MaterialParameters`, which throws on an unknown name, `MaterialGroup`
+skips a member that doesn't declare the parameter, so one group can span a
+heterogeneous set of materials.
 
 ---
 
@@ -990,14 +1076,15 @@ sampler budget has room for the two inputs.
 # Render state
 
 A `.fmat` material declares render state in its `material` block: `culling`
-(`back` / `front` / `none`) and `blending` (`opaque` / `alpha`). A
+(`back` / `front` / `none`) and `blending` (`opaque` / `alpha` / `additive`). A
 `ShaderMaterial` exposes `cullingMode`, `windingOrder`, and `isOpaqueOverride`
 constructor fields.
 
-Today `blending` is `opaque` (depth-write on, drawn in order) or `alpha`
-(depth-write off, depth-sorted, premultiplied source-over). Additive/multiply
-blend modes and per-material depth state are not configurable yet; they are
-encoder-controlled.
+Today `blending` is `opaque` (depth-write on, drawn in order), `alpha`
+(depth-write off, depth-sorted, premultiplied source-over), or `additive`
+(depth-write off, depth-sorted, output alpha forced to zero so the destination
+is only ever brightened). Multiply blending and per-material depth state are
+not configurable yet; they are encoder-controlled.
 
 ---
 
@@ -1041,8 +1128,8 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
 - **Typed codegen.** A future step will generate a typed Dart class per `.fmat`
   (compile-time-checked setters); today you use the name-based
   `MaterialParameters` API.
-- **Additive/multiply blending and per-material depth state** are not yet
-  configurable.
+- **Multiply blending and per-material depth state** are not yet configurable
+  (`blending: additive` is, alongside `opaque`/`alpha`).
 - **Per-instance custom attributes** work on unskinned instanced meshes, but a
   declaring material opts out of automatic cross-node batching and reads zero in
   the skinned and depth/shadow variants.
