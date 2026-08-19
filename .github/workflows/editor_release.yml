@@ -116,8 +116,16 @@ jobs:
               --team-id "$NOTARY_TEAM_ID" \
               --password "$NOTARY_PASSWORD" \
               --keychain "$KEYCHAIN"
-            security find-identity -v -p codesigning "$KEYCHAIN"
-            ARGS+=(--sign-identity "$SIGN_IDENTITY" \
+            # codesign matches -s against the SHA-1 hash exactly, sidestepping
+            # any whitespace or punctuation mismatch in the identity-name secret.
+            IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+              | awk '/Developer ID Application/ {print $2; exit}')
+            if [ -z "$IDENTITY" ]; then
+              echo "No Developer ID Application identity in $KEYCHAIN" >&2
+              exit 1
+            fi
+            echo "Signing with identity $IDENTITY"
+            ARGS+=(--sign-identity "$IDENTITY" \
                    --notarize-profile "$NOTARY_PROFILE" \
                    --keychain "$KEYCHAIN")
           fi
