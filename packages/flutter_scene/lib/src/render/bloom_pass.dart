@@ -16,10 +16,33 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 /// The resolve pass reads it and adds it to the HDR scene color.
 const String kBloomTextureBlackboardKey = 'bloom_texture';
 
-// Number of mip levels in the bloom chain, starting at half resolution.
+// Number of mip levels in the bloom chain, starting at the (capped) base.
 const int _kMipCount = 5;
 
+// Largest side (px) the first bloom mip is allowed to be. The mip chain
+// starts at half the render resolution but is capped here, so the whole
+// pyramid (and its blur kernels) covers the same fraction of the screen at
+// any resolution. Without this the spread is a fixed pixel count that shrinks
+// as the device pixel ratio grows, so bloom and any lens flare riding it look
+// tight on a 3x display and wide on a 1x one. 256 keeps the common
+// half-of-512 desktop case unchanged.
+const double _kMaxBloomBaseSide = 256.0;
+
 const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
+
+// The first bloom mip's size: half the render resolution, scaled down so its
+// larger side is at most [_kMaxBloomBaseSide], preserving aspect.
+ui.Size _bloomBaseSize(ui.Size dimension) {
+  var width = dimension.width / 2.0;
+  var height = dimension.height / 2.0;
+  final larger = math.max(width, height);
+  if (larger > _kMaxBloomBaseSide) {
+    final scale = _kMaxBloomBaseSide / larger;
+    width *= scale;
+    height *= scale;
+  }
+  return ui.Size(width, height);
+}
 
 /// Builds the bloom texture: a soft-knee threshold of the HDR scene color
 /// blurred through a downsample/upsample mip chain. Reads the scene color
@@ -72,21 +95,24 @@ class BloomPass extends RenderGraphPass {
       kSceneColorBlackboardKey,
     );
 
-    // Allocate the mip chain at successively halved resolutions.
-    final mips = <gpu.Texture>[];
+    // Allocate the downsample chain at successively halved resolutions,
+    // starting from a resolution-capped base so the bloom's on-screen spread
+    // stays stable across device pixel ratios.
+    final base = _bloomBaseSize(_dimensions);
+    final down = <gpu.Texture>[];
     final sizes = <ui.Size>[];
-    var width = (_dimensions.width / 2).floor();
-    var height = (_dimensions.height / 2).floor();
+    var width = base.width.floor();
+    var height = base.height.floor();
     for (var i = 0; i < _kMipCount; i++) {
       width = math.max(1, width);
       height = math.max(1, height);
-      mips.add(
+      down.add(
         context.texturePool.acquire(
           TransientTextureDescriptor.color(
             width: width,
             height: height,
             format: _hdrFormat,
-            debugName: 'bloom_$i',
+            debugName: 'bloom_down_$i',
           ),
         ),
       );
@@ -96,79 +122,87 @@ class BloomPass extends RenderGraphPass {
     }
 
     // Threshold the scene into the first mip.
-    _drawThreshold(context, scene, mips[0]);
+    _drawThreshold(context, scene, down[0]);
 
     // Downsample down the chain.
-    for (var i = 1; i < mips.length; i++) {
-      _drawFilter(
+    for (var i = 1; i < down.length; i++) {
+      _drawDownsample(
         context,
-        _downsampleShader,
-        source: mips[i - 1],
+        source: down[i - 1],
         sourceSize: sizes[i - 1],
-        target: mips[i],
-        additive: false,
+        target: down[i],
       );
     }
 
-    // Upsample back up, adding each level into the next larger one.
-    for (var i = mips.length - 2; i >= 0; i--) {
-      _drawFilter(
+    // Upsample back up, tent-blurring each level and adding the downsample
+    // one size larger. Every step writes a fresh cleared target and adds
+    // its inputs in the shader instead of blending into a reloaded
+    // attachment: some backends re-clear a loaded attachment across command
+    // buffers, which silently drops the accumulation and leaves the bloom
+    // (and any flare riding it) far dimmer than on backends that preserve
+    // it. The coarsest level needs no pass; it is its own downsample mip.
+    final up = List<gpu.Texture?>.filled(down.length, null);
+    up[down.length - 1] = down[down.length - 1];
+    for (var i = down.length - 2; i >= 0; i--) {
+      final target = context.texturePool.acquire(
+        TransientTextureDescriptor.color(
+          width: sizes[i].width.toInt(),
+          height: sizes[i].height.toInt(),
+          format: _hdrFormat,
+          debugName: 'bloom_up_$i',
+        ),
+      );
+      _drawUpsample(
         context,
-        _upsampleShader,
-        source: mips[i + 1],
+        source: up[i + 1]!,
         sourceSize: sizes[i + 1],
-        target: mips[i],
-        additive: true,
+        base: down[i],
+        target: target,
       );
+      up[i] = target;
     }
 
-    // Lens flares generate from a low (well blurred) mip and add into the
-    // finished bloom after the chain. Adding into a middle mip before the
-    // upsample would blur them once more, but a loaded attachment written
-    // in an earlier command buffer loses its contents on the Vulkan
-    // backend, so the flare composites last, where nothing reloads the
-    // target afterward.
-    // TODO(vulkan-bloom-load): Impeller Vulkan discards loaded attachment
-    // contents across command buffers (bloom's own upsample accumulation
-    // is degraded by the same behavior); investigate upstream, then
-    // consider moving the flare back inside the chain.
-    if (_settings.lensFlare.enabled && mips.length > 2) {
+    var result = up[0]!;
+
+    // Lens flares generate from a well-blurred mip and composite over the
+    // finished bloom into another fresh cleared target, for the same
+    // write-once reason as the upsample.
+    if (_settings.lensFlare.enabled && down.length > 2) {
+      final composite = context.texturePool.acquire(
+        TransientTextureDescriptor.color(
+          width: sizes[0].width.toInt(),
+          height: sizes[0].height.toInt(),
+          format: _hdrFormat,
+          debugName: 'bloom_flare',
+        ),
+      );
       _drawLensFlare(
         context,
-        source: mips[2],
-        target: mips[0],
+        source: up[2]!,
+        base: result,
+        target: composite,
         targetSize: sizes[0],
       );
+      result = composite;
     }
 
-    context.blackboard.set(kBloomTextureBlackboardKey, mips[0]);
+    context.blackboard.set(kBloomTextureBlackboardKey, result);
   }
 
   void _drawLensFlare(
     RenderGraphContext context, {
     required gpu.Texture source,
+    required gpu.Texture base,
     required gpu.Texture target,
     required ui.Size targetSize,
   }) {
     final flare = _settings.lensFlare;
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(texture: target, loadAction: gpu.LoadAction.load),
-      ),
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
     );
     renderPass.bindPipeline(resolvePipeline(_vertexShader, _lensFlareShader));
-    renderPass.setColorBlendEnable(true);
-    renderPass.setColorBlendEquation(
-      gpu.ColorBlendEquation(
-        colorBlendOperation: gpu.BlendOperation.add,
-        sourceColorBlendFactor: gpu.BlendFactor.one,
-        destinationColorBlendFactor: gpu.BlendFactor.one,
-        alphaBlendOperation: gpu.BlendOperation.add,
-        sourceAlphaBlendFactor: gpu.BlendFactor.one,
-        destinationAlphaBlendFactor: gpu.BlendFactor.one,
-      ),
-    );
+    renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final info = Float32List(8)
@@ -188,6 +222,11 @@ class BloomPass extends RenderGraphPass {
     renderPass.bindTexture(
       _lensFlareShader.getUniformSlot('source'),
       source,
+      sampler: _linearClamp,
+    );
+    renderPass.bindTexture(
+      _lensFlareShader.getUniformSlot('base'),
+      base,
       sampler: _linearClamp,
     );
     drawCompat(renderPass, 6);
@@ -224,40 +263,18 @@ class BloomPass extends RenderGraphPass {
     rendererSubmissions.submit(commandBuffer);
   }
 
-  void _drawFilter(
-    RenderGraphContext context,
-    gpu.Shader shader, {
+  void _drawDownsample(
+    RenderGraphContext context, {
     required gpu.Texture source,
     required ui.Size sourceSize,
     required gpu.Texture target,
-    required bool additive,
   }) {
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
-    final attachment = gpu.ColorAttachment(
-      texture: target,
-      // Additive upsample preserves the downsample result already in the
-      // target; threshold/downsample overwrite it.
-      loadAction: additive ? gpu.LoadAction.load : gpu.LoadAction.clear,
-    );
     final renderPass = commandBuffer.createRenderPass(
-      gpu.RenderTarget.singleColor(attachment),
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
     );
-    renderPass.bindPipeline(resolvePipeline(_vertexShader, shader));
-    if (additive) {
-      renderPass.setColorBlendEnable(true);
-      renderPass.setColorBlendEquation(
-        gpu.ColorBlendEquation(
-          colorBlendOperation: gpu.BlendOperation.add,
-          sourceColorBlendFactor: gpu.BlendFactor.one,
-          destinationColorBlendFactor: gpu.BlendFactor.one,
-          alphaBlendOperation: gpu.BlendOperation.add,
-          sourceAlphaBlendFactor: gpu.BlendFactor.one,
-          destinationAlphaBlendFactor: gpu.BlendFactor.one,
-        ),
-      );
-    } else {
-      renderPass.setColorBlendEnable(false);
-    }
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _downsampleShader));
+    renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final info = Float32List(4)
@@ -265,12 +282,53 @@ class BloomPass extends RenderGraphPass {
       ..[1] = 1.0 / sourceSize.height
       ..[2] = _settings.scatter;
     renderPass.bindUniform(
-      shader.getUniformSlot('BloomFilterInfo'),
+      _downsampleShader.getUniformSlot('BloomFilterInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      shader.getUniformSlot('source'),
+      _downsampleShader.getUniformSlot('source'),
       source,
+      sampler: _linearClamp,
+    );
+    drawCompat(renderPass, 6);
+    rendererSubmissions.submit(commandBuffer);
+  }
+
+  // Tent-blurs [source] (the smaller mip) and adds [base] (the downsample
+  // one size larger) in the shader, writing a cleared target. No loaded
+  // attachment, so backends that re-clear a reload cannot drop the
+  // accumulation.
+  void _drawUpsample(
+    RenderGraphContext context, {
+    required gpu.Texture source,
+    required ui.Size sourceSize,
+    required gpu.Texture base,
+    required gpu.Texture target,
+  }) {
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    final renderPass = commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
+    );
+    renderPass.bindPipeline(resolvePipeline(_vertexShader, _upsampleShader));
+    renderPass.setColorBlendEnable(false);
+    bindVertexBufferCompat(renderPass, _quadView, 6);
+
+    final info = Float32List(4)
+      ..[0] = 1.0 / sourceSize.width
+      ..[1] = 1.0 / sourceSize.height
+      ..[2] = _settings.scatter;
+    renderPass.bindUniform(
+      _upsampleShader.getUniformSlot('BloomFilterInfo'),
+      context.transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+    renderPass.bindTexture(
+      _upsampleShader.getUniformSlot('source'),
+      source,
+      sampler: _linearClamp,
+    );
+    renderPass.bindTexture(
+      _upsampleShader.getUniformSlot('base'),
+      base,
       sampler: _linearClamp,
     );
     drawCompat(renderPass, 6);

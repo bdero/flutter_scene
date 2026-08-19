@@ -19,6 +19,10 @@ flare_info;
 
 // A low mip of the bloom pyramid (thresholded, blurred scene color).
 uniform sampler2D source;
+// The finished bloom (full-resolution mip), added back here so the flare
+// composites into a cleared, write-once target instead of an additively
+// blended reload (which some backends drop).
+uniform sampler2D base;
 
 in vec2 v_uv;
 out vec4 frag_color;
@@ -73,5 +77,5 @@ void main() {
   result += SampleDistorted(fract(halo_uv), dir, dispersion) *
             (halo_weight * flare_info.params1.y);
 
-  frag_color = vec4(result * intensity, 1.0);
+  frag_color = vec4(texture(base, v_uv).rgb + result * intensity, 1.0);
 }

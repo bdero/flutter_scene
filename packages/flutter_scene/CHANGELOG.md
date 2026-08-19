@@ -4,6 +4,7 @@
 * `Scene.captureEnvironment` renders the scene's lighting at a point into a new `EnvironmentMap`.
 * SMAA anti-aliasing via `AntiAliasingMode.smaa`, cleaner edges than FXAA with far less texture blurring.
 * Lens flares via `BloomSettings.lensFlare`, ghost chains and a halo with chromatic dispersion off the bloom pyramid.
+* Bloom now spreads a consistent fraction of the screen across device pixel ratios, so bloom and lens flares no longer tighten on high-DPI displays; its passes also stop relying on reloaded attachments, matching every backend.
 * Clearcoat now responds to rect area lights.
 * Screen-space indirect light reprojects its radiance history, so the bounce stays put under camera motion.
 
