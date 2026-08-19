@@ -1,0 +1,189 @@
+// Covers the camera controllers: orbit/fly/follow drive their node's transform
+// with frame-rate-independent smoothing, clamped pitch, and a +Z forward axis
+// aimed via Node.lookAtFrom.
+
+import 'dart:math' as math;
+
+import 'package:flutter/services.dart';
+import 'package:flutter_scene/scene.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart';
+
+Vector3 _pos(Node n) => n.globalTransform.getTranslation();
+Vector3 _forward(Node n) {
+  final s = n.globalTransform.storage;
+  return Vector3(s[8], s[9], s[10]).normalized();
+}
+
+// Recovers (azimuth, polar) of an eye orbiting the origin, matching the
+// controller's own convention (azimuth about +Y, polar elevation).
+double _azimuthOf(Vector3 eye) => math.atan2(-eye.x, -eye.z);
+double _polarOf(Vector3 eye) =>
+    math.asin((eye.y / eye.length).clamp(-1.0, 1.0));
+
+KeyDownEvent _down(LogicalKeyboardKey key) => KeyDownEvent(
+  physicalKey: PhysicalKeyboardKey.keyW,
+  logicalKey: key,
+  timeStamp: Duration.zero,
+);
+
+void main() {
+  group('OrbitCameraController', () {
+    test('places the eye on the orbit and aims +Z at the target', () {
+      final node = Node();
+      final c = OrbitCameraController(
+        distance: 6.0,
+        polar: 0.0,
+        smoothing: 0.0,
+      );
+      node.addComponent(c);
+      c.update(1 / 60);
+
+      final eye = _pos(node);
+      expect(eye.x, closeTo(0.0, 1e-5));
+      expect(eye.y, closeTo(0.0, 1e-5));
+      expect(eye.z, closeTo(-6.0, 1e-5));
+      final f = _forward(node);
+      expect(f.x, closeTo(0.0, 1e-5));
+      expect(f.z, closeTo(1.0, 1e-5)); // looks toward the origin
+    });
+
+    test('orbitBy rotates and clamps polar inside the poles', () {
+      final node = Node();
+      final c = OrbitCameraController(polar: 0.0, azimuth: 0.0, smoothing: 0.0);
+      node.addComponent(c);
+      c.orbitBy(0.5, 10.0); // huge pitch request
+      c.update(1 / 60);
+      final eye = _pos(node);
+      expect(_polarOf(eye), closeTo(math.pi / 2 - 0.02, 1e-3));
+      expect(_azimuthOf(eye), closeTo(0.5, 1e-3));
+    });
+
+    test('dollyBy scales distance proportionally and clamps', () {
+      final node = Node();
+      final c = OrbitCameraController(
+        distance: 10.0,
+        minDistance: 2.0,
+        maxDistance: 20.0,
+        smoothing: 0.0,
+      );
+      node.addComponent(c);
+      c.dollyBy(1.0); // zoom in
+      c.update(1 / 60);
+      expect(c.distance, lessThan(10.0));
+      c.dollyBy(-100.0); // zoom way out, clamps to max
+      c.update(1 / 60);
+      expect(c.distance, closeTo(20.0, 1e-6));
+    });
+
+    test('settling is frame-rate independent for a fixed goal', () {
+      Node makeAt(double dt, int steps) {
+        final node = Node();
+        final c = OrbitCameraController(
+          distance: 5.0,
+          azimuth: 0.0,
+          smoothing: 0.2,
+        );
+        node.addComponent(c);
+        c.orbitBy(1.0, 0.0); // move the goal once
+        for (var i = 0; i < steps; i++) {
+          c.update(dt);
+        }
+        return node;
+      }
+
+      // Same 0.5s of wall-clock via coarse and fine steps -> same pose.
+      final coarse = _pos(makeAt(0.1, 5));
+      final fine = _pos(makeAt(1 / 240, 120));
+      expect((coarse - fine).length, lessThan(1e-3));
+    });
+
+    test('handleDragUpdate uses the viewport height to normalize', () {
+      final node = Node();
+      final c = OrbitCameraController(
+        rotateSpeed: math.pi,
+        azimuth: 0.0,
+        polar: 0.0,
+        distance: 6.0,
+        smoothing: 0.0,
+      );
+      node.addComponent(c);
+      c.viewportSize = const Size(1000, 500);
+      c.handleDragUpdate(const Offset(250, 0)); // half a view height across
+      c.update(1 / 60);
+      // azimuth goal = -250 * (pi / 500) = -pi/2.
+      expect(_azimuthOf(_pos(node)), closeTo(-math.pi / 2, 1e-4));
+    });
+  });
+
+  group('FlyCameraController', () {
+    test('a held W key moves along the forward axis', () {
+      final node = Node();
+      final c = FlyCameraController(
+        position: Vector3.zero(),
+        speed: 4.0,
+        smoothing: 0.0,
+        movementSmoothing: 0.0,
+      );
+      node.addComponent(c);
+      expect(c.handleKeyEvent(_down(LogicalKeyboardKey.keyW)), isTrue);
+      c.update(0.05);
+      // forward at yaw 0, pitch 0 is (0,0,-1); moved speed*dt = 0.2 units.
+      expect(_pos(node).z, closeTo(-0.2, 1e-5));
+    });
+
+    test('look clamps pitch short of vertical', () {
+      final node = Node();
+      final c = FlyCameraController(position: Vector3.zero(), smoothing: 0.0);
+      node.addComponent(c);
+      c.look(const Offset(0, -100000)); // slam look up
+      c.update(1 / 60);
+      // forward.y = sin(pitch); pitch is clamped to pitchLimit.
+      expect(_forward(node).y, closeTo(math.sin(c.pitchLimit), 1e-4));
+    });
+
+    test('grounded mode keeps forward/back horizontal', () {
+      final node = Node();
+      final c = FlyCameraController(
+        position: Vector3.zero(),
+        pitch: -1.0, // looking down
+        speed: 4.0,
+        smoothing: 0.0,
+        movementSmoothing: 0.0,
+        moveVertical: false,
+      );
+      node.addComponent(c);
+      c.handleKeyEvent(_down(LogicalKeyboardKey.keyW));
+      c.update(0.05);
+      expect(_pos(node).y, closeTo(0.0, 1e-6)); // no vertical drift
+    });
+  });
+
+  group('FollowCameraController', () {
+    test('snaps behind the target on the first frame, then eases', () {
+      final target = Node()..position = Vector3(0.0, 0.0, 0.0);
+      final camNode = Node();
+      final c = FollowCameraController(
+        followTarget: target,
+        distance: 8.0,
+        lookHeight: 1.0,
+        yaw: 0.0,
+        pitch: 0.0,
+        smoothing: 0.1,
+      );
+      camNode.addComponent(c);
+
+      c.update(1 / 60); // first frame snaps
+      final look = target.position + Vector3(0.0, 1.0, 0.0);
+      final f = _forward(camNode);
+      final want = (look - _pos(camNode)).normalized();
+      expect((f - want).length, lessThan(1e-4));
+
+      // Move the target; the camera should ease toward it, not jump.
+      target.position = Vector3(100.0, 0.0, 0.0);
+      c.update(1 / 60);
+      expect(_pos(camNode).x, greaterThan(0.0));
+      expect(_pos(camNode).x, lessThan(100.0));
+    });
+  });
+}

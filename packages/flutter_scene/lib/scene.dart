@@ -120,6 +120,13 @@ export 'src/asset_helpers.dart'
         imageFromBytes;
 export 'src/camera.dart'
     show Camera, CameraProjection, PerspectiveCamera, PerspectiveProjection;
+export 'src/camera_controllers/camera_controller.dart' show CameraController;
+export 'src/camera_controllers/fly_camera_controller.dart'
+    show FlyCameraController;
+export 'src/camera_controllers/follow_camera_controller.dart'
+    show FollowCameraController;
+export 'src/camera_controllers/orbit_camera_controller.dart'
+    show OrbitCameraController;
 export 'src/components/camera_component.dart' show CameraComponent, NodeCamera;
 export 'src/components/component.dart' show Component;
 export 'src/components/directional_light_component.dart'
@@ -268,6 +275,7 @@ export 'src/widgets/declarative.dart'
         SceneNodeController,
         SceneNodeHost,
         SceneSubtree;
+export 'src/widgets/camera_controls.dart' show CameraControls;
 export 'src/widgets/render_texture_view.dart' show RenderTextureView;
 export 'src/widgets/scene_view.dart'
     show
