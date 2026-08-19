@@ -105,24 +105,16 @@ class Game {
 
     // The camera lives in the scene as a node, not on the widget. A camera
     // node's transform is its view: the translation is the eye, local +Z is
-    // the look direction, +Y is up. There is no lookAt helper, so aim it by
-    // setting the transform to the inverse of a view matrix (a PerspectiveCamera
-    // built only to supply the eye/target aim, then discarded).
-    final cameraNode = Node(
-      localTransform: vm.Matrix4.identity()
-        ..copyInverse(
-          PerspectiveCamera(
-            position: vm.Vector3(0, 3, -8),
-            target: vm.Vector3.zero(),
-          ).getViewMatrix(),
-        ),
-    );
+    // the look direction, +Y is up. lookAtFrom sets both at once, so there is
+    // no view-matrix math to hand-roll.
+    final cameraNode = Node()
+      ..addComponent(CameraComponent(activateOnMount: true))
+      ..lookAtFrom(vm.Vector3(0, 3, -8), vm.Vector3.zero());
+    scene.add(cameraNode);
     // activateOnMount makes this the scene's primary camera when the node
     // mounts, so SceneView needs no `camera:` argument. (The first mounted
     // camera auto-promotes anyway; this states the intent explicitly, and is
     // how you pick one when several cameras exist.)
-    cameraNode.addComponent(CameraComponent(activateOnMount: true));
-    scene.add(cameraNode);
 
     player = Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)),
         PhysicallyBasedMaterial()));
@@ -185,8 +177,10 @@ The scene owns which camera is active, and there are three levers:
 
 With no camera set at all, the first mounted `CameraComponent` auto-promotes, and a scene with none
 still renders through a default camera. Move or rotate a `CameraComponent`'s node to move the view;
-the `NodeCamera` reads the node's world transform live each frame, which is what makes a follow-cam a
-one-line component that writes the camera node's transform in `update`.
+the `NodeCamera` reads the node's world transform live each frame. Aim it with `node.lookAt(target)`
+(rotate toward a world point) or `node.lookAtFrom(eye, target)` (position and aim in one call); +Z is
+the forward axis, so the same helpers aim lights and imported models. A follow-cam is then a one-line
+component that calls `node.lookAtFrom(...)` in `update` each frame.
 
 ### Behavior lives in components, not in the tick
 

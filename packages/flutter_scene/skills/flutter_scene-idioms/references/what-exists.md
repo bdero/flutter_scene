@@ -31,9 +31,13 @@ Transform API (0.22.0 added the component properties; older docs say only `local
 | `localTransform` | `Matrix4` get/set | Getter returns the LIVE matrix; in-place edit throws in debug on next read. Assign a fresh matrix. |
 | `mutateLocalTransform(void Function(Matrix4) edit)` | method | Edits in place AND dirties the cache. Correct raw-matrix path. |
 | `globalTransform` | `Matrix4` get/set | Cached world transform; setter solves for the needed local. |
+| `lookAt(target, {up})` | method | Orients the node's forward axis (local +Z) at a world-space target; preserves world position and scale. |
+| `lookAtFrom(eye, target, {up})` | method | Positions at `eye` and aims +Z at `target` in one call (the imperative camera one-liner). |
+| `Node.lookAtTransform(eye, target, {up})` | static -> `Matrix4` | The `lookAt` basis as a local transform, for `Node(localTransform:)` and declarative `transform:`. |
 
-Compose a matrix with `vm.Matrix4.translation(v)`, `vm.Matrix4.rotationY(a)`, `vm.Matrix4.compose(t,
-q, s)`. There is no `translate`/`rotateX`/`lookAt` on Node.
++Z is the forward axis engine-wide (cameras, directional/spot lights, imported models), so the
+lookAt helpers aim any of them. Compose a plain matrix with `vm.Matrix4.translation(v)`,
+`vm.Matrix4.rotationY(a)`, `vm.Matrix4.compose(t, q, s)`. There is no `translate`/`rotateX` on Node.
 
 Hierarchy (`SceneGraph` is a mixin): `add`, `addAll`, `addMesh`, `remove`, `removeAll`. `add` throws
 if the child already has a parent. `parent`, `children`, `detach()`, `getRoot()`, `getDepth()`.
