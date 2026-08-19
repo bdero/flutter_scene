@@ -101,6 +101,51 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(buildSidecar(m)['depth_write'], isTrue);
     });
 
+    test('parses depth_test into the AST and the sidecar', () {
+      final m = parseFmat('''
+material {
+  name: "Decal",
+  blending: alpha,
+  culling: front,
+  depth_test: always,
+}
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(m.depthTest, FmatDepthTest.always);
+      expect(buildSidecar(m)['depth_test'], 'always');
+
+      // The default is the plain occluding test, and it stays out of the
+      // sidecar so every existing material's metadata is unchanged.
+      final byDefault = parseFmat('''
+material { name: "Plain", blending: alpha }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(byDefault.depthTest, FmatDepthTest.lessEqual);
+      expect(buildSidecar(byDefault).containsKey('depth_test'), isFalse);
+
+      final explicit = parseFmat('''
+material { name: "Explicit", blending: alpha, depth_test: less_equal }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(explicit.depthTest, FmatDepthTest.lessEqual);
+
+      expect(
+        () => parseFmat('''
+material { name: "X", blending: alpha, depth_test: greater }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must be `less_equal` or `always`'),
+      );
+      // The test only applies in the translucent pass.
+      expect(
+        () => parseFmat('''
+material { name: "X", depth_test: always }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('needs `blending: alpha`'),
+      );
+    });
+
     test('parses blending: additive on lit and unlit alike', () {
       final lit = parseFmat('''
 material { name: "AddLit", shading_model: lit, blending: additive }

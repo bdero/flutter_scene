@@ -118,6 +118,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `blending` | `opaque`, `alpha`, `additive` | `opaque` | `alpha` and `additive` both route the material through the depth-sorted translucent pass. `additive` forces the output alpha to zero, so the destination is never darkened, only brightened; allowed on `lit` and `unlit` alike. |
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
+| `depth_test` | `less_equal`, `always` | `less_equal` | The depth test used in the translucent pass, so it needs `blending: alpha` or `additive`. `always` draws regardless of the opaque depth, for a projection volume whose own faces are not the surface being shaded (see Decals). |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
 | `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Surface materials, `lit` or `unlit` (`planar_reflection` is lit only). |
 | `scene_color_reach` | number | unbounded | How far past its own surface the shader samples, in local units. Lets readers whose screen rects are disjoint share one scene-color capture. Requires `engine_inputs`. |
@@ -615,6 +616,118 @@ fragment {
 
 No loops, no early returns, no integer math, so it is portable to every
 backend without further care.
+
+---
+
+# Decals
+
+A decal paints a mark (a scorch, a melt glow, a sticker) onto surfaces that are
+already drawn. Two tiers, depending on how flat the receiver is.
+
+## Mesh decals, for a flat receiver
+
+A translucent quad parented just above the receiving surface, with a nonzero
+`Material.depthBias` so it wins the depth comparison without moving:
+
+```dart
+final mark = Node(mesh: Mesh(PlaneGeometry(width: 2, depth: 2), scorch))
+  ..position = impactPoint;
+scorch.depthBias = 0.02;
+```
+
+The material is `blending: alpha` with the mark's coverage in `base_color.a`.
+This is the whole technique, and it needs no engine support. It is correct on
+flat ground and wrong on anything curved or stepped, where the quad floats over
+or sinks into the receiver.
+
+## Projected box decals, for any receiver
+
+A `DecalNode` draws a box; each of its fragments unprojects the opaque surface
+behind it, transforms that world point into the box's local space, discards
+outside the box, and shades what is left. The mark conforms to whatever it lands
+on, so it follows terrain, steps, and props.
+
+```dart
+final decal = DecalNode(material: await loadFmatMaterial('assets/scorch_decal.fmat'))
+  ..project(point: impactPoint, normal: groundNormal, size: 2.4, rotation: rng.nextDouble() * pi);
+scene.add(decal);
+
+// Later, fading it out.
+decal.fade = 1.0 - age / lifetime;
+if (age >= lifetime) scene.remove(decal);
+```
+
+`project` centers the box on `point` with its local Y along `normal`, spanning
+`size` world units across and `depth` along the normal, and the node keeps the
+material's `decal_inverse` (world to unit box) and `decal_fade` parameters in
+sync with its world transform, so a placed decal can still be moved or
+reparented. Names the material does not declare are skipped.
+
+The material carries the projection. Three keys make a box behave as a volume
+rather than as geometry: `culling: front` draws the back faces, so the decal
+survives the camera entering the box; `depth_test: always` keeps those faces
+from being rejected by the surface they paint (they sit behind it); and
+`engine_inputs: [scene_depth]` supplies `GetSceneWorldPosition`.
+
+```
+material {
+  name: "ScorchDecal",
+  shading_model: unlit,
+  blending: alpha,
+  culling: front,
+  depth_test: always,
+  engine_inputs: [scene_depth],
+  scene_color_reach: 0.0,
+
+  parameters: [
+    { type: mat4, name: decal_inverse },
+    { type: float, name: decal_fade, hint: range(0.0, 1.0, 0.01), default: 1.0 },
+    { type: sampler2d, name: decal_texture, hint: default_transparent },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 local = (material_params.decal_inverse *
+                  vec4(GetSceneWorldPosition(vec2(0.0)), 1.0)).xyz;
+    vec3 outside = step(vec3(0.5), abs(local));
+    if (max(outside.x, max(outside.y, outside.z)) > 0.0) {
+      discard;
+    }
+    float coverage = texture(decal_texture, local.xz + 0.5).a *
+                     material_params.decal_fade;
+    // Scorching darkens, which premultiplied source-over gives directly.
+    material.base_color = vec4(0.0, 0.0, 0.0, coverage);
+    PrepareMaterial(material);
+  }
+}
+```
+
+The unit box spans -0.5 to 0.5 on each axis, and the texture is sampled across
+its local XZ. A melt glow is the same material with `blending: additive` and a
+lit color instead of black. The whole thing is an ordinary translucent draw, so
+it sorts with everything else and costs one draw.
+
+Known limitations:
+
+- **One material instance per decal**, since the projection is a `mat4`
+  parameter. Per-instance custom attributes are not exposed, so a hundred
+  simultaneous decals are a hundred draws; pool a fixed set of `DecalNode`s to
+  keep the count bounded.
+- **The decal's normal is the box's, not the receiving surface's.** Correct for
+  a mark projected straight down onto ground, wrong for one that should wrap a
+  corner's shading.
+- **Tinted multiply is not expressible.** Darken-to-black and additive both work
+  in the existing blend model; a brown scorch that multiplies the receiver's
+  color needs a multiply blend mode, which does not exist. The workaround is to
+  declare `scene_color` too and output the product, at the cost of a capture
+  batch.
+- **Decals project onto opaque geometry only**, because the depth prepass is
+  opaque-only. Nothing paints onto glass.
+
+Give `depth` enough room to absorb the depth precision at the decal's distance
+from the camera: the unprojected position is compared against the box in world
+space, so a thin box far from the camera drops fragments.
 
 # The engine contract (both paths)
 
@@ -1134,8 +1247,9 @@ constructor fields.
 Today `blending` is `opaque` (depth-write on, drawn in order), `alpha`
 (depth-write off, depth-sorted, premultiplied source-over), or `additive`
 (depth-write off, depth-sorted, output alpha forced to zero so the destination
-is only ever brightened). Multiply blending and per-material depth state are
-not configurable yet; they are encoder-controlled.
+is only ever brightened). A translucent material also picks its depth write
+(`depth_write`) and its depth test (`depth_test`). Multiply blending is not
+configurable; it is encoder-controlled.
 
 ---
 
@@ -1179,8 +1293,9 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
 - **Typed codegen.** A future step will generate a typed Dart class per `.fmat`
   (compile-time-checked setters); today you use the name-based
   `MaterialParameters` API.
-- **Multiply blending and per-material depth state** are not yet configurable
-  (`blending: additive` is, alongside `opaque`/`alpha`).
+- **Multiply blending** is not yet configurable (`blending: additive` is,
+  alongside `opaque`/`alpha`, and `depth_write`/`depth_test` cover the
+  translucent depth state).
 - **Per-instance custom attributes** work on unskinned instanced meshes, but a
   declaring material opts out of automatic cross-node batching and reads zero in
   the skinned and depth/shadow variants.

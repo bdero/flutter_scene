@@ -54,6 +54,28 @@ enum FmatBlending {
 /// Which triangle faces are culled.
 enum FmatCulling { back, front, none }
 
+/// The depth test a translucent material's geometry uses.
+enum FmatDepthTest {
+  /// Occludes against the opaque scene.
+  lessEqual('less_equal'),
+
+  /// Draws regardless of the depth buffer, for a projection volume whose own
+  /// faces sit behind the surface it shades (see `DecalNode`).
+  always('always');
+
+  const FmatDepthTest(this.token);
+
+  /// The spelling used in a `.fmat` and in the generated sidecar.
+  final String token;
+
+  static FmatDepthTest? fromToken(String token) {
+    for (final value in values) {
+      if (value.token == token) return value;
+    }
+    return null;
+  }
+}
+
 /// The type of a material parameter. Scalar and vector types are packed into
 /// the generated `MaterialParams` uniform block; sampler types are declared as
 /// top-level uniforms.
@@ -240,6 +262,7 @@ class FmatMaterial {
     required this.blending,
     required this.culling,
     this.depthWrite = false,
+    this.depthTest = FmatDepthTest.lessEqual,
     required this.parameters,
     required this.fragmentSource,
     required this.fragmentSourceLine,
@@ -265,6 +288,9 @@ class FmatMaterial {
   final FmatBlending blending;
   final FmatCulling culling;
   final bool depthWrite;
+
+  /// The depth test used in the translucent pass (`depth_test:`).
+  final FmatDepthTest depthTest;
   final List<FmatParameter> parameters;
 
   /// The verbatim contents of the code block (`fragment { }` for a surface

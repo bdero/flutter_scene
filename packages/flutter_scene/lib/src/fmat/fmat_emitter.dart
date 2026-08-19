@@ -718,6 +718,8 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'blending': material.blending.name,
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,
+    if (material.depthTest != FmatDepthTest.lessEqual)
+      'depth_test': material.depthTest.token,
     if (material.engineInputs.isNotEmpty)
       'engine_inputs': material.engineInputs,
     if (material.sceneColorReach != null)

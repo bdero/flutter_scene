@@ -502,6 +502,13 @@ abstract class Material {
   @internal
   bool get drawsNothing => false;
 
+  /// The depth test geometry drawn with this material uses in the translucent
+  /// pass. `lessEqual` (the default) occludes against the opaque scene;
+  /// `always` draws regardless, for a projection volume whose own faces are
+  /// not the surface being shaded (see `DecalNode`).
+  @internal
+  gpu.CompareFunction get depthCompare => gpu.CompareFunction.lessEqual;
+
   /// Whether geometry rendered with this material is fully opaque.
   ///
   /// The renderer uses this to split draws into the opaque and
