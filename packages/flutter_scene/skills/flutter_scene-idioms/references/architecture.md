@@ -102,6 +102,28 @@ class Game {
 
   Future<void> load() async {
     await Scene.initializeStaticResources();
+
+    // The camera lives in the scene as a node, not on the widget. A camera
+    // node's transform is its view: the translation is the eye, local +Z is
+    // the look direction, +Y is up. There is no lookAt helper, so aim it by
+    // setting the transform to the inverse of a view matrix (a PerspectiveCamera
+    // built only to supply the eye/target aim, then discarded).
+    final cameraNode = Node(
+      localTransform: vm.Matrix4.identity()
+        ..copyInverse(
+          PerspectiveCamera(
+            position: vm.Vector3(0, 3, -8),
+            target: vm.Vector3.zero(),
+          ).getViewMatrix(),
+        ),
+    );
+    // activateOnMount makes this the scene's primary camera when the node
+    // mounts, so SceneView needs no `camera:` argument. (The first mounted
+    // camera auto-promotes anyway; this states the intent explicitly, and is
+    // how you pick one when several cameras exist.)
+    cameraNode.addComponent(CameraComponent(activateOnMount: true));
+    scene.add(cameraNode);
+
     player = Node(mesh: Mesh(CuboidGeometry(vm.Vector3(1, 1, 1)),
         PhysicallyBasedMaterial()));
     player.addComponent(PlayerController());
@@ -139,14 +161,32 @@ class _GameViewState extends State<GameView> {
   @override
   Widget build(BuildContext context) {
     if (!_ready) return const SizedBox.expand();
+    // No `camera:` here: the view resolves the scene's active camera, which is
+    // the CameraComponent added in Game.load. Resolution order is the explicit
+    // `camera:` (absent), then `cameraBuilder`, then `scene.camera` (the active
+    // CameraComponent), then a default camera.
     return SceneView(
       game.scene,
-      camera: PerspectiveCamera(position: vm.Vector3(0, 3, -8)),
       onTick: (elapsed, dt) => game.tick(dt),
     );
   }
 }
 ```
+
+### The active camera
+
+The scene owns which camera is active, and there are three levers:
+
+- **`CameraComponent(activateOnMount: true)`** (above) selects this camera when its node mounts.
+- **`cameraComponent.makeActive()`** switches to it at runtime, for example a chase-cam to a
+  cutscene camera. Before its node mounts the choice is deferred and applied on mount.
+- **`scene.camera = someCamera`** sets any `Camera` as the override directly, and `scene.camera`
+  reads the active one back.
+
+With no camera set at all, the first mounted `CameraComponent` auto-promotes, and a scene with none
+still renders through a default camera. Move or rotate a `CameraComponent`'s node to move the view;
+the `NodeCamera` reads the node's world transform live each frame, which is what makes a follow-cam a
+one-line component that writes the camera node's transform in `update`.
 
 ### Behavior lives in components, not in the tick
 
