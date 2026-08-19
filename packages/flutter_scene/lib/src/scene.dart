@@ -71,6 +71,7 @@ import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
 import 'render_texture.dart';
 import 'render_view.dart';
+import 'screen_distortion.dart';
 import 'shaders.dart';
 import 'sky_environment.dart';
 import 'skybox.dart';
@@ -1202,6 +1203,14 @@ base class Scene implements SceneGraph {
   final GodRaysSettings godRays = GodRaysSettings();
   late final GodRaysPass _godRaysPass = GodRaysPass(godRays);
 
+  /// Parametric radial screen distortion pulses. Off by default; set
+  /// [ScreenDistortionSettings.enabled] and add a [DistortionPulse] to turn
+  /// it on. Runs on the display-referred image after tone mapping.
+  final ScreenDistortionSettings screenDistortion = ScreenDistortionSettings();
+  late final ScreenDistortionPass _screenDistortionPass = ScreenDistortionPass(
+    screenDistortion,
+  );
+
   /// Depth of field with bokeh. Off by default; set [DepthOfField.enabled]
   /// to turn it on. Requires a [PerspectiveCamera] (it reconstructs blur from
   /// camera depth); skipped otherwise.
@@ -2002,6 +2011,11 @@ base class Scene implements SceneGraph {
         camera.projection is PerspectiveProjection &&
         cascades.isNotEmpty;
 
+    // A pure display-referred image warp; no depth, shadow, or camera
+    // projection needed.
+    final wantScreenDistortion =
+        screenDistortion.enabled && screenDistortion.pulses.isNotEmpty;
+
     // The geometry buffers the enabled custom passes (and god rays) request, so
     // the engine produces depth/normals even without AO/SSR and publishes the
     // shadow uniform for depth-aware passes.
@@ -2688,6 +2702,25 @@ base class Scene implements SceneGraph {
         postProcess: postProcess,
       ),
     );
+
+    // Radial distortion pulses warp the composed image (including bloom)
+    // right after tone mapping, so FXAA cleans up the resampled edges
+    // afterward. Built on the custom-pass API, ahead of any user-added
+    // afterToneMapping passes.
+    if (wantScreenDistortion) {
+      displaySteps.add(
+        (output) => UserRenderGraphPass(
+          pass: _screenDistortionPass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: output,
+          renderScene: renderScene,
+          viewLayerMask: view.layerMask,
+          passIndex: 0,
+          time: postTime,
+        ),
+      );
+    }
 
     var userPassIndex = 0;
     for (final pass in _passesAt(RenderStage.afterToneMapping)) {

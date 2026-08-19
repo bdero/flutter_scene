@@ -138,6 +138,8 @@ export 'src/render/irradiance_bake.dart'
 export 'src/render/temporal_anti_aliasing.dart'
     show TemporalAntiAliasingSettings;
 export 'src/god_rays.dart' show GodRaysSettings;
+export 'src/screen_distortion.dart'
+    show DistortionPulse, ScreenDistortionSettings;
 export 'src/screen_space_reflections.dart'
     show ScreenSpaceReflectionsSettings, SsrDebugView;
 export 'src/asset_helpers.dart'
