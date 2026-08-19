@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../shell/editor_dialog.dart';
 
 /// The up axis the imported model was authored in. glTF is Y-up by spec, so
 /// [yUp] is the default and a no-op; [zUp] adds a corrective rotation.
@@ -39,8 +40,8 @@ Future<GlbImportOptions?> showGlbImportOptions(
   bool showLinkToggle = true,
   String title = 'Import glTF',
 }) {
-  return showDialog<GlbImportOptions>(
-    context: context,
+  return showEditorDialog<GlbImportOptions>(
+    context,
     builder: (context) => _GlbImportDialog(
       initial: initial ?? const GlbImportOptions(),
       showLinkToggle: showLinkToggle,

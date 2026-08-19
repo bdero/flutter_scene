@@ -776,8 +776,8 @@ class _EditorHomeState extends State<_EditorHome> {
     );
     if (!context.mounted) return false;
     String gb(int bytes) => (bytes / (1 << 30)).toStringAsFixed(2);
-    final confirmed = await showDialog<bool>(
-      context: context,
+    final confirmed = await showEditorDialog<bool>(
+      context,
       builder: (context) => AlertDialog(
         title: const Text('Delete managed checkout?'),
         content: Text(

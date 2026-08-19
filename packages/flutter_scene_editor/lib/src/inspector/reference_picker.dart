@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
+import '../shell/editor_dialog.dart';
 
 typedef ReferencePickerEntry = ({LocalId id, String label});
 
@@ -28,8 +29,8 @@ class ReferencePicker extends StatelessWidget {
   }
 
   Future<void> _open(BuildContext context) async {
-    final selected = await showDialog<LocalId>(
-      context: context,
+    final selected = await showEditorDialog<LocalId>(
+      context,
       builder: (context) {
         final colors = context.theme.colors;
         return Dialog(
