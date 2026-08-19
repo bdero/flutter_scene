@@ -1,3 +1,8 @@
+## 0.22.1
+
+* Ship the `flutter_scene-idioms` agent skill, correct-usage guidance for coding agents that corrects the wrong assumptions carried from other 3D engines. `dart run flutter_scene:init` offers to install it, asking first at a terminal and never installing unattended without `--skills`.
+* Add `dart run flutter_scene:skills` to install, update, or `--check` the agent skill on its own, without touching the build hook or pubspec.
+
 ## 0.22.0
 
 * `Node.position`, `Node.rotation`, and `Node.scale` read and write the local transform one component at a time, and editing a returned copy in place throws in debug builds rather than silently doing nothing.
