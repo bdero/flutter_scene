@@ -1,5 +1,6 @@
 ## 0.22.1
 
+* `Node.lookAt`, `Node.lookAtFrom`, and the static `Node.lookAtTransform` orient a node's forward axis (local +Z) at a world-space target, aiming cameras, lights, and imported models without hand-building a view matrix.
 * Ship the `flutter_scene-idioms` agent skill, correct-usage guidance for coding agents that corrects the wrong assumptions carried from other 3D engines. `dart run flutter_scene:init` offers to install it, asking first at a terminal and never installing unattended without `--skills`.
 * Add `dart run flutter_scene:skills` to install, update, or `--check` the agent skill on its own, without touching the build hook or pubspec.
 
