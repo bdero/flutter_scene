@@ -99,6 +99,15 @@ nothing.
 Impeller, which Flutter GPU builds on, is the default renderer on every native
 platform as of 3.47, so there is nothing to do for it.
 
+### Coding agents
+
+This package ships an agent skill, correct-usage guidance so a coding assistant
+writes idiomatic Scene instead of guessing from other 3D engines. `dart run
+flutter_scene:init` offers to install it, and `dart run flutter_scene:skills`
+installs, updates, or checks it on its own without touching your build hook.
+Upgrading Scene can carry a newer revision of the skill; `dart run
+flutter_scene:skills --check` reports whether one is available.
+
 ### Enable Flutter GPU
 
 While developing, pass the flags on the command line:

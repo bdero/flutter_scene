@@ -82,6 +82,10 @@ Future<InitHookResult> installFlutterSceneBuildHook({
 }
 
 /// The bundled agent skill teaching correct flutter_scene usage.
+///
+/// When you change the skill content under `skills/flutter_scene-idioms/`,
+/// bump the `version:` field in its SKILL.md, or an already-installed copy is
+/// not detected as stale and never offered an update.
 const String flutterSceneSkillName = 'flutter_scene-idioms';
 
 // Agent skill homes. The skill installs under `<parent>/skills/` for every
