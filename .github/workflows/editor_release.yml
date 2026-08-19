@@ -37,8 +37,12 @@ jobs:
       matrix:
         include:
           - { runner: macos-latest, platform: macos }
-          - { runner: ubuntu-latest, platform: linux }
-          - { runner: windows-latest, platform: windows }
+          # Linux and Windows are held back from the first releases. They still
+          # build profile (not release) for Flutter GPU pending
+          # flutter/flutter#190872, Windows is unsigned, and the name patch
+          # needs a Windows-safe git apply. Restore these once those are sorted.
+          # - { runner: ubuntu-latest, platform: linux }
+          # - { runner: windows-latest, platform: windows }
     defaults:
       run:
         shell: bash
