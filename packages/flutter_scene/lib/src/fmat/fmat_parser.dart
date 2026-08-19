@@ -563,6 +563,7 @@ FmatMaterial _build(
     'blending',
     'culling',
     'depth_write',
+    'depth_test',
     'parameters',
     'varyings',
     'attributes',
@@ -611,6 +612,30 @@ FmatMaterial _build(
     throw FmatException('`depth_write` must be a boolean.', fileName: fileName);
   }
   final depthWrite = depthWriteValue as bool? ?? false;
+
+  // `depth_test` picks the translucent pass's depth comparison. `always` is for
+  // a projection volume whose own faces sit behind the surface it shades.
+  final depthTestValue = tree['depth_test'];
+  var depthTest = FmatDepthTest.lessEqual;
+  if (depthTestValue != null) {
+    final ident = depthTestValue is _Ident ? depthTestValue : null;
+    final parsed = ident == null ? null : FmatDepthTest.fromToken(ident.name);
+    if (parsed == null) {
+      throw FmatException(
+        '`depth_test` must be `less_equal` or `always`.',
+        fileName: fileName,
+        line: ident?.line,
+      );
+    }
+    depthTest = parsed;
+  }
+  if (depthTest != FmatDepthTest.lessEqual && blending == FmatBlending.opaque) {
+    throw FmatException(
+      '`depth_test` applies to the translucent pass, so it needs '
+      '`blending: alpha` or `blending: additive`.',
+      fileName: fileName,
+    );
+  }
 
   final parameters = _buildParameters(tree['parameters'], fileName);
   final varyings = _buildVaryings(tree['varyings'], parameters, fileName);
@@ -803,6 +828,7 @@ FmatMaterial _build(
     blending: blending,
     culling: culling,
     depthWrite: depthWrite,
+    depthTest: depthTest,
     parameters: parameters,
     fragmentSource: body.content,
     fragmentSourceLine: body.startLine,

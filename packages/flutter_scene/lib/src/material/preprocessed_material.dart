@@ -42,6 +42,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
        _depthWrite = metadata['depth_write'] == true,
+       _depthCompare = _parseDepthCompare(metadata['depth_test']),
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata),
        _usesPlanarReflection = parsePlanarReflectionInput(
@@ -265,6 +266,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   FmatBlending _blending;
   FmatCulling _culling;
   bool _depthWrite;
+  gpu.CompareFunction _depthCompare;
 
   /// Re-reads the render state and parameters from a regenerated [fragmentShader]
   /// and sidecar [metadata] (a hot-reloaded `.fmat`), in place.
@@ -282,6 +284,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _blending = _parseBlending(metadata['blending']);
     _culling = _parseCulling(metadata['culling']);
     _depthWrite = metadata['depth_write'] == true;
+    _depthCompare = _parseDepthCompare(metadata['depth_test']);
     _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
     // A reloaded declaration is a new schema object, which invalidates the
     // widened vertex layouts and instance buffers keyed on the old one.
@@ -485,6 +488,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   @internal
   bool get translucentDepthWrite => _depthWrite;
+
+  @override
+  @internal
+  gpu.CompareFunction get depthCompare => _depthCompare;
 }
 
 gpu.CullMode _cullMode(FmatCulling culling) => switch (culling) {
@@ -504,6 +511,11 @@ FmatBlending _parseBlending(Object? value) => switch (value) {
   'alpha' => FmatBlending.alpha,
   'additive' => FmatBlending.additive,
   _ => FmatBlending.opaque,
+};
+
+gpu.CompareFunction _parseDepthCompare(Object? value) => switch (value) {
+  'always' => gpu.CompareFunction.always,
+  _ => gpu.CompareFunction.lessEqual,
 };
 
 FmatCulling _parseCulling(Object? value) => switch (value) {

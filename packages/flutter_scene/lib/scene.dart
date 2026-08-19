@@ -258,6 +258,7 @@ export 'src/render_texture.dart'
 export 'src/render_view.dart' show RenderView;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
+export 'src/decal.dart' show DecalNode;
 export 'src/node.dart' show Node;
 export 'src/sprite.dart' show Sprite;
 export 'src/texture_atlas.dart'

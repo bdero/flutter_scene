@@ -1447,6 +1447,9 @@ base class SceneEncoder {
     while (_translucentCursor < end) {
       final record = _translucentRecords[_translucentCursor++];
       _renderPass.setDepthWriteEnable(record.material.translucentDepthWrite);
+      // Set per record, like the depth write above, so a projection volume
+      // drawn with `always` cannot leak that test into the next draw.
+      _renderPass.setDepthCompareOperation(record.material.depthCompare);
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;

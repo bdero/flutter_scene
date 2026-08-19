@@ -95,6 +95,41 @@ fragment {
 }
 ''';
 
+// A projected box decal, the shape assets/scorch_decal.fmat ships: unlit,
+// front-culled, drawn with `depth_test: always`, unprojecting the opaque depth
+// into the box's local space.
+const _decal = '''
+material {
+  name: "RuntimeDecal",
+  shading_model: unlit,
+  blending: alpha,
+  culling: front,
+  depth_test: always,
+  engine_inputs: [scene_depth],
+  scene_color_reach: 0.0,
+  parameters: [
+    { type: mat4, name: decal_inverse },
+    { type: float, name: decal_fade, default: 1.0 },
+    { type: sampler2d, name: decal_texture, hint: default_transparent },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 local = (material_params.decal_inverse *
+                  vec4(GetSceneWorldPosition(vec2(0.0)), 1.0)).xyz;
+    vec3 outside = step(vec3(0.5), abs(local));
+    if (max(outside.x, max(outside.y, outside.z)) > 0.0) {
+      discard;
+    }
+    float coverage = texture(decal_texture, local.xz + 0.5).a *
+                     material_params.decal_fade;
+    material.base_color = vec4(0.0, 0.0, 0.0, coverage);
+    PrepareMaterial(material);
+  }
+}
+''';
+
 const _broken = '''
 material {
   name: "RuntimeBroken",
@@ -216,6 +251,16 @@ void main() async {
         .cast<String, Object?>();
     expect(metadata['engine_inputs'], ['scene_color', 'scene_depth']);
     expect(metadata['scene_color_reach'], 0.25);
+  }, skip: skip);
+
+  test('compiles a projected decal material', () async {
+    final result = await compiler.compile(_decal, fileName: 'decal.fmat');
+    expect(result.entryName, 'RuntimeDecal');
+    final metadata = (result.sidecar['RuntimeDecal'] as Map)
+        .cast<String, Object?>();
+    expect(metadata['depth_test'], 'always');
+    expect(metadata['culling'], 'front');
+    expect(metadata['engine_inputs'], ['scene_depth']);
   }, skip: skip);
 
   test('reports GLSL errors as FmatCompileException', () async {
