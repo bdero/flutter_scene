@@ -55,6 +55,7 @@ This repo ships a set of on-demand skills under `packages/flutter_scene/skills/`
 - `flutter_scene-verification-loop` the closed run-settle-capture-correct loop for seeing your own output.
 - `flutter_scene-looks` copy-paste presets that make a scene look deliberate (lighting plus post).
 - `flutter_scene-procedural` building content from code (terrain, noise, instancing) instead of asset files.
+- `flutter_scene-performance` hitting frame budget (measure which thread is over, then a fixed remediation order).
 
 Install them into a project:
 

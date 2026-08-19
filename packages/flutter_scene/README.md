@@ -103,7 +103,8 @@ platform as of 3.47, so there is nothing to do for it.
 
 This package ships a set of agent skills so a coding assistant writes idiomatic
 Scene instead of guessing: correct usage and traps, the run-settle-capture
-verification loop, copy-paste look presets, and procedural content. `dart run
+verification loop, copy-paste look presets, procedural content, and
+performance. `dart run
 flutter_scene:init` offers to install them, and `dart run flutter_scene:skills`
 installs, updates, or checks them on their own without touching your build hook.
 Upgrading Scene can carry newer revisions; `dart run flutter_scene:skills
