@@ -13,7 +13,11 @@ void main(List<String> args) {
     await buildMaterials(
       buildInput: input,
       buildOutput: output,
-      materials: ['assets/custom_material.fmat', 'assets/noise_parity.fmat'],
+      materials: [
+        'assets/custom_material.fmat',
+        'assets/noise_parity.fmat',
+        'assets/planar_mirror.fmat',
+      ],
       assetMode: dataAssetsLane
           ? MaterialAssetMode.dataAssetsRequired
           : MaterialAssetMode.generatedTree,
