@@ -28,10 +28,13 @@ void importGltfToFsceneb(
 
   final inputBytes = File(inputGltfFilePath).readAsBytesSync();
   final container = parseGlb(inputBytes);
-  final doc = parseGltfJson(container.json);
-  final outputBytes = emitFsceneb(
-    doc,
+  final gltf = decodeMeshoptBufferViews(
+    parseGltfJson(container.json),
     container.binaryChunk,
+  );
+  final outputBytes = emitFsceneb(
+    gltf.doc,
+    gltf.bufferData,
     compressTextures: compressTextures,
     alignForCompression: alignForCompression,
   );

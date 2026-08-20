@@ -27,9 +27,10 @@ SceneDocument importGlbToSceneDocument(
   final container = parseGlb(glbBytes);
   final doc = parseGltfJson(container.json);
   _deliverWarnings(doc.warnings, onWarning);
+  final gltf = decodeMeshoptBufferViews(doc, container.binaryChunk);
   return buildSceneDocument(
-    doc,
-    container.binaryChunk,
+    gltf.doc,
+    gltf.bufferData,
     compressTextures: compressTextures,
   );
 }
@@ -50,9 +51,10 @@ Uint8List importGlbToFscenebBytes(
   final container = parseGlb(glbBytes);
   final doc = parseGltfJson(container.json);
   _deliverWarnings(doc.warnings, onWarning);
+  final gltf = decodeMeshoptBufferViews(doc, container.binaryChunk);
   return emitFsceneb(
-    doc,
-    container.binaryChunk,
+    gltf.doc,
+    gltf.bufferData,
     compressTextures: compressTextures,
   );
 }
@@ -93,9 +95,10 @@ SceneDocument importGltfToSceneDocument(
 }) {
   final normalized = _normalizeGltf(gltfBytes, resolveUri);
   _deliverWarnings(normalized.doc.warnings, onWarning);
+  final gltf = decodeMeshoptBufferViews(normalized.doc, normalized.bufferData);
   return buildSceneDocument(
-    normalized.doc,
-    normalized.bufferData,
+    gltf.doc,
+    gltf.bufferData,
     compressTextures: compressTextures,
   );
 }
@@ -120,11 +123,15 @@ SceneDocument importGltfToSceneDocument(
     }
   }
 
+  // EXT_meshopt_compression placeholder buffers hold no data the decode path
+  // reads, so they contribute nothing to the blob and are never resolved.
+  final placeholders = meshoptPlaceholderBuffers(doc);
   final bufferBase = <int>[];
-  for (final buffer in doc.buffers) {
+  for (int i = 0; i < doc.buffers.length; i++) {
     padTo4();
     bufferBase.add(blob.length);
-    blob.add(_resolveResource(buffer.uri, resolveUri, what: 'buffer'));
+    if (placeholders.contains(i)) continue;
+    blob.add(_resolveResource(doc.buffers[i].uri, resolveUri, what: 'buffer'));
   }
 
   final bufferViews = [
@@ -134,6 +141,10 @@ SceneDocument importGltfToSceneDocument(
         byteLength: v.byteLength,
         byteOffset: v.byteOffset + bufferBase[v.buffer],
         byteStride: v.byteStride,
+        meshopt: v.meshopt?.rebased(
+          buffer: 0,
+          byteOffset: v.meshopt!.byteOffset + bufferBase[v.meshopt!.buffer],
+        ),
       ),
   ];
 
@@ -158,24 +169,7 @@ SceneDocument importGltfToSceneDocument(
     blob.add(bytes);
   }
 
-  final normalized = GltfDocument(
-    scene: doc.scene,
-    scenes: doc.scenes,
-    nodes: doc.nodes,
-    meshes: doc.meshes,
-    accessors: doc.accessors,
-    bufferViews: bufferViews,
-    buffers: doc.buffers,
-    materials: doc.materials,
-    textures: doc.textures,
-    images: images,
-    samplers: doc.samplers,
-    skins: doc.skins,
-    animations: doc.animations,
-    lights: doc.lights,
-    materialsVariants: doc.materialsVariants,
-    warnings: doc.warnings,
-  );
+  final normalized = doc.copyWith(bufferViews: bufferViews, images: images);
   return (doc: normalized, bufferData: blob.toBytes());
 }
 

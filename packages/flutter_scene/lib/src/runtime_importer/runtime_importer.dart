@@ -49,10 +49,11 @@ Future<Node> importGlb(
     glbBinaryChunk: container.binaryChunk,
     resolveUri: null,
   );
-  final packed = await _packPrimitives(normalized.doc, normalized.bufferData);
+  final gltf = decodeMeshoptBufferViews(normalized.doc, normalized.bufferData);
+  final packed = await _packPrimitives(gltf.doc, gltf.bufferData);
   return _buildScene(
-    normalized.doc,
-    normalized.bufferData,
+    gltf.doc,
+    gltf.bufferData,
     packed,
     null,
     onWarning: onWarning,
@@ -82,10 +83,11 @@ Future<Node> importGltf(
     glbBinaryChunk: Uint8List(0),
     resolveUri: resolveUri,
   );
-  final packed = await _packPrimitives(normalized.doc, normalized.bufferData);
+  final gltf = decodeMeshoptBufferViews(normalized.doc, normalized.bufferData);
+  final packed = await _packPrimitives(gltf.doc, gltf.bufferData);
   return _buildScene(
-    normalized.doc,
-    normalized.bufferData,
+    gltf.doc,
+    gltf.bufferData,
     packed,
     resolveUri,
     onWarning: onWarning,
@@ -458,11 +460,17 @@ Future<({GltfDocument doc, Uint8List bufferData})> _normalizeBuffers(
     }
   }
 
+  // EXT_meshopt_compression placeholder buffers hold no data the decode path
+  // reads, so they contribute nothing to the blob and are never resolved.
+  final placeholders = meshoptPlaceholderBuffers(doc);
   final bufferBase = <int>[];
-  for (final buffer in doc.buffers) {
+  for (int i = 0; i < doc.buffers.length; i++) {
     padTo4();
     bufferBase.add(blob.length);
-    blob.add(await _resolveBufferBytes(buffer.uri, glbBinaryChunk, resolveUri));
+    if (placeholders.contains(i)) continue;
+    blob.add(
+      await _resolveBufferBytes(doc.buffers[i].uri, glbBinaryChunk, resolveUri),
+    );
   }
 
   final bufferViews = [
@@ -472,6 +480,10 @@ Future<({GltfDocument doc, Uint8List bufferData})> _normalizeBuffers(
         byteLength: v.byteLength,
         byteOffset: v.byteOffset + bufferBase[v.buffer],
         byteStride: v.byteStride,
+        meshopt: v.meshopt?.rebased(
+          buffer: 0,
+          byteOffset: v.meshopt!.byteOffset + bufferBase[v.meshopt!.buffer],
+        ),
       ),
   ];
 
