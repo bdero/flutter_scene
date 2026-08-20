@@ -7,10 +7,13 @@ import 'package:flutter/services.dart'
     show AssetBundle, AssetManifest, rootBundle;
 import 'package:vector_math/vector_math.dart';
 
-import '../fmat/fmat_emitter.dart' show radianceCubeEntryName;
+import '../fmat/fmat_emitter.dart'
+    show lightmapEntryName, radianceCubeEntryName;
 import '../generated_assets/generated_asset_lookup.dart';
 import '../generated_assets/generated_assets.dart';
 import '../gpu/gpu.dart' as gpu;
+import '../render/frame_transients.dart';
+import 'engine_lighting.dart';
 import 'physical_material.dart';
 import 'physically_based_material.dart' show AlphaMode, TextureTransform;
 import 'preprocessed_material.dart';
@@ -170,17 +173,29 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
     required super.fragmentShader,
     required super.metadata,
     required this.transmissive,
+    required this.lightmapped,
   });
 
   /// Whether this variant samples the captured scene color.
   final bool transmissive;
 
+  /// Whether this variant reads its diffuse ambient from a baked lightmap.
+  final bool lightmapped;
+
+  @override
+  bool get usesLightmapVariant => lightmapped;
+
   /// Creates a prepared variant from already-loaded static resources.
+  ///
+  /// [lightmapped] selects the entries that swap the SH diffuse ambient for a
+  /// baked lightmap; only the opaque material ships them.
   static PhysicalMaterialVariant fromDescriptor(
-    PhysicalMaterialDescriptor descriptor,
-  ) {
+    PhysicalMaterialDescriptor descriptor, {
+    bool lightmapped = false,
+  }) {
     final transmissive = descriptor.transmission > 0.0;
-    final entry = transmissive ? 'PhysicalTransmission' : 'PhysicalOpaque';
+    final name = transmissive ? 'PhysicalTransmission' : 'PhysicalOpaque';
+    final entry = lightmapped ? lightmapEntryName(name) : name;
     final assets = _physicalAssets;
     if (assets == null) {
       throw StateError(
@@ -196,12 +211,14 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
       return shader;
     }
 
-    final metadata = (assets.metadata[entry] as Map).cast<String, Object?>();
+    // The sidecar is keyed by material, not by variant entry.
+    final metadata = (assets.metadata[name] as Map).cast<String, Object?>();
     final material =
         PhysicalMaterialVariant._(
             fragmentShader: require(entry),
             metadata: metadata,
             transmissive: transmissive,
+            lightmapped: lightmapped,
           )
           ..setShadowFragmentShader(require('${entry}Shadow'))
           ..setRadianceCubeFragmentShaders(
@@ -242,6 +259,42 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
   bool _isOpaque = true;
   PhysicalTexture _reflectionRoughnessTexture = PhysicalTexture();
   double _reflectionRoughnessFactor = 1.0;
+
+  PhysicalTexture _lightmapTexture = PhysicalTexture(texCoord: 1);
+  double _lightmapIntensity = 1.0;
+  bool _lightmapRgbm = false;
+
+  /// Sets the baked lightmap this variant samples. Only meaningful when the
+  /// variant was built with [lightmapped].
+  void setLightmap(
+    PhysicalTexture texture, {
+    required double intensity,
+    required bool rgbm,
+  }) {
+    _lightmapTexture = texture;
+    _lightmapIntensity = intensity;
+    _lightmapRgbm = rgbm;
+  }
+
+  @override
+  void bindLightmap(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+  ) {
+    final source = _lightmapTexture.source;
+    EngineLightingUniforms.bindLightmap(
+      pass,
+      shader,
+      transientsBuffer,
+      texture: source?.sampledTexture,
+      transform: _lightmapTexture.transform,
+      texCoord: _lightmapTexture.texCoord,
+      intensity: _lightmapIntensity,
+      rgbm: _lightmapRgbm,
+      sampler: source?.sampledSampler,
+    );
+  }
 
   @override
   gpu.Texture? get reflectionRoughnessTexture =>

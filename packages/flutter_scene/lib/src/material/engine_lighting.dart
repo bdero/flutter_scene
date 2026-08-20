@@ -1,12 +1,15 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/physically_based_material.dart'
+    show TextureTransform;
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
@@ -453,6 +456,7 @@ class EngineLightingUniforms {
     EnvironmentMap env, {
     bool bindSsao = true,
     bool bindShadows = true,
+    bool bindDiffuseSh = true,
     bool? cubeShader,
   }) {
     if (_memoPassIs(pass)) {
@@ -485,12 +489,15 @@ class EngineLightingUniforms {
     // coefficient). During a cross-fade [Lighting.diffuseShTexture] carries a
     // 9x2 composite holding both environments' rows; otherwise the primary's
     // own 9x1 texture is bound and both shader row coordinates land on its
-    // single row. Sampled in EvaluateDiffuseSH.
-    pass.bindTexture(
-      shader.getUniformSlot('sh_coefficients'),
-      lighting.diffuseShTexture ?? env.diffuseShTexture,
-      sampler: _nearestClampSampler,
-    );
+    // single row. Sampled in EvaluateDiffuseSH. A baked-lightmap variant reads
+    // its diffuse ambient from the lightmap and declares no such sampler.
+    if (bindDiffuseSh) {
+      pass.bindTexture(
+        shader.getUniformSlot('sh_coefficients'),
+        lighting.diffuseShTexture ?? env.diffuseShTexture,
+        sampler: _nearestClampSampler,
+      );
+    }
     // The secondary cross-fade environment's radiance (the *_b samplers).
     // When no cross-fade is active the primary is bound here too (a valid
     // no-op, since frag_info.radiance_blend.x is 0 and the shader never
@@ -566,6 +573,68 @@ class EngineLightingUniforms {
       shader.getUniformSlot('ssao_texture'),
       Material.whitePlaceholder(lighting.ssaoMap),
       sampler: _clampLinearSampler,
+    );
+  }
+
+  static final Float32List _lightmapInfoScratch = Float32List(12);
+
+  /// Packs the `LightmapInfo` std140 block (three vec4s) into [target]. See
+  /// `shaders/lightmap.glsl` for the field layout.
+  @visibleForTesting
+  static void packLightmapInfo(
+    Float32List target, {
+    required TextureTransform transform,
+    required int texCoord,
+    required double intensity,
+    required bool rgbm,
+  }) {
+    target
+      ..[0] = transform.offset.x
+      ..[1] = transform.offset.y
+      ..[2] = transform.scale.x
+      ..[3] = transform.scale.y
+      ..[4] = math.cos(transform.rotation)
+      ..[5] = math.sin(transform.rotation)
+      ..[6] = texCoord.clamp(0, 1).toDouble()
+      ..[7] = rgbm ? 1.0 : 0.0
+      ..[8] = intensity
+      ..[9] = 0.0
+      ..[10] = 0.0
+      ..[11] = 0.0;
+  }
+
+  /// Binds the baked lightmap sampler and its `LightmapInfo` block. Both exist
+  /// only in the `FLUTTER_SCENE_LIGHTMAP` variants, so this runs exactly when
+  /// the material selected one (see `lightmap.glsl`).
+  ///
+  /// The bake replaces the SH diffuse ambient, so an unbound texture reads
+  /// black (no indirect light) rather than white.
+  static void bindLightmap(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer, {
+    required gpu.Texture? texture,
+    required TextureTransform transform,
+    required int texCoord,
+    required double intensity,
+    required bool rgbm,
+    gpu.SamplerOptions? sampler,
+  }) {
+    pass.bindTexture(
+      shader.getUniformSlot('lightmap_texture'),
+      texture ?? Material.getBlackPlaceholderTexture(),
+      sampler: sampler ?? _clampLinearSampler,
+    );
+    packLightmapInfo(
+      _lightmapInfoScratch,
+      transform: transform,
+      texCoord: texCoord,
+      intensity: intensity,
+      rgbm: rgbm,
+    );
+    pass.bindUniform(
+      shader.getUniformSlot('LightmapInfo'),
+      transientsBuffer.emplace(ByteData.sublistView(_lightmapInfoScratch)),
     );
   }
 
