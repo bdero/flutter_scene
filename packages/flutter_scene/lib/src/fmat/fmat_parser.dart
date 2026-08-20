@@ -658,7 +658,8 @@ FmatMaterial _build(
 
   // `engine_inputs` lists per-frame engine textures the shader samples:
   // `scene_color` (the accumulated background), `filtered_scene_color` (its
-  // roughness-filtered atlas), and `scene_depth` (the opaque linear depth).
+  // roughness-filtered atlas), `scene_depth` (the opaque linear depth), and
+  // `planar_reflection` (a PlanarReflectorComponent's mirrored capture).
   // Lit surface materials only: the samplers and their gates ride the engine-
   // lighting frame data, which unlit shaders and skies do not carry.
   final engineInputs = <String>[];
@@ -674,12 +675,13 @@ FmatMaterial _build(
       if (entry is _Ident &&
           (entry.name == 'scene_color' ||
               entry.name == 'filtered_scene_color' ||
-              entry.name == 'scene_depth')) {
+              entry.name == 'scene_depth' ||
+              entry.name == 'planar_reflection')) {
         if (!engineInputs.contains(entry.name)) engineInputs.add(entry.name);
       } else {
         throw FmatException(
           'Unknown `engine_inputs` entry; supported: `scene_color`, '
-          '`filtered_scene_color`, `scene_depth`.',
+          '`filtered_scene_color`, `scene_depth`, `planar_reflection`.',
           fileName: fileName,
           line: entry is _Ident ? entry.line : null,
         );
