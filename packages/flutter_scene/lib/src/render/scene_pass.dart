@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -90,7 +90,9 @@ class ScenePass extends RenderGraphPass {
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
     bool includeOffscreen = false,
+    bool suppressPlanarReflections = false,
   }) : _captureOpaqueColor = captureOpaqueColor,
+       _suppressPlanarReflections = suppressPlanarReflections,
        _bindSceneDepth = bindSceneDepth,
        _time = time,
        _camera = camera,
@@ -146,6 +148,7 @@ class ScenePass extends RenderGraphPass {
   // depth, and the engine time for material animation.
   final bool _captureOpaqueColor;
   final bool _bindSceneDepth;
+  final bool _suppressPlanarReflections;
   final double _time;
   final List<Plane> _cullingPlanes;
   final bool _includeOffscreen;
@@ -154,6 +157,15 @@ class ScenePass extends RenderGraphPass {
 
   @override
   String get name => 'ScenePass';
+
+  /// Whether draws in this pass suppress planar reflection sampling (the
+  /// pass is itself a planar capture, which must not recurse).
+  @visibleForTesting
+  bool get debugSuppressesPlanarReflections => _suppressPlanarReflections;
+
+  /// The node-layer mask this pass draws.
+  @visibleForTesting
+  int get debugLayerMask => _layerMask;
 
   @override
   void execute(RenderGraphContext context) {
@@ -306,6 +318,7 @@ class ScenePass extends RenderGraphPass {
       tanHalfFovX: tanHalfFovX,
       tanHalfFovY: tanHalfFovY,
       time: _time,
+      planarReflectionsSuppressed: _suppressPlanarReflections,
     );
 
     final commandBuffer = gpu.gpuContext.createCommandBuffer();

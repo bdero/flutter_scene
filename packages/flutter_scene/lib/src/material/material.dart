@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
+import 'package:flutter_scene/src/render/planar_reflection.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
@@ -436,6 +437,19 @@ abstract class Material {
   /// base material requests nothing; a `.fmat` material declares these with
   /// `engine_inputs:`.
   Set<RenderInput> get sceneInputs => const {};
+
+  /// Whether this material samples a planar reflection capture (a `.fmat`
+  /// that declares the `planar_reflection` engine input). The
+  /// `PlanarReflectorComponent` governing the surface routes its capture to
+  /// materials that report true.
+  @internal
+  bool get usesPlanarReflection => false;
+
+  /// The planar reflection capture this material samples, or null when none
+  /// is active. Refreshed each frame by the governing reflector; only read
+  /// when [usesPlanarReflection] is true.
+  @internal
+  PlanarReflectionFrame? planarReflectionFrame;
 
   /// Maximum local-space distance sampled beyond the current surface.
   ///

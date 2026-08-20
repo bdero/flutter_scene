@@ -826,6 +826,7 @@ class Lighting {
     this.tanHalfFovX = 0.0,
     this.tanHalfFovY = 0.0,
     this.time = 0.0,
+    this.planarReflectionsSuppressed = false,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
 
   /// The image-based-lighting environment in effect for this draw.
@@ -975,4 +976,9 @@ class Lighting {
   /// Seconds since the scene started rendering, for engine-driven material
   /// animation (the same clock custom post passes receive).
   final double time;
+
+  /// Whether this draw is inside a planar reflection capture, where mirror
+  /// materials bind no capture and fall back to their base look so captures
+  /// never recurse.
+  final bool planarReflectionsSuppressed;
 }

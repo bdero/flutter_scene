@@ -10,13 +10,14 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart'
-    show Matrix3, Matrix4, Ray, Vector3;
+    show Frustum, Matrix3, Matrix4, Plane, Ray, Vector3;
 import 'ambient_occlusion.dart';
 import 'audio/audio_engine.dart';
 import 'auto_exposure.dart';
 import 'camera.dart';
 import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
+import 'components/planar_reflector_component.dart';
 import 'components/reflection_probe_component.dart';
 import 'fog.dart';
 import 'god_rays.dart';
@@ -48,6 +49,8 @@ import 'render/post_effect_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
 import 'render/render_scene.dart';
+import 'render/planar_reflection.dart';
+import 'render/planar_reflection_pass.dart';
 import 'render/punctual_lights.dart';
 import 'render/spot_shadow.dart';
 import 'render/scene_pass.dart';
@@ -655,6 +658,154 @@ base class Scene implements SceneGraph {
   // previous face's intermediate attachments, which is safe on one
   // submission queue (the GPU executes the faces in submission order).
   TransientTexturePool? _probeCapturePool;
+
+  // Cross-frame planar reflection capture targets, one per active reflection
+  // group, keyed by the shared group id (or the reflector component for an
+  // ungrouped one). Pruned as groups disappear.
+  final Map<Object, _PlanarCaptureResources> _planarCaptureResources = {};
+
+  /// The planar reflection capture passes built for the most recent capturing
+  /// view, for tests that assert graph composition. Empty when no reflector
+  /// captured.
+  @visibleForTesting
+  List<PlanarReflectionCapturePass> debugLastPlanarCapturePasses = const [];
+
+  // Builds this frame's planar reflection capture passes for the primary
+  // view: groups the visible reflectors, allocates or reuses each group's
+  // capture target, routes the resulting frame to the mirror surfaces'
+  // materials, and returns one capture pass per group. Distributes a null
+  // frame to reflectors that do not capture this frame so their surfaces
+  // fall back to the base look.
+  List<PlanarReflectionCapturePass> _buildPlanarCapturePasses({
+    required RenderView view,
+    required Camera camera,
+    required ui.Size pixelSize,
+    required EnvironmentMap environmentMap,
+    required DirectionalLightComponent? lightComponent,
+    required PunctualLighting punctualLighting,
+    required List<ShadowCascade> cascades,
+    required double time,
+  }) {
+    final reflectors = renderScene.planarReflectorComponents;
+    if (reflectors.isEmpty) {
+      _planarCaptureResources.clear();
+      debugLastPlanarCapturePasses = const [];
+      return const [];
+    }
+    // The oblique near-plane clip is a perspective-projection modification;
+    // other projections render without planar reflections (like the other
+    // camera-reconstruction effects).
+    final perspective = camera.projection is PerspectiveProjection;
+    final groups = <Object, List<PlanarReflectorComponent>>{};
+    Frustum? frustum;
+    for (final reflector in reflectors) {
+      var active =
+          perspective &&
+          reflector.enabled &&
+          reflector.node.internalEffectiveVisible &&
+          (reflector.node.layers & view.layerMask) != 0;
+      if (active) {
+        // A camera on or behind the mirror plane sees the surface's back (or
+        // nothing), so there is no reflection to capture.
+        final plane = reflector.worldPlane();
+        if (plane.normal.dot(camera.position) + plane.constant <= 0.0) {
+          active = false;
+        }
+      }
+      if (active) {
+        final bounds = reflector.node.combinedWorldBounds;
+        if (bounds != null) {
+          frustum ??= camera.getFrustum(pixelSize);
+          if (!frustum.intersectsWithAabb3(bounds)) {
+            active = false;
+          }
+        }
+      }
+      if (!active) {
+        reflector.internalDistributeFrame(null);
+        continue;
+      }
+      final Object key = reflector.reflectionGroupId >= 0
+          ? reflector.reflectionGroupId
+          : reflector;
+      groups.putIfAbsent(key, () => []).add(reflector);
+    }
+    _planarCaptureResources.removeWhere((key, _) => !groups.containsKey(key));
+    if (groups.isEmpty) {
+      debugLastPlanarCapturePasses = const [];
+      return const [];
+    }
+
+    final light = lightComponent?.light;
+    final lightDirection = lightComponent?.worldDirection;
+    final passes = <PlanarReflectionCapturePass>[];
+    groups.forEach((key, members) {
+      // Members of a shared group are co-planar by contract; the first one
+      // supplies the plane and capture settings.
+      final lead = members.first;
+      final plane = lead.worldPlane();
+      final scale = lead.resolutionScale.clamp(0.1, 1.0);
+      final width = math.max(1, (pixelSize.width * scale).round());
+      final height = math.max(1, (pixelSize.height * scale).round());
+      final captureSize = ui.Size(width.toDouble(), height.toDouble());
+      final resources = _planarCaptureResources.putIfAbsent(
+        key,
+        _PlanarCaptureResources.new,
+      );
+      final texture = resources.acquire(width, height);
+      final reflectedCamera = PlanarReflectionCamera(
+        source: camera,
+        plane: plane,
+        clipBias: lead.clipBias,
+      );
+      final frame = PlanarReflectionFrame(
+        texture: texture,
+        viewProjection: reflectedCamera.getViewTransform(captureSize),
+      );
+      for (final member in members) {
+        member.internalDistributeFrame(frame);
+      }
+      passes.add(
+        PlanarReflectionCapturePass(
+          scenePass: ScenePass(
+            camera: reflectedCamera,
+            renderScene: renderScene,
+            dimensions: captureSize,
+            environmentMap: environmentMap,
+            environmentMapB: _crossfadeEnvironment,
+            environmentBlend: _crossfadeBlend,
+            environmentIntensity: environmentIntensity,
+            environmentTransform: environmentTransform,
+            skybox: skybox,
+            enableMsaa: false,
+            directionalLight: light,
+            directionalLightDirection: lightDirection,
+            punctualLighting: punctualLighting,
+            cascades: cascades,
+            layerMask: lead.layerMask,
+            fog: fog,
+            time: time,
+            // Rejects whole objects behind the mirror on the CPU; the
+            // oblique projection clips whatever straddles the plane.
+            cullingPlanes: [
+              Plane.normalconstant(
+                plane.normal,
+                plane.constant - lead.clipBias,
+              ),
+            ],
+            suppressPlanarReflections: true,
+          ),
+          output: texture,
+          pool: resources.pool,
+          groupKey: key,
+          layerMask: lead.layerMask,
+          dimensions: captureSize,
+        ),
+      );
+    });
+    debugLastPlanarCapturePasses = passes;
+    return passes;
+  }
 
   /// Captures the scene's linear HDR lighting at [position] into a new
   /// [EnvironmentMap]: renders the scene into six cube faces (with shadows
@@ -1362,6 +1513,20 @@ base class Scene implements SceneGraph {
       for (final view in views)
         if (view.target != null) view,
     ]..sort((a, b) => a.order.compareTo(b.order));
+
+    // Planar reflection captures follow one view's camera: the first screen
+    // view, or the first texture view of a frame with no screen views.
+    // Texture views render before the screen views' captures, so they
+    // composite the previous frame's capture.
+    RenderView? planarCaptureView;
+    for (final view in views) {
+      if (view.target == null) {
+        planarCaptureView = view;
+        break;
+      }
+    }
+    planarCaptureView ??= textureViews.isNotEmpty ? textureViews.first : null;
+
     final now = DateTime.now();
     for (final view in textureViews) {
       final target = view.target!;
@@ -1378,6 +1543,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        capturePlanarReflections: identical(view, planarCaptureView),
       );
       target.markUpdated(now);
     }
@@ -1408,6 +1574,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        capturePlanarReflections: identical(view, planarCaptureView),
       );
     }
 
@@ -1608,6 +1775,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    bool capturePlanarReflections = false,
   }) {
     // Allocate the offscreen render target at physical-pixel resolution so
     // the rasterized 3D content matches Flutter's framebuffer density.
@@ -1648,6 +1816,7 @@ base class Scene implements SceneGraph {
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       capturer: capturer,
+      capturePlanarReflections: capturePlanarReflections,
     );
     if (capturer != null) {
       pendingCapture!.completer.complete(
@@ -1685,6 +1854,10 @@ base class Scene implements SceneGraph {
     // reflections, indirect-light history, post-processing, anti-aliasing,
     // or display-referred chain.
     bool captureLinearColor = false,
+    // Whether this view renders the frame's planar reflection captures (the
+    // primary view only; captures follow its camera and other views reuse
+    // its result). Never set for a linear-color capture.
+    bool capturePlanarReflections = false,
   }) {
     // A capture frame observes the pool from graph construction on, so
     // display-chain and custom-pass destinations acquired before execute are
@@ -1881,6 +2054,25 @@ base class Scene implements SceneGraph {
           cascades: effectiveCascades,
         ),
       );
+    }
+
+    // Planar reflection captures render right after the shadow atlas they
+    // reuse and before the view's own scene work, so mirror surfaces sample
+    // this frame's captures. A frame without reflectors adds nothing here.
+    if (capturePlanarReflections && !captureLinearColor) {
+      final capturePasses = _buildPlanarCapturePasses(
+        view: view,
+        camera: camera,
+        pixelSize: pixelSize,
+        environmentMap: environmentMap,
+        lightComponent: lightComponent,
+        punctualLighting: punctualLighting,
+        cascades: effectiveCascades,
+        time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
+      );
+      for (final pass in capturePasses) {
+        graph.addPass(pass);
+      }
     }
     // Ambient occlusion, screen-space reflections, normals, and materials
     // that sample scene depth need the geometry prepass. Depth-only post
@@ -2403,5 +2595,38 @@ base class Scene implements SceneGraph {
       );
       i++;
     }
+  }
+}
+
+// Cross-frame GPU resources for one planar reflection group: the persistent
+// capture target mirror surfaces sample and the transient pool the capture
+// renders through (its own, so capture attachments never collide with a
+// view's same-sized transients).
+class _PlanarCaptureResources {
+  final TransientTexturePool pool = TransientTexturePool();
+  gpu.Texture? _texture;
+  int _width = 0;
+  int _height = 0;
+
+  // The group's capture target at the requested size, reallocated when the
+  // size changes (the old texture is released to finalizers; any in-flight
+  // frame object keeps it alive until sampled).
+  gpu.Texture acquire(int width, int height) {
+    var texture = _texture;
+    if (texture == null || _width != width || _height != height) {
+      texture = gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        width,
+        height,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+        enableRenderTargetUsage: true,
+        enableShaderReadUsage: true,
+      );
+      _texture = texture;
+      _width = width;
+      _height = height;
+      pool.clear();
+    }
+    return texture;
   }
 }
