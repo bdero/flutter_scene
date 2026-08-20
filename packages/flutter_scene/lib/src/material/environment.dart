@@ -6,18 +6,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/asset_helpers.dart';
+import 'package:flutter_scene/src/material/diffuse_sh.dart';
 import 'package:flutter_scene/src/material/equirect_image.dart';
+import 'package:flutter_scene/src/material/ibl_ktx2.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/env_prefilter.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/render/sky_bake.dart';
 import 'package:flutter_scene/src/skybox.dart';
+import 'package:flutter_scene/src/texture/half_float.dart';
 import 'package:vector_math/vector_math.dart';
-
-/// Number of L2 spherical-harmonic coefficients used for diffuse
-/// irradiance (bands 0..2).
-/// {@category Lighting and environment}
-const int kDiffuseShCoefficientCount = 9;
 
 /// A source of image-based lighting: diffuse irradiance plus prefiltered
 /// specular radiance, both derived from an equirectangular environment.
@@ -34,6 +32,8 @@ const int kDiffuseShCoefficientCount = 9;
 /// [EnvironmentMap.studio] (the built-in procedural default),
 /// [EnvironmentMap.constantDiffuse] for uniform ambient radiance with black
 /// reflections,
+/// [EnvironmentMap.fromKtx2Bytes] / [EnvironmentMap.fromKtx2Asset] for a
+/// pre-baked KTX2 radiance cubemap (no prefilter at load),
 /// [EnvironmentMap.fromGpuTextures] when you already hold a prefiltered
 /// atlas, or [EnvironmentMap.empty] for a no-op black environment.
 ///
@@ -210,6 +210,144 @@ base class EnvironmentMap {
       prefilteredRadiance,
       diffuseSphericalHarmonics ?? _zeroSphericalHarmonics(),
     );
+  }
+
+  /// Loads an [EnvironmentMap] from a pre-baked KTX2 radiance cubemap, the
+  /// output of an offline image-based-lighting bake (the Khronos glTF IBL
+  /// sampler, or [prefilterEquirectRadianceToCube] run in tooling).
+  ///
+  /// The file must be a cubemap (`faceCount` 6) with square power-of-two faces
+  /// at least [kMinRadianceCubeSize] a side, storing an uncompressed
+  /// `R16G16B16A16_SFLOAT`, `R32G32B32A32_SFLOAT`, `E5B9G9R9_UFLOAT_PACK32`,
+  /// `B10G11R11_UFLOAT_PACK32`, or `R8G8B8A8_UNORM`/`_SRGB` payload, optionally
+  /// zstd-supercompressed. Block-compressed and Basis payloads are rejected;
+  /// a GGX radiance chain is high dynamic range and a block codec destroys it.
+  /// Anything else throws a [FormatException].
+  ///
+  /// **Mip-to-roughness convention.** The mip chain must be a GGX roughness
+  /// series with **linear perceptual roughness per level**,
+  /// `roughness = level / (levelCount - 1)`, mip 0 being the mirror level and
+  /// the last level fully rough. That is the engine's own convention
+  /// ([prefilterEquirectRadianceToCube] bakes mip `i` at
+  /// `i / (kPrefilterBandCount - 1)`), and it is what the shader assumes when
+  /// it samples at `lod = roughness * (kPrefilterBandCount - 1)`. The shader's
+  /// lod scale is a constant, not the texture's mip count, so a chain of any
+  /// other length is resampled here onto exactly [kPrefilterBandCount] levels
+  /// (interpolating the two source levels bracketing each band's roughness).
+  /// A file baked with a non-linear roughness distribution shades differently
+  /// from an internally prefiltered environment; re-bake it linearly.
+  ///
+  /// **Face order.** Faces are taken in KTX2 order (+X, -X, +Y, -Y, +Z, -Z)
+  /// with no reordering and no flip. The engine's cube sampling is the
+  /// Khronos/Vulkan/GL convention verbatim (see `cubeFaceBases`), so a
+  /// conforming file lands correctly as stored. Reorienting an environment for
+  /// a scene is `Scene.environmentTransform`, not the loader's business.
+  ///
+  /// **Diffuse.** [diffuseSphericalHarmonics] wins when given; otherwise
+  /// [diffuseShSidecar] is parsed ([parseDiffuseShSidecar]); otherwise the
+  /// file's [kDiffuseShKtx2Key] key/value entry is read; otherwise the diffuse
+  /// term is zero and only reflections light the scene. Coefficients are
+  /// irradiance-domain, with the Lambertian `A_l` band factors and the `1/pi`
+  /// BRDF term already folded in exactly as
+  /// [computeDiffuseSphericalHarmonics] returns them. Check a bake against the
+  /// contract with [describeDiffuseSphericalHarmonics].
+  ///
+  /// The parse and resample run on a background isolate; only the upload
+  /// touches the main thread.
+  /// {@category Lighting and environment}
+  static Future<EnvironmentMap> fromKtx2Bytes(
+    Uint8List bytes, {
+    List<Vector3>? diffuseSphericalHarmonics,
+    Uint8List? diffuseShSidecar,
+  }) async {
+    final sidecarSh = diffuseShSidecar == null
+        ? null
+        : parseDiffuseShSidecar(diffuseShSidecar);
+    // The layout the backend can sample decides which resample runs, so it is
+    // resolved here and carried into the isolate.
+    final cubeLayout = effectiveMipRadianceLayout;
+    final decoded = await compute(_decodeKtx2EnvironmentOnIsolate, (
+      bytes,
+      cubeLayout,
+    ));
+    final (radiance, fileSh) = cubeLayout
+        ? _uploadRadianceCube(decoded as ImportedRadianceCube)
+        : _uploadRadianceAtlas(decoded as ImportedRadianceAtlas);
+    return EnvironmentMap._(
+      radiance,
+      diffuseSphericalHarmonics ??
+          sidecarSh ??
+          fileSh ??
+          _zeroSphericalHarmonics(),
+    );
+  }
+
+  /// Loads an [EnvironmentMap] from a pre-baked KTX2 radiance cubemap in the
+  /// asset bundle (see [fromKtx2Bytes] for the accepted conventions).
+  ///
+  /// [diffuseShAssetPath], when given, is a sidecar of
+  /// [kDiffuseShSidecarByteLength] bytes holding the diffuse spherical
+  /// harmonics; a file that carries them in its own [kDiffuseShKtx2Key]
+  /// metadata needs no sidecar.
+  /// {@category Lighting and environment}
+  static Future<EnvironmentMap> fromKtx2Asset({
+    required String assetPath,
+    String? diffuseShAssetPath,
+    List<Vector3>? diffuseSphericalHarmonics,
+    AssetBundle? bundle,
+  }) async {
+    final environment = await fromKtx2Bytes(
+      await bytesFromAsset(assetPath, bundle: bundle),
+      diffuseSphericalHarmonics: diffuseSphericalHarmonics,
+      diffuseShSidecar: diffuseShAssetPath == null
+          ? null
+          : await bytesFromAsset(diffuseShAssetPath, bundle: bundle),
+    );
+    _environmentAssetPaths[environment] = assetPath;
+    return environment;
+  }
+
+  /// Uploads a decoded radiance cube to a cube texture, face by face and mip
+  /// by mip.
+  static (gpu.Texture, List<Vector3>?) _uploadRadianceCube(
+    ImportedRadianceCube decoded,
+  ) {
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      decoded.baseSize,
+      decoded.baseSize,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+      textureType: gpu.TextureType.textureCube,
+      mipLevelCount: kPrefilterBandCount,
+      enableRenderTargetUsage: false,
+    );
+    for (var mip = 0; mip < decoded.mips.length; mip++) {
+      final faces = decoded.mips[mip];
+      for (var face = 0; face < faces.length; face++) {
+        texture.overwrite(
+          ByteData.sublistView(faces[face]),
+          mipLevel: mip,
+          slice: face,
+        );
+      }
+    }
+    return (texture, decoded.diffuseSphericalHarmonics);
+  }
+
+  /// Uploads a decoded radiance atlas, the fallback for backends that cannot
+  /// sample a mip chain.
+  static (gpu.Texture, List<Vector3>?) _uploadRadianceAtlas(
+    ImportedRadianceAtlas decoded,
+  ) {
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      decoded.width,
+      decoded.height,
+      format: gpu.PixelFormat.r16g16b16a16Float,
+      enableRenderTargetUsage: false,
+    );
+    texture.overwrite(ByteData.sublistView(decoded.pixels));
+    return (texture, decoded.diffuseSphericalHarmonics);
   }
 
   /// Builds an [EnvironmentMap] from an already-decoded equirectangular
@@ -399,10 +537,6 @@ base class EnvironmentMap {
     return EnvironmentMap._fromGpuSh(baked.atlas, baked.sh);
   }
 
-  // Scratch storage for reinterpreting a 32-bit float as its raw bits.
-  static final Float32List _floatBits = Float32List(1);
-  static final Uint32List _floatBitsView = Uint32List.view(_floatBits.buffer);
-
   /// Creates the radiance source equirect from linear float [pixels], with a
   /// CPU-built mip chain when the backend supports manually-mipped textures (the
   /// same capability that selects the cube radiance layout). The cube prefilter
@@ -426,7 +560,7 @@ base class EnvironmentMap {
       mipLevelCount: mipCount,
     );
     texture.overwrite(
-      ByteData.sublistView(_floatPixelsToHalf(pixels)),
+      ByteData.sublistView(floatPixelsToHalf(pixels)),
       mipLevel: 0,
     );
     var level = pixels;
@@ -437,7 +571,7 @@ base class EnvironmentMap {
       final nh = math.max(1, h >> 1);
       level = _boxDownsampleEquirect(level, w, h, nw, nh);
       texture.overwrite(
-        ByteData.sublistView(_floatPixelsToHalf(level)),
+        ByteData.sublistView(floatPixelsToHalf(level)),
         mipLevel: mip,
       );
       w = nw;
@@ -487,34 +621,6 @@ base class EnvironmentMap {
       }
     }
     return dst;
-  }
-
-  /// Converts linear RGBA float [pixels] to half-float (fp16) bit patterns
-  /// for upload to an `r16g16b16a16Float` texture.
-  static Uint16List _floatPixelsToHalf(Float32List pixels) {
-    final half = Uint16List(pixels.length);
-    for (var i = 0; i < pixels.length; i++) {
-      half[i] = _floatToHalfBits(pixels[i]);
-    }
-    return half;
-  }
-
-  /// Converts one 32-bit float to a 16-bit half-float bit pattern.
-  /// Subnormals flush to zero; values past the half range clamp to the
-  /// largest finite half.
-  static int _floatToHalfBits(double value) {
-    _floatBits[0] = value;
-    final bits = _floatBitsView[0];
-    final sign = (bits >>> 16) & 0x8000;
-    final exponent = ((bits >>> 23) & 0xff) - 112; // rebias 127 -> 15
-    final mantissa = bits & 0x7fffff;
-    if (exponent >= 0x1f) {
-      return sign | 0x7bff; // overflow / inf / nan -> largest finite half
-    }
-    if (exponent <= 0) {
-      return sign; // underflow -> signed zero
-    }
-    return sign | (exponent << 10) | (mantissa >>> 13);
   }
 
   /// Builds the package's built-in procedural "studio" environment.
@@ -935,10 +1041,10 @@ base class EnvironmentMap {
   static gpu.Texture _shTextureFromList(List<Vector3> sh) {
     final half = Uint16List(kDiffuseShCoefficientCount * 4);
     for (var i = 0; i < kDiffuseShCoefficientCount; i++) {
-      half[i * 4] = _floatToHalfBits(sh[i].x);
-      half[i * 4 + 1] = _floatToHalfBits(sh[i].y);
-      half[i * 4 + 2] = _floatToHalfBits(sh[i].z);
-      half[i * 4 + 3] = _floatToHalfBits(1.0);
+      half[i * 4] = floatToHalfBits(sh[i].x);
+      half[i * 4 + 1] = floatToHalfBits(sh[i].y);
+      half[i * 4 + 2] = floatToHalfBits(sh[i].z);
+      half[i * 4 + 3] = floatToHalfBits(1.0);
     }
     final texture = gpu.gpuContext.createTexture(
       gpu.StorageMode.hostVisible,
@@ -949,6 +1055,17 @@ base class EnvironmentMap {
     texture.overwrite(ByteData.sublistView(half));
     return texture;
   }
+}
+
+// Isolate entry point for EnvironmentMap.fromKtx2Bytes. Parses the container,
+// decodes the faces, and resamples them onto the radiance layout the backend
+// can sample: an ImportedRadianceCube when it renders and samples mip chains,
+// an ImportedRadianceAtlas otherwise.
+Object _decodeKtx2EnvironmentOnIsolate((Uint8List, bool) message) {
+  final (bytes, cubeLayout) = message;
+  return cubeLayout
+      ? decodeKtx2RadianceCube(bytes)
+      : decodeKtx2RadianceAtlas(bytes);
 }
 
 // Isolate entry point for EnvironmentMap.fromEquirectImageBytes. Decodes an
