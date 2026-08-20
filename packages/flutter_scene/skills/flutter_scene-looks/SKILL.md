@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-looks
-version: 2
+version: 3
 description: Give a flutter_scene render a deliberate, polished look. Use this whenever a scene looks flat, dull, or washed out, or whenever the ask is to make it look good, because a good look is lighting plus post-processing, not geometry. Ships copy-paste EnvironmentSettings presets that configure the whole stack coherently.
 ---
 
@@ -144,12 +144,13 @@ Start from the nearest look, then move one field at a time.
 - **Colors feel wrong.** Turn on `colorGradingEnabled` and reach for `saturation`, `contrast`, `temperature`, `tint` before anything else.
 - **Wrong tone-map feel.** `ToneMappingMode.aces` is contrasty and filmic, `pbrNeutral` (default) preserves hue and saturation, `agx` is the most neutral highlight rolloff. Do not reintroduce an `exposure: 2.0` hack; that was an artifact of an older renderer.
 
-## Two look tools that are not on EnvironmentSettings
+## Look tools that are not on EnvironmentSettings
 
-Anti-aliasing and reflection probes affect the look but are set outside `EnvironmentSettings`, so a preset does not turn them on.
+Anti-aliasing, reflection probes, and planar reflectors affect the look but are set outside `EnvironmentSettings`, so a preset does not turn them on.
 
 - **Anti-aliasing** is a `Scene` field. The default `AntiAliasingMode.auto` already picks `msaa` where the backend supports it and `fxaa` otherwise, so edges are handled. Reach for `scene.antiAliasingMode = AntiAliasingMode.smaa` when `fxaa` looks mushy (it blurs texture detail) and `msaa` is unavailable; SMAA keeps edges clean without the blur, at ~3x fxaa cost.
-- **Reflection probes** capture true local reflections that SSR cannot, because SSR only reflects what is on screen. Attach a `ReflectionProbeComponent` to a node placed at the reflective spot (a room, a mirror ball); it captures the surroundings into a parallax-corrected box and blends with the environment. The capture renders the scene six times, so it happens once on activate (or on an explicit `requestCapture()`), never per frame. See `references/looks.md` for both.
+- **Reflection probes** capture true local reflections that SSR cannot, because SSR only reflects what is on screen. Attach a `ReflectionProbeComponent` to a node placed at the reflective spot (a room, a mirror ball); it captures the surroundings into a parallax-corrected box and blends with the environment. The capture renders the scene six times, so it happens once on activate (or on an explicit `requestCapture()`), never per frame.
+- **Planar reflectors** render a true per-frame mirror for one flat surface (a mirror, a glossy floor), which neither SSR nor a probe can produce. Attach a `PlanarReflectorComponent` to the mirror node and give the surface a `.fmat` material declaring `engine_inputs: [ planar_reflection ]`; the component renders the scene once more per frame from the reflected camera and the material samples it with `GetPlanarReflection()`. That extra scene render is the cost, so bound it with `resolutionScale` (default 0.5) and `layerMask`. See `references/looks.md` for all three.
 
 ## Cost
 

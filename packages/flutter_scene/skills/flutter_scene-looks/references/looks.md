@@ -237,6 +237,30 @@ scene.add(probe);
 
 For a one-shot environment capture with no node or parallax (e.g. to hand a captured `EnvironmentMap` to another material), `Scene.captureEnvironment(position: ...)` returns an `EnvironmentMap` directly.
 
+### Planar reflectors (`PlanarReflectorComponent`)
+
+A true mirror for one flat surface, re-rendered every frame the surface is visible: the engine renders the scene from the view camera reflected across the surface's plane (near plane clamped to the mirror, so nothing behind it leaks in) and hands the capture to the surface's material. Use it for mirrors and glossy floors where SSR's on-screen-only reflections or a probe's static capture are not enough.
+
+Two pieces pair up. The component goes on the mirror node (the plane is the node's local `+Y` through its transform, or an explicit `localNormal`):
+
+```dart
+final mirror = Node(mesh: Mesh(PlaneGeometry(width: 10, depth: 10), mirrorMaterial))
+  ..addComponent(PlanarReflectorComponent());
+scene.add(mirror);
+```
+
+And the surface's material is a `.fmat` that declares the `planar_reflection` engine input and samples `GetPlanarReflection()` (mirrored scene color in rgb, `a` 1 while a capture is bound; fall back to the environment reflection at `a == 0`). A worked mirror lives at `examples/flutter_app/assets/planar_mirror.fmat`.
+
+| Constructor arg | Default | What it does |
+| --- | --- | --- |
+| `resolutionScale` | `0.5` | Capture resolution relative to the view (clamped `0.1..1.0`). The fragment-cost lever. |
+| `layerMask` | all layers | What renders into the capture. The draw-cost lever. |
+| `reflectionGroupId` | `-1` | Co-planar surfaces sharing a non-negative id share one capture per frame; `-1` means an own capture. |
+| `clipBias` | `1e-3` | World-space offset of the clip plane in front of the mirror, keeping the surface itself out of the capture. |
+| `localNormal` | local `+Y` | The mirror plane's facing direction in node space. |
+
+The capture is a second scene submission per reflection group per frame: its CPU and draw-call cost scales with scene complexity, not just resolution. It reuses the frame's shadow atlas and runs without screen-space post; reflectors seen inside a capture draw their base look, so captures never recurse.
+
 ---
 
 ## Cost and budget
