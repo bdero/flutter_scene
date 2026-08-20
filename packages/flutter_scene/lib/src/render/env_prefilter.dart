@@ -6,22 +6,21 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/radiance_layout.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 
-/// Number of roughness bands in a prefiltered-radiance atlas (band 0 =
-/// mirror, band `kPrefilterBandCount - 1` = fully rough; band `i` covers
-/// perceptual roughness `i / (kPrefilterBandCount - 1)`).
-///
-/// Must match `kPrefilterBands` in `shaders/texture.glsl`.
-const int kPrefilterBandCount = 8;
-
-/// Equirectangular width of a single roughness band in the atlas.
-const int kPrefilterBandWidth = 512;
-
-/// Equirectangular height of a single roughness band in the atlas.
-///
-/// Must match `kPrefilterBandHeight` in `shaders/texture.glsl`.
-const int kPrefilterBandHeight = 256;
+// The layout constants and the cube face bases live in radiance_layout.dart so
+// the pure-Dart importer can share them without pulling in the GPU.
+export 'package:flutter_scene/src/render/radiance_layout.dart'
+    show
+        kMinRadianceCubeSize,
+        kPrefilterBandCount,
+        kPrefilterBandHeight,
+        kPrefilterBandWidth,
+        kRadianceCubeSize,
+        radianceBandRoughness,
+        radianceCubeFaceCoords,
+        radianceCubeFaceDirection;
 
 // Two triangles of NDC positions covering the whole render target (6 vec2s).
 final gpu.DeviceBuffer _fullscreenQuad = gpu.gpuContext
@@ -90,32 +89,6 @@ gpu.Texture prefilterEquirectRadiance(
   return atlas;
 }
 
-/// Default width (and height) of the prefiltered radiance cube's base mip.
-/// Sizes the convolved reflection/ambient cube, not the visible background
-/// (which samples the full-resolution source); see
-/// `EnvironmentMap.radianceCubeSize`.
-const int kRadianceCubeSize = 512;
-
-// Cube face world bases (right, up, forward), in flutter_gpu cube slice order
-// (+X, -X, +Y, -Y, +Z, -Z). A face texel at (u, v) (v measured top-down, as
-// FullscreenVertex emits) maps to normalize(forward + (2u-1)*right +
-// (2v-1)*up), the same direction the hardware samplerCube reads back, so a
-// baked direction round-trips. Verified against rendered reflections.
-final List<(Vector3, Vector3, Vector3)> _cubeFaceBases = [
-  (Vector3(0, 0, -1), Vector3(0, -1, 0), Vector3(1, 0, 0)), // +X
-  (Vector3(0, 0, 1), Vector3(0, -1, 0), Vector3(-1, 0, 0)), // -X
-  (Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0)), // +Y
-  (Vector3(1, 0, 0), Vector3(0, 0, -1), Vector3(0, -1, 0)), // -Y
-  (Vector3(1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, 1)), // +Z
-  (Vector3(-1, 0, 0), Vector3(0, -1, 0), Vector3(0, 0, -1)), // -Z
-];
-
-/// The smallest cube face size that can hold [kPrefilterBandCount] mip levels.
-/// A texture of size `S` supports `floor(log2(S))` mip levels, so the cube must
-/// be at least `2^kPrefilterBandCount` to store one roughness band per mip; a
-/// smaller request would fail texture creation (`mipLevelCount out of range`).
-const int kMinRadianceCubeSize = 1 << kPrefilterBandCount;
-
 /// Creates an empty prefiltered-radiance cube (one roughness band per mip
 /// level), for [prefilterEquirectRadianceToCube] and incremental cube bakes.
 /// [size] is the base-mip face size (default [kRadianceCubeSize]), clamped up to
@@ -137,6 +110,11 @@ gpu.Texture createRadianceCubeTexture({int size = kRadianceCubeSize}) =>
 /// draw time with `textureLod(samplerCube, dir, roughness * maxLod)`. Removes
 /// the equirect pole singularity from the radiance reflections sample. [size]
 /// is the base-mip face size.
+///
+/// The result is exactly what `EnvironmentMap.fromGpuTextures` expects for the
+/// cube layout, and what `EnvironmentMap.fromKtx2Bytes` reproduces from a
+/// pre-baked file. [sourceEquirect] is sRGB-encoded unless [sourceIsLinear].
+/// {@category Lighting and environment}
 gpu.Texture prefilterEquirectRadianceToCube(
   gpu.Texture sourceEquirect, {
   bool sourceIsLinear = false,
@@ -169,8 +147,8 @@ void prefilterEquirectRadianceCubeFace(
 }) {
   assert(face >= 0 && face < 6);
   assert(band >= 0 && band < kPrefilterBandCount);
-  final (right, up, forward) = _cubeFaceBases[face];
-  final roughness = band / (kPrefilterBandCount - 1);
+  final (right, up, forward) = cubeFaceBases[face];
+  final roughness = radianceBandRoughness(band);
   final vertexShader = baseShaderLibrary['FullscreenVertex']!;
   final fragmentShader = baseShaderLibrary['PrefilterRadianceCubeFragment']!;
   final commandBuffer = gpu.gpuContext.createCommandBuffer();
