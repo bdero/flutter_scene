@@ -89,6 +89,8 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
   int get lightChannelMask => item.lightChannelMask;
   @override
   Object? get jointsTexture => item.jointsTexture;
+  @override
+  Object? get morphWeights => item.morphWeights;
 
   void release() {
     _item = null;

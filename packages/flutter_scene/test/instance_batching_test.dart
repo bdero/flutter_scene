@@ -49,6 +49,7 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
     this.lightListCount = 0,
     this.lightChannelMask = 0xFF,
     this.jointsTexture,
+    this.morphWeights,
   });
 
   @override
@@ -67,6 +68,8 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
   final int lightChannelMask;
   @override
   final Object? jointsTexture;
+  @override
+  final Object? morphWeights;
 }
 
 RenderItem _item(Geometry geometry, Material material) =>
@@ -106,7 +109,7 @@ void main() {
       );
     });
 
-    test('opaque run splits on lighting, fade, and joints', () {
+    test('opaque run splits on lighting, fade, joints, and morphs', () {
       final geometry = _StubGeometry();
       final material = _StubMaterial();
       final pipeline = Object();
@@ -116,6 +119,7 @@ void main() {
         int lightListCount = 0,
         int lightChannelMask = 0xFF,
         Object? jointsTexture,
+        Object? morphWeights,
       }) => _OpaqueCandidate(
         geometry: geometry,
         material: material,
@@ -125,6 +129,7 @@ void main() {
         lightListCount: lightListCount,
         lightChannelMask: lightChannelMask,
         jointsTexture: jointsTexture,
+        morphWeights: morphWeights,
       );
 
       expect(opaqueBatchEnd([candidate(), candidate(), candidate()], 0), 3);
@@ -142,6 +147,16 @@ void main() {
       );
       expect(
         opaqueBatchEnd([candidate(), candidate(jointsTexture: Object())], 0),
+        1,
+      );
+      // Morphed items carry per-item weights, so they never merge (in either
+      // position of the run).
+      expect(
+        opaqueBatchEnd([candidate(), candidate(morphWeights: Object())], 0),
+        1,
+      );
+      expect(
+        opaqueBatchEnd([candidate(morphWeights: Object()), candidate()], 0),
         1,
       );
     });

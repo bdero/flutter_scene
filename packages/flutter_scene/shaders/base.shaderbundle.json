@@ -7,6 +7,14 @@
     "type": "vertex",
     "file": "shaders/flutter_scene_skinned.vert"
   },
+  "MorphedUnskinnedVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_morphed_unskinned.vert"
+  },
+  "MorphedSkinnedVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_morphed_skinned.vert"
+  },
   "UnskinnedDepthVertex": {
     "type": "vertex",
     "file": "shaders/flutter_scene_unskinned_depth.vert"

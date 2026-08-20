@@ -20,6 +20,10 @@ frame_info;
 
 uniform sampler2D joints_texture;
 
+#ifdef FLUTTER_SCENE_MORPH_TARGETS
+#include <flutter_scene_morph.glsl>
+#endif
+
 // This attribute layout is expected to be identical to `SkinnedVertex` within
 // `impeller/scene/importer/scene.fbs`.
 in vec3 position;
@@ -62,6 +66,18 @@ mat4 GetJoint(float joint_index) {
 }
 
 void main() {
+  // Morph before skinning: targets blend the object-space position and
+  // normal, then the blended skin matrix deforms the morphed result. The
+  // plain variant aliases the attributes through macros, so its preprocessed
+  // body stays byte-identical to the pre-morph shader.
+#ifdef FLUTTER_SCENE_MORPH_TARGETS
+  vec3 in_position = MorphedPosition(position);
+  vec3 in_normal = MorphedNormal(normal);
+#else
+#define in_position position
+#define in_normal normal
+#endif
+
   mat4 skin_matrix;
   if (frame_info.enable_skinning == 1) {
     skin_matrix =
@@ -71,17 +87,17 @@ void main() {
     skin_matrix = mat4(1); // Identity matrix.
   }
 
-  vec4 skinned_position = skin_matrix * vec4(position, 1.0);
-  vec3 skinned_normal = mat3(skin_matrix) * normal;
+  vec4 skinned_position = skin_matrix * vec4(in_position, 1.0);
+  vec3 skinned_normal = mat3(skin_matrix) * in_normal;
   mat4 combined_transform = frame_info.model_transform * skin_matrix;
-  vec4 model_position = combined_transform * vec4(position, 1.0);
+  vec4 model_position = combined_transform * vec4(in_position, 1.0);
 
   VertexInputs vertex;
   vertex.position = skinned_position.xyz;
   vertex.normal = skinned_normal;
   vertex.tangent = vec4(mat3(skin_matrix) * tangent.xyz, tangent.w);
   vertex.world_position = model_position.xyz;
-  vertex.world_normal = mat3(combined_transform) * normal;
+  vertex.world_normal = mat3(combined_transform) * in_normal;
   vec3 world_tangent = mat3(combined_transform) * tangent.xyz;
   float tangent_length_squared = dot(world_tangent, world_tangent);
   float tangent_sign = determinant(mat3(combined_transform)) < 0.0

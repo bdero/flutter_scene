@@ -31,20 +31,35 @@ in vec4 model_transform_2;
 in vec4 model_transform_3;
 in vec4 instance_color;
 
+#ifdef FLUTTER_SCENE_MORPH_TARGETS
+#include <flutter_scene_morph.glsl>
+#endif
+
 // The v_* outputs are declared in material_vertex.glsl (included first), so a
 // material's custom varyings can follow them with matching interpolant slots.
 
 void main() {
+  // Morph targets blend the object-space position and normal before any
+  // transform. The plain variant aliases the attributes through macros, so
+  // its preprocessed body stays byte-identical to the pre-morph shader.
+#ifdef FLUTTER_SCENE_MORPH_TARGETS
+  vec3 in_position = MorphedPosition(position);
+  vec3 in_normal = MorphedNormal(normal);
+#else
+#define in_position position
+#define in_normal normal
+#endif
+
   mat4 model_transform = mat4(model_transform_0, model_transform_1,
                               model_transform_2, model_transform_3);
-  vec4 model_position = model_transform * vec4(position, 1.0);
+  vec4 model_position = model_transform * vec4(in_position, 1.0);
 
   VertexInputs vertex;
-  vertex.position = position;
-  vertex.normal = normal;
+  vertex.position = in_position;
+  vertex.normal = in_normal;
   vertex.tangent = tangent;
   vertex.world_position = model_position.xyz;
-  vertex.world_normal = mat3(model_transform) * normal;
+  vertex.world_normal = mat3(model_transform) * in_normal;
   vec3 world_tangent = mat3(model_transform) * tangent.xyz;
   float tangent_length_squared = dot(world_tangent, world_tangent);
   float tangent_sign = determinant(mat3(model_transform)) < 0.0

@@ -1,19 +1,30 @@
 /// Geometry subclasses carrying glTF morph targets (blend shapes).
 ///
-/// Both classes keep the base vertex data and blend
-/// `base + sum(weight_i * delta_i)` on the CPU into a fresh vertex upload
-/// whenever the applied weights change. Morphing happens before skinning;
-/// the skinned variant blends the same interleaved layout the skin matrix
-/// consumes, so the skin transforms already-morphed positions.
+/// Two blend paths share one semantic, `base + sum(weight_i * delta_i)`
+/// with morphing always applied before skinning:
+///
+///  * GPU (the default): the deltas upload once into an RGBA32F texture
+///    (row band per target, see [MorphTexturePacking]) and the morphed
+///    vertex shader sums the highest-magnitude [kMaxGpuMorphTargets]
+///    weights per draw.
+///  * CPU (the fallback): when the packed deltas exceed the guaranteed
+///    texture dimensions ([kMorphTextureMaxDimension]), a weight change
+///    re-blends position and normal into a fresh vertex upload.
+///
+/// The policy is deterministic: GPU whenever [computeMorphTexturePacking]
+/// fits, CPU otherwise; [usesGpuMorphing] reports the choice.
 library;
 
 import 'dart:math' show sqrt;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
+import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/constants.dart';
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Unskinned geometry with morph targets.
@@ -27,45 +38,117 @@ class MorphedUnskinnedGeometry extends UnskinnedGeometry with _MorphBlending {
   /// Creates unskinned geometry morphed by [morphTargets].
   MorphedUnskinnedGeometry(MorphTargetData morphTargets) {
     _initMorphState(morphTargets);
+    if (usesGpuMorphing) setVertexShaderName('MorphedUnskinnedVertex');
   }
 
   @override
   int get _strideInFloats => kUnskinnedPerVertexSize ~/ 4;
+
+  /// On the GPU path the depth-style passes must run the full morphed
+  /// vertex shader (a position-only fetch would draw the unmorphed base);
+  /// the CPU path keeps the position-only fast path since its buffer
+  /// already holds the blended positions.
+  @override
+  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex =>
+      usesGpuMorphing ? null : super.depthOnlyVertex;
+
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    vm.Matrix4 modelTransform,
+    vm.Matrix4 cameraTransform,
+    vm.Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
+  }) {
+    super.bind(
+      pass,
+      transientsBuffer,
+      modelTransform,
+      cameraTransform,
+      cameraPosition,
+      shaderOverride: shaderOverride,
+      depthBias: depthBias,
+    );
+    _bindMorphStage(pass, transientsBuffer, shaderOverride);
+  }
 }
 
 /// Skinned geometry with morph targets, blended before the skin matrix is
-/// applied.
+/// applied on both paths.
+///
+/// A skinned morphed draw spends two vertex-stage samplers (the joints
+/// texture plus the morph texture). With the 15-sampler lit fragment stage
+/// that totals 17 combined units, one over the GLES 3.0 minimum of 16, so a
+/// driver at the bare minimum cannot bind a lit skinned morphed draw (real
+/// GLES3 hardware reports 32 or more).
+/// TODO(morph-sampler-budget): pack the joint matrices and morph deltas
+/// into one vertex-stage texture to fit the GLES minimum.
 /// {@category Geometry}
 class MorphedSkinnedGeometry extends SkinnedGeometry with _MorphBlending {
   /// Creates skinned geometry morphed by [morphTargets].
   MorphedSkinnedGeometry(MorphTargetData morphTargets) {
     _initMorphState(morphTargets);
+    if (usesGpuMorphing) setVertexShaderName('MorphedSkinnedVertex');
   }
 
   @override
   int get _strideInFloats => kSkinnedPerVertexSize ~/ 4;
+
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    vm.Matrix4 modelTransform,
+    vm.Matrix4 cameraTransform,
+    vm.Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
+  }) {
+    super.bind(
+      pass,
+      transientsBuffer,
+      modelTransform,
+      cameraTransform,
+      cameraPosition,
+      shaderOverride: shaderOverride,
+      depthBias: depthBias,
+    );
+    _bindMorphStage(pass, transientsBuffer, shaderOverride);
+  }
 }
 
-/// Shared morph state and CPU blending over the interleaved vertex layouts.
+/// Shared morph state and the two blend paths over the interleaved vertex
+/// layouts.
 ///
-/// The base vertex bytes are stashed at upload; a weight change re-blends
-/// position and normal into a scratch copy and re-uploads it. A geometry
-/// shared by nodes holding different weights re-blends on every draw.
+/// On the CPU path a geometry shared by nodes holding different weights
+/// re-blends on every draw.
 /// TODO(morph-cpu-share): cache per-weight-set uploads for shared geometry.
 mixin _MorphBlending on Geometry {
   late final MorphTargetData _morphData;
+  MorphTexturePacking? _packing;
 
-  // Base interleaved vertex floats and the index upload, kept so a blend can
-  // re-upload without the caller's buffers.
+  // Base interleaved vertex floats and the index upload, kept so a CPU
+  // blend can re-upload without the caller's buffers.
   Float32List? _baseVertexFloats;
   int _baseVertexCount = 0;
   ByteData? _baseIndices;
   gpu.IndexType _baseIndexType = gpu.IndexType.int16;
 
-  // The last-blended weights and the reused blend output.
+  // CPU path: the last-blended weights and the reused blend output.
   Float32List? _appliedWeights;
   Float32List? _blendScratch;
   bool _uploadingBlend = false;
+
+  // GPU path: the per-draw weights, the once-uploaded delta texture, and
+  // the reused MorphInfo uniform floats.
+  Float32List? _gpuWeights;
+  gpu.Texture? _morphTexture;
+  final Float32List _morphInfoScratch = Float32List(
+    4 + kMaxGpuMorphTargets * 4,
+  );
+  bool _warnedCustomVertexVariant = false;
 
   /// Floats per vertex of this geometry's interleaved layout. Position sits
   /// at offset 0 and normal at offset 3 in both layouts.
@@ -74,9 +157,14 @@ mixin _MorphBlending on Geometry {
   @override
   MorphTargetData get morphTargets => _morphData;
 
+  /// Whether this geometry blends on the GPU (the deltas fit the guaranteed
+  /// texture dimensions) or falls back to CPU blending.
+  bool get usesGpuMorphing => _packing != null;
+
   // Called by the subclass constructors.
   void _initMorphState(MorphTargetData data) {
     _morphData = data;
+    _packing = computeMorphTexturePacking(data);
   }
 
   @override
@@ -113,6 +201,12 @@ mixin _MorphBlending on Geometry {
   @override
   void setMorphWeights(Float32List? weights) {
     if (weights == null) return;
+    if (usesGpuMorphing) {
+      // Retained by reference: the render item hands the node's live list
+      // right before each draw's bind, which reads it synchronously.
+      _gpuWeights = weights;
+      return;
+    }
     final base = _baseVertexFloats;
     if (base == null) return; // Nothing uploaded yet.
     if (_weightsMatch(weights)) return;
@@ -130,6 +224,76 @@ mixin _MorphBlending on Geometry {
     } finally {
       _uploadingBlend = false;
     }
+  }
+
+  // Binds the morph texture and the active (index, weight) pairs for one
+  // draw. No-op on the CPU path (the vertex buffer already holds the
+  // blend). A custom material's vertex variant has no morph stage, so those
+  // draws render the unmorphed base.
+  // TODO(morph-custom-materials): generate morphed vertex variants for
+  // `.fmat` materials with a `vertex { }` block.
+  void _bindMorphStage(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    gpu.Shader? shaderOverride,
+  ) {
+    final packing = _packing;
+    if (packing == null) return;
+    if (shaderOverride != null && !identical(shaderOverride, vertexShader)) {
+      if (!_warnedCustomVertexVariant) {
+        _warnedCustomVertexVariant = true;
+        debugPrint(
+          'A custom material vertex stage was bound to morphed geometry; '
+          'its draws render without morphing.',
+        );
+      }
+      return;
+    }
+    final shader = vertexShader;
+
+    final texture = _morphTexture ??= _buildMorphTexture(packing);
+    pass.bindTexture(
+      shader.getUniformSlot('morph_texture'),
+      texture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
+        mipFilter: gpu.MipFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+
+    final weights = _gpuWeights ?? _morphData.defaultWeights;
+    final active = MorphTargetData.selectActiveTargets(weights);
+    final scratch = _morphInfoScratch;
+    scratch.fillRange(0, scratch.length, 0);
+    scratch[0] = active.length.toDouble();
+    scratch[1] = packing.width.toDouble();
+    scratch[2] = packing.rowsPerAttribute.toDouble();
+    scratch[3] = packing.includesNormals ? 1 : 0;
+    for (var i = 0; i < active.length; i++) {
+      scratch[4 + i * 4] = packing.bandStart(active[i].index).toDouble();
+      scratch[4 + i * 4 + 1] = active[i].weight;
+    }
+    pass.bindUniform(
+      shader.getUniformSlot('MorphInfo'),
+      transientsBuffer.emplace(ByteData.sublistView(scratch)),
+    );
+  }
+
+  // Uploads the packed delta texels once. The texture is static content, so
+  // no ring is needed.
+  gpu.Texture _buildMorphTexture(MorphTexturePacking packing) {
+    final texels = buildMorphTexturePayload(_morphData, packing);
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      packing.width,
+      packing.height,
+      format: gpu.PixelFormat.r32g32b32a32Float,
+    );
+    texture.overwrite(ByteData.sublistView(texels));
+    return texture;
   }
 
   bool _weightsMatch(Float32List weights) {
