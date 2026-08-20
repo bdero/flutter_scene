@@ -1,12 +1,12 @@
 ---
 name: flutter_scene-looks
-version: 1
+version: 2
 description: Give a flutter_scene render a deliberate, polished look. Use this whenever a scene looks flat, dull, or washed out, or whenever the ask is to make it look good, because a good look is lighting plus post-processing, not geometry. Ships copy-paste EnvironmentSettings presets that configure the whole stack coherently.
 ---
 
 # Making flutter_scene look good
 
-The single most common reason a flutter_scene render looks amateur is that the post-processing stack was left at defaults. flutter_scene has a deep lit-and-post pipeline (image-based lighting, tone mapping, bloom, ambient occlusion, screen-space reflections, fog, god rays, depth of field, color grading, vignette, film grain). Out of the box almost all of it is off, so a bare scene is technically correct and visually flat.
+The single most common reason a flutter_scene render looks amateur is that the post-processing stack was left at defaults. flutter_scene has a deep lit-and-post pipeline (image-based lighting, tone mapping, bloom, lens flares, ambient occlusion, screen-space reflections, fog, god rays, depth of field, color grading, vignette, film grain). Out of the box almost all of it is off, so a bare scene is technically correct and visually flat.
 
 **The insight: a polished look is lighting and post-processing, not geometry.** Better meshes will not fix a flat render. Do not spend effort on modeling detail when the scene reads dull; spend it on the look. And a look is a *coherent* set of choices, not twelve knobs turned independently. Turning bloom, AO, SSR, fog, grain, and grading up one at a time, each by feel, lands in muddy incoherent territory. Pick one deliberate preset and paste it whole.
 
@@ -139,9 +139,17 @@ Start from the nearest look, then move one field at a time.
 
 - **Too dim or too bright overall.** Change `exposure` (default 1.0), not per-light intensity. Or turn on `autoExposureEnabled: true` to let the scene meter itself.
 - **Highlights not glowing.** Lower `bloomThreshold` toward 1.0 or below, or raise `bloomIntensity`. `bloomScatter` widens the glow.
+- **Want a lens flare off a bright source.** Turn on `lensFlareEnabled` (needs `bloomEnabled`). Keep `lensFlareIntensity` modest and drop `lensFlareHaloIntensity` first if the flare washes the frame; the halo is the broad wash, the ghosts are the crisp chain.
 - **Reads flat and ungrounded.** `ambientOcclusionEnabled: true`. Use `AmbientOcclusionMethod.groundTruth` for quality, keep `ambientOcclusionHalfResolution: true` for cost.
 - **Colors feel wrong.** Turn on `colorGradingEnabled` and reach for `saturation`, `contrast`, `temperature`, `tint` before anything else.
 - **Wrong tone-map feel.** `ToneMappingMode.aces` is contrasty and filmic, `pbrNeutral` (default) preserves hue and saturation, `agx` is the most neutral highlight rolloff. Do not reintroduce an `exposure: 2.0` hack; that was an artifact of an older renderer.
+
+## Two look tools that are not on EnvironmentSettings
+
+Anti-aliasing and reflection probes affect the look but are set outside `EnvironmentSettings`, so a preset does not turn them on.
+
+- **Anti-aliasing** is a `Scene` field. The default `AntiAliasingMode.auto` already picks `msaa` where the backend supports it and `fxaa` otherwise, so edges are handled. Reach for `scene.antiAliasingMode = AntiAliasingMode.smaa` when `fxaa` looks mushy (it blurs texture detail) and `msaa` is unavailable; SMAA keeps edges clean without the blur, at ~3x fxaa cost.
+- **Reflection probes** capture true local reflections that SSR cannot, because SSR only reflects what is on screen. Attach a `ReflectionProbeComponent` to a node placed at the reflective spot (a room, a mirror ball); it captures the surroundings into a parallax-corrected box and blends with the environment. The capture renders the scene six times, so it happens once on activate (or on an explicit `requestCapture()`), never per frame. See `references/looks.md` for both.
 
 ## Cost
 

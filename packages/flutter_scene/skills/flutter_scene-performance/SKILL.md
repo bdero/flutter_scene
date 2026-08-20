@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-performance
-version: 1
+version: 2
 description: Make a flutter_scene app hit frame budget. Use whenever a scene janks, stutters, or drops frames, or when the ask is to make it faster or run on mobile or web, because code-driven scenes are reliably slow and the fix depends on which thread is over budget, not on a guessed poly count.
 ---
 

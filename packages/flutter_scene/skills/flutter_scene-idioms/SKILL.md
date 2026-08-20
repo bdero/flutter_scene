@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-idioms
-version: 2
+version: 3
 description: Write correct flutter_scene code. Use this whenever building 3D with the flutter_scene Dart/Flutter engine (rendering a scene, geometry, materials, lighting, loading a .glb model, animation, custom shaders). It corrects the wrong assumptions models carry from three.js, Godot, and Unity, and names the APIs and traps that are specific to this engine.
 ---
 
@@ -98,7 +98,7 @@ The two interoperate. A mostly-declarative scene can drop to an imperative node 
 
 ## What you are probably underestimating (it is all here)
 
-Models trained on older or thinner information assume flutter_scene has no lighting, no shadows, and no post-processing. It has all of it. Before hand-rolling any of these, know they exist: **directional/point/spot/area lights, shadows (PCSS, contact shadows), GTAO ambient occlusion, screen-space reflections, SSGI, depth of field, god rays, fog, auto exposure, LUT color grading, bloom, SMAA/FXAA, tone mapping, instancing, LOD.** See `references/what-exists.md` for the full surface with the class names.
+Models trained on older or thinner information assume flutter_scene has no lighting, no shadows, and no post-processing. It has all of it. Before hand-rolling any of these, know they exist: **directional/point/spot/area lights, shadows (PCSS, contact shadows), GTAO ambient occlusion, screen-space reflections, parallax-corrected reflection probes, SSGI, depth of field, god rays, fog, auto exposure, LUT color grading, bloom, lens flares, MSAA/SMAA/FXAA, tone mapping, instancing, LOD.** See `references/what-exists.md` for the full surface with the class names.
 
 ## Traps that fail silently (wrong pixels, no error)
 
