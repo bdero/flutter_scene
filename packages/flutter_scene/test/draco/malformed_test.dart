@@ -8,10 +8,10 @@ import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/src/gltf/draco/mesh_decoder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _fixtureDir = 'test/fixtures/draco';
+import 'fixtures.dart';
 
 Uint8List _payload(String name) {
-  final contents = parseGlb(File('$_fixtureDir/$name.glb').readAsBytesSync());
+  final contents = parseGlb(File('$fixtureDir/$name.glb').readAsBytesSync());
   final doc = parseGltfJson(contents.json);
   final meshes = contents.json['meshes'] as List;
   final primitives = (meshes[0] as Map)['primitives'] as List;
