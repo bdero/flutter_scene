@@ -54,7 +54,8 @@ uniform FragInfo {
   vec4 probe_extents;
   // Directional light: xyz = direction the light travels (toward the scene),
   // w = shadow filter (0 rotated Poisson, 1 fixed PCF). The second vector's
-  // rgb is color premultiplied by intensity.
+  // rgb is color premultiplied by intensity, and its w is the cascade
+  // cross-fade fraction (0 hands off between cascades without blending).
   // Active only when has_directional_light > 0.5.
   vec4 directional_light_direction;
   vec4 directional_light_color;

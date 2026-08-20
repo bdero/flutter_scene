@@ -377,6 +377,31 @@ void main() {
     expect(coatComposition, greaterThan(transmission));
   });
 
+  test('cascade cross-fade collapses to the hard hand-off at zero', () {
+    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    final uniforms = File(
+      'shaders/material_engine_lighting.glsl',
+    ).readAsStringSync();
+
+    // The overlap rides an already-declared slot, so no uniform or sampler is
+    // added, and it is packed as a fraction the shader halves into UV space.
+    expect(uniforms, contains('vec4 directional_light_color;'));
+    expect(lighting, contains('frag_info.directional_light_color.w * 0.5'));
+
+    // A zero band selects the constant 1.0, so the first containing cascade
+    // takes the whole weight and the rest are skipped; the leftover weight
+    // reads as lit. Together these make zero overlap exactly today's path.
+    expect(lighting, contains('return band > 0.0 ? ramp.x * ramp.y : 1.0;'));
+    expect(lighting, contains('min(CascadeBlendWeight(uv, margin, band),'));
+    expect(lighting, contains('return shadow_sum + (1.0 - weight);'));
+    // The weight guard replaces the old `found` flag, so a full cascade ends
+    // the walk instead of a second lookup.
+    expect(lighting, contains('if (weight < 1.0 && count > IDX)'));
+    // An early return inside the blend would emit a loop here (see the
+    // Direct3D note on SampleShadow), so the helper must stay a select.
+    expect(lighting, isNot(contains('if (band <= 0.0) return')));
+  });
+
   test('anisotropy affects analytic and image-based lighting', () {
     final pbr = File('shaders/pbr.glsl').readAsStringSync();
     final lighting = File('shaders/material_lighting.glsl').readAsStringSync();

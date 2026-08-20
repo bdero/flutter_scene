@@ -198,16 +198,30 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   return shadow;
 }
 
+// How much of a cascade this fragment takes, falling from 1 at `band` inside
+// the tile to 0 at its usable edge, so the next cascade supplies the rest. A
+// zero band selects exactly 1.0, the hard hand-off where the first containing
+// cascade takes the whole weight. Written as a select rather than an early
+// return so no loop is emitted here (see SampleShadow); the ramp's width is
+// floored to keep smoothstep well defined when it is unused.
+float CascadeBlendWeight(vec2 uv, float margin, float band) {
+  vec2 low = vec2(margin);
+  vec2 high = vec2(margin + max(band, 1e-4));
+  vec2 ramp = smoothstep(low, high, uv) * smoothstep(low, high, vec2(1.0) - uv);
+  return band > 0.0 ? ramp.x * ramp.y : 1.0;
+}
+
 // Soft cascaded-shadow lookup. Returns 1.0 (lit) .. 0.0 (fully
 // shadowed). `world_pos` and `n` are world-space; `n` is the geometric
-// normal. Picks the first (highest-resolution)
-// cascade whose box contains the fragment.
+// normal. Walks the cascades highest-resolution first, taking from each the
+// weight its tile still has room for.
 // Tries cascade IDX (a literal): if the fragment lies inside its tile with
-// room for the PCF kernel, samples it and marks `found`. IDX is a literal so
-// no uniform array or vector is indexed with a dynamic index (invalid in GLSL
-// ES 1.00, and misread for indices past the first by some GLES drivers).
+// room for the PCF kernel, samples it and accumulates its weight. IDX is a
+// literal so no uniform array or vector is indexed with a dynamic index
+// (invalid in GLSL ES 1.00, and misread for indices past the first by some
+// GLES drivers).
 #define _TRY_CASCADE(IDX)                                                    \
-  if (!found && count > IDX) {                                               \
+  if (weight < 1.0 && count > IDX) {                                         \
     mat4 cascade_matrix = frag_info.light_space_matrix[IDX];                 \
     float box = frag_info.cascade_box_sizes[IDX];                            \
     vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);          \
@@ -217,9 +231,13 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
         max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);   \
     if (!(uv.x < margin || uv.x > 1.0 - margin || uv.y < margin ||          \
           uv.y > 1.0 - margin || proj.z < 0.0 || proj.z > 1.0)) {           \
-      result = SampleCascade(IDX, count, cascade_matrix, box,                \
-                             biased_world_pos);                              \
-      found = true;                                                          \
+      float take = min(CascadeBlendWeight(uv, margin, band),                 \
+                       1.0 - weight);                                        \
+      if (take > 0.0) {                                                      \
+        shadow_sum += take * SampleCascade(IDX, count, cascade_matrix, box,  \
+                                           biased_world_pos);                \
+        weight += take;                                                      \
+      }                                                                      \
     }                                                                        \
   }
 
@@ -229,16 +247,21 @@ float SampleShadow(vec3 world_pos, vec3 n) {
   // original point could choose a tile that normal bias moves outside, making
   // every PCF tap clamp to one edge texel and producing a visible band.
   vec3 biased_world_pos = BiasDirectionalShadowPosition(world_pos, n);
+  // Cross-fade half-width in a cascade's UV space, from the light's
+  // cascadeOverlap. At 0 every _TRY_CASCADE takes the full weight, so the
+  // first containing cascade wins outright and the later ones are skipped.
+  float band = frag_info.directional_light_color.w * 0.5;
   // Unrolled with literal cascade indices: see _TRY_CASCADE. A single `return`
   // (no early return inside a loop) also avoids a nested-loop pattern that
   // crashes a Direct3D shader compiler.
-  float result = 1.0;
-  bool found = false;
+  float shadow_sum = 0.0;
+  float weight = 0.0;
   _TRY_CASCADE(0)
   _TRY_CASCADE(1)
   _TRY_CASCADE(2)
   _TRY_CASCADE(3)
-  return result;
+  // Weight no cascade covered reads as lit.
+  return shadow_sum + (1.0 - weight);
 }
 #undef _TRY_CASCADE
 #endif

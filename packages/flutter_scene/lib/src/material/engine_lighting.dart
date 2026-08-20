@@ -109,6 +109,9 @@ class EngineLightingUniforms {
       fragInfo[48] = light.color.x * light.intensity;
       fragInfo[49] = light.color.y * light.intensity;
       fragInfo[50] = light.color.z * light.intensity;
+      // directional_light_color.w is the cascade cross-fade fraction; 0 (the
+      // default) leaves the shader's hard cascade hand-off.
+      fragInfo[51] = light.cascadeOverlap.clamp(0.0, 1.0);
     }
     // light_space_matrix[4] at [52..115], cascade_box_sizes at [116..119].
     for (var i = 0; i < cascades.length; i++) {

@@ -62,7 +62,9 @@ enum DirectionalShadowFilter {
 /// pass. Shadows are cascaded: the camera view is split into
 /// [shadowCascadeCount] depth ranges out to [shadowMaxDistance], each
 /// fit with its own shadow map so near geometry stays crisp over a long
-/// view distance. The penumbra is a soft Poisson-disk PCF kernel of
+/// view distance. [firstCascadeFarBound] pins where the first of them
+/// ends and [cascadeOverlap] cross-fades the hand-off between them. The
+/// penumbra is a soft Poisson-disk PCF kernel of
 /// radius [shadowSoftness], and shadowing fades back to lit at the far
 /// edge over [shadowFadeRange]. Cascaded shadows require the scene to
 /// render with a perspective projection.
@@ -88,6 +90,8 @@ class DirectionalLight {
     this.shadowCascadeCount = 4,
     this.shadowMaxDistance = 150.0,
     this.shadowCascadeSplitLambda = 0.6,
+    this.firstCascadeFarBound,
+    this.cascadeOverlap = 0.0,
     this.shadowMapResolution = 1024,
     this.shadowDepthBias = 0.02,
     this.shadowNormalBias = 0.02,
@@ -157,6 +161,32 @@ class DirectionalLight {
   /// proportionally more resolution. Used by [computeCascades].
   double shadowCascadeSplitLambda;
 
+  // TODO(fscene): expose these two through DirectionalLightCodec; the pinned
+  // bound needs a nullable number field, which the codecs have no shape for.
+  /// View distance, in world units, at which the first cascade ends. `null`
+  /// (the default) lets [shadowCascadeSplitLambda] place it.
+  ///
+  /// Pin it to hold a known resolution over the near field, for example the
+  /// reach of a third-person camera, and let the rest of the range spread
+  /// across the remaining cascades under the usual split scheme. Clamped
+  /// between the camera near plane and [shadowMaxDistance], and ignored when
+  /// there is only one cascade (it already ends at [shadowMaxDistance]).
+  /// Automatic bounding-sphere fitting and texel snapping still apply.
+  /// {@category Lighting and environment}
+  double? firstCascadeFarBound;
+
+  /// Fraction of each cascade's shadow tile, measured inward from its edge,
+  /// over which it cross-fades into the next cascade, from `0.0` to `1.0`.
+  ///
+  /// `0.0` (the default) hands off hard, so a fragment takes the first cascade
+  /// whose tile contains it and the resolution change can read as a seam.
+  /// Larger values soften that seam; each cascade also widens past its split by
+  /// the same fraction of its span, so the blend band is genuinely covered by
+  /// both. `1.0` blends from the tile center outward. Fragments inside the band
+  /// cost a second cascade lookup.
+  /// {@category Lighting and environment}
+  double cascadeOverlap;
+
   /// Pixel resolution of the (square) shadow map. With cascades this is
   /// the resolution of each cascade's tile.
   int shadowMapResolution;
@@ -214,6 +244,8 @@ class DirectionalLight {
   /// self-shadow acne.
   ShadowCasterFaces shadowCasterFaces;
 
+  // TODO(fscene): expose the channel masks through the light codecs, so an
+  // authored scene can carry them.
   /// The light channels this light illuminates, an 8-bit mask (default
   /// `0xFF`, every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
@@ -261,12 +293,21 @@ class DirectionalLight {
     final far = shadowMaxDistance;
 
     // Practical split scheme: a blend of logarithmic and uniform
-    // spacing, so the near cascades get proportionally more resolution.
+    // spacing, so the near cascades get proportionally more resolution. A
+    // pinned first bound takes the first split and the same scheme spreads the
+    // rest from there; a single cascade has no rest, so it keeps far.
+    final bound = firstCascadeFarBound;
+    final pinned = bound != null && count > 1
+        ? bound.clamp(near, far).toDouble()
+        : null;
     final splits = <double>[near];
-    for (var i = 1; i <= count; i++) {
-      final ratio = i / count;
-      final logSplit = near * math.pow(far / near, ratio);
-      final uniformSplit = near + (far - near) * ratio;
+    if (pinned != null) splits.add(pinned);
+    final splitNear = pinned ?? near;
+    final splitCount = pinned != null ? count - 1 : count;
+    for (var i = 1; i <= splitCount; i++) {
+      final ratio = i / splitCount;
+      final logSplit = splitNear * math.pow(far / splitNear, ratio);
+      final uniformSplit = splitNear + (far - splitNear) * ratio;
       splits.add(
         shadowCascadeSplitLambda * logSplit +
             (1.0 - shadowCascadeSplitLambda) * uniformSplit,
@@ -285,6 +326,8 @@ class DirectionalLight {
         ? Vector3(0.0, -1.0, 0.0)
         : effectiveDirection * (1.0 / lightLength);
 
+    final overlap = cascadeOverlap.clamp(0.0, 1.0);
+
     final cascades = <ShadowCascade>[];
     for (var c = 0; c < count; c++) {
       // The smallest stable sphere enclosing both rectangular end planes has
@@ -293,7 +336,12 @@ class DirectionalLight {
       // own circumcircle is the minimum. This keeps the rotation-invariant
       // cascade fit while wasting less shadow-map area than a midpoint sphere.
       final sliceNear = splits[c];
-      final sliceFar = splits[c + 1];
+      // Overlap fits a cascade past its split so it and its successor both
+      // cover the band the shader cross-fades over. The last cascade has no
+      // successor, so it keeps its bound.
+      final sliceFar = overlap > 0.0 && c < count - 1
+          ? splits[c + 1] + (splits[c + 1] - sliceNear) * overlap
+          : splits[c + 1];
       final centerDepth = math.min(
         sliceFar,
         (sliceNear + sliceFar) * (1.0 + tanRadius2) * 0.5,
