@@ -17,6 +17,8 @@ import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/fmat/material_registry.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
+import 'package:flutter_scene/src/geometry/morph_targets.dart';
+import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
@@ -564,7 +566,16 @@ class ResourceRealizer {
       );
     }
     final vertexCount = vertexBytes.lengthInBytes ~/ perVertexBytes;
-    final geometry = skinned ? SkinnedGeometry() : UnskinnedGeometry();
+    final morphData = res.morphTargets == null
+        ? null
+        : _buildMorphData(res, res.morphTargets!, vertexCount);
+    final Geometry geometry = skinned
+        ? (morphData != null
+              ? MorphedSkinnedGeometry(morphData)
+              : SkinnedGeometry())
+        : (morphData != null
+              ? MorphedUnskinnedGeometry(morphData)
+              : UnskinnedGeometry());
 
     ByteData? indexBytes;
     var indexType = gpu.IndexType.int16;
@@ -593,6 +604,30 @@ class ResourceRealizer {
         ),
         vertexCount,
         indices: indexBytes,
+        indexType: indexType,
+      );
+    } else if (soa && morphData != null) {
+      // Morphed geometry keeps its base interleaved for CPU re-blending, so
+      // a structure-of-arrays payload (the emitter writes morphed geometry
+      // interleaved, but be tolerant) is interleaved once here.
+      final streams = InterleavedLayoutAdapter.sliceUnskinnedStreams(
+        vertexBytes,
+        vertexCount,
+      );
+      geometry.uploadVertexData(
+        ByteData.sublistView(
+          InterleavedLayoutAdapter.packUnskinned(
+            positions: Float32List.sublistView(streams.position),
+            vertexCount: vertexCount,
+            normals: Float32List.sublistView(streams.normal),
+            texCoords: Float32List.sublistView(streams.texCoord),
+            texCoords1: Float32List.sublistView(streams.texCoord1),
+            colors: Float32List.sublistView(streams.color),
+            tangents: Float32List.sublistView(streams.tangent),
+          ),
+        ),
+        vertexCount,
+        indexBytes,
         indexType: indexType,
       );
     } else if (soa) {
@@ -630,6 +665,50 @@ class ResourceRealizer {
     }
     geometry.primitiveType = _topology(res.topology);
     return geometry;
+  }
+
+  /// Reads a geometry's morph delta payload into engine [MorphTargetData]:
+  /// the dense position slab, then the normal and tangent slabs when the
+  /// spec declares them.
+  MorphTargetData _buildMorphData(
+    GeometryResource res,
+    MorphTargetsSpec spec,
+    int vertexCount,
+  ) {
+    final bytes = _payloadBytes(spec.deltas, 'morph delta');
+    final floats = bytes.offsetInBytes % 4 == 0
+        ? bytes.buffer.asFloat32List(
+            bytes.offsetInBytes,
+            bytes.lengthInBytes ~/ 4,
+          )
+        : Float32List.sublistView(Uint8List.fromList(bytes));
+    final slab = spec.targetCount * vertexCount * 3;
+    final sections =
+        1 + (spec.hasNormalDeltas ? 1 : 0) + (spec.hasTangentDeltas ? 1 : 0);
+    if (floats.length < slab * sections) {
+      throw FsceneFormatException(
+        'Geometry ${res.id} morph delta payload has ${floats.length} floats; '
+        'expected ${slab * sections} for ${spec.targetCount} targets of '
+        '$vertexCount vertices',
+      );
+    }
+    var offset = slab;
+    Float32List? section(bool present) {
+      if (!present) return null;
+      final result = Float32List.sublistView(floats, offset, offset + slab);
+      offset += slab;
+      return result;
+    }
+
+    return MorphTargetData(
+      vertexCount: vertexCount,
+      targetCount: spec.targetCount,
+      positionDeltas: Float32List.sublistView(floats, 0, slab),
+      normalDeltas: section(spec.hasNormalDeltas),
+      tangentDeltas: section(spec.hasTangentDeltas),
+      targetNames: spec.targetNames,
+      defaultWeights: spec.defaultWeights,
+    );
   }
 
   gpu.PrimitiveType _topology(String name) {

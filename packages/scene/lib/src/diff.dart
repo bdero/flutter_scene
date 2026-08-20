@@ -238,6 +238,7 @@ List<LocalId> _resourcePayloads(ResourceSpec resource) => switch (resource) {
   GeometryResource() => [
     if (resource.vertices != null) resource.vertices!,
     if (resource.indices != null) resource.indices!,
+    if (resource.morphTargets != null) resource.morphTargets!.deltas,
   ],
   TextureResource() => [if (resource.payload != null) resource.payload!],
   _ => const [],

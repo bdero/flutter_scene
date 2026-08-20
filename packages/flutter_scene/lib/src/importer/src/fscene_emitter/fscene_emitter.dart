@@ -136,10 +136,12 @@ SceneDocument buildSceneDocument(
   // reference the same mesh.
   final meshPairs = <(int, bool), List<(LocalId, LocalId)>>{};
   for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++) {
+    validateMorphTargetConsistency(doc.meshes[meshIndex]);
     List<(LocalId, LocalId)> buildPairs(bool skinned) {
       final pairs = <(LocalId, LocalId)>[];
       var primIndex = 0;
-      for (final primitive in doc.meshes[meshIndex].primitives) {
+      final mesh = doc.meshes[meshIndex];
+      for (final primitive in mesh.primitives) {
         if (primitive.mode != 4) continue; // triangles only
         final bounds = _primitiveBounds(
           primitive,
@@ -156,6 +158,8 @@ SceneDocument buildSceneDocument(
           bufferData,
           bounds: bounds,
           includeSkinning: skinned,
+          morphTargetNames: mesh.targetNames,
+          defaultMorphWeights: mesh.weights,
         );
         pairs.add((geometryId, materialFor(primitive.material)));
         primIndex++;
@@ -192,7 +196,12 @@ SceneDocument buildSceneDocument(
     final components = <ComponentSpec>[];
     if (node.mesh != null && node.mesh! < doc.meshes.length) {
       final pairs = meshPairs[(node.mesh!, node.skin != null)] ?? const [];
-      if (pairs.isNotEmpty) components.add(_meshComponent(pairs));
+      if (pairs.isNotEmpty) {
+        // node.weights overrides the mesh's default morph weights for this
+        // instance; it rides the mesh component rather than the shared
+        // geometry resource.
+        components.add(_meshComponent(pairs, morphWeights: node.weights));
+      }
     }
     final lightIndex = node.light;
     if (lightIndex != null &&
@@ -319,7 +328,8 @@ void _buildAnimation(
       'translation' => AnimationProperty.translation,
       'rotation' => AnimationProperty.rotation,
       'scale' => AnimationProperty.scale,
-      _ => null, // 'weights' (morph targets) and unknowns
+      'weights' => AnimationProperty.weights,
+      _ => null, // unknown target paths
     };
     if (property == null) continue;
 
@@ -336,12 +346,21 @@ void _buildAnimation(
       doc.bufferViews,
       bufferData,
     );
-    final componentCount = property == AnimationProperty.rotation ? 4 : 3;
+    final isCubic = sampler.interpolation == 'CUBICSPLINE';
+    // A weights sampler is a flattened (frame x target) scalar stream; its
+    // per-keyframe component count is the output/input length ratio.
+    final componentCount = switch (property) {
+      AnimationProperty.rotation => 4,
+      AnimationProperty.weights =>
+        times.isEmpty ? 0 : values.length ~/ (times.length * (isCubic ? 3 : 1)),
+      _ => 3,
+    };
+    if (property == AnimationProperty.weights && componentCount == 0) continue;
     final keyframes = coordinatePolicy.convertAnimationValues(
       selectGltfKeyframeValues(
         values,
         componentCount: componentCount,
-        cubicSpline: sampler.interpolation == 'CUBICSPLINE',
+        cubicSpline: isCubic,
       ),
       targetPath: channel.targetPath,
     );
@@ -391,13 +410,20 @@ LocalId _floatPayload(
       .id;
 }
 
-ComponentSpec _meshComponent(List<(LocalId, LocalId)> pairs) {
+ComponentSpec _meshComponent(
+  List<(LocalId, LocalId)> pairs, {
+  List<double>? morphWeights,
+}) {
+  final weights = morphWeights == null
+      ? null
+      : ListValue([for (final w in morphWeights) DoubleValue(w)]);
   if (pairs.length == 1) {
     return ComponentSpec(
       'mesh',
       properties: {
         'geometry': ResourceRefValue(pairs.first.$1),
         'material': ResourceRefValue(pairs.first.$2),
+        if (weights != null) 'morphWeights': weights,
       },
     );
   }
@@ -411,6 +437,7 @@ ComponentSpec _meshComponent(List<(LocalId, LocalId)> pairs) {
             'material': ResourceRefValue(materialId),
           }),
       ]),
+      if (weights != null) 'morphWeights': weights,
     },
   );
 }
@@ -460,6 +487,8 @@ LocalId _buildGeometry(
   Uint8List bufferData, {
   required BoundsSpec? bounds,
   required bool includeSkinning,
+  List<String> morphTargetNames = const [],
+  List<double> defaultMorphWeights = const [],
 }) {
   final packed = packGltfPrimitive(
     primitive: primitive,
@@ -469,14 +498,19 @@ LocalId _buildGeometry(
     coordinatePolicy: GltfCoordinatePolicy.bakeNative,
     includeSkinning: includeSkinning,
   );
+  final morph = packed.morphTargets;
   // Unskinned geometry is stored de-interleaved (structure of arrays) so the
   // realizer uploads each attribute straight to its own GPU buffer with no
-  // load-time reshuffle. Skinned geometry stays interleaved.
+  // load-time reshuffle. Skinned geometry stays interleaved, as does morphed
+  // geometry (whose realizer stashes the interleaved base for CPU blending).
   final Uint8List vertexBytes;
   final String vertexLayout;
   if (packed.isSkinned) {
     vertexBytes = packed.vertexBytes;
     vertexLayout = InterleavedLayoutAdapter.skinnedLayout;
+  } else if (morph != null) {
+    vertexBytes = packed.vertexBytes;
+    vertexLayout = InterleavedLayoutAdapter.unskinnedInterleavedLayout;
   } else {
     vertexBytes = InterleavedLayoutAdapter.concatUnskinnedStreams(
       InterleavedLayoutAdapter.splitUnskinnedAttributes(
@@ -504,6 +538,37 @@ LocalId _buildGeometry(
       bytes: packed.indexBytes,
     ),
   );
+  MorphTargetsSpec? morphSpec;
+  if (morph != null) {
+    // Dense GPU-ready delta slabs, concatenated positions/normals/tangents.
+    final sections = BytesBuilder(copy: false);
+    void addSection(Float32List floats) {
+      sections.add(
+        floats.buffer.asUint8List(floats.offsetInBytes, floats.lengthInBytes),
+      );
+    }
+
+    addSection(morph.positionDeltas);
+    if (morph.normalDeltas != null) addSection(morph.normalDeltas!);
+    if (morph.tangentDeltas != null) addSection(morph.tangentDeltas!);
+    final deltaBytes = sections.toBytes();
+    final deltas = document.addPayload(
+      PayloadSpec(
+        document.newId(),
+        encoding: PayloadEncoding.floats,
+        length: deltaBytes.length,
+        bytes: deltaBytes,
+      ),
+    );
+    morphSpec = MorphTargetsSpec(
+      deltas: deltas.id,
+      targetCount: morph.targetCount,
+      hasNormalDeltas: morph.normalDeltas != null,
+      hasTangentDeltas: morph.tangentDeltas != null,
+      targetNames: morphTargetNames,
+      defaultWeights: defaultMorphWeights,
+    );
+  }
   return document
       .addResource(
         GeometryResource(
@@ -511,6 +576,7 @@ LocalId _buildGeometry(
           vertices: vertices.id,
           indices: indices.id,
           bounds: bounds,
+          morphTargets: morphSpec,
         ),
       )
       .id;

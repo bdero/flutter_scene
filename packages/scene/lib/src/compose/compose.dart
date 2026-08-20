@@ -617,6 +617,16 @@ ResourceSpec _remapResource(ResourceSpec r, LocalId Function(LocalId) remap) =>
         procedural: r.procedural,
         bounds: r.bounds,
         topology: r.topology,
+        morphTargets: r.morphTargets == null
+            ? null
+            : MorphTargetsSpec(
+                deltas: remap(r.morphTargets!.deltas),
+                targetCount: r.morphTargets!.targetCount,
+                hasNormalDeltas: r.morphTargets!.hasNormalDeltas,
+                hasTangentDeltas: r.morphTargets!.hasTangentDeltas,
+                targetNames: r.morphTargets!.targetNames,
+                defaultWeights: r.morphTargets!.defaultWeights,
+              ),
       ),
       TextureResource() => TextureResource(
         remap(r.id),

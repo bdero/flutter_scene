@@ -99,6 +99,17 @@ engine.Animation? buildAnimation(
           times,
           _vec3List(values),
         );
+      case AnimationProperty.weights:
+        // The keyframes payload is the flattened glTF shape, one weight per
+        // target per keyframe. Trailing floats past a whole keyframe are
+        // dropped rather than trusted.
+        final targetCount = times.isEmpty ? 0 : values.length ~/ times.length;
+        property = engine.AnimationProperty.weights;
+        resolver = engine.PropertyResolver.makeMorphWeightsTimeline(
+          times,
+          Float32List.sublistView(values, 0, times.length * targetCount),
+          targetCount: targetCount,
+        );
     }
     channels.add(
       engine.AnimationChannel(

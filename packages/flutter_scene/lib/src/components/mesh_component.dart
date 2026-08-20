@@ -81,8 +81,20 @@ class MeshComponent extends Component {
   @protected
   List<RenderItem> get renderItems => _renderItems;
 
+  /// Morph weights the scene realizer recorded for this node instance
+  /// (glTF `node.weights` overriding the mesh defaults), applied to the
+  /// owning node when the component mounts.
+  @internal
+  List<double>? initialMorphWeights;
+
   @override
-  void onMount() => _registerRenderItems();
+  void onMount() {
+    _registerRenderItems();
+    final weights = initialMorphWeights;
+    if (weights != null && node.internalMorphWeights != null) {
+      node.setMorphWeights(weights);
+    }
+  }
 
   @override
   void onUnmount() => _unregisterRenderItems();

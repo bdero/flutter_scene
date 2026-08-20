@@ -31,6 +31,7 @@ export 'src/specs.dart'
         LoadPolicy,
         MaterialResource,
         MatrixTransform,
+        MorphTargetsSpec,
         NodeSpec,
         PayloadEncoding,
         PayloadEnvironment,

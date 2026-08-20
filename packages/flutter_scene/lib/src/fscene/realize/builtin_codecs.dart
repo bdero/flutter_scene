@@ -247,6 +247,14 @@ class MeshCodec extends ComponentCodec {
         ],
       ),
     ),
+    ComponentPropertyDef(
+      'morphWeights',
+      ComponentPropertyKind.list,
+      doc:
+          'Per-instance morph target weights overriding the geometry '
+          'defaults, in target order.',
+      itemDef: ComponentPropertyDef('weight', ComponentPropertyKind.number),
+    ),
   ];
 
   @override
@@ -270,7 +278,7 @@ class MeshCodec extends ComponentCodec {
     // TODO(fscene): serialize MeshPrimitive.visible/castsShadow (property
     // defs above, plus the write side in serialize()). Every realized
     // primitive keeps the field defaults for now.
-    return MeshComponent(
+    final component = MeshComponent(
       Mesh.primitives(
         primitives: [
           for (final (geometryId, materialId) in pairs)
@@ -281,6 +289,14 @@ class MeshCodec extends ComponentCodec {
         ],
       ),
     );
+    final weights = spec.properties['morphWeights'];
+    if (weights is ListValue) {
+      component.initialMorphWeights = [
+        for (final value in weights.values)
+          if (value is DoubleValue) value.value,
+      ];
+    }
+    return component;
   }
 
   @override
@@ -300,12 +316,14 @@ class MeshCodec extends ComponentCodec {
       pairs.add((geometryId, materialId));
     }
     if (pairs.isEmpty) return null;
+    final weights = _serializedMorphWeights(component);
     if (pairs.length == 1) {
       return ComponentSpec(
         type,
         properties: {
           'geometry': ResourceRefValue(pairs.first.$1),
           'material': ResourceRefValue(pairs.first.$2),
+          if (weights != null) 'morphWeights': weights,
         },
       );
     }
@@ -319,6 +337,7 @@ class MeshCodec extends ComponentCodec {
               'material': ResourceRefValue(materialId),
             }),
         ]),
+        if (weights != null) 'morphWeights': weights,
       },
     );
   }
@@ -348,6 +367,22 @@ class MeshCodec extends ComponentCodec {
       return (geometry.id, material.id);
     }
     return null;
+  }
+
+  // The owning node's live morph weights, when they differ from the
+  // geometry's defaults; null keeps the component free of the property.
+  ListValue? _serializedMorphWeights(MeshComponent component) {
+    if (!component.isAttached) return null;
+    final node = component.node;
+    final live = node.internalMorphWeights;
+    final defaults = node.mesh?.morphTargets?.defaultWeights;
+    if (live == null || defaults == null) return null;
+    var differs = live.length != defaults.length;
+    for (var i = 0; !differs && i < live.length; i++) {
+      differs = live[i] != defaults[i];
+    }
+    if (!differs) return null;
+    return ListValue([for (final w in live) DoubleValue(w)]);
   }
 
   // Serializes a live geometry or material into the destination document.
