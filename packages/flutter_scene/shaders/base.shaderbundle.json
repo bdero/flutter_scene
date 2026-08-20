@@ -35,6 +35,14 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_standard_cube.frag"
   },
+  "StandardLightmapFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lightmap.frag"
+  },
+  "StandardLightmapCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lightmap_cube.frag"
+  },
   "DepthOnlyFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_only.frag"

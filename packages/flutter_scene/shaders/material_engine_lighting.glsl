@@ -160,7 +160,13 @@ uniform sampler2D shadow_map;
 // select the environment: row 0 primary, row 1 the cross-fade secondary. When
 // no cross-fade is active the primary's 9x1 texture is bound directly and both
 // row coordinates land on its single row.
+//
+// A baked-lightmap variant supplies its diffuse ambient from the lightmap
+// instead, so the coefficients are not declared there and the lightmap sampler
+// costs no extra texture unit.
+#ifndef FLUTTER_SCENE_LIGHTMAP
 uniform sampler2D sh_coefficients;
+#endif
 // The secondary environment cross-faded in by frag_info.radiance_blend.x: its
 // prefiltered radiance, in the same layout as the primary. Its diffuse SH
 // rides in sh_coefficients row 1. A dummy is bound when no cross-fade is
