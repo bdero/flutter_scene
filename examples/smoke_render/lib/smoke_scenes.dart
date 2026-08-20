@@ -652,6 +652,81 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // A mirror floor driven by a PlanarReflectorComponent, reflecting an
+  // L-shaped run of differently colored boxes capped by a cone. The
+  // arrangement is asymmetric in both floor axes, so a handedness or
+  // orientation error in the capture puts the wrong color on the wrong side
+  // or stands the reflection upright. One reflection group at a pinned
+  // capture scale.
+  SmokeScene('planar_mirror', () {
+    final scene = Scene();
+    // The mirror surface goes fully rough under a live capture, so ambient
+    // and sun both flatten it toward grey. Keep them low and make the
+    // subjects emissive instead, since emission never reaches the floor
+    // directly and the reflection is left to light it.
+    scene.environmentIntensity = 0.18;
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.35, -1.0, -0.4),
+        DirectionalLight(intensity: 1.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 4.6, depth: 4.6),
+          _fmatMaterial('PlanarMirror')
+            ..parameters.setFloat('reflectivity', 1.0),
+        ),
+      )..addComponent(
+        PlanarReflectorComponent(resolutionScale: 0.5, reflectionGroupId: 0),
+      ),
+    );
+    PhysicallyBasedMaterial subject(vm.Vector4 color) =>
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = color
+          ..emissiveFactor = color
+          ..emissiveStrength = 1.6
+          ..metallicFactor = 0.0
+          ..roughnessFactor = 0.4
+          ..vertexColorWeight = 0.0;
+    Node box(vm.Vector3 position, vm.Vector4 color) => Node(
+      mesh: Mesh(CuboidGeometry(vm.Vector3(0.62, 0.62, 0.62)), subject(color)),
+    )..localTransform = vm.Matrix4.translation(position);
+    // The L's long arm runs across the floor in x, its short arm forward in z
+    // off the left end, so left/right and near/far are both distinguishable.
+    scene.add(
+      box(vm.Vector3(-1.1, 0.32, -0.85), vm.Vector4(0.90, 0.20, 0.16, 1)),
+    );
+    scene.add(
+      box(vm.Vector3(-0.2, 0.32, -0.85), vm.Vector4(0.20, 0.75, 0.30, 1)),
+    );
+    scene.add(
+      box(vm.Vector3(0.7, 0.32, -0.85), vm.Vector4(0.20, 0.42, 0.95, 1)),
+    );
+    scene.add(
+      box(vm.Vector3(-1.1, 0.32, 0.05), vm.Vector4(0.95, 0.78, 0.18, 1)),
+    );
+    // The cone caps the short arm, a silhouette a flipped capture cannot
+    // disguise as a box.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          CylinderGeometry(bottomRadius: 0.3, topRadius: 0.0, height: 0.8),
+          subject(vm.Vector4(0.95, 0.95, 0.97, 1)),
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(-1.1, 0.4, 0.95)),
+    );
+    return (
+      scene: scene,
+      // A diagonal view down the L's bisector, so its two arms run to
+      // opposite sides of the frame instead of stacking into one row.
+      camera: PerspectiveCamera(
+        position: vm.Vector3(-4.2, 2.8, 4.2),
+        target: vm.Vector3(-0.2, 0.4, 0.05),
+      ),
+    );
+  }, preload: loadSmokeMaterials),
   // Lens flares off the bloom chain: a single intense emissive card in a
   // dim scene must bloom and cast a ghost chain through the screen center
   // plus a halo ring. Guards the whole bloom pyramid (its only golden) and
@@ -834,6 +909,74 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           vm.Matrix4.rotationY(0.6);
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
+  }),
+  // Both shadow-catcher modes in one frame, two catcher planes side by side
+  // under one shadow-casting sun, each with the same chiral caster above it.
+  // One plane bakes its footprint cache, the other samples the atlas live,
+  // so a flipped or offset cache diffs against its neighbor. The
+  // catcher writes only the darkening, so the magenta clear reads through the
+  // planes everywhere the shadow does not fall.
+  SmokeScene('shadow_catcher', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.45, -1.0, -0.3),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    final casterMaterial = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.85, 0.45, 0.25, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.6
+      ..vertexColorWeight = 0.0;
+    // One catcher plane plus the L-shaped caster floating above it. The
+    // caster's two arms make the shadow chiral, so a mirrored cache shows.
+    void station(double x, ShadowCatcherMode mode) {
+      scene.add(
+        Node(
+          mesh: Mesh(
+            PlaneGeometry(width: 2.0, depth: 2.0),
+            ShadowCatcherMaterial(
+              shadowIntensity: 0.85,
+              aoStrength: 0.0,
+              softness: 0.05,
+              fadeStart: 0.6,
+              fadeEnd: 1.0,
+              mode: mode,
+            ),
+          ),
+        )..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0, 0)),
+      );
+      scene.add(
+        Node(
+          mesh: Mesh(
+            CuboidGeometry(vm.Vector3(0.9, 0.22, 0.28)),
+            casterMaterial,
+          ),
+        )..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0.85, -0.1)),
+      );
+      scene.add(
+        Node(
+            mesh: Mesh(
+              CuboidGeometry(vm.Vector3(0.28, 0.22, 0.7)),
+              casterMaterial,
+            ),
+          )
+          ..localTransform = vm.Matrix4.translation(
+            vm.Vector3(x + 0.31, 0.85, 0.4),
+          ),
+      );
+    }
+
+    station(-1.15, ShadowCatcherMode.baked);
+    station(1.15, ShadowCatcherMode.live);
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 3.0, 4.4),
+        target: vm.Vector3(0, 0.3, 0),
+      ),
+    );
   }),
   // A cuboid textured from an in-memory compressed KTX2 payload (mipped and
   // supercompressed), the shape an imported compressed texture takes. Covers
