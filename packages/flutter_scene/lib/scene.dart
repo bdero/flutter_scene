@@ -146,6 +146,8 @@ export 'src/components/directional_light_component.dart'
     show DirectionalLightComponent;
 export 'src/components/environment_volume_component.dart'
     show EnvironmentVolumeComponent, EnvironmentVolumeShape;
+export 'src/components/planar_reflector_component.dart'
+    show PlanarReflectorComponent;
 export 'src/components/reflection_probe_component.dart'
     show ReflectionProbeComponent;
 export 'src/components/image_based_light_component.dart'

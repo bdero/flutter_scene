@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/rect_area_light_component.dart';
+import 'package:flutter_scene/src/components/planar_reflector_component.dart';
 import 'package:flutter_scene/src/components/reflection_probe_component.dart';
 import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
@@ -574,6 +575,23 @@ class RenderScene {
   /// Unregisters [probe]. Called when its owning node unmounts.
   void removeReflectionProbeComponent(ReflectionProbeComponent probe) {
     reflectionProbeComponents.remove(probe);
+  }
+
+  /// The planar reflectors contributed by mounted
+  /// [PlanarReflectorComponent]s, in registration order. Each visible one
+  /// renders a per-frame mirrored scene capture before the primary view's
+  /// scene pass.
+  final List<PlanarReflectorComponent> planarReflectorComponents = [];
+
+  /// Registers [reflector] as an active planar reflector. Called by a
+  /// [PlanarReflectorComponent] when its owning node mounts.
+  void addPlanarReflectorComponent(PlanarReflectorComponent reflector) {
+    planarReflectorComponents.add(reflector);
+  }
+
+  /// Unregisters [reflector]. Called when its owning node unmounts.
+  void removePlanarReflectorComponent(PlanarReflectorComponent reflector) {
+    planarReflectorComponents.remove(reflector);
   }
 
   /// The mounted [CameraComponent]s, in mount order. The first is the
