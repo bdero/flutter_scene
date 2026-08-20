@@ -267,6 +267,9 @@ class MeshCodec extends ComponentCodec {
       debugPrint('fscene: mesh component has no geometry/material references');
       return null;
     }
+    // TODO(fscene): serialize MeshPrimitive.visible/castsShadow (property
+    // defs above, plus the write side in serialize()). Every realized
+    // primitive keeps the field defaults for now.
     return MeshComponent(
       Mesh.primitives(
         primitives: [

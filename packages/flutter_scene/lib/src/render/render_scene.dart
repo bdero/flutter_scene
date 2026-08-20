@@ -55,6 +55,12 @@ class RenderItem {
   /// Refreshed each frame by the scene pre-pass.
   bool visible = false;
 
+  /// Mirrors the owning `MeshPrimitive.visible`, refreshed each frame.
+  /// Ands with [visible] to gate the color passes; independent of
+  /// [castsShadows], so a primitive can be excluded from color while still
+  /// casting a shadow.
+  bool primitiveVisible = true;
+
   /// Mirrors the owning node's frustum-cull opt-in, refreshed each frame.
   bool frustumCulled = true;
 
@@ -678,7 +684,11 @@ class RenderScene {
   }) {
     final inputs = <RenderInput>{};
     void collect(RenderItem item) {
-      if (!item.visible || (item.layers & layerMask) == 0) return;
+      if (!item.visible ||
+          !item.primitiveVisible ||
+          (item.layers & layerMask) == 0) {
+        return;
+      }
       inputs.addAll(item.material.sceneInputs);
       final lod = item.lod;
       if (lod != null) {
