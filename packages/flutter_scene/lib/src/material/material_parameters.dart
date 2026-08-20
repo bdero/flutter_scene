@@ -43,6 +43,11 @@ class _SamplerSlot {
 ///  * the dynamic [operator []=]: dispatches on the declared type and throws on
 ///    a mismatch;
 ///  * [rawBlock] / [offsetOf]: a raw escape hatch for hot loops.
+///
+/// Typed getters ([getFloat], [getVec4], [getColor], ...) mirror the setters
+/// and read back the effective value, the explicitly assigned value if set,
+/// otherwise the sidecar default. [getParameter] is the type-erased
+/// equivalent, and [parameters] enumerates every declared parameter.
 /// {@category Materials}
 class MaterialParameters {
   MaterialParameters._(
@@ -109,6 +114,7 @@ class MaterialParameters {
       layout,
       samplers,
     );
+    params._defaults = defaults;
     defaults.forEach(params._applyDefault);
     return params;
   }
@@ -122,6 +128,7 @@ class MaterialParameters {
     required Map<String, ({FmatType type, int offset, bool sourceColor})>
     parameters,
     Map<String, FmatHintKind?> samplers = const {},
+    Map<String, Object> defaults = const {},
   }) {
     final layout = {
       for (final e in parameters.entries)
@@ -134,12 +141,15 @@ class MaterialParameters {
     final samplerSlots = {
       for (final e in samplers.entries) e.key: _SamplerSlot(e.value),
     };
-    return MaterialParameters._(
+    final params = MaterialParameters._(
       blockName,
       ByteData(blockSizeBytes),
       layout,
       samplerSlots,
     );
+    params._defaults = Map.of(defaults);
+    defaults.forEach(params._applyDefault);
+    return params;
   }
 
   String _blockName;
@@ -155,6 +165,12 @@ class MaterialParameters {
 
   final Map<String, Object> _assigned = <String, Object>{};
 
+  /// Sidecar-declared defaults by parameter name, raw as authored (a `num`
+  /// for scalars, a `List` for vectors and matrices). Absent for a parameter
+  /// with no declared default. Kept in sync with the current layout across
+  /// [updateFromMetadata].
+  Map<String, Object> _defaults = <String, Object>{};
+
   /// The values explicitly assigned through the typed setters, keyed by
   /// parameter name, as last set (vectors and matrices are stored as defensive
   /// copies; textures appear as their live `gpu.Texture`). Sidecar defaults
@@ -167,6 +183,20 @@ class MaterialParameters {
 
   /// The names of the sampler parameters in this material.
   Iterable<String> get samplerNames => _samplers.keys;
+
+  /// Whether a scalar/vector parameter named [name] is declared.
+  bool hasParameter(String name) => _layout.containsKey(name);
+
+  /// Whether a sampler parameter named [name] is declared.
+  bool hasSampler(String name) => _samplers.containsKey(name);
+
+  /// Whether [name] was explicitly set on this instance, as opposed to left
+  /// at the sidecar default. Throws [ArgumentError] if [name] is not a
+  /// declared parameter.
+  bool isParameterAssigned(String name) {
+    _slot(name, null);
+    return _assigned.containsKey(name);
+  }
 
   /// The raw uniform-block bytes, for the hot-loop escape hatch. Pair with
   /// [offsetOf]; you own correctness (type and std140 layout) here.
@@ -298,6 +328,7 @@ class MaterialParameters {
     _block = newBlock;
     _layout = newLayout;
     _samplers = newSamplers;
+    _defaults = Map.of(newDefaults);
     _overridden.removeWhere(
       (name) => !newLayout.containsKey(name) && !newSamplers.containsKey(name),
     );
@@ -415,6 +446,103 @@ class MaterialParameters {
     slot.sampler = null;
   }
 
+  /// Effective value of a float parameter, the assigned value if set,
+  /// otherwise the sidecar default. Throws on an unknown name or wrong type.
+  double getFloat(String name) =>
+      _block.getFloat32(_slot(name, FmatType.float_).offsetBytes, Endian.host);
+
+  /// Effective value of an int parameter, the assigned value if set,
+  /// otherwise the sidecar default. Throws on an unknown name or wrong type.
+  int getInt(String name) =>
+      _block.getInt32(_slot(name, FmatType.int_).offsetBytes, Endian.host);
+
+  /// Effective value of a vec2 parameter, the assigned value if set,
+  /// otherwise the sidecar default. Throws on an unknown name or wrong type.
+  Vector2 getVec2(String name) {
+    final f = _readFloats(_slot(name, FmatType.vec2).offsetBytes, 2);
+    return Vector2(f[0], f[1]);
+  }
+
+  /// Effective value of a vec3 parameter, the assigned value if set,
+  /// otherwise the sidecar default. Throws on an unknown name or wrong type.
+  Vector3 getVec3(String name) {
+    final f = _readFloats(_slot(name, FmatType.vec3).offsetBytes, 3);
+    return Vector3(f[0], f[1], f[2]);
+  }
+
+  /// Effective value of a vec4 parameter, the assigned value if set,
+  /// otherwise the sidecar default. Throws on an unknown name or wrong type.
+  Vector4 getVec4(String name) {
+    final f = _readFloats(_slot(name, FmatType.vec4).offsetBytes, 4);
+    return Vector4(f[0], f[1], f[2], f[3]);
+  }
+
+  /// Effective value of a mat4 parameter, the assigned value if set,
+  /// otherwise the sidecar default. Throws on an unknown name or wrong type.
+  Matrix4 getMat4(String name) =>
+      Matrix4.fromList(_readFloats(_slot(name, FmatType.mat4).offsetBytes, 16));
+
+  /// Effective value of a vec4 parameter as a [Color], the assigned value if
+  /// set, otherwise the sidecar default. For a `source_color`-hinted
+  /// parameter the rgb channels are sRGB-encoded back from the stored linear
+  /// value, the inverse of [setColor]; alpha is read as-is. A non-source_color
+  /// parameter reads its raw channels unencoded. Throws on an unknown name or
+  /// wrong type.
+  Color getColor(String name) {
+    final slot = _slot(name, FmatType.vec4);
+    final f = _readFloats(slot.offsetBytes, 4);
+    var r = f[0], g = f[1], b = f[2];
+    if (slot.sourceColor) {
+      r = _linearToSrgb(r);
+      g = _linearToSrgb(g);
+      b = _linearToSrgb(b);
+    }
+    return Color.from(alpha: f[3], red: r, green: g, blue: b);
+  }
+
+  /// The texture bound to sampler [name], or null when unset. The engine
+  /// binds the declared placeholder at draw time for an unset sampler, so
+  /// that placeholder is never surfaced here. Throws on an unknown sampler
+  /// name.
+  gpu.Texture? getTexture(String name) {
+    final slot = _samplers[name];
+    if (slot == null) {
+      throw ArgumentError('Unknown sampler parameter "$name".');
+    }
+    return slot.texture;
+  }
+
+  /// Effective value of a declared parameter, boxed as [double], [int],
+  /// [Vector2], [Vector3], [Vector4], or [Matrix4] matching its declared
+  /// type. For samplers use [getTexture]. Throws on an unknown name.
+  Object getParameter(String name) {
+    final type = _slot(name, null).type;
+    return switch (type) {
+      FmatType.float_ => getFloat(name),
+      FmatType.int_ => getInt(name),
+      FmatType.vec2 => getVec2(name),
+      FmatType.vec3 => getVec3(name),
+      FmatType.vec4 => getVec4(name),
+      FmatType.mat4 => getMat4(name),
+      // Samplers are declared separately (see _samplers) and never appear in
+      // _layout, so _slot never returns one of these for a plain parameter.
+      FmatType.sampler2d ||
+      FmatType.samplerCube => throw StateError('unreachable: sampler type'),
+    };
+  }
+
+  /// Every declared scalar/vector parameter (not samplers, see
+  /// [samplerNames]), with its GLSL type spelling and sidecar-declared
+  /// default (null if none was declared).
+  Iterable<({String name, String type, Object? defaultValue})> get parameters =>
+      _layout.entries.map(
+        (e) => (
+          name: e.key,
+          type: e.value.type.glslType,
+          defaultValue: _defaults[e.key],
+        ),
+      );
+
   /// Dynamic, type-checked assignment. Dispatches on the parameter's declared
   /// type and throws if [value]'s runtime type does not match.
   void operator []=(String name, Object value) {
@@ -500,6 +628,11 @@ class MaterialParameters {
     }
   }
 
+  List<double> _readFloats(int offset, int count) => [
+    for (var i = 0; i < count; i++)
+      _block.getFloat32(offset + i * 4, Endian.host),
+  ];
+
   void _setDynamic(String name, FmatType type, Object value) {
     if (type == FmatType.float_ && value is num) {
       setFloat(name, value.toDouble());
@@ -584,6 +717,12 @@ class MaterialParameters {
 // sRGB -> linear matching pbr.glsl's SRGBToLinear on the GPU.
 double _srgbToLinear(double c) =>
     c <= 0.04045 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+
+// linear -> sRGB, the inverse of _srgbToLinear, for reading a source_color
+// parameter back out through getColor.
+double _linearToSrgb(double c) => c <= 0.0031308
+    ? c * 12.92
+    : 1.055 * math.pow(c, 1 / 2.4).toDouble() - 0.055;
 
 FmatHintKind? _hintKind(String? kind) => switch (kind) {
   'default_white' => FmatHintKind.defaultWhite,
