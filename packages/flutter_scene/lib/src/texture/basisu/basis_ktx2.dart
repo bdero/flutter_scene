@@ -53,11 +53,9 @@ class StandardKtx2Image {
   final bool hasAlpha;
 }
 
-/// Decodes every stored mip level of a standard KTX2 [texture] to RGBA8.
-/// Pure data work, safe to run on a background isolate. Throws
-/// [Ktx2FormatException] or [FormatException] on malformed or unsupported
-/// content.
-StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
+/// Validates that [texture] is a plausibly-sized 2D standard file and returns
+/// its base dimensions.
+({int width, int height}) _checkStandard2d(Ktx2Texture texture) {
   if (texture.faceCount != 1 ||
       texture.layerCount > 1 ||
       texture.pixelDepth > 1) {
@@ -67,7 +65,6 @@ StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
       'Only 2D non-array standard KTX2 textures are supported',
     );
   }
-  final format = readDataFormat(texture);
   final width = texture.pixelWidth;
   final height = math.max(1, texture.pixelHeight);
   // Basis encoders cap dimensions at 16K; a larger value is a corrupt header,
@@ -75,6 +72,40 @@ StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
   if (width < 1 || width > 16384 || height > 16384) {
     throw Ktx2FormatException('Implausible dimensions ${width}x$height');
   }
+  return (width: width, height: height);
+}
+
+/// One repacked ASTC 4x4 mip level.
+typedef AstcLevel = ({int width, int height, Uint8List blocks});
+
+/// Repacks the stored mip levels of a UASTC [texture] into ASTC 4x4 blocks
+/// (the direct compressed upload path), or returns null when [texture] does
+/// not carry UASTC. At most [maxLevels] levels are produced.
+List<AstcLevel>? repackStandardKtx2ToAstc(Ktx2Texture texture, int maxLevels) {
+  final (:width, :height) = _checkStandard2d(texture);
+  if (readDataFormat(texture).colorModel != kDfModelUastc) return null;
+  final levels = <AstcLevel>[];
+  final count = math.min(texture.levels.length, maxLevels);
+  for (var level = 0; level < count; level++) {
+    final size = mipSize(width, height, level);
+    final payload = _levelPayload(texture, level);
+    final blockCount = ((size.width + 3) >> 2) * ((size.height + 3) >> 2);
+    levels.add((
+      width: size.width,
+      height: size.height,
+      blocks: transcodeUastcToAstc4x4(payload, blockCount),
+    ));
+  }
+  return levels;
+}
+
+/// Decodes every stored mip level of a standard KTX2 [texture] to RGBA8.
+/// Pure data work, safe to run on a background isolate. Throws
+/// [Ktx2FormatException] or [FormatException] on malformed or unsupported
+/// content.
+StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
+  final (:width, :height) = _checkStandard2d(texture);
+  final format = readDataFormat(texture);
   final srgb = format.isSrgb;
 
   switch (format.colorModel) {

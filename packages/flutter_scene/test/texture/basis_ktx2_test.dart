@@ -94,6 +94,44 @@ void main() {
     });
   });
 
+  group('UASTC to ASTC 4x4 repack', () {
+    // The .astc goldens are `ktx extract --transcode astc --raw` output,
+    // levels concatenated base first.
+    test('sRGB mipped zstd file matches the reference, every level', () {
+      final texture = readKtx2(_fixture('uastc_srgb_mips_zstd_64.ktx2'));
+      final levels = repackStandardKtx2ToAstc(texture, 7)!;
+      expect(levels.length, 7);
+      expect(levels.first.width, 64);
+      expect(levels.last.width, 1);
+      expect(
+        _concat([for (final level in levels) level.blocks]),
+        _fixture('uastc_srgb_mips_zstd_64.astc'),
+      );
+    });
+
+    test('alpha-bearing file matches the reference', () {
+      final texture = readKtx2(_fixture('uastc_alpha_srgb_32.ktx2'));
+      final levels = repackStandardKtx2ToAstc(texture, 1)!;
+      expect(levels.single.blocks, _fixture('uastc_alpha_srgb_32.astc'));
+    });
+
+    test('luminance-alpha file matches the reference', () {
+      final texture = readKtx2(
+        _fixture('luminance_alpha_reference_uastc.ktx2'),
+      );
+      final levels = repackStandardKtx2ToAstc(texture, 1)!;
+      expect(
+        levels.single.blocks,
+        _fixture('luminance_alpha_reference_uastc.astc'),
+      );
+    });
+
+    test('non-UASTC files are not repacked', () {
+      final texture = readKtx2(_fixture('etc1s_srgb_mips_64.ktx2'));
+      expect(repackStandardKtx2ToAstc(texture, 7), isNull);
+    });
+  });
+
   group('standard KTX2 ETC1S decode', () {
     test('sRGB mipped file matches the reference, every level', () {
       final image = decodeStandardKtx2(
