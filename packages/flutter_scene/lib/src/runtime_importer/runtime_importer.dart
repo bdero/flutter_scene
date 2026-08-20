@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
@@ -25,44 +26,86 @@ import 'material_builder.dart';
 import 'skin_builder.dart';
 import 'texture_builder.dart';
 
+export 'package:flutter_scene/src/importer/gltf.dart'
+    show GltfImportWarning, GltfWarningCallback;
 export 'gltf_resources.dart' show GltfResourceResolver;
 
 /// Parse a GLB byte stream into a [Node] tree.
 ///
 /// Returns a synthesized root node whose children are the root nodes of the
 /// GLB's default scene. Each scene node is created and wired up to match the
-/// glTF node hierarchy.
-Future<Node> importGlb(Uint8List bytes) async {
+/// glTF node hierarchy. [onWarning], when given, receives non-fatal import
+/// issues (an unrecognized extension, an image that fell back to a
+/// placeholder); without it they print instead.
+Future<Node> importGlb(
+  Uint8List bytes, {
+  GltfWarningCallback? onWarning,
+}) async {
   final container = parseGlb(bytes);
   final doc = parseGltfJson(container.json);
-  final bufferData = await _resolveBufferData(
+  _deliverWarnings(doc.warnings, onWarning);
+  final normalized = await _normalizeBuffers(
     doc,
     glbBinaryChunk: container.binaryChunk,
     resolveUri: null,
   );
-  final packed = await _packPrimitives(doc, bufferData);
-  return _buildScene(doc, bufferData, packed, null);
+  final packed = await _packPrimitives(normalized.doc, normalized.bufferData);
+  return _buildScene(
+    normalized.doc,
+    normalized.bufferData,
+    packed,
+    null,
+    onWarning: onWarning,
+  );
 }
 
 /// Parse a multi-file glTF document into a [Node] tree.
 ///
 /// [gltfJson] is the raw bytes of the `.gltf` file. [resolveUri] fetches
 /// each external resource (the `.bin` buffer and image files) the
-/// document references by relative URI; `data:` URIs are decoded
-/// internally and never reach the resolver.
+/// document references by relative URI, percent-decoded; `data:` URIs are
+/// decoded internally and never reach the resolver. A document with more
+/// than one buffer has every buffer concatenated and its bufferViews
+/// rebased, the same normalization the offline importer performs.
+/// [onWarning], when given, receives non-fatal import issues; without it
+/// they print instead.
 Future<Node> importGltf(
   Uint8List gltfJson, {
   required GltfResourceResolver resolveUri,
+  GltfWarningCallback? onWarning,
 }) async {
   final json = jsonDecode(utf8.decode(gltfJson)) as Map<String, Object?>;
   final doc = parseGltfJson(json);
-  final bufferData = await _resolveBufferData(
+  _deliverWarnings(doc.warnings, onWarning);
+  final normalized = await _normalizeBuffers(
     doc,
     glbBinaryChunk: Uint8List(0),
     resolveUri: resolveUri,
   );
-  final packed = await _packPrimitives(doc, bufferData);
-  return _buildScene(doc, bufferData, packed, resolveUri);
+  final packed = await _packPrimitives(normalized.doc, normalized.bufferData);
+  return _buildScene(
+    normalized.doc,
+    normalized.bufferData,
+    packed,
+    resolveUri,
+    onWarning: onWarning,
+  );
+}
+
+// Delivers parse-time warnings to onWarning, or prints them when absent.
+// Safe to call before any isolate hop: parseGltfJson always runs on the
+// calling isolate, never inside compute().
+void _deliverWarnings(
+  List<GltfImportWarning> warnings,
+  GltfWarningCallback? onWarning,
+) {
+  for (final warning in warnings) {
+    if (onWarning != null) {
+      onWarning(warning);
+    } else {
+      debugPrint('glTF import: $warning');
+    }
+  }
 }
 
 /// Packs every mesh primitive's vertex/index data on a background isolate,
@@ -140,14 +183,16 @@ Future<Node> _buildScene(
   GltfDocument doc,
   Uint8List bufferData,
   List<List<_PackedPrimitiveVariants?>> packed,
-  GltfResourceResolver? resolveUri,
-) async {
+  GltfResourceResolver? resolveUri, {
+  GltfWarningCallback? onWarning,
+}) async {
   // Decode all textures up front so material construction can reference
   // them by index without per-material async work.
   final List<Texture2D> textures = await buildTextures(
     doc,
     bufferData,
     resolveUri: resolveUri,
+    onWarning: onWarning,
   );
   final materials = await Future.wait([
     for (final material in doc.materials) buildMaterial(material, textures),
@@ -387,28 +432,75 @@ Component? _buildLightComponent(GltfPunctualLight light) {
   }
 }
 
-/// Returns the binary buffer that backs the document's bufferViews.
+/// Resolves every buffer the document references and concatenates them into
+/// one blob with [GltfBufferView]s rebased to absolute offsets into it,
+/// returning a document copy that carries the rebased views. Mirrors the
+/// offline importer's multi-buffer normalization
+/// (`in_memory_import.dart`'s `_normalizeGltf`) so the runtime path supports
+/// the same multi-buffer `.gltf` documents.
 ///
-/// For GLB the implicit "buffer 0" is the embedded BIN chunk. For
-/// multi-file glTF the single buffer is resolved from its URI: a
-/// `data:` URI is decoded inline, an external URI goes through
-/// [resolveUri]. glTF documents with more than one buffer are not yet
-/// supported (none of the engine's target assets need it).
-Future<Uint8List> _resolveBufferData(
+/// For GLB the implicit buffer 0 (no uri) is the embedded BIN chunk. Every
+/// other buffer is resolved from its URI: a `data:` URI decodes inline, an
+/// external URI is percent-decoded and passed to [resolveUri].
+Future<({GltfDocument doc, Uint8List bufferData})> _normalizeBuffers(
   GltfDocument doc, {
   required Uint8List glbBinaryChunk,
   required GltfResourceResolver? resolveUri,
 }) async {
   if (doc.buffers.isEmpty) {
-    return glbBinaryChunk;
+    return (doc: doc, bufferData: glbBinaryChunk);
   }
-  if (doc.buffers.length > 1) {
-    throw const FormatException(
-      'glTF with multiple buffers is not yet supported by the runtime '
-      'importer',
-    );
+
+  final blob = BytesBuilder();
+  void padTo4() {
+    while (blob.length % 4 != 0) {
+      blob.addByte(0);
+    }
   }
-  final uri = doc.buffers.first.uri;
+
+  final bufferBase = <int>[];
+  for (final buffer in doc.buffers) {
+    padTo4();
+    bufferBase.add(blob.length);
+    blob.add(await _resolveBufferBytes(buffer.uri, glbBinaryChunk, resolveUri));
+  }
+
+  final bufferViews = [
+    for (final v in doc.bufferViews)
+      GltfBufferView(
+        buffer: 0,
+        byteLength: v.byteLength,
+        byteOffset: v.byteOffset + bufferBase[v.buffer],
+        byteStride: v.byteStride,
+      ),
+  ];
+
+  final normalized = GltfDocument(
+    scene: doc.scene,
+    scenes: doc.scenes,
+    nodes: doc.nodes,
+    meshes: doc.meshes,
+    accessors: doc.accessors,
+    bufferViews: bufferViews,
+    buffers: doc.buffers,
+    materials: doc.materials,
+    textures: doc.textures,
+    images: doc.images,
+    samplers: doc.samplers,
+    skins: doc.skins,
+    animations: doc.animations,
+    lights: doc.lights,
+    materialsVariants: doc.materialsVariants,
+    warnings: doc.warnings,
+  );
+  return (doc: normalized, bufferData: blob.toBytes());
+}
+
+Future<Uint8List> _resolveBufferBytes(
+  String? uri,
+  Uint8List glbBinaryChunk,
+  GltfResourceResolver? resolveUri,
+) async {
   if (uri == null) return glbBinaryChunk; // GLB embedded buffer.
   if (uri.startsWith('data:')) return decodeGltfDataUri(uri);
   if (resolveUri == null) {
@@ -417,5 +509,5 @@ Future<Uint8List> _resolveBufferData(
       'provided. Use importGltf / Node.fromGltfBytes for multi-file glTF.',
     );
   }
-  return resolveUri(uri);
+  return resolveUri(Uri.decodeComponent(uri));
 }

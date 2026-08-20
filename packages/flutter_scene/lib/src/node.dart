@@ -1008,24 +1008,34 @@ base class Node implements SceneGraph {
   ///
   /// No offline conversion is required, useful for runtime use cases such
   /// as user-uploaded models, network-loaded assets, or model editors.
+  /// [onWarning], when given, receives non-fatal import issues (an
+  /// unrecognized extension, an image that fell back to a placeholder);
+  /// without it they print instead.
   ///
   /// Example:
   /// ```dart
   /// final bytes = await rootBundle.load('assets/dash.glb');
   /// final node = await Node.fromGlbBytes(bytes.buffer.asUint8List());
   /// ```
-  static Future<Node> fromGlbBytes(Uint8List bytes) {
-    return importGlb(bytes);
+  static Future<Node> fromGlbBytes(
+    Uint8List bytes, {
+    GltfWarningCallback? onWarning,
+  }) {
+    return importGlb(bytes, onWarning: onWarning);
   }
 
   /// Convenience wrapper for [fromGlbBytes] that loads from the asset bundle.
-  static Future<Node> fromGlbAsset(String assetPath) async {
+  static Future<Node> fromGlbAsset(
+    String assetPath, {
+    GltfWarningCallback? onWarning,
+  }) async {
     final byteData = await rootBundle.load(assetPath);
     return importGlb(
       byteData.buffer.asUint8List(
         byteData.offsetInBytes,
         byteData.lengthInBytes,
       ),
+      onWarning: onWarning,
     );
   }
 
@@ -1034,9 +1044,13 @@ base class Node implements SceneGraph {
   ///
   /// Multi-file glTF keeps its geometry buffer and images in separate
   /// files referenced by relative URI. [resolveUri] fetches each of
-  /// those resources by URI — for example downloading them relative to
-  /// the `.gltf`'s own URL, or reading sibling files from disk.
-  /// `data:` URIs are decoded internally and never reach [resolveUri].
+  /// those resources by URI, percent-decoded — for example downloading
+  /// them relative to the `.gltf`'s own URL, or reading sibling files
+  /// from disk. `data:` URIs are decoded internally and never reach
+  /// [resolveUri]. A document with more than one buffer is supported;
+  /// its buffers are concatenated and rebased before use. [onWarning],
+  /// when given, receives non-fatal import issues; without it they
+  /// print instead.
   ///
   /// For single-file `.glb` models use [fromGlbBytes] instead.
   ///
@@ -1050,8 +1064,9 @@ base class Node implements SceneGraph {
   static Future<Node> fromGltfBytes(
     Uint8List gltfJson, {
     required GltfResourceResolver resolveUri,
+    GltfWarningCallback? onWarning,
   }) {
-    return importGltf(gltfJson, resolveUri: resolveUri);
+    return importGltf(gltfJson, resolveUri: resolveUri, onWarning: onWarning);
   }
 
   /// This list allows the node to act as a parent in the scene graph hierarchy. Transformations

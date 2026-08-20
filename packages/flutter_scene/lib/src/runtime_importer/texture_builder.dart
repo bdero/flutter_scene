@@ -22,14 +22,23 @@ Future<List<Texture2D>> buildTextures(
   GltfDocument doc,
   Uint8List bufferData, {
   GltfResourceResolver? resolveUri,
+  GltfWarningCallback? onWarning,
 }) async {
+  void warn(String message) {
+    if (onWarning != null) {
+      onWarning(GltfImportWarning(message));
+    } else {
+      debugPrint(message);
+    }
+  }
+
   final results = <Texture2D>[];
   final contents = gltfTextureContents(doc);
   for (int i = 0; i < doc.textures.length; i++) {
     final tex = doc.textures[i];
     final imageIdx = tex.source;
     if (imageIdx == null || imageIdx < 0 || imageIdx >= doc.images.length) {
-      debugPrint('glTF texture $i has no image source — using a placeholder.');
+      warn('glTF texture $i has no image source, using a placeholder.');
       results.add(_placeholder());
       continue;
     }
@@ -48,9 +57,9 @@ Future<List<Texture2D>> buildTextures(
         imageBytes = decodeGltfDataUri(uri);
       } else if (resolveUri != null) {
         try {
-          imageBytes = await resolveUri(uri);
+          imageBytes = await resolveUri(Uri.decodeComponent(uri));
         } catch (e) {
-          debugPrint(
+          warn(
             'Failed to resolve glTF image $imageIdx URI "$uri": $e. '
             'Using placeholder.',
           );
@@ -58,7 +67,7 @@ Future<List<Texture2D>> buildTextures(
           continue;
         }
       } else {
-        debugPrint(
+        warn(
           'glTF image $imageIdx references external URI "$uri" but no '
           'resource resolver was provided. Using placeholder.',
         );
@@ -74,7 +83,7 @@ Future<List<Texture2D>> buildTextures(
       final texture = await _decodeAndUpload(imageBytes, contents[i]);
       results.add(texture);
     } catch (e, st) {
-      debugPrint('Failed to decode glTF image $imageIdx: $e\n$st');
+      warn('Failed to decode glTF image $imageIdx: $e\n$st');
       results.add(_placeholder());
     }
   }
