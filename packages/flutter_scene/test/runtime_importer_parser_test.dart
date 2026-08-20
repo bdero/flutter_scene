@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -117,6 +118,26 @@ void main() {
         expect(doc.nodes, isNotEmpty);
       });
     }
+  });
+
+  test('texture parses a KHR_texture_basisu source', () {
+    final doc = parseGltfJson(
+      jsonDecode('''
+{
+  "asset": {"version": "2.0"},
+  "textures": [
+    {"source": 0, "extensions": {"KHR_texture_basisu": {"source": 1}}},
+    {"source": 0}
+  ],
+  "images": [{"uri": "a.png"}, {"uri": "a.ktx2", "mimeType": "image/ktx2"}]
+}
+''')
+          as Map<String, Object?>,
+    );
+    expect(doc.textures[0].source, 0);
+    expect(doc.textures[0].basisuSource, 1);
+    expect(doc.textures[1].basisuSource, isNull);
+    expect(doc.images[1].mimeType, 'image/ktx2');
   });
 
   test('primitive packing preserves TEXCOORD_0 and TEXCOORD_1', () {
