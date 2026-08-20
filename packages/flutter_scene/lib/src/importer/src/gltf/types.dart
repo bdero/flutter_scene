@@ -53,6 +53,31 @@ class GltfDocument {
   /// unrecognized `extensionsUsed` entries). Import entry points deliver
   /// these to a caller's warning callback, or print them when none is given.
   final List<GltfImportWarning> warnings;
+
+  /// A copy of this document with the given lists replaced.
+  GltfDocument copyWith({
+    List<GltfBufferView>? bufferViews,
+    List<GltfImage>? images,
+  }) {
+    return GltfDocument(
+      scene: scene,
+      scenes: scenes,
+      nodes: nodes,
+      meshes: meshes,
+      accessors: accessors,
+      bufferViews: bufferViews ?? this.bufferViews,
+      buffers: buffers,
+      materials: materials,
+      textures: textures,
+      images: images ?? this.images,
+      samplers: samplers,
+      skins: skins,
+      animations: animations,
+      lights: lights,
+      materialsVariants: materialsVariants,
+      warnings: warnings,
+    );
+  }
 }
 
 /// A `KHR_lights_punctual` light definition. Fields match the extension spec.
@@ -277,18 +302,82 @@ class GltfBufferView {
     required this.byteLength,
     this.byteOffset = 0,
     this.byteStride,
+    this.meshopt,
   });
 
   final int buffer;
   final int byteLength;
   final int byteOffset;
   final int? byteStride;
+
+  /// Set when the view's data is stored compressed by the
+  /// `EXT_meshopt_compression` extension. [buffer], [byteOffset] and
+  /// [byteLength] then describe the uncompressed fallback storage, which the
+  /// decoding path never reads.
+  final GltfMeshoptCompression? meshopt;
+}
+
+/// The `EXT_meshopt_compression` extension object on a buffer view, locating
+/// and describing the compressed source data.
+class GltfMeshoptCompression {
+  GltfMeshoptCompression({
+    required this.buffer,
+    required this.byteLength,
+    required this.byteStride,
+    required this.count,
+    required this.mode,
+    this.byteOffset = 0,
+    this.filter = 'NONE',
+  });
+
+  final int buffer;
+  final int byteOffset;
+  final int byteLength;
+
+  /// Size of one decoded element. Not the same thing as the view's
+  /// [GltfBufferView.byteStride], which stays absent for index data.
+  final int byteStride;
+  final int count;
+
+  /// `ATTRIBUTES`, `TRIANGLES`, or `INDICES`. Kept as written so the decoder
+  /// reports an unknown value instead of the parser guessing one.
+  final String mode;
+
+  /// `NONE`, `OCTAHEDRAL`, `QUATERNION`, or `EXPONENTIAL`.
+  final String filter;
+
+  /// Size of the decoded data.
+  int get decodedByteLength => count * byteStride;
+
+  GltfMeshoptCompression rebased({
+    required int buffer,
+    required int byteOffset,
+  }) {
+    return GltfMeshoptCompression(
+      buffer: buffer,
+      byteOffset: byteOffset,
+      byteLength: byteLength,
+      byteStride: byteStride,
+      count: count,
+      mode: mode,
+      filter: filter,
+    );
+  }
 }
 
 class GltfBuffer {
-  GltfBuffer({required this.byteLength, this.uri});
+  GltfBuffer({
+    required this.byteLength,
+    this.uri,
+    this.meshoptFallback = false,
+  });
   final int byteLength;
   final String? uri;
+
+  /// Whether the buffer is tagged as an `EXT_meshopt_compression` fallback.
+  /// Only compressed views may reference it, so the decoding path never loads
+  /// it.
+  final bool meshoptFallback;
 }
 
 class GltfMaterial {
