@@ -25,7 +25,9 @@ import 'package:vector_math/vector_math.dart';
 import 'package:scene/scene.dart';
 
 import '../../../geometry/interleaved_layout.dart';
+import '../../../texture/basisu/basis_ktx2.dart';
 import '../../../texture/block_alignment.dart';
+import '../../../texture/ktx2/ktx2.dart';
 import '../../../texture/ktx2_image.dart';
 import '../../../texture/mipmap.dart';
 import '../../texture_roles.dart';
@@ -234,6 +236,9 @@ SceneDocument buildSceneDocument(
       if (root >= 0 && root < nodeIds.length) document.roots.add(nodeIds[root]);
     }
   }
+
+  // TODO(ibl-fsceneb): serialize the default scene's EXT_lights_image_based
+  // light (doc.imageBasedLights) as an environment component here.
 
   // KHR_materials_variants: attach a materialsVariants component to each
   // document root whose subtree has variant-mapped primitives. Bindings
@@ -918,10 +923,15 @@ LocalId? _buildTexture(
   bool alignForCompression = false,
   TextureContent content = TextureContent.color,
 }) {
-  if (texture.source == null || texture.source! >= doc.images.length) {
+  // A KHR_texture_basisu KTX2 image wins over the fallback source, matching
+  // the runtime importer.
+  final sourceIndex = texture.basisuSource ?? texture.source;
+  if (sourceIndex == null ||
+      sourceIndex < 0 ||
+      sourceIndex >= doc.images.length) {
     return null;
   }
-  final image = doc.images[texture.source!];
+  final image = doc.images[sourceIndex];
   if (image.bufferView != null) {
     final view = doc.bufferViews[image.bufferView!];
     final encoded = Uint8List.sublistView(
@@ -929,15 +939,19 @@ LocalId? _buildTexture(
       view.byteOffset,
       view.byteOffset + view.byteLength,
     );
-    final decoded = img.decodeImage(encoded);
+    final decoded = _decodeSourceImage(encoded, image.mimeType, sourceIndex);
     if (decoded != null) {
-      final rgba = decoded.convert(numChannels: 4, format: img.Format.uint8);
+      final rgba = decoded.image;
       final raw = rgba.getBytes(order: img.ChannelOrder.rgba);
       // sRGB needs no per-role handling here: the engine linearizes sRGB in
       // the fragment shaders (SRGBToLinear on the sampled base color), so
       // every texture uploads as a non-sRGB format regardless of role. The
       // role ([content]) only steers mip downsampling, which must average
-      // sRGB color in linear light and renormalize normals.
+      // sRGB color in linear light and renormalize normals. A linear-tagged
+      // color source averages directly, as it does at runtime.
+      final mipContent = (content == TextureContent.color && !decoded.srgb)
+          ? TextureContent.data
+          : content;
       // ASTC 4x4 (the compressed format) requires both dimensions to be a
       // multiple of the 4x4 block size; a non-aligned compressed texture is
       // rejected at GPU load and shows a placeholder. Resample those up to the
@@ -968,7 +982,7 @@ LocalId? _buildTexture(
               image.width,
               image.height,
               generateMips: true,
-              content: content,
+              content: mipContent,
               supercompress: true,
             )
           : pixels;
@@ -1010,6 +1024,68 @@ LocalId? _buildTexture(
   }
   return null;
 }
+
+/// A source image decoded to RGBA8, with the transfer function its container
+/// declared.
+typedef _SourceImage = ({img.Image image, bool srgb});
+
+/// Decodes a glTF image payload to RGBA8. KTX2 payloads (KHR_texture_basisu,
+/// detected by magic bytes or mime type) go through the pure-Dart transcoder,
+/// everything else through package:image. Returns null when the payload cannot
+/// be decoded, which drops just this texture from the cook.
+_SourceImage? _decodeSourceImage(
+  Uint8List encoded,
+  String? mimeType,
+  int imageIndex,
+) {
+  if (looksLikeKtx2(encoded) || mimeType == 'image/ktx2') {
+    return _decodeKtx2SourceImage(encoded, imageIndex);
+  }
+  final decoded = img.decodeImage(encoded);
+  if (decoded == null) return null;
+  return (
+    image: decoded.convert(numChannels: 4, format: img.Format.uint8),
+    srgb: true,
+  );
+}
+
+/// Decodes a KTX2 payload's base level to RGBA8, the same bytes the runtime
+/// importer transcodes. Only the base level is kept; the cooking path builds
+/// its own mip chain.
+_SourceImage? _decodeKtx2SourceImage(Uint8List encoded, int imageIndex) {
+  try {
+    final texture = readKtx2(encoded);
+    if (isInternalKtx2(texture)) {
+      final level = decodeKtx2Level(texture);
+      return (
+        image: _rgbaImage(level.rgba, level.width, level.height),
+        srgb: true,
+      );
+    }
+    final standard = decodeStandardKtx2(texture);
+    final base = standard.levels.first;
+    return (
+      image: _rgbaImage(base.pixels, base.width, base.height),
+      srgb: standard.srgb,
+    );
+  } catch (e) {
+    sceneLog(
+      'fscene: could not decode KTX2 glTF image $imageIndex ($e), '
+      'dropping the texture',
+    );
+    return null;
+  }
+}
+
+img.Image _rgbaImage(Uint8List rgba, int width, int height) =>
+    img.Image.fromBytes(
+      width: width,
+      height: height,
+      bytes: rgba.buffer,
+      bytesOffset: rgba.offsetInBytes,
+      numChannels: 4,
+      order: img.ChannelOrder.rgba,
+    );
 
 double _at(List<double>? values, int index, double fallback) =>
     (values != null && values.length > index) ? values[index] : fallback;
