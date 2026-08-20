@@ -146,6 +146,11 @@ void main() {
     _checkPrimitive(fixture, 0, 0);
   });
 
+  test('decodes compressed sequential indices byte-exact', () {
+    final fixture = _loadFixture('synthetic_draco_seq_cl10');
+    _checkPrimitive(fixture, 0, 0);
+  });
+
   test('decodes EdgeBreaker connectivity byte-exact', () {
     final fixture = _loadFixture('synthetic_draco_eb');
     _checkPrimitive(fixture, 0, 0);
