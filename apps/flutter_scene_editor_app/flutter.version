@@ -2,5 +2,5 @@
 # release workflow clones this exact revision, so the packaged engine, the
 # bundled impellerc, and the shader bundle format stay in lockstep by
 # construction. Tracks the Flutter stable the editor pairs with, currently
-# 3.47.0. Update deliberately (build + smoke locally first).
-4cf24164269a5ebf0c16a028a00727d0e77bbb05
+# 3.47.1. Update deliberately (build + smoke locally first).
+6655482ec06e547f90abf8ae7590466f4415978d

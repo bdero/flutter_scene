@@ -3,7 +3,7 @@ description: The standalone Flutter Scene Editor desktop application.
 publish_to: none
 
 # Tracks the flutter_scene release this build pairs with.
-version: 0.22.0
+version: 0.22.1
 
 resolution: workspace
 
