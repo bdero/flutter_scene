@@ -7,6 +7,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/texture/basisu/etc1s.dart';
 import 'package:flutter_scene/src/texture/basisu/uastc.dart';
 import 'package:flutter_scene/src/texture/ktx2/dfd.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
@@ -69,6 +70,11 @@ StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
   final format = readDataFormat(texture);
   final width = texture.pixelWidth;
   final height = math.max(1, texture.pixelHeight);
+  // Basis encoders cap dimensions at 16K; a larger value is a corrupt header,
+  // rejected here before it can size an absurd allocation.
+  if (width < 1 || width > 16384 || height > 16384) {
+    throw Ktx2FormatException('Implausible dimensions ${width}x$height');
+  }
   final srgb = format.isSrgb;
 
   switch (format.colorModel) {
@@ -91,9 +97,36 @@ StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
         hasAlpha: format.hasAlpha,
       );
     case kDfModelEtc1s:
-      // TODO(etc1s-transcode): BasisLZ/ETC1S decode lands with the slice
-      // transcoder; until then standard ETC1S files are rejected.
-      throw Ktx2FormatException('ETC1S KTX2 textures are not supported yet');
+      if (texture.supercompression != Ktx2Supercompression.basisLz) {
+        throw Ktx2FormatException(
+          'ETC1S color model without BasisLZ supercompression',
+        );
+      }
+      final transcoder = Etc1sTranscoder(
+        texture.supercompressionGlobalData,
+        texture.levels.length,
+      );
+      final levels = <MipLevel>[];
+      for (var level = 0; level < texture.levels.length; level++) {
+        final size = mipSize(width, height, level);
+        levels.add(
+          MipLevel(
+            size.width,
+            size.height,
+            transcoder.decodeImageRgba8(
+              texture.levels[level].data,
+              level,
+              size.width,
+              size.height,
+            ),
+          ),
+        );
+      }
+      return StandardKtx2Image(
+        levels: levels,
+        srgb: srgb,
+        hasAlpha: format.hasAlpha,
+      );
     default:
       if (texture.vkFormat == _vkFormatRgba8Unorm ||
           texture.vkFormat == _vkFormatRgba8Srgb) {
