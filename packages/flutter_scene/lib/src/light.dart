@@ -296,9 +296,13 @@ class DirectionalLight {
     // spacing, so the near cascades get proportionally more resolution. A
     // pinned first bound takes the first split and the same scheme spreads the
     // rest from there; a single cascade has no rest, so it keeps far.
+    // A pin at or past shadowMaxDistance leaves no range for the remaining
+    // cascades (every later split collapses onto far), so it falls back to
+    // the automatic scheme; the lower clamp stays strictly above the near
+    // plane so cascade 0 keeps thickness.
     final bound = firstCascadeFarBound;
-    final pinned = bound != null && count > 1
-        ? bound.clamp(near, far).toDouble()
+    final pinned = bound != null && count > 1 && bound < far && far > near
+        ? math.max(bound, near + (far - near) * 1e-3)
         : null;
     final splits = <double>[near];
     if (pinned != null) splits.add(pinned);
