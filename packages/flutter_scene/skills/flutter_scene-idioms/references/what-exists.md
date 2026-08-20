@@ -101,6 +101,7 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
 | `SpotLightComponent` | `(light)`; `worldPosition`, `worldDirection` |
 | `RectAreaLightComponent` | `(light)`; `worldPosition`, `worldRight`, `worldUp` |
 | `EnvironmentVolumeComponent` | `({required settings, shape = box, extents, radius = 5.0, blendDistance = 1.0, priority = 0.0, weight = 1.0})` |
+| `ReflectionProbeComponent` | `({extents = Vector3.all(5), blendDistance = 1.0, priority = 10.0, weight = 1.0, faceResolution = 128, captureOnActivate = true})`; parallax-corrected local reflections in the box; `requestCapture()` re-captures |
 | `MaterialsVariantsComponent` | No public ctor. `MaterialsVariantsComponent.of(root)`/`.allOf(root)`, then `select(name)`, `variants`, `selected` |
 | `SemanticsComponent` | `({label, value, hint, button, onTap, ... boundsOverride, properties})` |
 | `WidgetComponent` | `({required Widget child, required Size size, pixelRatio = 1.0, worldHeight = 1.0, update = everyFrame, input = automatic, ...})`; `.bindOnly(...)` |
@@ -367,7 +368,9 @@ looks blend via `EnvironmentSettings` (snapshot/lerp of the whole look) and `Env
   `temperature`, `tint`, `lift`/`gamma`/`gain`, `lut` (`ColorLut?`, applies after tone mapping,
   independent of `enabled`), `lutBlend` (1.0).
 - `chromaticAberration` (`intensity` 0.2), `vignette` (`intensity` 0.5, `radius` 0.75, `smoothness`
-  0.5), `filmGrain` (`intensity` 0.3), `bloom` (`threshold` 1.0, `intensity` 0.15, `scatter` 0.7).
+  0.5), `filmGrain` (`intensity` 0.3), `bloom` (`threshold` 1.0, `intensity` 0.15, `scatter` 0.7,
+  and `lensFlare`: `enabled` false, `intensity` 1.0, `ghostCount` 4, `ghostSpacing` 0.3, `haloRadius`
+  0.35, `haloIntensity` 1.0, `chromaticAberration` 0.005; rides the bloom, needs bloom enabled).
 - `customEffects` (`List<PostEffect>`).
 
 `ColorLut.fromCubeString`/`.fromCubeAsset` (Adobe `.cube`, edge 2..64).
@@ -386,10 +389,13 @@ input_color` at `in vec2 v_uv`. `PostInsertion` = `beforeTonemap` (linear HDR pr
 {viewport, pixelRatio})`, `renderViews(views, canvas, {region, pixelRatio})`, `warmUp(views,
 {includeOffscreen})`, `raycast(ray, {maxDistance, layerMask, where, includeInvisible})`,
 `raycastAll(...)`, `addRenderPass`/`removeRenderPass`, `captureRenderGraph({viewIndex, request,
-timeout})`. Statics: `Scene.initializeStaticResources()`, `Scene.isReadyToRender`,
-`Scene.physicalCameraExposure`, `Scene.isAntiAliasingModeSupported`.
+timeout})`, `captureEnvironment({required position, faceResolution = 128, equirectWidth = 512,
+layerMask})` -> `EnvironmentMap` (one-shot static capture; use `ReflectionProbeComponent` for a
+node-anchored, parallax-corrected, auto-blended probe). Statics: `Scene.initializeStaticResources()`,
+`Scene.isReadyToRender`, `Scene.physicalCameraExposure`, `Scene.isAntiAliasingModeSupported`,
+`Scene.effectiveAntiAliasingMode`.
 
-`Scene.antiAliasingMode` (`AntiAliasingMode.auto` -> msaa or fxaa; also `none`, `msaa`, `fxaa`),
+`Scene.antiAliasingMode` (`AntiAliasingMode.auto` -> msaa or fxaa; also `none`, `msaa`, `fxaa`, `smaa`),
 `Scene.renderScale` (1.0), `Scene.filterQuality` (`FilterQuality.medium`), `Scene.views`
 (`List<RenderView>` for RenderTexture targets).
 
