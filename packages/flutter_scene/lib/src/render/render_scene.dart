@@ -156,6 +156,14 @@ class RenderItem {
   /// Per-instance linear RGBA multipliers matching [instanceTransforms].
   List<Vector4>? instanceColors;
 
+  /// Packed custom per-instance attribute floats, [instanceAttributeFloats]
+  /// per instance in declaration order, or null when none are supplied.
+  Float32List? instanceAttributeData;
+
+  /// Custom attribute floats each instance carries, zero unless the material
+  /// declares `instance_attributes`.
+  int instanceAttributeFloats = 0;
+
   /// Per-instance local winding parity matching [instanceTransforms].
   List<bool>? instanceWindingFlipped;
 
@@ -173,7 +181,8 @@ class RenderItem {
   /// Packed world-space instance AABBs, six floats per instance.
   Float32List? _instanceWorldBounds;
 
-  /// Packed world transform and color records, twenty floats per instance.
+  /// Packed world transform and color records, twenty floats per instance plus
+  /// [instanceAttributeFloats] custom attribute floats.
   @internal
   Float32List? instanceWorldData;
 
@@ -203,7 +212,10 @@ class RenderItem {
         : (_instanceWorldBounds?.length == boundsLength
               ? _instanceWorldBounds!
               : Float32List(boundsLength));
-    final dataLength = instances.length * 20;
+    final attributes = instanceAttributeData;
+    final attributeFloats = attributes == null ? 0 : instanceAttributeFloats;
+    final recordFloats = 20 + attributeFloats;
+    final dataLength = instances.length * recordFloats;
     final packedData = colors == null || colors.length != instances.length
         ? null
         : (instanceWorldData?.length == dataLength
@@ -231,9 +243,17 @@ class RenderItem {
         packedBounds[offset + 5] = _instanceAabbScratch.max.z;
       }
       if (packedData != null) {
-        final offset = i * 20;
+        final offset = i * recordFloats;
         packedData.setAll(offset, _instanceWorldScratch.storage);
         packedData.setAll(offset + 16, colors![i].storage);
+        if (attributeFloats > 0) {
+          packedData.setRange(
+            offset + 20,
+            offset + recordFloats,
+            attributes!,
+            i * attributeFloats,
+          );
+        }
       }
       final instanceFlipped =
           retainedWinding?[i] ?? (instances[i].determinant() < 0);

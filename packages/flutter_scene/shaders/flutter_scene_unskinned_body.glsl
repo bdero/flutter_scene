@@ -72,6 +72,12 @@ void main() {
                        length(model_transform[2].xyz));
   v_tangent = vertex.world_tangent;
 
+#ifdef MATERIAL_INSTANCE_VARYINGS
+  // Forward the material's declared per-instance attributes to the fragment
+  // stage (defined only when Surface() reads one through its accessor).
+  MATERIAL_INSTANCE_VARYINGS
+#endif
+
 #ifdef HAS_MATERIAL_VERTEX
   // Reference the mesh inputs behind a runtime-zero (see VertexKeepAlive) so a
   // Vertex() hook that fully replaces the outputs cannot let the optimizer

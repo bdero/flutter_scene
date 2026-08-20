@@ -203,10 +203,19 @@ class ShadowEncoder {
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
+    // A masked caster runs the material's color vertex variant, which declares
+    // its per-instance attribute inputs, so the instance record has to be as
+    // wide here as in the color pass.
+    final instanceSchema = depthVertex == null
+        ? item.material.instanceAttributes
+        : null;
+    final attributeFloats = instanceSchema?.floatCount ?? 0;
     final pipeline = resolvePipeline(
       activeVertex,
       fragmentShader,
-      vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
+      vertexLayout:
+          depthVertex?.layout ??
+          geometry.instancedVertexLayoutFor(instanceSchema),
     );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.clearBindings();
@@ -268,6 +277,7 @@ class ShadowEncoder {
       final PackedInstances packed = depthVertex == null
           ? packInstanceDataBatches(
               batches,
+              attributeFloats: attributeFloats,
               scratch: transientInstancePackingScratch,
             )
           : packInstanceTransformBatches(
@@ -304,6 +314,7 @@ class ShadowEncoder {
               InstanceDataBatch.cached(
                 packedWorldData: packedWorldData,
                 packedWindingFlipped: packedWinding,
+                attributeFloats: item.instanceAttributeFloats,
               ),
             ];
       final PackedInstances packed = depthVertex == null
@@ -314,10 +325,13 @@ class ShadowEncoder {
                     item.instanceColors!,
                     nodeWindingFlipped: item.windingFlipped,
                     instanceWindingFlipped: item.instanceWindingFlipped,
+                    attributeData: item.instanceAttributeData,
+                    attributeFloats: attributeFloats,
                     scratch: transientInstancePackingScratch,
                   )
                 : packInstanceDataBatches(
                     cached,
+                    attributeFloats: attributeFloats,
                     scratch: transientInstancePackingScratch,
                   ))
           : (cached == null
@@ -347,6 +361,7 @@ class ShadowEncoder {
           _renderPass,
           item.worldTransform,
           slot: instanceSlot,
+          attributeFloats: attributeFloats,
         );
       } else {
         bindSingleInstanceTransform(

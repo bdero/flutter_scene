@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/dfg_lut.dart';
 
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
@@ -331,6 +332,15 @@ abstract class Material {
   /// shader.
   @internal
   gpu.Shader? materialVertexShader(String variant) => null;
+
+  /// The per-instance attributes this material declares, or null when it
+  /// declares none (everything but a `.fmat` with an `instance_attributes`
+  /// block).
+  ///
+  /// The schema widens the instance-rate vertex buffer, so it is part of the
+  /// pipeline's vertex layout as well as of what an instanced mesh accepts.
+  @internal
+  InstanceAttributeSchema? get instanceAttributes => null;
 
   /// Binds this material's vertex-stage uniforms to [vertexShader], called by
   /// the encoder only when it used a material-supplied vertex shader (see

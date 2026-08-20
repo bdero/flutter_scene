@@ -67,6 +67,12 @@ void main() {
                        length(model_transform[2].xyz));
   v_tangent = vec4(0.0);
 
+#ifdef MATERIAL_INSTANCE_VARYINGS
+  // Forward the material's declared per-instance attributes to the fragment
+  // stage (defined only when Surface() reads one through its accessor).
+  MATERIAL_INSTANCE_VARYINGS
+#endif
+
 #ifdef HAS_MATERIAL_VERTEX
   // Keep the position input and the instance-rate model_transform columns
   // live so a hook that replaces world_position cannot strip them (see

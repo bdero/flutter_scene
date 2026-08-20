@@ -109,6 +109,12 @@ void main() {
                        length(combined_transform[2].xyz));
   v_tangent = vertex.world_tangent;
 
+#ifdef MATERIAL_INSTANCE_VARYINGS
+  // Forward the material's declared per-instance attributes to the fragment
+  // stage (defined only when Surface() reads one through its accessor).
+  MATERIAL_INSTANCE_VARYINGS
+#endif
+
 #ifdef HAS_MATERIAL_VERTEX
   // Keep the mesh inputs (including the skin attributes) live behind a
   // runtime-zero (see VertexKeepAlive) so a hook that fully replaces the

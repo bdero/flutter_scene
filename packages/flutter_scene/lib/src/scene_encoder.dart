@@ -519,7 +519,11 @@ base class SceneEncoder {
       material.materialVertexShader(geometry.materialVertexVariant) ??
           geometry.vertexShader,
       material.fragmentShaderForLighting(_lighting),
-      vertexLayout: geometry.instancedVertexLayout,
+      // A material declaring `instance_attributes` widens the instance-rate
+      // slot, so the pipeline depends on the material as well as the geometry.
+      vertexLayout: geometry.instancedVertexLayoutFor(
+        material.instanceAttributes,
+      ),
     );
 
     if (material.isOpaque()) {
@@ -860,6 +864,9 @@ base class SceneEncoder {
         _renderPass,
         worldTransform,
         slot: geometry.vertexStreamCount,
+        // A single draw has no per-instance source, so declared attributes
+        // read zero.
+        attributeFloats: material.instanceAttributes?.floatCount ?? 0,
       );
     }
     _bindMaterial(material, materialVertex, fade);
@@ -896,7 +903,10 @@ base class SceneEncoder {
     Vector3? sortBackToFrontFrom,
     Float32List? packedWorldData,
     Uint8List? packedWorldWindingFlipped,
+    Float32List? attributeData,
+    int attributeFloats = 0,
   }) {
+    _checkInstanceAttributeWidth(material, attributeFloats);
     if (!identical(_boundPipeline, pipeline)) {
       _clearBindings();
     }
@@ -934,13 +944,18 @@ base class SceneEncoder {
         sortBackToFrontFrom == null &&
             packedWorldData != null &&
             packedWorldWindingFlipped != null
-        ? packInstanceDataBatches([
-            InstanceDataBatch.cached(
-              packedWorldData: packedWorldData,
-              packedWindingFlipped: packedWorldWindingFlipped,
-              indices: instanceIndices,
-            ),
-          ], scratch: transientInstancePackingScratch)
+        ? packInstanceDataBatches(
+            [
+              InstanceDataBatch.cached(
+                packedWorldData: packedWorldData,
+                packedWindingFlipped: packedWorldWindingFlipped,
+                indices: instanceIndices,
+                attributeFloats: attributeFloats,
+              ),
+            ],
+            attributeFloats: attributeFloats,
+            scratch: transientInstancePackingScratch,
+          )
         : packInstanceData(
             nodeTransform,
             instances,
@@ -949,6 +964,8 @@ base class SceneEncoder {
             instanceWindingFlipped: instanceWindingFlipped,
             indices: instanceIndices,
             sortBackToFrontFrom: sortBackToFrontFrom,
+            attributeData: attributeData,
+            attributeFloats: attributeFloats,
             scratch: transientInstancePackingScratch,
           );
     if (profileRendering) {
@@ -968,6 +985,22 @@ base class SceneEncoder {
     }
   }
 
+  /// Fails the draw when the instance data a caller packed is not the width
+  /// this material's shader and vertex layout expect. A silent mismatch would
+  /// feed the shader whatever the neighboring bytes hold.
+  static void _checkInstanceAttributeWidth(
+    Material material,
+    int attributeFloats,
+  ) {
+    final expected = material.instanceAttributes?.floatCount ?? 0;
+    if (attributeFloats == expected) return;
+    throw StateError(
+      'This material expects $expected instance attribute float(s) per '
+      'instance, but the instance data carries $attributeFloats. The mesh and '
+      'the material disagree about the instance-rate layout.',
+    );
+  }
+
   void _encodeInstancedBatches(
     gpu.RenderPipeline pipeline,
     Geometry geometry,
@@ -975,6 +1008,9 @@ base class SceneEncoder {
     List<InstanceDataBatch> batches,
     double fade,
   ) {
+    // Cross-node batching synthesizes instances, so a material declaring
+    // per-instance attributes is kept out of it (see opaqueBatchEnd).
+    assert(material.instanceAttributes == null);
     if (!identical(_boundPipeline, pipeline)) {
       _clearBindings();
     }
@@ -1109,6 +1145,8 @@ base class SceneEncoder {
               record.windingFlipped == item.windingFlipped
               ? item.instanceWorldWindingFlipped
               : null,
+          attributeData: item.instanceAttributeData,
+          attributeFloats: item.instanceAttributeFloats,
         );
       } else {
         _encode(
@@ -1449,6 +1487,8 @@ base class SceneEncoder {
               record.windingFlipped == record.item.windingFlipped
               ? record.item.instanceWorldWindingFlipped
               : null,
+          attributeData: record.item.instanceAttributeData,
+          attributeFloats: record.item.instanceAttributeFloats,
         );
       } else {
         _encode(

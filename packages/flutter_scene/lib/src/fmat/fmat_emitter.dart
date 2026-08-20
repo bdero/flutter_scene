@@ -71,6 +71,40 @@ void _writeVaryings(StringBuffer sb, FmatMaterial material, String direction) {
   sb.writeln();
 }
 
+/// The instance attributes [material]'s fragment stage reads, in declared
+/// order. Only these get an interpolant, so a material whose attributes drive
+/// the vertex stage alone pays no varying slots. The whole-word check errs
+/// toward forwarding when unsure, which costs a slot rather than a compile
+/// error.
+List<FmatInstanceAttribute> forwardedInstanceAttributes(FmatMaterial material) {
+  if (material.instanceAttributes.isEmpty) return const [];
+  return [
+    for (final a in material.instanceAttributes)
+      if (RegExp(
+        '\\b${RegExp.escape(a.accessorName)}\\b',
+      ).hasMatch(material.fragmentSource))
+        a,
+  ];
+}
+
+/// Writes the fragment stage's instance-attribute interpolants and accessors
+/// into [sb]. `Surface()` reads each attribute through `GetInstance<Name>()`,
+/// matching how it reads every other engine input.
+void _writeInstanceAccessors(StringBuffer sb, FmatMaterial material) {
+  final forwarded = forwardedInstanceAttributes(material);
+  if (forwarded.isEmpty) return;
+  sb.writeln('// Per-instance attributes forwarded by the vertex stage.');
+  for (final a in forwarded) {
+    sb.writeln('in ${a.type.glslType} ${a.varyingName};');
+  }
+  for (final a in forwarded) {
+    sb.writeln(
+      '${a.type.glslType} ${a.accessorName}() { return ${a.varyingName}; }',
+    );
+  }
+  sb.writeln();
+}
+
 /// Emits the fragment shader GLSL for [material].
 ///
 /// [defines] are written after the generated-file banner and before framework
@@ -174,6 +208,7 @@ String emitFragmentGlsl(
 
   // Custom interpolants the vertex stage wrote, read by name in Surface().
   _writeVaryings(sb, material, 'in');
+  _writeInstanceAccessors(sb, material);
 
   final uniforms = material.uniformParameters.toList();
   final samplers = material.samplerParameters.toList();
@@ -344,6 +379,10 @@ Map<String, String> emitVertexGlsl(FmatMaterial material) {
       material,
       bodyInclude,
       isDepth: variant == 'depth',
+      // Only the unskinned color variant fetches the instance-rate slot the
+      // custom attributes ride in; the skinned variant takes its transform
+      // from FrameInfo and the depth variant binds a transform-only buffer.
+      fetchesInstanceAttributes: variant == 'unskinned',
     );
   });
   return result;
@@ -381,10 +420,50 @@ void _writeAttributes(
   sb.writeln();
 }
 
+/// Writes a vertex variant's instance-attribute declarations into [sb]. The
+/// unskinned color variant reads them from the instance-rate slot; the other
+/// variants never bind that data, so they read zero (an attribute-driven
+/// displacement does not shadow, matching custom vertex attributes).
+void _writeInstanceAttributes(
+  StringBuffer sb,
+  FmatMaterial material, {
+  required bool fetchesInstanceAttributes,
+}) {
+  if (material.instanceAttributes.isEmpty) return;
+  if (fetchesInstanceAttributes) {
+    sb.writeln('// Custom per-instance attributes (instance-rate slot).');
+    for (final a in material.instanceAttributes) {
+      sb.writeln('in ${a.type.glslType} ${a.inputName};');
+    }
+  } else {
+    sb.writeln('// This variant binds no per-instance attribute data; they');
+    sb.writeln('// read zero here.');
+    for (final a in material.instanceAttributes) {
+      sb.writeln(
+        '${a.type.glslType} ${a.inputName} = ${_zeroLiteral(a.type)};',
+      );
+    }
+  }
+  final forwarded = forwardedInstanceAttributes(material);
+  for (final a in forwarded) {
+    sb.writeln('out ${a.type.glslType} ${a.varyingName};');
+  }
+  if (forwarded.isNotEmpty) {
+    // The body include invokes this after writing the stage outputs, so the
+    // fragment accessors see the drawn instance's values.
+    final assignments = forwarded
+        .map((a) => '${a.varyingName} = ${a.inputName};')
+        .join(' ');
+    sb.writeln('#define MATERIAL_INSTANCE_VARYINGS $assignments');
+  }
+  sb.writeln();
+}
+
 String _emitVertexVariant(
   FmatMaterial material,
   String bodyInclude, {
   required bool isDepth,
+  required bool fetchesInstanceAttributes,
 }) {
   final sb = StringBuffer();
   sb.writeln(
@@ -430,15 +509,27 @@ String _emitVertexVariant(
   // Custom per-vertex attributes Vertex() reads by name (real inputs in the
   // color variants, zero in the depth variant).
   _writeAttributes(sb, material, isDepth: isDepth);
-  if (material.attributes.isNotEmpty) {
-    // Folded into the zero-bound keep-alive by the body include so an
-    // attribute Vertex() never reads survives compilation; the geometry
-    // supplies its buffer unconditionally and a stripped input breaks
-    // reflection and the pipeline's vertex layout.
-    final terms = material.attributes
-        .map((a) => a.type == FmatType.float_ ? a.name : '${a.name}.x')
-        .join(' + ');
-    sb.writeln('#define MATERIAL_ATTRIBUTES_KEEP_ALIVE ($terms)');
+  _writeInstanceAttributes(
+    sb,
+    material,
+    fetchesInstanceAttributes: fetchesInstanceAttributes,
+  );
+  // Folded into the zero-bound keep-alive by the body include so an attribute
+  // Vertex() never reads survives compilation; the geometry supplies its
+  // buffer unconditionally and a stripped input breaks reflection and the
+  // pipeline's vertex layout. The instance-rate inputs join it only in the
+  // variant that actually declares them as inputs.
+  final keepAliveTerms = <String>[
+    for (final a in material.attributes)
+      a.type == FmatType.float_ ? a.name : '${a.name}.x',
+    if (fetchesInstanceAttributes)
+      for (final a in material.instanceAttributes)
+        a.type == FmatType.float_ ? a.inputName : '${a.inputName}.x',
+  ];
+  if (keepAliveTerms.isNotEmpty) {
+    sb.writeln(
+      '#define MATERIAL_ATTRIBUTES_KEEP_ALIVE (${keepAliveTerms.join(' + ')})',
+    );
     sb.writeln();
   }
 
@@ -563,6 +654,19 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     if (material.engineInputs.isNotEmpty)
       'engine_inputs': material.engineInputs,
     'uniform_block': kMaterialParamsBlock,
+    // Declared order plus the resolved record offsets, so the runtime lays out
+    // the instance-rate buffer without re-deriving the padding rule.
+    if (material.instanceAttributes.isNotEmpty)
+      'instance_attributes': [
+        for (final a in material.instanceAttributes)
+          <String, Object?>{
+            'name': a.name,
+            'type': a.type.glslType,
+            'offset': a.byteOffset,
+          },
+      ],
+    if (material.instanceAttributes.isNotEmpty)
+      'instance_record_bytes': material.instanceRecordBytes,
     if (material.hasVertexStage)
       'vertex': <String, Object?>{
         for (final variant in kVertexVariants.keys)

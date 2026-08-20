@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
+import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
@@ -798,6 +799,42 @@ abstract class Geometry {
   /// Subclasses that describe their vertices override this.
   @protected
   VertexLayoutDescriptor? get defaultVertexLayout => null;
+
+  // Memoized widened layout, keyed on the schema and base layout it was built
+  // from. Both are stable objects in the steady state, so a scene drawing the
+  // same geometry/material pair every frame builds this once.
+  InstanceAttributeSchema? _widenedSchema;
+  VertexLayoutDescriptor? _widenedBase;
+  VertexLayoutDescriptor? _widenedLayout;
+
+  /// [instancedVertexLayout] with the trailing instance-rate slot widened by
+  /// the per-instance attributes [schema] declares, or the plain layout when
+  /// [schema] is null.
+  ///
+  /// A material's `instance_attributes` append to the instance record the
+  /// engine already binds, so the pipeline this geometry draws with depends on
+  /// the material as well as the geometry.
+  @internal
+  VertexLayoutDescriptor? instancedVertexLayoutFor(
+    InstanceAttributeSchema? schema,
+  ) {
+    final base = instancedVertexLayout;
+    if (schema == null || base == null || !bindsModelTransformInstance) {
+      return base;
+    }
+    if (identical(schema, _widenedSchema) && identical(base, _widenedBase)) {
+      return _widenedLayout;
+    }
+    final widened = VertexLayoutDescriptor(
+      buffers: [
+        ...base.buffers.sublist(0, base.buffers.length - 1),
+        schema.widen(base.buffers.last),
+      ],
+    );
+    _widenedSchema = schema;
+    _widenedBase = base;
+    return _widenedLayout = widened;
+  }
 
   VertexLayoutDescriptor? _vertexLayout;
   bool? _bindsModelTransformInstance;

@@ -465,10 +465,19 @@ class _DepthPrepassEncoder {
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
+    // Without a position-only path this pass runs the material's color vertex
+    // variant, which declares its per-instance attribute inputs, so the
+    // instance record has to be as wide here as in the color pass.
+    final instanceSchema = depthVertex == null
+        ? item.material.instanceAttributes
+        : null;
+    final attributeFloats = instanceSchema?.floatCount ?? 0;
     final pipeline = resolvePipeline(
       activeVertex,
       fragmentShader,
-      vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
+      vertexLayout:
+          depthVertex?.layout ??
+          geometry.instancedVertexLayoutFor(instanceSchema),
     );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.clearBindings();
@@ -563,6 +572,7 @@ class _DepthPrepassEncoder {
       final PackedInstances packed = depthVertex == null
           ? packInstanceDataBatches(
               batches,
+              attributeFloats: attributeFloats,
               scratch: transientInstancePackingScratch,
             )
           : packInstanceTransformBatches(
@@ -604,6 +614,7 @@ class _DepthPrepassEncoder {
                 packedWorldData: packedWorldData,
                 packedWindingFlipped: packedWinding,
                 indices: item.visibleInstanceIndices,
+                attributeFloats: item.instanceAttributeFloats,
               ),
             ];
       final PackedInstances packed = depthVertex == null
@@ -615,10 +626,13 @@ class _DepthPrepassEncoder {
                     nodeWindingFlipped: item.windingFlipped,
                     instanceWindingFlipped: item.instanceWindingFlipped,
                     indices: item.visibleInstanceIndices,
+                    attributeData: item.instanceAttributeData,
+                    attributeFloats: attributeFloats,
                     scratch: transientInstancePackingScratch,
                   )
                 : packInstanceDataBatches(
                     cached,
+                    attributeFloats: attributeFloats,
                     scratch: transientInstancePackingScratch,
                   ))
           : (cached == null
@@ -649,6 +663,7 @@ class _DepthPrepassEncoder {
           _renderPass,
           item.worldTransform,
           slot: instanceSlot,
+          attributeFloats: attributeFloats,
         );
       } else {
         bindSingleInstanceTransform(
