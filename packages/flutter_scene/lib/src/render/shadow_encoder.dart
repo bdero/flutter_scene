@@ -181,6 +181,7 @@ class ShadowEncoder {
     // path below; apply this item's skeleton to the (possibly shared)
     // geometry first.
     item.applyJointsTexture(geometry);
+    item.applyMorphWeights(geometry);
     // An alpha-masked caster draws through the masked depth shader (so only
     // its opaque texels cast) and needs the full-vertex varyings, so it skips
     // the position-only path. It also keeps the material's own culling, so the

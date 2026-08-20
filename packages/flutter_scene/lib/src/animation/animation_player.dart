@@ -30,14 +30,34 @@ class AnimationPlayer {
     // would snapshot the current (possibly mid-playback, animated) transform
     // as the rest pose and corrupt the blend baseline for every clip.
     for (final binding in clip._bindings) {
-      _targetTransforms.putIfAbsent(
+      final transforms = _targetTransforms.putIfAbsent(
         binding.node,
         () => AnimationTransforms(bindPose: _bindPoseOf(binding.node)),
       );
+      _recordChannelKind(transforms, binding);
     }
 
     _clips[animation.name] = clip;
     return clip;
+  }
+
+  // Marks what the bound channel drives. A weights channel captures the
+  // node's rest weights once (same corruption rule as the bind pose); a
+  // node whose mesh has no morph targets keeps null weight state and the
+  // channel no-ops.
+  static void _recordChannelKind(
+    AnimationTransforms transforms,
+    _ChannelBinding binding,
+  ) {
+    if (binding.channel.bindTarget.property != AnimationProperty.weights) {
+      transforms.drivesTransform = true;
+      return;
+    }
+    if (transforms.bindMorphWeights != null) return;
+    final live = binding.node.internalMorphWeights;
+    if (live == null) return;
+    transforms.bindMorphWeights = Float32List.fromList(live);
+    transforms.animatedMorphWeights = Float32List.fromList(live);
   }
 
   /// Unregisters [clip] so it no longer contributes to the blend.
@@ -68,9 +88,11 @@ class AnimationPlayer {
     for (final clip in _clips.values) {
       clip.rebind(newRoot, animation: byName[clip._animation.name]);
       for (final binding in clip._bindings) {
-        _targetTransforms[binding.node] = AnimationTransforms(
-          bindPose: _bindPoseOf(binding.node),
+        final transforms = _targetTransforms.putIfAbsent(
+          binding.node,
+          () => AnimationTransforms(bindPose: _bindPoseOf(binding.node)),
         );
+        _recordChannelKind(transforms, binding);
       }
     }
   }
@@ -94,6 +116,10 @@ class AnimationPlayer {
     // Reset the animated pose state.
     for (final transforms in _targetTransforms.values) {
       transforms.animatedPose = transforms.bindPose.clone();
+      final bindWeights = transforms.bindMorphWeights;
+      if (bindWeights != null) {
+        transforms.animatedMorphWeights!.setAll(0, bindWeights);
+      }
     }
 
     // Compute a weight multiplier for normalizing the animation.
@@ -111,10 +137,17 @@ class AnimationPlayer {
 
     // Apply the animated pose to the bound joints, keeping the
     // decomposition so a later rebind anchors to consistent scale signs.
+    // Nodes bound only by weights channels keep their manual transform.
     for (final entry in _targetTransforms.entries) {
       final node = entry.key;
       final transforms = entry.value;
-      node.setLocalTransformTrs(transforms.animatedPose);
+      if (transforms.drivesTransform) {
+        node.setLocalTransformTrs(transforms.animatedPose);
+      }
+      final animatedWeights = transforms.animatedMorphWeights;
+      if (animatedWeights != null && node.internalMorphWeights != null) {
+        node.setMorphWeights(animatedWeights);
+      }
     }
   }
 }

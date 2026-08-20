@@ -7,7 +7,7 @@ import '../node.dart';
 
 /// Builds an engine [Animation] from a glTF animation. Each glTF channel
 /// becomes an engine [AnimationChannel] keyed by the target node's name and
-/// transform property (translation/rotation/scale). The engine currently
+/// property (translation/rotation/scale/weights). The engine currently
 /// supports linear timeline interpolation; STEP samplers degrade to "always
 /// pick the next keyframe" via the same resolver, and CUBICSPLINE samplers
 /// keep only the keyframe values (tangents discarded).
@@ -44,10 +44,21 @@ Animation buildAnimation({
     AnimationProperty property;
     PropertyResolver resolver;
     final isCubic = sampler.interpolation == 'CUBICSPLINE';
+    // A weights sampler is a flattened (frame x target) scalar stream, so its
+    // per-keyframe component count comes from the output/input length ratio
+    // instead of the target path.
+    final componentCount = switch (channel.targetPath) {
+      'rotation' => 4,
+      'weights' =>
+        times.isEmpty
+            ? 0
+            : sourceValues.length ~/ (times.length * (isCubic ? 3 : 1)),
+      _ => 3,
+    };
     final values = coordinatePolicy.convertAnimationValues(
       selectGltfKeyframeValues(
         sourceValues,
-        componentCount: channel.targetPath == 'rotation' ? 4 : 3,
+        componentCount: componentCount,
         cubicSpline: isCubic,
       ),
       targetPath: channel.targetPath,
@@ -73,9 +84,13 @@ Animation buildAnimation({
           _readVec3List(values),
         );
       case 'weights':
-        // Morph target weights — not supported by flutter_scene yet.
-        debugPrint('Skipping morph-target animation channel (weights).');
-        continue;
+        if (componentCount == 0) continue;
+        property = AnimationProperty.weights;
+        resolver = PropertyResolver.makeMorphWeightsTimeline(
+          times.toList(),
+          values,
+          targetCount: componentCount,
+        );
       default:
         debugPrint(
           'Skipping unknown animation target path: ${channel.targetPath}',

@@ -171,6 +171,9 @@ List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
     return (unskinned: unskinned, skinned: unskinned);
   }
 
+  for (final mesh in doc.meshes) {
+    validateMorphTargetConsistency(mesh);
+  }
   return [
     for (var meshIndex = 0; meshIndex < doc.meshes.length; meshIndex++)
       [
@@ -353,7 +356,11 @@ void _populateNode({
       final packedPrimitive = gltfNode.skin == null
           ? packedVariants.unskinned
           : packedVariants.skinned;
-      final geometry = geometryFromPacked(packedPrimitive);
+      final geometry = geometryFromPacked(
+        packedPrimitive,
+        morphTargetNames: gltfMesh.targetNames,
+        defaultMorphWeights: gltfMesh.weights,
+      );
       final material = p.material != null
           ? materials[p.material!]
           : UnlitMaterial();
@@ -381,6 +388,11 @@ void _populateNode({
     }
     if (primitives.isNotEmpty) {
       engineNode.mesh = Mesh.primitives(primitives: primitives);
+      // node.weights overrides the mesh defaults for this instance.
+      final nodeWeights = gltfNode.weights;
+      if (nodeWeights != null && engineNode.internalMorphWeights != null) {
+        engineNode.setMorphWeights(nodeWeights);
+      }
     }
   }
 

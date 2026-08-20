@@ -170,6 +170,7 @@ class GltfNode {
     this.translation,
     this.rotation,
     this.scale,
+    this.weights,
   });
 
   final String? name;
@@ -185,6 +186,10 @@ class GltfNode {
   final Vector3? translation;
   final Quaternion? rotation;
   final Vector3? scale;
+
+  /// Per-instance morph target weights overriding [GltfMesh.weights], or
+  /// null when the node keeps the mesh defaults.
+  final List<double>? weights;
 }
 
 /// The engine-side name for the glTF node at [index].
@@ -206,9 +211,22 @@ String resolveGltfNodeName(String? gltfName, int index) {
 }
 
 class GltfMesh {
-  GltfMesh({this.name, this.primitives = const []});
+  GltfMesh({
+    this.name,
+    this.primitives = const [],
+    this.weights = const [],
+    this.targetNames = const [],
+  });
   final String? name;
   final List<GltfMeshPrimitive> primitives;
+
+  /// Default morph target weights, or empty when the mesh declares none
+  /// (all-zero defaults per spec).
+  final List<double> weights;
+
+  /// Morph target names from `extras.targetNames` (a common exporter
+  /// convention), or empty when absent.
+  final List<String> targetNames;
 }
 
 /// `KHR_draco_mesh_compression` data on a mesh primitive.
@@ -230,6 +248,7 @@ class GltfMeshPrimitive {
     this.mode = 4,
     this.variantMappings = const {},
     this.draco,
+    this.targets = const [],
   });
 
   /// Maps glTF attribute names ('POSITION', 'NORMAL', 'TEXCOORD_0',
@@ -250,6 +269,29 @@ class GltfMeshPrimitive {
   /// compressed. When present, the attribute and index accessors describe
   /// decoded output and their buffer views may be undefined.
   final GltfDracoCompression? draco;
+
+  /// Morph targets, each mapping delta attribute names ('POSITION',
+  /// 'NORMAL', 'TANGENT') to accessor indexes. Empty when unmorphed.
+  final List<Map<String, int>> targets;
+}
+
+/// Validates that every triangle primitive of [mesh] declares the same
+/// morph target count, the glTF invariant that lets one weight list drive
+/// all of a mesh's primitives. Throws a [FormatException] on a mismatch.
+void validateMorphTargetConsistency(GltfMesh mesh) {
+  int? expected;
+  for (final primitive in mesh.primitives) {
+    if (primitive.mode != 4) continue;
+    final count = primitive.targets.length;
+    expected ??= count;
+    if (count != expected) {
+      throw FormatException(
+        'glTF mesh "${mesh.name ?? ''}" has primitives with mismatched morph '
+        'target counts ($expected vs $count); all primitives of a mesh must '
+        'share the same targets',
+      );
+    }
+  }
 }
 
 /// Component types from glTF spec section 5.1.1.

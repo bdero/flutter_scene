@@ -1,7 +1,6 @@
 part of '../animation.dart';
 
-/// One of the three node-local transform components an animation channel
-/// can drive.
+/// The node-local property an animation channel can drive.
 enum AnimationProperty {
   /// Animates [Node.localTransform]'s translation.
   translation,
@@ -11,6 +10,9 @@ enum AnimationProperty {
 
   /// Animates [Node.localTransform]'s scale.
   scale,
+
+  /// Animates the node's morph target weights (see [Node.setMorphWeights]).
+  weights,
 }
 
 /// Identifies a single animation target as a (node name, property) pair.

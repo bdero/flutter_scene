@@ -1085,6 +1085,7 @@ base class SceneEncoder {
       record.material.lightListCount = item.lightListCount;
       record.material.lightChannelMask = item.lightChannelMask;
       item.applyJointsTexture(record.geometry);
+      item.applyMorphWeights(record.geometry);
 
       final end = opaqueBatchEnd(_opaqueRecords, index);
       if (end > index + 1) {
@@ -1449,6 +1450,7 @@ base class SceneEncoder {
       if (joints != null) {
         record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
       }
+      record.item.applyMorphWeights(record.geometry);
       final instances = record.item.instanceTransforms;
       if (instances != null) {
         _encodeInstanced(

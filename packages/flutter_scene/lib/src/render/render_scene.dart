@@ -122,6 +122,20 @@ class RenderItem {
     drawnGeometry.setJointsTexture(texture, jointsTextureWidth);
   }
 
+  /// The owning node's live morph target weights, or null for an unmorphed
+  /// node. Refreshed each frame. Carried per item (like [jointsTexture]) so
+  /// nodes sharing one morphed geometry each draw with their own weights.
+  Float32List? morphWeights;
+
+  /// Applies this item's morph weights to [drawnGeometry]. No-op for
+  /// unmorphed items. Render passes call this immediately before the
+  /// geometry's bind, next to [applyJointsTexture].
+  void applyMorphWeights(Geometry drawnGeometry) {
+    final weights = morphWeights;
+    if (weights == null) return;
+    drawnGeometry.setMorphWeights(weights);
+  }
+
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
 
