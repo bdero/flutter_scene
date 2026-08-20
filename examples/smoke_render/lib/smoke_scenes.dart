@@ -7,7 +7,13 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/render/radiance_layout.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/half_float.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
 import 'package:smoke_render/synthetic_morph_glb.dart';
@@ -190,6 +196,228 @@ PreprocessedMaterial _fmatMaterial(String name) {
     radianceCubeFragmentShader: _materialsLibrary!['${name}Cube'],
     metadata: metadata,
     vertexShaders: vertexShaders,
+  );
+}
+
+/// The pre-baked environment preloaded by [loadPrebakedIbl].
+EnvironmentMap? _prebakedIblEnvironment;
+
+/// Linear radiance the pre-baked cubemap fixture fills [face] with at [level].
+///
+/// Six saturated hues, one per face, so a face-order or handedness mistake
+/// puts a visibly wrong color in the reflection. The level ladder dims each
+/// step of the roughness chain, so a mip-to-roughness mistake reads as the
+/// wrong brightness on the wrong sphere.
+vm.Vector3 _iblFaceColor(int face, int level) {
+  final base = switch (face) {
+    0 => vm.Vector3(1.60, 0.07, 0.07), // +X red
+    1 => vm.Vector3(0.07, 1.15, 1.50), // -X cyan
+    2 => vm.Vector3(1.60, 1.45, 0.45), // +Y warm white
+    3 => vm.Vector3(0.05, 0.09, 0.60), // -Y deep blue
+    4 => vm.Vector3(0.08, 1.30, 0.12), // +Z green
+    _ => vm.Vector3(1.55, 0.60, 0.07), // -Z orange
+  };
+  return base * (1.0 - level * 0.1);
+}
+
+/// The L2 basis of `diffuse_sh.dart`, transcribed so the fixture's projection
+/// lands in the domain the shader evaluates.
+Float64List _shBasis(vm.Vector3 d) => Float64List.fromList([
+  0.282095,
+  0.488603 * d.y,
+  0.488603 * d.z,
+  0.488603 * d.x,
+  1.092548 * d.x * d.y,
+  1.092548 * d.y * d.z,
+  0.315392 * (3.0 * d.z * d.z - 1.0),
+  1.092548 * d.x * d.z,
+  0.546274 * (d.x * d.x - d.y * d.y),
+]);
+
+/// Projects the fixture's base level onto the engine's irradiance-domain
+/// spherical harmonics, so the diffuse ambient carries the same per-face
+/// colors the reflections do.
+List<vm.Vector3> _iblDiffuseSh() {
+  const samples = 16; // per face axis
+  // Lambertian band factors over pi (A_l / pi), the convention the shader's
+  // coefficients already fold in.
+  const bandFactor = <double>[
+    1.0,
+    2.0 / 3.0,
+    2.0 / 3.0,
+    2.0 / 3.0,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+  ];
+  final sh = [
+    for (var i = 0; i < kDiffuseShCoefficientCount; i++) vm.Vector3.zero(),
+  ];
+  var weightSum = 0.0;
+  for (var face = 0; face < 6; face++) {
+    final radiance = _iblFaceColor(face, 0);
+    for (var y = 0; y < samples; y++) {
+      for (var x = 0; x < samples; x++) {
+        final u = (x + 0.5) / samples, v = (y + 0.5) / samples;
+        final s = 2.0 * u - 1.0, t = 2.0 * v - 1.0;
+        // A cube texel's solid angle, falling off with the cube-to-sphere
+        // stretch; summed over all six faces it integrates to 4 pi.
+        final weight = math.pow(1.0 + s * s + t * t, -1.5).toDouble();
+        weightSum += weight;
+        final basis = _shBasis(radianceCubeFaceDirection(face, u, v));
+        for (var i = 0; i < kDiffuseShCoefficientCount; i++) {
+          sh[i].addScaled(radiance, basis[i] * weight);
+        }
+      }
+    }
+  }
+  final norm = 4.0 * math.pi / weightSum;
+  for (var i = 0; i < kDiffuseShCoefficientCount; i++) {
+    sh[i].scale(norm * bandFactor[i]);
+  }
+  return sh;
+}
+
+/// The pre-baked environment fixture: a KTX2 float16 cubemap whose eight mip
+/// levels are the engine's eight roughness bands, plus the diffuse
+/// coefficients in the file's own key/value metadata.
+///
+/// Built here rather than committed. The smallest face size the radiance
+/// layout accepts is [kMinRadianceCubeSize], so even a solid-color bake is a
+/// few megabytes of binary, and the engine ships no supercompressor to shrink
+/// it. Generating it with the engine's own KTX2 writer keeps the provenance in
+/// one readable place, the way the compressed_texture scene builds its payload.
+Uint8List _prebakedIblKtx2() {
+  const size = kMinRadianceCubeSize;
+  const vkFormatRgba16Sfloat = 97;
+  final levels = <Ktx2Level>[];
+  for (var level = 0; level < kPrefilterBandCount; level++) {
+    final levelSize = math.max(1, size >> level);
+    final texels = levelSize * levelSize;
+    final payload = Uint8List(texels * 8 * 6);
+    final view = ByteData.sublistView(payload);
+    final alpha = floatToHalfBits(1.0);
+    for (var face = 0; face < 6; face++) {
+      final rgb = _iblFaceColor(face, level);
+      final r = floatToHalfBits(rgb.x);
+      final g = floatToHalfBits(rgb.y);
+      final b = floatToHalfBits(rgb.z);
+      var offset = face * texels * 8;
+      for (var i = 0; i < texels; i++) {
+        view.setUint16(offset, r, Endian.little);
+        view.setUint16(offset + 2, g, Endian.little);
+        view.setUint16(offset + 4, b, Endian.little);
+        view.setUint16(offset + 6, alpha, Endian.little);
+        offset += 8;
+      }
+    }
+    levels.add(Ktx2Level(data: payload));
+  }
+  return writeKtx2(
+    Ktx2Texture(
+      vkFormat: vkFormatRgba16Sfloat,
+      typeSize: 2,
+      pixelWidth: size,
+      pixelHeight: size,
+      faceCount: 6,
+      levels: levels,
+      keyValues: {kDiffuseShKtx2Key: encodeDiffuseShSidecar(_iblDiffuseSh())},
+      levelAlignment: 4,
+    ),
+  );
+}
+
+/// Loads the pre-baked environment once. Call before pumping the prebaked_ibl
+/// scene.
+Future<void> loadPrebakedIbl() async {
+  _prebakedIblEnvironment ??= await EnvironmentMap.fromKtx2Bytes(
+    _prebakedIblKtx2(),
+  );
+}
+
+/// A camera-facing unit quad carrying a UV1 set, the channel a lightmap
+/// samples by default.
+MeshGeometry _lightmapQuad() => MeshGeometry.fromArrays(
+  positions: Float32List.fromList([
+    -0.5, -0.5, 0, //
+    0.5, -0.5, 0,
+    0.5, 0.5, 0,
+    -0.5, 0.5, 0,
+  ]),
+  normals: Float32List.fromList([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]),
+  texCoords: Float32List.fromList([0, 1, 1, 1, 1, 0, 0, 0]),
+  texCoords1: Float32List.fromList([0, 1, 1, 1, 1, 0, 0, 0]),
+  indices: <int>[0, 1, 2, 0, 2, 3],
+);
+
+/// Lightmaps sample raw linear radiance, so no mip chain (which would average
+/// an RGBM alpha into nonsense) and no wrap at the edges.
+const TextureSampling _lightmapSampling = TextureSampling(
+  mipmaps: false,
+  addressMode: gpu.SamplerAddressMode.clampToEdge,
+);
+
+/// A low-dynamic-range bake: a two-axis radiance gradient with a checker in
+/// blue, so a swapped UV axis, the wrong UV set, or a dropped intensity are
+/// all visible at a glance.
+Texture2D _gradientLightmap() {
+  const size = 64;
+  final pixels = Uint8List(size * size * 4);
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final i = (y * size + x) * 4;
+      final u = x / (size - 1), v = y / (size - 1);
+      pixels[i] = (30 + 210 * u).round();
+      pixels[i + 1] = (30 + 210 * (1.0 - v)).round();
+      pixels[i + 2] = ((x >> 3) + (y >> 3)).isEven ? 220 : 50;
+      pixels[i + 3] = 255;
+    }
+  }
+  return Texture2D.fromPixels(
+    pixels,
+    size,
+    size,
+    content: TextureContent.data,
+    sampling: _lightmapSampling,
+  );
+}
+
+/// A high-dynamic-range bake packed as RGBM, a radial hot spot peaking well
+/// above 1.0. Only the decode branch can bring the core back, so a material
+/// that reads it as plain linear radiance renders a dim, flat patch.
+Texture2D _rgbmLightmap() {
+  const size = 64;
+  // The decode the lightmap shader applies is rgb * pow(a, 2.2) * 34.4932.
+  const range = 34.4932;
+  final pixels = Uint8List(size * size * 4);
+  for (var y = 0; y < size; y++) {
+    for (var x = 0; x < size; x++) {
+      final i = (y * size + x) * 4;
+      final dx = x / (size - 1) - 0.5, dy = y / (size - 1) - 0.5;
+      final falloff = math.exp(-24.0 * (dx * dx + dy * dy));
+      final radiance = vm.Vector3(0.16, 0.10, 0.06)
+        ..addScaled(vm.Vector3(3.2, 2.1, 0.9), falloff);
+      final peak = math.max(math.max(radiance.x, radiance.y), radiance.z);
+      // Quantize alpha upward so the reconstructed scale never clips a channel.
+      final alpha = (math.pow(peak / range, 1.0 / 2.2) * 255.0).ceil().clamp(
+        1,
+        255,
+      );
+      final scale = math.pow(alpha / 255.0, 2.2).toDouble() * range;
+      pixels[i] = (radiance.x / scale * 255.0).round().clamp(0, 255);
+      pixels[i + 1] = (radiance.y / scale * 255.0).round().clamp(0, 255);
+      pixels[i + 2] = (radiance.z / scale * 255.0).round().clamp(0, 255);
+      pixels[i + 3] = alpha;
+    }
+  }
+  return Texture2D.fromPixels(
+    pixels,
+    size,
+    size,
+    content: TextureContent.data,
+    sampling: _lightmapSampling,
   );
 }
 
@@ -1322,6 +1550,95 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadSmokeMaterials),
+
+  // A pre-baked KTX2 radiance cubemap loaded straight from file bytes, with no
+  // prefilter at load. Each cube face is a different saturated color and each
+  // mip level is a dimmer step of the same ladder, so face order, handedness,
+  // and the mip-to-roughness mapping are all readable off the reflections.
+  // Head-on spheres put the +Z face at the center, the four side faces in a
+  // ring, and -Z at the silhouette. Covers the cube-mip layout (Metal/Vulkan)
+  // and the equirect band-atlas fallback (GLES/WebGL2) from one fixture.
+  SmokeScene('prebaked_ibl', () {
+    final scene = Scene()..environment = _prebakedIblEnvironment!;
+    Node sphere(double x, double y, vm.Vector4 color, double roughness) => Node(
+      mesh: Mesh(
+        SphereGeometry(radius: 0.55),
+        PhysicallyBasedMaterial()
+          ..baseColorFactor = color
+          ..metallicFactor = 1.0
+          ..roughnessFactor = roughness
+          ..vertexColorWeight = 0.0,
+      ),
+    )..localTransform = vm.Matrix4.translation(vm.Vector3(x, y, 0));
+    // A tinted metal for the roughness sweep, so the neutral mirror stays
+    // distinguishable from the smoothest of the three. World x runs right to
+    // left on screen from a camera on +z, so the sweep is authored mirrored
+    // and reads 0.0, 0.4, 0.9, mirror in the frame.
+    final gold = vm.Vector4(0.95, 0.80, 0.45, 1.0);
+    scene.add(sphere(0.75, 0.75, gold, 0.0));
+    scene.add(sphere(-0.75, 0.75, gold, 0.4));
+    scene.add(sphere(0.75, -0.75, gold, 0.9));
+    scene.add(sphere(-0.75, -0.75, vm.Vector4(0.97, 0.97, 0.97, 1.0), 0.0));
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 0, 4.2),
+        target: vm.Vector3.zero(),
+      ),
+    );
+  }, preload: loadPrebakedIbl),
+
+  // A baked lightmap beside its control. The left quad takes its diffuse
+  // ambient from the environment's spherical harmonics; the middle one, same
+  // material otherwise, replaces that ambient with a bake on UV1 scaled by a
+  // nonneutral intensity. The small right quad carries an RGBM-encoded bake,
+  // so the decode branch renders too; its falloff lives in the alpha, so
+  // reading it as plain linear radiance flattens the hot core into a
+  // near-uniform bright patch.
+  SmokeScene('baked_lightmap', () {
+    final scene = Scene();
+    final geometry = _lightmapQuad();
+    PhysicallyBasedMaterial base() => PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.82, 0.82, 0.84, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.85
+      ..vertexColorWeight = 0.0
+      ..doubleSided = true;
+    void quad(double x, double size, PhysicallyBasedMaterial material) {
+      scene.add(
+        Node(mesh: Mesh(geometry, material))
+          ..localTransform =
+              vm.Matrix4.translation(vm.Vector3(x, 0, 0)) *
+              vm.Matrix4.diagonal3Values(size, size, size),
+      );
+    }
+
+    // World x runs right to left on screen from a camera on +z, so the row is
+    // authored mirrored and reads control, bake, RGBM bake in the frame.
+    quad(1.35, 1.05, base());
+    quad(
+      0.05,
+      1.05,
+      base()
+        ..lightmapTexture = _gradientLightmap()
+        ..lightmapIntensity = 1.9,
+    );
+    quad(
+      -1.35,
+      0.75,
+      base()
+        ..lightmapTexture = _rgbmLightmap()
+        ..lightmapRgbm = true,
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 0, 5.4),
+        target: vm.Vector3.zero(),
+      ),
+    );
+  }),
+
 ];
 
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the
