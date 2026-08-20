@@ -438,6 +438,9 @@ void _writeInstanceAttributes(
   } else {
     sb.writeln('// This variant binds no per-instance attribute data; they');
     sb.writeln('// read zero here.');
+    // TODO(instance-attributes-skinned): a skinned mesh takes its transform
+    // from FrameInfo and binds no instance-rate slot, so instancing it means
+    // giving it one before these can carry real values.
     for (final a in material.instanceAttributes) {
       sb.writeln(
         '${a.type.glslType} ${a.inputName} = ${_zeroLiteral(a.type)};',
