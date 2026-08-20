@@ -289,6 +289,11 @@ List<vm.Vector3> _iblDiffuseSh() {
 /// few megabytes of binary, and the engine ships no supercompressor to shrink
 /// it. Generating it with the engine's own KTX2 writer keeps the provenance in
 /// one readable place, the way the compressed_texture scene builds its payload.
+///
+/// TODO(ibl-ktx2-zstd): the payload is stored uncompressed, so the loader's
+/// zstd supercompression branch goes unrendered. Emit the levels zstd-framed
+/// once the engine carries a compressor (it ships only the decoder today),
+/// which also shrinks the fixture enough to commit as a file.
 Uint8List _prebakedIblKtx2() {
   const size = kMinRadianceCubeSize;
   const vkFormatRgba16Sfloat = 97;
