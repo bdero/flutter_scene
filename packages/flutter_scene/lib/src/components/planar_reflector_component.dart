@@ -57,9 +57,11 @@ class PlanarReflectorComponent extends Component {
          'resolutionScale must be a positive, finite number.',
        );
 
-  /// The capture's resolution relative to the view it follows, `0..1`
-  /// typically. Defaults to `0.5` (half resolution, a quarter of the
-  /// fragment work), matching the screen-space reflection knob.
+  /// The capture's resolution relative to the view it follows, clamped to
+  /// `0.1..1.0` at capture time. Defaults to `0.5` (half resolution, a
+  /// quarter of the fragment work), matching the screen-space reflection
+  /// knob. Setting [enabled] false pauses capturing entirely and the
+  /// surface falls back to its base look.
   double resolutionScale;
 
   /// A bitmask selecting which node layers render into the capture, the
