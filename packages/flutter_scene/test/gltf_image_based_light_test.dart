@@ -61,6 +61,9 @@ void main() {
   test('the document extension parses into a structured light', () {
     final doc = parseGltfJson(_document());
     expect(doc.imageBasedLights, hasLength(1));
+    // Recognized extension, so no unrecognized-extension warning fires;
+    // keeps kRecognizedGltfExtensions and the parser from drifting apart.
+    expect(doc.warnings, isEmpty);
     final light = doc.imageBasedLights.single;
     expect(light.name, 'courtyard');
     expect(light.intensity, 2.5);

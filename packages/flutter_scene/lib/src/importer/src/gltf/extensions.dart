@@ -21,6 +21,13 @@ const Set<String> kRecognizedGltfExtensions = {
   'KHR_materials_volume',
   'KHR_materials_unlit',
   'KHR_texture_transform',
+  'EXT_meshopt_compression',
+  // Only widens which attributes may use the quantized component types the
+  // accessor readers already convert, so no dedicated parsing is needed.
+  'KHR_mesh_quantization',
+  'KHR_draco_mesh_compression',
+  'KHR_texture_basisu',
+  'EXT_lights_image_based',
 };
 
 /// Extensions not parsed yet but with support planned. Named individually so
