@@ -70,10 +70,9 @@ void main() {
       () {
         final primitive = doc.meshes.first.primitives.first;
         final accessor = doc.accessors[primitive.attributes['POSITION']!];
-        final view = doc.bufferViews[accessor.bufferView!];
         final positions = readAccessorAsFloat32(
           accessor,
-          view,
+          doc.bufferViews,
           container.binaryChunk,
         );
         expect(accessor.type, GltfAccessorType.vec3);
@@ -91,10 +90,9 @@ void main() {
         final primitive = doc.meshes.first.primitives.first;
         if (primitive.indices == null) return;
         final accessor = doc.accessors[primitive.indices!];
-        final view = doc.bufferViews[accessor.bufferView!];
         final indices = readAccessorAsUint32(
           accessor,
-          view,
+          doc.bufferViews,
           container.binaryChunk,
         );
         expect(accessor.type, GltfAccessorType.scalar);

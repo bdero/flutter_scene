@@ -222,10 +222,16 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
         final sampler = anim.samplers[ch.sampler];
         final inputAcc = doc.accessors[sampler.input];
         final outputAcc = doc.accessors[sampler.output];
-        final inputView = doc.bufferViews[inputAcc.bufferView!];
-        final outputView = doc.bufferViews[outputAcc.bufferView!];
-        final times = readAccessorAsFloat32(inputAcc, inputView, bufferData);
-        final values = readAccessorAsFloat32(outputAcc, outputView, bufferData);
+        final times = readAccessorAsFloat32(
+          inputAcc,
+          doc.bufferViews,
+          bufferData,
+        );
+        final values = readAccessorAsFloat32(
+          outputAcc,
+          doc.bufferViews,
+          bufferData,
+        );
         final isCubic = sampler.interpolation == 'CUBICSPLINE';
         final pc = _PoseChannel(
           targetNode: ch.targetNode!,
@@ -591,8 +597,7 @@ List<Matrix4> _readInverseBindMatrices(
     return out;
   }
   final accessor = doc.accessors[skin.inverseBindMatrices!];
-  final view = doc.bufferViews[accessor.bufferView!];
-  final floats = readAccessorAsFloat32(accessor, view, bufferData);
+  final floats = readAccessorAsFloat32(accessor, doc.bufferViews, bufferData);
   for (int i = 0; i < skin.joints.length; i++) {
     final base = i * 16;
     out.add(
@@ -653,5 +658,5 @@ List<AabbBounds> _computeJointInfluenceAabbs(
 
 Float32List _readFloats(int idx, GltfDocument doc, Uint8List bufferData) {
   final a = doc.accessors[idx];
-  return readAccessorAsFloat32(a, doc.bufferViews[a.bufferView!], bufferData);
+  return readAccessorAsFloat32(a, doc.bufferViews, bufferData);
 }

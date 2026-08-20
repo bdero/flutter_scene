@@ -34,12 +34,10 @@ Animation buildAnimation({
     final sampler = gltfAnimation.samplers[channel.sampler];
     final inputAccessor = accessors[sampler.input];
     final outputAccessor = accessors[sampler.output];
-    final inputView = bufferViews[inputAccessor.bufferView!];
-    final outputView = bufferViews[outputAccessor.bufferView!];
-    final times = readAccessorAsFloat32(inputAccessor, inputView, bufferData);
+    final times = readAccessorAsFloat32(inputAccessor, bufferViews, bufferData);
     final sourceValues = readAccessorAsFloat32(
       outputAccessor,
-      outputView,
+      bufferViews,
       bufferData,
     );
 

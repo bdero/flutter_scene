@@ -36,9 +36,8 @@ Skin buildSkin({
         'got ${accessor.type}',
       );
     }
-    final view = bufferViews[accessor.bufferView!];
     final floats = coordinatePolicy.convertMatrices(
-      readAccessorAsFloat32(accessor, view, bufferData),
+      readAccessorAsFloat32(accessor, bufferViews, bufferData),
     );
     if (floats.length != gltfSkin.joints.length * 16) {
       throw FormatException(
