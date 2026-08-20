@@ -479,6 +479,25 @@ void main() {
       );
     });
 
+    test('a hidden primitive is skipped by default, included on request', () {
+      final blockerPrimitive = MeshPrimitive(_quad(), UnlitMaterial())
+        ..visible = false;
+      final blocker = Node(
+        name: 'blocker',
+        localTransform: Matrix4.translation(Vector3(0, 0, 2)),
+        mesh: Mesh.primitives(primitives: [blockerPrimitive]),
+      );
+      final root = Node()
+        ..add(blocker)
+        ..add(_quadNode(name: 'panel'));
+      final ray = Ray.originDirection(Vector3(0, 0, 5), Vector3(0, 0, -1));
+      expect(raycastNode(root, ray)!.node.name, 'panel');
+      expect(
+        raycastNode(root, ray, includeInvisible: true)!.node.name,
+        'blocker',
+      );
+    });
+
     test('raycastable=false makes a node ray-transparent', () {
       final glass = _quadNode(
         name: 'glass',

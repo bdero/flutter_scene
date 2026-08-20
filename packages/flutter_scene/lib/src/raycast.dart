@@ -69,11 +69,13 @@ class SceneRaycastHit {
 /// Casts [ray] (direction need not be normalized) through [root]'s subtree
 /// and returns the nearest hit, or null.
 ///
-/// Only visible nodes participate unless [includeInvisible] is set. Nodes
-/// must intersect [layerMask] (against [Node.layers]), have
-/// [Node.raycastable] set, and pass [where] when provided. Skinned meshes
-/// are tested at rest pose. Geometry with caller-managed vertex buffers
-/// (`setVertices`) or non-triangle topology is skipped.
+/// Only visible nodes participate unless [includeInvisible] is set, and a
+/// primitive with `MeshPrimitive.visible` false is likewise skipped unless
+/// [includeInvisible] is set. Nodes must intersect [layerMask] (against
+/// [Node.layers]), have [Node.raycastable] set, and pass [where] when
+/// provided. Skinned meshes are tested at rest pose. Geometry with
+/// caller-managed vertex buffers (`setVertices`) or non-triangle topology is
+/// skipped.
 /// {@category Picking and input}
 // TODO(raycast): test InstancedMesh components (one local-space test per
 // instance transform).
@@ -135,7 +137,14 @@ void _walk(
       (node.layers & layerMask) != 0 &&
       (where == null || where(node))) {
     for (final component in node.getComponents<MeshComponent>()) {
-      _testNodeMesh(node, component.mesh.primitives, ray, maxDistance, emit);
+      _testNodeMesh(
+        node,
+        component.mesh.primitives,
+        ray,
+        maxDistance,
+        includeInvisible,
+        emit,
+      );
     }
   }
   for (final child in node.children) {
@@ -157,6 +166,7 @@ void _testNodeMesh(
   List<MeshPrimitive> primitives,
   Ray ray,
   double maxDistance,
+  bool includeInvisible,
   void Function(SceneRaycastHit) emit,
 ) {
   final worldTransform = node.globalTransform;
@@ -174,7 +184,9 @@ void _testNodeMesh(
   final localRay = Ray.originDirection(localOrigin, localTip - localOrigin);
 
   for (var p = 0; p < primitives.length; p++) {
-    final geometry = primitives[p].geometry;
+    final primitive = primitives[p];
+    if (!primitive.visible && !includeInvisible) continue;
+    final geometry = primitive.geometry;
     if (geometry.primitiveType != gpu.PrimitiveType.triangle) continue;
     final data = geometry.cpuMeshData;
     if (data.vertexCount == 0) continue;

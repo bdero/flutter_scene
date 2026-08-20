@@ -164,21 +164,24 @@ class MeshComponent extends Component {
     final highlightColor = node.highlightColor;
     for (var index = 0; index < _renderItems.length; index++) {
       final item = _renderItems[index];
+      final primitive = _mesh.primitives[index];
+      final effectiveCastsShadows = primitive.castsShadow && node.castsShadows;
       final staticShadowChanged =
           (item.visible != true ||
               item.shadowStatic != node.shadowStatic ||
-              item.castsShadows != node.castsShadows ||
+              item.castsShadows != effectiveCastsShadows ||
               transformChanged) &&
           (item.shadowStatic || node.shadowStatic) &&
-          (item.castsShadows || node.castsShadows);
+          (item.castsShadows || effectiveCastsShadows);
       item.visible = true;
+      item.primitiveVisible = primitive.visible;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.layers = layers;
       if (transformChanged) item.worldTransform.setFrom(worldTransform);
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
-      item.castsShadows = node.castsShadows;
+      item.castsShadows = effectiveCastsShadows;
       item.highlightColor = highlightColor;
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;

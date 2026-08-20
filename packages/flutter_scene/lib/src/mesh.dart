@@ -23,6 +23,23 @@ base class MeshPrimitive {
 
   /// The shader and per-material parameters used to render [geometry].
   Material material;
+
+  /// Whether this primitive draws in the opaque/translucent color passes.
+  /// Defaults to `true`.
+  ///
+  /// Ands with the owning node's visibility hierarchy, so hiding either the
+  /// node or the primitive hides it. Independent of [castsShadow]; a
+  /// primitive can stay invisible while still casting a shadow.
+  /// {@category Geometry}
+  bool visible = true;
+
+  /// Whether this primitive casts shadows. Defaults to `true`.
+  ///
+  /// Ands with the owning node's [Node.castsShadows]. Independent of
+  /// [visible], so a primitive can render while opting out of
+  /// self-shadowing, or stay invisible while still casting a shadow.
+  /// {@category Geometry}
+  bool castsShadow = true;
 }
 
 /// Defines the shape and appearance of a 3D model in the scene.
