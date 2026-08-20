@@ -21,6 +21,7 @@ import 'example_reflection_probes.dart';
 import 'example_accessibility.dart';
 import 'example_audio.dart';
 import 'example_auto_exposure.dart';
+import 'example_cloth.dart';
 import 'example_configurator.dart';
 import 'example_dicom.dart';
 import 'example_lights.dart';
@@ -110,6 +111,17 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..vignette.intensity = 0.71
     ..vignette.radius = 0.71
     ..vignette.smoothness = 0.5,
+  // The cloth corridor is one-sided open sheets, which only cast a shadow when
+  // the shadow pass keeps both faces.
+  'Physics': () =>
+      ExampleSettings()..shadowCasterFaces = ShadowCasterFaces.both,
+  // Same for the cloth example, plus occlusion to ground the folds where they
+  // stack.
+  'Cloth': () => ExampleSettings()
+    ..shadowCasterFaces = ShadowCasterFaces.both
+    ..ambientOcclusion.enabled = true
+    ..ambientOcclusion.radius = 0.35
+    ..ambientOcclusion.intensity = 1.4,
   // A strong sun for the adaptation walk: the outdoor half of the path
   // should overexpose while the meter is adapted to the room.
   'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
@@ -180,6 +192,7 @@ class _MyAppState extends State<MyApp> {
       'Area Lights': (context) => const ExampleAreaLights(),
       'Reflection Probes': (context) => const ExampleReflectionProbes(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
+      'Cloth': (context) => const ExampleCloth(),
       'Particles': (context) => const ExampleParticles(),
       'Explosions': (context) => const ExampleExplosion(),
       'Gaussian Splats': (context) => const ExampleSplats(),
