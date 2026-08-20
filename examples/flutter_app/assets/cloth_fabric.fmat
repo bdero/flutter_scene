@@ -1,0 +1,116 @@
+// Woven fabric for the Cloth example. Three things separate it from a plain
+// PBR surface:
+//
+//   - Cloth is an open sheet, so the shading normal is flipped toward the
+//     viewer and both faces light correctly.
+//   - A procedural plain weave perturbs the normal and darkens the thread
+//     valleys, so the surface reads as fabric at any distance instead of as
+//     smooth vinyl.
+//   - A sheen lobe and a transmission term, the two cues the metallic
+//     roughness model has no room for: the bright fuzz at grazing angles, and
+//     the glow of a backlit sheet.
+//
+// The pattern (stripes, checks) comes from the mesh's vertex colors, so one
+// material dresses every scene.
+
+material {
+  name: "ClothFabric",
+  shading_model: lit,
+  blending: opaque,
+  culling: none,
+
+  parameters: [
+    { type: vec4, name: base_color, hint: source_color, default: [1.0, 1.0, 1.0, 1.0] },
+    { type: float, name: roughness, hint: range(0.0, 1.0, 0.01), default: 0.82 },
+
+    // Thread cells across the sheet's UV square.
+    { type: float, name: weave_scale, hint: range(1.0, 400.0, 1.0), default: 110.0 },
+    { type: float, name: weave_depth, hint: range(0.0, 2.0, 0.01), default: 0.55 },
+    // Loose fiber ends, breaking up the specular so the weave never looks
+    // stamped.
+    { type: float, name: fuzz, hint: range(0.0, 1.0, 0.01), default: 0.35 },
+
+    { type: vec3, name: sheen_color, hint: source_color, default: [1.0, 0.93, 0.86] },
+    { type: float, name: sheen_strength, hint: range(0.0, 2.0, 0.01), default: 0.35 },
+    // How much light makes it through the weave from behind.
+    { type: float, name: transmission, hint: range(0.0, 1.0, 0.01), default: 0.18 },
+
+    // The scene's key light, since sheen and transmission are both direct
+    // light terms and the engine BRDF has no hook to add a lobe inside it.
+    { type: vec3, name: light_direction, default: [0.4, 0.7, 0.5] },
+    { type: vec3, name: light_color, default: [1.0, 1.0, 1.0] },
+  ],
+}
+
+fragment {
+  // Cheap value hash for the fiber fuzz. Only its spread matters.
+  float ClothHash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+    vec3 view_dir = GetViewDirection();
+    vec3 geometric = normalize(GetWorldNormal());
+    // An open sheet has no back: shade whichever side is turned toward us.
+    if (dot(geometric, view_dir) < 0.0) {
+      geometric = -geometric;
+    }
+
+    // Plain weave. Warp and weft ride over each other cell by cell, so the
+    // one on top gets the deeper ridge.
+    vec2 thread = uv * material_params.weave_scale;
+    float warp = 6.2831853 * thread.x;
+    float weft = 6.2831853 * thread.y;
+    float over = step(0.0, sin(warp * 0.5) * sin(weft * 0.5));
+    float warp_amplitude = mix(0.25, 1.0, over);
+    float weft_amplitude = mix(1.0, 0.25, over);
+
+    vec2 slope = vec2(cos(warp) * warp_amplitude, cos(weft) * weft_amplitude) *
+                 material_params.weave_depth;
+    if (material_params.fuzz > 0.0) {
+      vec2 fiber = floor(thread);
+      slope += (vec2(ClothHash(fiber), ClothHash(fiber + 31.7)) - 0.5) *
+               material_params.fuzz;
+    }
+
+    // The engine derives tangent space from screen-space derivatives, so the
+    // weave needs no tangent attribute on the mesh.
+    mat3 tbn = CotangentFrame(geometric, -v_viewvector, uv);
+    vec3 normal = normalize(tbn * normalize(vec3(-slope.x, -slope.y, 1.0)));
+
+    // Thread crowns catch the light; the crossings between them sit in shadow.
+    float height = 0.5 + 0.25 * (sin(warp) * warp_amplitude +
+                                 sin(weft) * weft_amplitude);
+
+    vec4 tint = material_params.base_color * GetVertexColor();
+    vec3 albedo = tint.rgb * mix(0.78, 1.0, height);
+
+    material.base_color = vec4(albedo, 1.0);
+    material.normal = normal;
+    material.metallic = 0.0;
+    material.roughness = clamp(material_params.roughness, 0.05, 1.0);
+    material.occlusion = mix(0.6, 1.0, height);
+
+    vec3 light_dir = normalize(material_params.light_direction);
+    float n_dot_l = clamp(dot(normal, light_dir), 0.0, 1.0);
+    float n_dot_v = clamp(dot(normal, view_dir), 0.0, 1.0);
+
+    // Sheen: the fiber ends stand up off the surface, so a cloth lit from any
+    // direction rims bright where it turns away from the eye.
+    float sheen = pow(1.0 - n_dot_v, 4.0) * (0.25 + 0.75 * n_dot_l);
+    vec3 emissive = material_params.sheen_color * material_params.light_color *
+                    (sheen * material_params.sheen_strength);
+
+    // Transmission: light entering the far side, strongest when looking into
+    // the light through the sheet.
+    float back = clamp(dot(-normal, light_dir), 0.0, 1.0);
+    float toward = clamp(dot(-view_dir, light_dir), 0.0, 1.0);
+    emissive += albedo * material_params.light_color *
+                (material_params.transmission * back *
+                 (0.25 + 0.75 * toward * toward));
+
+    material.emissive = emissive;
+    PrepareMaterial(material);
+  }
+}

@@ -17,6 +17,11 @@ import 'character/character_controller.dart';
 import 'character/character_controls.dart';
 import 'character/character_input.dart';
 import 'character/third_person_camera.dart';
+import 'cloth/character_cloth_body.dart';
+import 'cloth/cloth_controls.dart';
+import 'cloth/cloth_settings.dart';
+import 'cloth/cloth_sheet.dart';
+import 'cloth/cloth_solver.dart';
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
 import 'example_settings.dart';
@@ -44,6 +49,32 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   );
   late final CharacterController _character;
   Node? _characterNode;
+
+  // A corridor of simulated cloth beyond the banner curtain, parted by a set
+  // of capsules fitted to Dash's bones (see [CharacterClothBody]).
+  final List<ClothSheet> _clothSheets = [];
+  final CharacterClothBody _clothBody = CharacterClothBody();
+  // Tuned against this scene: a soft, heavily damped fabric that hangs rather
+  // than billows, which is what reads well on six layers at once. Six sheets
+  // share the frame with the rest of the playground, so there is no
+  // self-collision broadphase and the substep count is low; the compliance and
+  // viscosity are what keep it stable there.
+  final ClothSettings cloth = ClothSettings()
+    ..selfCollision = false
+    ..substeps = 2
+    ..stretchCompliance = 1.97e-6
+    ..bending = 0.17
+    ..stretchDamping = 0.18
+    ..damping = 0.15
+    ..friction = 0.14
+    ..gravity = 9.8
+    ..airDensity = 0.97
+    ..dragCoefficient = 1.20
+    ..liftCoefficient = 0.56
+    ..contactOffset = 0.10
+    ..wind.speed = 2.80
+    ..wind.headingDegrees = 178.0
+    ..wind.gust = 0.35;
 
   // A translucent trigger volume Dash can walk into. While Dash is inside,
   // the box glows and a vignette closes in around the view.
@@ -117,6 +148,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _buildSeesaw();
     _buildCurtain();
     _buildRopes();
+    _buildClothCorridor();
     _spawnCharacter();
 
     // React to Dash entering / leaving the trigger volume. Subscribing
@@ -288,6 +320,9 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
 
   // A 3-2-1 pyramid of dynamic boxes Dash can clamber onto.
   void _buildStack() {
+    // Off to the -x side: the cloth corridor runs down the middle at this
+    // depth, and the spinner's bar sweeps out to x = -7.
+    const centerX = -5.0;
     const spacing = 1.04;
     final palette = <vm.Vector4>[
       vm.Vector4(0.90, 0.20, 0.22, 1),
@@ -300,7 +335,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       final startX = -(count - 1) / 2 * spacing;
       for (var i = 0; i < count; i++) {
         _addBody(
-          position: vm.Vector3(startX + i * spacing, y, -10.0),
+          position: vm.Vector3(centerX + startX + i * spacing, y, -10.0),
           type: BodyType.dynamic_,
           mesh: _boxMesh(vm.Vector3.all(1.0), palette[row]),
           shape: BoxShape(halfExtents: vm.Vector3.all(0.5)),
@@ -805,6 +840,95 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     }
   }
 
+  // Six hanging sheets past the ropes, each a full cloth simulation. They are
+  // not rigid bodies: Dash walks through them, and a capsule set on his bones
+  // is what pushes them aside.
+  Future<void> _buildClothCorridor() async {
+    const columns = 24, rows = 20;
+    const width = 3.6, height = 2.9, top = 3.0, spacing = 2.4, first = -10.0;
+    final PreprocessedMaterial fabric;
+    try {
+      fabric = await loadFmatMaterial('assets/cloth_fabric.fmat');
+    } catch (_) {
+      // The rest of the playground stands on its own without the cloth.
+      return;
+    }
+    if (!mounted) return;
+    _clothFabric = fabric;
+
+    for (var s = 0; s < 6; s++) {
+      final z = first - s * spacing;
+      final solver = ClothSolver(
+        columns: columns,
+        rows: rows,
+        layout: (c, r) => vm.Vector3(
+          (c / (columns - 1) - 0.5) * width,
+          top - (r / (rows - 1)) * height,
+          z,
+        ),
+      );
+      solver.pinTopEdge();
+      solver.groundHeight = 0.0;
+      solver.colliders.add(_clothBody.collider);
+
+      final hue = s / 6.0;
+      final sheet = ClothSheet(
+        solver: solver,
+        material: fabric,
+        colors: clothColors(
+          solver,
+          (c, r) => _clothColor(hue) * (0.72 + 0.28 * (r / (rows - 1))),
+        ),
+      );
+      _clothSheets.add(sheet);
+      scene.add(sheet.node);
+
+      // The rail it hangs from.
+      _addStaticBox(
+        vm.Vector3(0, top + 0.08, z),
+        vm.Vector3(width / 2 + 0.15, 0.06, 0.1),
+        vm.Vector4(0.40, 0.40, 0.46, 1),
+      );
+    }
+  }
+
+  /// Walks the hue around the wheel so each layer reads as its own sheet.
+  vm.Vector3 _clothColor(double t) {
+    final angle = t * 2 * math.pi;
+    return vm.Vector3(
+      0.35 + 0.32 * math.cos(angle),
+      0.30 + 0.26 * math.cos(angle - 2.1),
+      0.38 + 0.30 * math.cos(angle - 4.2),
+    );
+  }
+
+  // Advances every sheet with the character's bone capsules already posed for
+  // this frame.
+  void _stepCloth(double dt) {
+    final fabric = _clothFabric;
+    if (_clothSheets.isEmpty || fabric == null) return;
+    final characterNode = _characterNode;
+    // The model loads a frame or two after the character node exists, so keep
+    // trying until every bone is found.
+    if (!_clothBody.isBound && characterNode != null) {
+      _clothBody.bind(characterNode);
+    }
+    _clothBody.update();
+
+    final seconds = _clothSeconds += dt;
+    for (final sheet in _clothSheets) {
+      // Re-applied every frame, so a slider takes effect with no wiring.
+      cloth.applyTo(sheet.solver);
+      cloth.wind.applyTo(sheet.solver, seconds);
+      sheet.solver.step(dt);
+      sheet.sync();
+    }
+    applyFabricLight(fabric);
+  }
+
+  PreprocessedMaterial? _clothFabric;
+  double _clothSeconds = 0.0;
+
   void _spawnCharacter() {
     final node = Node(localTransform: vm.Matrix4.translation(_spawn));
     node.addComponent(RigidBody(type: BodyType.kinematic));
@@ -845,7 +969,17 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     scene.add(node);
   }
 
-  void _reset() => _character.teleport(_spawn);
+  void _reset() {
+    _character.teleport(_spawn);
+    _resetCloth();
+  }
+
+  void _resetCloth() {
+    for (final sheet in _clothSheets) {
+      sheet.solver.reset();
+      sheet.sync();
+    }
+  }
 
   // Drives the code-animated kinematic bodies (the lift and the spinner)
   // each frame before the scene updates, so their new poses are carried
@@ -921,6 +1055,8 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _driveKinematics(dt);
     scene.update(dt);
     _camera.follow(_character.footPosition, dt);
+    // After scene.update, so the bones carry this frame's animated pose.
+    _stepCloth(dt);
 
     // Ease the glow / vignette toward whether Dash is inside the trigger,
     // and push the eased color onto the box material.
@@ -967,6 +1103,24 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         // center, with no overlap with system chrome.
         ExampleOverlay.topCenterAction(
           child: _PhysicsHeaderActions(onReset: () => setState(_reset)),
+        ),
+        // Right side: the joystick owns the bottom-left corner and the jump
+        // button the bottom-right.
+        ExampleOverlay.topRightPanel(
+          child: ClothControlPanel(
+            settings: cloth,
+            // The top-right slot is unbounded horizontally, so the panel has
+            // to say how wide it is.
+            width: 300,
+            stats: _clothSheets.isEmpty
+                ? 'cloth loading'
+                : '${_clothSheets.length} sheets, '
+                      '${_clothSheets.first.solver.particleCount * _clothSheets.length} '
+                      'particles',
+            onChanged: () => setState(() {}),
+            onReset: () => setState(_resetCloth),
+            showSelfCollision: false,
+          ),
         ),
       ],
     );
