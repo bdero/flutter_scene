@@ -10,6 +10,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
+import 'package:smoke_render/synthetic_morph_glb.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Side length of the captured render, in logical pixels. Fixed for
@@ -200,6 +201,42 @@ Node? _skinnedModel;
 /// skinned_animation scene.
 Future<void> loadSmokeModels() async {
   _skinnedModel ??= await Node.fromGlbAsset('assets_src/two_triangles.glb');
+}
+
+/// The skinned and morphed model preloaded by [loadMorphSkinnedModel], plus
+/// the same model at rest weights beside it as the reference.
+Node? _morphSkinnedModel;
+Node? _morphSkinnedRest;
+
+/// Imports the synthetic skinned and morphed GLB and pins its morph weights.
+/// The bytes are built in code (see `synthetic_morph_glb.dart`), so the scene
+/// needs no committed fixture. The clone keeps every weight at zero, so both
+/// copies share one geometry and differ only by the morph blend.
+Future<void> loadMorphSkinnedModel() async {
+  if (_morphSkinnedModel != null) return;
+  final model = await Node.fromGlbBytes(buildMorphSkinnedGlb());
+  final rest = model.clone();
+  rest.meshNodes.first.setMorphWeights(const [0.0, 0.0, 0.0]);
+  final meshNode = model.meshNodes.first;
+  meshNode.setMorphWeights(kMorphSkinnedWeights);
+  final geometry = meshNode.mesh!.primitives.first.geometry;
+  if (geometry is! MorphedSkinnedGeometry || !geometry.usesGpuMorphing) {
+    throw StateError(
+      'morph_skinned expects GPU-morphed skinned geometry, got '
+      '${geometry.runtimeType}',
+    );
+  }
+  _morphSkinnedRest = rest;
+  _morphSkinnedModel = model;
+}
+
+/// The Draco-compressed KTX2-textured quads preloaded by [loadBasisuQuads].
+Node? _basisuQuads;
+
+/// Imports the compressed quads once. Call before pumping the basisu_textures
+/// scene.
+Future<void> loadBasisuQuads() async {
+  _basisuQuads ??= await Node.fromGlbAsset('assets/basisu_quads_draco.glb');
 }
 
 /// A flat NxN grid in the XZ plane carrying a per-vertex `phase` custom
@@ -1023,6 +1060,27 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _camera());
   }),
+  // Two quads sampling KHR_texture_basisu KTX2 textures through the standard
+  // glTF path, one a mipped zstd-supercompressed UASTC sRGB file with no
+  // alpha, the other an ETC1S sRGB file whose alpha blob is drawn with alpha
+  // blending, so the magenta clear reads through everywhere it thins.
+  // The quads themselves arrive Draco-compressed, so one scene covers
+  // compressed geometry import and Basis Universal transcode all the way to
+  // pixels. Both materials are unlit, so the frame reads the decoded texels
+  // rather than a lighting response.
+  SmokeScene('basisu_textures', () {
+    final scene = Scene();
+    scene.add(_basisuQuads!);
+    return (
+      scene: scene,
+      // Square on to the quads' front, which the root handedness flip puts on
+      // the -z side, so the texels land unmirrored.
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 0, -3.1),
+        target: vm.Vector3.zero(),
+      ),
+    );
+  }, preload: loadBasisuQuads),
   // The single custom-material scene: one .fmat that customizes BOTH the
   // vertex stage (a world-space ripple, which also displaces the shadow) and
   // the fragment color (blended from a per-vertex attribute forwarded through a
@@ -1174,6 +1232,31 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadSmokeModels),
+  // A skinned mesh that is also morphed, held at fixed nonzero weights on
+  // three targets, so the GPU morph texture path and the morph-before-skin
+  // ordering both draw. The waist joint's bend carries the targets'
+  // displacement with it, which is what separates the two orderings, and the
+  // per-corner vertex colors make a twist or a flip read directly. The
+  // second copy is the same mesh and skin at rest weights, so a morph that
+  // stops blending collapses the pair into two identical shapes.
+  // [loadMorphSkinnedModel] asserts the geometry took the GPU path.
+  SmokeScene('morph_skinned', () {
+    final scene = Scene();
+    Node placed(Node model, double x) => Node()
+      ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0, 0))
+      ..add(model);
+    scene.add(placed(_morphSkinnedRest!, -1.0));
+    scene.add(placed(_morphSkinnedModel!, 1.0));
+    return (
+      scene: scene,
+      // Imported glTF sits behind the root handedness flip, so the model's
+      // front faces -z; the camera views it from there.
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0.5, 2.0, -5.6),
+        target: vm.Vector3(0, 0.9, 0),
+      ),
+    );
+  }, preload: loadMorphSkinnedModel),
 
   // A hand-written vertex/fragment pair driven through ShaderMaterial, with no
   // engine vertex shader involved. The vertex stage displaces the grid along
