@@ -44,6 +44,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _depthWrite = metadata['depth_write'] == true,
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata),
+       _usesPlanarReflection = parsePlanarReflectionInput(
+         metadata['engine_inputs'],
+       ),
        _vertexShaders = vertexShaders,
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
     setFragmentShader(fragmentShader);
@@ -66,7 +69,13 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     return inputs;
   }
 
+  /// Whether the sidecar's `engine_inputs` declares `planar_reflection`.
+  @visibleForTesting
+  static bool parsePlanarReflectionInput(Object? value) =>
+      value is List && value.contains('planar_reflection');
+
   Set<RenderInput> _sceneInputs;
+  bool _usesPlanarReflection;
   gpu.Shader? _shadowFragmentShader;
   gpu.Shader? _cubeFragmentShader;
   gpu.Shader? _cubeShadowFragmentShader;
@@ -155,6 +164,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   @override
   Set<RenderInput> get sceneInputs => _sceneInputs;
+
+  @override
+  @internal
+  bool get usesPlanarReflection => _usesPlanarReflection;
 
   /// The material's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
@@ -260,6 +273,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // A reloaded declaration is a new schema object, which invalidates the
     // widened vertex layouts and instance buffers keyed on the old one.
     _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata);
+    _usesPlanarReflection = parsePlanarReflectionInput(
+      metadata['engine_inputs'],
+    );
     markMaterialSceneInputsChanged();
     setFragmentShader(fragmentShader);
     parameters.updateFromMetadata(fragmentShader, metadata);
@@ -320,6 +336,9 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
           _sceneInputs,
         );
       }
+      if (_usesPlanarReflection) {
+        _bindPlanarReflection(pass, shader, transientsBuffer, lighting);
+      }
       // Lit `.fmat` shaders include the lighting framework (and thus fog.glsl),
       // so they carry the FogInfo block. Unlit `.fmat` shaders do not; fog on
       // those is a TODO(fog): give the unlit `.fmat` template the fog block.
@@ -338,6 +357,42 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         transientsBuffer.emplace(_zeroKeepAlive),
       );
     }
+  }
+
+  static final gpu.SamplerOptions _planarReflectionSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
+  // Binds the planar capture routed by this surface's reflector, or a black
+  // placeholder with the gate off when none applies this draw (no reflector
+  // routed one, or the draw is inside a capture, which must not recurse).
+  void _bindPlanarReflection(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {
+    final frame = lighting.planarReflectionsSuppressed
+        ? null
+        : planarReflectionFrame;
+    // PlanarReflectionInfo: mat4 view_projection + vec4 params (x gate).
+    final info = Float32List(20);
+    if (frame != null) {
+      info.setAll(0, frame.viewProjection.storage);
+      info[16] = 1.0;
+    }
+    pass.bindUniform(
+      shader.getUniformSlot('PlanarReflectionInfo'),
+      transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+    pass.bindTexture(
+      shader.getUniformSlot('planar_reflection'),
+      frame?.texture ?? Material.getBlackPlaceholderTexture(),
+      sampler: _planarReflectionSampler,
+    );
   }
 
   @override
