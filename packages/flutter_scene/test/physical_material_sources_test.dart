@@ -53,7 +53,9 @@ void main() {
     final manifest =
         jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
             as Map<String, dynamic>;
-    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    final sampling = File(
+      'shaders/material_shadow_sampling.glsl',
+    ).readAsStringSync();
     final uniforms = File(
       'shaders/material_engine_lighting.glsl',
     ).readAsStringSync();
@@ -62,7 +64,7 @@ void main() {
       manifest['StandardFragment']['file'],
       'shaders/flutter_scene_standard.frag',
     );
-    expect(lighting, contains('#ifndef FLUTTER_SCENE_SKIP_SHADOWS'));
+    expect(sampling, contains('#ifndef FLUTTER_SCENE_SKIP_SHADOWS'));
     expect(
       uniforms,
       contains(
@@ -125,7 +127,11 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('sampler_budget');
     try {
       final impellerc = await findImpellerC();
-      for (final name in ['physical_opaque', 'physical_transmission']) {
+      for (final name in [
+        'physical_opaque',
+        'physical_transmission',
+        'shadow_catcher',
+      ]) {
         final variants = emitFragmentShaderVariants(
           _compile(name),
           generateShadowVariant: true,

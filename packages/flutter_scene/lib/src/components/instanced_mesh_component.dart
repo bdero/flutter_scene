@@ -53,7 +53,9 @@ class InstancedMeshComponent extends Component {
   void refreshRenderItem() {
     final item = _renderItem;
     if (item == null) return;
-    item.visible = true;
+    // A material can declare itself draw-less for the frame (the shadow
+    // catcher at zero intensity); its item then joins no pass at all.
+    item.visible = !item.material.drawsNothing;
     final frustumCulled = node.frustumCulled;
     final frustumCulledChanged = item.frustumCulled != frustumCulled;
     item.frustumCulled = frustumCulled;

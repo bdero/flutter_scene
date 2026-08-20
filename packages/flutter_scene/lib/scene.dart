@@ -84,6 +84,7 @@ export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;
 export 'src/material/preprocessed_sky.dart' show PreprocessedSky;
 export 'src/material/shader_material.dart' show ShaderMaterial;
 export 'src/material/shader_stage.dart' show MeshVariant, ShaderStage;
+export 'src/material/shadow_catcher_material.dart' show ShadowCatcherMaterial;
 export 'src/material/sprite_material.dart' show SpriteBlendMode, SpriteMaterial;
 export 'src/material/unlit_material.dart' show UnlitMaterial;
 export 'src/fmat/material_registry.dart'

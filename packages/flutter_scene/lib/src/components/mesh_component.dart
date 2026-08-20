@@ -167,15 +167,18 @@ class MeshComponent extends Component {
       final item = _renderItems[index];
       final primitive = _mesh.primitives[index];
       final effectiveCastsShadows = primitive.castsShadow && node.castsShadows;
+      // A material can declare itself draw-less for the frame (the shadow
+      // catcher at zero intensity); its item then joins no pass at all.
+      final visible = !item.material.drawsNothing;
       final staticShadowChanged =
-          (item.visible != true ||
+          (item.visible != visible ||
               item.shadowStatic != node.shadowStatic ||
               item.castsShadows != effectiveCastsShadows ||
               item.lightChannelMask != lightChannelMask ||
               transformChanged) &&
           (item.shadowStatic || node.shadowStatic) &&
           (item.castsShadows || effectiveCastsShadows);
-      item.visible = true;
+      item.visible = visible;
       item.primitiveVisible = primitive.visible;
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
