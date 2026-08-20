@@ -1,0 +1,29 @@
+// A sharp planar mirror driven by a PlanarReflectorComponent. The component
+// renders the mirrored scene capture each frame and routes it here; the
+// engine input below declares the sampler and GetPlanarReflection().
+material {
+  name: "PlanarMirror",
+  shading_model: lit,
+  engine_inputs: [ planar_reflection ],
+  parameters: [
+    { type: vec4, name: base_color, hint: source_color,
+      default: [0.85, 0.88, 0.95, 1.0] },
+    { type: float, name: reflectivity, hint: range(0, 1, 0.01), default: 1.0 },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec4 reflection = GetPlanarReflection();
+    material.base_color = material_params.base_color;
+    material.metallic = 1.0;
+    // With a live capture the mirror term rides emissive and the surface
+    // goes rough so the environment reflection bows out; without a capture
+    // (inside another capture, or no reflector) the sharp environment
+    // reflection is the fallback look.
+    material.roughness = mix(0.05, 1.0, reflection.a);
+    material.emissive = material_params.base_color.rgb * reflection.rgb *
+        (material_params.reflectivity * reflection.a);
+    PrepareMaterial(material);
+  }
+}

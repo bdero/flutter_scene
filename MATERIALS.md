@@ -119,7 +119,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
-| `engine_inputs` | list of `scene_color`, `scene_depth` | `[]` | Per-frame engine textures the shader samples (see below). Lit surface materials only. |
+| `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Lit surface materials only. |
 
 ## Engine inputs (`engine_inputs`)
 
@@ -135,6 +135,14 @@ cost nothing when unused:
   (planar view-space) depth in world units. Requesting it forces the depth
   prepass (already produced when SSAO or reflections are on). Use it for
   depth-fade absorption, shoreline foam, and soft-particle edges.
+- `planar_reflection` binds the mirrored scene capture a
+  `PlanarReflectorComponent` renders for the surface each frame, plus the
+  capture's view-projection for projective sampling. Use it for mirrors and
+  glossy floors; attach the component to the mirror node and it routes each
+  frame's capture to the subtree's declaring materials. Unlike the other
+  inputs this one costs a second scene render per reflection group per
+  frame while the mirror is visible (CPU and draw calls scale with scene
+  complexity, not just the capture resolution).
 
 Declaring an input emits the sampler and these accessors into your shader:
 
@@ -144,7 +152,17 @@ vec3  GetSceneColor(vec2 uv_offset);  // opaque scene color behind the fragment
 float GetSceneDepth(vec2 uv_offset);  // opaque linear depth behind the fragment
 float GetFragmentViewDepth();         // this fragment's own linear depth
 float GetTime();                      // engine seconds, for animation
+vec4  GetPlanarReflection();          // mirrored capture at this fragment
 ```
+
+`GetPlanarReflection()` returns the mirrored scene color in rgb with `a` 1
+when a capture is bound this draw and 0 otherwise (no reflector routed one,
+or the draw is inside a capture, which never recurses). Blend toward the
+environment reflection at `a == 0` so the surface degrades gracefully; the
+worked mirror lives at `examples/flutter_app/assets/planar_mirror.fmat`.
+Surfaces sampling a planar capture are effectively excluded from
+screen-space reflections (their depth-prepass roughness reads fully rough),
+so the two do not double up.
 
 `GetFragmentViewDepth()` and `GetSceneDepth(vec2(0.0))` are directly
 comparable: their difference is the world-space thickness between this

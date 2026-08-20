@@ -16,6 +16,9 @@ import 'package:flutter_scene/src/render/shadow_pass.dart';
 /// so captures never nest) followed by a blit of its linear HDR color into
 /// the group's capture texture. No screen-space post-processing runs inside
 /// a capture.
+// TODO(planar-capture-inputs): captures produce no scene-color snapshot or
+// depth prepass, so materials sampling those engine inputs read their inert
+// fallbacks inside a mirror (refraction shows black, depth fades vanish).
 class PlanarReflectionCapturePass extends RenderGraphPass {
   PlanarReflectionCapturePass({
     required ScenePass scenePass,
