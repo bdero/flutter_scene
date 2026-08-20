@@ -52,6 +52,31 @@ Future<Object?> _compileReflection(
   return jsonDecode(reflection.readAsStringSync());
 }
 
+Future<Object?> _compileVertexReflection(
+  Uri impellerc,
+  Directory temp,
+  String entry,
+  String source, {
+  String backend = '--opengl-es',
+}) async {
+  final input = File.fromUri(temp.uri.resolve('$entry.vert'))
+    ..writeAsStringSync(source);
+  final reflection = File.fromUri(temp.uri.resolve('$entry.json'));
+  final result = await Process.run(impellerc.toFilePath(), [
+    backend,
+    '--input-type=vert',
+    '--input=${input.path}',
+    '--sl=${temp.uri.resolve('$entry.out').toFilePath()}',
+    '--spirv=${temp.uri.resolve('$entry.spirv').toFilePath()}',
+    '--reflection-json=${reflection.path}',
+    '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
+    '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
+    if (backend == '--opengl-es') '--gles-language-version=300',
+  ]);
+  expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  return jsonDecode(reflection.readAsStringSync());
+}
+
 void main() {
   test('materials guard their shadow sampler layout', () {
     final manifest =
@@ -117,10 +142,12 @@ void main() {
   });
 
   // The GLES backend allocates fragment texture units after the vertex
-  // stage's, so a skinned draw (which spends one on joints_texture) leaves 15
-  // for the fragment stage on a driver reporting the ES 3.0 minimum of 16.
-  // Engines older than the combined-limit fix reject the draw outright, so
-  // every lit variant has to fit.
+  // stage's, from one combined pool with an ES 3.0 minimum of 16. The
+  // fragment cap of 15 leaves room for a skinned draw's joints_texture; the
+  // worst pairing the engine makes is a lit morphed skinned draw (2 vertex
+  // samplers, 17 combined), pinned with its justification by the vertex
+  // pairing test below. Engines older than the combined-limit fix reject an
+  // over-budget draw outright, so every lit variant has to fit.
   //
   // Raising this needs the engine fix in every supported stable; see the
   // TODO(radiance-layout) in shaders/texture.glsl. Until then, a new engine
@@ -159,6 +186,68 @@ void main() {
                 'samplers, over the $maxFragmentSamplers budget.',
           );
         }
+      }
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  // GLES exposes one combined pool of texture units, vertex stage first, and
+  // the ES 3.0 minimum is 16 total. The fragment cap above only holds the
+  // real invariant when the vertex-stage counts are pinned too, so this
+  // asserts them, and the combined total for every pairing the engine makes.
+  // A sampler added to either stage moves a number here and fails loudly.
+  //
+  // The one pairing over the 16-unit minimum is a lit morphed skinned draw
+  // at 17, accepted deliberately because real GLES3 hardware reports 32 or
+  // more units; see TODO(morph-sampler-budget) in morphed_geometry.dart for
+  // the escape (joints and morph deltas sharing one vertex texture).
+  test('vertex sampler counts pin the combined pairing budget', () async {
+    final temp = Directory.systemTemp.createTempSync('vertex_sampler_budget');
+    try {
+      final impellerc = await findImpellerC();
+      const expectedVertexSamplers = {
+        'UnskinnedVertex': 0,
+        'SkinnedVertex': 1,
+        'MorphedUnskinnedVertex': 1,
+        'MorphedSkinnedVertex': 2,
+      };
+      const expectedCombined = {
+        'UnskinnedVertex': 15,
+        'SkinnedVertex': 16,
+        'MorphedUnskinnedVertex': 16,
+        'MorphedSkinnedVertex': 17,
+      };
+      final manifest =
+          jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
+              as Map<String, dynamic>;
+      for (final entry in expectedVertexSamplers.entries) {
+        final file = (manifest[entry.key] as Map)['file'] as String;
+        final reflection =
+            await _compileVertexReflection(
+                  impellerc,
+                  temp,
+                  entry.key,
+                  File(file).readAsStringSync(),
+                )
+                as Map<String, Object?>;
+        final samplers =
+            reflection['sampled_images'] as List<Object?>? ?? const [];
+        expect(
+          samplers,
+          hasLength(entry.value),
+          reason:
+              '${entry.key} declares ${samplers.length} vertex samplers, '
+              'expected ${entry.value}; the combined pairing table below '
+              'reasons from these counts.',
+        );
+        expect(
+          maxFragmentSamplers + entry.value,
+          expectedCombined[entry.key],
+          reason:
+              'the worst lit pairing for ${entry.key} changed; update the '
+              'table and re-justify it against the 16-unit ES 3.0 minimum.',
+        );
       }
     } finally {
       temp.deleteSync(recursive: true);
