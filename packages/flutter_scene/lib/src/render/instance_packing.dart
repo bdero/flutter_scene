@@ -53,6 +53,14 @@ class InstancePackingScratch {
 final InstancePackingScratch transientInstancePackingScratch =
     InstancePackingScratch();
 
+/// Floats in the model transform alone, the record a depth-style pass consumes.
+const int kInstanceTransformFloats = 16;
+
+/// Floats in the engine's fixed instance record, the model transform plus the
+/// color multiplier. A material declaring `instance_attributes` appends its
+/// packed attribute floats after these.
+const int kInstanceRecordFloats = 20;
+
 /// Per-instance world transforms packed for the instance-rate vertex buffer
 /// (slot 1), split by winding parity.
 ///
@@ -85,19 +93,26 @@ class PackedInstanceTransforms implements PackedInstances {
   int get cwCount => cw.length ~/ 16;
 }
 
-/// Per-instance world transforms and color multipliers for a color pass.
+/// Per-instance world transforms and color multipliers for a color pass,
+/// followed by the material's declared per-instance attributes.
 class PackedInstanceData implements PackedInstances {
-  PackedInstanceData(this.ccw, this.cw);
+  PackedInstanceData(this.ccw, this.cw, {this.attributeFloats = 0});
 
   @override
   final Float32List ccw;
   @override
   final Float32List cw;
 
+  /// Attribute floats appended to each record, past the transform and color.
+  final int attributeFloats;
+
+  /// Floats one record occupies.
+  int get recordFloats => kInstanceRecordFloats + attributeFloats;
+
   @override
-  int get ccwCount => ccw.length ~/ 20;
+  int get ccwCount => ccw.length ~/ recordFloats;
   @override
-  int get cwCount => cw.length ~/ 20;
+  int get cwCount => cw.length ~/ recordFloats;
 }
 
 /// One retained instance group consumed by [packInstanceDataBatches].
@@ -109,6 +124,8 @@ class InstanceDataBatch {
     required this.nodeWindingFlipped,
     this.instanceWindingFlipped,
     this.indices,
+    this.attributeData,
+    this.attributeFloats = 0,
   }) : instances = instances,
        colors = colors,
        packedWorldData = null,
@@ -118,7 +135,8 @@ class InstanceDataBatch {
          instanceWindingFlipped == null ||
              instanceWindingFlipped.length == instances.length,
        ),
-       assert(indices == null || indices.length <= instances.length);
+       assert(indices == null || indices.length <= instances.length),
+       assert(attributeFloats == 0 || attributeData != null);
 
   InstanceDataBatch.single({
     required this.nodeTransform,
@@ -128,12 +146,15 @@ class InstanceDataBatch {
        packedWorldData = null,
        packedWindingFlipped = null,
        instanceWindingFlipped = null,
-       indices = null;
+       indices = null,
+       attributeData = null,
+       attributeFloats = 0;
 
   InstanceDataBatch.cached({
     required Float32List packedWorldData,
     required Uint8List packedWindingFlipped,
     this.indices,
+    this.attributeFloats = 0,
   }) : nodeTransform = _identity,
        instances = null,
        colors = null,
@@ -141,10 +162,21 @@ class InstanceDataBatch {
        packedWindingFlipped = packedWindingFlipped,
        nodeWindingFlipped = false,
        instanceWindingFlipped = null,
-       assert(packedWorldData.length % 20 == 0),
-       assert(packedWindingFlipped.length == packedWorldData.length ~/ 20),
+       attributeData = null,
        assert(
-         indices == null || indices.length <= packedWorldData.length ~/ 20,
+         packedWorldData.length % (kInstanceRecordFloats + attributeFloats) ==
+             0,
+       ),
+       assert(
+         packedWindingFlipped.length ==
+             packedWorldData.length ~/
+                 (kInstanceRecordFloats + attributeFloats),
+       ),
+       assert(
+         indices == null ||
+             indices.length <=
+                 packedWorldData.length ~/
+                     (kInstanceRecordFloats + attributeFloats),
        );
 
   static final Matrix4 _identity = Matrix4.identity();
@@ -158,16 +190,33 @@ class InstanceDataBatch {
   final List<bool>? instanceWindingFlipped;
   final List<int>? indices;
 
+  /// Per-instance custom attribute floats for the unpacked path,
+  /// [attributeFloats] per instance in declaration order. Null when the batch
+  /// carries none.
+  final Float32List? attributeData;
+
+  /// Custom attribute floats this batch's source records carry.
+  final int attributeFloats;
+
+  /// Floats one source record occupies in [packedWorldData].
+  int get sourceRecordFloats => kInstanceRecordFloats + attributeFloats;
+
   int get length => packedWorldData == null
       ? (instances == null ? 1 : (indices?.length ?? instances!.length))
-      : (indices?.length ?? packedWorldData!.length ~/ 20);
+      : (indices?.length ?? packedWorldData!.length ~/ sourceRecordFloats);
 }
 
 /// Packs several retained groups without building a flattened matrix list.
+///
+/// [attributeFloats] is the material's custom per-instance attribute width;
+/// records are that much wider and a batch that carries no matching attribute
+/// data contributes zeros, never stale scratch bytes.
 PackedInstanceData packInstanceDataBatches(
   List<InstanceDataBatch> batches, {
+  int attributeFloats = 0,
   InstancePackingScratch? scratch,
 }) {
+  final recordFloats = kInstanceRecordFloats + attributeFloats;
   var count = 0;
   for (final batch in batches) {
     count += batch.length;
@@ -225,8 +274,8 @@ PackedInstanceData packInstanceDataBatches(
         : (batchCwCount == batch.length ? 1 : 2);
   }
 
-  final ccwLength = (count - cwCount) * 20;
-  final cwLength = cwCount * 20;
+  final ccwLength = (count - cwCount) * recordFloats;
+  final cwLength = cwCount * recordFloats;
   final ccw = scratch?.ccw(ccwLength) ?? Float32List(ccwLength);
   final cw = scratch?.cw(cwLength) ?? Float32List(cwLength);
   final world = scratch?.world ?? Matrix4.zero();
@@ -234,15 +283,20 @@ PackedInstanceData packInstanceDataBatches(
   flatIndex = 0;
   for (var batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     final batch = batches[batchIndex];
+    // A batch whose source does not carry this material's attributes (a
+    // synthesized single-node record) contributes zeros rather than whatever
+    // the reused scratch last held.
+    final carriesAttributes =
+        attributeFloats > 0 && batch.attributeFloats == attributeFloats;
     final packedData = batch.packedWorldData;
     if (packedData != null) {
       final indices = batch.indices;
-      if (indices == null) {
+      if (indices == null && (attributeFloats == 0 || carriesAttributes)) {
         final winding = batchWinding[batchIndex];
         if (winding != 2) {
           final target = winding == 0 ? ccw : cw;
           final targetIndex = winding == 0 ? ccwIndex : cwIndex;
-          final offset = targetIndex * 20;
+          final offset = targetIndex * recordFloats;
           target.setRange(offset, offset + packedData.length, packedData);
           if (winding == 0) {
             ccwIndex += batch.length;
@@ -253,13 +307,23 @@ PackedInstanceData packInstanceDataBatches(
           continue;
         }
       }
+      final sourceFloats = batch.sourceRecordFloats;
       for (var slot = 0; slot < batch.length; slot++) {
         final source = indices?[slot] ?? slot;
         final isFlipped = flipped[flatIndex++] != 0;
         final target = isFlipped ? cw : ccw;
         final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
-        final offset = targetIndex * 20;
-        target.setRange(offset, offset + 20, packedData, source * 20);
+        final offset = targetIndex * recordFloats;
+        final copied = carriesAttributes ? recordFloats : kInstanceRecordFloats;
+        target.setRange(
+          offset,
+          offset + copied,
+          packedData,
+          source * sourceFloats,
+        );
+        if (copied < recordFloats) {
+          target.fillRange(offset + copied, offset + recordFloats, 0);
+        }
       }
       continue;
     }
@@ -268,13 +332,21 @@ PackedInstanceData packInstanceDataBatches(
       final isFlipped = flipped[flatIndex++] != 0;
       final target = isFlipped ? cw : ccw;
       final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
-      final offset = targetIndex * 20;
+      final offset = targetIndex * recordFloats;
       target.setAll(offset, batch.nodeTransform.storage);
-      target.setRange(offset + 16, offset + 20, _whiteColor);
+      target.setRange(offset + 16, offset + kInstanceRecordFloats, _whiteColor);
+      if (attributeFloats > 0) {
+        target.fillRange(
+          offset + kInstanceRecordFloats,
+          offset + recordFloats,
+          0,
+        );
+      }
       continue;
     }
     final colors = batch.colors!;
     final indices = batch.indices;
+    final attributes = carriesAttributes ? batch.attributeData! : null;
     for (var slot = 0; slot < batch.length; slot++) {
       final i = indices?[slot] ?? slot;
       world.setFrom(batch.nodeTransform);
@@ -282,12 +354,26 @@ PackedInstanceData packInstanceDataBatches(
       final isFlipped = flipped[flatIndex++] != 0;
       final target = isFlipped ? cw : ccw;
       final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
-      final offset = targetIndex * 20;
+      final offset = targetIndex * recordFloats;
       target.setAll(offset, world.storage);
       target.setAll(offset + 16, colors[i].storage);
+      if (attributes != null) {
+        target.setRange(
+          offset + kInstanceRecordFloats,
+          offset + recordFloats,
+          attributes,
+          i * attributeFloats,
+        );
+      } else if (attributeFloats > 0) {
+        target.fillRange(
+          offset + kInstanceRecordFloats,
+          offset + recordFloats,
+          0,
+        );
+      }
     }
   }
-  return PackedInstanceData(ccw, cw);
+  return PackedInstanceData(ccw, cw, attributeFloats: attributeFloats);
 }
 
 /// Packs retained groups as transform-only records for depth-style passes.
@@ -350,13 +436,19 @@ PackedInstanceTransforms packInstanceTransformBatches(
     final packedData = batch.packedWorldData;
     if (packedData != null) {
       final indices = batch.indices;
+      final sourceFloats = batch.sourceRecordFloats;
       for (var slot = 0; slot < batch.length; slot++) {
         final source = indices?[slot] ?? slot;
         final isFlipped = flipped[flatIndex++] != 0;
         final target = isFlipped ? cw : ccw;
         final targetIndex = isFlipped ? cwIndex++ : ccwIndex++;
-        final offset = targetIndex * 16;
-        target.setRange(offset, offset + 16, packedData, source * 20);
+        final offset = targetIndex * kInstanceTransformFloats;
+        target.setRange(
+          offset,
+          offset + kInstanceTransformFloats,
+          packedData,
+          source * sourceFloats,
+        );
       }
       continue;
     }
@@ -385,7 +477,8 @@ PackedInstanceTransforms packInstanceTransformBatches(
 
 const List<double> _whiteColor = [1, 1, 1, 1];
 
-/// Packs world transforms followed by linear RGBA color multipliers.
+/// Packs world transforms followed by linear RGBA color multipliers, then the
+/// material's declared per-instance attributes.
 PackedInstanceData packInstanceData(
   Matrix4 nodeTransform,
   List<Matrix4> instances,
@@ -394,20 +487,28 @@ PackedInstanceData packInstanceData(
   List<bool>? instanceWindingFlipped,
   List<int>? indices,
   Vector3? sortBackToFrontFrom,
+  Float32List? attributeData,
+  int attributeFloats = 0,
   InstancePackingScratch? scratch,
 }) {
   assert(instances.length == colors.length);
   if (sortBackToFrontFrom == null) {
-    return packInstanceDataBatches([
-      InstanceDataBatch(
-        nodeTransform: nodeTransform,
-        instances: instances,
-        colors: colors,
-        nodeWindingFlipped: nodeWindingFlipped,
-        instanceWindingFlipped: instanceWindingFlipped,
-        indices: indices,
-      ),
-    ], scratch: scratch);
+    return packInstanceDataBatches(
+      [
+        InstanceDataBatch(
+          nodeTransform: nodeTransform,
+          instances: instances,
+          colors: colors,
+          nodeWindingFlipped: nodeWindingFlipped,
+          instanceWindingFlipped: instanceWindingFlipped,
+          indices: indices,
+          attributeData: attributeData,
+          attributeFloats: attributeData == null ? 0 : attributeFloats,
+        ),
+      ],
+      attributeFloats: attributeFloats,
+      scratch: scratch,
+    );
   }
 
   final sorted = _sortInstances(
@@ -419,18 +520,31 @@ PackedInstanceData packInstanceData(
     indices,
   );
 
+  final recordFloats = kInstanceRecordFloats + attributeFloats;
   Float32List pack(List<int> order) {
-    final result = Float32List(order.length * 20);
+    final result = Float32List(order.length * recordFloats);
     for (var i = 0; i < order.length; i++) {
       final source = order[i];
-      final offset = i * 20;
+      final offset = i * recordFloats;
       result.setRange(offset, offset + 16, sorted.worldTransforms, source * 16);
       result.setAll(offset + 16, colors[source].storage);
+      if (attributeData != null && attributeFloats > 0) {
+        result.setRange(
+          offset + kInstanceRecordFloats,
+          offset + recordFloats,
+          attributeData,
+          source * attributeFloats,
+        );
+      }
     }
     return result;
   }
 
-  return PackedInstanceData(pack(sorted.ccw), pack(sorted.cw));
+  return PackedInstanceData(
+    pack(sorted.ccw),
+    pack(sorted.cw),
+    attributeFloats: attributeFloats,
+  );
 }
 
 /// Packs `nodeTransform * instances[i]` into per-parity instance buffers.
@@ -586,17 +700,42 @@ void bindSingleInstanceTransform(
 }
 
 /// Uploads one world transform with a white instance-color multiplier.
+///
+/// [attributeFloats] widens the record to match a material declaring
+/// `instance_attributes`; a non-instanced draw has nowhere to take those
+/// values from, so they read zero (documented in MATERIALS.md).
 void bindSingleInstanceData(
   gpu.RenderPass pass,
   Matrix4 worldTransform, {
   int slot = 1,
+  int attributeFloats = 0,
 }) {
+  if (attributeFloats == 0) {
+    bindInstanceData(
+      pass,
+      _singleInstanceDataScratch..setAll(0, worldTransform.storage),
+      slot: slot,
+    );
+    return;
+  }
+  final floats = kInstanceRecordFloats + attributeFloats;
+  var scratch = _singleWideInstanceDataScratch;
+  if (scratch == null || scratch.length != floats) {
+    scratch = _singleWideInstanceDataScratch = Float32List(floats)
+      ..setRange(16, kInstanceRecordFloats, const [1, 1, 1, 1]);
+  }
   bindInstanceData(
     pass,
-    _singleInstanceDataScratch..setAll(0, worldTransform.storage),
+    scratch
+      ..setAll(0, worldTransform.storage)
+      ..fillRange(kInstanceRecordFloats, floats, 0),
     slot: slot,
   );
 }
+
+// Reused like the fixed-width scratch above, rebuilt when a draw needs a
+// different attribute width (a scene mixes few such materials).
+Float32List? _singleWideInstanceDataScratch;
 
 /// Uploads [packed] transforms and binds them to the instance-rate slot.
 ///

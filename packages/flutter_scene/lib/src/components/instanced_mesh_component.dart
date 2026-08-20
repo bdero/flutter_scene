@@ -86,6 +86,8 @@ class InstancedMeshComponent extends Component {
     item.lightChannelMask = lightChannelMask;
     item.instanceTransforms = instancedMesh.instances;
     item.instanceColors = instancedMesh.colors;
+    item.instanceAttributeData = instancedMesh.instanceAttributeData;
+    item.instanceAttributeFloats = instancedMesh.instanceAttributeFloats;
     item.instanceWindingFlipped = instancedMesh.windingFlipped;
     item.cullInstances = instancedMesh.cullInstances;
     item.sortTransparentInstances = instancedMesh.sortTransparentInstances;

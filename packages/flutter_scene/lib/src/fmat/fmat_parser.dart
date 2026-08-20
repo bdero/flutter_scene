@@ -566,6 +566,7 @@ FmatMaterial _build(
     'parameters',
     'varyings',
     'attributes',
+    'instance_attributes',
     'requires',
     'engine_inputs',
   };
@@ -616,6 +617,13 @@ FmatMaterial _build(
     tree['attributes'],
     parameters,
     varyings,
+    fileName,
+  );
+  final instanceAttributes = _buildInstanceAttributes(
+    tree['instance_attributes'],
+    parameters,
+    varyings,
+    attributes,
     fileName,
   );
 
@@ -751,6 +759,23 @@ FmatMaterial _build(
     );
   }
 
+  // A per-instance attribute reaches the shader only through the generated
+  // vertex variants, which exist only for a material with a vertex stage.
+  if (instanceAttributes.isNotEmpty && vertex == null) {
+    throw FmatException(
+      'A material with `instance_attributes` must declare a `vertex { }` '
+      'block; the attributes are bound to its generated vertex variants.',
+      fileName: fileName,
+    );
+  }
+
+  if (instanceAttributes.isNotEmpty && domain != FmatDomain.surface) {
+    throw FmatException(
+      '`instance_attributes` is only supported in surface materials.',
+      fileName: fileName,
+    );
+  }
+
   return FmatMaterial(
     name: name,
     domain: domain,
@@ -766,8 +791,136 @@ FmatMaterial _build(
     vertexSourceLine: vertex?.startLine ?? 0,
     varyings: varyings,
     attributes: attributes,
+    instanceAttributes: instanceAttributes,
     engineInputs: engineInputs,
   );
+}
+
+/// Vertex inputs the engine's instance-rate slot already carries, so a
+/// declared attribute may not derive one of these names.
+const _reservedInstanceInputs = <String>{
+  'instance_color',
+  'instance_model_transform_0',
+  'instance_model_transform_1',
+  'instance_model_transform_2',
+  'instance_model_transform_3',
+};
+
+List<FmatInstanceAttribute> _buildInstanceAttributes(
+  Object? raw,
+  List<FmatParameter> parameters,
+  List<FmatVarying> varyings,
+  List<FmatAttribute> attributes,
+  String? fileName,
+) {
+  if (raw == null) return const [];
+  if (raw is! List) {
+    throw FmatException(
+      '`instance_attributes` must be a list.',
+      fileName: fileName,
+    );
+  }
+  final taken = {
+    for (final p in parameters) p.name,
+    for (final v in varyings) v.name,
+    for (final a in attributes) a.name,
+  };
+  final result = <FmatInstanceAttribute>[];
+  final seen = <String>{};
+  final accessors = <String>{};
+  var offset = kInstanceRecordBaseBytes;
+  for (final entry in raw) {
+    if (entry is! Map<String, Object?>) {
+      throw FmatException(
+        'Each instance attribute must be an object.',
+        fileName: fileName,
+      );
+    }
+    for (final key in entry.keys) {
+      if (key != 'type' && key != 'name') {
+        throw FmatException(
+          'Unknown instance attribute key `$key`.',
+          fileName: fileName,
+        );
+      }
+    }
+
+    final typeTok = entry['type'];
+    if (typeTok is! _Ident) {
+      throw FmatException(
+        'Instance attribute `type` is required.',
+        fileName: fileName,
+      );
+    }
+    // Matrix instance attributes would each need several vertex input slots
+    // and a packing rule of their own; reject them the way `mat3` parameters
+    // are rejected rather than emitting something the layout cannot describe.
+    if (typeTok.name == 'mat3' || typeTok.name == 'mat4') {
+      throw FmatException(
+        '`${typeTok.name}` instance attributes are not supported because a '
+        'matrix spans several instance-rate inputs; pass its columns as '
+        'separate `vec4` attributes.',
+        fileName: fileName,
+        line: typeTok.line,
+      );
+    }
+    final type = FmatType.fromToken(typeTok.name);
+    if (type == null || !_varyingTypes.contains(type)) {
+      throw FmatException(
+        'Instance attribute `${typeTok.name}` must be one of float, vec2, '
+        'vec3, vec4.',
+        fileName: fileName,
+        line: typeTok.line,
+      );
+    }
+
+    final nameVal = entry['name'];
+    final name = switch (nameVal) {
+      String s => s,
+      _Ident id => id.name,
+      _ => throw FmatException(
+        'Instance attribute `name` is required.',
+        fileName: fileName,
+      ),
+    };
+    _validateParamName(name, fileName);
+    if (!seen.add(name)) {
+      throw FmatException(
+        'Duplicate instance attribute name `$name`.',
+        fileName: fileName,
+      );
+    }
+    if (taken.contains(name)) {
+      throw FmatException(
+        'Instance attribute `$name` collides with a parameter, varying, or '
+        'vertex attribute of the same name.',
+        fileName: fileName,
+      );
+    }
+
+    final attribute = FmatInstanceAttribute(
+      type: type,
+      name: name,
+      byteOffset: offset,
+    );
+    if (_reservedInstanceInputs.contains(attribute.inputName)) {
+      throw FmatException(
+        'Instance attribute `$name` derives the reserved vertex input '
+        '`${attribute.inputName}`.',
+        fileName: fileName,
+      );
+    }
+    if (!accessors.add(attribute.accessorName)) {
+      throw FmatException(
+        'Instance attribute `$name` derives the accessor '
+        '`${attribute.accessorName}()`, which another attribute already uses.',
+        fileName: fileName,
+      );
+    }
+    result.add(attribute);
+    offset += attribute.packedFloats * 4;
+  }
+  return result;
 }
 
 List<FmatAttribute> _buildAttributes(

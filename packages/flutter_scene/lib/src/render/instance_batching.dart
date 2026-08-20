@@ -16,8 +16,14 @@ abstract interface class OpaqueBatchRecord {
 
 int opaqueBatchEnd(List<OpaqueBatchRecord> records, int start) {
   final first = records[start];
+  // Batching synthesizes one instance per node, and a node carries no
+  // per-instance attribute values, so a material declaring them draws its
+  // items separately (each from its own instanced mesh's data).
+  // TODO(instance-attributes-batching): give a node a per-node attribute
+  // source so these can batch too.
   if (first.geometry.instancedVertexLayout == null ||
-      first.jointsTexture != null) {
+      first.jointsTexture != null ||
+      first.material.instanceAttributes != null) {
     return start + 1;
   }
   var end = start + 1;
@@ -72,6 +78,10 @@ InstanceDataBatch instanceDataBatchFor(
   }
   final packedWorldData = item.instanceWorldData;
   final packedWinding = item.instanceWorldWindingFlipped;
+  final attributeData = item.instanceAttributeData;
+  final attributeFloats = attributeData == null
+      ? 0
+      : item.instanceAttributeFloats;
   if (resolvedWinding == item.windingFlipped &&
       packedWorldData != null &&
       packedWinding != null) {
@@ -79,6 +89,7 @@ InstanceDataBatch instanceDataBatchFor(
       packedWorldData: packedWorldData,
       packedWindingFlipped: packedWinding,
       indices: indices,
+      attributeFloats: attributeFloats,
     );
   }
   return InstanceDataBatch(
@@ -88,5 +99,7 @@ InstanceDataBatch instanceDataBatchFor(
     nodeWindingFlipped: resolvedWinding,
     instanceWindingFlipped: item.instanceWindingFlipped,
     indices: indices,
+    attributeData: attributeData,
+    attributeFloats: attributeFloats,
   );
 }

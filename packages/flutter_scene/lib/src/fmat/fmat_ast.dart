@@ -175,6 +175,56 @@ class FmatAttribute {
   int get components => type.componentCount;
 }
 
+/// Bytes the engine's fixed instance record occupies (the model transform's
+/// four columns plus the instance color multiplier). Declared per-instance
+/// attributes append after it, so this is the first custom attribute's offset.
+const int kInstanceRecordBaseBytes = 80;
+
+/// A custom per-instance attribute the instance-rate vertex buffer supplies,
+/// declared in the material's `instance_attributes` list.
+///
+/// The emitter declares it as a vertex `in instance_<name>` in the trailing
+/// instance-rate slot, and forwards `v_instance_<name>` to the fragment stage
+/// when `Surface()` calls its accessor. Only float and vector types are
+/// supported; a `vec3` is padded to 16 bytes in the packed record.
+class FmatInstanceAttribute {
+  const FmatInstanceAttribute({
+    required this.type,
+    required this.name,
+    required this.byteOffset,
+  });
+
+  final FmatType type;
+  final String name;
+
+  /// Byte offset within the instance record, counted from the record start
+  /// (so never below [kInstanceRecordBaseBytes]).
+  final int byteOffset;
+
+  /// The instance-rate vertex input the emitter declares and the geometry
+  /// layout binds by name.
+  String get inputName => 'instance_$name';
+
+  /// The interpolant carrying this attribute to the fragment stage.
+  String get varyingName => 'v_instance_$name';
+
+  /// The accessor `Surface()` reads this attribute through.
+  String get accessorName => 'GetInstance${_pascalCase(name)}';
+
+  /// Floats this attribute consumes in the packed record, including the pad a
+  /// `vec3` carries so the next attribute starts 16 bytes on.
+  int get packedFloats => type == FmatType.vec3 ? 4 : type.componentCount;
+
+  /// Floats a caller supplies for this attribute (the pad is not one of them).
+  int get components => type.componentCount;
+}
+
+String _pascalCase(String name) => name
+    .split('_')
+    .where((part) => part.isNotEmpty)
+    .map((part) => part[0].toUpperCase() + part.substring(1))
+    .join();
+
 /// A fully parsed and validated `.fmat` material.
 class FmatMaterial {
   FmatMaterial({
@@ -192,6 +242,7 @@ class FmatMaterial {
     this.vertexSourceLine = 0,
     this.varyings = const [],
     this.attributes = const [],
+    this.instanceAttributes = const [],
     this.engineInputs = const [],
   });
 
@@ -238,6 +289,18 @@ class FmatMaterial {
   /// Custom per-vertex attributes the mesh supplies to `Vertex()`, in declared
   /// order. Empty unless the material declares an `attributes` list.
   final List<FmatAttribute> attributes;
+
+  /// Custom per-instance attributes the instance-rate buffer supplies, in
+  /// declared order. Empty unless the material declares an
+  /// `instance_attributes` list.
+  final List<FmatInstanceAttribute> instanceAttributes;
+
+  /// Bytes one packed instance record occupies, the fixed transform and color
+  /// block plus every declared attribute.
+  int get instanceRecordBytes => instanceAttributes.isEmpty
+      ? kInstanceRecordBaseBytes
+      : instanceAttributes.last.byteOffset +
+            instanceAttributes.last.packedFloats * 4;
 
   /// Per-frame engine inputs the shader samples (`engine_inputs:` in the
   /// material block): `scene_color` (the composed color behind the draw),
