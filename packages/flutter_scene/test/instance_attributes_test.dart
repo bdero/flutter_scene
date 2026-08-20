@@ -93,6 +93,8 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
   @override
   int get lightListCount => 0;
   @override
+  int get lightChannelMask => 0xFF;
+  @override
   Object? get jointsTexture => null;
 }
 
