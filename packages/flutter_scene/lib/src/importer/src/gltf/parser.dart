@@ -1,8 +1,38 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'extensions.dart';
 import 'types.dart';
+import 'warnings.dart';
 
 GltfDocument parseGltfJson(Map<String, Object?> json) {
+  // Required-extension validation happens before any buffer/image work: per
+  // spec, a required extension this engine can't parse means the whole file
+  // is refused rather than crashing later or rendering garbage.
+  final extensionsRequired =
+      (json['extensionsRequired'] as List?)?.cast<String>() ?? const [];
+  final unsupportedRequired = [
+    for (final name in extensionsRequired)
+      if (!kRecognizedGltfExtensions.contains(name)) name,
+  ];
+  if (unsupportedRequired.isNotEmpty) {
+    throw UnsupportedRequiredExtensionException(unsupportedRequired);
+  }
+
+  // An extensionsUsed entry this engine doesn't recognize is safe to ignore
+  // (the spec only requires refusing unsupported *required* extensions), but
+  // still worth surfacing so a caller notices missing functionality.
+  final extensionsUsed =
+      (json['extensionsUsed'] as List?)?.cast<String>() ?? const [];
+  final warnings = [
+    for (final name in extensionsUsed)
+      if (!kRecognizedGltfExtensions.contains(name))
+        GltfImportWarning(
+          kPlannedGltfExtensions.contains(name)
+              ? 'glTF uses extension "$name" (support planned), ignoring'
+              : 'glTF uses unrecognized extension "$name", ignoring',
+        ),
+  ];
+
   // KHR_lights_punctual declares its lights at the document's extensions.
   final docExtensions = json['extensions'] as Map?;
   final punctual = docExtensions?['KHR_lights_punctual'] as Map?;
@@ -26,6 +56,7 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
       for (final v in (variants?['variants'] as List?) ?? const [])
         ((v as Map)['name'] as String?) ?? '',
     ],
+    warnings: warnings,
   );
 }
 
