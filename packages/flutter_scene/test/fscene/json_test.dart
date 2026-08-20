@@ -376,7 +376,11 @@ void main() {
       expect(() => readFscene(v0Text), throwsA(isA<FsceneVersionException>()));
       final migrated = readFscene(
         v0Text,
-        migrations: [(json) => json, (json) => json, (json) => json],
+        // One identity step per version hop, derived so the chain tracks
+        // currentFsceneVersion instead of hardcoding its length.
+        migrations: [
+          for (var i = 0; i < currentFsceneVersion; i++) (json) => json,
+        ],
       );
       expect(migrated.formatVersion, currentFsceneVersion);
     });
