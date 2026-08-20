@@ -126,6 +126,25 @@ class InstanceAttributeSchema {
   }
 }
 
+/// Fails a draw whose packed instance data is not the width [schema] expects.
+///
+/// The instance buffer and the pipeline's vertex layout are chosen separately,
+/// so a disagreement would feed the shader whatever the neighboring bytes hold
+/// rather than failing.
+@internal
+void checkInstanceRecordWidth(
+  InstanceAttributeSchema? schema,
+  int attributeFloats,
+) {
+  final expected = schema?.floatCount ?? 0;
+  if (attributeFloats == expected) return;
+  throw StateError(
+    'This material expects $expected instance attribute float(s) per '
+    'instance, but the instance data carries $attributeFloats. The mesh and '
+    'the material disagree about the instance-rate layout.',
+  );
+}
+
 gpu.VertexFormat _formatFor(int components) => switch (components) {
   1 => gpu.VertexFormat.float32,
   2 => gpu.VertexFormat.float32x2,

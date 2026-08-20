@@ -43,6 +43,35 @@ sky {
 }
 ''';
 
+// Exercises every declared instance-attribute type and both stages: the
+// vertex hook reads an input, Surface() reads another through its accessor.
+const _instanceAttributes = '''
+material {
+  name: "RuntimeInstanced",
+  shading_model: unlit,
+  instance_attributes: [
+    { type: float, name: wobble },
+    { type: vec3, name: tint_shift },
+    { type: vec2, name: uv_pan },
+    { type: vec4, name: extra },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += sin(instance_wobble) + instance_uv_pan.x +
+        instance_extra.w;
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(GetInstanceTintShift(), 1.0);
+    PrepareMaterial(material);
+  }
+}
+''';
+
 const _broken = '''
 material {
   name: "RuntimeBroken",
@@ -129,6 +158,29 @@ void main() async {
       fileName: 'test.fmat',
     );
     expect(edited.shaderBundle.lengthInBytes, greaterThan(1000));
+  }, skip: skip);
+
+  test('compiles a material with instance attributes', () async {
+    // impellerc builds every backend in the bundle, so this covers the
+    // generated instance-rate inputs and the forwarded varying on all of them.
+    final result = await compiler.compile(
+      _instanceAttributes,
+      fileName: 'instanced.fmat',
+    );
+    expect(result.entryName, 'RuntimeInstanced');
+    final metadata = (result.sidecar['RuntimeInstanced'] as Map)
+        .cast<String, Object?>();
+    expect(metadata['instance_attributes'], [
+      {'name': 'wobble', 'type': 'float', 'offset': 80},
+      {'name': 'tint_shift', 'type': 'vec3', 'offset': 84},
+      {'name': 'uv_pan', 'type': 'vec2', 'offset': 100},
+      {'name': 'extra', 'type': 'vec4', 'offset': 108},
+    ]);
+    expect(metadata['instance_record_bytes'], 124);
+    expect(
+      utf8.decode(Uint8List.sublistView(result.shaderBundle, 4, 8)),
+      'IPSB',
+    );
   }, skip: skip);
 
   test('reports GLSL errors as FmatCompileException', () async {

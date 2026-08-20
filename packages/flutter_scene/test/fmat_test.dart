@@ -979,4 +979,232 @@ fragment { void Surface(inout MaterialInputs material) {} }
       );
     });
   });
+
+  group('instance attributes', () {
+    const withInstanceAttributes = '''
+material {
+  name: "Inst",
+  shading_model: unlit,
+  instance_attributes: [
+    { type: float, name: wobble },
+    { type: vec3, name: tint_shift },
+    { type: vec2, name: uv_pan },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += sin(instance_wobble);
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(GetInstanceTintShift(), 1.0);
+    PrepareMaterial(material);
+  }
+}
+''';
+
+    test('parses declared attributes in order', () {
+      final m = parseFmat(withInstanceAttributes);
+      expect(m.instanceAttributes.map((a) => a.name), [
+        'wobble',
+        'tint_shift',
+        'uv_pan',
+      ]);
+      expect(m.instanceAttributes.map((a) => a.type), [
+        FmatType.float_,
+        FmatType.vec3,
+        FmatType.vec2,
+      ]);
+    });
+
+    test('appends after the fixed record and pads a vec3 to 16 bytes', () {
+      final m = parseFmat(withInstanceAttributes);
+      expect(kInstanceRecordBaseBytes, 80);
+      expect(m.instanceAttributes.map((a) => a.byteOffset), [80, 84, 100]);
+      // tint_shift occupies 16 bytes though it is 12 wide, so uv_pan starts at
+      // 100 rather than 96.
+      expect(m.instanceAttributes[1].packedFloats, 4);
+      expect(m.instanceRecordBytes, 108);
+    });
+
+    test('derives the input, varying, and accessor names', () {
+      final a = parseFmat(withInstanceAttributes).instanceAttributes[1];
+      expect(a.inputName, 'instance_tint_shift');
+      expect(a.varyingName, 'v_instance_tint_shift');
+      expect(a.accessorName, 'GetInstanceTintShift');
+    });
+
+    test('the unskinned variant declares each attribute as an in', () {
+      final unskinned = emitVertexGlsl(
+        parseFmat(withInstanceAttributes),
+      )['InstUnskinnedVertex']!;
+      expect(unskinned, contains('in float instance_wobble;'));
+      expect(unskinned, contains('in vec3 instance_tint_shift;'));
+      expect(unskinned, contains('in vec2 instance_uv_pan;'));
+      // A declared input the hook never reads must survive the optimizer.
+      expect(
+        unskinned,
+        contains(
+          '#define MATERIAL_ATTRIBUTES_KEEP_ALIVE (instance_wobble + '
+          'instance_tint_shift.x + instance_uv_pan.x)',
+        ),
+      );
+    });
+
+    test('variants without an instance-rate slot read zero', () {
+      final variants = emitVertexGlsl(parseFmat(withInstanceAttributes));
+      for (final key in ['InstSkinnedVertex', 'InstUnskinnedDepthVertex']) {
+        expect(variants[key], contains('float instance_wobble = 0.0;'));
+        expect(
+          variants[key],
+          contains('vec3 instance_tint_shift = vec3(0.0);'),
+        );
+        expect(variants[key], isNot(contains('in float instance_wobble;')));
+      }
+    });
+
+    test('forwards a varying only for the attributes Surface() reads', () {
+      final material = parseFmat(withInstanceAttributes);
+      expect(forwardedInstanceAttributes(material).map((a) => a.name), [
+        'tint_shift',
+      ]);
+      final fragment = emitFragmentGlsl(material);
+      expect(fragment, contains('in vec3 v_instance_tint_shift;'));
+      expect(
+        fragment,
+        contains(
+          'vec3 GetInstanceTintShift() { return v_instance_tint_shift; }',
+        ),
+      );
+      expect(fragment, isNot(contains('v_instance_wobble')));
+
+      final unskinned = emitVertexGlsl(material)['InstUnskinnedVertex']!;
+      expect(unskinned, contains('out vec3 v_instance_tint_shift;'));
+      expect(
+        unskinned,
+        contains(
+          '#define MATERIAL_INSTANCE_VARYINGS '
+          'v_instance_tint_shift = instance_tint_shift;',
+        ),
+      );
+      expect(unskinned, isNot(contains('out float v_instance_wobble;')));
+    });
+
+    test('a material declaring none emits no instance-attribute plumbing', () {
+      final material = parseFmat('''
+material { name: "Plain", shading_model: unlit }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment {
+  void Surface(inout MaterialInputs material) { PrepareMaterial(material); }
+}
+''');
+      expect(emitFragmentGlsl(material), isNot(contains('v_instance_')));
+      for (final glsl in emitVertexGlsl(material).values) {
+        expect(glsl, isNot(contains('MATERIAL_INSTANCE_VARYINGS')));
+      }
+      expect(
+        buildSidecar(material).containsKey('instance_attributes'),
+        isFalse,
+      );
+    });
+
+    test('records the resolved offsets in the sidecar', () {
+      final sidecar = buildSidecar(parseFmat(withInstanceAttributes));
+      expect(sidecar['instance_attributes'], [
+        {'name': 'wobble', 'type': 'float', 'offset': 80},
+        {'name': 'tint_shift', 'type': 'vec3', 'offset': 84},
+        {'name': 'uv_pan', 'type': 'vec2', 'offset': 100},
+      ]);
+      expect(sidecar['instance_record_bytes'], 108);
+    });
+
+    test('rejects a matrix instance attribute', () {
+      for (final type in ['mat3', 'mat4']) {
+        expect(
+          () => parseFmat('''
+material { name: "X", instance_attributes: [ { type: $type, name: m } ] }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+          _throwsFmat('spans several instance-rate inputs'),
+          reason: type,
+        );
+      }
+    });
+
+    test('rejects a non-interpolatable instance attribute type', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", instance_attributes: [ { type: int, name: i } ] }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must be one of float, vec2, vec3, vec4'),
+      );
+    });
+
+    test('rejects a duplicate instance attribute name', () {
+      expect(
+        () => parseFmat('''
+material {
+  name: "X",
+  instance_attributes: [
+    { type: float, name: a },
+    { type: vec2, name: a },
+  ],
+}
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('Duplicate instance attribute name'),
+      );
+    });
+
+    test('rejects a collision with a parameter, varying, or attribute', () {
+      expect(
+        () => parseFmat('''
+material {
+  name: "X",
+  attributes: [ { type: float, name: shared } ],
+  instance_attributes: [ { type: float, name: shared } ],
+}
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('collides with a parameter, varying, or vertex attribute'),
+      );
+    });
+
+    test('rejects a name deriving a reserved vertex input', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", instance_attributes: [ { type: vec4, name: color } ] }
+vertex { void Vertex(inout VertexInputs vertex) {} }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('reserved vertex input `instance_color`'),
+      );
+    });
+
+    test('rejects instance attributes without a vertex block', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", instance_attributes: [ { type: float, name: a } ] }
+fragment { void Surface(inout MaterialInputs material) {} }
+'''),
+        _throwsFmat('must declare a `vertex'),
+      );
+    });
+
+    test('rejects instance attributes on a sky', () {
+      expect(
+        () => parseFmat('''
+material { name: "X", instance_attributes: [ { type: float, name: a } ] }
+sky { vec3 Sky(vec3 direction) { return vec3(0.0); } }
+'''),
+        _throwsFmat('only supported in surface materials'),
+      );
+    });
+  });
 }

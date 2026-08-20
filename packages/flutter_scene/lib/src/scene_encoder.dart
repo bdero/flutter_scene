@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
@@ -906,7 +907,7 @@ base class SceneEncoder {
     Float32List? attributeData,
     int attributeFloats = 0,
   }) {
-    _checkInstanceAttributeWidth(material, attributeFloats);
+    checkInstanceRecordWidth(material.instanceAttributes, attributeFloats);
     if (!identical(_boundPipeline, pipeline)) {
       _clearBindings();
     }
@@ -983,22 +984,6 @@ base class SceneEncoder {
       _setWindingOrder(gpu.WindingOrder.clockwise);
       _drawGeometry(geometry, instanceCount: packed.cwCount);
     }
-  }
-
-  /// Fails the draw when the instance data a caller packed is not the width
-  /// this material's shader and vertex layout expect. A silent mismatch would
-  /// feed the shader whatever the neighboring bytes hold.
-  static void _checkInstanceAttributeWidth(
-    Material material,
-    int attributeFloats,
-  ) {
-    final expected = material.instanceAttributes?.floatCount ?? 0;
-    if (attributeFloats == expected) return;
-    throw StateError(
-      'This material expects $expected instance attribute float(s) per '
-      'instance, but the instance data carries $attributeFloats. The mesh and '
-      'the material disagree about the instance-rate layout.',
-    );
   }
 
   void _encodeInstancedBatches(

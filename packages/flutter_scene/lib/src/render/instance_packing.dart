@@ -710,13 +710,24 @@ void bindSingleInstanceData(
   int slot = 1,
   int attributeFloats = 0,
 }) {
+  bindInstanceData(
+    pass,
+    packSingleInstanceData(worldTransform, attributeFloats: attributeFloats),
+    slot: slot,
+  );
+}
+
+/// The one-element record [bindSingleInstanceData] uploads: [worldTransform], a
+/// white color multiplier, then [attributeFloats] zeros.
+///
+/// The returned list is shared scratch; the caller copies it out before the
+/// next call.
+Float32List packSingleInstanceData(
+  Matrix4 worldTransform, {
+  int attributeFloats = 0,
+}) {
   if (attributeFloats == 0) {
-    bindInstanceData(
-      pass,
-      _singleInstanceDataScratch..setAll(0, worldTransform.storage),
-      slot: slot,
-    );
-    return;
+    return _singleInstanceDataScratch..setAll(0, worldTransform.storage);
   }
   final floats = kInstanceRecordFloats + attributeFloats;
   var scratch = _singleWideInstanceDataScratch;
@@ -724,13 +735,9 @@ void bindSingleInstanceData(
     scratch = _singleWideInstanceDataScratch = Float32List(floats)
       ..setRange(16, kInstanceRecordFloats, const [1, 1, 1, 1]);
   }
-  bindInstanceData(
-    pass,
-    scratch
-      ..setAll(0, worldTransform.storage)
-      ..fillRange(kInstanceRecordFloats, floats, 0),
-    slot: slot,
-  );
+  return scratch
+    ..setAll(0, worldTransform.storage)
+    ..fillRange(kInstanceRecordFloats, floats, 0);
 }
 
 // Reused like the fixed-width scratch above, rebuilt when a draw needs a
