@@ -89,7 +89,7 @@ class WrapTransform extends PredictionTransform {
 }
 
 /// Shared base for the two octahedral normal transforms.
-abstract class _NormalOctahedronTransformBase extends PredictionTransform {
+abstract class NormalOctahedronTransformBase extends PredictionTransform {
   final OctahedronToolBox toolBox = OctahedronToolBox();
 
   @override
@@ -154,7 +154,7 @@ abstract class _NormalOctahedronTransformBase extends PredictionTransform {
 }
 
 /// Octahedral normal transform without canonicalization.
-class NormalOctahedronTransform extends _NormalOctahedronTransformBase {
+class NormalOctahedronTransform extends NormalOctahedronTransformBase {
   final Int32List _st = Int32List(2);
 
   @override
@@ -201,7 +201,7 @@ class NormalOctahedronTransform extends _NormalOctahedronTransformBase {
 
 /// Octahedral normal transform with canonicalized rotations.
 class NormalOctahedronCanonicalizedTransform
-    extends _NormalOctahedronTransformBase {
+    extends NormalOctahedronTransformBase {
   final Int32List _st = Int32List(2);
 
   @override
