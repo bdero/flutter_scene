@@ -1,5 +1,7 @@
 import 'package:vector_math/vector_math.dart';
 
+import 'warnings.dart';
+
 /// In-memory representation of the parts of glTF 2.0 that flutter_scene
 /// consumes. Field names match the glTF spec (camelCase). Indexes into other
 /// arrays are stored as `int?` and resolved at use time.
@@ -21,6 +23,7 @@ class GltfDocument {
     this.animations = const [],
     this.lights = const [],
     this.materialsVariants = const [],
+    this.warnings = const [],
   });
 
   final int? scene;
@@ -45,6 +48,11 @@ class GltfDocument {
   /// declaration order. Empty when the extension is absent. Primitive
   /// mappings ([GltfMeshPrimitive.variantMappings]) index into this list.
   final List<String> materialsVariants;
+
+  /// Non-fatal issues noticed while parsing this document (currently,
+  /// unrecognized `extensionsUsed` entries). Import entry points deliver
+  /// these to a caller's warning callback, or print them when none is given.
+  final List<GltfImportWarning> warnings;
 }
 
 /// A `KHR_lights_punctual` light definition. Fields match the extension spec.

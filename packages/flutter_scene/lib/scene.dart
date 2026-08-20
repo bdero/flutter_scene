@@ -248,6 +248,11 @@ export 'src/post_process/post_process.dart'
         LensFlareSettings,
         PostProcessSettings,
         VignetteSettings;
+export 'src/importer/gltf.dart'
+    show
+        GltfImportWarning,
+        GltfWarningCallback,
+        UnsupportedRequiredExtensionException;
 export 'src/render/env_prefilter.dart' show prefilterEquirectRadiance;
 export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
 export 'src/scene_path.dart'

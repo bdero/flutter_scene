@@ -16,13 +16,17 @@ typedef GltfUriResolver = Uint8List? Function(String uri);
 ///
 /// The document contains native scene coordinates. Realize it with
 /// `realizeScene` (or write it with `writeFscene`/`writeFsceneb`). Uses no
-/// `dart:io`, so it runs at runtime on any platform.
+/// `dart:io`, so it runs at runtime on any platform. [onWarning], when given,
+/// receives non-fatal import issues (currently, an unrecognized extension);
+/// without it they print instead.
 SceneDocument importGlbToSceneDocument(
   Uint8List glbBytes, {
   bool compressTextures = false,
+  GltfWarningCallback? onWarning,
 }) {
   final container = parseGlb(glbBytes);
   final doc = parseGltfJson(container.json);
+  _deliverWarnings(doc.warnings, onWarning);
   return buildSceneDocument(
     doc,
     container.binaryChunk,
@@ -36,18 +40,36 @@ SceneDocument importGlbToSceneDocument(
 /// The same conversion the `buildScenes` build hook performs, minus the file
 /// I/O. Uses no `dart:io`, so it runs at runtime on any platform. Single-file
 /// `.glb` only; multi-file `.gltf` (external `.bin`/image resources) is not
-/// supported by the offline importer.
+/// supported by the offline importer. [onWarning], when given, receives
+/// non-fatal import issues; without it they print instead.
 Uint8List importGlbToFscenebBytes(
   Uint8List glbBytes, {
   bool compressTextures = false,
+  GltfWarningCallback? onWarning,
 }) {
   final container = parseGlb(glbBytes);
   final doc = parseGltfJson(container.json);
+  _deliverWarnings(doc.warnings, onWarning);
   return emitFsceneb(
     doc,
     container.binaryChunk,
     compressTextures: compressTextures,
   );
+}
+
+// Delivers parse-time warnings to onWarning, or prints them when absent.
+void _deliverWarnings(
+  List<GltfImportWarning> warnings,
+  GltfWarningCallback? onWarning,
+) {
+  for (final warning in warnings) {
+    if (onWarning != null) {
+      onWarning(warning);
+    } else {
+      // ignore: avoid_print
+      print('glTF import: $warning');
+    }
+  }
 }
 
 /// Converts a multi-file glTF (`.gltf` JSON plus external `.bin` and image
@@ -59,14 +81,18 @@ Uint8List importGlbToFscenebBytes(
 /// are embedded into the document, so the result is self-contained (no leftover
 /// file references) and saves to a standalone `.fscene`. Throws a
 /// [FormatException] when a referenced resource cannot be resolved.
+/// [onWarning], when given, receives non-fatal import issues; without it
+/// they print instead.
 ///
 /// Single-file `.glb` uses [importGlbToSceneDocument] instead.
 SceneDocument importGltfToSceneDocument(
   Uint8List gltfBytes, {
   required GltfUriResolver resolveUri,
   bool compressTextures = false,
+  GltfWarningCallback? onWarning,
 }) {
   final normalized = _normalizeGltf(gltfBytes, resolveUri);
+  _deliverWarnings(normalized.doc.warnings, onWarning);
   return buildSceneDocument(
     normalized.doc,
     normalized.bufferData,
@@ -148,6 +174,7 @@ SceneDocument importGltfToSceneDocument(
     animations: doc.animations,
     lights: doc.lights,
     materialsVariants: doc.materialsVariants,
+    warnings: doc.warnings,
   );
   return (doc: normalized, bufferData: blob.toBytes());
 }
