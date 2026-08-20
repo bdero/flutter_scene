@@ -80,7 +80,20 @@ DracoDecodedMesh decodeDracoMesh(Uint8List data) {
     default:
       throw dracoError('unknown mesh encoding method $encoderMethod');
   }
-  return decoder.decode();
+  // A corrupted stream that passes the explicit validity checks can still
+  // drive connectivity indices out of range; surface that as a clean format
+  // error rather than an index error.
+  // TODO(draco-limits): allocation sizes are bounded only by the header
+  // sanity checks (matching the reference decoder), so a crafted stream can
+  // still demand large corner table allocations before failing. Cap them
+  // against the payload size if that ever matters.
+  try {
+    return decoder.decode();
+  } on RangeError {
+    throw dracoError('malformed stream');
+  } on ArgumentError {
+    throw dracoError('malformed stream');
+  }
 }
 
 /// Base driver shared by the sequential and EdgeBreaker mesh decoders.

@@ -20,14 +20,15 @@ node make_cube.mjs
 cp ../../../../../examples/assets_src/two_triangles.glb .
 npx @gltf-transform/cli draco synthetic.glb synthetic_draco_eb.glb
 npx @gltf-transform/cli draco synthetic.glb synthetic_draco_seq.glb --method sequential
+npx @gltf-transform/cli draco synthetic_big.glb synthetic_draco_seq_cl10.glb --method sequential --encode-speed 0 --decode-speed 0
 npx @gltf-transform/cli draco synthetic.glb synthetic_draco_eb_cl10.glb --encode-speed 0 --decode-speed 0
 npx @gltf-transform/cli draco synthetic_big.glb synthetic_draco_eb_valence.glb --encode-speed 0 --decode-speed 0
 npx @gltf-transform/cli draco cube.glb cube_draco_eb.glb
 npx @gltf-transform/cli draco cube.glb cube_draco_eb_cl10.glb --encode-speed 0 --decode-speed 0
 npx @gltf-transform/cli draco two_triangles.glb two_triangles_draco_eb.glb
-for f in synthetic_draco_eb synthetic_draco_seq synthetic_draco_eb_cl10 \
-    synthetic_draco_eb_valence cube_draco_eb cube_draco_eb_cl10 \
-    two_triangles_draco_eb; do
+for f in synthetic_draco_eb synthetic_draco_seq synthetic_draco_seq_cl10 \
+    synthetic_draco_eb_cl10 synthetic_draco_eb_valence cube_draco_eb \
+    cube_draco_eb_cl10 two_triangles_draco_eb; do
   npx @gltf-transform/cli copy $f.glb ${f}_decoded.glb
 done
 rm -f synthetic.glb synthetic_big.glb cube.glb two_triangles.glb
