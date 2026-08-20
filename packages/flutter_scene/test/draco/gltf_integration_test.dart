@@ -10,10 +10,10 @@ import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/src/gltf/bounds_baker.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _fixtureDir = 'test/fixtures/draco';
+import 'fixtures.dart';
 
 (GltfDocument, Uint8List) _load(String name) {
-  final contents = parseGlb(File('$_fixtureDir/$name.glb').readAsBytesSync());
+  final contents = parseGlb(File('$fixtureDir/$name.glb').readAsBytesSync());
   return (parseGltfJson(contents.json), contents.binaryChunk);
 }
 

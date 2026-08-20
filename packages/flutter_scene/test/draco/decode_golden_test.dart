@@ -10,7 +10,7 @@ import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/importer/src/gltf/draco/mesh_decoder.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _fixtureDir = 'test/fixtures/draco';
+import 'fixtures.dart';
 
 class _Fixture {
   _Fixture(this.compressed, this.decoded);
@@ -59,8 +59,8 @@ _Fixture _loadFixture(String name) {
   }
 
   return _Fixture(
-    load('$_fixtureDir/$name.glb'),
-    load('$_fixtureDir/${name}_decoded.glb'),
+    load('$fixtureDir/$name.glb'),
+    load('$fixtureDir/${name}_decoded.glb'),
   );
 }
 
@@ -163,7 +163,7 @@ void main() {
   });
 
   test('decodes high compression EdgeBreaker byte-exact', () {
-    // Valence coded traversal plus the stronger prediction schemes.
+    // Prediction degree traversal plus the stronger prediction schemes.
     final fixture = _loadFixture('synthetic_draco_eb_cl10');
     _checkPrimitive(fixture, 0, 0);
   });
