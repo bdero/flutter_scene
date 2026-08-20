@@ -69,8 +69,19 @@ export 'src/environment_volume.dart'
         EnvironmentVolumeBounds,
         SphereVolumeBounds,
         blendEnvironmentVolumes;
+export 'src/material/diffuse_sh.dart'
+    show
+        ShDiffuseSummary,
+        describeDiffuseSphericalHarmonics,
+        encodeDiffuseShSidecar,
+        evaluateDiffuseSphericalHarmonics,
+        kDiffuseShCoefficientCount,
+        kDiffuseShKtx2Key,
+        kDiffuseShSidecarByteLength,
+        kShBand0Basis,
+        parseDiffuseShSidecar;
 export 'src/material/environment.dart'
-    show EnvironmentMap, environmentAssetPathOf, kDiffuseShCoefficientCount;
+    show EnvironmentMap, environmentAssetPathOf;
 export 'src/material/equirect_image.dart'
     show EquirectImageFormat, decodeEquirectHdrImage, detectEquirectImageFormat;
 export 'src/material/exr_decoder.dart' show ExrFormatException, decodeOpenExr;
@@ -255,7 +266,12 @@ export 'src/importer/gltf.dart'
         GltfImportWarning,
         GltfWarningCallback,
         UnsupportedRequiredExtensionException;
-export 'src/render/env_prefilter.dart' show prefilterEquirectRadiance;
+export 'src/render/env_prefilter.dart'
+    show
+        kPrefilterBandCount,
+        prefilterEquirectRadiance,
+        prefilterEquirectRadianceToCube;
+export 'src/texture/ktx2/ktx2.dart' show Ktx2FormatException;
 export 'src/runtime_importer/gltf_resources.dart' show GltfResourceResolver;
 export 'src/scene_path.dart'
     show BezierPath, CatmullRomPath, PolylinePath, ScenePath, ScenePathFrame;

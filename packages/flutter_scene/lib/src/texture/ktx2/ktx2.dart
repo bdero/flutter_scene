@@ -119,9 +119,22 @@ class Ktx2Texture {
 
 /// Thrown when bytes are not a valid KTX2 file or exceed what this reader
 /// supports (e.g. a 64-bit offset that does not fit in a web-safe integer).
-class Ktx2FormatException implements Exception {
+///
+/// A [FormatException] so callers can catch malformed input uniformly with
+/// every other decoder the engine ships.
+/// {@category Assets and loading}
+class Ktx2FormatException implements FormatException {
   Ktx2FormatException(this.message);
+
+  @override
   final String message;
+
+  @override
+  Object? get source => null;
+
+  @override
+  int? get offset => null;
+
   @override
   String toString() => 'Ktx2FormatException: $message';
 }
