@@ -1,3 +1,17 @@
+## 0.24.0
+
+* glTF import validates `extensionsRequired`, refusing a file that needs an unsupported extension with every missing extension named, and surfaces unrecognized `extensionsUsed` entries through a new `onWarning` callback on every import entry point instead of loading silently.
+* Sparse glTF accessors now apply, including a zero-filled base when `bufferView` is absent, with decoded indices bounds-checked at the write site.
+* `KHR_draco_mesh_compression` decodes in pure Dart on every platform, EdgeBreaker and sequential connectivity, standard prediction schemes, byte-exact against the reference decoder.
+* `EXT_meshopt_compression` decodes in pure Dart, all three modes and all four filters, with `KHR_mesh_quantization` recognized alongside it.
+* Standard KTX2 textures (`KHR_texture_basisu`) load at runtime, UASTC and ETC1S transcode in pure Dart with Zstandard supercompression, uploading ASTC-compressed on capable devices and RGBA8 elsewhere.
+* The runtime glTF importer accepts multi-buffer `.gltf` documents and percent-decodes resource URIs before they reach the resolver.
+* `MeshPrimitive.visible` and `MeshPrimitive.castsShadow` hide one primitive of a mesh or drop just its shadow, independently, without material hacks.
+* `MaterialParameters` gains typed getters (`getFloat`, `getVec4`, ...) returning effective values, `hasParameter`, `isParameterAssigned`, and full parameter enumeration.
+* Light channels: an 8-bit `channelMask` on every light and `Node.lightChannelMask` restrict which nodes a light illuminates, with an independent `DirectionalLight.shadowCasterChannelMask` for shadow-map casters.
+* `DirectionalLight.firstCascadeFarBound` pins the first shadow cascade's far boundary for a guaranteed-tight near cascade, and `cascadeOverlap` cross-fades cascade hand-offs.
+* `ShadowCatcherMaterial`, an invisible ground that shows only received shadows and ambient occlusion, with baked and live modes, per-catcher softness, tint, and radial fade, for product scenes over a transparent background.
+
 ## 0.23.0
 
 * Parallax-corrected reflection probes via `ReflectionProbeComponent`, capturing the scene into a local environment whose reflections track the probe's box.
