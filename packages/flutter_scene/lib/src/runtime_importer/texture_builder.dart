@@ -5,6 +5,10 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../importer/texture_roles.dart';
+import '../texture/basisu/basis_ktx2.dart';
+import '../texture/basisu/basis_ktx2_loader.dart';
+import '../texture/compressed_texture.dart';
+import '../texture/ktx2/ktx2.dart';
 import '../texture/mipmap.dart';
 import '../texture/texture2d.dart';
 import 'gltf_resources.dart';
@@ -15,9 +19,12 @@ import 'gltf_resources.dart';
 /// Image data is sourced from the GLB binary chunk (images referenced
 /// via `bufferView`), from a `data:` URI (decoded inline), or from an
 /// external file URI fetched through [resolveUri] when one is given
-/// (multi-file glTF). An image that can't be sourced or decoded falls
-/// back to a 1x1 white placeholder so material binding never sees a
-/// null texture.
+/// (multi-file glTF). A texture with a KHR_texture_basisu extension prefers
+/// its KTX2 image; KTX2 payloads (detected by magic bytes or an image/ktx2
+/// mime type) decode on a shared background isolate, everything else goes
+/// through the platform image codec. An image that can't be sourced or
+/// decoded falls back to a 1x1 white placeholder so material binding never
+/// sees a null texture.
 Future<List<Texture2D>> buildTextures(
   GltfDocument doc,
   Uint8List bufferData, {
@@ -32,14 +39,20 @@ Future<List<Texture2D>> buildTextures(
     }
   }
 
-  final results = <Texture2D>[];
+  final results = List<Texture2D?>.filled(doc.textures.length, null);
   final contents = gltfTextureContents(doc);
+  // Standard KTX2 files batch into one decode isolate so the transcoder's
+  // lookup tables build once per import; the engine's own cooked files keep
+  // their compressed upload path.
+  final standardIndices = <int>[];
+  final standardRequests = <StandardKtx2Request>[];
+  final internalIndices = <int>[];
+  final internalPayloads = <Uint8List>[];
   for (int i = 0; i < doc.textures.length; i++) {
     final tex = doc.textures[i];
-    final imageIdx = tex.source;
+    final imageIdx = tex.basisuSource ?? tex.source;
     if (imageIdx == null || imageIdx < 0 || imageIdx >= doc.images.length) {
       warn('glTF texture $i has no image source, using a placeholder.');
-      results.add(_placeholder());
       continue;
     }
     final image = doc.images[imageIdx];
@@ -63,7 +76,6 @@ Future<List<Texture2D>> buildTextures(
             'Failed to resolve glTF image $imageIdx URI "$uri": $e. '
             'Using placeholder.',
           );
-          results.add(_placeholder());
           continue;
         }
       } else {
@@ -71,23 +83,49 @@ Future<List<Texture2D>> buildTextures(
           'glTF image $imageIdx references external URI "$uri" but no '
           'resource resolver was provided. Using placeholder.',
         );
-        results.add(_placeholder());
         continue;
       }
     } else {
-      results.add(_placeholder());
       continue;
     }
 
+    if (looksLikeKtx2(imageBytes) || image.mimeType == 'image/ktx2') {
+      try {
+        if (isInternalKtx2(readKtx2(imageBytes))) {
+          internalIndices.add(i);
+          internalPayloads.add(imageBytes);
+        } else {
+          standardIndices.add(i);
+          standardRequests.add((bytes: imageBytes, content: contents[i]));
+        }
+      } on Ktx2FormatException catch (e) {
+        debugPrint('Failed to parse glTF KTX2 image $imageIdx: $e');
+      }
+      continue;
+    }
     try {
-      final texture = await _decodeAndUpload(imageBytes, contents[i]);
-      results.add(texture);
+      results[i] = await _decodeAndUpload(imageBytes, contents[i]);
     } catch (e, st) {
       warn('Failed to decode glTF image $imageIdx: $e\n$st');
-      results.add(_placeholder());
     }
   }
-  return results;
+
+  if (standardRequests.isNotEmpty) {
+    final decoded = await loadStandardKtx2Batch(standardRequests);
+    for (int j = 0; j < standardIndices.length; j++) {
+      results[standardIndices[j]] = decoded[j];
+    }
+  }
+  for (int j = 0; j < internalIndices.length; j++) {
+    try {
+      results[internalIndices[j]] = Texture2D.fromGpuTexture(
+        await gpuTextureFromKtx2Async(internalPayloads[j]),
+      );
+    } catch (e) {
+      debugPrint('Failed to load glTF KTX2 texture: $e');
+    }
+  }
+  return [for (final result in results) result ?? _placeholder()];
 }
 
 Future<Texture2D> _decodeAndUpload(

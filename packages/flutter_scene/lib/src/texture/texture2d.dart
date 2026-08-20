@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
 
 import '../asset_helpers.dart';
@@ -162,6 +163,14 @@ class Texture2D implements TextureSource {
     ),
     sampling.toSamplerOptions(),
   );
+
+  /// Wraps an already-uploaded GPU [texture] with [sampling] (the KTX2 load
+  /// paths, whose mip chains come from the file rather than the generator).
+  @internal
+  static Texture2D fromGpuTexture(
+    gpu.Texture texture, {
+    TextureSampling sampling = const TextureSampling(),
+  }) => Texture2D._(texture, sampling.toSamplerOptions());
 
   /// Builds a texture from a decoded [image].
   static Future<Texture2D> fromImage(

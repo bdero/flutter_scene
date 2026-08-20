@@ -617,9 +617,13 @@ class GltfTextureTransform {
 }
 
 class GltfTexture {
-  GltfTexture({this.source, this.sampler});
+  GltfTexture({this.source, this.sampler, this.basisuSource});
   final int? source;
   final int? sampler;
+
+  /// KHR_texture_basisu image index (a KTX2 image), preferred over [source]
+  /// when present.
+  final int? basisuSource;
 }
 
 class GltfImage {
