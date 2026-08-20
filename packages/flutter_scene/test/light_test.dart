@@ -223,6 +223,182 @@ void main() {
     });
   });
 
+  group('DirectionalLight cascade shaping', () {
+    const aspectRatio = 16.0 / 9.0;
+    PerspectiveCamera cameraAt(Vector3 position, Vector3 target) =>
+        PerspectiveCamera(position: position, target: target);
+
+    final views = [
+      cameraAt(Vector3(0, 8, -20), Vector3(0, 0, 0)),
+      cameraAt(Vector3(37, 3, 12), Vector3(-4, 9, -30)),
+      cameraAt(Vector3(-120, 60, 5), Vector3(0, 0, 0)),
+    ];
+
+    test('the knobs default to automatic and no overlap', () {
+      expect(DirectionalLight().firstCascadeFarBound, isNull);
+      expect(DirectionalLight().cascadeOverlap, 0.0);
+    });
+
+    test('firstCascadeFarBound pins the first split across camera moves', () {
+      final light = DirectionalLight(
+        castsShadow: true,
+        shadowCascadeCount: 4,
+        firstCascadeFarBound: 18.0,
+      );
+      for (final camera in views) {
+        final cascades = light.computeCascades(camera, aspectRatio);
+        expect(cascades.first.splitDistance, closeTo(18.0, 1e-9));
+        // The rest still spread out to the shadow distance, in order.
+        for (var i = 1; i < cascades.length; i++) {
+          expect(
+            cascades[i].splitDistance,
+            greaterThan(cascades[i - 1].splitDistance),
+          );
+        }
+        expect(
+          cascades.last.splitDistance,
+          closeTo(light.shadowMaxDistance, 1e-6),
+        );
+      }
+    });
+
+    test('a pinned bound is clamped into the shadowed range', () {
+      final camera = views.first;
+      final near = DirectionalLight(
+        shadowCascadeCount: 3,
+        firstCascadeFarBound: -5.0,
+      ).computeCascades(camera, aspectRatio);
+      expect(near.first.splitDistance, closeTo(camera.fovNear, 1e-9));
+
+      final far = DirectionalLight(
+        shadowCascadeCount: 3,
+        shadowMaxDistance: 100.0,
+        firstCascadeFarBound: 1000.0,
+      ).computeCascades(camera, aspectRatio);
+      expect(far.first.splitDistance, closeTo(100.0, 1e-9));
+    });
+
+    test('a single cascade keeps its far bound', () {
+      final camera = views.first;
+      final control = DirectionalLight(
+        shadowCascadeCount: 1,
+      ).computeCascades(camera, aspectRatio);
+      final pinned = DirectionalLight(
+        shadowCascadeCount: 1,
+        firstCascadeFarBound: 20.0,
+      ).computeCascades(camera, aspectRatio);
+      expect(pinned.single.splitDistance, control.single.splitDistance);
+      expect(pinned.single.boxSize, control.single.boxSize);
+    });
+
+    test('pinning keeps the fit and the texel snapping', () {
+      final light = DirectionalLight(
+        castsShadow: true,
+        shadowCascadeCount: 3,
+        firstCascadeFarBound: 25.0,
+        shadowMapResolution: 512,
+      );
+      final camera = views.first;
+      final cascades = light.computeCascades(camera, aspectRatio);
+      // The pinned first cascade still fits its own frustum slice.
+      final forward = (camera.target - camera.position).normalized();
+      final right = camera.up.cross(forward).normalized();
+      final up = forward.cross(right).normalized();
+      final tanV = tan(camera.fovRadiansY * 0.5);
+      final tanH = tanV * aspectRatio;
+      for (final depth in [camera.fovNear, 25.0]) {
+        final planeCenter = camera.position + forward * depth;
+        for (final sx in [-1.0, 1.0]) {
+          for (final sy in [-1.0, 1.0]) {
+            final corner =
+                planeCenter +
+                right * (sx * depth * tanH) +
+                up * (sy * depth * tanV);
+            final clip = cascades.first.lightSpaceMatrix.transformed(
+              Vector4(corner.x, corner.y, corner.z, 1),
+            );
+            expect(clip.x, inInclusiveRange(-1.02, 1.02));
+            expect(clip.y, inInclusiveRange(-1.02, 1.02));
+            expect(clip.z, inInclusiveRange(0.0, 1.0));
+          }
+        }
+      }
+      // Snapping puts the world origin on a texel boundary.
+      final origin = cascades.first.lightSpaceMatrix.transformed(
+        Vector4(0, 0, 0, 1),
+      );
+      const resolution = 512.0;
+      for (final ndc in [origin.x, origin.y]) {
+        final texel = (ndc * 0.5 + 0.5) * resolution;
+        expect((texel - texel.roundToDouble()).abs(), lessThan(1e-6));
+      }
+    });
+
+    test('zero overlap produces the control cascades exactly', () {
+      DirectionalLight light({double overlap = 0.0}) => DirectionalLight(
+        castsShadow: true,
+        shadowCascadeCount: 4,
+        cascadeOverlap: overlap,
+      );
+      for (final camera in views) {
+        final control = light().computeCascades(camera, aspectRatio);
+        final zero = light(overlap: 0.0).computeCascades(camera, aspectRatio);
+        for (var i = 0; i < control.length; i++) {
+          expect(zero[i].splitDistance, control[i].splitDistance);
+          expect(zero[i].boxSize, control[i].boxSize);
+          expect(zero[i].radius, control[i].radius);
+          expect(zero[i].center, control[i].center);
+          expect(
+            zero[i].lightSpaceMatrix.storage,
+            control[i].lightSpaceMatrix.storage,
+          );
+        }
+      }
+    });
+
+    test('overlap widens every cascade but the last', () {
+      final camera = views.first;
+      final control = DirectionalLight(
+        castsShadow: true,
+        shadowCascadeCount: 4,
+      ).computeCascades(camera, aspectRatio);
+      final overlapped = DirectionalLight(
+        castsShadow: true,
+        shadowCascadeCount: 4,
+        cascadeOverlap: 0.25,
+      ).computeCascades(camera, aspectRatio);
+      for (var i = 0; i < control.length - 1; i++) {
+        expect(overlapped[i].radius, greaterThan(control[i].radius));
+        // The split a fragment is assigned by is untouched; only coverage grew.
+        expect(overlapped[i].splitDistance, control[i].splitDistance);
+      }
+      expect(overlapped.last.radius, control.last.radius);
+      expect(overlapped.last.splitDistance, control.last.splitDistance);
+    });
+
+    test('the overlap fraction is clamped', () {
+      final camera = views.first;
+      final wide = DirectionalLight(
+        shadowCascadeCount: 2,
+        cascadeOverlap: 5.0,
+      ).computeCascades(camera, aspectRatio);
+      final full = DirectionalLight(
+        shadowCascadeCount: 2,
+        cascadeOverlap: 1.0,
+      ).computeCascades(camera, aspectRatio);
+      expect(wide.first.radius, full.first.radius);
+
+      final negative = DirectionalLight(
+        shadowCascadeCount: 2,
+        cascadeOverlap: -1.0,
+      ).computeCascades(camera, aspectRatio);
+      final none = DirectionalLight(
+        shadowCascadeCount: 2,
+      ).computeCascades(camera, aspectRatio);
+      expect(negative.first.radius, none.first.radius);
+    });
+  });
+
   group('SpotLight.shadowViewProjection', () {
     // A spot at the origin aiming straight down, a 30-degree outer cone,
     // reaching 10 units.
