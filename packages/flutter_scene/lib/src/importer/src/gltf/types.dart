@@ -164,6 +164,17 @@ class GltfMesh {
   final List<GltfMeshPrimitive> primitives;
 }
 
+/// `KHR_draco_mesh_compression` data on a mesh primitive.
+class GltfDracoCompression {
+  GltfDracoCompression({required this.bufferView, required this.attributes});
+
+  /// Buffer view holding the compressed Draco payload.
+  final int bufferView;
+
+  /// glTF attribute name to Draco unique attribute id.
+  final Map<String, int> attributes;
+}
+
 class GltfMeshPrimitive {
   GltfMeshPrimitive({
     this.attributes = const {},
@@ -171,6 +182,7 @@ class GltfMeshPrimitive {
     this.material,
     this.mode = 4,
     this.variantMappings = const {},
+    this.draco,
   });
 
   /// Maps glTF attribute names ('POSITION', 'NORMAL', 'TEXCOORD_0',
@@ -186,6 +198,11 @@ class GltfMeshPrimitive {
   /// [GltfDocument.materialsVariants]) to material index. Empty when the
   /// primitive declares no mappings; [material] stays the default.
   final Map<int, int> variantMappings;
+
+  /// `KHR_draco_mesh_compression` data, or null when the primitive is not
+  /// compressed. When present, the attribute and index accessors describe
+  /// decoded output and their buffer views may be undefined.
+  final GltfDracoCompression? draco;
 }
 
 /// Component types from glTF spec section 5.1.1.

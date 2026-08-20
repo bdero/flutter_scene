@@ -156,12 +156,26 @@ GltfMesh _parseMesh(Map<String, Object?> j) {
             variantMappings.putIfAbsent(v as int, () => material);
           }
         }
+        // KHR_draco_mesh_compression: the compressed payload's buffer view
+        // plus the attribute name to Draco attribute id map.
+        final dracoExt =
+            (pj['extensions'] as Map?)?['KHR_draco_mesh_compression'] as Map?;
+        GltfDracoCompression? draco;
+        if (dracoExt != null) {
+          draco = GltfDracoCompression(
+            bufferView: dracoExt['bufferView'] as int,
+            attributes:
+                (dracoExt['attributes'] as Map?)?.cast<String, int>() ??
+                const {},
+          );
+        }
         return GltfMeshPrimitive(
           attributes: attrs,
           indices: pj['indices'] as int?,
           material: pj['material'] as int?,
           mode: (pj['mode'] as int?) ?? 4,
           variantMappings: variantMappings,
+          draco: draco,
         );
       })
       .toList(growable: false);
