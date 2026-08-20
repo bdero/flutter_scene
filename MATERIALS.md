@@ -349,6 +349,72 @@ an attribute reads zero there: a displacement driven by a custom attribute is
 not reflected in the shadow, while one driven by `world_position` / a parameter
 is (world position is available in every pass).
 
+## Custom instance attributes (instance to vertex and fragment)
+
+Declare named per-instance inputs in an `instance_attributes` list; each
+instance of an `InstancedMesh` supplies its own values.
+
+```
+material {
+  name: "Foliage",
+  instance_attributes: [                 // float/vec2/vec3/vec4
+    { type: float, name: wobble },
+    { type: vec3, name: tint_shift },
+  ],
+}
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += 0.1 * sin(instance_wobble);
+  }
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color.rgb *= GetInstanceTintShift();
+    PrepareMaterial(material);
+  }
+}
+```
+
+`Vertex()` reads the attribute as `instance_<name>`, and `Surface()` reads it
+through the generated `GetInstance<Name>()` accessor, alongside the engine's
+other `Get*()` inputs. The interpolant is only emitted for the attributes the
+fragment body actually calls, so vertex-only attributes cost no varying slot.
+
+Set the values per instance:
+
+```dart
+final index = mesh.addInstance(transform);
+mesh.setInstanceAttribute(index, 'wobble', random.nextDouble() * 6.28);
+mesh.setInstanceAttribute(index, 'tint_shift', Vector3(1.0, 0.9, 0.8));
+```
+
+`setInstanceAttributes(index, packed)` writes them all at once for hot loops,
+in declaration order.
+
+The rules:
+
+- Declared attributes append, in declaration order, to the instance-rate vertex
+  buffer, after the 80-byte block holding the model transform and instance
+  color.
+- Floats pack tightly at 4 bytes each, **but a `vec3` occupies 16 bytes**, so
+  the attribute after one starts 16 bytes on, not 12. The bulk
+  `setInstanceAttributes` path takes that pad float too.
+- A declaring material requires a `vertex { }` block (the attributes are bound
+  to its generated vertex variants), and is a surface material only.
+- `mat3` and `mat4` are rejected; a matrix spans several instance-rate inputs.
+  Pass its columns as separate `vec4` attributes.
+- An instance whose attributes are never set draws with zeros, and so does a
+  non-instanced draw of the same material (a single node has nowhere to take
+  per-instance values from).
+- The skinned and depth/shadow variants bind no instance attribute data, so
+  they read zero there, matching per-vertex custom attributes.
+- A declaring material **opts out of automatic cross-node batching**. That
+  optimization synthesizes one instance per node, and a node carries no
+  attribute values; each instanced mesh draws from its own data instead.
+- The geometry must use the engine's instance-rate record. A geometry with its
+  own instance buffer (a billboard batch) fails at draw setup rather than
+  reading the wrong bytes.
+
 ---
 
 # Built-in noise, `#include <noise.glsl>`
@@ -744,6 +810,12 @@ in vec4 model_transform_2;
 in vec4 model_transform_3;
 ```
 
+The color pass adds `in vec4 instance_color` after those columns, for an 80-byte
+instance record. A `.fmat` declaring `instance_attributes` appends its own
+inputs after that record (see
+[Custom instance attributes](#custom-instance-attributes-instance-to-vertex-and-fragment));
+a raw `ShaderMaterial` has no such declaration and always sees the fixed record.
+
 Your shader writes `gl_Position` and the standard outputs the fragment stage reads
 (`v_position`, `v_normal`, `v_viewvector`, `v_texture_coords`,
 `v_texture_coords_1`, `v_color`, `v_model_scale`, `v_tangent`), plus any of
@@ -888,9 +960,11 @@ changed. Every part of a `.fmat` reloads with no app-side code and no restart:
 - **The GLSL body** (`Surface()` and the `vertex { }` block's `Vertex()`) — the
   changed `.shaderbundle` is reloaded in place via `ShaderLibrary.reinitialize`
   and the affected render pipelines are rebuilt, so a fragment or vertex edit
-  shows up live. (Changing the `varyings` / `attributes` lists changes the
-  generated shaders' structure; that reloads too, but a new custom attribute
-  only takes effect once the geometry supplies it via `setCustomAttribute`.)
+  shows up live. (Changing the `varyings` / `attributes` /
+  `instance_attributes` lists changes the generated shaders' structure; that
+  reloads too, but a new custom attribute only takes effect once the geometry
+  supplies it via `setCustomAttribute`, and an edited `instance_attributes`
+  list drops the instanced mesh's packed values, so set them again.)
 
 Requirements: the build hook `dart run flutter_scene:init` installs, so a `.fmat`
 edit re-runs it and re-syncs the regenerated assets, and a `SceneView` (or its
@@ -915,9 +989,9 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
   `MaterialParameters` API.
 - **Additive/multiply blending and per-material depth state** are not yet
   configurable.
-- **Per-instance custom attributes** are not exposed yet; the instance-rate slot
-  carries the model transform. Per-vertex custom attributes work on both static
-  and skinned meshes.
+- **Per-instance custom attributes** work on unskinned instanced meshes, but a
+  declaring material opts out of automatic cross-node batching and reads zero in
+  the skinned and depth/shadow variants.
 - **An inspector** that surfaces the parameter hints as UI does not exist (the
   metadata is emitted for future tooling).
 

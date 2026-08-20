@@ -759,19 +759,19 @@ FmatMaterial _build(
     );
   }
 
+  if (instanceAttributes.isNotEmpty && domain != FmatDomain.surface) {
+    throw FmatException(
+      '`instance_attributes` is only supported in surface materials.',
+      fileName: fileName,
+    );
+  }
+
   // A per-instance attribute reaches the shader only through the generated
   // vertex variants, which exist only for a material with a vertex stage.
   if (instanceAttributes.isNotEmpty && vertex == null) {
     throw FmatException(
       'A material with `instance_attributes` must declare a `vertex { }` '
       'block; the attributes are bound to its generated vertex variants.',
-      fileName: fileName,
-    );
-  }
-
-  if (instanceAttributes.isNotEmpty && domain != FmatDomain.surface) {
-    throw FmatException(
-      '`instance_attributes` is only supported in surface materials.',
       fileName: fileName,
     );
   }

@@ -13,6 +13,7 @@ export 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show
         emitFragmentGlsl,
         emitVertexGlsl,
+        forwardedInstanceAttributes,
         vertexVariantEntryName,
         kVertexVariants,
         buildSidecar,
