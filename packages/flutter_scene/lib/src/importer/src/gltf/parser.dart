@@ -147,6 +147,23 @@ GltfAccessor _parseAccessor(Map<String, Object?> j) {
     normalized: (j['normalized'] as bool?) ?? false,
     min: _numList(j['min']),
     max: _numList(j['max']),
+    sparse: _parseAccessorSparse(j['sparse']),
+  );
+}
+
+GltfAccessorSparse? _parseAccessorSparse(Object? raw) {
+  if (raw is! Map) return null;
+  final indices = raw['indices'] as Map<String, Object?>;
+  final values = raw['values'] as Map<String, Object?>;
+  return GltfAccessorSparse(
+    count: raw['count'] as int,
+    indicesBufferView: indices['bufferView'] as int,
+    indicesByteOffset: (indices['byteOffset'] as int?) ?? 0,
+    indicesComponentType: GltfComponentType.fromGlValue(
+      indices['componentType'] as int,
+    ),
+    valuesBufferView: values['bufferView'] as int,
+    valuesByteOffset: (values['byteOffset'] as int?) ?? 0,
   );
 }
 

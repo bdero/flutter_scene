@@ -270,11 +270,7 @@ LocalId _buildSkin(
   if (skin.inverseBindMatrices != null) {
     final accessor = doc.accessors[skin.inverseBindMatrices!];
     matrices = coordinatePolicy.convertMatrices(
-      readAccessorAsFloat32(
-        accessor,
-        doc.bufferViews[accessor.bufferView!],
-        bufferData,
-      ),
+      readAccessorAsFloat32(accessor, doc.bufferViews, bufferData),
     );
   } else {
     // Spec default: identity per joint, column-major.
@@ -332,12 +328,12 @@ void _buildAnimation(
     final outputAccessor = doc.accessors[sampler.output];
     final times = readAccessorAsFloat32(
       inputAccessor,
-      doc.bufferViews[inputAccessor.bufferView!],
+      doc.bufferViews,
       bufferData,
     );
     final values = readAccessorAsFloat32(
       outputAccessor,
-      doc.bufferViews[outputAccessor.bufferView!],
+      doc.bufferViews,
       bufferData,
     );
     final componentCount = property == AnimationProperty.rotation ? 4 : 3;

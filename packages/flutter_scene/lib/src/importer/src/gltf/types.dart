@@ -209,11 +209,15 @@ class GltfAccessor {
     this.normalized = false,
     this.min,
     this.max,
+    this.sparse,
   });
 
   final GltfComponentType componentType;
   final int count;
   final GltfAccessorType type;
+
+  /// Index into [GltfDocument.bufferViews], or null when the accessor has no
+  /// dense storage (spec default: a zero-filled base, sparse-only data).
   final int? bufferView;
   final int byteOffset;
   final bool normalized;
@@ -223,6 +227,40 @@ class GltfAccessor {
   /// to skip a vertex scan when computing bounding volumes.
   final List<double>? min;
   final List<double>? max;
+
+  /// Sparse storage overriding select elements of the base data, or null
+  /// when the accessor is fully dense.
+  final GltfAccessorSparse? sparse;
+}
+
+/// A glTF accessor's `sparse` object (spec section 5.1.1). Overrides
+/// [count] elements of the accessor's base data with values named by
+/// [indicesBufferView]/[valuesBufferView].
+class GltfAccessorSparse {
+  GltfAccessorSparse({
+    required this.count,
+    required this.indicesBufferView,
+    this.indicesByteOffset = 0,
+    required this.indicesComponentType,
+    required this.valuesBufferView,
+    this.valuesByteOffset = 0,
+  });
+
+  /// Number of overridden elements.
+  final int count;
+
+  /// Index into [GltfDocument.bufferViews] holding the element indices.
+  final int indicesBufferView;
+  final int indicesByteOffset;
+
+  /// Component type of the indices (unsignedByte, unsignedShort, or
+  /// unsignedInt per spec).
+  final GltfComponentType indicesComponentType;
+
+  /// Index into [GltfDocument.bufferViews] holding the override values, laid
+  /// out like the accessor's own component type/count.
+  final int valuesBufferView;
+  final int valuesByteOffset;
 }
 
 class GltfBufferView {

@@ -88,11 +88,7 @@ PackedPrimitive packGltfPrimitive({
   final bool indices32Bit;
   if (primitive.indices != null) {
     final accessor = accessors[primitive.indices!];
-    indexList = readAccessorAsUint32(
-      accessor,
-      bufferViews[accessor.bufferView!],
-      bufferData,
-    );
+    indexList = readAccessorAsUint32(accessor, bufferViews, bufferData);
     indices32Bit = accessor.componentType == GltfComponentType.unsignedInt;
   } else {
     // No indices: a sequential triangle list.
@@ -310,11 +306,7 @@ Float32List _readVec3(
   Uint8List bufferData,
 ) {
   final accessor = accessors[idx];
-  return readAccessorAsFloat32(
-    accessor,
-    bufferViews[accessor.bufferView!],
-    bufferData,
-  );
+  return readAccessorAsFloat32(accessor, bufferViews, bufferData);
 }
 
 Float32List _readVec4(
@@ -324,11 +316,7 @@ Float32List _readVec4(
   Uint8List bufferData,
 ) {
   final accessor = accessors[idx];
-  return readAccessorAsFloat32(
-    accessor,
-    bufferViews[accessor.bufferView!],
-    bufferData,
-  );
+  return readAccessorAsFloat32(accessor, bufferViews, bufferData);
 }
 
 Float32List _readOptionalVec4(
@@ -355,11 +343,7 @@ Float32List _readOptionalVec2(
   final idx = primitive.attributes[name];
   if (idx == null) return Float32List(vertexCount * 2);
   final accessor = accessors[idx];
-  return readAccessorAsFloat32(
-    accessor,
-    bufferViews[accessor.bufferView!],
-    bufferData,
-  );
+  return readAccessorAsFloat32(accessor, bufferViews, bufferData);
 }
 
 Float32List _readOptionalColor(
@@ -383,11 +367,7 @@ Float32List _readOptionalColor(
     return out;
   }
   final accessor = accessors[idx];
-  final raw = readAccessorAsFloat32(
-    accessor,
-    bufferViews[accessor.bufferView!],
-    bufferData,
-  );
+  final raw = readAccessorAsFloat32(accessor, bufferViews, bufferData);
   if (accessor.type == GltfAccessorType.vec4) return raw;
   // Promote vec3 colors to vec4 with alpha=1.
   final out = Float32List(vertexCount * 4);
