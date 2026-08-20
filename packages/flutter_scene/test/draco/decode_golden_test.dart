@@ -156,4 +156,27 @@ void main() {
     _checkPrimitive(fixture, 0, 0);
     _checkPrimitive(fixture, 0, 1);
   });
+
+  test('decodes high compression EdgeBreaker byte-exact', () {
+    // Valence coded traversal plus the stronger prediction schemes.
+    final fixture = _loadFixture('synthetic_draco_eb_cl10');
+    _checkPrimitive(fixture, 0, 0);
+  });
+
+  test('decodes valence coded traversal byte-exact', () {
+    // 1058 faces crosses the encoder's threshold for valence coding.
+    final fixture = _loadFixture('synthetic_draco_eb_valence');
+    _checkPrimitive(fixture, 0, 0);
+  });
+
+  test('decodes attribute seams byte-exact', () {
+    // Flat shaded cube, deduplicated positions force per-corner attributes.
+    final fixture = _loadFixture('cube_draco_eb');
+    _checkPrimitive(fixture, 0, 0);
+  });
+
+  test('decodes attribute seams at high compression byte-exact', () {
+    final fixture = _loadFixture('cube_draco_eb_cl10');
+    _checkPrimitive(fixture, 0, 0);
+  });
 }
