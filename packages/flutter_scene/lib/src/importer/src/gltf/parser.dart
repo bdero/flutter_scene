@@ -204,18 +204,38 @@ List<double>? _numList(Object? raw) {
 }
 
 GltfBufferView _parseBufferView(Map<String, Object?> j) {
+  final meshopt = _extension(
+    j['extensions'] as Map?,
+    'EXT_meshopt_compression',
+  );
   return GltfBufferView(
     buffer: j['buffer'] as int,
     byteLength: j['byteLength'] as int,
     byteOffset: (j['byteOffset'] as int?) ?? 0,
     byteStride: j['byteStride'] as int?,
+    meshopt: meshopt == null
+        ? null
+        : GltfMeshoptCompression(
+            buffer: meshopt['buffer'] as int,
+            byteOffset: (meshopt['byteOffset'] as int?) ?? 0,
+            byteLength: meshopt['byteLength'] as int,
+            byteStride: meshopt['byteStride'] as int,
+            count: meshopt['count'] as int,
+            mode: meshopt['mode'] as String,
+            filter: (meshopt['filter'] as String?) ?? 'NONE',
+          ),
   );
 }
 
 GltfBuffer _parseBuffer(Map<String, Object?> j) {
+  final meshopt = _extension(
+    j['extensions'] as Map?,
+    'EXT_meshopt_compression',
+  );
   return GltfBuffer(
     byteLength: j['byteLength'] as int,
     uri: j['uri'] as String?,
+    meshoptFallback: (meshopt?['fallback'] as bool?) ?? false,
   );
 }
 
