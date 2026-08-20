@@ -230,7 +230,13 @@ void main() {
         expect(warnings, hasLength(1));
         expect(warnings.single.message, contains('my%20image.png'));
         if (caught != null) {
-          expect(caught.toString(), contains('Impeller'));
+          // The GPU-unavailable message differs across engine versions
+          // ("Impeller" vs the Flutter GPU manifest-setting wording); accept
+          // either so only a genuine GPU-absence failure is tolerated.
+          expect(
+            caught.toString(),
+            anyOf(contains('Impeller'), contains('Flutter GPU')),
+          );
         }
       },
     );
