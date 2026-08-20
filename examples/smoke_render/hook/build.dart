@@ -15,6 +15,7 @@ void main(List<String> args) {
       buildOutput: output,
       materials: [
         'assets/custom_material.fmat',
+        'assets/instance_grid.fmat',
         'assets/noise_parity.fmat',
         'assets/planar_mirror.fmat',
       ],
