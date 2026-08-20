@@ -162,6 +162,19 @@ void main() {
       );
     });
 
+    test('the widened layout binds the names the shader declares', () {
+      // flutter_gpu matches vertex attributes by name, and the emitter and the
+      // runtime schema derive them independently, so they have to agree.
+      final material = parseFmat(_source);
+      final unskinned = emitVertexGlsl(material)['InstUnskinnedVertex']!;
+      final widened = _schema().widen(kUnskinnedInstancedLayout.buffers.last);
+      final bound = widened.attributes.map((a) => a.name).toSet();
+      for (final a in material.instanceAttributes) {
+        expect(bound, contains(a.inputName));
+        expect(unskinned, contains('in ${a.type.glslType} ${a.inputName};'));
+      }
+    });
+
     test('the widened stride reaches the geometry vertex layout', () {
       final geometry = _StubGeometry(layout: kUnskinnedInstancedLayout);
       final plain = geometry.instancedVertexLayoutFor(null)!;
