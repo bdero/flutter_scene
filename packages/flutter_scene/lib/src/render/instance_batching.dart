@@ -12,17 +12,21 @@ abstract interface class OpaqueBatchRecord {
   int get lightListCount;
   int get lightChannelMask;
   Object? get jointsTexture;
+  Object? get morphWeights;
 }
 
 int opaqueBatchEnd(List<OpaqueBatchRecord> records, int start) {
   final first = records[start];
-  // Batching synthesizes one instance per node, and a node carries no
-  // per-instance attribute values, so a material declaring them draws its
-  // items separately (each from its own instanced mesh's data).
+  // Skinned and morphed items carry per-item state (skeleton, weights)
+  // bound outside the instance buffer, so they draw unbatched. Batching also
+  // synthesizes one instance per node, and a node carries no per-instance
+  // attribute values, so a material declaring them draws its items separately
+  // (each from its own instanced mesh's data).
   // TODO(instance-attributes-batching): give a node a per-node attribute
   // source so these can batch too.
   if (first.geometry.instancedVertexLayout == null ||
       first.jointsTexture != null ||
+      first.morphWeights != null ||
       first.material.instanceAttributes != null) {
     return start + 1;
   }
@@ -41,13 +45,15 @@ bool _canBatchOpaque(OpaqueBatchRecord first, OpaqueBatchRecord next) {
       first.lightListOffset == next.lightListOffset &&
       first.lightListCount == next.lightListCount &&
       first.lightChannelMask == next.lightChannelMask &&
-      next.jointsTexture == null;
+      next.jointsTexture == null &&
+      next.morphWeights == null;
 }
 
 int depthBatchEnd(List<RenderItem> records, int start) {
   final first = records[start];
   if (first.geometry.instancedVertexLayout == null ||
-      first.jointsTexture != null) {
+      first.jointsTexture != null ||
+      first.morphWeights != null) {
     return start + 1;
   }
   var end = start + 1;
@@ -55,7 +61,8 @@ int depthBatchEnd(List<RenderItem> records, int start) {
     final next = records[end];
     if (!identical(first.geometry, next.geometry) ||
         !identical(first.material, next.material) ||
-        next.jointsTexture != null) {
+        next.jointsTexture != null ||
+        next.morphWeights != null) {
       break;
     }
     end++;
