@@ -47,6 +47,7 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
     this.fade = 1,
     this.lightListOffset = 0,
     this.lightListCount = 0,
+    this.lightChannelMask = 0xFF,
     this.jointsTexture,
   });
 
@@ -62,6 +63,8 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
   final int lightListOffset;
   @override
   final int lightListCount;
+  @override
+  final int lightChannelMask;
   @override
   final Object? jointsTexture;
 }
@@ -111,6 +114,7 @@ void main() {
         double fade = 1,
         int lightListOffset = 0,
         int lightListCount = 0,
+        int lightChannelMask = 0xFF,
         Object? jointsTexture,
       }) => _OpaqueCandidate(
         geometry: geometry,
@@ -119,6 +123,7 @@ void main() {
         fade: fade,
         lightListOffset: lightListOffset,
         lightListCount: lightListCount,
+        lightChannelMask: lightChannelMask,
         jointsTexture: jointsTexture,
       );
 
@@ -129,6 +134,12 @@ void main() {
       );
       expect(opaqueBatchEnd([candidate(), candidate(lightListCount: 1)], 0), 1);
       expect(opaqueBatchEnd([candidate(), candidate(fade: 0.5)], 0), 1);
+      // The primary directional rides a per-draw uniform, so items on
+      // different light channels cannot share one instanced draw.
+      expect(
+        opaqueBatchEnd([candidate(), candidate(lightChannelMask: 0x01)], 0),
+        1,
+      );
       expect(
         opaqueBatchEnd([candidate(), candidate(jointsTexture: Object())], 0),
         1,

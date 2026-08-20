@@ -322,7 +322,7 @@ class PunctualLightBuffer {
       floats[base + 4] = light.color.x * light.intensity;
       floats[base + 5] = light.color.y * light.intensity;
       floats[base + 6] = light.color.z * light.intensity;
-      cullables.add(CullableLight(row, null));
+      cullables.add(CullableLight(row, null, channelMask: light.channelMask));
       row++;
     }
 
@@ -344,6 +344,7 @@ class PunctualLightBuffer {
           row,
           lightInfluenceBounds(position, light.range),
           worldPosition: position,
+          channelMask: light.channelMask,
         ),
       );
       row++;
@@ -380,6 +381,7 @@ class PunctualLightBuffer {
           row,
           lightInfluenceBounds(position, light.range),
           worldPosition: position,
+          channelMask: light.channelMask,
         ),
       );
       row++;
@@ -418,6 +420,7 @@ class PunctualLightBuffer {
           row,
           reach > 0.0 ? lightInfluenceBounds(position, reach) : null,
           worldPosition: position,
+          channelMask: light.channelMask,
         ),
       );
       row++;

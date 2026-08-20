@@ -69,6 +69,12 @@ class RenderItem {
   /// not intersect (`layers & layerMask == 0`).
   int layers = kRenderLayerAll;
 
+  /// The owning node's light channels (an 8-bit bitmask), refreshed each
+  /// frame. A light shades this item only when its own channel mask
+  /// intersects (`light.channelMask & lightChannelMask != 0`), and a
+  /// directional light's caster mask is tested against it the same way.
+  int lightChannelMask = 0xFF;
+
   /// Whether the owning node's world transform reverses triangle winding.
   bool nodeWindingFlipped = false;
 

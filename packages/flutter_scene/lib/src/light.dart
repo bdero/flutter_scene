@@ -97,6 +97,8 @@ class DirectionalLight {
     this.contactShadows = false,
     this.contactShadowDistance = 0.3,
     this.angularRadius = 0.005,
+    this.channelMask = 0xFF,
+    this.shadowCasterChannelMask = 0xFF,
   }) : direction = direction ?? defaultDirection,
        color = color ?? Vector3(1.0, 1.0, 1.0);
 
@@ -211,6 +213,29 @@ class DirectionalLight {
   /// watertight geometry (e.g. voxel terrain) to remove grazing-angle
   /// self-shadow acne.
   ShadowCasterFaces shadowCasterFaces;
+
+  /// The light channels this light illuminates, an 8-bit mask (default
+  /// `0xFF`, every channel). A node receives this light only when
+  /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
+  /// either side never intersects and the light is skipped. Channels do not
+  /// affect image-based (environment) lighting, which every node receives.
+  ///
+  /// Deliberately independent of [shadowCasterChannelMask], which selects what
+  /// renders into the shadow map. A node can be lit without casting, or cast
+  /// without being lit.
+  /// {@category Lighting and environment}
+  int channelMask;
+
+  /// The light channels whose nodes render into this light's shadow map, an
+  /// 8-bit mask (default `0xFF`, every channel). A node casts only when
+  /// `shadowCasterChannelMask & node.lightChannelMask` is nonzero. Narrow it
+  /// to keep bulky scenery out of the cascades without changing what the light
+  /// illuminates.
+  ///
+  /// Deliberately independent of [channelMask], which selects what this light
+  /// illuminates.
+  /// {@category Lighting and environment}
+  int shadowCasterChannelMask;
 
   /// Builds the [shadowCascadeCount] shadow cascades that cover
   /// [camera]'s view out to [shadowMaxDistance], for a render target of
@@ -441,6 +466,7 @@ class PointLight {
     this.intensity = 1.0,
     this.range = 0.0,
     this.falloffExponent = 2.0,
+    this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// Linear RGB color of the light.
@@ -459,6 +485,14 @@ class PointLight {
   /// light reach further without blowing out its near field (a hero light
   /// touching distant scenery). Values at or below zero are clamped.
   double falloffExponent;
+
+  /// The light channels this light illuminates, an 8-bit mask (default
+  /// `0xFF`, every channel). A node receives this light only when
+  /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
+  /// either side never intersects. Channels do not affect image-based
+  /// (environment) lighting, which every node receives.
+  /// {@category Lighting and environment}
+  int channelMask;
 }
 
 /// A rectangle that emits light from its face, shaded with linearly
@@ -479,6 +513,7 @@ class RectAreaLight {
     this.width = 1.0,
     this.height = 1.0,
     this.range = 0.0,
+    this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// Linear RGB color of the light.
@@ -500,6 +535,14 @@ class RectAreaLight {
   /// windows to zero. `0` means infinite range (the form factor's own
   /// inverse-square falloff still applies).
   double range;
+
+  /// The light channels this panel illuminates, an 8-bit mask (default
+  /// `0xFF`, every channel). A node receives this light only when
+  /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
+  /// either side never intersects. Channels do not affect image-based
+  /// (environment) lighting, which every node receives.
+  /// {@category Lighting and environment}
+  int channelMask;
 }
 
 /// A light that radiates from a world-space point within a cone, combining a
@@ -538,6 +581,7 @@ class SpotLight {
     this.shadowNormalBias = 0.1,
     this.shadowSoftness = 1.0,
     this.shadowCasterFaces = ShadowCasterFaces.front,
+    this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
@@ -600,6 +644,21 @@ class SpotLight {
   /// (peter-panning) by recording the far side; [ShadowCasterFaces.front] is
   /// the general default.
   ShadowCasterFaces shadowCasterFaces;
+
+  // TODO(light-channels-spot-casters): add a spot caster mask alongside
+  // DirectionalLight.shadowCasterChannelMask, so a spot's shadow map can drop
+  // casters the way a cascade can.
+  /// The light channels this spot illuminates, an 8-bit mask (default `0xFF`,
+  /// every channel). A node receives this light only when
+  /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
+  /// either side never intersects. Channels do not affect image-based
+  /// (environment) lighting, which every node receives.
+  ///
+  /// Gates the lighting only. Every caster still renders into this spot's
+  /// shadow map; only [DirectionalLight.shadowCasterChannelMask] filters
+  /// casters.
+  /// {@category Lighting and environment}
+  int channelMask;
 
   /// The world -> clip matrix that renders and samples this spot's perspective
   /// shadow map, for a light at [worldPosition] aimed along [worldDirection]

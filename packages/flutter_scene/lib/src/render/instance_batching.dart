@@ -10,6 +10,7 @@ abstract interface class OpaqueBatchRecord {
   double get fade;
   int get lightListOffset;
   int get lightListCount;
+  int get lightChannelMask;
   Object? get jointsTexture;
 }
 
@@ -33,6 +34,7 @@ bool _canBatchOpaque(OpaqueBatchRecord first, OpaqueBatchRecord next) {
       first.fade == next.fade &&
       first.lightListOffset == next.lightListOffset &&
       first.lightListCount == next.lightListCount &&
+      first.lightChannelMask == next.lightChannelMask &&
       next.jointsTexture == null;
 }
 

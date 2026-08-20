@@ -161,6 +161,7 @@ class MeshComponent extends Component {
     final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
     final layers = node.layers;
+    final lightChannelMask = node.lightChannelMask;
     final highlightColor = node.highlightColor;
     for (var index = 0; index < _renderItems.length; index++) {
       final item = _renderItems[index];
@@ -170,6 +171,7 @@ class MeshComponent extends Component {
           (item.visible != true ||
               item.shadowStatic != node.shadowStatic ||
               item.castsShadows != effectiveCastsShadows ||
+              item.lightChannelMask != lightChannelMask ||
               transformChanged) &&
           (item.shadowStatic || node.shadowStatic) &&
           (item.castsShadows || effectiveCastsShadows);
@@ -178,6 +180,7 @@ class MeshComponent extends Component {
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.layers = layers;
+      item.lightChannelMask = lightChannelMask;
       if (transformChanged) item.worldTransform.setFrom(worldTransform);
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;

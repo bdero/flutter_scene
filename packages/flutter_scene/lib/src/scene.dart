@@ -1777,6 +1777,8 @@ base class Scene implements SceneGraph {
                   // casters render through the masked depth shader), so a
                   // swapped material must invalidate cached static tiles.
                   identityHashCode(item.material) +
+                  // A caster's channels decide which lights it casts into.
+                  item.lightChannelMask +
                   t[12].hashCode * 3 +
                   t[13].hashCode * 7 +
                   t[14].hashCode * 13);
@@ -1835,6 +1837,9 @@ base class Scene implements SceneGraph {
           casterFaces: cascades.isNotEmpty
               ? light!.shadowCasterFaces
               : ShadowCasterFaces.front,
+          casterChannelMask: cascades.isNotEmpty
+              ? light!.shadowCasterChannelMask
+              : 0xFF,
           cameraPosition: camera.position,
           spotShadows: spotShadowFrame,
           cachePlan: shadowCachePlan,

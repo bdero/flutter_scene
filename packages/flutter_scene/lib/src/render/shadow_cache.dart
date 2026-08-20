@@ -82,6 +82,7 @@ class DirectionalShadowCache {
   final Vector3 _lightDir = Vector3.zero();
   int _resolution = 0;
   ShadowCasterFaces _casterFaces = ShadowCasterFaces.front;
+  int _casterChannelMask = 0xFF;
 
   /// Decides which tiles to re-render for this frame's [idealCascades] and
   /// returns the effective cascades to sample with.
@@ -100,6 +101,7 @@ class DirectionalShadowCache {
     final paramsChanged =
         resolution != _resolution ||
         light.shadowCasterFaces != _casterFaces ||
+        light.shadowCasterChannelMask != _casterChannelMask ||
         _entries.length != idealCascades.length ||
         (dir - _lightDir).length2 > 1e-10;
     if (paramsChanged) {
@@ -109,6 +111,7 @@ class DirectionalShadowCache {
       }
       _resolution = resolution;
       _casterFaces = light.shadowCasterFaces;
+      _casterChannelMask = light.shadowCasterChannelMask;
       _lightDir.setFrom(dir);
     }
 

@@ -101,4 +101,11 @@ void main() {
     final p = plan(idealCascades());
     expect(p.refreshes.length, 2);
   });
+
+  test('a shadow-caster channel change rebuilds everything', () {
+    plan(idealCascades());
+    expect(plan(idealCascades()).refreshes, isEmpty);
+    light.shadowCasterChannelMask = 0x0F;
+    expect(plan(idealCascades()).refreshes.length, 2);
+  });
 }

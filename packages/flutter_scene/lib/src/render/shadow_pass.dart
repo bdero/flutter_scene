@@ -48,6 +48,7 @@ class ShadowPass extends RenderGraphPass {
     required Vector3 cameraPosition,
     List<ShadowCascade> cascades = const [],
     ShadowCasterFaces casterFaces = ShadowCasterFaces.front,
+    int casterChannelMask = 0xFF,
     SpotShadowFrame? spotShadows,
     ByteData? shadowUniform,
     ShadowCachePlan? cachePlan,
@@ -55,6 +56,7 @@ class ShadowPass extends RenderGraphPass {
        _cascades = cascades,
        _tileResolution = tileResolution,
        _casterFaces = casterFaces,
+       _casterChannelMask = casterChannelMask,
        _cameraPosition = cameraPosition,
        _spotShadows = spotShadows,
        _shadowUniform = shadowUniform,
@@ -64,6 +66,10 @@ class ShadowPass extends RenderGraphPass {
   final List<ShadowCascade> _cascades;
   final int _tileResolution;
   final ShadowCasterFaces _casterFaces;
+
+  // The directional light's shadow-caster channels. Applies to the cascade
+  // tiles only; spot tiles take every caster.
+  final int _casterChannelMask;
   final SpotShadowFrame? _spotShadows;
   final ShadowCachePlan? _cachePlan;
 
@@ -151,6 +157,7 @@ class ShadowPass extends RenderGraphPass {
       Matrix4 matrix,
       ShadowCasterFaces faces, {
       ShadowCasterFilter filter = ShadowCasterFilter.all,
+      int casterChannelMask = 0xFF,
     }) {
       renderPass.setViewport(
         gpu.Viewport(
@@ -167,6 +174,7 @@ class ShadowPass extends RenderGraphPass {
         _cameraPosition,
         faces,
         filter: filter,
+        casterChannelMask: casterChannelMask,
       );
       _renderScene.cull(encoder.frustum, encoder.submitCulled);
       encoder.flush();
@@ -197,13 +205,19 @@ class ShadowPass extends RenderGraphPass {
           _cameraPosition,
           _casterFaces,
           filter: ShadowCasterFilter.dynamicOnly,
+          casterChannelMask: _casterChannelMask,
         );
         for (final item in _renderScene.items) {
           encoder.submit(item);
         }
         encoder.flush();
       } else {
-        renderTile(c, _cascades[c].lightSpaceMatrix, _casterFaces);
+        renderTile(
+          c,
+          _cascades[c].lightSpaceMatrix,
+          _casterFaces,
+          casterChannelMask: _casterChannelMask,
+        );
       }
     }
     final spots = _spotShadows;
@@ -264,6 +278,7 @@ class ShadowPass extends RenderGraphPass {
         _cameraPosition,
         _casterFaces,
         filter: ShadowCasterFilter.staticOnly,
+        casterChannelMask: _casterChannelMask,
       );
       _renderScene.cull(encoder.frustum, encoder.submitCulled);
       encoder.flush();

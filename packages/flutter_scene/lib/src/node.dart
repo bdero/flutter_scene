@@ -120,6 +120,21 @@ base class Node implements SceneGraph {
   /// inherited by children.
   int layers = kRenderLayerDefault;
 
+  // TODO(fscene): serialize this mask (NodeSpec field + json + diff).
+  /// The light channels this node's meshes occupy, an 8-bit bitmask. A light
+  /// reaches them only when its own channel mask intersects this one
+  /// (`light.channelMask & lightChannelMask != 0`), so a light can be aimed at
+  /// a subset of the scene without a second scene graph. `0xFF` (the default)
+  /// takes every channel; `0` takes none and leaves the meshes with only
+  /// image-based lighting, which channels never gate. Not inherited by
+  /// children; set it on each mesh-bearing node.
+  ///
+  /// A directional light's `shadowCasterChannelMask` tests against this same
+  /// value, so a node can be lit without casting into that light's shadow map
+  /// and the other way around.
+  /// {@category Scene graph}
+  int lightChannelMask = 0xFF;
+
   /// Marks this node's meshes as static shadow casters: their geometry,
   /// material coverage, and world transform are promised not to change while
   /// mounted, so the engine may render them into cached shadow-map tiles that
