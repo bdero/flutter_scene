@@ -237,4 +237,222 @@ void main() {
       expect(p.parameterNames, ['gloss']);
     });
   });
+
+  group('typed getters', () {
+    test('an unset parameter falls back to the sidecar default', () {
+      final p = MaterialParameters.withLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+          'steps': (type: FmatType.int_, offset: 20, sourceColor: false),
+          'dir': (type: FmatType.vec3, offset: 32, sourceColor: false),
+        },
+        defaults: {
+          'gloss': 0.75,
+          'steps': 4,
+          'dir': [1.0, 0.0, 0.0],
+        },
+      );
+      expect(p.getFloat('gloss'), closeTo(0.75, 1e-6));
+      expect(p.getInt('steps'), 4);
+      expect(p.getVec3('dir'), Vector3(1.0, 0.0, 0.0));
+    });
+
+    test('an assigned value overrides the default', () {
+      final p = MaterialParameters.withLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+        },
+        defaults: {'gloss': 0.75},
+      );
+      p.setFloat('gloss', 0.1);
+      expect(p.getFloat('gloss'), closeTo(0.1, 1e-6));
+    });
+
+    test('float / int / vec2 / vec3 / vec4 / mat4 round-trip', () {
+      final p = _params();
+      p.setFloat('gloss', 0.5);
+      p.setInt('steps', 3);
+      p.setVec3('dir', Vector3(1.0, 2.0, 3.0));
+      p.setVec4('tint', Vector4(0.1, 0.2, 0.3, 0.4));
+      expect(p.getFloat('gloss'), closeTo(0.5, 1e-6));
+      expect(p.getInt('steps'), 3);
+      expect(p.getVec3('dir'), Vector3(1.0, 2.0, 3.0));
+      expect(p.getVec4('tint'), Vector4(0.1, 0.2, 0.3, 0.4));
+
+      final withMat4 = MaterialParameters.withLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'xform': (type: FmatType.mat4, offset: 0, sourceColor: false),
+        },
+      );
+      final m = Matrix4.identity()..setEntry(0, 3, 5.0);
+      withMat4.setMat4('xform', m);
+      expect(withMat4.getMat4('xform'), m);
+    });
+
+    test('vec2 round-trip', () {
+      final p = MaterialParameters.withLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 16,
+        parameters: {
+          'uv': (type: FmatType.vec2, offset: 0, sourceColor: false),
+        },
+      );
+      p.setVec2('uv', Vector2(0.25, 0.75));
+      expect(p.getVec2('uv'), Vector2(0.25, 0.75));
+    });
+
+    test('getColor round-trips a source_color parameter through sRGB', () {
+      final p = _params();
+      const color = Color(0xff804020);
+      p.setColor('tint', color);
+      final readBack = p.getColor('tint');
+      expect(readBack.a, closeTo(color.a, 1e-3));
+      expect(readBack.r, closeTo(color.r, 1e-3));
+      expect(readBack.g, closeTo(color.g, 1e-3));
+      expect(readBack.b, closeTo(color.b, 1e-3));
+    });
+
+    test('getColor reads raw channels for a non-source_color parameter', () {
+      final p = _params();
+      const color = Color(0xff804020);
+      p.setColor('plain', color);
+      final readBack = p.getColor('plain');
+      expect(readBack.r, closeTo(color.r, 1e-6));
+      expect(readBack.g, closeTo(color.g, 1e-6));
+      expect(readBack.b, closeTo(color.b, 1e-6));
+      expect(readBack.a, closeTo(color.a, 1e-6));
+    });
+
+    test(
+      'getTexture is null when unset, and the assigned texture otherwise',
+      () {
+        final p = _params();
+        expect(p.getTexture('detail'), isNull);
+      },
+    );
+
+    test('unknown parameter throws on every typed getter', () {
+      final p = _params();
+      expect(() => p.getFloat('nope'), throwsArgumentError);
+      expect(() => p.getInt('nope'), throwsArgumentError);
+      expect(() => p.getVec2('nope'), throwsArgumentError);
+      expect(() => p.getVec3('nope'), throwsArgumentError);
+      expect(() => p.getVec4('nope'), throwsArgumentError);
+      expect(() => p.getMat4('nope'), throwsArgumentError);
+      expect(() => p.getColor('nope'), throwsArgumentError);
+      expect(() => p.getTexture('nope'), throwsArgumentError);
+    });
+
+    test('a type mismatch throws on the getter', () {
+      final p = _params();
+      expect(() => p.getVec4('gloss'), throwsArgumentError);
+      expect(() => p.getFloat('tint'), throwsArgumentError);
+      expect(() => p.getInt('dir'), throwsArgumentError);
+    });
+  });
+
+  group('hasParameter / hasSampler / isParameterAssigned', () {
+    test('hasParameter and hasSampler report declared names', () {
+      final p = _params();
+      expect(p.hasParameter('gloss'), isTrue);
+      expect(p.hasParameter('nope'), isFalse);
+      expect(p.hasSampler('detail'), isTrue);
+      expect(p.hasSampler('nope'), isFalse);
+    });
+
+    test('isParameterAssigned distinguishes set vs default', () {
+      final p = _params();
+      expect(p.isParameterAssigned('gloss'), isFalse);
+      p.setFloat('gloss', 0.5);
+      expect(p.isParameterAssigned('gloss'), isTrue);
+    });
+
+    test('isParameterAssigned throws on an unknown name', () {
+      expect(() => _params().isParameterAssigned('nope'), throwsArgumentError);
+    });
+  });
+
+  group('getParameter (type-erased)', () {
+    test('returns the same boxed value as the typed getter', () {
+      final p = _params();
+      p.setFloat('gloss', 0.5);
+      p.setInt('steps', 3);
+      p.setVec3('dir', Vector3(1.0, 2.0, 3.0));
+      expect(p.getParameter('gloss'), p.getFloat('gloss'));
+      expect(p.getParameter('steps'), p.getInt('steps'));
+      expect(p.getParameter('dir'), p.getVec3('dir'));
+    });
+
+    test('throws on an unknown name', () {
+      expect(() => _params().getParameter('nope'), throwsArgumentError);
+    });
+  });
+
+  group('parameters enumeration', () {
+    test('lists every declared parameter with its type and default', () {
+      final p = MaterialParameters.withLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+          'dir': (type: FmatType.vec3, offset: 32, sourceColor: false),
+        },
+        defaults: {
+          'gloss': 0.75,
+          'dir': [1.0, 0.0, 0.0],
+        },
+      );
+      final byName = {for (final info in p.parameters) info.name: info};
+      expect(byName.keys, containsAll(['gloss', 'dir']));
+      expect(byName['gloss']!.type, 'float');
+      expect(byName['gloss']!.defaultValue, 0.75);
+      expect(byName['dir']!.type, 'vec3');
+      expect(byName['dir']!.defaultValue, [1.0, 0.0, 0.0]);
+    });
+
+    test('a parameter with no declared default reports null', () {
+      final p = _params();
+      final byName = {for (final info in p.parameters) info.name: info};
+      expect(byName['steps']!.defaultValue, isNull);
+    });
+  });
+
+  group('getters survive a hot-reload metadata update', () {
+    test('an override keeps its effective value at a new offset', () {
+      final p = _params();
+      p.setFloat('gloss', 0.25);
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 40, sourceColor: false),
+        },
+        defaults: {'gloss': 0.9},
+      );
+      expect(p.getFloat('gloss'), closeTo(0.25, 1e-6));
+      expect(p.isParameterAssigned('gloss'), isTrue);
+    });
+
+    test('an unset parameter picks up the edited default', () {
+      final p = _params();
+      p.updateFromLayout(
+        blockName: 'MaterialParams',
+        blockSizeBytes: 64,
+        parameters: {
+          'gloss': (type: FmatType.float_, offset: 16, sourceColor: false),
+        },
+        defaults: {'gloss': 0.42},
+      );
+      expect(p.getFloat('gloss'), closeTo(0.42, 1e-6));
+      expect(p.isParameterAssigned('gloss'), isFalse);
+      final byName = {for (final info in p.parameters) info.name: info};
+      expect(byName['gloss']!.defaultValue, 0.42);
+    });
+  });
 }
