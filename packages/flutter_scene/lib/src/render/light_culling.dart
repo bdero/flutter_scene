@@ -4,20 +4,29 @@ import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
 /// A punctual light reduced to what culling needs: its row [index] in the
-/// shared light-parameter buffer, world-space influence [bounds], and optional
-/// [worldPosition] used to choose the nearest lights when an item overflows its
-/// light budget.
+/// shared light-parameter buffer, world-space influence [bounds], the
+/// [channelMask] it lights, and optional [worldPosition] used to choose the
+/// nearest lights when an item overflows its light budget.
 ///
 /// A null [bounds] means infinite influence (a directional light, or a point or
 /// spot light with no range), so the light reaches every item and is never
 /// culled. A null [worldPosition] identifies a directional light, which sorts
 /// ahead of local lights because its influence is independent of distance.
 class CullableLight {
-  const CullableLight(this.index, this.bounds, {this.worldPosition});
+  const CullableLight(
+    this.index,
+    this.bounds, {
+    this.worldPosition,
+    this.channelMask = 0xFF,
+  });
 
   final int index;
   final Aabb3? bounds;
   final Vector3? worldPosition;
+
+  /// The light's channel mask; it reaches an item only when this intersects
+  /// [RenderItem.lightChannelMask].
+  final int channelMask;
 }
 
 /// The world-space AABB a point or spot light at [worldPosition] with [range]
@@ -48,7 +57,9 @@ class LightCullResult {
 /// Infinite-influence lights reach every item. Ranged lights are scattered onto
 /// the items their influence AABB overlaps using [bvh] (which holds the bounded
 /// items); unbounded items (no [RenderItem.worldBounds]) cannot be culled, so
-/// they conservatively receive every light. Each item's list is capped at
+/// they conservatively receive every light. A light is skipped for an item
+/// whose [RenderItem.lightChannelMask] its own [CullableLight.channelMask] does
+/// not intersect, whatever the geometry says. Each item's list is capped at
 /// [maxPerItem]. Directional lights and the nearest local lights are retained;
 /// the excess is dropped and flagged in the result.
 LightCullResult assignLightsToItems({
@@ -60,33 +71,31 @@ LightCullResult assignLightsToItems({
   if (lights.every(
     (light) => light.bounds == null && light.worldPosition == null,
   )) {
-    final count = lights.length.clamp(0, maxPerItem);
-    for (final item in items) {
-      item.lightListOffset = 0;
-      item.lightListCount = count;
-    }
-    return LightCullResult([
-      for (var i = 0; i < count; i++) lights[i].index,
-    ], lights.length > maxPerItem);
+    return _assignInfiniteLights(items, lights, maxPerItem);
   }
 
   for (final item in items) {
     item.lightScratch.clear();
   }
 
-  final infinite = <int>[
+  final infinite = <CullableLight>[
     for (final light in lights)
-      if (light.bounds == null) light.index,
+      if (light.bounds == null) light,
   ];
   final unbounded = <RenderItem>[
     for (final item in items)
       if (item.worldBounds == null) item,
   ];
 
-  // Infinite-influence lights reach every item.
+  // Infinite-influence lights reach every item whose channels they share.
   if (infinite.isNotEmpty) {
     for (final item in items) {
-      item.lightScratch.addAll(infinite);
+      final mask = item.lightChannelMask;
+      for (final light in infinite) {
+        if ((light.channelMask & mask) != 0) {
+          item.lightScratch.add(light.index);
+        }
+      }
     }
   }
 
@@ -95,9 +104,16 @@ LightCullResult assignLightsToItems({
   for (final light in lights) {
     final bounds = light.bounds;
     if (bounds == null) continue;
-    bvh.queryAabb(bounds, (item) => item.lightScratch.add(light.index));
+    final channelMask = light.channelMask;
+    bvh.queryAabb(bounds, (item) {
+      if ((item.lightChannelMask & channelMask) != 0) {
+        item.lightScratch.add(light.index);
+      }
+    });
     for (final item in unbounded) {
-      item.lightScratch.add(light.index);
+      if ((item.lightChannelMask & channelMask) != 0) {
+        item.lightScratch.add(light.index);
+      }
     }
   }
 
@@ -122,6 +138,41 @@ LightCullResult assignLightsToItems({
     for (var i = 0; i < count; i++) {
       flat.add(scratch[i]);
     }
+  }
+  return LightCullResult(flat, overflowed);
+}
+
+// Every light reaches every item, so the items differ only by channel mask.
+// One slice is built per distinct mask and shared by the items carrying it,
+// which collapses to a single slice at offset 0 for the usual all-on scene.
+LightCullResult _assignInfiniteLights(
+  List<RenderItem> items,
+  List<CullableLight> lights,
+  int maxPerItem,
+) {
+  final flat = <int>[];
+  final slices = <int, (int, int)>{};
+  var overflowed = false;
+  for (final item in items) {
+    final mask = item.lightChannelMask;
+    var slice = slices[mask];
+    if (slice == null) {
+      final offset = flat.length;
+      var count = 0;
+      for (final light in lights) {
+        if ((light.channelMask & mask) == 0) continue;
+        if (count == maxPerItem) {
+          overflowed = true;
+          break;
+        }
+        flat.add(light.index);
+        count++;
+      }
+      slice = (offset, count);
+      slices[mask] = slice;
+    }
+    item.lightListOffset = slice.$1;
+    item.lightListCount = slice.$2;
   }
   return LightCullResult(flat, overflowed);
 }

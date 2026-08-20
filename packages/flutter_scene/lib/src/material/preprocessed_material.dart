@@ -229,7 +229,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       final env = environment ?? lighting.environmentMap;
       final fragInfo = _fragInfoScratch
         ..fillRange(0, _fragInfoScratch.length, 0);
-      EngineLightingUniforms.packInto(fragInfo, lighting, env);
+      EngineLightingUniforms.packInto(
+        fragInfo,
+        lighting,
+        env,
+        nodeChannelMask: lightChannelMask,
+      );
       // radiance_blend.zw [162]/[163]: this item's punctual-light slice
       // (count, offset) into the per-frame light-index buffer.
       fragInfo[162] = lightListCount.toDouble();

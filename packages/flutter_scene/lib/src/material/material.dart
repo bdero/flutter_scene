@@ -222,6 +222,13 @@ abstract class Material {
   @internal
   int lightListCount = 0;
 
+  /// The owning render item's light channels, set by the encoder right before
+  /// [bind]. The punctual lights are already filtered by the culler, so this
+  /// only gates the primary directional light, whose data rides its own
+  /// uniform path. Defaults to `0xFF` (every channel).
+  @internal
+  int lightChannelMask = 0xFF;
+
   gpu.Shader? _fragmentShader;
   String? _fragmentShaderName;
 

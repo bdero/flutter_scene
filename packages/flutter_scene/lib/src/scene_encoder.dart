@@ -85,6 +85,8 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
   @override
   int get lightListCount => item.lightListCount;
   @override
+  int get lightChannelMask => item.lightChannelMask;
+  @override
   Object? get jointsTexture => item.jointsTexture;
 
   void release() {
@@ -465,6 +467,7 @@ base class SceneEncoder {
   double _boundMaterialFade = double.nan;
   int _boundMaterialLightOffset = -1;
   int _boundMaterialLightCount = -1;
+  int _boundMaterialLightChannelMask = -1;
   gpu.WindingOrder? _boundWindingOrder;
   gpu.PrimitiveType? _boundPrimitiveType;
   int _encodedDraws = 0;
@@ -722,6 +725,7 @@ base class SceneEncoder {
     _boundMaterialFade = double.nan;
     _boundMaterialLightOffset = -1;
     _boundMaterialLightCount = -1;
+    _boundMaterialLightChannelMask = -1;
     _boundWindingOrder = null;
     _boundPrimitiveType = null;
   }
@@ -733,11 +737,13 @@ base class SceneEncoder {
   ) {
     final lightOffset = material.lightListOffset;
     final lightCount = material.lightListCount;
+    final lightChannelMask = material.lightChannelMask;
     if (identical(_boundMaterial, material) &&
         identical(_boundMaterialVertex, materialVertex) &&
         _boundMaterialFade == fade &&
         _boundMaterialLightOffset == lightOffset &&
-        _boundMaterialLightCount == lightCount) {
+        _boundMaterialLightCount == lightCount &&
+        _boundMaterialLightChannelMask == lightChannelMask) {
       return;
     }
     material.lodFade = fade;
@@ -751,6 +757,7 @@ base class SceneEncoder {
     _boundMaterialFade = fade;
     _boundMaterialLightOffset = lightOffset;
     _boundMaterialLightCount = lightCount;
+    _boundMaterialLightChannelMask = lightChannelMask;
   }
 
   void _setWindingOrder(gpu.WindingOrder windingOrder) {
@@ -1039,6 +1046,10 @@ base class SceneEncoder {
         b.item.lightListCount,
       );
       if (byLightCount != 0) return byLightCount;
+      final byChannels = a.item.lightChannelMask.compareTo(
+        b.item.lightChannelMask,
+      );
+      if (byChannels != 0) return byChannels;
       final byFade = a.fade.compareTo(b.fade);
       if (byFade != 0) return byFade;
       return a.depth.compareTo(b.depth);
@@ -1051,6 +1062,7 @@ base class SceneEncoder {
       final item = record.item;
       record.material.lightListOffset = item.lightListOffset;
       record.material.lightListCount = item.lightListCount;
+      record.material.lightChannelMask = item.lightChannelMask;
       item.applyJointsTexture(record.geometry);
 
       final end = opaqueBatchEnd(_opaqueRecords, index);
@@ -1384,6 +1396,7 @@ base class SceneEncoder {
       _boundMaterialFade = double.nan;
       _boundMaterialLightOffset = -1;
       _boundMaterialLightCount = -1;
+      _boundMaterialLightChannelMask = -1;
       _boundWindingOrder = null;
       _boundPrimitiveType = null;
       EngineLightingUniforms.invalidateBindMemo();
@@ -1408,6 +1421,7 @@ base class SceneEncoder {
       _renderPass.setDepthWriteEnable(record.material.translucentDepthWrite);
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
+      record.material.lightChannelMask = record.item.lightChannelMask;
       final joints = record.jointsTexture;
       if (joints != null) {
         record.geometry.setJointsTexture(joints, record.jointsTextureWidth);

@@ -42,16 +42,28 @@ class EngineLightingUniforms {
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
   /// [fragInfo] from [lighting] and [env]. Leaves the material-specific fields
   /// (color, factors, alpha mode) untouched for the caller to fill.
+  ///
+  /// [nodeChannelMask] is the drawing item's `Node.lightChannelMask`. When it
+  /// misses the directional light's own channels the light is packed away for
+  /// this draw, which is what suppresses the primary directional per object
+  /// (the punctual lights are already filtered by the culler).
   static void packInto(
     Float32List fragInfo,
     Lighting lighting,
-    EnvironmentMap env,
-  ) {
+    EnvironmentMap env, {
+    int nodeChannelMask = 0xFF,
+  }) {
     // Default to fully drawn; a material with an active LOD cross-fade
     // overwrites this. Without it the zero-initialized slot would discard
     // every fragment.
     fragInfo[fadeIndex] = 1.0;
-    final light = lighting.directionalLight;
+    // A node outside the light's channels gets no direct sun and no cast
+    // shadow; the image-based ambient is untouched, so the shadow-ambient
+    // control is cleared with it below.
+    final scene = lighting.directionalLight;
+    final light = scene != null && (scene.channelMask & nodeChannelMask) != 0
+        ? scene
+        : null;
     final cascades = lighting.shadowMap == null
         ? const <ShadowCascade>[]
         : lighting.cascades;

@@ -58,6 +58,7 @@ class InstancedMeshComponent extends Component {
     final frustumCulledChanged = item.frustumCulled != frustumCulled;
     item.frustumCulled = frustumCulled;
     item.layers = node.layers;
+    final lightChannelMask = node.lightChannelMask;
     final worldTransform = node.globalTransform;
     final worldTransformVersion = node.worldTransformVersion;
     final instanceRevision = instancedMesh.revision;
@@ -70,6 +71,7 @@ class InstancedMeshComponent extends Component {
         (item.visible != true ||
             item.shadowStatic != node.shadowStatic ||
             item.castsShadows != node.castsShadows ||
+            item.lightChannelMask != lightChannelMask ||
             boundsChangedByInput) &&
         (item.shadowStatic || node.shadowStatic) &&
         (item.castsShadows || node.castsShadows);
@@ -79,6 +81,7 @@ class InstancedMeshComponent extends Component {
     item.refreshWinding(node.windingFlipped);
     item.shadowStatic = node.shadowStatic;
     item.castsShadows = node.castsShadows;
+    item.lightChannelMask = lightChannelMask;
     item.instanceTransforms = instancedMesh.instances;
     item.instanceColors = instancedMesh.colors;
     item.instanceWindingFlipped = instancedMesh.windingFlipped;

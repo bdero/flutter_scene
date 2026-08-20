@@ -1373,6 +1373,7 @@ class PhysicallyBasedMaterial extends Material {
         ..lodFade = lodFade
         ..lightListOffset = lightListOffset
         ..lightListCount = lightListCount
+        ..lightChannelMask = lightChannelMask
         ..environment = environment;
       prepared.bind(pass, transientsBuffer, lighting);
       return;
@@ -1405,7 +1406,12 @@ class PhysicallyBasedMaterial extends Material {
     // unwritten slots) instead of a per-draw allocation; emplace below copies
     // the bytes out immediately.
     final fragInfo = _fragInfoScratch..fillRange(0, _fragInfoScratch.length, 0);
-    EngineLightingUniforms.packInto(fragInfo, lighting, env);
+    EngineLightingUniforms.packInto(
+      fragInfo,
+      lighting,
+      env,
+      nodeChannelMask: lightChannelMask,
+    );
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;
     fragInfo[2] = baseColorFactor.b;

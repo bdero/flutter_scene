@@ -16,6 +16,29 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// reusable tiles and dynamic casters on top every frame.
 enum ShadowCasterFilter { all, staticOnly, dynamicOnly }
 
+/// Whether [item] belongs in a shadow map drawn under [filter] for a light
+/// whose casters are limited to [casterChannelMask].
+///
+/// The view-independent half of [ShadowEncoder.submit] (frustum culling and
+/// material opacity are the rest), pulled out so the filter and channel rules
+/// are testable without a render pass. Ordered so the common rejection is a
+/// plain flag read.
+bool shadowCasterAccepted(
+  RenderItem item,
+  ShadowCasterFilter filter,
+  int casterChannelMask,
+) {
+  if (filter == ShadowCasterFilter.staticOnly && !item.shadowStatic) {
+    return false;
+  }
+  if (filter == ShadowCasterFilter.dynamicOnly && item.shadowStatic) {
+    return false;
+  }
+  if (!item.castsShadows) return false;
+  if ((item.lightChannelMask & casterChannelMask) == 0) return false;
+  return item.visible;
+}
+
 /// Records each opaque shadow caster's depth into a shadow-map render
 /// pass, from a directional light's point of view.
 ///
@@ -31,7 +54,9 @@ class ShadowEncoder {
     this._cameraPosition,
     ShadowCasterFaces casterFaces, {
     ShadowCasterFilter filter = ShadowCasterFilter.all,
-  }) : _filter = filter {
+    int casterChannelMask = 0xFF,
+  }) : _filter = filter,
+       _casterChannelMask = casterChannelMask {
     frustum = Frustum.matrix(_lightSpaceMatrix);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
@@ -55,6 +80,11 @@ class ShadowEncoder {
   final TransientWriter _transientsBuffer;
   final Matrix4 _lightSpaceMatrix;
   final ShadowCasterFilter _filter;
+
+  // The light's shadow-caster channels. An item casts only when its node's
+  // light channels intersect these, independently of whether the light
+  // shades it.
+  final int _casterChannelMask;
 
   // The scene camera position, bound as FrameInfo.camera_position so a
   // `vertex { }` material's camera-relative displacement (e.g. a world curve)
@@ -95,13 +125,10 @@ class ShadowEncoder {
   void submitCulled(RenderItem item) => _submit(item, true);
 
   void _submit(RenderItem item, bool alreadyCulled) {
-    // The filter checks run first: the dynamic composite iterates the whole
-    // item list (most of which is static), so the common case must reject on
-    // a plain flag before any virtual call.
-    if (_filter == ShadowCasterFilter.staticOnly && !item.shadowStatic) return;
-    if (_filter == ShadowCasterFilter.dynamicOnly && item.shadowStatic) return;
-    if (!item.castsShadows) return;
-    if (!item.visible) return;
+    // The flag and channel checks run first: the dynamic composite iterates
+    // the whole item list (most of which is static), so the common case must
+    // reject before any virtual call.
+    if (!shadowCasterAccepted(item, _filter, _casterChannelMask)) return;
     if (!item.material.isOpaque()) return;
     if (!alreadyCulled && item.frustumCulled) {
       final bounds = item.cullBounds;
