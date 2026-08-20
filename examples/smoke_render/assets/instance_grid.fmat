@@ -1,0 +1,31 @@
+// Per-instance custom attributes end to end: a vec4 read by the fragment
+// stage and a float read by both stages, appended to the engine's instance
+// record and supplied per instance by an InstancedMesh.
+
+material {
+  name: "InstanceGrid",
+  shading_model: lit,
+  instance_attributes: [
+    { type: vec4, name: tint },
+    { type: float, name: lift },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Vertex-stage read of the instance data; a wrong stride or a dropped
+    // instance buffer flattens the staircase.
+    vertex.world_position.y += 0.35 * instance_lift;
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = GetInstanceTint();
+    material.metallic = 0.0;
+    // The same float the vertex stage lifted by, so the gloss ramp and the
+    // staircase must agree across the grid.
+    material.roughness = mix(0.15, 0.85, GetInstanceLift());
+    PrepareMaterial(material);
+  }
+}

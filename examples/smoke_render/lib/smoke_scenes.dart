@@ -1639,6 +1639,116 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
   }),
 
+  // Cascaded shadows down a long corridor, with the first split pinned and a
+  // wide overlap. Splits land about five, ten, and seventeen units out, so
+  // three hand-offs cross the near half of the corridor where there is screen
+  // area to read them. A rail running the whole length casts one continuous
+  // shadow stripe over all three, and the pillars sample each depth range; the
+  // hand-offs must read as a smooth softening, not as stripes or a hard seam.
+  SmokeScene('cascade_shaping', () {
+    final scene = Scene();
+    // A dim ambient, so the cast shadows carry real contrast against the sun
+    // rather than washing out.
+    scene.environmentIntensity = 0.3;
+    scene.add(
+      _directionalLightNode(
+        // Grazing and pointed back toward the camera, so shadows are long and
+        // fall in front of their casters instead of hiding behind them.
+        vm.Vector3(-0.34, -0.62, 0.71),
+        DirectionalLight(
+          intensity: 3.5,
+          castsShadow: true,
+          shadowMaxDistance: 26.0,
+          shadowCascadeCount: 4,
+          firstCascadeFarBound: 5.0,
+          cascadeOverlap: 0.3,
+          // Below the default, so each cascade's own texel size is visible and
+          // a hand-off has something to blend between.
+          shadowMapResolution: 512,
+          shadowSoftness: 0.06,
+        ),
+      ),
+    );
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.62, 0.61, 0.58, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    // A narrow strip rather than a broad field, so the frame corners stay the
+    // magenta clear while the corridor runs to the horizon.
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 3.5, depth: 44.0), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0, -14.0)),
+    );
+    // The rail whose unbroken shadow crosses every hand-off.
+    scene.add(
+      Node(
+        mesh: Mesh(CuboidGeometry(vm.Vector3(0.14, 0.14, 32.0)), material),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0.95, 1.35, -10.0)),
+    );
+    final pillar = CuboidGeometry(vm.Vector3(0.24, 1.7, 0.24));
+    for (var i = 0; i < 9; i++) {
+      scene.add(
+        Node(mesh: Mesh(pillar, material))
+          ..localTransform = vm.Matrix4.translation(
+            vm.Vector3(i.isEven ? 0.55 : -0.55, 0.85, 4.0 - i * 4.0),
+          ),
+      );
+    }
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 3.2, 9.0),
+        target: vm.Vector3(0, 0.5, -12.0),
+      ),
+    );
+  }),
+
+  // Per-instance custom attributes: one instanced grid whose `.fmat` declares a
+  // vec4 tint and a float, each instance carrying its own values. The tint
+  // sweeps red to blue across the grid and dark to bright along it, and the
+  // float lifts each cube (vertex stage) while ramping its gloss (fragment
+  // stage), so a mispacked instance record scrambles the gradient or flattens
+  // the staircase.
+  SmokeScene('instance_attributes', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.35, -1.0, -0.45),
+        DirectionalLight(intensity: 2.5),
+      ),
+    );
+    const n = 5;
+    const spacing = 0.72;
+    final grid = InstancedMesh(
+      geometry: CuboidGeometry(vm.Vector3(0.44, 0.44, 0.44)),
+      material: _fmatMaterial('InstanceGrid'),
+    );
+    for (var row = 0; row < n; row++) {
+      for (var col = 0; col < n; col++) {
+        final u = col / (n - 1), v = row / (n - 1);
+        final index = grid.addInstance(
+          vm.Matrix4.translation(
+            vm.Vector3((col - 2) * spacing, 0.22, (row - 2) * spacing),
+          ),
+        );
+        grid.setInstanceAttribute(
+          index,
+          'tint',
+          vm.Vector4(0.9 * u, 0.15 + 0.6 * v, 0.9 * (1.0 - u), 1.0),
+        );
+        grid.setInstanceAttribute(index, 'lift', (u + v) * 0.5);
+      }
+    }
+    scene.add(Node()..addComponent(InstancedMeshComponent(grid)));
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 4.0, 4.2),
+        target: vm.Vector3.zero(),
+      ),
+    );
+  }, preload: loadSmokeMaterials),
 ];
 
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the
