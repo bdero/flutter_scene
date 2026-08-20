@@ -1,13 +1,13 @@
-// Verifies the standard-KTX2 (Basis Universal UASTC) decode path against
-// reference goldens.
+// Verifies the standard-KTX2 (Basis Universal UASTC and ETC1S) decode paths
+// against reference goldens.
 //
-// Fixture provenance (test/fixtures/ktx2/): uastc_srgb_mips_zstd_64.ktx2,
-// uastc_linear_20x14.ktx2, and uastc_alpha_srgb_32.ktx2 were encoded with the
-// KTX-Software v4.4.2 `ktx create` CLI from deterministic PNGs;
-// luminance_alpha_reference_uastc.ktx2 is KhronosGroup/KTX-Software
-// tests/testimages at v4.4.2. Each .rgba golden is the same tool's
-// `ktx extract --transcode rgba8 --raw` output, levels concatenated base
-// first; the decoder must match it byte for byte.
+// Fixture provenance (test/fixtures/ktx2/): the uastc_* and etc1s_* files
+// were encoded with the KTX-Software v4.4.2 `ktx create` CLI from
+// deterministic PNGs; luminance_alpha_reference_uastc.ktx2 and
+// alpha_simple_basis.ktx2 are KhronosGroup/KTX-Software tests/testimages at
+// v4.4.2. Each .rgba golden is the same tool's `ktx extract --transcode
+// rgba8 --raw` output, levels concatenated base first; the decoder must
+// match it byte for byte.
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -94,6 +94,63 @@ void main() {
     });
   });
 
+  group('standard KTX2 ETC1S decode', () {
+    test('sRGB mipped file matches the reference, every level', () {
+      final image = decodeStandardKtx2(
+        readKtx2(_fixture('etc1s_srgb_mips_64.ktx2')),
+      );
+      expect(image.levels.length, 7);
+      expect(image.srgb, isTrue);
+      expect(image.hasAlpha, isFalse);
+      expect(image.levels.first.width, 64);
+      expect(image.levels.last.width, 1);
+      expect(_texel(image.levels[0].pixels, 64, 0, 0), [255, 231, 58, 255]);
+      expect(_texel(image.levels[0].pixels, 64, 33, 17), [172, 230, 197, 255]);
+      expect(_texel(image.levels[3].pixels, 8, 2, 5), [127, 127, 127, 255]);
+      expect(_texel(image.levels[6].pixels, 1, 0, 0), [161, 161, 161, 255]);
+      expect(
+        _concat([for (final level in image.levels) level.pixels]),
+        _fixture('etc1s_srgb_mips_64.rgba'),
+      );
+    });
+
+    test('alpha slice recombines with the color slice', () {
+      final image = decodeStandardKtx2(
+        readKtx2(_fixture('etc1s_alpha_srgb_32.ktx2')),
+      );
+      expect(image.levels.length, 1);
+      expect(image.srgb, isTrue);
+      expect(image.hasAlpha, isTrue);
+      expect(_texel(image.levels[0].pixels, 32, 16, 16), [12, 119, 169, 255]);
+      expect(_texel(image.levels[0].pixels, 32, 0, 0), [0, 4, 177, 0]);
+      expect(image.levels[0].pixels, _fixture('etc1s_alpha_srgb_32.rgba'));
+    });
+
+    test('linear non-block-aligned file matches the reference', () {
+      final image = decodeStandardKtx2(
+        readKtx2(_fixture('etc1s_linear_20x14.ktx2')),
+      );
+      expect(image.levels.length, 1);
+      expect(image.srgb, isFalse);
+      expect(image.hasAlpha, isFalse);
+      expect(image.levels.first.width, 20);
+      expect(image.levels.first.height, 14);
+      expect(_texel(image.levels[0].pixels, 20, 0, 0), [0, 0, 0, 255]);
+      expect(_texel(image.levels[0].pixels, 20, 19, 13), [255, 255, 83, 255]);
+      expect(image.levels[0].pixels, _fixture('etc1s_linear_20x14.rgba'));
+    });
+
+    test('Khronos alpha reference file matches the reference', () {
+      final image = decodeStandardKtx2(
+        readKtx2(_fixture('alpha_simple_basis.ktx2')),
+      );
+      expect(image.levels.length, 1);
+      expect(image.hasAlpha, isTrue);
+      expect(_texel(image.levels[0].pixels, 8, 4, 4), [171, 187, 204, 128]);
+      expect(image.levels[0].pixels, _fixture('alpha_simple_basis.rgba'));
+    });
+  });
+
   group('standard KTX2 detection', () {
     test('recognizes the file identifier', () {
       expect(looksLikeKtx2(_fixture('uastc_linear_20x14.ktx2')), isTrue);
@@ -145,6 +202,54 @@ void main() {
       }
       // Damage either trips the decoder or survives to decoded output; it
       // must never escape as a RangeError or other unexpected type.
+      expect(
+        error,
+        anyOf(isNull, isA<FormatException>(), isA<Ktx2FormatException>()),
+      );
+    });
+
+    test('truncated BasisLZ global data throws cleanly', () {
+      final texture = readKtx2(_fixture('etc1s_alpha_srgb_32.ktx2'));
+      final short = Ktx2Texture(
+        vkFormat: texture.vkFormat,
+        pixelWidth: texture.pixelWidth,
+        pixelHeight: texture.pixelHeight,
+        levels: texture.levels,
+        supercompression: texture.supercompression,
+        dataFormatDescriptor: texture.dataFormatDescriptor,
+        supercompressionGlobalData: Uint8List.sublistView(
+          texture.supercompressionGlobalData,
+          0,
+          24,
+        ),
+      );
+      expect(() => decodeStandardKtx2(short), throwsFormatException);
+    });
+
+    test('ETC1S without BasisLZ supercompression throws cleanly', () {
+      final texture = readKtx2(_fixture('etc1s_alpha_srgb_32.ktx2'));
+      final wrong = Ktx2Texture(
+        vkFormat: texture.vkFormat,
+        pixelWidth: texture.pixelWidth,
+        pixelHeight: texture.pixelHeight,
+        levels: texture.levels,
+        dataFormatDescriptor: texture.dataFormatDescriptor,
+      );
+      expect(
+        () => decodeStandardKtx2(wrong),
+        throwsA(isA<Ktx2FormatException>()),
+      );
+    });
+
+    test('corrupted ETC1S slice throws cleanly or decodes', () {
+      final bytes = Uint8List.fromList(_fixture('etc1s_srgb_mips_64.ktx2'));
+      bytes[bytes.length - 100] ^= 0xFF;
+      Object? error;
+      try {
+        decodeStandardKtx2(readKtx2(bytes));
+      } catch (e) {
+        error = e;
+      }
       expect(
         error,
         anyOf(isNull, isA<FormatException>(), isA<Ktx2FormatException>()),
