@@ -148,6 +148,8 @@ export 'src/components/environment_volume_component.dart'
     show EnvironmentVolumeComponent, EnvironmentVolumeShape;
 export 'src/components/reflection_probe_component.dart'
     show ReflectionProbeComponent;
+export 'src/components/image_based_light_component.dart'
+    show ImageBasedLightComponent;
 export 'src/components/instanced_mesh_component.dart'
     show InstancedMeshComponent;
 export 'src/components/lod_component.dart' show LodComponent;

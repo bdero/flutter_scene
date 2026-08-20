@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/importer/gltf_light_units.dart';
 import '../animation.dart';
 import '../components/component.dart';
 import '../components/directional_light_component.dart';
+import '../components/image_based_light_component.dart';
 import '../components/materials_variants_component.dart';
 import '../components/point_light_component.dart';
 import '../components/spot_light_component.dart';
@@ -258,6 +259,15 @@ Future<Node> _buildScene(
       ),
     );
   }
+  final imageBasedLight = await _buildImageBasedLight(
+    doc,
+    bufferData,
+    sceneIndex,
+    resolveUri,
+  );
+  if (imageBasedLight != null) {
+    root.addComponent(imageBasedLight);
+  }
   if (sceneIndex != null && sceneIndex < doc.scenes.length) {
     for (final rootNodeIdx in doc.scenes[sceneIndex].nodes) {
       if (rootNodeIdx >= 0 && rootNodeIdx < engineNodes.length) {
@@ -388,6 +398,54 @@ void _populateNode({
     }
     engineNode.add(engineNodes[childIndex]);
   }
+}
+
+// Surfaces the default scene's EXT_lights_image_based light, resolving each
+// specular face image's bytes so the caller can build an environment from
+// them. Returns null when the document declares none.
+Future<ImageBasedLightComponent?> _buildImageBasedLight(
+  GltfDocument doc,
+  Uint8List bufferData,
+  int? sceneIndex,
+  GltfResourceResolver? resolveUri,
+) async {
+  if (sceneIndex == null || sceneIndex >= doc.scenes.length) return null;
+  final lightIndex = doc.scenes[sceneIndex].imageBasedLight;
+  if (lightIndex == null ||
+      lightIndex < 0 ||
+      lightIndex >= doc.imageBasedLights.length) {
+    return null;
+  }
+  final light = doc.imageBasedLights[lightIndex];
+  final specular = <List<Uint8List>>[];
+  for (final level in light.specularImages) {
+    final faces = <Uint8List>[];
+    for (final imageIndex in level) {
+      final bytes = await resolveGltfImageBytes(
+        doc,
+        bufferData,
+        imageIndex,
+        resolveUri: resolveUri,
+      );
+      if (bytes == null) {
+        debugPrint(
+          'Skipping EXT_lights_image_based specular image $imageIndex, its '
+          'bytes could not be sourced.',
+        );
+        continue;
+      }
+      faces.add(bytes);
+    }
+    if (faces.length == level.length) specular.add(faces);
+  }
+  return ImageBasedLightComponent.internal(
+    name: light.name,
+    rotation: light.rotation,
+    intensity: light.intensity,
+    irradianceCoefficients: light.irradianceCoefficients,
+    specularImageSize: light.specularImageSize,
+    specularImages: specular,
+  );
 }
 
 // Builds the engine light component for a KHR_lights_punctual light, or null

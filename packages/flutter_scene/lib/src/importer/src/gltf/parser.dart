@@ -37,6 +37,7 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
   final docExtensions = json['extensions'] as Map?;
   final punctual = docExtensions?['KHR_lights_punctual'] as Map?;
   final variants = docExtensions?['KHR_materials_variants'] as Map?;
+  final imageBased = docExtensions?['EXT_lights_image_based'] as Map?;
   return GltfDocument(
     scene: json['scene'] as int?,
     scenes: _list(json['scenes'], _parseScene),
@@ -52,6 +53,7 @@ GltfDocument parseGltfJson(Map<String, Object?> json) {
     skins: _list(json['skins'], _parseSkin),
     animations: _list(json['animations'], _parseAnimation),
     lights: _list(punctual?['lights'], _parsePunctualLight),
+    imageBasedLights: _list(imageBased?['lights'], _parseImageBasedLight),
     materialsVariants: [
       for (final v in (variants?['variants'] as List?) ?? const [])
         ((v as Map)['name'] as String?) ?? '',
@@ -79,15 +81,55 @@ GltfPunctualLight _parsePunctualLight(Map<String, Object?> j) {
   );
 }
 
+GltfImageBasedLight _parseImageBasedLight(Map<String, Object?> j) {
+  Quaternion? rotation;
+  if (j['rotation'] is List) {
+    final r = (j['rotation'] as List).cast<num>();
+    rotation = Quaternion(
+      r[0].toDouble(),
+      r[1].toDouble(),
+      r[2].toDouble(),
+      r[3].toDouble(),
+    );
+  }
+  final coefficients = <Vector3>[];
+  for (final c in (j['irradianceCoefficients'] as List?) ?? const []) {
+    final rgb = (c as List).cast<num>();
+    coefficients.add(
+      Vector3(rgb[0].toDouble(), rgb[1].toDouble(), rgb[2].toDouble()),
+    );
+  }
+  if (coefficients.isNotEmpty && coefficients.length != 9) {
+    throw FormatException(
+      'EXT_lights_image_based irradianceCoefficients must hold 9 RGB triples, '
+      'got ${coefficients.length}',
+    );
+  }
+  return GltfImageBasedLight(
+    name: j['name'] as String?,
+    rotation: rotation,
+    intensity: (j['intensity'] as num?)?.toDouble() ?? 1.0,
+    irradianceCoefficients: coefficients,
+    specularImageSize: (j['specularImageSize'] as num?)?.toInt() ?? 0,
+    specularImages: [
+      for (final level in (j['specularImages'] as List?) ?? const [])
+        (level as List).cast<num>().map((e) => e.toInt()).toList(),
+    ],
+  );
+}
+
 List<T> _list<T>(Object? array, T Function(Map<String, Object?>) f) {
   if (array == null) return const [];
   return (array as List).map((e) => f(e as Map<String, Object?>)).toList();
 }
 
 GltfScene _parseScene(Map<String, Object?> j) {
+  final imageBased =
+      (j['extensions'] as Map?)?['EXT_lights_image_based'] as Map?;
   return GltfScene(
     name: j['name'] as String?,
     nodes: ((j['nodes'] as List?) ?? const []).cast<int>(),
+    imageBasedLight: (imageBased?['light'] as num?)?.toInt(),
   );
 }
 
