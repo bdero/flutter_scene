@@ -1,0 +1,135 @@
+material {
+  name: "ShadowCatcher",
+  shading_model: shadowCatcher,
+  blending: alpha,
+  culling: back,
+  parameters: [
+    { type: vec3, name: shadow_color, hint: source_color, default: [0, 0, 0] },
+    { type: float, name: shadow_intensity, hint: range(0, 1, 0.01), default: 0.8 },
+    { type: float, name: ao_strength, hint: range(0, 1, 0.01), default: 0.5 },
+    { type: float, name: fade_start, default: 0 },
+    { type: float, name: fade_end, default: 0 },
+  ],
+  varyings: [
+    { type: vec3, name: catcher_local_position },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    // Object-space position, for the radial fade from the mesh origin.
+    catcher_local_position = vertex.position;
+  }
+}
+
+fragment {
+  // Visibility contribution of every shadow-casting spot whose tile rides the
+  // shared atlas after the directional cascades, over this item's
+  // punctual-light slice. Each spot's shadow is weighted by its cone and
+  // range attenuation so a spot that cannot reach this point cannot darken
+  // it. Returns 1 fully lit .. 0 fully shadowed.
+  float CatcherSpotShadowVisibility(vec3 world_pos, vec3 n) {
+    float visibility = 1.0;
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+    if (frag_info.spot_shadow_params.x > 0.5) {
+      int count = frag_info.punctual_dims.x < 0.5
+          ? 0
+          : int(frag_info.radiance_blend.z);
+      int offset = int(frag_info.radiance_blend.w);
+      for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
+        if (i >= count) break;
+        int light_row = int(FetchPunctualIndex(offset + i) + 0.5);
+        vec4 l0 = FetchPunctualTexel(light_row, 0);
+        // Spots only (type 2).
+        if (l0.w < 1.5 || l0.w > 2.5) continue;
+        vec4 l3 = FetchPunctualTexel(light_row, 3);
+        // Skip spots with no tile in the atlas.
+        if (l3.y < -0.5) continue;
+        vec4 l1 = FetchPunctualTexel(light_row, 1);
+        vec4 l2 = FetchPunctualTexel(light_row, 2);
+        vec3 to_light = l0.xyz - world_pos;
+        float dist_sq = dot(to_light, to_light);
+        vec3 light_dir = to_light * inversesqrt(max(dist_sq, 1e-8));
+        float inv_range = l1.w;
+        float range_factor = dist_sq * inv_range * inv_range;
+        float window = clamp(1.0 - range_factor * range_factor, 0.0, 1.0);
+        float cd = dot(normalize(l2.xyz), -light_dir);
+        float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
+        float weight = window * window * cone * cone;
+        float spot_visibility =
+            SampleSpotShadow(light_row, int(l3.y + 0.5), world_pos, n);
+        visibility *= 1.0 - weight * (1.0 - spot_visibility);
+      }
+    }
+#endif
+    return visibility;
+  }
+
+  // Aggregate shadow visibility at this fragment (1 fully lit .. 0 fully
+  // shadowed): the directional cascades, every shadow-casting spot's tile,
+  // and the sun contact term marched by the occlusion pass, the same
+  // composition the lit path applies. A sun the surface faces away from
+  // contributes no cast-shadow differential, so it reads as lit rather
+  // than darkening the whole plane.
+  float CatcherShadowVisibility(vec3 world_pos, vec3 n, vec4 occlusion_sample) {
+    float visibility = 1.0;
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+    if (frag_info.has_directional_light > 0.5 &&
+        frag_info.casts_shadow > 0.5) {
+      vec3 light_vector =
+          -normalize(frag_info.directional_light_direction.xyz);
+      float facing = clamp(dot(n, light_vector) / 0.15, 0.0, 1.0);
+      if (facing > 0.0) {
+        visibility = mix(1.0, SampleShadow(world_pos, n), facing);
+      }
+    }
+    visibility *= CatcherSpotShadowVisibility(world_pos, n);
+#endif
+#ifndef FLUTTER_SCENE_SKIP_SSAO
+    if (frag_info.ssao_lighting.w > 0.5) {
+      visibility = min(visibility, occlusion_sample.g);
+    }
+#endif
+    return visibility;
+  }
+
+  void Surface(inout MaterialInputs material) {
+    vec3 world_pos = GetWorldPosition();
+    vec3 n = GetWorldNormal();
+
+    // The occlusion chain's texture for this frame. Visibility rides r (a
+    // under the indirect-light layout); the sun contact term rides g.
+    vec4 occlusion_sample = vec4(1.0);
+    float occlusion = 1.0;
+#ifndef FLUTTER_SCENE_SKIP_SSAO
+    if (frag_info.ssao_params.x > 0.5) {
+      occlusion_sample = texture(
+          ssao_texture, gl_FragCoord.xy * frag_info.ssao_params.zw);
+      occlusion = frag_info.camera_up.w > 0.5
+          ? occlusion_sample.a
+          : occlusion_sample.r;
+    }
+#endif
+
+    float shadow_visibility =
+        CatcherShadowVisibility(world_pos, n, occlusion_sample);
+    float shadow_term =
+        material_params.shadow_intensity * (1.0 - shadow_visibility);
+    float ao_term = material_params.ao_strength * (1.0 - occlusion);
+
+    // Radial fade from the mesh origin, in the mesh's local units.
+    // fade_end <= fade_start leaves the fade off.
+    float radial_fade = 1.0;
+    if (material_params.fade_end > material_params.fade_start) {
+      radial_fade = 1.0 - smoothstep(
+          material_params.fade_start, material_params.fade_end,
+          length(catcher_local_position));
+    }
+
+    // TODO(shadow-catcher-fog): the catcher skips ApplyFog, so its overlay
+    // does not lose contrast inside distance fog like lit surfaces do.
+    float alpha = clamp(shadow_term + ao_term, 0.0, 1.0) * radial_fade;
+    material.base_color = vec4(material_params.shadow_color, alpha);
+    PrepareMaterial(material);
+  }
+}

@@ -24,6 +24,12 @@ enum FmatShadingModel {
   /// enables the physical fields on `MaterialInputs`.
   physical,
 
+  /// A shadow-receiving overlay. Uses the lit engine bindings (shadow atlas,
+  /// occlusion chain, punctual lights) so `Surface()` can sample them, but
+  /// the framework outputs `base_color` directly (premultiplied) instead of
+  /// running the lighting. Backs the engine's bundled shadow catcher.
+  shadowCatcher,
+
   /// No lighting. The material's `Surface()` writes the final color into
   /// `base_color`; the framework outputs it premultiplied. Use for stylized
   /// or self-lit effects.

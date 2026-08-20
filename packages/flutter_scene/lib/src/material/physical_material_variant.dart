@@ -147,6 +147,22 @@ Future<void> initializePhysicalMaterialResources() async {
   await _loadPhysicalAssets();
 }
 
+/// The loaded physical-bundle shader library and combined sidecar, for the
+/// engine materials that ride the same bundle (the shadow catcher). Throws
+/// until `Scene.initializeStaticResources()` has completed.
+@internal
+({gpu.ShaderLibrary library, Map<String, Object?> metadata})
+requirePhysicalBundleAssets() {
+  final assets = _physicalAssets;
+  if (assets == null) {
+    throw StateError(
+      'Physical material resources are not ready. Await '
+      'Scene.initializeStaticResources() before preparing materials.',
+    );
+  }
+  return (library: assets.library, metadata: assets.metadata);
+}
+
 /// A prepared internal shader variant for [PhysicallyBasedMaterial].
 @internal
 class PhysicalMaterialVariant extends PreprocessedMaterial {

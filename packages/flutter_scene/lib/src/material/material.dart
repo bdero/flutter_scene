@@ -385,6 +385,26 @@ abstract class Material {
   @internal
   bool get translucentDepthWrite => false;
 
+  /// Whether this material's geometry joins the camera depth prepass that
+  /// feeds the screen-space chain (ambient occlusion, contact shadows,
+  /// reflections, depth of field).
+  ///
+  /// Opaque materials do; translucent ones normally do not (the chain wants
+  /// the opaque scene). A translucent surface that must be known to the
+  /// screen-space chain, the shadow catcher, overrides this to true so
+  /// occlusion is evaluated at its own depth instead of the backdrop's.
+  @internal
+  bool get depthPrepassParticipates => isOpaque();
+
+  /// Whether this material currently draws nothing at all, keeping its render
+  /// items out of every pass (color, depth prepass, shadows).
+  ///
+  /// Refreshed per frame by the scene pre-pass, so a material can toggle it
+  /// live. The base material always draws; the shadow catcher returns true at
+  /// `shadowIntensity == 0` as a true early-out.
+  @internal
+  bool get drawsNothing => false;
+
   /// Whether geometry rendered with this material is fully opaque.
   ///
   /// The renderer uses this to split draws into the opaque and

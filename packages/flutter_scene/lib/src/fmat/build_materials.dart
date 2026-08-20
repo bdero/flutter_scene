@@ -108,6 +108,7 @@ const _frameworkShaderFiles = <String>[
   'material_inputs.glsl',
   'material_engine_lighting.glsl',
   'material_lighting.glsl',
+  'material_shadow_sampling.glsl',
   'filtered_scene_color.glsl',
   // The vertex-stage includes a material's generated vertex variants pull in.
   'material_vertex.glsl',
@@ -189,6 +190,7 @@ Future<void> buildBundledPhysicalMaterials({
   materials: const [
     'assets/materials/physical_opaque.fmat',
     'assets/materials/physical_transmission.fmat',
+    'assets/materials/shadow_catcher.fmat',
   ],
   bundleName: 'physical',
   discoveryRoot: 'assets/',

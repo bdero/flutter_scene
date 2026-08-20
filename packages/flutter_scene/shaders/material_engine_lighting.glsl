@@ -139,13 +139,21 @@ uniform FragInfo {
 }
 frag_info;
 
+// FLUTTER_SCENE_SHADOW_CATCHER compiles out the image-based-lighting
+// samplers: a shadow catcher never evaluates the lighting, and a declared
+// sampler stays in the binding surface whether or not any live code reads it
+// (backends disagree on the liveness of dead declarations), so the runtime
+// would otherwise have to bind environment textures the shader cannot use.
+#ifndef FLUTTER_SCENE_SHADOW_CATCHER
 // The prefiltered radiance in whichever layout this backend builds, a
 // roughness-mip cubemap or the 2D equirect atlas (see RadianceSampler).
 uniform RadianceSampler prefiltered_radiance;
 uniform sampler2D brdf_lut;
+#endif
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 uniform sampler2D shadow_map;
 #endif
+#ifndef FLUTTER_SCENE_SHADOW_CATCHER
 // Diffuse irradiance SH coefficients, coefficient i at texel i (RGB). Sampled
 // instead of read from a uniform so a sky's coefficients, computed on the GPU,
 // need no read-back (the diffuse_sh* uniform fields above are unused). Rows
@@ -158,12 +166,16 @@ uniform sampler2D sh_coefficients;
 // rides in sh_coefficients row 1. A dummy is bound when no cross-fade is
 // active.
 uniform RadianceSampler prefiltered_radiance_b;
+#endif
 // Screen-space ambient occlusion (occlusion factor in .r). A white
 // placeholder is bound when occlusion is disabled, so the sample is a
 // no-op; frag_info.ssao_params.x gates it regardless.
 #ifndef FLUTTER_SCENE_SKIP_SSAO
 uniform sampler2D ssao_texture;
 #endif
+// A shadow catcher's no-shadow variant compiles its spot loop out, leaving
+// the punctual textures with no live reference, so it declares neither.
+#if !defined(FLUTTER_SCENE_SHADOW_CATCHER) || !defined(FLUTTER_SCENE_SKIP_SHADOWS)
 // The additional analytic lights (point, spot, and directional lights past the
 // first) as an RGBA32F data texture: one light per row, four texels wide. Read
 // by computed UV (not a dynamically-indexed uniform array, which GLSL ES 1.00
@@ -180,6 +192,7 @@ uniform sampler2D punctual_lights;
 // computed UV (punctual_dims.yz give its width/height). A white placeholder is
 // bound and never read when the per-object count is 0.
 uniform sampler2D punctual_index;
+#endif
 
 // Engine time in seconds (wrapped to keep float precision), for material
 // animation. Zero when the engine provides no time.

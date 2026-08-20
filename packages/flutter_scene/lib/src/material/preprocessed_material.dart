@@ -107,6 +107,31 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   );
   static final ByteData _fragInfoBytes = ByteData.sublistView(_fragInfoScratch);
 
+  /// Packs the engine lighting fields plus this draw's punctual-light slice
+  /// into the shared `FragInfo` scratch, then lets [adjustEngineLighting]
+  /// apply per-material overrides before the caller emplaces it.
+  void _packEngineFragInfo(Lighting lighting, EnvironmentMap env) {
+    final fragInfo = _fragInfoScratch..fillRange(0, _fragInfoScratch.length, 0);
+    EngineLightingUniforms.packInto(
+      fragInfo,
+      lighting,
+      env,
+      nodeChannelMask: lightChannelMask,
+    );
+    // radiance_blend.zw [162]/[163]: this item's punctual-light slice
+    // (count, offset) into the per-frame light-index buffer.
+    fragInfo[162] = lightListCount.toDouble();
+    fragInfo[163] = lightListOffset.toDouble();
+    adjustEngineLighting(fragInfo);
+  }
+
+  /// Hook for subclasses to override packed `FragInfo` lighting fields for
+  /// this draw (a per-material shadow softness, say) without touching any
+  /// scene-wide setting. Runs after the engine fields are packed and before
+  /// the block is uploaded. The base implementation changes nothing.
+  @protected
+  void adjustEngineLighting(Float32List fragInfo) {}
+
   @override
   Set<RenderInput> get sceneInputs => _sceneInputs;
 
@@ -225,20 +250,20 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
     final shader = fragmentShaderForLighting(lighting);
 
-    if (shadingModel != FmatShadingModel.unlit) {
-      final env = environment ?? lighting.environmentMap;
-      final fragInfo = _fragInfoScratch
-        ..fillRange(0, _fragInfoScratch.length, 0);
-      EngineLightingUniforms.packInto(
-        fragInfo,
-        lighting,
-        env,
-        nodeChannelMask: lightChannelMask,
+    if (shadingModel == FmatShadingModel.shadowCatcher) {
+      _packEngineFragInfo(lighting, lighting.environmentMap);
+      pass.bindUniform(
+        shader.getUniformSlot('FragInfo'),
+        transientsBuffer.emplace(_fragInfoBytes),
       );
-      // radiance_blend.zw [162]/[163]: this item's punctual-light slice
-      // (count, offset) into the per-frame light-index buffer.
-      fragInfo[162] = lightListCount.toDouble();
-      fragInfo[163] = lightListOffset.toDouble();
+      // The catcher's generated fragment samples only the shadow atlas, the
+      // occlusion chain, and (in its shadow variant) the punctual textures.
+      // The radiance/BRDF/SH samplers and the fog block are compiled out of
+      // it, and binding an absent slot fails, so it takes its own bind set.
+      EngineLightingUniforms.bindShadowCatcherTextures(pass, shader, lighting);
+    } else if (shadingModel != FmatShadingModel.unlit) {
+      final env = environment ?? lighting.environmentMap;
+      _packEngineFragInfo(lighting, env);
       pass.bindUniform(
         shader.getUniformSlot('FragInfo'),
         transientsBuffer.emplace(_fragInfoBytes),
@@ -356,6 +381,7 @@ gpu.CullMode _cullMode(FmatCulling culling) => switch (culling) {
 FmatShadingModel _parseShadingModel(Object? value) => switch (value) {
   'unlit' => FmatShadingModel.unlit,
   'physical' => FmatShadingModel.physical,
+  'shadowCatcher' => FmatShadingModel.shadowCatcher,
   _ => FmatShadingModel.lit,
 };
 

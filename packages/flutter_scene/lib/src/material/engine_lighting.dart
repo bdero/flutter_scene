@@ -530,6 +530,45 @@ class EngineLightingUniforms {
     }
   }
 
+  /// Binds the engine samplers a shadow-catcher fragment shader declares.
+  ///
+  /// The catcher's generated `main()` never calls `EvaluateLighting`, so the
+  /// radiance, BRDF, and SH samplers (and the fog block) are compiled out of
+  /// it; binding those slots would fail. Its shadow variant, selected exactly
+  /// when [Lighting.shadowMap] is set, is the only one that declares the
+  /// shadow atlas and the punctual textures (its no-shadow twin compiles the
+  /// spot loop out), so those bind only then.
+  static void bindShadowCatcherTextures(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    Lighting lighting,
+  ) {
+    final shadowMap = lighting.shadowMap;
+    if (shadowMap != null) {
+      // fp32 atlas; PCF is explicit in the shader, so nearest is portable.
+      pass.bindTexture(
+        shader.getUniformSlot('shadow_map'),
+        shadowMap,
+        sampler: _nearestSampler,
+      );
+      pass.bindTexture(
+        shader.getUniformSlot('punctual_lights'),
+        Material.whitePlaceholder(lighting.punctualParamsTexture),
+        sampler: _nearestClampSampler,
+      );
+      pass.bindTexture(
+        shader.getUniformSlot('punctual_index'),
+        Material.whitePlaceholder(lighting.punctualIndexTexture),
+        sampler: _nearestClampSampler,
+      );
+    }
+    pass.bindTexture(
+      shader.getUniformSlot('ssao_texture'),
+      Material.whitePlaceholder(lighting.ssaoMap),
+      sampler: _clampLinearSampler,
+    );
+  }
+
   /// Binds the material scene-input samplers for a material that declared
   /// them (`Material.sceneInputs`); their slots exist only in shaders
   /// emitted with `engine_inputs`, so this must not run for other

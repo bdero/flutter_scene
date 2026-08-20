@@ -87,9 +87,15 @@ void _writeVaryings(StringBuffer sb, FmatMaterial material, String direction) {
 const String kRadianceCubeDefine = 'FLUTTER_SCENE_RADIANCE_CUBE';
 
 /// Whether [material] declares the prefiltered-radiance sampler, and so needs
-/// an entry per radiance layout.
+/// an entry per radiance layout. A shadow catcher never samples the
+/// environment (its generated `main()` skips `EvaluateLighting`, so the
+/// radiance samplers are compiled out), so it ships no cube twin.
 bool materialSamplesEnvironment(FmatMaterial material) =>
-    material.shadingModel != FmatShadingModel.unlit || material.useEnvironment;
+    switch (material.shadingModel) {
+      FmatShadingModel.unlit ||
+      FmatShadingModel.shadowCatcher => material.useEnvironment,
+      _ => true,
+    };
 
 /// The bundle entry name of [entryName]'s cubemap-radiance twin.
 String radianceCubeEntryName(String entryName) => '${entryName}Cube';
@@ -97,7 +103,10 @@ String radianceCubeEntryName(String entryName) => '${entryName}Cube';
 /// Whether the material described by sidecar [metadata] samples the
 /// environment, and so ships a [radianceCubeEntryName] twin.
 bool sidecarSamplesEnvironment(Map<String, Object?> metadata) =>
-    metadata['shading_model'] != 'unlit' || metadata['use_environment'] == true;
+    switch (metadata['shading_model']) {
+      'unlit' || 'shadowCatcher' => metadata['use_environment'] == true,
+      _ => true,
+    };
 
 String emitFragmentGlsl(
   FmatMaterial material, {
@@ -119,15 +128,27 @@ String emitFragmentGlsl(
   if (material.shadingModel == FmatShadingModel.physical) {
     sb.writeln('#define FLUTTER_SCENE_PHYSICAL_MATERIAL');
   }
+  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
+    sb.writeln('#define FLUTTER_SCENE_SHADOW_CATCHER');
+  }
   if (material.engineInputs.contains('filtered_scene_color')) {
     sb.writeln('#define FLUTTER_SCENE_SKIP_SSAO');
   }
   sb.writeln('#include <material_varyings.glsl>');
   sb.writeln('#include <pbr.glsl>');
-  sb.writeln('#include <texture.glsl>');
+  if (material.shadingModel != FmatShadingModel.shadowCatcher) {
+    sb.writeln('#include <texture.glsl>');
+  }
   sb.writeln('#include <normals.glsl>');
   sb.writeln('#include <material_inputs.glsl>');
-  if (lit) {
+  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
+    // The catcher samples the shadow atlas and occlusion chain but never
+    // evaluates the lighting, so it takes the engine bindings plus the
+    // sampling utilities without the full framework (whose dead code would
+    // keep the image-based-lighting samplers in the binding surface).
+    sb.writeln('#include <material_engine_lighting.glsl>');
+    sb.writeln('#include <material_shadow_sampling.glsl>');
+  } else if (lit) {
     sb.writeln('#include <material_engine_lighting.glsl>');
     sb.writeln('#include <material_lighting.glsl>');
   }
@@ -219,7 +240,16 @@ String emitFragmentGlsl(
       '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
   }
-  if (lit) {
+  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
+    sb.writeln(
+      '  // Shadow catcher: the surface color is the composed overlay,',
+    );
+    sb.writeln('  // output premultiplied without running the lighting.');
+    sb.writeln(
+      '  frag_color = vec4(material.base_color.rgb, 1.0) * '
+      'material.base_color.a;',
+    );
+  } else if (lit) {
     sb.writeln('  frag_color = EvaluateLighting(material);');
   } else {
     sb.writeln('  // Unlit: output the surface color, premultiplied by alpha.');

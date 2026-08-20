@@ -385,15 +385,15 @@ class _DepthPrepassEncoder {
   final List<RenderItem> _records = [];
 
   /// Records [item]'s depth, unless it is hidden, rejected by its layer
-  /// mask, or outside this encoder's set (opaque items normally; translucent
-  /// depth-writing items in the patch mode).
+  /// mask, or outside this encoder's set (prepass-participating items
+  /// normally, which is the opaque scene plus opt-ins like the shadow
+  /// catcher; translucent depth-writing items in the patch mode).
   void submit(RenderItem item) {
     if (!item.visible) return;
     if ((item.layers & _layerMask) == 0) return;
-    final opaque = item.material.isOpaque();
     if (_translucentPatch
-        ? (opaque || !item.material.translucentDepthWrite)
-        : !opaque) {
+        ? (item.material.isOpaque() || !item.material.translucentDepthWrite)
+        : !item.material.depthPrepassParticipates) {
       return;
     }
     if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
