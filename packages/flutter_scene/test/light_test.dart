@@ -262,20 +262,33 @@ void main() {
       }
     });
 
-    test('a pinned bound is clamped into the shadowed range', () {
+    test('a pinned bound is clamped inside the shadowed range', () {
       final camera = views.first;
+      // Below the near plane the pin clamps strictly above it, so cascade 0
+      // keeps thickness instead of collapsing to a zero-width slice.
       final near = DirectionalLight(
         shadowCascadeCount: 3,
         firstCascadeFarBound: -5.0,
       ).computeCascades(camera, aspectRatio);
-      expect(near.first.splitDistance, closeTo(camera.fovNear, 1e-9));
+      expect(near.first.splitDistance, greaterThan(camera.fovNear));
+      for (var i = 1; i < near.length; i++) {
+        expect(near[i].splitDistance, greaterThan(near[i - 1].splitDistance));
+      }
 
+      // At or past shadowMaxDistance the pin would collapse every later
+      // cascade onto far, so it falls back to the automatic scheme.
+      final control = DirectionalLight(
+        shadowCascadeCount: 3,
+        shadowMaxDistance: 100.0,
+      ).computeCascades(camera, aspectRatio);
       final far = DirectionalLight(
         shadowCascadeCount: 3,
         shadowMaxDistance: 100.0,
         firstCascadeFarBound: 1000.0,
       ).computeCascades(camera, aspectRatio);
-      expect(far.first.splitDistance, closeTo(100.0, 1e-9));
+      for (var i = 0; i < control.length; i++) {
+        expect(far[i].splitDistance, control[i].splitDistance);
+      }
     });
 
     test('a single cascade keeps its far bound', () {
@@ -437,5 +450,46 @@ void main() {
       final far = project(Vector3(0, -9, 0)).z;
       expect(far, greaterThan(near));
     });
+  });
+  test('a first-cascade pin at shadowMaxDistance falls back to automatic', () {
+    final light = DirectionalLight()
+      ..shadowCascadeCount = 4
+      ..shadowMaxDistance = 30.0;
+    final camera = PerspectiveCamera(
+      position: Vector3(0, 2, 8),
+      target: Vector3.zero(),
+    );
+    final automatic = light.computeCascades(camera, 1.5);
+    light.firstCascadeFarBound = 30.0;
+    final pinnedAtFar = light.computeCascades(camera, 1.5);
+    for (var i = 0; i < automatic.length; i++) {
+      expect(pinnedAtFar[i].splitDistance, automatic[i].splitDistance);
+    }
+    // Past the range behaves the same as at it.
+    light.firstCascadeFarBound = 45.0;
+    final pinnedPastFar = light.computeCascades(camera, 1.5);
+    for (var i = 0; i < automatic.length; i++) {
+      expect(pinnedPastFar[i].splitDistance, automatic[i].splitDistance);
+    }
+  });
+
+  test('a first-cascade pin below the near plane keeps cascade 0 thick', () {
+    final light = DirectionalLight()
+      ..shadowCascadeCount = 4
+      ..shadowMaxDistance = 30.0
+      ..firstCascadeFarBound = 0.0;
+    final camera = PerspectiveCamera(
+      position: Vector3(0, 2, 8),
+      target: Vector3.zero(),
+    );
+    final cascades = light.computeCascades(camera, 1.5);
+    // The pin clamps strictly above the near plane, so the first split is a
+    // real interval and the later splits stay strictly increasing.
+    for (var i = 1; i < cascades.length; i++) {
+      expect(
+        cascades[i].splitDistance,
+        greaterThan(cascades[i - 1].splitDistance),
+      );
+    }
   });
 }
