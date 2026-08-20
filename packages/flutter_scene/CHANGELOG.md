@@ -1,21 +1,21 @@
 ## 0.24.0
 
-* glTF import validates `extensionsRequired`, refusing a file that needs an unsupported extension with every missing extension named, and surfaces unrecognized `extensionsUsed` entries through a new `onWarning` callback on every import entry point instead of loading silently.
-* Sparse glTF accessors now apply, including a zero-filled base when `bufferView` is absent, with decoded indices bounds-checked at the write site.
-* `KHR_draco_mesh_compression` decodes in pure Dart on every platform, EdgeBreaker and sequential connectivity, standard prediction schemes, byte-exact against the reference decoder.
-* `EXT_meshopt_compression` decodes in pure Dart, all three modes and all four filters, with `KHR_mesh_quantization` recognized alongside it.
-* Standard KTX2 textures (`KHR_texture_basisu`) load at runtime, UASTC and ETC1S transcode in pure Dart with Zstandard supercompression, uploading ASTC-compressed on capable devices and RGBA8 elsewhere.
-* The runtime glTF importer accepts multi-buffer `.gltf` documents and percent-decodes resource URIs before they reach the resolver.
-* `MeshPrimitive.visible` and `MeshPrimitive.castsShadow` hide one primitive of a mesh or drop just its shadow, independently, without material hacks.
-* `MaterialParameters` gains typed getters (`getFloat`, `getVec4`, ...) returning effective values, `hasParameter`, `isParameterAssigned`, and full parameter enumeration.
-* Light channels: an 8-bit `channelMask` on every light and `Node.lightChannelMask` restrict which nodes a light illuminates, with an independent `DirectionalLight.shadowCasterChannelMask` for shadow-map casters.
-* `DirectionalLight.firstCascadeFarBound` pins the first shadow cascade's far boundary for a guaranteed-tight near cascade, and `cascadeOverlap` cross-fades cascade hand-offs.
-* `ShadowCatcherMaterial`, an invisible ground that shows only received shadows and ambient occlusion, with baked and live modes, per-catcher softness, tint, and radial fade, for product scenes over a transparent background.
-* Morph targets: glTF blend shapes import on both paths, blend on the CPU or a GPU morph texture (top 8 weights by magnitude, morph before skin), animate via `weights` channels, and round-trip through the scene document. `Node.morphWeights`/`setMorphWeight` drive them per instance.
-* `EnvironmentMap.fromKtx2Bytes`/`fromKtx2Asset` load a pre-baked GGX radiance cubemap (KTX2, linear roughness per mip, optional zstd) with SH-9 diffuse from a sidecar or embedded metadata, skipping the load-time prefilter; `EXT_lights_image_based` surfaces through the importer.
-* Baked lightmaps: `lightmapTexture` on `PhysicallyBasedMaterial` (UV1 default, transform and intensity, optional RGBM decode) replaces the SH diffuse ambient so baked and live indirect light never double-count.
-* Per-instance custom attributes: a `.fmat` `instance_attributes` block declares typed named attributes that ride the instance buffer, set via `InstancedMesh.setInstanceAttribute`, read in `Vertex()` and `Surface()`.
-* Planar reflections: `PlanarReflectorComponent` renders a mirrored, oblique-clipped scene capture that `.fmat` materials sample via the `planar_reflection` engine input, with capture sharing, layer masks, and resolution scaling.
+* glTF import validates `extensionsRequired` and surfaces warnings through an `onWarning` callback on every entry point.
+* Sparse glTF accessors apply, including the zero-filled base for an absent `bufferView`.
+* `KHR_draco_mesh_compression` decodes in pure Dart on every platform.
+* `EXT_meshopt_compression` decodes in pure Dart; `KHR_mesh_quantization` is recognized alongside it.
+* Standard KTX2 textures (`KHR_texture_basisu`) load on both import paths, transcoded in pure Dart.
+* The runtime importer accepts multi-buffer `.gltf` documents and percent-decodes resource URIs.
+* `MeshPrimitive.visible` and `MeshPrimitive.castsShadow` toggle one primitive's color and shadow passes independently.
+* `MaterialParameters` gains typed getters, `hasParameter`, `isParameterAssigned`, and parameter enumeration.
+* Light channels, `channelMask` on lights and `Node.lightChannelMask` restrict what a light illuminates; `DirectionalLight.shadowCasterChannelMask` filters shadow casters independently.
+* `DirectionalLight.firstCascadeFarBound` pins the first cascade split; `cascadeOverlap` cross-fades cascade hand-offs.
+* `ShadowCatcherMaterial`, an invisible ground showing only received shadows and ambient occlusion, live by default with a baked mode.
+* Morph targets import on both paths, animate via `weights` channels, and blend on the CPU or a GPU morph texture; `Node.morphWeights` drives them.
+* `EnvironmentMap.fromKtx2Bytes` loads a pre-baked radiance cubemap with SH-9 diffuse, skipping the load-time prefilter.
+* `PhysicallyBasedMaterial.lightmapTexture` adds a baked lightmap that replaces the SH diffuse ambient.
+* `.fmat` `instance_attributes` declare typed per-instance data, set via `InstancedMesh.setInstanceAttribute`.
+* `PlanarReflectorComponent` renders a mirrored scene capture that `.fmat` materials sample via the `planar_reflection` engine input.
 
 ## 0.23.0
 
