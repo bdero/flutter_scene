@@ -59,8 +59,11 @@ class StandardKtx2Image {
   if (texture.faceCount != 1 ||
       texture.layerCount > 1 ||
       texture.pixelDepth > 1) {
-    // TODO(ktx2-cube-array): cube map, array, and 3D standard files need
-    // per-image slicing within each level.
+    // TODO(ktx2-cube-array): array and 3D standard files still need per-image
+    // slicing within each level. Uncompressed cubemaps have it in
+    // material/ibl_ktx2.dart (environment radiance); a Basis-encoded cubemap
+    // bound as a material texture would need the same slicing here plus a
+    // cube upload path.
     throw Ktx2FormatException(
       'Only 2D non-array standard KTX2 textures are supported',
     );
