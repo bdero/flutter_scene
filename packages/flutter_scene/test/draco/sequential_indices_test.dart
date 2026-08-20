@@ -61,6 +61,39 @@ void main() {
     expect(decoded.attributes, isEmpty);
   });
 
+  test('decodes wide uncompressed sequential indices', () {
+    // Point counts at 2^16 and 2^21 select the varint and uint32 index
+    // encodings; the fixtures only reach the narrower widths.
+    Uint8List build(int numPoints, List<int> indices, List<int> indexBytes) {
+      final out = BytesBuilder();
+      out.add('DRACO'.codeUnits);
+      out.add([2, 2, 1, 0, 0, 0]);
+      writeVarint(out, indices.length ~/ 3);
+      writeVarint(out, numPoints);
+      out.addByte(1); // Uncompressed indices.
+      out.add(indexBytes);
+      out.addByte(0); // No attribute decoders.
+      return out.toBytes();
+    }
+
+    final varintIndices = [0, 70000, 5];
+    final varintBytes = BytesBuilder();
+    for (final index in varintIndices) {
+      writeVarint(varintBytes, index);
+    }
+    final varintDecoded = decodeDracoMesh(
+      build(1 << 16, varintIndices, varintBytes.takeBytes()),
+    );
+    expect(varintDecoded.faces, varintIndices);
+
+    final wideIndices = [1 << 20, 3, 2000000];
+    final wideBytes = Uint32List.fromList(wideIndices);
+    final wideDecoded = decodeDracoMesh(
+      build(1 << 21, wideIndices, Uint8List.sublistView(wideBytes)),
+    );
+    expect(wideDecoded.faces, wideIndices);
+  });
+
   test('rejects a negative running index', () {
     // First delta is -1, running index dips below zero.
     final out = BytesBuilder();
