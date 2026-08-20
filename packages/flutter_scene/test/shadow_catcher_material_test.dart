@@ -11,6 +11,8 @@ import 'package:flutter_scene/src/fmat/fmat.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/render_scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/shadow_catcher_bake_pass.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -140,17 +142,21 @@ void main() {
             'ssao_texture',
             'punctual_lights',
             'punctual_index',
+            'baked_shadow_texture',
           }),
         );
         // The no-shadow variant compiles the whole shadow path out, leaving
-        // only the occlusion chain.
+        // the occlusion chain and the baked cache.
         final base = await _compileReflection(
           impellerc,
           temp,
           'ShadowCatcher',
           variants['ShadowCatcher']!,
         );
-        expect(_samplerNames(base), unorderedEquals({'ssao_texture'}));
+        expect(
+          _samplerNames(base),
+          unorderedEquals({'ssao_texture', 'baked_shadow_texture'}),
+        );
       } finally {
         temp.deleteSync(recursive: true);
       }
@@ -166,9 +172,53 @@ void main() {
     expect(material.softness, 0.0);
     expect(material.fadeStart, 0.0);
     expect(material.fadeEnd, 0.0);
+    expect(material.mode, ShadowCatcherMode.baked);
     expect(material.isOpaque(), isFalse);
     expect(material.depthPrepassParticipates, isTrue);
     expect(material.drawsNothing, isFalse);
+  });
+
+  test('baked mode requests a bake exactly when a cache is stale', () {
+    final material = ShadowCatcherMaterial();
+    // Baked by default: the first rendered frame bakes the cache.
+    expect(material.needsBakedShadowRefresh, isTrue);
+
+    // A disabled catcher never bakes (it draws nothing at all).
+    material.shadowIntensity = 0.0;
+    expect(material.needsBakedShadowRefresh, isFalse);
+    material.shadowIntensity = 0.8;
+
+    // Live mode samples the atlas per fragment; no cache to refresh.
+    material.mode = ShadowCatcherMode.live;
+    expect(material.needsBakedShadowRefresh, isFalse);
+
+    // Returning to baked mode re-bakes, as does the explicit dirty flag and
+    // a softness change (the cache resolution rides softness).
+    material.mode = ShadowCatcherMode.baked;
+    expect(material.needsBakedShadowRefresh, isTrue);
+    material.markBakedShadowsDirty();
+    expect(material.needsBakedShadowRefresh, isTrue);
+    material.softness = 0.3;
+    expect(material.needsBakedShadowRefresh, isTrue);
+  });
+
+  test('bake resolution maps softness to a fixed blur span', () {
+    // Softer shadows bake smaller: the 4-texel blur kernel spans the
+    // softness, so resolution = footprint / softness * 4.
+    expect(ShadowCatcherBakePass.bakeResolution(2.0, 0.1), 80);
+    expect(ShadowCatcherBakePass.bakeResolution(2.0, 0.4), 20);
+    // Softness 0 defers to the scene's atlas softness at a default size.
+    expect(ShadowCatcherBakePass.bakeResolution(2.0, 0.0), 256);
+    // Clamped so tiny or huge footprints stay reasonable.
+    expect(ShadowCatcherBakePass.bakeResolution(100.0, 0.01), 1024);
+    expect(ShadowCatcherBakePass.bakeResolution(0.1, 10.0), 16);
+  });
+
+  test('the scene registers a bake pass for stale baked catchers', () {
+    final source = File('lib/src/scene.dart').readAsStringSync();
+
+    expect(source, contains('needsBakedShadowRefresh'));
+    expect(source, contains('ShadowCatcherBakePass'));
   });
 
   test('shadow catcher fmat defaults mirror the Dart defaults', () {
@@ -183,7 +233,11 @@ void main() {
     expect(defaults['ao_strength'], 0.5);
     expect(defaults['fade_start'], 0);
     expect(defaults['fade_end'], 0);
-    expect(compiled.material.samplerParameters, isEmpty);
+    expect(defaults['catcher_mode'], 0);
+    // The baked cache sampler is the only material texture.
+    expect(compiled.material.samplerParameters.map((p) => p.name), [
+      'baked_shadow_texture',
+    ]);
   });
 
   test('zero shadow intensity is a true early-out', () {
