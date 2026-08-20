@@ -17,6 +17,15 @@ int toInt32(int x) {
   return m >= 0x80000000 ? m - 0x100000000 : m;
 }
 
+final Float32List _f32Scratch = Float32List(1);
+
+/// Rounds [x] to float32 precision, mirroring the reference decoder's
+/// single-precision arithmetic so dequantized output is bit-identical.
+double toFloat32(double x) {
+  _f32Scratch[0] = x;
+  return _f32Scratch[0];
+}
+
 /// Zigzag-decodes an unsigned symbol to a signed value.
 int symbolToSignedInt(int val) {
   final result = val >> 1;
