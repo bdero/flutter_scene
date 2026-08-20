@@ -100,6 +100,24 @@ bool materialSamplesEnvironment(FmatMaterial material) =>
 /// The bundle entry name of [entryName]'s cubemap-radiance twin.
 String radianceCubeEntryName(String entryName) => '${entryName}Cube';
 
+/// Declares the baked-lightmap sampler and swaps the SH diffuse ambient for
+/// it. The sampler exists only in these entries, and it displaces
+/// `sh_coefficients` rather than extending the sampler set, so a lightmap
+/// entry costs the same texture units as its plain twin.
+///
+/// This doubles the entries of every material it is generated for, so it is
+/// generated only where a lightmap is expected (see
+/// `buildBundledPhysicalMaterials`).
+///
+/// TODO(lightmap-fmat): let a user `.fmat` opt into the axis (a declared
+/// feature, so a material that wants a bake pays the entries and the rest do
+/// not), which needs a runtime path to set the slot on a
+/// `PreprocessedMaterial`.
+const String kLightmapDefine = 'FLUTTER_SCENE_LIGHTMAP';
+
+/// The bundle entry name of [entryName]'s baked-lightmap twin.
+String lightmapEntryName(String entryName) => '${entryName}Lightmap';
+
 /// Whether the material described by sidecar [metadata] samples the
 /// environment, and so ships a [radianceCubeEntryName] twin.
 bool sidecarSamplesEnvironment(Map<String, Object?> metadata) =>

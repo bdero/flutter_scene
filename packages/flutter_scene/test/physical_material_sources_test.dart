@@ -24,25 +24,29 @@ bool _hasNamedResource(Object? value, String name) {
   return false;
 }
 
+/// The backends a lit variant has to compile for.
+const _backends = ['--opengl-es', '--metal-desktop', '--vulkan'];
+
 Future<Object?> _compileReflection(
   Uri impellerc,
   Directory temp,
   String entry,
-  String source,
-) async {
+  String source, {
+  String backend = '--opengl-es',
+}) async {
   final input = File.fromUri(temp.uri.resolve('$entry.frag'))
     ..writeAsStringSync(source);
   final reflection = File.fromUri(temp.uri.resolve('$entry.json'));
   final result = await Process.run(impellerc.toFilePath(), [
-    '--opengl-es',
+    backend,
     '--input-type=frag',
     '--input=${input.path}',
-    '--sl=${temp.uri.resolve('$entry.glsl').toFilePath()}',
+    '--sl=${temp.uri.resolve('$entry.out').toFilePath()}',
     '--spirv=${temp.uri.resolve('$entry.spirv').toFilePath()}',
     '--reflection-json=${reflection.path}',
     '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
     '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
-    '--gles-language-version=300',
+    if (backend == '--opengl-es') '--gles-language-version=300',
   ]);
   expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
   return jsonDecode(reflection.readAsStringSync());
@@ -135,6 +139,7 @@ void main() {
         final variants = emitFragmentShaderVariants(
           _compile(name),
           generateShadowVariant: true,
+          generateLightmapVariant: name == 'physical_opaque',
         );
         for (final variant in variants.entries) {
           final reflection =
@@ -167,6 +172,8 @@ void main() {
       for (final entry in [
         'flutter_scene_standard',
         'flutter_scene_standard_cube',
+        'flutter_scene_standard_lightmap',
+        'flutter_scene_standard_lightmap_cube',
       ]) {
         final reflection =
             await _compileReflection(
@@ -187,6 +194,161 @@ void main() {
       }
     } finally {
       temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('the baked lightmap ships as a define-gated variant axis', () {
+    final compiled = _compile('physical_opaque');
+    final plain = emitFragmentShaderVariants(
+      compiled,
+      generateShadowVariant: true,
+    );
+    final withLightmap = emitFragmentShaderVariants(
+      compiled,
+      generateShadowVariant: true,
+      generateLightmapVariant: true,
+    );
+
+    expect(
+      withLightmap.keys,
+      unorderedEquals({
+        'PhysicalOpaque',
+        'PhysicalOpaqueShadow',
+        'PhysicalOpaqueCube',
+        'PhysicalOpaqueShadowCube',
+        'PhysicalOpaqueLightmap',
+        'PhysicalOpaqueLightmapShadow',
+        'PhysicalOpaqueLightmapCube',
+        'PhysicalOpaqueLightmapShadowCube',
+      }),
+    );
+    // The axis adds entries; it does not disturb the ones already shipping.
+    plain.forEach((entry, glsl) {
+      expect(withLightmap[entry], glsl, reason: '$entry changed');
+    });
+    withLightmap.forEach((entry, glsl) {
+      expect(
+        glsl.contains('#define FLUTTER_SCENE_LIGHTMAP'),
+        entry.contains('Lightmap'),
+        reason: '$entry should define the lightmap only when named Lightmap.',
+      );
+    });
+    // The transmission material is deliberately left off the axis; see the
+    // TODO(lightmap-transmission) in buildBundledPhysicalMaterials.
+    expect(
+      emitFragmentShaderVariants(
+        _compile('physical_transmission'),
+        generateShadowVariant: true,
+      ).keys,
+      hasLength(4),
+    );
+  });
+
+  test('a bound lightmap displaces the SH diffuse ambient', () {
+    final lightmap = File('shaders/lightmap.glsl').readAsStringSync();
+    final uniforms = File(
+      'shaders/material_engine_lighting.glsl',
+    ).readAsStringSync();
+    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+
+    // The sampler takes the texture unit sh_coefficients gives up, so a
+    // lightmap entry costs no more than its plain twin.
+    expect(
+      uniforms,
+      contains(
+        '#ifndef FLUTTER_SCENE_LIGHTMAP\n'
+        'uniform sampler2D sh_coefficients;\n'
+        '#endif',
+      ),
+    );
+    expect(lightmap, contains('uniform sampler2D lightmap_texture;'));
+    expect(lightmap, contains('uniform LightmapInfo {'));
+    expect(lightmap, contains('vec3 BakedDiffuseRadiance() {'));
+    // RGBM decode is a uniform-driven branch, not a second define axis.
+    expect(lightmap, contains('baked.rgb * pow(baked.a, 2.2) * 34.4932'));
+    expect(lightmap, contains('lightmap_info.rotation.w > 0.5'));
+    expect(lightmap, isNot(contains('#define FLUTTER_SCENE_LIGHTMAP_RGBM')));
+    expect(lighting, contains('vec3 irradiance = BakedDiffuseRadiance();'));
+  });
+
+  test('lightmap variants trade sh_coefficients for the lightmap', () async {
+    final temp = Directory.systemTemp.createTempSync('lightmap_samplers');
+    try {
+      final impellerc = await findImpellerC();
+      final variants = emitFragmentShaderVariants(
+        _compile('physical_opaque'),
+        generateShadowVariant: true,
+        generateLightmapVariant: true,
+      );
+      final entries = <String, String>{
+        ...variants,
+        'flutter_scene_standard': File(
+          'shaders/flutter_scene_standard.frag',
+        ).readAsStringSync(),
+        'flutter_scene_standard_lightmap': File(
+          'shaders/flutter_scene_standard_lightmap.frag',
+        ).readAsStringSync(),
+        'flutter_scene_standard_lightmap_cube': File(
+          'shaders/flutter_scene_standard_lightmap_cube.frag',
+        ).readAsStringSync(),
+      };
+      for (final backend in _backends) {
+        for (final entry in entries.entries) {
+          final lit = entry.key.toLowerCase().contains('lightmap');
+          final reflection =
+              await _compileReflection(
+                    impellerc,
+                    temp,
+                    entry.key,
+                    entry.value,
+                    backend: backend,
+                  )
+                  as Map<String, Object?>;
+          final samplers = reflection['sampled_images']! as List<Object?>;
+          expect(
+            samplers,
+            hasLength(lessThanOrEqualTo(maxFragmentSamplers)),
+            reason:
+                '${entry.key} on $backend declares ${samplers.length} '
+                'fragment samplers, over the $maxFragmentSamplers budget.',
+          );
+          expect(
+            _hasNamedResource(reflection, 'lightmap_texture'),
+            lit,
+            reason: '${entry.key} on $backend',
+          );
+          expect(
+            _hasNamedResource(reflection, 'sh_coefficients'),
+            !lit,
+            reason: '${entry.key} on $backend',
+          );
+        }
+      }
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
+
+  test('the base bundle ships the lightmap standard entries', () {
+    final manifest =
+        jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
+            as Map<String, dynamic>;
+
+    expect(
+      manifest['StandardLightmapFragment']['file'],
+      'shaders/flutter_scene_standard_lightmap.frag',
+    );
+    expect(
+      manifest['StandardLightmapCubeFragment']['file'],
+      'shaders/flutter_scene_standard_lightmap_cube.frag',
+    );
+    for (final entry in [
+      'flutter_scene_standard_lightmap',
+      'flutter_scene_standard_lightmap_cube',
+    ]) {
+      final source = File('shaders/$entry.frag').readAsStringSync();
+      expect(source, contains('#define FLUTTER_SCENE_LIGHTMAP'));
+      expect(source, contains('#include <flutter_scene_standard.frag>'));
     }
   });
 

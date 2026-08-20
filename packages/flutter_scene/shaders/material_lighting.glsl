@@ -13,6 +13,11 @@
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
 #include <fog.glsl>
 #include <octahedral.glsl>
+// The baked lightmap. Included only where it is used, so a plain lit entry
+// compiles to exactly the same code it did before the slot existed.
+#ifdef FLUTTER_SCENE_LIGHTMAP
+#include <lightmap.glsl>
+#endif
 
 // Evaluates the L2 diffuse-irradiance SH polynomial in direction `n`.
 // The coefficients already include the cosine convolution and 1/pi, so
@@ -455,11 +460,21 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec3 env_reflection =
       environment_transform *
       ParallaxCorrectReflection(v_position, reflection_normal);
+#ifdef FLUTTER_SCENE_LIGHTMAP
+  // The bake already carries this surface's indirect diffuse, so it replaces
+  // the SH ambient rather than adding to it. A bake has no direction, so the
+  // back side reads the same value.
+  vec3 irradiance = BakedDiffuseRadiance();
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  vec3 transmitted_irradiance = irradiance;
+#endif
+#else
   vec3 irradiance = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 0.0),
                         vec3(0.0));
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   vec3 transmitted_irradiance = max(
       EvaluateDiffuseSH(sh_coefficients, -env_normal, 0.0), vec3(0.0));
+#endif
 #endif
   vec3 prefiltered_color =
       SampleRadianceEnv(prefiltered_radiance,
@@ -468,8 +483,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // share the bound layout, so the same samplers' _b pair is read.
   float env_blend = frag_info.radiance_blend.x;
   if (env_blend > 0.0) {
+#ifndef FLUTTER_SCENE_LIGHTMAP
     vec3 irradiance_b = max(EvaluateDiffuseSH(sh_coefficients, env_normal, 1.0),
                             vec3(0.0));
+#endif
     // env_reflection is box-corrected for the primary probe; the secondary
     // reuses it, so a probe->environment crossfade samples the secondary with
     // the probe's parallax vector. Transient and weight-blended, so
@@ -478,6 +495,9 @@ vec4 EvaluateLighting(MaterialInputs material) {
     vec3 prefiltered_b =
         SampleRadianceEnv(prefiltered_radiance_b,
                           env_reflection, roughness);
+    // A baked diffuse ambient belongs to the surface, not to either
+    // environment, so only the specular lobe cross-fades here.
+#ifndef FLUTTER_SCENE_LIGHTMAP
     irradiance = mix(irradiance, irradiance_b, env_blend);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     vec3 transmitted_irradiance_b = max(
@@ -485,11 +505,16 @@ vec4 EvaluateLighting(MaterialInputs material) {
     transmitted_irradiance = mix(
         transmitted_irradiance, transmitted_irradiance_b, env_blend);
 #endif
+#endif
     prefiltered_color = mix(prefiltered_color, prefiltered_b, env_blend);
   }
+  // environment_intensity scales the image-based lighting; a bake carries its
+  // own lightmap_intensity instead.
+#ifndef FLUTTER_SCENE_LIGHTMAP
   irradiance *= frag_info.environment_intensity;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   transmitted_irradiance *= frag_info.environment_intensity;
+#endif
 #endif
   prefiltered_color *= frag_info.environment_intensity;
 

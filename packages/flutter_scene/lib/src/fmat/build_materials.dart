@@ -12,7 +12,13 @@ import 'package:flutter_scene/src/importer/build_hooks.dart'
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
 import 'fmat.dart';
-import 'fmat_emitter.dart' show kRadianceCubeDefine, materialSamplesEnvironment;
+import 'fmat_emitter.dart'
+    show
+        kLightmapDefine,
+        kRadianceCubeDefine,
+        lightmapEntryName,
+        materialSamplesEnvironment,
+        radianceCubeEntryName;
 import 'target_shader_bundle.dart';
 
 /// Controls where [buildMaterials] puts generated `.fmat` shader assets.
@@ -109,6 +115,7 @@ const _frameworkShaderFiles = <String>[
   'material_engine_lighting.glsl',
   'material_lighting.glsl',
   'material_shadow_sampling.glsl',
+  'lightmap.glsl',
   'filtered_scene_color.glsl',
   // The vertex-stage includes a material's generated vertex variants pull in.
   'material_vertex.glsl',
@@ -196,6 +203,11 @@ Future<void> buildBundledPhysicalMaterials({
   discoveryRoot: 'assets/',
   assetMode: assetMode,
   generateShadowVariants: true,
+  // Baked lightmaps go on static opaque surfaces. Transmissive materials are
+  // refractive glass, which nothing bakes, and the axis doubles their entries.
+  // TODO(lightmap-transmission): generate the axis for PhysicalTransmission
+  // too if a transmissive lightmapped surface ever comes up.
+  lightmapVariantMaterials: const {'PhysicalOpaque'},
   sourceRoot: sourceRoot,
   owner: owner,
   pruneGeneratedTree: pruneGeneratedTree,
@@ -210,6 +222,7 @@ Future<void> _buildMaterials({
   required String discoveryRoot,
   required MaterialAssetMode assetMode,
   bool generateShadowVariants = false,
+  Set<String> lightmapVariantMaterials = const {},
   Uri? sourceRoot,
   String? owner,
   bool pruneGeneratedTree = true,
@@ -344,7 +357,8 @@ Future<void> _buildMaterials({
     await shaderBundleStamp(
       buildInput,
       'fmat package=$assetOwner bundle=$bundleName '
-      'shadows=$generateShadowVariants',
+      'shadows=$generateShadowVariants '
+      'lightmaps=${(lightmapVariantMaterials.toList()..sort()).join(',')}',
     ),
   );
   for (final materialPath in materialPaths) {
@@ -433,6 +447,9 @@ Future<void> _buildMaterials({
       final fragmentVariants = emitFragmentShaderVariants(
         compiled,
         generateShadowVariant: hasShadowVariant,
+        generateLightmapVariant:
+            lightmapVariantMaterials.contains(entryName) &&
+            compiled.material.shadingModel != FmatShadingModel.unlit,
       );
       for (final variant in fragmentVariants.entries) {
         final variantEntryName = variant.key;
@@ -606,36 +623,48 @@ Future<void> _buildMaterials({
 Map<String, String> emitFragmentShaderVariants(
   FmatCompilation compiled, {
   required bool generateShadowVariant,
+  bool generateLightmapVariant = false,
 }) {
   final material = compiled.material;
   final entryName = material.name;
+  // The outermost axis, so a Lightmap entry still gets its Shadow and Cube
+  // twins. Only materials expected to carry a bake generate it; it doubles
+  // the entries of the ones that do.
+  final byLightmap = <String, List<String>>{
+    entryName: const [],
+    if (generateLightmapVariant)
+      lightmapEntryName(entryName): const [kLightmapDefine],
+  };
   // The unsuffixed entry is the no-shadow fast path. The Shadow entry keeps
   // the complete sampler layout used when the scene binds a shadow atlas.
-  final byShadow = generateShadowVariant
-      ? <String, String>{
-          entryName: emitFragmentGlsl(
-            material,
-            defines: const ['FLUTTER_SCENE_SKIP_SHADOWS'],
-          ),
-          '${entryName}Shadow': compiled.glsl,
-        }
-      : <String, String>{entryName: compiled.glsl};
+  final byShadow = <String, List<String>>{};
+  byLightmap.forEach((name, defines) {
+    if (generateShadowVariant) {
+      byShadow[name] = [...defines, 'FLUTTER_SCENE_SKIP_SHADOWS'];
+      byShadow['${name}Shadow'] = defines;
+    } else {
+      byShadow[name] = defines;
+    }
+  });
   if (!materialSamplesEnvironment(material)) {
-    return byShadow;
+    return <String, String>{
+      for (final entry in byShadow.entries)
+        entry.key: entry.value.isEmpty
+            ? compiled.glsl
+            : emitFragmentGlsl(material, defines: entry.value),
+    };
   }
   // Backends build the prefiltered radiance in one of two layouts and each
   // entry declares only its own sampler, so every entry gets a Cube twin that
   // the runtime picks from the bound environment.
   final variants = <String, String>{};
-  byShadow.forEach((name, glsl) {
-    variants[name] = glsl;
-    variants['${name}Cube'] = emitFragmentGlsl(
+  byShadow.forEach((name, defines) {
+    variants[name] = defines.isEmpty
+        ? compiled.glsl
+        : emitFragmentGlsl(material, defines: defines);
+    variants[radianceCubeEntryName(name)] = emitFragmentGlsl(
       material,
-      defines: [
-        if (generateShadowVariant && !name.endsWith('Shadow'))
-          'FLUTTER_SCENE_SKIP_SHADOWS',
-        kRadianceCubeDefine,
-      ],
+      defines: [...defines, kRadianceCubeDefine],
     );
   });
   return variants;
