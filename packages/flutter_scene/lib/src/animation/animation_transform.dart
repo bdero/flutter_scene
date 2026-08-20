@@ -64,6 +64,20 @@ class AnimationTransforms {
     scale: Vector3.all(1.0),
   );
 
+  /// Whether a transform-property channel binds this node. The player
+  /// writes [animatedPose] back to the node only when set, so a node driven
+  /// solely by a morph weights channel keeps its manual transform.
+  bool drivesTransform = false;
+
+  /// The node's rest morph weights, captured when the first weights channel
+  /// binds it; null while no weights channel targets the node.
+  Float32List? bindMorphWeights;
+
+  /// Scratch weights mutated by clips during [AnimationPlayer.update].
+  ///
+  /// Reset to a copy of [bindMorphWeights] at the start of each frame.
+  Float32List? animatedMorphWeights;
+
   /// Creates an [AnimationTransforms] anchored at the supplied bind pose.
   AnimationTransforms({required this.bindPose});
 }

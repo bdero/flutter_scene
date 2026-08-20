@@ -191,6 +191,7 @@ class MeshComponent extends Component {
       item.highlightColor = highlightColor;
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;
+      item.morphWeights = node.internalMorphWeights;
       if (staticShadowChanged) renderScene?.markStaticShadowDirty();
 
       final boundsVersion = item.geometry.localBoundsVersion;

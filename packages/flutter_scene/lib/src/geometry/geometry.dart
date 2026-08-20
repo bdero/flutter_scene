@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
+import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
@@ -743,6 +744,18 @@ abstract class Geometry {
   /// [SkinnedGeometry] overrides this to `'skinned'`.
   @internal
   String get materialVertexVariant => 'unskinned';
+
+  /// The morph target deltas this geometry carries, or null for unmorphed
+  /// geometry. Overridden by the morphed geometry subclasses.
+  /// {@category Geometry}
+  MorphTargetData? get morphTargets => null;
+
+  /// Hook for morphed geometries to receive the owning node's morph weights.
+  ///
+  /// The default implementation does nothing. The render passes call this
+  /// right before each draw's bind (mirroring [setJointsTexture]), so a
+  /// geometry shared between several nodes blends each node's own weights.
+  void setMorphWeights(Float32List? weights) {}
 
   /// Hook for skinned geometries to receive the joints texture computed
   /// by [Skin.getJointsTexture].

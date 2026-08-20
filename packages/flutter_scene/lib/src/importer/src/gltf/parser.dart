@@ -174,6 +174,7 @@ GltfNode _parseNode(Map<String, Object?> j) {
     translation: translation,
     rotation: rotation,
     scale: scale,
+    weights: _numList(j['weights']),
   );
 }
 
@@ -218,10 +219,23 @@ GltfMesh _parseMesh(Map<String, Object?> j) {
           mode: (pj['mode'] as int?) ?? 4,
           variantMappings: variantMappings,
           draco: draco,
+          targets: [
+            for (final t in (pj['targets'] as List?) ?? const [])
+              (t as Map).cast<String, int>(),
+          ],
         );
       })
       .toList(growable: false);
-  return GltfMesh(name: j['name'] as String?, primitives: primitives);
+  final extras = j['extras'] as Map?;
+  return GltfMesh(
+    name: j['name'] as String?,
+    primitives: primitives,
+    weights: _numList(j['weights']) ?? const [],
+    targetNames: [
+      for (final name in (extras?['targetNames'] as List?) ?? const [])
+        name as String,
+    ],
+  );
 }
 
 GltfAccessor _parseAccessor(Map<String, Object?> j) {

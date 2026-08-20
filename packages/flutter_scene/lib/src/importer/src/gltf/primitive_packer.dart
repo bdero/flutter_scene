@@ -1,6 +1,8 @@
 import 'dart:math' show sqrt;
 import 'dart:typed_data';
 
+import 'package:scene/scene.dart' show sceneLog;
+
 import '../../constants.dart';
 import 'accessor.dart';
 import 'coordinate_policy.dart';
@@ -23,6 +25,7 @@ class PackedPrimitive {
     required this.indices32Bit,
     required this.isSkinned,
     required this.sourceWindingFlipped,
+    this.morphTargets,
   });
 
   /// Packed vertex buffer in the engine's vertex layout (72 bytes per
@@ -46,6 +49,42 @@ class PackedPrimitive {
 
   /// Whether the packed source convention reverses native winding.
   final bool sourceWindingFlipped;
+
+  /// The primitive's morph target deltas, remapped to the packed vertex
+  /// order and coordinate-converted like the base vertices, or null when
+  /// the primitive declares no targets.
+  final PackedMorphTargets? morphTargets;
+}
+
+/// Morph target deltas packed alongside a [PackedPrimitive], target-major
+/// (`[target][vertex][component]`), aligned with the packed vertex order.
+class PackedMorphTargets {
+  PackedMorphTargets({
+    required this.targetCount,
+    required this.vertexCount,
+    required this.positionDeltas,
+    this.normalDeltas,
+    this.tangentDeltas,
+  });
+
+  /// The number of morph targets.
+  final int targetCount;
+
+  /// The packed primitive's vertex count each target's deltas cover.
+  final int vertexCount;
+
+  /// Position deltas, `targetCount * vertexCount * 3` floats.
+  final Float32List positionDeltas;
+
+  /// Normal deltas (same shape as [positionDeltas]), or null when no target
+  /// carries them or the base primitive has no authored normals.
+  final Float32List? normalDeltas;
+
+  /// Tangent deltas, xyz only (the bitangent sign always comes from the
+  /// base tangent), or null when absent. Stored for later use; blending
+  /// does not apply them yet. TODO(morph-tangent-deltas): apply tangent
+  /// deltas in the CPU and GPU blend paths.
+  final Float32List? tangentDeltas;
 }
 
 /// Packs a glTF mesh primitive into the engine's vertex/index layout.
@@ -310,6 +349,117 @@ PackedPrimitive packGltfPrimitive({
     indices32Bit: outIndices32Bit,
     isSkinned: hasJoints,
     sourceWindingFlipped: coordinatePolicy.sourceWindingFlipped,
+    morphTargets: _packMorphTargets(
+      primitive,
+      accessors,
+      bufferViews,
+      bufferData,
+      srcOf: srcOf,
+      sourceVertexCount: vertexCount,
+      coordinatePolicy: coordinatePolicy,
+    ),
+  );
+}
+
+/// Reads a primitive's morph targets into packed, target-major delta slabs
+/// aligned with the packed vertex order ([srcOf] maps output vertex to
+/// source vertex, identity unless the primitive was de-indexed for flat
+/// normals). Deltas are additive per spec; a native-baking policy negates
+/// each delta's Z like the base attributes.
+PackedMorphTargets? _packMorphTargets(
+  GltfMeshPrimitive primitive,
+  List<GltfAccessor> accessors,
+  List<GltfBufferView> bufferViews,
+  Uint8List bufferData, {
+  required List<int> srcOf,
+  required int sourceVertexCount,
+  required GltfCoordinatePolicy coordinatePolicy,
+}) {
+  final targets = primitive.targets;
+  if (targets.isEmpty) return null;
+
+  final hasBaseNormals = primitive.attributes.containsKey('NORMAL');
+  final hasBaseTangents = primitive.attributes.containsKey('TANGENT');
+  final anyNormals = targets.any((t) => t.containsKey('NORMAL'));
+  final anyTangents = targets.any((t) => t.containsKey('TANGENT'));
+  // Without authored base normals the primitive was de-indexed to flat
+  // normals; deltas relative to normals the asset never authored have no
+  // meaning, so they are dropped. TODO(morph-flat-normals): regenerate flat
+  // normals from morphed positions instead of keeping the rest normals.
+  if (anyNormals && !hasBaseNormals) {
+    sceneLog(
+      'glTF morph targets carry NORMAL deltas but the base primitive has no '
+      'authored normals; morphing keeps the generated flat normals',
+    );
+  }
+  // Tangent deltas without base normals cannot produce a valid frame; with
+  // base normals but no base tangent there is nothing to offset.
+  if (anyTangents && !hasBaseTangents) {
+    sceneLog(
+      'glTF morph targets carry TANGENT deltas but the base primitive has no '
+      'authored tangents; ignoring them',
+    );
+  }
+  final includeNormals = anyNormals && hasBaseNormals;
+  final includeTangents = anyTangents && hasBaseTangents && hasBaseNormals;
+
+  final outVertexCount = srcOf.length;
+  final targetCount = targets.length;
+  final positionDeltas = Float32List(targetCount * outVertexCount * 3);
+  final normalDeltas = includeNormals
+      ? Float32List(targetCount * outVertexCount * 3)
+      : null;
+  final tangentDeltas = includeTangents
+      ? Float32List(targetCount * outVertexCount * 3)
+      : null;
+
+  void fill(Float32List slab, int targetIndex, int accessorIndex) {
+    final accessor = accessors[accessorIndex];
+    if (accessor.count != sourceVertexCount) {
+      throw FormatException(
+        'glTF morph target accessor has ${accessor.count} elements; the '
+        'primitive has $sourceVertexCount vertices',
+      );
+    }
+    final source = readAccessorAsFloat32(accessor, bufferViews, bufferData);
+    // POSITION/NORMAL deltas are VEC3; TANGENT deltas are VEC3 per spec but
+    // a VEC4-authored one is tolerated (its w is ignored, the bitangent sign
+    // always comes from the base tangent).
+    final comps = accessor.type.componentCount;
+    if (comps < 3) {
+      throw FormatException(
+        'glTF morph target accessor has $comps components; expected 3',
+      );
+    }
+    final base = targetIndex * outVertexCount * 3;
+    final flipZ = coordinatePolicy.bakesNative;
+    for (var k = 0; k < outVertexCount; k++) {
+      final s = srcOf[k] * comps;
+      slab[base + k * 3] = source[s];
+      slab[base + k * 3 + 1] = source[s + 1];
+      slab[base + k * 3 + 2] = flipZ ? -source[s + 2] : source[s + 2];
+    }
+  }
+
+  for (var t = 0; t < targetCount; t++) {
+    final target = targets[t];
+    // A target may omit any attribute; omitted deltas stay zero.
+    final position = target['POSITION'];
+    if (position != null) fill(positionDeltas, t, position);
+    final normal = target['NORMAL'];
+    if (normalDeltas != null && normal != null) fill(normalDeltas, t, normal);
+    final tangent = target['TANGENT'];
+    if (tangentDeltas != null && tangent != null) {
+      fill(tangentDeltas, t, tangent);
+    }
+  }
+
+  return PackedMorphTargets(
+    targetCount: targetCount,
+    vertexCount: outVertexCount,
+    positionDeltas: positionDeltas,
+    normalDeltas: normalDeltas,
+    tangentDeltas: tangentDeltas,
   );
 }
 

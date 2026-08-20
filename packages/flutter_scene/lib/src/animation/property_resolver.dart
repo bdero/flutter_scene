@@ -53,6 +53,20 @@ abstract class PropertyResolver {
   ) {
     return ScaleTimelineResolver._(times, values);
   }
+
+  /// Creates a morph weights resolver that linearly interpolates between
+  /// keyframed weight vectors.
+  ///
+  /// [values] is the flattened keyframe data, [targetCount] weights per
+  /// keyframe in target order (`times.length * targetCount` floats), the
+  /// shape a glTF `weights` sampler decodes to.
+  static PropertyResolver makeMorphWeightsTimeline(
+    List<double> times,
+    Float32List values, {
+    required int targetCount,
+  }) {
+    return MorphWeightsTimelineResolver._(times, values, targetCount);
+  }
 }
 
 class _TimelineKey {
@@ -203,5 +217,53 @@ class ScaleTimelineResolver extends TimelineResolver {
       target.animatedPose.scale.y * scale.y,
       target.animatedPose.scale.z * scale.z,
     );
+  }
+}
+
+/// Resolves a morph weights timeline with per-target linear interpolation,
+/// blended into [AnimationTransforms.animatedMorphWeights] as an offset
+/// from the rest weights (matching the translation blend rule).
+class MorphWeightsTimelineResolver extends TimelineResolver {
+  final Float32List _values;
+
+  /// Weights per keyframe.
+  final int targetCount;
+
+  /// The flattened keyframe values ([targetCount] per keyframe). Read by
+  /// the scene serializer.
+  Float32List get values => Float32List.fromList(_values);
+
+  MorphWeightsTimelineResolver._(
+    List<double> times,
+    this._values,
+    this.targetCount,
+  ) : super._(times) {
+    assert(targetCount >= 0);
+    assert(times.length * targetCount == _values.length);
+  }
+
+  @override
+  void apply(AnimationTransforms target, double timeInSeconds, double weight) {
+    final animated = target.animatedMorphWeights;
+    final bind = target.bindMorphWeights;
+    if (animated == null || bind == null || targetCount == 0) {
+      return;
+    }
+    if (_values.isEmpty) {
+      return;
+    }
+
+    _TimelineKey key = _getTimelineKey(timeInSeconds);
+    final current = key.index * targetCount;
+    final previous = (key.index - 1) * targetCount;
+    final count = targetCount < animated.length ? targetCount : animated.length;
+    for (var i = 0; i < count; i++) {
+      var value = _values[current + i];
+      if (key.lerp < 1) {
+        final a = _values[previous + i];
+        value = a + (value - a) * key.lerp;
+      }
+      animated[i] += (value - bind[i]) * weight;
+    }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -74,6 +75,18 @@ base class Mesh {
 
   /// The list of [MeshPrimitive] objects that make up the [Geometry] and [Material] of the 3D model.
   final List<MeshPrimitive> primitives;
+
+  /// The morph target data of this mesh's first morphed primitive, or null
+  /// when no primitive carries targets. Every primitive of an imported mesh
+  /// shares one target count and order (the importers validate it), so the
+  /// first primitive's names, defaults, and count speak for the whole mesh.
+  MorphTargetData? get morphTargets {
+    for (final p in primitives) {
+      final data = p.geometry.morphTargets;
+      if (data != null) return data;
+    }
+    return null;
+  }
 
   vm.Aabb3? _localBoundsCache;
   bool _localBoundsCached = false;

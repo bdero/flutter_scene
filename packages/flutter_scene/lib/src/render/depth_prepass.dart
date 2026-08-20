@@ -441,6 +441,7 @@ class _DepthPrepassEncoder {
     // Skinned items draw through the full bind path below; apply this item's
     // skeleton to the (possibly shared) geometry first.
     item.applyJointsTexture(geometry);
+    item.applyMorphWeights(geometry);
     // An alpha-masked material samples its mask through the full-vertex
     // varyings, so it skips the position-only path too.
     final masked = item.material.depthAlphaMasked;

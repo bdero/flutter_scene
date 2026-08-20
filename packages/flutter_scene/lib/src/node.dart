@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
+import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -325,6 +326,74 @@ base class Node implements SceneGraph {
   /// The skin attached to this node, used for skeletal animation. Set by
   /// importers (both the scene importer and the runtime glTF/GLB loader).
   Skin? skin;
+
+  // This node instance's morph target weights, lazily seeded from the mesh's
+  // defaults on first access. Per instance so clones sharing one morphed
+  // geometry can hold different expressions, matching glTF's node.weights
+  // override of mesh.weights.
+  Float32List? _morphWeights;
+
+  MorphTargetData? get _meshMorphTargets => mesh?.morphTargets;
+
+  /// The number of morph targets on this node's mesh, or zero when the mesh
+  /// has none.
+  int get morphTargetCount => _meshMorphTargets?.targetCount ?? 0;
+
+  /// The morph target names from the source asset (`extras.targetNames`),
+  /// empty strings for unnamed targets. Empty when the mesh has no targets.
+  List<String> get morphTargetNames =>
+      _meshMorphTargets?.targetNames ?? const [];
+
+  /// The mesh-authored default morph weights, or null when the mesh has no
+  /// targets. Returns a copy.
+  Float32List? get defaultMorphWeights {
+    final defaults = _meshMorphTargets?.defaultWeights;
+    return defaults == null ? null : Float32List.fromList(defaults);
+  }
+
+  /// This node's current morph target weights, or null when the mesh has no
+  /// targets. Returns a copy; drive weights through [setMorphWeight] or
+  /// [setMorphWeights].
+  Float32List? get morphWeights {
+    final live = internalMorphWeights;
+    return live == null ? null : Float32List.fromList(live);
+  }
+
+  /// Sets the weight of morph target [index] on this node instance.
+  ///
+  /// Throws a [StateError] when the mesh has no morph targets and a
+  /// [RangeError] when [index] is outside `[0, morphTargetCount)`.
+  void setMorphWeight(int index, double value) {
+    final live = internalMorphWeights;
+    if (live == null) {
+      throw StateError("This node's mesh has no morph targets");
+    }
+    live[index] = value;
+  }
+
+  /// Replaces morph weights on this node instance, in target order. Entries
+  /// beyond the mesh's target count are ignored; missing trailing entries
+  /// keep their current value.
+  void setMorphWeights(List<double> values) {
+    final live = internalMorphWeights;
+    if (live == null) {
+      throw StateError("This node's mesh has no morph targets");
+    }
+    for (var i = 0; i < values.length && i < live.length; i++) {
+      live[i] = values[i];
+    }
+  }
+
+  /// The live weight storage the renderer and animation system read and
+  /// write, or null when the mesh has no morph targets.
+  @internal
+  Float32List? get internalMorphWeights {
+    final data = _meshMorphTargets;
+    if (data == null) return null;
+    final live = _morphWeights;
+    if (live != null && live.length == data.targetCount) return live;
+    return _morphWeights = Float32List.fromList(data.defaultWeights);
+  }
 
   /// Assigns the world-space transform of this node, automatically computing
   /// the [localTransform] needed to place the node at [transform] given the
@@ -1323,6 +1392,9 @@ base class Node implements SceneGraph {
     );
     result.isJoint = isJoint;
     result._localTransformTrs = _localTransformTrs?.clone();
+    result._morphWeights = _morphWeights == null
+        ? null
+        : Float32List.fromList(_morphWeights!);
     result._animations.addAll(_animations);
     // Components opt into cloning through [Component.cloneFor]; mesh
     // components are excluded because the mesh is already cloned through the
