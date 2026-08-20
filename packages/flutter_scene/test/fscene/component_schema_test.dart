@@ -181,11 +181,14 @@ void main() {
       'geometry',
       'material',
       'primitives',
+      'morphWeights',
     ]);
     expect(mesh.propertySchema[0].kind, ComponentPropertyKind.resourceRef);
     expect(mesh.propertySchema[0].defaultValue, isNull); // required
     expect(mesh.propertySchema[2].kind, ComponentPropertyKind.list);
     expect(mesh.propertySchema[2].itemDef, isNotNull);
+    expect(mesh.propertySchema[3].kind, ComponentPropertyKind.list);
+    expect(mesh.propertySchema[3].itemDef!.kind, ComponentPropertyKind.number);
   });
 
   test('directional light is rotation-aimed and preserves shadow controls', () {

@@ -334,8 +334,8 @@ class _PoseChannel {
   final int targetNode;
 
   /// One of `'translation'`, `'rotation'`, `'scale'`. (`'weights'`
-  /// drives morph targets, which flutter_scene doesn't currently
-  /// support; those channels are filtered out via [isUsable].)
+  /// drives morph targets, which never move joints, so those channels
+  /// are filtered out of the pose bake via [isUsable].)
   final String targetPath;
   final Float32List times;
   final Float32List values;

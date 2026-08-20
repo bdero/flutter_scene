@@ -381,7 +381,8 @@ class IcosphereGeometrySpec extends ProceduralGeometry {
 
 /// Mesh geometry, sourced either from a binary [payload] chunk (imported
 /// content) or a [procedural] descriptor (a runtime primitive). Exactly one
-/// source is set. Carries optional local [bounds].
+/// source is set. Carries optional local [bounds] and optional
+/// [morphTargets].
 /// {@category Documents}
 class GeometryResource extends ResourceSpec {
   /// Creates a geometry resource from payload chunks (a [vertices] buffer and
@@ -393,6 +394,7 @@ class GeometryResource extends ResourceSpec {
     this.procedural,
     this.bounds,
     this.topology = 'triangle',
+    this.morphTargets,
   }) : assert(
          (vertices == null) != (procedural == null),
          'A geometry has exactly one source: a vertex payload or a procedural '
@@ -419,6 +421,50 @@ class GeometryResource extends ResourceSpec {
   /// runtime enum at realization): `triangle`, `triangleStrip`, `line`,
   /// `lineStrip`, or `point`.
   final String topology;
+
+  /// The geometry's morph target (blend shape) data, or null when unmorphed.
+  final MorphTargetsSpec? morphTargets;
+}
+
+/// Morph target data on a [GeometryResource]: the delta payload plus target
+/// metadata.
+///
+/// The [deltas] chunk holds dense float32 delta slabs, target-major and
+/// aligned with the geometry's vertex order: every target's position deltas
+/// (`targetCount * vertexCount * 3` floats), then the same shape of normal
+/// deltas when [hasNormalDeltas], then tangent deltas (xyz) when
+/// [hasTangentDeltas].
+/// {@category Documents}
+class MorphTargetsSpec {
+  /// Creates a morph targets description over the [deltas] payload.
+  MorphTargetsSpec({
+    required this.deltas,
+    required this.targetCount,
+    this.hasNormalDeltas = false,
+    this.hasTangentDeltas = false,
+    List<String>? targetNames,
+    List<double>? defaultWeights,
+  }) : targetNames = targetNames ?? const [],
+       defaultWeights = defaultWeights ?? const [];
+
+  /// The binary chunk holding the delta slabs.
+  final LocalId deltas;
+
+  /// The number of morph targets.
+  final int targetCount;
+
+  /// Whether [deltas] carries a normal-delta slab after the positions.
+  final bool hasNormalDeltas;
+
+  /// Whether [deltas] carries a tangent-delta slab after the normals.
+  final bool hasTangentDeltas;
+
+  /// The target names (from the source asset's `extras.targetNames`), or
+  /// empty when unnamed.
+  final List<String> targetNames;
+
+  /// The mesh-authored default weights, or empty for all-zero defaults.
+  final List<double> defaultWeights;
 }
 
 /// A texture sourced either from an embedded [payload] chunk or an external
@@ -951,7 +997,7 @@ class SkinSpec {
   final LocalId? skeleton;
 }
 
-/// The transform channel an animation drives on its target node.
+/// The node property an animation channel drives on its target node.
 /// {@category Documents}
 enum AnimationProperty {
   /// Drives the target's translation.
@@ -962,6 +1008,11 @@ enum AnimationProperty {
 
   /// Drives the target's scale.
   scale,
+
+  /// Drives the target's morph target weights. The keyframes payload is the
+  /// flattened glTF shape, one weight per target per keyframe; the target
+  /// count is the keyframe count divided by the timeline length.
+  weights,
 }
 
 /// One animation channel: a keyframe timeline driving one [property] of one

@@ -606,6 +606,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
       :final indices,
       :final procedural,
       :final bounds,
+      :final morphTargets,
     ):
       return {
         'kind': 'geometry',
@@ -618,6 +619,17 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
             'max': [bounds.max.x, bounds.max.y, bounds.max.z],
           },
         if (r.topology != 'triangle') 'topology': r.topology,
+        if (morphTargets != null)
+          'morphTargets': {
+            'deltas': idKey(morphTargets.deltas),
+            'targetCount': morphTargets.targetCount,
+            if (morphTargets.hasNormalDeltas) 'normals': true,
+            if (morphTargets.hasTangentDeltas) 'tangents': true,
+            if (morphTargets.targetNames.isNotEmpty)
+              'names': morphTargets.targetNames,
+            if (morphTargets.defaultWeights.isNotEmpty)
+              'weights': morphTargets.defaultWeights,
+          },
       };
     case TextureResource(:final payload, :final asset, :final content):
       return {
@@ -1141,6 +1153,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
             : null,
         bounds: _decodeBounds(json['bounds']),
         topology: json['topology'] as String? ?? 'triangle',
+        morphTargets: _decodeMorphTargets(json['morphTargets']),
       );
     case 'texture':
       return TextureResource(
@@ -1283,6 +1296,24 @@ BoundsSpec? _decodeBounds(Object? json) {
   return BoundsSpec(
     min: Vector3(_d(min[0]), _d(min[1]), _d(min[2])),
     max: Vector3(_d(max[0]), _d(max[1]), _d(max[2])),
+  );
+}
+
+MorphTargetsSpec? _decodeMorphTargets(Object? json) {
+  if (json == null) return null;
+  final m = json as Map;
+  return MorphTargetsSpec(
+    deltas: LocalId.parse(m['deltas'] as String),
+    targetCount: m['targetCount'] as int,
+    hasNormalDeltas: m['normals'] as bool? ?? false,
+    hasTangentDeltas: m['tangents'] as bool? ?? false,
+    targetNames: [
+      for (final name in (m['names'] as List? ?? const [])) name as String,
+    ],
+    defaultWeights: [
+      for (final weight in (m['weights'] as List? ?? const []))
+        _d(weight as num),
+    ],
   );
 }
 
