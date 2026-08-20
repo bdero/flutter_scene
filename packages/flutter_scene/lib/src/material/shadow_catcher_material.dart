@@ -62,11 +62,12 @@ enum ShadowCatcherMode {
 /// ground plane would have.
 ///
 /// [mode] selects how the atlas shadow term is evaluated. The default
-/// [ShadowCatcherMode.baked] renders the footprint shadow once into a
-/// low-resolution cache (blurred by [softness]) and samples it per frame,
-/// right for a static product scene; call [markBakedShadowsDirty] after the
-/// lights or casters change, or use [ShadowCatcherMode.live] for continuous
-/// motion. Baked mode assumes a ground-plane-like mesh lying in its local XZ
+/// [ShadowCatcherMode.live] samples the atlas per frame and stays correct as
+/// lights and casters move. [ShadowCatcherMode.baked] renders the footprint
+/// shadow once into a low-resolution cache (blurred by [softness]) and
+/// samples that instead, cheaper and right for a static product scene, but
+/// stale until [markBakedShadowsDirty] is called after the lights or casters
+/// change. Baked mode assumes a ground-plane-like mesh lying in its local XZ
 /// plane (the cache is a top-down footprint).
 ///
 /// [shadowIntensity] doubles as the enable switch. At exactly `0` the
@@ -85,7 +86,7 @@ class ShadowCatcherMaterial extends Material {
     double softness = 0.0,
     double fadeStart = 0.0,
     double fadeEnd = 0.0,
-    ShadowCatcherMode mode = ShadowCatcherMode.baked,
+    ShadowCatcherMode mode = ShadowCatcherMode.live,
   }) : _shadowColor = shadowColor,
        _shadowIntensity = shadowIntensity,
        _aoStrength = aoStrength,
@@ -108,10 +109,10 @@ class ShadowCatcherMaterial extends Material {
 
   /// How the shadow term is evaluated; see [ShadowCatcherMode].
   ///
-  /// Defaults to [ShadowCatcherMode.baked], the right choice for a static
-  /// product scene. Switch to [ShadowCatcherMode.live] when the lights or
-  /// shadow casters move, or call [markBakedShadowsDirty] after discrete
-  /// changes.
+  /// Defaults to [ShadowCatcherMode.live], which stays correct as lights and
+  /// casters move. Switch to [ShadowCatcherMode.baked] for a static product
+  /// scene, cheaper and softer for free, calling [markBakedShadowsDirty]
+  /// after any discrete light or model change.
   ShadowCatcherMode get mode => _mode;
   set mode(ShadowCatcherMode value) {
     if (_mode == value) return;

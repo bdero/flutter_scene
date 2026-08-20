@@ -172,15 +172,15 @@ void main() {
     expect(material.softness, 0.0);
     expect(material.fadeStart, 0.0);
     expect(material.fadeEnd, 0.0);
-    expect(material.mode, ShadowCatcherMode.baked);
+    expect(material.mode, ShadowCatcherMode.live);
     expect(material.isOpaque(), isFalse);
     expect(material.depthPrepassParticipates, isTrue);
     expect(material.drawsNothing, isFalse);
   });
 
   test('baked mode requests a bake exactly when a cache is stale', () {
-    final material = ShadowCatcherMaterial();
-    // Baked by default: the first rendered frame bakes the cache.
+    final material = ShadowCatcherMaterial(mode: ShadowCatcherMode.baked);
+    // Freshly baked-mode: the first rendered frame bakes the cache.
     expect(material.needsBakedShadowRefresh, isTrue);
 
     // A disabled catcher never bakes (it draws nothing at all).
