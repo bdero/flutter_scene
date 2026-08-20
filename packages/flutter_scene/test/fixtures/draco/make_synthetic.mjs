@@ -3,7 +3,10 @@
 // EdgeBreaker traversal and parallelogram prediction to be exercised.
 import { Document, NodeIO } from '@gltf-transform/core';
 
-const N = 9; // (N+1)^2 = 100 vertices, 2*N*N = 162 triangles
+// Grid resolution and output name are overridable; N=23 (1058 triangles)
+// crosses Draco's 1000-face threshold for valence coded traversal.
+const N = Number(process.argv[2] ?? 9); // (N+1)^2 vertices, 2*N*N triangles
+const outName = process.argv[3] ?? 'synthetic.glb';
 const doc = new Document();
 const buffer = doc.createBuffer();
 
@@ -68,5 +71,5 @@ const mesh = doc.createMesh('bumpy').addPrimitive(prim);
 const node = doc.createNode('bumpy').setMesh(mesh);
 doc.createScene('scene').addChild(node);
 
-await new NodeIO().write('synthetic.glb', doc);
-console.log('wrote synthetic.glb', verts, 'verts', idx.length / 3, 'tris');
+await new NodeIO().write(outName, doc);
+console.log('wrote', outName, verts, 'verts', idx.length / 3, 'tris');
