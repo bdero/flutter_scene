@@ -25,6 +25,50 @@ import 'gltf_resources.dart';
 /// through the platform image codec. An image that can't be sourced or
 /// decoded falls back to a 1x1 white placeholder so material binding never
 /// sees a null texture.
+/// The encoded bytes of `doc.images[imageIndex]`, sourced from the GLB binary
+/// chunk, a `data:` URI, or [resolveUri] for an external file (percent-decoded
+/// per the glTF spec). Returns null when the image cannot be sourced, routing
+/// the reason through [onMessage] (debug-printed when none is given).
+Future<Uint8List?> resolveGltfImageBytes(
+  GltfDocument doc,
+  Uint8List bufferData,
+  int imageIndex, {
+  GltfResourceResolver? resolveUri,
+  void Function(String message)? onMessage,
+}) async {
+  void report(String message) =>
+      onMessage != null ? onMessage(message) : debugPrint(message);
+  if (imageIndex < 0 || imageIndex >= doc.images.length) return null;
+  final image = doc.images[imageIndex];
+  if (image.bufferView != null) {
+    final bv = doc.bufferViews[image.bufferView!];
+    return Uint8List.sublistView(
+      bufferData,
+      bv.byteOffset,
+      bv.byteOffset + bv.byteLength,
+    );
+  }
+  final uri = image.uri;
+  if (uri == null) return null;
+  if (uri.startsWith('data:')) return decodeGltfDataUri(uri);
+  if (resolveUri == null) {
+    report(
+      'glTF image $imageIndex references external URI "$uri" but no '
+      'resource resolver was provided. Using placeholder.',
+    );
+    return null;
+  }
+  try {
+    return await resolveUri(Uri.decodeComponent(uri));
+  } catch (e) {
+    report(
+      'Failed to resolve glTF image $imageIndex URI "$uri": $e. '
+      'Using placeholder.',
+    );
+    return null;
+  }
+}
+
 Future<List<Texture2D>> buildTextures(
   GltfDocument doc,
   Uint8List bufferData, {
@@ -55,41 +99,17 @@ Future<List<Texture2D>> buildTextures(
       warn('glTF texture $i has no image source, using a placeholder.');
       continue;
     }
-    final image = doc.images[imageIdx];
-    Uint8List? imageBytes;
-    if (image.bufferView != null) {
-      final bv = doc.bufferViews[image.bufferView!];
-      imageBytes = Uint8List.sublistView(
-        bufferData,
-        bv.byteOffset,
-        bv.byteOffset + bv.byteLength,
-      );
-    } else if (image.uri != null) {
-      final uri = image.uri!;
-      if (uri.startsWith('data:')) {
-        imageBytes = decodeGltfDataUri(uri);
-      } else if (resolveUri != null) {
-        try {
-          imageBytes = await resolveUri(Uri.decodeComponent(uri));
-        } catch (e) {
-          warn(
-            'Failed to resolve glTF image $imageIdx URI "$uri": $e. '
-            'Using placeholder.',
-          );
-          continue;
-        }
-      } else {
-        warn(
-          'glTF image $imageIdx references external URI "$uri" but no '
-          'resource resolver was provided. Using placeholder.',
-        );
-        continue;
-      }
-    } else {
-      continue;
-    }
+    final imageBytes = await resolveGltfImageBytes(
+      doc,
+      bufferData,
+      imageIdx,
+      resolveUri: resolveUri,
+      onMessage: warn,
+    );
+    if (imageBytes == null) continue;
 
-    if (looksLikeKtx2(imageBytes) || image.mimeType == 'image/ktx2') {
+    if (looksLikeKtx2(imageBytes) ||
+        doc.images[imageIdx].mimeType == 'image/ktx2') {
       try {
         if (isInternalKtx2(readKtx2(imageBytes))) {
           internalIndices.add(i);

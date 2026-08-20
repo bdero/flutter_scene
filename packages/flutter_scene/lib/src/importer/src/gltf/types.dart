@@ -22,6 +22,7 @@ class GltfDocument {
     this.skins = const [],
     this.animations = const [],
     this.lights = const [],
+    this.imageBasedLights = const [],
     this.materialsVariants = const [],
     this.warnings = const [],
   });
@@ -43,6 +44,11 @@ class GltfDocument {
   /// Punctual lights declared by the `KHR_lights_punctual` extension, indexed
   /// by [GltfNode.light]. Empty when the extension is absent.
   final List<GltfPunctualLight> lights;
+
+  /// Image-based lights declared by the `EXT_lights_image_based` extension,
+  /// indexed by [GltfScene.imageBasedLight]. Empty when the extension is
+  /// absent.
+  final List<GltfImageBasedLight> imageBasedLights;
 
   /// Variant names declared by the `KHR_materials_variants` extension, in
   /// declaration order. Empty when the extension is absent. Primitive
@@ -106,10 +112,51 @@ class GltfPunctualLight {
   final double outerConeAngle;
 }
 
+/// An `EXT_lights_image_based` light definition. Fields match the extension
+/// spec; the images are left as indices into `GltfDocument.images` so the
+/// parse stays free of resource resolution.
+class GltfImageBasedLight {
+  GltfImageBasedLight({
+    this.name,
+    Quaternion? rotation,
+    this.intensity = 1.0,
+    required this.irradianceCoefficients,
+    required this.specularImageSize,
+    required this.specularImages,
+  }) : rotation = rotation ?? Quaternion.identity();
+
+  final String? name;
+
+  /// Rotation of the light's cubemap relative to the scene.
+  final Quaternion rotation;
+
+  /// Scalar multiplier on both the irradiance and the specular images.
+  final double intensity;
+
+  /// The spec's 9x3 irradiance spherical-harmonic coefficients, as stored.
+  ///
+  /// These are the source radiance projection, without the Lambertian
+  /// convolution or the `1/pi` the engine folds in at bake time; see
+  /// `ImageBasedLightComponent.diffuseSphericalHarmonics` for the converted
+  /// form.
+  final List<Vector3> irradianceCoefficients;
+
+  /// Face size of the specular cubemap's mip 0.
+  final int specularImageSize;
+
+  /// `specularImages[level][face]` image indices, faces in cube order
+  /// (+X, -X, +Y, -Y, +Z, -Z). Level count is the roughness chain length.
+  final List<List<int>> specularImages;
+}
+
 class GltfScene {
-  GltfScene({this.name, this.nodes = const []});
+  GltfScene({this.name, this.nodes = const [], this.imageBasedLight});
   final String? name;
   final List<int> nodes;
+
+  /// Index into [GltfDocument.imageBasedLights] (`EXT_lights_image_based`),
+  /// or null.
+  final int? imageBasedLight;
 }
 
 class GltfNode {
