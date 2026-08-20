@@ -17,6 +17,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
 
 import 'accessor.dart';
+import 'draco/gltf_draco.dart';
 import 'types.dart';
 
 /// A mutable axis-aligned bounding box accumulator.
@@ -637,9 +638,29 @@ List<AabbBounds> _computeJointInfluenceAabbs(
     jointCount,
     (_) => AabbBounds.empty(),
   );
-  final positions = _readFloats(prim.attributes['POSITION']!, doc, bufferData);
-  final joints = _readFloats(prim.attributes['JOINTS_0']!, doc, bufferData);
-  final weights = _readFloats(prim.attributes['WEIGHTS_0']!, doc, bufferData);
+  // Draco compressed primitives read from synthesized decoded storage.
+  var accessors = doc.accessors;
+  var bufferViews = doc.bufferViews;
+  var data = bufferData;
+  if (prim.draco != null) {
+    final resolved = decodeDracoPrimitive(
+      primitive: prim,
+      accessors: accessors,
+      bufferViews: bufferViews,
+      bufferData: data,
+    );
+    accessors = resolved.accessors;
+    bufferViews = resolved.bufferViews;
+    data = resolved.bufferData;
+  }
+  Float32List read(int idx) {
+    final a = accessors[idx];
+    return readAccessorAsFloat32(a, bufferViews, data);
+  }
+
+  final positions = read(prim.attributes['POSITION']!);
+  final joints = read(prim.attributes['JOINTS_0']!);
+  final weights = read(prim.attributes['WEIGHTS_0']!);
   final vertexCount = positions.length ~/ 3;
   for (int v = 0; v < vertexCount; v++) {
     final px = positions[v * 3 + 0];
@@ -654,9 +675,4 @@ List<AabbBounds> _computeJointInfluenceAabbs(
     }
   }
   return influence;
-}
-
-Float32List _readFloats(int idx, GltfDocument doc, Uint8List bufferData) {
-  final a = doc.accessors[idx];
-  return readAccessorAsFloat32(a, doc.bufferViews, bufferData);
 }

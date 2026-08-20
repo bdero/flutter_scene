@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../../constants.dart';
 import 'accessor.dart';
 import 'coordinate_policy.dart';
+import 'draco/gltf_draco.dart';
 import 'types.dart';
 
 /// Pure-data result of packing a glTF mesh primitive into
@@ -74,6 +75,19 @@ PackedPrimitive packGltfPrimitive({
   required GltfCoordinatePolicy coordinatePolicy,
   bool includeSkinning = true,
 }) {
+  // KHR_draco_mesh_compression: decode the payload and swap in synthesized
+  // accessor tables, so the packing below reads decoded data unchanged.
+  if (primitive.draco != null) {
+    final resolved = decodeDracoPrimitive(
+      primitive: primitive,
+      accessors: accessors,
+      bufferViews: bufferViews,
+      bufferData: bufferData,
+    );
+    accessors = resolved.accessors;
+    bufferViews = resolved.bufferViews;
+    bufferData = resolved.bufferData;
+  }
   final positionIdx = primitive.attributes['POSITION'];
   if (positionIdx == null) {
     throw const FormatException('Mesh primitive is missing POSITION attribute');
