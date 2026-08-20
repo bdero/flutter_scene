@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- `MorphTargetsSpec` and `GeometryResource.morphTargets` carry baked morph target deltas, names, and default weights.
+- `AnimationProperty.weights` animates morph weights.
+- `.fscene` version 4; a version-3 reader refuses a morph-bearing document instead of silently dropping the deltas. Version 3 documents read as-is.
+
 ## 0.2.0
 
 - `package:scene/schema.dart`, the portable component schema model (`ComponentSchema`, `ComponentPropertyDef`, the tagged constraint taxonomy, `formerNames`/`formerTypes`).

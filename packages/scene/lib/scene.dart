@@ -57,7 +57,7 @@ export 'src/specs.dart'
         TorusGeometrySpec,
         TransformSpec,
         TrsTransform;
-export 'src/scene_document.dart' show SceneDocument;
+export 'src/scene_document.dart' show SceneDocument, currentFsceneVersion;
 export 'src/property_value.dart'
     show
         AssetRef,
@@ -82,7 +82,6 @@ export 'src/binary/fsceneb.dart'
     show FscenebFormatException, kFscenebVersion, readFsceneb, writeFsceneb;
 export 'src/json/fscene_json.dart'
     show
-        currentFsceneVersion,
         decodeDocument,
         encodeDocument,
         encodeResource,

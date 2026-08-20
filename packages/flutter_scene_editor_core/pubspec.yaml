@@ -12,7 +12,7 @@ environment:
   sdk: ^3.10.0
 
 dependencies:
-  scene: ^0.2.0
+  scene: ^0.3.0
   meta: ^1.15.0
   vector_math: ^2.1.4
 

@@ -32,7 +32,7 @@ environment:
 
 dependencies:
   code_assets: ^1.2.1
-  scene: ^0.2.0
+  scene: ^0.3.0
   # Offline glTF import (build hook + CLI) arg parsing. Build-time only.
   args: ^2.5.0
   collection: ^1.19.0
