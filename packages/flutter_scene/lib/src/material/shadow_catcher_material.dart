@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Color;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -11,6 +11,22 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physical_material_variant.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+
+/// How a [ShadowCatcherMaterial] evaluates its shadow term each frame.
+/// {@category Materials}
+enum ShadowCatcherMode {
+  /// The shadow atlas (cascades plus spot tiles) is sampled per fragment
+  /// every frame. Always correct, including moving lights and casters.
+  live,
+
+  /// The atlas shadow is rendered once into a low-resolution footprint
+  /// cache, separable-blurred, and sampled per frame, the right default for
+  /// static product scenes. The cache refreshes on load and on
+  /// [ShadowCatcherMaterial.markBakedShadowsDirty]; a moving light or caster
+  /// otherwise leaves the baked shadow behind. The screen-space contact and
+  /// occlusion terms stay live (they are view-dependent).
+  baked,
+}
 
 /// An invisible ground surface that receives shadows and ambient occlusion.
 ///
@@ -45,6 +61,14 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// from it, and depth of field focuses on it), which is the behavior a real
 /// ground plane would have.
 ///
+/// [mode] selects how the atlas shadow term is evaluated. The default
+/// [ShadowCatcherMode.baked] renders the footprint shadow once into a
+/// low-resolution cache (blurred by [softness]) and samples it per frame,
+/// right for a static product scene; call [markBakedShadowsDirty] after the
+/// lights or casters change, or use [ShadowCatcherMode.live] for continuous
+/// motion. Baked mode assumes a ground-plane-like mesh lying in its local XZ
+/// plane (the cache is a top-down footprint).
+///
 /// [shadowIntensity] doubles as the enable switch. At exactly `0` the
 /// catcher registers no draws in any pass at all, a true early-out.
 ///
@@ -61,12 +85,14 @@ class ShadowCatcherMaterial extends Material {
     double softness = 0.0,
     double fadeStart = 0.0,
     double fadeEnd = 0.0,
+    ShadowCatcherMode mode = ShadowCatcherMode.baked,
   }) : _shadowColor = shadowColor,
        _shadowIntensity = shadowIntensity,
        _aoStrength = aoStrength,
        _softness = softness,
        _fadeStart = fadeStart,
-       _fadeEnd = fadeEnd;
+       _fadeEnd = fadeEnd,
+       _mode = mode;
 
   Color _shadowColor;
   double _shadowIntensity;
@@ -74,7 +100,38 @@ class ShadowCatcherMaterial extends Material {
   double _softness;
   double _fadeStart;
   double _fadeEnd;
+  ShadowCatcherMode _mode;
   bool _paramsDirty = true;
+  bool _bakeDirty = true;
+  gpu.Texture? _bakedTexture;
+  Vector4 _bakedRegion = Vector4(0.0, 0.0, 1.0, 1.0);
+
+  /// How the shadow term is evaluated; see [ShadowCatcherMode].
+  ///
+  /// Defaults to [ShadowCatcherMode.baked], the right choice for a static
+  /// product scene. Switch to [ShadowCatcherMode.live] when the lights or
+  /// shadow casters move, or call [markBakedShadowsDirty] after discrete
+  /// changes.
+  ShadowCatcherMode get mode => _mode;
+  set mode(ShadowCatcherMode value) {
+    if (_mode == value) return;
+    _mode = value;
+    _paramsDirty = true;
+    if (value == ShadowCatcherMode.live) {
+      _bakedTexture = null;
+    } else {
+      _bakeDirty = true;
+    }
+  }
+
+  /// Schedules a re-bake of the cached footprint shadow.
+  ///
+  /// Call after the lights or shadow casters change while [mode] is
+  /// [ShadowCatcherMode.baked]; the cache refreshes on the next rendered
+  /// frame. A no-op in live mode.
+  void markBakedShadowsDirty() {
+    _bakeDirty = true;
+  }
 
   /// The color the surface darkens toward where it is shadowed or occluded.
   ///
@@ -105,18 +162,22 @@ class ShadowCatcherMaterial extends Material {
     _paramsDirty = true;
   }
 
-  /// World-space penumbra radius for this catcher's shadow lookup.
+  /// World-space penumbra radius for this catcher's shadow, decoupled from
+  /// the scene's shadow settings.
   ///
   /// `0` (the default) inherits the scene's `DirectionalLight.shadowSoftness`.
-  /// A positive value overrides the softness for this catcher's draws only,
-  /// per draw in its own uniform block, so it never perturbs the scene-wide
-  /// shadow settings or other receivers. Large values stay bounded by the
-  /// fixed shadow filter kernel, so very soft shadows read best with a
-  /// matching `shadowFilter`/resolution setup on the light.
+  /// In live mode a positive value overrides the softness for this catcher's
+  /// draws only, per draw in its own uniform block, so it never perturbs the
+  /// scene-wide shadow settings or other receivers (large values stay
+  /// bounded by the fixed shadow filter kernel). In baked mode it maps to
+  /// the cache blur and resolution instead, so softer shadows are cheaper
+  /// and unbounded by the kernel.
   double get softness => _softness;
   set softness(double value) {
     _softness = value;
     _paramsDirty = true;
+    // The baked cache maps softness to its resolution, so it must re-bake.
+    _bakeDirty = true;
   }
 
   /// Radial distance from the mesh origin, in the mesh's local units, where
@@ -220,6 +281,48 @@ class ShadowCatcherMaterial extends Material {
       ..lightListCount = lightListCount;
     prepared.bind(pass, transientsBuffer, lighting);
   }
+
+  /// Whether the bake pass must refresh this material's footprint cache.
+  @internal
+  bool get needsBakedShadowRefresh =>
+      _mode == ShadowCatcherMode.baked &&
+      _shadowIntensity != 0 &&
+      (_bakeDirty || _bakedTexture == null);
+
+  /// Binds the catcher for the footprint bake draw: `catcher_mode` 2 (raw
+  /// atlas visibility out) and the scene's own atlas softness (the catcher's
+  /// [softness] rides the cache blur instead). The caller sets
+  /// [lightListOffset]/[lightListCount] from the baked item first.
+  @internal
+  void bindForBake(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {
+    final prepared = _prepared
+      ..name = name
+      ..lightListOffset = lightListOffset
+      ..lightListCount = lightListCount
+      ..internalBaking = true;
+    prepared.parameters.setInt('catcher_mode', 2);
+    try {
+      prepared.bind(pass, transientsBuffer, lighting);
+    } finally {
+      prepared.internalBaking = false;
+      // The next ordinary bind re-syncs the whole parameter set.
+      _paramsDirty = true;
+    }
+  }
+
+  /// Installs a freshly baked footprint [cache]. [region] maps the mesh's
+  /// local XZ into cache UV as `(minX, maxZ, 1/sizeX, 1/sizeZ)`.
+  @internal
+  void completeBake(gpu.Texture cache, Vector4 region) {
+    _bakedTexture = cache;
+    _bakedRegion = region;
+    _bakeDirty = false;
+    _paramsDirty = true;
+  }
 }
 
 /// The shader-backed half of [ShadowCatcherMaterial], prepared lazily at
@@ -260,14 +363,43 @@ class _ShadowCatcherVariant extends PreprocessedMaterial {
 
   final ShadowCatcherMaterial _owner;
 
+  /// Set around the footprint bake draw; [adjustEngineLighting] then leaves
+  /// the scene's atlas softness in place (the catcher's own softness maps to
+  /// the cache blur, applying it twice would widen the penumbra).
+  bool internalBaking = false;
+
+  static final gpu.SamplerOptions _bakedSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.linear,
+    magFilter: gpu.MinMagFilter.linear,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
   /// Pushes the owner's public properties into the shader parameters.
   void applyParameters(ShadowCatcherMaterial owner) {
+    final baked = owner._bakedTexture;
     parameters
       ..setVec3('shadow_color', _linearColor(owner.shadowColor))
       ..setFloat('shadow_intensity', owner.shadowIntensity.clamp(0.0, 1.0))
       ..setFloat('ao_strength', owner.aoStrength.clamp(0.0, 1.0))
       ..setFloat('fade_start', owner.fadeStart)
-      ..setFloat('fade_end', owner.fadeEnd);
+      ..setFloat('fade_end', owner.fadeEnd)
+      // Sample the cache only once a bake produced one; until then (and in
+      // live mode) the atlas is sampled per fragment.
+      ..setInt(
+        'catcher_mode',
+        owner.mode == ShadowCatcherMode.baked && baked != null ? 1 : 0,
+      )
+      ..setVec4('baked_region', owner._bakedRegion);
+    if (baked != null) {
+      parameters.setTexture(
+        'baked_shadow_texture',
+        baked,
+        sampler: _bakedSampler,
+      );
+    } else {
+      parameters.clearTexture('baked_shadow_texture');
+    }
   }
 
   /// sRGB-decodes [color] to a linear rgb vector, matching what `setColor`
@@ -286,8 +418,9 @@ class _ShadowCatcherVariant extends PreprocessedMaterial {
   void adjustEngineLighting(Float32List fragInfo) {
     // A positive per-catcher softness replaces the scene softness in this
     // draw's own uniform block ([135] is FragInfo.shadow_softness), leaving
-    // every other receiver on the scene-wide setting.
-    if (_owner.softness > 0.0) {
+    // every other receiver on the scene-wide setting. The bake draw skips
+    // the override; there the catcher's softness rides the cache blur.
+    if (!internalBaking && _owner.softness > 0.0) {
       fragInfo[135] = _owner.softness;
     }
   }

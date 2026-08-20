@@ -56,6 +56,8 @@ import 'screen_space_reflections.dart';
 import 'render/selection_outline_pass.dart';
 import 'depth_of_field.dart';
 import 'render/dof_pass.dart';
+import 'material/shadow_catcher_material.dart';
+import 'render/shadow_catcher_bake_pass.dart';
 import 'render/shadow_cache.dart';
 import 'render/shadow_pass.dart';
 import 'render/ssao_pass.dart';
@@ -1854,6 +1856,29 @@ base class Scene implements SceneGraph {
                   light!.color * light.intensity,
                 )
               : null,
+        ),
+      );
+    }
+    // Baked shadow catchers refresh their footprint caches right after the
+    // atlas renders, so the scene pass samples a current cache this frame.
+    List<RenderItem>? catcherBakes;
+    for (final item in renderScene.items) {
+      final material = item.material;
+      if (item.visible &&
+          material is ShadowCatcherMaterial &&
+          material.needsBakedShadowRefresh) {
+        (catcherBakes ??= []).add(item);
+      }
+    }
+    if (catcherBakes != null) {
+      graph.addPass(
+        ShadowCatcherBakePass(
+          items: catcherBakes,
+          environmentMap: environmentMap,
+          directionalLight: light,
+          directionalLightDirection: lightDirection,
+          punctualLighting: punctualLighting,
+          cascades: effectiveCascades,
         ),
       );
     }

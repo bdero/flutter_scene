@@ -9,6 +9,9 @@ material {
     { type: float, name: ao_strength, hint: range(0, 1, 0.01), default: 0.5 },
     { type: float, name: fade_start, default: 0 },
     { type: float, name: fade_end, default: 0 },
+    { type: int, name: catcher_mode, default: 0 },
+    { type: vec4, name: baked_region, default: [0, 0, 1, 1] },
+    { type: sampler2d, name: baked_shadow_texture, hint: default_white },
   ],
   varyings: [
     { type: vec3, name: catcher_local_position },
@@ -65,13 +68,12 @@ fragment {
     return visibility;
   }
 
-  // Aggregate shadow visibility at this fragment (1 fully lit .. 0 fully
-  // shadowed): the directional cascades, every shadow-casting spot's tile,
-  // and the sun contact term marched by the occlusion pass, the same
-  // composition the lit path applies. A sun the surface faces away from
-  // contributes no cast-shadow differential, so it reads as lit rather
-  // than darkening the whole plane.
-  float CatcherShadowVisibility(vec3 world_pos, vec3 n, vec4 occlusion_sample) {
+  // Aggregate shadow-atlas visibility at this fragment (1 fully lit .. 0
+  // fully shadowed): the directional cascades plus every shadow-casting
+  // spot's tile, the same composition the lit path applies. A sun the
+  // surface faces away from contributes no cast-shadow differential, so it
+  // reads as lit rather than darkening the whole plane.
+  float CatcherAtlasShadowVisibility(vec3 world_pos, vec3 n) {
     float visibility = 1.0;
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
     if (frag_info.has_directional_light > 0.5 &&
@@ -85,17 +87,35 @@ fragment {
     }
     visibility *= CatcherSpotShadowVisibility(world_pos, n);
 #endif
-#ifndef FLUTTER_SCENE_SKIP_SSAO
-    if (frag_info.ssao_lighting.w > 0.5) {
-      visibility = min(visibility, occlusion_sample.g);
-    }
-#endif
     return visibility;
   }
 
   void Surface(inout MaterialInputs material) {
     vec3 world_pos = GetWorldPosition();
     vec3 n = GetWorldNormal();
+
+    // Atlas visibility: live per fragment, or the baked cache in the mesh's
+    // local XZ footprint (the bake pass renders and blurs it once). The
+    // screen-space contact and occlusion terms below stay live either way,
+    // they are view-dependent and cannot be baked.
+    float shadow_visibility;
+    if (material_params.catcher_mode == 1) {
+      vec2 cache_uv = vec2(
+          (catcher_local_position.x - material_params.baked_region.x) *
+              material_params.baked_region.z,
+          (material_params.baked_region.y - catcher_local_position.z) *
+              material_params.baked_region.w);
+      shadow_visibility =
+          texture(baked_shadow_texture, clamp(cache_uv, 0.0, 1.0)).r;
+    } else {
+      shadow_visibility = CatcherAtlasShadowVisibility(world_pos, n);
+    }
+    if (material_params.catcher_mode == 2) {
+      // Bake render: write the raw atlas visibility for the cache.
+      material.base_color = vec4(vec3(shadow_visibility), 1.0);
+      PrepareMaterial(material);
+      return;
+    }
 
     // The occlusion chain's texture for this frame. Visibility rides r (a
     // under the indirect-light layout); the sun contact term rides g.
@@ -109,10 +129,10 @@ fragment {
           ? occlusion_sample.a
           : occlusion_sample.r;
     }
+    if (frag_info.ssao_lighting.w > 0.5) {
+      shadow_visibility = min(shadow_visibility, occlusion_sample.g);
+    }
 #endif
-
-    float shadow_visibility =
-        CatcherShadowVisibility(world_pos, n, occlusion_sample);
     float shadow_term =
         material_params.shadow_intensity * (1.0 - shadow_visibility);
     float ao_term = material_params.ao_strength * (1.0 - occlusion);
