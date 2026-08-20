@@ -340,6 +340,66 @@ class PhysicallyBasedMaterial extends Material {
     _markMaterialDataDirty();
   }
 
+  /// Baked indirect diffuse light, in linear radiance unless [lightmapRgbm] is
+  /// set. Null (the default) leaves the material lit by the environment alone.
+  ///
+  /// A bound lightmap replaces the environment's spherical-harmonics diffuse
+  /// ambient for this material rather than adding to it, so the baked bounce
+  /// is not counted twice. Specular image-based lighting, the analytic lights,
+  /// and [occlusionTexture] are unaffected.
+  ///
+  /// Selects a shader variant that carries the lightmap sampler, so binding
+  /// one costs a pipeline the first time it is drawn. Not available on
+  /// transmissive materials.
+  ///
+  /// Accepts a [Texture2D] or a `RenderTexture` (sampled live).
+  // TODO(lightmap-serialization): carry the slot through the `.fscene` codecs
+  // (lib/src/fscene/realize/) and the editor's material copy, which round-trip
+  // every other texture slot.
+  TextureSource? get lightmapTexture => _lightmapTexture;
+  TextureSource? _lightmapTexture;
+  set lightmapTexture(TextureSource? value) {
+    if (identical(_lightmapTexture, value)) return;
+    _lightmapTexture = value;
+    _markMaterialDataDirty(variant: true);
+  }
+
+  /// UV transform applied to [lightmapTexture].
+  TextureTransform get lightmapTextureTransform => _lightmapTextureTransform;
+  TextureTransform _lightmapTextureTransform = TextureTransform();
+  set lightmapTextureTransform(TextureTransform value) {
+    _lightmapTextureTransform = value;
+    _markMaterialDataDirty();
+  }
+
+  /// Texture-coordinate channel used by [lightmapTexture]. Defaults to `1`,
+  /// the channel bakers reserve for the non-overlapping lightmap unwrap.
+  int get lightmapTextureTexCoord => _lightmapTextureTexCoord;
+  int _lightmapTextureTexCoord = 1;
+  set lightmapTextureTexCoord(int value) {
+    _lightmapTextureTexCoord = value.clamp(0, 1);
+    _markMaterialDataDirty();
+  }
+
+  /// Multiplier applied to the decoded [lightmapTexture] radiance.
+  double get lightmapIntensity => _lightmapIntensity;
+  double _lightmapIntensity = 1.0;
+  set lightmapIntensity(double value) {
+    _lightmapIntensity = value;
+    _markMaterialDataDirty();
+  }
+
+  /// Whether [lightmapTexture] is RGBM-encoded, an HDR bake packed into an LDR
+  /// image with the shared multiplier in the alpha channel. `false` (the
+  /// default) reads the texture as linear radiance.
+  bool get lightmapRgbm => _lightmapRgbm;
+  bool _lightmapRgbm = false;
+  set lightmapRgbm(bool value) {
+    if (_lightmapRgbm == value) return;
+    _lightmapRgbm = value;
+    _markMaterialDataDirty();
+  }
+
   /// Per-material image-based-lighting environment, overriding the
   /// scene-wide `Scene.environment` when set.
   EnvironmentMap? environment;
@@ -909,6 +969,9 @@ class PhysicallyBasedMaterial extends Material {
   static const int _diffuseTransmissionFeature = 1 << 4;
   static const int _iridescenceFeature = 1 << 5;
   static const int _anisotropyFeature = 1 << 6;
+  // Outside the 0x7f physical-feature mask below: a lightmap picks a shader
+  // variant without pulling the material onto the physical path.
+  static const int _lightmapFeature = 1 << 7;
 
   int _variantKey = 0;
   bool _materialDataDirty = true;
@@ -919,6 +982,7 @@ class PhysicallyBasedMaterial extends Material {
     if (!variant) return;
     final previousTransmission = _usesTransmissionVariant;
     _variantKey = _computeVariantKey();
+    _updateStandardShaderNames();
     if (previousTransmission != _usesTransmissionVariant) {
       markMaterialSceneInputsChanged();
     }
@@ -943,6 +1007,7 @@ class PhysicallyBasedMaterial extends Material {
     if (diffuseTransmission > 0.0) key |= _diffuseTransmissionFeature;
     if (iridescence > 0.0) key |= _iridescenceFeature;
     if (anisotropy != 0.0) key |= _anisotropyFeature;
+    if (lightmapTexture != null) key |= _lightmapFeature;
 
     final textures = <TextureSource?>[
       specularTexture,
@@ -966,12 +1031,29 @@ class PhysicallyBasedMaterial extends Material {
     return key;
   }
 
+  /// The feature bitmask that selects this material's shader variant.
+  @internal
+  @visibleForTesting
+  int get variantKey => _variantKey;
+
   bool get _usesPhysicalVariant => (_variantKey & 0x7f) != 0;
+
+  /// The bit [variantKey] sets when a baked lightmap is bound.
+  @internal
+  @visibleForTesting
+  static int get lightmapVariantBit => _lightmapFeature;
+
+  // A bake is baked into the surface, not refracted through it, so only the
+  // opaque material ships lightmap entries.
+  // TODO(lightmap-transmission): generate them for the transmission material
+  // too if a transmissive lightmapped surface ever comes up.
+  bool get _usesLightmapVariant =>
+      (_variantKey & _lightmapFeature) != 0 && !_usesTransmissionVariant;
 
   /// Whether serialization must preserve physical extension state.
   @internal
   bool get hasPhysicalConfiguration =>
-      _computeVariantKey() != 0 ||
+      (_computeVariantKey() & ~_lightmapFeature) != 0 ||
       clearcoatRoughness != 0.0 ||
       clearcoatNormalScale != Vector2.all(1.0) ||
       sheenRoughness != 0.0 ||
@@ -987,6 +1069,22 @@ class PhysicallyBasedMaterial extends Material {
   bool get _usesTransmissionVariant =>
       (_variantKey & _transmissionFeature) != 0;
 
+  // The standard-path entry pair, swapped when a lightmap is bound so the
+  // shader that samples it is also the one the lightmap is bound to.
+  bool _standardShaderNamesLightmapped = false;
+
+  void _updateStandardShaderNames() {
+    final lightmapped = _usesLightmapVariant;
+    if (lightmapped == _standardShaderNamesLightmapped) return;
+    _standardShaderNamesLightmapped = lightmapped;
+    setFragmentShaderName(
+      lightmapped ? 'StandardLightmapFragment' : 'StandardFragment',
+      cubeName: lightmapped
+          ? 'StandardLightmapCubeFragment'
+          : 'StandardCubeFragment',
+    );
+  }
+
   void _ensurePreparedVariant() {
     if (!_materialDataDirty) return;
     if (!_usesPhysicalVariant) {
@@ -994,13 +1092,36 @@ class PhysicallyBasedMaterial extends Material {
       _materialDataDirty = false;
       return;
     }
+    final lightmapped = _usesLightmapVariant;
+    if (lightmapTexture != null && !lightmapped) {
+      debugPrint(
+        'PhysicallyBasedMaterial "$name" is transmissive, which has no baked '
+        'lightmap variant, so its lightmapTexture is ignored. '
+        'TODO(lightmap-transmission): generate the lightmap entries for the '
+        'transmission material.',
+      );
+    }
     final descriptor = _toDescriptor();
     final prepared = _preparedVariant;
-    if (prepared == null || prepared.transmissive != _usesTransmissionVariant) {
-      _preparedVariant = PhysicalMaterialVariant.fromDescriptor(descriptor);
+    if (prepared == null ||
+        prepared.transmissive != _usesTransmissionVariant ||
+        prepared.lightmapped != lightmapped) {
+      _preparedVariant = PhysicalMaterialVariant.fromDescriptor(
+        descriptor,
+        lightmapped: lightmapped,
+      );
     } else {
       prepared.updateDescriptor(descriptor);
     }
+    _preparedVariant!.setLightmap(
+      _texture(
+        lightmapTexture,
+        lightmapTextureTransform,
+        lightmapTextureTexCoord,
+      ),
+      intensity: lightmapIntensity,
+      rgbm: lightmapRgbm,
+    );
     _materialDataDirty = false;
   }
 
@@ -1185,6 +1306,7 @@ class PhysicallyBasedMaterial extends Material {
     _alphaCutoff = descriptor.alphaCutoff;
     doubleSided = descriptor.doubleSided;
     _variantKey = _computeVariantKey();
+    _updateStandardShaderNames();
     _materialDataDirty = true;
   }
 
@@ -1495,8 +1617,24 @@ class PhysicallyBasedMaterial extends Material {
       shader,
       lighting,
       env,
+      bindDiffuseSh: !_usesLightmapVariant,
       cubeShader: usesRadianceCubeVariant(lighting),
     );
+    // The same condition picked `shader`, so the lightmap goes to a shader
+    // that declares its sampler.
+    if (_usesLightmapVariant) {
+      EngineLightingUniforms.bindLightmap(
+        pass,
+        shader,
+        transientsBuffer,
+        texture: resolveTextureSource(lightmapTexture),
+        transform: lightmapTextureTransform,
+        texCoord: lightmapTextureTexCoord,
+        intensity: lightmapIntensity,
+        rgbm: lightmapRgbm,
+        sampler: textureSourceSampler(lightmapTexture),
+      );
+    }
     EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
   }
 

@@ -88,6 +88,25 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   gpu.Shader? get radianceCubeFragmentShader =>
       _cubeFragmentShader ?? super.radianceCubeFragmentShader;
 
+  /// Whether this material draws with its baked-lightmap variant, which reads
+  /// the diffuse ambient from a lightmap instead of the environment's SH
+  /// coefficients (and so declares no `sh_coefficients` sampler).
+  ///
+  /// The shaders assigned here must already be the lightmap entries; this only
+  /// tells [bind] which engine resources those entries declare.
+  @protected
+  bool get usesLightmapVariant => false;
+
+  /// Binds the lightmap sampler and its `LightmapInfo` block, called only when
+  /// [usesLightmapVariant] is true. See
+  /// [EngineLightingUniforms.bindLightmap].
+  @protected
+  void bindLightmap(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+  ) {}
+
   @override
   gpu.Shader fragmentShaderForLighting(Lighting lighting) {
     final shadow = lighting.shadowMap != null;
@@ -277,8 +296,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         env,
         bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
         bindShadows: lighting.shadowMap != null,
+        bindDiffuseSh: !usesLightmapVariant,
         cubeShader: usesRadianceCubeVariant(lighting),
       );
+      if (usesLightmapVariant) {
+        bindLightmap(pass, shader, transientsBuffer);
+      }
       if (_sceneInputs.isNotEmpty) {
         EngineLightingUniforms.bindSceneInputTextures(
           pass,
