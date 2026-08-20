@@ -50,6 +50,7 @@ import 'example_chrome.dart';
 import 'example_shapes.dart';
 import 'example_explosion.dart';
 import 'example_particles.dart';
+import 'example_planar_mirror.dart';
 import 'example_splats.dart';
 import 'example_skybox.dart';
 import 'example_ssr.dart';
@@ -239,6 +240,7 @@ class _MyAppState extends State<MyApp> {
       'Lights': (context) => const ExampleLights(),
       'Area Lights': (context) => const ExampleAreaLights(),
       'Reflection Probes': (context) => const ExampleReflectionProbes(),
+      'Planar Mirror': (context) => const ExamplePlanarMirror(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Cloth': (context) => const ExampleCloth(),
       'Particles': (context) => const ExampleParticles(),

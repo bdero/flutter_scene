@@ -36,6 +36,13 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 /// rendered to a `RenderTexture` composite the previous frame's capture, and
 /// additional views reuse the primary view's capture.
 /// {@category Rendering}
+// TODO(planar-blur): blur the capture with a small mip chain keyed by the
+// surface roughness, plus a maxRoughness cutoff that skips the capture
+// entirely; today the capture is the sharp mirror term.
+// TODO(planar-depth-fade): fade the reflection by the reflected hit's
+// distance from the plane so tall reflections soften like SSR's range fade.
+// TODO(planar-multiview): capture per consuming view; today secondary views
+// reuse the primary view's capture, which is approximate for their cameras.
 class PlanarReflectorComponent extends Component {
   /// Creates a planar reflector for the mirror surface at the owning node.
   PlanarReflectorComponent({

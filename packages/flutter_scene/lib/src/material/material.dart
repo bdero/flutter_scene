@@ -442,6 +442,10 @@ abstract class Material {
   /// that declares the `planar_reflection` engine input). The
   /// `PlanarReflectorComponent` governing the surface routes its capture to
   /// materials that report true.
+  // TODO(planar-pbm-hook): give PhysicallyBasedMaterial a planar hook that
+  // swaps the capture in for its environment specular; the lit shader sits
+  // at the fragment sampler cap, so the sampler needs a variant axis or a
+  // displaced slot first. The `.fmat` engine input is the supported seam.
   @internal
   bool get usesPlanarReflection => false;
 
