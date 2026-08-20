@@ -11,6 +11,11 @@
 * Light channels: an 8-bit `channelMask` on every light and `Node.lightChannelMask` restrict which nodes a light illuminates, with an independent `DirectionalLight.shadowCasterChannelMask` for shadow-map casters.
 * `DirectionalLight.firstCascadeFarBound` pins the first shadow cascade's far boundary for a guaranteed-tight near cascade, and `cascadeOverlap` cross-fades cascade hand-offs.
 * `ShadowCatcherMaterial`, an invisible ground that shows only received shadows and ambient occlusion, with baked and live modes, per-catcher softness, tint, and radial fade, for product scenes over a transparent background.
+* Morph targets: glTF blend shapes import on both paths, blend on the CPU or a GPU morph texture (top 8 weights by magnitude, morph before skin), animate via `weights` channels, and round-trip through the scene document. `Node.morphWeights`/`setMorphWeight` drive them per instance.
+* `EnvironmentMap.fromKtx2Bytes`/`fromKtx2Asset` load a pre-baked GGX radiance cubemap (KTX2, linear roughness per mip, optional zstd) with SH-9 diffuse from a sidecar or embedded metadata, skipping the load-time prefilter; `EXT_lights_image_based` surfaces through the importer.
+* Baked lightmaps: `lightmapTexture` on `PhysicallyBasedMaterial` (UV1 default, transform and intensity, optional RGBM decode) replaces the SH diffuse ambient so baked and live indirect light never double-count.
+* Per-instance custom attributes: a `.fmat` `instance_attributes` block declares typed named attributes that ride the instance buffer, set via `InstancedMesh.setInstanceAttribute`, read in `Vertex()` and `Surface()`.
+* Planar reflections: `PlanarReflectorComponent` renders a mirrored, oblique-clipped scene capture that `.fmat` materials sample via the `planar_reflection` engine input, with capture sharing, layer masks, and resolution scaling.
 
 ## 0.23.0
 
