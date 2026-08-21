@@ -115,9 +115,11 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..vignette.intensity = 0.71
     ..vignette.radius = 0.71
     ..vignette.smoothness = 0.5,
-  // The car's showroom look: a softened key with contact shadows, ground-truth
+  // The car's showroom look, a softened key with contact shadows, ground-truth
   // occlusion carrying bounce light into the arches, a cool contrasty grade,
-  // and a wide-open lens flaring off the bodywork highlights.
+  // and a wide-open lens flaring off the bodywork highlights. Chromatic
+  // aberration and god rays are tuned but left switched off, so turning either
+  // back on picks up where it was rather than at the stock value.
   'Car': () => ExampleSettings()
     ..lightIntensity = 2.043
     ..shadowSoftness = 0.053
@@ -149,8 +151,6 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..depthOfField.focalLength = 0.077
     ..depthOfField.quality = DepthOfFieldQuality.high
     ..vignette.enabled = true
-    // Tuned but switched off. Kept so turning either back on picks up where
-    // it was left rather than at the stock value.
     ..chromaticAberration.intensity = 0.132
     ..godRays.density = 1.764
     ..godRays.anisotropy = 0.506
