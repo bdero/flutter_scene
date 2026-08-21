@@ -6,12 +6,16 @@ import 'package:flutter_scene/scene.dart'
         AntiAliasingMode,
         DepthOfFieldQuality,
         DirectionalShadowFilter,
+        FogMode,
+        SsrDebugView,
+        ToneMappingMode,
         Scene,
         PostInsertion,
         ShadowCasterFaces,
         SpecularAmbientOcclusionMode;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart'
     show RapierWorld;
+import 'package:vector_math/vector_math.dart' show Vector3;
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart'
     show Box3dPhysicsWorld;
 import 'package:example_app/example_animation.dart';
@@ -111,6 +115,50 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..vignette.intensity = 0.71
     ..vignette.radius = 0.71
     ..vignette.smoothness = 0.5,
+  // The car's showroom look: a softened key with contact shadows, ground-truth
+  // occlusion carrying bounce light into the arches, a cool contrasty grade,
+  // and a wide-open lens flaring off the bodywork highlights.
+  'Car': () => ExampleSettings()
+    ..lightIntensity = 2.043
+    ..shadowSoftness = 0.053
+    ..contactShadows = true
+    ..exposure = 1.954
+    ..environmentIntensity = 1.022
+    ..ambientOcclusion.enabled = true
+    ..ambientOcclusion.method = AmbientOcclusionMethod.groundTruth
+    ..ambientOcclusion.visibilityBitmask = true
+    ..ambientOcclusion.thickness = 0.338
+    ..ambientOcclusion.multiBounce = 0.611
+    ..ambientOcclusion.indirectLight = 7.148
+    ..ambientOcclusion.specularMode = SpecularAmbientOcclusionMode.simple
+    ..colorGrading.enabled = true
+    ..colorGrading.brightness = 1.007
+    ..colorGrading.contrast = 1.203
+    ..colorGrading.saturation = 1.110
+    ..colorGrading.temperature = -0.118
+    ..colorGrading.tint = -0.161
+    ..bloom.enabled = true
+    ..bloom.threshold = 0.876
+    ..bloom.intensity = 0.191
+    ..bloom.lensFlare.enabled = true
+    ..bloom.lensFlare.intensity = 0.300
+    ..bloom.lensFlare.ghostCount = 5
+    ..depthOfField.enabled = true
+    ..depthOfField.focusDistance = 7.94
+    ..depthOfField.fStop = 0.7
+    ..depthOfField.focalLength = 0.077
+    ..depthOfField.quality = DepthOfFieldQuality.high
+    ..vignette.enabled = true
+    // Tuned but switched off. Kept so turning either back on picks up where
+    // it was left rather than at the stock value.
+    ..chromaticAberration.intensity = 0.132
+    ..godRays.density = 1.764
+    ..godRays.anisotropy = 0.506
+    ..autoExposure.strength = 0.663
+    ..autoExposure.compensation = 1.265
+    ..autoExposure.minEv = -4.455
+    ..autoExposure.maxEv = 2.499
+    ..autoExposure.speedDown = 0.1,
   // The cloth corridor is one-sided open sheets, which only cast a shadow when
   // the shadow pass keeps both faces.
   'Physics': () =>
@@ -508,8 +556,11 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             _buildRendering(),
+                            _buildExposure(),
                             _buildDirectionalLight(),
                             _buildAmbientOcclusion(),
+                            _buildFog(),
+                            _buildReflections(),
                             _buildPostProcessing(),
                           ],
                         ),
@@ -597,6 +648,187 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
               items: [
                 for (final quality in FilterQuality.values)
                   DropdownMenuItem(value: quality, child: Text(quality.name)),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExposure() {
+    final settings = exampleSettings;
+    final meter = settings.autoExposure;
+    return ExpansionTile(
+      title: const Text('Exposure and tone mapping'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        _slider('Exposure', settings.exposure, 0, 8, (v) {
+          settings.exposure = v;
+        }),
+        Row(
+          children: [
+            const Text('Tone mapping'),
+            const Spacer(),
+            DropdownButton<ToneMappingMode>(
+              value: settings.toneMapping,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.toneMapping = value);
+                }
+              },
+              items: [
+                for (final mode in ToneMappingMode.values)
+                  DropdownMenuItem(value: mode, child: Text(mode.name)),
+              ],
+            ),
+          ],
+        ),
+        _slider('Environment', settings.environmentIntensity, 0, 4, (v) {
+          settings.environmentIntensity = v;
+        }),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Auto exposure'),
+          value: meter.enabled,
+          onChanged: (value) => setState(() => meter.enabled = value),
+        ),
+        if (meter.enabled) ...[
+          _slider('Strength', meter.strength, 0, 1, (v) {
+            meter.strength = v;
+          }),
+          _slider('Compensation', meter.compensation, -4, 4, (v) {
+            meter.compensation = v;
+          }),
+          _slider('Min EV', meter.minEv, -8, 4, (v) {
+            meter.minEv = v;
+          }),
+          _slider('Max EV', meter.maxEv, -4, 12, (v) {
+            meter.maxEv = v;
+          }),
+          _slider('Speed up', meter.speedUp, 0.1, 10, (v) {
+            meter.speedUp = v;
+          }),
+          _slider('Speed down', meter.speedDown, 0.1, 10, (v) {
+            meter.speedDown = v;
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFog() {
+    final fog = exampleSettings.fog;
+    return ExpansionTile(
+      title: const Text('Fog'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: fog.enabled,
+          onChanged: (value) => setState(() => fog.enabled = value),
+        ),
+        Row(
+          children: [
+            const Text('Mode'),
+            const Spacer(),
+            DropdownButton<FogMode>(
+              value: fog.mode,
+              onChanged: (value) {
+                if (value != null) setState(() => fog.mode = value);
+              },
+              items: [
+                for (final mode in FogMode.values)
+                  DropdownMenuItem(value: mode, child: Text(mode.name)),
+              ],
+            ),
+          ],
+        ),
+        _slider('Color R', fog.color.r, 0, 1, (v) => fog.color.r = v),
+        _slider('Color G', fog.color.g, 0, 1, (v) => fog.color.g = v),
+        _slider('Color B', fog.color.b, 0, 1, (v) => fog.color.b = v),
+        _slider('Sky blend', fog.skyColorInfluence, 0, 1, (v) {
+          fog.skyColorInfluence = v;
+        }),
+        _slider('Density', fog.density, 0, 0.2, (v) {
+          fog.density = v;
+        }, decimals: 3),
+        _slider('Start', fog.start, 0, 200, (v) {
+          fog.start = v;
+        }, decimals: 0),
+        _slider('End', fog.end, 1, 500, (v) {
+          fog.end = v;
+        }, decimals: 0),
+        _slider('Max opacity', fog.maxOpacity, 0, 1, (v) {
+          fog.maxOpacity = v;
+        }),
+        _slider('Cutoff', fog.cutoffDistance, 0, 500, (v) {
+          fog.cutoffDistance = v;
+        }, decimals: 0),
+        _slider('Height', fog.height, -20, 60, (v) {
+          fog.height = v;
+        }, decimals: 1),
+        _slider('Height falloff', fog.heightFalloff, 0, 1, (v) {
+          fog.heightFalloff = v;
+        }, decimals: 3),
+        _slider('Sun scatter', fog.sunInScatter, 0, 2, (v) {
+          fog.sunInScatter = v;
+        }),
+        _slider('Sun power', fog.sunInScatterExponent, 1, 64, (v) {
+          fog.sunInScatterExponent = v;
+        }, decimals: 0),
+      ],
+    );
+  }
+
+  Widget _buildReflections() {
+    final ssr = exampleSettings.screenSpaceReflections;
+    return ExpansionTile(
+      title: const Text('Screen-space reflections'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: ssr.enabled,
+          onChanged: (value) => setState(() => ssr.enabled = value),
+        ),
+        _slider('Intensity', ssr.intensity, 0, 2, (v) => ssr.intensity = v),
+        _slider('Max distance', ssr.maxDistance, 1, 100, (v) {
+          ssr.maxDistance = v;
+        }, decimals: 0),
+        _slider('Thickness', ssr.thickness, 0.01, 2, (v) {
+          ssr.thickness = v;
+        }),
+        _slider('Stride', ssr.stride, 1, 32, (v) {
+          ssr.stride = v;
+        }, decimals: 0),
+        _slider('Max steps', ssr.maxSteps.toDouble(), 8, 256, (v) {
+          ssr.maxSteps = v.round();
+        }, decimals: 0),
+        _slider('Blur', ssr.blur, 0, 1, (v) => ssr.blur = v),
+        _slider('Fade start', ssr.distanceFadeStart, 0, 1, (v) {
+          ssr.distanceFadeStart = v;
+        }),
+        _slider('Resolution', ssr.resolutionScale, 0.25, 1, (v) {
+          ssr.resolutionScale = v;
+        }),
+        Row(
+          children: [
+            const Text('Debug view'),
+            const Spacer(),
+            DropdownButton<SsrDebugView>(
+              value: ssr.debugView,
+              onChanged: (value) {
+                if (value != null) setState(() => ssr.debugView = value);
+              },
+              items: [
+                for (final view in SsrDebugView.values)
+                  DropdownMenuItem(value: view, child: Text(view.name)),
               ],
             ),
           ],
@@ -789,6 +1021,24 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Intensity', settings.intensity, 0, 3, (v) {
           settings.intensity = v;
         }),
+        _slider('Power', settings.power, 0.1, 4, (v) {
+          settings.power = v;
+        }),
+        _slider('Detail', settings.detail, 0, 1, (v) {
+          settings.detail = v;
+        }),
+        _slider('Horizon', settings.horizonAngle, 0, 0.5, (v) {
+          settings.horizonAngle = v;
+        }, decimals: 3),
+        _slider('Direct light', settings.directLightAffect, 0, 1, (v) {
+          settings.directLightAffect = v;
+        }),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Depth mip chain'),
+          value: settings.depthMipChain,
+          onChanged: (value) => setState(() => settings.depthMipChain = value),
+        ),
         if (settings.method == AmbientOcclusionMethod.groundTruth) ...[
           _slider('Slices', settings.sliceCount.toDouble(), 1, 8, (v) {
             settings.sliceCount = v.round();
@@ -809,6 +1059,11 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
             _slider('Thickness', settings.thickness, 0.05, 2, (v) {
               settings.thickness = v;
             }),
+            _slider('Thickness bias', settings.thicknessHeuristic, 0, 0.05, (
+              v,
+            ) {
+              settings.thicknessHeuristic = v;
+            }, decimals: 4),
             _slider('Indirect light', settings.indirectLight, 0, 12, (v) {
               settings.indirectLight = v;
             }),
@@ -883,6 +1138,23 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Tint', grading.tint, -1, 1, (v) {
           grading.tint = v;
         }),
+        // Lift, gamma and gain are the shadow, midtone and highlight legs of
+        // the grade; each is a colour, so they get one row per channel.
+        for (final leg in <(String, Vector3, double, double)>[
+          ('Lift', grading.lift, -0.5, 0.5),
+          ('Gamma', grading.gamma, 0.1, 3.0),
+          ('Gain', grading.gain, 0.0, 3.0),
+        ]) ...[
+          _slider('${leg.$1} R', leg.$2.r, leg.$3, leg.$4, (v) {
+            leg.$2.r = v;
+          }),
+          _slider('${leg.$1} G', leg.$2.g, leg.$3, leg.$4, (v) {
+            leg.$2.g = v;
+          }),
+          _slider('${leg.$1} B', leg.$2.b, leg.$3, leg.$4, (v) {
+            leg.$2.b = v;
+          }),
+        ],
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Film look'),
@@ -1094,6 +1366,9 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         _slider('Blur scale', settings.blurScale, 0, 3, (v) {
           settings.blurScale = v;
         }),
+        _slider('Sensor height', settings.sensorHeight * 1000, 4, 70, (v) {
+          settings.sensorHeight = v / 1000;
+        }, decimals: 0),
         _slider('Max fg blur', settings.maxForegroundBlur, 0, 64, (v) {
           settings.maxForegroundBlur = v;
         }),
