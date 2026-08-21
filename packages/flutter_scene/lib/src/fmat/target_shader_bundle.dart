@@ -12,6 +12,7 @@ import '../generated_assets/generated_file_names.dart';
 import '../generated_assets/generated_tree.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 import '../importer/build_cache.dart' show buildCacheRevision;
+import 'framework_shaders.dart';
 
 export '../generated_assets/generated_assets.dart' show ShaderBundleBackend;
 
@@ -93,7 +94,10 @@ Future<void> buildTargetShaderBundleJson({
     buildInput: buildInput,
     buildOutput: buildOutput,
     manifestFileName: manifestFileName,
-    includeDirectories: includeDirectories,
+    // flutter_scene's own shaders/ goes last, so a raw shader can
+    // `#include <scene_inputs.glsl>` (or the noise library) without the caller
+    // resolving the package, and a same-named file of the caller's still wins.
+    includeDirectories: [...includeDirectories, await frameworkShaderInclude()],
     assetMode: switch (assetMode) {
       TargetShaderBundleAssetMode.generatedTree =>
         ShaderBundleAssetMode.legacyOnly,
