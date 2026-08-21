@@ -96,6 +96,25 @@ base class GpuContext {
     });
   }
 
+  /// Texture unit reserved for creation and upload binds, above any unit
+  /// [RenderPass.bindTexture] assigns. GL texture bindings are global per
+  /// unit, so a texture created or uploaded between a pass's binds and its
+  /// draw (a lazily built placeholder, say) would otherwise replace the
+  /// texture the pass bound on the active unit, a hazard Impeller's
+  /// per-draw binding model does not have.
+  late final int _setupTextureUnit = () {
+    final Object? max = _gl.getParameter(
+      web.WebGL2RenderingContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS,
+    );
+    return (max is num ? max.toInt() : 32) - 1;
+  }();
+
+  /// Binds [texture] on the reserved setup unit for creation or upload work.
+  void _bindTextureForSetup(int target, web.WebGLTexture? texture) {
+    _gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + _setupTextureUnit);
+    _gl.bindTexture(target, texture);
+  }
+
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) {
     if (storageMode == StorageMode.deviceTransient) {
       throw Exception(
