@@ -125,7 +125,9 @@ base class Texture {
       if (_texture == null) {
         throw StateError('Failed to create WebGL texture');
       }
-      gl.bindTexture(target, _texture);
+      // The setup unit keeps this bind from replacing a texture a render
+      // pass bound for its next draw.
+      _gpuContext._bindTextureForSetup(target, _texture);
       // texStorage2D on the cube target allocates all six faces (and their
       // mips). A cube must be square.
       gl.texStorage2D(
@@ -290,8 +292,10 @@ base class Texture {
     final mipWidth = (width >> mipLevel).clamp(1, width).toInt();
     final mipHeight = (height >> mipLevel).clamp(1, height).toInt();
     // The bind target is the texture; the upload target selects the cube face.
+    // Uploaded on the setup unit so a mid-encode upload never replaces a
+    // texture a render pass bound for its next draw.
     final sliceTarget = glSliceTarget(slice);
-    gl.bindTexture(glTarget, _texture);
+    _gpuContext._bindTextureForSetup(glTarget, _texture);
     if (_isCompressedFormat(format)) {
       final blocks = sourceBytes.buffer
           .asUint8List(sourceBytes.offsetInBytes, sourceBytes.lengthInBytes)
