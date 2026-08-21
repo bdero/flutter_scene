@@ -290,10 +290,16 @@ class ShadowCatcherMaterial extends Material {
       _shadowIntensity != 0 &&
       (_bakeDirty || _bakedTexture == null);
 
-  /// Binds the catcher for the footprint bake draw: `catcher_mode` 2 (raw
-  /// atlas visibility out) and the scene's own atlas softness (the catcher's
+  /// Binds the catcher for the footprint bake draw, `catcher_mode` 2 (raw
+  /// atlas visibility out) with the scene's own atlas softness (the catcher's
   /// [softness] rides the cache blur instead). The caller sets
   /// [lightListOffset]/[lightListCount] from the baked item first.
+  ///
+  /// Mode 2 stays in the parameter block until [finishBakeBind], so the bake
+  /// draw's later vertex-stage bind emplaces the same bytes. GL backends hold
+  /// one block binding per program shared by both stages, so a vertex-stage
+  /// rebind with re-synced ordinary parameters would revert the fragment's
+  /// mode mid-draw.
   @internal
   void bindForBake(
     gpu.RenderPass pass,
@@ -306,13 +312,15 @@ class ShadowCatcherMaterial extends Material {
       ..lightListCount = lightListCount
       ..internalBaking = true;
     prepared.parameters.setInt('catcher_mode', 2);
-    try {
-      prepared.bind(pass, transientsBuffer, lighting);
-    } finally {
-      prepared.internalBaking = false;
-      // The next ordinary bind re-syncs the whole parameter set.
-      _paramsDirty = true;
-    }
+    prepared.bind(pass, transientsBuffer, lighting);
+  }
+
+  /// Ends the bake bind begun by [bindForBake], after the bake draw's last
+  /// stage bind. The next ordinary bind re-syncs the whole parameter set.
+  @internal
+  void finishBakeBind() {
+    _variant?.internalBaking = false;
+    _paramsDirty = true;
   }
 
   /// Installs a freshly baked footprint [cache]. [region] maps the mesh's
