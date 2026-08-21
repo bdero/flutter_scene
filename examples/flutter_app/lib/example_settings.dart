@@ -39,6 +39,25 @@ class ExampleSettings {
   /// Depth of field shared across the examples. Disabled by default.
   final DepthOfField depthOfField = DepthOfField();
 
+  /// Volumetric fog. Off by default, like the rest of the effects.
+  final Fog fog = Fog();
+
+  /// Screen-space reflections.
+  final ScreenSpaceReflectionsSettings screenSpaceReflections =
+      ScreenSpaceReflectionsSettings();
+
+  /// The auto-exposure meter. While enabled it drives [exposure] itself.
+  final AutoExposureSettings autoExposure = AutoExposureSettings();
+
+  /// Exposure multiplier applied before tone mapping.
+  double exposure = 1.0;
+
+  /// The tone-mapping operator the resolve pass runs.
+  ToneMappingMode toneMapping = ToneMappingMode.pbrNeutral;
+
+  /// Scales the image-based lighting the scene's environment contributes.
+  double environmentIntensity = 1.0;
+
   /// Anti-aliasing mode shared across the examples.
   AntiAliasingMode antiAliasingMode = AntiAliasingMode.auto;
 
@@ -135,16 +154,24 @@ class ExampleSettings {
   shadowDepthBias: $shadowDepthBias
   shadowNormalBias: $shadowNormalBias
   shadowAmbientStrength: $shadowAmbientStrength
-  ambientOcclusion: enabled ${ambientOcclusion.enabled}, method ${ambientOcclusion.method}, radius ${ambientOcclusion.radius}, intensity ${ambientOcclusion.intensity}, bias ${ambientOcclusion.bias}, sampleCount ${ambientOcclusion.sampleCount}, sliceCount ${ambientOcclusion.sliceCount}, stepsPerSlice ${ambientOcclusion.stepsPerSlice}, visibilityBitmask ${ambientOcclusion.visibilityBitmask}, thickness ${ambientOcclusion.thickness}, multiBounce ${ambientOcclusion.multiBounce}, bentNormals ${ambientOcclusion.bentNormals}, halfResolution ${ambientOcclusion.halfResolution}, specularMode ${ambientOcclusion.specularMode}
-  colorGrading: enabled ${colorGrading.enabled}, brightness ${colorGrading.brightness}, contrast ${colorGrading.contrast}, saturation ${colorGrading.saturation}, temperature ${colorGrading.temperature}, tint ${colorGrading.tint}
+  ambientOcclusion: enabled ${ambientOcclusion.enabled}, method ${ambientOcclusion.method}, radius ${ambientOcclusion.radius}, intensity ${ambientOcclusion.intensity}, power ${ambientOcclusion.power}, detail ${ambientOcclusion.detail}, horizonAngle ${ambientOcclusion.horizonAngle}, directLightAffect ${ambientOcclusion.directLightAffect}, indirectLight ${ambientOcclusion.indirectLight}, thicknessHeuristic ${ambientOcclusion.thicknessHeuristic}, depthMipChain ${ambientOcclusion.depthMipChain}, bias ${ambientOcclusion.bias}, sampleCount ${ambientOcclusion.sampleCount}, sliceCount ${ambientOcclusion.sliceCount}, stepsPerSlice ${ambientOcclusion.stepsPerSlice}, visibilityBitmask ${ambientOcclusion.visibilityBitmask}, thickness ${ambientOcclusion.thickness}, multiBounce ${ambientOcclusion.multiBounce}, bentNormals ${ambientOcclusion.bentNormals}, halfResolution ${ambientOcclusion.halfResolution}, specularMode ${ambientOcclusion.specularMode}
+  colorGrading: enabled ${colorGrading.enabled}, brightness ${colorGrading.brightness}, contrast ${colorGrading.contrast}, saturation ${colorGrading.saturation}, temperature ${colorGrading.temperature}, tint ${colorGrading.tint}, lift ${colorGrading.lift.x}, ${colorGrading.lift.y}, ${colorGrading.lift.z}, gamma ${colorGrading.gamma.x}, ${colorGrading.gamma.y}, ${colorGrading.gamma.z}, gain ${colorGrading.gain.x}, ${colorGrading.gain.y}, ${colorGrading.gain.z}, lutBlend ${colorGrading.lutBlend}
   bloom: enabled ${bloom.enabled}, threshold ${bloom.threshold}, intensity ${bloom.intensity}, scatter ${bloom.scatter}
+  lensFlare: enabled ${bloom.lensFlare.enabled}, intensity ${bloom.lensFlare.intensity}, ghostCount ${bloom.lensFlare.ghostCount}, ghostSpacing ${bloom.lensFlare.ghostSpacing}, haloRadius ${bloom.lensFlare.haloRadius}, haloIntensity ${bloom.lensFlare.haloIntensity}, chromaticAberration ${bloom.lensFlare.chromaticAberration}
   godRays: enabled ${godRays.enabled}, intensity ${godRays.intensity}, density ${godRays.density}, anisotropy ${godRays.anisotropy}, stepCount ${godRays.stepCount}, maxDistance ${godRays.maxDistance}, jitter ${godRays.jitter}, color ${godRays.color.x}, ${godRays.color.y}, ${godRays.color.z}
   depthOfField: enabled ${depthOfField.enabled}, focusDistance ${depthOfField.focusDistance}, fStop ${depthOfField.fStop}, focalLength ${depthOfField.focalLength}, sensorHeight ${depthOfField.sensorHeight}, blurScale ${depthOfField.blurScale}, maxForegroundBlur ${depthOfField.maxForegroundBlur}, maxBackgroundBlur ${depthOfField.maxBackgroundBlur}, bladeCount ${depthOfField.bladeCount}, bladeRotation ${depthOfField.bladeRotation}, bladeCurvature ${depthOfField.bladeCurvature}, quality ${depthOfField.quality}
   chromaticAberration: enabled ${chromaticAberration.enabled}, intensity ${chromaticAberration.intensity}
   vignette: enabled ${vignette.enabled}, intensity ${vignette.intensity}, radius ${vignette.radius}, smoothness ${vignette.smoothness}
   filmGrain: enabled ${filmGrain.enabled}, intensity ${filmGrain.intensity}
+  fog: enabled ${fog.enabled}, mode ${fog.mode}, color ${fog.color.x}, ${fog.color.y}, ${fog.color.z}, skyColorInfluence ${fog.skyColorInfluence}, density ${fog.density}, start ${fog.start}, end ${fog.end}, maxOpacity ${fog.maxOpacity}, cutoffDistance ${fog.cutoffDistance}, height ${fog.height}, heightFalloff ${fog.heightFalloff}, sunInScatter ${fog.sunInScatter}, sunInScatterExponent ${fog.sunInScatterExponent}
+  screenSpaceReflections: enabled ${screenSpaceReflections.enabled}, intensity ${screenSpaceReflections.intensity}, maxDistance ${screenSpaceReflections.maxDistance}, thickness ${screenSpaceReflections.thickness}, stride ${screenSpaceReflections.stride}, maxSteps ${screenSpaceReflections.maxSteps}, blur ${screenSpaceReflections.blur}, distanceFadeStart ${screenSpaceReflections.distanceFadeStart}, resolutionScale ${screenSpaceReflections.resolutionScale}, debugView ${screenSpaceReflections.debugView}
+  exposure: $exposure
+  toneMapping: $toneMapping
+  environmentIntensity: $environmentIntensity
+  autoExposure: enabled ${autoExposure.enabled}, strength ${autoExposure.strength}, compensation ${autoExposure.compensation}, minEv ${autoExposure.minEv}, maxEv ${autoExposure.maxEv}, speedUp ${autoExposure.speedUp}, speedDown ${autoExposure.speedDown}
   antiAliasingMode: $antiAliasingMode
-  renderScale: $renderScale''';
+  renderScale: $renderScale
+  filterQuality: $filterQuality''';
 
   /// Copies the shared settings onto [scene] so its next frame uses them.
   void applyTo(Scene scene) {
@@ -166,6 +193,46 @@ class ExampleSettings {
     grading.gain.setFrom(colorGrading.gain);
     grading.lut = colorGrading.lut;
     grading.lutBlend = colorGrading.lutBlend;
+
+    scene.exposure = exposure;
+    scene.toneMapping = toneMapping;
+    scene.environmentIntensity = environmentIntensity;
+
+    final meter = scene.autoExposure;
+    meter.enabled = autoExposure.enabled;
+    meter.strength = autoExposure.strength;
+    meter.compensation = autoExposure.compensation;
+    meter.minEv = autoExposure.minEv;
+    meter.maxEv = autoExposure.maxEv;
+    meter.speedUp = autoExposure.speedUp;
+    meter.speedDown = autoExposure.speedDown;
+
+    final sceneFog = scene.fog;
+    sceneFog.enabled = fog.enabled;
+    sceneFog.mode = fog.mode;
+    sceneFog.color.setFrom(fog.color);
+    sceneFog.skyColorInfluence = fog.skyColorInfluence;
+    sceneFog.density = fog.density;
+    sceneFog.start = fog.start;
+    sceneFog.end = fog.end;
+    sceneFog.maxOpacity = fog.maxOpacity;
+    sceneFog.cutoffDistance = fog.cutoffDistance;
+    sceneFog.height = fog.height;
+    sceneFog.heightFalloff = fog.heightFalloff;
+    sceneFog.sunInScatter = fog.sunInScatter;
+    sceneFog.sunInScatterExponent = fog.sunInScatterExponent;
+
+    final ssr = scene.screenSpaceReflections;
+    ssr.enabled = screenSpaceReflections.enabled;
+    ssr.intensity = screenSpaceReflections.intensity;
+    ssr.maxDistance = screenSpaceReflections.maxDistance;
+    ssr.thickness = screenSpaceReflections.thickness;
+    ssr.stride = screenSpaceReflections.stride;
+    ssr.maxSteps = screenSpaceReflections.maxSteps;
+    ssr.blur = screenSpaceReflections.blur;
+    ssr.distanceFadeStart = screenSpaceReflections.distanceFadeStart;
+    ssr.resolutionScale = screenSpaceReflections.resolutionScale;
+    ssr.debugView = screenSpaceReflections.debugView;
 
     final aberration = scene.postProcess.chromaticAberration;
     aberration.enabled = chromaticAberration.enabled;
@@ -201,6 +268,13 @@ class ExampleSettings {
     ao.radius = ambientOcclusion.radius;
     ao.intensity = ambientOcclusion.intensity;
     ao.bias = ambientOcclusion.bias;
+    ao.power = ambientOcclusion.power;
+    ao.detail = ambientOcclusion.detail;
+    ao.horizonAngle = ambientOcclusion.horizonAngle;
+    ao.directLightAffect = ambientOcclusion.directLightAffect;
+    ao.indirectLight = ambientOcclusion.indirectLight;
+    ao.thicknessHeuristic = ambientOcclusion.thicknessHeuristic;
+    ao.depthMipChain = ambientOcclusion.depthMipChain;
     ao.sampleCount = ambientOcclusion.sampleCount;
     ao.sliceCount = ambientOcclusion.sliceCount;
     ao.stepsPerSlice = ambientOcclusion.stepsPerSlice;
@@ -277,6 +351,14 @@ class ExampleSettings {
       light.shadowAmbientStrength = shadowAmbientStrength;
       light.shadowCasterFaces = shadowCasterFaces;
     } else {
+      // Clear the scene's own light through its setter first. Detaching the
+      // component by hand leaves the scene still holding it, and the next
+      // enable goes through the setter, which tries to detach it a second
+      // time and throws. That throw escapes applyTo, and since examples call
+      // this from their frame tick, it takes the rest of the tick with it:
+      // the light comes back but everything after it, camera included, stops.
+      scene.directionalLight = null;
+      // Any light an example attached itself rather than through the scene.
       for (final component
           in scene.root.getComponents<DirectionalLightComponent>().toList()) {
         scene.root.removeComponent(component);
