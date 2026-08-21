@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, setEquals, visibleForTesting;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
@@ -8,6 +9,8 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/shader_stage.dart';
+import 'package:flutter_scene/src/render/custom_render_pass.dart'
+    show RenderInput;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
@@ -106,7 +109,8 @@ class ShaderMaterial extends Material {
     this.cullingMode = gpu.CullMode.backFace,
     this.windingOrder = gpu.WindingOrder.counterClockwise,
     this.isOpaqueOverride = true,
-  }) {
+    Set<RenderInput> sceneInputs = const {},
+  }) : _sceneInputs = sceneInputs {
     if (fragmentShader != null) {
       setFragmentShader(fragmentShader);
     }
@@ -136,6 +140,33 @@ class ShaderMaterial extends Material {
   /// materials, which the encoder defers to the back-to-front
   /// translucent pass with alpha blending.
   bool isOpaqueOverride;
+
+  Set<RenderInput> _sceneInputs;
+
+  /// Per-frame engine textures this material samples.
+  ///
+  /// [RenderInput.depth] binds `scene_depth`, the opaque geometry's linear
+  /// view-space depth, and forces the depth prepass.
+  /// [RenderInput.opaqueSceneColor] binds `scene_opaque_color`, the scene
+  /// behind this draw, and [RenderInput.filteredSceneColor] adds its
+  /// roughness-filtered atlas as `scene_filtered_color`. Together they are what
+  /// a translucent surface needs for refraction and depth-fade absorption.
+  ///
+  /// Nothing is generated for you, unlike a `.fmat` material: declare the
+  /// samplers yourself under those names and derive the screen UV from
+  /// `gl_FragCoord`. The engine produces an input only while a visible material
+  /// asks for it, so an unused one costs nothing.
+  @override
+  Set<RenderInput> get sceneInputs => _sceneInputs;
+
+  set sceneInputs(Set<RenderInput> value) {
+    if (setEquals(_sceneInputs, value)) return;
+    _sceneInputs = value;
+    // The frame's input set is summarized across materials and cached, so a
+    // change has to invalidate it or the engine keeps producing (or skipping)
+    // last frame's buffers.
+    markMaterialSceneInputsChanged();
+  }
 
   final Map<String, ByteData> _uniformBlocks = {};
   final Map<String, _BoundTexture> _textures = {};
@@ -370,6 +401,15 @@ class ShaderMaterial extends Material {
 
     if (useEnvironment) {
       _bindEnvironmentTextures(pass, shader, lighting);
+    }
+
+    if (_sceneInputs.isNotEmpty) {
+      EngineLightingUniforms.bindSceneInputTextures(
+        pass,
+        shader,
+        lighting,
+        _sceneInputs,
+      );
     }
   }
 

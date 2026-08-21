@@ -6,6 +6,11 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
+// The revision counter the frame's scene-input summary is cached against is
+// internal, and asserting the invalidation is the point of the last test here.
+// ignore: implementation_imports
+import 'package:flutter_scene/src/material/material.dart'
+    show materialSceneInputsRevision;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -66,6 +71,38 @@ void main() {
       expect(opaque.isOpaque(), isTrue);
       opaque.isOpaqueOverride = false;
       expect(opaque.isOpaque(), isFalse);
+    });
+  });
+
+  group('ShaderMaterial scene inputs', () {
+    test('requests nothing by default', () {
+      expect(ShaderMaterial().sceneInputs, isEmpty);
+    });
+
+    test('carries what the constructor declared', () {
+      final material = ShaderMaterial(
+        sceneInputs: const {RenderInput.opaqueSceneColor, RenderInput.depth},
+      );
+      expect(
+        material.sceneInputs,
+        containsAll(<RenderInput>[
+          RenderInput.opaqueSceneColor,
+          RenderInput.depth,
+        ]),
+      );
+    });
+
+    test('a change invalidates the cached frame summary', () {
+      final material = ShaderMaterial();
+      final before = materialSceneInputsRevision;
+      material.sceneInputs = const {RenderInput.depth};
+      expect(materialSceneInputsRevision, greaterThan(before));
+
+      // Setting an equal set is not a change and must not invalidate, or every
+      // material assignment costs the frame its input summary.
+      final after = materialSceneInputsRevision;
+      material.sceneInputs = const {RenderInput.depth};
+      expect(materialSceneInputsRevision, after);
     });
   });
 }
