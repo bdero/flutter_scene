@@ -120,7 +120,10 @@ class ExampleCarState extends State<ExampleCar> {
     final axis = switch (name) {
       'Frunk' => vm.Vector3(0, 0, 1),
       'Trunk' => vm.Vector3(0, 0, -1),
-      _ => vm.Vector3(0, -1, 0),
+      // The doors hinge about +Y. Both sides share the axis because the model
+      // mirrors the left and right nodes, so the same local rotation swings
+      // each one outwards.
+      _ => vm.Vector3(0, 1, 0),
     };
     state.amount = amount;
     state.node.localTransform = state.startTransform.clone()
