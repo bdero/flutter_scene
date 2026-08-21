@@ -13,6 +13,8 @@
 * `ShadowCatcherMaterial`, an invisible ground showing only received shadows and ambient occlusion, live by default with a baked mode.
 * Morph targets import on both paths, animate via `weights` channels, and blend on the CPU or a GPU morph texture; `Node.morphWeights` drives them.
 * `EnvironmentMap.fromKtx2Bytes` loads a pre-baked radiance cubemap with SH-9 diffuse, skipping the load-time prefilter.
+* `EXT_lights_image_based` imports as an `ImageBasedLightComponent` on the model root.
+* SH-9 diffuse helpers, `parseDiffuseShSidecar`/`encodeDiffuseShSidecar`, `evaluateDiffuseSphericalHarmonics`, and `describeDiffuseSphericalHarmonics` for verifying imported coefficients.
 * `PhysicallyBasedMaterial.lightmapTexture` adds a baked lightmap that replaces the SH diffuse ambient.
 * `.fmat` `instance_attributes` declare typed per-instance data, set via `InstancedMesh.setInstanceAttribute`.
 * `PlanarReflectorComponent` renders a mirrored scene capture that `.fmat` materials sample via the `planar_reflection` engine input.
