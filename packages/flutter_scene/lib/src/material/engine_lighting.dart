@@ -549,6 +549,61 @@ class EngineLightingUniforms {
     }
   }
 
+  /// Binds the standalone `SceneInputInfo` block that
+  /// `shaders/scene_inputs.glsl` declares, carrying what a `.fmat` material
+  /// reads out of `FragInfo`: which inputs exist this frame, the render-target
+  /// size the screen UV comes from, and the camera basis a refraction projects
+  /// against. A raw [gpu.Shader] has no `FragInfo`, so without this it can
+  /// neither gate on availability nor find the UV to sample with.
+  ///
+  /// Does nothing when the shader does not declare the block, which is both
+  /// the material that computes its own mapping and the one whose declaration
+  /// was optimized away. Unlike a sampler, an absent block reflects as a null
+  /// size, so this is detectable rather than a bad bind.
+  static void bindSceneInputInfo(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    Lighting lighting,
+    TransientWriter transientsBuffer,
+  ) {
+    final slot = shader.getUniformSlot('SceneInputInfo');
+    if (slot.sizeInBytes == null) return;
+
+    final info = Float32List(20);
+    info[0] = lighting.opaqueSceneColor != null ? 1.0 : 0.0;
+    info[1] = lighting.sceneDepthLinear != null ? 1.0 : 0.0;
+    info[2] = lighting.filteredSceneColor != null ? 1.0 : 0.0;
+    final viewport = lighting.viewportSize;
+    info[4] = viewport.width;
+    info[5] = viewport.height;
+    info[6] = viewport.width > 0 ? 1.0 / viewport.width : 0.0;
+    info[7] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
+    final forward = lighting.cameraForward;
+    if (forward != null) {
+      info[8] = forward.x;
+      info[9] = forward.y;
+      info[10] = forward.z;
+    }
+    info[11] = lighting.tanHalfFovY;
+    final right = lighting.cameraRight;
+    if (right != null) {
+      info[12] = right.x;
+      info[13] = right.y;
+      info[14] = right.z;
+    }
+    info[15] = lighting.tanHalfFovX;
+    final up = lighting.cameraUp;
+    if (up != null) {
+      info[16] = up.x;
+      info[17] = up.y;
+      info[18] = up.z;
+    }
+    pass.bindUniform(
+      slot,
+      transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+  }
+
   /// Binds the secondary cross-fade environment's prefiltered radiance to the
   /// `prefiltered_radiance_b` sampler (the specular term only, no diffuse SH).
   /// Shared by the lit material and the environment skybox; both share the

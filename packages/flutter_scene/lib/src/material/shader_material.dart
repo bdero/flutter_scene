@@ -110,7 +110,14 @@ class ShaderMaterial extends Material {
     this.windingOrder = gpu.WindingOrder.counterClockwise,
     this.isOpaqueOverride = true,
     Set<RenderInput> sceneInputs = const {},
-  }) : _sceneInputs = sceneInputs {
+  }) : _sceneInputs = _normalizeSceneInputs(sceneInputs) {
+    // A material constructed with inputs is not in the frame's cached summary
+    // yet. Attaching it to a mounted mesh invalidates through the mesh
+    // component, but constructing before the first render does not, so cover
+    // the declaration itself.
+    if (_sceneInputs.isNotEmpty) {
+      markMaterialSceneInputsChanged();
+    }
     if (fragmentShader != null) {
       setFragmentShader(fragmentShader);
     }
@@ -141,27 +148,76 @@ class ShaderMaterial extends Material {
   /// translucent pass with alpha blending.
   bool isOpaqueOverride;
 
+  /// The inputs a material may declare. The rest of [RenderInput] is for
+  /// custom render passes; a material asking for one would neither bind
+  /// anything nor make the engine produce it, while still costing the frame
+  /// its cached whole-scene summary.
+  static const _materialInputs = <RenderInput>{
+    RenderInput.opaqueSceneColor,
+    RenderInput.filteredSceneColor,
+    RenderInput.depth,
+  };
+
+  static Set<RenderInput> _normalizeSceneInputs(Set<RenderInput> value) {
+    for (final input in value) {
+      if (!_materialInputs.contains(input)) {
+        throw ArgumentError.value(
+          input,
+          'sceneInputs',
+          'a material can declare only ${_materialInputs.join(', ')}. '
+              'The rest of RenderInput is for CustomRenderPass.inputs',
+        );
+      }
+    }
+    // The filtered atlas is built from the scene-color snapshot, so asking for
+    // it asks for that too. `.fmat` normalizes the same way; doing it here
+    // keeps one meaning of the set no matter which path declared it.
+    final normalized = {...value};
+    if (normalized.contains(RenderInput.filteredSceneColor)) {
+      normalized.add(RenderInput.opaqueSceneColor);
+    }
+    // Copied and frozen so a caller mutating the set it passed in, or the set
+    // this hands back, cannot change what the material asks for behind the
+    // invalidation below.
+    return Set.unmodifiable(normalized);
+  }
+
   Set<RenderInput> _sceneInputs;
 
   /// Per-frame engine textures this material samples.
   ///
-  /// [RenderInput.depth] binds `scene_depth`, the opaque geometry's linear
-  /// view-space depth, and forces the depth prepass.
   /// [RenderInput.opaqueSceneColor] binds `scene_opaque_color`, the scene
-  /// behind this draw, and [RenderInput.filteredSceneColor] adds its
-  /// roughness-filtered atlas as `scene_filtered_color`. Together they are what
-  /// a translucent surface needs for refraction and depth-fade absorption.
+  /// composed behind this draw, [RenderInput.filteredSceneColor] adds its
+  /// roughness-filtered atlas as `scene_filtered_color` (and implies the
+  /// snapshot), and [RenderInput.depth] binds `scene_depth`, the opaque
+  /// geometry's linear view-space depth. Together they are what a translucent
+  /// surface needs for refraction and depth-fade absorption.
   ///
-  /// Nothing is generated for you, unlike a `.fmat` material: declare the
-  /// samplers yourself under those names and derive the screen UV from
-  /// `gl_FragCoord`. The engine produces an input only while a visible material
-  /// asks for it, so an unused one costs nothing.
+  /// Include `<scene_inputs.glsl>` to get the samplers and their accessors
+  /// rather than declaring them by hand. It gates each read on whether the
+  /// engine produced the input this frame, which a raw shader cannot otherwise
+  /// know, and it derives the screen UV from a `SceneInputInfo` block the
+  /// engine binds. Hand-rolling that means sampling an opaque-white placeholder
+  /// on the frames an input is missing.
+  ///
+  /// **Declaring an input the shader does not sample is a crash, not a
+  /// no-op.** A declared-but-unsampled sampler is eliminated by the compiler
+  /// while the runtime reflection still lists it, and the bind then writes into
+  /// a slot that does not exist. Keep this set and the shader's
+  /// `FLUTTER_SCENE_*` defines in step.
+  ///
+  /// This is a declaration, not a per-frame knob. Producing an input is not
+  /// free: [RenderInput.depth] forces the depth prepass, and the scene-color
+  /// inputs split the scene pass around every screen-reading layer. Any
+  /// non-empty set also moves the frame off its cached whole-scene answer onto
+  /// a per-view collection, and each change re-summarizes the whole scene.
   @override
   Set<RenderInput> get sceneInputs => _sceneInputs;
 
   set sceneInputs(Set<RenderInput> value) {
-    if (setEquals(_sceneInputs, value)) return;
-    _sceneInputs = value;
+    final normalized = _normalizeSceneInputs(value);
+    if (setEquals(_sceneInputs, normalized)) return;
+    _sceneInputs = normalized;
     // The frame's input set is summarized across materials and cached, so a
     // change has to invalidate it or the engine keeps producing (or skipping)
     // last frame's buffers.
@@ -409,6 +465,12 @@ class ShaderMaterial extends Material {
         shader,
         lighting,
         _sceneInputs,
+      );
+      EngineLightingUniforms.bindSceneInputInfo(
+        pass,
+        shader,
+        lighting,
+        transientsBuffer,
       );
     }
   }

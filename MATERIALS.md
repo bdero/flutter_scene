@@ -830,30 +830,61 @@ final water = ShaderMaterial(
 );
 ```
 
-`RenderInput.depth` binds `scene_depth`, the opaque geometry's linear
-view-space depth in world units, and forces the depth prepass.
-`RenderInput.opaqueSceneColor` binds `scene_opaque_color`, the scene behind
-this draw, and `RenderInput.filteredSceneColor` adds its roughness-filtered
-atlas as `scene_filtered_color` for rough refraction.
+`RenderInput.opaqueSceneColor` binds `scene_opaque_color`, the scene composed
+behind this draw. `RenderInput.depth` binds `scene_depth`, the opaque
+geometry's linear view-space depth in world units.
+`RenderInput.filteredSceneColor` adds the roughness-filtered atlas as
+`scene_filtered_color` for rough refraction, and implies the snapshot it is
+built from. Those three are the whole set a material may declare; the rest of
+`RenderInput` belongs to `CustomRenderPass.inputs` and is rejected here.
 
-Nothing is generated for you here, unlike the `.fmat` path. Declare the
-samplers yourself under those names and derive the screen UV from
-`gl_FragCoord`:
+In the shader, `#include <scene_inputs.glsl>` and declare which inputs you took
+so only those samplers exist:
 
 ```glsl
-uniform sampler2D scene_opaque_color;
-uniform highp sampler2D scene_depth;
-uniform PostFrameInfo { vec4 resolution; } frame;
+#define FLUTTER_SCENE_SCENE_COLOR
+#define FLUTTER_SCENE_SCENE_DEPTH
+#include <scene_inputs.glsl>
 
-vec2 uv = gl_FragCoord.xy * frame.resolution.zw;
-float behind = texture(scene_depth, uv).r;   // linear view depth, world units
-vec3 refracted = texture(scene_opaque_color, uv + offset).rgb;
+// v_viewvector is the engine vertex shaders' output; a material with its own
+// vertex stage passes whatever it computed.
+float thickness = GetSceneDepth(vec2(0.0)) - GetFragmentViewDepth(v_viewvector);
+vec3 refracted = GetSceneColor(normal_offset * refraction_strength);
 ```
 
-`sceneInputs` is settable after construction; assigning a different set
-invalidates the frame's cached input summary, and assigning an equal one
-does not. The engine produces an input only while a visible material asks for
-it, so declaring none costs nothing.
+The header is the same contract the `.fmat` accessors give you, and it exists
+for a reason worth stating. An input is produced only on the frames a visible
+material asks for it, and it can go missing anyway (a non-perspective camera
+produces no depth), so every read is gated: `GetSceneColor` returns black and
+`GetSceneDepth` returns a huge depth when the input is absent, which fades an
+effect out. Sampling the sampler directly instead reads an opaque-white
+placeholder on those frames, which is a blown-out image rather than an inert
+one. The header also derives the screen UV from a `SceneInputInfo` block the
+engine binds, since a raw shader has no other way to learn the render-target
+size (it is the widget size times the device pixel ratio times
+`Scene.renderScale`, and the material draws into the scene color target rather
+than into the widget).
+
+`buildTargetShaderBundleJson` puts flutter_scene's `shaders/` on the include
+path, so the `#include` resolves with no setup. It also reaches `noise.glsl`
+and the rest of the engine's GLSL.
+
+**Keep the defines and the Dart set in step.** They are two declarations of one
+thing, and disagreeing is not a no-op. A sampler the shader declares but never
+samples is eliminated by the compiler while the runtime reflection still lists
+it, and the bind then writes into a slot that does not exist, which fails at
+draw time. Check what a bundle really compiled with:
+
+```sh
+strings my.shaderbundle | grep -oE "[a-z_0-9]+ \[\[texture\([0-9]+\)\]\]" | sort -u
+```
+
+`sceneInputs` is settable after construction, and assigning an equal set is not
+a change. Treat it as a declaration rather than a per-frame knob, though.
+Producing an input is not free: `RenderInput.depth` forces the depth prepass,
+and the scene-color inputs split the scene pass around every screen-reading
+layer. Any non-empty set also moves the frame off its cached whole-scene
+summary onto a per-view collection, and each change re-summarizes the scene.
 
 Unlike the `.fmat` path this is available on `unlit` shading, and a raw
 material pays none of the lit framework's eight engine samplers, so the
