@@ -15,10 +15,10 @@ import 'cloth_solver.dart';
 /// perfectly steady breeze goes limp.
 class ClothWind {
   /// Wind speed, meters per second.
-  double speed = 6.0;
+  double speed = 5.47;
 
   /// Compass heading the wind blows toward, degrees clockwise from +X.
-  double headingDegrees = 0.0;
+  double headingDegrees = 131.0;
 
   /// Gust strength, as a fraction of [speed] varying over the sheet.
   double gust = 0.35;
@@ -114,6 +114,7 @@ class ClothSliderRow extends StatelessWidget {
     required this.min,
     required this.max,
     required this.onChanged,
+    this.onChangeEnd,
     this.fractionDigits = 2,
     this.suffix = '',
   });
@@ -123,6 +124,11 @@ class ClothSliderRow extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
+
+  /// Fired when the drag finishes. Used by the values that cannot be applied
+  /// in place, so the scene is rebuilt once rather than on every tick.
+  final ValueChanged<double>? onChangeEnd;
+
   final int fractionDigits;
   final String suffix;
 
@@ -137,6 +143,7 @@ class ClothSliderRow extends StatelessWidget {
       min: min,
       max: max,
       onChanged: onChanged,
+      onChangeEnd: onChangeEnd,
     );
     // A slider has a minimum width of its own, so on a narrow panel the label
     // goes above it rather than squeezing it off the edge.

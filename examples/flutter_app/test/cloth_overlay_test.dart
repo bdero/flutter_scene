@@ -45,9 +45,11 @@ void main() {
         ExampleOverlay.bottomLeftPanel(
           child: ClothControlPanel(
             settings: ClothSettings(),
-            stats: '2400 particles, 7000 constraints, 6.1 ms',
+            stats: ValueNotifier<String>(
+              '2400 particles, 7000 constraints, 6.1 ms',
+            ),
             onChanged: () {},
-            onQualityChanged: () {},
+            onRebuild: () {},
             onReset: () {},
           ),
         ),
