@@ -206,37 +206,41 @@ class ShadowCatcherBakePass extends RenderGraphPass {
       material
         ..lightListOffset = item.lightListOffset
         ..lightListCount = item.lightListCount;
-      material.bindForBake(pass, context.transientsBuffer, lighting);
-      // The bake projects the plane flat, so both faces are equivalent; no
-      // culling keeps a flipped or bottom-viewed plane baking identically.
-      pass.setCullMode(gpu.CullMode.none);
-      pass.setColorBlendEnable(false);
-      pass.setDepthWriteEnable(false);
-      pass.setDepthCompareOperation(gpu.CompareFunction.always);
-      geometry.bind(
-        pass,
-        context.transientsBuffer,
-        item.worldTransform,
-        bakeTransform,
-        bakeCameraPosition,
-        shaderOverride: materialVertex,
-      );
-      if (materialVertex != null) {
-        material.bindVertexStage(
+      try {
+        material.bindForBake(pass, context.transientsBuffer, lighting);
+        // The bake projects the plane flat, so both faces are equivalent; no
+        // culling keeps a flipped or bottom-viewed plane baking identically.
+        pass.setCullMode(gpu.CullMode.none);
+        pass.setColorBlendEnable(false);
+        pass.setDepthWriteEnable(false);
+        pass.setDepthCompareOperation(gpu.CompareFunction.always);
+        geometry.bind(
           pass,
-          materialVertex,
           context.transientsBuffer,
-        );
-      }
-      if (geometry.instancedVertexLayout != null &&
-          geometry.bindsModelTransformInstance) {
-        bindSingleInstanceData(
-          pass,
           item.worldTransform,
-          slot: geometry.vertexStreamCount,
+          bakeTransform,
+          bakeCameraPosition,
+          shaderOverride: materialVertex,
         );
+        if (materialVertex != null) {
+          material.bindVertexStage(
+            pass,
+            materialVertex,
+            context.transientsBuffer,
+          );
+        }
+        if (geometry.instancedVertexLayout != null &&
+            geometry.bindsModelTransformInstance) {
+          bindSingleInstanceData(
+            pass,
+            item.worldTransform,
+            slot: geometry.vertexStreamCount,
+          );
+        }
+        geometry.draw(pass);
+      } finally {
+        material.finishBakeBind();
       }
-      geometry.draw(pass);
       rendererSubmissions.submit(commandBuffer);
     }
 
