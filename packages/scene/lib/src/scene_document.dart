@@ -1,6 +1,11 @@
 import 'package:scene/src/id.dart';
 import 'package:scene/src/specs.dart';
 
+/// The `.fscene` format version this build reads and writes. Newer documents
+/// are refused; older ones migrate on read.
+/// {@category Serialization}
+const int currentFsceneVersion = 4;
+
 /// The in-memory `.fscene` document: a GPU-free, encoding-independent
 /// description of a scene that the encoders serialize and the realizer turns
 /// into a live `Node` graph.
@@ -12,11 +17,6 @@ import 'package:scene/src/specs.dart';
 /// and packed binary), composition (prefab overrides), and realization live
 /// in separate layers.
 /// {@category Documents}
-/// The `.fscene` format version this build reads and writes. Newer documents
-/// are refused; older ones migrate on read.
-/// {@category Serialization}
-const int currentFsceneVersion = 4;
-
 class SceneDocument {
   /// Creates an empty document. A new [documentId] and [allocator] (with a
   /// fresh session salt) are generated unless supplied.
