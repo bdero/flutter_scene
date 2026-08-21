@@ -1,3 +1,7 @@
+## 0.5.1
+
+* Widen the `scene` constraint to `^0.3.0`. No native changes; a release reuses the 0.5.0 binaries and wasm.
+
 ## 0.5.0
 
 * BREAKING: `RapierWorld.snapshot` wraps the native payload in an envelope carrying the body set it captured, so snapshots taken by 0.4.0 no longer restore.
