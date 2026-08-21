@@ -96,6 +96,8 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
   int get lightChannelMask => 0xFF;
   @override
   Object? get jointsTexture => null;
+  @override
+  Float32List? get morphWeights => null;
 }
 
 InstancedMesh _mesh({InstanceAttributeSchema? schema}) => InstancedMesh(

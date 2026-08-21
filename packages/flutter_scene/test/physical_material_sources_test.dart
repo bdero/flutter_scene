@@ -635,7 +635,11 @@ void main() {
   });
 
   test('cascade cross-fade collapses to the hard hand-off at zero', () {
-    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    // The cascade sampling lives in the shared shadow-sampling include so the
+    // shadow catcher can use it without the lighting framework.
+    final lighting = File(
+      'shaders/material_shadow_sampling.glsl',
+    ).readAsStringSync();
     final uniforms = File(
       'shaders/material_engine_lighting.glsl',
     ).readAsStringSync();

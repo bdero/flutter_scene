@@ -100,11 +100,7 @@ void _checkPrimitive(_Fixture fixture, int meshIndex, int primitiveIndex) {
   // Indices.
   final referenceIndices = readAccessorAsUint32(
     fixture.decoded.doc.accessors[referencePrimitive.indices!],
-    fixture.decoded.doc.bufferViews[fixture
-        .decoded
-        .doc
-        .accessors[referencePrimitive.indices!]
-        .bufferView!],
+    fixture.decoded.doc.bufferViews,
     fixture.decoded.bin,
   );
   expect(decoded.faces.length, referenceIndices.length, reason: 'index count');
