@@ -119,7 +119,7 @@ Future<List<Texture2D>> buildTextures(
           standardRequests.add((bytes: imageBytes, content: contents[i]));
         }
       } on Ktx2FormatException catch (e) {
-        debugPrint('Failed to parse glTF KTX2 image $imageIdx: $e');
+        warn('Failed to parse glTF KTX2 image $imageIdx: $e');
       }
       continue;
     }
@@ -142,7 +142,7 @@ Future<List<Texture2D>> buildTextures(
         await gpuTextureFromKtx2Async(internalPayloads[j]),
       );
     } catch (e) {
-      debugPrint('Failed to load glTF KTX2 texture: $e');
+      warn('Failed to load glTF KTX2 texture: $e');
     }
   }
   return [for (final result in results) result ?? _placeholder()];

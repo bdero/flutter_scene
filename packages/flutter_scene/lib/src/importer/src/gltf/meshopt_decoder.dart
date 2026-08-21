@@ -252,7 +252,7 @@ void _validateDecodedAccessors(
       final vertexCount = doc.accessors[position].count;
       final values = readAccessorAsUint32(
         accessor,
-        doc.bufferViews[viewIndex],
+        doc.bufferViews,
         bufferData,
       );
       for (final value in values) {

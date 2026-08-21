@@ -44,17 +44,18 @@ void main() {
     test(
       'a required extension with planned support says so, not "unsupported"',
       () {
-        try {
-          parseGltfJson({
-            'extensionsRequired': ['KHR_draco_mesh_compression'],
-          });
-          fail('expected UnsupportedRequiredExtensionException');
-        } on UnsupportedRequiredExtensionException catch (e) {
-          expect(e.message, contains('support planned'));
-          expect(
-            e.message,
-            isNot(contains('KHR_draco_mesh_compression (unsupported)')),
-          );
+        // Iterates the planned set so the test tracks decoders as they land;
+        // vacuous once every planned extension is recognized.
+        for (final name in kPlannedGltfExtensions) {
+          try {
+            parseGltfJson({
+              'extensionsRequired': [name],
+            });
+            fail('expected UnsupportedRequiredExtensionException');
+          } on UnsupportedRequiredExtensionException catch (e) {
+            expect(e.message, contains('support planned'));
+            expect(e.message, isNot(contains('$name (unsupported)')));
+          }
         }
       },
     );
@@ -81,11 +82,15 @@ void main() {
     test(
       'a used extension with planned support mentions that in the warning',
       () {
-        final doc = parseGltfJson({
-          'extensionsUsed': ['EXT_meshopt_compression'],
-        });
-        expect(doc.warnings, hasLength(1));
-        expect(doc.warnings.single.message, contains('support planned'));
+        // Iterates the planned set so the test tracks decoders as they land;
+        // vacuous once every planned extension is recognized.
+        for (final name in kPlannedGltfExtensions) {
+          final doc = parseGltfJson({
+            'extensionsUsed': [name],
+          });
+          expect(doc.warnings, hasLength(1));
+          expect(doc.warnings.single.message, contains('support planned'));
+        }
       },
     );
 

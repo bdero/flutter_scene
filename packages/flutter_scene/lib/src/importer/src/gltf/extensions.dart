@@ -33,11 +33,7 @@ const Set<String> kRecognizedGltfExtensions = {
 /// Extensions not parsed yet but with support planned. Named individually so
 /// [UnsupportedRequiredExtensionException] and the `extensionsUsed` warning
 /// can say support is planned instead of a bare unsupported.
-const Set<String> kPlannedGltfExtensions = {
-  'KHR_draco_mesh_compression',
-  'EXT_meshopt_compression',
-  'KHR_texture_basisu',
-};
+const Set<String> kPlannedGltfExtensions = {};
 
 /// Thrown when a glTF document's `extensionsRequired` names an extension this
 /// engine can't parse. Every unsupported required extension is named in one
