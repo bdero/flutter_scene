@@ -53,28 +53,32 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   // A corridor of simulated cloth beyond the banner curtain, parted by a set
   // of capsules fitted to Dash's bones (see [CharacterClothBody]).
   final List<ClothSheet> _clothSheets = [];
+  final List<Node> _clothRails = [];
   final CharacterClothBody _clothBody = CharacterClothBody();
-  // Tuned against this scene: a soft, heavily damped fabric that hangs rather
-  // than billows, which is what reads well on six layers at once. Six sheets
-  // share the frame with the rest of the playground, so there is no
-  // self-collision broadphase and the substep count is low; the compliance and
-  // viscosity are what keep it stable there.
+  // The shared tuned defaults, with this scene's own contact gap.
+  // Tuned against this scene: six stiff, heavy layers around a walking body,
+  // held well off him in a slow gusty breeze, with self-collision on now that
+  // an uneven frame rate no longer shakes the sheets.
   final ClothSettings cloth = ClothSettings()
-    ..selfCollision = false
+    ..quality = ClothQuality.high
     ..substeps = 2
-    ..stretchCompliance = 1.97e-6
-    ..bending = 0.17
-    ..stretchDamping = 0.18
-    ..damping = 0.15
-    ..friction = 0.14
+    ..stretchCompliance = 3.25e-6
+    ..bending = 0.55
+    ..stretchDamping = 0.35
+    ..damping = 0.29
+    ..friction = 0.09
     ..gravity = 9.8
-    ..airDensity = 0.97
-    ..dragCoefficient = 1.20
-    ..liftCoefficient = 0.56
-    ..contactOffset = 0.10
-    ..wind.speed = 2.80
-    ..wind.headingDegrees = 178.0
-    ..wind.gust = 0.35;
+    ..airDensity = 3.02
+    ..dragCoefficient = 2.11
+    ..liftCoefficient = 0.00
+    ..contactOffset = 0.300
+    ..thicknessRatio = 0.90
+    ..groundOffset = 0.352
+    ..selfCollision = true
+    ..wind.speed = 3.67
+    ..wind.headingDegrees = 173.6
+    ..wind.gust = 0.41;
+  final ValueNotifier<String> _clothStats = ValueNotifier<String>('');
 
   // A translucent trigger volume Dash can walk into. While Dash is inside,
   // the box glows and a vignette closes in around the view.
@@ -146,8 +150,6 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _buildBridge();
     _buildElevator();
     _buildSeesaw();
-    _buildCurtain();
-    _buildRopes();
     _buildClothCorridor();
     _spawnCharacter();
 
@@ -159,6 +161,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
   @override
   void dispose() {
     _collisionSub?.cancel();
+    _clothStats.dispose();
     _vignetteListenable.dispose();
     super.dispose();
   }
@@ -215,13 +218,13 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     return node;
   }
 
-  void _addStaticBox(
+  Node _addStaticBox(
     vm.Vector3 center,
     vm.Vector3 halfExtents,
     vm.Vector4 color, {
     vm.Quaternion? rotation,
   }) {
-    _addBody(
+    return _addBody(
       position: center,
       type: BodyType.fixed,
       mesh: _boxMesh(halfExtents * 2.0, color),
@@ -704,148 +707,20 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     );
   }
 
-  // A curtain of hanging cloth-like banners: several adjacent vertical
-  // strips, each a chain of slats hinged about the horizontal width axis
-  // and anchored to the world at the top. Dash parts them as he runs
-  // through; they swing back and settle (lightly damped, like the bridge).
-  void _buildCurtain() {
-    const cx = 0.0, cz = -6.0, topY = 3.0;
-    const nStrips = 5, nSlats = 4;
-    const stripW = 0.5, slatHalfY = 0.25, slatHalfZ = 0.03;
-    const pitch = stripW + 0.04;
-    final color = vm.Vector4(0.85, 0.33, 0.42, 1);
+  // Six hanging sheets down the middle of the playground, each a full cloth
+  // simulation. They are not rigid bodies: Dash walks through them, and a
+  // capsule set on his bones is what pushes them aside.
+  static const int _clothSheetCount = 6;
+  static const double _clothWidth = 3.6;
+  static const double _clothHeight = 2.9;
+  // Spread down the lane the banner curtain and bead ropes used to occupy,
+  // far enough apart to walk between one sheet and the next.
+  static const double _clothSpacing = 3.2;
+  static const double _clothFirstZ = -6.0;
 
-    // Decorative top rail the banners hang from.
-    scene.add(
-      Node(
-        mesh: _boxMesh(
-          vm.Vector3(nStrips * pitch + 0.3, 0.12, 0.2),
-          vm.Vector4(0.40, 0.40, 0.46, 1),
-        ),
-        localTransform: vm.Matrix4.translation(vm.Vector3(cx, topY + 0.06, cz)),
-      ),
-    );
+  double _clothZ(int index) => _clothFirstZ - index * _clothSpacing;
 
-    final axis = vm.Vector3(1, 0, 0);
-    for (var s = 0; s < nStrips; s++) {
-      final x = cx + (s - (nStrips - 1) / 2) * pitch;
-      Node? prev;
-      for (var i = 0; i < nSlats; i++) {
-        final y = topY - slatHalfY - i * (slatHalfY * 2);
-        final node = Node(
-          mesh: _boxMesh(
-            vm.Vector3(stripW, slatHalfY * 2, slatHalfZ * 2),
-            color,
-          ),
-          localTransform: vm.Matrix4.translation(vm.Vector3(x, y, cz)),
-        );
-        node.addComponent(
-          RigidBody(
-            type: BodyType.dynamic_,
-            // Light and fairly damped so the banners flutter and settle
-            // quickly rather than swinging like heavy slabs.
-            mass: 0.2,
-            linearDamping: 0.9,
-            angularDamping: 1.8,
-          ),
-        );
-        node.addComponent(
-          Collider(
-            shape: BoxShape(
-              halfExtents: vm.Vector3(stripW / 2, slatHalfY, slatHalfZ),
-            ),
-            material: const PhysicsMaterial(friction: 0.6, restitution: 0.0),
-          ),
-        );
-        scene.add(node);
-        node.addComponent(
-          i == 0
-              ? RevoluteJoint(
-                  axis: axis,
-                  localAnchorA: vm.Vector3(0, slatHalfY, 0),
-                  localAnchorB: vm.Vector3(x, topY, cz),
-                )
-              : RevoluteJoint(
-                  otherNode: prev,
-                  axis: axis,
-                  localAnchorA: vm.Vector3(0, slatHalfY, 0),
-                  localAnchorB: vm.Vector3(0, -slatHalfY, 0),
-                ),
-        );
-        prev = node;
-      }
-    }
-  }
-
-  // A cluster of free-swinging rope columns: chains of beads linked by
-  // spherical joints, anchored to the world at the top. Dash runs through
-  // and they swing out of the way.
-  void _buildRopes() {
-    const topY = 3.0, nBeads = 7, spacing = 0.34, beadR = 0.16;
-    const halfSpacing = spacing / 2;
-    // Just behind the banner curtain (which is at z = -6), spread across
-    // the same width so Dash hits the banners first, then the ropes.
-    final anchors = <vm.Vector3>[
-      for (final x in [-1.4, -0.7, 0.0, 0.7, 1.4]) vm.Vector3(x, topY, -7.6),
-    ];
-    // Shared geometry / material across every bead.
-    final beadGeometry = SphereGeometry(radius: beadR);
-    final beadMaterial = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.55, 0.50, 0.42, 1)
-      ..roughnessFactor = 0.5
-      ..metallicFactor = 0.0;
-
-    for (final anchor in anchors) {
-      Node? prev;
-      for (var i = 0; i < nBeads; i++) {
-        final y = topY - halfSpacing - i * spacing;
-        final node = Node(
-          mesh: Mesh(beadGeometry, beadMaterial),
-          localTransform: vm.Matrix4.translation(
-            vm.Vector3(anchor.x, y, anchor.z),
-          ),
-        );
-        node.addComponent(
-          RigidBody(
-            type: BodyType.dynamic_,
-            // Light and fairly damped: reacts readily to Dash but settles
-            // quickly with small swings, like a lightweight dangling cord
-            // rather than a heavy slow pendulum.
-            mass: 0.1,
-            linearDamping: 0.9,
-            angularDamping: 1.8,
-          ),
-        );
-        node.addComponent(
-          Collider(
-            shape: const SphereShape(radius: beadR),
-            material: const PhysicsMaterial(friction: 0.5, restitution: 0.05),
-          ),
-        );
-        scene.add(node);
-        node.addComponent(
-          i == 0
-              ? SphericalJoint(
-                  localAnchorA: vm.Vector3(0, halfSpacing, 0),
-                  localAnchorB: anchor.clone(),
-                )
-              : SphericalJoint(
-                  otherNode: prev,
-                  localAnchorA: vm.Vector3(0, halfSpacing, 0),
-                  localAnchorB: vm.Vector3(0, -halfSpacing, 0),
-                ),
-        );
-        prev = node;
-      }
-    }
-  }
-
-  // Six hanging sheets past the ropes, each a full cloth simulation. They are
-  // not rigid bodies: Dash walks through them, and a capsule set on his bones
-  // is what pushes them aside.
   Future<void> _buildClothCorridor() async {
-    const columns = 24, rows = 20;
-    const width = 3.6, height = 2.9, top = 3.0, spacing = 2.4, first = -10.0;
     final PreprocessedMaterial fabric;
     try {
       fabric = await loadFmatMaterial('assets/cloth_fabric.fmat');
@@ -855,14 +730,40 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     }
     if (!mounted) return;
     _clothFabric = fabric;
+    setState(_rebuildClothSheets);
+  }
 
-    for (var s = 0; s < 6; s++) {
-      final z = first - s * spacing;
+  /// Rebuilds every sheet, and the rail it hangs from, at the current
+  /// tessellation and ride height.
+  ///
+  /// The ground gap lifts the whole assembly rather than cropping the sheet,
+  /// so the curtains keep their length and the rails rise with them. The base
+  /// resolution is picked so the medium tier lands on the 24 by 20 grid this
+  /// corridor shipped with.
+  void _rebuildClothSheets() {
+    final fabric = _clothFabric;
+    if (fabric == null) return;
+    for (final sheet in _clothSheets) {
+      scene.remove(sheet.node);
+    }
+    for (final rail in _clothRails) {
+      scene.remove(rail);
+    }
+    _clothSheets.clear();
+    _clothRails.clear();
+
+    final columns = cloth.quality.gridSize(32);
+    final rows = cloth.quality.gridSize(26);
+    const height = _clothHeight;
+    final top = cloth.groundOffset + height;
+
+    for (var s = 0; s < _clothSheetCount; s++) {
+      final z = _clothZ(s);
       final solver = ClothSolver(
         columns: columns,
         rows: rows,
         layout: (c, r) => vm.Vector3(
-          (c / (columns - 1) - 0.5) * width,
+          (c / (columns - 1) - 0.5) * _clothWidth,
           top - (r / (rows - 1)) * height,
           z,
         ),
@@ -871,7 +772,7 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       solver.groundHeight = 0.0;
       solver.colliders.add(_clothBody.collider);
 
-      final hue = s / 6.0;
+      final hue = s / _clothSheetCount;
       final sheet = ClothSheet(
         solver: solver,
         material: fabric,
@@ -883,11 +784,13 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       _clothSheets.add(sheet);
       scene.add(sheet.node);
 
-      // The rail it hangs from.
-      _addStaticBox(
-        vm.Vector3(0, top + 0.08, z),
-        vm.Vector3(width / 2 + 0.15, 0.06, 0.1),
-        vm.Vector4(0.40, 0.40, 0.46, 1),
+      // The rail it hangs from, which rides up with it.
+      _clothRails.add(
+        _addStaticBox(
+          vm.Vector3(0, top + 0.08, z),
+          vm.Vector3(_clothWidth / 2 + 0.15, 0.06, 0.1),
+          vm.Vector4(0.40, 0.40, 0.46, 1),
+        ),
       );
     }
   }
@@ -920,10 +823,16 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
       // Re-applied every frame, so a slider takes effect with no wiring.
       cloth.applyTo(sheet.solver);
       cloth.wind.applyTo(sheet.solver, seconds);
-      sheet.solver.step(dt);
+      sheet.solver.advance(dt);
       sheet.sync();
     }
     applyFabricLight(fabric);
+
+    final solver = _clothSheets.first.solver;
+    _clothStats.value =
+        '${_clothSheets.length} sheets, '
+        '${solver.particleCount * _clothSheets.length} particles, '
+        '${(solver.lastStepMilliseconds * _clothSheets.length).toStringAsFixed(1)} ms';
   }
 
   PreprocessedMaterial? _clothFabric;
@@ -1112,14 +1021,12 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
             // The top-right slot is unbounded horizontally, so the panel has
             // to say how wide it is.
             width: 300,
-            stats: _clothSheets.isEmpty
-                ? 'cloth loading'
-                : '${_clothSheets.length} sheets, '
-                      '${_clothSheets.first.solver.particleCount * _clothSheets.length} '
-                      'particles',
+            stats: _clothStats,
             onChanged: () => setState(() {}),
             onReset: () => setState(_resetCloth),
-            showSelfCollision: false,
+            onRebuild: () => setState(_rebuildClothSheets),
+            showGroundOffset: true,
+            showSelfCollision: true,
           ),
         ),
       ],

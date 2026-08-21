@@ -179,8 +179,10 @@ void main() {
       expect(p.length, lessThan(10.0), reason: 'particle $i flew off');
     }
     // Looser than the quiet hang: a gale loads the sheet hard enough that a
-    // single sweep per substep leaves a few percent on the worst edge.
-    expect(_maxStrain(solver, 0.06), lessThan(0.1));
+    // single sweep per substep leaves some on the worst edge, and the hem
+    // drags along the floor rather than bouncing off it now that contacts do
+    // not manufacture momentum.
+    expect(_maxStrain(solver, 0.06), lessThan(0.15));
   });
 
   test(
@@ -218,6 +220,118 @@ void main() {
       expect(_maxStrain(solver, 0.14), lessThan(0.05));
     },
   );
+
+  test('the wind is billed for rest area, not stretched area', () {
+    // A sheet forced past its rest size by a body sweeping through it used to
+    // feed itself: bigger triangles caught more wind, which stretched them
+    // further, until the sheet exploded. Real cloth barely changes area, so
+    // the force is billed against the rest pose and that loop cannot close.
+    final solver = _sheet(columns: 32, rows: 26, spacing: 0.116, height: 3.0);
+    solver.pinTopEdge();
+    solver.groundHeight = 0.0;
+    solver.substeps = 2;
+    solver.contactOffset = 0.30;
+    solver.wind.setValues(4.0, 0.0, 2.0);
+
+    final torso = ClothCapsule(
+      start: Vector3(0.0, 1.44, 4.0),
+      end: Vector3(0.0, 1.44, 4.0),
+      radius: 1.0,
+    );
+    final body = ClothColliderSet([torso]);
+    solver.colliders.add(body);
+
+    for (var i = 0; i < 600; i++) {
+      final z = 4.0 - i / 60.0 * 2.5;
+      torso.placeAt(Vector3(0.0, 1.44, z), Vector3(0.0, 1.44, z));
+      body.setBounds(Vector3(0.0, 1.44, z), 1.05);
+      solver.step(_dt);
+    }
+    for (var i = 0; i < solver.positions.length; i++) {
+      expect(solver.positions[i].isFinite, isTrue, reason: 'float $i');
+    }
+    for (var i = 0; i < solver.particleCount; i++) {
+      expect(_positionOf(solver, i).length, lessThan(20.0));
+    }
+  });
+
+  test('a contact does not manufacture velocity as substeps rise', () {
+    // Velocity is read back as the position change over a substep, so a
+    // contact correction of a fixed size reports a speed of that size over h.
+    // Left alone, halving the substep doubles the speed a resting overlap
+    // hands back, which is what made self-collision buzz harder the more
+    // substeps it was given. Separation carries the previous position with it,
+    // so the speed after contact must not track the substep count.
+    double speedAfterContact(int substeps) {
+      // A sheet draped over a sphere and left to settle, so the contact is a
+      // steady rest rather than a first-frame overlap.
+      final solver =
+          _sheet(
+              columns: 12,
+              rows: 12,
+              spacing: 0.1,
+              height: 1.0,
+              vertical: false,
+            )
+            ..substeps = substeps
+            ..selfCollision = false
+            ..dragCoefficient = 0.0
+            ..liftCoefficient = 0.0;
+      solver.colliders.add(
+        ClothSphere(center: Vector3(0.0, 0.55, 0.0), radius: 0.3),
+      );
+      // Let it settle onto the collider first: a contact that is already
+      // resting is the case that buzzes, not a first-frame overlap (resolving
+      // that legitimately yanks the neighbours through the weave).
+      for (var i = 0; i < 420; i++) {
+        solver.step(_dt);
+      }
+      // How far the sheet coasts on the next step is the velocity the contact
+      // left behind.
+      final before = [
+        for (var i = 0; i < solver.particleCount; i++) _positionOf(solver, i),
+      ];
+      solver.step(_dt);
+      var worst = 0.0;
+      for (var i = 0; i < solver.particleCount; i++) {
+        worst = math.max(worst, _positionOf(solver, i).distanceTo(before[i]));
+      }
+      return worst / _dt;
+    }
+
+    final slow = speedAfterContact(2);
+    final fast = speedAfterContact(24);
+    expect(fast, lessThan(slow * 2.0 + 0.1), reason: 'slow $slow fast $fast');
+  });
+
+  test('an uneven frame rate does not shake the sheet apart', () {
+    // Velocity in position-based dynamics is the position change over the
+    // step, so the step size is baked into every velocity in the sheet. Handed
+    // the raw frame time, a short frame reports inflated velocities and the
+    // long frame that follows integrates them into a large displacement, whose
+    // correction reports larger velocities again. Anything that makes frames
+    // uneven (a costly effect, a window resize, self-collision switching on)
+    // then shakes the cloth, which is a timing bug wearing the costume of a
+    // cloth bug. [ClothSolver.advance] runs fixed steps so this cannot happen.
+    final solver = _sheet(columns: 24, rows: 20, spacing: 0.12, height: 3.0);
+    solver.pinTopEdge();
+    solver.wind.setValues(3.0, 0.0, 1.0);
+
+    for (var i = 0; i < 600; i++) {
+      // The pathological pacing: 240 fps and 30 fps alternating.
+      solver.advance(i.isEven ? 1 / 240 : 1 / 30);
+    }
+    for (var i = 0; i < solver.particleCount; i++) {
+      final p = _positionOf(solver, i);
+      expect(
+        p.x.isFinite && p.y.isFinite && p.z.isFinite,
+        isTrue,
+        reason: 'particle $i diverged',
+      );
+      expect(p.length, lessThan(20.0), reason: 'particle $i flew off');
+    }
+    expect(_maxStrain(solver, 0.12), lessThan(0.2));
+  });
 
   test('reset restores the starting shape', () {
     final solver = _sheet();

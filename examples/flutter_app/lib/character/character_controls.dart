@@ -41,18 +41,23 @@ class _CharacterControlsState extends State<CharacterControls> {
   @override
   void initState() {
     super.initState();
-    // Grab focus after the first frame so keyboard input works immediately
-    // on the web without a click.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _focusNode.requestFocus(),
-    );
+    // Read the keyboard directly rather than through focus. Focus-based
+    // routing works until something else takes focus and never gives it back
+    // (a dropdown in an overlay panel is enough), which strands the character
+    // mid-stride. Nothing here accepts typed text, so there is nothing to
+    // take the keys away from.
+    HardwareKeyboard.instance.addHandler(_onGlobalKey);
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onGlobalKey);
     _focusNode.dispose();
     super.dispose();
   }
+
+  bool _onGlobalKey(KeyEvent event) =>
+      _onKey(_focusNode, event) == KeyEventResult.handled;
 
   double _axis(LogicalKeyboardKey positive, LogicalKeyboardKey negative) =>
       (_held(positive) ? 1.0 : 0.0) - (_held(negative) ? 1.0 : 0.0);
@@ -118,8 +123,6 @@ class _CharacterControlsState extends State<CharacterControls> {
   Widget build(BuildContext context) {
     return Focus(
       focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _onKey,
       child: Stack(
         children: [
           // Dragging anywhere on the scene (outside the controls below)

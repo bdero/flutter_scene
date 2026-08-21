@@ -98,15 +98,21 @@ class QuakeCamera {
       PerspectiveCamera(position: position.clone(), target: position + forward);
 
   /// Tracks held keys; reports movement keys as handled while [enabled].
-  KeyEventResult onKeyEvent(FocusNode node, KeyEvent event) {
+  KeyEventResult onKeyEvent(FocusNode node, KeyEvent event) =>
+      handleKey(event) ? KeyEventResult.handled : KeyEventResult.ignored;
+
+  /// Tracks held keys straight from a key event, for callers wiring this to
+  /// [HardwareKeyboard] rather than to a focus node. Returns whether the key
+  /// was consumed.
+  bool handleKey(KeyEvent event) {
     final key = event.logicalKey;
-    if (!quakeCameraMoveKeys.contains(key)) return KeyEventResult.ignored;
+    if (!quakeCameraMoveKeys.contains(key)) return false;
     if (event is KeyDownEvent || event is KeyRepeatEvent) {
       _heldKeys.add(key);
     } else if (event is KeyUpEvent) {
       _heldKeys.remove(key);
     }
-    return enabled ? KeyEventResult.handled : KeyEventResult.ignored;
+    return enabled;
   }
 
   /// Rotates the view by a drag delta (logical pixels). Horizontal drags

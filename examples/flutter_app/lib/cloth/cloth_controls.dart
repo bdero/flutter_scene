@@ -1,5 +1,6 @@
 // The control panel shared by the cloth demos.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../example_action_hint.dart';
@@ -19,32 +20,39 @@ class ClothControlPanel extends StatelessWidget {
     required this.stats,
     required this.onChanged,
     required this.onReset,
-    this.onQualityChanged,
+    this.onRebuild,
     this.showSelfCollision = true,
+    this.showGroundOffset = false,
     this.width,
   });
 
   final ClothSettings settings;
 
-  /// A line of counters under the controls (particles, solve time).
-  final String stats;
+  /// A line of counters under the controls (particles, solve time). A
+  /// listenable, so the solve time keeps ticking without rebuilding the whole
+  /// panel every frame.
+  final ValueListenable<String> stats;
 
   final VoidCallback onChanged;
   final VoidCallback onReset;
 
-  /// Supplied only by scenes that can rebuild their sheets at a new
-  /// tessellation; the quality row is hidden without it.
-  final VoidCallback? onQualityChanged;
+  /// Applies the values that cannot take effect in place (the tessellation
+  /// and the hem height) by rebuilding the sheets. Rows that need it are
+  /// hidden when a scene cannot.
+  final VoidCallback? onRebuild;
 
   /// Whether the scene can afford self-collision.
   final bool showSelfCollision;
+
+  /// Whether the scene hangs sheets whose hem height means anything.
+  final bool showGroundOffset;
 
   /// Needed in overlay slots that do not constrain width (the top-right one).
   final double? width;
 
   @override
   Widget build(BuildContext context) {
-    final onQualityChanged = this.onQualityChanged;
+    final onRebuild = this.onRebuild;
     return ExamplePanelCard(
       icon: Icons.air,
       title: 'Cloth',
@@ -118,6 +126,14 @@ class ClothControlPanel extends StatelessWidget {
             suffix: ' cm',
           ),
           if (showSelfCollision)
+            _slider(
+              'Thickness',
+              settings.thicknessRatio,
+              0.1,
+              0.9,
+              (v) => settings.thicknessRatio = v,
+            ),
+          if (showSelfCollision)
             _Labelled(
               label: 'Self-collision',
               child: Switch(
@@ -128,7 +144,23 @@ class ClothControlPanel extends StatelessWidget {
                 },
               ),
             ),
-          if (onQualityChanged != null)
+          if (onRebuild != null && showGroundOffset)
+            ClothSliderRow(
+              label: 'Ground gap',
+              value: settings.groundOffset * 100.0,
+              min: 0.0,
+              max: 100.0,
+              fractionDigits: 0,
+              suffix: ' cm',
+              // Written live so the readout tracks the drag, but the sheets
+              // are only recut when it ends.
+              onChanged: (v) {
+                settings.groundOffset = v / 100.0;
+                onChanged();
+              },
+              onChangeEnd: (_) => onRebuild(),
+            ),
+          if (onRebuild != null)
             _Labelled(
               label: 'Quality',
               // A dropdown has to be given a width. In a Row it would be laid
@@ -148,23 +180,37 @@ class ClothControlPanel extends StatelessWidget {
                   onChanged: (quality) {
                     if (quality == null || quality == settings.quality) return;
                     settings.quality = quality;
-                    onQualityChanged();
+                    onRebuild();
                   },
                 ),
               ),
             ),
           const SizedBox(height: 4),
-          Text(
-            stats,
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: onReset,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Reset'),
+          ValueListenableBuilder<String>(
+            valueListenable: stats,
+            builder: (context, value, _) => Text(
+              value,
+              style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
+          ),
+          // Wrapped, so the pair stacks instead of overflowing on a narrow
+          // panel.
+          Wrap(
+            alignment: WrapAlignment.end,
+            children: [
+              TextButton.icon(
+                // Dumps the whole set to the console as pasteable Dart, so a
+                // look tuned on the sliders can become the defaults.
+                onPressed: settings.printSource,
+                icon: const Icon(Icons.print_outlined, size: 18),
+                label: const Text('Print'),
+              ),
+              TextButton.icon(
+                onPressed: onReset,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reset'),
+              ),
+            ],
           ),
         ],
       ),

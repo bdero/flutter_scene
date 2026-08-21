@@ -13,6 +13,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
@@ -25,6 +26,7 @@ import 'example_action_hint.dart';
 import 'example_overlay.dart';
 import 'example_panel.dart';
 import 'example_settings.dart';
+import 'quake_camera.dart';
 
 enum _Demo {
   flag('Flag'),
@@ -35,6 +37,32 @@ enum _Demo {
   final String label;
 }
 
+/// Each scene's tuned starting point, as deltas from the stock defaults.
+///
+/// The flag runs on the stock values; the drape wants a softer, slacker sheet
+/// that settles, and the curtain a stiffer one in a gustier wind.
+ClothSettings _presetFor(_Demo demo) {
+  final settings = ClothSettings();
+  switch (demo) {
+    case _Demo.flag:
+      return settings;
+    case _Demo.drape:
+      return settings
+        ..stretchCompliance = 2.18e-6
+        ..bending = 0.25
+        ..friction = 0.25
+        ..wind.speed = 5.10
+        ..wind.gust = 0.33;
+    case _Demo.curtain:
+      return settings
+        ..stretchCompliance = 2.18e-6
+        ..bending = 0.18
+        ..friction = 0.39
+        ..wind.speed = 5.10
+        ..wind.gust = 0.57;
+  }
+}
+
 class ExampleCloth extends StatefulWidget {
   const ExampleCloth({super.key});
 
@@ -43,7 +71,7 @@ class ExampleCloth extends StatefulWidget {
 }
 
 class _ExampleClothState extends State<ExampleCloth> {
-  final ClothSettings _settings = ClothSettings();
+  final ClothSettings _settings = _presetFor(_Demo.flag);
   _Demo _demo = _Demo.flag;
 
   @override
@@ -64,15 +92,7 @@ class _ExampleClothState extends State<ExampleCloth> {
                 if (demo == null || demo == _demo) return;
                 setState(() {
                   _demo = demo;
-                  _settings
-                    // A flag is one layer streaming downwind, so its folds
-                    // almost never touch; the drape is all about them.
-                    ..selfCollision = demo == _Demo.drape
-                    ..wind.speed = switch (demo) {
-                      _Demo.flag => 7.0,
-                      _Demo.curtain => 2.0,
-                      _Demo.drape => 1.0,
-                    };
+                  _settings.copyFrom(_presetFor(demo));
                 });
               },
             ),
@@ -85,7 +105,12 @@ class _ExampleClothState extends State<ExampleCloth> {
   Widget _body() => _ClothStage(
     // The scene owns its Scene and SceneView; the key rebuilds it (and
     // disposes the old scene) when the selection or the tessellation changes.
-    key: ValueKey('${_demo.name}-${_settings.quality.name}'),
+    // The hem height and the tessellation are both cut into the sheet, so a
+    // change to either has to rebuild the scene.
+    key: ValueKey(
+      '${_demo.name}-${_settings.quality.name}-'
+      '${_settings.groundOffset.toStringAsFixed(2)}',
+    ),
     demo: _demo,
     settings: _settings,
     onSettingsChanged: () => setState(() {}),
@@ -123,14 +148,18 @@ class _ClothStageState extends State<_ClothStage> {
   ClothSheet? _sheet;
   ClothSolver? _solver;
 
-  // Orbit camera.
-  double _yaw = -0.9;
-  double _pitch = 0.16;
-  double _distance = 4.4;
-  vm.Vector3 _target = vm.Vector3(1.1, 1.9, 0.0);
+  // A free-flying camera. Each scene names the pose it starts at, as an orbit
+  // around the sheet, which the camera is synced to on load and on reset.
+  final QuakeCamera _camera = QuakeCamera()..speed = 3.2;
+  double _spawnYaw = -0.9;
+  double _spawnPitch = 0.16;
+  double _spawnDistance = 4.4;
+  vm.Vector3 _spawnTarget = vm.Vector3(1.1, 1.9, 0.0);
 
   ClothSphere? _ball;
   Node? _ballNode;
+
+  final ValueNotifier<String> _stats = ValueNotifier<String>('');
 
   Size _viewSize = Size.zero;
   int _grabPointer = -1;
@@ -140,6 +169,10 @@ class _ClothStageState extends State<_ClothStage> {
   @override
   void initState() {
     super.initState();
+    // Read the keyboard directly rather than through focus, so opening a
+    // dropdown (which takes focus and never hands it back) cannot strand the
+    // camera. Nothing in this example accepts typed text.
+    HardwareKeyboard.instance.addHandler(_camera.handleKey);
     _load();
   }
 
@@ -158,7 +191,9 @@ class _ClothStageState extends State<_ClothStage> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_camera.handleKey);
     scene.removeAll();
+    _stats.dispose();
     super.dispose();
   }
 
@@ -185,6 +220,8 @@ class _ClothStageState extends State<_ClothStage> {
       case _Demo.curtain:
         _buildCurtain();
     }
+
+    _camera.syncTo(_spawnCamera());
 
     final solver = _solver!;
     _sheet = ClothSheet(
@@ -242,10 +279,10 @@ class _ClothStageState extends State<_ClothStage> {
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 1.55, 0.0)),
     );
 
-    _target = vm.Vector3(1.1, 1.9, 0.0);
-    _distance = 4.4;
-    _yaw = -0.9;
-    _pitch = 0.16;
+    _spawnTarget = vm.Vector3(1.1, 1.9, 0.0);
+    _spawnDistance = 4.4;
+    _spawnYaw = -0.9;
+    _spawnPitch = 0.16;
   }
 
   void _buildDrape() {
@@ -280,16 +317,16 @@ class _ClothStageState extends State<_ClothStage> {
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0.0, 0.72, 0.0)),
     );
 
-    _target = vm.Vector3(0.0, 0.75, 0.0);
-    _distance = 3.9;
-    _yaw = -0.7;
-    _pitch = 0.28;
+    _spawnTarget = vm.Vector3(0.0, 0.75, 0.0);
+    _spawnDistance = 3.9;
+    _spawnYaw = -0.7;
+    _spawnPitch = 0.28;
   }
 
   void _buildCurtain() {
     const width = 2.8;
-    const height = 2.4;
     const top = 2.7;
+    final height = math.max(top - widget.settings.groundOffset, 0.5);
     final columns = _grid(52);
     final rows = _grid(44);
 
@@ -341,10 +378,10 @@ class _ClothStageState extends State<_ClothStage> {
     );
     _props.add(_ballNode!);
 
-    _target = vm.Vector3(0.0, 1.4, 0.0);
-    _distance = 5.0;
-    _yaw = -0.35;
-    _pitch = 0.12;
+    _spawnTarget = vm.Vector3(0.0, 1.4, 0.0);
+    _spawnDistance = 5.0;
+    _spawnYaw = -0.35;
+    _spawnPitch = 0.12;
   }
 
   /// The sheet's pattern, carried in the vertex colors.
@@ -375,15 +412,22 @@ class _ClothStageState extends State<_ClothStage> {
     if (sheet == null || fabric == null) return;
     _elapsed = elapsed.inMicroseconds / 1e6;
 
+    _camera.move(_elapsed);
     _animate();
     // Re-applied every frame, so a slider takes effect with no wiring.
     widget.settings.applyTo(sheet.solver);
     widget.settings.wind.applyTo(sheet.solver, _elapsed);
-    sheet.solver.step(deltaSeconds);
+    sheet.solver.advance(deltaSeconds);
     sheet.sync();
 
     applyFabricLight(fabric);
     exampleSettings.applyTo(scene);
+
+    final solver = sheet.solver;
+    _stats.value =
+        '${solver.particleCount} particles, '
+        '${solver.constraintCount} constraints, '
+        '${solver.lastStepMilliseconds.toStringAsFixed(1)} ms';
   }
 
   void _animate() {
@@ -399,18 +443,26 @@ class _ClothStageState extends State<_ClothStage> {
     _ballNode?.localTransform = vm.Matrix4.translation(ball.center);
   }
 
-  PerspectiveCamera _camera() {
-    final horizontal = math.cos(_pitch) * _distance;
+  /// The pose a scene starts (and resets) at, as a look at its sheet.
+  PerspectiveCamera _spawnCamera() {
+    final horizontal = math.cos(_spawnPitch) * _spawnDistance;
     return PerspectiveCamera(
       position:
-          _target +
+          _spawnTarget +
           vm.Vector3(
-            math.sin(_yaw) * horizontal,
-            math.sin(_pitch) * _distance,
-            math.cos(_yaw) * horizontal,
+            math.sin(_spawnYaw) * horizontal,
+            math.sin(_spawnPitch) * _spawnDistance,
+            math.cos(_spawnYaw) * horizontal,
           ),
-      target: _target,
+      target: _spawnTarget,
     );
+  }
+
+  /// Puts the sheet back where it started and the camera back with it.
+  void _respawn() {
+    _sheet?.solver.reset();
+    _sheet?.sync();
+    _camera.syncTo(_spawnCamera());
   }
 
   // --- Interaction -------------------------------------------------------
@@ -418,7 +470,7 @@ class _ClothStageState extends State<_ClothStage> {
   void _onPointerDown(PointerDownEvent event) {
     final sheet = _sheet;
     if (sheet == null || _viewSize.isEmpty) return;
-    final ray = _camera().screenPointToRay(event.localPosition, _viewSize);
+    final ray = _camera.camera.screenPointToRay(event.localPosition, _viewSize);
     final hit = raycastNode(sheet.node, ray);
     if (hit == null) return;
     final particle = sheet.solver.nearestParticle(hit.worldPoint);
@@ -435,16 +487,16 @@ class _ClothStageState extends State<_ClothStage> {
     if (sheet == null) return;
     if (event.pointer == _grabPointer) {
       if (_viewSize.isEmpty) return;
-      final ray = _camera().screenPointToRay(event.localPosition, _viewSize);
+      final ray = _camera.camera.screenPointToRay(
+        event.localPosition,
+        _viewSize,
+      );
       sheet.solver.moveGrab(
         ray.origin + ray.direction.normalized() * _grabDistance,
       );
       return;
     }
-    setState(() {
-      _yaw -= event.delta.dx * 0.008;
-      _pitch = (_pitch + event.delta.dy * 0.008).clamp(-1.4, 1.4);
-    });
+    _camera.look(event.delta);
   }
 
   void _endGrab(PointerEvent event) {
@@ -484,14 +536,16 @@ class _ClothStageState extends State<_ClothStage> {
                 onPointerCancel: _endGrab,
                 onPointerSignal: (signal) {
                   if (signal is! PointerScrollEvent) return;
-                  setState(() {
-                    _distance = (_distance + signal.scrollDelta.dy * 0.004)
-                        .clamp(1.2, 14.0);
-                  });
+                  // Scroll rides along the view direction, the same axis W
+                  // and S walk.
+                  _camera.position.addScaled(
+                    _camera.forward,
+                    -signal.scrollDelta.dy * 0.01,
+                  );
                 },
                 child: SceneView(
                   scene,
-                  cameraBuilder: (elapsed) => _camera(),
+                  cameraBuilder: (elapsed) => _camera.camera,
                   onTick: _tick,
                 ),
               );
@@ -499,28 +553,38 @@ class _ClothStageState extends State<_ClothStage> {
           ),
         ),
         ExampleOverlay.topCenterAction(
-          child: const ExampleActionHint(
-            message: 'Drag the cloth to grab it, drag elsewhere to orbit',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Flexible(
+                child: ExampleActionHint(
+                  message:
+                      'WASD to fly, Q and E for down and up, drag to look, '
+                      'drag the cloth to grab it',
+                ),
+              ),
+              const SizedBox(width: 8),
+              ExampleActionButton(
+                tooltip: 'Respawn the cloth and camera',
+                icon: Icons.restart_alt,
+                onPressed: () => setState(_respawn),
+              ),
+            ],
           ),
         ),
-        ExampleOverlay.bottomLeftPanel(child: _controls(sheet.solver)),
+        ExampleOverlay.bottomLeftPanel(child: _controls()),
       ],
     );
   }
 
-  Widget _controls(ClothSolver solver) {
+  Widget _controls() {
     return ClothControlPanel(
       settings: widget.settings,
-      stats:
-          '${solver.particleCount} particles, '
-          '${solver.constraintCount} constraints, '
-          '${solver.lastStepMilliseconds.toStringAsFixed(1)} ms',
+      stats: _stats,
       onChanged: () => setState(() {}),
-      onQualityChanged: widget.onSettingsChanged,
-      onReset: () => setState(() {
-        solver.reset();
-        _sheet?.sync();
-      }),
+      onRebuild: widget.onSettingsChanged,
+      showGroundOffset: widget.demo == _Demo.curtain,
+      onReset: () => setState(_respawn),
     );
   }
 }

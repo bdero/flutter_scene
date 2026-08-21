@@ -30,9 +30,11 @@ void main() {
         _host(
           ClothControlPanel(
             settings: ClothSettings(),
-            stats: '1234 particles, 5678 constraints, 4.2 ms',
+            stats: ValueNotifier<String>(
+              '1234 particles, 5678 constraints, 4.2 ms',
+            ),
             onChanged: () {},
-            onQualityChanged: () {},
+            onRebuild: () {},
             onReset: () {},
           ),
           size,
@@ -52,25 +54,30 @@ void main() {
       _host(
         ClothControlPanel(
           settings: settings,
-          stats: '',
+          stats: ValueNotifier<String>(''),
           onChanged: () {},
-          onQualityChanged: () => qualityChanges++,
+          onRebuild: () => qualityChanges++,
           onReset: () {},
         ),
         const Size(340, 800),
       ),
     );
 
-    // The panel is taller than the viewport now, so scroll the row into
-    // view before tapping it.
-    await tester.scrollUntilVisible(find.text('Medium'), 80);
-    await tester.tap(find.text('Medium'));
+    // Whatever the default tier is, pick a different one, so retuning the
+    // defaults does not break this.
+    final current = settings.quality;
+    final other = ClothQuality.values.firstWhere((q) => q != current);
+
+    // The panel is taller than the viewport, so scroll the row into view
+    // before tapping it.
+    await tester.scrollUntilVisible(find.text(current.label), 80);
+    await tester.tap(find.text(current.label));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('High').last);
+    await tester.tap(find.text(other.label).last);
     await tester.pumpAndSettle();
-    expect(settings.quality, ClothQuality.high);
+    expect(settings.quality, other);
     expect(qualityChanges, 1);
   });
 
@@ -81,9 +88,9 @@ void main() {
       _host(
         ClothControlPanel(
           settings: settings,
-          stats: '',
+          stats: ValueNotifier<String>(''),
           onChanged: () => changes++,
-          onQualityChanged: () {},
+          onRebuild: () {},
           onReset: () {},
         ),
         const Size(340, 800),

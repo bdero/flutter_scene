@@ -269,6 +269,7 @@ class ClothSolver {
     }
     _layout(layout);
     _buildTriangles();
+    _measureTriangles();
     _buildConstraints();
     _buildSpatialHash();
   }
@@ -352,7 +353,17 @@ class ClothSolver {
   /// Half the sheet's thickness, the closest two non-neighboring particles
   /// may come. Scales with the grid spacing, since two layers cannot be
   /// resolved any finer than the particles that carry them.
+  ///
+  /// Keep it under half the spacing. Self-collision holds non-adjacent
+  /// particles `2 * thickness` apart, so above that it demands they stay
+  /// further apart than the weave holds adjacent ones, and the two constraint
+  /// sets fight over every fold tighter than a couple of cells.
   late double thickness;
+
+  /// [thickness] as a fraction of the grid spacing, which is how the scenes
+  /// set it (the spacing is not known until the sheet is laid out).
+  double get thicknessRatio => thickness / _spacing;
+  set thicknessRatio(double value) => thickness = _spacing * value;
 
   /// The gap held against colliders and the ground. Kept off [thickness] so a
   /// coarse sheet still wraps a body snugly instead of floating a cell away
@@ -381,7 +392,14 @@ class ClothSolver {
 
   double _inverseParticleMass = 1.0;
   double _spacing = 0.05;
+  double _degenerateArea = 1e-9;
   double _time = 0.0;
+
+  // Each triangle's area in the rest pose. The aerodynamic force uses this
+  // rather than the deformed area: woven cloth barely changes area, so any
+  // growth is solver error, and billing the wind for it makes a stretched
+  // triangle catch more wind, which stretches it further.
+  late final Float32List _triangleRestArea;
 
   // Distance constraints, one per mesh edge: particle pairs and rest lengths.
   late final Int32List _distancePairs;
@@ -400,6 +418,11 @@ class ClothSolver {
   late final Int32List _hashEntries;
   late Int32List _pairs;
   int _pairCount = 0;
+  // Contacts the position solve resolved this substep, handed to the velocity
+  // pass so it can damp the approach that caused them.
+  late Int32List _pairContacts;
+  late Float32List _pairNormals;
+  int _pairContactCount = 0;
   int _hashTableSize = 0;
 
   int _grabbed = -1;
@@ -472,10 +495,51 @@ class ClothSolver {
     _forces.fillRange(0, _forces.length, 0.0);
     _grabbed = -1;
     _time = 0.0;
+    _accumulator = 0.0;
     updateNormals();
   }
 
+  /// The fixed simulation timestep [advance] runs the solver at.
+  static const double fixedTimeStep = 1.0 / 60.0;
+
+  /// The most fixed steps [advance] will run for one frame. Beyond this the
+  /// leftover time is dropped, so a long stall costs the sheet some simulated
+  /// time rather than a frame that takes even longer and stalls again.
+  static const int maxStepsPerFrame = 3;
+
+  double _accumulator = 0.0;
+
+  /// Advances the simulation to cover [frameSeconds] of real time, in fixed
+  /// steps.
+  ///
+  /// Position-based dynamics reads velocity back as the position change over
+  /// the step, so the timestep is baked into every velocity in the sheet. Feed
+  /// it the frame time directly and an irregular frame rate feeds it a
+  /// different one each frame: a short frame divides a small displacement by a
+  /// small step and reports a large velocity, the next long frame integrates
+  /// that velocity over a long step into a large displacement, and the
+  /// constraint correction that follows reports an even larger velocity. The
+  /// sheet shakes itself apart, and the trigger is whatever made the frames
+  /// uneven rather than anything in the cloth. A fixed step keeps every
+  /// velocity on the same footing.
+  void advance(double frameSeconds) {
+    if (!frameSeconds.isFinite || frameSeconds <= 0.0) return;
+    _accumulator += frameSeconds;
+    var steps = 0;
+    while (_accumulator >= fixedTimeStep && steps < maxStepsPerFrame) {
+      step(fixedTimeStep);
+      _accumulator -= fixedTimeStep;
+      steps++;
+    }
+    if (_accumulator > fixedTimeStep * maxStepsPerFrame) {
+      _accumulator = 0.0;
+    }
+  }
+
   /// Advances the simulation by [deltaSeconds].
+  ///
+  /// This is the fixed-step primitive; scenes should call [advance] with the
+  /// frame time instead, so the step size never varies.
   void step(double deltaSeconds) {
     final started = DateTime.now();
     final dt = deltaSeconds.clamp(1.0 / 240.0, 1.0 / 30.0);
@@ -504,6 +568,7 @@ class ClothSolver {
       // scene has now put them, one slice per substep.
       _solveColliders((s + 1) / substeps);
       _updateVelocities(h, velocityScale);
+      _solveContactVelocity();
       if (stretchDamping > 0.0) _dampStretchVelocity();
     }
     updateNormals();
@@ -573,8 +638,11 @@ class ClothSolver {
     final down = _distanceBetween(0, columns);
     _spacing = math.max((across + down) * 0.5, 1e-4);
     _inverseParticleMass = 1.0 / (arealDensity * _spacing * _spacing);
+    // A rest triangle's cross product is about spacing squared, so this is a
+    // triangle collapsed to a thousandth of its rest area.
+    _degenerateArea = _spacing * _spacing * 1e-3;
     _inverseMasses.fillRange(0, particleCount, _inverseParticleMass);
-    thickness = _spacing * 0.6;
+    thickness = _spacing * 0.4;
   }
 
   double _distanceBetween(int a, int b) {
@@ -613,6 +681,25 @@ class ClothSolver {
       }
     }
     triangles = list;
+  }
+
+  void _measureTriangles() {
+    _triangleRestArea = Float32List(triangleCount);
+    for (var t = 0; t < triangles.length; t += 3) {
+      final a = triangles[t] * 3,
+          b = triangles[t + 1] * 3,
+          c = triangles[t + 2] * 3;
+      final ux = positions[c] - positions[a];
+      final uy = positions[c + 1] - positions[a + 1];
+      final uz = positions[c + 2] - positions[a + 2];
+      final vx = positions[b] - positions[a];
+      final vy = positions[b + 1] - positions[a + 1];
+      final vz = positions[b + 2] - positions[a + 2];
+      final nx = uy * vz - uz * vy;
+      final ny = uz * vx - ux * vz;
+      final nz = ux * vy - uy * vx;
+      _triangleRestArea[t ~/ 3] = math.sqrt(nx * nx + ny * ny + nz * nz) * 0.5;
+    }
   }
 
   void _buildConstraints() {
@@ -691,6 +778,8 @@ class ClothSolver {
     _hashStart = Int32List(_hashTableSize + 1);
     _hashEntries = Int32List(particleCount);
     _pairs = Int32List(particleCount * 12);
+    _pairContacts = Int32List(particleCount * 12);
+    _pairNormals = Float32List(particleCount * 18);
   }
 
   // --- Simulation --------------------------------------------------------
@@ -850,8 +939,13 @@ class ClothSolver {
       var n2z = p2x * p4y - p2y * p4x;
       final len1 = math.sqrt(n1x * n1x + n1y * n1y + n1z * n1z);
       final len2 = math.sqrt(n2x * n2x + n2y * n2y + n2z * n2z);
-      // A collapsed triangle has no meaningful normal; skip it this substep.
-      if (len1 < 1e-9 || len2 < 1e-9) continue;
+      // A collapsed triangle has no meaningful normal. The floor is relative
+      // to the rest geometry rather than an absolute epsilon, because these
+      // cross products carry twice the triangle's area: a fixed epsilon is
+      // permissive enough at cloth scale to let a folded, nearly degenerate
+      // triangle drive the correction, which is how a hard fold around a body
+      // turns into a blow-up.
+      if (len1 < _degenerateArea || len2 < _degenerateArea) continue;
       n1x /= len1;
       n1y /= len1;
       n1z /= len1;
@@ -966,7 +1060,7 @@ class ClothSolver {
       var nz = ux * vy - uy * vx;
       final crossLength = math.sqrt(nx * nx + ny * ny + nz * nz);
       if (crossLength < 1e-12) continue;
-      final area = crossLength * 0.5;
+      final area = _triangleRestArea[t ~/ 3];
       nx /= crossLength;
       ny /= crossLength;
       nz /= crossLength;
@@ -1043,15 +1137,23 @@ class ClothSolver {
   /// [sweep] is how far through the step's collider motion this substep sits.
   void _solveColliders(double sweep) {
     final ground = groundHeight;
+    _contactFlags.fillRange(0, particleCount, 0);
     for (var i = 0; i < particleCount; i++) {
       if (_inverseMasses[i] == 0.0) continue;
       final x = i * 3;
 
       if (ground != null) {
-        final floor = ground + contactOffset;
+        // The floor holds the sheet off by its own half-thickness, not by
+        // [contactOffset]. That margin is tuned for whatever body the scene
+        // sweeps through the cloth, and a body-sized gap applied to the floor
+        // raises it out from under a sheet that was cut to hang lower,
+        // clamping the hem up into the rows above it and compressing the
+        // lattice against itself for as long as the scene runs.
+        final floor = ground + thickness;
         if (positions[x + 1] < floor) {
           final depth = floor - positions[x + 1];
-          positions[x + 1] = floor;
+          _separate(x, 0.0, depth, 0.0);
+          _recordContact(x, 0.0, 1.0, 0.0);
           _applyContactFriction(x, 0.0, 1.0, 0.0, depth);
         }
       }
@@ -1066,9 +1168,13 @@ class ClothSolver {
           _contactNormal,
         );
         if (depth <= 0.0) continue;
-        positions[x] += _contactNormal.x * depth;
-        positions[x + 1] += _contactNormal.y * depth;
-        positions[x + 2] += _contactNormal.z * depth;
+        _separate(
+          x,
+          _contactNormal.x * depth,
+          _contactNormal.y * depth,
+          _contactNormal.z * depth,
+        );
+        _recordContact(x, _contactNormal.x, _contactNormal.y, _contactNormal.z);
         _applyContactFriction(
           x,
           _contactNormal.x,
@@ -1081,6 +1187,101 @@ class ClothSolver {
   }
 
   final Vector3 _contactNormal = Vector3.zero();
+
+  // One contact slot per particle, filled by the collider pass and consumed by
+  // the velocity pass in the same substep.
+  late final Uint8List _contactFlags = Uint8List(particleCount);
+  late final Float32List _contactNormals = Float32List(particleCount * 3);
+
+  /// Cancels the velocity a contact is still driving into the surface.
+  ///
+  /// [_separate] deliberately leaves velocity alone, so this is where a
+  /// contact actually stops the cloth: it removes the part of the velocity
+  /// heading into whatever was touched, and leaves everything along the
+  /// surface for friction and the weave to deal with. Without it the sheet
+  /// keeps accelerating into a collider it is already resting on.
+  void _solveContactVelocity() {
+    for (var i = 0; i < particleCount; i++) {
+      if (_contactFlags[i] == 0 || _inverseMasses[i] == 0.0) continue;
+      final x = i * 3;
+      final nx = _contactNormals[x];
+      final ny = _contactNormals[x + 1];
+      final nz = _contactNormals[x + 2];
+      final into =
+          _velocities[x] * nx +
+          _velocities[x + 1] * ny +
+          _velocities[x + 2] * nz;
+      if (into >= 0.0) continue;
+      _velocities[x] -= nx * into;
+      _velocities[x + 1] -= ny * into;
+      _velocities[x + 2] -= nz * into;
+    }
+    // Pairs the position solve actually separated this substep, with the
+    // normal it used. Testing for overlap again here would find none: the
+    // solve just pushed them to exactly the separation distance, so every
+    // pair would be filtered out and nothing would ever damp a contact.
+    for (var k = 0; k < _pairContactCount; k++) {
+      final i = _pairContacts[k * 2];
+      final j = _pairContacts[k * 2 + 1];
+      final wi = _inverseMasses[i];
+      final wj = _inverseMasses[j];
+      final sum = wi + wj;
+      if (sum == 0.0) continue;
+      final x = i * 3, y = j * 3;
+      final nx = _pairNormals[k * 3];
+      final ny = _pairNormals[k * 3 + 1];
+      final nz = _pairNormals[k * 3 + 2];
+      final closing =
+          (_velocities[y] - _velocities[x]) * nx +
+          (_velocities[y + 1] - _velocities[x + 1]) * ny +
+          (_velocities[y + 2] - _velocities[x + 2]) * nz;
+      if (closing >= 0.0) continue;
+      final impulse = closing / sum;
+      _velocities[x] += nx * impulse * wi;
+      _velocities[x + 1] += ny * impulse * wi;
+      _velocities[x + 2] += nz * impulse * wi;
+      _velocities[y] -= nx * impulse * wj;
+      _velocities[y + 1] -= ny * impulse * wj;
+      _velocities[y + 2] -= nz * impulse * wj;
+    }
+  }
+
+  void _recordPairContact(int i, int j, double nx, double ny, double nz) {
+    if (_pairContactCount >= _pairs.length ~/ 2) return;
+    _pairContacts[_pairContactCount * 2] = i;
+    _pairContacts[_pairContactCount * 2 + 1] = j;
+    _pairNormals[_pairContactCount * 3] = nx;
+    _pairNormals[_pairContactCount * 3 + 1] = ny;
+    _pairNormals[_pairContactCount * 3 + 2] = nz;
+    _pairContactCount++;
+  }
+
+  void _recordContact(int offset, double nx, double ny, double nz) {
+    _contactFlags[offset ~/ 3] = 1;
+    _contactNormals[offset] = nx;
+    _contactNormals[offset + 1] = ny;
+    _contactNormals[offset + 2] = nz;
+  }
+
+  /// Moves a particle out of a contact without that showing up as velocity.
+  ///
+  /// Velocity is read back as the position change over the substep, so a
+  /// correction of a fixed size reports a speed of that size over h: halve the
+  /// substep and the same overlap hands back twice the speed. Unlike the weave
+  /// constraints, whose per-substep violation shrinks with the substep, a
+  /// contact's depth is set by where the surfaces are, so nothing damps that
+  /// out and the sheet buzzes harder the more substeps it is given. Carrying
+  /// the previous position along with the correction leaves the particle's
+  /// actual motion for the substep unchanged, so separation stays a matter of
+  /// position and never invents momentum.
+  void _separate(int offset, double dx, double dy, double dz) {
+    positions[offset] += dx;
+    positions[offset + 1] += dy;
+    positions[offset + 2] += dz;
+    _previous[offset] += dx;
+    _previous[offset + 1] += dy;
+    _previous[offset + 2] += dz;
+  }
 
   // Removes up to `friction * depth` of the tangential motion this substep,
   // the standard position-level Coulomb approximation.
@@ -1149,7 +1350,7 @@ class ClothSolver {
               final j = _hashEntries[s];
               // Each pair once, and never one the weave already constrains.
               if (j <= i) continue;
-              if (_areNeighbors(i, j)) continue;
+              if (_tooCloseOnSheet(i, j)) continue;
               final y = j * 3;
               final dx = positions[y] - positions[x];
               final dy = positions[y + 1] - positions[x + 1];
@@ -1167,6 +1368,7 @@ class ClothSolver {
   }
 
   void _solveSelfCollisions() {
+    _pairContactCount = 0;
     final minimum = thickness * 2.0;
     for (var k = 0; k < _pairCount; k++) {
       final i = _pairs[k * 2];
@@ -1186,25 +1388,37 @@ class ClothSolver {
       final distance = math.sqrt(distanceSquared);
       final depth = minimum - distance;
       final scale = depth / (distance * sum);
-      positions[x] -= dx * scale * wi;
-      positions[x + 1] -= dy * scale * wi;
-      positions[x + 2] -= dz * scale * wi;
-      positions[y] += dx * scale * wj;
-      positions[y + 1] += dy * scale * wj;
-      positions[y + 2] += dz * scale * wj;
+      _separate(x, -dx * scale * wi, -dy * scale * wi, -dz * scale * wi);
+      _separate(y, dx * scale * wj, dy * scale * wj, dz * scale * wj);
       final nx = dx / distance, ny = dy / distance, nz = dz / distance;
+      _recordPairContact(i, j, nx, ny, nz);
       if (wi != 0.0) _applyContactFriction(x, -nx, -ny, -nz, depth);
       if (wj != 0.0) _applyContactFriction(y, nx, ny, nz, depth);
     }
   }
 
-  // Grid neighbors are held by the weave constraints; a self-collision on top
-  // of that would fight them and buzz.
-  bool _areNeighbors(int i, int j) {
-    final di = (i ~/ columns) - (j ~/ columns);
-    if (di > 1 || di < -1) return false;
-    final dj = (i % columns) - (j % columns);
-    return dj <= 1 && dj >= -1;
+  /// Whether two particles are close enough along the sheet that a contact
+  /// between them would be nonsense.
+  ///
+  /// Self-collision is for two layers of fabric meeting. Particles a few cells
+  /// apart are not two layers, they are the same piece of cloth: a crease
+  /// folds them together legitimately, and there is no separation the solver
+  /// can enforce that the weave will not immediately undo. Left in, they
+  /// generate contacts a whole cell deep every frame and the sheet thrashes.
+  ///
+  /// The exclusion has to reach far enough that the surface between the pair
+  /// is longer than the separation being enforced, so it scales with the
+  /// thickness rather than being fixed at the immediate neighbours.
+  bool _tooCloseOnSheet(int i, int j) {
+    final di = ((i ~/ columns) - (j ~/ columns)).abs();
+    if (di > _selfCollisionSkip) return false;
+    final dj = ((i % columns) - (j % columns)).abs();
+    return dj <= _selfCollisionSkip;
+  }
+
+  int get _selfCollisionSkip {
+    final cells = (thickness * 2.0 / _spacing).ceil() + 1;
+    return cells < 2 ? 2 : cells;
   }
 
   int _hashOf(int particle, double inverseCell) => _hashCell(
