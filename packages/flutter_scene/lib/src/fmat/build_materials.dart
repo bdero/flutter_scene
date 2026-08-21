@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
@@ -19,6 +18,7 @@ import 'fmat_emitter.dart'
         lightmapEntryName,
         materialSamplesEnvironment,
         radianceCubeEntryName;
+import 'framework_shaders.dart';
 import 'target_shader_bundle.dart';
 
 /// Controls where [buildMaterials] puts generated `.fmat` shader assets.
@@ -285,18 +285,7 @@ Future<void> _buildMaterials({
   // output keyed to it is separated by target. Several builds share one tree.
   final target = shaderBundleTargetKey(buildInput);
 
-  // Locate flutter_scene's framework shader directory. flutter_scene has no
-  // top-level `flutter_scene.dart` library, so resolve through this package's
-  // `build_hooks.dart` (which always exists) and hop to the sibling `shaders/`.
-  final frameworkLib = await Isolate.resolvePackageUri(
-    Uri.parse('package:flutter_scene/build_hooks.dart'),
-  );
-  if (frameworkLib == null) {
-    throw Exception(
-      'buildMaterials could not resolve the flutter_scene package location.',
-    );
-  }
-  final frameworkShaders = frameworkLib.resolve('../shaders/');
+  final frameworkShaders = await frameworkShaderInclude();
 
   // Generated GLSL and the synthesized manifest live under the package's build
   // directory; they are regenerated each run.

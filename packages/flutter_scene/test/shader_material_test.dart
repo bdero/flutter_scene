@@ -104,5 +104,59 @@ void main() {
       material.sceneInputs = const {RenderInput.depth};
       expect(materialSceneInputsRevision, after);
     });
+
+    test('declaring inputs at construction invalidates too', () {
+      final before = materialSceneInputsRevision;
+      ShaderMaterial(sceneInputs: const {RenderInput.depth});
+      expect(materialSceneInputsRevision, greaterThan(before));
+
+      // A material that declares nothing cannot change the frame's answer.
+      final after = materialSceneInputsRevision;
+      ShaderMaterial();
+      expect(materialSceneInputsRevision, after);
+    });
+
+    test('rejects inputs only a custom render pass can ask for', () {
+      expect(
+        () => ShaderMaterial(sceneInputs: const {RenderInput.shadowMap}),
+        throwsArgumentError,
+      );
+      expect(
+        () => ShaderMaterial(sceneInputs: const {RenderInput.normals}),
+        throwsArgumentError,
+      );
+      expect(
+        () => ShaderMaterial().sceneInputs = const {RenderInput.shadowMap},
+        throwsArgumentError,
+      );
+    });
+
+    test('the filtered atlas implies the snapshot it is built from', () {
+      final material = ShaderMaterial(
+        sceneInputs: const {RenderInput.filteredSceneColor},
+      );
+      expect(
+        material.sceneInputs,
+        containsAll(<RenderInput>[
+          RenderInput.filteredSceneColor,
+          RenderInput.opaqueSceneColor,
+        ]),
+      );
+    });
+
+    test('the declared set cannot be mutated behind the invalidation', () {
+      final declared = <RenderInput>{RenderInput.depth};
+      final material = ShaderMaterial(sceneInputs: declared);
+
+      // Mutating the caller's set must not reach the material, and the getter
+      // must not hand out something a caller can mutate. Either would change
+      // what the frame produces without bumping the revision.
+      declared.add(RenderInput.opaqueSceneColor);
+      expect(material.sceneInputs, const {RenderInput.depth});
+      expect(
+        () => material.sceneInputs.add(RenderInput.opaqueSceneColor),
+        throwsUnsupportedError,
+      );
+    });
   });
 }

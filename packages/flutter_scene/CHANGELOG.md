@@ -22,6 +22,7 @@
 
 ## 0.23.0
 
+* `ShaderMaterial.sceneInputs` declares the engine's per-frame scene textures, so a raw shader can refract and measure its own thickness like a `.fmat` material. Include `<scene_inputs.glsl>` for the samplers and their accessors; `buildTargetShaderBundleJson` puts flutter_scene's `shaders/` on the include path so it resolves with no setup.
 * Parallax-corrected reflection probes via `ReflectionProbeComponent`, capturing the scene into a local environment whose reflections track the probe's box.
 * `Scene.captureEnvironment` renders the scene's lighting at a point into a new `EnvironmentMap`.
 * SMAA anti-aliasing via `AntiAliasingMode.smaa`, cleaner edges than FXAA with far less texture blurring.

@@ -941,8 +941,10 @@ class Lighting {
   /// visibility in a (instead of visibility in r).
   final bool ssaoIndirectLight;
 
-  /// The color-pass render-target size, used to map `gl_FragCoord` into the
-  /// occlusion texture's UV. Zero when occlusion is off.
+  /// The color-pass render-target size, which maps `gl_FragCoord` into the
+  /// occlusion texture's UV and into the screen UV a material samples its
+  /// scene inputs at. Always the pass dimensions, independent of whether
+  /// occlusion is on.
   final ui.Size viewportSize;
 
   /// The opaque geometry's linear (planar view-space) depth texture for
