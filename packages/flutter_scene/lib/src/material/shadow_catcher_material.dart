@@ -20,7 +20,7 @@ enum ShadowCatcherMode {
   live,
 
   /// The atlas shadow is rendered once into a low-resolution footprint
-  /// cache, separable-blurred, and sampled per frame, the right default for
+  /// cache, separable-blurred, and sampled per frame, the cheap opt-in for
   /// static product scenes. The cache refreshes on load and on
   /// [ShadowCatcherMaterial.markBakedShadowsDirty]; a moving light or caster
   /// otherwise leaves the baked shadow behind. The screen-space contact and
