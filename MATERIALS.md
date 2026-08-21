@@ -815,6 +815,52 @@ See `examples/flutter_app/lib/example_raw_shader.dart` with
 
 ---
 
+# Engine inputs on a raw `ShaderMaterial`
+
+A `ShaderMaterial` can declare the same per-frame engine textures a `.fmat`
+material asks for with `engine_inputs:`, which is what a translucent surface
+needs to refract and to measure its own thickness.
+
+```dart
+final water = ShaderMaterial(
+  vertexShader: library['WaterVertex']!,
+  fragmentShader: library['WaterFragment']!,
+  isOpaqueOverride: false,
+  sceneInputs: const {RenderInput.opaqueSceneColor, RenderInput.depth},
+);
+```
+
+`RenderInput.depth` binds `scene_depth`, the opaque geometry's linear
+view-space depth in world units, and forces the depth prepass.
+`RenderInput.opaqueSceneColor` binds `scene_opaque_color`, the scene behind
+this draw, and `RenderInput.filteredSceneColor` adds its roughness-filtered
+atlas as `scene_filtered_color` for rough refraction.
+
+Nothing is generated for you here, unlike the `.fmat` path. Declare the
+samplers yourself under those names and derive the screen UV from
+`gl_FragCoord`:
+
+```glsl
+uniform sampler2D scene_opaque_color;
+uniform highp sampler2D scene_depth;
+uniform PostFrameInfo { vec4 resolution; } frame;
+
+vec2 uv = gl_FragCoord.xy * frame.resolution.zw;
+float behind = texture(scene_depth, uv).r;   // linear view depth, world units
+vec3 refracted = texture(scene_opaque_color, uv + offset).rgb;
+```
+
+`sceneInputs` is settable after construction; assigning a different set
+invalidates the frame's cached input summary, and assigning an equal one
+does not. The engine produces an input only while a visible material asks for
+it, so declaring none costs nothing.
+
+Unlike the `.fmat` path this is available on `unlit` shading, and a raw
+material pays none of the lit framework's eight engine samplers, so the
+sampler budget has room for the two inputs.
+
+---
+
 # Render state
 
 A `.fmat` material declares render state in its `material` block: `culling`
