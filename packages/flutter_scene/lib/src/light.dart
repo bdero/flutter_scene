@@ -168,10 +168,13 @@ class DirectionalLight {
   ///
   /// Pin it to hold a known resolution over the near field, for example the
   /// reach of a third-person camera, and let the rest of the range spread
-  /// across the remaining cascades under the usual split scheme. Clamped
-  /// between the camera near plane and [shadowMaxDistance], and ignored when
-  /// there is only one cascade (it already ends at [shadowMaxDistance]).
-  /// Automatic bounding-sphere fitting and texel snapping still apply.
+  /// across the remaining cascades under the usual split scheme. A pin below
+  /// the camera near plane is lifted just above it so cascade 0 keeps
+  /// thickness; a pin at or past [shadowMaxDistance] is ignored and the
+  /// automatic scheme runs, since it would collapse every later cascade onto
+  /// the far bound. Also ignored when there is only one cascade (it already
+  /// ends at [shadowMaxDistance]). Automatic bounding-sphere fitting and
+  /// texel snapping still apply.
   /// {@category Lighting and environment}
   double? firstCascadeFarBound;
 
