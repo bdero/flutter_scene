@@ -1714,13 +1714,30 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // sweeps red to blue across the grid and dark to bright along it, and the
   // float lifts each cube (vertex stage) while ramping its gloss (fragment
   // stage), so a mispacked instance record scrambles the gradient or flattens
-  // the staircase.
+  // the staircase. The light casts so the depth and shadow variants render
+  // too; they bind no instance data and read zero (the documented contract),
+  // so every cube's shadow sits in the flat unlifted grid while the cubes
+  // themselves stair-step above it.
   SmokeScene('instance_attributes', () {
     final scene = Scene();
     scene.add(
       _directionalLightNode(
         vm.Vector3(-0.35, -1.0, -0.45),
-        DirectionalLight(intensity: 2.5),
+        DirectionalLight(
+          intensity: 2.5,
+          castsShadow: true,
+          shadowMaxDistance: 20.0,
+        ),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.8, depth: 3.8),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.62, 0.62, 0.62, 1.0)
+            ..roughnessFactor = 0.9,
+        ),
       ),
     );
     const n = 5;
