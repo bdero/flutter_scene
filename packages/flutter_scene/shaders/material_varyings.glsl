@@ -9,7 +9,6 @@ in vec3 v_viewvector; // camera_position - vertex_position (world space)
 in vec2 v_texture_coords;
 in vec2 v_texture_coords_1;
 in vec4 v_color;
-in vec3 v_model_scale;
 in vec4 v_tangent;
 
 out vec4 frag_color;
@@ -37,10 +36,6 @@ vec2 GetUV(int channel) { return channel == 1 ? GetUV1() : GetUV0(); }
 
 // Interpolated per-vertex color (white if the mesh has none).
 vec4 GetVertexColor() { return v_color; }
-
-// Rotation-independent world scale of the model transform. Volume thickness
-// is authored in local units and uses this to form a world-space ray.
-vec3 GetModelScale() { return v_model_scale; }
 
 // World-space tangent and bitangent sign. A zero vector means the mesh did
 // not provide tangents and the fragment shader derives its tangent frame.

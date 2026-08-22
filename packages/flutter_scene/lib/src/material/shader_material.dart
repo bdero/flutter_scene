@@ -51,7 +51,6 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// in vec2 v_texture_coords;
 /// in vec2 v_texture_coords_1;
 /// in vec4 v_color;           // per-vertex color, white when absent
-/// in vec3 v_model_scale;     // rotation-independent world scale
 /// in vec4 v_tangent;         // world tangent + bitangent sign, zero when absent
 /// ```
 ///

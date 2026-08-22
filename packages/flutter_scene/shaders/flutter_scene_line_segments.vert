@@ -26,7 +26,6 @@ out vec3 v_viewvector;
 out vec2 v_texture_coords;
 out vec2 v_texture_coords_1;
 out vec4 v_color;
-out vec3 v_model_scale;
 out vec4 v_tangent;
 
 void main() {
@@ -63,8 +62,5 @@ void main() {
   v_texture_coords = vec2(corner.x, corner.y * 0.5 + 0.5);
   v_texture_coords_1 = v_texture_coords;
   v_color = vec4(1.0);
-  v_model_scale = vec3(length(frame_info.model_transform[0].xyz),
-                       length(frame_info.model_transform[1].xyz),
-                       length(frame_info.model_transform[2].xyz));
   v_tangent = vec4(0.0);
 }

@@ -136,8 +136,17 @@ uniform FragInfo {
   // when the occlusion texture's gba channels carry a packed view-space bent
   // normal. w is reserved.
   vec4 ssao_lighting;
+  // xyz: the draw's model scale (world-space lengths of the model transform's
+  // basis vectors), for scaling local-space lengths like the transmission
+  // thickness into world units. Replaces the old v_model_scale varying; an
+  // instanced draw carries its node's scale (not per-instance), and a skinned
+  // draw its node's (not per-joint). w unused.
+  vec4 model_scale;
 }
 frag_info;
+
+// The per-draw model scale (see FragInfo.model_scale).
+vec3 GetModelScale() { return frag_info.model_scale.xyz; }
 
 // FLUTTER_SCENE_SHADOW_CATCHER compiles out the image-based-lighting
 // samplers: a shadow catcher never evaluates the lighting, and a declared

@@ -1507,6 +1507,9 @@ class PhysicallyBasedMaterial extends Material {
         ..lightListOffset = lightListOffset
         ..lightListCount = lightListCount
         ..lightChannelMask = lightChannelMask
+        ..modelScaleX = modelScaleX
+        ..modelScaleY = modelScaleY
+        ..modelScaleZ = modelScaleZ
         ..environment = environment;
       prepared.bind(pass, transientsBuffer, lighting);
       return;
@@ -1544,6 +1547,9 @@ class PhysicallyBasedMaterial extends Material {
       lighting,
       env,
       nodeChannelMask: lightChannelMask,
+      modelScaleX: modelScaleX,
+      modelScaleY: modelScaleY,
+      modelScaleZ: modelScaleZ,
     );
     fragInfo[0] = baseColorFactor.r;
     fragInfo[1] = baseColorFactor.g;

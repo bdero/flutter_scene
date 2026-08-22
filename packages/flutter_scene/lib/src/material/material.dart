@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
+
+import 'package:vector_math/vector_math.dart' show Matrix4;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
@@ -231,6 +234,28 @@ abstract class Material {
   /// uniform path. Defaults to `0xFF` (every channel).
   @internal
   int lightChannelMask = 0xFF;
+
+  /// The draw's model scale (world-space lengths of the model transform's
+  /// basis vectors), set by the encoder right before [bind] and packed into
+  /// `FragInfo.model_scale`. Scales local-space lengths like the transmission
+  /// volume thickness into world units. An instanced draw carries its node's
+  /// scale (not per-instance), and a skinned draw its node's (not per-joint).
+  @internal
+  double modelScaleX = 1.0;
+  @internal
+  double modelScaleY = 1.0;
+  @internal
+  double modelScaleZ = 1.0;
+
+  /// Sets [modelScaleX]/[modelScaleY]/[modelScaleZ] from [transform]'s basis
+  /// vector lengths. Called by the encoder with the drawn world transform.
+  @internal
+  void setModelScaleFromTransform(Matrix4 transform) {
+    final s = transform.storage;
+    modelScaleX = math.sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
+    modelScaleY = math.sqrt(s[4] * s[4] + s[5] * s[5] + s[6] * s[6]);
+    modelScaleZ = math.sqrt(s[8] * s[8] + s[9] * s[9] + s[10] * s[10]);
+  }
 
   gpu.Shader? _fragmentShader;
   String? _fragmentShaderName;
