@@ -263,6 +263,10 @@ void main() {
         'flutter_scene_standard_cube',
         'flutter_scene_standard_lightmap',
         'flutter_scene_standard_lightmap_cube',
+        'flutter_scene_standard_no_shadow',
+        'flutter_scene_standard_no_shadow_cube',
+        'flutter_scene_standard_lightmap_no_shadow',
+        'flutter_scene_standard_lightmap_no_shadow_cube',
       ]) {
         final reflection =
             await _compileReflection(
@@ -438,6 +442,60 @@ void main() {
       final source = File('shaders/$entry.frag').readAsStringSync();
       expect(source, contains('#define FLUTTER_SCENE_LIGHTMAP'));
       expect(source, contains('#include <flutter_scene_standard.frag>'));
+    }
+  });
+
+  test('the base bundle ships the no-shadow standard entries', () async {
+    final manifest =
+        jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
+            as Map<String, dynamic>;
+
+    const entries = {
+      'StandardNoShadowFragment': 'flutter_scene_standard_no_shadow',
+      'StandardNoShadowCubeFragment': 'flutter_scene_standard_no_shadow_cube',
+      'StandardLightmapNoShadowFragment':
+          'flutter_scene_standard_lightmap_no_shadow',
+      'StandardLightmapNoShadowCubeFragment':
+          'flutter_scene_standard_lightmap_no_shadow_cube',
+    };
+    entries.forEach((entry, file) {
+      expect(manifest[entry]['file'], 'shaders/$file.frag');
+      final source = File('shaders/$file.frag').readAsStringSync();
+      expect(source, contains('#define FLUTTER_SCENE_SKIP_SHADOWS'));
+      expect(source, contains('#include <flutter_scene_standard.frag>'));
+    });
+
+    // The twin exists to drop the shadow sampling; the full entry keeps it.
+    final temp = Directory.systemTemp.createTempSync('standard_no_shadow');
+    try {
+      final impellerc = await findImpellerC();
+      final full =
+          await _compileReflection(
+                impellerc,
+                temp,
+                'StandardFragment',
+                File('shaders/flutter_scene_standard.frag').readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      final slim =
+          await _compileReflection(
+                impellerc,
+                temp,
+                'StandardNoShadowFragment',
+                File(
+                  'shaders/flutter_scene_standard_no_shadow.frag',
+                ).readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      expect(_hasNamedResource(full, 'shadow_map'), isTrue);
+      expect(_hasNamedResource(slim, 'shadow_map'), isFalse);
+      // The twins must stay bind-compatible outside the shadow atlas: the
+      // punctual light textures survive the define, so a shadow-less scene
+      // still shades its point and spot lights.
+      expect(_hasNamedResource(slim, 'punctual_lights'), isTrue);
+      expect(_hasNamedResource(slim, 'punctual_index'), isTrue);
+    } finally {
+      temp.deleteSync(recursive: true);
     }
   });
 

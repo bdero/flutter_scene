@@ -98,7 +98,12 @@ class PhysicallyBasedMaterial extends Material {
        _normalTexture = normalTexture,
        _emissiveTexture = emissiveTexture,
        _occlusionTexture = occlusionTexture {
-    setFragmentShaderName('StandardFragment', cubeName: 'StandardCubeFragment');
+    setFragmentShaderName(
+      'StandardFragment',
+      cubeName: 'StandardCubeFragment',
+      noShadowName: 'StandardNoShadowFragment',
+      noShadowCubeName: 'StandardNoShadowCubeFragment',
+    );
   }
 
   /// Creates a material from normalized imported properties.
@@ -1082,6 +1087,12 @@ class PhysicallyBasedMaterial extends Material {
       cubeName: lightmapped
           ? 'StandardLightmapCubeFragment'
           : 'StandardCubeFragment',
+      noShadowName: lightmapped
+          ? 'StandardLightmapNoShadowFragment'
+          : 'StandardNoShadowFragment',
+      noShadowCubeName: lightmapped
+          ? 'StandardLightmapNoShadowCubeFragment'
+          : 'StandardNoShadowCubeFragment',
     );
   }
 
@@ -1617,6 +1628,9 @@ class PhysicallyBasedMaterial extends Material {
       shader,
       lighting,
       env,
+      // The no-shadow twin declares no shadow_map sampler; the same call
+      // that picked `shader` above decides whether the slot exists.
+      bindShadows: !usesNoShadowVariant(lighting),
       bindDiffuseSh: !_usesLightmapVariant,
       cubeShader: usesRadianceCubeVariant(lighting),
     );

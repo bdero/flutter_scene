@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
+
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -256,6 +257,10 @@ abstract class Material {
   void setFragmentShader(gpu.Shader shader) {
     _fragmentShader = shader;
     _fragmentShaderName = null;
+    _noShadowFragmentShader = null;
+    _noShadowFragmentShaderName = null;
+    _noShadowRadianceCubeFragmentShader = null;
+    _noShadowRadianceCubeFragmentShaderName = null;
   }
 
   /// Assigns the fragment shader by [name] from [baseShaderLibrary].
@@ -267,15 +272,33 @@ abstract class Material {
   ///
   /// [cubeName] is the twin built for the cubemap radiance layout, needed by
   /// any shader that samples the environment (see [radianceCubeFragmentShader]).
-  void setFragmentShaderName(String name, {String? cubeName}) {
+  ///
+  /// [noShadowName] and [noShadowCubeName] are the twins built with
+  /// `FLUTTER_SCENE_SKIP_SHADOWS`, selected for a draw with no shadow atlas
+  /// bound (see [fragmentShaderForLighting]). A material without them always
+  /// draws with the full shaders.
+  void setFragmentShaderName(
+    String name, {
+    String? cubeName,
+    String? noShadowName,
+    String? noShadowCubeName,
+  }) {
     _fragmentShaderName = name;
     _fragmentShader = null;
     _radianceCubeFragmentShaderName = cubeName;
     _radianceCubeFragmentShader = null;
+    _noShadowFragmentShaderName = noShadowName;
+    _noShadowFragmentShader = null;
+    _noShadowRadianceCubeFragmentShaderName = noShadowCubeName;
+    _noShadowRadianceCubeFragmentShader = null;
   }
 
   gpu.Shader? _radianceCubeFragmentShader;
   String? _radianceCubeFragmentShaderName;
+  gpu.Shader? _noShadowFragmentShader;
+  String? _noShadowFragmentShaderName;
+  gpu.Shader? _noShadowRadianceCubeFragmentShader;
+  String? _noShadowRadianceCubeFragmentShaderName;
 
   /// Assigns the already-loaded variant built with
   /// `FLUTTER_SCENE_RADIANCE_CUBE`, the counterpart of [setFragmentShader]
@@ -315,12 +338,50 @@ abstract class Material {
       lighting.environmentMap.usesCubeRadianceLayout &&
       radianceCubeFragmentShader != null;
 
-  /// Selects this material's fragment shader for the frame lighting state.
+  /// The `FLUTTER_SCENE_SKIP_SHADOWS` twin of [fragmentShader], or null when
+  /// this material carries none and always draws with the full shader.
   @internal
-  gpu.Shader fragmentShaderForLighting(Lighting lighting) =>
-      usesRadianceCubeVariant(lighting)
-      ? radianceCubeFragmentShader!
-      : fragmentShader;
+  gpu.Shader? get noShadowFragmentShader =>
+      _noShadowFragmentShader ??= _noShadowFragmentShaderName == null
+      ? null
+      : baseShaderLibrary[_noShadowFragmentShaderName!];
+
+  /// The `FLUTTER_SCENE_SKIP_SHADOWS` twin of [radianceCubeFragmentShader],
+  /// or null when this material carries none.
+  @internal
+  gpu.Shader? get noShadowRadianceCubeFragmentShader =>
+      _noShadowRadianceCubeFragmentShader ??=
+          _noShadowRadianceCubeFragmentShaderName == null
+          ? null
+          : baseShaderLibrary[_noShadowRadianceCubeFragmentShaderName!];
+
+  /// Whether [fragmentShaderForLighting] picks a no-shadow twin for
+  /// [lighting], which is also what decides whether the `shadow_map` sampler
+  /// (which that twin does not declare) gets bound. Both decisions must come
+  /// from here, like [usesRadianceCubeVariant].
+  @internal
+  bool usesNoShadowVariant(Lighting lighting) =>
+      lighting.shadowMap == null &&
+      (usesRadianceCubeVariant(lighting)
+              ? noShadowRadianceCubeFragmentShader
+              : noShadowFragmentShader) !=
+          null;
+
+  /// Selects this material's fragment shader for the frame lighting state.
+  ///
+  /// The radiance-layout variant wins over the shadow one: a shadow variant
+  /// in the wrong layout would be handed a texture its sampler cannot read,
+  /// while dropping the no-shadow variant only costs dead shadow code.
+  @internal
+  gpu.Shader fragmentShaderForLighting(Lighting lighting) {
+    final noShadow = usesNoShadowVariant(lighting);
+    if (usesRadianceCubeVariant(lighting)) {
+      return noShadow
+          ? noShadowRadianceCubeFragmentShader!
+          : radianceCubeFragmentShader!;
+    }
+    return noShadow ? noShadowFragmentShader! : fragmentShader;
+  }
 
   /// The vertex shader this material supplies for a geometry's [variant]
   /// (`'unskinned'` / `'skinned'` for the color pass, `'depth'` for the
