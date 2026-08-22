@@ -157,8 +157,33 @@ class MeshComponent extends Component {
   @internal
   void refreshRenderItems() {
     if (_renderItems.isEmpty) return;
-    final worldTransform = node.globalTransform;
     final worldTransformVersion = node.worldTransformVersion;
+    var staticStateUnchanged =
+        node.shadowStatic &&
+        node.skin == null &&
+        worldTransformVersion == _worldTransformVersion;
+    for (
+      var index = 0;
+      staticStateUnchanged && index < _renderItems.length;
+      index++
+    ) {
+      final item = _renderItems[index];
+      final primitive = _mesh.primitives[index];
+      staticStateUnchanged =
+          item.visible == !item.material.drawsNothing &&
+          item.primitiveVisible == primitive.visible &&
+          item.frustumCulled == node.frustumCulled &&
+          item.layers == node.layers &&
+          item.lightChannelMask == node.lightChannelMask &&
+          item.shadowStatic == node.shadowStatic &&
+          item.castsShadows == (primitive.castsShadow && node.castsShadows) &&
+          item.highlightColor == node.highlightColor &&
+          _boundsVersions[index] == item.geometry.localBoundsVersion;
+    }
+    if (staticStateUnchanged) {
+      return;
+    }
+    final worldTransform = node.globalTransform;
     final transformChanged = worldTransformVersion != _worldTransformVersion;
     final windingFlipped = node.windingFlipped;
 

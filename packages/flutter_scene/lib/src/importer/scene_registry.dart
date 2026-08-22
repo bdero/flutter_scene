@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter/services.dart';
 
 import 'package:scene/scene.dart';
+
 import '../fscene/realize/component_codec.dart';
 import '../generated_assets/generated_asset_lookup.dart';
 import '../generated_assets/generated_assets.dart';
@@ -37,6 +38,13 @@ final Map<String, Future<_SceneTemplate>> _sceneTemplates = {};
 /// claim cannot drop a template another caller is still loading instances
 /// from.
 final Map<String, int> _sceneTemplateHolders = {};
+
+/// One manifest-backed registry per asset bundle for the top-level helpers.
+/// Bundle identity is the cache boundary, and [Expando] lets a discarded
+/// test or application bundle release its registry with it.
+final Expando<Future<SceneRegistry>> _sceneRegistries = Expando(
+  'flutter_scene scene registries',
+);
 
 /// Tracked dependency sets of streamed lazy subtrees, keyed by placeholder
 /// node, so repeated loads refresh the registration instead of duplicating it.
@@ -626,7 +634,7 @@ Future<Node> loadScene(
   SceneReloadCallback? onReload,
   Scene? applyStageTo,
 }) async {
-  final sceneRegistry = await SceneRegistry.load(bundle: bundle);
+  final sceneRegistry = await _sharedSceneRegistry(bundle);
   return sceneRegistry.loadScene(
     sourcePath,
     package: package,
@@ -650,7 +658,7 @@ Future<void> loadSceneSubtree(
   AssetBundle? bundle,
   FsceneComponentRegistry? registry,
 }) async {
-  final sceneRegistry = await SceneRegistry.load(bundle: bundle);
+  final sceneRegistry = await _sharedSceneRegistry(bundle);
   return sceneRegistry.loadSubtree(
     node,
     package: package,
@@ -693,9 +701,16 @@ Future<bool> releaseScene(
       ? activeSceneSourceLoader()?.resolveScene(sourcePath)
       : null;
   if (sourceKey != null) return _releaseSceneTemplateClaim(sourceKey);
-  final registry = await SceneRegistry.load(bundle: bundle);
+  final registry = await _sharedSceneRegistry(bundle);
   final key = registry.resolveKey(sourcePath, package: package);
   return _releaseSceneTemplateClaim(key);
+}
+
+Future<SceneRegistry> _sharedSceneRegistry(AssetBundle? bundle) {
+  final assetBundle = bundle ?? rootBundle;
+  return _sceneRegistries[assetBundle] ??= SceneRegistry.load(
+    bundle: assetBundle,
+  );
 }
 
 /// Drops every cached scene template, whatever their outstanding claims.
