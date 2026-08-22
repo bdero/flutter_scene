@@ -55,28 +55,41 @@ class InstancedMeshComponent extends Component {
     if (item == null) return;
     // A material can declare itself draw-less for the frame (the shadow
     // catcher at zero intensity); its item then joins no pass at all.
-    item.visible = !item.material.drawsNothing;
+    final visible = !item.material.drawsNothing;
     final frustumCulled = node.frustumCulled;
-    final frustumCulledChanged = item.frustumCulled != frustumCulled;
-    item.frustumCulled = frustumCulled;
-    item.layers = node.layers;
     final lightChannelMask = node.lightChannelMask;
-    final worldTransform = node.globalTransform;
     final worldTransformVersion = node.worldTransformVersion;
     final instanceRevision = instancedMesh.revision;
     final geometryBoundsVersion = instancedMesh.geometry.localBoundsVersion;
+    if (node.shadowStatic &&
+        worldTransformVersion == _worldTransformVersion &&
+        instanceRevision == _instanceRevision &&
+        geometryBoundsVersion == _geometryBoundsVersion &&
+        item.visible == visible &&
+        item.frustumCulled == frustumCulled &&
+        item.layers == node.layers &&
+        item.shadowStatic == node.shadowStatic &&
+        item.castsShadows == node.castsShadows &&
+        item.lightChannelMask == lightChannelMask) {
+      return;
+    }
+    final frustumCulledChanged = item.frustumCulled != frustumCulled;
+    item.frustumCulled = frustumCulled;
+    item.layers = node.layers;
+    final worldTransform = node.globalTransform;
     final boundsChangedByInput =
         worldTransformVersion != _worldTransformVersion ||
         instanceRevision != _instanceRevision ||
         geometryBoundsVersion != _geometryBoundsVersion;
     final staticShadowChanged =
-        (item.visible != true ||
+        (item.visible != visible ||
             item.shadowStatic != node.shadowStatic ||
             item.castsShadows != node.castsShadows ||
             item.lightChannelMask != lightChannelMask ||
             boundsChangedByInput) &&
         (item.shadowStatic || node.shadowStatic) &&
         (item.castsShadows || node.castsShadows);
+    item.visible = visible;
     if (worldTransformVersion != _worldTransformVersion) {
       item.worldTransform.setFrom(worldTransform);
     }

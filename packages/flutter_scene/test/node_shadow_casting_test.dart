@@ -84,4 +84,26 @@ void main() {
     root.scenePrePass(0);
     expect(renderScene.staticShadowRevision, greaterThan(moved));
   });
+
+  test('static render items still refresh changed node settings', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final caster = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()))
+      ..shadowStatic = true;
+    root.add(caster);
+    root.scenePrePass(0);
+
+    caster
+      ..castsShadows = false
+      ..frustumCulled = false
+      ..layers = 4
+      ..highlightColor = Vector4(1, 0, 1, 1);
+    root.scenePrePass(0);
+
+    final item = renderScene.items.single;
+    expect(item.castsShadows, isFalse);
+    expect(item.frustumCulled, isFalse);
+    expect(item.layers, 4);
+    expect(item.highlightColor, Vector4(1, 0, 1, 1));
+  });
 }
