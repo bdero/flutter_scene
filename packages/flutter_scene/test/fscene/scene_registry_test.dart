@@ -65,6 +65,23 @@ void main() {
       );
     });
 
+    test('top-level loads scan each asset bundle once', () async {
+      clearSceneTemplateCache();
+      const key = 'packages/app/flutter_scene/scene/assets/shared.fsceneb';
+      final document = SceneDocument()
+        ..addNode(NodeSpec(id: const LocalId(9, 1), name: 'root'), root: true);
+      final bundle = _BytesAssetBundle({key: writeFsceneb(document)});
+
+      try {
+        await loadScene('assets/shared', bundle: bundle);
+        await loadScene('assets/shared', bundle: bundle);
+
+        expect(bundle.manifestLoads, 1);
+      } finally {
+        clearSceneTemplateCache();
+      }
+    });
+
     test(
       'requires package disambiguation for duplicate source paths',
       () async {
@@ -484,6 +501,7 @@ final class _BytesAssetBundle extends CachingAssetBundle {
 
   /// Successful [load] calls per key.
   final Map<String, int> loadCounts = {};
+  int manifestLoads = 0;
 
   /// Fails every scene read while set, standing in for a transient asset
   /// read error.
@@ -492,6 +510,7 @@ final class _BytesAssetBundle extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async {
     if (key == 'AssetManifest.bin') {
+      manifestLoads++;
       final manifest = <String, Object>{
         for (final asset in assets.keys) asset: <Object>[],
       };
