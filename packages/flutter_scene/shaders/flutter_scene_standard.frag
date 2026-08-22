@@ -32,9 +32,17 @@ texture_transforms;
 // lighting framework (material_lighting.glsl) consumes it.
 void Surface(inout MaterialInputs material) {
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  vec2 base_color_uv = MaterialTextureUv(
-      texture_transforms.base_color_transform,
-      texture_transforms.base_color_rotation);
+  // base_color_rotation.w (padding in each record) carries a single flag set
+  // when any of the five records transforms its UVs or selects UV set 1.
+  // Every record is identity for a default glTF material, and the identity
+  // transform reproduces the raw UV bit-exactly, so the uniform branch only
+  // skips work.
+  bool transformed_uvs = texture_transforms.base_color_rotation.w > 0.5;
+  vec2 base_color_uv = transformed_uvs
+      ? MaterialTextureUv(
+            texture_transforms.base_color_transform,
+            texture_transforms.base_color_rotation)
+      : GetUV0();
   vec4 base_color_srgb = texture(base_color_texture, base_color_uv);
   vec3 albedo = SRGBToLinear(base_color_srgb.rgb) * vertex_color.rgb *
                 frag_info.color.rgb;
@@ -55,17 +63,21 @@ void Surface(inout MaterialInputs material) {
   //       (camera_position - vertex_position).
   vec3 normal = GetWorldNormal();
   if (frag_info.has_normal_map > 0.5) {
-    vec2 normal_uv = MaterialTextureUv(
-        texture_transforms.normal_transform,
-        texture_transforms.normal_rotation);
+    vec2 normal_uv = transformed_uvs
+        ? MaterialTextureUv(
+              texture_transforms.normal_transform,
+              texture_transforms.normal_rotation)
+        : GetUV0();
     normal = PerturbNormal(normal_texture, normal, v_viewvector,
                            normal_uv, frag_info.normal_scale);
   }
   material.normal = normal;
 
-  vec2 metallic_roughness_uv = MaterialTextureUv(
-      texture_transforms.metallic_roughness_transform,
-      texture_transforms.metallic_roughness_rotation);
+  vec2 metallic_roughness_uv = transformed_uvs
+      ? MaterialTextureUv(
+            texture_transforms.metallic_roughness_transform,
+            texture_transforms.metallic_roughness_rotation)
+      : GetUV0();
   vec4 metallic_roughness =
       texture(metallic_roughness_texture, metallic_roughness_uv);
   material.metallic = clamp(metallic_roughness.b * frag_info.metallic_factor,
@@ -74,15 +86,19 @@ void Surface(inout MaterialInputs material) {
       clamp(metallic_roughness.g * frag_info.roughness_factor, kMinRoughness,
             1.0);
 
-  vec2 occlusion_uv = MaterialTextureUv(
-      texture_transforms.occlusion_transform,
-      texture_transforms.occlusion_rotation);
+  vec2 occlusion_uv = transformed_uvs
+      ? MaterialTextureUv(
+            texture_transforms.occlusion_transform,
+            texture_transforms.occlusion_rotation)
+      : GetUV0();
   float occlusion = texture(occlusion_texture, occlusion_uv).r;
   material.occlusion = 1.0 - (1.0 - occlusion) * frag_info.occlusion_strength;
 
-  vec2 emissive_uv = MaterialTextureUv(
-      texture_transforms.emissive_transform,
-      texture_transforms.emissive_rotation);
+  vec2 emissive_uv = transformed_uvs
+      ? MaterialTextureUv(
+            texture_transforms.emissive_transform,
+            texture_transforms.emissive_rotation)
+      : GetUV0();
   material.emissive = SRGBToLinear(texture(emissive_texture, emissive_uv).rgb) *
                       frag_info.emissive_factor.rgb *
                       frag_info.emissive_factor.a;

@@ -645,6 +645,13 @@ void main() {
     expect(unlit, contains('MaterialTextureUv('));
     expect(depthNormal, contains('MaterialTextureUv('));
     expect(standard, isNot(contains('vec2 TransformUv(')));
+    // The standard shader skips all five UV-transform evaluations behind one
+    // uniform flag carried in the base record's padding float, set by the
+    // material when any record transforms its UVs or selects UV set 1.
+    expect(
+      standard,
+      contains('texture_transforms.base_color_rotation.w > 0.5'),
+    );
   });
 
   test('filtered scene color lives in a reviewable shader include', () {
