@@ -1604,6 +1604,22 @@ class PhysicallyBasedMaterial extends Material {
       occlusionTextureTransform,
       occlusionTextureTexCoord,
     );
+    // The base record's padding float carries one flag the shader branches on
+    // to skip the five UV-transform evaluations, set when any record
+    // transforms its UVs or selects UV set 1. The identity transform
+    // reproduces the raw UV bit-exactly, so the flag only gates work.
+    final transformedUvs =
+        !baseColorTextureTransform.isIdentity ||
+        !metallicRoughnessTextureTransform.isIdentity ||
+        !normalTextureTransform.isIdentity ||
+        !emissiveTextureTransform.isIdentity ||
+        !occlusionTextureTransform.isIdentity ||
+        baseColorTextureTexCoord != 0 ||
+        metallicRoughnessTextureTexCoord != 0 ||
+        normalTextureTexCoord != 0 ||
+        emissiveTextureTexCoord != 0 ||
+        occlusionTextureTexCoord != 0;
+    textureTransforms[7] = transformedUvs ? 1.0 : 0.0;
     pass.bindUniform(
       shader.getUniformSlot('TextureTransforms'),
       transientsBuffer.emplace(ByteData.sublistView(textureTransforms)),
