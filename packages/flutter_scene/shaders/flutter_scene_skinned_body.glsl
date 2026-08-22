@@ -120,9 +120,6 @@ void main() {
   v_texture_coords = vertex.uv;
   v_texture_coords_1 = vertex.uv1;
   v_color = vertex.color;
-  v_model_scale = vec3(length(combined_transform[0].xyz),
-                       length(combined_transform[1].xyz),
-                       length(combined_transform[2].xyz));
   v_tangent = vertex.world_tangent;
 
 #ifdef MATERIAL_INSTANCE_VARYINGS

@@ -62,9 +62,6 @@ void main() {
   v_texture_coords = vec2(0.0);
   v_texture_coords_1 = vec2(0.0);
   v_color = vec4(0.0);
-  v_model_scale = vec3(length(model_transform[0].xyz),
-                       length(model_transform[1].xyz),
-                       length(model_transform[2].xyz));
   v_tangent = vec4(0.0);
 
 #ifdef MATERIAL_INSTANCE_VARYINGS

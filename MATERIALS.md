@@ -513,9 +513,14 @@ in vec3 v_viewvector;      // camera_position - vertex_position
 in vec2 v_texture_coords;
 in vec2 v_texture_coords_1;
 in vec4 v_color;           // per-vertex color, white when the model has none
-in vec3 v_model_scale;
 in vec4 v_tangent;         // world-space tangent and bitangent sign
 ```
+
+The model scale is no longer one of the interpolated outputs (lit materials
+read it from `FragInfo.model_scale`, which the `.fmat` `GetModelScale()`
+accessor wraps). A raw shader pair that needs it computes it from the model
+transform its vertex stage already receives and passes it through its own
+varying.
 
 The fragment output is `out vec4 frag_color;` at location 0.
 
@@ -836,7 +841,7 @@ a raw `ShaderMaterial` has no such declaration and always sees the fixed record.
 
 Your shader writes `gl_Position` and the standard outputs the fragment stage reads
 (`v_position`, `v_normal`, `v_viewvector`, `v_texture_coords`,
-`v_texture_coords_1`, `v_color`, `v_model_scale`, `v_tangent`), plus any of
+`v_texture_coords_1`, `v_color`, `v_tangent`), plus any of
 your own varyings. A skinned mesh
 instead takes its model transform,
 `enable_skinning`, and `joint_texture_size` in `FrameInfo`, and adds the

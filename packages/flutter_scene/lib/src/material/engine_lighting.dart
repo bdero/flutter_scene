@@ -24,12 +24,12 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (672 bytes / 168 floats:
+  /// The float count of the full `FragInfo` block (688 bytes / 172 floats:
   /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
   /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
-  /// 160..163, then `ssao_lighting` at 164..167). See the layout map in the
-  /// implementation.
-  static const fragInfoFloatCount = 168;
+  /// 160..163, `ssao_lighting` at 164..167, and `model_scale` at 168..171).
+  /// See the layout map in the implementation.
+  static const fragInfoFloatCount = 172;
 
   /// Index of the LOD cross-fade `fade` field in `FragInfo`, occupying std140
   /// padding before `environment_transform` (so the block size is unchanged).
@@ -55,6 +55,9 @@ class EngineLightingUniforms {
     Lighting lighting,
     EnvironmentMap env, {
     int nodeChannelMask = 0xFF,
+    double modelScaleX = 1.0,
+    double modelScaleY = 1.0,
+    double modelScaleZ = 1.0,
   }) {
     // Default to fully drawn; a material with an active LOD cross-fade
     // overwrites this. Without it the zero-initialized slot would discard
@@ -176,6 +179,11 @@ class EngineLightingUniforms {
     fragInfo[165] = lighting.ssaoMultiBounce.clamp(0.0, 1.0);
     fragInfo[166] = lighting.ssaoBentNormals ? 1.0 : 0.0;
     fragInfo[167] = lighting.ssaoContactShadows ? 1.0 : 0.0;
+    // model_scale at [168..170]: the draw's model scale, set by the encoder
+    // on the material before bind (replaces the old v_model_scale varying).
+    fragInfo[168] = modelScaleX;
+    fragInfo[169] = modelScaleY;
+    fragInfo[170] = modelScaleZ;
     // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
     // dimensions the shader needs to normalize its punctual-light fetches.
     // x: parameters-texture row count (all scene lights). y/z: the light-index

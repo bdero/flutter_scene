@@ -45,7 +45,6 @@ out vec3 v_viewvector; // camera_position - vertex_position (world space)
 out vec2 v_texture_coords;
 out vec2 v_texture_coords_1;
 out vec4 v_color;
-out vec3 v_model_scale;
 out vec4 v_tangent;
 
 #ifndef HAS_MATERIAL_VERTEX

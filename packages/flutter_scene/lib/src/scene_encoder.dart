@@ -1086,6 +1086,7 @@ base class SceneEncoder {
       record.material.lightListOffset = item.lightListOffset;
       record.material.lightListCount = item.lightListCount;
       record.material.lightChannelMask = item.lightChannelMask;
+      record.material.setModelScaleFromTransform(item.worldTransform);
       item.applyJointsTexture(record.geometry);
       item.applyMorphWeights(record.geometry);
 
@@ -1448,6 +1449,7 @@ base class SceneEncoder {
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;
+      record.material.setModelScaleFromTransform(record.item.worldTransform);
       final joints = record.jointsTexture;
       if (joints != null) {
         record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
