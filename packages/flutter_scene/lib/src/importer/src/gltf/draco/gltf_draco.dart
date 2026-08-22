@@ -56,9 +56,10 @@ DracoPrimitiveData decodeDracoPrimitive({
   final outViews = List.of(bufferViews);
   final builder = BytesBuilder(copy: false);
 
-  // Attributes outside the extension keep their own (fallback) storage, so
-  // the synthesized buffer must retain the original bytes ahead of the
-  // decoded sections for their views to stay valid.
+  // Attributes outside the extension keep their own (fallback) storage, and
+  // morph target accessors always do (the extension compresses only the base
+  // attributes), so the synthesized buffer must retain the original bytes
+  // ahead of the decoded sections for their views to stay valid.
   var hasFallbackAttribute = false;
   for (final entry in primitive.attributes.entries) {
     if (draco.attributes.containsKey(entry.key)) continue;
@@ -69,7 +70,7 @@ DracoPrimitiveData decodeDracoPrimitive({
     }
     hasFallbackAttribute = true;
   }
-  if (hasFallbackAttribute) {
+  if (hasFallbackAttribute || primitive.targets.isNotEmpty) {
     builder.add(bufferData);
     final pad = (4 - bufferData.length % 4) % 4;
     if (pad != 0) {

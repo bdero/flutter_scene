@@ -48,6 +48,41 @@ void _comparePacked(String name) {
   }
 }
 
+/// Appends [slabs] (each `vertexCount * 3` floats) to [bin] as float VEC3
+/// accessors and returns the extended tables plus one accessor index per
+/// slab. Used to graft synthetic morph targets onto a fixture document.
+(List<GltfAccessor>, List<GltfBufferView>, Uint8List, List<int>)
+_appendVec3Accessors(GltfDocument doc, Uint8List bin, List<Float32List> slabs) {
+  final accessors = List.of(doc.accessors);
+  final views = List.of(doc.bufferViews);
+  final builder = BytesBuilder(copy: false);
+  builder.add(bin);
+  final pad = (4 - bin.length % 4) % 4;
+  if (pad != 0) builder.add(Uint8List(pad));
+  final indices = <int>[];
+  for (final slab in slabs) {
+    final offset = builder.length;
+    builder.add(Uint8List.sublistView(slab));
+    views.add(
+      GltfBufferView(
+        buffer: 0,
+        byteLength: slab.lengthInBytes,
+        byteOffset: offset,
+      ),
+    );
+    accessors.add(
+      GltfAccessor(
+        componentType: GltfComponentType.float,
+        count: slab.length ~/ 3,
+        type: GltfAccessorType.vec3,
+        bufferView: views.length - 1,
+      ),
+    );
+    indices.add(accessors.length - 1);
+  }
+  return (accessors, views, builder.takeBytes(), indices);
+}
+
 void main() {
   test('parses the draco extension on primitives', () {
     final (doc, _) = _load('synthetic_draco_eb');
@@ -76,6 +111,81 @@ void main() {
 
   test('packs skinned draco primitives like the reference decode', () {
     _comparePacked('two_triangles_draco_eb');
+  });
+
+  test('packs morph targets on draco primitives like the reference decode', () {
+    // Morph target accessors always live in the original buffer (the
+    // extension compresses only the base attributes), so packing a fully
+    // compressed primitive with targets must still read them correctly.
+    final (compressedDoc, compressedBin) = _load('synthetic_draco_seq');
+    final (decodedDoc, decodedBin) = _load('synthetic_draco_seq_decoded');
+    final compressedPrim = compressedDoc.meshes[0].primitives[0];
+    final decodedPrim = decodedDoc.meshes[0].primitives[0];
+    // Every attribute is inside the extension, the shape that previously
+    // dropped the original bytes from the synthesized buffer.
+    expect(
+      compressedPrim.attributes.keys,
+      everyElement(isIn(compressedPrim.draco!.attributes.keys)),
+    );
+    final vertexCount =
+        compressedDoc.accessors[compressedPrim.attributes['POSITION']!].count;
+    expect(
+      vertexCount,
+      decodedDoc.accessors[decodedPrim.attributes['POSITION']!].count,
+    );
+
+    // Two targets, each with POSITION and NORMAL deltas; the values only
+    // need to be deterministic and distinct per slab.
+    Float32List slab(int seed) {
+      final out = Float32List(vertexCount * 3);
+      for (var i = 0; i < out.length; i++) {
+        out[i] = ((i * 31 + seed * 7) % 17 - 8) / 16;
+      }
+      return out;
+    }
+
+    final slabs = [slab(1), slab(2), slab(3), slab(4)];
+
+    PackedPrimitive pack(
+      GltfDocument doc,
+      Uint8List bin,
+      GltfMeshPrimitive prim,
+    ) {
+      final (accessors, views, data, idx) = _appendVec3Accessors(
+        doc,
+        bin,
+        slabs,
+      );
+      return packGltfPrimitive(
+        primitive: GltfMeshPrimitive(
+          attributes: prim.attributes,
+          indices: prim.indices,
+          material: prim.material,
+          mode: prim.mode,
+          draco: prim.draco,
+          targets: [
+            {'POSITION': idx[0], 'NORMAL': idx[1]},
+            {'POSITION': idx[2], 'NORMAL': idx[3]},
+          ],
+        ),
+        accessors: accessors,
+        bufferViews: views,
+        bufferData: data,
+        coordinatePolicy: GltfCoordinatePolicy.bakeNative,
+      );
+    }
+
+    final packed = pack(compressedDoc, compressedBin, compressedPrim);
+    final reference = pack(decodedDoc, decodedBin, decodedPrim);
+    final morphs = packed.morphTargets!;
+    final referenceMorphs = reference.morphTargets!;
+    expect(morphs.targetCount, 2);
+    expect(morphs.vertexCount, referenceMorphs.vertexCount);
+    expect(morphs.positionDeltas, referenceMorphs.positionDeltas);
+    expect(morphs.normalDeltas, referenceMorphs.normalDeltas);
+    // The reference itself carries the grafted values, so the comparison
+    // above is not vacuously matching zero-filled slabs.
+    expect(referenceMorphs.positionDeltas[0], slabs[0][0]);
   });
 
   test('bakes skinned pose unions from draco primitives', () {
