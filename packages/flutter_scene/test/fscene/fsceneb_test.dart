@@ -78,6 +78,36 @@ void main() {
       expect(view.getUint32(8, Endian.little), bytes.length);
       expect(bytes.length % 8, 0);
     });
+
+    test('compresses repetitive payloads without changing their bytes', () {
+      final doc = SceneDocument();
+      final id = doc.newId();
+      doc.addPayload(
+        PayloadSpec(
+          id,
+          encoding: PayloadEncoding.vertexBuffer,
+          bytes: Uint8List(64 * 1024),
+        ),
+      );
+
+      final encoded = writeFsceneb(doc);
+      expect(encoded.length, lessThan(2048));
+      expect(String.fromCharCodes(encoded), contains('GZBL'));
+      expect(
+        readFsceneb(encoded).payload(id)!.bytes,
+        equals(Uint8List(64 * 1024)),
+      );
+    });
+
+    test('reads a version 1 container with plain payload chunks', () {
+      final encoded = writeFsceneb(_sample());
+      expect(String.fromCharCodes(encoded), isNot(contains('GZBL')));
+      ByteData.sublistView(encoded).setUint32(4, 1, Endian.little);
+
+      final restored = readFsceneb(encoded);
+      expect(restored.rootNodes.single.name, 'world');
+      expect(restored.payloads.length, 3);
+    });
   });
 
   group('malformed input', () {
