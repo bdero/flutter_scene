@@ -27,6 +27,25 @@ interaction lands on the widgets at exactly the point you see. Geometry in
 front of the panel blocks input, and a drag that slides off the panel's edge
 stays captured by it, so sliders and scrolls behave.
 
+## The child owns its state
+
+The component holds the widget it was built with, and `SceneView` mounts that
+subtree once. A `setState` in the widget that built the component does not
+rebuild it, so values pushed in that way never reach the surface: the hosted
+subtree keeps its own state and reports values out.
+
+```dart
+class ControlPanel extends StatefulWidget {
+  const ControlPanel({super.key, required this.onSpin});
+
+  final ValueChanged<double> onSpin;   // reports out to the scene
+  ...
+}
+```
+
+To drive the panel from outside, hand it something it can listen to (a
+`ValueNotifier`, an `AnimationController`) rather than a plain value.
+
 ## Bring your own surface
 
 Three tiers share the one component; each takes over a little more.

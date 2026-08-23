@@ -54,6 +54,7 @@ import 'example_planar_mirror.dart';
 import 'example_splats.dart';
 import 'example_skybox.dart';
 import 'example_ssr.dart';
+import 'example_widget_inset.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
@@ -259,6 +260,8 @@ class _MyAppState extends State<MyApp> {
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Audio': (context) => const ExampleAudio(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
+      'Widget Input (inset view)': (context) =>
+          const ExampleWidgetInset(),
       'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
       'Physics': (context) => FutureBuilder<void>(

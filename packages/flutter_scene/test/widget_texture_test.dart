@@ -125,6 +125,58 @@ void main() {
     expect(presses, 1);
   });
 
+  testWidgets('forwarded positions agree with the render tree when the host '
+      'is away from the window origin', (tester) async {
+    // Slider converts a gesture's globalPosition back through render-object
+    // transforms (globalToLocal), so it only works when event positions and
+    // the hit path agree with the render tree about the coordinate space.
+    // Hosting the texture away from the origin makes any texture-space
+    // shortcut visible: with bare texture-space positions the slider reads
+    // garbage (regression test for exactly that).
+    final controller = WidgetTextureController();
+    double value = 0.0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.only(left: 123, top: 217),
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: WidgetTexture(
+                controller: controller,
+                width: 200,
+                height: 48,
+                child: StatefulBuilder(
+                  builder: (context, setState) => Slider(
+                    value: value,
+                    onChanged: (v) => setState(() => value = v),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // A tap at 80% across the texture seeks the slider near 80% (the thumb
+    // padding at the track ends makes the mapping approximate).
+    controller.tapAt(const Offset(0.8, 0.5));
+    await tester.pump();
+    expect(value, greaterThan(0.6));
+    expect(value, lessThan(1.0));
+
+    // A drag toward the left end tracks continuously.
+    controller.pointerDown(const Offset(0.8, 0.5));
+    controller.pointerMove(const Offset(0.5, 0.5));
+    await tester.pump();
+    expect(value, closeTo(0.5, 0.15));
+    controller.pointerMove(const Offset(0.2, 0.5));
+    controller.pointerUp(const Offset(0.2, 0.5));
+    await tester.pump();
+    expect(value, lessThan(0.3));
+  });
+
   testWidgets('captures publish a texture matching the capture size', (
     tester,
   ) async {

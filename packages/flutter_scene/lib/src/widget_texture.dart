@@ -124,6 +124,16 @@ class WidgetTextureController extends ChangeNotifier {
   // system, so taps and drags raycast against scene geometry can drive the
   // widgets. Gesture recognizers (buttons, drags, scrollables) work
   // normally.
+  //
+  // Events are dispatched in the framework's global space (the hosted
+  // child's `getTransformTo(null)` applied to the texture-space position),
+  // with that transform composed into the hit path. Both sides of a
+  // recognizer's coordinate math then agree with the render tree: handlers
+  // that convert `details.globalPosition` back through render objects
+  // (Slider's `globalToLocal`, text selection) and handlers that use
+  // `details.localPosition`. Dispatching bare texture-space positions
+  // instead breaks the globalPosition path whenever the host is not at the
+  // window origin.
   // TODO(widget-textures): hover (MouseRegion enter/exit) needs MouseTracker
   // integration, which tracks annotations on the on-screen layer tree.
 
@@ -316,20 +326,42 @@ class _RenderWidgetTexture extends RenderProxyBox {
     (uv.dy.clamp(0.0, 1.0)) * _captureSize.height,
   );
 
+  /// Hit-tests [child] at texture-space [local] with the child's global
+  /// transform composed into the path, and returns the path together with
+  /// the position in the framework's global space. Returns null when the
+  /// transform is degenerate (the host is not meaningfully on stage).
+  (HitTestResult, Offset, Matrix4)? _globalHit(RenderBox child, Offset local) {
+    final childToGlobal = child.getTransformTo(null);
+    if (Matrix4.tryInvert(childToGlobal) == null) return null;
+    final global = MatrixUtils.transformPoint(childToGlobal, local);
+    final result = BoxHitTestResult();
+    result.addWithPaintTransform(
+      transform: childToGlobal,
+      position: global,
+      hitTest: (result, position) => child.hitTest(result, position: position),
+    );
+    // The trailing binding entry routes the event into the pointer router
+    // and closes the gesture arena, mirroring the live pointer pipeline.
+    result.add(HitTestEntry(GestureBinding.instance));
+    return (result, global, childToGlobal);
+  }
+
   void _pointerDown(Offset uv, int id) {
     final child = this.child;
     if (child == null) return;
     if (_pointers.containsKey(id)) _pointerCancel(id);
-    final local = _uvToLocal(uv);
-    final result = HitTestResult();
-    child.hitTest(BoxHitTestResult.wrap(result), position: local);
-    // The trailing binding entry routes the event into the pointer router
-    // and closes the gesture arena, mirroring the live pointer pipeline.
-    result.add(HitTestEntry(GestureBinding.instance));
-    final state = _SyntheticPointer(_nextSyntheticPointer++, result, local);
+    final hit = _globalHit(child, _uvToLocal(uv));
+    if (hit == null) return;
+    final (result, global, childToGlobal) = hit;
+    final state = _SyntheticPointer(
+      _nextSyntheticPointer++,
+      result,
+      global,
+      childToGlobal,
+    );
     _pointers[id] = state;
     GestureBinding.instance.dispatchEvent(
-      PointerDownEvent(pointer: state.pointer, position: local),
+      PointerDownEvent(pointer: state.pointer, position: global),
       result,
     );
   }
@@ -337,23 +369,34 @@ class _RenderWidgetTexture extends RenderProxyBox {
   void _pointerMove(Offset uv, int id) {
     final state = _pointers[id];
     if (state == null) return;
-    final local = _uvToLocal(uv);
+    // The down-time transform maps the whole interaction, matching the
+    // hit path captured at down (standard pointer-capture semantics).
+    final global = MatrixUtils.transformPoint(
+      state.childToGlobal,
+      _uvToLocal(uv),
+    );
     GestureBinding.instance.dispatchEvent(
       PointerMoveEvent(
         pointer: state.pointer,
-        position: local,
-        delta: local - state.lastLocal,
+        position: global,
+        delta: global - state.lastGlobal,
       ),
       state.path,
     );
-    state.lastLocal = local;
+    state.lastGlobal = global;
   }
 
   void _pointerUp(Offset uv, int id) {
     final state = _pointers.remove(id);
     if (state == null) return;
     GestureBinding.instance.dispatchEvent(
-      PointerUpEvent(pointer: state.pointer, position: _uvToLocal(uv)),
+      PointerUpEvent(
+        pointer: state.pointer,
+        position: MatrixUtils.transformPoint(
+          state.childToGlobal,
+          _uvToLocal(uv),
+        ),
+      ),
       state.path,
     );
   }
@@ -362,7 +405,7 @@ class _RenderWidgetTexture extends RenderProxyBox {
     final state = _pointers.remove(id);
     if (state == null) return;
     GestureBinding.instance.dispatchEvent(
-      PointerCancelEvent(pointer: state.pointer, position: state.lastLocal),
+      PointerCancelEvent(pointer: state.pointer, position: state.lastGlobal),
       state.path,
     );
   }
@@ -370,14 +413,13 @@ class _RenderWidgetTexture extends RenderProxyBox {
   void _pointerScroll(Offset uv, Offset scrollDelta) {
     final child = this.child;
     if (child == null) return;
-    final local = _uvToLocal(uv);
-    final result = HitTestResult();
-    child.hitTest(BoxHitTestResult.wrap(result), position: local);
-    result.add(HitTestEntry(GestureBinding.instance));
+    final hit = _globalHit(child, _uvToLocal(uv));
+    if (hit == null) return;
+    final (result, global, _) = hit;
     // The binding entry's handleEvent resolves pointer signals, so
     // scrollables under the point receive the event.
     GestureBinding.instance.dispatchEvent(
-      PointerScrollEvent(position: local, scrollDelta: scrollDelta),
+      PointerScrollEvent(position: global, scrollDelta: scrollDelta),
       result,
     );
   }
@@ -624,11 +666,14 @@ class _RenderWidgetTexture extends RenderProxyBox {
   }
 }
 
-/// One in-flight synthetic pointer interaction.
+/// One in-flight synthetic pointer interaction. Positions are in the
+/// framework's global space; [childToGlobal] is the child's transform
+/// captured at pointer down and drives the whole interaction.
 class _SyntheticPointer {
-  _SyntheticPointer(this.pointer, this.path, this.lastLocal);
+  _SyntheticPointer(this.pointer, this.path, this.lastGlobal, this.childToGlobal);
 
   final int pointer;
   final HitTestResult path;
-  Offset lastLocal;
+  Offset lastGlobal;
+  final Matrix4 childToGlobal;
 }
