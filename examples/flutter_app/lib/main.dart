@@ -260,8 +260,7 @@ class _MyAppState extends State<MyApp> {
       'Custom Skybox': (context) => const ExampleSkybox(),
       'Audio': (context) => const ExampleAudio(),
       'Widget Texture': (context) => const ExampleWidgetTexture(),
-      'Widget Input (inset view)': (context) =>
-          const ExampleWidgetInset(),
+      'Widget Input (inset view)': (context) => const ExampleWidgetInset(),
       'Accessibility': (context) => const ExampleAccessibility(),
       'Render Targets': (context) => const ExampleRenderTarget(),
       'Physics': (context) => FutureBuilder<void>(
