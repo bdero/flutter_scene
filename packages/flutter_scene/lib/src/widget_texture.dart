@@ -331,6 +331,7 @@ class _RenderWidgetTexture extends RenderProxyBox {
   /// the position in the framework's global space. Returns null when the
   /// transform is degenerate (the host is not meaningfully on stage).
   (HitTestResult, Offset, Matrix4)? _globalHit(RenderBox child, Offset local) {
+    if (!child.attached) return null;
     final childToGlobal = child.getTransformTo(null);
     if (Matrix4.tryInvert(childToGlobal) == null) return null;
     final global = MatrixUtils.transformPoint(childToGlobal, local);
@@ -670,7 +671,12 @@ class _RenderWidgetTexture extends RenderProxyBox {
 /// framework's global space; [childToGlobal] is the child's transform
 /// captured at pointer down and drives the whole interaction.
 class _SyntheticPointer {
-  _SyntheticPointer(this.pointer, this.path, this.lastGlobal, this.childToGlobal);
+  _SyntheticPointer(
+    this.pointer,
+    this.path,
+    this.lastGlobal,
+    this.childToGlobal,
+  );
 
   final int pointer;
   final HitTestResult path;

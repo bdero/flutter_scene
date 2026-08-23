@@ -10,8 +10,8 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// a gesture's `globalPosition` back through render-object transforms, like
 /// [Slider], only work when synthesized event positions agree with the
 /// render tree about the coordinate space. This example exercises exactly
-/// that path — drag the slider on the 3D panel and the cube's spin follows;
-/// the button and switch cover the tap path.
+/// that path, dragging the slider on the 3D panel to drive the cube spin,
+/// while the button and switch cover the tap path.
 ///
 /// (Regression exercise: with texture-space positions dispatched as
 /// `globalPosition`, the slider here jumps to a wrong value and drags in the
@@ -180,7 +180,7 @@ class ExampleWidgetInsetState extends State<ExampleWidgetInset> {
 
 /// The live subtree on the panel: the slider is the probe for forwarded
 /// position math, the button and switch for the tap path. It owns its state
-/// and reports values out, the way every hosted subtree should — `SceneView`
+/// and reports values out, the way every hosted subtree should. `SceneView`
 /// mounts it once, so values pushed in from an enclosing `setState` would
 /// never reach it.
 class _PanelCard extends StatefulWidget {
