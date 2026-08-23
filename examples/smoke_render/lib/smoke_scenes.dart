@@ -1047,6 +1047,33 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(_cuboid(vm.Vector4(0.95, 0.95, 0.95, 1.0), 1.0, 0.15));
     return (scene: scene, camera: _camera());
   }),
+  // Scalar ior / specular factor / specular color on the standard shader
+  // (folded into its dielectric F0, no physical variant): an ior 1.0 sphere
+  // with no dielectric reflection, a high-ior sphere, and a tinted,
+  // half-weight specular sphere. Sensitive to the fold drifting from the
+  // physical shader's formula.
+  SmokeScene('dielectric_specular', () {
+    final scene = Scene();
+    Node sphere(double x, PhysicallyBasedMaterial material) =>
+        Node(mesh: Mesh(SphereGeometry(radius: 0.42), material))
+          ..localTransform = vm.Matrix4.translation(vm.Vector3(x, 0, 0));
+    PhysicallyBasedMaterial dielectric() => PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.12, 0.1, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.2
+      ..vertexColorWeight = 0.0;
+    scene.add(sphere(-0.95, dielectric()..ior = 1.0));
+    scene.add(sphere(0.0, dielectric()..ior = 2.4));
+    scene.add(
+      sphere(
+        0.95,
+        dielectric()
+          ..specular = 0.5
+          ..specularColor = vm.Vector4(0.2, 0.6, 1.0, 1.0),
+      ),
+    );
+    return (scene: scene, camera: _camera());
+  }),
   // Layered physical shader with several factor-only lobes enabled.
   SmokeScene('physical_layered', () {
     final scene = Scene();

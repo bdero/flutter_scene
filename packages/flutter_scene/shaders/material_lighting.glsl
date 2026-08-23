@@ -385,14 +385,19 @@ vec4 EvaluateLighting(MaterialInputs material) {
       normalize(cross(geometric_normal, anisotropic_tangent));
 #endif
 
-  vec3 dielectric_reflectance = vec3(0.04);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   float ior_f0 = pow((max(material.ior, 1.0) - 1.0) /
                          (max(material.ior, 1.0) + 1.0),
                      2.0);
-  dielectric_reflectance = clamp(
+  vec3 dielectric_reflectance = clamp(
       vec3(ior_f0) * material.specular_color * material.specular_weight,
       vec3(0.0), vec3(1.0));
+#else
+  // The standard path takes its dielectric F0 from the draw's FragInfo, the
+  // same ior * specular_color * specular_weight product the physical path
+  // forms above, precomputed on the CPU. A default material packs 0.04, so
+  // a scalar ior or specular tweak no longer needs the physical shader.
+  vec3 dielectric_reflectance = frag_info.dielectric_f0.xyz;
 #endif
   vec3 reflectance = mix(dielectric_reflectance, albedo, metallic);
 

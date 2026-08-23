@@ -524,6 +524,26 @@ void main() {
     expect(lighting, isNot(contains('prefiltered_radiance_cube')));
   });
 
+  test('the standard path takes its dielectric F0 from FragInfo', () {
+    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    final uniforms = File(
+      'shaders/material_engine_lighting.glsl',
+    ).readAsStringSync();
+    // The physical path still derives its own from the material inputs; the
+    // standard path reads the CPU-packed product, so scalar ior and specular
+    // no longer force the physical variant.
+    expect(uniforms, contains('vec4 dielectric_f0;'));
+    expect(lighting, contains('frag_info.dielectric_f0.xyz'));
+    expect(
+      lighting,
+      contains('material.specular_color * material.specular_weight'),
+    );
+    expect(
+      lighting,
+      isNot(contains('vec3 dielectric_reflectance = vec3(0.04);')),
+    );
+  });
+
   test('lit materials reverse normals on back-facing fragments', () {
     final varyings = File('shaders/material_varyings.glsl').readAsStringSync();
     final standard = File(

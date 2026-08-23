@@ -142,6 +142,11 @@ uniform FragInfo {
   // instanced draw carries its node's scale (not per-instance), and a skinned
   // draw its node's (not per-joint). w unused.
   vec4 model_scale;
+  // xyz: the dielectric specular reflectance at normal incidence for the
+  // standard (non-physical) shader path, clamp(((ior - 1) / (ior + 1))^2 *
+  // specular_color * specular_factor, 0, 1), 0.04 for a default material.
+  // The physical path derives its own from material inputs. w unused.
+  vec4 dielectric_f0;
 }
 frag_info;
 
