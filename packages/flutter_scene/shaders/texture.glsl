@@ -17,9 +17,55 @@ vec2 SphericalToEquirectangular(vec3 direction) {
   return uv;
 }
 
+// Samples an equirect along a view direction, choosing the mip level from the
+// projection's own geometry rather than from the UV's screen derivatives.
+//
+// Letting the hardware pick gets it wrong at both singularities of the
+// projection, and both are visible:
+//
+//   * **The seam.** Longitude wraps, so U jumps a whole period where the
+//     panorama joins. The quad straddling that jump measures a footprint the
+//     width of the entire texture and selects the top of the mip chain, which
+//     is the average of the whole sky. It prints as a one pixel bright line
+//     from pole to pole.
+//
+//   * **The poles.** An equirect's texels are slivers 1/cos(latitude) wide, so
+//     approaching a pole one row of them fans out over the whole sky. The
+//     correct footprint there spans MANY columns, and a screen-space difference
+//     of a rapidly-turning atan2 across a 2x2 quad badly underestimates it. The
+//     level that gets picked is too fine, so instead of the row's average the
+//     pole shows a handful of its columns splayed into wedges.
+//
+// The footprint is analytic instead. For a screen pixel covering `w` radians,
+// the region it maps to spans `w` of latitude and `w / cos(latitude)` of
+// longitude, which is exactly the 1/cos blow-up the hardware misses. Feeding
+// that as an explicit gradient pair makes the pole resolve to the average of
+// however many columns really collapse into the pixel (smooth, and progressively
+// smoother toward the pole) and leaves the seam with the footprint it actually
+// has (small).
+//
+// `direction` must be normalised. Its derivatives are used rather than the UV's
+// because the direction is continuous everywhere, including across the seam.
+//
+// Any equirect read with an implicit mip level needs this. A texture with no
+// mip chain hides the seam half of it, which is how it survives being written
+// the obvious way.
+vec3 SampleEquirectByFootprint(sampler2D tex, vec3 direction, vec2 uv) {
+  // Radians per pixel, from the direction itself: for a unit vector the chord
+  // and the angle agree to first order.
+  float w = max(length(dFdx(direction)), length(dFdy(direction)));
+  // Guarded, because at the exact pole this is zero and the longitude span is
+  // the whole circle; the clamp lands the level at the top of the chain, which
+  // is the row average, which is the right answer there.
+  float cos_lat = max(sqrt(max(1.0 - direction.y * direction.y, 0.0)), 1e-4);
+  return textureGrad(tex, uv, vec2(w * kInvAtan.x / cos_lat, 0.0),
+                     vec2(0.0, w * kInvAtan.y))
+      .rgb;
+}
+
 vec3 SampleEnvironmentTexture(sampler2D tex, vec3 direction) {
-  vec2 uv = SphericalToEquirectangular(direction);
-  return texture(tex, uv).rgb;
+  return SampleEquirectByFootprint(tex, direction,
+                                   SphericalToEquirectangular(direction));
 }
 
 vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
