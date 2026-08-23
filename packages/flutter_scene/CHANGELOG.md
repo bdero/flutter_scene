@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Widget-surface pointer forwarding dispatches events in the framework's global space (with the host's transform in the hit path), so widgets that convert `globalPosition` through render objects — `Slider`, text selection — work when the scene view is not at the window origin.
 * glTF import validates `extensionsRequired` and surfaces warnings through an `onWarning` callback on every entry point.
 * Sparse glTF accessors apply, including the zero-filled base for an absent `bufferView`.
 * `KHR_draco_mesh_compression` decodes in pure Dart on every platform.
