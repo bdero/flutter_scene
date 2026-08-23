@@ -2,6 +2,7 @@
 
 * Widget-surface pointer forwarding dispatches events in the framework's global space (with the host's transform in the hit path), so widgets that convert `globalPosition` through render objects (Slider, text selection) work when the scene view is not at the window origin.
 * The standard PBR shader ships a no-shadow variant, selected automatically for draws with no shadow atlas bound, roughly halving the compiled fragment program for shadow-less scenes on mobile GPUs; it also skips its five per-texture UV-transform evaluations when every transform is identity.
+* `PhysicallyBasedMaterial` keeps a scalar `ior`, `specular`, and `specularColor` on the standard shader by folding them into its dielectric reflectance (the `KHR_materials_ior` / `KHR_materials_specular` formula the physical shader uses), so only specular textures and the layered features select the heavier physical variant.
 * The model scale is no longer interpolated per fragment (`v_model_scale` left the vertex output interface, cutting varying bandwidth on tiler GPUs); lit materials read it from `FragInfo.model_scale` through the unchanged `GetModelScale()` accessor, now carrying the node's scale rather than per-instance or per-joint scale, and a raw `ShaderMaterial` pair that needs it passes its own varying computed from the model transform.
 * glTF import validates `extensionsRequired` and surfaces warnings through an `onWarning` callback on every entry point.
 * Sparse glTF accessors apply, including the zero-filled base for an absent `bufferView`.

@@ -60,9 +60,11 @@ class TextureTransform {
 /// transmissive features.
 ///
 /// The material selects and caches an internal shader variant from its active
-/// features. Basic opaque configurations use the standard shader, while
-/// clearcoat, sheen, transmission, anisotropy, iridescence, and related
-/// properties activate physical variants without changing the public type.
+/// features. Basic opaque configurations use the standard shader, including
+/// a scalar [ior], [specular], and [specularColor] (folded into its dielectric
+/// reflectance), while specular textures, clearcoat, sheen, transmission,
+/// anisotropy, iridescence, and related properties activate physical variants
+/// without changing the public type.
 /// Importers normalize format-specific extensions into these scene-native
 /// properties.
 ///
@@ -993,15 +995,41 @@ class PhysicallyBasedMaterial extends Material {
     }
   }
 
+  /// Whether the scalar specular inputs differ from the glTF defaults, in
+  /// which case the standard shader's dielectric F0 carries their product.
+  bool get _hasScalarSpecularConfiguration =>
+      ior != 1.5 ||
+      specular != 1.0 ||
+      specularColor.x != 1.0 ||
+      specularColor.y != 1.0 ||
+      specularColor.z != 1.0;
+
+  /// The dielectric specular reflectance at normal incidence the standard
+  /// shader path uses for these inputs, `clamp(((ior - 1) / (ior + 1))^2 *
+  /// specularColor * specular, 0, 1)` per `KHR_materials_ior` and
+  /// `KHR_materials_specular`, which is the same product the physical shader
+  /// forms from its material inputs. Returns 0.04 for the defaults.
+  @visibleForTesting
+  static Vector3 dielectricSpecularF0({
+    required double ior,
+    required double specular,
+    required Vector4 specularColor,
+  }) {
+    final clampedIor = math.max(ior, 1.0);
+    final iorF0 = math.pow((clampedIor - 1.0) / (clampedIor + 1.0), 2.0);
+    return Vector3(
+      (iorF0 * specularColor.x * specular).clamp(0.0, 1.0).toDouble(),
+      (iorF0 * specularColor.y * specular).clamp(0.0, 1.0).toDouble(),
+      (iorF0 * specularColor.z * specular).clamp(0.0, 1.0).toDouble(),
+    );
+  }
+
   int _computeVariantKey() {
     var key = 0;
-    if (specular != 1.0 ||
-        specularTexture != null ||
-        specularColorTexture != null ||
-        specularColor.x != 1.0 ||
-        specularColor.y != 1.0 ||
-        specularColor.z != 1.0 ||
-        ior != 1.5) {
+    // Scalar ior, specular factor, and specular color fold into the
+    // standard shader's dielectric F0 (see dielectricSpecularF0), so only a
+    // specular texture needs the physical variant.
+    if (specularTexture != null || specularColorTexture != null) {
       key |= _specularFeature;
     }
     if (clearcoat > 0.0) key |= _clearcoatFeature;
@@ -1059,6 +1087,7 @@ class PhysicallyBasedMaterial extends Material {
   @internal
   bool get hasPhysicalConfiguration =>
       (_computeVariantKey() & ~_lightmapFeature) != 0 ||
+      _hasScalarSpecularConfiguration ||
       clearcoatRoughness != 0.0 ||
       clearcoatNormalScale != Vector2.all(1.0) ||
       sheenRoughness != 0.0 ||
@@ -1569,6 +1598,19 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[133] = alphaCutoff;
     fragInfo[138] = specularAntiAliasingVariance;
     fragInfo[139] = specularAntiAliasingThreshold;
+    // dielectric_f0 [172..174]: packInto wrote the plain 0.04; a scalar ior,
+    // specular factor, or specular color replaces it with their product so
+    // the draw stays on the standard shader.
+    if (_hasScalarSpecularConfiguration) {
+      final f0 = dielectricSpecularF0(
+        ior: ior,
+        specular: specular,
+        specularColor: specularColor,
+      );
+      fragInfo[EngineLightingUniforms.dielectricF0Index] = f0.x;
+      fragInfo[EngineLightingUniforms.dielectricF0Index + 1] = f0.y;
+      fragInfo[EngineLightingUniforms.dielectricF0Index + 2] = f0.z;
+    }
     fragInfo[EngineLightingUniforms.fadeIndex] = lodFade;
     // radiance_blend.zw [162]/[163]: this item's punctual-light slice
     // (count, offset) into the per-frame light-index buffer.

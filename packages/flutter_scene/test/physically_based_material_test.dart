@@ -148,4 +148,77 @@ void main() {
     expect(info[6], 0.0);
     expect(info[7], 0.0);
   });
+
+  test('scalar ior and specular stay on the standard shader', () {
+    final material = PhysicallyBasedMaterial()
+      ..ior = 2.0
+      ..specular = 0.5
+      ..specularColor = Vector4(0.9, 0.8, 0.7, 1.0);
+
+    // No physical feature bit, so the draw keeps the standard shader.
+    expect(material.variantKey & 0x7f, 0);
+    // Serialization still has to preserve them.
+    expect(material.hasPhysicalConfiguration, isTrue);
+
+    // A specular texture is what needs the physical variant.
+    material.specularTexture = _FakeTextureSource();
+    expect(material.variantKey & 0x7f, isNot(0));
+    material.specularTexture = null;
+    expect(material.variantKey & 0x7f, 0);
+    material.specularColorTexture = _FakeTextureSource();
+    expect(material.variantKey & 0x7f, isNot(0));
+  });
+
+  test('the folded dielectric F0 matches the physical formula', () {
+    final defaults = PhysicallyBasedMaterial.dielectricSpecularF0(
+      ior: 1.5,
+      specular: 1.0,
+      specularColor: Vector4.all(1.0),
+    );
+    expect(
+      defaults.x,
+      closeTo(EngineLightingUniforms.defaultDielectricF0, 1e-7),
+    );
+    expect(
+      defaults.y,
+      closeTo(EngineLightingUniforms.defaultDielectricF0, 1e-7),
+    );
+    expect(
+      defaults.z,
+      closeTo(EngineLightingUniforms.defaultDielectricF0, 1e-7),
+    );
+
+    // ((2 - 1) / (2 + 1))^2 = 1 / 9.
+    final glass = PhysicallyBasedMaterial.dielectricSpecularF0(
+      ior: 2.0,
+      specular: 1.0,
+      specularColor: Vector4.all(1.0),
+    );
+    expect(glass.x, closeTo(1 / 9, 1e-7));
+
+    // The specular factor and color scale the F0 per channel.
+    final tinted = PhysicallyBasedMaterial.dielectricSpecularF0(
+      ior: 1.5,
+      specular: 0.5,
+      specularColor: Vector4(1.0, 0.5, 0.0, 1.0),
+    );
+    expect(tinted.x, closeTo(0.02, 1e-7));
+    expect(tinted.y, closeTo(0.01, 1e-7));
+    expect(tinted.z, 0.0);
+
+    // Vector3 stores float32, hence the tolerances above. Clamped to [0, 1]
+    // like the shader, and an ior below 1 reads as 1.
+    final clamped = PhysicallyBasedMaterial.dielectricSpecularF0(
+      ior: 100.0,
+      specular: 1.0,
+      specularColor: Vector4.all(30.0),
+    );
+    expect(clamped.x, 1.0);
+    final air = PhysicallyBasedMaterial.dielectricSpecularF0(
+      ior: 0.5,
+      specular: 1.0,
+      specularColor: Vector4.all(1.0),
+    );
+    expect(air.x, 0.0);
+  });
 }

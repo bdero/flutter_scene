@@ -24,12 +24,21 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (688 bytes / 172 floats:
+  /// The float count of the full `FragInfo` block (704 bytes / 176 floats:
   /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
   /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
-  /// 160..163, `ssao_lighting` at 164..167, and `model_scale` at 168..171).
-  /// See the layout map in the implementation.
-  static const fragInfoFloatCount = 172;
+  /// 160..163, `ssao_lighting` at 164..167, `model_scale` at 168..171, and
+  /// `dielectric_f0` at 172..175). See the layout map in the implementation.
+  static const fragInfoFloatCount = 176;
+
+  /// Index of the `dielectric_f0` vec4 in `FragInfo`. [packInto] writes the
+  /// standard 0.04 dielectric reflectance; a material with a non-default
+  /// ior, specular factor, or specular color overwrites it afterward.
+  static const dielectricF0Index = 172;
+
+  /// The dielectric F0 of a default material (ior 1.5, specular 1, white
+  /// specular color), the value the standard shader used to hard-code.
+  static const defaultDielectricF0 = 0.04;
 
   /// Index of the LOD cross-fade `fade` field in `FragInfo`, occupying std140
   /// padding before `environment_transform` (so the block size is unchanged).
@@ -184,6 +193,11 @@ class EngineLightingUniforms {
     fragInfo[168] = modelScaleX;
     fragInfo[169] = modelScaleY;
     fragInfo[170] = modelScaleZ;
+    // dielectric_f0 at [172..174]: the standard shader path's dielectric
+    // reflectance, the plain 0.04 unless the material overwrites it.
+    fragInfo[dielectricF0Index] = defaultDielectricF0;
+    fragInfo[dielectricF0Index + 1] = defaultDielectricF0;
+    fragInfo[dielectricF0Index + 2] = defaultDielectricF0;
     // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
     // dimensions the shader needs to normalize its punctual-light fetches.
     // x: parameters-texture row count (all scene lights). y/z: the light-index
