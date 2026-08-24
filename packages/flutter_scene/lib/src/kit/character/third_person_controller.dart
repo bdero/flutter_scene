@@ -103,6 +103,11 @@ class ThirdPersonControllerComponent extends Component {
   }
 
   @override
+  void update(double deltaSeconds) {
+    fixedUpdate(deltaSeconds);
+  }
+
+  @override
   void fixedUpdate(double fixedDt) {
     if (fixedDt <= 0.0 || !isAttached) return;
 

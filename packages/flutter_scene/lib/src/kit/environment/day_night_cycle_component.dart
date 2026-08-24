@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/sky_sources.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Evaluated atmospheric lighting colors for a specific sun elevation.
@@ -43,6 +44,9 @@ class DayNightCycleComponent extends Component {
   /// Target node hosting the scene's primary directional sun light.
   Node? sunLightNode;
 
+  /// Optional procedural physical sky whose sun direction is synchronized.
+  PhysicalSkySource? skySource;
+
   /// Whether to automatically apply evaluated sun colors and intensities to the light.
   bool applyLightingToTarget;
 
@@ -51,6 +55,7 @@ class DayNightCycleComponent extends Component {
     this.timeSpeed = 0.0,
     this.latitude = 34.0,
     this.sunLightNode,
+    this.skySource,
     this.applyLightingToTarget = true,
   });
 
@@ -74,36 +79,37 @@ class DayNightCycleComponent extends Component {
     final sunDir = sunDirection;
     final elevation = sunDir.y;
 
-    if (elevation > 0.15) {
-      // Daytime
-      final t = ((elevation - 0.15) / 0.85).clamp(0.0, 1.0);
+    if (elevation > 0.0) {
+      // Sun above horizon: smooth daylight to golden hour / sunset
+      final t = elevation.clamp(0.0, 1.0);
+      final smoothT = math.sin(t * math.pi * 0.5);
       final sunColor =
-          vm.Vector3(1.0, 0.95, 0.85) * t +
-          vm.Vector3(1.0, 0.7, 0.4) * (1.0 - t);
+          vm.Vector3(1.0, 0.95, 0.88) * smoothT +
+          vm.Vector3(1.0, 0.55, 0.20) * (1.0 - smoothT);
+      final intensity = 80000.0 * smoothT;
+      final ambientColor =
+          vm.Vector3(0.20, 0.28, 0.38) * smoothT +
+          vm.Vector3(0.12, 0.08, 0.15) * (1.0 - smoothT);
       return AtmosphericLighting(
         sunColor: sunColor,
-        sunIntensity: 100000.0 * elevation.clamp(0.2, 1.0),
-        ambientColor: vm.Vector3(0.2, 0.25, 0.35),
-        shadowDarkness: 1.0,
-      );
-    } else if (elevation > -0.05) {
-      // Twilight transition
-      final t = ((elevation + 0.05) / 0.20).clamp(0.0, 1.0);
-      final sunColor =
-          vm.Vector3(1.0, 0.4, 0.1) * t + vm.Vector3(0.3, 0.1, 0.2) * (1.0 - t);
-      return AtmosphericLighting(
-        sunColor: sunColor,
-        sunIntensity: 30000.0 * t,
-        ambientColor: vm.Vector3(0.15, 0.1, 0.2),
-        shadowDarkness: 0.8 * t,
+        sunIntensity: intensity,
+        ambientColor: ambientColor,
+        shadowDarkness: (0.3 + 0.7 * smoothT).clamp(0.0, 1.0),
       );
     } else {
-      // Night
+      // Sun below horizon: smooth transition from dusk / twilight to starry night
+      final nightT = (-elevation / 0.4).clamp(0.0, 1.0);
+      final duskColor = vm.Vector3(1.0, 0.55, 0.20);
+      final nightSunColor = vm.Vector3(0.20, 0.30, 0.50);
+      final sunColor = duskColor * (1.0 - nightT) + nightSunColor * nightT;
+      final ambientColor =
+          vm.Vector3(0.12, 0.08, 0.15) * (1.0 - nightT) +
+          vm.Vector3(0.02, 0.03, 0.06) * nightT;
       return AtmosphericLighting(
-        sunColor: vm.Vector3(0.2, 0.3, 0.5),
-        sunIntensity: 500.0,
-        ambientColor: vm.Vector3(0.02, 0.03, 0.06),
-        shadowDarkness: 0.2,
+        sunColor: sunColor,
+        sunIntensity: 400.0 * (1.0 - nightT * 0.5),
+        ambientColor: ambientColor,
+        shadowDarkness: 0.3 * (1.0 - nightT),
       );
     }
   }
@@ -124,6 +130,10 @@ class DayNightCycleComponent extends Component {
     if (targetNode == null) return;
 
     final sunDir = sunDirection;
+    if (skySource != null) {
+      skySource!.sunDirection = sunDir;
+    }
+
     final eye = sunDir * 100.0;
     final target = vm.Vector3.zero();
 
@@ -170,6 +180,7 @@ class DayNightCycleComponent extends Component {
       timeOfDay: timeOfDay,
       timeSpeed: timeSpeed,
       latitude: latitude,
+      skySource: skySource,
       applyLightingToTarget: applyLightingToTarget,
     );
   }
