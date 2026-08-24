@@ -78,7 +78,7 @@ class KitDemoSettings {
   double lagSpeed = 8.0;
   bool enableLag = true;
   double cameraOrbitYaw = 0.0;
-  double cameraOrbitPitch = -0.32;
+  double cameraOrbitPitch = 0.28;
 
   // Day & Night
   double timeOfDay = 14.0;

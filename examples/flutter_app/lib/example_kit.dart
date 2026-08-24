@@ -1045,13 +1045,12 @@ class _KitStageState extends State<_KitStage> {
 
   void _handlePointerMove(Offset delta, Offset localPos, Size? size) {
     if (widget.scenario == _KitScenario.characterCamera) {
-      widget.settings.cameraOrbitYaw -= delta.dx * 0.008;
+      widget.settings.cameraOrbitYaw -= delta.dx * 0.006;
       widget.settings.cameraOrbitPitch =
-          (widget.settings.cameraOrbitPitch - delta.dy * 0.008).clamp(
-            -1.2,
-            0.4,
+          (widget.settings.cameraOrbitPitch - delta.dy * 0.006).clamp(
+            -0.35,
+            1.15,
           );
-      widget.onSettingsChanged();
     } else if (widget.scenario == _KitScenario.flocking) {
       _updateAttractorFromScreen(localPos, size);
     }

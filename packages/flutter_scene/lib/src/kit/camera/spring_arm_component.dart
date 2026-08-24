@@ -101,8 +101,8 @@ class SpringArmComponent extends Component {
     final pivot = _initialized ? _smoothedPivotWorld : _currentRawPivotWorld;
     final rot = _initialized ? _smoothedRotation : _currentRawRotation;
 
-    final backDir = rot.rotate(vm.Vector3(0, 0, 1));
-    final socketPos = pivot + backDir * currentLength;
+    final forwardDir = rot.rotate(vm.Vector3(0, 0, 1));
+    final socketPos = pivot - forwardDir * currentLength;
     final finalPos = socketPos + rot.rotate(socketOffset);
 
     return vm.Matrix4.compose(finalPos, rot, vm.Vector3.all(1.0));
@@ -219,7 +219,8 @@ class SpringArmComponent extends Component {
     // 3. Occlusion query excluding character and camera subtree
     var desiredLength = targetLength;
     final rayStart = _smoothedPivotWorld;
-    final rayDir = _smoothedRotation.rotate(vm.Vector3(0, 0, 1)).normalized();
+    final forwardDir = _smoothedRotation.rotate(vm.Vector3(0, 0, 1));
+    final rayDir = (-forwardDir).normalized();
 
     final ray = vm.Ray.originDirection(rayStart, rayDir);
     final hit = raycastNode(
