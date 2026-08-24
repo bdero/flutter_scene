@@ -18,32 +18,36 @@ void main() {
           utf8.encode(
             jsonEncode({
               'asset': {'version': '2.0'},
-              'extensionsUsed': ['KHR_lights_punctual'],
+              'nodes': [
+                {
+                  'extensions': {
+                    'KHR_lights_punctual': {'light': 0},
+                  },
+                  'translation': [1.0, 2.0, 3.0],
+                  'rotation': [0.0, 0.7071068, 0.0, 0.7071068],
+                },
+              ],
               'extensions': {
                 'KHR_lights_punctual': {
                   'lights': [
-                    {'type': 'directional'},
+                    {
+                      'type': 'directional',
+                      'color': [1.0, 1.0, 1.0],
+                      'intensity': 1000.0,
+                    },
                   ],
                 },
               },
+              'extensionsRequired': ['KHR_lights_punctual'],
               'scenes': [
                 {
                   'nodes': [0],
                 },
               ],
               'scene': 0,
-              'nodes': [
-                {
-                  'rotation': [0.0, 0.38268343, 0.0, 0.92387953],
-                  'extensions': {
-                    'KHR_lights_punctual': {'light': 0},
-                  },
-                },
-              ],
             }),
           ),
         );
-
         final runtime = await importGltf(
           bytes,
           resolveUri: (_) async => Uint8List(0),
@@ -70,7 +74,7 @@ void main() {
       expect(vertices.sublist(0, 3), [1, 2, 3]);
       _expectListNear(vertices.sublist(3, 6), [0.25, 0.5, 0.75]);
       _expectListNear(vertices.sublist(14, 18), [0.1, 0.2, 0.3, -1]);
-      expect(source.sourceWindingFlipped, isTrue);
+      expect(source.sourceWindingFlipped, isFalse);
     });
 
     test('offline packing reflects vectors and tangent handedness', () {
@@ -82,6 +86,19 @@ void main() {
       _expectListNear(vertices.sublist(3, 6), [0.25, 0.5, -0.75]);
       _expectListNear(vertices.sublist(14, 18), [0.1, 0.2, -0.3, 1]);
       expect(native.indexBytes, source.indexBytes);
+      expect(native.sourceWindingFlipped, isFalse);
+    });
+
+    test('offline packing swaps index pairs for CCW native winding', () {
+      final source = _packWithIndices(GltfCoordinatePolicy.runtimeBoundary);
+      final native = _packWithIndices(GltfCoordinatePolicy.bakeNative);
+
+      final sourceIndices = Uint16List.sublistView(source.indexBytes!);
+      final nativeIndices = Uint16List.sublistView(native.indexBytes!);
+
+      expect(sourceIndices, [0, 1, 2]);
+      expect(nativeIndices, [0, 2, 1]);
+      expect(source.sourceWindingFlipped, isFalse);
       expect(native.sourceWindingFlipped, isFalse);
     });
 
@@ -177,6 +194,50 @@ PackedPrimitive _pack(GltfCoordinatePolicy policy) {
       GltfBufferView(buffer: 0, byteOffset: 24, byteLength: 16),
     ],
     bufferData: attributes.buffer.asUint8List(),
+    coordinatePolicy: policy,
+  );
+}
+
+PackedPrimitive _packWithIndices(GltfCoordinatePolicy policy) {
+  final positions = Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  final indices = Uint16List.fromList([0, 1, 2]);
+  final buffer = Uint8List(positions.lengthInBytes + indices.lengthInBytes);
+  buffer.setRange(0, positions.lengthInBytes, positions.buffer.asUint8List());
+  buffer.setRange(
+    positions.lengthInBytes,
+    buffer.length,
+    indices.buffer.asUint8List(),
+  );
+
+  return packGltfPrimitive(
+    primitive: GltfMeshPrimitive(attributes: const {'POSITION': 0}, indices: 1),
+    accessors: [
+      GltfAccessor(
+        componentType: GltfComponentType.float,
+        count: 3,
+        type: GltfAccessorType.vec3,
+        bufferView: 0,
+      ),
+      GltfAccessor(
+        componentType: GltfComponentType.unsignedShort,
+        count: 3,
+        type: GltfAccessorType.scalar,
+        bufferView: 1,
+      ),
+    ],
+    bufferViews: [
+      GltfBufferView(
+        buffer: 0,
+        byteOffset: 0,
+        byteLength: positions.lengthInBytes,
+      ),
+      GltfBufferView(
+        buffer: 0,
+        byteOffset: positions.lengthInBytes,
+        byteLength: indices.lengthInBytes,
+      ),
+    ],
+    bufferData: buffer,
     coordinatePolicy: policy,
   );
 }

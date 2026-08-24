@@ -451,10 +451,10 @@ abstract final class InterleavedLayoutAdapter {
   /// triangle list; otherwise they are a non-indexed triangle list and
   /// [vertexCount] must be a multiple of three. Each triangle's
   /// unnormalized face normal is accumulated onto its three vertices, so
-  /// Computes area-weighted vertex normals from triangle connectivity.
+  /// larger triangles contribute more strongly to shared vertices.
   ///
   /// Assumes Counter-Clockwise (CCW) model-space front-face winding, so the
-  /// face normal is the standard right-hand cross product of the edges
+  /// face normal is the standard cross product of the edges
   /// `(b - a) x (c - a)`.
   static Float32List generateNormals({
     required Float32List positions,

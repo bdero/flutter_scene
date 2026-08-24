@@ -1,7 +1,7 @@
 ---
 name: flutter_scene-verification-loop
-version: 1
-description: Close the visual-iteration loop when building or debugging a flutter_scene 3D app so you see your own output and self-correct. Use whenever a change affects what renders (geometry, materials, lighting, shaders, post-processing) or a frame looks wrong (black, washed-out, see-through, missing geometry).
+version: 2
+description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
 ---
 
 # Verifying flutter_scene visually

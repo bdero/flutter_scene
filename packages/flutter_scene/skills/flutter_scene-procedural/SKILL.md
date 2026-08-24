@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-procedural
-version: 1
+version: 2
 description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
 ---
 
@@ -50,7 +50,7 @@ MeshGeometry buildTerrain({int cols = 128, int rows = 128, double spacing = 0.5}
     }
   }
 
-  // Two triangles per cell, wound so the front face points +Y (up).
+  // Two triangles per cell, wound Counter-Clockwise (CCW) so the front face points +Y (up).
   for (var r = 0; r < rows - 1; r++) {
     for (var c = 0; c < cols - 1; c++) {
       final v00 = r * cols + c;
@@ -58,8 +58,8 @@ MeshGeometry buildTerrain({int cols = 128, int rows = 128, double spacing = 0.5}
       final v01 = v00 + cols;
       final v11 = v01 + 1;
       builder
-        ..addTriangle(v00, v10, v01)
-        ..addTriangle(v10, v11, v01);
+        ..addTriangle(v00, v01, v10)
+        ..addTriangle(v10, v01, v11);
     }
   }
 
@@ -74,7 +74,7 @@ final terrain = Node(mesh: Mesh(buildTerrain(), PhysicallyBasedMaterial()..rough
 scene.add(terrain);
 ```
 
-If a hand-built surface renders inside-out (visible only from below, dark where lit), reverse each triangle's index order. flutter_scene's front faces wind clockwise in model space; never fix orientation with a per-triangle flip on an imported model, but for geometry you author yourself the winding is yours to set.
+If a hand-built surface renders inside-out (visible only from below, dark where lit), reverse each triangle's index order. flutter_scene's front faces wind Counter-Clockwise (CCW) in model space, matching glTF and standard conventions; never fix orientation with a per-triangle flip on an imported model, but for geometry you author yourself the winding is yours to set.
 
 ## Scattering thousands of copies
 

@@ -24,7 +24,7 @@ Vector3 triangleNormal(Float32List positions, List<int> indices, int triangle) {
 
 // Asserts every (non-degenerate) triangle is wound so its front face points
 // outward, i.e. the right-hand-rule geometric normal points in the same
-// direction as the stored per-vertex shading normals (the engine's CCW convention).
+// direction as stored per-vertex shading normals (the engine's CCW convention).
 void expectOutwardWinding(PrimitiveArrays arrays) {
   final positions = arrays.positions;
   final normals = arrays.normals!;

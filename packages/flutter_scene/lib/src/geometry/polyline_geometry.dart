@@ -179,8 +179,8 @@ class PolylineGeometry extends MeshGeometry {
     for (var i = 0; i < count - 1; i++) {
       final a = i * 2;
       indices
-        ..addAll([a, a + 2, a + 1])
-        ..addAll([a + 1, a + 2, a + 3]);
+        ..addAll([a, a + 1, a + 2])
+        ..addAll([a + 1, a + 3, a + 2]);
     }
 
     // A triangle-fan disk for each round cap.
@@ -193,7 +193,7 @@ class PolylineGeometry extends MeshGeometry {
       }
       for (var k = 0; k < _diskSegments; k++) {
         final next = (k + 1) % _diskSegments;
-        indices.addAll([base, base + 1 + next, base + 1 + k]);
+        indices.addAll([base, base + 1 + k, base + 1 + next]);
       }
     }
 

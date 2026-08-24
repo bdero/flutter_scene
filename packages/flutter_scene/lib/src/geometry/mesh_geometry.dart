@@ -1079,6 +1079,9 @@ class GeometryBuilder {
   }
 
   /// Adds a triangle referencing three previously added vertex indices.
+  ///
+  /// Vertices must be specified in Counter-Clockwise (CCW) order around the
+  /// outward-facing normal, matching the glTF and engine front-face convention.
   GeometryBuilder addTriangle(int a, int b, int c) {
     final count = vertexCount;
     for (final index in [a, b, c]) {

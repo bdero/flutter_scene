@@ -395,6 +395,7 @@ class GeometryResource extends ResourceSpec {
     this.bounds,
     this.topology = 'triangle',
     this.morphTargets,
+    this.legacyWinding = false,
   }) : assert(
          (vertices == null) != (procedural == null),
          'A geometry has exactly one source: a vertex payload or a procedural '
@@ -424,6 +425,10 @@ class GeometryResource extends ResourceSpec {
 
   /// The geometry's morph target (blend shape) data, or null when unmorphed.
   final MorphTargetsSpec? morphTargets;
+
+  /// Whether this geometry was migrated from an older document version (< 5)
+  /// that stored indices with clockwise winding.
+  final bool legacyWinding;
 }
 
 /// Morph target data on a [GeometryResource]: the delta payload plus target

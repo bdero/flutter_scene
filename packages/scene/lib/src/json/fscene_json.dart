@@ -40,10 +40,22 @@ final List<FsceneMigration> _builtInMigrations = [
   // a morph-bearing document instead of silently dropping the deltas.
   (json) => json,
   // 4 -> 5 standardized model-space front-face winding to Counter-Clockwise
-  // (CCW). Version 4 documents read as-is, with payload index swapping applied
-  // during realization for documents with formatVersion < 5.
-  (json) => json,
+  // (CCW). Version 4 documents flag geometry index buffers with legacyWinding
+  // so index pairs are swapped during realization.
+  _migrateV4ToV5,
 ];
+
+Map<String, dynamic> _migrateV4ToV5(Map<String, dynamic> json) {
+  final resources = json['resources'];
+  if (resources is Map) {
+    for (final res in resources.values) {
+      if (res is Map && res['kind'] == 'geometry' && res['indices'] != null) {
+        res['legacyWinding'] = true;
+      }
+    }
+  }
+  return json;
+}
 
 Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {
   final stageValue = json['stage'];
@@ -1152,6 +1164,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         bounds: _decodeBounds(json['bounds']),
         topology: json['topology'] as String? ?? 'triangle',
         morphTargets: _decodeMorphTargets(json['morphTargets']),
+        legacyWinding: json['legacyWinding'] == true,
       );
     case 'texture':
       return TextureResource(
