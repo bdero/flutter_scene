@@ -418,11 +418,12 @@ base class SceneEncoder {
     this._lighting,
     this._layerMask,
     this._cullingPlanes,
-    this._cullInstances,
-  ) : _renderPass = renderPass,
-      _transientsBuffer = transientsBuffer {
+    this._cullInstances, {
+    Matrix4? cameraTransform,
+  }) : _renderPass = renderPass,
+       _transientsBuffer = transientsBuffer {
     currentSceneEncoderViewport = _dimensions;
-    _cameraTransform = _camera.getViewTransform(_dimensions);
+    _cameraTransform = cameraTransform ?? _camera.getViewTransform(_dimensions);
     frustum = Frustum.matrix(_cameraTransform);
     // The screen-size LOD metric is perspective-specific; with any other
     // projection LOD nodes draw their highest-detail level.

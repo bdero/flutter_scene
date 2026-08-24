@@ -54,6 +54,7 @@ class _StressTest {
     required this.sizeBytes,
     this.animationName,
     this.modelScale = 1.0,
+    this.settings,
   });
 
   final String id;
@@ -64,6 +65,7 @@ class _StressTest {
   final double modelScale;
   // If set, the first matching animation is played on a loop after load.
   final String? animationName;
+  final ExampleSettings Function()? settings;
 
   /// True when [url] points at a multi-file glTF (a `.gltf` JSON with
   /// external `.bin` and image files) rather than a single-file `.glb`.
@@ -157,6 +159,144 @@ final _catalog = <_StressTest>[
         'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/'
         'main/Models/Sponza/glTF/Sponza.gltf',
     sizeBytes: 52686624,
+    settings: () => ExampleSettings()
+      ..directionalLightEnabled = true
+      ..shadowOnly = false
+      ..lightAzimuthDegrees = 111.14397321428582
+      ..lightElevationDegrees = 78.69349888392773
+      ..lightIntensity = 10.0
+      ..lightColor.setValues(1.0, 1.0, 1.0)
+      ..lightCastsShadow = true
+      ..shadowSoftness = 0.08844517299107145
+      ..shadowFilter = DirectionalShadowFilter.rotatedPoisson
+      ..angularRadius = 0.03139428710937498
+      ..contactShadows = true
+      ..contactShadowDistance = 1.1032121930803565
+      ..shadowFadeRange = 9.031808035714285
+      ..shadowCascadeCount = 4
+      ..shadowMaxDistance = 185.68359375000014
+      ..shadowCascadeSplitLambda = 0.4551130022321431
+      ..cascadeOverlap = 0.0
+      ..shadowMapResolution = 2048
+      ..shadowDepthBias = 0.03456682477678571
+      ..shadowNormalBias = 0.00204729352678569
+      ..shadowAmbientStrength = 0.15035574776785832
+      ..ambientOcclusion.enabled = true
+      ..ambientOcclusion.method = AmbientOcclusionMethod.groundTruth
+      ..ambientOcclusion.radius = 0.33
+      ..ambientOcclusion.intensity = 1.0
+      ..ambientOcclusion.power = 1.5
+      ..ambientOcclusion.detail = 0.5
+      ..ambientOcclusion.horizonAngle = 0.06
+      ..ambientOcclusion.directLightAffect = 0.0
+      ..ambientOcclusion.indirectLight = 8.209821428571372
+      ..ambientOcclusion.thicknessHeuristic = 0.005043247767857112
+      ..ambientOcclusion.depthMipChain = true
+      ..ambientOcclusion.bias = 0.07
+      ..ambientOcclusion.sampleCount = 16
+      ..ambientOcclusion.sliceCount = 3
+      ..ambientOcclusion.stepsPerSlice = 3
+      ..ambientOcclusion.visibilityBitmask = true
+      ..ambientOcclusion.thickness = 0.5698050362723207
+      ..ambientOcclusion.multiBounce = 1.0
+      ..ambientOcclusion.bentNormals = false
+      ..ambientOcclusion.halfResolution = false
+      ..ambientOcclusion.specularMode = SpecularAmbientOcclusionMode.bentCone
+      ..colorGrading.enabled = true
+      ..colorGrading.brightness = 1.0018136160714266
+      ..colorGrading.contrast = 0.9995117187499986
+      ..colorGrading.saturation = 0.9974190848214235
+      ..colorGrading.temperature = 0.26067243303570997
+      ..colorGrading.tint = 0.0011160714285713969
+      ..colorGrading.lift.setValues(0.0, 0.0, 0.0)
+      ..colorGrading.gamma.setValues(1.0, 1.0, 1.0)
+      ..colorGrading.gain.setValues(1.0, 1.0, 1.0)
+      ..colorGrading.lutBlend = 1.0
+      ..bloom.enabled = true
+      ..bloom.threshold = 0.8173828124999993
+      ..bloom.intensity = 0.15
+      ..bloom.scatter = 0.7
+      ..bloom.lensFlare.enabled = true
+      ..bloom.lensFlare.intensity = 0.2453962053571428
+      ..bloom.lensFlare.ghostCount = 4
+      ..bloom.lensFlare.ghostSpacing = 0.3
+      ..bloom.lensFlare.haloRadius = 0.35
+      ..bloom.lensFlare.haloIntensity = 1.0
+      ..bloom.lensFlare.chromaticAberration = 0.028416224888392863
+      ..godRays.enabled = true
+      ..godRays.intensity = 0.5785435267857144
+      ..godRays.density = 0.2507672991071428
+      ..godRays.anisotropy = 0.7
+      ..godRays.stepCount = 24
+      ..godRays.maxDistance = 200.0
+      ..godRays.jitter = 1.0
+      ..godRays.color.setValues(1.0, 1.0, 1.0)
+      ..depthOfField.enabled = true
+      ..depthOfField.focusDistance = 6.0950195312500055
+      ..depthOfField.fStop = 2.939798409598211
+      ..depthOfField.focalLength = 0.06454380580357147
+      ..depthOfField.sensorHeight = 0.024
+      ..depthOfField.blurScale = 1.0
+      ..depthOfField.maxForegroundBlur = 24.0
+      ..depthOfField.maxBackgroundBlur = 32.0
+      ..depthOfField.bladeCount = 0
+      ..depthOfField.bladeRotation = 0.0
+      ..depthOfField.bladeCurvature = 0.0
+      ..depthOfField.quality = DepthOfFieldQuality.high
+      ..chromaticAberration.enabled = true
+      ..chromaticAberration.intensity = 0.06166294642857137
+      ..vignette.enabled = true
+      ..vignette.intensity = 0.5
+      ..vignette.radius = 0.75
+      ..vignette.smoothness = 0.5
+      ..filmGrain.enabled = false
+      ..filmGrain.intensity = 0.03962053571428574
+      ..screenSpaceReflections.enabled = true
+      ..screenSpaceReflections.intensity = 1.0
+      ..screenSpaceReflections.maxDistance = 24.4
+      ..screenSpaceReflections.thickness = 0.46
+      ..screenSpaceReflections.stride = 9.0
+      ..screenSpaceReflections.maxSteps = 90
+      ..screenSpaceReflections.blur = 0.3
+      ..screenSpaceReflections.distanceFadeStart = 0.0
+      ..screenSpaceReflections.resolutionScale = 1.0
+      ..screenSpaceReflections.debugView = SsrDebugView.composite
+      ..globalIllumination.enabled = true
+      ..globalIllumination.volumeMode = IrradianceVolumeMode.followCamera
+      ..globalIllumination.resolution.setValues(16.0, 8.0, 16.0)
+      ..globalIllumination.extents.setValues(60.0, 30.602888107299805, 60.0)
+      ..globalIllumination.intensity = 0.9461495535714289
+      ..globalIllumination.hysteresis = 0.95
+      ..globalIllumination.shadowBias = 0.3
+      ..globalIllumination.visibility = 0.7
+      ..globalIllumination.visibilityBias = 0.08
+      ..globalIllumination.probeUpdateBudget = 0
+      ..globalIllumination.injectionResolution =
+          IrradianceInjectionResolution.eighth
+      ..globalIllumination.fireflyClamp = 8.0
+      ..globalIllumination.emissiveGiBoost = 1.0
+      ..globalIllumination.updateWhenIdleOnly = false
+      ..globalIllumination.bakeOnly = false
+      ..temporalAntiAliasing.minimumCurrentWeight = 0.108504115513393
+      ..temporalAntiAliasing.varianceGamma = 1.2
+      ..temporalAntiAliasing.sharpness = 0.0
+      ..temporalAntiAliasing.jitterSequenceLength = 32
+      ..temporalAntiAliasing.jitterScale = 0.4471714564732142
+      ..temporalAntiAliasing.objectMotion = true
+      ..temporalAntiAliasing.skinnedMotion = true
+      ..exposure = 1.0
+      ..toneMapping = ToneMappingMode.pbrNeutral
+      ..environmentIntensity = 0.0
+      ..autoExposure.enabled = true
+      ..autoExposure.strength = 0.55
+      ..autoExposure.compensation = 0.0
+      ..autoExposure.minEv = -4.0
+      ..autoExposure.maxEv = 4.0
+      ..autoExposure.speedUp = 3.0
+      ..autoExposure.speedDown = 1.0
+      ..antiAliasingMode = AntiAliasingMode.taa
+      ..renderScale = 1.0
+      ..filterQuality = FilterQuality.medium,
   ),
   _StressTest(
     id: 'MetalRoughSpheres',
@@ -927,6 +1067,9 @@ class _ExampleStressTestsState extends State<ExampleStressTests> {
   }
 
   void _back() {
+    resetExampleSettings(
+      () => ExampleSettings()..directionalLightEnabled = false,
+    );
     setState(() => _active = null);
   }
 
@@ -1059,6 +1202,10 @@ class _StressSceneState extends State<_StressScene> {
   @override
   void initState() {
     super.initState();
+    resetExampleSettings(
+      widget.test.settings ??
+          () => ExampleSettings()..directionalLightEnabled = false,
+    );
     _modelScale = widget.test.modelScale;
     _applyCameraSoftness();
     _focusLockObserver = createFocusLockObserver(() {

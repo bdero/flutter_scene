@@ -158,6 +158,25 @@ class IrradianceFieldState {
       layout.injectionDepthHeight,
     );
     _historyIsA = true;
+    _clearTexture(_historyA!);
+    _clearTexture(_historyB!);
+    _clearTexture(_sampled!);
+    _clearTexture(_irradianceAccumulator!);
+    _clearTexture(_depthAccumulator!);
+  }
+
+  static void _clearTexture(gpu.Texture texture, [Vector4? clearValue]) {
+    final commandBuffer = gpu.gpuContext.createCommandBuffer();
+    commandBuffer.createRenderPass(
+      gpu.RenderTarget.singleColor(
+        gpu.ColorAttachment(
+          texture: texture,
+          loadAction: gpu.LoadAction.clear,
+          clearValue: clearValue ?? Vector4.zero(),
+        ),
+      ),
+    );
+    rendererSubmissions.submit(commandBuffer);
   }
 
   /// A device buffer holding the sample indices `0..count`, one per instance.
@@ -306,7 +325,12 @@ class IrradianceInjectPass extends RenderGraphPass {
     final layout = state._layout;
     final placement = state._placement;
     final radiance = sceneRadiance;
-    if (layout == null || placement == null || radiance == null) return;
+    if (layout == null || placement == null) return;
+    if (radiance == null) {
+      IrradianceFieldState._clearTexture(state._irradianceAccumulator!);
+      IrradianceFieldState._clearTexture(state._depthAccumulator!);
+      return;
+    }
     final depthNormal = context.blackboard.get<gpu.Texture>(
       kLinearDepthBlackboardKey,
     );

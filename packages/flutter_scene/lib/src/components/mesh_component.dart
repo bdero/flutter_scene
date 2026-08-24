@@ -223,11 +223,15 @@ class MeshComponent extends Component {
       item.frustumCulled = frustumCulled;
       item.layers = layers;
       item.lightChannelMask = lightChannelMask;
+      item.isMoving =
+          transformChanged || (skin != null && jointsTexture != null);
+      item.previousWorldTransform.setFrom(item.worldTransform);
       if (transformChanged) item.worldTransform.setFrom(worldTransform);
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
       item.castsShadows = effectiveCastsShadows;
       item.highlightColor = highlightColor;
+      item.previousJointsTexture = skin?.getPreviousJointsTexture();
       item.jointsTexture = jointsTexture;
       item.jointsTextureWidth = jointsTextureWidth;
       item.morphWeights = node.internalMorphWeights;

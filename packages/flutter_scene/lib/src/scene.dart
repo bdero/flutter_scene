@@ -10,7 +10,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart'
-    show Frustum, Matrix3, Matrix4, Plane, Ray, Vector3;
+    show Frustum, Matrix3, Matrix4, Plane, Ray, Vector2, Vector3, Vector4;
 import 'ambient_occlusion.dart';
 import 'global_illumination.dart';
 import 'audio/audio_engine.dart';
@@ -77,6 +77,10 @@ import 'skybox.dart';
 import 'sun_light.dart';
 import 'surface.dart';
 import 'tone_mapping.dart';
+import 'render/temporal_anti_aliasing.dart';
+import 'render/velocity_pass.dart';
+import 'render/taa_pass.dart';
+import 'render/irradiance_bake.dart';
 
 /// Defines a common interface for managing a scene graph, allowing the addition and removal of [Nodes].
 ///
@@ -131,6 +135,13 @@ enum AntiAliasingMode {
   /// come out cleaner than [fxaa] with far less blurring of texture
   /// detail, at roughly three times the anti-aliasing cost.
   smaa,
+
+  /// Temporal anti-aliasing. Jitters the camera each frame and resolves
+  /// against a reprojected history, so edges, specular shimmer, and
+  /// screen-space effect noise all resolve. Needs the depth prepass, and
+  /// adds a velocity pass when the scene has moving geometry. Tuned by
+  /// [Scene.temporalAntiAliasing].
+  taa,
 
   /// Selects [msaa] when the backend supports it and [fxaa] otherwise.
   auto,
@@ -249,6 +260,8 @@ base class Scene implements SceneGraph {
         return AntiAliasingMode.fxaa;
       case AntiAliasingMode.smaa:
         return AntiAliasingMode.smaa;
+      case AntiAliasingMode.taa:
+        return AntiAliasingMode.taa;
       case AntiAliasingMode.msaa:
       case AntiAliasingMode.auto:
         return _offscreenMsaaSupported
@@ -911,6 +924,70 @@ base class Scene implements SceneGraph {
     );
   }
 
+  /// Bakes the irradiance field by rendering the scene from every probe in the
+  /// active volume.
+  ///
+  /// Runs [probesPerStep] probes per call to the returned stepper so a load
+  /// screen can stay responsive.
+  /// {@category Lighting and environment}
+  IrradianceFieldBakeStepper bakeIrradianceField({
+    int faceResolution = 16,
+    int probesPerStep = 8,
+    int layerMask = 0xFFFFFFFF,
+  }) {
+    if (!isReadyToRender) {
+      throw StateError(
+        'Scene.bakeIrradianceField requires the engine resources; await '
+        'Scene.initializeStaticResources() first.',
+      );
+    }
+    renderScene.rebuildIfDirty();
+    final lightComponent = renderScene.primaryDirectionalLight;
+    final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final punctualLighting = _punctualLightBuffer.build(
+      directionals: renderScene.directionalLights,
+      primaryDirectional: lightComponent,
+      points: renderScene.pointLights,
+      spots: renderScene.spotLights,
+      areas: renderScene.rectAreaLights,
+      items: renderScene.items,
+      bvh: renderScene.bvh,
+      spotShadows: spotShadowFrame,
+    );
+    final chosen = renderScene.irradianceVolumeComponents.isNotEmpty
+        ? renderScene.irradianceVolumeComponents.first
+        : null;
+    final center = chosen != null ? chosen.worldCenter : Vector3.zero();
+    final extents = chosen != null
+        ? chosen.extents * 2.0
+        : globalIllumination.extents;
+    final resolution = chosen != null
+        ? chosen.resolution
+        : globalIllumination.resolution;
+    final layout = IrradianceFieldLayout(resolution);
+    final origin = center - extents * 0.5;
+    final spacing = Vector3(
+      resolution.x > 1 ? extents.x / (resolution.x - 1) : extents.x,
+      resolution.y > 1 ? extents.y / (resolution.y - 1) : extents.y,
+      resolution.z > 1 ? extents.z / (resolution.z - 1) : extents.z,
+    );
+    return IrradianceFieldBakeStepper(
+      layout: layout,
+      origin: origin,
+      spacing: spacing,
+      faceResolution: faceResolution,
+      probesPerStep: probesPerStep,
+      layerMask: layerMask,
+      renderScene: renderScene,
+      environmentMap: environment ?? Material.getDefaultEnvironmentMap(),
+      transientsBuffer: uniformTransients,
+      lightComponent: lightComponent,
+      punctualLighting: punctualLighting,
+      spotShadowFrame: spotShadowFrame,
+      renderView: _renderViewToTexture,
+    );
+  }
+
   // Applies the camera-position blend of the manual [environmentVolumes] and
   // the mounted environment-volume components over [baseEnvironment] to the
   // live look fields, before the environment is used this frame. A no-op unless
@@ -1102,6 +1179,14 @@ base class Scene implements SceneGraph {
   /// for a hard camera cut or a wholesale lighting change that should not
   /// converge in over the hysteresis tail.
   void invalidateGlobalIllumination() => _irradianceField.invalidate();
+
+  /// Temporal anti-aliasing settings. Active when [antiAliasingMode] is
+  /// [AntiAliasingMode.taa].
+  final TemporalAntiAliasingSettings temporalAntiAliasing =
+      TemporalAntiAliasingSettings();
+
+  TaaHistoryState? _taaState;
+  int _taaFrameIndex = 0;
 
   /// Distance fog. Off by default; set [Fog.enabled] and a [Fog.mode] to turn it
   /// on. Applied per-fragment by every material in linear HDR before tone
@@ -2094,12 +2179,49 @@ base class Scene implements SceneGraph {
       }
     }
     // Ambient occlusion, screen-space reflections, normals, and materials
-    // that sample scene depth need the geometry prepass. Depth-only post
+    // that sample scene depth need the geometry prepass. Depth-only post    // Depth and normal pre-passes need a perspective camera. Orthographic
     // effects reuse the stored main-pass depth when it is single-sampled.
     final perspective = camera.projection;
     final perspectiveCamera = perspective is PerspectiveProjection
         ? perspective
         : null;
+
+    final enableTaa =
+        effectiveAa == AntiAliasingMode.taa &&
+        perspectiveCamera != null &&
+        !captureLinearColor;
+
+    Vector2 currentJitterNdc = Vector2.zero();
+    Vector2 currentJitterUv = Vector2.zero();
+    Vector2 prevJitterNdc = Vector2.zero();
+    TaaHistoryState? taaState;
+    if (enableTaa) {
+      taaState = _taaState ??= TaaHistoryState();
+      final haltonPt = halton23(
+        (_taaFrameIndex % temporalAntiAliasing.jitterSequenceLength) + 1,
+      );
+      _taaFrameIndex++;
+      currentJitterNdc = Vector2(
+        (2 * haltonPt.x - 1) /
+            pixelSize.width *
+            temporalAntiAliasing.jitterScale,
+        (2 * haltonPt.y - 1) /
+            pixelSize.height *
+            temporalAntiAliasing.jitterScale,
+      );
+      currentJitterUv = Vector2(
+        currentJitterNdc.x * 0.5,
+        -currentJitterNdc.y * 0.5,
+      );
+      prevJitterNdc = taaState.previousJitterNdc;
+      taaState.previousJitterNdc = currentJitterNdc;
+      taaState.previousJitterUv = currentJitterUv;
+    }
+
+    final currentJitteredViewProjection = enableTaa
+        ? camera.getViewTransform(pixelSize, jitter: currentJitterNdc)
+        : null;
+
     // Reflections run after the scene is drawn (they sample the lit color),
     // so capture whether they apply here and add the pass below.
     final wantSsr =
@@ -2137,6 +2259,7 @@ base class Scene implements SceneGraph {
         wantCustomNormals ||
         wantSsr ||
         wantIrradianceField ||
+        enableTaa ||
         ambientOcclusion.enabled ||
         wantContactShadows ||
         wantCustomDepth;
@@ -2158,7 +2281,13 @@ base class Scene implements SceneGraph {
         // is published. With only reflections on, use full resolution. The
         // depth-mip-chain path (SsaoPass builds the reduced levels) wants a
         // full-resolution base, so it also renders the prepass full size.
-        final depthDimensions = (wantAo && !ambientOcclusion.depthMipChain)
+        final depthDimensions =
+            (wantAo &&
+                !ambientOcclusion.depthMipChain &&
+                !enableTaa &&
+                !wantSsr &&
+                !wantCustomNormals &&
+                !wantIrradianceField)
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
         // Reflections need the interpolated view-space normal, so the prepass
@@ -2177,10 +2306,35 @@ base class Scene implements SceneGraph {
             // depth later; the patch depth-tests against this attachment.
             // Storing it (a non-transient attachment plus store bandwidth)
             // is paid whenever depth of field is on, patch or no patch.
-            keepDepthStencil: depthOfField.enabled,
+            keepDepthStencil:
+                depthOfField.enabled ||
+                (enableTaa && temporalAntiAliasing.objectMotion),
             cameraRight: cameraRight,
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
+            cameraTransform: currentJitteredViewProjection,
+          ),
+        );
+      }
+      if (enableTaa && temporalAntiAliasing.objectMotion) {
+        final prevViewProj =
+            taaState!.previousViewTransform ??
+            (currentJitteredViewProjection ??
+                camera.getViewTransform(pixelSize));
+        graph.addPass(
+          VelocityPass(
+            camera: camera,
+            renderScene: renderScene,
+            dimensions: pixelSize,
+            currentViewProjection:
+                currentJitteredViewProjection ??
+                camera.getViewTransform(pixelSize),
+            previousViewProjection: prevViewProj,
+            currentJitterNdc: currentJitterNdc,
+            previousJitterNdc: prevJitterNdc,
+            layerMask: view.layerMask,
+            cullingPlanes: view.cullingPlanes,
+            skinnedMotion: temporalAntiAliasing.skinnedMotion,
           ),
         );
       }
@@ -2296,6 +2450,7 @@ base class Scene implements SceneGraph {
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
         cullingPlanes: view.cullingPlanes,
         includeOffscreen: _warmUpIncludeOffscreen,
+        cameraTransform: currentJitteredViewProjection,
       ),
     );
     if (wantSceneColorHistory) {
@@ -2435,6 +2590,55 @@ base class Scene implements SceneGraph {
           time: postTime,
         ),
       );
+    }
+
+    // Temporal anti-aliasing resolve on the linear HDR scene color, before
+    // auto exposure and bloom so the resolved image is what blooms and tone-maps.
+    if (enableTaa) {
+      final unjitteredViewProj = camera.getViewTransform(pixelSize);
+      final prevViewProj =
+          taaState!.previousViewTransform ?? unjitteredViewProj;
+      final cameraForward = camera.forward;
+      final cameraRight = camera.up.cross(cameraForward)..normalize();
+      final cameraUp = cameraForward.cross(cameraRight)..normalize();
+      final viewToWorld = Matrix4.identity();
+      viewToWorld.setColumns(
+        Vector4(cameraRight.x, cameraRight.y, cameraRight.z, 0.0),
+        Vector4(cameraUp.x, cameraUp.y, cameraUp.z, 0.0),
+        Vector4(cameraForward.x, cameraForward.y, cameraForward.z, 0.0),
+        Vector4(camera.position.x, camera.position.y, camera.position.z, 1.0),
+      );
+      final currentToPrev = prevViewProj * viewToWorld;
+      final halfFovY = perspectiveCamera.fovRadiansY * 0.5;
+      final tanHalfFovY = math.tan(halfFovY);
+      final tanHalfFovX = tanHalfFovY * (pixelSize.width / pixelSize.height);
+
+      final taaOutput = pool.acquire(
+        TransientTextureDescriptor.color(
+          width: width,
+          height: height,
+          format: gpu.PixelFormat.r16g16b16a16Float,
+          debugName: 'taa_resolved_color',
+        ),
+      );
+
+      graph.addPass(
+        TaaPass(
+          dimensions: pixelSize,
+          settings: temporalAntiAliasing,
+          state: taaState,
+          currentToPreviousViewProjection: currentToPrev,
+          cameraPosition: camera.position,
+          tanHalfFovX: tanHalfFovX,
+          tanHalfFovY: tanHalfFovY,
+          far: perspectiveCamera.far,
+          near: perspectiveCamera.near,
+          currentJitterNdc: currentJitterNdc,
+          previousJitterNdc: prevJitterNdc,
+          destination: taaOutput,
+        ),
+      );
+      taaState.previousViewTransform = unjitteredViewProj;
     }
 
     // Auto exposure meters the HDR image the resolve will consume, after

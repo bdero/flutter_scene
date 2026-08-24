@@ -1,6 +1,7 @@
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/render/irradiance_bake.dart';
 
 /// A [Component] that places the scene's irradiance volume on its node.
 ///
@@ -22,6 +23,7 @@ class IrradianceVolumeComponent extends Component {
     this.intensity,
     this.hysteresis,
     this.visibility,
+    this.bake,
   }) : extents = extents ?? Vector3.all(10.0),
        resolution = resolution ?? Vector3(16, 8, 16);
 
@@ -38,6 +40,9 @@ class IrradianceVolumeComponent extends Component {
   double? intensity;
   double? hysteresis;
   double? visibility;
+
+  /// An optional baked irradiance field providing the initial state.
+  IrradianceFieldBake? bake;
 
   bool _invalidated = false;
 

@@ -175,6 +175,12 @@ void main() {
     vec3 excess = max(radiance - vec3(1.0), vec3(0.0));
     radiance += excess * (info.camera_position.w - 1.0);
   }
+  // Energy conservation on recursive diffuse feedback: damp reflective radiance
+  // so the infinite-bounce geometric series (albedo * gain)^N converges strictly
+  // below unity and avoids chromatic saturation runaway.
+  vec3 diffuse_reflected = min(radiance, vec3(1.0)) * 0.6;
+  vec3 emission_excess = max(radiance - vec3(1.0), vec3(0.0));
+  radiance = diffuse_reflected + emission_excess;
   v_radiance = ProbeClampLuminance(radiance, info.proj.w);
   v_sample = vec4(direction, distance_to_sample / info.grid_spacing.w);
   v_weight = weight;

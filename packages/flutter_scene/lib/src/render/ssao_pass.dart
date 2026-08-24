@@ -25,6 +25,10 @@ const String kSsaoTextureBlackboardKey = 'ssao_texture';
 // [SsaoBlurPass].
 const String _kSsaoRawBlackboardKey = 'ssao_raw';
 
+// Intermediate key: the 1:1 base depth [SsaoPass] uses for occlusion and
+// hands to [SsaoBlurPass].
+const String _kSsaoDepthBlackboardKey = 'ssao_depth';
+
 // The pass stores one scalar visibility value per pixel.
 // Impeller's GLES backend only supports RGBA8 for this color attachment.
 // TODO(ssao-format): use R8 once it is renderable on Impeller GLES.
@@ -203,41 +207,48 @@ class SsaoPass extends RenderGraphPass {
       kLinearDepthBlackboardKey,
     );
 
-    // Build the depth mip chain from the (full-resolution) linear depth so the
-    // occlusion samples a coarser level the further each tap reaches. When
-    // disabled the three slots reuse the base depth and the shader stays at
-    // level 0, so behaviour is unchanged.
-    var mip1 = linearDepth;
-    var mip2 = linearDepth;
-    var mip3 = linearDepth;
+    final aoSize = ambientOcclusionTargetSize(_dimensions, _settings);
+    final aoWidth = aoSize.width.toInt();
+    final aoHeight = aoSize.height.toInt();
+
+    // The base depth for the occlusion pass must match the pass resolution
+    // (aoWidth x aoHeight) 1:1. When the depth prepass runs at full resolution
+    // (e.g. for TAA, SSR, or irradiance fields), downsample it to the pass size so
+    // nearest-filtered lookups land on exact texel centers instead of texel
+    // seams between adjacent fragments.
+    final baseDepth =
+        (linearDepth.width == aoWidth && linearDepth.height == aoHeight)
+        ? linearDepth
+        : _downsampleDepth(context, linearDepth, aoWidth, aoHeight);
+
+    // Build the depth mip chain from baseDepth so the occlusion samples a
+    // coarser level the further each tap reaches. When disabled the three slots
+    // reuse baseDepth and the shader stays at level 0.
+    var mip1 = baseDepth;
+    var mip2 = baseDepth;
+    var mip3 = baseDepth;
     var mipLevels = 1;
     if (_settings.depthMipChain) {
-      final fw = _dimensions.width.toInt();
-      final fh = _dimensions.height.toInt();
       mip1 = _downsampleDepth(
         context,
-        linearDepth,
-        math.max(1, fw ~/ 2),
-        math.max(1, fh ~/ 2),
+        baseDepth,
+        math.max(1, aoWidth ~/ 2),
+        math.max(1, aoHeight ~/ 2),
       );
       mip2 = _downsampleDepth(
         context,
         mip1,
-        math.max(1, fw ~/ 4),
-        math.max(1, fh ~/ 4),
+        math.max(1, aoWidth ~/ 4),
+        math.max(1, aoHeight ~/ 4),
       );
       mip3 = _downsampleDepth(
         context,
         mip2,
-        math.max(1, fw ~/ 8),
-        math.max(1, fh ~/ 8),
+        math.max(1, aoWidth ~/ 8),
+        math.max(1, aoHeight ~/ 8),
       );
       mipLevels = 4;
     }
-
-    final aoSize = ambientOcclusionTargetSize(_dimensions, _settings);
-    final aoWidth = aoSize.width.toInt();
-    final aoHeight = aoSize.height.toInt();
     final indirect = ambientOcclusionCarriesIndirectLight(_settings);
     final occlusion = context.texturePool.acquire(
       TransientTextureDescriptor.color(
@@ -343,7 +354,7 @@ class SsaoPass extends RenderGraphPass {
     );
     renderPass.bindTexture(
       fragmentShader.getUniformSlot('linear_depth'),
-      linearDepth,
+      baseDepth,
       sampler: _nearestClamp,
     );
     if (groundTruth) {
@@ -356,6 +367,7 @@ class SsaoPass extends RenderGraphPass {
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
 
+    context.blackboard.set(_kSsaoDepthBlackboardKey, baseDepth);
     context.blackboard.set(_kSsaoRawBlackboardKey, occlusion);
   }
 }
@@ -385,9 +397,9 @@ class SsaoBlurPass extends RenderGraphPass {
   @override
   void execute(RenderGraphContext context) {
     final raw = context.blackboard.require<gpu.Texture>(_kSsaoRawBlackboardKey);
-    final linearDepth = context.blackboard.require<gpu.Texture>(
-      kLinearDepthBlackboardKey,
-    );
+    final linearDepth =
+        context.blackboard.get<gpu.Texture>(_kSsaoDepthBlackboardKey) ??
+        context.blackboard.require<gpu.Texture>(kLinearDepthBlackboardKey);
 
     final aoSize = ambientOcclusionTargetSize(_dimensions, _settings);
     final aoWidth = aoSize.width.toInt();

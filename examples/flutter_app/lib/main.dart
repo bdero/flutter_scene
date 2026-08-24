@@ -7,6 +7,8 @@ import 'package:flutter_scene/scene.dart'
         DepthOfFieldQuality,
         DirectionalShadowFilter,
         FogMode,
+        IrradianceInjectionResolution,
+        IrradianceVolumeMode,
         SsrDebugView,
         ToneMappingMode,
         Scene,
@@ -211,6 +213,24 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..chromaticAberration.enabled = true
     ..chromaticAberration.intensity = 0.32
     ..vignette.enabled = true,
+  'Global Illumination': () => ExampleSettings()
+    ..environmentIntensity = 0.06
+    ..exposure = 1.4
+    ..antiAliasingMode = AntiAliasingMode.taa
+    ..ambientOcclusion.enabled = true
+    ..ambientOcclusion.method = AmbientOcclusionMethod.groundTruth
+    ..ambientOcclusion.radius = 0.8
+    ..ambientOcclusion.intensity = 1.0
+    ..ambientOcclusion.halfResolution = false
+    ..globalIllumination.enabled = true
+    ..globalIllumination.volumeMode = IrradianceVolumeMode.fitScene
+    ..globalIllumination.resolution.setValues(14, 8, 14)
+    ..globalIllumination.intensity = 1.0
+    ..globalIllumination.hysteresis = 0.92
+    ..globalIllumination.visibility = 0.6
+    ..globalIllumination.emissiveGiBoost = 2.0
+    ..globalIllumination.injectionResolution =
+        IrradianceInjectionResolution.quarter,
 };
 
 class MyApp extends StatefulWidget {
@@ -566,6 +586,7 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             _buildRendering(),
+                            _buildGlobalIllumination(),
                             _buildExposure(),
                             _buildDirectionalLight(),
                             _buildAmbientOcclusion(),
@@ -662,6 +683,64 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
             ),
           ],
         ),
+        if (exampleSettings.antiAliasingMode == AntiAliasingMode.taa) ...[
+          const Divider(),
+          _slider(
+            'TAA min current weight',
+            exampleSettings.temporalAntiAliasing.minimumCurrentWeight,
+            0.01,
+            0.3,
+            (v) =>
+                exampleSettings.temporalAntiAliasing.minimumCurrentWeight = v,
+            decimals: 3,
+          ),
+          _slider(
+            'TAA variance gamma',
+            exampleSettings.temporalAntiAliasing.varianceGamma,
+            0.5,
+            2.0,
+            (v) => exampleSettings.temporalAntiAliasing.varianceGamma = v,
+          ),
+          _slider(
+            'TAA sharpness',
+            exampleSettings.temporalAntiAliasing.sharpness,
+            0,
+            1.0,
+            (v) => exampleSettings.temporalAntiAliasing.sharpness = v,
+          ),
+          _slider(
+            'TAA jitter sequence',
+            exampleSettings.temporalAntiAliasing.jitterSequenceLength
+                .toDouble(),
+            2,
+            32,
+            (v) => exampleSettings.temporalAntiAliasing.jitterSequenceLength = v
+                .round(),
+          ),
+          _slider(
+            'TAA jitter scale',
+            exampleSettings.temporalAntiAliasing.jitterScale,
+            0.1,
+            2.0,
+            (v) => exampleSettings.temporalAntiAliasing.jitterScale = v,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Object motion vectors'),
+            value: exampleSettings.temporalAntiAliasing.objectMotion,
+            onChanged: (value) => setState(
+              () => exampleSettings.temporalAntiAliasing.objectMotion = value,
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Skinned motion vectors'),
+            value: exampleSettings.temporalAntiAliasing.skinnedMotion,
+            onChanged: (value) => setState(
+              () => exampleSettings.temporalAntiAliasing.skinnedMotion = value,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -879,6 +958,12 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
           onChanged: (value) =>
               setState(() => settings.directionalLightEnabled = value),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Shadow only'),
+          value: settings.shadowOnly,
+          onChanged: (value) => setState(() => settings.shadowOnly = value),
+        ),
         _slider('Azimuth', settings.lightAzimuthDegrees, 0, 360, (v) {
           settings.lightAzimuthDegrees = v;
         }),
@@ -916,9 +1001,23 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
               settings.shadowFilter =
                   filter ?? DirectionalShadowFilter.rotatedPoisson;
             }),
-            items: [
-              for (final filter in DirectionalShadowFilter.values)
-                DropdownMenuItem(value: filter, child: Text(filter.name)),
+            items: const [
+              DropdownMenuItem(
+                value: DirectionalShadowFilter.rotatedPoisson,
+                child: Text('Rotated Poisson'),
+              ),
+              DropdownMenuItem(
+                value: DirectionalShadowFilter.fixedPcf,
+                child: Text('Fixed PCF'),
+              ),
+              DropdownMenuItem(
+                value: DirectionalShadowFilter.pcss,
+                child: Text('PCSS'),
+              ),
+              DropdownMenuItem(
+                value: DirectionalShadowFilter.bilinearPcf,
+                child: Text('Bilinear PCF (smooth)'),
+              ),
             ],
           ),
         ),
@@ -949,6 +1048,9 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
         }, decimals: 0),
         _slider('Split lambda', settings.shadowCascadeSplitLambda, 0, 1, (v) {
           settings.shadowCascadeSplitLambda = v;
+        }),
+        _slider('Cascade overlap', settings.cascadeOverlap, 0, 1, (v) {
+          settings.cascadeOverlap = v;
         }),
         Row(
           children: [
@@ -1407,6 +1509,120 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
                 DropdownMenuItem(value: q, child: Text(q.name)),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGlobalIllumination() {
+    final settings = exampleSettings.globalIllumination;
+    return ExpansionTile(
+      title: const Text('Global illumination (DDGI)'),
+      initiallyExpanded: true,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Enabled'),
+          value: settings.enabled,
+          onChanged: (value) => setState(() => settings.enabled = value),
+        ),
+        Row(
+          children: [
+            const Text('Volume mode'),
+            const Spacer(),
+            DropdownButton<IrradianceVolumeMode>(
+              value: settings.volumeMode,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.volumeMode = value);
+                }
+              },
+              items: [
+                for (final mode in IrradianceVolumeMode.values)
+                  DropdownMenuItem(value: mode, child: Text(mode.name)),
+              ],
+            ),
+          ],
+        ),
+        _slider('Intensity', settings.intensity, 0, 2, (v) {
+          settings.intensity = v;
+        }),
+        _slider('Hysteresis', settings.hysteresis, 0.5, 0.99, (v) {
+          settings.hysteresis = v;
+        }, decimals: 3),
+        _slider('Shadow bias', settings.shadowBias, 0, 2, (v) {
+          settings.shadowBias = v;
+        }),
+        _slider('Visibility', settings.visibility, 0, 1, (v) {
+          settings.visibility = v;
+        }),
+        _slider('Visibility bias', settings.visibilityBias, 0, 0.5, (v) {
+          settings.visibilityBias = v;
+        }, decimals: 3),
+        _slider('Emissive boost', settings.emissiveGiBoost, 1, 10, (v) {
+          settings.emissiveGiBoost = v;
+        }),
+        _slider('Firefly clamp', settings.fireflyClamp, 0, 64, (v) {
+          settings.fireflyClamp = v;
+        }),
+        _slider('Probes X', settings.resolution.x, 4, 32, (v) {
+          settings.resolution.x = v.roundToDouble();
+        }),
+        _slider('Probes Y', settings.resolution.y, 2, 16, (v) {
+          settings.resolution.y = v.roundToDouble();
+        }),
+        _slider('Probes Z', settings.resolution.z, 4, 32, (v) {
+          settings.resolution.z = v.roundToDouble();
+        }),
+        _slider('Extents X', settings.extents.x, 1, 60, (v) {
+          settings.extents.x = v;
+        }),
+        _slider('Extents Y', settings.extents.y, 1, 60, (v) {
+          settings.extents.y = v;
+        }),
+        _slider('Extents Z', settings.extents.z, 1, 60, (v) {
+          settings.extents.z = v;
+        }),
+        Row(
+          children: [
+            const Text('Injection resolution'),
+            const Spacer(),
+            DropdownButton<IrradianceInjectionResolution>(
+              value: settings.injectionResolution,
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => settings.injectionResolution = value);
+                }
+              },
+              items: [
+                for (final res in IrradianceInjectionResolution.values)
+                  DropdownMenuItem(value: res, child: Text(res.name)),
+              ],
+            ),
+          ],
+        ),
+        _slider(
+          'Update budget',
+          settings.probeUpdateBudget.toDouble(),
+          0,
+          1024,
+          (v) {
+            settings.probeUpdateBudget = v.round();
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Update when idle only'),
+          value: settings.updateWhenIdleOnly,
+          onChanged: (value) =>
+              setState(() => settings.updateWhenIdleOnly = value),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Bake only'),
+          value: settings.bakeOnly,
+          onChanged: (value) => setState(() => settings.bakeOnly = value),
         ),
       ],
     );

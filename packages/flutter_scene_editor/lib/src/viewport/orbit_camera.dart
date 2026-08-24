@@ -23,7 +23,7 @@ class OrthographicProjection extends CameraProjection {
   final double far;
 
   @override
-  vm.Matrix4 getProjectionMatrix(double aspectRatio) {
+  vm.Matrix4 getProjectionMatrix(double aspectRatio, {vm.Vector2? jitter}) {
     final halfHeight = height / 2;
     final halfWidth = halfHeight * aspectRatio;
     return vm.Matrix4(

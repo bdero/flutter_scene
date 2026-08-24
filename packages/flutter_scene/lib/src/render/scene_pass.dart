@@ -93,11 +93,13 @@ class ScenePass extends RenderGraphPass {
     List<Plane> cullingPlanes = const [],
     bool includeOffscreen = false,
     bool suppressPlanarReflections = false,
+    Matrix4? cameraTransform,
   }) : _captureOpaqueColor = captureOpaqueColor,
        _suppressPlanarReflections = suppressPlanarReflections,
        _bindSceneDepth = bindSceneDepth,
        _time = time,
        _camera = camera,
+       _cameraTransform = cameraTransform,
        _layerMask = layerMask,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -124,6 +126,7 @@ class ScenePass extends RenderGraphPass {
        _includeOffscreen = includeOffscreen;
 
   final Camera _camera;
+  final Matrix4? _cameraTransform;
   final RenderScene _renderScene;
   final ui.Size _dimensions;
   final EnvironmentMap _environmentMap;
@@ -357,6 +360,7 @@ class ScenePass extends RenderGraphPass {
       _layerMask,
       _cullingPlanes,
       !_includeOffscreen,
+      cameraTransform: _cameraTransform,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {

@@ -158,12 +158,12 @@ float SpecularAARoughness(vec3 normal, float roughness) {
   vec3 d_normal_x = dFdx(normal);
   vec3 d_normal_y = dFdy(normal);
   float variance = frag_info.specular_aa_variance *
-                   (dot(d_normal_x, d_normal_x) +
-                    dot(d_normal_y, d_normal_y));
+                   max(dot(d_normal_x, d_normal_x),
+                       dot(d_normal_y, d_normal_y));
   float kernel = min(2.0 * variance, frag_info.specular_aa_threshold);
-  float widened = clamp(roughness * roughness * roughness * roughness + kernel,
-                        0.0, 1.0);
-  return clamp(sqrt(sqrt(widened)), kMinRoughness, 1.0);
+  float square_roughness =
+      clamp(roughness * roughness + kernel, kMinRoughness * kMinRoughness, 1.0);
+  return sqrt(square_roughness);
 }
 
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
@@ -324,7 +324,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     occlusion = min(
         occlusion,
         frag_info.camera_up.w > 0.5 ? ssao_sample.a : ssao_sample.r);
-    if (frag_info.ssao_lighting.z > 0.5) {
+    if (frag_info.ssao_lighting.z > 0.5 && frag_info.camera_up.w < 0.5) {
       // The packed view-space bent normal, rotated into world space with the
       // camera basis the depth prepass rendered from.
       vec3 bent_view = OctDecode(ssao_sample.ba);
@@ -605,7 +605,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // Screen-space contact shadow for the sun, marched by the occlusion pass.
   // Applies whether or not a shadow map is active, grounding small contacts
   // that shadow-map resolution and bias miss.
-  if (frag_info.ssao_lighting.w > 0.5) {
+  if (frag_info.ssao_lighting.w > 0.5 && frag_info.camera_up.w < 0.5) {
     shadow = min(shadow, ssao_sample.g);
   }
 #endif
@@ -668,11 +668,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
                                    reflectance, n_dot_v, material.specular,
                                    anisotropic_tangent,
                                    anisotropic_bitangent) *
-             shadow;
+             sun_visibility;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     coat_direct += EvaluateClearcoatLight(
         light_vector, frag_info.directional_light_color.rgb, coat_normal,
-        camera_normal, coat_roughness) * shadow;
+        camera_normal, coat_roughness) * sun_visibility;
 #endif
   }
 

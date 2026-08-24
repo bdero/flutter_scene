@@ -116,6 +116,12 @@ void main() {
         ).shadowFilter,
         DirectionalShadowFilter.fixedPcf,
       );
+      expect(
+        DirectionalLight(
+          shadowFilter: DirectionalShadowFilter.bilinearPcf,
+        ).shadowFilter,
+        DirectionalShadowFilter.bilinearPcf,
+      );
     });
 
     // Every corner of a cascade's slice of the camera frustum must

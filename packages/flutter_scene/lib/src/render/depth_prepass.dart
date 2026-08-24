@@ -54,6 +54,7 @@ class DepthPrepass extends RenderGraphPass {
     Vector3? cameraRight,
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
+    Matrix4? cameraTransform,
   }) : _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -64,7 +65,10 @@ class DepthPrepass extends RenderGraphPass {
        _writeNormals = writeNormals,
        _keepDepthStencil = keepDepthStencil,
        _cameraRight = cameraRight ?? Vector3.zero(),
-       _cameraUp = cameraUp ?? Vector3.zero();
+       _cameraUp = cameraUp ?? Vector3.zero(),
+       _cameraTransform = cameraTransform;
+
+  final Matrix4? _cameraTransform;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -151,7 +155,7 @@ class DepthPrepass extends RenderGraphPass {
     final encoder = _DepthPrepassEncoder(
       renderPass,
       context.transientsBuffer,
-      _camera.getViewTransform(_dimensions),
+      _cameraTransform ?? _camera.getViewTransform(_dimensions),
       _camera.position,
       _cameraForward,
       _layerMask,

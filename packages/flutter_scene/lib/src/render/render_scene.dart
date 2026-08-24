@@ -110,6 +110,7 @@ class RenderItem {
   /// own skeleton; every render pass applies it via [applyJointsTexture]
   /// just before binding a draw.
   gpu.Texture? jointsTexture;
+  gpu.Texture? previousJointsTexture;
   int jointsTextureWidth = 0;
 
   /// Applies this item's joints texture to [drawnGeometry] (which differs
@@ -139,6 +140,12 @@ class RenderItem {
 
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
+
+  /// The previous frame's world-space transform, for motion vector rendering.
+  final Matrix4 previousWorldTransform = Matrix4.identity();
+
+  /// Whether this item moved, deformed, or changed instances this frame.
+  bool isMoving = false;
 
   /// Start index of this item's punctual-light list in the shared per-frame
   /// light-index buffer, and how many lights follow. Refreshed each frame by

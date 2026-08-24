@@ -49,6 +49,11 @@ enum DirectionalShadowFilter {
   /// [DirectionalLight.angularRadius] and capped by
   /// [DirectionalLight.shadowSoftness]. Costs 9 extra shadow-map taps.
   pcss,
+
+  /// A smooth, non-dithered 4-tap bilinear PCF grid. Reads 4 adjacent texels
+  /// per tap and interpolates depth tests continuously, giving smooth analog
+  /// penumbras without noise or stepping within a 16-sample texture budget.
+  bilinearPcf,
 }
 
 /// An infinitely-distant light source (e.g. the sun) that illuminates

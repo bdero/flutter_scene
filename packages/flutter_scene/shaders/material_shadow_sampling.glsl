@@ -38,6 +38,36 @@ float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
   return receiver_depth <= caster_depth ? 1.0 : 0.0;
 }
 
+// 2x2 bilinear percentage-closer filtering for one tap. Evaluates four adjacent
+// shadow texels and continuously interpolates the depth tests across fractional
+// texels, producing smooth analog penumbras without noise rotation or stepping.
+float ShadowTapBilinear(vec2 p, float radius, vec2 uv, int cascade,
+                        float inv_count, float receiver_depth) {
+  vec2 offset = p * radius;
+  vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+                   vec2(1.0 - frag_info.shadow_texel_size));
+  vec2 tile_tex =
+      vec2(cuv.x, 1.0 - cuv.y) / frag_info.shadow_texel_size - vec2(0.5);
+  vec2 base = floor(tile_tex);
+  vec2 f = tile_tex - base;
+  vec2 cuv00 = (base + vec2(0.5)) * frag_info.shadow_texel_size;
+  vec2 atlas_uv00 = vec2((float(cascade) + cuv00.x) * inv_count, cuv00.y);
+  vec2 step_uv = vec2(frag_info.shadow_texel_size * inv_count,
+                      frag_info.shadow_texel_size);
+
+  float d00 = texture(shadow_map, atlas_uv00).r;
+  float d10 = texture(shadow_map, atlas_uv00 + vec2(step_uv.x, 0.0)).r;
+  float d01 = texture(shadow_map, atlas_uv00 + vec2(0.0, step_uv.y)).r;
+  float d11 = texture(shadow_map, atlas_uv00 + step_uv).r;
+
+  float s00 = receiver_depth <= d00 ? 1.0 : 0.0;
+  float s10 = receiver_depth <= d10 ? 1.0 : 0.0;
+  float s01 = receiver_depth <= d01 ? 1.0 : 0.0;
+  float s11 = receiver_depth <= d11 ? 1.0 : 0.0;
+
+  return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+}
+
 // Applies the directional shadow receiver's normal-offset bias. A soft PCF
 // kernel on a surface tilted relative to the light straddles a depth gradient,
 // so lift the receiver far enough that the whole kernel clears the surface.
@@ -45,10 +75,8 @@ float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
 vec3 BiasDirectionalShadowPosition(vec3 world_pos, vec3 n) {
   vec3 light_toward = -normalize(frag_info.directional_light_direction.xyz);
   float ndotl = max(dot(n, light_toward), 0.15);
-  float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / (ndotl * ndotl),
-                    8.0);
-  float normal_offset =
-      frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
+  float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / ndotl, 4.0);
+  float normal_offset = frag_info.shadow_normal_bias * (1.0 + slope);
   return world_pos + n * normal_offset;
 }
 
@@ -114,7 +142,7 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   float max_radius =
       max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);
   float radius = max_radius;
-  if (filter_index > 1.5) {
+  if (filter_index > 1.5 && filter_index < 2.5) {
     // Percentage-closer soft shadows: find the mean blocker depth inside the
     // light's angular cone, then widen the filter with the blocker distance
     // so shadows sharpen at contact. The cascade's clip depth spans 7 * box
@@ -143,15 +171,31 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   //
   // TODO(flutter_scene): use file-scope const arrays once impellerc/SPIRV-Cross
   // emits valid ES 1.00 array constructors for them.
-  int sample_count = fixed_filter > 0.5 ? 17 : 16;
-  float lit = 0.0;
-  for (int i = 0; i < 17; i++) {
-    if (i >= sample_count) break;
-    vec2 tap = mix(PoissonShadowTap(i), FixedShadowTap(i), fixed_filter);
-    lit += ShadowTap(tap, ca, sa, radius, uv, cascade, inv_count,
-                     receiver_depth);
+  float shadow = 0.0;
+  if (filter_index > 2.5) {
+    // 4-tap bilinear PCF: 4 taps x 4 texels = 16 samples total (matching the
+    // 16-sample budget), producing continuous analog filtering with zero
+    // noise rotation or stepped banding.
+    float lit = ShadowTapBilinear(vec2(-0.7071, -0.7071), radius, uv, cascade,
+                                  inv_count, receiver_depth) +
+                ShadowTapBilinear(vec2(0.7071, -0.7071), radius, uv, cascade,
+                                  inv_count, receiver_depth) +
+                ShadowTapBilinear(vec2(-0.7071, 0.7071), radius, uv, cascade,
+                                  inv_count, receiver_depth) +
+                ShadowTapBilinear(vec2(0.7071, 0.7071), radius, uv, cascade,
+                                  inv_count, receiver_depth);
+    shadow = lit * 0.25;
+  } else {
+    int sample_count = fixed_filter > 0.5 ? 17 : 16;
+    float lit = 0.0;
+    for (int i = 0; i < 17; i++) {
+      if (i >= sample_count) break;
+      vec2 tap = mix(PoissonShadowTap(i), FixedShadowTap(i), fixed_filter);
+      lit += ShadowTap(tap, ca, sa, radius, uv, cascade, inv_count,
+                       receiver_depth);
+    }
+    shadow = lit / float(sample_count);
   }
-  float shadow = lit / float(sample_count);
 
   // Only the last cascade has a real outer edge (inner cascades hand
   // off to the next), so fade just it back to lit at the boundary.

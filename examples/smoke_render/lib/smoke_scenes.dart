@@ -34,7 +34,13 @@ final GlobalKey smokeSceneKey = GlobalKey();
 /// A deterministic smoke scene: a builder that produces a [Scene] and the
 /// camera to view it from. No animation, no wall-clock input.
 class SmokeScene {
-  const SmokeScene(this.id, this.setup, {this.preload, this.warmupFrames = 0});
+  const SmokeScene(
+    this.id,
+    this.setup, {
+    this.preload,
+    this.warmupFrames = 0,
+    this.fullCoverage = false,
+  });
 
   final String id;
   final ({Scene scene, PerspectiveCamera camera}) Function() setup;
@@ -48,6 +54,10 @@ class SmokeScene {
   /// time because every temporal blend here clamps its rate exponent at a
   /// 60 Hz cadence, and the smoke lanes render well below that.
   final int warmupFrames;
+
+  /// Whether the scene geometry completely covers the viewport, meaning corners
+  /// are geometry rather than the background clear color.
+  final bool fullCoverage;
 }
 
 /// The fixed three-quarter view shared by the scenes.
@@ -773,6 +783,118 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     // The field converges over frames, and its first frame has no scene-color
     // history to scatter from.
     warmupFrames: 45,
+  ),
+  SmokeScene(
+    'ddgi_cornell',
+    () {
+      final scene = Scene();
+      scene.environmentIntensity = 0.06;
+      scene.exposure = 1.4;
+      scene.globalIllumination
+        ..enabled = true
+        ..volumeMode = IrradianceVolumeMode.fitScene
+        ..resolution = vm.Vector3(14, 8, 14)
+        ..intensity = 1.0
+        ..hysteresis = 0.92
+        ..visibility = 0.6
+        ..emissiveGiBoost = 2.0
+        ..injectionResolution = IrradianceInjectionResolution.quarter;
+
+      PhysicallyBasedMaterial matte(
+        double r,
+        double g,
+        double b, {
+        vm.Vector4? emissive,
+      }) => PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(r, g, b, 1.0)
+        ..emissiveFactor = emissive ?? vm.Vector4.zero()
+        ..metallicFactor = 0.0
+        ..roughnessFactor = 0.92
+        ..vertexColorWeight = 0.0;
+
+      final white = matte(0.86, 0.86, 0.84);
+      final warm = matte(0.78, 0.16, 0.10);
+      final cool = matte(0.10, 0.32, 0.72);
+
+      void box(vm.Vector3 size, vm.Vector3 at, PhysicallyBasedMaterial m) {
+        scene.add(
+          Node(mesh: Mesh(CuboidGeometry(size), m))
+            ..localTransform = vm.Matrix4.translation(at),
+        );
+      }
+
+      box(vm.Vector3(9.0, 0.4, 9.0), vm.Vector3(0, -0.2, 0), white);
+      box(vm.Vector3(9.0, 0.4, 9.0), vm.Vector3(0, 4.2, 0), white);
+      box(vm.Vector3(9.0, 4.4, 0.4), vm.Vector3(0, 2.0, -4.3), white);
+      box(vm.Vector3(0.4, 4.4, 9.0), vm.Vector3(-4.3, 2.0, 0), warm);
+      box(vm.Vector3(0.4, 4.4, 9.0), vm.Vector3(4.3, 2.0, 0), cool);
+      box(vm.Vector3(0.5, 3.0, 3.4), vm.Vector3(-0.6, 1.5, -1.4), white);
+      box(
+        vm.Vector3(2.4, 1.1, 0.3),
+        vm.Vector3(-2.4, 2.4, -4.0),
+        matte(0.02, 0.02, 0.02, emissive: vm.Vector4(5.0, 1.6, 0.35, 1.0)),
+      );
+      box(
+        vm.Vector3(0.3, 2.2, 2.2),
+        vm.Vector3(2.6, 1.1, -2.6),
+        matte(0.02, 0.02, 0.02, emissive: vm.Vector4(0.3, 2.2, 4.6, 1.0)),
+      );
+      scene.add(
+        Node(mesh: Mesh(SphereGeometry(radius: 0.85), white))
+          ..localTransform = vm.Matrix4.translation(vm.Vector3(1.7, 0.85, 0.4)),
+      );
+      box(vm.Vector3(1.3, 1.3, 1.3), vm.Vector3(-2.4, 0.65, 1.6), white);
+      box(vm.Vector3(0.9, 2.2, 0.9), vm.Vector3(2.9, 1.1, 2.2), white);
+
+      scene.directionalLight = DirectionalLight(
+        direction: vm.Vector3(0.0, -0.9, 1.0).normalized(),
+        intensity: 2.4,
+        castsShadow: true,
+        color: vm.Vector3(1.0, 0.96, 0.90),
+      );
+
+      return (
+        scene: scene,
+        camera: PerspectiveCamera(
+          position: vm.Vector3(0.0, 2.3, 7.4),
+          target: vm.Vector3(0, 1.6, -1.0),
+        ),
+      );
+    },
+    warmupFrames: 45,
+    fullCoverage: true,
+  ),
+  SmokeScene(
+    'taa',
+    () {
+      final scene = Scene();
+      scene.antiAliasingMode = AntiAliasingMode.taa;
+      scene.temporalAntiAliasing
+        ..sharpness = 0.4
+        ..jitterScale = 1.0;
+      scene.environmentIntensity = 0.4;
+      final sphere = SphereGeometry(radius: 1.0);
+      final shiny = PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(0.9, 0.2, 0.2, 1.0)
+        ..metallicFactor = 0.9
+        ..roughnessFactor = 0.1;
+      scene.add(Node(mesh: Mesh(sphere, shiny)));
+      scene.add(
+        _directionalLightNode(
+          vm.Vector3(-0.4, -0.9, -0.3),
+          DirectionalLight(intensity: 3.0),
+        ),
+      );
+      return (
+        scene: scene,
+        camera: PerspectiveCamera(
+          position: vm.Vector3(0, 1.2, 2.8),
+          target: vm.Vector3(0, 0, 0),
+        ),
+      );
+    },
+    warmupFrames: 16,
+    fullCoverage: true,
   ),
   SmokeScene('area_light', () {
     final scene = Scene();

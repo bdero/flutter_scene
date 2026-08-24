@@ -151,22 +151,26 @@ void main() {
   }
 
   // Immediate neighbours recover tight contact detail before the wide kernel
-  // is filtered. Their falloff is four times faster, matching the main radius
-  // normalisation used by the reference ASSAO implementation.
-  ivec2 center_coord = ivec2(v_uv * vec2(textureSize(linear_depth, 0)));
+  // is filtered. Rotating by the pixel hash removes screen-axis alignment
+  // so curvature under perspective projection does not produce coherent
+  // horizontal or vertical stripes on planar surfaces.
   float detail_sum = 0.0;
-  detail_sum += SampleObscurance(
-      normal, ViewPositionBase(center_coord + ivec2(-1, 0)) - origin,
-      falloff_scale * 4.0, horizon);
-  detail_sum += SampleObscurance(
-      normal, ViewPositionBase(center_coord + ivec2(1, 0)) - origin,
-      falloff_scale * 4.0, horizon);
-  detail_sum += SampleObscurance(
-      normal, ViewPositionBase(center_coord + ivec2(0, -1)) - origin,
-      falloff_scale * 4.0, horizon);
-  detail_sum += SampleObscurance(
-      normal, ViewPositionBase(center_coord + ivec2(0, 1)) - origin,
-      falloff_scale * 4.0, horizon);
+  if (detail > 0.0) {
+    vec2 rot_x = vec2(cos(rotation), sin(rotation));
+    vec2 rot_y = vec2(-rot_x.y, rot_x.x);
+    vec3 q0 = ViewPositionAt(v_uv + rot_x * ssao.viewport.zw, 0);
+    vec3 q1 = ViewPositionAt(v_uv - rot_x * ssao.viewport.zw, 0);
+    vec3 q2 = ViewPositionAt(v_uv + rot_y * ssao.viewport.zw, 0);
+    vec3 q3 = ViewPositionAt(v_uv - rot_y * ssao.viewport.zw, 0);
+    detail_sum += SampleObscurance(
+        normal, q0 - origin, falloff_scale * 4.0, horizon);
+    detail_sum += SampleObscurance(
+        normal, q1 - origin, falloff_scale * 4.0, horizon);
+    detail_sum += SampleObscurance(
+        normal, q2 - origin, falloff_scale * 4.0, horizon);
+    detail_sum += SampleObscurance(
+        normal, q3 - origin, falloff_scale * 4.0, horizon);
+  }
 
   float wide_obscurance = weight_sum > 0.0 ? sum / weight_sum : 0.0;
   // Both terms are means. `detail` is therefore the additive strength of the
