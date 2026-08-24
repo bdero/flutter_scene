@@ -48,6 +48,49 @@ class _TestFloorGeometry extends Geometry {
   }) {}
 }
 
+class _TestWallGeometry extends Geometry {
+  _TestWallGeometry({double xPos = 1.0, double halfSize = 10.0}) {
+    primitiveType = gpu.PrimitiveType.triangle;
+    setCpuPositionsForTesting(
+      Float32List.fromList([
+        xPos,
+        -halfSize,
+        -halfSize,
+        xPos,
+        halfSize,
+        -halfSize,
+        xPos,
+        halfSize,
+        halfSize,
+        xPos,
+        -halfSize,
+        -halfSize,
+        xPos,
+        halfSize,
+        halfSize,
+        xPos,
+        -halfSize,
+        halfSize,
+      ]),
+      bounds: vm.Aabb3.minMax(
+        vm.Vector3(xPos - 0.1, -halfSize, -halfSize),
+        vm.Vector3(xPos + 0.1, halfSize, halfSize),
+      ),
+    );
+  }
+
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    vm.Matrix4 modelTransform,
+    vm.Matrix4 cameraTransform,
+    vm.Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
+  }) {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -170,6 +213,35 @@ void main() {
 
       expect(controller.isGrounded, isTrue);
       expect(player.position.y, closeTo(0.9, 0.01));
+    });
+
+    test('wide collision capsule stops penetration into wall', () {
+      final root = Node();
+      final wallNode = Node(
+        mesh: Mesh(_TestWallGeometry(xPos: 1.0), UnlitMaterial()),
+      );
+      root.add(wallNode);
+
+      final player = Node()..position = vm.Vector3(0.0, 0.9, 0.0);
+      root.add(player);
+
+      final controller = ThirdPersonControllerComponent(
+        walkSpeed: 4.0,
+        groundPlaneHeight: 0.0,
+        footOffset: 0.9,
+        obstacleRadius: 0.85,
+        obstacleHeight: 1.8,
+      );
+      player.addComponent(controller);
+
+      // Move forward (+X) toward the wall at x = 1.0
+      controller.setMoveInput(vm.Vector2(1, 0));
+      for (var i = 0; i < 30; i++) {
+        controller.fixedUpdate(0.016);
+      }
+
+      // Wall is at x = 1.0. Character with radius 0.85 cannot exceed x = 0.25.
+      expect(player.position.x, lessThanOrEqualTo(0.3));
     });
   });
 }

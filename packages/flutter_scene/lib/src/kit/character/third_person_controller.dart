@@ -50,6 +50,9 @@ class ThirdPersonControllerComponent extends Component {
   /// Capsule/cylinder radius for horizontal obstacle collision. Set to 0 to disable.
   double obstacleRadius;
 
+  /// Total capsule height for vertical obstacle collision scanning.
+  double obstacleHeight;
+
   /// Current linear velocity vector in world space.
   vm.Vector3 velocity = vm.Vector3.zero();
 
@@ -79,7 +82,8 @@ class ThirdPersonControllerComponent extends Component {
     this.groundLayerMask = 0xFFFFFFFF,
     this.groundPlaneHeight,
     this.footOffset = 0.0,
-    this.obstacleRadius = 0.45,
+    this.obstacleRadius = 0.85,
+    this.obstacleHeight = 1.8,
   });
 
   /// Feeds planar movement input vector (-1.0 to 1.0 on X/Y, where +Y is forward)
@@ -245,17 +249,54 @@ class ThirdPersonControllerComponent extends Component {
     var horizMove = vm.Vector3(velocity.x, 0.0, velocity.z) * fixedDt;
     if (obstacleRadius > 0.0 && horizMove.length2 > 1e-6) {
       final moveDir = horizMove.normalized();
-      final probeStart = currentPos + vm.Vector3(0, 0.3 - footOffset, 0);
-      final obsHit = raycastNode(
-        _rootNode,
-        vm.Ray.originDirection(probeStart, moveDir),
-        maxDistance: obstacleRadius + horizMove.length,
-        layerMask: groundLayerMask,
-        where: (n) => !_isExcluded(n),
-      );
-      if (obsHit != null &&
-          obsHit.distance < obstacleRadius + horizMove.length) {
-        final wallNormal = obsHit.worldNormal;
+      final perpLeft = vm.Vector3(-moveDir.z, 0.0, moveDir.x);
+      final flankOffset = obstacleRadius * 0.75;
+      final maxProbeDist = obstacleRadius + horizMove.length;
+
+      // Check multiple vertical levels and lateral flanks across the collision capsule
+      final probeOffsets = [
+        // Feet / lower body level
+        vm.Vector3(0.0, 0.3 - footOffset, 0.0),
+        perpLeft * flankOffset + vm.Vector3(0.0, 0.3 - footOffset, 0.0),
+        perpLeft * -flankOffset + vm.Vector3(0.0, 0.3 - footOffset, 0.0),
+        // Mid torso / waist level
+        vm.Vector3(0.0, 0.85 - footOffset, 0.0),
+        perpLeft * flankOffset + vm.Vector3(0.0, 0.85 - footOffset, 0.0),
+        perpLeft * -flankOffset + vm.Vector3(0.0, 0.85 - footOffset, 0.0),
+        // Upper torso / shoulder level
+        vm.Vector3(0.0, math.min(1.4, obstacleHeight - 0.2) - footOffset, 0.0),
+        perpLeft * flankOffset +
+            vm.Vector3(
+              0.0,
+              math.min(1.4, obstacleHeight - 0.2) - footOffset,
+              0.0,
+            ),
+        perpLeft * -flankOffset +
+            vm.Vector3(
+              0.0,
+              math.min(1.4, obstacleHeight - 0.2) - footOffset,
+              0.0,
+            ),
+      ];
+
+      SceneRaycastHit? closestHit;
+      for (final offset in probeOffsets) {
+        final probeStart = currentPos + offset;
+        final hit = raycastNode(
+          _rootNode,
+          vm.Ray.originDirection(probeStart, moveDir),
+          maxDistance: maxProbeDist,
+          layerMask: groundLayerMask,
+          where: (n) => !_isExcluded(n),
+        );
+        if (hit != null &&
+            (closestHit == null || hit.distance < closestHit.distance)) {
+          closestHit = hit;
+        }
+      }
+
+      if (closestHit != null && closestHit.distance < maxProbeDist) {
+        final wallNormal = closestHit.worldNormal;
         final dot = horizMove.dot(wallNormal);
         if (dot < 0.0) {
           horizMove -= wallNormal * dot;
@@ -302,6 +343,7 @@ class ThirdPersonControllerComponent extends Component {
       groundPlaneHeight: groundPlaneHeight,
       footOffset: footOffset,
       obstacleRadius: obstacleRadius,
+      obstacleHeight: obstacleHeight,
     );
   }
 }
