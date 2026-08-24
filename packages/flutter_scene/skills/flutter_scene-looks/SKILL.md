@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-looks
-version: 3
+version: 4
 description: Give a flutter_scene render a deliberate, polished look. Use this whenever a scene looks flat, dull, or washed out, or whenever the ask is to make it look good, because a good look is lighting plus post-processing, not geometry. Ships copy-paste EnvironmentSettings presets that configure the whole stack coherently.
 ---
 
@@ -143,6 +143,15 @@ Start from the nearest look, then move one field at a time.
 - **Reads flat and ungrounded.** `ambientOcclusionEnabled: true`. Use `AmbientOcclusionMethod.groundTruth` for quality, keep `ambientOcclusionHalfResolution: true` for cost.
 - **Colors feel wrong.** Turn on `colorGradingEnabled` and reach for `saturation`, `contrast`, `temperature`, `tint` before anything else.
 - **Wrong tone-map feel.** `ToneMappingMode.aces` is contrasty and filmic, `pbrNeutral` (default) preserves hue and saturation, `agx` is the most neutral highlight rolloff. Do not reintroduce an `exposure: 2.0` hack; that was an artifact of an older renderer.
+
+## Micro-surface metrics and anti-waxiness tuning
+
+When tuning procedural materials or custom shaders, use quantitative surface metrics to eliminate waxiness, plastic reads, or harsh aliasing:
+
+- **1-pixel luminance gradient (`grad/L`).** Measures micro-scale pixel energy `(|dL/dx| + |dL/dy|) / 2`. Natural weathered stone and terrain surfaces sit at `grad/L >= 0.025` to `0.085`; values under `0.010` read as smooth untextured plastic.
+- **High-frequency vs low-frequency ratio (`hf/lf`).** Compares 1px blur residuals to 4px residuals. A low ratio with high variance indicates blotchy macro-clouds rather than fine surface grain.
+- **Grazing terminator crossing fraction.** Under grazing directional lighting (sun below 20 degrees elevation), over-amplified normal maps create binary lit/unlit noise (pebble-dash or torn straw). Keep terminator crossing fractions bounded under 0.05.
+- **Tone-curve shoulder awareness.** Tone mapping curves (like ACES) compress channel differences near the shoulder. A surface reading high value (`V > 0.85`) with low saturation (`S < 0.40`) is over-exposed rather than under-pigmented; reducing exposure reveals natural material saturation without washing out channels.
 
 ## Look tools that are not on EnvironmentSettings
 

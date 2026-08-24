@@ -246,6 +246,87 @@ It bakes `getNoise2` over a `width` x `height` grid into a grayscale `Texture2D`
 
 ---
 
+## Natural formations: rocks, cliffs, trails, and scatter recipes
+
+Composing raw noise into realistic natural terrain and geology requires specific math patterns to avoid telltale procedural artifacts.
+
+### 1. Free-end Worley rock cracks (avoiding closed cell loops)
+
+Standard cellular Worley distance (`F2 - F1`) creates a continuous polygon network like bathroom tile or dry mud. To create natural weathering cracks with free ends, mask the cell borders with a low-frequency macro patch and a high-frequency grain breaker:
+
+```glsl
+// GLSL shader bake or .fmat surface
+vec2 cwl = NoiseCellular2(p * 3.0); // F1 in x, F2 in y
+float net = smoothstep(0.070, 0.004, cwl.y - cwl.x);
+float region = smoothstep(0.46, 0.62, NoiseFbm2(p * 1.0, 3));
+float breaker = smoothstep(0.32, 0.54, NoiseFbm2(p * 6.0, 2));
+float crack = net * region * breaker; // produces isolated segments with natural start/end points
+```
+
+### 2. Noise-modulated pitting (avoiding regular dot lattices)
+
+Thresholding Worley noise at a constant radius places a pit in every single cell, creating an artificial grid lattice. Modulate the threshold radius with an underlying Perlin field so pores vary in size and only appear in exposed weathering pockets:
+
+```glsl
+float sizeVar = NoiseFbm2(p * 2.5, 3);
+vec2 pw = NoiseCellular2(p * 5.0);
+float pit = smoothstep(0.05 + 0.24 * sizeVar * sizeVar, 0.005, pw.x)
+          * smoothstep(0.40, 0.68, NoiseFbm2(p * 1.5, 3));
+```
+
+### 3. Incised trail heightfields (scours vs flat stripes)
+
+Footpaths are formed by water and foot traffic compressing and eroding soil downwards. Cut the path profile into the terrain heightfield as an incised trough with raised spoil banks:
+
+```dart
+double computeTerrainHeight(double x, double z, FastNoiseLite noise, ScenePath trail) {
+  final baseHeight = noise.getNoise2(x, z) * 8.0;
+  final dist = trail.distanceTo(vm.Vector2(x, z));
+  const pathWidth = 1.8;
+  const pathDepth = 0.45;
+  const bermHeight = 0.25;
+
+  // Carve central path trough
+  final trench = (1.0 - (dist / pathWidth).clamp(0.0, 1.0)) * pathDepth;
+  // Build gentle spoil berm along the verge
+  final verge = ((dist - pathWidth * 0.8) / (pathWidth * 0.8)).clamp(0.0, 1.0);
+  final berm = math.sin(verge * math.pi) * bermHeight;
+
+  return baseHeight - trench + berm;
+}
+```
+
+### 4. Macro-massed pebble scatter (avoiding uniform sandpaper noise)
+
+Gravel and pebbles cluster into water-washed scour lines rather than spreading evenly over an entire level. Gate multi-scale pebble instances with a low-frequency macro massing field:
+
+```dart
+void scatterPebbles(InstancedMesh finePebbles, InstancedMesh largeStones, FastNoiseLite terrainNoise) {
+  final macroNoise = FastNoiseLite(seed: 42)..frequency = 0.05;
+  for (var x = 0.0; x < 64.0; x += 0.8) {
+    for (var z = 0.0; z < 64.0; z += 0.8) {
+      // Deterministic coordinate jitter
+      final h = noiseHash2(x.round(), z.round());
+      final jx = x + ((h & 0xFF) / 255.0 - 0.5) * 0.6;
+      final jz = z + (((h >> 8) & 0xFF) / 255.0 - 0.5) * 0.6;
+
+      final mass = (macroNoise.getNoise2(jx, jz) + 1.0) * 0.5;
+      if (mass > 0.65) {
+        final y = terrainNoise.getNoise2(jx, jz) * 8.0;
+        final matrix = vm.Matrix4.translation(vm.Vector3(jx, y, jz));
+        if (((h >> 16) & 0xFF) > 180) {
+          largeStones.addInstance(matrix);
+        } else {
+          finePebbles.addInstance(matrix);
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
 ## The web noise caveat, expanded
 
 The Dart `FastNoiseLite` port relies on 32-bit integer arithmetic. On native platforms this is exact. On the web (dart2js), a Dart `int` is a JavaScript double, exact only to 53 bits, so the integer hash loses its low bits and 3D noise can overflow. The result is a plausible-looking but wrong field, silent, and web-only. A web-safe integer multiply for the Dart side is a planned follow-up.

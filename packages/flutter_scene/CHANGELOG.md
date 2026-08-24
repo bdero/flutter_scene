@@ -2,6 +2,9 @@
 
 * Added `package:flutter_scene/kit.dart`, high-level gameplay, camera boom, character controller, day/night cycle, water surface, audio, pooling, and debug visualization components.
 * Standardized model-space front-face winding to Counter-Clockwise (CCW) across primitives, procedural builders, materials, and `.fscene` version 5.
+* Update `flutter_scene-procedural` skill (v2) with natural formation recipes (rock fractures, incised trails, pebble scatter, Gerstner waves, tree branching, and procedural island topographies).
+* Update `flutter_scene-looks` skill (v4) with micro-surface and anti-waxiness tuning guidance.
+* Update `flutter_scene-verification-loop` skill (v2) with empirical verification disciplines and blind-pairwise review rules.
 * Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview) with optional `colorFilter`, captured through the compositor on frames that sample it.
 * Generated scene registries are cached per asset bundle.
 * `.fsceneb` payload chunks compress with gzip, cutting file sizes by ~73% in exchange for higher load-time decompression CPU.

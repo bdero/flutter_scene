@@ -10,7 +10,7 @@ A lot of 3D work does not need an artist's `.glb` at all. Terrain, scattered fol
 
 **The insight: for a code-driven scene, generate geometry and draw it instanced. That path is more reliable than loading external assets, because it has no import step, no coordinate-conversion traps, no missing-file failure modes, and one draw call for thousands of copies.** Three pieces cover almost everything:
 
-- **`GeometryBuilder`** (and the ten built-in primitives) build custom meshes without a model file.
+- **`GeometryBuilder`** (and the built-in primitives and swept paths) build custom meshes without a model file.
 - **`FastNoiseLite`** drives heightmaps, placement, and displacement deterministically.
 - **`InstancedMesh`** draws thousands of copies of one mesh as a single render item.
 
@@ -76,6 +76,17 @@ scene.add(terrain);
 
 If a hand-built surface renders inside-out (visible only from below, dark where lit), reverse each triangle's index order. flutter_scene's front faces wind Counter-Clockwise (CCW) in model space, matching glTF and standard conventions; never fix orientation with a per-triangle flip on an imported model, but for geometry you author yourself the winding is yours to set.
 
+## Natural formations and rock structures
+
+To achieve documentary realism rather than generic procedural lumps:
+
+1. **Footpaths are scoured trenches, not flat stripes.** A real trail is the lowest line across terrain because water and foot traffic erode it downwards. When generating heightfields, cut the trail path profile down into the terrain with banks rising away on both sides. A path drawn as a flat texture reads as a sticker; a path you walk inside reads as a place.
+2. **Ridged noise for valley walls and cliffs.** Standard `FractalType.fbm` makes rolling mounds. Use `FractalType.ridged` for valley walls, mountain spurs, and cliffs to produce sharp erosion creases.
+3. **Free-end Worley rock cracks.** Standard Worley noise (`F2 - F1`) creates closed polygonal loops like dry mud or bathroom tile. To produce weathered rock fractures with natural free ends, multiply the cell border by a low-frequency region mask and a high-frequency grain breaker.
+4. **Noise-modulated pitting.** A constant threshold radius across Worley cells places a pit in every cell, producing an artificial grid lattice. Modulate the threshold radius with an underlying Perlin field so pores vary in size and only appear in exposed weathering pockets.
+5. **Macro massing for scattered gravel.** Soil wears in 0.5m to 2m zones. Modulate multi-scale pebble instances with a low-frequency massing field so gravel clusters into realistic water scour lines rather than uniform sandpaper noise.
+6. **Sunk block settling and ground contact staining.** Place boulders and masonry courses 1/3 to 2/3 submerged into the sampled ground height. Use vertex colors or shader ground distance to stain the bottom 20cm of rock near the soil boundary, creating a smooth moisture transition instead of a sharp polygonal seam.
+
 ## Scattering thousands of copies
 
 `InstancedMesh` holds one geometry/material pair and a transform per copy. The whole set is one pipeline and one cull test. Place instances by sampling the same terrain height so they sit on the ground.
@@ -116,4 +127,4 @@ Native platforms are unaffected. `noiseHash2`/`noiseHash3` are the bit-exact CPU
 
 ## More depth
 
-`references/procedural.md` has the full `GeometryBuilder` and `MeshData` API (including off-isolate meshing), the complete `FastNoiseLite` config reference, the instancing API in full, modular-kit assembly from the built-in primitives, and the web-noise caveat expanded.
+`references/procedural.md` has the full `GeometryBuilder` and `MeshData` API (including off-isolate meshing), the complete `FastNoiseLite` config reference, natural rock and terrain formation recipes, the instancing API in full, modular-kit assembly from the built-in primitives, and the web-noise caveat expanded.
