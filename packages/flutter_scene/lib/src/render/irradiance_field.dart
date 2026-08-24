@@ -136,6 +136,8 @@ class IrradianceFieldLayout {
   int get depthOriginY => irradianceOriginY + tileRows * irradianceTile;
 
   /// Atlas width in texels.
+  // TODO(gi-atlas-packing): pack irradiance tiles at double stride or separate
+  // atlas textures to reclaim unused right-half space.
   int get atlasWidth => tilesPerRow * depthTile;
 
   /// Atlas height in texels.
