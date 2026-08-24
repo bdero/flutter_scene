@@ -130,6 +130,7 @@ class ExternalTexture extends ChangeNotifier implements TextureSource {
     required int height,
     this.update = ExternalTextureUpdate.everyFrame,
     this.sampling = const ExternalTextureSampling(),
+    this.colorFilter,
   }) : assert(width > 0 && height > 0, 'ExternalTexture size must be positive'),
        _textureId = textureId,
        _width = width,
@@ -144,6 +145,10 @@ class ExternalTexture extends ChangeNotifier implements TextureSource {
 
   /// Sampling options used when a material samples this source.
   ExternalTextureSampling sampling;
+
+  /// Optional color filter applied to the captured texture (for example color
+  /// inversion or channel swizzling).
+  ui.ColorFilter? colorFilter;
 
   gpu.Texture? _texture;
   bool _captureInFlight = false;
@@ -239,13 +244,19 @@ class ExternalTexture extends ChangeNotifier implements TextureSource {
     try {
       final width = _width;
       final height = _height;
-      final builder = ui.SceneBuilder()
-        ..addTexture(
-          textureId,
-          width: width.toDouble(),
-          height: height.toDouble(),
-          filterQuality: ui.FilterQuality.none,
-        );
+      final builder = ui.SceneBuilder();
+      if (colorFilter != null) {
+        builder.pushColorFilter(colorFilter!);
+      }
+      builder.addTexture(
+        textureId,
+        width: width.toDouble(),
+        height: height.toDouble(),
+        filterQuality: ui.FilterQuality.none,
+      );
+      if (colorFilter != null) {
+        builder.pop();
+      }
       final scene = builder.build();
       final ui.Image image;
       try {
