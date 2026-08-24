@@ -43,4 +43,29 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('kit slider updates settings value on change', (tester) async {
+    final settings = KitDemoSettings();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: KitSliderRow(
+            label: 'Arm Length',
+            value: settings.armLength,
+            min: 2.0,
+            max: 12.0,
+            onChanged: (v) => settings.armLength = v,
+          ),
+        ),
+      ),
+    );
+
+    expect(settings.armLength, closeTo(5.5, 0.01));
+    final slider = find.byType(Slider);
+    expect(slider, findsOneWidget);
+
+    await tester.tap(slider);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 }

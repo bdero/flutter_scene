@@ -147,5 +147,60 @@ void main() {
       expect(socketPos.y, closeTo(1.5, 0.01));
       expect(socketPos.z, closeTo(1.0, 0.01));
     });
+
+    test('empirical simulation of movement and camera dragging', () {
+      final root = Node();
+      final characterNode = Node()..position = vm.Vector3(0, 0.9, 0);
+
+      final cameraNode = Node();
+      root.add(characterNode);
+      root.add(cameraNode);
+
+      final controller = ThirdPersonControllerComponent(
+        walkSpeed: 5.0,
+        groundPlaneHeight: 0.0,
+      );
+      characterNode.addComponent(controller);
+
+      final arm = SpringArmComponent(
+        targetLength: 5.5,
+        targetOffset: vm.Vector3(0, 1.4, 0),
+        enablePositionLag: true,
+        positionLagSpeed: 8.0,
+        enableRotationLag: true,
+        rotationLagSpeed: 8.0,
+        cameraNode: cameraNode,
+        inheritYaw: false,
+        inheritPitch: false,
+        inheritRoll: false,
+        yaw: 0.0,
+        pitch: 0.28,
+      );
+      characterNode.addComponent(arm);
+
+      // Simulate 30 frames:
+      for (var frame = 0; frame < 30; frame++) {
+        // Frame 10-20: User presses W (move forward)
+        if (frame >= 10 && frame < 20) {
+          controller.setMoveInput(vm.Vector2(0, 1), cameraHeadingYaw: arm.yaw);
+        } else {
+          controller.setMoveInput(vm.Vector2.zero(), cameraHeadingYaw: arm.yaw);
+        }
+
+        // Frame 5-15: User drags camera yaw
+        if (frame >= 5 && frame < 15) {
+          arm.yaw += 0.05;
+        }
+
+        controller.fixedUpdate(0.016);
+        arm.update(0.016);
+
+        final charPos = characterNode.position;
+        final camPos =
+            (cameraNode.globalTransform * vm.Vector4(0, 0, 0, 1)).xyz;
+
+        expect((camPos - charPos).length, closeTo(5.5, 0.5));
+      }
+    });
   });
 }

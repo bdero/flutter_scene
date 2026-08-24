@@ -689,7 +689,7 @@ class _KitStageState extends State<_KitStage> {
       socketOffset: vm.Vector3(0.0, 0.3, 0),
       enablePositionLag: widget.settings.enableLag,
       positionLagSpeed: widget.settings.lagSpeed,
-      enableRotationLag: widget.settings.enableLag,
+      enableRotationLag: false,
       rotationLagSpeed: widget.settings.lagSpeed,
       cameraNode: _cameraNode,
       inheritYaw: false,
@@ -834,7 +834,7 @@ class _KitStageState extends State<_KitStage> {
       vm.Aabb3.minMax(vm.Vector3(-14, -2, -14), vm.Vector3(14, 5, 14)),
       PerspectiveCamera(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.55, 0.55, 0.75),
-      paddingFactor: 1.3,
+      paddingFactor: 1.35,
     );
   }
 
@@ -1045,9 +1045,9 @@ class _KitStageState extends State<_KitStage> {
 
   void _handlePointerMove(Offset delta, Offset localPos, Size? size) {
     if (widget.scenario == _KitScenario.characterCamera) {
-      widget.settings.cameraOrbitYaw -= delta.dx * 0.006;
+      widget.settings.cameraOrbitYaw -= delta.dx * 0.005;
       widget.settings.cameraOrbitPitch =
-          (widget.settings.cameraOrbitPitch - delta.dy * 0.006).clamp(
+          (widget.settings.cameraOrbitPitch - delta.dy * 0.005).clamp(
             -0.35,
             1.15,
           );
@@ -1100,22 +1100,19 @@ class _KitStageState extends State<_KitStage> {
         Positioned.fill(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              return GestureDetector(
+              return Listener(
                 behavior: HitTestBehavior.opaque,
-                onPanStart: (details) => _handlePointerDown(
-                  details.localPosition,
+                onPointerDown: (event) => _handlePointerDown(
+                  event.localPosition,
                   constraints.biggest,
                 ),
-                onPanUpdate: (details) => _handlePointerMove(
-                  details.delta,
-                  details.localPosition,
+                onPointerMove: (event) => _handlePointerMove(
+                  event.delta,
+                  event.localPosition,
                   constraints.biggest,
                 ),
-                onPanEnd: (_) => _handlePointerUp(),
-                onTapDown: (details) => _handlePointerDown(
-                  details.localPosition,
-                  constraints.biggest,
-                ),
+                onPointerUp: (_) => _handlePointerUp(),
+                onPointerCancel: (_) => _handlePointerUp(),
                 child: SceneView(
                   scene,
                   camera: _nodeCamera,
@@ -1242,7 +1239,7 @@ class _KitStageState extends State<_KitStage> {
       _springArm!.targetLength = widget.settings.armLength;
       _springArm!.enablePositionLag = widget.settings.enableLag;
       _springArm!.positionLagSpeed = widget.settings.lagSpeed;
-      _springArm!.enableRotationLag = widget.settings.enableLag;
+      _springArm!.enableRotationLag = false;
       _springArm!.rotationLagSpeed = widget.settings.lagSpeed;
     }
 
