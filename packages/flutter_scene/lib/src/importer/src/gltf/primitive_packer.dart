@@ -320,6 +320,13 @@ PackedPrimitive packGltfPrimitive({
       out[o + 16] = -out[o + 16];
       out[o + 17] = -out[o + 17];
     }
+    // Negating Z mirrors the triangle winding; swap indices (a, b, c) -> (a, c, b)
+    // so the baked native geometry retains Counter-Clockwise (CCW) front faces.
+    for (var i = 0; i + 2 < outIndexList.length; i += 3) {
+      final tmp = outIndexList[i + 1];
+      outIndexList[i + 1] = outIndexList[i + 2];
+      outIndexList[i + 2] = tmp;
+    }
   }
 
   // The engine wants 16- or 32-bit indices. Pass 32-bit through; narrow

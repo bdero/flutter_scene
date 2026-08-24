@@ -125,10 +125,10 @@ void main() {
         alignment: RibbonAlignment.ground,
         up: Vector3(0, 1, 0),
       );
-      // A +Y-facing surface has a -Y geometric normal.
+      // A +Y-facing surface has a +Y geometric normal.
       expect(
         _triangleNormal(arrays.positions, arrays.indices, 0).y,
-        lessThan(0),
+        greaterThan(0),
       );
     });
   });

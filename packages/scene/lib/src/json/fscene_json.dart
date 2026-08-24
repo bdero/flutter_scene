@@ -39,6 +39,10 @@ final List<FsceneMigration> _builtInMigrations = [
   // documents read as-is. The version exists so a version-3 reader refuses
   // a morph-bearing document instead of silently dropping the deltas.
   (json) => json,
+  // 4 -> 5 standardized model-space front-face winding to Counter-Clockwise
+  // (CCW). Version 4 documents read as-is, with payload index swapping applied
+  // during realization for documents with formatVersion < 5.
+  (json) => json,
 ];
 
 Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {
