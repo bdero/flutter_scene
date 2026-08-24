@@ -1558,16 +1558,22 @@ class _StartScreen extends StatelessWidget {
                       border: Border.all(color: Theme.of(context).dividerColor),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: recentProjects.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) => _RecentProjectTile(
-                        path: recentProjects[index],
-                        onOpen: () =>
-                            onOpenRecentProject(recentProjects[index]),
-                        onRemove: () =>
-                            onRemoveRecentProject(recentProjects[index]),
+                    // A Material between the tinted container and the tiles,
+                    // so ListTile backgrounds and ink render on it instead of
+                    // being hidden behind the container fill.
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: recentProjects.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) => _RecentProjectTile(
+                          path: recentProjects[index],
+                          onOpen: () =>
+                              onOpenRecentProject(recentProjects[index]),
+                          onRemove: () =>
+                              onRemoveRecentProject(recentProjects[index]),
+                        ),
                       ),
                     ),
                   ),
@@ -1595,14 +1601,18 @@ class _StartScreen extends StatelessWidget {
                       border: Border.all(color: Theme.of(context).dividerColor),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: recentScenes.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) => _RecentSceneTile(
-                        path: recentScenes[index],
-                        onOpen: () => onOpenRecent(recentScenes[index]),
-                        onRemove: () => onRemoveRecent(recentScenes[index]),
+                    // See the projects list: keeps tile ink above the fill.
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: recentScenes.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) => _RecentSceneTile(
+                          path: recentScenes[index],
+                          onOpen: () => onOpenRecent(recentScenes[index]),
+                          onRemove: () => onRemoveRecent(recentScenes[index]),
+                        ),
                       ),
                     ),
                   ),

@@ -24,6 +24,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show CachingAssetBundle;
 import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart' hide NodeChange;
@@ -557,6 +558,273 @@ class EditorController extends ChangeNotifier {
   Future<void> recompose() async {
     await _realizeAll();
     notifyListeners();
+  }
+
+  // --- animation preview ----------------------------------------------------
+  //
+  // The animation panel drives one document animation through a playhead.
+  // Poses are evaluated straight from the document's keyframe payloads and
+  // written onto the matching live nodes by stable id, so scrubbing and
+  // playback preview exactly what the saved document will drive at runtime
+  // without paying for a re-realization per edit. Stopping restores every
+  // touched node to its document transform.
+
+  /// The document animation the playhead drives.
+  LocalId? _previewAnimation;
+  double _previewTime = 0;
+  bool _previewPlaying = false;
+  bool _previewLoop = true;
+  double _previewSpeed = 1;
+  Ticker? _ticker;
+  Duration? _lastTick;
+
+  /// The transforms captured before the first pose application per node,
+  /// restored on [stopPreview] (and re-captured after).
+  final Map<LocalId, TransformSpec> _prePreviewTransforms = {};
+
+  /// Playhead movement, notified per tick so the timeline repaints without
+  /// rebuilding every listening panel (the controller's notifyListeners
+  /// rebuilds the whole editor).
+  final ValueNotifier<double> previewPlayhead = ValueNotifier(0);
+
+  /// The animation currently loaded on the playhead.
+  LocalId? get previewAnimationId => _previewAnimation;
+
+  /// Whether playback is running.
+  bool get previewPlaying => _previewPlaying;
+
+  /// Whether playback wraps at the clip's end.
+  bool get previewLoop => _previewLoop;
+
+  /// The playback speed multiplier.
+  double get previewSpeed => _previewSpeed;
+
+  /// The playhead position in seconds.
+  double get previewTime => _previewTime;
+
+  /// The clip duration of animation [id]: its last keyframe time.
+  double previewDuration(LocalId id) {
+    final spec = document.animations[id];
+    if (spec == null) return 0;
+    var end = 0.0;
+    for (final channel in spec.channels) {
+      final times = _payloadFloats(channel.timeline);
+      if (times.isNotEmpty && times.last > end) end = times.last;
+    }
+    return end;
+  }
+
+  /// Loads [id] onto the playhead (or unloads when null), resetting the
+  /// playhead and restoring any previewed pose.
+  void selectPreviewAnimation(LocalId? id) {
+    _stopTicker();
+    _restorePreviewedNodes();
+    _previewAnimation = id;
+    _previewTime = 0;
+    previewPlayhead.value = 0;
+    notifyListeners();
+  }
+
+  /// Starts (or resumes) playback of the loaded animation.
+  void playPreview() {
+    final id = _previewAnimation;
+    if (id == null || document.animations[id] == null) return;
+    // A paused-at-the-end clip restarts from the top.
+    final duration = previewDuration(id);
+    if (!_previewLoop && duration > 0 && _previewTime >= duration) {
+      _previewTime = 0;
+      previewPlayhead.value = 0;
+    }
+    _previewPlaying = true;
+    (_ticker ??= Ticker(_onTick)).start();
+    notifyListeners();
+  }
+
+  /// Pauses playback at the current playhead.
+  void pausePreview() {
+    if (!_previewPlaying) return;
+    _stopTicker();
+    notifyListeners();
+  }
+
+  /// Toggles between playing and paused.
+  void togglePreviewPlay() => _previewPlaying ? pausePreview() : playPreview();
+
+  /// Pauses and restores every previewed node to its document transform.
+  void stopPreview() {
+    _stopTicker();
+    _restorePreviewedNodes();
+    _previewTime = 0;
+    previewPlayhead.value = 0;
+    notifyListeners();
+  }
+
+  /// Moves the playhead to [time] (wrapping or clamping per the loop mode)
+  /// and applies the pose there.
+  void seekPreview(double time) {
+    final id = _previewAnimation;
+    if (id == null) return;
+    final spec = document.animations[id];
+    if (spec == null) return;
+    final duration = previewDuration(id);
+    var t = time;
+    if (duration > 0) {
+      if (_previewLoop) {
+        t %= duration;
+        if (t < 0) t += duration;
+      } else {
+        t = t.clamp(0.0, duration);
+      }
+    } else {
+      t = 0;
+    }
+    _previewTime = t;
+    previewPlayhead.value = t;
+    _applyPose(spec, t);
+  }
+
+  /// Sets whether playback wraps at the clip's end.
+  void setPreviewLoop(bool loop) {
+    if (_previewLoop == loop) return;
+    _previewLoop = loop;
+    notifyListeners();
+  }
+
+  /// Sets the playback speed multiplier (clamped to a sane range).
+  void setPreviewSpeed(double speed) {
+    final next = speed.clamp(0.05, 8.0);
+    if (_previewSpeed == next) return;
+    _previewSpeed = next;
+    notifyListeners();
+  }
+
+  void _stopTicker() {
+    _previewPlaying = false;
+    _ticker?.stop();
+    _lastTick = null;
+  }
+
+  void _onTick(Duration elapsed) {
+    final last = _lastTick;
+    _lastTick = elapsed;
+    if (last == null || !_previewPlaying) return;
+    final delta = (elapsed - last).inMicroseconds / 1e6;
+    seekPreview(_previewTime + delta * _previewSpeed);
+    // A non-looping clip pauses when it reaches its end.
+    if (!_previewPlaying) return;
+    if (!_previewLoop) {
+      final duration = _previewAnimation == null
+          ? 0.0
+          : previewDuration(_previewAnimation!);
+      if (duration > 0 && _previewTime >= duration) pausePreview();
+    }
+  }
+
+  void _restorePreviewedNodes() {
+    for (final entry in _prePreviewTransforms.entries) {
+      final live = _liveById[entry.key];
+      if (live != null) applyTransformSpec(live, entry.value);
+    }
+    _prePreviewTransforms.clear();
+  }
+
+  void _captureIfNeeded(LocalId nodeId) {
+    if (_prePreviewTransforms.containsKey(nodeId)) return;
+    final spec = document.nodes[nodeId]?.transform;
+    if (spec != null) _prePreviewTransforms[nodeId] = spec;
+  }
+
+  /// Evaluates [spec] at [t] and writes the result onto the live nodes each
+  /// channel targets. Nodes missing from the live graph (deleted, or inside
+  /// an unrealized prefab) are skipped; morph-weight channels are not
+  /// authored in the editor and are ignored here.
+  void _applyPose(AnimationSpec spec, double t) {
+    for (final channel in spec.channels) {
+      final live = _liveById[channel.target];
+      if (live == null || channel.property == AnimationProperty.weights) {
+        continue;
+      }
+      _captureIfNeeded(channel.target);
+      final times = _payloadFloats(channel.timeline);
+      final values = _payloadFloats(channel.keyframes);
+      final stride = channel.property == AnimationProperty.rotation ? 4 : 3;
+      final sampled = _sampleChannel(times, values, stride, t);
+      if (sampled == null) continue;
+      switch (channel.property) {
+        case AnimationProperty.translation:
+          live.position = Vector3(sampled[0], sampled[1], sampled[2]);
+        case AnimationProperty.rotation:
+          live.rotation = Quaternion(
+            sampled[0],
+            sampled[1],
+            sampled[2],
+            sampled[3],
+          ).normalized();
+        case AnimationProperty.scale:
+          live.scale = Vector3(sampled[0], sampled[1], sampled[2]);
+        case AnimationProperty.weights:
+          break;
+      }
+    }
+  }
+
+  /// A payload's bytes as float32s (native-endian, matching the emitter).
+  Float32List _payloadFloats(LocalId id) {
+    final bytes = document.payload(id)?.bytes;
+    if (bytes == null) return Float32List(0);
+    if (bytes.offsetInBytes % 4 == 0) {
+      return bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+    }
+    return Uint8List.fromList(bytes).buffer.asFloat32List(
+      0,
+      bytes.lengthInBytes ~/ 4,
+    );
+  }
+
+  /// Linearly interpolates a keyframe channel at [t]: the component values at
+  /// the surrounding keyframes (rotations slerped as quaternions), or null
+  /// when the channel carries no keyframes.
+  List<double>? _sampleChannel(
+    Float32List times,
+    Float32List values,
+    int stride,
+    double t,
+  ) {
+    if (times.isEmpty) return null;
+    var hi = 0;
+    while (hi < times.length && times[hi] < t) {
+      hi++;
+    }
+    List<double> slice(int index) => [
+      for (var j = 0; j < stride; j++) values[index * stride + j],
+    ];
+    if (hi <= 0) return slice(0);
+    if (hi >= times.length) return slice(times.length - 1);
+    final lo = hi - 1;
+    final span = times[hi] - times[lo];
+    final f = span <= 0 ? 0.0 : (t - times[lo]) / span;
+    if (stride == 4) {
+      final a = Quaternion(
+        values[lo * 4],
+        values[lo * 4 + 1],
+        values[lo * 4 + 2],
+        values[lo * 4 + 3],
+      );
+      final b = Quaternion(
+        values[hi * 4],
+        values[hi * 4 + 1],
+        values[hi * 4 + 2],
+        values[hi * 4 + 3],
+      );
+      final blended = a.slerp(b, f);
+      return [blended.x, blended.y, blended.z, blended.w];
+    }
+    final a = slice(lo);
+    final b = slice(hi);
+    return [for (var j = 0; j < stride; j++) a[j] + (b[j] - a[j]) * f];
   }
 
   /// Imports a glTF binary ([glbBytes]) into the current scene as a new
@@ -1249,13 +1517,37 @@ class EditorController extends ChangeNotifier {
   Future<void> _reflect(Transaction transaction) async {
     if (transaction.isEmpty) return;
     // A stage-only edit just re-applies scene-wide settings; no re-realize.
-    if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
+    if (transaction.records.every(
+      (r) => r.slot == ChangeSlot.stage,
+    )) {
       await realizeStage(
         document,
         scene,
         environmentLoader: _loadAssetEnvironment,
         fmatSkyLoader: fmatLibrary.loadSky,
       );
+      return;
+    }
+    // Animation authoring edits (and their keyframe payloads) ride entirely
+    // on [_applyPose], which reads the document directly, so they need no
+    // re-realization; just refresh a mid-scrub pose so edits show at once.
+    // (Imported animations land through importSceneIntoScene's own full
+    // realize, not here.)
+    if (transaction.records.every(
+      (r) =>
+          r.slot == ChangeSlot.poolAnimation ||
+          r.slot == ChangeSlot.poolPayload,
+    )) {
+      final id = _previewAnimation;
+      if (id != null) {
+        final spec = document.animations[id];
+        if (spec != null) {
+          _restorePreviewedNodes();
+          _applyPose(spec, _previewTime);
+        } else {
+          selectPreviewAnimation(null);
+        }
+      }
       return;
     }
     // Creating an unreferenced resource has no live-scene effect. Primitive
@@ -2160,10 +2452,12 @@ class EditorController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _ticker?.stop();
     session.selection.removeListener(_onSelectionChanged);
     fmatLibrary.dispose();
     lastError.dispose();
     previewEpoch.dispose();
+    previewPlayhead.dispose();
     scene.removeAll();
     super.dispose();
   }

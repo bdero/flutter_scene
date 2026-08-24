@@ -35,6 +35,7 @@ export 'src/materials/fmat_library.dart'
         fmatToolchainForInstallation;
 export 'src/mcp/render_graph_tools.dart' show RenderGraphMcp;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
+export 'src/panels/animation_panel.dart' show AnimationPanel;
 export 'src/panels/console_panel.dart' show ConsolePanel;
 export 'src/project/app_session.dart' show AppSession, AppSessionState;
 export 'src/project/build_config_dialog.dart' show showBuildConfigDialog;

@@ -8,6 +8,7 @@ import 'package:forui/forui.dart';
 import '../controller/editor_controller.dart';
 import '../io/glb_import_options.dart';
 import '../io/scene_io.dart';
+import '../panels/animation_panel.dart';
 import '../panels/asset_browser_panel.dart';
 import '../panels/console_panel.dart';
 import '../panels/history_panel.dart';
@@ -33,6 +34,7 @@ const Map<String, String> _panelTitles = {
   'outliner': 'Outliner',
   'inspector': 'Inspector',
   'assets': 'Assets',
+  'animation': 'Animation',
   'history': 'History',
   'console': 'Console',
   'render_graph': 'Render Graph',
@@ -833,6 +835,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                               projectRoot: widget.projectRootDirectory,
                               onOpenScene: _openPath,
                             ),
+                          ),
+                          DockPanel(
+                            id: 'animation',
+                            title: 'Animation',
+                            child: AnimationPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'history',

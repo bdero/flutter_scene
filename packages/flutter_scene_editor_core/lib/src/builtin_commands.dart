@@ -17,6 +17,8 @@ import 'clone.dart';
 import 'command.dart';
 import 'params.dart';
 
+import 'animation_commands.dart' show animationCommands;
+
 // ---------------------------------------------------------------------------
 // Shared helpers.
 // ---------------------------------------------------------------------------
@@ -2926,7 +2928,7 @@ final detachFromPrefab = CommandEntry(
 
 /// Registers all built-in commands into [registry].
 void registerBuiltinCommands(CommandRegistry registry) {
-  for (final command in builtinCommands) {
+  for (final command in [...builtinCommands, ...animationCommands]) {
     registry.register(command);
   }
 }

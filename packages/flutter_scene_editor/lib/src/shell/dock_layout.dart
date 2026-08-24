@@ -7,8 +7,8 @@ enum DockZone { center, left, right, top, bottom }
 
 /// The initial editor arrangement used when no saved layout is available.
 ///
-/// The left column stacks Outliner above Assets and History, the Viewport owns
-/// the center, and Inspector occupies the right column.
+/// The left column stacks Outliner above Assets, History, and Animation, the
+/// Viewport owns the center, and Inspector occupies the right column.
 DockLayout defaultEditorDockLayout() {
   return DockLayout(
     DockSplit(
@@ -18,7 +18,7 @@ DockLayout defaultEditorDockLayout() {
           Axis.vertical,
           [
             DockTabs(['outliner']),
-            DockTabs(['assets', 'history']),
+            DockTabs(['assets', 'history', 'animation']),
           ],
           [0.5363231641857922, 0.4636768358142078],
         ),
