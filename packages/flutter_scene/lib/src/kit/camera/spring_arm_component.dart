@@ -6,7 +6,13 @@ import 'package:flutter_scene/src/raycast.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// A camera boom component that maintains distance to a target while preventing
-/// geometry occlusion by raycasting or sphere-probing against the environment.
+/// geometry occlusion by raycasting against the environment.
+///
+/// For a full-featured orbit camera controller with mouse/touch drag and inertial damping,
+/// see `FollowCameraController` and `OrbitCameraController`.
+///
+/// Note on raycasting: [raycastNode] performs a hierarchical bounding-box early-out followed
+/// by per-triangle intersection tests on static render meshes at rest pose.
 /// {@category Gameplay kit}
 class SpringArmComponent extends Component {
   /// Desired length of the boom arm when unoccluded.
@@ -39,6 +45,9 @@ class SpringArmComponent extends Component {
   /// Minimum distance the arm can compress to when obstructed.
   double minLength;
 
+  /// Bitmask of layers to test for occlusion (defaults to all layers).
+  int layerMask;
+
   /// An optional child camera node driven directly by this spring arm.
   Node? cameraNode;
 
@@ -56,18 +65,18 @@ class SpringArmComponent extends Component {
     this.enableRotationLag = false,
     this.rotationLagSpeed = 10.0,
     this.minLength = 0.5,
+    this.layerMask = 0xFFFFFFFF,
     this.cameraNode,
   }) : targetLength = math.max(minLength, targetLength),
        currentLength = math.max(minLength, targetLength),
-       targetOffset = targetOffset ?? vm.Vector3(0, 1.5, 0),
-       socketOffset = socketOffset ?? vm.Vector3.zero();
+       targetOffset = targetOffset?.clone() ?? vm.Vector3(0, 1.5, 0),
+       socketOffset = socketOffset?.clone() ?? vm.Vector3.zero();
 
   /// Gets the world-space socket transform computed for this frame.
   vm.Matrix4 get socketTransform {
     final pivot = _initialized ? _smoothedPivotWorld : _currentRawPivotWorld;
     final rot = _initialized ? _smoothedRotation : _currentRawRotation;
 
-    // Arm direction is back (-Z in model space) rotated by the boom rotation.
     final backDir = rot.rotate(vm.Vector3(0, 0, 1));
     final socketPos = pivot + backDir * currentLength;
     final finalPos = socketPos + rot.rotate(socketOffset);
@@ -76,7 +85,7 @@ class SpringArmComponent extends Component {
   }
 
   vm.Vector3 get _currentRawPivotWorld {
-    if (!isAttached) return targetOffset;
+    if (!isAttached) return targetOffset.clone();
     final parentWorld = node.globalTransform;
     return (parentWorld *
             vm.Vector4(targetOffset.x, targetOffset.y, targetOffset.z, 1.0))
@@ -98,6 +107,16 @@ class SpringArmComponent extends Component {
     return curr;
   }
 
+  bool _isExcluded(Node hitNode) {
+    if (hitNode == node || hitNode == cameraNode) return true;
+    Node? p = hitNode.parent;
+    while (p != null) {
+      if (p == node || p == cameraNode) return true;
+      p = p.parent;
+    }
+    return false;
+  }
+
   @override
   void onMount() {
     _smoothedPivotWorld = _currentRawPivotWorld;
@@ -114,7 +133,7 @@ class SpringArmComponent extends Component {
     final rawPivot = _currentRawPivotWorld;
     final rawRot = _currentRawRotation;
 
-    // 1. Position lag smoothing
+    // 1. Position lag smoothing (exponential)
     if (enablePositionLag && positionLagSpeed > 0.0) {
       final t = 1.0 - math.exp(-positionLagSpeed * deltaSeconds);
       _smoothedPivotWorld =
@@ -123,7 +142,7 @@ class SpringArmComponent extends Component {
       _smoothedPivotWorld = rawPivot;
     }
 
-    // 2. Rotation lag smoothing
+    // 2. Rotation lag smoothing (exponential)
     if (enableRotationLag && rotationLagSpeed > 0.0) {
       final t = (1.0 - math.exp(-rotationLagSpeed * deltaSeconds)).clamp(
         0.0,
@@ -134,36 +153,49 @@ class SpringArmComponent extends Component {
       _smoothedRotation = rawRot;
     }
 
-    // 3. Occlusion query
+    // 3. Occlusion query excluding character and camera subtree
     var desiredLength = targetLength;
     final rayStart = _smoothedPivotWorld;
     final rayDir = _smoothedRotation.rotate(vm.Vector3(0, 0, 1)).normalized();
 
-    // Query scene raycast if in tree
     final ray = vm.Ray.originDirection(rayStart, rayDir);
-    final hit = raycastNode(_rootNode, ray, maxDistance: targetLength);
+    final hit = raycastNode(
+      _rootNode,
+      ray,
+      maxDistance: targetLength,
+      layerMask: layerMask,
+      where: (n) => !_isExcluded(n),
+    );
     if (hit != null && hit.distance < targetLength) {
       desiredLength = math.max(minLength, hit.distance - probeRadius);
     }
 
     // Smoothly compress or expand current length
     if (desiredLength < currentLength) {
-      // Compress instantly to avoid wall clipping
       currentLength = desiredLength;
     } else {
-      // Expand smoothly
       final t = (1.0 - math.exp(-12.0 * deltaSeconds)).clamp(0.0, 1.0);
       currentLength = currentLength + (desiredLength - currentLength) * t;
     }
 
-    // 4. Update child camera node if bound
+    // 4. Update child camera node converting world socket to local space
     if (cameraNode != null) {
-      cameraNode!.localTransform = socketTransform;
+      final camParent = cameraNode!.parent;
+      if (camParent != null) {
+        final invParent = camParent.globalTransform.clone()..invert();
+        cameraNode!.localTransform = invParent * socketTransform;
+      } else {
+        cameraNode!.localTransform = socketTransform;
+      }
     }
   }
 
   @override
   Component? cloneFor(Node cloneOwner) {
+    if (cameraNode != null) {
+      // Caller-driven rebinding needed when referencing external nodes.
+      return null;
+    }
     return SpringArmComponent(
       targetLength: targetLength,
       probeRadius: probeRadius,
@@ -174,6 +206,7 @@ class SpringArmComponent extends Component {
       enableRotationLag: enableRotationLag,
       rotationLagSpeed: rotationLagSpeed,
       minLength: minLength,
+      layerMask: layerMask,
     );
   }
 }

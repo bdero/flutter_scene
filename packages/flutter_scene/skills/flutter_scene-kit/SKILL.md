@@ -1,12 +1,17 @@
 ---
 name: flutter_scene-kit
-version: 1
+version: 2
 description: Build interactive 3D gameplay, character controllers, camera rigs, dynamic day/night cycles, water surfaces, audio, pooling, and debug overlays in flutter_scene. Use when creating game mechanics, camera controls, NPC behaviors, atmospheric environments, or diagnostic HUDs.
 ---
 
 # Gameplay, camera, and atmosphere kit in flutter_scene
 
 Flutter Scene provides high-level gameplay components and ergonomic building blocks in `package:flutter_scene/kit.dart` so games and interactive experiences do not need to re-implement standard mechanics from scratch.
+
+When choosing components, consider existing engine alternatives:
+- For physics-driven character navigation with collider capsules, wall sliding, and autostep, use `KinematicCharacterController` from `package:flutter_scene_rapier/physics.dart`.
+- For interactive mouse/touch orbit cameras with inertia, use `OrbitCameraController` or `FollowCameraController`.
+- For framing a standalone `PerspectiveCamera`, use `PerspectiveCamera.framing`. Use `BoundsFraming` when computing a transform for a `NodeCamera` mounted in the scene graph.
 
 ## Imports
 
@@ -58,7 +63,7 @@ cameraNode.localTransform = baseTransform * offset.toMatrix4();
 
 ### ThirdPersonControllerComponent
 
-`ThirdPersonControllerComponent` handles planar movement, sprint multipliers, turn smoothing, ground snapping with raycasts, slope sliding, step climbing, coyote time, and buffered jumps.
+`ThirdPersonControllerComponent` handles kinematic movement, sprint multipliers, turn smoothing, ground snapping with raycasts, slope sliding, coyote time, and buffered jumps. Input expects `+Y` as forward in 3D.
 
 ```dart
 final playerNode = Node();
@@ -66,11 +71,12 @@ final controller = ThirdPersonControllerComponent(
   walkSpeed: 4.5,
   runMultiplier: 1.8,
   jumpVelocity: 7.0,
+  groundPlaneHeight: 0.0, // Optional fallback floor
 );
 playerNode.addComponent(controller);
 
-// Feed joystick or keyboard input
-controller.setMoveInput(vm.Vector2(inputX, inputY), isRunning: isSprinting);
+// When using VirtualJoystick (where up is -Y in screen space), invert Y:
+// controller.setMoveInput(vm.Vector2(joystickDir.x, -joystickDir.y), isRunning: isSprinting);
 if (jumpPressed) controller.jump();
 ```
 
@@ -86,7 +92,7 @@ final seekForce = Steering.seek(npcPos, npcVel, targetPos, maxSpeed: 4.0);
 final arriveForce = Steering.arrive(npcPos, npcVel, targetPos, slowingRadius: 3.0);
 
 // Flocking separation
-final sepForce = Steering.separation(npcPos, neighborPositions, desiredDistance: 1.5);
+final sepForce = Steering.separation(npcPos, npcVel, neighborPositions, desiredDistance: 1.5);
 ```
 
 ## Dynamic environments and atmosphere
@@ -96,7 +102,10 @@ final sepForce = Steering.separation(npcPos, neighborPositions, desiredDistance:
 `DayNightCycleComponent` moves the sun along a realistic solar arc given latitude and time of day, evaluating sun colors, intensities, and ambient lighting transitions.
 
 ```dart
-final sunNode = Node()..addComponent(DirectionalLightComponent());
+final sunLight = DirectionalLight();
+final sunNode = Node()..addComponent(DirectionalLightComponent(sunLight));
+scene.root.add(sunNode);
+
 final skyCycle = DayNightCycleComponent(
   timeOfDay: 14.5, // 2:30 PM
   timeSpeed: 0.1,  // Progress 0.1 hours per second

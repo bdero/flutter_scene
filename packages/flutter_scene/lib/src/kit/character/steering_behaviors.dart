@@ -54,33 +54,34 @@ class Steering {
     return truncate(force, maxForce);
   }
 
-  /// Computes a separation force avoiding crowding nearby [neighbors].
+  /// Computes a separation steering force avoiding crowding nearby [neighbors].
   static vm.Vector3 separation(
     vm.Vector3 currentPos,
+    vm.Vector3 currentVel,
     List<vm.Vector3> neighbors, {
     double desiredDistance = 2.0,
     double maxSpeed = 5.0,
     double maxForce = 10.0,
   }) {
-    var steering = vm.Vector3.zero();
+    var pushDir = vm.Vector3.zero();
     var count = 0;
 
     for (final other in neighbors) {
       final diff = currentPos - other;
       final dist = diff.length;
       if (dist > 0.001 && dist < desiredDistance) {
-        // Weight inversely by distance
-        steering += diff.normalized() / dist;
+        pushDir += diff.normalized() / dist;
         count++;
       }
     }
 
     if (count == 0) return vm.Vector3.zero();
-    steering /= count.toDouble();
-    if (steering.length2 > 0) {
-      steering = steering.normalized() * maxSpeed;
-    }
-    return truncate(steering, maxForce);
+    pushDir /= count.toDouble();
+    if (pushDir.length2 == 0) return vm.Vector3.zero();
+
+    final desiredVel = pushDir.normalized() * maxSpeed;
+    final force = desiredVel - currentVel;
+    return truncate(force, maxForce);
   }
 
   /// Computes an alignment force steering towards the average velocity of [neighborVelocities].

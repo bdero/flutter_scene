@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -10,8 +11,12 @@ class DebugDraw {
   static final List<double> _positions = [];
   static final List<double> _colors = [];
 
+  /// Maximum vertex limit to avoid unbounded accumulation when un-flushed.
+  static int maxVertexLimit = 65536;
+
   /// Draws a wireframe line segment between [start] and [end].
   static void line(vm.Vector3 start, vm.Vector3 end, {vm.Vector4? color}) {
+    if (vertexCount >= maxVertexLimit) return;
     final c = color ?? vm.Vector4(1.0, 1.0, 1.0, 1.0);
 
     _positions.addAll([start.x, start.y, start.z, end.x, end.y, end.z]);
@@ -33,7 +38,6 @@ class DebugDraw {
     final min = bounds.min;
     final max = bounds.max;
 
-    // 8 corners
     final p000 = vm.Vector3(min.x, min.y, min.z);
     final p100 = vm.Vector3(max.x, min.y, min.z);
     final p010 = vm.Vector3(min.x, max.y, min.z);
@@ -69,7 +73,6 @@ class DebugDraw {
     int segments = 16,
     vm.Vector4? color,
   }) {
-    // Draw 3 orthogonal circles (XY, XZ, YZ)
     for (var i = 0; i < segments; i++) {
       final a1 = (i / segments) * 2 * math.pi;
       final a2 = ((i + 1) / segments) * 2 * math.pi;
@@ -107,16 +110,19 @@ class DebugDraw {
     final yAxis = (transform * vm.Vector4(0, size, 0, 1)).xyz;
     final zAxis = (transform * vm.Vector4(0, 0, size, 1)).xyz;
 
-    line(origin, xAxis, color: vm.Vector4(1, 0, 0, 1)); // X = Red
-    line(origin, yAxis, color: vm.Vector4(0, 1, 0, 1)); // Y = Green
-    line(origin, zAxis, color: vm.Vector4(0, 0, 1, 1)); // Z = Blue
+    line(origin, xAxis, color: vm.Vector4(1, 0, 0, 1));
+    line(origin, yAxis, color: vm.Vector4(0, 1, 0, 1));
+    line(origin, zAxis, color: vm.Vector4(0, 0, 1, 1));
   }
 
   /// Total number of line vertices accumulated for the current frame.
   static int get vertexCount => _positions.length ~/ 3;
 
   /// Builds a [MeshGeometry] containing all accumulated line segments and clears the buffer.
-  static MeshGeometry? flushMesh() {
+  static MeshGeometry? flushMesh({
+    GeometryBufferArena? bufferArena,
+    GeometryStorage storage = GeometryStorage.fixed,
+  }) {
     if (_positions.isEmpty) return null;
 
     final posList = Float32List.fromList(_positions);
@@ -128,6 +134,8 @@ class DebugDraw {
       positions: posList,
       colors: colList,
       primitiveType: gpu.PrimitiveType.line,
+      bufferArena: bufferArena,
+      storage: storage,
     );
   }
 

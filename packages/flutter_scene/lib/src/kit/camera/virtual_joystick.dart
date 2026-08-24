@@ -3,9 +3,16 @@ import 'package:flutter/widgets.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Callback for joystick input events emitting a normalized 2D direction vector.
+///
+/// In screen space, dragging upward produces a negative Y component (`direction.y < 0`).
+/// {@category Widgets}
 typedef JoystickCallback = void Function(vm.Vector2 direction);
 
 /// An ergonomic on-screen multi-touch virtual thumbstick for driving game characters and cameras.
+///
+/// Note on coordinate space: The joystick emits raw screen-space directions (where pushing up is `-Y`
+/// and right is `+X`). When feeding into character controllers expecting `+Y` as forward, invert the Y axis:
+/// `controller.setMoveInput(vm.Vector2(dir.x, -dir.y))`.
 /// {@category Widgets}
 class VirtualJoystick extends StatefulWidget {
   /// Radius of the outer boundary circle.
@@ -14,10 +21,10 @@ class VirtualJoystick extends StatefulWidget {
   /// Radius of the inner draggable knob.
   final double knobRadius;
 
-  /// Deadzone radius (0.0 to 1.0) below which input is reported as zero.
+  /// Deadzone radius (0.0 to <1.0) below which input is reported as zero.
   final double deadzone;
 
-  /// Callback receiving the normalized direction vector (-1.0 to 1.0 on X and Y).
+  /// Callback receiving the normalized direction vector in screen coordinates.
   final JoystickCallback onChanged;
 
   /// Optional decoration for the outer ring.
@@ -34,7 +41,10 @@ class VirtualJoystick extends StatefulWidget {
     this.deadzone = 0.1,
     this.baseDecoration,
     this.knobDecoration,
-  });
+  }) : assert(
+         deadzone >= 0.0 && deadzone < 1.0,
+         'deadzone must be in [0.0, 1.0)',
+       );
 
   @override
   State<VirtualJoystick> createState() => _VirtualJoystickState();
@@ -61,7 +71,6 @@ class _VirtualJoystickState extends State<VirtualJoystick> {
       if (normalizedMag < widget.deadzone) {
         widget.onChanged(vm.Vector2.zero());
       } else {
-        // Remap from deadzone to 1.0
         final remappedMag =
             (normalizedMag - widget.deadzone) / (1.0 - widget.deadzone);
         final dir =

@@ -5,6 +5,9 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// {@category Gameplay kit}
 class PoissonDiscSampler {
   /// Generates a set of 2D points within a rectangular area with minimum separation [minDistance].
+  ///
+  /// When [seed] is null, a fresh random sequence is used. Pass a specific integer [seed]
+  /// for deterministic generation across runs.
   static List<vm.Vector2> sampleRect(
     double width,
     double height,
@@ -12,7 +15,18 @@ class PoissonDiscSampler {
     int maxCandidates = 30,
     int? seed,
   }) {
-    final rng = math.Random(seed ?? 42);
+    if (minDistance <= 0.0) {
+      throw ArgumentError.value(
+        minDistance,
+        'minDistance',
+        'minDistance must be positive.',
+      );
+    }
+    if (width <= 0.0 || height <= 0.0) {
+      throw ArgumentError('width and height must be positive.');
+    }
+
+    final rng = seed != null ? math.Random(seed) : math.Random();
     final cellSize = minDistance / math.sqrt(2);
     final gridWidth = (width / cellSize).ceil();
     final gridHeight = (height / cellSize).ceil();
@@ -46,7 +60,6 @@ class PoissonDiscSampler {
           final cellX = candidate.x ~/ cellSize;
           final cellY = candidate.y ~/ cellSize;
 
-          // Check neighborhood
           var fits = true;
           for (var dy = -2; dy <= 2 && fits; dy++) {
             for (var dx = -2; dx <= 2 && fits; dx++) {

@@ -11,12 +11,10 @@ void main() {
 
       expect(shake.trauma, equals(0.8));
 
-      // Advance 0.5s
       final offset = shake.update(0.5);
       expect(shake.trauma, closeTo(0.3, 0.001));
       expect(offset.translation.length2, greaterThan(0.0));
 
-      // Advance 0.5s -> should reach 0.0
       shake.update(0.5);
       expect(shake.trauma, equals(0.0));
 
@@ -31,6 +29,14 @@ void main() {
       final shake = CameraShake();
       shake.addTrauma(1.5);
       expect(shake.trauma, equals(1.0));
+    });
+
+    test('CameraShakeOffset.zero returns independent unshared instances', () {
+      final z1 = CameraShakeOffset.zero;
+      final z2 = CameraShakeOffset.zero;
+
+      z1.translation.x = 99.0;
+      expect(z2.translation.x, equals(0.0));
     });
   });
 }
