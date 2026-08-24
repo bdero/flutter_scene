@@ -130,7 +130,6 @@ class TaaPass extends RenderGraphPass {
     required this.near,
     required this.currentJitterNdc,
     required this.previousJitterNdc,
-    required this.destination,
   });
 
   final ui.Size dimensions;
@@ -144,7 +143,6 @@ class TaaPass extends RenderGraphPass {
   final double near;
   final Vector2 currentJitterNdc;
   final Vector2 previousJitterNdc;
-  final gpu.Texture destination;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -175,11 +173,13 @@ class TaaPass extends RenderGraphPass {
     final readHistory = state.hasHistory ? state.currentHistory : currentColor;
     final prevDepth = state.previousLinearDepth ?? depthNormal;
 
+    final targetTexture = writeHistory;
+
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(
         gpu.ColorAttachment(
-          texture: destination,
+          texture: targetTexture,
           loadAction: gpu.LoadAction.clear,
           clearValue: Vector4.zero(),
         ),
@@ -249,35 +249,6 @@ class TaaPass extends RenderGraphPass {
     drawCompat(renderPass, 6);
     rendererSubmissions.submit(commandBuffer);
 
-    // Blit/copy resolved destination into writeHistory and linear depth into
-    // previousLinearDepth for the next frame.
-    final historyCmd = gpu.gpuContext.createCommandBuffer();
-    final historyPass = historyCmd.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(
-          texture: writeHistory,
-          loadAction: gpu.LoadAction.clear,
-          clearValue: Vector4.zero(),
-        ),
-      ),
-    );
-    historyPass.setColorBlendEnable(false);
-    historyPass.setCullMode(gpu.CullMode.none);
-    historyPass.setPrimitiveType(gpu.PrimitiveType.triangle);
-    final copyPipeline = resolvePipeline(
-      _vertexShader,
-      baseShaderLibrary['CopyFragment']!,
-    );
-    historyPass.bindPipeline(copyPipeline);
-    bindVertexBufferCompat(historyPass, _taaFullscreenView, 6);
-    historyPass.bindTexture(
-      baseShaderLibrary['CopyFragment']!.getUniformSlot('source_texture'),
-      destination,
-      sampler: _nearestClamp,
-    );
-    drawCompat(historyPass, 6);
-    rendererSubmissions.submit(historyCmd);
-
     final prevDepthTexture = state.previousLinearDepth;
     if (prevDepthTexture != null) {
       final depthCopyCmd = gpu.gpuContext.createCommandBuffer();
@@ -293,6 +264,10 @@ class TaaPass extends RenderGraphPass {
       depthCopyPass.setColorBlendEnable(false);
       depthCopyPass.setCullMode(gpu.CullMode.none);
       depthCopyPass.setPrimitiveType(gpu.PrimitiveType.triangle);
+      final copyPipeline = resolvePipeline(
+        _vertexShader,
+        baseShaderLibrary['CopyFragment']!,
+      );
       depthCopyPass.bindPipeline(copyPipeline);
       bindVertexBufferCompat(depthCopyPass, _taaFullscreenView, 6);
       depthCopyPass.bindTexture(
@@ -305,6 +280,6 @@ class TaaPass extends RenderGraphPass {
     }
 
     state.finishResolve();
-    context.blackboard.set(kSceneColorBlackboardKey, destination);
+    context.blackboard.set(kSceneColorBlackboardKey, targetTexture);
   }
 }

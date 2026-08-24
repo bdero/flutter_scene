@@ -724,6 +724,14 @@ class EnvironmentEffectsSpec {
     this.globalIlluminationEmissiveBoost = 1.0,
     this.globalIlluminationUpdateWhenIdleOnly = false,
     this.globalIlluminationBakeOnly = false,
+    this.temporalAntiAliasingEnabled = false,
+    this.temporalAntiAliasingMinimumCurrentWeight = 0.1,
+    this.temporalAntiAliasingVarianceGamma = 1.0,
+    this.temporalAntiAliasingSharpness = 0.0,
+    this.temporalAntiAliasingJitterSequenceLength = 16,
+    this.temporalAntiAliasingJitterScale = 1.0,
+    this.temporalAntiAliasingObjectMotion = true,
+    this.temporalAntiAliasingSkinnedMotion = true,
     this.fogEnabled = false,
     this.fogMode = 'exponential',
     Vector3? fogColor,
@@ -863,6 +871,18 @@ class EnvironmentEffectsSpec {
         globalIlluminationUpdateWhenIdleOnly:
             other.globalIlluminationUpdateWhenIdleOnly,
         globalIlluminationBakeOnly: other.globalIlluminationBakeOnly,
+        temporalAntiAliasingEnabled: other.temporalAntiAliasingEnabled,
+        temporalAntiAliasingMinimumCurrentWeight:
+            other.temporalAntiAliasingMinimumCurrentWeight,
+        temporalAntiAliasingVarianceGamma:
+            other.temporalAntiAliasingVarianceGamma,
+        temporalAntiAliasingSharpness: other.temporalAntiAliasingSharpness,
+        temporalAntiAliasingJitterSequenceLength:
+            other.temporalAntiAliasingJitterSequenceLength,
+        temporalAntiAliasingJitterScale: other.temporalAntiAliasingJitterScale,
+        temporalAntiAliasingObjectMotion: other.temporalAntiAliasingObjectMotion,
+        temporalAntiAliasingSkinnedMotion:
+            other.temporalAntiAliasingSkinnedMotion,
         fogEnabled: other.fogEnabled,
         fogMode: other.fogMode,
         fogColor: other.fogColor.clone(),
@@ -993,6 +1013,16 @@ class EnvironmentEffectsSpec {
   double globalIlluminationEmissiveBoost;
   bool globalIlluminationUpdateWhenIdleOnly;
   bool globalIlluminationBakeOnly;
+
+  /// Temporal anti-aliasing. See `TemporalAntiAliasingSettings`.
+  bool temporalAntiAliasingEnabled;
+  double temporalAntiAliasingMinimumCurrentWeight;
+  double temporalAntiAliasingVarianceGamma;
+  double temporalAntiAliasingSharpness;
+  int temporalAntiAliasingJitterSequenceLength;
+  double temporalAntiAliasingJitterScale;
+  bool temporalAntiAliasingObjectMotion;
+  bool temporalAntiAliasingSkinnedMotion;
 
   Vector3 fogColor;
   double fogSkyColorInfluence;

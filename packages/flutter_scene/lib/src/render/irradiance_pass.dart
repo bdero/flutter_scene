@@ -63,8 +63,9 @@ class IrradianceFieldState {
     required GlobalIlluminationSettings settings,
     required Vector3 center,
     required Vector3 extents,
+    Vector3? resolution,
   }) {
-    final layout = IrradianceFieldLayout(settings.resolution);
+    final layout = IrradianceFieldLayout(resolution ?? settings.resolution);
     final placement = planIrradianceGrid(
       center: center,
       extents: extents,
@@ -455,47 +456,48 @@ class IrradianceInjectPass extends RenderGraphPass {
     final spacing = placement.spacing;
     final anchor = placement.anchor;
     final counts = layout.resolution;
+    final info = Float32List(48);
+    info[0] = sourceWidth.toDouble();
+    info[1] = sourceHeight.toDouble();
+    info[2] = 1.0 / sourceWidth;
+    info[3] = 1.0 / sourceHeight;
+    info[4] = tanHalfFovX;
+    info[5] = tanHalfFovY;
+    info[6] = far;
+    info[7] = settings.fireflyClamp;
+    info[8] = cameraPosition.x;
+    info[9] = cameraPosition.y;
+    info[10] = cameraPosition.z;
+    info[11] = settings.emissiveGiBoost;
+    info[12] = cameraRight.x;
+    info[13] = cameraRight.y;
+    info[14] = cameraRight.z;
+    info[16] = cameraUp.x;
+    info[17] = cameraUp.y;
+    info[18] = cameraUp.z;
+    info[20] = cameraForward.x;
+    info[21] = cameraForward.y;
+    info[22] = cameraForward.z;
+    info[24] = spacing.x;
+    info[25] = spacing.y;
+    info[26] = spacing.z;
+    info[27] = placement.maxProbeDistance;
+    info[28] = anchor.x;
+    info[29] = anchor.y;
+    info[30] = anchor.z;
+    info[32] = counts.x;
+    info[33] = counts.y;
+    info[34] = counts.z;
+    info[35] = layout.tilesPerRow.toDouble();
+    info[36] = tileSize;
+    info[37] = interior;
+    info[38] = footprint;
+    info[40] = targetWidth.toDouble();
+    info[41] = targetHeight.toDouble();
+    info[42] = 1.0 / targetWidth;
+    info[43] = 1.0 / targetHeight;
+
     for (var corner = 0; corner < 8; corner++) {
-      final info = Float32List(48);
-      info[0] = sourceWidth.toDouble();
-      info[1] = sourceHeight.toDouble();
-      info[2] = 1.0 / sourceWidth;
-      info[3] = 1.0 / sourceHeight;
-      info[4] = tanHalfFovX;
-      info[5] = tanHalfFovY;
-      info[6] = far;
-      info[7] = settings.fireflyClamp;
-      info[8] = cameraPosition.x;
-      info[9] = cameraPosition.y;
-      info[10] = cameraPosition.z;
-      info[11] = settings.emissiveGiBoost;
-      info[12] = cameraRight.x;
-      info[13] = cameraRight.y;
-      info[14] = cameraRight.z;
-      info[16] = cameraUp.x;
-      info[17] = cameraUp.y;
-      info[18] = cameraUp.z;
-      info[20] = cameraForward.x;
-      info[21] = cameraForward.y;
-      info[22] = cameraForward.z;
-      info[24] = spacing.x;
-      info[25] = spacing.y;
-      info[26] = spacing.z;
-      info[27] = placement.maxProbeDistance;
-      info[28] = anchor.x;
-      info[29] = anchor.y;
-      info[30] = anchor.z;
-      info[32] = counts.x;
-      info[33] = counts.y;
-      info[34] = counts.z;
-      info[35] = layout.tilesPerRow.toDouble();
-      info[36] = tileSize;
-      info[37] = interior;
-      info[38] = footprint;
-      info[40] = targetWidth.toDouble();
-      info[41] = targetHeight.toDouble();
-      info[42] = 1.0 / targetWidth;
-      info[43] = 1.0 / targetHeight;
       info[44] = (corner & 1) != 0 ? 1.0 : 0.0;
       info[45] = (corner & 2) != 0 ? 1.0 : 0.0;
       info[46] = (corner & 4) != 0 ? 1.0 : 0.0;

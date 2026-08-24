@@ -1185,6 +1185,8 @@ base class Scene implements SceneGraph {
   final TemporalAntiAliasingSettings temporalAntiAliasing =
       TemporalAntiAliasingSettings();
 
+  // TODO(taa-multiview): track TAA history and jitter per view rather than
+  // per scene so multiview configurations do not share history.
   TaaHistoryState? _taaState;
   int _taaFrameIndex = 0;
 
@@ -2179,8 +2181,10 @@ base class Scene implements SceneGraph {
       }
     }
     // Ambient occlusion, screen-space reflections, normals, and materials
-    // that sample scene depth need the geometry prepass. Depth-only post    // Depth and normal pre-passes need a perspective camera. Orthographic
+    // that sample scene depth need the geometry prepass. Depth-only post
     // effects reuse the stored main-pass depth when it is single-sampled.
+    // Depth and normal pre-passes need a perspective camera. Orthographic
+    // cameras skip these effects.
     final perspective = camera.projection;
     final perspectiveCamera = perspective is PerspectiveProjection
         ? perspective
@@ -2613,15 +2617,6 @@ base class Scene implements SceneGraph {
       final tanHalfFovY = math.tan(halfFovY);
       final tanHalfFovX = tanHalfFovY * (pixelSize.width / pixelSize.height);
 
-      final taaOutput = pool.acquire(
-        TransientTextureDescriptor.color(
-          width: width,
-          height: height,
-          format: gpu.PixelFormat.r16g16b16a16Float,
-          debugName: 'taa_resolved_color',
-        ),
-      );
-
       graph.addPass(
         TaaPass(
           dimensions: pixelSize,
@@ -2635,7 +2630,6 @@ base class Scene implements SceneGraph {
           near: perspectiveCamera.near,
           currentJitterNdc: currentJitterNdc,
           previousJitterNdc: prevJitterNdc,
-          destination: taaOutput,
         ),
       );
       taaState.previousViewTransform = unjitteredViewProj;
@@ -2816,11 +2810,13 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
   }) {
     final settings = globalIllumination;
-    final (center, extents) = _planIrradianceVolume(settings, camera);
+    final (center, extents, resolution) =
+        _planIrradianceVolume(settings, camera);
     if (!_irradianceField.update(
       settings: settings,
       center: center,
       extents: extents,
+      resolution: resolution,
     )) {
       return null;
     }
@@ -2903,13 +2899,17 @@ base class Scene implements SceneGraph {
   IrradianceVolumeComponent? _activeIrradianceVolume;
 
   // Where the irradiance volume sits this frame, as a center and a full size.
-  (Vector3, Vector3) _planIrradianceVolume(
+  (Vector3, Vector3, Vector3) _planIrradianceVolume(
     GlobalIlluminationSettings settings,
     Camera camera,
   ) {
     switch (settings.volumeMode) {
       case IrradianceVolumeMode.followCamera:
-        return (camera.position.clone(), settings.extents.clone());
+        return (
+          camera.position.clone(),
+          settings.extents.clone(),
+          settings.resolution,
+        );
       case IrradianceVolumeMode.component:
         // Exactly one volume is active per frame. Among those containing the
         // camera the highest priority wins; with none containing it the
@@ -2935,11 +2935,18 @@ base class Scene implements SceneGraph {
             _activeIrradianceVolume = chosen;
             _irradianceField.invalidate();
           }
-          settings.resolution.setFrom(chosen.resolution);
-          return (chosen.worldCenter, chosen.extents * 2.0);
+          return (
+            chosen.worldCenter,
+            chosen.extents * 2.0,
+            chosen.resolution,
+          );
         }
         _activeIrradianceVolume = null;
-        return (camera.position.clone(), settings.extents.clone());
+        return (
+          camera.position.clone(),
+          settings.extents.clone(),
+          settings.resolution,
+        );
       case IrradianceVolumeMode.fitScene:
         Vector3? low;
         Vector3? high;
@@ -2955,12 +2962,15 @@ base class Scene implements SceneGraph {
           Vector3.max(high!, bounds.max, high);
         }
         if (low == null || high == null) {
-          return (camera.position.clone(), settings.extents.clone());
+          return (
+            camera.position.clone(),
+            settings.extents.clone(),
+            settings.resolution,
+          );
         }
         // Pad by a probe spacing so surfaces on the bounds are inside the
         // cage rather than on its outermost plane.
         final size = (high - low)
-          ..scale(1.0)
           ..add(
             Vector3(
               (high.x - low.x) / math.max(2.0, settings.resolution.x),
@@ -2968,7 +2978,7 @@ base class Scene implements SceneGraph {
               (high.z - low.z) / math.max(2.0, settings.resolution.z),
             ),
           );
-        return ((low + high)..scale(0.5), size);
+        return ((low + high)..scale(0.5), size, settings.resolution);
     }
   }
 

@@ -74,20 +74,21 @@ void main() {
       // renderers need fewer, longer frames to stay below emulator watchdogs.
       // TODO(smoke): restore multi-frame Android settling when the emulator
       // watchdog no longer terminates sustained software rendering.
-      final baseFrames =
-          !kIsWeb && defaultTargetPlatform == TargetPlatform.android ? 1 : 20;
+      final isAndroid =
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      final baseFrames = isAndroid ? 1 : 20;
       final settleStep = Duration(milliseconds: 1000 ~/ baseFrames);
       // A converging feature (the irradiance field, a temporal resolve) has
       // nothing to show in one frame, so its scene asks for more.
-      final settleFrames = smoke.warmupFrames > baseFrames
-          ? smoke.warmupFrames
-          : baseFrames;
+      final settleFrames = isAndroid
+          ? 1
+          : (smoke.warmupFrames > baseFrames ? smoke.warmupFrames : baseFrames);
       final boundary =
           smokeSceneKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
 
       for (var i = 0; i < settleFrames; i++) {
-        boundary.markNeedsPaint();
+        if (i > 0) boundary.markNeedsPaint();
         await tester.pump(settleStep);
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
