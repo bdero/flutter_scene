@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_scene/src/importer/build_hooks.dart'
     show discoveryDependencyDirectory;
 
+import '../generated_assets/engine_identity.dart' show engineIdentity;
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
 import 'fmat.dart';
@@ -105,24 +106,33 @@ List<String> discoverFmatMaterials(
 /// inside these are not tracked until `impellerc --depfile` is consumed in
 /// `--shader-bundle` mode (bdero/flutter_gpu_shaders#15).
 const _frameworkShaderFiles = <String>[
-  'material_varyings.glsl',
-  'pbr.glsl',
-  'texture.glsl',
-  'normals.glsl',
-  // Opt-in include for material authors (`#include <noise.glsl>`).
-  'noise.glsl',
-  'material_inputs.glsl',
+  'contact_shadow.glsl',
+  'depth_bias.glsl',
+  'depth_mask.glsl',
+  'filtered_scene_color.glsl',
+  'flutter_scene_morph.glsl',
+  'flutter_scene_skinned_body.glsl',
+  'flutter_scene_unskinned_body.glsl',
+  'flutter_scene_unskinned_depth_body.glsl',
+  'fog.glsl',
+  'interleaved_gradient_noise.glsl',
+  'lightmap.glsl',
+  'lod_fade.glsl',
   'material_engine_lighting.glsl',
+  'material_inputs.glsl',
   'material_lighting.glsl',
   'material_shadow_sampling.glsl',
-  'lightmap.glsl',
-  'filtered_scene_color.glsl',
-  // The vertex-stage includes a material's generated vertex variants pull in.
+  'material_varyings.glsl',
   'material_vertex.glsl',
-  'depth_bias.glsl',
-  'flutter_scene_unskinned_body.glsl',
-  'flutter_scene_skinned_body.glsl',
-  'flutter_scene_unskinned_depth_body.glsl',
+  'noise.glsl',
+  'normals.glsl',
+  'octahedral.glsl',
+  'pbr.glsl',
+  'scene_inputs.glsl',
+  'smaa.glsl',
+  'ssao_geometry.glsl',
+  'texture.glsl',
+  'tone_mapping.glsl',
 ];
 
 /// Compiles `.fmat` custom-material files into a Flutter GPU shader bundle plus
@@ -302,6 +312,7 @@ Future<void> _buildMaterials({
         .resolve('build/shaderbundles/$bundleName.shaderbundle')
         .toFilePath(),
   );
+  final variant = fileVariant ?? await engineIdentity();
   final shippedBundleFile = tree == null
       ? bundleFile
       : File.fromUri(
@@ -309,7 +320,7 @@ Future<void> _buildMaterials({
             GeneratedAssetFamily.material,
             nameId: bundleName,
             extension: '.shaderbundle',
-            variant: fileVariant,
+            variant: variant,
             target: target,
           ),
         );
@@ -318,7 +329,7 @@ Future<void> _buildMaterials({
           GeneratedAssetFamily.material,
           nameId: bundleName,
           extension: '.fmat.json',
-          variant: fileVariant,
+          variant: variant,
           target: target,
         ) ??
         packageRoot.resolve('build/shaderbundles/$bundleName.fmat.json'),
@@ -328,7 +339,7 @@ Future<void> _buildMaterials({
           GeneratedAssetFamily.material,
           nameId: bundleName,
           extension: '.index.json',
-          variant: fileVariant,
+          variant: variant,
           target: target,
         ) ??
         packageRoot.resolve('build/shaderbundles/$bundleName.index.json'),

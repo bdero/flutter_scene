@@ -101,6 +101,27 @@ void main() {
     );
   });
 
+  test('material bundles isolate file paths by engine identity', () async {
+    final tree = GeneratedAssetTree.open(temp.uri, 'app');
+    debugSetEngineIdentity('engine=first');
+    final first = tree.fileUri(
+      GeneratedAssetFamily.material,
+      nameId: 'materials',
+      extension: '.shaderbundle',
+      variant: await engineIdentity(),
+    );
+
+    debugSetEngineIdentity('engine=second');
+    final second = tree.fileUri(
+      GeneratedAssetFamily.material,
+      nameId: 'materials',
+      extension: '.shaderbundle',
+      variant: await engineIdentity(),
+    );
+
+    expect(first, isNot(second));
+  });
+
   test('a generated file is published by rename, never half-written', () {
     final target = temp.uri.resolve('out.bin');
     writeGeneratedBytes(target, List<int>.filled(64, 3));

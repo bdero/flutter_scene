@@ -145,11 +145,12 @@ Future<void> buildTargetShaderBundleJson({
     buildInput.packageName,
   )..requireAssetEntry();
   final target = shaderBundleTargetKey(buildInput);
+  final variant = fileVariant ?? await engineIdentity();
   final copyUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
     nameId: id,
     extension: '.shaderbundle',
-    variant: fileVariant,
+    variant: variant,
     target: target,
   );
   writeGeneratedBytes(copyUri, bytes);
