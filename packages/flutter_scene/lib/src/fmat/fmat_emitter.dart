@@ -37,6 +37,10 @@ const String kFragmentKeepAliveBlock = 'FragmentKeepAlive';
 /// The GLES-fold-safe instance name for [kFragmentKeepAliveBlock].
 const String kFragmentKeepAliveInstance = 'fragment_keep_alive';
 
+/// The framework varying schema version recorded in sidecars. Bumped whenever
+/// standard varyings in material_varyings.glsl or material_vertex.glsl change.
+const int kFrameworkVaryingSchemaVersion = 2;
+
 /// The engine vertex variants a material with a `vertex { }` block generates a
 /// shader for, mapping the sidecar key the runtime selects by to the shared
 /// body include that variant reuses. The keys correspond to the geometry a
@@ -677,6 +681,7 @@ String _emitSkyGlsl(
 Map<String, Object?> buildSidecar(FmatMaterial material) {
   return <String, Object?>{
     'name': material.name,
+    'framework_varying_schema': kFrameworkVaryingSchemaVersion,
     'domain': material.domain.name,
     if (material.useEnvironment) 'use_environment': true,
     'shading_model': material.shadingModel.name,

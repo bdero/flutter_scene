@@ -1206,5 +1206,17 @@ sky { vec3 Sky(vec3 direction) { return vec3(0.0); } }
         _throwsFmat('only supported in surface materials'),
       );
     });
+
+    test('stamps framework_varying_schema in sidecar', () {
+      final sidecar = buildSidecar(
+        parseFmat(
+          'material { name: "X" } fragment { void Surface(inout MaterialInputs material) {} }',
+        ),
+      );
+      expect(
+        sidecar['framework_varying_schema'],
+        kFrameworkVaryingSchemaVersion,
+      );
+    });
   });
 }

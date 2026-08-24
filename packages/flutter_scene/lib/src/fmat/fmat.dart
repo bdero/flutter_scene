@@ -17,6 +17,7 @@ export 'package:flutter_scene/src/fmat/fmat_emitter.dart'
         vertexVariantEntryName,
         kVertexVariants,
         buildSidecar,
+        kFrameworkVaryingSchemaVersion,
         kMaterialParamsBlock,
         kMaterialParamsInstance;
 export 'package:flutter_scene/src/fmat/fmat_parser.dart' show parseFmat;
