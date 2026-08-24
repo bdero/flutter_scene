@@ -870,7 +870,8 @@ class EditorToolSurface {
       name: 'describe_scene',
       description:
           'Return the scene-graph tree (node ids, slash paths, names, '
-          'component types) for an overview of the whole scene.',
+          'component types) plus an animation summary for an overview of '
+          'the whole scene.',
       inputSchema: {'type': 'object', 'properties': {}},
     ),
     ToolDefinition(
@@ -884,6 +885,34 @@ class EditorToolSurface {
           'ref': {
             'type': 'string',
             'description': 'A node slash path (Root/Cube) or id token.',
+          },
+        },
+        'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'list_animations',
+      description:
+          'List every animation in the document with its id token, name, '
+          'duration, and the target nodes and properties its channels drive.',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    ToolDefinition(
+      name: 'get_animation',
+      description:
+          "Return full detail for one animation: each channel's target node, "
+          'property, and decoded keyframes (a time plus a value per entry; '
+          'rotation values are quaternions, weights are flat lists). Author '
+          'and edit animations through the createAnimation / '
+          'setAnimationKeyframe / moveAnimationKeyframe / '
+          'removeAnimationKeyframe commands via run_command.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description': 'An animation id token or exact name.',
           },
         },
         'required': ['ref'],
@@ -976,9 +1005,22 @@ class EditorToolSurface {
       case 'describe_scene':
         return {
           'roots': [for (final n in _query.roots) _nodeTree(n)],
+          'animations': [
+            for (final a in session.document.animations.values)
+              _animationSummary(a),
+          ],
         };
       case 'get_node':
         return _nodeDetail(_resolve(_requireRef(args)));
+      case 'list_animations':
+        return {
+          'animations': [
+            for (final a in session.document.animations.values)
+              _animationSummary(a),
+          ],
+        };
+      case 'get_animation':
+        return _animationDetail(_resolveAnimation(_requireAnimationRef(args)));
       case 'get_selection':
         return _selectionResult();
       case 'select_node':
@@ -1609,6 +1651,16 @@ class EditorToolSurface {
     return ref;
   }
 
+  String _requireAnimationRef(Map<String, Object?> args) {
+    final ref = args['ref'];
+    if (ref is! String || ref.isEmpty) {
+      throw const ToolError(
+        'An animation "ref" (exact name or id token) is required',
+      );
+    }
+    return ref;
+  }
+
   /// Resolves a node reference, preferring a slash name path, then an id token.
   NodeSpec _resolve(String ref) {
     final byPath = _query.nodeByNamePath(ref.split('/'));
@@ -1620,6 +1672,135 @@ class EditorToolSurface {
       // Not an id token; fall through to the not-found error.
     }
     throw ToolError('No node matches: $ref');
+  }
+
+  /// Resolves an animation reference, preferring an id token, then an exact
+  /// name (an ambiguous name is rejected so agents fall back to the token).
+  AnimationSpec _resolveAnimation(String ref) {
+    try {
+      final animation = session.document.animation(LocalId.parse(ref));
+      if (animation != null) return animation;
+    } on FormatException {
+      // Not an id token; fall through to a name lookup.
+    }
+    final matches = [
+      for (final animation in session.document.animations.values)
+        if (animation.name == ref) animation,
+    ];
+    if (matches.length == 1) return matches.single;
+    throw ToolError(
+      matches.isEmpty
+          ? 'No animation matches: $ref'
+          : 'Animation name is ambiguous; use its id token: $ref',
+    );
+  }
+
+  /// The last keyframe time across every channel of [animation].
+  double _animationDuration(AnimationSpec animation) {
+    var duration = 0.0;
+    for (final channel in animation.channels) {
+      for (final time in _channelTimes(channel)) {
+        if (time > duration) duration = time;
+      }
+    }
+    return duration;
+  }
+
+  /// The compact per-animation shape carried by `list_animations` and
+  /// `describe_scene`: enough to pick an animation and see what it drives,
+  /// without decoding every keyframe.
+  Map<String, Object?> _animationSummary(AnimationSpec animation) => {
+    'id': animation.id.toToken(),
+    'name': animation.name,
+    'duration': _animationDuration(animation),
+    'channels': [
+      for (final channel in animation.channels)
+        {'target': _channelTarget(channel), 'property': channel.property.name},
+    ],
+  };
+
+  /// Full detail for one animation, with each channel's keyframes decoded
+  /// out of its float32 timeline/keyframes payloads.
+  Map<String, Object?> _animationDetail(AnimationSpec animation) => {
+    'id': animation.id.toToken(),
+    'name': animation.name,
+    'duration': _animationDuration(animation),
+    'channels': [
+      for (final channel in animation.channels) _channelDetail(channel),
+    ],
+  };
+
+  /// A channel's target node, addressed the same way nodes are everywhere
+  /// else on this surface (slash path first, id token as the stable form).
+  Map<String, Object?> _channelTarget(AnimationChannelSpec channel) => {
+    'id': channel.target.toToken(),
+    if (_query.namePathOf(channel.target) case final path?) 'path': path,
+  };
+
+  /// One channel's decoded keyframes. Rotation carries a quaternion per
+  /// keyframe, translation and scale a vec3, and weights the flattened glTF
+  /// shape (one weight per morph target per keyframe).
+  Map<String, Object?> _channelDetail(AnimationChannelSpec channel) {
+    final times = _channelTimes(channel);
+    final valueBytes = session.document.payload(channel.keyframes)?.bytes;
+    final floats = valueBytes == null ? Float32List(0) : _floatsOf(valueBytes);
+    final weightStride = times.isEmpty ? 0 : floats.length ~/ times.length;
+    return {
+      'target': _channelTarget(channel),
+      'property': channel.property.name,
+      'keyframes': [
+        for (var i = 0; i < times.length; i++)
+          {
+            'time': times[i],
+            'value': switch (channel.property) {
+              AnimationProperty.rotation =>
+                floats.length >= i * 4 + 4
+                    ? {
+                        'x': floats[i * 4],
+                        'y': floats[i * 4 + 1],
+                        'z': floats[i * 4 + 2],
+                        'w': floats[i * 4 + 3],
+                      }
+                    : null,
+              AnimationProperty.weights => [
+                for (
+                  var j = 0;
+                  j < weightStride && i * weightStride + j < floats.length;
+                  j++
+                )
+                  floats[i * weightStride + j],
+              ],
+              _ =>
+                floats.length >= i * 3 + 3
+                    ? {
+                        'x': floats[i * 3],
+                        'y': floats[i * 3 + 1],
+                        'z': floats[i * 3 + 2],
+                      }
+                    : null,
+            },
+          },
+      ],
+    };
+  }
+
+  /// A payload chunk's bytes as float32s (chunks can be unaligned views).
+  Float32List _floatsOf(Uint8List bytes) {
+    if (bytes.offsetInBytes % 4 == 0) {
+      return bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+    }
+    return Uint8List.fromList(
+      bytes,
+    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
+  }
+
+  List<double> _channelTimes(AnimationChannelSpec channel) {
+    final bytes = session.document.payload(channel.timeline)?.bytes;
+    if (bytes == null) return const [];
+    return [for (final t in _floatsOf(bytes)) t];
   }
 
   Object? _transformJson(TransformSpec transform) => switch (transform) {

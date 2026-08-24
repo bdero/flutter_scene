@@ -29,7 +29,10 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
             'the node tree, get_node for detail, and search_commands + '
             'run_command to make edits (every command is one undoable step, '
             'identical to the editor UI). Address nodes by slash path '
-            '(Root/Cube) first, id token as a fallback.',
+            '(Root/Cube) first, id token as a fallback. For animations, use '
+            'list_animations / get_animation to read them and the '
+            'createAnimation / setAnimationKeyframe commands through '
+            'run_command to author them.',
       );
 
   /// The tool surface every call is delegated to.

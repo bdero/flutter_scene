@@ -107,6 +107,207 @@ void main() {
       );
     });
   });
+  group('animation perception', () {
+    test('bootstrap surface offers the animation tools', () {
+      final names = _surface().bootstrapTools().map((t) => t.name).toSet();
+      expect(names, containsAll(['list_animations', 'get_animation']));
+    });
+
+    test('describe_scene carries an animation summary', () async {
+      final surface = _surface();
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final scene = await surface.dispatch('describe_scene', {});
+      final animations = scene['animations'] as List;
+      expect(animations, hasLength(1));
+      final summary = animations.single as Map;
+      expect(summary['name'], 'Animation');
+      expect(summary['id'], isNotEmpty);
+      expect(summary['duration'], 0.0);
+      expect((summary['channels'] as List), isEmpty);
+    });
+
+    test('keyframes authored via run_command read back decoded', () async {
+      final surface = _surface();
+      // A target node plus a two-keyframe translation channel.
+      await surface.dispatch('run_command', {
+        'command': 'createNode',
+        'params': {'name': 'Cube'},
+      });
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      final nodeId = await _firstRootId(surface);
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'time': 0.0,
+          'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+        },
+      });
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'time': 1.5,
+          'translation': {'x': 2.0, 'y': 4.0, 'z': -1.0},
+        },
+      });
+      // A rotation keyframe exercises the quaternion stride.
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'rotation',
+          'time': 0.5,
+          'rotation': {
+            'x': 0.0,
+            'y': 0.7071067811865476,
+            'z': 0.0,
+            'w': 0.7071067811865476,
+          },
+        },
+      });
+
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      expect(detail['duration'], 1.5);
+      final channels = detail['channels'] as List;
+      expect(channels, hasLength(2));
+      final translation =
+          channels.firstWhere((c) => (c as Map)['property'] == 'translation')
+              as Map;
+      expect(((translation['target'] as Map)['path']), 'Cube');
+      final keys = translation['keyframes'] as List;
+      expect(keys, hasLength(2));
+      // Keyframes come back time-sorted out of the timeline payload.
+      expect((keys.first as Map)['time'], 0.0);
+      expect((keys.last as Map)['time'], 1.5);
+      expect((keys.last as Map)['value'], {'x': 2.0, 'y': 4.0, 'z': -1.0});
+
+      final rotation =
+          channels.firstWhere((c) => (c as Map)['property'] == 'rotation')
+              as Map;
+      expect(
+        ((rotation['keyframes'].single as Map)['value'] as Map)['w'],
+        closeTo(0.7071067811865476, 1e-6),
+      );
+
+      // The same detail resolves by exact name.
+      final byName = await surface.dispatch('get_animation', {
+        'ref': 'Animation',
+      });
+      expect(byName['id'], animationId);
+
+      // list_animations summarizes without decoding values.
+      final summary =
+          ((await surface.dispatch('list_animations', {}))['animations']
+                      as List)
+                  .single
+              as Map;
+      expect(summary['duration'], 1.5);
+      expect((summary['channels'] as List), hasLength(2));
+    });
+
+    test('get_animation on a missing ref throws ToolError', () {
+      expect(
+        () => _surface().dispatch('get_animation', {'ref': 'Nope'}),
+        throwsA(isA<ToolError>()),
+      );
+      // The missing-ref complaint is about animations, not nodes.
+      expect(
+        () => _surface().dispatch('get_animation', {}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('animation'),
+          ),
+        ),
+      );
+    });
+
+    test('an ambiguous animation name is rejected', () async {
+      final surface = _surface();
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      expect(
+        () => surface.dispatch('get_animation', {'ref': 'Animation'}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('ambiguous'),
+          ),
+        ),
+      );
+    });
+
+    test('weights channels decode with the flattened glTF stride', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      final doc = session.document;
+      await surface.dispatch('run_command', {
+        'command': 'createNode',
+        'params': {'name': 'Mesh'},
+      });
+      // No command authors weight channels (they come from imported models),
+      // so build one directly: 2 keyframes x 2 morph targets.
+      final timelineId = doc.newId();
+      final valuesId = doc.newId();
+      Uint8List floatBytes(List<double> xs) =>
+          Float32List.fromList(xs).buffer.asUint8List();
+      doc.addPayload(
+        PayloadSpec(
+          timelineId,
+          encoding: PayloadEncoding.floats,
+          bytes: floatBytes([0, 1]),
+        ),
+      );
+      doc.addPayload(
+        PayloadSpec(
+          valuesId,
+          encoding: PayloadEncoding.floats,
+          bytes: floatBytes([0.25, 0.5, 0.75, 1.0]),
+        ),
+      );
+      final nodeId = LocalId.parse(await _firstRootId(surface));
+      doc.addAnimation(
+        AnimationSpec(
+          doc.newId(),
+          name: 'Blend',
+          channels: [
+            AnimationChannelSpec(
+              target: nodeId,
+              property: AnimationProperty.weights,
+              timeline: timelineId,
+              keyframes: valuesId,
+            ),
+          ],
+        ),
+      );
+
+      final detail = await surface.dispatch('get_animation', {'ref': 'Blend'});
+      final channel = (detail['channels'] as List).single as Map;
+      expect(channel['property'], 'weights');
+      final keys = channel['keyframes'] as List;
+      expect(keys, hasLength(2));
+      expect((keys.first as Map)['value'], [0.25, 0.5]);
+      expect((keys.last as Map)['value'], [0.75, 1.0]);
+    });
+  });
 }
 
 Future<String> _firstRootId(EditorToolSurface surface) async {
