@@ -163,9 +163,8 @@ class ThirdPersonControllerComponent extends Component {
     }
 
     if (detectedGround &&
-        (isGrounded ||
-            currentPos.y <= groundY + footOffset + 0.1 ||
-            velocity.y <= 0.0)) {
+        velocity.y <= 0.0 &&
+        (isGrounded || currentPos.y <= groundY + footOffset + 0.25)) {
       if (!isGrounded) {
         velocity.y = 0.0;
       }

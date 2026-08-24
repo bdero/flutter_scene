@@ -134,6 +134,37 @@ void main() {
       expect(controller.isGrounded, isFalse);
     });
 
+    test(
+      'single jump request produces multi-frame ascent and eventual landing',
+      () {
+        final node = Node()..position = vm.Vector3(0, 0, 0);
+        final controller = ThirdPersonControllerComponent(
+          jumpVelocity: 6.0,
+          groundPlaneHeight: 0.0,
+        );
+        node.addComponent(controller);
+
+        controller.fixedUpdate(0.016);
+        expect(controller.isGrounded, isTrue);
+
+        controller.jump();
+
+        // Over next 10 frames (~160ms), character should remain airborne and ascend
+        for (var i = 0; i < 10; i++) {
+          controller.fixedUpdate(0.016);
+          expect(controller.isGrounded, isFalse);
+          expect(node.position.y, greaterThan(0.0));
+        }
+
+        // After 60 frames (~1s), character should have fallen back down and landed
+        for (var i = 0; i < 50; i++) {
+          controller.fixedUpdate(0.016);
+        }
+        expect(controller.isGrounded, isTrue);
+        expect(node.position.y, closeTo(0.0, 0.05));
+      },
+    );
+
     test('does not teleport when under parent with offset and Z-flip', () {
       final root = Node();
       final parent = Node()
