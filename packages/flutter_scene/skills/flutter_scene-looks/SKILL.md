@@ -146,12 +146,12 @@ Start from the nearest look, then move one field at a time.
 
 ## Micro-surface metrics and anti-waxiness tuning
 
-When tuning procedural materials or custom shaders, use quantitative surface metrics to eliminate waxiness, plastic reads, or harsh aliasing:
+When tuning procedural materials or custom shaders, use surface metrics and exposure discipline to eliminate waxiness, plastic reads, or harsh aliasing:
 
-- **1-pixel luminance gradient (`grad/L`).** Measures micro-scale pixel energy `(|dL/dx| + |dL/dy|) / 2`. Natural weathered stone and terrain surfaces sit at `grad/L >= 0.025` to `0.085`; values under `0.010` read as smooth untextured plastic.
-- **High-frequency vs low-frequency ratio (`hf/lf`).** Compares 1px blur residuals to 4px residuals. A low ratio with high variance indicates blotchy macro-clouds rather than fine surface grain.
-- **Grazing terminator crossing fraction.** Under grazing directional lighting (sun below 20 degrees elevation), over-amplified normal maps create binary lit/unlit noise (pebble-dash or torn straw). Keep terminator crossing fractions bounded under 0.05.
-- **Tone-curve shoulder awareness.** Tone mapping curves (like ACES) compress channel differences near the shoulder. A surface reading high value (`V > 0.85`) with low saturation (`S < 0.40`) is over-exposed rather than under-pigmented; reducing exposure reveals natural material saturation without washing out channels.
+- **Surface reads like smooth plastic.** Increase high-frequency micro-scale variation. Low 1-pixel luminance gradients `(|dL/dx| + |dL/dy|) / 2` indicate untextured or overly smooth surfaces.
+- **Blotchy macro clouds.** Balance high-frequency and low-frequency energy ratios (`hf/lf`). High variance with low fine detail indicates large-scale noise patches without adequate surface grain.
+- **Harsh normal-map glitter or torn noise.** Check terminator crossing behavior under low grazing light angles (sun low on the horizon). Over-amplified normal maps flip adjacent pixels between full light and full shadow.
+- **Colors look washed out in bright areas.** Tone mapping curves compress channel differences near the shoulder. A surface reading high brightness with low saturation is often over-exposed rather than under-pigmented; reduce exposure to restore natural material saturation.
 
 ## Look tools that are not on EnvironmentSettings
 
