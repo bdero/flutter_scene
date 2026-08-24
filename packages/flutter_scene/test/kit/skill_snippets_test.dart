@@ -73,7 +73,11 @@ void _skillSnippetsCompilationCheck(Scene scene) {
   final _ = surface.normal;
 
   // 7. DebugDraw
-  DebugDraw.line(vm.Vector3.zero(), vm.Vector3.all(1), color: vm.Vector4(1, 0, 0, 1));
+  DebugDraw.line(
+    vm.Vector3.zero(),
+    vm.Vector3.all(1),
+    color: vm.Vector4(1, 0, 0, 1),
+  );
   DebugDraw.box(vm.Aabb3(), color: vm.Vector4(0, 1, 0, 1));
   DebugDraw.sphere(vm.Vector3.zero(), 1.0, color: vm.Vector4(0, 0, 1, 1));
   DebugDraw.axes(vm.Matrix4.identity(), size: 2.0);
