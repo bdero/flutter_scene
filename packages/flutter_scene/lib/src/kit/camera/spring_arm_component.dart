@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/math_extensions.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/raycast.dart';
 import 'package:vector_math/vector_math.dart' as vm;
@@ -70,7 +69,7 @@ class SpringArmComponent extends Component {
   Node? cameraNode;
 
   vm.Vector3 _smoothedPivotWorld = vm.Vector3.zero();
-  vm.Quaternion _smoothedRotation = vm.Quaternion.identity();
+  vm.Matrix4 _cachedSocketTransform = vm.Matrix4.identity();
   bool _initialized = false;
 
   SpringArmComponent({
@@ -97,69 +96,67 @@ class SpringArmComponent extends Component {
        socketOffset = socketOffset?.clone() ?? vm.Vector3.zero();
 
   /// Gets the world-space socket transform computed for this frame.
-  vm.Matrix4 get socketTransform {
-    final pivot = _initialized ? _smoothedPivotWorld : _currentRawPivotWorld;
-    final rot = _initialized ? _smoothedRotation : _currentRawRotation;
+  vm.Matrix4 get socketTransform => _cachedSocketTransform;
 
-    final forwardDir = rot.rotate(vm.Vector3(0, 0, 1));
-    final socketPos = pivot - forwardDir * currentLength;
-    final finalPos = socketPos + rot.rotate(socketOffset);
-
-    return vm.Matrix4.compose(finalPos, rot, vm.Vector3.all(1.0));
-  }
-
-  vm.Vector3 get _currentRawPivotWorld {
-    if (!isAttached) return targetOffset.clone();
-    final parentWorld = node.globalTransform;
-    return (parentWorld *
-            vm.Vector4(targetOffset.x, targetOffset.y, targetOffset.z, 1.0))
-        .xyz;
-  }
-
-  vm.Quaternion get _currentRawRotation {
-    if (!inheritYaw && !inheritPitch && !inheritRoll) {
-      return vm.Quaternion.euler(yaw, pitch, roll);
-    }
-    if (!isAttached) {
-      return vm.Quaternion.euler(yaw, pitch, roll);
-    }
-    if (inheritYaw && inheritPitch && inheritRoll) {
-      final ownerRot = vm.Quaternion.identity();
-      node.globalTransform.decompose(
-        vm.Vector3.zero(),
-        ownerRot,
-        vm.Vector3.zero(),
-      );
-      return ownerRot;
-    }
-
+  /// Effective yaw angle of the boom.
+  double get effectiveYaw {
+    if (!inheritYaw || !isAttached) return yaw;
     final ownerRot = vm.Quaternion.identity();
     node.globalTransform.decompose(
       vm.Vector3.zero(),
       ownerRot,
       vm.Vector3.zero(),
     );
-
     final qx = ownerRot.x;
     final qy = ownerRot.y;
     final qz = ownerRot.z;
     final qw = ownerRot.w;
-
-    final sinp = (2 * (qw * qy - qz * qx)).clamp(-1.0, 1.0);
-    final ownerPitch = math.asin(sinp);
     final ownerYaw = math.atan2(
-      2 * (qw * qz + qx * qy),
+      2 * (qw * qy + qz * qx),
       1 - 2 * (qy * qy + qz * qz),
     );
-    final ownerRoll = math.atan2(
-      2 * (qw * qx + qy * qz),
-      1 - 2 * (qx * qx + qy * qy),
-    );
+    return ownerYaw + yaw;
+  }
 
-    final finalYaw = inheritYaw ? ownerYaw : yaw;
-    final finalPitch = inheritPitch ? ownerPitch : pitch;
-    final finalRoll = inheritRoll ? ownerRoll : roll;
-    return vm.Quaternion.euler(finalYaw, finalPitch, finalRoll);
+  /// Effective pitch angle of the boom.
+  double get effectivePitch {
+    if (!inheritPitch || !isAttached) return pitch;
+    final ownerRot = vm.Quaternion.identity();
+    node.globalTransform.decompose(
+      vm.Vector3.zero(),
+      ownerRot,
+      vm.Vector3.zero(),
+    );
+    final qx = ownerRot.x;
+    final qy = ownerRot.y;
+    final qz = ownerRot.z;
+    final qw = ownerRot.w;
+    final sinp = (2 * (qw * qx - qy * qz)).clamp(-1.0, 1.0);
+    final ownerPitch = math.asin(sinp);
+    return (ownerPitch + pitch).clamp(-1.4, 1.4);
+  }
+
+  vm.Vector3 get _currentRawPivotWorld {
+    if (!isAttached) return targetOffset.clone();
+    final parentPos = vm.Vector3.zero();
+    node.globalTransform.decompose(
+      parentPos,
+      vm.Quaternion.identity(),
+      vm.Vector3.zero(),
+    );
+    return parentPos + targetOffset;
+  }
+
+  static vm.Vector3 _computeEyePosition(
+    vm.Vector3 pivot,
+    double yAngle,
+    double pAngle,
+    double dist,
+  ) {
+    final horizontal = math.cos(pAngle) * dist;
+    return pivot +
+        vm.Vector3(-math.sin(yAngle), 0.0, -math.cos(yAngle)) * horizontal +
+        vm.Vector3(0.0, math.sin(pAngle) * dist, 0.0);
   }
 
   Node get _rootNode {
@@ -183,9 +180,34 @@ class SpringArmComponent extends Component {
   @override
   void onMount() {
     _smoothedPivotWorld = _currentRawPivotWorld;
-    _smoothedRotation = _currentRawRotation;
     currentLength = targetLength;
+    _updateSocketTransform();
     _initialized = true;
+  }
+
+  void _updateSocketTransform() {
+    final currentYaw = effectiveYaw;
+    final currentPitch = effectivePitch.clamp(-1.4, 1.4);
+    final eye = _computeEyePosition(
+      _smoothedPivotWorld,
+      currentYaw,
+      currentPitch,
+      currentLength,
+    );
+    final lookDir = (_smoothedPivotWorld - eye).normalized();
+    final right = vm.Vector3(0, 1, 0).cross(lookDir).normalized();
+    final offsetEye =
+        eye + right * socketOffset.x + vm.Vector3(0, 1, 0) * socketOffset.y;
+    final offsetTarget =
+        _smoothedPivotWorld +
+        right * socketOffset.x +
+        vm.Vector3(0, 1, 0) * socketOffset.y;
+
+    _cachedSocketTransform = Node.lookAtTransform(
+      offsetEye,
+      offsetTarget,
+      up: vm.Vector3(0, 1, 0),
+    );
   }
 
   @override
@@ -194,7 +216,6 @@ class SpringArmComponent extends Component {
     if (deltaSeconds <= 0.0) return;
 
     final rawPivot = _currentRawPivotWorld;
-    final rawRot = _currentRawRotation;
 
     // 1. Position lag smoothing (exponential)
     if (enablePositionLag && positionLagSpeed > 0.0) {
@@ -205,24 +226,20 @@ class SpringArmComponent extends Component {
       _smoothedPivotWorld = rawPivot;
     }
 
-    // 2. Rotation lag smoothing (exponential)
-    if (enableRotationLag && rotationLagSpeed > 0.0) {
-      final t = (1.0 - math.exp(-rotationLagSpeed * deltaSeconds)).clamp(
-        0.0,
-        1.0,
-      );
-      _smoothedRotation = _smoothedRotation.slerp(rawRot, t);
-    } else {
-      _smoothedRotation = rawRot;
-    }
+    final currentYaw = effectiveYaw;
+    final currentPitch = effectivePitch.clamp(-1.4, 1.4);
 
-    // 3. Occlusion query excluding character and camera subtree
+    // 2. Occlusion query from pivot along boom direction toward desired eye
+    final unoccludedEye = _computeEyePosition(
+      _smoothedPivotWorld,
+      currentYaw,
+      currentPitch,
+      targetLength,
+    );
+    final rayDir = (unoccludedEye - _smoothedPivotWorld).normalized();
+    final ray = vm.Ray.originDirection(_smoothedPivotWorld, rayDir);
+
     var desiredLength = targetLength;
-    final rayStart = _smoothedPivotWorld;
-    final forwardDir = _smoothedRotation.rotate(vm.Vector3(0, 0, 1));
-    final rayDir = (-forwardDir).normalized();
-
-    final ray = vm.Ray.originDirection(rayStart, rayDir);
     final hit = raycastNode(
       _rootNode,
       ray,
@@ -242,14 +259,17 @@ class SpringArmComponent extends Component {
       currentLength = currentLength + (desiredLength - currentLength) * t;
     }
 
+    // 3. Compute final camera socket transform
+    _updateSocketTransform();
+
     // 4. Update child camera node converting world socket to local space
     if (cameraNode != null) {
       final camParent = cameraNode!.parent;
       if (camParent != null) {
         final invParent = camParent.globalTransform.clone()..invert();
-        cameraNode!.localTransform = invParent * socketTransform;
+        cameraNode!.localTransform = invParent * _cachedSocketTransform;
       } else {
-        cameraNode!.localTransform = socketTransform;
+        cameraNode!.localTransform = _cachedSocketTransform;
       }
     }
   }
