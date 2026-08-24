@@ -159,7 +159,6 @@ class MeshComponent extends Component {
     if (_renderItems.isEmpty) return;
     final worldTransformVersion = node.worldTransformVersion;
     var staticStateUnchanged =
-        node.shadowStatic &&
         node.skin == null &&
         node.internalMorphWeights == null &&
         worldTransformVersion == _worldTransformVersion;
@@ -171,6 +170,8 @@ class MeshComponent extends Component {
       final item = _renderItems[index];
       final primitive = _mesh.primitives[index];
       staticStateUnchanged =
+          item.jointsTexture == null &&
+          item.morphWeights == null &&
           item.visible == !item.material.drawsNothing &&
           item.primitiveVisible == primitive.visible &&
           item.frustumCulled == node.frustumCulled &&

@@ -42,9 +42,16 @@ final Map<String, int> _sceneTemplateHolders = {};
 /// One manifest-backed registry per asset bundle for the top-level helpers.
 /// Bundle identity is the cache boundary, and [Expando] lets a discarded
 /// test or application bundle release its registry with it.
-final Expando<Future<SceneRegistry>> _sceneRegistries = Expando(
+Expando<Future<SceneRegistry>> _sceneRegistries = Expando(
   'flutter_scene scene registries',
 );
+
+/// Evicts every cached manifest-backed scene registry so a subsequent load
+/// re-reads the bundle manifest.
+@internal
+void clearSceneRegistryCache() {
+  _sceneRegistries = Expando('flutter_scene scene registries');
+}
 
 /// Tracked dependency sets of streamed lazy subtrees, keyed by placeholder
 /// node, so repeated loads refresh the registration instead of duplicating it.
@@ -709,9 +716,11 @@ Future<bool> releaseScene(
 Future<SceneRegistry> _sharedSceneRegistry(AssetBundle? bundle) {
   final assetBundle = bundle ?? rootBundle;
   return _sceneRegistries[assetBundle] ??=
-      SceneRegistry.load(bundle: assetBundle).onError((error, stackTrace) {
+      SceneRegistry.load(
+        bundle: assetBundle,
+      ).onError((Object error, StackTrace stackTrace) {
         _sceneRegistries[assetBundle] = null;
-        throw error!;
+        Error.throwWithStackTrace(error, stackTrace);
       });
 }
 
@@ -723,6 +732,7 @@ Future<SceneRegistry> _sharedSceneRegistry(AssetBundle? bundle) {
 void clearSceneTemplateCache() {
   _sceneTemplates.clear();
   _sceneTemplateHolders.clear();
+  clearSceneRegistryCache();
 }
 
 /// The number of scene templates the shared cache is holding.
