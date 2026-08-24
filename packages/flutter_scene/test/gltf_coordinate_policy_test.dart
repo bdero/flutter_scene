@@ -18,33 +18,28 @@ void main() {
           utf8.encode(
             jsonEncode({
               'asset': {'version': '2.0'},
-              'nodes': [
-                {
-                  'extensions': {
-                    'KHR_lights_punctual': {'light': 0},
-                  },
-                  'translation': [1.0, 2.0, 3.0],
-                  'rotation': [0.0, 0.7071068, 0.0, 0.7071068],
-                },
-              ],
+              'extensionsUsed': ['KHR_lights_punctual'],
               'extensions': {
                 'KHR_lights_punctual': {
                   'lights': [
-                    {
-                      'type': 'directional',
-                      'color': [1.0, 1.0, 1.0],
-                      'intensity': 1000.0,
-                    },
+                    {'type': 'directional'},
                   ],
                 },
               },
-              'extensionsRequired': ['KHR_lights_punctual'],
               'scenes': [
                 {
                   'nodes': [0],
                 },
               ],
               'scene': 0,
+              'nodes': [
+                {
+                  'rotation': [0.0, 0.38268343, 0.0, 0.92387953],
+                  'extensions': {
+                    'KHR_lights_punctual': {'light': 0},
+                  },
+                },
+              ],
             }),
           ),
         );
@@ -66,6 +61,64 @@ void main() {
         );
       },
     );
+
+    test('runtime and offline imported triangles agree on drawn orientation', () {
+      // A single CCW triangle in glTF space.
+      final runtimePacked = _packWithIndices(
+        GltfCoordinatePolicy.runtimeBoundary,
+      );
+      final offlinePacked = _packWithIndices(GltfCoordinatePolicy.bakeNative);
+
+      final runtimeVertices = Float32List.sublistView(
+        runtimePacked.vertexBytes,
+      );
+      final offlineVertices = Float32List.sublistView(
+        offlinePacked.vertexBytes,
+      );
+
+      final runtimeIndices = Uint16List.sublistView(runtimePacked.indexBytes);
+      final offlineIndices = Uint16List.sublistView(offlinePacked.indexBytes);
+
+      // Runtime import preserves glTF vertex coordinates and CCW indices [0, 1, 2],
+      // and places an F = diag(1, 1, -1) boundary transform at the imported root.
+      // In world space, vertex i becomes F * v_i = (v_x, v_y, -v_z).
+      Vector3 runtimeWorldVertex(int index) {
+        final v = runtimeIndices[index];
+        return Vector3(
+          runtimeVertices[v * 18],
+          runtimeVertices[v * 18 + 1],
+          -runtimeVertices[v * 18 + 2],
+        );
+      }
+
+      // Offline import bakes F into vertex positions and swaps indices to [0, 2, 1]
+      // with an identity root transform.
+      Vector3 offlineWorldVertex(int index) {
+        final v = offlineIndices[index];
+        return Vector3(
+          offlineVertices[v * 18],
+          offlineVertices[v * 18 + 1],
+          offlineVertices[v * 18 + 2],
+        );
+      }
+
+      // The drawn triangle in world space:
+      final r0 = runtimeWorldVertex(0);
+      final r1 = runtimeWorldVertex(1);
+      final r2 = runtimeWorldVertex(2);
+
+      final o0 = offlineWorldVertex(0);
+      final o1 = offlineWorldVertex(1);
+      final o2 = offlineWorldVertex(2);
+
+      // Because runtime's F transform has negative determinant (parity flip),
+      // the effective world-space winding normal is (r2 - r0) x (r1 - r0),
+      // exactly matching offline's CCW geometric normal (o1 - o0) x (o2 - o0).
+      final runtimeEffectiveNormal = (r2 - r0).cross(r1 - r0);
+      final offlineEffectiveNormal = (o1 - o0).cross(o2 - o0);
+
+      _expectVectorNear(runtimeEffectiveNormal, offlineEffectiveNormal);
+    });
 
     test('runtime packing leaves vertex bytes untouched', () {
       final source = _pack(GltfCoordinatePolicy.runtimeBoundary);
@@ -93,8 +146,8 @@ void main() {
       final source = _packWithIndices(GltfCoordinatePolicy.runtimeBoundary);
       final native = _packWithIndices(GltfCoordinatePolicy.bakeNative);
 
-      final sourceIndices = Uint16List.sublistView(source.indexBytes!);
-      final nativeIndices = Uint16List.sublistView(native.indexBytes!);
+      final sourceIndices = Uint16List.sublistView(source.indexBytes);
+      final nativeIndices = Uint16List.sublistView(native.indexBytes);
 
       expect(sourceIndices, [0, 1, 2]);
       expect(nativeIndices, [0, 2, 1]);

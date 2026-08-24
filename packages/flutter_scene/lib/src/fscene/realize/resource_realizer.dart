@@ -583,8 +583,8 @@ class ResourceRealizer {
     if (indexId != null) {
       final rawIndexBytes = _payloadBytes(indexId, 'index');
       final isUint32 = document.payload(indexId)!.format == 'uint32';
-      final isTriangleTopology =
-          res.topology == 'triangle' || res.topology == 'triangles';
+      indexType = isUint32 ? gpu.IndexType.int32 : gpu.IndexType.int16;
+      final isTriangleTopology = res.topology == 'triangle';
       if ((res.legacyWinding || document.formatVersion < 5) &&
           isTriangleTopology) {
         final migrated = Uint8List.fromList(rawIndexBytes);
@@ -611,6 +611,9 @@ class ResourceRealizer {
         }
         indexBytes = ByteData.sublistView(migrated);
       } else {
+        // TODO(winding): Support legacy winding migration for triangleStrip
+        // topology (requires vertex-order reversal, not index-triple swap).
+        // TODO(winding): Support non-indexed geometry winding migration.
         indexBytes = ByteData.sublistView(rawIndexBytes);
       }
     }
