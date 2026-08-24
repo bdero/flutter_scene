@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -68,6 +69,87 @@ class _ExampleExternalTextureState extends State<ExampleExternalTexture> {
   double _roughness = 0.35;
   double _metallic = 0.0;
   double _emissive = 0.8;
+  bool _invertColors = false;
+  bool _swapRb = false;
+
+  ui.ColorFilter? _currentColorFilter() {
+    if (!_invertColors && !_swapRb) return null;
+    if (_invertColors && _swapRb) {
+      return const ui.ColorFilter.matrix(<double>[
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        255.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        255.0,
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]);
+    } else if (_invertColors) {
+      return const ui.ColorFilter.matrix(<double>[
+        -1.0,
+        0.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        255.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]);
+    } else {
+      return const ui.ColorFilter.matrix(<double>[
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+      ]);
+    }
+  }
+
+  void _updateFilter() {
+    _source?.colorFilter = _currentColorFilter();
+    _source?.requestCapture();
+  }
 
   @override
   void initState() {
@@ -207,6 +289,7 @@ class _ExampleExternalTextureState extends State<ExampleExternalTexture> {
       textureId: textureId,
       width: width,
       height: height,
+      colorFilter: _currentColorFilter(),
     );
     _source = source;
     _bind(source);
@@ -323,6 +406,38 @@ class _ExampleExternalTextureState extends State<ExampleExternalTexture> {
                 _emissive = v;
                 _applyEmissive();
               },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Invert colors',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+                Switch(
+                  value: _invertColors,
+                  onChanged: (v) {
+                    setState(() => _invertColors = v);
+                    _updateFilter();
+                  },
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Swap R/B (BGR)',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+                Switch(
+                  value: _swapRb,
+                  onChanged: (v) {
+                    setState(() => _swapRb = v);
+                    _updateFilter();
+                  },
+                ),
+              ],
             ),
             if (_error != null)
               Padding(
