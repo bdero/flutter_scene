@@ -1287,6 +1287,13 @@ class _KitStageState extends State<_KitStage> {
     final vertVel = _characterController!.velocity.y;
 
     if (!isGrounded) {
+      _dashLandingCooldown = 0.0;
+      final landClip = _dashClips['JumpLand'];
+      if (landClip != null) {
+        landClip.playing = false;
+        landClip.weight = 0.0;
+      }
+
       if (vertVel >= 0.0) {
         if (_dashJumpState != 1) {
           _dashJumpState = 1;
@@ -1305,7 +1312,7 @@ class _KitStageState extends State<_KitStage> {
     }
     _prevGrounded = isGrounded;
 
-    if (_dashLandingCooldown > 0.0) {
+    if (isGrounded && _dashLandingCooldown > 0.0) {
       _dashLandingCooldown = math.max(0.0, _dashLandingCooldown - dt);
       if (_dashLandingCooldown == 0.0) {
         _dashJumpState = 0;

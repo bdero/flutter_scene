@@ -165,6 +165,50 @@ void main() {
       },
     );
 
+    test('delays subsequent jump until landing delay elapses', () {
+      final node = Node()..position = vm.Vector3(0, 0, 0);
+      final controller = ThirdPersonControllerComponent(
+        jumpVelocity: 6.0,
+        groundPlaneHeight: 0.0,
+        landingJumpDelay: 0.20,
+      );
+      node.addComponent(controller);
+
+      // Settle on ground
+      controller.fixedUpdate(0.016);
+      expect(controller.isGrounded, isTrue);
+
+      // Perform first jump
+      controller.jump();
+      controller.fixedUpdate(0.016);
+      expect(controller.isGrounded, isFalse);
+
+      // Step until landing touchdown
+      while (!controller.isGrounded) {
+        controller.fixedUpdate(0.016);
+      }
+      expect(controller.isGrounded, isTrue);
+
+      // Immediately request another jump 50ms after landing
+      controller.jump();
+      controller.fixedUpdate(0.05);
+
+      // Should still be grounded during the 200ms landing window
+      expect(controller.isGrounded, isTrue);
+      expect(controller.velocity.y, equals(0.0));
+
+      // Advance through the remainder of the 200ms landing delay
+      for (var i = 0; i < 15; i++) {
+        controller.fixedUpdate(0.016);
+      }
+
+      // Subsequent jump now initiates cleanly
+      controller.jump();
+      controller.fixedUpdate(0.016);
+      expect(controller.isGrounded, isFalse);
+      expect(controller.velocity.y, greaterThan(4.0));
+    });
+
     test('does not teleport when under parent with offset and Z-flip', () {
       final root = Node();
       final parent = Node()

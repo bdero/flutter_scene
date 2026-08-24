@@ -35,16 +35,19 @@ class ThirdPersonControllerComponent extends Component {
   /// Time window (in seconds) after leaving a ledge during which a jump is still allowed.
   double coyoteTimeWindow;
 
-  /// Time window (in seconds) to buffer jump inputs before touching the ground.
+  /// Time window (in seconds)  /// Time buffer window for jump inputs before landing (in seconds).
   double jumpBufferWindow;
 
-  /// Bitmask of layers to test for ground (defaults to all layers).
+  /// Delay after landing before another jump can be initiated (in seconds).
+  double landingJumpDelay;
+
+  /// Layer mask used for raycasting against static floor/ground geometry.
   int groundLayerMask;
 
-  /// Optional fixed ground plane height. When set, snaps the character if falling below this Y value.
+  /// Optional fallback infinite planar floor height.
   double? groundPlaneHeight;
 
-  /// Distance from the node center down to the character's feet / base.
+  /// Vertical offset from the node origin down to the character's feet.
   double footOffset;
 
   /// Capsule/cylinder radius for horizontal obstacle collision. Set to 0 to disable.
@@ -68,6 +71,8 @@ class ThirdPersonControllerComponent extends Component {
   double? _cameraHeadingYaw;
   double _coyoteTimer = 0.0;
   double _jumpBufferTimer = 0.0;
+  double _landingTimer = 0.0;
+  double _airborneTime = 0.0;
   double _currentYaw = 0.0;
 
   ThirdPersonControllerComponent({
@@ -79,6 +84,7 @@ class ThirdPersonControllerComponent extends Component {
     this.maxSlopeAngleDegrees = 45.0,
     this.coyoteTimeWindow = 0.12,
     this.jumpBufferWindow = 0.15,
+    this.landingJumpDelay = 0.20,
     this.groundLayerMask = 0xFFFFFFFF,
     this.groundPlaneHeight,
     this.footOffset = 0.0,
@@ -133,6 +139,7 @@ class ThirdPersonControllerComponent extends Component {
     // Update timers
     if (_coyoteTimer > 0.0) _coyoteTimer -= fixedDt;
     if (_jumpBufferTimer > 0.0) _jumpBufferTimer -= fixedDt;
+    if (_landingTimer > 0.0) _landingTimer -= fixedDt;
 
     final currentPos = (node.globalTransform * vm.Vector4(0, 0, 0, 1)).xyz;
 
@@ -167,12 +174,17 @@ class ThirdPersonControllerComponent extends Component {
         (isGrounded || currentPos.y <= groundY + footOffset + 0.25)) {
       if (!isGrounded) {
         velocity.y = 0.0;
+        if (_airborneTime > 0.08) {
+          _landingTimer = landingJumpDelay;
+        }
+        _airborneTime = 0.0;
       }
       isGrounded = true;
       _coyoteTimer = coyoteTimeWindow;
       groundNormal = norm;
     } else {
       isGrounded = false;
+      _airborneTime += fixedDt;
     }
 
     // 2. Slope slide calculation
@@ -183,6 +195,7 @@ class ThirdPersonControllerComponent extends Component {
     // 3. Process jump
     if (_jumpBufferTimer > 0.0 &&
         (isGrounded || _coyoteTimer > 0.0) &&
+        _landingTimer <= 0.0 &&
         !isTooSteep) {
       velocity.y = jumpVelocity;
       isGrounded = false;
@@ -338,6 +351,7 @@ class ThirdPersonControllerComponent extends Component {
       maxSlopeAngleDegrees: maxSlopeAngleDegrees,
       coyoteTimeWindow: coyoteTimeWindow,
       jumpBufferWindow: jumpBufferWindow,
+      landingJumpDelay: landingJumpDelay,
       groundLayerMask: groundLayerMask,
       groundPlaneHeight: groundPlaneHeight,
       footOffset: footOffset,
