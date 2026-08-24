@@ -4,8 +4,14 @@ import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/raycast.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-/// High-level 3rd-person character movement component with ground snapping,
-/// slope sliding, step climbing, coyote time, and turn smoothing.
+/// High-level 3rd-person character movement component with ground raycast snapping,
+/// slope sliding, coyote time, and turn smoothing.
+///
+/// For physical character navigation against 3D colliders and capsules with autostep,
+/// see `KinematicCharacterController` in `package:flutter_scene_rapier/physics.dart`.
+///
+/// Note on raycasting: [raycastNode] performs a hierarchical bounding-box early-out followed
+/// by per-triangle intersection tests on static render meshes at rest pose.
 /// {@category Gameplay kit}
 class ThirdPersonControllerComponent extends Component {
   /// Base walking speed in world units per second.
@@ -26,14 +32,17 @@ class ThirdPersonControllerComponent extends Component {
   /// Maximum slope angle (in degrees) that can be walked up without sliding.
   double maxSlopeAngleDegrees;
 
-  /// Maximum step obstacle height (in units) the character can smoothly step up.
-  double maxStepHeight;
-
   /// Time window (in seconds) after leaving a ledge during which a jump is still allowed.
   double coyoteTimeWindow;
 
   /// Time window (in seconds) to buffer jump inputs before touching the ground.
   double jumpBufferWindow;
+
+  /// Bitmask of layers to test for ground (defaults to all layers).
+  int groundLayerMask;
+
+  /// Optional fixed ground plane height. When set, snaps the character if falling below this Y value.
+  double? groundPlaneHeight;
 
   /// Current linear velocity vector in world space.
   vm.Vector3 velocity = vm.Vector3.zero();
@@ -58,12 +67,13 @@ class ThirdPersonControllerComponent extends Component {
     this.jumpVelocity = 6.5,
     this.gravity = 18.0,
     this.maxSlopeAngleDegrees = 45.0,
-    this.maxStepHeight = 0.3,
     this.coyoteTimeWindow = 0.12,
     this.jumpBufferWindow = 0.15,
+    this.groundLayerMask = 0xFFFFFFFF,
+    this.groundPlaneHeight,
   });
 
-  /// Feeds planar movement input vector (-1.0 to 1.0 on X/Y).
+  /// Feeds planar movement input vector (-1.0 to 1.0 on X/Y, where +Y is forward).
   void setMoveInput(vm.Vector2 input, {bool isRunning = false}) {
     _moveInput = input;
     _isRunning = isRunning;
@@ -82,13 +92,23 @@ class ThirdPersonControllerComponent extends Component {
     return curr;
   }
 
+  bool _isExcluded(Node hitNode) {
+    if (hitNode == node) return true;
+    Node? p = hitNode.parent;
+    while (p != null) {
+      if (p == node) return true;
+      p = p.parent;
+    }
+    return false;
+  }
+
   @override
-  void update(double deltaSeconds) {
-    if (deltaSeconds <= 0.0 || !isAttached) return;
+  void fixedUpdate(double fixedDt) {
+    if (fixedDt <= 0.0 || !isAttached) return;
 
     // Update timers
-    if (_coyoteTimer > 0.0) _coyoteTimer -= deltaSeconds;
-    if (_jumpBufferTimer > 0.0) _jumpBufferTimer -= deltaSeconds;
+    if (_coyoteTimer > 0.0) _coyoteTimer -= fixedDt;
+    if (_jumpBufferTimer > 0.0) _jumpBufferTimer -= fixedDt;
 
     final currentPos = (node.globalTransform * vm.Vector4(0, 0, 0, 1)).xyz;
 
@@ -97,23 +117,30 @@ class ThirdPersonControllerComponent extends Component {
     var groundY = currentPos.y;
     var norm = vm.Vector3(0, 1, 0);
 
-    // Cast downward ray starting slightly above the character base
+    // Cast downward ray starting 0.4m above the character base
     final rayStart = currentPos + vm.Vector3(0, 0.4, 0);
     final ray = vm.Ray.originDirection(rayStart, vm.Vector3(0, -1, 0));
-    final hit = raycastNode(_rootNode, ray, maxDistance: 0.6 + maxStepHeight);
-    if (hit != null && hit.distance <= 0.45 + maxStepHeight) {
+    final hit = raycastNode(
+      _rootNode,
+      ray,
+      maxDistance: 0.8,
+      layerMask: groundLayerMask,
+      where: (n) => !_isExcluded(n),
+    );
+
+    if (hit != null && hit.distance <= 0.7) {
       detectedGround = true;
       groundY = rayStart.y - hit.distance;
       norm = hit.worldNormal;
-    } else if (currentPos.y <= 0.05) {
-      // Flat ground fallback at y = 0
+    } else if (groundPlaneHeight != null &&
+        currentPos.y <= groundPlaneHeight! + 0.05) {
       detectedGround = true;
-      groundY = 0.0;
+      groundY = groundPlaneHeight!;
     }
 
-    if (detectedGround) {
+    if (detectedGround &&
+        (isGrounded || currentPos.y <= groundY + 0.1 || velocity.y <= 0.0)) {
       if (!isGrounded) {
-        // Just landed
         velocity.y = 0.0;
       }
       isGrounded = true;
@@ -137,10 +164,10 @@ class ThirdPersonControllerComponent extends Component {
       _coyoteTimer = 0.0;
       _jumpBufferTimer = 0.0;
     } else if (!isGrounded) {
-      velocity.y -= gravity * deltaSeconds;
+      velocity.y -= gravity * fixedDt;
     }
 
-    // 4. Horizontal movement calculation
+    // 4. Horizontal movement calculation (exponential smoothing)
     final targetSpeed = walkSpeed * (_isRunning ? runMultiplier : 1.0);
     final inputLen = _moveInput.length;
 
@@ -149,13 +176,11 @@ class ThirdPersonControllerComponent extends Component {
       final desiredVelX = inputDir.x * targetSpeed;
       final desiredVelZ = inputDir.y * targetSpeed;
 
-      // Smooth horizontal acceleration
       final accelRate = isGrounded ? 15.0 : 4.0;
-      final t = (accelRate * deltaSeconds).clamp(0.0, 1.0);
+      final t = 1.0 - math.exp(-accelRate * fixedDt);
       velocity.x += (desiredVelX - velocity.x) * t;
       velocity.z += (desiredVelZ - velocity.z) * t;
 
-      // Smooth yaw rotation towards movement direction
       final targetYaw = math.atan2(inputDir.x, inputDir.y);
       var angleDiff = targetYaw - _currentYaw;
       while (angleDiff > math.pi) {
@@ -164,34 +189,47 @@ class ThirdPersonControllerComponent extends Component {
       while (angleDiff < -math.pi) {
         angleDiff += 2 * math.pi;
       }
-      _currentYaw += angleDiff * (turnSpeed * deltaSeconds).clamp(0.0, 1.0);
+      final rotT = 1.0 - math.exp(-turnSpeed * fixedDt);
+      _currentYaw += angleDiff * rotT;
     } else {
-      // Decelerate
       final friction = isGrounded ? 12.0 : 2.0;
-      final t = (friction * deltaSeconds).clamp(0.0, 1.0);
+      final t = 1.0 - math.exp(-friction * fixedDt);
       velocity.x += (0.0 - velocity.x) * t;
       velocity.z += (0.0 - velocity.z) * t;
     }
 
-    // If on steep slope, apply slide force
+    // Slope sliding
     if (isGrounded && isTooSteep) {
       final slideDir = vm.Vector3(
         groundNormal.x,
         0,
         groundNormal.z,
       ).normalized();
-      velocity.x += slideDir.x * gravity * deltaSeconds;
-      velocity.z += slideDir.z * gravity * deltaSeconds;
+      velocity.x += slideDir.x * gravity * fixedDt;
+      velocity.z += slideDir.z * gravity * fixedDt;
     }
 
-    // 5. Apply displacement to node
-    var newPos = currentPos + velocity * deltaSeconds;
-    if (isGrounded && newPos.y < groundY) {
-      newPos.y = groundY;
+    // 5. Apply displacement converting world position back to parent local space
+    var newWorldPos = currentPos + velocity * fixedDt;
+    if (isGrounded) {
+      newWorldPos.y = groundY;
     }
 
-    final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _currentYaw);
-    node.localTransform = vm.Matrix4.compose(newPos, rot, node.scale);
+    // TODO(kit): implement forward-probe step climbing against kinematic obstacles.
+
+    final newWorldRot = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      _currentYaw,
+    );
+    final worldMat = vm.Matrix4.compose(newWorldPos, newWorldRot, node.scale);
+
+    final parent = node.parent;
+    if (parent != null) {
+      final invParent = parent.globalTransform.clone()..invert();
+      node.localTransform = invParent * worldMat;
+    } else {
+      node.localTransform = worldMat;
+    }
   }
 
   @override
@@ -203,9 +241,10 @@ class ThirdPersonControllerComponent extends Component {
       jumpVelocity: jumpVelocity,
       gravity: gravity,
       maxSlopeAngleDegrees: maxSlopeAngleDegrees,
-      maxStepHeight: maxStepHeight,
       coyoteTimeWindow: coyoteTimeWindow,
       jumpBufferWindow: jumpBufferWindow,
+      groundLayerMask: groundLayerMask,
+      groundPlaneHeight: groundPlaneHeight,
     );
   }
 }

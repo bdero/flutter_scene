@@ -5,16 +5,22 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// Evaluated translational and rotational camera shake offsets.
 /// {@category Gameplay kit}
 class CameraShakeOffset {
+  /// Translational displacement offset in local camera units.
   final vm.Vector3 translation;
+
+  /// Rotational pitch, yaw, and roll angles in radians.
   final vm.Vector3 rotationEuler;
 
+  /// Creates a camera shake offset.
   CameraShakeOffset({required this.translation, required this.rotationEuler});
 
-  static final CameraShakeOffset zero = CameraShakeOffset(
+  /// Returns a fresh zero-displacement offset instance.
+  static CameraShakeOffset get zero => CameraShakeOffset(
     translation: vm.Vector3.zero(),
     rotationEuler: vm.Vector3.zero(),
   );
 
+  /// Converts this offset into a local transform matrix.
   vm.Matrix4 toMatrix4() {
     final rot = vm.Quaternion.euler(
       rotationEuler.y,
@@ -48,6 +54,7 @@ class CameraShake {
 
   double _time = 0.0;
 
+  /// Creates a camera shake generator with optional decay and limit parameters.
   CameraShake({
     this.decayRate = 1.2,
     this.frequency = 25.0,
@@ -68,9 +75,8 @@ class CameraShake {
     }
 
     _time += deltaSeconds * frequency;
-    final shakePower = trauma * trauma; // Non-linear response
+    final shakePower = trauma * trauma;
 
-    // Sample multi-channel noise using coordinate offsets
     final tx = _noise.getNoise2(_time, 0.0) * maxTranslation.x * shakePower;
     final ty = _noise.getNoise2(_time, 100.0) * maxTranslation.y * shakePower;
     final tz = _noise.getNoise2(_time, 200.0) * maxTranslation.z * shakePower;
@@ -79,7 +85,6 @@ class CameraShake {
     final ry = _noise.getNoise2(_time, 400.0) * maxRotation.y * shakePower;
     final rz = _noise.getNoise2(_time, 500.0) * maxRotation.z * shakePower;
 
-    // Decay trauma
     trauma = math.max(0.0, trauma - decayRate * deltaSeconds);
 
     return CameraShakeOffset(

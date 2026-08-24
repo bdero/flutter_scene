@@ -49,22 +49,21 @@ void main() {
         slowingRadius: 2.0,
         maxSpeed: 5.0,
       );
-      // Desired velocity should be small, so force opposes current fast velocity
       expect(force.x, lessThan(0.0));
     });
 
     test('separation pushes away from nearby neighbors', () {
       final currentPos = vm.Vector3(0, 0, 0);
-      final neighbors = [
-        vm.Vector3(0.5, 0, 0), // Close on the right
-      ];
+      final currentVel = vm.Vector3.zero();
+      final neighbors = [vm.Vector3(0.5, 0, 0)];
 
       final force = Steering.separation(
         currentPos,
+        currentVel,
         neighbors,
         desiredDistance: 2.0,
       );
-      expect(force.x, lessThan(0.0)); // Pushes left
+      expect(force.x, lessThan(0.0));
     });
   });
 }

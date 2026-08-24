@@ -524,6 +524,17 @@ abstract class Geometry {
     indexCount: _indexCount,
   );
 
+  /// Injects CPU-side vertex positions and optional bounding box for testing
+  /// without requiring a GPU upload.
+  @visibleForTesting
+  void setCpuPositionsForTesting(Float32List positions, {vm.Aabb3? bounds}) {
+    _cpuPositions = positions;
+    _vertexCount = positions.length ~/ 3;
+    if (bounds != null) {
+      setLocalBounds(bounds, null);
+    }
+  }
+
   /// Whether this geometry retains CPU-side vertex data, making
   /// [extractMeshData] available.
   ///

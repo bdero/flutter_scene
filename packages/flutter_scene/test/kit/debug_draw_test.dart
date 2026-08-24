@@ -20,7 +20,6 @@ void main() {
       expect(DebugDraw.vertexCount, equals(4));
 
       DebugDraw.box(vm.Aabb3.minMax(vm.Vector3(0, 0, 0), vm.Vector3(1, 1, 1)));
-      // 12 edges * 2 vertices = 24 vertices
       expect(DebugDraw.vertexCount, equals(4 + 24));
 
       DebugDraw.clear();

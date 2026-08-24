@@ -1,16 +1,24 @@
 import 'dart:math' as math;
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Definition of a single directional Gerstner wave.
 /// {@category Gameplay kit}
 class GerstnerWave {
+  /// Normalized 2D wave propagation direction vector.
   final vm.Vector2 direction;
+
+  /// Crest height amplitude in world units.
   final double amplitude;
+
+  /// Distance between wave crests in world units.
   final double wavelength;
+
+  /// Propagation speed multiplier.
   final double speed;
+
+  /// Trochoidal crest sharpness factor between 0.0 (sine) and 1.0 (sharp crests).
   final double steepness;
 
   GerstnerWave({
@@ -28,12 +36,9 @@ class WaterSurfaceComponent extends Component {
   /// Active Gerstner wave spectrum.
   final List<GerstnerWave> waves;
 
-  /// Underlying updatable water plane geometry if driven on CPU.
-  MeshGeometry? meshGeometry;
-
   double _time = 0.0;
 
-  WaterSurfaceComponent({List<GerstnerWave>? waves, this.meshGeometry})
+  WaterSurfaceComponent({List<GerstnerWave>? waves})
     : waves =
           waves ??
           [
@@ -68,6 +73,8 @@ class WaterSurfaceComponent extends Component {
     var binormal = vm.Vector3(0, 0, 1);
 
     for (final w in waves) {
+      if (w.amplitude <= 0.0 || w.wavelength <= 0.0) continue;
+
       final k = 2 * math.pi / w.wavelength;
       final c = math.sqrt(9.81 / k);
       final phase =
@@ -107,6 +114,6 @@ class WaterSurfaceComponent extends Component {
 
   @override
   Component? cloneFor(Node cloneOwner) {
-    return WaterSurfaceComponent(waves: waves);
+    return WaterSurfaceComponent(waves: List.from(waves));
   }
 }
