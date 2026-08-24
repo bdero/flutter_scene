@@ -154,5 +154,22 @@ void main() {
       expect(controller.velocity.x, greaterThan(0.5));
       expect(controller.velocity.z, closeTo(0.0, 0.1));
     });
+
+    test('maintains footOffset height above ground plane', () {
+      final player = Node()..position = vm.Vector3(0, 5.0, 0);
+      final controller = ThirdPersonControllerComponent(
+        walkSpeed: 4.0,
+        groundPlaneHeight: 0.0,
+        footOffset: 0.9,
+      );
+      player.addComponent(controller);
+
+      for (var i = 0; i < 60; i++) {
+        controller.fixedUpdate(0.016);
+      }
+
+      expect(controller.isGrounded, isTrue);
+      expect(player.position.y, closeTo(0.9, 0.01));
+    });
   });
 }

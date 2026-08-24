@@ -519,6 +519,7 @@ class _KitStageState extends State<_KitStage> {
   Node? _characterNode;
   ThirdPersonControllerComponent? _characterController;
   SpringArmComponent? _springArm;
+  Map<String, AnimationClip> _dashClips = {};
   final CameraShake _shake = CameraShake();
   vm.Vector2 _joystickInput = vm.Vector2.zero();
 
@@ -595,6 +596,7 @@ class _KitStageState extends State<_KitStage> {
     _springArm = null;
     _dayNight = null;
     _water = null;
+    _dashClips.clear();
     _floatingProps.clear();
     _boidNodes.clear();
     _boidVelocities.clear();
@@ -661,42 +663,51 @@ class _KitStageState extends State<_KitStage> {
       scene.add(Node(mesh: Mesh(boxGeo, wallMat))..position = pos);
     }
 
-    // Stylized player character with torso, head, and visor
-    final charTorsoGeo = CuboidGeometry(vm.Vector3(0.8, 1.0, 0.6));
-    final charTorsoMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.18, 0.65, 0.95, 1.0)
-      ..roughnessFactor = 0.3;
-    _characterNode = Node(mesh: Mesh(charTorsoGeo, charTorsoMat))
-      ..position = vm.Vector3(0, 0.9, 0);
+    // Playable animated Dash character
+    final dashNode = Node()..position = vm.Vector3(0, 0.9, 0);
+    _characterNode = dashNode;
 
-    final charHeadGeo = CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5));
-    final charHeadMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.95, 0.85, 0.72, 1.0);
-    _characterNode!.add(
-      Node(mesh: Mesh(charHeadGeo, charHeadMat))
-        ..position = vm.Vector3(0, 0.75, 0),
-    );
+    final clips = <String, AnimationClip>{};
+    loadScene('assets_src/dash.glb').then((model) {
+      if (!mounted || _characterNode != dashNode) return;
+      final pivot = Node()
+        ..localTransform = (vm.Matrix4.identity()
+          ..rotateY(math.pi)
+          ..translateByVector3(vm.Vector3(0.0, -0.9, 0.0)));
+      pivot.add(model);
+      dashNode.add(pivot);
 
-    final charVisorGeo = CuboidGeometry(vm.Vector3(0.42, 0.16, 0.2));
-    final charVisorMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.08, 0.08, 0.08, 1.0)
-      ..metallicFactor = 0.9
-      ..roughnessFactor = 0.1;
-    _characterNode!.add(
-      Node(mesh: Mesh(charVisorGeo, charVisorMat))
-        ..position = vm.Vector3(0, 0.78, 0.22),
-    );
+      for (final name in const [
+        'Idle',
+        'Walk',
+        'Run',
+        'JumpStart',
+        'JumpLand',
+      ]) {
+        final anim = model.findAnimationByName(name);
+        if (anim == null) continue;
+        final loop = name != 'JumpStart' && name != 'JumpLand';
+        final clip = model.createAnimationClip(anim)
+          ..loop = loop
+          ..playing = loop
+          ..weight = name == 'Idle' ? 1.0 : 0.0;
+        clips[name] = clip;
+      }
+      _dashClips = clips;
+    });
 
     _characterController = ThirdPersonControllerComponent(
       walkSpeed: widget.settings.walkSpeed,
       jumpVelocity: widget.settings.jumpVelocity,
       groundPlaneHeight: 0.0,
+      footOffset: 0.9,
+      obstacleRadius: 0.5,
     );
     _characterNode!.addComponent(_characterController!);
 
     _springArm = SpringArmComponent(
       targetLength: widget.settings.armLength,
-      targetOffset: vm.Vector3(0, 1.4, 0),
+      targetOffset: vm.Vector3(0, 0.6, 0),
       socketOffset: vm.Vector3(0.0, 0.3, 0),
       enablePositionLag: widget.settings.enableLag,
       positionLagSpeed: widget.settings.lagSpeed,
@@ -718,15 +729,17 @@ class _KitStageState extends State<_KitStage> {
     // Physical atmospheric sky driven by sun direction
     final physicalSky = PhysicalSkySource(
       sunDirection: vm.Vector3(0.5, 0.7, 0.5).normalized(),
-      turbidity: 3.0,
-      groundColor: vm.Vector3(0.3, 0.32, 0.28),
+      turbidity: 4.0,
+      groundColor: vm.Vector3(0.2, 0.22, 0.2),
     );
     scene.skybox = Skybox(physicalSky);
     scene.skyEnvironment = SkyEnvironment(physicalSky);
+    // Directional light contributes pure shadow mapping without adding direct illuminance
     scene.sunLight = SunLight(
       physicalSky,
+      intensity: 0.0,
       castsShadow: true,
-      shadowAmbientStrength: 0.65,
+      shadowAmbientStrength: 0.75,
       shadowMaxDistance: 80.0,
     );
 
@@ -1085,10 +1098,11 @@ class _KitStageState extends State<_KitStage> {
 
     final tanFov = math.tan(0.5);
     final aspect = size.width / size.height;
+    // In flutter_scene, local camera forward is +Z
     final camRayLocal = vm.Vector3(
       ndcX * tanFov * aspect,
       ndcY * tanFov,
-      -1.0,
+      1.0,
     ).normalized();
 
     final camRot = vm.Quaternion.identity();
@@ -1257,6 +1271,31 @@ class _KitStageState extends State<_KitStage> {
 
     // Step the scene components (ThirdPersonController + SpringArm)
     scene.update(dt);
+
+    // Update Dash animation blend weights based on controller velocity
+    if (_dashClips.isNotEmpty && _characterController != null) {
+      final horizSpeed = vm.Vector2(
+        _characterController!.velocity.x,
+        _characterController!.velocity.z,
+      ).length;
+      final isGrounded = _characterController!.isGrounded;
+
+      if (!isGrounded) {
+        _dashClips['Idle']?.weight = 0.0;
+        _dashClips['Walk']?.weight = 0.0;
+        _dashClips['Run']?.weight = 0.0;
+        _dashClips['JumpStart']?.weight = 1.0;
+      } else {
+        _dashClips['JumpStart']?.weight = 0.0;
+        final walkWeight = (horizSpeed / 4.0).clamp(0.0, 1.0);
+        final runWeight = ((horizSpeed - 4.0) / 3.0).clamp(0.0, 1.0);
+        final idleWeight = (1.0 - walkWeight).clamp(0.0, 1.0);
+
+        _dashClips['Idle']?.weight = idleWeight;
+        _dashClips['Walk']?.weight = (walkWeight - runWeight).clamp(0.0, 1.0);
+        _dashClips['Run']?.weight = runWeight;
+      }
+    }
 
     // Apply trauma shake offset to camera
     final shakeOffset = _shake.update(dt);
