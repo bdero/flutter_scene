@@ -45,10 +45,7 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
     // and so switching the key light off still leaves the walls readable.
     scene.environmentIntensity = 0.06;
     scene.exposure = 1.4;
-    scene.antiAliasingMode = AntiAliasingMode.smaa;
-    // TODO(taa-example): switch this to AntiAliasingMode.taa once the
-    // temporal resolve lands; the probe field's convergence and the emissive
-    // panel's highlights are exactly what it stabilizes.
+    scene.antiAliasingMode = AntiAliasingMode.taa;
 
     scene.ambientOcclusion
       ..enabled = true
@@ -60,15 +57,16 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
     // The field carries the far-field bounce; the occlusion above carries the
     // near-field contact darkening. Composing the two is the whole reason the
     // field can be this coarse.
-    scene.globalIllumination
+    exampleSettings.globalIllumination
       ..enabled = true
       ..volumeMode = IrradianceVolumeMode.fitScene
-      ..resolution = vm.Vector3(14, 8, 14)
+      ..resolution.setValues(14, 8, 14)
       ..intensity = 1.0
       ..hysteresis = 0.92
       ..visibility = 0.6
       ..emissiveGiBoost = 2.0
       ..injectionResolution = IrradianceInjectionResolution.quarter;
+    exampleSettings.applyTo(scene);
 
     _applySun();
     _buildRoom();
@@ -158,7 +156,7 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
 
   @override
   Widget build(BuildContext context) {
-    final settings = scene.globalIllumination;
+    final settings = exampleSettings.globalIllumination;
     return Stack(
       children: [
         Positioned.fill(
@@ -184,57 +182,80 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
                 _SwitchRow(
                   label: 'Irradiance field',
                   value: settings.enabled,
-                  onChanged: (v) => setState(() => settings.enabled = v),
+                  onChanged: (v) => setState(() {
+                    settings.enabled = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Intensity',
                   value: settings.intensity,
                   min: 0,
                   max: 3,
-                  onChanged: (v) => setState(() => settings.intensity = v),
+                  onChanged: (v) => setState(() {
+                    settings.intensity = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Hysteresis',
                   value: settings.hysteresis,
                   min: 0.5,
                   max: 0.99,
-                  onChanged: (v) => setState(() => settings.hysteresis = v),
+                  onChanged: (v) => setState(() {
+                    settings.hysteresis = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Shadow bias',
                   value: settings.shadowBias,
                   min: 0,
                   max: 1.5,
-                  onChanged: (v) => setState(() => settings.shadowBias = v),
+                  onChanged: (v) => setState(() {
+                    settings.shadowBias = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Visibility',
                   value: settings.visibility,
                   min: 0,
                   max: 1,
-                  onChanged: (v) => setState(() => settings.visibility = v),
+                  onChanged: (v) => setState(() {
+                    settings.visibility = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Vis bias',
                   value: settings.visibilityBias,
                   min: 0,
                   max: 0.4,
-                  onChanged: (v) => setState(() => settings.visibilityBias = v),
+                  onChanged: (v) => setState(() {
+                    settings.visibilityBias = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Emissive GI',
                   value: settings.emissiveGiBoost,
                   min: 1,
                   max: 8,
-                  onChanged: (v) =>
-                      setState(() => settings.emissiveGiBoost = v),
+                  onChanged: (v) => setState(() {
+                    settings.emissiveGiBoost = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Firefly',
                   value: settings.fireflyClamp,
                   min: 0,
                   max: 32,
-                  onChanged: (v) => setState(() => settings.fireflyClamp = v),
+                  onChanged: (v) => setState(() {
+                    settings.fireflyClamp = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 _SliderRow(
                   label: 'Probes/axis',
@@ -243,11 +264,12 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
                   max: 24,
                   onChanged: (v) => setState(() {
                     final n = v.roundToDouble();
-                    settings.resolution = vm.Vector3(
+                    settings.resolution.setValues(
                       n,
                       (n * 0.6).roundToDouble(),
                       n,
                     );
+                    exampleSettings.applyTo(scene);
                   }),
                 ),
                 Row(
@@ -267,7 +289,10 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
                           DropdownMenuItem(value: r, child: Text(r.name)),
                       ],
                       onChanged: (v) => setState(() {
-                        if (v != null) settings.injectionResolution = v;
+                        if (v != null) {
+                          settings.injectionResolution = v;
+                          exampleSettings.applyTo(scene);
+                        }
                       }),
                     ),
                   ],
@@ -275,8 +300,10 @@ class _ExampleGlobalIlluminationState extends State<ExampleGlobalIllumination> {
                 _SwitchRow(
                   label: 'Update when idle only',
                   value: settings.updateWhenIdleOnly,
-                  onChanged: (v) =>
-                      setState(() => settings.updateWhenIdleOnly = v),
+                  onChanged: (v) => setState(() {
+                    settings.updateWhenIdleOnly = v;
+                    exampleSettings.applyTo(scene);
+                  }),
                 ),
                 Align(
                   alignment: Alignment.centerLeft,

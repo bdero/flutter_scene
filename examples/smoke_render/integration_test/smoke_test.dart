@@ -82,14 +82,16 @@ void main() {
       final settleFrames = smoke.warmupFrames > baseFrames
           ? smoke.warmupFrames
           : baseFrames;
+      final boundary =
+          smokeSceneKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+
       for (var i = 0; i < settleFrames; i++) {
+        boundary.markNeedsPaint();
         await tester.pump(settleStep);
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
 
-      final boundary =
-          smokeSceneKey.currentContext!.findRenderObject()
-              as RenderRepaintBoundary;
       final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
       final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
       final rgba = (await image.toByteData(
@@ -112,11 +114,13 @@ void main() {
 
       // Reference-free render-sanity checks (catch black screen / nothing /
       // unlit). The visual diff service catches subtler "renders, but changed".
-      expect(
-        stats.cornersClear,
-        isTrue,
-        reason: 'corners are not the clear color; the surface did not clear',
-      );
+      if (!smoke.fullCoverage) {
+        expect(
+          stats.cornersClear,
+          isTrue,
+          reason: 'corners are not the clear color; the surface did not clear',
+        );
+      }
       expect(
         stats.centerNonClearFraction,
         greaterThan(0.05),

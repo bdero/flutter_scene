@@ -32,37 +32,46 @@ vec3 ViewPositionBase(ivec2 coord) {
   return vec3(ndc.x * z * AO_INFO.proj.x, ndc.y * z * AO_INFO.proj.y, z);
 }
 
-// Selects the smoother one-sided derivative on each axis. This avoids joining
-// foreground and background positions at silhouettes, while retaining fp32
-// position differences across broad sloped surfaces.
+// Reconstructs the view-space geometric normal from linear depth.
+// Uses smooth central differences on continuous surfaces, avoiding the
+// alternating one-sided derivative switching that produces screen-space
+// grid and rectangular self-occlusion artifacts. Falls back to the smaller
+// one-sided derivative only across true geometric silhouette edges.
 vec3 ReconstructNormal(vec2 uv, vec3 center) {
   ivec2 size = textureSize(linear_depth, 0);
   ivec2 p = clamp(ivec2(uv * vec2(size)), ivec2(0), size - ivec2(1));
   vec3 center_sample = ViewPositionBase(p);
   vec3 left = ViewPositionBase(p - ivec2(1, 0));
   vec3 right = ViewPositionBase(p + ivec2(1, 0));
-  vec3 down = ViewPositionBase(p - ivec2(0, 1));
-  vec3 up = ViewPositionBase(p + ivec2(0, 1));
+  vec3 top = ViewPositionBase(p - ivec2(0, 1));
+  vec3 bottom = ViewPositionBase(p + ivec2(0, 1));
+
+  float dl = abs(center_sample.z - left.z);
+  float dr = abs(right.z - center_sample.z);
   vec3 dx;
   if (p.x == 0) {
     dx = right - center_sample;
   } else if (p.x == size.x - 1) {
     dx = center_sample - left;
+  } else if (abs(dl - dr) < 0.02 * max(center_sample.z, 0.1)) {
+    dx = (right - left) * 0.5;
   } else {
-    dx = length(center_sample - left) < length(right - center_sample)
-        ? center_sample - left
-        : right - center_sample;
+    dx = dl < dr ? (center_sample - left) : (right - center_sample);
   }
+
+  float dt = abs(center_sample.z - top.z);
+  float db = abs(bottom.z - center_sample.z);
   vec3 dy;
   if (p.y == 0) {
-    dy = up - center_sample;
+    dy = bottom - center_sample;
   } else if (p.y == size.y - 1) {
-    dy = center_sample - down;
+    dy = center_sample - top;
+  } else if (abs(dt - db) < 0.02 * max(center_sample.z, 0.1)) {
+    dy = (bottom - top) * 0.5;
   } else {
-    dy = length(center_sample - down) < length(up - center_sample)
-        ? center_sample - down
-        : up - center_sample;
+    dy = dt < db ? (center_sample - top) : (bottom - center_sample);
   }
+
   vec3 normal = normalize(cross(dx, dy));
   return dot(normal, center) > 0.0 ? -normal : normal;
 }

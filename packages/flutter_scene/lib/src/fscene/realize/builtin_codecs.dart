@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
+import 'package:flutter_scene/src/components/irradiance_volume_component.dart';
 import 'package:flutter_scene/src/components/materials_variants_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/fscene/realize/node_identity.dart';
@@ -64,6 +65,7 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(SpotLightCodec())
     ..register(CameraCodec())
     ..register(EnvironmentVolumeCodec())
+    ..register(IrradianceVolumeCodec())
     ..register(WidgetCodec())
     ..register(SemanticsCodec())
     ..register(AudioSourceCodec())
@@ -1693,4 +1695,53 @@ class RectAreaLightCodec
   @override
   RectAreaLightComponent create(PropertyReader props) =>
       RectAreaLightComponent(RectAreaLight());
+}
+
+/// Codec for [IrradianceVolumeComponent].
+class IrradianceVolumeCodec
+    extends DeclarativeComponentCodec<IrradianceVolumeComponent> {
+  @override
+  String get type => 'irradianceVolume';
+
+  static const _boxColor = GizmoColor(0.2, 0.8, 0.6);
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    icon: 'light',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      GizmoIcon(color: _boxColor),
+      GizmoWireBox(halfExtentsBind: 'extents', color: _boxColor),
+    ]),
+  );
+
+  @override
+  List<ComponentField<IrradianceVolumeComponent>> get fields => [
+    ComponentField.vec3(
+      'extents',
+      defaultValue: () => Vector3.all(10),
+      doc: 'World-space half-size of the irradiance volume box.',
+      get: (c) => c.extents,
+      set: (c, v) => c.extents = v,
+    ),
+    ComponentField.vec3(
+      'resolution',
+      defaultValue: () => Vector3(16, 8, 16),
+      doc: 'Probe count along each axis.',
+      get: (c) => c.resolution,
+      set: (c, v) => c.resolution = v,
+    ),
+    ComponentField.number(
+      'priority',
+      defaultValue: 0.0,
+      doc: 'Volume selection order; higher applies on top.',
+      get: (c) => c.priority,
+      set: (c, v) => c.priority = v,
+    ),
+  ];
+
+  @override
+  IrradianceVolumeComponent create(PropertyReader props) =>
+      IrradianceVolumeComponent();
 }

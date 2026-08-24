@@ -145,4 +145,14 @@ base class Skin {
   /// The edge length, in texels, of the joints texture produced by
   /// [getJointsTexture].
   int getTextureWidth() => _jointsTextureEdge(joints.length);
+
+  /// The previous frame's joints texture from the ring, or the current texture
+  /// on the first frame.
+  gpu.Texture getPreviousJointsTexture() {
+    final prevSlot =
+        (_jointsTextureRingCursor - 1 + _jointsTextureRingSize) %
+        _jointsTextureRingSize;
+    return _jointsTextureRing[prevSlot] ??
+        _jointsTextureRing[_jointsTextureRingCursor]!;
+  }
 }

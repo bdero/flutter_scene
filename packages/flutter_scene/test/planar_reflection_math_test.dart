@@ -272,7 +272,8 @@ void main() {
 
 class _FixedProjection extends CameraProjection {
   @override
-  Matrix4 getProjectionMatrix(double aspectRatio) => Matrix4.identity();
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
+      Matrix4.identity();
 }
 
 class _FixedProjectionCamera extends Camera {

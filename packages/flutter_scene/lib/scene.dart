@@ -131,6 +131,10 @@ export 'src/global_illumination.dart'
         GlobalIlluminationSettings,
         IrradianceInjectionResolution,
         IrradianceVolumeMode;
+export 'src/render/irradiance_bake.dart'
+    show IrradianceFieldBake, IrradianceFieldBakeStepper;
+export 'src/render/temporal_anti_aliasing.dart'
+    show TemporalAntiAliasingSettings;
 export 'src/god_rays.dart' show GodRaysSettings;
 export 'src/screen_space_reflections.dart'
     show ScreenSpaceReflectionsSettings, SsrDebugView;

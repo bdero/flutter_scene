@@ -145,10 +145,11 @@ class ObliqueNearClipProjection extends CameraProjection {
   final Vector4 _viewSpacePlane;
 
   @override
-  Matrix4 getProjectionMatrix(double aspectRatio) => obliqueNearClipProjection(
-    base.getProjectionMatrix(aspectRatio),
-    _viewSpacePlane,
-  );
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
+      obliqueNearClipProjection(
+        base.getProjectionMatrix(aspectRatio, jitter: jitter),
+        _viewSpacePlane,
+      );
 }
 
 /// The camera a planar reflection capture renders with: [source] reflected

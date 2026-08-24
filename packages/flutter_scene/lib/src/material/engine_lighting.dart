@@ -54,7 +54,7 @@ class EngineLightingUniforms {
   /// std140 padding after `fade`) so every lit material gets antialiasing by
   /// default; a material that exposes the knobs overwrites these afterward.
   static const defaultSpecularAaVariance = 0.15;
-  static const defaultSpecularAaThreshold = 0.2;
+  static const defaultSpecularAaThreshold = 1.0;
 
   /// Writes the engine lighting / IBL / shadow fields of `FragInfo` into
   /// [fragInfo] from [lighting] and [env]. Leaves the material-specific fields
