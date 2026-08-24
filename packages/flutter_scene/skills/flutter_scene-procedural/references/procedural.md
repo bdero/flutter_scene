@@ -246,7 +246,7 @@ It bakes `getNoise2` over a `width` x `height` grid into a grayscale `Texture2D`
 
 ---
 
-## Natural formations: rocks, cliffs, trails, and scatter recipes
+### Natural formations: rocks, cliffs, trails, and scatter recipes
 
 Composing raw noise into realistic natural terrain and geology requires specific math patterns to avoid telltale procedural artifacts.
 
@@ -256,10 +256,11 @@ Standard cellular Worley distance (`F2 - F1`) creates a continuous polygon netwo
 
 ```glsl
 // GLSL shader bake or .fmat surface
-vec2 cwl = NoiseCellular2(p * 3.0); // F1 in x, F2 in y
-float net = smoothstep(0.070, 0.004, cwl.y - cwl.x);
-float region = smoothstep(0.46, 0.62, NoiseFbm2(p * 1.0, 3));
-float breaker = smoothstep(0.32, 0.54, NoiseFbm2(p * 6.0, 2));
+// Cellular Worley noise returning F2 - F1 distance
+float cwl = NoiseCellular2(p * 3.0, 1337, kNoiseCellularEuclidean, kNoiseCellularDistance2Sub, 1.0);
+float net = smoothstep(0.08, -0.80, cwl);
+float region = smoothstep(-0.2, 0.4, NoiseFbm2(p * 1.0, 1338, 3, 2.0, 0.5));
+float breaker = smoothstep(-0.4, 0.2, NoiseFbm2(p * 6.0, 1339, 2, 2.0, 0.5));
 float crack = net * region * breaker; // produces isolated segments with natural start/end points
 ```
 
@@ -268,28 +269,40 @@ float crack = net * region * breaker; // produces isolated segments with natural
 Thresholding Worley noise at a constant radius places a pit in every single cell, creating an artificial grid lattice. Modulate the threshold radius with an underlying Perlin field so pores vary in size and only appear in exposed weathering pockets:
 
 ```glsl
-float sizeVar = NoiseFbm2(p * 2.5, 3);
-vec2 pw = NoiseCellular2(p * 5.0);
-float pit = smoothstep(0.05 + 0.24 * sizeVar * sizeVar, 0.005, pw.x)
-          * smoothstep(0.40, 0.68, NoiseFbm2(p * 1.5, 3));
+float sizeVar = (NoiseFbm2(p * 2.5, 1337, 3, 2.0, 0.5) + 1.0) * 0.5;
+float pw = NoiseCellular2(p * 5.0, 1338, kNoiseCellularEuclidean, kNoiseCellularDistance, 1.0);
+float pit = smoothstep(0.05 + 0.24 * sizeVar * sizeVar, 0.005, pw)
+          * smoothstep(-0.1, 0.5, NoiseFbm2(p * 1.5, 1339, 3, 2.0, 0.5));
 ```
 
 ### 3. Incised trail heightfields (scours vs flat stripes)
 
-Footpaths are formed by water and foot traffic compressing and eroding soil downwards. Cut the path profile into the terrain heightfield as an incised trough with raised spoil banks:
+Footpaths are formed by water and foot traffic compressing and eroding soil downwards. Sample the path polyline once (`trail.sample(n, evenlySpaced: true)`) and compute the minimum point-to-segment distance to cut the path profile into the terrain heightfield with raised spoil banks:
 
 ```dart
-double computeTerrainHeight(double x, double z, FastNoiseLite noise, ScenePath trail) {
+double computeTerrainHeight(double x, double z, FastNoiseLite noise, List<vm.Vector3> trailPoints) {
   final baseHeight = noise.getNoise2(x, z) * 8.0;
-  final dist = trail.distanceTo(vm.Vector2(x, z));
+
+  // Find minimum distance from (x, z) to the sampled 2D path segments
+  var minDist = double.infinity;
+  final p = vm.Vector2(x, z);
+  for (var i = 0; i < trailPoints.length - 1; i++) {
+    final a = vm.Vector2(trailPoints[i].x, trailPoints[i].z);
+    final b = vm.Vector2(trailPoints[i + 1].x, trailPoints[i + 1].z);
+    final ab = b - a;
+    final t = ((p - a).dot(ab) / ab.length2).clamp(0.0, 1.0);
+    final dist = (p - (a + ab * t)).length;
+    if (dist < minDist) minDist = dist;
+  }
+
   const pathWidth = 1.8;
   const pathDepth = 0.45;
   const bermHeight = 0.25;
 
   // Carve central path trough
-  final trench = (1.0 - (dist / pathWidth).clamp(0.0, 1.0)) * pathDepth;
+  final trench = (1.0 - (minDist / pathWidth).clamp(0.0, 1.0)) * pathDepth;
   // Build gentle spoil berm along the verge
-  final verge = ((dist - pathWidth * 0.8) / (pathWidth * 0.8)).clamp(0.0, 1.0);
+  final verge = ((minDist - pathWidth * 0.8) / (pathWidth * 0.8)).clamp(0.0, 1.0);
   final berm = math.sin(verge * math.pi) * bermHeight;
 
   return baseHeight - trench + berm;
@@ -298,15 +311,19 @@ double computeTerrainHeight(double x, double z, FastNoiseLite noise, ScenePath t
 
 ### 4. Macro-massed pebble scatter (avoiding uniform sandpaper noise)
 
-Gravel and pebbles cluster into water-washed scour lines rather than spreading evenly over an entire level. Gate multi-scale pebble instances with a low-frequency macro massing field:
+Gravel and pebbles cluster into water-washed scour lines rather than spreading evenly over an entire level. Gate multi-scale pebble instances with a low-frequency macro massing field and key the hash off integer cell coordinates:
 
 ```dart
 void scatterPebbles(InstancedMesh finePebbles, InstancedMesh largeStones, FastNoiseLite terrainNoise) {
   final macroNoise = FastNoiseLite(seed: 42)..frequency = 0.05;
-  for (var x = 0.0; x < 64.0; x += 0.8) {
-    for (var z = 0.0; z < 64.0; z += 0.8) {
-      // Deterministic coordinate jitter
-      final h = noiseHash2(x.round(), z.round());
+  const step = 0.8;
+  const cells = 80; // 64m / 0.8m
+  for (var ix = 0; ix < cells; ix++) {
+    for (var iz = 0; iz < cells; iz++) {
+      final x = ix * step;
+      final z = iz * step;
+      // Deterministic coordinate jitter keyed off integer cell indices
+      final h = noiseHash2(1337, ix, iz);
       final jx = x + ((h & 0xFF) / 255.0 - 0.5) * 0.6;
       final jz = z + (((h >> 8) & 0xFF) / 255.0 - 0.5) * 0.6;
 
@@ -333,69 +350,53 @@ Trochoidal Gerstner waves pull vertices horizontally toward wave peaks, creating
 // GLSL Gerstner wave displacement
 struct Wave { vec2 dir; float amp; float freq; float speed; float steepness; };
 
-vec3 evaluateGerstner(vec2 pos, float time, Wave w, inout vec3 tangent, inout vec3 binormal) {
-  float phase = dot(w.dir, pos) * w.freq + time * w.speed;
+// Caller seeds accumulators with tangent = vec3(1.0, 0.0, 0.0) and binormal = vec3(0.0, 0.0, 1.0).
+vec3 evaluateGerstner(vec2 pos, float time, Wave w, float numWaves, inout vec3 tangent, inout vec3 binormal) {
+  vec2 d = normalize(w.dir);
+  float phase = dot(d, pos) * w.freq + time * w.speed;
   float c = cos(phase);
   float s = sin(phase);
-  float q = w.steepness / (w.amp * w.freq * 4.0);
+  float q = w.steepness / (w.amp * w.freq * numWaves);
 
-  tangent += vec3(-q * w.dir.x * w.dir.x * w.amp * w.freq * s,
-                   w.dir.x * w.amp * w.freq * c,
-                  -q * w.dir.x * w.dir.y * w.amp * w.freq * s);
-  binormal += vec3(-q * w.dir.x * w.dir.y * w.amp * w.freq * s,
-                    w.dir.y * w.amp * w.freq * c,
-                   -q * w.dir.y * w.dir.y * w.amp * w.freq * s);
+  tangent += vec3(-q * d.x * d.x * w.amp * w.freq * s,
+                   d.x * w.amp * w.freq * c,
+                  -q * d.x * d.y * w.amp * w.freq * s);
+  binormal += vec3(-q * d.x * d.y * w.amp * w.freq * s,
+                    d.y * w.amp * w.freq * c,
+                   -q * d.y * d.y * w.amp * w.freq * s);
 
-  return vec3(q * w.amp * w.dir.x * c,
+  return vec3(q * w.amp * d.x * c,
               w.amp * s,
-              q * w.amp * w.dir.y * c);
+              q * w.amp * d.y * c);
 }
 ```
 
 For shallow water transitions and shorelines:
-- **Beer-Lambert Depth Extinction**: Compute depth $d = y_{surface} - y_{floor}$. Attenuate color with $\mathbf{C} = \mathbf{C}_{deep} + (\mathbf{C}_{shallow} - \mathbf{C}_{deep}) e^{-\boldsymbol{\sigma}_a d}$.
-- **Tidal Wet Sand**: Reduce sand roughness to `0.15` and multiply albedo by `0.6` within the wave wash zone to produce glistening wet shorelines.
+- **Beer-Lambert Depth Extinction**: Declare `engine_inputs: [ depth ]` in the `.fmat` to sample linear opaque scene depth (`RenderInput.depth`). Compute water depth `d = sceneDepth - surfaceDepth` and attenuate color with `C = C_deep + (C_shallow - C_deep) * exp(-sigma_a * d)`.
+- **Tidal Wet Sand**: Reduce sand roughness to 0.15 and multiply albedo by 0.6 within the wave wash zone to produce glistening wet shorelines.
 
 ### 6. Trees, branching splines, and backlit foliage
 
-Trunk and branch structures follow Leonardo da Vinci's rule: total cross-sectional area is conserved across splits ($d_{parent}^2 = \sum d_{child}^2$). Extrude branches along swept spline tubes:
+Trunk and branch structures follow Leonardo da Vinci's rule: total cross-sectional area is conserved across splits (d_parent^2 = sum d_child^2). Extrude branches along swept spline tubes using `TubeGeometry` (sweeping a round cross-section along a `ScenePath`) or `ExtrudeGeometry`:
 
-- **Backlit Leaf Translucency**: Leaves are thin cellular structures. Add a diffuse transmission term in the material shader so backlit foliage glows rather than rendering as a dark silhouette:
+- **Backlit Leaf Translucency**: Set `Material.doubleSided = true` for two-sided rendering. In a custom leaf shader, add a diffuse transmission term so backlit foliage glows rather than rendering as a dark silhouette:
 ```glsl
 // In custom leaf shader
 float NdotL = dot(normal, lightDir);
 float backLight = max(0.0, -NdotL) * leafTransmissionFactor;
 vec3 litColor = albedo * (max(0.0, NdotL) + backLight * leafTranslucentColor);
 ```
-- **Quadratic Cantilever Wind**: Displace leaf and branch vertices in world space proportional to height squared ($\Delta \mathbf{P} = \text{windVec} \cdot (h / h_{max})^2 \sin(\omega t - \mathbf{k} \cdot \mathbf{P})$) so tips sway vigorously while roots remain anchored.
+- **Quadratic Cantilever Wind**: Displace leaf and branch vertices in world space proportional to height squared (delta_p = windVec * (h / h_max)^2 * sin(omega * t - k * p)) so tips sway vigorously while roots remain anchored.
 
 ### 7. Procedural skies and runtime IBL synchronization
 
-Combine Rayleigh scattering (fine air molecules, scattering $\propto \lambda^{-4}$) and Mie scattering (forward aerosol haze around the sun):
-
-```glsl
-// Atmospheric scattering approximation
-vec3 computeSkyColor(vec3 viewDir, vec3 sunDir) {
-  float cosTheta = dot(viewDir, sunDir);
-  float zenith = max(0.0, viewDir.y);
-
-  // Rayleigh blue zenith + horizon warming
-  vec3 rayleigh = mix(vec3(1.0, 0.4, 0.1), vec3(0.15, 0.45, 0.95), pow(zenith, 0.4));
-  // Mie forward solar halo
-  float miePhase = 0.25 * (1.0 - 0.76 * 0.76) / pow(1.0 + 0.76 * 0.76 - 2.0 * 0.76 * cosTheta, 1.5);
-  vec3 mie = vec3(1.0, 0.9, 0.7) * miePhase * 0.3;
-
-  return rayleigh + mie;
-}
-```
-
-Bake the procedural sky at startup into an `EnvironmentMap` cubemap with prefiltered radiance and irradiance. This ensures all physically based materials in the scene inherit matching ambient lighting without manual tuning.
+Use `PhysicalSkySource` (`lib/src/sky_sources.dart`) with analytic Rayleigh and Mie scattering. Assign `SkyEnvironment` to `Scene.skyEnvironment` or call `EnvironmentMap.fromSky` to bake prefiltered radiance and SH-9 diffuse coefficients into the scene's IBL automatically, and assign the source to `Scene.skybox` for matching background visuals.
 
 ### 8. Islands, coastal bays, and sand dunes
 
 To form natural island topographies:
-- **Domain-Warped Island Mask**: Multiply a radial distance falloff $(1.0 - (r / R)^2)$ with domain-warped FBM to form organic bays, sandbars, and peninsulas rather than symmetrical circular cones.
-- **Slope-Based Sediment Stripping**: Compute heightfield slope $|\nabla h| = \sqrt{(dh/dx)^2 + (dh/dz)^2}$. Steep cliffs ($|\nabla h| > 1.0$) strip topsoil to expose rock strata, while gentle coastal planes ($|\nabla h| < 0.25$) accumulate golden beach sand.
+- **Domain-Warped Island Mask**: Multiply a radial distance falloff (1.0 - (r / R)^2) with domain-warped FBM to form organic bays, sandbars, and peninsulas rather than symmetrical circular cones.
+- **Slope-Based Sediment Stripping**: Compute heightfield slope sqrt((dh/dx)^2 + (dh/dz)^2). Steep cliffs strip topsoil to expose rock strata, while gentle coastal planes accumulate golden beach sand.
 - **Anisotropic Wind Dune Ripples**: Layer 8:1 anisotropically stretched noise perpendicular to the prevailing wind direction to generate fine ripple crests across sand surfaces.
 
 ---
