@@ -710,7 +710,8 @@ class _KitStageState extends State<_KitStage> {
       jumpVelocity: widget.settings.jumpVelocity,
       groundPlaneHeight: 0.0,
       footOffset: 0.9,
-      obstacleRadius: 0.5,
+      obstacleRadius: 0.85,
+      obstacleHeight: 1.8,
     );
     _characterNode!.addComponent(_characterController!);
 
