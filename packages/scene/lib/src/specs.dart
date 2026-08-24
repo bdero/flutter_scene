@@ -880,7 +880,8 @@ class EnvironmentEffectsSpec {
         temporalAntiAliasingJitterSequenceLength:
             other.temporalAntiAliasingJitterSequenceLength,
         temporalAntiAliasingJitterScale: other.temporalAntiAliasingJitterScale,
-        temporalAntiAliasingObjectMotion: other.temporalAntiAliasingObjectMotion,
+        temporalAntiAliasingObjectMotion:
+            other.temporalAntiAliasingObjectMotion,
         temporalAntiAliasingSkinnedMotion:
             other.temporalAntiAliasingSkinnedMotion,
         fogEnabled: other.fogEnabled,

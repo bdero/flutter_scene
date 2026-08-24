@@ -1162,8 +1162,9 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
         gi['updateWhenIdleOnly'] as bool? ?? false,
     globalIlluminationBakeOnly: gi['bakeOnly'] as bool? ?? false,
     temporalAntiAliasingEnabled: taa['enabled'] as bool? ?? false,
-    temporalAntiAliasingMinimumCurrentWeight:
-        _d(taa['minimumCurrentWeight'] ?? 0.1),
+    temporalAntiAliasingMinimumCurrentWeight: _d(
+      taa['minimumCurrentWeight'] ?? 0.1,
+    ),
     temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.0),
     temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.0),
     temporalAntiAliasingJitterSequenceLength:
