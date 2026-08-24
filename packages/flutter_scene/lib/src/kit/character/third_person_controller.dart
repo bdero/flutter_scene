@@ -8,7 +8,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// slope sliding, coyote time, and turn smoothing.
 ///
 /// For physical character navigation against 3D colliders and capsules with autostep,
-/// see `KinematicCharacterController` in `package:flutter_scene_rapier/physics.dart`.
+/// see `KinematicCharacterController` in `package:flutter_scene/physics.dart`.
 ///
 /// Note on raycasting: [raycastNode] performs a hierarchical bounding-box early-out followed
 /// by per-triangle intersection tests on static render meshes at rest pose.

@@ -9,33 +9,56 @@ import 'package:vector_math/vector_math.dart' as vm;
 class _TestBlockGeometry extends Geometry {
   _TestBlockGeometry({double halfSize = 1.0}) {
     primitiveType = gpu.PrimitiveType.triangle;
-    setCpuPositionsForTesting(
-      Float32List.fromList([
-        -halfSize,
-        -halfSize,
-        0,
-        halfSize,
-        -halfSize,
-        0,
-        halfSize,
-        halfSize,
-        0,
-        -halfSize,
-        -halfSize,
-        0,
-        halfSize,
-        halfSize,
-        0,
-        -halfSize,
-        halfSize,
-        0,
-      ]),
-      bounds: vm.Aabb3.minMax(
+    _positions = Float32List.fromList([
+      -halfSize,
+      -halfSize,
+      0,
+      halfSize,
+      -halfSize,
+      0,
+      halfSize,
+      halfSize,
+      0,
+      -halfSize,
+      -halfSize,
+      0,
+      halfSize,
+      halfSize,
+      0,
+      -halfSize,
+      halfSize,
+      0,
+    ]);
+    setLocalBounds(
+      vm.Aabb3.minMax(
         vm.Vector3(-halfSize, -halfSize, -halfSize),
         vm.Vector3(halfSize, halfSize, halfSize),
       ),
+      null,
     );
   }
+
+  late final Float32List _positions;
+
+  @override
+  ({
+    ByteData? vertices,
+    Float32List? positions,
+    Float32List? texCoords,
+    ByteData? indices,
+    gpu.IndexType indexType,
+    int vertexCount,
+    int indexCount,
+  })
+  get cpuMeshData => (
+    vertices: null,
+    positions: _positions,
+    texCoords: null,
+    indices: null,
+    indexType: gpu.IndexType.int16,
+    vertexCount: _positions.length ~/ 3,
+    indexCount: 0,
+  );
 
   @override
   void bind(
@@ -166,11 +189,9 @@ void main() {
         targetLength: 5.5,
         targetOffset: vm.Vector3(0, 1.4, 0),
         enablePositionLag: false,
-        enableRotationLag: false,
         cameraNode: cameraNode,
         inheritYaw: false,
         inheritPitch: false,
-        inheritRoll: false,
         yaw: 0.0,
         pitch: 0.28,
       );

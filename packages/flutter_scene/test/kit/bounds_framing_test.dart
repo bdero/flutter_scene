@@ -12,11 +12,11 @@ void main() {
           vm.Vector3(-5, -5, -5),
           vm.Vector3(5, 5, 5),
         );
-        final camera = PerspectiveCamera(fovRadiansY: 1.0);
+        final projection = PerspectiveProjection(fovRadiansY: 1.0);
 
         final xform = BoundsFraming.computeFramingTransform(
           bounds,
-          camera,
+          projection,
           paddingFactor: 1.2,
         );
         final camPos = (xform * vm.Vector4(0, 0, 0, 1)).xyz;

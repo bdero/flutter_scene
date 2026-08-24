@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-kit
-version: 2
+version: 3
 description: Build interactive 3D gameplay, character controllers, camera rigs, dynamic day/night cycles, water surfaces, audio, pooling, and debug overlays in flutter_scene. Use when creating game mechanics, camera controls, NPC behaviors, atmospheric environments, or diagnostic HUDs.
 ---
 
@@ -9,7 +9,7 @@ description: Build interactive 3D gameplay, character controllers, camera rigs, 
 Flutter Scene provides high-level gameplay components and ergonomic building blocks in `package:flutter_scene/kit.dart` so games and interactive experiences do not need to re-implement standard mechanics from scratch.
 
 When choosing components, consider existing engine alternatives:
-- For physics-driven character navigation with collider capsules, wall sliding, and autostep, use `KinematicCharacterController` from `package:flutter_scene_rapier/physics.dart`.
+- For physics-driven character navigation with collider capsules, wall sliding, and autostep, use `KinematicCharacterController` from `package:flutter_scene/physics.dart`.
 - For interactive mouse/touch orbit cameras with inertia, use `OrbitCameraController` or `FollowCameraController`.
 - For framing a standalone `PerspectiveCamera`, use `PerspectiveCamera.framing`. Use `BoundsFraming` when computing a transform for a `NodeCamera` mounted in the scene graph.
 
@@ -26,6 +26,8 @@ import 'package:vector_math/vector_math.dart' as vm;
 ### SpringArmComponent
 
 `SpringArmComponent` attaches to a target character node and mounts a camera node at the arm's socket. It casts rays against the scene hierarchy to prevent geometry clipping, smoothly pulling the camera inward when colliding with walls.
+
+Note on offsets: `targetOffset` is applied in world space from the character node's origin, and `socketOffset` acts in the camera socket's local plane along X (right) and Y (up).
 
 ```dart
 final characterNode = Node();
@@ -139,6 +141,6 @@ DebugDraw.axes(node.globalTransform, size: 2.0);
 // Render debug lines
 final debugMesh = DebugDraw.flushMesh();
 if (debugMesh != null) {
-  debugNode.mesh = Mesh(debugMesh, material: UnlitMaterial());
+  debugNode.mesh = Mesh(debugMesh, UnlitMaterial());
 }
 ```
