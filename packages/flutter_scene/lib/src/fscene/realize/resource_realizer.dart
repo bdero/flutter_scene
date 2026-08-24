@@ -583,8 +583,10 @@ class ResourceRealizer {
     if (indexId != null) {
       final rawIndexBytes = _payloadBytes(indexId, 'index');
       final isUint32 = document.payload(indexId)!.format == 'uint32';
-      indexType = isUint32 ? gpu.IndexType.int32 : gpu.IndexType.int16;
-      if (res.legacyWinding || document.formatVersion < 5) {
+      final isTriangleTopology =
+          res.topology == 'triangle' || res.topology == 'triangles';
+      if ((res.legacyWinding || document.formatVersion < 5) &&
+          isTriangleTopology) {
         final migrated = Uint8List.fromList(rawIndexBytes);
         if (isUint32) {
           final u32 = migrated.buffer.asUint32List(
