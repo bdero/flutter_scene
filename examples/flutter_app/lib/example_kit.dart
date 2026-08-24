@@ -1051,6 +1051,9 @@ class _KitStageState extends State<_KitStage> {
             -0.35,
             1.15,
           );
+      debugPrint(
+        '[LIVE DRAG] delta: $delta -> Yaw: ${widget.settings.cameraOrbitYaw.toStringAsFixed(2)}, Pitch: ${widget.settings.cameraOrbitPitch.toStringAsFixed(2)}',
+      );
     } else if (widget.scenario == _KitScenario.flocking) {
       _updateAttractorFromScreen(localPos, size);
     }

@@ -320,7 +320,7 @@ class _MyAppState extends State<MyApp> {
       'Split Screen': (context) => const ExampleSplitScreen(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };
-    selectedExample = examples.keys.first;
+    selectedExample = 'Gameplay Kit';
     resetExampleSettings(settingsDefaults[selectedExample]);
 
     _ready = Future.wait([
