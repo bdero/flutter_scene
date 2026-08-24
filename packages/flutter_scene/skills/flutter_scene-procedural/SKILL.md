@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-procedural
-version: 2
+version: 3
 description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
 ---
 
@@ -76,16 +76,20 @@ scene.add(terrain);
 
 If a hand-built surface renders inside-out (visible only from below, dark where lit), reverse each triangle's index order. flutter_scene's front faces wind Counter-Clockwise (CCW) in model space, matching glTF and standard conventions; never fix orientation with a per-triangle flip on an imported model, but for geometry you author yourself the winding is yours to set.
 
-## Natural formations and rock structures
+## Natural formations and landscape recipes
 
 To achieve documentary realism rather than generic procedural lumps:
 
-1. **Footpaths are scoured trenches, not flat stripes.** A real trail is the lowest line across terrain because water and foot traffic erode it downwards. When generating heightfields, cut the trail path profile down into the terrain with banks rising away on both sides. A path drawn as a flat texture reads as a sticker; a path you walk inside reads as a place.
+1. **Footpaths are scoured trenches, not flat stripes.** A real trail is the lowest line across terrain because water and foot traffic erode it downwards. When generating heightfields, cut the trail path profile down into the terrain with banks rising away on both sides.
 2. **Ridged noise for valley walls and cliffs.** Standard `FractalType.fbm` makes rolling mounds. Use `FractalType.ridged` for valley walls, mountain spurs, and cliffs to produce sharp erosion creases.
-3. **Free-end Worley rock cracks.** Standard Worley noise (`F2 - F1`) creates closed polygonal loops like dry mud or bathroom tile. To produce weathered rock fractures with natural free ends, multiply the cell border by a low-frequency region mask and a high-frequency grain breaker.
+3. **Free-end Worley rock cracks.** Standard Worley noise (`F2 - F1`) creates closed polygonal loops like bathroom tile. To produce weathered rock fractures with natural free ends, multiply the cell border by a low-frequency region mask and a high-frequency grain breaker.
 4. **Noise-modulated pitting.** A constant threshold radius across Worley cells places a pit in every cell, producing an artificial grid lattice. Modulate the threshold radius with an underlying Perlin field so pores vary in size and only appear in exposed weathering pockets.
 5. **Macro massing for scattered gravel.** Soil wears in 0.5m to 2m zones. Modulate multi-scale pebble instances with a low-frequency massing field so gravel clusters into realistic water scour lines rather than uniform sandpaper noise.
-6. **Sunk block settling and ground contact staining.** Place boulders and masonry courses 1/3 to 2/3 submerged into the sampled ground height. Use vertex colors or shader ground distance to stain the bottom 20cm of rock near the soil boundary, creating a smooth moisture transition instead of a sharp polygonal seam.
+6. **Sunk block settling and ground contact staining.** Place boulders and masonry courses 1/3 to 2/3 submerged into the sampled ground height. Use vertex colors or shader ground distance to stain the bottom 20cm of rock near the soil boundary, creating a smooth moisture transition.
+7. **Oceans and Gerstner waves.** Sum 4 to 8 directional Gerstner trochoidal waves that pull vertices horizontally toward crests, producing sharp peaks and wide flat troughs. Use Beer-Lambert depth absorption ($e^{-\sigma_a d}$) for turquoise to deep navy transitions, Jacobian folding for peak foam, and darken/smooth tidal sand within the shoreline wash.
+8. **Trees and foliage translucency.** Extrude branching splines preserving cross-sectional area ($d_{parent}^2 = \sum d_{child}^2$). Leaves require a double-sided transmission term in shader passes so backlit canopies glow instead of rendering as black silhouettes. Apply quadratic cantilever displacement ($\Delta \mathbf{P} \propto h^2$) for organic wind sway.
+9. **Procedural skies and IBL synchronization.** Combine Rayleigh scattering (blue zenith/red horizon) with Mie forward scattering (solar halo). Bake the procedural sky to an `EnvironmentMap` cubemap at load time with prefiltered radiance/irradiance so scene IBL matches the atmosphere automatically.
+10. **Islands and coastal erosion.** Multiply radial distance falloff with domain-warped FBM to form organic bays, sandbars, and lagoons. Use analytical surface slopes to strip topsoil on steep cliffs while depositing golden sand and reef shoals on shallow coastal planes.
 
 ## Scattering thousands of copies
 
@@ -127,4 +131,4 @@ Native platforms are unaffected. `noiseHash2`/`noiseHash3` are the bit-exact CPU
 
 ## More depth
 
-`references/procedural.md` has the full `GeometryBuilder` and `MeshData` API (including off-isolate meshing), the complete `FastNoiseLite` config reference, natural rock and terrain formation recipes, the instancing API in full, modular-kit assembly from the built-in primitives, and the web-noise caveat expanded.
+`references/procedural.md` has the full `GeometryBuilder` and `MeshData` API (including off-isolate meshing), the complete `FastNoiseLite` config reference, natural rock, ocean, tree, sky, and island formation recipes, the instancing API in full, modular-kit assembly from the built-in primitives, and the web-noise caveat expanded.

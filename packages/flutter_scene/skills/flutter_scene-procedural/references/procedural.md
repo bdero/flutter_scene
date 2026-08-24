@@ -325,6 +325,79 @@ void scatterPebbles(InstancedMesh finePebbles, InstancedMesh largeStones, FastNo
 }
 ```
 
+### 5. Oceans and Gerstner waves
+
+Trochoidal Gerstner waves pull vertices horizontally toward wave peaks, creating sharp crests and wide flat troughs. Sum multiple directional waves and compute normals analytically:
+
+```glsl
+// GLSL Gerstner wave displacement
+struct Wave { vec2 dir; float amp; float freq; float speed; float steepness; };
+
+vec3 evaluateGerstner(vec2 pos, float time, Wave w, inout vec3 tangent, inout vec3 binormal) {
+  float phase = dot(w.dir, pos) * w.freq + time * w.speed;
+  float c = cos(phase);
+  float s = sin(phase);
+  float q = w.steepness / (w.amp * w.freq * 4.0);
+
+  tangent += vec3(-q * w.dir.x * w.dir.x * w.amp * w.freq * s,
+                   w.dir.x * w.amp * w.freq * c,
+                  -q * w.dir.x * w.dir.y * w.amp * w.freq * s);
+  binormal += vec3(-q * w.dir.x * w.dir.y * w.amp * w.freq * s,
+                    w.dir.y * w.amp * w.freq * c,
+                   -q * w.dir.y * w.dir.y * w.amp * w.freq * s);
+
+  return vec3(q * w.amp * w.dir.x * c,
+              w.amp * s,
+              q * w.amp * w.dir.y * c);
+}
+```
+
+For shallow water transitions and shorelines:
+- **Beer-Lambert Depth Extinction**: Compute depth $d = y_{surface} - y_{floor}$. Attenuate color with $\mathbf{C} = \mathbf{C}_{deep} + (\mathbf{C}_{shallow} - \mathbf{C}_{deep}) e^{-\boldsymbol{\sigma}_a d}$.
+- **Tidal Wet Sand**: Reduce sand roughness to `0.15` and multiply albedo by `0.6` within the wave wash zone to produce glistening wet shorelines.
+
+### 6. Trees, branching splines, and backlit foliage
+
+Trunk and branch structures follow Leonardo da Vinci's rule: total cross-sectional area is conserved across splits ($d_{parent}^2 = \sum d_{child}^2$). Extrude branches along swept spline tubes:
+
+- **Backlit Leaf Translucency**: Leaves are thin cellular structures. Add a diffuse transmission term in the material shader so backlit foliage glows rather than rendering as a dark silhouette:
+```glsl
+// In custom leaf shader
+float NdotL = dot(normal, lightDir);
+float backLight = max(0.0, -NdotL) * leafTransmissionFactor;
+vec3 litColor = albedo * (max(0.0, NdotL) + backLight * leafTranslucentColor);
+```
+- **Quadratic Cantilever Wind**: Displace leaf and branch vertices in world space proportional to height squared ($\Delta \mathbf{P} = \text{windVec} \cdot (h / h_{max})^2 \sin(\omega t - \mathbf{k} \cdot \mathbf{P})$) so tips sway vigorously while roots remain anchored.
+
+### 7. Procedural skies and runtime IBL synchronization
+
+Combine Rayleigh scattering (fine air molecules, scattering $\propto \lambda^{-4}$) and Mie scattering (forward aerosol haze around the sun):
+
+```glsl
+// Atmospheric scattering approximation
+vec3 computeSkyColor(vec3 viewDir, vec3 sunDir) {
+  float cosTheta = dot(viewDir, sunDir);
+  float zenith = max(0.0, viewDir.y);
+
+  // Rayleigh blue zenith + horizon warming
+  vec3 rayleigh = mix(vec3(1.0, 0.4, 0.1), vec3(0.15, 0.45, 0.95), pow(zenith, 0.4));
+  // Mie forward solar halo
+  float miePhase = 0.25 * (1.0 - 0.76 * 0.76) / pow(1.0 + 0.76 * 0.76 - 2.0 * 0.76 * cosTheta, 1.5);
+  vec3 mie = vec3(1.0, 0.9, 0.7) * miePhase * 0.3;
+
+  return rayleigh + mie;
+}
+```
+
+Bake the procedural sky at startup into an `EnvironmentMap` cubemap with prefiltered radiance and irradiance. This ensures all physically based materials in the scene inherit matching ambient lighting without manual tuning.
+
+### 8. Islands, coastal bays, and sand dunes
+
+To form natural island topographies:
+- **Domain-Warped Island Mask**: Multiply a radial distance falloff $(1.0 - (r / R)^2)$ with domain-warped FBM to form organic bays, sandbars, and peninsulas rather than symmetrical circular cones.
+- **Slope-Based Sediment Stripping**: Compute heightfield slope $|\nabla h| = \sqrt{(dh/dx)^2 + (dh/dz)^2}$. Steep cliffs ($|\nabla h| > 1.0$) strip topsoil to expose rock strata, while gentle coastal planes ($|\nabla h| < 0.25$) accumulate golden beach sand.
+- **Anisotropic Wind Dune Ripples**: Layer 8:1 anisotropically stretched noise perpendicular to the prevailing wind direction to generate fine ripple crests across sand surfaces.
+
 ---
 
 ## The web noise caveat, expanded
