@@ -716,9 +716,10 @@ Future<bool> releaseScene(
 Future<SceneRegistry> _sharedSceneRegistry(AssetBundle? bundle) {
   final assetBundle = bundle ?? rootBundle;
   return _sceneRegistries[assetBundle] ??=
-      SceneRegistry.load(
-        bundle: assetBundle,
-      ).onError((Object error, StackTrace stackTrace) {
+      SceneRegistry.load(bundle: assetBundle).onError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
         _sceneRegistries[assetBundle] = null;
         Error.throwWithStackTrace(error, stackTrace);
       });
