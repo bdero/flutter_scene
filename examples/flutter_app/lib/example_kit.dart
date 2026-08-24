@@ -33,6 +33,7 @@ class ExampleKit extends StatefulWidget {
 class _ExampleKitState extends State<ExampleKit> {
   _KitScenario _scenario = _KitScenario.characterCamera;
   final KitDemoSettings _settings = KitDemoSettings();
+  final GlobalKey<_KitStageState> _stageKey = GlobalKey<_KitStageState>();
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +41,7 @@ class _ExampleKitState extends State<ExampleKit> {
       children: [
         Positioned.fill(
           child: _KitStage(
-            key: ValueKey(_scenario),
+            key: _stageKey,
             scenario: _scenario,
             settings: _settings,
             onSettingsChanged: () => setState(() {}),
@@ -68,6 +69,7 @@ class _ExampleKitState extends State<ExampleKit> {
           child: _KitScenarioPanel(
             scenario: _scenario,
             settings: _settings,
+            onFireBurst: () => _stageKey.currentState?.fireProjectileBurst(),
             onChanged: () => setState(() {}),
           ),
         ),
@@ -80,11 +82,13 @@ class _KitScenarioPanel extends StatelessWidget {
   const _KitScenarioPanel({
     required this.scenario,
     required this.settings,
+    required this.onFireBurst,
     required this.onChanged,
   });
 
   final _KitScenario scenario;
   final KitDemoSettings settings;
+  final VoidCallback onFireBurst;
   final VoidCallback onChanged;
 
   @override
@@ -189,6 +193,11 @@ class _KitScenarioPanel extends StatelessWidget {
               onChanged();
             },
           ),
+          const SizedBox(height: 6),
+          const Text(
+            'Drives physical Rayleigh/Mie sky scattering and directional sun shadows smoothly with zero discontinuities.',
+            style: TextStyle(color: Colors.white70, fontSize: 11),
+          ),
         ];
 
       case _KitScenario.waterBuoyancy:
@@ -224,6 +233,11 @@ class _KitScenarioPanel extends StatelessWidget {
               onChanged();
             },
           ),
+          const SizedBox(height: 6),
+          const Text(
+            'Trochoidal Gerstner waves drive real-time surface height, normal orientation, and pitch/roll of floating buoys and crates.',
+            style: TextStyle(color: Colors.white70, fontSize: 11),
+          ),
         ];
 
       case _KitScenario.flocking:
@@ -249,16 +263,77 @@ class _KitScenarioPanel extends StatelessWidget {
               onChanged();
             },
           ),
+          const SizedBox(height: 6),
+          const Text(
+            'Autonomous boids steering with seek, separation, cohesion, and alignment behavior towards a moving target.',
+            style: TextStyle(color: Colors.white70, fontSize: 11),
+          ),
         ];
 
       case _KitScenario.spawnerPooling:
         return [
+          const KitSectionHeader('Zero-GC Projectile Pooling'),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Continuous Auto-Fire',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+              Switch(
+                value: settings.autoFire,
+                onChanged: (v) {
+                  settings.autoFire = v;
+                  onChanged();
+                },
+              ),
+            ],
+          ),
+          Center(
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.bolt, size: 16),
+              label: const Text('Fire Projectile Burst'),
+              onPressed: onFireBurst,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white10,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Active in Flight: ${settings.activeProjectiles}',
+                  style: const TextStyle(
+                    color: Colors.amberAccent,
+                    fontSize: 11,
+                  ),
+                ),
+                Text(
+                  'Pool Buffer Size: ${settings.poolCapacity}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+                Text(
+                  'Total Recycled Spawns: ${settings.totalSpawns}',
+                  style: const TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const KitSectionHeader('Poisson-Disc Distribution'),
           KitSliderRow(
-            label: 'Min distance',
+            label: 'Min tree spacing',
             value: settings.minDistance,
-            min: 1.0,
-            max: 6.0,
+            min: 2.0,
+            max: 7.0,
             onChanged: (v) {
               settings.minDistance = v;
               onChanged();
@@ -270,7 +345,7 @@ class _KitScenarioPanel extends StatelessWidget {
         return [
           const KitSectionHeader('Debug Shapes'),
           const Text(
-            'Demonstrates immediate-mode DebugDraw wireframes (lines, rays, boxes, spheres, axes) and real-time PerformanceOverlay3d.',
+            'Demonstrates immediate-mode DebugDraw wireframes (lines, rays, boxes, spheres, axes) and real-time PerformanceOverlay3D.',
             style: TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ];
@@ -294,6 +369,19 @@ class _KitStage extends StatefulWidget {
   State<_KitStage> createState() => _KitStageState();
 }
 
+class _ActiveProjectile {
+  _ActiveProjectile({
+    required this.node,
+    required this.position,
+    required this.velocity,
+  });
+
+  final Node node;
+  vm.Vector3 position;
+  vm.Vector3 velocity;
+  double lifeTime = 0.0;
+}
+
 class _KitStageState extends State<_KitStage> {
   final Scene scene = Scene();
   final Node _cameraNode = Node();
@@ -305,9 +393,9 @@ class _KitStageState extends State<_KitStage> {
   ThirdPersonControllerComponent? _characterController;
   SpringArmComponent? _springArm;
   final CameraShake _shake = CameraShake();
+  vm.Vector2 _joystickInput = vm.Vector2.zero();
 
   // Day/Night scenario
-  Node? _sunLightNode;
   DayNightCycleComponent? _dayNight;
 
   // Water scenario
@@ -319,8 +407,10 @@ class _KitStageState extends State<_KitStage> {
   final List<vm.Vector3> _boidVelocities = [];
 
   // Pooling scenario
-  NodePool? _bulletPool;
+  NodePool? _projectilePool;
+  final List<_ActiveProjectile> _activeProjectiles = [];
   final List<Node> _scatteredProps = [];
+  double _fireTimer = 0.0;
 
   double _elapsed = 0.0;
   final Set<LogicalKeyboardKey> _pressedKeys = {};
@@ -334,6 +424,48 @@ class _KitStageState extends State<_KitStage> {
     );
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     _buildScene();
+  }
+
+  @override
+  void didUpdateWidget(covariant _KitStage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scenario != widget.scenario) {
+      _buildScene();
+    } else if (widget.scenario == _KitScenario.spawnerPooling &&
+        oldWidget.settings.minDistance != widget.settings.minDistance) {
+      _rebuildPoissonFoliage();
+    } else if (widget.scenario == _KitScenario.waterBuoyancy &&
+        (oldWidget.settings.waveAmplitude != widget.settings.waveAmplitude ||
+            oldWidget.settings.waveSpeed != widget.settings.waveSpeed ||
+            oldWidget.settings.waveSteepness !=
+                widget.settings.waveSteepness)) {
+      _rebuildWater();
+    }
+  }
+
+  void _rebuildWater() {
+    if (_water != null) {
+      scene.root.removeComponent(_water!);
+    }
+    _water = WaterSurfaceComponent(
+      waves: [
+        GerstnerWave(
+          direction: vm.Vector2(1.0, 0.2).normalized(),
+          amplitude: widget.settings.waveAmplitude,
+          wavelength: 12.0,
+          speed: widget.settings.waveSpeed,
+          steepness: widget.settings.waveSteepness,
+        ),
+        GerstnerWave(
+          direction: vm.Vector2(0.5, 0.8).normalized(),
+          amplitude: widget.settings.waveAmplitude * 0.5,
+          wavelength: 6.0,
+          speed: widget.settings.waveSpeed * 1.3,
+          steepness: widget.settings.waveSteepness,
+        ),
+      ],
+    );
+    scene.root.addComponent(_water!);
   }
 
   @override
@@ -357,14 +489,14 @@ class _KitStageState extends State<_KitStage> {
     scene.add(_cameraNode);
     scene.add(_debugMeshNode);
 
-    // Add ambient default lighting
+    // Reset default directional light
     final keyLight = DirectionalLight()
-      ..color = vm.Vector3(1.0, 0.98, 0.95)
-      ..intensity = 40000.0;
+      ..color = vm.Vector3(1.0, 0.98, 0.92)
+      ..intensity = 50000.0;
     final keyLightNode = Node()
       ..addComponent(DirectionalLightComponent(keyLight));
     keyLightNode.localTransform = vm.Matrix4.identity()
-      ..setTranslation(vm.Vector3(10, 20, 10));
+      ..setTranslation(vm.Vector3(12, 24, 12));
     scene.add(keyLightNode);
 
     switch (widget.scenario) {
@@ -385,38 +517,57 @@ class _KitStageState extends State<_KitStage> {
 
   void _buildCharacterCamera() {
     // Ground plane
-    final groundMesh = PlaneGeometry(width: 40, depth: 40);
+    final groundMesh = PlaneGeometry(width: 48, depth: 48);
     final groundNode = Node(
       mesh: Mesh(
         groundMesh,
         PhysicallyBasedMaterial()
-          ..baseColorFactor = vm.Vector4(0.25, 0.28, 0.32, 1.0)
+          ..baseColorFactor = vm.Vector4(0.24, 0.26, 0.30, 1.0)
           ..roughnessFactor = 0.8,
       ),
     )..position = vm.Vector3.zero();
     scene.add(groundNode);
 
     // Obstacle blocks for collision and occlusion testing
-    final boxGeo = CuboidGeometry(vm.Vector3(3, 2.5, 3));
+    final boxGeo = CuboidGeometry(vm.Vector3(3.5, 2.5, 3.5));
     final wallMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.6, 0.3, 0.2, 1.0)
+      ..baseColorFactor = vm.Vector4(0.65, 0.35, 0.22, 1.0)
       ..roughnessFactor = 0.6;
     for (final pos in [
-      vm.Vector3(6, 1.25, 6),
-      vm.Vector3(-6, 1.25, -6),
-      vm.Vector3(-8, 1.25, 4),
-      vm.Vector3(0, 1.25, -10),
+      vm.Vector3(7, 1.25, 7),
+      vm.Vector3(-7, 1.25, -7),
+      vm.Vector3(-8, 1.25, 5),
+      vm.Vector3(0, 1.25, -11),
+      vm.Vector3(10, 1.25, -5),
     ]) {
       scene.add(Node(mesh: Mesh(boxGeo, wallMat))..position = pos);
     }
 
-    // Player character
-    final charGeo = CuboidGeometry(vm.Vector3(0.8, 1.8, 0.8));
-    final charMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.2, 0.7, 0.9, 1.0)
+    // Stylized player character with torso, head, and visor
+    final charTorsoGeo = CuboidGeometry(vm.Vector3(0.8, 1.0, 0.6));
+    final charTorsoMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.18, 0.65, 0.95, 1.0)
       ..roughnessFactor = 0.3;
-    _characterNode = Node(mesh: Mesh(charGeo, charMat))
+    _characterNode = Node(mesh: Mesh(charTorsoGeo, charTorsoMat))
       ..position = vm.Vector3(0, 0.9, 0);
+
+    final charHeadGeo = CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5));
+    final charHeadMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.95, 0.85, 0.72, 1.0);
+    _characterNode!.add(
+      Node(mesh: Mesh(charHeadGeo, charHeadMat))
+        ..position = vm.Vector3(0, 0.75, 0),
+    );
+
+    final charVisorGeo = CuboidGeometry(vm.Vector3(0.42, 0.16, 0.2));
+    final charVisorMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.08, 0.08, 0.08, 1.0)
+      ..metallicFactor = 0.9
+      ..roughnessFactor = 0.1;
+    _characterNode!.add(
+      Node(mesh: Mesh(charVisorGeo, charVisorMat))
+        ..position = vm.Vector3(0, 0.78, 0.22),
+    );
 
     _characterController = ThirdPersonControllerComponent(
       walkSpeed: widget.settings.walkSpeed,
@@ -428,7 +579,7 @@ class _KitStageState extends State<_KitStage> {
     _springArm = SpringArmComponent(
       targetLength: widget.settings.armLength,
       targetOffset: vm.Vector3(0, 1.4, 0),
-      socketOffset: vm.Vector3(0.4, 0, 0),
+      socketOffset: vm.Vector3(0.0, 0.3, 0),
       enablePositionLag: widget.settings.enableLag,
       positionLagSpeed: widget.settings.lagSpeed,
       enableRotationLag: widget.settings.enableLag,
@@ -441,84 +592,102 @@ class _KitStageState extends State<_KitStage> {
   }
 
   void _buildDayNight() {
+    // Physical atmospheric sky driven by sun direction
+    final physicalSky = PhysicalSkySource(
+      sunDirection: vm.Vector3(0.5, 0.7, 0.5).normalized(),
+      turbidity: 3.0,
+      groundColor: vm.Vector3(0.3, 0.32, 0.28),
+    );
+    scene.skybox = Skybox(physicalSky);
+    scene.skyEnvironment = SkyEnvironment(physicalSky);
+    scene.sunLight = SunLight(physicalSky, castsShadow: true);
+
     // Ground plane
-    final groundMesh = PlaneGeometry(width: 50, depth: 50);
+    final groundMesh = PlaneGeometry(width: 60, depth: 60);
     scene.add(
       Node(
         mesh: Mesh(
           groundMesh,
           PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.3, 0.32, 0.28, 1.0)
+            ..baseColorFactor = vm.Vector4(0.32, 0.35, 0.30, 1.0)
             ..roughnessFactor = 0.9,
         ),
       ),
     );
 
-    // Monoliths casting shadows
-    final pillarGeo = CuboidGeometry(vm.Vector3(1.2, 6.0, 1.2));
+    // Monoliths casting dynamic shadows across the landscape
+    final pillarGeo = CuboidGeometry(vm.Vector3(1.4, 7.0, 1.4));
     final pillarMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.8, 0.78, 0.72, 1.0)
-      ..roughnessFactor = 0.4;
+      ..baseColorFactor = vm.Vector4(0.85, 0.82, 0.78, 1.0)
+      ..roughnessFactor = 0.35;
 
-    for (var i = 0; i < 6; i++) {
-      final angle = (i / 6.0) * 2 * math.pi;
-      final x = math.cos(angle) * 8.0;
-      final z = math.sin(angle) * 8.0;
+    for (var i = 0; i < 8; i++) {
+      final angle = (i / 8.0) * 2 * math.pi;
+      final x = math.cos(angle) * 10.0;
+      final z = math.sin(angle) * 10.0;
       scene.add(
         Node(mesh: Mesh(pillarGeo, pillarMat))
-          ..position = vm.Vector3(x, 3.0, z),
+          ..position = vm.Vector3(x, 3.5, z),
       );
     }
-
-    final sunLight = DirectionalLight();
-    _sunLightNode = Node()..addComponent(DirectionalLightComponent(sunLight));
-    scene.add(_sunLightNode!);
 
     _dayNight = DayNightCycleComponent(
       timeOfDay: widget.settings.timeOfDay,
       timeSpeed: widget.settings.timeSpeed,
       latitude: widget.settings.latitude,
-      sunLightNode: _sunLightNode,
+      skySource: physicalSky,
     );
     scene.root.addComponent(_dayNight!);
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-12, 0, -12), vm.Vector3(12, 6, 12)),
+      vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 8, 14)),
       PerspectiveCamera(fovRadiansY: 1.0),
-      viewDirection: vm.Vector3(0.7, 0.5, 0.7),
+      viewDirection: vm.Vector3(0.7, 0.45, 0.7),
       paddingFactor: 1.4,
     );
   }
 
   void _buildWaterBuoyancy() {
-    _water = WaterSurfaceComponent();
+    _rebuildWater();
     _floatingProps.clear();
 
+    // Visible translucent water surface
+    final waterGeo = PlaneGeometry(width: 48, depth: 48);
+    final waterMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.06, 0.38, 0.68, 0.85)
+      ..roughnessFactor = 0.05
+      ..metallicFactor = 0.1;
+    scene.add(
+      Node(mesh: Mesh(waterGeo, waterMat))..position = vm.Vector3.zero(),
+    );
+
+    // Floating buoys and crates
     final buoyGeo = CuboidGeometry(vm.Vector3(1.2, 1.2, 1.2));
     final buoyMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(1.0, 0.4, 0.1, 1.0)
+      ..baseColorFactor = vm.Vector4(1.0, 0.38, 0.08, 1.0)
       ..roughnessFactor = 0.2;
 
-    for (var x = -8; x <= 8; x += 4) {
-      for (var z = -8; z <= 8; z += 4) {
-        final node = Node(mesh: Mesh(buoyGeo, buoyMat))
-          ..position = vm.Vector3(x.toDouble(), 0, z.toDouble())
-          ..addComponent(
-            FloatingMotionComponent(
-              hoverAmplitude: 0.3,
-              hoverFrequency: 0.8,
-              spinSpeed: 0.5,
-            ),
-          );
+    final crateGeo = CuboidGeometry(vm.Vector3(1.6, 1.6, 1.6));
+    final crateMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.65, 0.45, 0.28, 1.0)
+      ..roughnessFactor = 0.7;
+
+    for (var x = -10; x <= 10; x += 5) {
+      for (var z = -10; z <= 10; z += 5) {
+        final isBuoy = (x + z) % 10 == 0;
+        final node = Node(
+          mesh: Mesh(isBuoy ? buoyGeo : crateGeo, isBuoy ? buoyMat : crateMat),
+        )..position = vm.Vector3(x.toDouble(), 0, z.toDouble());
         _floatingProps.add(node);
         scene.add(node);
       }
     }
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-10, -2, -10), vm.Vector3(10, 4, 10)),
+      vm.Aabb3.minMax(vm.Vector3(-14, -2, -14), vm.Vector3(14, 5, 14)),
       PerspectiveCamera(fovRadiansY: 1.0),
-      viewDirection: vm.Vector3(0.5, 0.6, 0.8),
+      viewDirection: vm.Vector3(0.55, 0.55, 0.75),
+      paddingFactor: 1.3,
     );
   }
 
@@ -526,110 +695,184 @@ class _KitStageState extends State<_KitStage> {
     _boidNodes.clear();
     _boidVelocities.clear();
 
-    final boidGeo = CuboidGeometry(vm.Vector3(0.4, 0.4, 1.0));
+    final boidGeo = CuboidGeometry(vm.Vector3(0.4, 0.3, 1.0));
     final boidMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.3, 0.9, 0.5, 1.0)
-      ..roughnessFactor = 0.4;
+      ..baseColorFactor = vm.Vector4(0.2, 0.95, 0.6, 1.0)
+      ..roughnessFactor = 0.3;
 
     final rng = math.Random(42);
-    for (var i = 0; i < 24; i++) {
+    for (var i = 0; i < 28; i++) {
       final pos = vm.Vector3(
-        (rng.nextDouble() - 0.5) * 16.0,
+        (rng.nextDouble() - 0.5) * 18.0,
         rng.nextDouble() * 8.0 + 2.0,
-        (rng.nextDouble() - 0.5) * 16.0,
+        (rng.nextDouble() - 0.5) * 18.0,
       );
       final node = Node(mesh: Mesh(boidGeo, boidMat))..position = pos;
       _boidNodes.add(node);
       _boidVelocities.add(
         vm.Vector3(
-          (rng.nextDouble() - 0.5) * 2.0,
-          (rng.nextDouble() - 0.5) * 2.0,
-          (rng.nextDouble() - 0.5) * 2.0,
+          (rng.nextDouble() - 0.5) * 3.0,
+          (rng.nextDouble() - 0.5) * 3.0,
+          (rng.nextDouble() - 0.5) * 3.0,
         ),
       );
       scene.add(node);
     }
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-12, 0, -12), vm.Vector3(12, 10, 12)),
+      vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 12, 14)),
       PerspectiveCamera(fovRadiansY: 1.0),
-      viewDirection: vm.Vector3(0.6, 0.6, 0.6),
+      viewDirection: vm.Vector3(0.6, 0.55, 0.65),
+      paddingFactor: 1.4,
     );
   }
 
   void _buildSpawnerPooling() {
+    _activeProjectiles.clear();
     _scatteredProps.clear();
 
-    // 1. Procedural tree/rock scattering using PoissonDiscSampler
-    final groundMesh = PlaneGeometry(width: 30, depth: 30);
+    // Ground plane
+    final groundMesh = PlaneGeometry(width: 36, depth: 36);
     scene.add(
       Node(
         mesh: Mesh(
           groundMesh,
           PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.2, 0.3, 0.22, 1.0)
-            ..roughnessFactor = 0.9,
+            ..baseColorFactor = vm.Vector4(0.22, 0.28, 0.24, 1.0)
+            ..roughnessFactor = 0.85,
         ),
       ),
     );
 
-    final points = PoissonDiscSampler.sampleRect(
-      28.0,
-      28.0,
-      widget.settings.minDistance,
-      seed: 777,
+    // Center cannon / turret
+    final turretBaseGeo = CuboidGeometry(vm.Vector3(1.8, 0.8, 1.8));
+    final turretBaseMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.2, 0.2, 0.25, 1.0)
+      ..metallicFactor = 0.8
+      ..roughnessFactor = 0.2;
+    final turretBarrelGeo = CuboidGeometry(vm.Vector3(0.6, 0.6, 2.2));
+    final turretBarrelMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.8, 0.2, 0.2, 1.0)
+      ..metallicFactor = 0.5
+      ..roughnessFactor = 0.3;
+
+    final turretNode = Node(mesh: Mesh(turretBaseGeo, turretBaseMat))
+      ..position = vm.Vector3(0, 0.4, 0);
+    turretNode.add(
+      Node(mesh: Mesh(turretBarrelGeo, turretBarrelMat))
+        ..position = vm.Vector3(0, 0.5, 0.6)
+        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), -0.25),
     );
-    final treeGeo = CuboidGeometry(vm.Vector3(0.8, 3.5, 0.8));
-    final treeMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.15, 0.6, 0.25, 1.0)
-      ..roughnessFactor = 0.5;
+    scene.add(turretNode);
 
-    for (final pt in points) {
-      final x = pt.x - 14.0;
-      final z = pt.y - 14.0;
-      final prop = Node(mesh: Mesh(treeGeo, treeMat))
-        ..position = vm.Vector3(x, 1.75, z);
-      _scatteredProps.add(prop);
-      scene.add(prop);
-    }
+    // 1. Poisson-disc distribution of trees around the perimeter
+    _rebuildPoissonFoliage();
 
-    // 2. NodePool for zero-GC particles/bullets
-    final bulletGeo = CuboidGeometry(vm.Vector3(0.3, 0.3, 0.3));
-    final bulletMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(1.0, 0.9, 0.2, 1.0)
+    // 2. Zero-GC NodePool for recycled projectiles
+    final projGeo = CuboidGeometry(vm.Vector3(0.4, 0.4, 0.4));
+    final projMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(1.0, 0.85, 0.15, 1.0)
+      ..emissiveFactor = vm.Vector4(1.0, 0.7, 0.1, 1.0)
       ..roughnessFactor = 0.1;
 
-    _bulletPool = NodePool(
-      () => Node(mesh: Mesh(bulletGeo, bulletMat)),
+    _projectilePool = NodePool(
+      () => Node(mesh: Mesh(projGeo, projMat)),
       initialSize: 16,
       maxSize: widget.settings.poolMaxSize,
     );
 
+    widget.settings.poolCapacity = _projectilePool!.idleCount;
+
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 6, 14)),
+      vm.Aabb3.minMax(vm.Vector3(-16, 0, -16), vm.Vector3(16, 8, 16)),
       PerspectiveCamera(fovRadiansY: 1.0),
-      viewDirection: vm.Vector3(0.7, 0.5, 0.7),
-      paddingFactor: 1.3,
+      viewDirection: vm.Vector3(0.65, 0.48, 0.65),
+      paddingFactor: 1.35,
     );
   }
 
+  void _rebuildPoissonFoliage() {
+    for (final p in _scatteredProps) {
+      p.parent?.remove(p);
+    }
+    _scatteredProps.clear();
+
+    final points = PoissonDiscSampler.sampleRect(
+      32.0,
+      32.0,
+      widget.settings.minDistance,
+      seed: 555,
+    );
+
+    final trunkGeo = CuboidGeometry(vm.Vector3(0.6, 2.5, 0.6));
+    final trunkMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.45, 0.28, 0.16, 1.0)
+      ..roughnessFactor = 0.9;
+    final foliageGeo = CuboidGeometry(vm.Vector3(2.0, 2.2, 2.0));
+    final foliageMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.18, 0.65, 0.28, 1.0)
+      ..roughnessFactor = 0.6;
+
+    for (final pt in points) {
+      final x = pt.x - 16.0;
+      final z = pt.y - 16.0;
+      if (math.sqrt(x * x + z * z) < 4.0) {
+        continue; // Keep center clear for cannon
+      }
+
+      final tree = Node(mesh: Mesh(trunkGeo, trunkMat))
+        ..position = vm.Vector3(x, 1.25, z);
+      tree.add(
+        Node(mesh: Mesh(foliageGeo, foliageMat))
+          ..position = vm.Vector3(0, 1.8, 0),
+      );
+      _scatteredProps.add(tree);
+      scene.add(tree);
+    }
+  }
+
+  void fireProjectileBurst() {
+    if (_projectilePool == null) return;
+    final rng = math.Random();
+    for (var i = 0; i < 5; i++) {
+      final node = _projectilePool!.spawn(parent: scene.root);
+      final angle = (i - 2) * 0.18 + (rng.nextDouble() - 0.5) * 0.1;
+      final speed = 14.0 + rng.nextDouble() * 4.0;
+      final dir = vm.Vector3(
+        math.sin(angle),
+        0.45,
+        math.cos(angle),
+      ).normalized();
+
+      final proj = _ActiveProjectile(
+        node: node,
+        position: vm.Vector3(0, 0.9, 1.2),
+        velocity: dir * speed,
+      );
+      node.position = proj.position;
+      _activeProjectiles.add(proj);
+      widget.settings.totalSpawns++;
+    }
+  }
+
   void _buildDebugVisuals() {
-    final groundMesh = PlaneGeometry(width: 20, depth: 20);
+    final groundMesh = PlaneGeometry(width: 24, depth: 24);
     scene.add(
       Node(
         mesh: Mesh(
           groundMesh,
           PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.15, 0.15, 0.18, 1.0)
+            ..baseColorFactor = vm.Vector4(0.16, 0.16, 0.20, 1.0)
             ..roughnessFactor = 0.9,
         ),
       ),
     );
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-8, 0, -8), vm.Vector3(8, 6, 8)),
+      vm.Aabb3.minMax(vm.Vector3(-9, 0, -9), vm.Vector3(9, 6, 9)),
       PerspectiveCamera(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.6, 0.5, 0.8),
+      paddingFactor: 1.3,
     );
   }
 
@@ -655,7 +898,7 @@ class _KitStageState extends State<_KitStage> {
   void _tickCharacter(double dt) {
     if (_characterController == null || _characterNode == null) return;
 
-    // Keyboard movement input
+    // Read keyboard movement input
     var mx = 0.0;
     var my = 0.0;
     if (_pressedKeys.contains(LogicalKeyboardKey.keyW) ||
@@ -675,9 +918,12 @@ class _KitStageState extends State<_KitStage> {
       mx -= 1.0;
     }
 
+    final moveX = mx != 0.0 ? mx : _joystickInput.x;
+    final moveY = my != 0.0 ? my : _joystickInput.y;
     final isSprinting = _pressedKeys.contains(LogicalKeyboardKey.shiftLeft);
+
     _characterController!.setMoveInput(
-      vm.Vector2(mx, my),
+      vm.Vector2(moveX, moveY),
       isRunning: isSprinting,
     );
 
@@ -696,6 +942,9 @@ class _KitStageState extends State<_KitStage> {
       _springArm!.rotationLagSpeed = widget.settings.lagSpeed;
     }
 
+    // Step the scene components (ThirdPersonController + SpringArm)
+    scene.update(dt);
+
     // Apply trauma shake offset to camera
     final shakeOffset = _shake.update(dt);
     if (shakeOffset.translation.length2 > 0) {
@@ -708,26 +957,48 @@ class _KitStageState extends State<_KitStage> {
     if (_dayNight == null) return;
     _dayNight!.timeSpeed = widget.settings.timeSpeed;
     _dayNight!.latitude = widget.settings.latitude;
-    _dayNight!.timeOfDay = widget.settings.timeOfDay;
+
+    if (widget.settings.timeSpeed == 0.0) {
+      _dayNight!.timeOfDay = widget.settings.timeOfDay;
+    } else {
+      widget.settings.timeOfDay = _dayNight!.timeOfDay;
+    }
+
+    scene.update(dt);
   }
 
   void _tickWater(double dt) {
     if (_water == null) return;
+
     for (final prop in _floatingProps) {
       final surface = _water!.evaluateAt(
         vm.Vector2(prop.position.x, prop.position.z),
       );
-      prop.position.y = surface.displacement.y;
+      prop.position = vm.Vector3(
+        prop.position.x,
+        surface.displacement.y,
+        prop.position.z,
+      );
+
+      final normal = surface.normal;
+      final up = vm.Vector3(0, 1, 0);
+      final rotAxis = up.cross(normal);
+      if (rotAxis.length2 > 1e-4) {
+        final rotAngle = math.acos(up.dot(normal).clamp(-1.0, 1.0));
+        prop.rotation = vm.Quaternion.axisAngle(rotAxis.normalized(), rotAngle);
+      }
     }
+
+    scene.update(dt);
   }
 
   void _tickFlocking(double dt) {
     if (_boidNodes.isEmpty) return;
 
     final targetPos = vm.Vector3(
-      math.sin(_elapsed * 0.8) * 8.0,
-      4.0 + math.cos(_elapsed * 1.2) * 2.0,
-      math.cos(_elapsed * 0.8) * 8.0,
+      math.sin(_elapsed * 0.8) * 10.0,
+      4.5 + math.cos(_elapsed * 1.2) * 2.5,
+      math.cos(_elapsed * 0.8) * 10.0,
     );
 
     final positions = _boidNodes.map((n) => n.position).toList();
@@ -752,50 +1023,75 @@ class _KitStageState extends State<_KitStage> {
       final aliForce = Steering.alignment(vel, _boidVelocities);
 
       final totalForce =
-          seekForce * 1.0 + sepForce * 2.5 + cohForce * 0.6 + aliForce * 0.8;
+          seekForce * 1.2 + sepForce * 2.8 + cohForce * 0.6 + aliForce * 0.8;
       vel = (vel + totalForce * dt);
       if (vel.length > widget.settings.maxSteerSpeed) {
         vel = vel.normalized() * widget.settings.maxSteerSpeed;
       }
       _boidVelocities[i] = vel;
+      node.position = node.position + vel * dt;
 
-      node.position += vel * dt;
+      // Orient boid forward towards velocity direction
       if (vel.length2 > 0.01) {
-        final yaw = math.atan2(vel.x, vel.z);
-        node.localTransform = vm.Matrix4.compose(
-          node.position,
-          vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw),
-          vm.Vector3.all(1.0),
-        );
+        final forward = vel.normalized();
+        final yaw = math.atan2(forward.x, forward.z);
+        final pitch = -math.asin(forward.y.clamp(-1.0, 1.0));
+        node.rotation = vm.Quaternion.euler(yaw, pitch, 0.0);
       }
     }
+
+    scene.update(dt);
   }
 
   void _tickSpawnerPooling(double dt) {
-    if (_bulletPool == null) return;
-    // Auto-fire periodic bursts for visualization
-    if ((_elapsed * 10).floor() % 12 == 0 && _bulletPool!.activeCount < 40) {
-      final rng = math.Random();
-      final node = _bulletPool!.spawn(
-        parent: scene.root,
-        transform: vm.Matrix4.translation(
-          vm.Vector3(
-            (rng.nextDouble() - 0.5) * 10.0,
-            0.5,
-            (rng.nextDouble() - 0.5) * 10.0,
-          ),
-        ),
-      );
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) _bulletPool?.despawn(node);
-      });
+    if (_projectilePool == null) return;
+
+    // Automatic periodic firing
+    if (widget.settings.autoFire) {
+      _fireTimer += dt;
+      if (_fireTimer >= widget.settings.fireInterval) {
+        _fireTimer = 0.0;
+        fireProjectileBurst();
+      }
     }
+
+    // Step active projectiles and recycle when finished
+    final expired = <_ActiveProjectile>[];
+    for (final proj in _activeProjectiles) {
+      proj.lifeTime += dt;
+      proj.velocity.y -= 18.0 * dt; // Gravity
+      proj.position += proj.velocity * dt;
+
+      // Bounce off ground
+      if (proj.position.y <= 0.2) {
+        proj.position.y = 0.2;
+        proj.velocity.y = -proj.velocity.y * 0.6;
+        proj.velocity.x *= 0.85;
+        proj.velocity.z *= 0.85;
+      }
+
+      proj.node.position = proj.position;
+
+      if (proj.lifeTime >= 3.0) {
+        expired.add(proj);
+      }
+    }
+
+    for (final proj in expired) {
+      _activeProjectiles.remove(proj);
+      _projectilePool!.despawn(proj.node);
+    }
+
+    widget.settings.activeProjectiles = _activeProjectiles.length;
+    widget.settings.poolCapacity = _projectilePool!.idleCount;
+
+    scene.update(dt);
   }
 
   void _tickDebugVisuals(double dt) {
     DebugDraw.clear();
 
-    // Draw animated axes
+    // Draw coordinate axes
     final centerMat = vm.Matrix4.identity()
       ..setTranslation(vm.Vector3(0, 2.0, 0))
       ..rotateY(_elapsed);
@@ -820,6 +1116,8 @@ class _KitStageState extends State<_KitStage> {
     if (mesh != null) {
       _debugMeshNode.mesh = Mesh(mesh, UnlitMaterial());
     }
+
+    scene.update(dt);
   }
 
   @override
@@ -844,10 +1142,10 @@ class _KitStageState extends State<_KitStage> {
                 const SizedBox(width: 16),
                 VirtualJoystick(
                   onChanged: (dir) {
-                    // Joystick emits up as -Y in screen space; invert for 3D forward (+Y)
-                    _characterController?.setMoveInput(
-                      vm.Vector2(dir.x, -dir.y),
-                    );
+                    setState(() {
+                      // Joystick emits up as -Y in screen space; invert for 3D forward (+Y)
+                      _joystickInput = vm.Vector2(dir.x, -dir.y);
+                    });
                   },
                 ),
               ],

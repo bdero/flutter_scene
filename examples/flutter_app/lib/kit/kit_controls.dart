@@ -95,8 +95,13 @@ class KitDemoSettings {
   double maxSteerSpeed = 6.0;
 
   // Spawner & Pooling
-  double minDistance = 2.5;
-  int poolMaxSize = 64;
+  double minDistance = 3.5;
+  int poolMaxSize = 48;
+  bool autoFire = true;
+  double fireInterval = 0.18;
+  int activeProjectiles = 0;
+  int poolCapacity = 48;
+  int totalSpawns = 0;
 
   // Debug Visuals
   bool showWireframeBoxes = true;
