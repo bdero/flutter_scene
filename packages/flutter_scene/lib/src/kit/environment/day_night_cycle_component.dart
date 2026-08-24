@@ -86,7 +86,7 @@ class DayNightCycleComponent extends Component {
       final sunColor =
           vm.Vector3(1.0, 0.95, 0.88) * smoothT +
           vm.Vector3(1.0, 0.55, 0.20) * (1.0 - smoothT);
-      final intensity = 80000.0 * smoothT;
+      final intensity = 3.0 * smoothT;
       final ambientColor =
           vm.Vector3(0.20, 0.28, 0.38) * smoothT +
           vm.Vector3(0.12, 0.08, 0.15) * (1.0 - smoothT);
@@ -107,7 +107,7 @@ class DayNightCycleComponent extends Component {
           vm.Vector3(0.02, 0.03, 0.06) * nightT;
       return AtmosphericLighting(
         sunColor: sunColor,
-        sunIntensity: 400.0 * (1.0 - nightT * 0.5),
+        sunIntensity: 0.25 * (1.0 - nightT * 0.5),
         ambientColor: ambientColor,
         shadowDarkness: 0.3 * (1.0 - nightT),
       );
@@ -120,6 +120,11 @@ class DayNightCycleComponent extends Component {
       timeOfDay = (timeOfDay + timeSpeed * deltaSeconds) % 24.0;
     }
 
+    final sunDir = sunDirection;
+    if (skySource != null) {
+      skySource!.sunDirection = sunDir;
+    }
+
     final targetNode =
         sunLightNode ??
         node.children.cast<Node?>().firstWhere(
@@ -128,11 +133,6 @@ class DayNightCycleComponent extends Component {
         );
 
     if (targetNode == null) return;
-
-    final sunDir = sunDirection;
-    if (skySource != null) {
-      skySource!.sunDirection = sunDir;
-    }
 
     final eye = sunDir * 100.0;
     final target = vm.Vector3.zero();

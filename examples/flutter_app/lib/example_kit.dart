@@ -510,10 +510,10 @@ class _ActiveProjectile {
 }
 
 class _KitStageState extends State<_KitStage> {
-  final Scene scene = Scene();
-  final Node _cameraNode = Node();
-  late final NodeCamera _nodeCamera;
-  final Node _debugMeshNode = Node();
+  Scene scene = Scene();
+  Node _cameraNode = Node();
+  late NodeCamera _nodeCamera;
+  Node _debugMeshNode = Node();
 
   // Character scenario
   Node? _characterNode;
@@ -553,10 +553,6 @@ class _KitStageState extends State<_KitStage> {
   @override
   void initState() {
     super.initState();
-    _nodeCamera = NodeCamera(
-      _cameraNode,
-      PerspectiveCamera(fovRadiansY: 1.0).projection,
-    );
     HardwareKeyboard.instance.addHandler(_handleKeyEvent);
     _buildScene();
   }
@@ -566,6 +562,7 @@ class _KitStageState extends State<_KitStage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.scenario != widget.scenario) {
       _buildScene();
+      setState(() {});
     }
   }
 
@@ -586,24 +583,38 @@ class _KitStageState extends State<_KitStage> {
   }
 
   void _buildScene() {
-    scene.removeAll();
-    scene.skybox = null;
-    scene.skyEnvironment = null;
-    scene.sunLight = null;
+    scene = Scene();
+    _cameraNode = Node();
+    _nodeCamera = NodeCamera(
+      _cameraNode,
+      PerspectiveCamera(fovRadiansY: 1.0).projection,
+    );
+    _debugMeshNode = Node();
+    _characterNode = null;
+    _characterController = null;
+    _springArm = null;
+    _dayNight = null;
+    _water = null;
+    _floatingProps.clear();
+    _boidNodes.clear();
+    _boidVelocities.clear();
+    _projectilePool = null;
+    _activeProjectiles.clear();
+    _scatteredProps.clear();
+    DebugDraw.clear();
 
     scene.add(_cameraNode);
-    scene.add(_debugMeshNode);
 
     if (widget.scenario != _KitScenario.dayNight) {
-      // Standard studio key light for general scenarios
-      final keyLight = DirectionalLight()
-        ..color = vm.Vector3(1.0, 0.98, 0.92)
-        ..intensity = 40000.0;
-      final keyLightNode = Node()
-        ..addComponent(DirectionalLightComponent(keyLight));
-      keyLightNode.localTransform = vm.Matrix4.identity()
-        ..setTranslation(vm.Vector3(12, 24, 12));
-      scene.add(keyLightNode);
+      // Natural balanced directional sun/key light
+      scene.directionalLight = DirectionalLight(
+        direction: vm.Vector3(-0.6, -1.0, -0.45).normalized(),
+        intensity: 2.8,
+        castsShadow: true,
+        shadowMaxDistance: 60.0,
+        shadowAmbientStrength: 0.35,
+      );
+      scene.environmentIntensity = 0.5;
     }
 
     switch (widget.scenario) {
@@ -1022,6 +1033,7 @@ class _KitStageState extends State<_KitStage> {
   }
 
   void _buildDebugVisuals() {
+    scene.add(_debugMeshNode);
     final groundMesh = PlaneGeometry(width: 24, depth: 24);
     final groundMat = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.25, 0.25, 0.28, 1.0);
@@ -1045,15 +1057,12 @@ class _KitStageState extends State<_KitStage> {
 
   void _handlePointerMove(Offset delta, Offset localPos, Size? size) {
     if (widget.scenario == _KitScenario.characterCamera) {
-      widget.settings.cameraOrbitYaw -= delta.dx * 0.005;
+      widget.settings.cameraOrbitYaw += delta.dx * 0.005;
       widget.settings.cameraOrbitPitch =
-          (widget.settings.cameraOrbitPitch - delta.dy * 0.005).clamp(
+          (widget.settings.cameraOrbitPitch + delta.dy * 0.005).clamp(
             -0.35,
             1.15,
           );
-      debugPrint(
-        '[LIVE DRAG] delta: $delta -> Yaw: ${widget.settings.cameraOrbitYaw.toStringAsFixed(2)}, Pitch: ${widget.settings.cameraOrbitPitch.toStringAsFixed(2)}',
-      );
     } else if (widget.scenario == _KitScenario.flocking) {
       _updateAttractorFromScreen(localPos, size);
     }

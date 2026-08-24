@@ -42,7 +42,7 @@ void main() {
 
       final pos = sunNode.position;
       expect(pos.y, greaterThan(50.0));
-      expect(sunLight.intensity, greaterThan(50000.0));
+      expect(sunLight.intensity, greaterThan(2.0));
     });
 
     test('overhead noon at equator does not degenerate', () {
