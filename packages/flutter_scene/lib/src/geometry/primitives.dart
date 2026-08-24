@@ -494,7 +494,8 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents, {bool debugColors = false}) {
         colors[v * 4 + 3] = color[3];
       }
     }
-    // Two CCW triangles matching the outward face normal: (a, d, b) and (d, c, b).
+    // Two CCW triangles matching the outward face normal:
+    // (a, d, b) and (d, c, b).
     indices.addAll([base, base + 3, base + 1, base + 3, base + 2, base + 1]);
   }
   return (

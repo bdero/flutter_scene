@@ -1558,7 +1558,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       for (var c = 0; c < n; c++) {
         final i0 = r * (n + 1) + c;
         final i2 = i0 + (n + 1);
-        indices.addAll([i0, i0 + 1, i2, i0 + 1, i2 + 1, i2]);
+        indices.addAll([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1]);
       }
     }
     final scene = Scene()..environmentIntensity = 0.0;

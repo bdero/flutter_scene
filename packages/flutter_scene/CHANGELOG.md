@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Standardized model-space front-face winding to Counter-Clockwise (CCW) across primitives, procedural builders, materials, and `.fscene` version 5.
 * Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview), captured through the compositor on frames that sample it.
 * Generated scene registries are cached per asset bundle.
 * `.fsceneb` payload chunks compress with gzip, cutting file sizes by ~73% in exchange for higher load-time decompression CPU.

@@ -107,9 +107,10 @@ routes a symptom to the right one.
 
 1. `set_viewport_debug_mode` to normals (or `get_pass_output` on the normals buffer) and look at the
    orientation. Inverted normals confirm a winding problem.
-2. Cause is almost always counter-clockwise hand-built triangles. flutter_scene front faces wind
-   CLOCKWISE in model space. Reverse each triangle's index order, or omit normals and let the
-   constructor derive them. NEVER fix orientation with a per-triangle winding flip; that leaves
+2. Cause is almost always clockwise hand-built triangles. flutter_scene front faces wind
+   COUNTER-CLOCKWISE (CCW) in model space, matching glTF and standard conventions. Ensure triangle
+   indices wind CCW around the outward face normal, or omit normals and let the constructor derive
+   them. NEVER fix orientation with a per-triangle winding flip on an imported model; that leaves
    normals and IBL wrong. Traps #13 and #17.
 3. For an imported model rendered mirrored, check you did not overwrite the runtime importer's
    `scale(1, 1, -1)` handedness root. Trap #5.

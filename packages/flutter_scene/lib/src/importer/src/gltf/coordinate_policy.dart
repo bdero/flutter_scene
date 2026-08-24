@@ -31,7 +31,7 @@ extension GltfCoordinateConversion on GltfCoordinatePolicy {
   bool get bakesNative => this == GltfCoordinatePolicy.bakeNative;
 
   /// Whether packed source triangles use the opposite native winding.
-  bool get sourceWindingFlipped => this == GltfCoordinatePolicy.runtimeBoundary;
+  bool get sourceWindingFlipped => false;
 
   /// Converts a source position or translation.
   Vector3 convertPosition(Vector3 value) =>

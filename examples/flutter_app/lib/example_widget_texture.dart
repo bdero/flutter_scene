@@ -308,8 +308,8 @@ Geometry _buildCrtScreen({
       texCoords[v * 2 + 1] = (1 - ny) / 2; // v = 0 at the top
     }
   }
-  // Two triangles per cell, wound to match the engine front-face convention
-  // (the same order as the cuboid's +Z face: br, bl, tl, tr).
+  // Two triangles per cell, wound Counter-Clockwise (CCW) matching the
+  // engine front-face convention (bl, br, tr and bl, tr, tl).
   final indices = <int>[];
   for (var r = 0; r < rows - 1; r++) {
     for (var c = 0; c < columns - 1; c++) {
@@ -317,7 +317,7 @@ Geometry _buildCrtScreen({
       final br = bl + 1;
       final tl = bl + columns;
       final tr = tl + 1;
-      indices.addAll([br, bl, tr, tr, bl, tl]);
+      indices.addAll([bl, br, tr, bl, tr, tl]);
     }
   }
   // Normals are omitted; smooth area-weighted vertex normals are generated

@@ -441,8 +441,8 @@ MeshGeometry _buildNavLine(
   for (var i = 0; i < samples - 1; i++) {
     final base = i * 2;
     builder
-      ..addTriangle(base, base + 1, base + 2)
-      ..addTriangle(base + 1, base + 3, base + 2);
+      ..addTriangle(base, base + 2, base + 1)
+      ..addTriangle(base + 1, base + 2, base + 3);
   }
   return builder.build();
 }

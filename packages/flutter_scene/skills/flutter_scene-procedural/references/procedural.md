@@ -67,7 +67,7 @@ With `deduplicate: true` (the default), `addVertex` merges a vertex equal to one
 
 ### Winding
 
-flutter_scene's front faces wind **clockwise in model space**. For a surface that should face +Y (a heightmap, a floor), match the built-in plane's winding: for a cell with corners `v00`(x,z), `v10`(x+1,z), `v01`(x,z+1), `v11`(x+1,z+1), emit `addTriangle(v00, v10, v01)` and `addTriangle(v10, v11, v01)`.
+flutter_scene's front faces wind **counter-clockwise in model space**, matching glTF and standard conventions. For a surface that should face +Y (a heightmap, a floor), match the built-in plane's winding: for a cell with corners `v00`(x,z), `v10`(x+1,z), `v01`(x,z+1), `v11`(x+1,z+1), emit `addTriangle(v00, v01, v10)` and `addTriangle(v10, v01, v11)`.
 
 If a mesh renders inside-out (invisible from the front, visible and inverted-lit from behind), reverse each triangle's index order. Because generated normals follow the winding, fixing the winding fixes the normals too. This freedom is only for geometry you author. Never apply a per-triangle winding flip to an imported model to correct its orientation, that leaves its normals and image-based lighting wrong.
 

@@ -106,7 +106,7 @@ class ShaderMaterial extends Material {
     gpu.Shader? depthVertexShader,
     this.useEnvironment = false,
     this.cullingMode = gpu.CullMode.backFace,
-    this.windingOrder = gpu.WindingOrder.counterClockwise,
+    this.windingOrder = gpu.WindingOrder.clockwise,
     this.isOpaqueOverride = true,
     Set<RenderInput> sceneInputs = const {},
   }) : _sceneInputs = _normalizeSceneInputs(sceneInputs) {
@@ -135,9 +135,9 @@ class ShaderMaterial extends Material {
   /// [gpu.CullMode.backFace] to match the standard materials.
   gpu.CullMode cullingMode;
 
-  /// Triangle winding order. Defaults to
-  /// [gpu.WindingOrder.counterClockwise] to match the glTF
-  /// convention and the standard materials.
+  /// Triangle winding order. Defaults to [gpu.WindingOrder.clockwise] to
+  /// project model-space Counter-Clockwise (CCW) front faces on the Y-down
+  /// rasterizer.
   gpu.WindingOrder windingOrder;
 
   /// Whether this material participates in the opaque pass.

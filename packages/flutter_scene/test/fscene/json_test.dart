@@ -473,6 +473,38 @@ void main() {
         throwsA(isA<FsceneUnsupportedFeatureException>()),
       );
     });
+
+    test('migrates a version 4 document and marks legacy index winding', () {
+      final doc = SceneDocument();
+      final vId = doc.newId();
+      final iId = doc.newId();
+      doc.addPayload(
+        PayloadSpec(
+          vId,
+          encoding: PayloadEncoding.vertexBuffer,
+          layout: 'unskinned',
+        ),
+      );
+      doc.addPayload(
+        PayloadSpec(
+          iId,
+          encoding: PayloadEncoding.indexBuffer,
+          format: 'uint16',
+        ),
+      );
+      final geo = doc.addResource(
+        GeometryResource(doc.newId(), vertices: vId, indices: iId),
+      );
+
+      final json = jsonDecode(writeFscene(doc)) as Map<String, dynamic>;
+      json['fscene'] = 4;
+      final text = jsonEncode(json);
+
+      final read = readFscene(text);
+      expect(read.formatVersion, currentFsceneVersion);
+      final readGeo = read.resource(geo.id) as GeometryResource;
+      expect(readGeo.legacyWinding, isTrue);
+    });
   });
 
   group('procedural geometry', () {

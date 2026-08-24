@@ -106,8 +106,8 @@ Uint8List buildMorphSkinnedGlb() {
   }
   // Caps, so the ends read solid instead of showing the inside wall.
   final top = (_rows - 1) * _corners.length;
-  indices.addAll([0, 1, 2, 0, 2, 3]);
-  indices.addAll([top, top + 2, top + 1, top, top + 3, top + 2]);
+  indices.addAll([0, 2, 1, 0, 3, 2]);
+  indices.addAll([top, top + 1, top + 2, top, top + 2, top + 3]);
 
   // Joint 0 sits at the origin, joint 1 a unit up; the inverse binds undo
   // those rest positions.

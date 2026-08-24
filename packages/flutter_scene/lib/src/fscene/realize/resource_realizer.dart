@@ -584,7 +584,7 @@ class ResourceRealizer {
       final rawIndexBytes = _payloadBytes(indexId, 'index');
       final isUint32 = document.payload(indexId)!.format == 'uint32';
       indexType = isUint32 ? gpu.IndexType.int32 : gpu.IndexType.int16;
-      if (document.formatVersion < 5) {
+      if (res.legacyWinding || document.formatVersion < 5) {
         final migrated = Uint8List.fromList(rawIndexBytes);
         if (isUint32) {
           final u32 = migrated.buffer.asUint32List(
