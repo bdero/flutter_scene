@@ -196,7 +196,7 @@ class LineSegmentsGeometry extends Geometry {
       1.0, 1.0, //
       1.0, -1.0,
     ]);
-    final indices = Uint16List.fromList(<int>[0, 1, 2, 0, 2, 3]);
+    final indices = Uint16List.fromList(<int>[0, 3, 1, 3, 2, 1]);
     final vertexBytes = ByteData.sublistView(verts);
     final indexBytes = ByteData.sublistView(indices);
     final buffer = gpu.gpuContext.createDeviceBuffer(

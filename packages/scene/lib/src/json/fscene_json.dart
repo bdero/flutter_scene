@@ -617,6 +617,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
       :final procedural,
       :final bounds,
       :final morphTargets,
+      :final legacyWinding,
     ):
       return {
         'kind': 'geometry',
@@ -640,6 +641,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
             if (morphTargets.defaultWeights.isNotEmpty)
               'weights': morphTargets.defaultWeights,
           },
+        if (legacyWinding) 'legacyWinding': true,
       };
     case TextureResource(:final payload, :final asset, :final content):
       return {
