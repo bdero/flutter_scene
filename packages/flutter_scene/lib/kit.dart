@@ -1,0 +1,32 @@
+/// High-level gameplay, camera, character, environment, audio, and debug utilities for Flutter Scene.
+///
+/// Import this barrel to access ready-to-use game components:
+/// - [SpringArmComponent] and [CameraShake] for camera rigs.
+/// - [ThirdPersonControllerComponent] and [Steering] for character motion.
+/// - [DayNightCycleComponent] and [WaterSurfaceComponent] for atmospheric environments.
+/// - [SoundManager] and [SurfaceFootstepAudio] for game sound.
+/// - [NodePool] and [PoissonDiscSampler] for object recycling and spawning.
+/// - [DebugDraw] and [PerformanceOverlay3D] for immediate-mode visualization.
+library;
+
+export 'src/kit/audio/sound_manager.dart' show SoundManager;
+export 'src/kit/audio/surface_footstep_audio.dart'
+    show SurfaceFootstepAudio, SurfaceMaterialType;
+export 'src/kit/camera/bounds_framing.dart' show BoundsFraming;
+export 'src/kit/camera/camera_shake.dart' show CameraShake, CameraShakeOffset;
+export 'src/kit/camera/spring_arm_component.dart' show SpringArmComponent;
+export 'src/kit/camera/virtual_joystick.dart'
+    show JoystickCallback, VirtualJoystick;
+export 'src/kit/character/steering_behaviors.dart' show Steering;
+export 'src/kit/character/third_person_controller.dart'
+    show ThirdPersonControllerComponent;
+export 'src/kit/debug/debug_draw.dart' show DebugDraw;
+export 'src/kit/debug/performance_overlay_3d.dart' show PerformanceOverlay3D;
+export 'src/kit/environment/day_night_cycle_component.dart'
+    show AtmosphericLighting, DayNightCycleComponent;
+export 'src/kit/environment/floating_motion_component.dart'
+    show FloatingMotionComponent;
+export 'src/kit/environment/water_surface_component.dart'
+    show GerstnerWave, WaterSurfaceComponent;
+export 'src/kit/pooling/node_pool.dart' show NodePool;
+export 'src/kit/pooling/volume_spawner.dart' show PoissonDiscSampler;
