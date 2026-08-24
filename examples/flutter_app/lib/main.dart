@@ -31,7 +31,6 @@ import 'example_cloth.dart';
 import 'example_configurator.dart';
 import 'example_dicom.dart';
 import 'example_kit.dart';
-import 'example_global_illumination.dart';
 import 'example_lights.dart';
 import 'example_spot_shadow.dart';
 import 'example_fscene.dart';
@@ -213,24 +212,6 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..chromaticAberration.enabled = true
     ..chromaticAberration.intensity = 0.32
     ..vignette.enabled = true,
-  'Global Illumination': () => ExampleSettings()
-    ..environmentIntensity = 0.06
-    ..exposure = 1.4
-    ..antiAliasingMode = AntiAliasingMode.taa
-    ..ambientOcclusion.enabled = true
-    ..ambientOcclusion.method = AmbientOcclusionMethod.groundTruth
-    ..ambientOcclusion.radius = 0.8
-    ..ambientOcclusion.intensity = 1.0
-    ..ambientOcclusion.halfResolution = false
-    ..globalIllumination.enabled = true
-    ..globalIllumination.volumeMode = IrradianceVolumeMode.fitScene
-    ..globalIllumination.resolution.setValues(14, 8, 14)
-    ..globalIllumination.intensity = 1.0
-    ..globalIllumination.hysteresis = 0.92
-    ..globalIllumination.visibility = 0.6
-    ..globalIllumination.emissiveGiBoost = 2.0
-    ..globalIllumination.injectionResolution =
-        IrradianceInjectionResolution.quarter,
 };
 
 class MyApp extends StatefulWidget {
@@ -265,7 +246,6 @@ class _MyAppState extends State<MyApp> {
       'Area Lights': (context) => const ExampleAreaLights(),
       'Reflection Probes': (context) => const ExampleReflectionProbes(),
       'Planar Mirror': (context) => const ExamplePlanarMirror(),
-      'Global Illumination': (context) => const ExampleGlobalIllumination(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Cloth': (context) => const ExampleCloth(),
       'Gameplay Kit': (context) => const ExampleKit(),
