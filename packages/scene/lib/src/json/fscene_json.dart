@@ -571,6 +571,21 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.autoExposureSpeedUp != 3.0) 'speedUp': e.autoExposureSpeedUp,
     if (e.autoExposureSpeedDown != 1.0) 'speedDown': e.autoExposureSpeedDown,
   };
+  final taa = <String, dynamic>{
+    if (e.temporalAntiAliasingEnabled) 'enabled': true,
+    if (e.temporalAntiAliasingMinimumCurrentWeight != 0.1)
+      'minimumCurrentWeight': e.temporalAntiAliasingMinimumCurrentWeight,
+    if (e.temporalAntiAliasingVarianceGamma != 1.0)
+      'varianceGamma': e.temporalAntiAliasingVarianceGamma,
+    if (e.temporalAntiAliasingSharpness != 0.0)
+      'sharpness': e.temporalAntiAliasingSharpness,
+    if (e.temporalAntiAliasingJitterSequenceLength != 16)
+      'jitterSequenceLength': e.temporalAntiAliasingJitterSequenceLength,
+    if (e.temporalAntiAliasingJitterScale != 1.0)
+      'jitterScale': e.temporalAntiAliasingJitterScale,
+    if (!e.temporalAntiAliasingObjectMotion) 'objectMotion': false,
+    if (!e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': false,
+  };
   return {
     if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
     if (bloom.isNotEmpty) 'bloom': bloom,
@@ -582,6 +597,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (ao.isNotEmpty) 'ambientOcclusion': ao,
     if (ssr.isNotEmpty) 'screenSpaceReflections': ssr,
     if (gi.isNotEmpty) 'globalIllumination': gi,
+    if (taa.isNotEmpty) 'temporalAntiAliasing': taa,
     if (fog.isNotEmpty) 'fog': fog,
     if (godRays.isNotEmpty) 'godRays': godRays,
     if (dof.isNotEmpty) 'depthOfField': dof,
@@ -1066,6 +1082,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
   final ao = _map(effects['ambientOcclusion']);
   final ssr = _map(effects['screenSpaceReflections']);
   final gi = _map(effects['globalIllumination']);
+  final taa = _map(effects['temporalAntiAliasing']);
   final fog = _map(effects['fog']);
   final rays = _map(effects['godRays']);
   final dof = _map(effects['depthOfField']);
@@ -1144,6 +1161,16 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     globalIlluminationUpdateWhenIdleOnly:
         gi['updateWhenIdleOnly'] as bool? ?? false,
     globalIlluminationBakeOnly: gi['bakeOnly'] as bool? ?? false,
+    temporalAntiAliasingEnabled: taa['enabled'] as bool? ?? false,
+    temporalAntiAliasingMinimumCurrentWeight:
+        _d(taa['minimumCurrentWeight'] ?? 0.1),
+    temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.0),
+    temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.0),
+    temporalAntiAliasingJitterSequenceLength:
+        (taa['jitterSequenceLength'] as num?)?.toInt() ?? 16,
+    temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 1.0),
+    temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? true,
+    temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? true,
     screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
     screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
     screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),

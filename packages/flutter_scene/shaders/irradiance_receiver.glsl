@@ -27,6 +27,8 @@ vec4 IrradianceCageTap(vec3 offset, vec3 base_lattice, vec3 alpha,
                        vec3 biased_position, vec3 direction) {
   vec3 counts = frag_info.gi_counts.xyz;
   vec3 lattice = base_lattice + offset;
+  // TODO(gi-far-origin): subtract anchor on CPU and upload relative lattice
+  // to avoid fp32 precision loss far from origin.
   vec3 relative = lattice - frag_info.gi_anchor.xyz;
   float inside =
       (any(lessThan(relative, vec3(0.0))) ||

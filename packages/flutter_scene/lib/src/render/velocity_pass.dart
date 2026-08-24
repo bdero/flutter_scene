@@ -151,6 +151,12 @@ class VelocityPass extends RenderGraphPass {
     frameInfoData[33] = _currentJitterNdc.y;
     frameInfoData[34] = _previousJitterNdc.x;
     frameInfoData[35] = _previousJitterNdc.y;
+    final frameInfoView = context.transientsBuffer.emplace(
+      ByteData.sublistView(frameInfoData),
+    );
+
+    final skinnedModelInfo = Float32List(36);
+    final unskinnedModelInfo = Float32List(32);
 
     final frustum = Frustum.matrix(_currentViewProjection);
 
@@ -182,24 +188,25 @@ class VelocityPass extends RenderGraphPass {
       renderPass.setPrimitiveType(item.geometry.primitiveType);
       renderPass.bindUniform(
         vertexShader.getUniformSlot('VelocityFrameInfo'),
-        context.transientsBuffer.emplace(ByteData.sublistView(frameInfoData)),
+        frameInfoView,
       );
       renderPass.bindUniform(
         _fragmentShader.getUniformSlot('VelocityFrameInfo'),
-        context.transientsBuffer.emplace(ByteData.sublistView(frameInfoData)),
+        frameInfoView,
       );
 
       if (isSkinned) {
-        final modelInfo = Float32List(36);
-        modelInfo.setRange(0, 16, item.worldTransform.storage);
-        modelInfo.setRange(16, 32, item.previousWorldTransform.storage);
-        modelInfo[32] = item.jointsTextureWidth.toDouble();
-        modelInfo[33] = item.jointsTextureWidth.toDouble();
-        modelInfo[34] = 1.0;
-        modelInfo[35] = 0.0;
+        skinnedModelInfo.setRange(0, 16, item.worldTransform.storage);
+        skinnedModelInfo.setRange(16, 32, item.previousWorldTransform.storage);
+        skinnedModelInfo[32] = item.jointsTextureWidth.toDouble();
+        skinnedModelInfo[33] = item.jointsTextureWidth.toDouble();
+        skinnedModelInfo[34] = 1.0;
+        skinnedModelInfo[35] = 0.0;
         renderPass.bindUniform(
           vertexShader.getUniformSlot('VelocitySkinnedModelInfo'),
-          context.transientsBuffer.emplace(ByteData.sublistView(modelInfo)),
+          context.transientsBuffer.emplace(
+            ByteData.sublistView(skinnedModelInfo),
+          ),
         );
         renderPass.bindTexture(
           vertexShader.getUniformSlot('current_joints_texture'),
@@ -213,12 +220,17 @@ class VelocityPass extends RenderGraphPass {
         );
         item.geometry.bindGeometryBuffers(renderPass);
       } else {
-        final modelInfo = Float32List(32);
-        modelInfo.setRange(0, 16, item.worldTransform.storage);
-        modelInfo.setRange(16, 32, item.previousWorldTransform.storage);
+        unskinnedModelInfo.setRange(0, 16, item.worldTransform.storage);
+        unskinnedModelInfo.setRange(
+          16,
+          32,
+          item.previousWorldTransform.storage,
+        );
         renderPass.bindUniform(
           vertexShader.getUniformSlot('VelocityModelInfo'),
-          context.transientsBuffer.emplace(ByteData.sublistView(modelInfo)),
+          context.transientsBuffer.emplace(
+            ByteData.sublistView(unskinnedModelInfo),
+          ),
         );
         item.geometry.bindPositionStream(renderPass);
         bindSingleInstanceData(renderPass, item.worldTransform, slot: 1);

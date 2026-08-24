@@ -5,12 +5,18 @@
 * World-space global illumination via `Scene.globalIllumination`, a grid of octahedral irradiance probes fed by scattering the visible surfaces' shaded radiance, so bounce light persists for geometry the camera is not looking at and colored bleed reads correctly. Off by default.
 * Probe visibility via `GlobalIlluminationSettings.visibility`, per-direction depth moments and a Chebyshev bound so the field does not leak through walls.
 * Emissive surfaces light the probe field, scaled by `GlobalIlluminationSettings.emissiveGiBoost` so a small bright emitter can light a room without brightening the direct image.
+* Offline and progressive irradiance field baking via `Scene.bakeIrradianceField` and `IrradianceFieldBakeStepper`.
 * `IrradianceVolumeComponent` places the irradiance volume on a node, for authored placement instead of fitting the scene or following the camera.
 * `Scene.invalidateGlobalIllumination` discards the accumulated field so it refills from scratch after a hard camera cut.
 * The lit shaders read the environment's diffuse coefficients with `texelFetch` from a texture the probe atlas extends, so global illumination costs no additional fragment sampler.
 * Update `flutter_scene-procedural` skill (v2) with natural formation recipes (rock fractures, incised trails, pebble scatter, Gerstner waves, tree branching, and procedural island topographies).
 * Update `flutter_scene-looks` skill (v4) with micro-surface and anti-waxiness tuning guidance.
 * Update `flutter_scene-verification-loop` skill (v2) with empirical verification disciplines and blind-pairwise review rules.
+* Temporal anti-aliasing via `AntiAliasingMode.taa` and `Scene.temporalAntiAliasing`, reprojecting history with camera subpixel jittering, motion vectors for unskinned and skinned geometry, and variance-guided history clamping.
+* Geometric specular anti-aliasing adapts specular roughness based on screen-space normal derivatives to suppress high-frequency specular shimmer on subpixel geometry and grazing angles; `Material.specularAaThreshold` configures the threshold.
+* `DirectionalShadowFilter.bilinearPcf` continuous 2x2 bilinear percentage-closer filtering.
+* `CameraProjection.getProjectionMatrix` adds an optional named `jitter` parameter for temporal subpixel sampling.
+* Direct lighting modulates specular and clearcoat terms with `sun_visibility`.
 * Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview) with optional `colorFilter`, captured through the compositor on frames that sample it.
 * Generated scene registries are cached per asset bundle.
 * `.fsceneb` payload chunks compress with gzip, cutting file sizes by ~73% in exchange for higher load-time decompression CPU.

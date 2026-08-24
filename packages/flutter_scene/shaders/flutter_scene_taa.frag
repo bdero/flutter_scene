@@ -154,10 +154,14 @@ void main() {
   vec3 neighbor_min = vec3(1e6);
   vec3 neighbor_max = vec3(-1e6);
 
+  vec3 cross_blur = vec3(0.0);
   for (int dy = -1; dy <= 1; dy++) {
     for (int dx = -1; dx <= 1; dx++) {
       vec2 tap_uv = uv + vec2(float(dx), float(dy)) * texel_size;
       vec3 col = textureLod(current_color, tap_uv, 0.0).rgb;
+      if (abs(dx) + abs(dy) == 1) {
+        cross_blur += col;
+      }
       vec3 ycocg = RGB2YCoCg(col);
       m1 += ycocg;
       m2 += ycocg * ycocg;
@@ -196,11 +200,7 @@ void main() {
 
   // 8. Optional sharpening.
   if (info.taa_settings.z > 0.0) {
-    vec3 up = textureLod(current_color, uv + vec2(0.0, -texel_size.y), 0.0).rgb;
-    vec3 down = textureLod(current_color, uv + vec2(0.0, texel_size.y), 0.0).rgb;
-    vec3 left = textureLod(current_color, uv + vec2(-texel_size.x, 0.0), 0.0).rgb;
-    vec3 right = textureLod(current_color, uv + vec2(texel_size.x, 0.0), 0.0).rgb;
-    vec3 blur = (up + down + left + right) * 0.25;
+    vec3 blur = cross_blur * 0.25;
     vec3 sharpened = resolved + (resolved - blur) * info.taa_settings.z;
     resolved = max(vec3(0.0), sharpened);
   }

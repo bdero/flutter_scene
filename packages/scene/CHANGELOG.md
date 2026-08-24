@@ -7,6 +7,7 @@
 - `MorphTargetsSpec` and `GeometryResource.morphTargets` carry baked morph target deltas, names, and default weights.
 - `AnimationProperty.weights` animates morph weights.
 - `.fscene` version 4; a version-3 reader refuses a morph-bearing document instead of silently dropping the deltas. Version 3 documents read as-is.
+- `EnvironmentEffectsSpec` carries global illumination and temporal anti-aliasing settings, delta-serialized through `.fscene` and `.fsceneb`.
 
 ## 0.2.0
 
