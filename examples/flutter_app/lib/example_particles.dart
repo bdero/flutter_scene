@@ -770,7 +770,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
         final a = i * (segments + 1) + s;
         final b = (i + 1) * (segments + 1) + s;
         // Same rotational winding as the disc primitive (front face up).
-        indices.addAll([a, b + 1, a + 1, a, b, b + 1]);
+        indices.addAll([a, a + 1, b, a + 1, b + 1, b]);
       }
     }
     return MeshGeometry.fromArrays(
@@ -839,7 +839,7 @@ class ExampleParticlesState extends State<ExampleParticles> {
       for (var s = 0; s < segments; s++) {
         final a = i * (segments + 1) + s;
         final b = (i + 1) * (segments + 1) + s;
-        indices.addAll([a, b + 1, a + 1, a, b, b + 1]);
+        indices.addAll([a, a + 1, b, a + 1, b + 1, b]);
       }
     }
     return MeshGeometry.fromArrays(
