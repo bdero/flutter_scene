@@ -48,6 +48,24 @@ class SpringArmComponent extends Component {
   /// Bitmask of layers to test for occlusion (defaults to all layers).
   int layerMask;
 
+  /// Whether to inherit yaw rotation from the owning node.
+  bool inheritYaw;
+
+  /// Whether to inherit pitch rotation from the owning node.
+  bool inheritPitch;
+
+  /// Whether to inherit roll rotation from the owning node.
+  bool inheritRoll;
+
+  /// Boom yaw angle in radians (used when [inheritYaw] is false).
+  double yaw;
+
+  /// Boom pitch angle in radians (used when [inheritPitch] is false).
+  double pitch;
+
+  /// Boom roll angle in radians (used when [inheritRoll] is false).
+  double roll;
+
   /// An optional child camera node driven directly by this spring arm.
   Node? cameraNode;
 
@@ -67,6 +85,12 @@ class SpringArmComponent extends Component {
     this.minLength = 0.5,
     this.layerMask = 0xFFFFFFFF,
     this.cameraNode,
+    this.inheritYaw = true,
+    this.inheritPitch = true,
+    this.inheritRoll = true,
+    this.yaw = 0.0,
+    this.pitch = 0.0,
+    this.roll = 0.0,
   }) : targetLength = math.max(minLength, targetLength),
        currentLength = math.max(minLength, targetLength),
        targetOffset = targetOffset?.clone() ?? vm.Vector3(0, 1.5, 0),
@@ -93,10 +117,49 @@ class SpringArmComponent extends Component {
   }
 
   vm.Quaternion get _currentRawRotation {
-    if (!isAttached) return vm.Quaternion.identity();
-    final rot = vm.Quaternion.identity();
-    node.globalTransform.decompose(vm.Vector3.zero(), rot, vm.Vector3.zero());
-    return rot;
+    if (!inheritYaw && !inheritPitch && !inheritRoll) {
+      return vm.Quaternion.euler(yaw, pitch, roll);
+    }
+    if (!isAttached) {
+      return vm.Quaternion.euler(yaw, pitch, roll);
+    }
+    if (inheritYaw && inheritPitch && inheritRoll) {
+      final ownerRot = vm.Quaternion.identity();
+      node.globalTransform.decompose(
+        vm.Vector3.zero(),
+        ownerRot,
+        vm.Vector3.zero(),
+      );
+      return ownerRot;
+    }
+
+    final ownerRot = vm.Quaternion.identity();
+    node.globalTransform.decompose(
+      vm.Vector3.zero(),
+      ownerRot,
+      vm.Vector3.zero(),
+    );
+
+    final qx = ownerRot.x;
+    final qy = ownerRot.y;
+    final qz = ownerRot.z;
+    final qw = ownerRot.w;
+
+    final sinp = (2 * (qw * qy - qz * qx)).clamp(-1.0, 1.0);
+    final ownerPitch = math.asin(sinp);
+    final ownerYaw = math.atan2(
+      2 * (qw * qz + qx * qy),
+      1 - 2 * (qy * qy + qz * qz),
+    );
+    final ownerRoll = math.atan2(
+      2 * (qw * qx + qy * qz),
+      1 - 2 * (qx * qx + qy * qy),
+    );
+
+    final finalYaw = inheritYaw ? ownerYaw : yaw;
+    final finalPitch = inheritPitch ? ownerPitch : pitch;
+    final finalRoll = inheritRoll ? ownerRoll : roll;
+    return vm.Quaternion.euler(finalYaw, finalPitch, finalRoll);
   }
 
   Node get _rootNode {
@@ -207,6 +270,12 @@ class SpringArmComponent extends Component {
       rotationLagSpeed: rotationLagSpeed,
       minLength: minLength,
       layerMask: layerMask,
+      inheritYaw: inheritYaw,
+      inheritPitch: inheritPitch,
+      inheritRoll: inheritRoll,
+      yaw: yaw,
+      pitch: pitch,
+      roll: roll,
     );
   }
 }

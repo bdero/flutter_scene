@@ -56,6 +56,7 @@ class ThirdPersonControllerComponent extends Component {
   // Input states
   vm.Vector2 _moveInput = vm.Vector2.zero();
   bool _isRunning = false;
+  double? _cameraHeadingYaw;
   double _coyoteTimer = 0.0;
   double _jumpBufferTimer = 0.0;
   double _currentYaw = 0.0;
@@ -73,10 +74,16 @@ class ThirdPersonControllerComponent extends Component {
     this.groundPlaneHeight,
   });
 
-  /// Feeds planar movement input vector (-1.0 to 1.0 on X/Y, where +Y is forward).
-  void setMoveInput(vm.Vector2 input, {bool isRunning = false}) {
+  /// Feeds planar movement input vector (-1.0 to 1.0 on X/Y, where +Y is forward)
+  /// and optional [cameraHeadingYaw] angle (in radians) so movement is relative to camera view.
+  void setMoveInput(
+    vm.Vector2 input, {
+    bool isRunning = false,
+    double? cameraHeadingYaw,
+  }) {
     _moveInput = input;
     _isRunning = isRunning;
+    _cameraHeadingYaw = cameraHeadingYaw;
   }
 
   /// Triggers a jump request (buffered if in mid-air).
@@ -177,16 +184,26 @@ class ThirdPersonControllerComponent extends Component {
     final inputLen = _moveInput.length;
 
     if (inputLen > 0.01) {
-      final inputDir = _moveInput.normalized();
-      final desiredVelX = inputDir.x * targetSpeed;
-      final desiredVelZ = inputDir.y * targetSpeed;
+      var inputX = _moveInput.x;
+      var inputZ = _moveInput.y;
+      if (_cameraHeadingYaw != null) {
+        final sinY = math.sin(_cameraHeadingYaw!);
+        final cosY = math.cos(_cameraHeadingYaw!);
+        final rotatedX = inputX * cosY + inputZ * sinY;
+        final rotatedZ = -inputX * sinY + inputZ * cosY;
+        inputX = rotatedX;
+        inputZ = rotatedZ;
+      }
+      final desiredVel = vm.Vector2(inputX, inputZ).normalized() * targetSpeed;
+      final desiredVelX = desiredVel.x;
+      final desiredVelZ = desiredVel.y;
 
       final accelRate = isGrounded ? 15.0 : 4.0;
       final t = 1.0 - math.exp(-accelRate * fixedDt);
       velocity.x += (desiredVelX - velocity.x) * t;
       velocity.z += (desiredVelZ - velocity.z) * t;
 
-      final targetYaw = math.atan2(inputDir.x, inputDir.y);
+      final targetYaw = math.atan2(desiredVelX, desiredVelZ);
       var angleDiff = targetYaw - _currentYaw;
       while (angleDiff > math.pi) {
         angleDiff -= 2 * math.pi;
