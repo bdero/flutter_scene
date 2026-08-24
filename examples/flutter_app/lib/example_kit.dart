@@ -520,6 +520,10 @@ class _KitStageState extends State<_KitStage> {
   ThirdPersonControllerComponent? _characterController;
   SpringArmComponent? _springArm;
   Map<String, AnimationClip> _dashClips = {};
+  int _dashJumpState = 0;
+  double _dashLandingCooldown = 0.0;
+  double _dashAirborneBlend = 0.0;
+  bool _prevGrounded = true;
   final CameraShake _shake = CameraShake();
   vm.Vector2 _joystickInput = vm.Vector2.zero();
 
@@ -536,7 +540,7 @@ class _KitStageState extends State<_KitStage> {
   // Flocking scenario
   final List<Node> _boidNodes = [];
   final List<vm.Vector3> _boidVelocities = [];
-  final Node _targetMarkerNode = Node();
+  Node _targetMarkerNode = Node();
   vm.Vector3? _userAttractorPos;
   bool _isUserAttracting = false;
   double _cachedBoidCount = -1.0;
@@ -597,9 +601,14 @@ class _KitStageState extends State<_KitStage> {
     _dayNight = null;
     _water = null;
     _dashClips.clear();
+    _dashJumpState = 0;
+    _dashLandingCooldown = 0.0;
+    _dashAirborneBlend = 0.0;
+    _prevGrounded = true;
     _floatingProps.clear();
     _boidNodes.clear();
     _boidVelocities.clear();
+    _targetMarkerNode = Node();
     _projectilePool = null;
     _activeProjectiles.clear();
     _scatteredProps.clear();
@@ -1082,13 +1091,7 @@ class _KitStageState extends State<_KitStage> {
   }
 
   void _handlePointerUp() {
-    if (widget.scenario == _KitScenario.flocking) {
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (mounted) {
-          _isUserAttracting = false;
-        }
-      });
-    }
+    // Keep user attractor active at the dragged location so boids gather there
   }
 
   void _updateAttractorFromScreen(Offset pos, Size? size) {
@@ -1098,23 +1101,28 @@ class _KitStageState extends State<_KitStage> {
 
     final tanFov = math.tan(0.5);
     final aspect = size.width / size.height;
-    // In flutter_scene, local camera forward is +Z
-    final camRayLocal = vm.Vector3(
-      ndcX * tanFov * aspect,
-      ndcY * tanFov,
-      1.0,
-    ).normalized();
 
-    final camRot = vm.Quaternion.identity();
-    final camPos = vm.Vector3.zero();
-    _cameraNode.globalTransform.decompose(camPos, camRot, vm.Vector3.zero());
+    final camPos = _cameraNode.globalTransform.getTranslation();
+    final camForward = (_cameraNode.globalTransform * vm.Vector4(0, 0, 1, 0))
+        .xyz
+        .normalized();
+    final camRight = (_cameraNode.globalTransform * vm.Vector4(1, 0, 0, 0)).xyz
+        .normalized();
+    final camUp = (_cameraNode.globalTransform * vm.Vector4(0, 1, 0, 0)).xyz
+        .normalized();
 
-    final camRayWorld = camRot.rotate(camRayLocal).normalized();
-    if (camRayWorld.y.abs() > 1e-4) {
-      final t = (3.5 - camPos.y) / camRayWorld.y;
+    final worldRayDir =
+        (camForward +
+                camRight * (ndcX * tanFov * aspect) +
+                camUp * (ndcY * tanFov))
+            .normalized();
+    if (worldRayDir.y.abs() > 1e-4) {
+      final t = (3.5 - camPos.y) / worldRayDir.y;
       if (t > 0) {
-        _userAttractorPos = camPos + camRayWorld * t;
+        final hitPos = camPos + worldRayDir * t;
+        _userAttractorPos = hitPos;
         _isUserAttracting = true;
+        _targetMarkerNode.position = hitPos;
       }
     }
   }
@@ -1180,7 +1188,6 @@ class _KitStageState extends State<_KitStage> {
   void _tick(double dt) {
     _elapsed += dt;
 
-    // Reactively apply setting changes without reference issues
     if (widget.scenario == _KitScenario.waterBuoyancy) {
       if (_cachedWaveAmplitude != widget.settings.waveAmplitude ||
           _cachedWaveSpeed != widget.settings.waveSpeed ||
@@ -1219,9 +1226,8 @@ class _KitStageState extends State<_KitStage> {
   }
 
   void _tickCharacter(double dt) {
-    if (_characterController == null || _characterNode == null) return;
+    if (_characterController == null) return;
 
-    // Read keyboard movement input
     var mx = 0.0;
     var my = 0.0;
     if (_pressedKeys.contains(LogicalKeyboardKey.keyW) ||
@@ -1272,28 +1278,84 @@ class _KitStageState extends State<_KitStage> {
     // Step the scene components (ThirdPersonController + SpringArm)
     scene.update(dt);
 
-    // Update Dash animation blend weights based on controller velocity
-    if (_dashClips.isNotEmpty && _characterController != null) {
-      final horizSpeed = vm.Vector2(
-        _characterController!.velocity.x,
-        _characterController!.velocity.z,
-      ).length;
-      final isGrounded = _characterController!.isGrounded;
+    final horizSpeed = vm.Vector2(
+      _characterController!.velocity.x,
+      _characterController!.velocity.z,
+    ).length;
+    final isGrounded = _characterController!.isGrounded;
+    final vertVel = _characterController!.velocity.y;
 
-      if (!isGrounded) {
-        _dashClips['Idle']?.weight = 0.0;
-        _dashClips['Walk']?.weight = 0.0;
-        _dashClips['Run']?.weight = 0.0;
-        _dashClips['JumpStart']?.weight = 1.0;
+    if (!isGrounded) {
+      if (vertVel >= 0.0) {
+        if (_dashJumpState != 1) {
+          _dashJumpState = 1;
+          _dashClips['JumpStart']?.seek(0.0);
+        }
       } else {
-        _dashClips['JumpStart']?.weight = 0.0;
-        final walkWeight = (horizSpeed / 4.0).clamp(0.0, 1.0);
-        final runWeight = ((horizSpeed - 4.0) / 3.0).clamp(0.0, 1.0);
-        final idleWeight = (1.0 - walkWeight).clamp(0.0, 1.0);
+        _dashJumpState = 2;
+      }
+    } else {
+      if (!_prevGrounded && _dashJumpState != 0) {
+        // Touchdown: trigger JumpLand overlay
+        _dashJumpState = 3;
+        _dashLandingCooldown = 0.4;
+        _dashClips['JumpLand']?.seek(0.0);
+      }
+    }
+    _prevGrounded = isGrounded;
 
-        _dashClips['Idle']?.weight = idleWeight;
-        _dashClips['Walk']?.weight = (walkWeight - runWeight).clamp(0.0, 1.0);
-        _dashClips['Run']?.weight = runWeight;
+    if (_dashLandingCooldown > 0.0) {
+      _dashLandingCooldown = math.max(0.0, _dashLandingCooldown - dt);
+      if (_dashLandingCooldown == 0.0) {
+        _dashJumpState = 0;
+      }
+    }
+
+    final airborne = _dashJumpState == 1 || _dashJumpState == 2;
+    final landing = _dashJumpState == 3;
+
+    // Smoothly ease the airborne takeoff/falling pose in and out
+    _dashAirborneBlend +=
+        ((airborne ? 1.0 : 0.0) - _dashAirborneBlend) *
+        (1.0 - math.exp(-12.0 * dt));
+
+    if (_dashClips.isNotEmpty) {
+      final groundedWeight = math.max(
+        _dashJumpState == 0 ? 1.0 : 0.0,
+        math.min(1.0, 1.0 - _dashLandingCooldown * 6.0),
+      );
+      final landingWeight =
+          (landing ? 1.0 : 0.0) * math.min(1.0, _dashLandingCooldown * 4.0);
+
+      final speedFraction = (horizSpeed / widget.settings.walkSpeed).clamp(
+        0.0,
+        1.0,
+      );
+      final double idle, walk, run;
+      if (speedFraction < 0.5) {
+        idle = 1.0 - speedFraction * 2.0;
+        walk = speedFraction * 2.0;
+        run = 0.0;
+      } else {
+        idle = 0.0;
+        walk = (1.0 - speedFraction) * 2.0;
+        run = speedFraction * 2.0 - 1.0;
+      }
+
+      _dashClips['Idle']?.weight = groundedWeight * idle;
+      _dashClips['Walk']?.weight = groundedWeight * walk;
+      _dashClips['Run']?.weight = groundedWeight * run;
+
+      final startClip = _dashClips['JumpStart'];
+      if (startClip != null) {
+        startClip.weight = _dashAirborneBlend;
+        startClip.playing = airborne || _dashAirborneBlend > 0.01;
+      }
+
+      final landClip = _dashClips['JumpLand'];
+      if (landClip != null) {
+        landClip.weight = landingWeight;
+        landClip.playing = landing;
       }
     }
 

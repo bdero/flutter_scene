@@ -87,5 +87,20 @@ void main() {
       final worldPos = (sunNode.globalTransform * vm.Vector4(0, 0, 0, 1)).xyz;
       expect(worldPos.y, greaterThan(50.0));
     });
+
+    test('evaluates zero sun intensity and shadows at night or shadowOnly', () {
+      final nightCycle = DayNightCycleComponent(timeOfDay: 0.0);
+      final nightLighting = nightCycle.evaluateLighting();
+      expect(nightLighting.sunIntensity, equals(0.0));
+      expect(nightLighting.shadowDarkness, equals(0.0));
+
+      final shadowOnlyCycle = DayNightCycleComponent(
+        timeOfDay: 12.0,
+        shadowOnly: true,
+      );
+      final shadowOnlyLighting = shadowOnlyCycle.evaluateLighting();
+      expect(shadowOnlyLighting.sunIntensity, equals(0.0));
+      expect(shadowOnlyLighting.shadowDarkness, greaterThan(0.0));
+    });
   });
 }

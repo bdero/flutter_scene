@@ -50,6 +50,9 @@ class DayNightCycleComponent extends Component {
   /// Whether to automatically apply evaluated sun colors and intensities to the light.
   bool applyLightingToTarget;
 
+  /// When true, the directional sun light contributes pure shadow casting with 0 direct illuminance.
+  bool shadowOnly;
+
   DayNightCycleComponent({
     this.timeOfDay = 12.0,
     this.timeSpeed = 0.0,
@@ -57,6 +60,7 @@ class DayNightCycleComponent extends Component {
     this.sunLightNode,
     this.skySource,
     this.applyLightingToTarget = true,
+    this.shadowOnly = false,
   });
 
   /// Evaluates the normalized sun direction vector looking towards the sun in the sky.
@@ -86,7 +90,7 @@ class DayNightCycleComponent extends Component {
       final sunColor =
           vm.Vector3(1.0, 0.95, 0.88) * smoothT +
           vm.Vector3(1.0, 0.55, 0.20) * (1.0 - smoothT);
-      final intensity = 3.0 * smoothT;
+      final intensity = shadowOnly ? 0.0 : (3.0 * smoothT);
       final ambientColor =
           vm.Vector3(0.20, 0.28, 0.38) * smoothT +
           vm.Vector3(0.12, 0.08, 0.15) * (1.0 - smoothT);
@@ -107,9 +111,9 @@ class DayNightCycleComponent extends Component {
           vm.Vector3(0.02, 0.03, 0.06) * nightT;
       return AtmosphericLighting(
         sunColor: sunColor,
-        sunIntensity: 0.25 * (1.0 - nightT * 0.5),
+        sunIntensity: 0.0,
         ambientColor: ambientColor,
-        shadowDarkness: 0.3 * (1.0 - nightT),
+        shadowDarkness: 0.0,
       );
     }
   }
@@ -182,6 +186,7 @@ class DayNightCycleComponent extends Component {
       latitude: latitude,
       skySource: skySource,
       applyLightingToTarget: applyLightingToTarget,
+      shadowOnly: shadowOnly,
     );
   }
 }
