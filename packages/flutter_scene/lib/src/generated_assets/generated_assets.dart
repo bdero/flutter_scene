@@ -53,9 +53,14 @@ enum ShaderBundleBackend { metalIos, metalDesktop, openglEs, vulkan }
 /// The build and the runtime both resolve through here, so what an output is
 /// recorded as and what the app looks for cannot drift apart. Drift is silent,
 /// it renders a black frame.
+///
+/// Apple's embedded platforms share the iOS arm because `metalIos` names a
+/// shader family rather than a product: watchOS and tvOS run Metal and take the
+/// same variant. Left out, they fall to the default and ask for a bundle no
+/// build produces.
 Set<ShaderBundleBackend> shaderBundleBackendsForOS(String? os) => switch (os) {
   null => const {ShaderBundleBackend.openglEs},
-  'ios' => const {ShaderBundleBackend.metalIos},
+  'ios' || 'watchos' || 'tvos' => const {ShaderBundleBackend.metalIos},
   'macos' => const {ShaderBundleBackend.metalDesktop},
   'fuchsia' => const {ShaderBundleBackend.vulkan},
   _ => const {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan},
