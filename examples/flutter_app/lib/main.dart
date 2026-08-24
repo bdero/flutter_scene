@@ -28,6 +28,7 @@ import 'example_auto_exposure.dart';
 import 'example_cloth.dart';
 import 'example_configurator.dart';
 import 'example_dicom.dart';
+import 'example_kit.dart';
 import 'example_lights.dart';
 import 'example_spot_shadow.dart';
 import 'example_fscene.dart';
@@ -245,6 +246,7 @@ class _MyAppState extends State<MyApp> {
       'Planar Mirror': (context) => const ExamplePlanarMirror(),
       'Spot Shadow': (context) => const ExampleSpotShadow(),
       'Cloth': (context) => const ExampleCloth(),
+      'Gameplay Kit': (context) => const ExampleKit(),
       'Particles': (context) => const ExampleParticles(),
       'Explosions': (context) => const ExampleExplosion(),
       'Gaussian Splats': (context) => const ExampleSplats(),
