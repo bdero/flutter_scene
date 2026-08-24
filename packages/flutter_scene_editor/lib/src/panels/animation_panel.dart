@@ -248,52 +248,124 @@ class _AnimationPanelState extends State<AnimationPanel> {
         if (animation != null) ...[
           _transport(scheme),
           _keyBar(scheme),
+          // Always-visible legend for the canvas gestures below.
+          Padding(
+            padding: const EdgeInsets.only(left: 10, right: 10, bottom: 2),
+            child: Text(
+              'Drag the ruler or a lane to scrub · double-click a lane to add '
+              'a key here · drag a diamond to retime it',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontSize: 10,
+                    color: scheme.outline,
+                  ),
+            ),
+          ),
           Expanded(
-            child: AnimationTimeline(
-              controller: _controller,
-              animation: animation,
-              duration: _duration,
-              draggingKey: _dragging,
-              selectedKey: (_dragging && _selectedKey != null)
-                  ? (
-                      target: _selectedKey!.target,
-                      property: _selectedKey!.property,
-                      time: _selectedKey!.time + _dragOffset,
-                    )
-                  : _selectedKey,
-              onTapLane: (time) {
-                setState(() => _selectedKey = null);
-                _controller.seekPreview(time);
-              },
-              onScrub: _controller.seekPreview,
-              onSelectKey: (key) => setState(() => _selectedKey = key),
-              onDragKeyStart: (key) => setState(() {
-                _selectedKey = key;
-                _dragging = true;
-                _dragOffset = 0;
-              }),
-              onDragKeyUpdate: (offset) =>
-                  setState(() => _dragOffset = offset),
-              onDragKeyEnd: () {
-                final key = _selectedKey;
-                final offset = _dragOffset;
-                setState(() {
-                  _dragging = false;
-                  _dragOffset = 0;
-                });
-                if (key != null && offset != 0) {
-                  unawaited(_moveSelectedKey(key.time + offset));
-                }
-              },
-              onDoubleTapLane: (channel, time) => _addKeyAt(channel, time),
+            child: Stack(
+              children: [
+                AnimationTimeline(
+                  controller: _controller,
+                  animation: animation,
+                  duration: _duration,
+                  draggingKey: _dragging,
+                  selectedKey: (_dragging && _selectedKey != null)
+                      ? (
+                          target: _selectedKey!.target,
+                          property: _selectedKey!.property,
+                          time: _selectedKey!.time + _dragOffset,
+                        )
+                      : _selectedKey,
+                  onTapLane: (time) {
+                    setState(() => _selectedKey = null);
+                    _controller.seekPreview(time);
+                  },
+                  onScrub: _controller.seekPreview,
+                  onSelectKey: (key) => setState(() => _selectedKey = key),
+                  onDragKeyStart: (key) => setState(() {
+                    _selectedKey = key;
+                    _dragging = true;
+                    _dragOffset = 0;
+                  }),
+                  onDragKeyUpdate: (offset) =>
+                      setState(() => _dragOffset = offset),
+                  onDragKeyEnd: () {
+                    final key = _selectedKey;
+                    final offset = _dragOffset;
+                    setState(() {
+                      _dragging = false;
+                      _dragOffset = 0;
+                    });
+                    if (key != null && offset != 0) {
+                      unawaited(_moveSelectedKey(key.time + offset));
+                    }
+                  },
+                  onDoubleTapLane: (channel, time) => _addKeyAt(channel, time),
+                ),
+                if (animation.channels.isEmpty)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest
+                                .withValues(alpha: 0.92),
+                            border:
+                                Border.all(color: scheme.outlineVariant),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'No keyframes yet.\n\n'
+                            '1. Select a node in the Outliner\n'
+                            '2. Drag the playhead where the pose belongs\n'
+                            '3. Pose the node with the viewport gizmo\n'
+                            '4. Press Key — repeat at other times',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(height: 1.5),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ] else
           Expanded(
-            child: Center(
-              child: Text(
-                'Create an animation to start keyframing.',
-                style: Theme.of(context).textTheme.bodySmall,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Animate a model in four steps:',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '1. Create an animation with + above.\n'
+                    '2. Select a node in the Outliner.\n'
+                    '3. Park the playhead, pose the node with the gizmo, '
+                    'press Key.\n'
+                    '4. Move the playhead and repeat — then press Play.',
+                    style: TextStyle(fontSize: 12, height: 1.6),
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _createAnimation,
+                      icon: const Icon(Icons.add, size: 14),
+                      label: const Text('Create animation'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -335,43 +407,67 @@ class _AnimationPanelState extends State<AnimationPanel> {
           // Expanded + isExpanded keeps a long animation name from pushing
           // the action buttons out of the header row.
           Expanded(
-            child: DropdownButton<LocalId>(
-              value: id,
-              isDense: true,
-              isExpanded: true,
-              underline: const SizedBox.shrink(),
-              hint: const Text('No animation'),
-              items: [
-                for (final entry in animations.entries)
-                  DropdownMenuItem(
-                    value: entry.key,
-                    child: Text(
-                      entry.value.name.isEmpty
-                          ? entry.key.toToken()
-                          : entry.value.name,
-                      style: const TextStyle(fontSize: 13),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+            child: _PanelTip(
+              message: 'The animation this panel edits and previews.\n\n'
+                  'Pick one here after creating it with + below.',
+              child: DropdownButton<LocalId>(
+                value: id,
+                isDense: true,
+                isExpanded: true,
+                underline: const SizedBox.shrink(),
+                hint: const Text('No animation'),
+                items: [
+                  for (final entry in animations.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(
+                        entry.value.name.isEmpty
+                            ? entry.key.toToken()
+                            : entry.value.name,
+                        style: const TextStyle(fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-              ],
-              onChanged: (value) => _controller.selectPreviewAnimation(value),
+                ],
+                onChanged: (value) => _controller.selectPreviewAnimation(value),
+              ),
             ),
           ),
-          IconButton(
-            tooltip: 'Rename animation',
-            icon: const Icon(Icons.edit_outlined, size: 16),
-            onPressed: animation == null ? null : () => _promptRename(),
+          _PanelTip(
+            message: 'Step-by-step guide to animating a model.',
+            child: IconButton(
+              tooltip: 'Animation help',
+              icon: const Icon(Icons.help_outline, size: 16),
+              onPressed: _showHelp,
+            ),
           ),
-          IconButton(
-            tooltip: 'Delete animation',
-            icon: const Icon(Icons.delete_outline, size: 16),
-            onPressed: animation == null ? null : _deleteAnimation,
+          _PanelTip(
+            message: 'Rename this animation.\n\nThe name is what you look up '
+                'in code when you play the clip at runtime.',
+            child: IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 16),
+              onPressed: animation == null ? null : () => _promptRename(),
+            ),
           ),
-          IconButton(
-            tooltip: 'New animation',
-            icon: const Icon(Icons.add, size: 18),
-            onPressed: _createAnimation,
+          _PanelTip(
+            message:
+                'Delete this animation and all of its keyframes.\n\n'
+                'Undoable like any edit.',
+            child: IconButton(
+              icon: const Icon(Icons.delete_outline, size: 16),
+              onPressed: animation == null ? null : _deleteAnimation,
+            ),
+          ),
+          _PanelTip(
+            message:
+                'Create a new empty animation.\n\n'
+                'Then select a node in the Outliner, pose it with the gizmo, '
+                'and press Key to capture the pose.',
+            child: IconButton(
+              icon: const Icon(Icons.add, size: 18),
+              onPressed: _createAnimation,
+            ),
           ),
         ],
       ),
@@ -406,6 +502,91 @@ class _AnimationPanelState extends State<AnimationPanel> {
     if (name != null) await _renameAnimation(name);
   }
 
+  /// The walkthrough behind the header's ? button: the whole loop from
+  /// empty scene to playing keyframes in an app.
+  Future<void> _showHelp() async {
+    await showEditorDialog<void>(
+      context,
+      builder: (context) => AlertDialog(
+        title: const Text('Animating a model'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _helpStep(
+                  '1 · Create',
+                  'Press + in this panel\'s header to create an animation '
+                  '(a named clip, e.g. "Spin"). Rename it to something you '
+                  'will recognize in code.',
+                ),
+                _helpStep(
+                  '2 · Pose',
+                  'Select a node in the Outliner and pose it with the '
+                  'viewport gizmo (move / rotate / scale).',
+                ),
+                _helpStep(
+                  '3 · Key',
+                  'Drag the playhead in this panel to where the pose belongs, '
+                  'then press Key. That captures the node\'s translation, '
+                  'rotation, and scale as one keyframe.',
+                ),
+                _helpStep(
+                  '4 · Repeat',
+                  'Move the playhead to another time, pose again, press Key '
+                  'again. Between two keys the editor interpolates smoothly; '
+                  'each lane row below shows one animated property with its '
+                  'keys as diamonds.',
+                ),
+                _helpStep(
+                  '5 · Preview',
+                  'Press Play. Scrub by dragging the timeline. Stop restores '
+                  'the nodes to their un-animated pose so you can keep '
+                  'editing.',
+                ),
+                _helpStep(
+                  '6 · Save & play',
+                  'Save the scene — keyframes persist beside the .fscene in '
+                  'a .fsceneb sidecar. In your app, load the scene and play '
+                  'the clip from the root\'s parsedAnimations by name '
+                  '(see the flutter_scene docs on AnimationClip).',
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Every edit here is undoable (Cmd+Z) and also available to '
+                  'agents through the same commands.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _helpStep(String title, String body) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(body, style: const TextStyle(fontSize: 12, height: 1.45)),
+      ],
+    ),
+  );
+
   Widget _transport(ColorScheme scheme) {
     final controller = _controller;
     final id = _animationId;
@@ -414,47 +595,66 @@ class _AnimationPanelState extends State<AnimationPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       child: Row(
         children: [
-          IconButton(
-            tooltip: controller.previewPlaying ? 'Pause' : 'Play',
-            icon: Icon(
-              controller.previewPlaying ? Icons.pause : Icons.play_arrow,
-              size: 20,
+          _PanelTip(
+            message: controller.previewPlaying
+                ? 'Pause the preview at the current frame.'
+                : 'Play the preview in the viewport.\n\n'
+                    'This is editor-only playback — what ships is the saved '
+                    'keyframes, played by your app.',
+            child: IconButton(
+              icon: Icon(
+                controller.previewPlaying ? Icons.pause : Icons.play_arrow,
+                size: 20,
+              ),
+              onPressed: id == null ? null : controller.togglePreviewPlay,
             ),
-            onPressed: id == null ? null : controller.togglePreviewPlay,
           ),
-          IconButton(
-            tooltip: 'Stop (restore poses)',
-            icon: const Icon(Icons.stop, size: 20),
-            onPressed: id == null ? null : controller.stopPreview,
-          ),
-          IconButton(
-            tooltip: controller.previewLoop
-                ? 'Looping on'
-                : 'Looping off (play once)',
-            icon: Icon(
-              controller.previewLoop ? Icons.repeat : Icons.arrow_forward,
-              size: 18,
+          _PanelTip(
+            message:
+                'Stop: pause and put every animated node back to its authored '
+                'pose (what you see in the Outliner and Inspector).',
+            child: IconButton(
+              icon: const Icon(Icons.stop, size: 20),
+              onPressed: id == null ? null : controller.stopPreview,
             ),
-            onPressed: id == null
-                ? null
-                : () => controller.setPreviewLoop(!controller.previewLoop),
           ),
-          PopupMenuButton<double>(
-            tooltip: 'Playback speed',
-            initialValue: controller.previewSpeed,
-            onSelected: controller.setPreviewSpeed,
-            itemBuilder: (context) => [
-              for (final speed in const [0.25, 0.5, 1.0, 2.0])
-                PopupMenuItem(
-                  value: speed,
-                  child: Text('$speed×'),
+          _PanelTip(
+            message: controller.previewLoop
+                ? 'Looping on: playback wraps at the clip\'s end.\n\n'
+                    'Turn off to play once — useful for checking a single '
+                    'pass frame by frame.'
+                : 'Looping off: playback stops at the clip\'s end.\n\n'
+                    'Turn on to preview continuously.',
+            child: IconButton(
+              icon: Icon(
+                controller.previewLoop ? Icons.repeat : Icons.arrow_forward,
+                size: 18,
+              ),
+              onPressed: id == null
+                  ? null
+                  : () => controller.setPreviewLoop(!controller.previewLoop),
+            ),
+          ),
+          _PanelTip(
+            message:
+                'Preview playback speed.\n\nAffects only this panel\'s '
+                'preview; keyframe times are unchanged.',
+            child: PopupMenuButton<double>(
+              initialValue: controller.previewSpeed,
+              onSelected: controller.setPreviewSpeed,
+              itemBuilder: (context) => [
+                for (final speed in const [0.25, 0.5, 1.0, 2.0])
+                  PopupMenuItem(
+                    value: speed,
+                    child: Text('$speed×'),
+                  ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  '${controller.previewSpeed}×',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Text(
-                '${controller.previewSpeed}×',
-                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
           ),
@@ -484,8 +684,14 @@ class _AnimationPanelState extends State<AnimationPanel> {
       padding: const EdgeInsets.only(left: 10, right: 10),
       child: Row(
         children: [
-          Tooltip(
-            message: 'Key the selected nodes\' transform at the playhead',
+          _PanelTip(
+            message:
+                'Key the pose: captures translation, rotation, and scale of '
+                'every selected node at the playhead.\n\n'
+                'How to use: select a node in the Outliner → drag the '
+                'playhead to a time → move/rotate/scale it with the viewport '
+                'gizmo → press Key. Move the playhead, pose again, press Key '
+                'again — the animation interpolates between keys.',
             child: SizedBox(
               height: 26,
               child: FilledButton.tonalIcon(
@@ -510,17 +716,23 @@ class _AnimationPanelState extends State<AnimationPanel> {
               ),
             ),
             const Spacer(),
-            IconButton(
-              tooltip: 'Delete keyframe',
-              icon: const Icon(Icons.delete_outline, size: 16),
-              onPressed: _deleteSelectedKey,
+            _PanelTip(
+              message: 'Delete this keyframe.\n\n'
+                  'The channel interpolates across the gap; removing the last '
+                  'key of a channel removes the channel.',
+              child: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 16),
+                onPressed: _deleteSelectedKey,
+              ),
             ),
           ] else
             Expanded(
               child: Text(
                 hasSelection
-                    ? 'Select a keyframe to edit it; double-tap a lane to add one.'
-                    : 'Select a node in the Outliner to key its transform.',
+                    ? 'Press Key to capture the selected nodes\' pose at the '
+                        'playhead.'
+                    : 'Select a node in the Outliner, then press Key to '
+                        'capture its pose.',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -868,6 +1080,25 @@ class _TimelinePainter extends CustomPainter {
       oldDelegate.duration != duration ||
       !identical(oldDelegate.times, times) ||
       !listEquals(oldDelegate.labels, labels);
+}
+
+/// A tooltip tuned for the panel's explanatory copy: appears quickly, stays
+/// readable, and wraps multi-line guidance.
+class _PanelTip extends StatelessWidget {
+  const _PanelTip({required this.message, required this.child});
+
+  final String message;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: message,
+    waitDuration: const Duration(milliseconds: 350),
+    showDuration: const Duration(seconds: 8),
+    margin: const EdgeInsets.symmetric(horizontal: 40),
+    padding: const EdgeInsets.all(10),
+    child: child,
+  );
 }
 
 bool listEquals<T>(List<T> a, List<T> b) {
