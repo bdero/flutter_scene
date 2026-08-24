@@ -10,6 +10,23 @@ import 'package:flutter_test/flutter_test.dart';
 Uint8List _ramp(int length) =>
     Uint8List.fromList(List.generate(length, (i) => i & 0xFF));
 
+List<String> _chunkTypes(Uint8List container) {
+  final types = <String>[];
+  var offset = 16;
+  final view = ByteData.sublistView(container);
+  while (offset + 8 <= container.length) {
+    final length = view.getUint32(offset, Endian.little);
+    final type = String.fromCharCodes(
+      container.sublist(offset + 4, offset + 8),
+    );
+    types.add(type);
+    offset += 8 + length;
+    final remainder = length % 8;
+    if (remainder != 0) offset += 8 - remainder;
+  }
+  return types;
+}
+
 // A document with a couple of nodes and payload chunks of deliberately
 // awkward (non-8-multiple) lengths to exercise chunk padding.
 SceneDocument _sample() {
@@ -92,7 +109,7 @@ void main() {
 
       final encoded = writeFsceneb(doc);
       expect(encoded.length, lessThan(2048));
-      expect(String.fromCharCodes(encoded), contains('GZBL'));
+      expect(_chunkTypes(encoded), contains('GZBL'));
       expect(
         readFsceneb(encoded).payload(id)!.bytes,
         equals(Uint8List(64 * 1024)),
@@ -101,7 +118,7 @@ void main() {
 
     test('reads a version 1 container with plain payload chunks', () {
       final encoded = writeFsceneb(_sample());
-      expect(String.fromCharCodes(encoded), isNot(contains('GZBL')));
+      expect(_chunkTypes(encoded), isNot(contains('GZBL')));
       ByteData.sublistView(encoded).setUint32(4, 1, Endian.little);
 
       final restored = readFsceneb(encoded);

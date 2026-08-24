@@ -37,6 +37,7 @@ import 'package:archive/archive.dart';
 import 'package:scene/src/id.dart';
 import 'package:scene/src/json/fscene_json.dart';
 import 'package:scene/src/scene_document.dart';
+import 'package:scene/src/specs.dart';
 
 /// The current `.fsceneb` container version this build reads and writes.
 /// {@category Serialization}
@@ -48,6 +49,17 @@ const String _chunkBlob = 'BLOB';
 const String _chunkGzipBlob = 'GZBL';
 const int _headerByteLength = 16;
 const int _alignment = 8;
+
+bool _isPrecompressedImage(PayloadSpec spec) {
+  if (spec.encoding != PayloadEncoding.image) return false;
+  final format = spec.format?.toLowerCase();
+  return format == 'png' ||
+      format == 'basis' ||
+      format == 'ktx2' ||
+      format == 'jpeg' ||
+      format == 'jpg' ||
+      format == 'webp';
+}
 
 /// Thrown when a `.fsceneb` container is malformed.
 /// {@category Serialization}
@@ -92,19 +104,32 @@ Uint8List writeFsceneb(SceneDocument document) {
   final payloads = document.payloads.entries.toList()
     ..sort((a, b) => a.key.toToken().compareTo(b.key.toToken()));
   for (final entry in payloads) {
-    final bytes = entry.value.bytes;
+    final spec = entry.value;
+    final bytes = spec.bytes;
     if (bytes == null) {
       throw FscenebFormatException(
         'Payload ${entry.key.toToken()} has no bytes to embed',
       );
     }
     final blob = _encodeBlob(entry.key, bytes);
-    final compressed = const GZipEncoder().encodeBytes(blob, level: 6);
-    if (compressed.length < blob.length) {
-      addChunk(_chunkGzipBlob, compressed);
-    } else {
-      addChunk(_chunkBlob, blob);
+    if (!_isPrecompressedImage(spec)) {
+      final compressed = const GZipEncoder().encodeBytes(blob, level: 6);
+      // Zero out the 32-bit timestamp at bytes 4..7 in the gzip header (RFC 1952)
+      // so encoding is deterministic on platforms where the encoder stamps DateTime.now().
+      if (compressed.length >= 10 &&
+          compressed[0] == 0x1f &&
+          compressed[1] == 0x8b) {
+        compressed[4] = 0;
+        compressed[5] = 0;
+        compressed[6] = 0;
+        compressed[7] = 0;
+      }
+      if (compressed.length < blob.length) {
+        addChunk(_chunkGzipBlob, compressed);
+        continue;
+      }
     }
+    addChunk(_chunkBlob, blob);
   }
 
   final bodyBytes = body.toBytes();
