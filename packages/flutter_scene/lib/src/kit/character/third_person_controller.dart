@@ -44,6 +44,12 @@ class ThirdPersonControllerComponent extends Component {
   /// Optional fixed ground plane height. When set, snaps the character if falling below this Y value.
   double? groundPlaneHeight;
 
+  /// Distance from the node center down to the character's feet / base.
+  double footOffset;
+
+  /// Capsule/cylinder radius for horizontal obstacle collision. Set to 0 to disable.
+  double obstacleRadius;
+
   /// Current linear velocity vector in world space.
   vm.Vector3 velocity = vm.Vector3.zero();
 
@@ -72,6 +78,8 @@ class ThirdPersonControllerComponent extends Component {
     this.jumpBufferWindow = 0.15,
     this.groundLayerMask = 0xFFFFFFFF,
     this.groundPlaneHeight,
+    this.footOffset = 0.0,
+    this.obstacleRadius = 0.45,
   });
 
   /// Feeds planar movement input vector (-1.0 to 1.0 on X/Y, where +Y is forward)
@@ -126,11 +134,11 @@ class ThirdPersonControllerComponent extends Component {
 
     // 1. Ground detection probe via scene raycast
     var detectedGround = false;
-    var groundY = currentPos.y;
+    var groundY = currentPos.y - footOffset;
     var norm = vm.Vector3(0, 1, 0);
 
-    // Cast downward ray starting 0.4m above the character base
-    final rayStart = currentPos + vm.Vector3(0, 0.4, 0);
+    // Cast downward ray starting 0.4m above the character base / feet
+    final rayStart = currentPos + vm.Vector3(0, 0.4 - footOffset, 0);
     final ray = vm.Ray.originDirection(rayStart, vm.Vector3(0, -1, 0));
     final hit = raycastNode(
       _rootNode,
@@ -145,13 +153,15 @@ class ThirdPersonControllerComponent extends Component {
       groundY = rayStart.y - hit.distance;
       norm = hit.worldNormal;
     } else if (groundPlaneHeight != null &&
-        currentPos.y <= groundPlaneHeight! + 0.05) {
+        currentPos.y <= groundPlaneHeight! + footOffset + 0.05) {
       detectedGround = true;
       groundY = groundPlaneHeight!;
     }
 
     if (detectedGround &&
-        (isGrounded || currentPos.y <= groundY + 0.1 || velocity.y <= 0.0)) {
+        (isGrounded ||
+            currentPos.y <= groundY + footOffset + 0.1 ||
+            velocity.y <= 0.0)) {
       if (!isGrounded) {
         velocity.y = 0.0;
       }
@@ -231,13 +241,36 @@ class ThirdPersonControllerComponent extends Component {
       velocity.z += slideDir.z * gravity * fixedDt;
     }
 
-    // 5. Apply displacement converting world position back to parent local space
-    var newWorldPos = currentPos + velocity * fixedDt;
-    if (isGrounded) {
-      newWorldPos.y = groundY;
+    // 5. Obstacle collision detection and horizontal deflection
+    var horizMove = vm.Vector3(velocity.x, 0.0, velocity.z) * fixedDt;
+    if (obstacleRadius > 0.0 && horizMove.length2 > 1e-6) {
+      final moveDir = horizMove.normalized();
+      final probeStart = currentPos + vm.Vector3(0, 0.3 - footOffset, 0);
+      final obsHit = raycastNode(
+        _rootNode,
+        vm.Ray.originDirection(probeStart, moveDir),
+        maxDistance: obstacleRadius + horizMove.length,
+        layerMask: groundLayerMask,
+        where: (n) => !_isExcluded(n),
+      );
+      if (obsHit != null &&
+          obsHit.distance < obstacleRadius + horizMove.length) {
+        final wallNormal = obsHit.worldNormal;
+        final dot = horizMove.dot(wallNormal);
+        if (dot < 0.0) {
+          horizMove -= wallNormal * dot;
+          velocity.x = horizMove.x / fixedDt;
+          velocity.z = horizMove.z / fixedDt;
+        }
+      }
     }
 
-    // TODO(kit): implement forward-probe step climbing against kinematic obstacles.
+    // 6. Apply displacement converting world position back to parent local space
+    var newWorldPos =
+        currentPos + vm.Vector3(horizMove.x, velocity.y * fixedDt, horizMove.z);
+    if (isGrounded) {
+      newWorldPos.y = groundY + footOffset;
+    }
 
     final newWorldRot = vm.Quaternion.axisAngle(
       vm.Vector3(0, 1, 0),
@@ -267,6 +300,8 @@ class ThirdPersonControllerComponent extends Component {
       jumpBufferWindow: jumpBufferWindow,
       groundLayerMask: groundLayerMask,
       groundPlaneHeight: groundPlaneHeight,
+      footOffset: footOffset,
+      obstacleRadius: obstacleRadius,
     );
   }
 }
