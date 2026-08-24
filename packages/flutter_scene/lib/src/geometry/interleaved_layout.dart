@@ -451,15 +451,11 @@ abstract final class InterleavedLayoutAdapter {
   /// triangle list; otherwise they are a non-indexed triangle list and
   /// [vertexCount] must be a multiple of three. Each triangle's
   /// unnormalized face normal is accumulated onto its three vertices, so
-  /// larger faces contribute proportionally; the result is normalized
-  /// per vertex. Vertices touched by no (or only degenerate) triangles
-  /// receive a default normal of `(0, 0, 1)`.
+  /// Computes area-weighted vertex normals from triangle connectivity.
   ///
-  /// Normals point out of the face the engine renders as front. The
-  /// engine's front faces wind clockwise in model space (the hand-built
-  /// primitives' convention; rasterization is Y-down, which flips the
-  /// apparent winding to counter-clockwise), so the face normal is the
-  /// REVERSED right-hand cross product of the edges.
+  /// Assumes Counter-Clockwise (CCW) model-space front-face winding, so the
+  /// face normal is the standard right-hand cross product of the edges
+  /// `(b - a) x (c - a)`.
   static Float32List generateNormals({
     required Float32List positions,
     required int vertexCount,
@@ -480,12 +476,12 @@ abstract final class InterleavedLayoutAdapter {
           cz = positions[c * 3 + 2];
       final e1x = bx - ax, e1y = by - ay, e1z = bz - az;
       final e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
-      // Unnormalized cross product (reversed for the engine's clockwise
-      // front-face winding): its magnitude is twice the triangle area,
-      // which weights each face's contribution by its size.
-      final nx = e2y * e1z - e2z * e1y;
-      final ny = e2z * e1x - e2x * e1z;
-      final nz = e2x * e1y - e2y * e1x;
+      // Unnormalized right-hand cross product (e1 x e2): its magnitude is
+      // twice the triangle area, which weights each face's contribution by its
+      // size.
+      final nx = e1y * e2z - e1z * e2y;
+      final ny = e1z * e2x - e1x * e2z;
+      final nz = e1x * e2y - e1y * e2x;
       for (final v in [a, b, c]) {
         normals[v * 3] += nx;
         normals[v * 3 + 1] += ny;

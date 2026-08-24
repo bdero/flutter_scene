@@ -15,9 +15,9 @@ MeshData buildTriangleData(Float32List positions) =>
     MeshData.build(positions: positions, indices: <int>[0, 1, 2]);
 
 void main() {
-  // A triangle wound per the engine front-face convention (clockwise in
-  // model space), whose generated face normal points at +Z.
-  final triangle = Float32List.fromList(<double>[0, 0, 0, 0, 1, 0, 1, 0, 0]);
+  // A triangle wound per the engine front-face convention (CCW in model
+  // space), whose generated face normal points at +Z.
+  final triangle = Float32List.fromList(<double>[0, 0, 0, 1, 0, 0, 0, 1, 0]);
 
   group('MeshData.build', () {
     test('generates face normals when normals are absent', () {

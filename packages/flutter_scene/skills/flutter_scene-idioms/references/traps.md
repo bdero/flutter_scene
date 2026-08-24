@@ -194,19 +194,17 @@ crosses and angular probes are not supported. Still silent.
 
 ---
 
-## 13. Hand-built triangles wound counter-clockwise
+## 13. Hand-built triangles wound clockwise
 
-**Mistake.** Generating triangles with the standard right-handed CCW convention (what most tutorials,
-mesh libraries, and model output produce) and feeding them to `MeshGeometry.fromArrays` or
-`GeometryBuilder`.
+**Mistake.** Generating triangles with clockwise winding instead of the standard Counter-Clockwise (CCW)
+right-handed convention when feeding `MeshGeometry.fromArrays` or `GeometryBuilder`.
 
 **Symptom.** The mesh is invisible from outside and visible from inside; a closed shape looks hollow
 or inside-out; lighting is inverted where it shows. ("See-through faces.")
 
-**Do instead.** flutter_scene's front faces wind CLOCKWISE in model space. Reverse each triangle's
-index order, or omit `normals` and let the constructor derive them from your winding. Never fix
-orientation with a per-triangle winding swap; that leaves normals and IBL sampling wrong. Still
-silent.
+**Do instead.** flutter_scene's front faces wind COUNTER-CLOCKWISE (CCW) in model space, matching glTF
+and standard 3D conventions. Ensure triangle indices wind CCW around the outward face normal, or omit
+`normals` and let `GeometryBuilder` derive them from your winding. Still silent.
 
 ---
 

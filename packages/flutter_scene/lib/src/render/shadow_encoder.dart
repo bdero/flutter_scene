@@ -73,7 +73,7 @@ class ShadowEncoder {
     };
     _renderPass.setCullMode(_casterCullMode);
     _currentCullMode = _casterCullMode;
-    _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+    _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
   }
 
   final gpu.RenderPass _renderPass;
@@ -299,8 +299,8 @@ class ShadowEncoder {
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
             flip
-                ? gpu.WindingOrder.clockwise
-                : gpu.WindingOrder.counterClockwise,
+                ? gpu.WindingOrder.counterClockwise
+                : gpu.WindingOrder.clockwise,
           );
           geometry.draw(_renderPass);
         }
@@ -376,8 +376,8 @@ class ShadowEncoder {
     // that are visible also cast shadows.
     _renderPass.setWindingOrder(
       item.windingFlipped
-          ? gpu.WindingOrder.clockwise
-          : gpu.WindingOrder.counterClockwise,
+          ? gpu.WindingOrder.counterClockwise
+          : gpu.WindingOrder.clockwise,
     );
     geometry.draw(_renderPass);
   }
@@ -396,7 +396,7 @@ class ShadowEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
       geometry.draw(_renderPass, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
@@ -405,7 +405,7 @@ class ShadowEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       geometry.draw(_renderPass, instanceCount: packed.cwCount);
     }
   }
