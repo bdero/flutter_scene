@@ -186,11 +186,25 @@ Future<void> buildTargetShaderBundleJson({
 /// inputs, or flutter_tools not making the redundant native data pass. Revisit
 /// if a Flutter release adds such a field.
 Set<ShaderBundleBackend> shaderBundleBackendsForBuild(BuildInput buildInput) =>
-    shaderBundleBackendsForOS(
-      buildInput.config.buildCodeAssets
-          ? buildInput.config.code.targetOS.name
-          : null,
-    );
+    shaderBundleBackendsForOS(_targetOSName(buildInput));
+
+/// The target OS named on [buildInput], or null when it names none.
+///
+/// Read off the config JSON rather than through `config.code.targetOS`, which
+/// parses the name into an `OS`. That set was closed until
+/// `package:code_assets` 2.0.0, and the older versions this package still
+/// supports throw on a name they do not know instead of minting one, so the
+/// typed accessor turns an embedder for a platform `dart:ffi` cannot name into
+/// a crashed build hook. Apple's watchOS and tvOS are two of those.
+///
+/// The name is a plain string in the protocol syntax on both sides, and a
+/// string is all backend selection needs.
+String? _targetOSName(BuildInput buildInput) {
+  if (!buildInput.config.buildCodeAssets) return null;
+  final extensions = buildInput.config.json['extensions'];
+  final code = extensions is Map ? extensions['code_assets'] : null;
+  return code is Map ? code['target_os'] as String? : null;
+}
 
 /// The leading part of a compiled bundle's build stamp, before its shader
 /// sources: the format revision, the backends this target needs, and the

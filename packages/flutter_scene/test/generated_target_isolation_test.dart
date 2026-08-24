@@ -21,8 +21,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks/hooks.dart';
 
 /// A hook input like the one `flutter run` makes for [targetOS], or like the
-/// one it also makes with no asset types at all when [targetOS] is null.
-BuildInput _input(Uri packageRoot, {OS? targetOS}) {
+/// one it also makes with no asset types at all when both are null.
+///
+/// [rawTargetOS] writes that name over the one [targetOS] produced, standing in
+/// for an embedder whose platform the protocol cannot name.
+BuildInput _input(Uri packageRoot, {OS? targetOS, String? rawTargetOS}) {
   final builder = BuildInputBuilder()
     ..setupShared(
       packageRoot: packageRoot,
@@ -32,6 +35,7 @@ BuildInput _input(Uri packageRoot, {OS? targetOS}) {
     )
     ..setupBuildInput();
   builder.config.setupBuild(linkingEnabled: false);
+  if (rawTargetOS != null) targetOS ??= OS.iOS;
   if (targetOS != null) {
     CodeAssetExtension(
       targetArchitecture: Architecture.arm64,
@@ -45,6 +49,12 @@ BuildInput _input(Uri packageRoot, {OS? targetOS}) {
           ? AndroidCodeConfig(targetNdkApi: 21)
           : null,
     ).setupBuildInput(builder);
+    if (rawTargetOS != null) {
+      // `target_os` is a plain string in the syntax, so an embedder can write
+      // a name the API has no `OS` for and still produce a valid config.
+      final extensions = builder.config.json['extensions']! as Map;
+      (extensions['code_assets']! as Map)['target_os'] = rawTargetOS;
+    }
   }
   return builder.build();
 }
@@ -330,6 +340,33 @@ void main() {
         ),
       ),
       currentShaderTarget,
+    );
+  });
+
+  test('an Apple embedded build and runtime agree on a key', () {
+    // Both sides spell these the same way, so they meet without either having
+    // to know about the other.
+    for (final os in ['watchos', 'tvos']) {
+      expect(
+        shaderBundleTargetKey(_input(temp.uri, rawTargetOS: os)),
+        shaderTargetKey(shaderBundleBackendsForOS(os)),
+        reason: 'a mismatch here is a black frame on $os',
+      );
+    }
+  });
+
+  test('a target OS the protocol cannot name is still read', () {
+    // Fails if the name is ever read back through `config.code.targetOS`,
+    // which throws on an OS this version of code_assets does not know.
+    expect(
+      shaderBundleBackendsForBuild(_input(temp.uri, rawTargetOS: 'watchos')),
+      {ShaderBundleBackend.metalIos},
+    );
+    // A name nothing recognises falls to the portable set rather than
+    // throwing, so adding cases above does not disturb the default.
+    expect(
+      shaderBundleBackendsForBuild(_input(temp.uri, rawTargetOS: 'nope')),
+      {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan},
     );
   });
 
