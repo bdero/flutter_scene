@@ -165,10 +165,8 @@ void main() {
       final arm = SpringArmComponent(
         targetLength: 5.5,
         targetOffset: vm.Vector3(0, 1.4, 0),
-        enablePositionLag: true,
-        positionLagSpeed: 8.0,
-        enableRotationLag: true,
-        rotationLagSpeed: 8.0,
+        enablePositionLag: false,
+        enableRotationLag: false,
         cameraNode: cameraNode,
         inheritYaw: false,
         inheritPitch: false,
