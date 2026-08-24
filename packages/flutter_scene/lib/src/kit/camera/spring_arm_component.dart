@@ -23,10 +23,10 @@ class SpringArmComponent extends Component {
   /// Radius of the sphere probe used to test for obstacles (0.0 for a thin ray).
   double probeRadius;
 
-  /// Local offset from the owning node's origin to the boom's pivot.
+  /// Local offset applied along world axes from the owning node's origin to the boom's pivot.
   vm.Vector3 targetOffset;
 
-  /// Local offset applied at the camera socket end (e.g. over-the-shoulder offset).
+  /// Local offset applied at the camera socket end along socket right (X) and up (Y).
   vm.Vector3 socketOffset;
 
   /// Whether the boom position smoothly lags behind the target.
@@ -34,12 +34,6 @@ class SpringArmComponent extends Component {
 
   /// Speed at which the lagged position catches up to the target (higher = faster).
   double positionLagSpeed;
-
-  /// Whether the boom rotation smoothly lags behind the target rotation.
-  bool enableRotationLag;
-
-  /// Speed at which the lagged rotation catches up (higher = faster).
-  double rotationLagSpeed;
 
   /// Minimum distance the arm can compress to when obstructed.
   double minLength;
@@ -53,17 +47,11 @@ class SpringArmComponent extends Component {
   /// Whether to inherit pitch rotation from the owning node.
   bool inheritPitch;
 
-  /// Whether to inherit roll rotation from the owning node.
-  bool inheritRoll;
-
   /// Boom yaw angle in radians (used when [inheritYaw] is false).
   double yaw;
 
   /// Boom pitch angle in radians (used when [inheritPitch] is false).
   double pitch;
-
-  /// Boom roll angle in radians (used when [inheritRoll] is false).
-  double roll;
 
   /// An optional child camera node driven directly by this spring arm.
   Node? cameraNode;
@@ -79,17 +67,13 @@ class SpringArmComponent extends Component {
     vm.Vector3? socketOffset,
     this.enablePositionLag = false,
     this.positionLagSpeed = 10.0,
-    this.enableRotationLag = false,
-    this.rotationLagSpeed = 10.0,
     this.minLength = 0.5,
     this.layerMask = 0xFFFFFFFF,
     this.cameraNode,
     this.inheritYaw = true,
     this.inheritPitch = true,
-    this.inheritRoll = true,
     this.yaw = 0.0,
     this.pitch = 0.0,
-    this.roll = 0.0,
   }) : targetLength = math.max(minLength, targetLength),
        currentLength = math.max(minLength, targetLength),
        targetOffset = targetOffset?.clone() ?? vm.Vector3(0, 1.5, 0),
@@ -287,16 +271,12 @@ class SpringArmComponent extends Component {
       socketOffset: socketOffset.clone(),
       enablePositionLag: enablePositionLag,
       positionLagSpeed: positionLagSpeed,
-      enableRotationLag: enableRotationLag,
-      rotationLagSpeed: rotationLagSpeed,
       minLength: minLength,
       layerMask: layerMask,
       inheritYaw: inheritYaw,
       inheritPitch: inheritPitch,
-      inheritRoll: inheritRoll,
       yaw: yaw,
       pitch: pitch,
-      roll: roll,
     );
   }
 }

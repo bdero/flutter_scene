@@ -2,10 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-/// Evaluated atmospheric lighting colors for a specific sun elevation.
+/// Evaluated atmospheric lighting parameters for a specific sun elevation.
 /// {@category Gameplay kit}
 class AtmosphericLighting {
   /// Directional sun light color in linear RGB.
@@ -14,8 +15,8 @@ class AtmosphericLighting {
   /// Directional sun light illuminance in lux.
   final double sunIntensity;
 
-  /// Ambient sky illumination color in linear RGB.
-  final vm.Vector3 ambientColor;
+  /// Ambient environment intensity multiplier for `Scene.environmentIntensity`.
+  final double environmentIntensity;
 
   /// Shadow darkness factor (0.0 = completely dark, 1.0 = standard shadows).
   final double shadowDarkness;
@@ -24,7 +25,7 @@ class AtmosphericLighting {
   AtmosphericLighting({
     required this.sunColor,
     required this.sunIntensity,
-    required this.ambientColor,
+    required this.environmentIntensity,
     required this.shadowDarkness,
   });
 }
@@ -47,6 +48,9 @@ class DayNightCycleComponent extends Component {
   /// Optional procedural physical sky whose sun direction is synchronized.
   PhysicalSkySource? skySource;
 
+  /// Optional target scene whose environment intensity is synchronized.
+  Scene? targetScene;
+
   /// Whether to automatically apply evaluated sun colors and intensities to the light.
   bool applyLightingToTarget;
 
@@ -59,6 +63,7 @@ class DayNightCycleComponent extends Component {
     this.latitude = 34.0,
     this.sunLightNode,
     this.skySource,
+    this.targetScene,
     this.applyLightingToTarget = true,
     this.shadowOnly = false,
   });
@@ -91,13 +96,10 @@ class DayNightCycleComponent extends Component {
           vm.Vector3(1.0, 0.95, 0.88) * smoothT +
           vm.Vector3(1.0, 0.55, 0.20) * (1.0 - smoothT);
       final intensity = shadowOnly ? 0.0 : (3.0 * smoothT);
-      final ambientColor =
-          vm.Vector3(0.20, 0.28, 0.38) * smoothT +
-          vm.Vector3(0.12, 0.08, 0.15) * (1.0 - smoothT);
       return AtmosphericLighting(
         sunColor: sunColor,
         sunIntensity: intensity,
-        ambientColor: ambientColor,
+        environmentIntensity: (0.3 + 0.5 * smoothT).clamp(0.0, 1.0),
         shadowDarkness: (0.3 + 0.7 * smoothT).clamp(0.0, 1.0),
       );
     } else {
@@ -106,13 +108,11 @@ class DayNightCycleComponent extends Component {
       final duskColor = vm.Vector3(1.0, 0.55, 0.20);
       final nightSunColor = vm.Vector3(0.20, 0.30, 0.50);
       final sunColor = duskColor * (1.0 - nightT) + nightSunColor * nightT;
-      final ambientColor =
-          vm.Vector3(0.12, 0.08, 0.15) * (1.0 - nightT) +
-          vm.Vector3(0.02, 0.03, 0.06) * nightT;
       return AtmosphericLighting(
         sunColor: sunColor,
         sunIntensity: 0.0,
-        ambientColor: ambientColor,
+        environmentIntensity:
+            (0.3 * (1.0 - nightT) + 0.08 * nightT).clamp(0.0, 1.0),
         shadowDarkness: 0.0,
       );
     }
@@ -166,11 +166,17 @@ class DayNightCycleComponent extends Component {
     }
 
     if (applyLightingToTarget) {
+      final lighting = evaluateLighting();
       final lightComp = targetNode.getComponent<DirectionalLightComponent>();
       if (lightComp != null) {
-        final lighting = evaluateLighting();
         lightComp.light.color = lighting.sunColor;
         lightComp.light.intensity = lighting.sunIntensity;
+        lightComp.light.castsShadow = lighting.shadowDarkness > 0.0;
+        lightComp.light.shadowAmbientStrength =
+            (1.0 - lighting.shadowDarkness).clamp(0.0, 1.0);
+      }
+      if (targetScene != null) {
+        targetScene!.environmentIntensity = lighting.environmentIntensity;
       }
     }
   }
@@ -185,6 +191,7 @@ class DayNightCycleComponent extends Component {
       timeSpeed: timeSpeed,
       latitude: latitude,
       skySource: skySource,
+      targetScene: targetScene,
       applyLightingToTarget: applyLightingToTarget,
       shadowOnly: shadowOnly,
     );

@@ -13,10 +13,20 @@ class DebugDraw {
 
   /// Maximum vertex limit to avoid unbounded accumulation when un-flushed.
   static int maxVertexLimit = 65536;
+  static bool _hasWarnedLimit = false;
 
   /// Draws a wireframe line segment between [start] and [end].
   static void line(vm.Vector3 start, vm.Vector3 end, {vm.Vector4? color}) {
-    if (vertexCount >= maxVertexLimit) return;
+    if (vertexCount >= maxVertexLimit) {
+      if (!_hasWarnedLimit) {
+        _hasWarnedLimit = true;
+        assert(
+          false,
+          'DebugDraw vertex limit ($maxVertexLimit) exceeded; discarding additional lines.',
+        );
+      }
+      return;
+    }
     final c = color ?? vm.Vector4(1.0, 1.0, 1.0, 1.0);
 
     _positions.addAll([start.x, start.y, start.z, end.x, end.y, end.z]);
@@ -129,6 +139,7 @@ class DebugDraw {
     final colList = Float32List.fromList(_colors);
     _positions.clear();
     _colors.clear();
+    _hasWarnedLimit = false;
 
     return MeshGeometry.fromArrays(
       positions: posList,
@@ -143,5 +154,6 @@ class DebugDraw {
   static void clear() {
     _positions.clear();
     _colors.clear();
+    _hasWarnedLimit = false;
   }
 }

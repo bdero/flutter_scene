@@ -15,7 +15,7 @@ class BoundsFraming {
   /// The resulting matrix is oriented with +Z facing the target, matching `NodeCamera`.
   static vm.Matrix4 computeFramingTransform(
     vm.Aabb3 bounds,
-    Camera camera, {
+    CameraProjection projection, {
     double paddingFactor = 1.25,
     vm.Vector3? viewDirection,
     vm.Vector3? upVector,
@@ -29,9 +29,8 @@ class BoundsFraming {
 
     // Solve distance from projection FOV
     double distance;
-    final proj = camera.projection;
-    if (proj is PerspectiveProjection) {
-      final halfFov = proj.fovRadiansY * 0.5;
+    if (projection is PerspectiveProjection) {
+      final halfFov = projection.fovRadiansY * 0.5;
       distance = (radius / math.sin(halfFov)) * paddingFactor;
     } else {
       distance = radius * 2.0 * paddingFactor;

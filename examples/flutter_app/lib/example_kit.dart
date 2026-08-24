@@ -555,6 +555,9 @@ class _KitStageState extends State<_KitStage> {
   double _elapsed = 0.0;
   final Set<LogicalKeyboardKey> _pressedKeys = {};
 
+  final GeometryBufferArena _debugBufferArena = GeometryBufferArena();
+  final UnlitMaterial _debugMaterial = UnlitMaterial();
+
   @override
   void initState() {
     super.initState();
@@ -721,12 +724,9 @@ class _KitStageState extends State<_KitStage> {
       socketOffset: vm.Vector3(0.0, 0.3, 0),
       enablePositionLag: widget.settings.enableLag,
       positionLagSpeed: widget.settings.lagSpeed,
-      enableRotationLag: false,
-      rotationLagSpeed: widget.settings.lagSpeed,
       cameraNode: _cameraNode,
       inheritYaw: false,
       inheritPitch: false,
-      inheritRoll: false,
       yaw: widget.settings.cameraOrbitYaw,
       pitch: widget.settings.cameraOrbitPitch,
     );
@@ -794,7 +794,7 @@ class _KitStageState extends State<_KitStage> {
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
       vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 8, 14)),
-      PerspectiveCamera(fovRadiansY: 1.0),
+      PerspectiveProjection(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.7, 0.45, 0.7),
       paddingFactor: 1.4,
     );
@@ -859,6 +859,16 @@ class _KitStageState extends State<_KitStage> {
         final node = Node(
           mesh: Mesh(isBuoy ? buoyGeo : crateGeo, isBuoy ? buoyMat : crateMat),
         )..position = vm.Vector3(x.toDouble(), 0, z.toDouble());
+        if (isBuoy) {
+          node.addComponent(
+            FloatingMotionComponent(
+              hoverAmplitude: 0.15,
+              hoverFrequency: 0.8,
+              wobbleDegrees: 6.0,
+              spinSpeed: 0.4,
+            ),
+          );
+        }
         _floatingProps.add(node);
         scene.add(node);
       }
@@ -866,7 +876,7 @@ class _KitStageState extends State<_KitStage> {
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
       vm.Aabb3.minMax(vm.Vector3(-14, -2, -14), vm.Vector3(14, 5, 14)),
-      PerspectiveCamera(fovRadiansY: 1.0),
+      PerspectiveProjection(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.55, 0.55, 0.75),
       paddingFactor: 1.35,
     );
@@ -933,7 +943,7 @@ class _KitStageState extends State<_KitStage> {
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
       vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 10, 14)),
-      PerspectiveCamera(fovRadiansY: 1.0),
+      PerspectiveProjection(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.65, 0.5, 0.65),
       paddingFactor: 1.35,
     );
@@ -985,7 +995,7 @@ class _KitStageState extends State<_KitStage> {
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
       vm.Aabb3.minMax(vm.Vector3(-16, 0, -16), vm.Vector3(16, 8, 16)),
-      PerspectiveCamera(fovRadiansY: 1.0),
+      PerspectiveProjection(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.65, 0.48, 0.65),
       paddingFactor: 1.35,
     );
@@ -1066,7 +1076,7 @@ class _KitStageState extends State<_KitStage> {
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
       vm.Aabb3.minMax(vm.Vector3(-8, 0, -8), vm.Vector3(8, 6, 8)),
-      PerspectiveCamera(fovRadiansY: 1.0),
+      PerspectiveProjection(fovRadiansY: 1.0),
       viewDirection: vm.Vector3(0.65, 0.5, 0.65),
       paddingFactor: 1.4,
     );
@@ -1161,9 +1171,12 @@ class _KitStageState extends State<_KitStage> {
           Positioned(
             bottom: 24,
             right: 24,
-            child: _VirtualJoystick(
+            child: VirtualJoystick(
+              radius: 45.0,
+              knobRadius: 16.0,
               onChanged: (v) {
-                _joystickInput = v;
+                // VirtualJoystick emits screen coordinates (+Y downward); invert Y for 3D forward
+                _joystickInput = vm.Vector2(v.x, -v.y);
               },
             ),
           ),
@@ -1272,8 +1285,6 @@ class _KitStageState extends State<_KitStage> {
       _springArm!.targetLength = widget.settings.armLength;
       _springArm!.enablePositionLag = widget.settings.enableLag;
       _springArm!.positionLagSpeed = widget.settings.lagSpeed;
-      _springArm!.enableRotationLag = false;
-      _springArm!.rotationLagSpeed = widget.settings.lagSpeed;
     }
 
     // Step the scene components (ThirdPersonController + SpringArm)
@@ -1545,80 +1556,12 @@ class _KitStageState extends State<_KitStage> {
       color: vm.Vector4(1.0, 0.8, 0.2, 0.7),
     );
 
-    // Flush to mesh
-    final mesh = DebugDraw.flushMesh();
+    // Flush to mesh reusing persistent arena
+    final mesh = DebugDraw.flushMesh(bufferArena: _debugBufferArena);
     if (mesh != null) {
-      _debugMeshNode.mesh = Mesh(mesh, UnlitMaterial());
+      _debugMeshNode.mesh = Mesh(mesh, _debugMaterial);
     }
 
     scene.update(dt);
-  }
-}
-
-class _VirtualJoystick extends StatefulWidget {
-  const _VirtualJoystick({required this.onChanged});
-
-  final ValueChanged<vm.Vector2> onChanged;
-
-  @override
-  State<_VirtualJoystick> createState() => _VirtualJoystickState();
-}
-
-class _VirtualJoystickState extends State<_VirtualJoystick> {
-  Offset _knobOffset = Offset.zero;
-  static const double _radius = 45.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanStart: (details) => _updateKnob(details.localPosition),
-      onPanUpdate: (details) => _updateKnob(details.localPosition),
-      onPanEnd: (_) => _resetKnob(),
-      child: Container(
-        width: _radius * 2,
-        height: _radius * 2,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.black.withValues(alpha: 0.35),
-          border: Border.all(color: Colors.white30, width: 2),
-        ),
-        child: Center(
-          child: Transform.translate(
-            offset: _knobOffset,
-            child: Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.8),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _updateKnob(Offset localPosition) {
-    final center = const Offset(_radius, _radius);
-    final delta = localPosition - center;
-    final dist = delta.distance;
-
-    final clampedDelta = dist > _radius ? (delta / dist) * _radius : delta;
-
-    setState(() {
-      _knobOffset = clampedDelta;
-    });
-
-    widget.onChanged(
-      vm.Vector2(clampedDelta.dx / _radius, -clampedDelta.dy / _radius),
-    );
-  }
-
-  void _resetKnob() {
-    setState(() {
-      _knobOffset = Offset.zero;
-    });
-    widget.onChanged(vm.Vector2.zero());
   }
 }

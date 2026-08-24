@@ -2,7 +2,7 @@
 
 * Added `package:flutter_scene/kit.dart`, high-level gameplay, camera boom, character controller, day/night cycle, water surface, audio, pooling, and debug visualization components.
 * Standardized model-space front-face winding to Counter-Clockwise (CCW) across primitives, procedural builders, materials, and `.fscene` version 5.
-* Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview), captured through the compositor on frames that sample it.
+* Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview) with optional `colorFilter`, captured through the compositor on frames that sample it.
 * Generated scene registries are cached per asset bundle.
 * `.fsceneb` payload chunks compress with gzip, cutting file sizes by ~73% in exchange for higher load-time decompression CPU.
 * Static render items skip per-frame property re-assignment when their transform and bounds are unchanged.

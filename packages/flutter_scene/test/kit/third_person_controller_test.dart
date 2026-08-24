@@ -8,33 +8,56 @@ import 'package:vector_math/vector_math.dart' as vm;
 class _TestFloorGeometry extends Geometry {
   _TestFloorGeometry({double halfSize = 50.0}) {
     primitiveType = gpu.PrimitiveType.triangle;
-    setCpuPositionsForTesting(
-      Float32List.fromList([
-        -halfSize,
-        0,
-        -halfSize,
-        halfSize,
-        0,
-        -halfSize,
-        halfSize,
-        0,
-        halfSize,
-        -halfSize,
-        0,
-        -halfSize,
-        halfSize,
-        0,
-        halfSize,
-        -halfSize,
-        0,
-        halfSize,
-      ]),
-      bounds: vm.Aabb3.minMax(
+    _positions = Float32List.fromList([
+      -halfSize,
+      0,
+      -halfSize,
+      halfSize,
+      0,
+      -halfSize,
+      halfSize,
+      0,
+      halfSize,
+      -halfSize,
+      0,
+      -halfSize,
+      halfSize,
+      0,
+      halfSize,
+      -halfSize,
+      0,
+      halfSize,
+    ]);
+    setLocalBounds(
+      vm.Aabb3.minMax(
         vm.Vector3(-halfSize, -0.1, -halfSize),
         vm.Vector3(halfSize, 0.1, halfSize),
       ),
+      null,
     );
   }
+
+  late final Float32List _positions;
+
+  @override
+  ({
+    ByteData? vertices,
+    Float32List? positions,
+    Float32List? texCoords,
+    ByteData? indices,
+    gpu.IndexType indexType,
+    int vertexCount,
+    int indexCount,
+  })
+  get cpuMeshData => (
+    vertices: null,
+    positions: _positions,
+    texCoords: null,
+    indices: null,
+    indexType: gpu.IndexType.int16,
+    vertexCount: _positions.length ~/ 3,
+    indexCount: 0,
+  );
 
   @override
   void bind(
@@ -51,33 +74,56 @@ class _TestFloorGeometry extends Geometry {
 class _TestWallGeometry extends Geometry {
   _TestWallGeometry({double xPos = 1.0, double halfSize = 10.0}) {
     primitiveType = gpu.PrimitiveType.triangle;
-    setCpuPositionsForTesting(
-      Float32List.fromList([
-        xPos,
-        -halfSize,
-        -halfSize,
-        xPos,
-        halfSize,
-        -halfSize,
-        xPos,
-        halfSize,
-        halfSize,
-        xPos,
-        -halfSize,
-        -halfSize,
-        xPos,
-        halfSize,
-        halfSize,
-        xPos,
-        -halfSize,
-        halfSize,
-      ]),
-      bounds: vm.Aabb3.minMax(
+    _positions = Float32List.fromList([
+      xPos,
+      -halfSize,
+      -halfSize,
+      xPos,
+      halfSize,
+      -halfSize,
+      xPos,
+      halfSize,
+      halfSize,
+      xPos,
+      -halfSize,
+      -halfSize,
+      xPos,
+      halfSize,
+      halfSize,
+      xPos,
+      -halfSize,
+      halfSize,
+    ]);
+    setLocalBounds(
+      vm.Aabb3.minMax(
         vm.Vector3(xPos - 0.1, -halfSize, -halfSize),
         vm.Vector3(xPos + 0.1, halfSize, halfSize),
       ),
+      null,
     );
   }
+
+  late final Float32List _positions;
+
+  @override
+  ({
+    ByteData? vertices,
+    Float32List? positions,
+    Float32List? texCoords,
+    ByteData? indices,
+    gpu.IndexType indexType,
+    int vertexCount,
+    int indexCount,
+  })
+  get cpuMeshData => (
+    vertices: null,
+    positions: _positions,
+    texCoords: null,
+    indices: null,
+    indexType: gpu.IndexType.int16,
+    vertexCount: _positions.length ~/ 3,
+    indexCount: 0,
+  );
 
   @override
   void bind(
