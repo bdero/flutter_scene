@@ -111,8 +111,10 @@ class DayNightCycleComponent extends Component {
       return AtmosphericLighting(
         sunColor: sunColor,
         sunIntensity: 0.0,
-        environmentIntensity:
-            (0.3 * (1.0 - nightT) + 0.08 * nightT).clamp(0.0, 1.0),
+        environmentIntensity: (0.3 * (1.0 - nightT) + 0.08 * nightT).clamp(
+          0.0,
+          1.0,
+        ),
         shadowDarkness: 0.0,
       );
     }
@@ -172,8 +174,8 @@ class DayNightCycleComponent extends Component {
         lightComp.light.color = lighting.sunColor;
         lightComp.light.intensity = lighting.sunIntensity;
         lightComp.light.castsShadow = lighting.shadowDarkness > 0.0;
-        lightComp.light.shadowAmbientStrength =
-            (1.0 - lighting.shadowDarkness).clamp(0.0, 1.0);
+        lightComp.light.shadowAmbientStrength = (1.0 - lighting.shadowDarkness)
+            .clamp(0.0, 1.0);
       }
       if (targetScene != null) {
         targetScene!.environmentIntensity = lighting.environmentIntensity;
