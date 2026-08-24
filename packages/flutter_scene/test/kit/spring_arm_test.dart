@@ -195,11 +195,11 @@ void main() {
         controller.fixedUpdate(0.016);
         arm.update(0.016);
 
-        final charPos = characterNode.position;
+        final pivotPos = characterNode.position + arm.targetOffset;
         final camPos =
             (cameraNode.globalTransform * vm.Vector4(0, 0, 0, 1)).xyz;
 
-        expect((camPos - charPos).length, closeTo(5.5, 0.5));
+        expect((camPos - pivotPos).length, closeTo(5.5, 0.05));
       }
     });
   });
