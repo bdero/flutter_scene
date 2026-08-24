@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart'
+    show PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
@@ -252,8 +254,8 @@ class _AnimationPanelState extends State<AnimationPanel> {
           Padding(
             padding: const EdgeInsets.only(left: 10, right: 10, bottom: 2),
             child: Text(
-              'Drag the ruler or a lane to scrub · double-click a lane to add '
-              'a key here · drag a diamond to retime it',
+              'Drag to scrub · double-click a lane to add a key · drag a '
+              'diamond to retime · wheel scrolls · ctrl/cmd+wheel zooms',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -782,7 +784,7 @@ List<double> channelTimes(SceneDocument document, AnimationChannelSpec channel) 
 /// playhead, and diamonds per keyframe. Diamonds drag to retime (committed as
 /// one undoable move on release), lanes scrub the playhead, and double-tapping
 /// a lane adds a keyframe capturing the target's current pose.
-class AnimationTimeline extends StatelessWidget {
+class AnimationTimeline extends StatefulWidget {
   const AnimationTimeline({
     super.key,
     required this.controller,
@@ -818,6 +820,22 @@ class AnimationTimeline extends StatelessWidget {
   final VoidCallback onDragKeyEnd;
   final void Function(AnimationChannelSpec channel, double time)
   onDoubleTapLane;
+
+  @override
+  State<AnimationTimeline> createState() => _AnimationTimelineState();
+}
+
+class _AnimationTimelineState extends State<AnimationTimeline> {
+  /// Horizontal scale in px/s; null fits the whole clip to the pane width.
+  double? _zoomPx;
+
+  /// Left edge of the visible window, in seconds.
+  double _scroll = 0;
+
+  static const double _maxPxPerSecond = 600;
+
+  EditorController get controller => widget.controller;
+  AnimationSpec get animation => widget.animation;
 
   @override
   Widget build(BuildContext context) {
@@ -859,81 +877,217 @@ class AnimationTimeline extends StatelessWidget {
     final width = constraints.maxWidth;
     const labelWidth = 120.0;
     final laneWidth = math.max(width - labelWidth - 8, 24.0);
-    final pxPerSecond = laneWidth / duration;
-    final contentHeight = _rulerHeight + math.max(times.length, 1) * _rowHeight + 4;
+    // Fit-to-width unless the user has zoomed in (px per second scale).
+    final fitPxPerSecond = laneWidth / widget.duration;
+    final pxPerSecond =
+        ((_zoomPx ?? fitPxPerSecond).clamp(
+              fitPxPerSecond,
+              math.max(fitPxPerSecond, _maxPxPerSecond),
+            ))
+            .toDouble();
+    final maxScroll = math.max(0.0, widget.duration * pxPerSecond - laneWidth);
+    _scroll = _scroll.clamp(0.0, maxScroll).toDouble();
+    final contentHeight =
+        _rulerHeight + math.max(times.length, 1) * _rowHeight + 4;
+
+    double xOf(double time) => labelWidth + time * pxPerSecond - _scroll;
+
+    double timeAt(Offset position) =>
+        ((position.dx - labelWidth + _scroll) / pxPerSecond)
+            .clamp(0.0, widget.duration)
+            .toDouble();
 
     int rowOf(double dy) => ((dy - _rulerHeight) / _rowHeight).floor();
 
-    double timeAt(Offset position) =>
-        ((position.dx - labelWidth) / pxPerSecond).clamp(0.0, duration).toDouble();
-
-    TimelineKey? hitKey(Offset position) {
-      final row = rowOf(position.dy);
-      if (row < 0 || row >= times.length) return null;
-      final channel = animation.channels[row];
-      TimelineKey? nearest;
-      var nearestDistance = double.infinity;
-      for (final time in times[row]) {
-        final dx = position.dx - (labelWidth + time * pxPerSecond);
-        final dy =
-            position.dy - (_rulerHeight + row * _rowHeight + _rowHeight / 2);
-        final distance = math.sqrt(dx * dx + dy * dy);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearest = (
-            target: channel.target,
-            property: channel.property,
-            time: time,
-          );
-        }
-      }
-      return nearestDistance <= 9 ? nearest : null;
+    // Scales by [factor], keeping [anchorTime] fixed under its pixel column.
+    void zoom(double factor, {double? anchorTime}) {
+      final next =
+          (pxPerSecond * factor)
+              .clamp(
+                fitPxPerSecond,
+                math.max(fitPxPerSecond, _maxPxPerSecond),
+              )
+              .toDouble();
+      if ((next - pxPerSecond).abs() < 1e-6) return;
+      final anchor = anchorTime ?? (_scroll + laneWidth / 2) / pxPerSecond;
+      setState(() {
+        _zoomPx = next;
+        _scroll =
+            (anchor * next - laneWidth / 2).clamp(
+              0.0,
+              math.max(0.0, widget.duration * next - laneWidth),
+            ).toDouble();
+      });
     }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapUp: (details) {
-        final position = details.localPosition;
-        final key = hitKey(position);
-        if (key != null) {
-          onSelectKey(key);
-          return;
+    // Wheel: plain scroll pans toward higher/lower times; ctrl/cmd+wheel
+    // zooms around the cursor.
+    void handleWheel(PointerSignalEvent event) {
+      if (event is! PointerScrollEvent) return;
+      final delta = event.scrollDelta.dy + event.scrollDelta.dx;
+      if (delta == 0) return;
+      final zooming =
+          HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed;
+      if (zooming) {
+        final anchor = timeAt(event.localPosition);
+        zoom(math.exp(-delta * 0.002), anchorTime: anchor);
+      } else {
+        setState(() {
+          _scroll =
+              (_scroll + delta / pxPerSecond).clamp(0.0, maxScroll).toDouble();
+        });
+      }
+    }
+
+    // Nearest keyframe within reach of the pointer, across all lanes — no
+    // need to land precisely on a row.
+    TimelineKey? hitKey(Offset position) {
+      TimelineKey? nearest;
+      var nearestDistance = double.infinity;
+      for (var row = 0; row < times.length; row++) {
+        final channel = animation.channels[row];
+        final cy = _rulerHeight + row * _rowHeight + _rowHeight / 2;
+        for (final time in times[row]) {
+          final dx = position.dx - xOf(time);
+          final dy = position.dy - cy;
+          final distance = math.sqrt(dx * dx + dy * dy);
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearest = (
+              target: channel.target,
+              property: channel.property,
+              time: time,
+            );
+          }
         }
-        final row = rowOf(position.dy);
-        if (row < 0 || row >= times.length) return;
-        onTapLane(timeAt(position));
-      },
-      onDoubleTapDown: (details) {
-        final row = rowOf(details.localPosition.dy);
-        if (row < 0 || row >= times.length) return;
-        onDoubleTapLane(animation.channels[row], timeAt(details.localPosition));
-      },
-      onDoubleTap: () {},
-      onPanStart: (details) {
-        final key = hitKey(details.localPosition);
-        if (key != null) onDragKeyStart(key);
-      },
-      onPanUpdate: (details) {
-        // An in-flight key drag moves the diamond; anything else scrubs.
-        if (draggingKey) {
-          onDragKeyUpdate(details.delta.dx / pxPerSecond);
-          return;
-        }
-        onScrub(timeAt(details.localPosition));
-      },
-      onPanEnd: (_) => onDragKeyEnd(),
-      child: CustomPaint(
-        size: Size(width, math.max(constraints.maxHeight, contentHeight)),
-        painter: _TimelinePainter(
-          scheme: scheme,
-          animation: animation,
-          labels: labels,
-          times: times,
-          duration: duration,
-          playhead: controller.previewPlayhead.value,
-          selectedKey: selectedKey,
-          labelWidth: labelWidth,
+      }
+      return nearestDistance <= 12 ? nearest : null;
+    }
+
+    return Listener(
+      onPointerSignal: handleWheel,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (details) {
+          final position = details.localPosition;
+          final key = hitKey(position);
+          if (key != null) {
+            widget.onSelectKey(key);
+            return;
+          }
+          final row = rowOf(position.dy);
+          if (row < 0 || row >= times.length) return;
+          widget.onTapLane(timeAt(position));
+        },
+        onDoubleTapDown: (details) {
+          final row = rowOf(details.localPosition.dy);
+          if (row < 0 || row >= times.length) return;
+          widget.onDoubleTapLane(
+            animation.channels[row],
+            timeAt(details.localPosition),
+          );
+        },
+        onDoubleTap: () {},
+        onPanStart: (details) {
+          final key = hitKey(details.localPosition);
+          if (key != null) widget.onDragKeyStart(key);
+        },
+        onPanUpdate: (details) {
+          // An in-flight key drag moves the diamond; anything else scrubs.
+          if (widget.draggingKey) {
+            widget.onDragKeyUpdate(details.delta.dx / pxPerSecond);
+            return;
+          }
+          widget.onScrub(timeAt(details.localPosition));
+        },
+        onPanEnd: (_) => widget.onDragKeyEnd(),
+        child: Stack(
+          children: [
+            CustomPaint(
+              size: Size(
+                width,
+                math.max(constraints.maxHeight, contentHeight),
+              ),
+              painter: _TimelinePainter(
+                scheme: scheme,
+                animation: animation,
+                labels: labels,
+                times: times,
+                duration: widget.duration,
+                playhead: controller.previewPlayhead.value,
+                selectedKey: widget.selectedKey,
+                labelWidth: labelWidth,
+                scrollSeconds: _scroll,
+                pxPerSecond: pxPerSecond,
+              ),
+            ),
+            Positioned(
+              right: 8,
+              bottom: 4,
+              child: _zoomControls(context, scheme, fitPxPerSecond, zoom),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  /// The floating zoom pill: out / current scale / in / back-to-fit.
+  Widget _zoomControls(
+    BuildContext context,
+    ColorScheme scheme,
+    double fitPxPerSecond,
+    void Function(double factor, {double? anchorTime}) zoom,
+  ) {
+    final percent =
+        (( _zoomPx ?? fitPxPerSecond) / fitPxPerSecond * 100).round();
+    Widget control(IconData icon, String tip, VoidCallback onTap) => _PanelTip(
+      message: tip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: Icon(icon, size: 14, color: scheme.onSurfaceVariant),
+        ),
+      ),
+    );
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.95),
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          control(
+            Icons.zoom_out_map,
+            'Zoom out (or ctrl/cmd + scroll wheel down)',
+            () => zoom(1 / 1.3),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              '$percent%',
+              style: TextStyle(fontSize: 9, color: scheme.onSurfaceVariant),
+            ),
+          ),
+          control(
+            Icons.zoom_in,
+            'Zoom in — easier to pick keyframes (or ctrl/cmd + wheel up)',
+            () => zoom(1.3),
+          ),
+          control(
+            Icons.center_focus_strong,
+            'Fit the whole clip back into the panel',
+            () => setState(() {
+              _zoomPx = null;
+              _scroll = 0;
+            }),
+          ),
+        ],
       ),
     );
   }
@@ -950,6 +1104,8 @@ class _TimelinePainter extends CustomPainter {
     required this.playhead,
     required this.selectedKey,
     required this.labelWidth,
+    required this.scrollSeconds,
+    required this.pxPerSecond,
   });
 
   final ColorScheme scheme;
@@ -961,6 +1117,12 @@ class _TimelinePainter extends CustomPainter {
   final TimelineKey? selectedKey;
   final double labelWidth;
 
+  /// Left edge of the visible window, in seconds.
+  final double scrollSeconds;
+
+  /// Horizontal scale in px/s (fit-to-width when unzoomed).
+  final double pxPerSecond;
+
   static const double _laneLeftPad = 4;
 
   @override
@@ -969,9 +1131,8 @@ class _TimelinePainter extends CustomPainter {
       Offset.zero & size,
       Paint()..color = scheme.surfaceContainerLow,
     );
-    final pxPerSecond = (size.width - labelWidth - 8) / duration;
 
-    // Ruler.
+    // Ruler. Ticks cover only the visible window.
     final rulerBottom = Offset(size.width, _rulerHeight);
     canvas.drawLine(
       const Offset(0, _rulerHeight),
@@ -981,10 +1142,16 @@ class _TimelinePainter extends CustomPainter {
     final tickStyle = Paint()
       ..color = scheme.outline.withValues(alpha: 0.5)
       ..strokeWidth = 1;
-    final step = _niceStep(duration);
+    final visibleSeconds = (size.width - labelWidth - 8) / pxPerSecond;
+    final step = _niceStep(visibleSeconds);
     final textStyle = TextStyle(fontSize: 9, color: scheme.outline);
-    for (var t = 0.0; t <= duration + 1e-6; t += step) {
-      final x = labelWidth + t * pxPerSecond;
+    final tStart = scrollSeconds;
+    final tEnd = scrollSeconds + visibleSeconds;
+    for (var t = (tStart / step).floorToDouble() * step;
+        t <= tEnd + 1e-6;
+        t += step) {
+      if (t < 0 || t > duration + 1e-6) continue;
+      final x = labelWidth + (t - scrollSeconds) * pxPerSecond;
       canvas.drawLine(Offset(x, 0), Offset(x, _rulerHeight - 3), tickStyle);
       TextPainter(
         text: TextSpan(text: t.toStringAsFixed(step < 0.25 ? 2 : 1), style: textStyle),
@@ -994,7 +1161,14 @@ class _TimelinePainter extends CustomPainter {
         ..paint(canvas, Offset(x + 2, 1));
     }
 
-    // Lanes.
+    // Lanes. The lane content (line, diamonds, playhead) is clipped to the
+    // lane column so scrolled-out keys never paint over the labels.
+    final laneClip = Rect.fromLTRB(
+      labelWidth,
+      0,
+      size.width - 8 + _laneLeftPad,
+      size.height,
+    );
     for (var row = 0; row < labels.length; row++) {
       final top = _rulerHeight + row * _rowHeight;
       if (row.isOdd) {
@@ -1014,20 +1188,28 @@ class _TimelinePainter extends CustomPainter {
       )
         ..layout(maxWidth: labelWidth - 8)
         ..paint(canvas, Offset(4, top + (_rowHeight - 11) / 2));
+    }
+
+    canvas.save();
+    canvas.clipRect(laneClip);
+    for (var row = 0; row < labels.length; row++) {
+      final top = _rulerHeight + row * _rowHeight;
       canvas.drawLine(
         Offset(labelWidth + _laneLeftPad, top + _rowHeight / 2),
-        Offset(labelWidth + _laneLeftPad + duration * pxPerSecond,
+        Offset(labelWidth + _laneLeftPad + duration * pxPerSecond - scrollSeconds,
             top + _rowHeight / 2),
         Paint()
           ..color = scheme.outlineVariant
           ..strokeWidth = 1.5,
       );
 
-      // Keyframe diamonds.
+      // Keyframe diamonds (only those inside the visible window).
       for (final time in times[row]) {
+        final x = labelWidth + time * pxPerSecond - scrollSeconds;
+        if (x < labelWidth - 6 || x > size.width - 2) continue;
         _drawDiamond(
           canvas,
-          labelWidth + time * pxPerSecond,
+          x,
           top + _rowHeight / 2,
           selectedKey != null &&
               selectedKey!.target == animation.channels[row].target &&
@@ -1037,16 +1219,19 @@ class _TimelinePainter extends CustomPainter {
       }
     }
 
-    // Playhead.
-    final x = labelWidth + playhead.clamp(0.0, duration) * pxPerSecond;
-    canvas.drawLine(
-      Offset(x, 0),
-      Offset(x, size.height),
-      Paint()
-        ..color = scheme.primary
-        ..strokeWidth = 1.5,
-    );
-    canvas.drawCircle(Offset(x, 5), 4, Paint()..color = scheme.primary);
+    // Playhead (clipped to the visible window).
+    if (playhead >= tStart && playhead <= tEnd) {
+      final x = labelWidth + (playhead - scrollSeconds) * pxPerSecond;
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        Paint()
+          ..color = scheme.primary
+          ..strokeWidth = 1.5,
+      );
+      canvas.drawCircle(Offset(x, 5), 4, Paint()..color = scheme.primary);
+    }
+    canvas.restore();
   }
 
   void _drawDiamond(Canvas canvas, double cx, double cy, bool selected) {
@@ -1078,6 +1263,8 @@ class _TimelinePainter extends CustomPainter {
       oldDelegate.playhead != playhead ||
       oldDelegate.selectedKey != selectedKey ||
       oldDelegate.duration != duration ||
+      oldDelegate.scrollSeconds != scrollSeconds ||
+      oldDelegate.pxPerSecond != pxPerSecond ||
       !identical(oldDelegate.times, times) ||
       !listEquals(oldDelegate.labels, labels);
 }

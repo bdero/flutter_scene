@@ -296,6 +296,51 @@ class _TabGroup extends StatefulWidget {
 class _TabGroupState extends State<_TabGroup> {
   DockZone? _hoverZone;
 
+  // The tab strip scrolls horizontally when a group holds more tabs than fit
+  // (Assets · History · Animation …); this keeps the active tab revealed.
+  final ScrollController _stripScroll = ScrollController();
+  final Map<String, GlobalKey> _tabKeys = {};
+  String? _revealedActive;
+
+  GlobalKey _tabKey(String id) => _tabKeys.putIfAbsent(id, GlobalKey.new);
+
+  void _scheduleReveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revealActive());
+  }
+
+  void _revealActive() {
+    if (!mounted) return;
+    final active = widget.group.activePanel;
+    if (active == null || active == _revealedActive) return;
+    final context = _tabKeys[active]?.currentContext;
+    if (context != null) {
+      _revealedActive = active;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 150),
+        alignment: 0.0,
+      );
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleReveal();
+  }
+
+  @override
+  void didUpdateWidget(_TabGroup oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleReveal();
+  }
+
+  @override
+  void dispose() {
+    _stripScroll.dispose();
+    super.dispose();
+  }
+
   DockZone _zoneAt(Offset local, Size size) {
     final dx = local.dx / size.width;
     final dy = local.dy / size.height;
@@ -322,21 +367,38 @@ class _TabGroupState extends State<_TabGroup> {
     final strip = Container(
       height: 30,
       color: scheme.surfaceContainerLow,
+      // The tabs scroll horizontally when they outgrow the pane; panel
+      // actions stay pinned at the right end of the strip.
       child: Row(
         children: [
-          for (final id in group.panels)
-            _DockTab(
-              panel: widget.panelById(id),
-              id: id,
-              selected: id == active,
-              closable: widget.panelById(id)?.closable ?? false,
-              onTap: () => widget.onSelect(group.panels.indexOf(id)),
-              onHide: () => widget.onHide(id),
-              onFloat: widget.onFloat == null
-                  ? null
-                  : () => widget.onFloat!(id),
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _stripScroll,
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final id in group.panels)
+                    KeyedSubtree(
+                      key: _tabKey(id),
+                      child: _DockTab(
+                        panel: widget.panelById(id),
+                        id: id,
+                        selected: id == active,
+                        closable:
+                            widget.panelById(id)?.closable ?? false,
+                        onTap: () =>
+                            widget.onSelect(group.panels.indexOf(id)),
+                        onHide: () => widget.onHide(id),
+                        onFloat: widget.onFloat == null
+                            ? null
+                            : () => widget.onFloat!(id),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          const Spacer(),
+          ),
           if (activePanel?.actions != null) activePanel!.actions!,
         ],
       ),
