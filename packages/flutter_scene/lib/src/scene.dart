@@ -2810,8 +2810,10 @@ base class Scene implements SceneGraph {
     required EnvironmentMap environmentMap,
   }) {
     final settings = globalIllumination;
-    final (center, extents, resolution) =
-        _planIrradianceVolume(settings, camera);
+    final (center, extents, resolution) = _planIrradianceVolume(
+      settings,
+      camera,
+    );
     if (!_irradianceField.update(
       settings: settings,
       center: center,
@@ -2935,11 +2937,7 @@ base class Scene implements SceneGraph {
             _activeIrradianceVolume = chosen;
             _irradianceField.invalidate();
           }
-          return (
-            chosen.worldCenter,
-            chosen.extents * 2.0,
-            chosen.resolution,
-          );
+          return (chosen.worldCenter, chosen.extents * 2.0, chosen.resolution);
         }
         _activeIrradianceVolume = null;
         return (
