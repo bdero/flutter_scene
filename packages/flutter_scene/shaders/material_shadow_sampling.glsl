@@ -75,8 +75,9 @@ float ShadowTapBilinear(vec2 p, float radius, vec2 uv, int cascade,
 vec3 BiasDirectionalShadowPosition(vec3 world_pos, vec3 n) {
   vec3 light_toward = -normalize(frag_info.directional_light_direction.xyz);
   float ndotl = max(dot(n, light_toward), 0.15);
-  float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / ndotl, 4.0);
-  float normal_offset = frag_info.shadow_normal_bias * (1.0 + slope);
+  float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / (ndotl * ndotl), 8.0);
+  float normal_offset =
+      frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
   return world_pos + n * normal_offset;
 }
 
