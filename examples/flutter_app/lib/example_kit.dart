@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide Material;
@@ -70,6 +71,7 @@ class _ExampleKitState extends State<ExampleKit> {
             scenario: _scenario,
             settings: _settings,
             onFireBurst: () => _stageKey.currentState?.fireProjectileBurst(),
+            onScatterFlock: () => _stageKey.currentState?.scatterFlock(),
             onChanged: () => setState(() {}),
           ),
         ),
@@ -78,25 +80,52 @@ class _ExampleKitState extends State<ExampleKit> {
   }
 }
 
-class _KitScenarioPanel extends StatelessWidget {
+class _KitScenarioPanel extends StatefulWidget {
   const _KitScenarioPanel({
     required this.scenario,
     required this.settings,
     required this.onFireBurst,
+    required this.onScatterFlock,
     required this.onChanged,
   });
 
   final _KitScenario scenario;
   final KitDemoSettings settings;
   final VoidCallback onFireBurst;
+  final VoidCallback onScatterFlock;
   final VoidCallback onChanged;
+
+  @override
+  State<_KitScenarioPanel> createState() => _KitScenarioPanelState();
+}
+
+class _KitScenarioPanelState extends State<_KitScenarioPanel> {
+  Timer? _uiTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _uiTimer = Timer.periodic(const Duration(milliseconds: 60), (_) {
+      if (mounted &&
+          widget.scenario == _KitScenario.dayNight &&
+          widget.settings.isTimePlaying) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _uiTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return ExamplePanelCard(
       icon: Icons.sports_esports,
-      title: scenario.label,
-      maxBodyHeight: 400,
+      title: widget.scenario.label,
+      maxBodyHeight: 440,
       body: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,7 +135,10 @@ class _KitScenarioPanel extends StatelessWidget {
   }
 
   List<Widget> _buildControls(BuildContext context) {
-    switch (scenario) {
+    final settings = widget.settings;
+    final onChanged = widget.onChanged;
+
+    switch (widget.scenario) {
       case _KitScenario.characterCamera:
         return [
           const KitSectionHeader('Character'),
@@ -135,7 +167,7 @@ class _KitScenarioPanel extends StatelessWidget {
             label: 'Arm length',
             value: settings.armLength,
             min: 2.0,
-            max: 10.0,
+            max: 12.0,
             onChanged: (v) {
               settings.armLength = v;
               onChanged();
@@ -153,14 +185,59 @@ class _KitScenarioPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Use WASD / Arrow keys and Space to jump, or the on-screen joystick.',
+            'Drag on screen to orbit camera freely. WASD / Arrow keys run relative to camera view.',
             style: TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ];
 
       case _KitScenario.dayNight:
+        final hours = settings.timeOfDay.floor();
+        final minutes = ((settings.timeOfDay - hours) * 60).round();
+        final timeStr =
+            '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}';
+
         return [
           const KitSectionHeader('Time of Day'),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Clock: $timeStr',
+                  style: const TextStyle(
+                    color: Colors.amberAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  backgroundColor: settings.isTimePlaying
+                      ? Colors.amber.shade800
+                      : Colors.blueGrey.shade700,
+                ),
+                icon: Icon(
+                  settings.isTimePlaying ? Icons.pause : Icons.play_arrow,
+                  size: 16,
+                ),
+                label: Text(
+                  settings.isTimePlaying ? 'Pause' : 'Play',
+                  style: const TextStyle(fontSize: 11),
+                ),
+                onPressed: () {
+                  setState(() {
+                    settings.isTimePlaying = !settings.isTimePlaying;
+                  });
+                  onChanged();
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
           KitSliderRow(
             label: 'Time',
             value: settings.timeOfDay,
@@ -169,13 +246,14 @@ class _KitScenarioPanel extends StatelessWidget {
             suffix: 'h',
             onChanged: (v) {
               settings.timeOfDay = v;
+              setState(() {});
               onChanged();
             },
           ),
           KitSliderRow(
             label: 'Cycle speed',
             value: settings.timeSpeed,
-            min: 0.0,
+            min: 0.1,
             max: 4.0,
             onChanged: (v) {
               settings.timeSpeed = v;
@@ -195,19 +273,19 @@ class _KitScenarioPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Drives physical Rayleigh/Mie sky scattering and directional sun shadows smoothly with zero discontinuities.',
+            'Drives physical Rayleigh/Mie atmospheric scattering and cascaded directional sun shadows.',
             style: TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ];
 
       case _KitScenario.waterBuoyancy:
         return [
-          const KitSectionHeader('Wave Simulation'),
+          const KitSectionHeader('Gerstner Wave Simulation'),
           KitSliderRow(
             label: 'Amplitude',
             value: settings.waveAmplitude,
             min: 0.1,
-            max: 1.2,
+            max: 2.0,
             onChanged: (v) {
               settings.waveAmplitude = v;
               onChanged();
@@ -217,7 +295,7 @@ class _KitScenarioPanel extends StatelessWidget {
             label: 'Speed',
             value: settings.waveSpeed,
             min: 0.2,
-            max: 3.0,
+            max: 4.0,
             onChanged: (v) {
               settings.waveSpeed = v;
               onChanged();
@@ -235,16 +313,45 @@ class _KitScenarioPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Trochoidal Gerstner waves drive real-time surface height, normal orientation, and pitch/roll of floating buoys and crates.',
+            'Trochoidal Gerstner waves compute height and surface normal dynamically, pitching and rolling floating props.',
             style: TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ];
 
       case _KitScenario.flocking:
         return [
-          const KitSectionHeader('Flock Parameters'),
+          const KitSectionHeader('Interactive Swarm'),
+          Center(
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.waves, size: 16),
+              label: const Text('Scatter Flock Impulse'),
+              onPressed: widget.onScatterFlock,
+            ),
+          ),
+          const SizedBox(height: 6),
           KitSliderRow(
-            label: 'Separation',
+            label: 'Boid count',
+            value: settings.boidCount,
+            min: 8.0,
+            max: 60.0,
+            fractionDigits: 0,
+            onChanged: (v) {
+              settings.boidCount = v;
+              onChanged();
+            },
+          ),
+          KitSliderRow(
+            label: 'Max speed',
+            value: settings.maxSteerSpeed,
+            min: 2.0,
+            max: 14.0,
+            onChanged: (v) {
+              settings.maxSteerSpeed = v;
+              onChanged();
+            },
+          ),
+          KitSliderRow(
+            label: 'Separation dist',
             value: settings.separationDistance,
             min: 0.5,
             max: 4.0,
@@ -254,19 +361,39 @@ class _KitScenarioPanel extends StatelessWidget {
             },
           ),
           KitSliderRow(
-            label: 'Max speed',
-            value: settings.maxSteerSpeed,
-            min: 2.0,
-            max: 12.0,
+            label: 'Separation wt',
+            value: settings.separationWeight,
+            min: 0.5,
+            max: 5.0,
             onChanged: (v) {
-              settings.maxSteerSpeed = v;
+              settings.separationWeight = v;
+              onChanged();
+            },
+          ),
+          KitSliderRow(
+            label: 'Cohesion wt',
+            value: settings.cohesionWeight,
+            min: 0.1,
+            max: 3.0,
+            onChanged: (v) {
+              settings.cohesionWeight = v;
+              onChanged();
+            },
+          ),
+          KitSliderRow(
+            label: 'Alignment wt',
+            value: settings.alignmentWeight,
+            min: 0.1,
+            max: 3.0,
+            onChanged: (v) {
+              settings.alignmentWeight = v;
               onChanged();
             },
           ),
           const SizedBox(height: 6),
           const Text(
-            'Autonomous boids steering with seek, separation, cohesion, and alignment behavior towards a moving target.',
-            style: TextStyle(color: Colors.white70, fontSize: 11),
+            'Click / drag on the 3D scene to guide the boid swarm to your cursor!',
+            style: TextStyle(color: Colors.amberAccent, fontSize: 11),
           ),
         ];
 
@@ -294,7 +421,7 @@ class _KitScenarioPanel extends StatelessWidget {
             child: ElevatedButton.icon(
               icon: const Icon(Icons.bolt, size: 16),
               label: const Text('Fire Projectile Burst'),
-              onPressed: onFireBurst,
+              onPressed: widget.onFireBurst,
             ),
           ),
           const SizedBox(height: 8),
@@ -315,7 +442,7 @@ class _KitScenarioPanel extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Pool Buffer Size: ${settings.poolCapacity}',
+                  'Pool Idle Available: ${settings.poolCapacity}',
                   style: const TextStyle(color: Colors.white70, fontSize: 11),
                 ),
                 Text(
@@ -401,16 +528,24 @@ class _KitStageState extends State<_KitStage> {
   // Water scenario
   WaterSurfaceComponent? _water;
   final List<Node> _floatingProps = [];
+  double _cachedWaveAmplitude = -1.0;
+  double _cachedWaveSpeed = -1.0;
+  double _cachedWaveSteepness = -1.0;
 
   // Flocking scenario
   final List<Node> _boidNodes = [];
   final List<vm.Vector3> _boidVelocities = [];
+  final Node _targetMarkerNode = Node();
+  vm.Vector3? _userAttractorPos;
+  bool _isUserAttracting = false;
+  double _cachedBoidCount = -1.0;
 
   // Pooling scenario
   NodePool? _projectilePool;
   final List<_ActiveProjectile> _activeProjectiles = [];
   final List<Node> _scatteredProps = [];
   double _fireTimer = 0.0;
+  double _cachedMinDistance = -1.0;
 
   double _elapsed = 0.0;
   final Set<LogicalKeyboardKey> _pressedKeys = {};
@@ -431,41 +566,7 @@ class _KitStageState extends State<_KitStage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.scenario != widget.scenario) {
       _buildScene();
-    } else if (widget.scenario == _KitScenario.spawnerPooling &&
-        oldWidget.settings.minDistance != widget.settings.minDistance) {
-      _rebuildPoissonFoliage();
-    } else if (widget.scenario == _KitScenario.waterBuoyancy &&
-        (oldWidget.settings.waveAmplitude != widget.settings.waveAmplitude ||
-            oldWidget.settings.waveSpeed != widget.settings.waveSpeed ||
-            oldWidget.settings.waveSteepness !=
-                widget.settings.waveSteepness)) {
-      _rebuildWater();
     }
-  }
-
-  void _rebuildWater() {
-    if (_water != null) {
-      scene.root.removeComponent(_water!);
-    }
-    _water = WaterSurfaceComponent(
-      waves: [
-        GerstnerWave(
-          direction: vm.Vector2(1.0, 0.2).normalized(),
-          amplitude: widget.settings.waveAmplitude,
-          wavelength: 12.0,
-          speed: widget.settings.waveSpeed,
-          steepness: widget.settings.waveSteepness,
-        ),
-        GerstnerWave(
-          direction: vm.Vector2(0.5, 0.8).normalized(),
-          amplitude: widget.settings.waveAmplitude * 0.5,
-          wavelength: 6.0,
-          speed: widget.settings.waveSpeed * 1.3,
-          steepness: widget.settings.waveSteepness,
-        ),
-      ],
-    );
-    scene.root.addComponent(_water!);
   }
 
   @override
@@ -486,18 +587,24 @@ class _KitStageState extends State<_KitStage> {
 
   void _buildScene() {
     scene.removeAll();
+    scene.skybox = null;
+    scene.skyEnvironment = null;
+    scene.sunLight = null;
+
     scene.add(_cameraNode);
     scene.add(_debugMeshNode);
 
-    // Reset default directional light
-    final keyLight = DirectionalLight()
-      ..color = vm.Vector3(1.0, 0.98, 0.92)
-      ..intensity = 50000.0;
-    final keyLightNode = Node()
-      ..addComponent(DirectionalLightComponent(keyLight));
-    keyLightNode.localTransform = vm.Matrix4.identity()
-      ..setTranslation(vm.Vector3(12, 24, 12));
-    scene.add(keyLightNode);
+    if (widget.scenario != _KitScenario.dayNight) {
+      // Standard studio key light for general scenarios
+      final keyLight = DirectionalLight()
+        ..color = vm.Vector3(1.0, 0.98, 0.92)
+        ..intensity = 40000.0;
+      final keyLightNode = Node()
+        ..addComponent(DirectionalLightComponent(keyLight));
+      keyLightNode.localTransform = vm.Matrix4.identity()
+        ..setTranslation(vm.Vector3(12, 24, 12));
+      scene.add(keyLightNode);
+    }
 
     switch (widget.scenario) {
       case _KitScenario.characterCamera:
@@ -585,6 +692,11 @@ class _KitStageState extends State<_KitStage> {
       enableRotationLag: widget.settings.enableLag,
       rotationLagSpeed: widget.settings.lagSpeed,
       cameraNode: _cameraNode,
+      inheritYaw: false,
+      inheritPitch: false,
+      inheritRoll: false,
+      yaw: widget.settings.cameraOrbitYaw,
+      pitch: widget.settings.cameraOrbitPitch,
     );
     _characterNode!.addComponent(_springArm!);
 
@@ -600,7 +712,12 @@ class _KitStageState extends State<_KitStage> {
     );
     scene.skybox = Skybox(physicalSky);
     scene.skyEnvironment = SkyEnvironment(physicalSky);
-    scene.sunLight = SunLight(physicalSky, castsShadow: true);
+    scene.sunLight = SunLight(
+      physicalSky,
+      castsShadow: true,
+      shadowAmbientStrength: 0.65,
+      shadowMaxDistance: 80.0,
+    );
 
     // Ground plane
     final groundMesh = PlaneGeometry(width: 60, depth: 60);
@@ -633,7 +750,9 @@ class _KitStageState extends State<_KitStage> {
 
     _dayNight = DayNightCycleComponent(
       timeOfDay: widget.settings.timeOfDay,
-      timeSpeed: widget.settings.timeSpeed,
+      timeSpeed: widget.settings.isTimePlaying
+          ? widget.settings.timeSpeed
+          : 0.0,
       latitude: widget.settings.latitude,
       skySource: physicalSky,
     );
@@ -647,7 +766,35 @@ class _KitStageState extends State<_KitStage> {
     );
   }
 
+  void _rebuildWater() {
+    if (_water != null) {
+      scene.root.removeComponent(_water!);
+    }
+    _water = WaterSurfaceComponent(
+      waves: [
+        GerstnerWave(
+          direction: vm.Vector2(1.0, 0.2).normalized(),
+          amplitude: widget.settings.waveAmplitude,
+          wavelength: 10.0,
+          speed: widget.settings.waveSpeed,
+          steepness: widget.settings.waveSteepness,
+        ),
+        GerstnerWave(
+          direction: vm.Vector2(0.5, 0.8).normalized(),
+          amplitude: widget.settings.waveAmplitude * 0.6,
+          wavelength: 6.0,
+          speed: widget.settings.waveSpeed * 1.3,
+          steepness: widget.settings.waveSteepness,
+        ),
+      ],
+    );
+    scene.root.addComponent(_water!);
+  }
+
   void _buildWaterBuoyancy() {
+    _cachedWaveAmplitude = widget.settings.waveAmplitude;
+    _cachedWaveSpeed = widget.settings.waveSpeed;
+    _cachedWaveSteepness = widget.settings.waveSteepness;
     _rebuildWater();
     _floatingProps.clear();
 
@@ -691,81 +838,100 @@ class _KitStageState extends State<_KitStage> {
     );
   }
 
-  void _buildFlocking() {
+  void _rebuildFlock() {
+    for (final n in _boidNodes) {
+      n.parent?.remove(n);
+    }
     _boidNodes.clear();
     _boidVelocities.clear();
 
-    final boidGeo = CuboidGeometry(vm.Vector3(0.4, 0.3, 1.0));
+    final boidCount = widget.settings.boidCount.round();
+    final boidGeo = CuboidGeometry(vm.Vector3(0.4, 0.25, 1.1));
     final boidMat = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.2, 0.95, 0.6, 1.0)
-      ..roughnessFactor = 0.3;
+      ..roughnessFactor = 0.25;
 
     final rng = math.Random(42);
-    for (var i = 0; i < 28; i++) {
+    for (var i = 0; i < boidCount; i++) {
       final pos = vm.Vector3(
-        (rng.nextDouble() - 0.5) * 18.0,
-        rng.nextDouble() * 8.0 + 2.0,
-        (rng.nextDouble() - 0.5) * 18.0,
+        (rng.nextDouble() - 0.5) * 16.0,
+        rng.nextDouble() * 6.0 + 2.0,
+        (rng.nextDouble() - 0.5) * 16.0,
       );
       final node = Node(mesh: Mesh(boidGeo, boidMat))..position = pos;
       _boidNodes.add(node);
       _boidVelocities.add(
         vm.Vector3(
-          (rng.nextDouble() - 0.5) * 3.0,
-          (rng.nextDouble() - 0.5) * 3.0,
-          (rng.nextDouble() - 0.5) * 3.0,
+          (rng.nextDouble() - 0.5) * 4.0,
+          (rng.nextDouble() - 0.5) * 2.0,
+          (rng.nextDouble() - 0.5) * 4.0,
         ),
       );
       scene.add(node);
     }
+  }
+
+  void scatterFlock() {
+    final rng = math.Random();
+    for (var i = 0; i < _boidVelocities.length; i++) {
+      final angle = rng.nextDouble() * 2 * math.pi;
+      final speed =
+          widget.settings.maxSteerSpeed * (1.8 + rng.nextDouble() * 0.8);
+      _boidVelocities[i] = vm.Vector3(
+        math.cos(angle) * speed,
+        (rng.nextDouble() - 0.3) * speed * 0.5,
+        math.sin(angle) * speed,
+      );
+    }
+  }
+
+  void _buildFlocking() {
+    _cachedBoidCount = widget.settings.boidCount;
+    _rebuildFlock();
+
+    // Target attractor marker beacon
+    final targetGeo = CuboidGeometry(vm.Vector3(0.8, 0.8, 0.8));
+    final targetMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(1.0, 0.25, 0.25, 1.0)
+      ..emissiveFactor = vm.Vector4(1.0, 0.3, 0.3, 1.0);
+    _targetMarkerNode.mesh = Mesh(targetGeo, targetMat);
+    scene.add(_targetMarkerNode);
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 12, 14)),
+      vm.Aabb3.minMax(vm.Vector3(-14, 0, -14), vm.Vector3(14, 10, 14)),
       PerspectiveCamera(fovRadiansY: 1.0),
-      viewDirection: vm.Vector3(0.6, 0.55, 0.65),
-      paddingFactor: 1.4,
+      viewDirection: vm.Vector3(0.65, 0.5, 0.65),
+      paddingFactor: 1.35,
     );
   }
 
   void _buildSpawnerPooling() {
     _activeProjectiles.clear();
-    _scatteredProps.clear();
+    _fireTimer = 0.0;
+    _cachedMinDistance = widget.settings.minDistance;
 
-    // Ground plane
-    final groundMesh = PlaneGeometry(width: 36, depth: 36);
-    scene.add(
-      Node(
-        mesh: Mesh(
-          groundMesh,
-          PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.22, 0.28, 0.24, 1.0)
-            ..roughnessFactor = 0.85,
-        ),
-      ),
-    );
-
-    // Center cannon / turret
-    final turretBaseGeo = CuboidGeometry(vm.Vector3(1.8, 0.8, 1.8));
+    // Cannon turret base
+    final turretBaseGeo = CuboidGeometry(vm.Vector3(2.0, 0.8, 2.0));
     final turretBaseMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.2, 0.2, 0.25, 1.0)
+      ..baseColorFactor = vm.Vector4(0.3, 0.32, 0.35, 1.0)
       ..metallicFactor = 0.8
       ..roughnessFactor = 0.2;
-    final turretBarrelGeo = CuboidGeometry(vm.Vector3(0.6, 0.6, 2.2));
-    final turretBarrelMat = PhysicallyBasedMaterial()
-      ..baseColorFactor = vm.Vector4(0.8, 0.2, 0.2, 1.0)
-      ..metallicFactor = 0.5
-      ..roughnessFactor = 0.3;
-
-    final turretNode = Node(mesh: Mesh(turretBaseGeo, turretBaseMat))
-      ..position = vm.Vector3(0, 0.4, 0);
-    turretNode.add(
-      Node(mesh: Mesh(turretBarrelGeo, turretBarrelMat))
-        ..position = vm.Vector3(0, 0.5, 0.6)
-        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), -0.25),
+    scene.add(
+      Node(mesh: Mesh(turretBaseGeo, turretBaseMat))
+        ..position = vm.Vector3(0, 0.4, 0),
     );
-    scene.add(turretNode);
 
-    // 1. Poisson-disc distribution of trees around the perimeter
+    final barrelGeo = CuboidGeometry(vm.Vector3(0.5, 0.5, 1.8));
+    final barrelMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.15, 0.15, 0.18, 1.0)
+      ..metallicFactor = 0.9
+      ..roughnessFactor = 0.15;
+    scene.add(
+      Node(mesh: Mesh(barrelGeo, barrelMat))
+        ..position = vm.Vector3(0, 0.9, 0.8),
+    );
+
+    // 1. Procedural Poisson-disc forest distribution
     _rebuildPoissonFoliage();
 
     // 2. Zero-GC NodePool for recycled projectiles
@@ -857,27 +1023,162 @@ class _KitStageState extends State<_KitStage> {
 
   void _buildDebugVisuals() {
     final groundMesh = PlaneGeometry(width: 24, depth: 24);
+    final groundMat = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.25, 0.25, 0.28, 1.0);
     scene.add(
-      Node(
-        mesh: Mesh(
-          groundMesh,
-          PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(0.16, 0.16, 0.20, 1.0)
-            ..roughnessFactor = 0.9,
-        ),
-      ),
+      Node(mesh: Mesh(groundMesh, groundMat))..position = vm.Vector3.zero(),
     );
 
     _cameraNode.localTransform = BoundsFraming.computeFramingTransform(
-      vm.Aabb3.minMax(vm.Vector3(-9, 0, -9), vm.Vector3(9, 6, 9)),
+      vm.Aabb3.minMax(vm.Vector3(-8, 0, -8), vm.Vector3(8, 6, 8)),
       PerspectiveCamera(fovRadiansY: 1.0),
-      viewDirection: vm.Vector3(0.6, 0.5, 0.8),
-      paddingFactor: 1.3,
+      viewDirection: vm.Vector3(0.65, 0.5, 0.65),
+      paddingFactor: 1.4,
     );
   }
 
-  void _tick(Duration elapsedDuration, double dt) {
+  void _handlePointerDown(Offset localPos, Size? size) {
+    if (widget.scenario == _KitScenario.flocking) {
+      _updateAttractorFromScreen(localPos, size);
+    }
+  }
+
+  void _handlePointerMove(Offset delta, Offset localPos, Size? size) {
+    if (widget.scenario == _KitScenario.characterCamera) {
+      widget.settings.cameraOrbitYaw -= delta.dx * 0.008;
+      widget.settings.cameraOrbitPitch =
+          (widget.settings.cameraOrbitPitch - delta.dy * 0.008).clamp(
+            -1.2,
+            0.4,
+          );
+      widget.onSettingsChanged();
+    } else if (widget.scenario == _KitScenario.flocking) {
+      _updateAttractorFromScreen(localPos, size);
+    }
+  }
+
+  void _handlePointerUp() {
+    if (widget.scenario == _KitScenario.flocking) {
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) {
+          _isUserAttracting = false;
+        }
+      });
+    }
+  }
+
+  void _updateAttractorFromScreen(Offset pos, Size? size) {
+    if (size == null || size.width == 0 || size.height == 0) return;
+    final ndcX = (pos.dx / size.width) * 2.0 - 1.0;
+    final ndcY = 1.0 - (pos.dy / size.height) * 2.0;
+
+    final tanFov = math.tan(0.5);
+    final aspect = size.width / size.height;
+    final camRayLocal = vm.Vector3(
+      ndcX * tanFov * aspect,
+      ndcY * tanFov,
+      -1.0,
+    ).normalized();
+
+    final camRot = vm.Quaternion.identity();
+    final camPos = vm.Vector3.zero();
+    _cameraNode.globalTransform.decompose(camPos, camRot, vm.Vector3.zero());
+
+    final camRayWorld = camRot.rotate(camRayLocal).normalized();
+    if (camRayWorld.y.abs() > 1e-4) {
+      final t = (3.5 - camPos.y) / camRayWorld.y;
+      if (t > 0) {
+        _userAttractorPos = camPos + camRayWorld * t;
+        _isUserAttracting = true;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (details) => _handlePointerDown(
+                  details.localPosition,
+                  constraints.biggest,
+                ),
+                onPanUpdate: (details) => _handlePointerMove(
+                  details.delta,
+                  details.localPosition,
+                  constraints.biggest,
+                ),
+                onPanEnd: (_) => _handlePointerUp(),
+                onTapDown: (details) => _handlePointerDown(
+                  details.localPosition,
+                  constraints.biggest,
+                ),
+                child: SceneView(
+                  scene,
+                  camera: _nodeCamera,
+                  onTick: (elapsedDuration, dt) => _tick(dt),
+                ),
+              );
+            },
+          ),
+        ),
+        if (widget.scenario == _KitScenario.characterCamera) ...[
+          Positioned(
+            bottom: 24,
+            right: 24,
+            child: _VirtualJoystick(
+              onChanged: (v) {
+                _joystickInput = v;
+              },
+            ),
+          ),
+          Positioned(
+            bottom: 24,
+            right: 150,
+            child: FloatingActionButton.small(
+              backgroundColor: Colors.blueAccent.withValues(alpha: 0.8),
+              onPressed: () {
+                _characterController?.jump();
+                _shake.addTrauma(0.2);
+              },
+              child: const Icon(Icons.arrow_upward, color: Colors.white),
+            ),
+          ),
+        ],
+        if (widget.scenario == _KitScenario.debugVisuals)
+          const Positioned(top: 64, right: 16, child: PerformanceOverlay3D()),
+      ],
+    );
+  }
+
+  void _tick(double dt) {
     _elapsed += dt;
+
+    // Reactively apply setting changes without reference issues
+    if (widget.scenario == _KitScenario.waterBuoyancy) {
+      if (_cachedWaveAmplitude != widget.settings.waveAmplitude ||
+          _cachedWaveSpeed != widget.settings.waveSpeed ||
+          _cachedWaveSteepness != widget.settings.waveSteepness) {
+        _cachedWaveAmplitude = widget.settings.waveAmplitude;
+        _cachedWaveSpeed = widget.settings.waveSpeed;
+        _cachedWaveSteepness = widget.settings.waveSteepness;
+        _rebuildWater();
+      }
+    } else if (widget.scenario == _KitScenario.spawnerPooling) {
+      if (_cachedMinDistance != widget.settings.minDistance) {
+        _cachedMinDistance = widget.settings.minDistance;
+        _rebuildPoissonFoliage();
+      }
+    } else if (widget.scenario == _KitScenario.flocking) {
+      if (_cachedBoidCount != widget.settings.boidCount) {
+        _cachedBoidCount = widget.settings.boidCount;
+        _rebuildFlock();
+      }
+    }
 
     switch (widget.scenario) {
       case _KitScenario.characterCamera:
@@ -922,9 +1223,11 @@ class _KitStageState extends State<_KitStage> {
     final moveY = my != 0.0 ? my : _joystickInput.y;
     final isSprinting = _pressedKeys.contains(LogicalKeyboardKey.shiftLeft);
 
+    // Pass camera heading yaw so movement aligns with the third-person camera view
     _characterController!.setMoveInput(
       vm.Vector2(moveX, moveY),
       isRunning: isSprinting,
+      cameraHeadingYaw: widget.settings.cameraOrbitYaw,
     );
 
     if (_pressedKeys.contains(LogicalKeyboardKey.space)) {
@@ -935,6 +1238,8 @@ class _KitStageState extends State<_KitStage> {
     _characterController!.jumpVelocity = widget.settings.jumpVelocity;
 
     if (_springArm != null) {
+      _springArm!.yaw = widget.settings.cameraOrbitYaw;
+      _springArm!.pitch = widget.settings.cameraOrbitPitch;
       _springArm!.targetLength = widget.settings.armLength;
       _springArm!.enablePositionLag = widget.settings.enableLag;
       _springArm!.positionLagSpeed = widget.settings.lagSpeed;
@@ -955,14 +1260,14 @@ class _KitStageState extends State<_KitStage> {
 
   void _tickDayNight(double dt) {
     if (_dayNight == null) return;
-    _dayNight!.timeSpeed = widget.settings.timeSpeed;
-    _dayNight!.latitude = widget.settings.latitude;
-
-    if (widget.settings.timeSpeed == 0.0) {
-      _dayNight!.timeOfDay = widget.settings.timeOfDay;
-    } else {
+    if (widget.settings.isTimePlaying) {
+      _dayNight!.timeSpeed = widget.settings.timeSpeed;
       widget.settings.timeOfDay = _dayNight!.timeOfDay;
+    } else {
+      _dayNight!.timeSpeed = 0.0;
+      _dayNight!.timeOfDay = widget.settings.timeOfDay;
     }
+    _dayNight!.latitude = widget.settings.latitude;
 
     scene.update(dt);
   }
@@ -995,11 +1300,18 @@ class _KitStageState extends State<_KitStage> {
   void _tickFlocking(double dt) {
     if (_boidNodes.isEmpty) return;
 
-    final targetPos = vm.Vector3(
-      math.sin(_elapsed * 0.8) * 10.0,
-      4.5 + math.cos(_elapsed * 1.2) * 2.5,
-      math.cos(_elapsed * 0.8) * 10.0,
-    );
+    final vm.Vector3 targetPos;
+    if (_isUserAttracting && _userAttractorPos != null) {
+      targetPos = _userAttractorPos!;
+      _targetMarkerNode.position = targetPos;
+    } else {
+      targetPos = vm.Vector3(
+        math.sin(_elapsed * 0.7) * 11.0,
+        4.0 + math.cos(_elapsed * 1.1) * 2.5,
+        math.cos(_elapsed * 0.7) * 11.0,
+      );
+      _targetMarkerNode.position = targetPos;
+    }
 
     final positions = _boidNodes.map((n) => n.position).toList();
 
@@ -1007,6 +1319,7 @@ class _KitStageState extends State<_KitStage> {
       final node = _boidNodes[i];
       var vel = _boidVelocities[i];
 
+      final seekWeight = _isUserAttracting ? 2.2 : 1.0;
       final seekForce = Steering.seek(
         node.position,
         vel,
@@ -1023,7 +1336,11 @@ class _KitStageState extends State<_KitStage> {
       final aliForce = Steering.alignment(vel, _boidVelocities);
 
       final totalForce =
-          seekForce * 1.2 + sepForce * 2.8 + cohForce * 0.6 + aliForce * 0.8;
+          seekForce * seekWeight +
+          sepForce * widget.settings.separationWeight +
+          cohForce * widget.settings.cohesionWeight +
+          aliForce * widget.settings.alignmentWeight;
+
       vel = (vel + totalForce * dt);
       if (vel.length > widget.settings.maxSteerSpeed) {
         vel = vel.normalized() * widget.settings.maxSteerSpeed;
@@ -1031,7 +1348,7 @@ class _KitStageState extends State<_KitStage> {
       _boidVelocities[i] = vel;
       node.position = node.position + vel * dt;
 
-      // Orient boid forward towards velocity direction
+      // Orient boid smoothly along velocity direction
       if (vel.length2 > 0.01) {
         final forward = vel.normalized();
         final yaw = math.atan2(forward.x, forward.z);
@@ -1119,41 +1436,72 @@ class _KitStageState extends State<_KitStage> {
 
     scene.update(dt);
   }
+}
+
+class _VirtualJoystick extends StatefulWidget {
+  const _VirtualJoystick({required this.onChanged});
+
+  final ValueChanged<vm.Vector2> onChanged;
+
+  @override
+  State<_VirtualJoystick> createState() => _VirtualJoystickState();
+}
+
+class _VirtualJoystickState extends State<_VirtualJoystick> {
+  Offset _knobOffset = Offset.zero;
+  static const double _radius = 45.0;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: SceneView(scene, camera: _nodeCamera, onTick: _tick),
+    return GestureDetector(
+      onPanStart: (details) => _updateKnob(details.localPosition),
+      onPanUpdate: (details) => _updateKnob(details.localPosition),
+      onPanEnd: (_) => _resetKnob(),
+      child: Container(
+        width: _radius * 2,
+        height: _radius * 2,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withValues(alpha: 0.35),
+          border: Border.all(color: Colors.white30, width: 2),
         ),
-        if (widget.scenario == _KitScenario.characterCamera)
-          Positioned(
-            right: 24,
-            bottom: 24,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton.filled(
-                  tooltip: 'Trigger Impact Camera Shake',
-                  icon: const Icon(Icons.vibration),
-                  onPressed: () => _shake.addTrauma(0.75),
-                ),
-                const SizedBox(width: 16),
-                VirtualJoystick(
-                  onChanged: (dir) {
-                    setState(() {
-                      // Joystick emits up as -Y in screen space; invert for 3D forward (+Y)
-                      _joystickInput = vm.Vector2(dir.x, -dir.y);
-                    });
-                  },
-                ),
-              ],
+        child: Center(
+          child: Transform.translate(
+            offset: _knobOffset,
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.8),
+              ),
             ),
           ),
-        if (widget.scenario == _KitScenario.debugVisuals)
-          const Positioned(top: 64, right: 16, child: PerformanceOverlay3D()),
-      ],
+        ),
+      ),
     );
+  }
+
+  void _updateKnob(Offset localPosition) {
+    final center = const Offset(_radius, _radius);
+    final delta = localPosition - center;
+    final dist = delta.distance;
+
+    final clampedDelta = dist > _radius ? (delta / dist) * _radius : delta;
+
+    setState(() {
+      _knobOffset = clampedDelta;
+    });
+
+    widget.onChanged(
+      vm.Vector2(clampedDelta.dx / _radius, -clampedDelta.dy / _radius),
+    );
+  }
+
+  void _resetKnob() {
+    setState(() {
+      _knobOffset = Offset.zero;
+    });
+    widget.onChanged(vm.Vector2.zero());
   }
 }

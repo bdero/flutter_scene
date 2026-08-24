@@ -135,5 +135,24 @@ void main() {
       expect(controller.isGrounded, isTrue);
       expect(player.position.y, closeTo(-2.0, 0.05));
     });
+
+    test('rotates movement direction by cameraHeadingYaw', () {
+      final player = Node()..position = vm.Vector3.zero();
+      final controller = ThirdPersonControllerComponent(
+        walkSpeed: 5.0,
+        groundPlaneHeight: 0.0,
+      );
+      player.addComponent(controller);
+
+      // Forward input (+Y) with 90 degree camera heading yaw should steer along +X
+      controller.setMoveInput(
+        vm.Vector2(0, 1),
+        cameraHeadingYaw: 3.141592653589793 / 2,
+      );
+      controller.fixedUpdate(0.1);
+
+      expect(controller.velocity.x, greaterThan(0.5));
+      expect(controller.velocity.z, closeTo(0.0, 0.1));
+    });
   });
 }

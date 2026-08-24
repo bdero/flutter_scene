@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter_scene/kit.dart';
 import 'package:flutter_scene/scene.dart';
@@ -119,6 +120,32 @@ void main() {
       arm.update(0.1);
 
       expect(arm.currentLength, closeTo(5.0, 0.01));
+    });
+
+    test('supports independent yaw and pitch boom rotation', () {
+      final characterNode = Node()..position = vm.Vector3(5, 0, 5);
+      // Turn character by 90 degrees
+      characterNode.rotation = vm.Quaternion.axisAngle(
+        vm.Vector3(0, 1, 0),
+        math.pi / 2,
+      );
+
+      final arm = SpringArmComponent(
+        targetLength: 4.0,
+        inheritYaw: false,
+        inheritPitch: false,
+        yaw: 0.0,
+        pitch: 0.0,
+      );
+      characterNode.addComponent(arm);
+
+      arm.update(0.1);
+
+      final socketPos = (arm.socketTransform * vm.Vector4(0, 0, 0, 1)).xyz;
+      // Socket should be offset by +Z (behind character in world space), not +X
+      expect(socketPos.x, closeTo(5.0, 0.01));
+      expect(socketPos.y, closeTo(1.5, 0.01));
+      expect(socketPos.z, closeTo(9.0, 0.01));
     });
   });
 }

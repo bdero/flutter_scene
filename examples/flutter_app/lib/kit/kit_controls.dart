@@ -74,25 +74,30 @@ class KitDemoSettings {
   // Character & Camera
   double walkSpeed = 5.0;
   double jumpVelocity = 7.0;
-  double armLength = 5.0;
+  double armLength = 5.5;
   double lagSpeed = 8.0;
   bool enableLag = true;
+  double cameraOrbitYaw = 0.0;
+  double cameraOrbitPitch = -0.32;
 
   // Day & Night
   double timeOfDay = 14.0;
   double timeSpeed = 0.5;
   double latitude = 34.0;
-  bool isTimePlaying = true;
+  bool isTimePlaying = false;
 
   // Water & Buoyancy
-  double waveAmplitude = 0.4;
-  double waveSpeed = 1.4;
-  double waveSteepness = 0.8;
+  double waveAmplitude = 0.8;
+  double waveSpeed = 1.5;
+  double waveSteepness = 0.7;
 
   // Flocking
-  double boidCount = 24;
-  double separationDistance = 1.5;
-  double maxSteerSpeed = 6.0;
+  double boidCount = 32.0;
+  double separationDistance = 1.6;
+  double maxSteerSpeed = 7.0;
+  double separationWeight = 2.5;
+  double cohesionWeight = 0.8;
+  double alignmentWeight = 1.0;
 
   // Spawner & Pooling
   double minDistance = 3.5;
