@@ -5,8 +5,8 @@
 /// The manifest chunk is the exact canonical JSON a bare `.fscene` text file
 /// would carry (so the two forms share one codec); the payload chunks hold the
 /// heavy binary the JSON references by id (vertex/index buffers, images,
-/// matrices). Chunks are uncompressed and chunk-aligned so the container stays
-/// cheap to read.
+/// matrices). Payload chunks use gzip when it reduces their size and every
+/// chunk stays aligned for cheap reads.
 ///
 /// Layout (all integers little-endian):
 ///
@@ -18,33 +18,48 @@
 ///   [12..16) reserved        uint32 (0)
 /// Chunks (repeat until totalByteLength), each 8-byte aligned:
 ///   [0..4)   dataByteLength  uint32 (unpadded)
-///   [4..8)   chunkType       4 ASCII bytes ("JSON" or "BLOB")
+///   [4..8)   chunkType       4 ASCII bytes ("JSON", "BLOB", or "GZBL")
 ///   [8..)    data            dataByteLength bytes
 ///   padding  zero bytes to the next 8-byte boundary
 /// ```
 ///
 /// The first chunk is the sole "JSON" chunk (UTF-8 document text). Each "BLOB"
 /// chunk carries one payload, its data being `[uint32 idByteLength][id token
-/// UTF-8][payload bytes]`. An unrecognized chunk type is skipped, so the format
-/// can grow new chunk kinds without breaking older readers.
+/// UTF-8][payload bytes]`. A "GZBL" chunk is the same data compressed with
+/// gzip. An unrecognized chunk type is skipped, so the format can grow new
+/// chunk kinds without breaking older readers.
 library;
 
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:scene/src/id.dart';
 import 'package:scene/src/json/fscene_json.dart';
 import 'package:scene/src/scene_document.dart';
+import 'package:scene/src/specs.dart';
 
 /// The current `.fsceneb` container version this build reads and writes.
 /// {@category Serialization}
-const int kFscenebVersion = 1;
+const int kFscenebVersion = 2;
 
 const List<int> _magic = [0x46, 0x53, 0x43, 0x42]; // "FSCB"
 const String _chunkJson = 'JSON';
 const String _chunkBlob = 'BLOB';
+const String _chunkGzipBlob = 'GZBL';
 const int _headerByteLength = 16;
 const int _alignment = 8;
+
+bool _isPrecompressedImage(PayloadSpec spec) {
+  if (spec.encoding != PayloadEncoding.image) return false;
+  final format = spec.format?.toLowerCase();
+  return format == 'png' ||
+      format == 'basis' ||
+      format == 'ktx2' ||
+      format == 'jpeg' ||
+      format == 'jpg' ||
+      format == 'webp';
+}
 
 /// Thrown when a `.fsceneb` container is malformed.
 /// {@category Serialization}
@@ -89,13 +104,32 @@ Uint8List writeFsceneb(SceneDocument document) {
   final payloads = document.payloads.entries.toList()
     ..sort((a, b) => a.key.toToken().compareTo(b.key.toToken()));
   for (final entry in payloads) {
-    final bytes = entry.value.bytes;
+    final spec = entry.value;
+    final bytes = spec.bytes;
     if (bytes == null) {
       throw FscenebFormatException(
         'Payload ${entry.key.toToken()} has no bytes to embed',
       );
     }
-    addChunk(_chunkBlob, _encodeBlob(entry.key, bytes));
+    final blob = _encodeBlob(entry.key, bytes);
+    if (!_isPrecompressedImage(spec)) {
+      final compressed = const GZipEncoder().encodeBytes(blob, level: 6);
+      // Zero out the 32-bit timestamp at bytes 4..7 in the gzip header (RFC 1952)
+      // so encoding is deterministic on platforms where the encoder stamps DateTime.now().
+      if (compressed.length >= 10 &&
+          compressed[0] == 0x1f &&
+          compressed[1] == 0x8b) {
+        compressed[4] = 0;
+        compressed[5] = 0;
+        compressed[6] = 0;
+        compressed[7] = 0;
+      }
+      if (compressed.length < blob.length) {
+        addChunk(_chunkGzipBlob, compressed);
+        continue;
+      }
+    }
+    addChunk(_chunkBlob, blob);
   }
 
   final bodyBytes = body.toBytes();
@@ -162,6 +196,14 @@ SceneDocument readFsceneb(Uint8List bytes) {
       case _chunkBlob:
         final (id, payload) = _decodeBlob(data);
         blobs[id] = payload;
+      case _chunkGzipBlob:
+        try {
+          final decompressed = const GZipDecoder().decodeBytes(data);
+          final (id, payload) = _decodeBlob(decompressed);
+          blobs[id] = payload;
+        } catch (error) {
+          throw FscenebFormatException('Invalid gzip payload chunk ($error)');
+        }
       default:
         break; // Skip unrecognized chunk types.
     }

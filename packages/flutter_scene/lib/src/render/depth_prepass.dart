@@ -54,6 +54,7 @@ class DepthPrepass extends RenderGraphPass {
     Vector3? cameraRight,
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
+    Matrix4? cameraTransform,
   }) : _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -64,7 +65,10 @@ class DepthPrepass extends RenderGraphPass {
        _writeNormals = writeNormals,
        _keepDepthStencil = keepDepthStencil,
        _cameraRight = cameraRight ?? Vector3.zero(),
-       _cameraUp = cameraUp ?? Vector3.zero();
+       _cameraUp = cameraUp ?? Vector3.zero(),
+       _cameraTransform = cameraTransform;
+
+  final Matrix4? _cameraTransform;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -151,7 +155,7 @@ class DepthPrepass extends RenderGraphPass {
     final encoder = _DepthPrepassEncoder(
       renderPass,
       context.transientsBuffer,
-      _camera.getViewTransform(_dimensions),
+      _cameraTransform ?? _camera.getViewTransform(_dimensions),
       _camera.position,
       _cameraForward,
       _layerMask,
@@ -314,7 +318,7 @@ class _DepthPrepassEncoder {
     // Winding and culling are matched to each material per draw in [submit]
     // (winding follows the node/instance parity, culling follows the material's
     // own mode), so the same faces the color pass draws contribute depth.
-    _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+    _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
     // The camera axes are constant across the pass. Pack them once and
     // rebind per draw (clearBindings drops the binding between draws). The
     // normal-writing path also needs the right/up axes to rotate the world
@@ -598,8 +602,8 @@ class _DepthPrepassEncoder {
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
             flip
-                ? gpu.WindingOrder.clockwise
-                : gpu.WindingOrder.counterClockwise,
+                ? gpu.WindingOrder.counterClockwise
+                : gpu.WindingOrder.clockwise,
           );
           geometry.draw(_renderPass);
         }
@@ -676,8 +680,8 @@ class _DepthPrepassEncoder {
     }
     _renderPass.setWindingOrder(
       item.windingFlipped
-          ? gpu.WindingOrder.clockwise
-          : gpu.WindingOrder.counterClockwise,
+          ? gpu.WindingOrder.counterClockwise
+          : gpu.WindingOrder.clockwise,
     );
     geometry.draw(_renderPass);
   }
@@ -696,7 +700,7 @@ class _DepthPrepassEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
       geometry.draw(_renderPass, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
@@ -705,7 +709,7 @@ class _DepthPrepassEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       geometry.draw(_renderPass, instanceCount: packed.cwCount);
     }
   }

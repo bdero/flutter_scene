@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/environment_volume_component.dart';
+import 'package:flutter_scene/src/components/irradiance_volume_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/rect_area_light_component.dart';
 import 'package:flutter_scene/src/components/planar_reflector_component.dart';
@@ -109,6 +110,7 @@ class RenderItem {
   /// own skeleton; every render pass applies it via [applyJointsTexture]
   /// just before binding a draw.
   gpu.Texture? jointsTexture;
+  gpu.Texture? previousJointsTexture;
   int jointsTextureWidth = 0;
 
   /// Applies this item's joints texture to [drawnGeometry] (which differs
@@ -138,6 +140,12 @@ class RenderItem {
 
   /// World-space transform, refreshed each frame from the owning node.
   final Matrix4 worldTransform = Matrix4.identity();
+
+  /// The previous frame's world-space transform, for motion vector rendering.
+  final Matrix4 previousWorldTransform = Matrix4.identity();
+
+  /// Whether this item moved, deformed, or changed instances this frame.
+  bool isMoving = false;
 
   /// Start index of this item's punctual-light list in the shared per-frame
   /// light-index buffer, and how many lights follow. Refreshed each frame by
@@ -572,6 +580,22 @@ class RenderScene {
   /// Unregisters [volume]. Called when its owning node unmounts.
   void removeEnvironmentVolumeComponent(EnvironmentVolumeComponent volume) {
     environmentVolumeComponents.remove(volume);
+  }
+
+  /// The irradiance volumes contributed by mounted
+  /// [IrradianceVolumeComponent]s, in registration order. At most one is
+  /// active per frame, chosen by priority among those containing the camera.
+  final List<IrradianceVolumeComponent> irradianceVolumeComponents = [];
+
+  /// Registers [volume] as an active irradiance volume. Called by an
+  /// [IrradianceVolumeComponent] when its owning node mounts.
+  void addIrradianceVolumeComponent(IrradianceVolumeComponent volume) {
+    irradianceVolumeComponents.add(volume);
+  }
+
+  /// Unregisters [volume]. Called when its owning node unmounts.
+  void removeIrradianceVolumeComponent(IrradianceVolumeComponent volume) {
+    irradianceVolumeComponents.remove(volume);
   }
 
   /// The reflection probes contributed by mounted

@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/ambient_occlusion.dart';
 import 'package:flutter_scene/src/depth_of_field.dart';
 import 'package:flutter_scene/src/fog.dart';
+import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/post_process/color_lut.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -113,6 +114,22 @@ class EnvironmentSettings {
     this.screenSpaceReflectionsBlur = 0.3,
     this.screenSpaceReflectionsDistanceFadeStart = 0.0,
     this.screenSpaceReflectionsResolutionScale = 1.0,
+    this.globalIlluminationEnabled = false,
+    this.globalIlluminationVolumeMode = IrradianceVolumeMode.followCamera,
+    Vector3? globalIlluminationResolution,
+    Vector3? globalIlluminationExtents,
+    this.globalIlluminationIntensity = 1.0,
+    this.globalIlluminationHysteresis = 0.95,
+    this.globalIlluminationShadowBias = 0.3,
+    this.globalIlluminationVisibility = 0.7,
+    this.globalIlluminationVisibilityBias = 0.08,
+    this.globalIlluminationProbeUpdateBudget = 0,
+    this.globalIlluminationInjectionResolution =
+        IrradianceInjectionResolution.eighth,
+    this.globalIlluminationFireflyClamp = 8.0,
+    this.globalIlluminationEmissiveBoost = 1.0,
+    this.globalIlluminationUpdateWhenIdleOnly = false,
+    this.globalIlluminationBakeOnly = false,
     this.fogEnabled = false,
     this.fogMode = FogMode.exponential,
     Vector3? fogColor,
@@ -157,6 +174,10 @@ class EnvironmentSettings {
        lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),
        gain = gain ?? Vector3.all(1.0),
+       globalIlluminationResolution =
+           globalIlluminationResolution ?? Vector3(16, 8, 16),
+       globalIlluminationExtents =
+           globalIlluminationExtents ?? Vector3(20, 10, 20),
        fogColor = fogColor ?? Vector3(0.6, 0.7, 0.8),
        godRaysColor = godRaysColor ?? Vector3.all(1.0);
 
@@ -248,6 +269,23 @@ class EnvironmentSettings {
   double screenSpaceReflectionsDistanceFadeStart;
   double screenSpaceReflectionsResolutionScale;
 
+  // World-space global illumination.
+  bool globalIlluminationEnabled;
+  IrradianceVolumeMode globalIlluminationVolumeMode;
+  Vector3 globalIlluminationResolution;
+  Vector3 globalIlluminationExtents;
+  double globalIlluminationIntensity;
+  double globalIlluminationHysteresis;
+  double globalIlluminationShadowBias;
+  double globalIlluminationVisibility;
+  double globalIlluminationVisibilityBias;
+  int globalIlluminationProbeUpdateBudget;
+  IrradianceInjectionResolution globalIlluminationInjectionResolution;
+  double globalIlluminationFireflyClamp;
+  double globalIlluminationEmissiveBoost;
+  bool globalIlluminationUpdateWhenIdleOnly;
+  bool globalIlluminationBakeOnly;
+
   // Fog.
   bool fogEnabled;
   FogMode fogMode;
@@ -306,6 +344,7 @@ class EnvironmentSettings {
     final grain = scene.postProcess.filmGrain;
     final ao = scene.ambientOcclusion;
     final ssr = scene.screenSpaceReflections;
+    final gi = scene.globalIllumination;
     final fog = scene.fog;
     final rays = scene.godRays;
     final dof = scene.depthOfField;
@@ -381,6 +420,21 @@ class EnvironmentSettings {
       screenSpaceReflectionsBlur: ssr.blur,
       screenSpaceReflectionsDistanceFadeStart: ssr.distanceFadeStart,
       screenSpaceReflectionsResolutionScale: ssr.resolutionScale,
+      globalIlluminationEnabled: gi.enabled,
+      globalIlluminationVolumeMode: gi.volumeMode,
+      globalIlluminationResolution: gi.resolution.clone(),
+      globalIlluminationExtents: gi.extents.clone(),
+      globalIlluminationIntensity: gi.intensity,
+      globalIlluminationHysteresis: gi.hysteresis,
+      globalIlluminationShadowBias: gi.shadowBias,
+      globalIlluminationVisibility: gi.visibility,
+      globalIlluminationVisibilityBias: gi.visibilityBias,
+      globalIlluminationProbeUpdateBudget: gi.probeUpdateBudget,
+      globalIlluminationInjectionResolution: gi.injectionResolution,
+      globalIlluminationFireflyClamp: gi.fireflyClamp,
+      globalIlluminationEmissiveBoost: gi.emissiveGiBoost,
+      globalIlluminationUpdateWhenIdleOnly: gi.updateWhenIdleOnly,
+      globalIlluminationBakeOnly: gi.bakeOnly,
       fogEnabled: fog.enabled,
       fogMode: fog.mode,
       fogColor: fog.color.clone(),
@@ -525,6 +579,23 @@ class EnvironmentSettings {
       ..blur = screenSpaceReflectionsBlur
       ..distanceFadeStart = screenSpaceReflectionsDistanceFadeStart
       ..resolutionScale = screenSpaceReflectionsResolutionScale;
+
+    scene.globalIllumination
+      ..enabled = globalIlluminationEnabled
+      ..volumeMode = globalIlluminationVolumeMode
+      ..resolution = globalIlluminationResolution.clone()
+      ..extents = globalIlluminationExtents.clone()
+      ..intensity = globalIlluminationIntensity
+      ..hysteresis = globalIlluminationHysteresis
+      ..shadowBias = globalIlluminationShadowBias
+      ..visibility = globalIlluminationVisibility
+      ..visibilityBias = globalIlluminationVisibilityBias
+      ..probeUpdateBudget = globalIlluminationProbeUpdateBudget
+      ..injectionResolution = globalIlluminationInjectionResolution
+      ..fireflyClamp = globalIlluminationFireflyClamp
+      ..emissiveGiBoost = globalIlluminationEmissiveBoost
+      ..updateWhenIdleOnly = globalIlluminationUpdateWhenIdleOnly
+      ..bakeOnly = globalIlluminationBakeOnly;
 
     scene.fog
       ..enabled = fogEnabled
@@ -755,6 +826,32 @@ class EnvironmentSettings {
         b.screenSpaceReflectionsResolutionScale,
         t,
       ),
+      globalIlluminationEnabled: d.globalIlluminationEnabled,
+      globalIlluminationVolumeMode: d.globalIlluminationVolumeMode,
+      globalIlluminationResolution: d.globalIlluminationResolution.clone(),
+      globalIlluminationExtents: d.globalIlluminationExtents.clone(),
+      globalIlluminationIntensity: _lerp(
+        a.globalIlluminationIntensity,
+        b.globalIlluminationIntensity,
+        t,
+      ),
+      globalIlluminationHysteresis: d.globalIlluminationHysteresis,
+      globalIlluminationShadowBias: d.globalIlluminationShadowBias,
+      globalIlluminationVisibility: _lerp(
+        a.globalIlluminationVisibility,
+        b.globalIlluminationVisibility,
+        t,
+      ),
+      globalIlluminationVisibilityBias: d.globalIlluminationVisibilityBias,
+      globalIlluminationProbeUpdateBudget:
+          d.globalIlluminationProbeUpdateBudget,
+      globalIlluminationInjectionResolution:
+          d.globalIlluminationInjectionResolution,
+      globalIlluminationFireflyClamp: d.globalIlluminationFireflyClamp,
+      globalIlluminationEmissiveBoost: d.globalIlluminationEmissiveBoost,
+      globalIlluminationUpdateWhenIdleOnly:
+          d.globalIlluminationUpdateWhenIdleOnly,
+      globalIlluminationBakeOnly: d.globalIlluminationBakeOnly,
       fogEnabled: d.fogEnabled,
       fogMode: d.fogMode,
       fogColor: _lerpVec3(a.fogColor, b.fogColor, t),

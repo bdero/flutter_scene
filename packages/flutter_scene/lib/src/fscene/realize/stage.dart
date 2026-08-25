@@ -25,6 +25,7 @@ import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/fmat_overrides.dart';
 import 'package:flutter_scene/src/environment_settings.dart';
 import 'package:flutter_scene/src/fog.dart';
+import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
@@ -343,6 +344,32 @@ void _applyEffectSpec(
         effects.screenSpaceReflectionsDistanceFadeStart
     ..screenSpaceReflectionsResolutionScale =
         effects.screenSpaceReflectionsResolutionScale
+    ..globalIlluminationEnabled = effects.globalIlluminationEnabled
+    ..globalIlluminationVolumeMode = _byName(
+      IrradianceVolumeMode.values,
+      effects.globalIlluminationVolumeMode,
+      IrradianceVolumeMode.followCamera,
+    )
+    ..globalIlluminationResolution.setFrom(effects.globalIlluminationResolution)
+    ..globalIlluminationExtents.setFrom(effects.globalIlluminationExtents)
+    ..globalIlluminationIntensity = effects.globalIlluminationIntensity
+    ..globalIlluminationHysteresis = effects.globalIlluminationHysteresis
+    ..globalIlluminationShadowBias = effects.globalIlluminationShadowBias
+    ..globalIlluminationVisibility = effects.globalIlluminationVisibility
+    ..globalIlluminationVisibilityBias =
+        effects.globalIlluminationVisibilityBias
+    ..globalIlluminationProbeUpdateBudget =
+        effects.globalIlluminationProbeUpdateBudget
+    ..globalIlluminationInjectionResolution = _byName(
+      IrradianceInjectionResolution.values,
+      effects.globalIlluminationInjectionResolution,
+      IrradianceInjectionResolution.eighth,
+    )
+    ..globalIlluminationFireflyClamp = effects.globalIlluminationFireflyClamp
+    ..globalIlluminationEmissiveBoost = effects.globalIlluminationEmissiveBoost
+    ..globalIlluminationUpdateWhenIdleOnly =
+        effects.globalIlluminationUpdateWhenIdleOnly
+    ..globalIlluminationBakeOnly = effects.globalIlluminationBakeOnly
     ..fogEnabled = effects.fogEnabled
     ..fogMode = _byName(FogMode.values, effects.fogMode, FogMode.exponential)
     ..fogColor.setFrom(effects.fogColor)
@@ -649,115 +676,132 @@ void serializeStage(Scene scene, SceneDocument document) {
   }
 }
 
-EnvironmentEffectsSpec _effectSpecFromSettings(EnvironmentSettings s) =>
-    EnvironmentEffectsSpec(
-      colorGradingEnabled: s.colorGradingEnabled,
-      brightness: s.brightness,
-      contrast: s.contrast,
-      saturation: s.saturation,
-      temperature: s.temperature,
-      tint: s.tint,
-      lift: s.lift.clone(),
-      gamma: s.gamma.clone(),
-      gain: s.gain.clone(),
-      // A LUT built from a string has no asset to reference; the look stays
-      // live but does not persist.
-      colorGradingLut: s.colorGradingLut?.sourceAsset == null
-          ? null
-          : AssetRef(s.colorGradingLut!.sourceAsset!),
-      colorGradingLutBlend: s.colorGradingLutBlend,
-      bloomEnabled: s.bloomEnabled,
-      bloomThreshold: s.bloomThreshold,
-      bloomIntensity: s.bloomIntensity,
-      bloomScatter: s.bloomScatter,
-      lensFlareEnabled: s.lensFlareEnabled,
-      lensFlareIntensity: s.lensFlareIntensity,
-      lensFlareGhostCount: s.lensFlareGhostCount,
-      lensFlareGhostSpacing: s.lensFlareGhostSpacing,
-      lensFlareHaloRadius: s.lensFlareHaloRadius,
-      lensFlareHaloIntensity: s.lensFlareHaloIntensity,
-      lensFlareChromaticAberration: s.lensFlareChromaticAberration,
-      vignetteEnabled: s.vignetteEnabled,
-      vignetteIntensity: s.vignetteIntensity,
-      vignetteRadius: s.vignetteRadius,
-      vignetteSmoothness: s.vignetteSmoothness,
-      chromaticAberrationEnabled: s.chromaticAberrationEnabled,
-      chromaticAberrationIntensity: s.chromaticAberrationIntensity,
-      filmGrainEnabled: s.filmGrainEnabled,
-      filmGrainIntensity: s.filmGrainIntensity,
-      ambientOcclusionEnabled: s.ambientOcclusionEnabled,
-      ambientOcclusionMethod: s.ambientOcclusionMethod.name,
-      ambientOcclusionRadius: s.ambientOcclusionRadius,
-      ambientOcclusionIntensity: s.ambientOcclusionIntensity,
-      ambientOcclusionBias: s.ambientOcclusionBias,
-      ambientOcclusionPower: s.ambientOcclusionPower,
-      ambientOcclusionDetail: s.ambientOcclusionDetail,
-      ambientOcclusionHorizonAngle: s.ambientOcclusionHorizonAngle,
-      ambientOcclusionDirectLightAffect: s.ambientOcclusionDirectLightAffect,
-      ambientOcclusionMultiBounce: s.ambientOcclusionMultiBounce,
-      ambientOcclusionSampleCount: s.ambientOcclusionSampleCount,
-      ambientOcclusionSliceCount: s.ambientOcclusionSliceCount,
-      ambientOcclusionStepsPerSlice: s.ambientOcclusionStepsPerSlice,
-      ambientOcclusionVisibilityBitmask: s.ambientOcclusionVisibilityBitmask,
-      ambientOcclusionThickness: s.ambientOcclusionThickness,
-      ambientOcclusionThicknessHeuristic: s.ambientOcclusionThicknessHeuristic,
-      ambientOcclusionBentNormals: s.ambientOcclusionBentNormals,
-      ambientOcclusionIndirectLight: s.ambientOcclusionIndirectLight,
-      ambientOcclusionHalfResolution: s.ambientOcclusionHalfResolution,
-      ambientOcclusionDepthMipChain: s.ambientOcclusionDepthMipChain,
-      ambientOcclusionSpecularMode: s.ambientOcclusionSpecularMode.name,
-      screenSpaceReflectionsEnabled: s.screenSpaceReflectionsEnabled,
-      screenSpaceReflectionsIntensity: s.screenSpaceReflectionsIntensity,
-      screenSpaceReflectionsMaxDistance: s.screenSpaceReflectionsMaxDistance,
-      screenSpaceReflectionsThickness: s.screenSpaceReflectionsThickness,
-      screenSpaceReflectionsStride: s.screenSpaceReflectionsStride,
-      screenSpaceReflectionsMaxSteps: s.screenSpaceReflectionsMaxSteps,
-      screenSpaceReflectionsBlur: s.screenSpaceReflectionsBlur,
-      screenSpaceReflectionsDistanceFadeStart:
-          s.screenSpaceReflectionsDistanceFadeStart,
-      screenSpaceReflectionsResolutionScale:
-          s.screenSpaceReflectionsResolutionScale,
-      fogEnabled: s.fogEnabled,
-      fogMode: s.fogMode.name,
-      fogColor: s.fogColor.clone(),
-      fogSkyColorInfluence: s.fogSkyColorInfluence,
-      fogDensity: s.fogDensity,
-      fogStart: s.fogStart,
-      fogEnd: s.fogEnd,
-      fogMaxOpacity: s.fogMaxOpacity,
-      fogCutoffDistance: s.fogCutoffDistance,
-      fogHeight: s.fogHeight,
-      fogHeightFalloff: s.fogHeightFalloff,
-      fogSunInScatter: s.fogSunInScatter,
-      fogSunInScatterExponent: s.fogSunInScatterExponent,
-      godRaysEnabled: s.godRaysEnabled,
-      godRaysIntensity: s.godRaysIntensity,
-      godRaysDensity: s.godRaysDensity,
-      godRaysAnisotropy: s.godRaysAnisotropy,
-      godRaysStepCount: s.godRaysStepCount,
-      godRaysMaxDistance: s.godRaysMaxDistance,
-      godRaysJitter: s.godRaysJitter,
-      godRaysColor: s.godRaysColor.clone(),
-      depthOfFieldEnabled: s.depthOfFieldEnabled,
-      depthOfFieldFocusDistance: s.depthOfFieldFocusDistance,
-      depthOfFieldFStop: s.depthOfFieldFStop,
-      depthOfFieldFocalLength: s.depthOfFieldFocalLength,
-      depthOfFieldSensorHeight: s.depthOfFieldSensorHeight,
-      depthOfFieldBlurScale: s.depthOfFieldBlurScale,
-      depthOfFieldMaxForegroundBlur: s.depthOfFieldMaxForegroundBlur,
-      depthOfFieldMaxBackgroundBlur: s.depthOfFieldMaxBackgroundBlur,
-      depthOfFieldBladeCount: s.depthOfFieldBladeCount,
-      depthOfFieldBladeRotation: s.depthOfFieldBladeRotation,
-      depthOfFieldBladeCurvature: s.depthOfFieldBladeCurvature,
-      depthOfFieldQuality: s.depthOfFieldQuality.name,
-      autoExposureEnabled: s.autoExposureEnabled,
-      autoExposureStrength: s.autoExposureStrength,
-      autoExposureCompensation: s.autoExposureCompensation,
-      autoExposureMinEv: s.autoExposureMinEv,
-      autoExposureMaxEv: s.autoExposureMaxEv,
-      autoExposureSpeedUp: s.autoExposureSpeedUp,
-      autoExposureSpeedDown: s.autoExposureSpeedDown,
-    );
+EnvironmentEffectsSpec _effectSpecFromSettings(
+  EnvironmentSettings s,
+) => EnvironmentEffectsSpec(
+  colorGradingEnabled: s.colorGradingEnabled,
+  brightness: s.brightness,
+  contrast: s.contrast,
+  saturation: s.saturation,
+  temperature: s.temperature,
+  tint: s.tint,
+  lift: s.lift.clone(),
+  gamma: s.gamma.clone(),
+  gain: s.gain.clone(),
+  // A LUT built from a string has no asset to reference; the look stays
+  // live but does not persist.
+  colorGradingLut: s.colorGradingLut?.sourceAsset == null
+      ? null
+      : AssetRef(s.colorGradingLut!.sourceAsset!),
+  colorGradingLutBlend: s.colorGradingLutBlend,
+  bloomEnabled: s.bloomEnabled,
+  bloomThreshold: s.bloomThreshold,
+  bloomIntensity: s.bloomIntensity,
+  bloomScatter: s.bloomScatter,
+  lensFlareEnabled: s.lensFlareEnabled,
+  lensFlareIntensity: s.lensFlareIntensity,
+  lensFlareGhostCount: s.lensFlareGhostCount,
+  lensFlareGhostSpacing: s.lensFlareGhostSpacing,
+  lensFlareHaloRadius: s.lensFlareHaloRadius,
+  lensFlareHaloIntensity: s.lensFlareHaloIntensity,
+  lensFlareChromaticAberration: s.lensFlareChromaticAberration,
+  vignetteEnabled: s.vignetteEnabled,
+  vignetteIntensity: s.vignetteIntensity,
+  vignetteRadius: s.vignetteRadius,
+  vignetteSmoothness: s.vignetteSmoothness,
+  chromaticAberrationEnabled: s.chromaticAberrationEnabled,
+  chromaticAberrationIntensity: s.chromaticAberrationIntensity,
+  filmGrainEnabled: s.filmGrainEnabled,
+  filmGrainIntensity: s.filmGrainIntensity,
+  ambientOcclusionEnabled: s.ambientOcclusionEnabled,
+  ambientOcclusionMethod: s.ambientOcclusionMethod.name,
+  ambientOcclusionRadius: s.ambientOcclusionRadius,
+  ambientOcclusionIntensity: s.ambientOcclusionIntensity,
+  ambientOcclusionBias: s.ambientOcclusionBias,
+  ambientOcclusionPower: s.ambientOcclusionPower,
+  ambientOcclusionDetail: s.ambientOcclusionDetail,
+  ambientOcclusionHorizonAngle: s.ambientOcclusionHorizonAngle,
+  ambientOcclusionDirectLightAffect: s.ambientOcclusionDirectLightAffect,
+  ambientOcclusionMultiBounce: s.ambientOcclusionMultiBounce,
+  ambientOcclusionSampleCount: s.ambientOcclusionSampleCount,
+  ambientOcclusionSliceCount: s.ambientOcclusionSliceCount,
+  ambientOcclusionStepsPerSlice: s.ambientOcclusionStepsPerSlice,
+  ambientOcclusionVisibilityBitmask: s.ambientOcclusionVisibilityBitmask,
+  ambientOcclusionThickness: s.ambientOcclusionThickness,
+  ambientOcclusionThicknessHeuristic: s.ambientOcclusionThicknessHeuristic,
+  ambientOcclusionBentNormals: s.ambientOcclusionBentNormals,
+  ambientOcclusionIndirectLight: s.ambientOcclusionIndirectLight,
+  ambientOcclusionHalfResolution: s.ambientOcclusionHalfResolution,
+  ambientOcclusionDepthMipChain: s.ambientOcclusionDepthMipChain,
+  ambientOcclusionSpecularMode: s.ambientOcclusionSpecularMode.name,
+  screenSpaceReflectionsEnabled: s.screenSpaceReflectionsEnabled,
+  screenSpaceReflectionsIntensity: s.screenSpaceReflectionsIntensity,
+  screenSpaceReflectionsMaxDistance: s.screenSpaceReflectionsMaxDistance,
+  screenSpaceReflectionsThickness: s.screenSpaceReflectionsThickness,
+  screenSpaceReflectionsStride: s.screenSpaceReflectionsStride,
+  screenSpaceReflectionsMaxSteps: s.screenSpaceReflectionsMaxSteps,
+  screenSpaceReflectionsBlur: s.screenSpaceReflectionsBlur,
+  screenSpaceReflectionsDistanceFadeStart:
+      s.screenSpaceReflectionsDistanceFadeStart,
+  screenSpaceReflectionsResolutionScale:
+      s.screenSpaceReflectionsResolutionScale,
+  globalIlluminationEnabled: s.globalIlluminationEnabled,
+  globalIlluminationVolumeMode: s.globalIlluminationVolumeMode.name,
+  globalIlluminationResolution: s.globalIlluminationResolution.clone(),
+  globalIlluminationExtents: s.globalIlluminationExtents.clone(),
+  globalIlluminationIntensity: s.globalIlluminationIntensity,
+  globalIlluminationHysteresis: s.globalIlluminationHysteresis,
+  globalIlluminationShadowBias: s.globalIlluminationShadowBias,
+  globalIlluminationVisibility: s.globalIlluminationVisibility,
+  globalIlluminationVisibilityBias: s.globalIlluminationVisibilityBias,
+  globalIlluminationProbeUpdateBudget: s.globalIlluminationProbeUpdateBudget,
+  globalIlluminationInjectionResolution:
+      s.globalIlluminationInjectionResolution.name,
+  globalIlluminationFireflyClamp: s.globalIlluminationFireflyClamp,
+  globalIlluminationEmissiveBoost: s.globalIlluminationEmissiveBoost,
+  globalIlluminationUpdateWhenIdleOnly: s.globalIlluminationUpdateWhenIdleOnly,
+  globalIlluminationBakeOnly: s.globalIlluminationBakeOnly,
+  fogEnabled: s.fogEnabled,
+  fogMode: s.fogMode.name,
+  fogColor: s.fogColor.clone(),
+  fogSkyColorInfluence: s.fogSkyColorInfluence,
+  fogDensity: s.fogDensity,
+  fogStart: s.fogStart,
+  fogEnd: s.fogEnd,
+  fogMaxOpacity: s.fogMaxOpacity,
+  fogCutoffDistance: s.fogCutoffDistance,
+  fogHeight: s.fogHeight,
+  fogHeightFalloff: s.fogHeightFalloff,
+  fogSunInScatter: s.fogSunInScatter,
+  fogSunInScatterExponent: s.fogSunInScatterExponent,
+  godRaysEnabled: s.godRaysEnabled,
+  godRaysIntensity: s.godRaysIntensity,
+  godRaysDensity: s.godRaysDensity,
+  godRaysAnisotropy: s.godRaysAnisotropy,
+  godRaysStepCount: s.godRaysStepCount,
+  godRaysMaxDistance: s.godRaysMaxDistance,
+  godRaysJitter: s.godRaysJitter,
+  godRaysColor: s.godRaysColor.clone(),
+  depthOfFieldEnabled: s.depthOfFieldEnabled,
+  depthOfFieldFocusDistance: s.depthOfFieldFocusDistance,
+  depthOfFieldFStop: s.depthOfFieldFStop,
+  depthOfFieldFocalLength: s.depthOfFieldFocalLength,
+  depthOfFieldSensorHeight: s.depthOfFieldSensorHeight,
+  depthOfFieldBlurScale: s.depthOfFieldBlurScale,
+  depthOfFieldMaxForegroundBlur: s.depthOfFieldMaxForegroundBlur,
+  depthOfFieldMaxBackgroundBlur: s.depthOfFieldMaxBackgroundBlur,
+  depthOfFieldBladeCount: s.depthOfFieldBladeCount,
+  depthOfFieldBladeRotation: s.depthOfFieldBladeRotation,
+  depthOfFieldBladeCurvature: s.depthOfFieldBladeCurvature,
+  depthOfFieldQuality: s.depthOfFieldQuality.name,
+  autoExposureEnabled: s.autoExposureEnabled,
+  autoExposureStrength: s.autoExposureStrength,
+  autoExposureCompensation: s.autoExposureCompensation,
+  autoExposureMinEv: s.autoExposureMinEv,
+  autoExposureMaxEv: s.autoExposureMaxEv,
+  autoExposureSpeedUp: s.autoExposureSpeedUp,
+  autoExposureSpeedDown: s.autoExposureSpeedDown,
+);
 
 /// The stage's global environment resource, creating and linking a studio
 /// default when the stage references none, so the look always has a resource

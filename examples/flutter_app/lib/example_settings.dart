@@ -46,6 +46,14 @@ class ExampleSettings {
   final ScreenSpaceReflectionsSettings screenSpaceReflections =
       ScreenSpaceReflectionsSettings();
 
+  /// Global illumination (DDGI irradiance field) shared across the examples.
+  final GlobalIlluminationSettings globalIllumination =
+      GlobalIlluminationSettings();
+
+  /// Temporal anti-aliasing settings shared across the examples.
+  final TemporalAntiAliasingSettings temporalAntiAliasing =
+      TemporalAntiAliasingSettings();
+
   /// The auto-exposure meter. While enabled it drives [exposure] itself.
   final AutoExposureSettings autoExposure = AutoExposureSettings();
 
@@ -71,6 +79,10 @@ class ExampleSettings {
 
   /// Whether the shared directional light is attached to the scene.
   bool directionalLightEnabled = true;
+
+  /// Whether the directional light operates in shadow-only mode (direct
+  /// intensity is zero, but shadows still render and modulate ambient).
+  bool shadowOnly = false;
 
   /// Compass angle of the directional light, in degrees, around the up axis.
   double lightAzimuthDegrees = 35.0;
@@ -109,6 +121,9 @@ class ExampleSettings {
   /// Cascade split spacing, uniform (`0`) to logarithmic (`1`).
   double shadowCascadeSplitLambda = 0.6;
 
+  /// Fraction of each cascade tile over which it cross-fades into the next.
+  double cascadeOverlap = 0.0;
+
   /// Pixel resolution of each cascade's shadow-map tile.
   int shadowMapResolution = 1024;
 
@@ -136,6 +151,7 @@ class ExampleSettings {
   String describe() =>
       '''
   directionalLightEnabled: $directionalLightEnabled
+  shadowOnly: $shadowOnly
   lightAzimuthDegrees: $lightAzimuthDegrees
   lightElevationDegrees: $lightElevationDegrees
   lightIntensity: $lightIntensity
@@ -150,6 +166,7 @@ class ExampleSettings {
   shadowCascadeCount: $shadowCascadeCount
   shadowMaxDistance: $shadowMaxDistance
   shadowCascadeSplitLambda: $shadowCascadeSplitLambda
+  cascadeOverlap: $cascadeOverlap
   shadowMapResolution: $shadowMapResolution
   shadowDepthBias: $shadowDepthBias
   shadowNormalBias: $shadowNormalBias
@@ -165,6 +182,8 @@ class ExampleSettings {
   filmGrain: enabled ${filmGrain.enabled}, intensity ${filmGrain.intensity}
   fog: enabled ${fog.enabled}, mode ${fog.mode}, color ${fog.color.x}, ${fog.color.y}, ${fog.color.z}, skyColorInfluence ${fog.skyColorInfluence}, density ${fog.density}, start ${fog.start}, end ${fog.end}, maxOpacity ${fog.maxOpacity}, cutoffDistance ${fog.cutoffDistance}, height ${fog.height}, heightFalloff ${fog.heightFalloff}, sunInScatter ${fog.sunInScatter}, sunInScatterExponent ${fog.sunInScatterExponent}
   screenSpaceReflections: enabled ${screenSpaceReflections.enabled}, intensity ${screenSpaceReflections.intensity}, maxDistance ${screenSpaceReflections.maxDistance}, thickness ${screenSpaceReflections.thickness}, stride ${screenSpaceReflections.stride}, maxSteps ${screenSpaceReflections.maxSteps}, blur ${screenSpaceReflections.blur}, distanceFadeStart ${screenSpaceReflections.distanceFadeStart}, resolutionScale ${screenSpaceReflections.resolutionScale}, debugView ${screenSpaceReflections.debugView}
+  globalIllumination: enabled ${globalIllumination.enabled}, volumeMode ${globalIllumination.volumeMode}, resolution ${globalIllumination.resolution.x}, ${globalIllumination.resolution.y}, ${globalIllumination.resolution.z}, extents ${globalIllumination.extents.x}, ${globalIllumination.extents.y}, ${globalIllumination.extents.z}, intensity ${globalIllumination.intensity}, hysteresis ${globalIllumination.hysteresis}, shadowBias ${globalIllumination.shadowBias}, visibility ${globalIllumination.visibility}, visibilityBias ${globalIllumination.visibilityBias}, probeUpdateBudget ${globalIllumination.probeUpdateBudget}, injectionResolution ${globalIllumination.injectionResolution}, fireflyClamp ${globalIllumination.fireflyClamp}, emissiveBoost ${globalIllumination.emissiveGiBoost}, updateWhenIdleOnly ${globalIllumination.updateWhenIdleOnly}, bakeOnly ${globalIllumination.bakeOnly}
+  temporalAntiAliasing: minimumCurrentWeight ${temporalAntiAliasing.minimumCurrentWeight}, varianceGamma ${temporalAntiAliasing.varianceGamma}, sharpness ${temporalAntiAliasing.sharpness}, jitterSequenceLength ${temporalAntiAliasing.jitterSequenceLength}, jitterScale ${temporalAntiAliasing.jitterScale}, objectMotion ${temporalAntiAliasing.objectMotion}, skinnedMotion ${temporalAntiAliasing.skinnedMotion}
   exposure: $exposure
   toneMapping: $toneMapping
   environmentIntensity: $environmentIntensity
@@ -233,6 +252,32 @@ class ExampleSettings {
     ssr.distanceFadeStart = screenSpaceReflections.distanceFadeStart;
     ssr.resolutionScale = screenSpaceReflections.resolutionScale;
     ssr.debugView = screenSpaceReflections.debugView;
+
+    final gi = scene.globalIllumination;
+    gi.enabled = globalIllumination.enabled;
+    gi.volumeMode = globalIllumination.volumeMode;
+    gi.resolution.setFrom(globalIllumination.resolution);
+    gi.extents.setFrom(globalIllumination.extents);
+    gi.intensity = globalIllumination.intensity;
+    gi.hysteresis = globalIllumination.hysteresis;
+    gi.shadowBias = globalIllumination.shadowBias;
+    gi.visibility = globalIllumination.visibility;
+    gi.visibilityBias = globalIllumination.visibilityBias;
+    gi.probeUpdateBudget = globalIllumination.probeUpdateBudget;
+    gi.injectionResolution = globalIllumination.injectionResolution;
+    gi.fireflyClamp = globalIllumination.fireflyClamp;
+    gi.emissiveGiBoost = globalIllumination.emissiveGiBoost;
+    gi.updateWhenIdleOnly = globalIllumination.updateWhenIdleOnly;
+    gi.bakeOnly = globalIllumination.bakeOnly;
+
+    final taa = scene.temporalAntiAliasing;
+    taa.minimumCurrentWeight = temporalAntiAliasing.minimumCurrentWeight;
+    taa.varianceGamma = temporalAntiAliasing.varianceGamma;
+    taa.sharpness = temporalAntiAliasing.sharpness;
+    taa.jitterSequenceLength = temporalAntiAliasing.jitterSequenceLength;
+    taa.jitterScale = temporalAntiAliasing.jitterScale;
+    taa.objectMotion = temporalAntiAliasing.objectMotion;
+    taa.skinnedMotion = temporalAntiAliasing.skinnedMotion;
 
     final aberration = scene.postProcess.chromaticAberration;
     aberration.enabled = chromaticAberration.enabled;
@@ -333,7 +378,7 @@ class ExampleSettings {
       }
       final light = component.light;
       light.direction = direction;
-      light.intensity = lightIntensity;
+      light.intensity = shadowOnly ? 0.0 : lightIntensity;
       light.color.setFrom(lightColor);
       light.castsShadow = lightCastsShadow;
       light.shadowSoftness = shadowSoftness;
@@ -345,6 +390,7 @@ class ExampleSettings {
       light.shadowCascadeCount = shadowCascadeCount;
       light.shadowMaxDistance = shadowMaxDistance;
       light.shadowCascadeSplitLambda = shadowCascadeSplitLambda;
+      light.cascadeOverlap = cascadeOverlap;
       light.shadowMapResolution = shadowMapResolution;
       light.shadowDepthBias = shadowDepthBias;
       light.shadowNormalBias = shadowNormalBias;

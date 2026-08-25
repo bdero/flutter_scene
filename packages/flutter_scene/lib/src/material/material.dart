@@ -421,8 +421,8 @@ abstract class Material {
   gpu.Shader? materialVertexShader(String variant) => null;
 
   /// The per-instance attributes this material declares, or null when it
-  /// declares none (everything but a `.fmat` with an `instance_attributes`
-  /// block).
+  /// declares none. A `.fmat` `instance_attributes` block declares them, as
+  /// does a raw `ShaderMaterial` constructed with `instanceAttributes`.
   ///
   /// The schema widens the instance-rate vertex buffer, so it is part of the
   /// pipeline's vertex layout as well as of what an instanced mesh accepts.
@@ -442,10 +442,10 @@ abstract class Material {
 
   /// Binds this material's render-pass state, uniforms, and textures.
   ///
-  /// The base implementation enables back-face culling with
-  /// counter-clockwise winding (matching the glTF convention). Subclasses
-  /// must call `super.bind` and then bind any per-material uniforms and
-  /// textures expected by their fragment shader. [lighting] carries the
+  /// The base implementation enables back-face culling with clockwise
+  /// winding on the Y-down rasterizer (accepting model-space CCW front faces).
+  /// Subclasses must call `super.bind` and then bind any per-material uniforms
+  /// and textures expected by their fragment shader. [lighting] carries the
   /// IBL [EnvironmentMap] (and its intensity) plus the analytic lights and
   /// shadow resources that materials shade against.
   void bind(
@@ -454,7 +454,7 @@ abstract class Material {
     Lighting lighting,
   ) {
     pass.setCullMode(renderCullMode);
-    pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+    pass.setWindingOrder(gpu.WindingOrder.clockwise);
   }
 
   /// The face-culling mode geometry drawn with this material renders with.

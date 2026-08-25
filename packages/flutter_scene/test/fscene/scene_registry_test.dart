@@ -65,6 +65,53 @@ void main() {
       );
     });
 
+    test('top-level loads scan each asset bundle once', () async {
+      clearSceneTemplateCache();
+      const key = 'packages/app/flutter_scene/scene/assets/shared.fsceneb';
+      final document = SceneDocument()
+        ..addNode(NodeSpec(id: const LocalId(9, 1), name: 'root'), root: true);
+      final bundle = _BytesAssetBundle({key: writeFsceneb(document)});
+
+      try {
+        await loadScene('assets/shared', bundle: bundle);
+        await loadScene('assets/shared', bundle: bundle);
+
+        expect(bundle.manifestLoads, 1);
+      } finally {
+        clearSceneTemplateCache();
+      }
+    });
+
+    test(
+      'hot reload and clearSceneTemplateCache re-scan the asset manifest',
+      () async {
+        clearSceneTemplateCache();
+        const keyA = 'packages/app/flutter_scene/scene/assets/a.fsceneb';
+        const keyB = 'packages/app/flutter_scene/scene/assets/b.fsceneb';
+        final docA = SceneDocument()
+          ..addNode(NodeSpec(id: const LocalId(1, 1), name: 'a'), root: true);
+        final docB = SceneDocument()
+          ..addNode(NodeSpec(id: const LocalId(2, 1), name: 'b'), root: true);
+        final bundle = _BytesAssetBundle({keyA: writeFsceneb(docA)});
+
+        try {
+          final nodeA = await loadScene('assets/a', bundle: bundle);
+          expect(nodeA.getChildByName('a'), isNotNull);
+          expect(bundle.manifestLoads, 1);
+
+          bundle.assets[keyB] = writeFsceneb(docB);
+          bundle.clear();
+          clearSceneTemplateCache();
+
+          final nodeB = await loadScene('assets/b', bundle: bundle);
+          expect(nodeB.getChildByName('b'), isNotNull);
+          expect(bundle.manifestLoads, 2);
+        } finally {
+          clearSceneTemplateCache();
+        }
+      },
+    );
+
     test(
       'requires package disambiguation for duplicate source paths',
       () async {
@@ -484,6 +531,7 @@ final class _BytesAssetBundle extends CachingAssetBundle {
 
   /// Successful [load] calls per key.
   final Map<String, int> loadCounts = {};
+  int manifestLoads = 0;
 
   /// Fails every scene read while set, standing in for a transient asset
   /// read error.
@@ -492,6 +540,7 @@ final class _BytesAssetBundle extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async {
     if (key == 'AssetManifest.bin') {
+      manifestLoads++;
       final manifest = <String, Object>{
         for (final asset in assets.keys) asset: <Object>[],
       };

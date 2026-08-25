@@ -141,9 +141,9 @@ class SunLight {
       ..setFrom(source.sunDirection)
       ..negate();
     light.color.setFrom(color ?? source.sunLightColor);
+    light.castsShadow = castsShadow;
     light.intensity = (intensity ?? source.sunLightIntensity) * intensityScale;
     light.priority = priority;
-    light.castsShadow = castsShadow;
     light.cacheStaticShadows = cacheStaticShadows;
     light.shadowSoftness = shadowSoftness;
     light.shadowMaxDistance = shadowMaxDistance;

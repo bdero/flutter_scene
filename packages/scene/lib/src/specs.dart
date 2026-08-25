@@ -395,6 +395,7 @@ class GeometryResource extends ResourceSpec {
     this.bounds,
     this.topology = 'triangle',
     this.morphTargets,
+    this.legacyWinding = false,
   }) : assert(
          (vertices == null) != (procedural == null),
          'A geometry has exactly one source: a vertex payload or a procedural '
@@ -424,6 +425,10 @@ class GeometryResource extends ResourceSpec {
 
   /// The geometry's morph target (blend shape) data, or null when unmorphed.
   final MorphTargetsSpec? morphTargets;
+
+  /// Whether this geometry was migrated from an older document version (< 5)
+  /// that stored indices with clockwise winding.
+  final bool legacyWinding;
 }
 
 /// Morph target data on a [GeometryResource]: the delta payload plus target
@@ -704,6 +709,29 @@ class EnvironmentEffectsSpec {
     this.screenSpaceReflectionsBlur = 0.3,
     this.screenSpaceReflectionsDistanceFadeStart = 0.0,
     this.screenSpaceReflectionsResolutionScale = 1.0,
+    this.globalIlluminationEnabled = false,
+    this.globalIlluminationVolumeMode = 'followCamera',
+    Vector3? globalIlluminationResolution,
+    Vector3? globalIlluminationExtents,
+    this.globalIlluminationIntensity = 1.0,
+    this.globalIlluminationHysteresis = 0.95,
+    this.globalIlluminationShadowBias = 0.3,
+    this.globalIlluminationVisibility = 0.7,
+    this.globalIlluminationVisibilityBias = 0.08,
+    this.globalIlluminationProbeUpdateBudget = 0,
+    this.globalIlluminationInjectionResolution = 'eighth',
+    this.globalIlluminationFireflyClamp = 8.0,
+    this.globalIlluminationEmissiveBoost = 1.0,
+    this.globalIlluminationUpdateWhenIdleOnly = false,
+    this.globalIlluminationBakeOnly = false,
+    this.temporalAntiAliasingEnabled = false,
+    this.temporalAntiAliasingMinimumCurrentWeight = 0.1,
+    this.temporalAntiAliasingVarianceGamma = 1.0,
+    this.temporalAntiAliasingSharpness = 0.0,
+    this.temporalAntiAliasingJitterSequenceLength = 16,
+    this.temporalAntiAliasingJitterScale = 1.0,
+    this.temporalAntiAliasingObjectMotion = true,
+    this.temporalAntiAliasingSkinnedMotion = true,
     this.fogEnabled = false,
     this.fogMode = 'exponential',
     Vector3? fogColor,
@@ -747,6 +775,10 @@ class EnvironmentEffectsSpec {
   }) : lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),
        gain = gain ?? Vector3.all(1.0),
+       globalIlluminationResolution =
+           globalIlluminationResolution ?? Vector3(16, 8, 16),
+       globalIlluminationExtents =
+           globalIlluminationExtents ?? Vector3(20, 10, 20),
        fogColor = fogColor ?? Vector3(0.6, 0.7, 0.8),
        godRaysColor = godRaysColor ?? Vector3.all(1.0);
 
@@ -819,6 +851,39 @@ class EnvironmentEffectsSpec {
             other.screenSpaceReflectionsDistanceFadeStart,
         screenSpaceReflectionsResolutionScale:
             other.screenSpaceReflectionsResolutionScale,
+        globalIlluminationEnabled: other.globalIlluminationEnabled,
+        globalIlluminationVolumeMode: other.globalIlluminationVolumeMode,
+        globalIlluminationResolution: other.globalIlluminationResolution
+            .clone(),
+        globalIlluminationExtents: other.globalIlluminationExtents.clone(),
+        globalIlluminationIntensity: other.globalIlluminationIntensity,
+        globalIlluminationHysteresis: other.globalIlluminationHysteresis,
+        globalIlluminationShadowBias: other.globalIlluminationShadowBias,
+        globalIlluminationVisibility: other.globalIlluminationVisibility,
+        globalIlluminationVisibilityBias:
+            other.globalIlluminationVisibilityBias,
+        globalIlluminationProbeUpdateBudget:
+            other.globalIlluminationProbeUpdateBudget,
+        globalIlluminationInjectionResolution:
+            other.globalIlluminationInjectionResolution,
+        globalIlluminationFireflyClamp: other.globalIlluminationFireflyClamp,
+        globalIlluminationEmissiveBoost: other.globalIlluminationEmissiveBoost,
+        globalIlluminationUpdateWhenIdleOnly:
+            other.globalIlluminationUpdateWhenIdleOnly,
+        globalIlluminationBakeOnly: other.globalIlluminationBakeOnly,
+        temporalAntiAliasingEnabled: other.temporalAntiAliasingEnabled,
+        temporalAntiAliasingMinimumCurrentWeight:
+            other.temporalAntiAliasingMinimumCurrentWeight,
+        temporalAntiAliasingVarianceGamma:
+            other.temporalAntiAliasingVarianceGamma,
+        temporalAntiAliasingSharpness: other.temporalAntiAliasingSharpness,
+        temporalAntiAliasingJitterSequenceLength:
+            other.temporalAntiAliasingJitterSequenceLength,
+        temporalAntiAliasingJitterScale: other.temporalAntiAliasingJitterScale,
+        temporalAntiAliasingObjectMotion:
+            other.temporalAntiAliasingObjectMotion,
+        temporalAntiAliasingSkinnedMotion:
+            other.temporalAntiAliasingSkinnedMotion,
         fogEnabled: other.fogEnabled,
         fogMode: other.fogMode,
         fogColor: other.fogColor.clone(),
@@ -932,6 +997,34 @@ class EnvironmentEffectsSpec {
   double screenSpaceReflectionsResolutionScale;
   bool fogEnabled;
   String fogMode;
+
+  /// World-space global illumination. See `GlobalIlluminationSettings`.
+  bool globalIlluminationEnabled;
+  String globalIlluminationVolumeMode;
+  Vector3 globalIlluminationResolution;
+  Vector3 globalIlluminationExtents;
+  double globalIlluminationIntensity;
+  double globalIlluminationHysteresis;
+  double globalIlluminationShadowBias;
+  double globalIlluminationVisibility;
+  double globalIlluminationVisibilityBias;
+  int globalIlluminationProbeUpdateBudget;
+  String globalIlluminationInjectionResolution;
+  double globalIlluminationFireflyClamp;
+  double globalIlluminationEmissiveBoost;
+  bool globalIlluminationUpdateWhenIdleOnly;
+  bool globalIlluminationBakeOnly;
+
+  /// Temporal anti-aliasing. See `TemporalAntiAliasingSettings`.
+  bool temporalAntiAliasingEnabled;
+  double temporalAntiAliasingMinimumCurrentWeight;
+  double temporalAntiAliasingVarianceGamma;
+  double temporalAntiAliasingSharpness;
+  int temporalAntiAliasingJitterSequenceLength;
+  double temporalAntiAliasingJitterScale;
+  bool temporalAntiAliasingObjectMotion;
+  bool temporalAntiAliasingSkinnedMotion;
+
   Vector3 fogColor;
   double fogSkyColorInfluence;
   double fogDensity;

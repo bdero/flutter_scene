@@ -157,8 +157,35 @@ class MeshComponent extends Component {
   @internal
   void refreshRenderItems() {
     if (_renderItems.isEmpty) return;
-    final worldTransform = node.globalTransform;
     final worldTransformVersion = node.worldTransformVersion;
+    var staticStateUnchanged =
+        node.skin == null &&
+        node.internalMorphWeights == null &&
+        worldTransformVersion == _worldTransformVersion;
+    for (
+      var index = 0;
+      staticStateUnchanged && index < _renderItems.length;
+      index++
+    ) {
+      final item = _renderItems[index];
+      final primitive = _mesh.primitives[index];
+      staticStateUnchanged =
+          item.jointsTexture == null &&
+          item.morphWeights == null &&
+          item.visible == !item.material.drawsNothing &&
+          item.primitiveVisible == primitive.visible &&
+          item.frustumCulled == node.frustumCulled &&
+          item.layers == node.layers &&
+          item.lightChannelMask == node.lightChannelMask &&
+          item.shadowStatic == node.shadowStatic &&
+          item.castsShadows == (primitive.castsShadow && node.castsShadows) &&
+          item.highlightColor == node.highlightColor &&
+          _boundsVersions[index] == item.geometry.localBoundsVersion;
+    }
+    if (staticStateUnchanged) {
+      return;
+    }
+    final worldTransform = node.globalTransform;
     final transformChanged = worldTransformVersion != _worldTransformVersion;
     final windingFlipped = node.windingFlipped;
 
@@ -196,13 +223,22 @@ class MeshComponent extends Component {
       item.frustumCulled = frustumCulled;
       item.layers = layers;
       item.lightChannelMask = lightChannelMask;
-      if (transformChanged) item.worldTransform.setFrom(worldTransform);
+      final isMoving =
+          transformChanged || (skin != null && jointsTexture != null);
+      item.isMoving = isMoving;
+      if (transformChanged) {
+        item.previousWorldTransform.setFrom(item.worldTransform);
+        item.worldTransform.setFrom(worldTransform);
+      }
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
       item.castsShadows = effectiveCastsShadows;
       item.highlightColor = highlightColor;
-      item.jointsTexture = jointsTexture;
-      item.jointsTextureWidth = jointsTextureWidth;
+      if (skin != null) {
+        item.previousJointsTexture = skin.getPreviousJointsTexture();
+        item.jointsTexture = jointsTexture;
+        item.jointsTextureWidth = jointsTextureWidth;
+      }
       item.morphWeights = node.internalMorphWeights;
       if (staticShadowChanged) renderScene?.markStaticShadowDirty();
 

@@ -34,11 +34,30 @@ final GlobalKey smokeSceneKey = GlobalKey();
 /// A deterministic smoke scene: a builder that produces a [Scene] and the
 /// camera to view it from. No animation, no wall-clock input.
 class SmokeScene {
-  const SmokeScene(this.id, this.setup, {this.preload});
+  const SmokeScene(
+    this.id,
+    this.setup, {
+    this.preload,
+    this.warmupFrames = 0,
+    this.fullCoverage = false,
+  });
 
   final String id;
   final ({Scene scene, PerspectiveCamera camera}) Function() setup;
   final Future<void> Function()? preload;
+
+  /// Frames to render before the capture, for a feature that converges over
+  /// time instead of resolving in one frame.
+  ///
+  /// The capture loop always pumps its own settling frames, so this only
+  /// raises the count. It is deterministic despite running on wall-clock
+  /// time because every temporal blend here clamps its rate exponent at a
+  /// 60 Hz cadence, and the smoke lanes render well below that.
+  final int warmupFrames;
+
+  /// Whether the scene geometry completely covers the viewport, meaning corners
+  /// are geometry rather than the background clear color.
+  final bool fullCoverage;
 }
 
 /// The fixed three-quarter view shared by the scenes.
@@ -686,6 +705,117 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Rect area lights via linearly transformed cosines: a warm wide panel and
   // a cool tall panel over a glossy plane. Guards the LTC atlas tiles, the
   // edge integration, and the stretched panel reflections across backends.
+  // The world-space irradiance field, in the rig that makes bounce light
+  // unmistakable: a small white room with an emissive red wall on one side
+  // and an emissive green wall on the other, a white occluder between them,
+  // and a dim key light so the room reads. Every colored texel on the white
+  // floor and ceiling arrived through the probe field.
+  //
+  // The room is deliberately small relative to the probe spacing. Screen-space
+  // injection only reaches the eight probes of the cell a surface sits in, so
+  // a wall lights the probes within about a cell of it and spreads outward one
+  // cell per frame through the scene-color feedback. That near-field reach is
+  // what this scene measures; a bake is what fills a large room's interior.
+  //
+  // The walls are solids thicker than a probe spacing, per the field's content
+  // rule.
+  SmokeScene(
+    'irradiance_field',
+    () {
+      final scene = Scene();
+      // Nearly no environment light, so the colored term is the field's.
+      scene.environmentIntensity = 0.02;
+      scene.exposure = 1.3;
+      scene.globalIllumination
+        ..enabled = true
+        ..volumeMode = IrradianceVolumeMode.fitScene
+        ..resolution = vm.Vector3(10, 6, 10)
+        ..intensity = 1.0
+        ..hysteresis = 0.85
+        ..visibility = 0.5
+        ..injectionResolution = IrradianceInjectionResolution.quarter;
+      scene.add(
+        _directionalLightNode(
+          vm.Vector3(0.1, -0.85, -0.5),
+          DirectionalLight(intensity: 1.6),
+        ),
+      );
+      PhysicallyBasedMaterial matte(
+        double r,
+        double g,
+        double b, {
+        vm.Vector4? emissive,
+      }) => PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(r, g, b, 1.0)
+        ..emissiveFactor = emissive ?? vm.Vector4.zero()
+        ..metallicFactor = 0.0
+        ..roughnessFactor = 0.95
+        ..vertexColorWeight = 0.0;
+      final white = matte(0.85, 0.85, 0.85);
+      void box(vm.Vector3 size, vm.Vector3 at, PhysicallyBasedMaterial m) {
+        scene.add(
+          Node(mesh: Mesh(CuboidGeometry(size), m))
+            ..localTransform = vm.Matrix4.translation(at),
+        );
+      }
+
+      box(vm.Vector3(3.4, 0.3, 3.4), vm.Vector3(0, -0.15, 0), white);
+      box(vm.Vector3(3.4, 2.0, 0.3), vm.Vector3(0, 1.0, -1.65), white);
+      box(
+        vm.Vector3(0.3, 2.0, 3.4),
+        vm.Vector3(-1.65, 1.0, 0),
+        matte(0.02, 0.02, 0.02, emissive: vm.Vector4(14.0, 0.45, 0.3, 1.0)),
+      );
+      box(
+        vm.Vector3(0.3, 2.0, 3.4),
+        vm.Vector3(1.65, 1.0, 0),
+        matte(0.02, 0.02, 0.02, emissive: vm.Vector4(0.15, 4.0, 0.28, 1.0)),
+      );
+      box(vm.Vector3(0.7, 1.1, 1.1), vm.Vector3(0, 0.55, -0.2), white);
+      return (
+        scene: scene,
+        camera: PerspectiveCamera(
+          position: vm.Vector3(0, 2.4, 4.9),
+          target: vm.Vector3(0, 0.35, 0),
+        ),
+      );
+    },
+    // The field converges over frames, and its first frame has no scene-color
+    // history to scatter from.
+    warmupFrames: 45,
+  ),
+  SmokeScene(
+    'taa',
+    () {
+      final scene = Scene();
+      scene.antiAliasingMode = AntiAliasingMode.taa;
+      scene.temporalAntiAliasing
+        ..sharpness = 0.4
+        ..jitterScale = 1.0;
+      scene.environmentIntensity = 0.4;
+      final sphere = SphereGeometry(radius: 1.0);
+      final shiny = PhysicallyBasedMaterial()
+        ..baseColorFactor = vm.Vector4(0.9, 0.2, 0.2, 1.0)
+        ..metallicFactor = 0.9
+        ..roughnessFactor = 0.1;
+      scene.add(Node(mesh: Mesh(sphere, shiny)));
+      scene.add(
+        _directionalLightNode(
+          vm.Vector3(-0.4, -0.9, -0.3),
+          DirectionalLight(intensity: 3.0),
+        ),
+      );
+      return (
+        scene: scene,
+        camera: PerspectiveCamera(
+          position: vm.Vector3(0, 1.2, 2.8),
+          target: vm.Vector3(0, 0, 0),
+        ),
+      );
+    },
+    warmupFrames: 16,
+    fullCoverage: true,
+  ),
   SmokeScene('area_light', () {
     final scene = Scene();
     scene.environmentIntensity = 0.05;
@@ -1558,7 +1688,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       for (var c = 0; c < n; c++) {
         final i0 = r * (n + 1) + c;
         final i2 = i0 + (n + 1);
-        indices.addAll([i0, i0 + 1, i2, i0 + 1, i2 + 1, i2]);
+        indices.addAll([i0, i2, i0 + 1, i0 + 1, i2, i2 + 1]);
       }
     }
     final scene = Scene()..environmentIntensity = 0.0;

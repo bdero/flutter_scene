@@ -1,6 +1,32 @@
-## 0.24.0
+## 0.23.0
 
-* Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview), captured through the compositor on frames that sample it.
+* Build hooks no longer crash on a target OS `package:code_assets` cannot name, which is how a third-party embedder announces tvOS or visionOS.
+* tvOS, visionOS, and watchOS select the iOS Metal shader variant, so an app on an Apple embedded platform finds its shader bundles and materials instead of looking for a target nothing builds.
+* Added `package:flutter_scene/kit.dart`, high-level gameplay, camera boom, character controller, day/night cycle, water surface, audio, pooling, and debug visualization components.
+* BREAKING: model-space front faces wind Counter-Clockwise (CCW) now, across primitives, procedural builders, materials, and `.fscene` version 5, matching glTF and the rest of the ecosystem. Version 4 documents swap index pairs on read and version 4 containers migrate at realization, so assets need no action, but hand-authored index buffers and custom `Geometry` subclasses wind the other way and need their triangles swapped.
+* World-space global illumination via `Scene.globalIllumination`, a grid of octahedral irradiance probes fed by scattering the visible surfaces' shaded radiance, so bounce light persists for geometry the camera is not looking at and colored bleed reads correctly. Off by default.
+* Probe visibility via `GlobalIlluminationSettings.visibility`, per-direction depth moments and a Chebyshev bound so the field does not leak through walls.
+* Emissive surfaces light the probe field, scaled by `GlobalIlluminationSettings.emissiveGiBoost` so a small bright emitter can light a room without brightening the direct image.
+* Offline and progressive irradiance field baking via `Scene.bakeIrradianceField` and `IrradianceFieldBakeStepper`.
+* `IrradianceVolumeComponent` places the irradiance volume on a node, for authored placement instead of fitting the scene or following the camera.
+* `Scene.invalidateGlobalIllumination` discards the accumulated field so it refills from scratch after a hard camera cut.
+* The lit shaders read the environment's diffuse coefficients with `texelFetch` from a texture the probe atlas extends, so global illumination costs no additional fragment sampler.
+* Add the `flutter_scene-kit` agent skill, covering the gameplay, camera rig, character controller, day/night, water, audio, pooling, and debug components in `kit.dart`.
+* Update `flutter_scene-idioms` skill (v4) with the reflection probes and lens flares the engine gained, and the traps that came with them.
+* Update `flutter_scene-performance` skill (v2) with SMAA's cost next to FXAA and the per-frame reflection-probe recapture trap.
+* Update `flutter_scene-procedural` skill (v2) with natural formation recipes (rock fractures, incised trails, pebble scatter, Gerstner waves, tree branching, and procedural island topographies).
+* Update `flutter_scene-looks` skill (v4) with micro-surface and anti-waxiness tuning guidance.
+* Update `flutter_scene-verification-loop` skill (v2) with empirical verification disciplines and blind-pairwise review rules.
+* Temporal anti-aliasing via `AntiAliasingMode.taa` and `Scene.temporalAntiAliasing`, reprojecting history with camera subpixel jittering, motion vectors for unskinned and skinned geometry, and variance-guided history clamping.
+* Geometric specular anti-aliasing adapts specular roughness based on screen-space normal derivatives to suppress high-frequency specular shimmer on subpixel geometry and grazing angles; `Material.specularAaThreshold` configures the threshold.
+* `DirectionalShadowFilter.bilinearPcf` continuous 2x2 bilinear percentage-closer filtering.
+* `CameraProjection.getProjectionMatrix` adds an optional named `jitter` parameter for temporal subpixel sampling.
+* Direct lighting modulates specular and clearcoat terms with `sun_visibility`.
+* Added `ExternalTexture`, a `TextureSource` fed by a platform texture id (video, camera preview) with optional `colorFilter`, captured through the compositor on frames that sample it.
+* Generated scene registries are cached per asset bundle.
+* `.fsceneb` payload chunks compress with gzip, cutting file sizes by ~73% in exchange for higher load-time decompression CPU.
+* Static render items skip per-frame property re-assignment when their transform and bounds are unchanged.
+* Instanced mesh static shadow updates track component visibility changes correctly.
 * Widget-surface pointer forwarding dispatches events in the framework's global space (with the host's transform in the hit path), so widgets that convert `globalPosition` through render objects (Slider, text selection) work when the scene view is not at the window origin.
 * The standard PBR shader ships a no-shadow variant, selected automatically for draws with no shadow atlas bound, roughly halving the compiled fragment program for shadow-less scenes on mobile GPUs; it also skips its five per-texture UV-transform evaluations when every transform is identity.
 * `PhysicallyBasedMaterial` keeps a scalar `ior`, `specular`, and `specularColor` on the standard shader by folding them into its dielectric reflectance (the `KHR_materials_ior` / `KHR_materials_specular` formula the physical shader uses), so only specular textures and the layered features select the heavier physical variant.
@@ -22,10 +48,8 @@
 * SH-9 diffuse helpers, `parseDiffuseShSidecar`/`encodeDiffuseShSidecar`, `evaluateDiffuseSphericalHarmonics`, and `describeDiffuseSphericalHarmonics` for verifying imported coefficients.
 * `PhysicallyBasedMaterial.lightmapTexture` adds a baked lightmap that replaces the SH diffuse ambient.
 * `.fmat` `instance_attributes` declare typed per-instance data, set via `InstancedMesh.setInstanceAttribute`.
+* A raw `ShaderMaterial` declares the same per-instance data through `ShaderInstanceAttribute`, so a custom vertex shader reads the `instance_<name>` inputs a `.fmat` would have generated.
 * `PlanarReflectorComponent` renders a mirrored scene capture that `.fmat` materials sample via the `planar_reflection` engine input.
-
-## 0.23.0
-
 * `ShaderMaterial.sceneInputs` declares the engine's per-frame scene textures, so a raw shader can refract and measure its own thickness like a `.fmat` material. Include `<scene_inputs.glsl>` for the samplers and their accessors; `buildTargetShaderBundleJson` puts flutter_scene's `shaders/` on the include path so it resolves with no setup.
 * Parallax-corrected reflection probes via `ReflectionProbeComponent`, capturing the scene into a local environment whose reflections track the probe's box.
 * `Scene.captureEnvironment` renders the scene's lighting at a point into a new `EnvironmentMap`.

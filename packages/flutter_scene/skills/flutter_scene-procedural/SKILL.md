@@ -1,7 +1,7 @@
 ---
 name: flutter_scene-procedural
-version: 1
-description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
+version: 2
+description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, building oceans and Gerstner waves, setting up procedural skies and trees, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
 ---
 
 # Procedural content in flutter_scene
@@ -10,7 +10,7 @@ A lot of 3D work does not need an artist's `.glb` at all. Terrain, scattered fol
 
 **The insight: for a code-driven scene, generate geometry and draw it instanced. That path is more reliable than loading external assets, because it has no import step, no coordinate-conversion traps, no missing-file failure modes, and one draw call for thousands of copies.** Three pieces cover almost everything:
 
-- **`GeometryBuilder`** (and the ten built-in primitives) build custom meshes without a model file.
+- **`GeometryBuilder`** (and the built-in primitives and swept paths) build custom meshes without a model file.
 - **`FastNoiseLite`** drives heightmaps, placement, and displacement deterministically.
 - **`InstancedMesh`** draws thousands of copies of one mesh as a single render item.
 
@@ -50,7 +50,7 @@ MeshGeometry buildTerrain({int cols = 128, int rows = 128, double spacing = 0.5}
     }
   }
 
-  // Two triangles per cell, wound so the front face points +Y (up).
+  // Two triangles per cell, wound Counter-Clockwise (CCW) so the front face points +Y (up).
   for (var r = 0; r < rows - 1; r++) {
     for (var c = 0; c < cols - 1; c++) {
       final v00 = r * cols + c;
@@ -58,8 +58,8 @@ MeshGeometry buildTerrain({int cols = 128, int rows = 128, double spacing = 0.5}
       final v01 = v00 + cols;
       final v11 = v01 + 1;
       builder
-        ..addTriangle(v00, v10, v01)
-        ..addTriangle(v10, v11, v01);
+        ..addTriangle(v00, v01, v10)
+        ..addTriangle(v10, v01, v11);
     }
   }
 
@@ -74,7 +74,22 @@ final terrain = Node(mesh: Mesh(buildTerrain(), PhysicallyBasedMaterial()..rough
 scene.add(terrain);
 ```
 
-If a hand-built surface renders inside-out (visible only from below, dark where lit), reverse each triangle's index order. flutter_scene's front faces wind clockwise in model space; never fix orientation with a per-triangle flip on an imported model, but for geometry you author yourself the winding is yours to set.
+If a hand-built surface renders inside-out (visible only from below, dark where lit), reverse each triangle's index order. flutter_scene's front faces wind Counter-Clockwise (CCW) in model space, matching glTF and standard conventions; never fix orientation with a per-triangle flip on an imported model, but for geometry you author yourself the winding is yours to set.
+
+## Natural formations and landscape recipes
+
+To achieve documentary realism rather than generic procedural lumps:
+
+1. **Footpaths are scoured trenches, not flat stripes.** A real trail is the lowest line across terrain because water and foot traffic erode it downwards. When generating heightfields, cut the trail path profile down into the terrain with banks rising away on both sides.
+2. **Ridged noise for valley walls and cliffs.** Standard `FractalType.fbm` makes rolling mounds. Use `FractalType.ridged` for valley walls, mountain spurs, and cliffs to produce sharp erosion creases.
+3. **Free-end Worley rock cracks.** Standard Worley noise (`F2 - F1`) creates closed polygonal loops like bathroom tile. To produce weathered rock fractures with natural free ends, multiply the cell border by a low-frequency region mask and a high-frequency grain breaker.
+4. **Noise-modulated pitting.** A constant threshold radius across Worley cells places a pit in every cell, producing an artificial grid lattice. Modulate the threshold radius with an underlying Perlin field so pores vary in size and only appear in exposed weathering pockets.
+5. **Macro massing for scattered gravel.** Soil wears in 0.5m to 2m zones. Modulate multi-scale pebble instances with a low-frequency massing field so gravel clusters into realistic water scour lines rather than uniform sandpaper noise.
+6. **Sunk block settling and ground contact staining.** Place boulders and masonry courses 1/3 to 2/3 submerged into the sampled ground height. Use vertex colors or shader ground distance to stain the bottom 20cm of rock near the soil boundary, creating a smooth moisture transition.
+7. **Oceans and Gerstner waves.** Sum 4 to 8 directional Gerstner trochoidal waves that pull vertices horizontally toward crests, producing sharp peaks and wide flat troughs. Use Beer-Lambert depth absorption (exp(-sigma_a * d)) via scene depth for turquoise to deep navy transitions, Jacobian folding for peak foam, and darken/smooth tidal sand within the shoreline wash.
+8. **Trees and foliage translucency.** Extrude branch splines using `TubeGeometry` or `ExtrudeGeometry`, conserving cross-sectional area across splits (d_parent^2 = sum d_child^2). Set `Material.doubleSided = true` and add diffuse transmission in custom leaf shaders so backlit canopies glow. Apply quadratic cantilever displacement (delta_p proportional to h^2) for organic wind sway.
+9. **Procedural skies and IBL synchronization.** Use `PhysicalSkySource` (`lib/src/sky_sources.dart`) with analytic Rayleigh and Mie scattering. Assign `SkyEnvironment` to `Scene.skyEnvironment` or call `EnvironmentMap.fromSky` to bake prefiltered radiance and SH-9 diffuse coefficients into the scene's IBL automatically, and assign the source to `Scene.skybox` for matching background visuals.
+10. **Islands and coastal erosion.** Multiply radial distance falloff with domain-warped FBM to form organic bays, sandbars, and lagoons. Use analytical surface slopes to strip topsoil on steep cliffs while depositing golden sand and reef shoals on shallow coastal planes.
 
 ## Scattering thousands of copies
 
@@ -116,4 +131,4 @@ Native platforms are unaffected. `noiseHash2`/`noiseHash3` are the bit-exact CPU
 
 ## More depth
 
-`references/procedural.md` has the full `GeometryBuilder` and `MeshData` API (including off-isolate meshing), the complete `FastNoiseLite` config reference, the instancing API in full, modular-kit assembly from the built-in primitives, and the web-noise caveat expanded.
+`references/procedural.md` has the full `GeometryBuilder` and `MeshData` API (including off-isolate meshing), the complete `FastNoiseLite` config reference, natural rock, ocean, tree, sky, and island formation recipes, the instancing API in full, modular-kit assembly from the built-in primitives, and the web-noise caveat expanded.

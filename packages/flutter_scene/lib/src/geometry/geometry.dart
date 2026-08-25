@@ -154,8 +154,9 @@ abstract class Geometry {
 
   /// Whether source triangles use the opposite of native scene winding.
   ///
-  /// Runtime glTF geometry keeps its source vertices unchanged and sets this
-  /// flag. Native and offline-imported geometry leave it false.
+  /// Native and imported geometry leave it false since both match the CCW
+  /// front-face convention. Custom geometries or importers can set it if
+  /// their source indices use clockwise winding.
   @internal
   bool sourceWindingFlipped = false;
 
@@ -348,6 +349,10 @@ abstract class Geometry {
         _indexCount = indices.lengthInBytes ~/ 4;
     }
   }
+
+  /// The index type (int16 or int32) of the bound index buffer.
+  @internal
+  gpu.IndexType get indexType => _indexType;
 
   /// Allocates a [gpu.DeviceBuffer] and uploads [vertices] (and optional
   /// [indices]) into it in one step.

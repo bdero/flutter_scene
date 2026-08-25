@@ -15,7 +15,7 @@ import 'package:hooks/hooks.dart';
 /// Bump when the hooks' generated output changes for the same inputs (the
 /// importer, the scene emitter, or the material pipeline), so outputs cached
 /// by an older flutter_scene revision are rebuilt.
-const int buildCacheRevision = 7;
+const int buildCacheRevision = 8;
 
 /// Disables the per-input build cache, so every source is reconverted. Only
 /// reaches a builder driven directly; see [HookOptions] for the pubspec form a

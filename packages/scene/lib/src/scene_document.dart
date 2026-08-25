@@ -4,7 +4,7 @@ import 'package:scene/src/specs.dart';
 /// The `.fscene` format version this build reads and writes. Newer documents
 /// are refused; older ones migrate on read.
 /// {@category Serialization}
-const int currentFsceneVersion = 4;
+const int currentFsceneVersion = 5;
 
 /// The in-memory `.fscene` document: a GPU-free, encoding-independent
 /// description of a scene that the encoders serialize and the realizer turns

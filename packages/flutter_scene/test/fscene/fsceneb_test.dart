@@ -10,6 +10,23 @@ import 'package:flutter_test/flutter_test.dart';
 Uint8List _ramp(int length) =>
     Uint8List.fromList(List.generate(length, (i) => i & 0xFF));
 
+List<String> _chunkTypes(Uint8List container) {
+  final types = <String>[];
+  var offset = 16;
+  final view = ByteData.sublistView(container);
+  while (offset + 8 <= container.length) {
+    final length = view.getUint32(offset, Endian.little);
+    final type = String.fromCharCodes(
+      container.sublist(offset + 4, offset + 8),
+    );
+    types.add(type);
+    offset += 8 + length;
+    final remainder = length % 8;
+    if (remainder != 0) offset += 8 - remainder;
+  }
+  return types;
+}
+
 // A document with a couple of nodes and payload chunks of deliberately
 // awkward (non-8-multiple) lengths to exercise chunk padding.
 SceneDocument _sample() {
@@ -77,6 +94,36 @@ void main() {
       expect(view.getUint32(4, Endian.little), kFscenebVersion);
       expect(view.getUint32(8, Endian.little), bytes.length);
       expect(bytes.length % 8, 0);
+    });
+
+    test('compresses repetitive payloads without changing their bytes', () {
+      final doc = SceneDocument();
+      final id = doc.newId();
+      doc.addPayload(
+        PayloadSpec(
+          id,
+          encoding: PayloadEncoding.vertexBuffer,
+          bytes: Uint8List(64 * 1024),
+        ),
+      );
+
+      final encoded = writeFsceneb(doc);
+      expect(encoded.length, lessThan(2048));
+      expect(_chunkTypes(encoded), contains('GZBL'));
+      expect(
+        readFsceneb(encoded).payload(id)!.bytes,
+        equals(Uint8List(64 * 1024)),
+      );
+    });
+
+    test('reads a version 1 container with plain payload chunks', () {
+      final encoded = writeFsceneb(_sample());
+      expect(_chunkTypes(encoded), isNot(contains('GZBL')));
+      ByteData.sublistView(encoded).setUint32(4, 1, Endian.little);
+
+      final restored = readFsceneb(encoded);
+      expect(restored.rootNodes.single.name, 'world');
+      expect(restored.payloads.length, 3);
     });
   });
 

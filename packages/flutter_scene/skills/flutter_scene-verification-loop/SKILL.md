@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-verification-loop
-version: 1
+version: 2
 description: Close the visual-iteration loop when building or debugging a flutter_scene 3D app so you see your own output and self-correct. Use whenever a change affects what renders (geometry, materials, lighting, shaders, post-processing) or a frame looks wrong (black, washed-out, see-through, missing geometry).
 ---
 
@@ -35,6 +35,25 @@ When deciding whether a change improved the look, **do not assign the frame a qu
 Instead, **compare two frames and return a binary pick.** Put the new frame next to a reference (a known-good target) or the previous frame, and answer only "which of these two is better", A or B. No number, no "8/10", no "looks pretty good now". A blind pairwise pick does not inflate the way a solo score does. This applies to every visual review, including the ones that feel obvious.
 
 If you have no reference at all, say so and describe the concrete difference between the two frames (this one is brighter here, that one has an artifact there) rather than inventing a score.
+
+## Empirical verification rules
+
+These rules prevent false diagnoses, hollow passes, and measurement traps during visual iteration:
+
+1. **Liveness before ablation.** A negative result is evidence only if the removed or modified term was actually live in the draw pass. Diff pixels for liveness before trusting an ablation.
+2. **Tools must fail loud on empty measurements.** A tool that measures an empty population, zero pixels, or non-finite data must fail loud rather than returning a default passing number.
+3. **Population discipline.** Always quote the population window, crop rectangle, brightness threshold, and rendering resolution beside any color or lighting figure.
+4. **Baselines expire quickly.** Two captures taken hours apart in a changing tree reflect multiple edits; isolate paired A/B captures with temporary snapshots or git worktrees.
+5. **Look at the raw frame before quoting numbers.** Inspect the actual captured frame before taking numbers off it; metrics can yield valid-looking numbers on corrupt frames.
+6. **Negative control requirement.** A metric that returns the same score for positive and negative control populations cannot serve as evidence for either.
+7. **Explanations are hypotheses, not evidence.** Before adopting an explanatory mechanism, identify the specific numerical observation that would differ if the mechanism were false.
+8. **Attribution must reach the triangle.** When diagnosing geometry defects, trace down to the specific triangle indices and edge lengths rather than stopping at the mesh component.
+9. **Symmetric domain clamping.** Clamping parametric lookup domains must be verified at both boundaries, and derived slope or heading accessors must clamp both sample points.
+10. **Multi-band octave tables for tiling.** Two-band ratios like `hf/lf` are blind to regular mid-frequency patterns; inspect multi-octave energy tables to detect periodic tiling.
+11. **Physical discrimination over naming.** A class-discriminating physical observation (such as missing shadow terminators) outranks code comments or variable names.
+12. **Grazing light terminator crossing.** Under low-angle grazing lighting, prioritize terminator-crossing fractions over slope RMS to detect normal map over-amplification.
+13. **Resolution scaling.** High-frequency energy (`hf/lf`) and relative contrast scale with resolution; compare them only at equal pixel resolutions.
+14. **Paired capture isolation.** Snapshot source files or freeze environment state when capturing before/after pairs so background modifications cannot corrupt the comparison.
 
 ## Be honest about tooling
 

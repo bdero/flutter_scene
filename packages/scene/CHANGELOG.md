@@ -2,9 +2,12 @@
 
 ## 0.3.0
 
+- Standardized model-space front-face winding to Counter-Clockwise (CCW) in `.fscene` format version 5; version 4 documents migrate by swapping index pairs during realization.
+- `.fsceneb` format version 2 compresses payload chunks with gzip; older readers reject version 2.
 - `MorphTargetsSpec` and `GeometryResource.morphTargets` carry baked morph target deltas, names, and default weights.
 - `AnimationProperty.weights` animates morph weights.
 - `.fscene` version 4; a version-3 reader refuses a morph-bearing document instead of silently dropping the deltas. Version 3 documents read as-is.
+- `EnvironmentEffectsSpec` carries global illumination and temporal anti-aliasing settings, delta-serialized through `.fscene` and `.fsceneb`.
 
 ## 0.2.0
 

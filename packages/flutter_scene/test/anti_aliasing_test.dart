@@ -71,6 +71,13 @@ void main() {
     expect(scene.effectiveAntiAliasingMode, expected);
   });
 
+  test('taa resolves to itself on every backend', () {
+    final scene = Scene();
+    scene.antiAliasingMode = AntiAliasingMode.taa;
+    expect(scene.effectiveAntiAliasingMode, AntiAliasingMode.taa);
+    expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.taa), isTrue);
+  });
+
   test('none and fxaa resolve to themselves', () {
     final scene = Scene();
     scene.antiAliasingMode = AntiAliasingMode.none;
@@ -82,6 +89,8 @@ void main() {
   test('every mode except msaa is unconditionally supported', () {
     expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.none), isTrue);
     expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.fxaa), isTrue);
+    expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.smaa), isTrue);
+    expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.taa), isTrue);
     expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.auto), isTrue);
   });
 }

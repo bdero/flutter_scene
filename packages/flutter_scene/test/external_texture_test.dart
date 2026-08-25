@@ -3,6 +3,8 @@
 // derivation, and disposal. The capture itself needs a live platform texture
 // and a GPU, so it is exercised by the example app rather than here.
 
+import 'dart:ui' as ui;
+
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_test/flutter_test.dart';
@@ -147,6 +149,20 @@ void main() {
       source.addListener(listener);
       source.removeListener(listener);
       expect(calls, 0);
+      source.dispose();
+    });
+
+    test('accepts optional colorFilter', () {
+      final source = ExternalTexture(
+        textureId: 1,
+        width: 16,
+        height: 16,
+        colorFilter: const ui.ColorFilter.mode(
+          ui.Color(0xFF000000),
+          ui.BlendMode.color,
+        ),
+      );
+      expect(source.colorFilter, isNotNull);
       source.dispose();
     });
   });

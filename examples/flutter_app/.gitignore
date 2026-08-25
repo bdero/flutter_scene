@@ -58,6 +58,7 @@ test/*
 !test/cloth_solver_test.dart
 !test/dicom_parser_test.dart
 !test/example_overlay_test.dart
+!test/kit_example_test.dart
 !test/quake_camera_test.dart
 pubspec.lock
 .metadata

@@ -15,7 +15,7 @@ import 'package:vector_math/vector_math.dart';
 abstract class CameraProjection {
   /// Returns the projection matrix for a render target of the given
   /// [aspectRatio] (width / height).
-  Matrix4 getProjectionMatrix(double aspectRatio);
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter});
 }
 
 /// A standard pinhole perspective projection.
@@ -40,8 +40,8 @@ class PerspectiveProjection extends CameraProjection {
   double far;
 
   @override
-  Matrix4 getProjectionMatrix(double aspectRatio) =>
-      _matrix4Perspective(fovRadiansY, aspectRatio, near, far);
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
+      _matrix4Perspective(fovRadiansY, aspectRatio, near, far, jitter: jitter);
 }
 
 /// A view onto a scene: a world-space eye [position] and orientation paired
@@ -120,8 +120,11 @@ abstract class Camera {
   /// of the given [dimensions].
   ///
   /// Called once per [Scene.render] call.
-  Matrix4 getViewTransform(ui.Size dimensions) =>
-      projection.getProjectionMatrix(dimensions.width / dimensions.height) *
+  Matrix4 getViewTransform(ui.Size dimensions, {Vector2? jitter}) =>
+      projection.getProjectionMatrix(
+        dimensions.width / dimensions.height,
+        jitter: jitter,
+      ) *
       getViewMatrix();
 
   /// Returns the view frustum (six normalized clip planes) for a render
@@ -177,8 +180,9 @@ Matrix4 _matrix4Perspective(
   double fovRadiansY,
   double aspectRatio,
   double zNear,
-  double zFar,
-) {
+  double zFar, {
+  Vector2? jitter,
+}) {
   assert(
     fovRadiansY > 0 && fovRadiansY < pi,
     'fovRadiansY is $fovRadiansY, which is not a valid vertical field of view '
@@ -193,6 +197,8 @@ Matrix4 _matrix4Perspective(
   );
   double height = tan(fovRadiansY * 0.5);
   double width = height * aspectRatio;
+  final jx = jitter?.x ?? 0.0;
+  final jy = jitter?.y ?? 0.0;
 
   return Matrix4(
     1.0 / width,
@@ -203,8 +209,8 @@ Matrix4 _matrix4Perspective(
     1.0 / height,
     0.0,
     0.0,
-    0.0,
-    0.0,
+    jx,
+    jy,
     zFar / (zFar - zNear),
     1.0,
     0.0,

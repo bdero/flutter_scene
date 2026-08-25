@@ -425,11 +425,10 @@ void main() {
 
   group('generateNormals', () {
     test('generates +Z for a front-face-wound triangle in the XY plane', () {
-      // Wound like the cuboid's +Z face (clockwise in model space, the
-      // engine's front-face convention), so the normal points at the
-      // viewer of that face.
+      // Wound Counter-Clockwise (CCW) in model space (the engine's front-face
+      // convention), so the normal points at the viewer of that face (+Z).
       final normals = InterleavedLayoutAdapter.generateNormals(
-        positions: Float32List.fromList([1, -1, 0, -1, -1, 0, 1, 1, 0]),
+        positions: Float32List.fromList([-1, -1, 0, 1, -1, 0, 1, 1, 0]),
         vertexCount: 3,
         indices: [0, 1, 2],
       );
@@ -442,7 +441,7 @@ void main() {
 
     test('handles a non-indexed triangle list', () {
       final normals = InterleavedLayoutAdapter.generateNormals(
-        positions: Float32List.fromList([1, -1, 0, -1, -1, 0, 1, 1, 0]),
+        positions: Float32List.fromList([-1, -1, 0, 1, -1, 0, 1, 1, 0]),
         vertexCount: 3,
       );
       expect(normals[2], closeTo(1, 1e-6));
@@ -450,9 +449,8 @@ void main() {
 
     test('matches analytic normals on a curved front-face-wound grid', () {
       // A dome z = b(1 - nx^2)(1 - ny^2) over [-1, 1]^2, wound per the
-      // engine front-face convention (the same construction as the
-      // widget-texture example's screen). The generated smooth normals
-      // must agree with the analytic surface normals, including SIGN
+      // engine front-face convention (CCW in model space). The generated smooth
+      // normals must agree with the analytic surface normals, including SIGN
       // (pointing out of the bulge, toward the front-face viewer).
       const n = 8;
       const bulge = 0.3;
@@ -474,7 +472,7 @@ void main() {
           final br = bl + 1;
           final tl = bl + n + 1;
           final tr = tl + 1;
-          indices.addAll([br, bl, tr, tr, bl, tl]);
+          indices.addAll([bl, br, tr, bl, tr, tl]);
         }
       }
       final normals = InterleavedLayoutAdapter.generateNormals(

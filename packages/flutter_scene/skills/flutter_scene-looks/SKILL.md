@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-looks
-version: 3
+version: 4
 description: Give a flutter_scene render a deliberate, polished look. Use this whenever a scene looks flat, dull, or washed out, or whenever the ask is to make it look good, because a good look is lighting plus post-processing, not geometry. Ships copy-paste EnvironmentSettings presets that configure the whole stack coherently.
 ---
 
@@ -143,6 +143,15 @@ Start from the nearest look, then move one field at a time.
 - **Reads flat and ungrounded.** `ambientOcclusionEnabled: true`. Use `AmbientOcclusionMethod.groundTruth` for quality, keep `ambientOcclusionHalfResolution: true` for cost.
 - **Colors feel wrong.** Turn on `colorGradingEnabled` and reach for `saturation`, `contrast`, `temperature`, `tint` before anything else.
 - **Wrong tone-map feel.** `ToneMappingMode.aces` is contrasty and filmic, `pbrNeutral` (default) preserves hue and saturation, `agx` is the most neutral highlight rolloff. Do not reintroduce an `exposure: 2.0` hack; that was an artifact of an older renderer.
+
+## Micro-surface metrics and anti-waxiness tuning
+
+When tuning procedural materials or custom shaders, use surface metrics and exposure discipline to eliminate waxiness, plastic reads, or harsh aliasing:
+
+- **Surface reads like smooth plastic.** Increase high-frequency micro-scale variation. Low 1-pixel luminance gradients `(|dL/dx| + |dL/dy|) / 2` indicate untextured or overly smooth surfaces.
+- **Blotchy macro clouds.** Balance high-frequency and low-frequency energy ratios (`hf/lf`). High variance with low fine detail indicates large-scale noise patches without adequate surface grain.
+- **Harsh normal-map glitter or torn noise.** Check terminator crossing behavior under low grazing light angles (sun low on the horizon). Over-amplified normal maps flip adjacent pixels between full light and full shadow.
+- **Colors look washed out in bright areas.** Tone mapping curves compress channel differences near the shoulder. A surface reading high brightness with low saturation is often over-exposed rather than under-pigmented; reduce exposure to restore natural material saturation.
 
 ## Look tools that are not on EnvironmentSettings
 

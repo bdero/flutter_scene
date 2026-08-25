@@ -158,6 +158,7 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('sampler_budget');
     try {
       final impellerc = await findImpellerC();
+      var worst = 0;
       for (final name in [
         'physical_opaque',
         'physical_transmission',
@@ -185,8 +186,23 @@ void main() {
                 '${variant.key} declares ${samplers.length} fragment '
                 'samplers, over the $maxFragmentSamplers budget.',
           );
+          // The world-space irradiance field extends the environment's
+          // coefficient texture downward rather than declaring a sampler of
+          // its own, so every lit variant still reads exactly one of them.
+          if (name != 'shadow_catcher' && !variant.key.contains('Lightmap')) {
+            expect(
+              _hasNamedResource(reflection, 'irradiance_field'),
+              isTrue,
+              reason: '${variant.key} lost the irradiance-field sampler.',
+            );
+          }
+          if (samplers.length > worst) worst = samplers.length;
         }
       }
+      // Pinned so a new engine sampler shows up as a failure here rather than
+      // as a rejected skinned draw on a minimum-spec driver. The irradiance
+      // field left this untouched because it rides the coefficient texture.
+      expect(worst, 14);
     } finally {
       temp.deleteSync(recursive: true);
     }
@@ -344,13 +360,13 @@ void main() {
     ).readAsStringSync();
     final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
 
-    // The sampler takes the texture unit sh_coefficients gives up, so a
+    // The sampler takes the texture unit irradiance_field gives up, so a
     // lightmap entry costs no more than its plain twin.
     expect(
       uniforms,
       contains(
         '#ifndef FLUTTER_SCENE_LIGHTMAP\n'
-        'uniform sampler2D sh_coefficients;\n'
+        'uniform highp sampler2D irradiance_field;\n'
         '#endif',
       ),
     );
@@ -411,7 +427,7 @@ void main() {
             reason: '${entry.key} on $backend',
           );
           expect(
-            _hasNamedResource(reflection, 'sh_coefficients'),
+            _hasNamedResource(reflection, 'irradiance_field'),
             !lit,
             reason: '${entry.key} on $backend',
           );

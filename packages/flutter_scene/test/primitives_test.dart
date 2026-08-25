@@ -23,8 +23,8 @@ Vector3 triangleNormal(Float32List positions, List<int> indices, int triangle) {
 }
 
 // Asserts every (non-degenerate) triangle is wound so its front face points
-// outward, i.e. the right-hand-rule geometric normal opposes the stored
-// per-vertex shading normals (the engine's front-face convention).
+// outward, i.e. the right-hand-rule geometric normal points in the same
+// direction as stored per-vertex shading normals (the engine's CCW convention).
 void expectOutwardWinding(PrimitiveArrays arrays) {
   final positions = arrays.positions;
   final normals = arrays.normals!;
@@ -39,7 +39,7 @@ void expectOutwardWinding(PrimitiveArrays arrays) {
         shadingAt(indices[tri * 3]) +
         shadingAt(indices[tri * 3 + 1]) +
         shadingAt(indices[tri * 3 + 2]);
-    expect(geo.dot(avg), lessThan(0), reason: 'triangle $tri is inside-out');
+    expect(geo.dot(avg), greaterThan(0), reason: 'triangle $tri is inside-out');
   }
 }
 
@@ -67,7 +67,7 @@ void main() {
 
         // Each of the six faces shares one axis-aligned unit normal across its
         // four vertices, and both its triangles are wound so the front face
-        // points opposite that normal (the engine's front-face convention),
+        // points along that normal (the engine's CCW front-face convention),
         // i.e. the stored normal faces outward.
         final normals = arrays.normals!;
         for (var f = 0; f < 6; f++) {
@@ -86,11 +86,11 @@ void main() {
           }
           expect(
             triangleNormal(arrays.positions, arrays.indices, f * 2).dot(n),
-            lessThan(0),
+            greaterThan(0),
           );
           expect(
             triangleNormal(arrays.positions, arrays.indices, f * 2 + 1).dot(n),
-            lessThan(0),
+            greaterThan(0),
           );
         }
       },
@@ -144,10 +144,10 @@ void main() {
         segmentsX: 1,
         segmentsZ: 1,
       );
-      // A +Y-facing surface has a -Y geometric normal.
+      // A +Y-facing surface has a +Y geometric normal.
       expect(
         triangleNormal(arrays.positions, arrays.indices, 0).y,
-        lessThan(0),
+        greaterThan(0),
       );
     });
   });
@@ -390,10 +390,10 @@ void main() {
         expect(arrays.positions[v * 3 + 1], 0);
         expect(arrays.normals!.sublist(v * 3, v * 3 + 3), [0, 1, 0]);
       }
-      // Front face points +Y, so the geometric normal points -Y.
+      // Front face points +Y, so the geometric normal points +Y.
       expect(
         triangleNormal(arrays.positions, arrays.indices, 0).y,
-        lessThan(0),
+        greaterThan(0),
       );
     });
 

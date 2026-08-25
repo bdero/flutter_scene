@@ -39,7 +39,23 @@ final List<FsceneMigration> _builtInMigrations = [
   // documents read as-is. The version exists so a version-3 reader refuses
   // a morph-bearing document instead of silently dropping the deltas.
   (json) => json,
+  // 4 -> 5 standardized model-space front-face winding to Counter-Clockwise
+  // (CCW). Version 4 documents flag geometry index buffers with legacyWinding
+  // so index pairs are swapped during realization.
+  _migrateV4ToV5,
 ];
+
+Map<String, dynamic> _migrateV4ToV5(Map<String, dynamic> json) {
+  final resources = json['resources'];
+  if (resources is Map) {
+    for (final res in resources.values) {
+      if (res is Map && res['kind'] == 'geometry' && res['indices'] != null) {
+        res['legacyWinding'] = true;
+      }
+    }
+  }
+  return json;
+}
 
 Map<String, dynamic> _migrateV1ToV2(Map<String, dynamic> json) {
   final stageValue = json['stage'];
@@ -468,6 +484,35 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.screenSpaceReflectionsResolutionScale != 1.0)
       'resolutionScale': e.screenSpaceReflectionsResolutionScale,
   };
+  final gi = <String, dynamic>{
+    if (e.globalIlluminationEnabled) 'enabled': true,
+    if (e.globalIlluminationVolumeMode != 'followCamera')
+      'volumeMode': e.globalIlluminationVolumeMode,
+    if (e.globalIlluminationResolution != Vector3(16, 8, 16))
+      'resolution': _vec3Json(e.globalIlluminationResolution),
+    if (e.globalIlluminationExtents != Vector3(20, 10, 20))
+      'extents': _vec3Json(e.globalIlluminationExtents),
+    if (e.globalIlluminationIntensity != 1.0)
+      'intensity': e.globalIlluminationIntensity,
+    if (e.globalIlluminationHysteresis != 0.95)
+      'hysteresis': e.globalIlluminationHysteresis,
+    if (e.globalIlluminationShadowBias != 0.3)
+      'shadowBias': e.globalIlluminationShadowBias,
+    if (e.globalIlluminationVisibility != 0.7)
+      'visibility': e.globalIlluminationVisibility,
+    if (e.globalIlluminationVisibilityBias != 0.08)
+      'visibilityBias': e.globalIlluminationVisibilityBias,
+    if (e.globalIlluminationProbeUpdateBudget != 0)
+      'probeUpdateBudget': e.globalIlluminationProbeUpdateBudget,
+    if (e.globalIlluminationInjectionResolution != 'eighth')
+      'injectionResolution': e.globalIlluminationInjectionResolution,
+    if (e.globalIlluminationFireflyClamp != 8.0)
+      'fireflyClamp': e.globalIlluminationFireflyClamp,
+    if (e.globalIlluminationEmissiveBoost != 1.0)
+      'emissiveBoost': e.globalIlluminationEmissiveBoost,
+    if (e.globalIlluminationUpdateWhenIdleOnly) 'updateWhenIdleOnly': true,
+    if (e.globalIlluminationBakeOnly) 'bakeOnly': true,
+  };
   final fog = <String, dynamic>{
     if (e.fogEnabled) 'enabled': true,
     if (e.fogMode != 'exponential') 'mode': e.fogMode,
@@ -526,6 +571,21 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.autoExposureSpeedUp != 3.0) 'speedUp': e.autoExposureSpeedUp,
     if (e.autoExposureSpeedDown != 1.0) 'speedDown': e.autoExposureSpeedDown,
   };
+  final taa = <String, dynamic>{
+    if (e.temporalAntiAliasingEnabled) 'enabled': true,
+    if (e.temporalAntiAliasingMinimumCurrentWeight != 0.1)
+      'minimumCurrentWeight': e.temporalAntiAliasingMinimumCurrentWeight,
+    if (e.temporalAntiAliasingVarianceGamma != 1.0)
+      'varianceGamma': e.temporalAntiAliasingVarianceGamma,
+    if (e.temporalAntiAliasingSharpness != 0.0)
+      'sharpness': e.temporalAntiAliasingSharpness,
+    if (e.temporalAntiAliasingJitterSequenceLength != 16)
+      'jitterSequenceLength': e.temporalAntiAliasingJitterSequenceLength,
+    if (e.temporalAntiAliasingJitterScale != 1.0)
+      'jitterScale': e.temporalAntiAliasingJitterScale,
+    if (!e.temporalAntiAliasingObjectMotion) 'objectMotion': false,
+    if (!e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': false,
+  };
   return {
     if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
     if (bloom.isNotEmpty) 'bloom': bloom,
@@ -536,6 +596,8 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (filmGrain.isNotEmpty) 'filmGrain': filmGrain,
     if (ao.isNotEmpty) 'ambientOcclusion': ao,
     if (ssr.isNotEmpty) 'screenSpaceReflections': ssr,
+    if (gi.isNotEmpty) 'globalIllumination': gi,
+    if (taa.isNotEmpty) 'temporalAntiAliasing': taa,
     if (fog.isNotEmpty) 'fog': fog,
     if (godRays.isNotEmpty) 'godRays': godRays,
     if (dof.isNotEmpty) 'depthOfField': dof,
@@ -601,6 +663,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
       :final procedural,
       :final bounds,
       :final morphTargets,
+      :final legacyWinding,
     ):
       return {
         'kind': 'geometry',
@@ -624,6 +687,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
             if (morphTargets.defaultWeights.isNotEmpty)
               'weights': morphTargets.defaultWeights,
           },
+        if (legacyWinding) 'legacyWinding': true,
       };
     case TextureResource(:final payload, :final asset, :final content):
       return {
@@ -1017,6 +1081,8 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
   final grain = _map(effects['filmGrain']);
   final ao = _map(effects['ambientOcclusion']);
   final ssr = _map(effects['screenSpaceReflections']);
+  final gi = _map(effects['globalIllumination']);
+  final taa = _map(effects['temporalAntiAliasing']);
   final fog = _map(effects['fog']);
   final rays = _map(effects['godRays']);
   final dof = _map(effects['depthOfField']);
@@ -1074,6 +1140,38 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     ambientOcclusionHalfResolution: ao['halfResolution'] as bool? ?? true,
     ambientOcclusionDepthMipChain: ao['depthMipChain'] as bool? ?? false,
     ambientOcclusionSpecularMode: ao['specularMode'] as String? ?? 'none',
+    globalIlluminationEnabled: gi['enabled'] as bool? ?? false,
+    globalIlluminationVolumeMode: gi['volumeMode'] as String? ?? 'followCamera',
+    globalIlluminationResolution: _effectVec(
+      gi['resolution'],
+      Vector3(16, 8, 16),
+    ),
+    globalIlluminationExtents: _effectVec(gi['extents'], Vector3(20, 10, 20)),
+    globalIlluminationIntensity: _d(gi['intensity'] ?? 1.0),
+    globalIlluminationHysteresis: _d(gi['hysteresis'] ?? 0.95),
+    globalIlluminationShadowBias: _d(gi['shadowBias'] ?? 0.3),
+    globalIlluminationVisibility: _d(gi['visibility'] ?? 0.7),
+    globalIlluminationVisibilityBias: _d(gi['visibilityBias'] ?? 0.08),
+    globalIlluminationProbeUpdateBudget:
+        (gi['probeUpdateBudget'] as num?)?.toInt() ?? 0,
+    globalIlluminationInjectionResolution:
+        gi['injectionResolution'] as String? ?? 'eighth',
+    globalIlluminationFireflyClamp: _d(gi['fireflyClamp'] ?? 8.0),
+    globalIlluminationEmissiveBoost: _d(gi['emissiveBoost'] ?? 1.0),
+    globalIlluminationUpdateWhenIdleOnly:
+        gi['updateWhenIdleOnly'] as bool? ?? false,
+    globalIlluminationBakeOnly: gi['bakeOnly'] as bool? ?? false,
+    temporalAntiAliasingEnabled: taa['enabled'] as bool? ?? false,
+    temporalAntiAliasingMinimumCurrentWeight: _d(
+      taa['minimumCurrentWeight'] ?? 0.1,
+    ),
+    temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.0),
+    temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.0),
+    temporalAntiAliasingJitterSequenceLength:
+        (taa['jitterSequenceLength'] as num?)?.toInt() ?? 16,
+    temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 1.0),
+    temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? true,
+    temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? true,
     screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
     screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
     screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),
@@ -1148,6 +1246,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         bounds: _decodeBounds(json['bounds']),
         topology: json['topology'] as String? ?? 'triangle',
         morphTargets: _decodeMorphTargets(json['morphTargets']),
+        legacyWinding: json['legacyWinding'] == true,
       );
     case 'texture':
       return TextureResource(

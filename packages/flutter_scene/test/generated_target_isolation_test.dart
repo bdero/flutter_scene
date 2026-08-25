@@ -21,8 +21,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks/hooks.dart';
 
 /// A hook input like the one `flutter run` makes for [targetOS], or like the
-/// one it also makes with no asset types at all when [targetOS] is null.
-BuildInput _input(Uri packageRoot, {OS? targetOS}) {
+/// one it also makes with no asset types at all when both are null.
+///
+/// Passing [rawTargetOS] writes that value over the name [targetOS] produced,
+/// standing in for an embedder whose platform the protocol cannot name. It is
+/// untyped, and null removes the key, so a config that names something other
+/// than an OS, or names nothing, can be built as well.
+BuildInput _input(
+  Uri packageRoot, {
+  OS? targetOS,
+  Object? rawTargetOS = _keepTargetOS,
+}) {
   final builder = BuildInputBuilder()
     ..setupShared(
       packageRoot: packageRoot,
@@ -32,6 +41,8 @@ BuildInput _input(Uri packageRoot, {OS? targetOS}) {
     )
     ..setupBuildInput();
   builder.config.setupBuild(linkingEnabled: false);
+  final overwrite = !identical(rawTargetOS, _keepTargetOS);
+  if (overwrite) targetOS ??= OS.iOS;
   if (targetOS != null) {
     CodeAssetExtension(
       targetArchitecture: Architecture.arm64,
@@ -45,9 +56,28 @@ BuildInput _input(Uri packageRoot, {OS? targetOS}) {
           ? AndroidCodeConfig(targetNdkApi: 21)
           : null,
     ).setupBuildInput(builder);
+    if (overwrite) {
+      // `target_os` is a plain string in the syntax, so an embedder can write
+      // a name the API has no `OS` for and still produce a valid config.
+      final extensions = builder.config.json['extensions']! as Map;
+      final code = extensions['code_assets']! as Map;
+      if (rawTargetOS == null) {
+        code.remove('target_os');
+      } else {
+        code['target_os'] = rawTargetOS;
+      }
+    }
   }
   return builder.build();
 }
+
+/// The default for `_input`'s `rawTargetOS`, meaning leave the name alone. A
+/// sentinel rather than null, since null is the request to remove the key.
+const Object _keepTargetOS = Object();
+
+/// The Apple platforms that run Metal off the iOS shader variant, spelled the
+/// way an embedder that can name itself spells them.
+const List<String> _appleEmbeddedNames = ['tvos', 'visionos', 'watchos'];
 
 /// The data-asset-only hook input `flutter run` makes for both a native
 /// build's second pass (code assets off) and a web build. flutter_tools reduces
@@ -331,6 +361,70 @@ void main() {
       ),
       currentShaderTarget,
     );
+  });
+
+  test('an Apple embedded build and runtime agree on a key', () {
+    // Both sides spell these the same way, so they meet without either having
+    // to know about the other.
+    for (final os in _appleEmbeddedNames) {
+      expect(
+        shaderBundleTargetKey(_input(temp.uri, rawTargetOS: os)),
+        shaderTargetKey(shaderBundleBackendsForOS(os)),
+        reason: 'a mismatch here is a black frame on $os',
+      );
+    }
+  });
+
+  test('an Apple embedded runtime meets a build that only knew iOS', () {
+    // A toolchain that cannot name its platform to the protocol builds as the
+    // iOS family instead, either as a fallback after a hook refused the real
+    // name or because it rides the iOS pipeline outright, while the app it
+    // produces still reports the real name at runtime. The two halves disagree
+    // about the name and have to agree about the key anyway.
+    final iosKey = shaderBundleTargetKey(_input(temp.uri, targetOS: OS.iOS));
+    for (final os in _appleEmbeddedNames) {
+      expect(
+        shaderTargetKey(shaderBundleBackendsForOS(os)),
+        iosKey,
+        reason: 'an iOS-family build is unreadable on $os',
+      );
+    }
+  });
+
+  test('a target OS the protocol cannot name is still read', () {
+    // Fails if the name is ever read back through `config.code.targetOS`,
+    // which throws on an OS this version of code_assets does not know.
+    for (final os in _appleEmbeddedNames) {
+      expect(shaderBundleBackendsForBuild(_input(temp.uri, rawTargetOS: os)), {
+        ShaderBundleBackend.metalIos,
+      }, reason: '$os must not be parsed through the typed accessor');
+    }
+    // A name nothing recognises falls to the portable set rather than
+    // throwing, so adding cases above does not disturb the default.
+    expect(
+      shaderBundleBackendsForBuild(_input(temp.uri, rawTargetOS: 'nope')),
+      {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan},
+    );
+  });
+
+  test('a config that names no target OS is portable, not web', () {
+    // Reading the name off the JSON means the shapes the typed accessor used
+    // to reject arrive here instead, and a hook that throws on one is the
+    // failure this stopped going through `config.code.targetOS` to avoid.
+    for (final Object? malformed in [null, 42, <String, Object?>{}]) {
+      expect(
+        shaderBundleBackendsForBuild(
+          _input(temp.uri, rawTargetOS: malformed, targetOS: OS.iOS),
+        ),
+        {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan},
+        reason: 'a config naming no OS must not be read as the web one',
+      );
+    }
+    // Which stays distinct from a config that names no OS because there are no
+    // code assets, the invocation web actually gets.
+    expect(shaderBundleBackendsForBuild(_dataOnlyInput(temp.uri)), {
+      ShaderBundleBackend.openglEs,
+    });
   });
 
   test('a manifest from an older schema is discarded rather than misread', () {

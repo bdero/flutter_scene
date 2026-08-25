@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show internal, kDebugMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
-    show radianceCubeEntryName, sidecarSamplesEnvironment;
+    show
+        kFrameworkVaryingSchemaVersion,
+        radianceCubeEntryName,
+        sidecarSamplesEnvironment;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
@@ -215,6 +218,15 @@ final class FmatMaterialRegistry {
         await _loadSidecar(index.sidecarAssetKey);
     final metadata = (metadataByMaterial[resolution.entry.entryName] as Map)
         .cast<String, Object?>();
+    final varyingSchema = metadata['framework_varying_schema'];
+    if (varyingSchema != null &&
+        varyingSchema != kFrameworkVaryingSchemaVersion) {
+      throw StateError(
+        'Material "$sourcePath" was compiled with an incompatible framework '
+        'varying schema ($varyingSchema, expected $kFrameworkVaryingSchemaVersion). '
+        'Rebuild the material with "flutter clean" or re-run buildMaterials.',
+      );
+    }
     if (metadata['domain'] == 'sky') {
       throw StateError(
         '"$sourcePath" is a sky .fmat; load it with loadFmatSky instead.',
@@ -305,6 +317,15 @@ final class FmatMaterialRegistry {
         await _loadSidecar(index.sidecarAssetKey);
     final metadata = (metadataByMaterial[resolution.entry.entryName] as Map)
         .cast<String, Object?>();
+    final varyingSchema = metadata['framework_varying_schema'];
+    if (varyingSchema != null &&
+        varyingSchema != kFrameworkVaryingSchemaVersion) {
+      throw StateError(
+        'Sky material "$sourcePath" was compiled with an incompatible framework '
+        'varying schema ($varyingSchema, expected $kFrameworkVaryingSchemaVersion). '
+        'Rebuild the material with "flutter clean" or re-run buildMaterials.',
+      );
+    }
     if (metadata['domain'] != 'sky') {
       throw StateError(
         '"$sourcePath" is not a sky .fmat (it has no `sky { }` block); load '

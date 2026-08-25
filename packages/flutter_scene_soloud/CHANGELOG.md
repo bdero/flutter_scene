@@ -1,3 +1,7 @@
+## 0.1.2
+
+* Widen the `flutter_scene` constraint to `^0.23.0`. No API changes.
+
 ## 0.1.1
 
 * Add `registerSoloudAudioBackend()`, so documents naming `soloud` as their audio engine realize a `SoloudAudioEngine`.

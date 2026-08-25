@@ -18,6 +18,10 @@ const _androidManifestChannel = MethodChannel(
   'dev.bdero.smoke_render/android_manifest',
 );
 
+/// Restricts the run to one scene, for iterating on it locally without
+/// paying for the whole matrix. Pass `--dart-define=SMOKE_ONLY=<id>`.
+const _onlyScene = String.fromEnvironment('SMOKE_ONLY');
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final captures = <String, String>{};
@@ -37,6 +41,7 @@ void main() {
   }
 
   for (final smoke in kSmokeScenes) {
+    if (_onlyScene.isNotEmpty && smoke.id != _onlyScene) continue;
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
       // Let Flutter render one ordinary frame before touching flutter_scene.
       // Android GLES can race GPU context setup if Scene initialization uploads
@@ -69,17 +74,25 @@ void main() {
       // renderers need fewer, longer frames to stay below emulator watchdogs.
       // TODO(smoke): restore multi-frame Android settling when the emulator
       // watchdog no longer terminates sustained software rendering.
-      final settleFrames =
-          !kIsWeb && defaultTargetPlatform == TargetPlatform.android ? 1 : 20;
-      final settleStep = Duration(milliseconds: 1000 ~/ settleFrames);
+      final isAndroid =
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      final baseFrames = isAndroid ? 1 : 20;
+      final settleStep = Duration(milliseconds: 1000 ~/ baseFrames);
+      // A converging feature (the irradiance field, a temporal resolve) has
+      // nothing to show in one frame, so its scene asks for more.
+      final settleFrames = isAndroid
+          ? 1
+          : (smoke.warmupFrames > baseFrames ? smoke.warmupFrames : baseFrames);
+      final boundary =
+          smokeSceneKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+
       for (var i = 0; i < settleFrames; i++) {
+        if (i > 0) boundary.markNeedsPaint();
         await tester.pump(settleStep);
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
 
-      final boundary =
-          smokeSceneKey.currentContext!.findRenderObject()
-              as RenderRepaintBoundary;
       final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
       final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
       final rgba = (await image.toByteData(
@@ -102,11 +115,13 @@ void main() {
 
       // Reference-free render-sanity checks (catch black screen / nothing /
       // unlit). The visual diff service catches subtler "renders, but changed".
-      expect(
-        stats.cornersClear,
-        isTrue,
-        reason: 'corners are not the clear color; the surface did not clear',
-      );
+      if (!smoke.fullCoverage) {
+        expect(
+          stats.cornersClear,
+          isTrue,
+          reason: 'corners are not the clear color; the surface did not clear',
+        );
+      }
       expect(
         stats.centerNonClearFraction,
         greaterThan(0.05),
@@ -130,6 +145,55 @@ void main() {
         greaterThan(8),
         reason: 'frame looks uniform; possible blank render',
       );
+      if (smoke.id == 'irradiance_field') {
+        // Both colored walls are emissive and nothing else lights the scene,
+        // so the floor's color is entirely bounce light carried by the probe
+        // field. Each half of the floor must take the tint of the wall beside
+        // it. This fails outright if the field stops contributing, and fails
+        // directionally if the octahedral addressing or the cage weights are
+        // wrong, which the luma gates above would not catch.
+        double redBias(int left, int top, int right, int bottom) {
+          var sum = 0.0;
+          var count = 0;
+          for (var y = top; y < bottom; y++) {
+            for (var x = left; x < right; x++) {
+              final offset = (y * image.width + x) * 4;
+              sum += rgba.getUint8(offset) - rgba.getUint8(offset + 1);
+              count++;
+            }
+          }
+          return sum / count;
+        }
+
+        final top = image.height * 58 ~/ 100;
+        final bottom = image.height * 76 ~/ 100;
+        // The view basis puts world -x on the right of the frame, so the red
+        // wall (at -x) lights the right half of the floor.
+        final greenSide = redBias(
+          image.width * 12 ~/ 100,
+          top,
+          image.width * 28 ~/ 100,
+          bottom,
+        );
+        final redSide = redBias(
+          image.width * 72 ~/ 100,
+          top,
+          image.width * 88 ~/ 100,
+          bottom,
+        );
+        // ignore: avoid_print
+        print(
+          'SMOKE irradiance_field bleed: greenSide=$greenSide '
+          'redSide=$redSide',
+        );
+        expect(
+          redSide,
+          greaterThan(greenSide + 8.0),
+          reason:
+              'the floor beside the red wall is not redder than the floor '
+              'beside the green wall; colored bounce is missing or mirrored',
+        );
+      }
       if (smoke.id == 'ambient_occlusion_edge') {
         double meanLuma(int left, int top, int right, int bottom) {
           var sum = 0.0;

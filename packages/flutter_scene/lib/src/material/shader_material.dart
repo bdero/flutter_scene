@@ -7,12 +7,31 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
+import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/shader_stage.dart';
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show FmatType;
 import 'package:flutter_scene/src/render/custom_render_pass.dart'
     show RenderInput;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+
+/// Scalar/vector type supplied once per instance to a raw shader pair.
+/// {@category Materials}
+enum ShaderInstanceAttributeType { float, vec2, vec3, vec4 }
+
+/// A named custom value appended to an instanced mesh's instance record.
+/// {@category Materials}
+class ShaderInstanceAttribute {
+  /// Creates a raw shader instance attribute declaration.
+  const ShaderInstanceAttribute(this.name, this.type);
+
+  /// Shader input suffix. The vertex shader receives `instance_<name>`.
+  final String name;
+
+  /// Number of components supplied for each instance.
+  final ShaderInstanceAttributeType type;
+}
 
 /// A [Material] backed by a caller-supplied fragment shader.
 ///
@@ -67,6 +86,22 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// diffuse irradiance SH coefficients are not bound generically; declare them
 /// in your own uniform block if you need them.
 ///
+/// ## Per-instance attributes
+///
+/// [ShaderInstanceAttribute] declarations widen the instance-rate vertex
+/// buffer of every `InstancedMesh` this material draws. Declare each one in
+/// your vertex shader as an `in` input named `instance_<name>`, and set its
+/// value per instance with `InstancedMesh.setInstanceAttribute`. A `vec3`
+/// occupies four floats in the record, as it does in a `.fmat`.
+///
+/// The engine's standard vertex shader does not declare these inputs, so a
+/// material declaring attributes supplies its own `vertexShader` (and a
+/// skinned or depth variant for the meshes it draws in those passes).
+///
+/// TODO(shader-instance-attributes): fail the draw when a material declares
+/// attributes with no vertex shader to read them, the way the `.fmat` parser
+/// rejects the same pairing.
+///
 /// ## Uniform block packing
 ///
 /// Flutter GPU resolves uniform blocks by name (via
@@ -97,7 +132,8 @@ class ShaderMaterial extends Material {
   /// assigned later via [setFragmentShader]; rendering throws until a
   /// shader is set. Set [useEnvironment] to `true` to have the engine
   /// bind the scene environment's IBL textures by their standard
-  /// names.
+  /// names, and pass `instanceAttributes` to widen the instance record
+  /// this material's instanced meshes carry.
   ShaderMaterial({
     gpu.Shader? fragmentShader,
     gpu.Shader? radianceCubeFragmentShader,
@@ -106,10 +142,12 @@ class ShaderMaterial extends Material {
     gpu.Shader? depthVertexShader,
     this.useEnvironment = false,
     this.cullingMode = gpu.CullMode.backFace,
-    this.windingOrder = gpu.WindingOrder.counterClockwise,
+    this.windingOrder = gpu.WindingOrder.clockwise,
     this.isOpaqueOverride = true,
     Set<RenderInput> sceneInputs = const {},
-  }) : _sceneInputs = _normalizeSceneInputs(sceneInputs) {
+    List<ShaderInstanceAttribute> instanceAttributes = const [],
+  }) : _sceneInputs = _normalizeSceneInputs(sceneInputs),
+       _instanceAttributes = _buildInstanceAttributes(instanceAttributes) {
     // A material constructed with inputs is not in the frame's cached summary
     // yet. Attaching it to a mounted mesh invalidates through the mesh
     // component, but constructing before the first render does not, so cover
@@ -135,9 +173,9 @@ class ShaderMaterial extends Material {
   /// [gpu.CullMode.backFace] to match the standard materials.
   gpu.CullMode cullingMode;
 
-  /// Triangle winding order. Defaults to
-  /// [gpu.WindingOrder.counterClockwise] to match the glTF
-  /// convention and the standard materials.
+  /// Triangle winding order. Defaults to [gpu.WindingOrder.clockwise] to
+  /// project model-space Counter-Clockwise (CCW) front faces on the Y-down
+  /// rasterizer.
   gpu.WindingOrder windingOrder;
 
   /// Whether this material participates in the opaque pass.
@@ -228,6 +266,45 @@ class ShaderMaterial extends Material {
   final Map<String, ByteData> _vertexUniformBlocks = {};
   final Map<String, _BoundTexture> _vertexTextures = {};
   final Map<MeshVariant, gpu.Shader> _vertexShaders = {};
+  final InstanceAttributeSchema? _instanceAttributes;
+
+  static InstanceAttributeSchema? _buildInstanceAttributes(
+    List<ShaderInstanceAttribute> declarations,
+  ) {
+    if (declarations.isEmpty) return null;
+    final names = <String>{};
+    final slots = <InstanceAttributeSlot>[];
+    var offset = 0;
+    for (final declaration in declarations) {
+      if (declaration.name.isEmpty || !names.add(declaration.name)) {
+        throw ArgumentError.value(
+          declaration.name,
+          'instanceAttributes',
+          'Names must be non-empty and unique.',
+        );
+      }
+      final type = switch (declaration.type) {
+        ShaderInstanceAttributeType.float => FmatType.float_,
+        ShaderInstanceAttributeType.vec2 => FmatType.vec2,
+        ShaderInstanceAttributeType.vec3 => FmatType.vec3,
+        ShaderInstanceAttributeType.vec4 => FmatType.vec4,
+      };
+      slots.add(
+        InstanceAttributeSlot(
+          name: declaration.name,
+          type: type,
+          floatOffset: offset,
+        ),
+      );
+      offset += type == FmatType.vec3 ? 4 : type.componentCount;
+    }
+    return InstanceAttributeSchema(slots);
+  }
+
+  /// The schema built from the `instanceAttributes` declarations, or null
+  /// when this material declared none.
+  @override
+  InstanceAttributeSchema? get instanceAttributes => _instanceAttributes;
 
   Map<String, ByteData> _blocksFor(ShaderStage stage) =>
       stage == ShaderStage.vertex ? _vertexUniformBlocks : _uniformBlocks;

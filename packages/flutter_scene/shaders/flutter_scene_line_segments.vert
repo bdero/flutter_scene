@@ -42,9 +42,10 @@ void main() {
   float perp_len = length(perp);
   perp = perp_len > 1e-12 ? perp / perp_len : vec3(0.0);
   // Orient the expansion so every quad winds as a front face under the
-  // engine's winding convention (perp flips sign with the segment direction
-  // otherwise, and a back-face culling material would drop the ribbons).
-  if (dot(cross(perp, dir), view) > 0.0) {
+  // engine's CCW winding convention (perp flips sign with the segment
+  // direction otherwise, and a back-face culling material would drop the
+  // ribbons).
+  if (dot(cross(dir, perp), view) < 0.0) {
     perp = -perp;
   }
   pos += perp * (frame_info.params.x * corner.y);

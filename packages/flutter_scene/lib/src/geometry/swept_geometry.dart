@@ -173,8 +173,8 @@ void stitchRings(
       final c = nextBase + j;
       final d = nextBase + j + 1;
       accumulator
-        ..addTriangle(a, c, b)
-        ..addTriangle(b, c, d);
+        ..addTriangle(a, b, c)
+        ..addTriangle(b, d, c);
     }
   }
 }

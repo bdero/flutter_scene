@@ -494,8 +494,9 @@ PrimitiveArrays buildCuboidArrays(Vector3 extents, {bool debugColors = false}) {
         colors[v * 4 + 3] = color[3];
       }
     }
-    // Two triangles matching the original winding: (a, b, d) and (d, b, c).
-    indices.addAll([base, base + 1, base + 3, base + 3, base + 1, base + 2]);
+    // Two CCW triangles matching the outward face normal:
+    // (a, d, b) and (d, c, b).
+    indices.addAll([base, base + 3, base + 1, base + 3, base + 2, base + 1]);
   }
   return (
     positions: positions,
@@ -542,7 +543,7 @@ PrimitiveArrays buildWedgeArrays(Vector3 size) {
     addVert(b, n, 1, 1);
     addVert(c, n, 1, 0);
     addVert(d, n, 0, 0);
-    indices.addAll([base, base + 1, base + 3, base + 3, base + 1, base + 2]);
+    indices.addAll([base, base + 3, base + 1, base + 3, base + 2, base + 1]);
   }
 
   void addTri(Vector3 a, Vector3 b, Vector3 c, Vector3 n) {
@@ -556,8 +557,8 @@ PrimitiveArrays buildWedgeArrays(Vector3 size) {
   addQuad(l0, l1, t1, t0, slopeN); // sloped top
   addQuad(l0, b0, b1, l1, Vector3(0, -1, 0)); // bottom
   addQuad(b0, t0, t1, b1, Vector3(0, 0, 1)); // vertical back
-  addTri(l0, t0, b0, Vector3(-1, 0, 0)); // left side
-  addTri(l1, b1, t1, Vector3(1, 0, 0)); // right side
+  addTri(l0, b0, t0, Vector3(-1, 0, 0)); // left side
+  addTri(l1, t1, b1, Vector3(1, 0, 0)); // right side
 
   return (
     positions: Float32List.fromList(positions),
@@ -605,10 +606,10 @@ PrimitiveArrays buildPlaneArrays({
       final v10 = v00 + 1;
       final v01 = v00 + columns;
       final v11 = v01 + 1;
-      // Wound so the lit surface faces +Y, toward a camera above.
+      // Wound Counter-Clockwise (CCW) so the lit surface faces +Y.
       indices
-        ..addAll([v00, v10, v01])
-        ..addAll([v10, v11, v01]);
+        ..addAll([v00, v01, v10])
+        ..addAll([v10, v01, v11]);
     }
   }
 
@@ -672,8 +673,8 @@ PrimitiveArrays buildSphereArrays({
       final d = c + 1;
       // Wound counter-clockwise as seen from outside the sphere.
       indices
-        ..addAll([a, c, b])
-        ..addAll([b, c, d]);
+        ..addAll([a, b, c])
+        ..addAll([b, d, c]);
     }
   }
 
@@ -763,8 +764,8 @@ PrimitiveArrays buildCylinderArrays({
       final b = a + 1;
       final c = a + columns;
       final d = c + 1;
-      if (!topApex) indices.addAll([a, c, b]);
-      if (!bottomApex) indices.addAll([b, c, d]);
+      if (!topApex) indices.addAll([a, b, c]);
+      if (!bottomApex) indices.addAll([b, d, c]);
     }
   }
 
@@ -789,7 +790,7 @@ PrimitiveArrays buildCylinderArrays({
     for (var s = 0; s < radialSegments; s++) {
       final r0 = rimBase + s;
       final r1 = rimBase + s + 1;
-      indices.addAll(flip ? [center, r1, r0] : [center, r0, r1]);
+      indices.addAll(flip ? [center, r0, r1] : [center, r1, r0]);
     }
   }
 
@@ -874,8 +875,8 @@ PrimitiveArrays buildCapsuleArrays({
       final c = a + columns;
       final d = c + 1;
       indices
-        ..addAll([a, c, b])
-        ..addAll([b, c, d]);
+        ..addAll([a, b, c])
+        ..addAll([b, d, c]);
     }
   }
 
@@ -936,8 +937,8 @@ PrimitiveArrays buildTorusArrays({
       final c = a + columns;
       final d = c + 1;
       indices
-        ..addAll([a, c, b])
-        ..addAll([b, c, d]);
+        ..addAll([a, b, c])
+        ..addAll([b, d, c]);
     }
   }
 
@@ -976,8 +977,8 @@ PrimitiveArrays buildDiscArrays({
   }
   final indices = <int>[];
   for (var s = 0; s < segments; s++) {
-    // Wound so the lit surface faces +Y (front face opposite +Y normal).
-    indices.addAll([0, 1 + s, 1 + s + 1]);
+    // Wound so the lit surface faces +Y.
+    indices.addAll([0, 1 + s + 1, 1 + s]);
   }
 
   return (
@@ -1039,8 +1040,8 @@ PrimitiveArrays buildRingArrays({
     final i1 = innerBase + s + 1;
     // Wound so the lit surface faces +Y.
     indices
-      ..addAll([o0, o1, i1])
-      ..addAll([o0, i1, i0]);
+      ..addAll([o0, i1, o1])
+      ..addAll([o0, i0, i1]);
   }
 
   return (
@@ -1080,29 +1081,29 @@ PrimitiveArrays buildIcosphereArrays({
     Vector3(-t, 0, -1),
     Vector3(-t, 0, 1),
   ];
-  // Faces wound so the outward normal opposes the right-hand normal (the
-  // engine's front-face convention), i.e. clockwise seen from outside.
+  // Faces wound Counter-Clockwise (CCW) so the outward normal points radially
+  // outward from the sphere center.
   var faces = <List<int>>[
-    [0, 5, 11],
-    [0, 1, 5],
-    [0, 7, 1],
-    [0, 10, 7],
-    [0, 11, 10],
-    [1, 9, 5],
-    [5, 4, 11],
-    [11, 2, 10],
-    [10, 6, 7],
-    [7, 8, 1],
-    [3, 4, 9],
-    [3, 2, 4],
-    [3, 6, 2],
-    [3, 8, 6],
-    [3, 9, 8],
-    [4, 5, 9],
-    [2, 11, 4],
-    [6, 10, 2],
-    [8, 7, 6],
-    [9, 1, 8],
+    [0, 11, 5],
+    [0, 5, 1],
+    [0, 1, 7],
+    [0, 7, 10],
+    [0, 10, 11],
+    [1, 5, 9],
+    [5, 11, 4],
+    [11, 10, 2],
+    [10, 7, 6],
+    [7, 1, 8],
+    [3, 9, 4],
+    [3, 4, 2],
+    [3, 2, 6],
+    [3, 6, 8],
+    [3, 8, 9],
+    [4, 9, 5],
+    [2, 4, 11],
+    [6, 2, 10],
+    [8, 6, 7],
+    [9, 8, 1],
   ];
 
   // Midpoint cache: each subdivided edge contributes one shared vertex.

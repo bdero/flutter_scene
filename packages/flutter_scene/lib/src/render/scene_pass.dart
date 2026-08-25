@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
+import 'package:flutter_scene/src/render/irradiance_field.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
@@ -83,6 +84,7 @@ class ScenePass extends RenderGraphPass {
     bool ssaoBentNormals = false,
     bool ssaoContactShadows = false,
     bool ssaoIndirectLight = false,
+    IrradianceFieldBinding? irradianceField,
     int layerMask = kRenderLayerAll,
     Fog? fog,
     bool captureOpaqueColor = false,
@@ -91,11 +93,13 @@ class ScenePass extends RenderGraphPass {
     List<Plane> cullingPlanes = const [],
     bool includeOffscreen = false,
     bool suppressPlanarReflections = false,
+    Matrix4? cameraTransform,
   }) : _captureOpaqueColor = captureOpaqueColor,
        _suppressPlanarReflections = suppressPlanarReflections,
        _bindSceneDepth = bindSceneDepth,
        _time = time,
        _camera = camera,
+       _cameraTransform = cameraTransform,
        _layerMask = layerMask,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -116,11 +120,13 @@ class ScenePass extends RenderGraphPass {
        _ssaoBentNormals = ssaoBentNormals,
        _ssaoContactShadows = ssaoContactShadows,
        _ssaoIndirectLight = ssaoIndirectLight,
+       _irradianceField = irradianceField,
        _fog = fog,
        _cullingPlanes = cullingPlanes,
        _includeOffscreen = includeOffscreen;
 
   final Camera _camera;
+  final Matrix4? _cameraTransform;
   final RenderScene _renderScene;
   final ui.Size _dimensions;
   final EnvironmentMap _environmentMap;
@@ -141,6 +147,7 @@ class ScenePass extends RenderGraphPass {
   final bool _ssaoBentNormals;
   final bool _ssaoContactShadows;
   final bool _ssaoIndirectLight;
+  final IrradianceFieldBinding? _irradianceField;
   final Fog? _fog;
 
   // Material scene inputs (see Material.sceneInputs): whether to capture
@@ -280,6 +287,7 @@ class ScenePass extends RenderGraphPass {
       environmentMap: _environmentMap,
       environmentMapB: _environmentMapB,
       diffuseShTexture: shComposite,
+      irradianceField: _irradianceField,
       environmentBlend: _environmentBlend,
       environmentIntensity: _environmentIntensity,
       environmentTransform: _environmentTransform,
@@ -352,6 +360,7 @@ class ScenePass extends RenderGraphPass {
       _layerMask,
       _cullingPlanes,
       !_includeOffscreen,
+      cameraTransform: _cameraTransform,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {

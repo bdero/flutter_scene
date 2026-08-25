@@ -254,5 +254,49 @@
   "LensFlareFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_lens_flare.frag"
+  },
+  "IrradianceInjectVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_irradiance_inject.vert"
+  },
+  "IrradianceInjectFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_inject.frag"
+  },
+  "IrradianceInjectDepthFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_inject_depth.frag"
+  },
+  "IrradianceBlendFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_blend.frag"
+  },
+  "IrradianceBlendDepthFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_blend_depth.frag"
+  },
+  "IrradianceFilterFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_filter.frag"
+  },
+  "IrradianceStripFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_irradiance_strip.frag"
+  },
+  "VelocityUnskinnedVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_velocity_unskinned.vert"
+  },
+  "VelocitySkinnedVertex": {
+    "type": "vertex",
+    "file": "shaders/flutter_scene_velocity_skinned.vert"
+  },
+  "VelocityFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_velocity.frag"
+  },
+  "TaaFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_taa.frag"
   }
 }

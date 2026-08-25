@@ -97,7 +97,8 @@ export 'src/material/physically_based_material.dart'
     show AlphaMode, PhysicallyBasedMaterial, TextureTransform;
 export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;
 export 'src/material/preprocessed_sky.dart' show PreprocessedSky;
-export 'src/material/shader_material.dart' show ShaderMaterial;
+export 'src/material/shader_material.dart'
+    show ShaderInstanceAttribute, ShaderInstanceAttributeType, ShaderMaterial;
 export 'src/material/shader_stage.dart' show MeshVariant, ShaderStage;
 export 'src/material/shadow_catcher_material.dart'
     show ShadowCatcherMaterial, ShadowCatcherMode;
@@ -126,6 +127,15 @@ export 'src/ambient_occlusion.dart'
 export 'src/auto_exposure.dart' show AutoExposureSettings;
 export 'src/depth_of_field.dart' show DepthOfField, DepthOfFieldQuality;
 export 'src/fog.dart' show Fog, FogMode;
+export 'src/global_illumination.dart'
+    show
+        GlobalIlluminationSettings,
+        IrradianceInjectionResolution,
+        IrradianceVolumeMode;
+export 'src/render/irradiance_bake.dart'
+    show IrradianceFieldBake, IrradianceFieldBakeStepper;
+export 'src/render/temporal_anti_aliasing.dart'
+    show TemporalAntiAliasingSettings;
 export 'src/god_rays.dart' show GodRaysSettings;
 export 'src/screen_space_reflections.dart'
     show ScreenSpaceReflectionsSettings, SsrDebugView;
@@ -150,6 +160,8 @@ export 'src/components/directional_light_component.dart'
     show DirectionalLightComponent;
 export 'src/components/environment_volume_component.dart'
     show EnvironmentVolumeComponent, EnvironmentVolumeShape;
+export 'src/components/irradiance_volume_component.dart'
+    show IrradianceVolumeComponent;
 export 'src/components/planar_reflector_component.dart'
     show PlanarReflectorComponent;
 export 'src/components/reflection_probe_component.dart'

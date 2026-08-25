@@ -46,16 +46,31 @@ const String generatedAssetsGitignore =
 // that target.
 enum ShaderBundleBackend { metalIos, metalDesktop, openglEs, vulkan }
 
-/// The backends an app running on [os] needs, spelled the way both
-/// `OS.name` (build) and `Platform.operatingSystem` (runtime) spell it. Null is
-/// web, or a hook invocation whose config names no target OS.
+/// The backends an app running on [os] needs, spelled the way the hook protocol
+/// spells `target_os` (build) and `Platform.operatingSystem` spells it
+/// (runtime). Null is web, or a hook invocation whose config names no target
+/// OS. A name with no arm here gets the portable set.
 ///
 /// The build and the runtime both resolve through here, so what an output is
 /// recorded as and what the app looks for cannot drift apart. Drift is silent,
 /// it renders a black frame.
+///
+/// Every Apple platform but macOS shares the iOS arm, because `metalIos` names
+/// a shader family rather than a product. impellerc's two Metal targets differ
+/// only in the MSL platform they generate for, iOS or macOS, so the embedded
+/// platforms all take the iOS variant. Naming them costs an arm each and keeps
+/// an embedder that reports its own OS from asking for a bundle no build
+/// produces, whether or not this package can build for it today.
+// TODO(watchos-gpu): watchOS has no Metal in its SDK, on the device or the
+// simulator, and its engine builds rasterize in software, so nothing renders
+// there yet and this arm is inert. It is here so the key still agrees on both
+// sides if a GPU path arrives. Revisit when one does.
 Set<ShaderBundleBackend> shaderBundleBackendsForOS(String? os) => switch (os) {
   null => const {ShaderBundleBackend.openglEs},
-  'ios' => const {ShaderBundleBackend.metalIos},
+  'ios' ||
+  'tvos' ||
+  'visionos' ||
+  'watchos' => const {ShaderBundleBackend.metalIos},
   'macos' => const {ShaderBundleBackend.metalDesktop},
   'fuchsia' => const {ShaderBundleBackend.vulkan},
   _ => const {ShaderBundleBackend.openglEs, ShaderBundleBackend.vulkan},

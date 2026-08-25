@@ -1,3 +1,7 @@
+## 0.2.1
+
+* Widen the `scene` constraint to `^0.3.0`. No API changes.
+
 ## 0.2.0
 
 * BREAKING: the backend now implements the `PhysicsSimulation` contract from `package:scene`; the runtime dependency moved from `flutter_scene` to `scene`.
