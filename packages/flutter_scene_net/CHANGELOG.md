@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Widen the `flutter_scene` constraint to `^0.23.0` and the `scene` constraint to `^0.3.0`. No API changes.
+
 ## 0.2.0
 
 - `PredictedTransformComponent` with `PredictedController`, client-side prediction of an owned entity with authoritative input-replay reconciliation, so local input renders instantly while the sim stays server-authoritative. Selected per entity through `SceneReplication`'s `localPrediction` seam.
