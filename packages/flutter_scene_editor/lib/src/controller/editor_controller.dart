@@ -748,7 +748,13 @@ class EditorController extends ChangeNotifier {
       final times = _payloadFloats(channel.timeline);
       final values = _payloadFloats(channel.keyframes);
       final stride = channel.property == AnimationProperty.rotation ? 4 : 3;
-      final sampled = _sampleChannel(times, values, stride, t);
+      final sampled = _sampleChannel(
+        times,
+        values,
+        stride,
+        t,
+        step: channel.interpolation == AnimationInterpolation.step,
+      );
       if (sampled == null) continue;
       switch (channel.property) {
         case AnimationProperty.translation:
@@ -791,8 +797,9 @@ class EditorController extends ChangeNotifier {
     Float32List times,
     Float32List values,
     int stride,
-    double t,
-  ) {
+    double t, {
+    bool step = false,
+  }) {
     if (times.isEmpty) return null;
     var hi = 0;
     while (hi < times.length && times[hi] < t) {
@@ -803,6 +810,8 @@ class EditorController extends ChangeNotifier {
     ];
     if (hi <= 0) return slice(0);
     if (hi >= times.length) return slice(times.length - 1);
+    // Step holds the previous keyframe until the next one is reached.
+    if (step) return slice(hi - 1);
     final lo = hi - 1;
     final span = times[hi] - times[lo];
     final f = span <= 0 ? 0.0 : (t - times[lo]) / span;

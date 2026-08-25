@@ -1,5 +1,14 @@
 part of '../animation.dart';
 
+/// How a timeline produces values between keyframes.
+enum TimelineInterpolation {
+  /// Straight lerp (rotation: slerp) between neighboring keyframes.
+  linear,
+
+  /// Hold the previous keyframe's value until the next one is reached.
+  step,
+}
+
 /// Computes a per-property animated value from a timeline of keyframes.
 ///
 /// Subclasses cover the three [AnimationProperty] flavors with the
@@ -25,9 +34,10 @@ abstract class PropertyResolver {
   /// monotonically non-decreasing.
   static PropertyResolver makeTranslationTimeline(
     List<double> times,
-    List<Vector3> values,
-  ) {
-    return TranslationTimelineResolver._(times, values);
+    List<Vector3> values, {
+    TimelineInterpolation interpolation = TimelineInterpolation.linear,
+  }) {
+    return TranslationTimelineResolver._(times, values, interpolation);
   }
 
   /// Creates a rotation resolver that spherically interpolates between
@@ -37,9 +47,10 @@ abstract class PropertyResolver {
   /// monotonically non-decreasing.
   static PropertyResolver makeRotationTimeline(
     List<double> times,
-    List<Quaternion> values,
-  ) {
-    return RotationTimelineResolver._(times, values);
+    List<Quaternion> values, {
+    TimelineInterpolation interpolation = TimelineInterpolation.linear,
+  }) {
+    return RotationTimelineResolver._(times, values, interpolation);
   }
 
   /// Creates a scale resolver that linearly interpolates between the
@@ -49,9 +60,10 @@ abstract class PropertyResolver {
   /// monotonically non-decreasing.
   static PropertyResolver makeScaleTimeline(
     List<double> times,
-    List<Vector3> values,
-  ) {
-    return ScaleTimelineResolver._(times, values);
+    List<Vector3> values, {
+    TimelineInterpolation interpolation = TimelineInterpolation.linear,
+  }) {
+    return ScaleTimelineResolver._(times, values, interpolation);
   }
 
   /// Creates a morph weights resolver that linearly interpolates between
@@ -64,8 +76,14 @@ abstract class PropertyResolver {
     List<double> times,
     Float32List values, {
     required int targetCount,
+    TimelineInterpolation interpolation = TimelineInterpolation.linear,
   }) {
-    return MorphWeightsTimelineResolver._(times, values, targetCount);
+    return MorphWeightsTimelineResolver._(
+      times,
+      values,
+      targetCount,
+      interpolation,
+    );
   }
 }
 
@@ -88,7 +106,13 @@ class _TimelineKey {
 abstract class TimelineResolver implements PropertyResolver {
   final List<double> _times;
 
-  TimelineResolver._(this._times);
+  /// How values are produced between keyframes.
+  final TimelineInterpolation _interpolation;
+
+  TimelineResolver._(
+    this._times, [
+    this._interpolation = TimelineInterpolation.linear,
+  ]);
 
   /// The keyframe times, in seconds. Read by the scene serializer.
   List<double> get times => List.unmodifiable(_times);
@@ -111,6 +135,10 @@ abstract class TimelineResolver implements PropertyResolver {
     double nextTime = _times[nextTimeIndex];
 
     double lerp = (time - previousTime) / (nextTime - previousTime);
+    // Step holds the previous keyframe until the next one is reached.
+    if (_interpolation == TimelineInterpolation.step && lerp < 1) {
+      lerp = 0;
+    }
     return _TimelineKey(nextTimeIndex, lerp);
   }
 }
@@ -124,8 +152,11 @@ class TranslationTimelineResolver extends TimelineResolver {
   /// The keyframe values. Read by the scene serializer.
   List<Vector3> get values => List.unmodifiable(_values);
 
-  TranslationTimelineResolver._(List<double> times, this._values)
-    : super._(times) {
+  TranslationTimelineResolver._(
+    List<double> times,
+    this._values,
+    TimelineInterpolation interpolation,
+  ) : super._(times, interpolation) {
     assert(times.length == _values.length);
   }
 
@@ -155,8 +186,11 @@ class RotationTimelineResolver extends TimelineResolver {
   /// The keyframe values. Read by the scene serializer.
   List<Quaternion> get values => List.unmodifiable(_values);
 
-  RotationTimelineResolver._(List<double> times, this._values)
-    : super._(times) {
+  RotationTimelineResolver._(
+    List<double> times,
+    this._values,
+    TimelineInterpolation interpolation,
+  ) : super._(times, interpolation) {
     assert(times.length == _values.length);
   }
 
@@ -190,7 +224,11 @@ class ScaleTimelineResolver extends TimelineResolver {
   /// The keyframe values. Read by the scene serializer.
   List<Vector3> get values => List.unmodifiable(_values);
 
-  ScaleTimelineResolver._(List<double> times, this._values) : super._(times) {
+  ScaleTimelineResolver._(
+    List<double> times,
+    this._values,
+    TimelineInterpolation interpolation,
+  ) : super._(times, interpolation) {
     assert(times.length == _values.length);
   }
 
@@ -237,7 +275,8 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
     List<double> times,
     this._values,
     this.targetCount,
-  ) : super._(times) {
+    TimelineInterpolation interpolation,
+  ) : super._(times, interpolation) {
     assert(targetCount >= 0);
     assert(times.length * targetCount == _values.length);
   }

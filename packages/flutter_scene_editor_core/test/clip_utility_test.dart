@@ -228,4 +228,57 @@ void main() {
     expect(rotated.x, closeTo(0.0, 1e-5));
     expect(rotated.z, closeTo(1.0, 1e-5));
   });
+
+  test(
+    'step interpolation survives the .fscene round trip; linear omits it',
+    () {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'Clip'});
+      final animationId = h.doc.animations.keys.last;
+      _run(h, 'setAnimationKeyframes', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'keys': [
+          {'time': 0.0},
+          {'time': 1.0},
+        ],
+      });
+      // A second, untouched channel stays linear.
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'scale',
+        'time': 0.0,
+      });
+
+      // A default channel encodes without the key at all.
+      final plain = writeFscene(readFscene(writeFscene(h.doc)));
+      expect(plain.contains('interpolation'), isFalse);
+
+      _run(h, 'setChannelInterpolation', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'interpolation': 'step',
+      });
+      final encoded = writeFscene(h.doc);
+      expect(encoded.contains('"interpolation": "step"'), isTrue);
+
+      final restored = readFscene(encoded);
+      final restoredAnimation = restored.animations[animationId]!;
+      final stepped = restoredAnimation.channels.firstWhere(
+        (c) => c.property == AnimationProperty.translation,
+      );
+      expect(stepped.interpolation, AnimationInterpolation.step);
+      final linear = restoredAnimation.channels.firstWhere(
+        (c) => c.property == AnimationProperty.scale,
+      );
+      expect(linear.interpolation, isNull);
+
+      // And the step flag itself survives a second round trip.
+      expect(writeFscene(restored), encoded);
+    },
+  );
 }

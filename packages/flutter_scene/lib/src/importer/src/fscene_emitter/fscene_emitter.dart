@@ -381,6 +381,11 @@ void _buildAnimation(
           PayloadEncoding.floats,
         ),
         keyframes: _floatPayload(document, keyframes, PayloadEncoding.floats),
+        // glTF STEP maps directly; CUBICSPLINE stays a linear approximation
+        // of its baked key values (unchanged behavior).
+        interpolation: sampler.interpolation == 'STEP'
+            ? AnimationInterpolation.step
+            : null,
       ),
     );
   }

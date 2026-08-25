@@ -1975,6 +1975,7 @@ class EditorToolSurface {
     return {
       'target': _channelTarget(channel),
       'property': channel.property.name,
+      'interpolation': channel.interpolation?.name ?? 'linear',
       'totalKeys': inRange.length,
       'keysTruncated': shown.length < inRange.length,
       'keyframes': [

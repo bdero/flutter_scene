@@ -952,6 +952,81 @@ final mirrorAnimationX = CommandEntry(
   },
 );
 
+final setChannelInterpolation = CommandEntry(
+  name: 'setChannelInterpolation',
+  doc:
+      'Set how one animation channel interpolates between keyframes: '
+      '"linear" (the default) blends between neighbors, "step" holds each '
+      'keyframe\'s value until the next one is reached.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
+    ParamSpec(
+      name: 'interpolation',
+      type: ParamType.string,
+      label: 'Interpolation',
+      description: '"linear" or "step".',
+    ),
+  ],
+  execute: (ctx, params) {
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final nodeId = requireNodeId(params, 'nodeId');
+    final property = _requireProperty(params);
+    final modeName = requireString(params, 'interpolation');
+    AnimationInterpolation? mode;
+    for (final value in AnimationInterpolation.values) {
+      if (value.name == modeName) mode = value;
+    }
+    if (mode == null && modeName != 'linear') {
+      throw CommandException(
+        'Unknown interpolation "$modeName" (linear or step)',
+      );
+    }
+    if (_channelOf(animation, nodeId, property) == null) {
+      throw CommandException(
+        'No ${property.name} channel on ${nodeId.toToken()}',
+      );
+    }
+    final updatedChannels = [
+      for (final c in animation.channels)
+        if (c.target == nodeId && c.property == property)
+          AnimationChannelSpec(
+            target: c.target,
+            targetName: c.targetName,
+            property: c.property,
+            timeline: c.timeline,
+            keyframes: c.keyframes,
+            // Linear is the default and encodes as absent.
+            interpolation: mode == AnimationInterpolation.step ? mode : null,
+          )
+        else
+          c,
+    ];
+    final updated = AnimationSpec(animation.id, name: animation.name)
+      ..channels.addAll(updatedChannels);
+    return Transaction(
+      name: 'Set channel interpolation',
+      records: [
+        ChangeRecord(
+          targetId: animation.id,
+          slot: ChangeSlot.poolAnimation,
+          oldValue: AnimationChange(animation),
+          newValue: AnimationChange(updated),
+        ),
+      ],
+    );
+  },
+);
+
 /// The animation authoring commands.
 final List<CommandEntry> animationCommands = [
   createAnimation,
@@ -960,6 +1035,7 @@ final List<CommandEntry> animationCommands = [
   keyPose,
   setAnimationKeyframe,
   setAnimationKeyframes,
+  setChannelInterpolation,
   removeAnimationKeyframe,
   moveAnimationKeyframe,
   duplicateAnimation,

@@ -80,24 +80,30 @@ engine.Animation? buildAnimation(
 
     final engine.AnimationProperty property;
     final engine.PropertyResolver resolver;
+    final interpolation = channel.interpolation == AnimationInterpolation.step
+        ? engine.TimelineInterpolation.step
+        : engine.TimelineInterpolation.linear;
     switch (channel.property) {
       case AnimationProperty.translation:
         property = engine.AnimationProperty.translation;
         resolver = engine.PropertyResolver.makeTranslationTimeline(
           times,
           _vec3List(values),
+          interpolation: interpolation,
         );
       case AnimationProperty.rotation:
         property = engine.AnimationProperty.rotation;
         resolver = engine.PropertyResolver.makeRotationTimeline(
           times,
           _quaternionList(values),
+          interpolation: interpolation,
         );
       case AnimationProperty.scale:
         property = engine.AnimationProperty.scale;
         resolver = engine.PropertyResolver.makeScaleTimeline(
           times,
           _vec3List(values),
+          interpolation: interpolation,
         );
       case AnimationProperty.weights:
         // The keyframes payload is the flattened glTF shape, one weight per
@@ -109,6 +115,7 @@ engine.Animation? buildAnimation(
           times,
           Float32List.sublistView(values, 0, times.length * targetCount),
           targetCount: targetCount,
+          interpolation: interpolation,
         );
     }
     channels.add(

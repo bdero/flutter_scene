@@ -1000,4 +1000,80 @@ void documentTests() {
     final bounds = detail['worldBounds'] as Map;
     expect((bounds['max'] as Map)['y'], 4);
   });
+
+  group('channel interpolation', () {
+    test('channels report their interpolation mode', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframes',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'keys': [
+            {'time': 0.0},
+            {'time': 1.0},
+          ],
+        },
+      });
+      // Default is linear.
+      var detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      expect(
+        ((detail['channels'] as List).single as Map)['interpolation'],
+        'linear',
+      );
+
+      await surface.dispatch('run_command', {
+        'command': 'setChannelInterpolation',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'interpolation': 'step',
+        },
+      });
+      detail = await surface.dispatch('get_animation', {'ref': animationId});
+      expect(
+        ((detail['channels'] as List).single as Map)['interpolation'],
+        'step',
+      );
+    });
+
+    test('an unknown interpolation mode is rejected', () {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      expect(
+        () => surface.dispatch('run_command', {
+          'command': 'setChannelInterpolation',
+          'params': {
+            'animationId': '0000008000000',
+            'nodeId': '0000008000001',
+            'property': 'translation',
+            'interpolation': 'bouncy',
+          },
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+  });
 }
