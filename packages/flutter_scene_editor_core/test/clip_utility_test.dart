@@ -369,4 +369,86 @@ void main() {
       24,
     );
   });
+
+  test('tangent authoring on cubic channels', () {
+    final h = _harness();
+    final node = _addCube(h, 'Cube');
+    _run(h, 'createAnimation', {'name': 'Clip'});
+    final animationId = h.doc.animations.keys.last;
+    _run(h, 'setAnimationKeyframes', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'keys': [
+        {'time': 0.0},
+        {'time': 1.0},
+      ],
+    });
+    _run(h, 'setChannelInterpolation', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'interpolation': 'cubic',
+    });
+    animation() => h.doc.animations[animationId]!;
+    List<double> row(double time) {
+      final channel = animation().channels.first;
+      final bytes = h.doc.payload(channel.keyframes)!.bytes!;
+      final floats = bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+      return floats;
+    }
+
+    // Author an out-tangent on key 0.
+    _run(h, 'setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'time': 0.0,
+      'outTangent': {'x': 30.0, 'y': 0.0, 'z': 0.0},
+    });
+    var floats = row(0.0);
+    // Out-tangent slot of key 0: floats[6..8].
+    expect(floats[6], closeTo(30.0, 1e-6));
+    // Re-key the same time WITHOUT tangents: they must survive.
+    _run(h, 'setNodeTransform', {
+      'nodeId': node.toToken(),
+      'translation': {'x': 1.0, 'y': 2.0, 'z': 3.0},
+    });
+    _run(h, 'setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'time': 0.0,
+    });
+    floats = row(0.0);
+    expect(floats[3], closeTo(1.0, 1e-6)); // value updated
+    expect(floats[4], closeTo(2.0, 1e-6));
+    expect(floats[5], closeTo(3.0, 1e-6));
+    expect(floats[6], closeTo(30.0, 1e-6)); // out-tangent preserved
+    expect(floats[9], closeTo(0.0, 1e-6)); // key 1 untouched
+
+    // Tangents on a non-cubic channel are rejected loudly.
+    final other = _addCube(h, 'Other');
+    _run(h, 'createAnimation', {'name': 'Linear'});
+    final linearId = h.doc.animations.keys.last;
+    _run(h, 'setAnimationKeyframe', {
+      'animationId': linearId.toToken(),
+      'nodeId': other.toToken(),
+      'property': 'translation',
+      'time': 0.0,
+    });
+    expect(
+      () => _run(h, 'setAnimationKeyframe', {
+        'animationId': linearId.toToken(),
+        'nodeId': other.toToken(),
+        'property': 'translation',
+        'time': 0.0,
+        'outTangent': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+      }),
+      throwsA(isA<CommandException>()),
+    );
+  });
 }

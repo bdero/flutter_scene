@@ -1998,6 +1998,16 @@ class EditorToolSurface {
           {
             'time': times[i],
             'value': valueAt(i),
+            if (cubic && !isWeights && floats.length >= baseOf(i)) ...{
+              'inTangent': [
+                for (var j = 0; j < componentStride; j++)
+                  floats[i * rowWidth + j],
+              ],
+              'outTangent': [
+                for (var j = 0; j < componentStride; j++)
+                  floats[i * rowWidth + componentStride * 2 + j],
+              ],
+            },
             if (channel.property == AnimationProperty.rotation &&
                 floats.length >= baseOf(i) + 4)
               'eulerDeg': _eulerDeg(

@@ -431,7 +431,9 @@ final setAnimationKeyframe = CommandEntry(
       'Add or update one keyframe of an animation channel. Omitted value '
       'components capture the target node\'s current transform. Rotation '
       'accepts a "rotation" quaternion or a "rotationEuler" '
-      '{yaw, pitch, roll} object in degrees.',
+      '{yaw, pitch, roll} object in degrees. On cubic channels, '
+      '"inTangent"/"outTangent" fill that key\'s tangent slots (vectors '
+      '{x, y, z}, or {x, y, z, w} quaternions for rotation).',
   category: 'Animation',
   paramSchema: const [
     ParamSpec(
@@ -537,18 +539,40 @@ List<double> _keyValue(
       'Pass either "rotation" or "rotationEuler", not both',
     );
   }
-  return _layoutRow(interpolation, property, switch (property) {
-    AnimationProperty.translation => [
-      ...(optionalVec3(key, 'translation') ?? trs.translation).storage,
-    ],
-    AnimationProperty.rotation => [
-      ...((quaternion ?? euler) ?? trs.rotation).storage,
-    ],
-    AnimationProperty.scale => [
-      ...(optionalVec3(key, 'scale') ?? trs.scale).storage,
-    ],
-    AnimationProperty.weights => const [],
-  }, previousRow);
+  return _layoutRow(
+    interpolation,
+    property,
+    switch (property) {
+      AnimationProperty.translation => [
+        ...(optionalVec3(key, 'translation') ?? trs.translation).storage,
+      ],
+      AnimationProperty.rotation => [
+        ...((quaternion ?? euler) ?? trs.rotation).storage,
+      ],
+      AnimationProperty.scale => [
+        ...(optionalVec3(key, 'scale') ?? trs.scale).storage,
+      ],
+      AnimationProperty.weights => const [],
+    },
+    previousRow: previousRow,
+    inTangent: _tangentOf(key, property, 'inTangent'),
+    outTangent: _tangentOf(key, property, 'outTangent'),
+  );
+}
+
+/// Reads an optional tangent slot from [key]. Rotation tangents are
+/// quaternions `{x, y, z, w}`; translation and scale tangents are
+/// `{x, y, z}` vectors.
+List<double>? _tangentOf(
+  Map<String, Object?> key,
+  AnimationProperty property,
+  String name,
+) {
+  if (key[name] == null) return null;
+  if (property == AnimationProperty.rotation) {
+    return [...requireQuaternion(key, name).storage];
+  }
+  return [...requireVec3(key, name).storage];
 }
 
 /// The row of [data] at [time] (within epsilon), or null.
@@ -560,21 +584,45 @@ List<double>? _rowAt(_KeyframeData data, double time) {
 }
 
 /// Wraps a logical [value] into a full layout-width row. Cubic rows carry
-/// `[inTangent, value, outTangent]`; existing tangent slots in
-/// [previousRow] are preserved so re-keying never drops them.
+/// `[inTangent, value, outTangent]`: existing tangent slots in
+/// [previousRow] are preserved so re-keying never drops them, while
+/// explicitly provided [inTangent]/[outTangent] rows override. Providing
+/// tangents on a non-cubic channel is an error — convert the channel
+/// first.
 List<double> _layoutRow(
   AnimationInterpolation? interpolation,
   AnimationProperty property,
-  List<double> logical,
+  List<double> logical, {
   List<double>? previousRow,
-) {
+  List<double>? inTangent,
+  List<double>? outTangent,
+}) {
   final stride = _strideOf(property);
-  if (interpolation != AnimationInterpolation.cubic) return logical;
+  final cubic = interpolation == AnimationInterpolation.cubic;
+  if (!cubic) {
+    if (inTangent != null || outTangent != null) {
+      throw const CommandException(
+        'Tangents require the channel interpolation to be "cubic" '
+        '(setChannelInterpolation)',
+      );
+    }
+    return logical;
+  }
   final row = List<double>.filled(stride * 3, 0);
   if (previousRow != null && previousRow.length == stride * 3) {
     for (var j = 0; j < stride; j++) {
       row[j] = previousRow[j];
       row[2 * stride + j] = previousRow[2 * stride + j];
+    }
+  }
+  if (inTangent != null) {
+    for (var j = 0; j < stride; j++) {
+      row[j] = inTangent[j];
+    }
+  }
+  if (outTangent != null) {
+    for (var j = 0; j < stride; j++) {
+      row[2 * stride + j] = outTangent[j];
     }
   }
   for (var j = 0; j < stride; j++) {
@@ -605,8 +653,9 @@ final setAnimationKeyframes = CommandEntry(
       type: ParamType.objectList,
       label: 'Keys',
       description:
-          'One {time, translation?, rotation?, rotationEuler?, scale?} '
-          'object per keyframe; times need not be sorted.',
+          'One {time, translation?, rotation?, rotationEuler?, scale?, '
+          'inTangent?, outTangent?} object per keyframe; times need not be '
+          'sorted. Tangent slots only apply to cubic channels.',
     ),
   ],
   execute: (ctx, params) {
@@ -648,7 +697,7 @@ final setAnimationKeyframes = CommandEntry(
           channel?.interpolation,
           property,
           _keyValue(key, property, trs),
-          previousRow,
+          previousRow: previousRow,
         ),
       );
     }
@@ -1216,7 +1265,7 @@ final keyPose = CommandEntry(
           channel?.interpolation,
           property,
           logical,
-          _rowAt(data, time),
+          previousRow: _rowAt(data, time),
         );
         _upsert(data, time, value);
         final (channelRecords, updated) = _writeChannel(

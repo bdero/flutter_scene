@@ -1102,12 +1102,14 @@ void documentTests() {
       final channel = (detail['channels'] as List).single as Map;
       expect(channel['interpolation'], 'cubic');
       // The keyed values live in each row's middle slot; tangent slots are
-      // not reported as values.
+      // not reported as values — they get their own fields instead.
       for (final keyframe in (channel['keyframes'] as List)) {
         expect(
           ((keyframe as Map)['value'] as Map)['x'],
           anyOf(closeTo(0.0, 1e-6), closeTo(10.0, 1e-6)),
         );
+        expect((keyframe['inTangent'] as List), hasLength(3));
+        expect((keyframe['outTangent'] as List), hasLength(3));
       }
     });
 
