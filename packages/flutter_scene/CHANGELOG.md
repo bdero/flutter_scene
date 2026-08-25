@@ -1,5 +1,7 @@
 ## 0.24.0
 
+* Build hooks no longer crash on a target OS `package:code_assets` cannot name, which is how a third-party embedder announces tvOS or visionOS.
+* tvOS, visionOS, and watchOS select the iOS Metal shader variant, so an app on an Apple embedded platform finds its shader bundles and materials instead of looking for a target nothing builds.
 * Added `package:flutter_scene/kit.dart`, high-level gameplay, camera boom, character controller, day/night cycle, water surface, audio, pooling, and debug visualization components.
 * Standardized model-space front-face winding to Counter-Clockwise (CCW) across primitives, procedural builders, materials, and `.fscene` version 5.
 * World-space global illumination via `Scene.globalIllumination`, a grid of octahedral irradiance probes fed by scattering the visible surfaces' shaded radiance, so bounce light persists for geometry the camera is not looking at and colored bleed reads correctly. Off by default.

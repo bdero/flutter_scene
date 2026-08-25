@@ -186,24 +186,37 @@ Future<void> buildTargetShaderBundleJson({
 /// inputs, or flutter_tools not making the redundant native data pass. Revisit
 /// if a Flutter release adds such a field.
 Set<ShaderBundleBackend> shaderBundleBackendsForBuild(BuildInput buildInput) =>
-    shaderBundleBackendsForOS(_targetOSName(buildInput));
+    buildInput.config.buildCodeAssets
+    ? shaderBundleBackendsForOS(_targetOSName(buildInput) ?? _unnamedTargetOS)
+    : shaderBundleBackendsForOS(null);
 
-/// The target OS named on [buildInput], or null when it names none.
+/// Stands in for a code-asset config that names no target OS.
+///
+/// No arm claims it, so it selects the portable set, which is what an
+/// unrecognized name gets. A config this malformed should not reach a hook, and
+/// if one does it must not be mistaken for the unset case, which means web and
+/// takes the GLES set alone.
+const String _unnamedTargetOS = 'unnamed';
+
+/// The target OS named in [buildInput]'s code-asset config, or null when no
+/// string is there to read.
 ///
 /// Read off the config JSON rather than through `config.code.targetOS`, which
 /// parses the name into an `OS`. That set was closed until
 /// `package:code_assets` 2.0.0, and the older versions this package still
 /// supports throw on a name they do not know instead of minting one, so the
 /// typed accessor turns an embedder for a platform `dart:ffi` cannot name into
-/// a crashed build hook. Apple's watchOS and tvOS are two of those.
+/// a crashed build hook. Apple's tvOS and watchOS are two of those.
 ///
 /// The name is a plain string in the protocol syntax on both sides, and a
-/// string is all backend selection needs.
+/// string is all backend selection needs. Nothing here may throw on a shape it
+/// did not expect, since not throwing on an unfamiliar config is the whole
+/// point.
 String? _targetOSName(BuildInput buildInput) {
-  if (!buildInput.config.buildCodeAssets) return null;
   final extensions = buildInput.config.json['extensions'];
   final code = extensions is Map ? extensions['code_assets'] : null;
-  return code is Map ? code['target_os'] as String? : null;
+  final os = code is Map ? code['target_os'] : null;
+  return os is String ? os : null;
 }
 
 /// The leading part of a compiled bundle's build stamp, before its shader
