@@ -507,30 +507,118 @@ void main() {
         );
       }
     });
+  });
 
-    test('undo removes the whole batch at once', () {
+  group('key pose', () {
+    test('keys all three channels of several nodes in one transaction', () {
+      final h = _harness();
+      final a = _addCube(h, 'A');
+      final b = _addCube(h, 'B');
+      // Pose A and B differently.
+      _run(h, 'setNodeTransform', {
+        'nodeId': a.toToken(),
+        'translation': {'x': 1.0, 'y': 2.0, 'z': 3.0},
+        'rotationEuler': {'yaw': 90.0, 'pitch': 0.0, 'roll': 0.0},
+        'scale': {'x': 2.0, 'y': 2.0, 'z': 2.0},
+      });
+      _run(h, 'setNodeTransform', {
+        'nodeId': b.toToken(),
+        'translation': {'x': -1.0, 'y': 0.0, 'z': 0.0},
+      });
+      _run(h, 'createAnimation', {'name': 'Clip'});
+      final animationId = h.doc.animations.keys.last;
+
+      _run(h, 'keyPose', {
+        'animationId': animationId.toToken(),
+        'time': 0.5,
+        'nodeIds': [a.toToken(), b.toToken()],
+      });
+
+      final animation = h.doc.animations[animationId]!;
+      for (final node in [a, b]) {
+        for (final property in AnimationProperty.values) {
+          if (property == AnimationProperty.weights) continue;
+          final (times, values) = _channelData(
+            h.doc,
+            animation,
+            node,
+            property,
+          );
+          expect(times, hasLength(1), reason: '$node/$property');
+          expect(times.single, closeTo(0.5, 1e-6));
+          expect(
+            values.single,
+            hasLength(property == AnimationProperty.rotation ? 4 : 3),
+          );
+        }
+      }
+      final (aTimes, aTranslations) = _channelData(
+        h.doc,
+        animation,
+        a,
+        AnimationProperty.translation,
+      );
+      expect(aTranslations.single, [1.0, 2.0, 3.0]);
+    });
+
+    test('an unknown node fails without keying anything', () {
+      final h = _harness();
+      final good = _addCube(h, 'Good');
+      _run(h, 'createAnimation', {'name': 'Clip'});
+      final animationId = h.doc.animations.keys.last;
+      expect(
+        () => _run(h, 'keyPose', {
+          'animationId': animationId.toToken(),
+          'time': 0.0,
+          'nodeIds': [good.toToken(), '0000000100000999'],
+        }),
+        throwsA(isA<CommandException>()),
+      );
+      expect(h.doc.animations[animationId]!.channels, isEmpty);
+    });
+
+    test('undo removes every channel the pose keyed at once', () {
       final h = _harness();
       final node = _addCube(h, 'Cube');
-      _run(h, 'createAnimation', {'name': 'Bounce'});
-      final animationId = h.doc.animations.keys.last;
-      _run(h, 'setAnimationKeyframes', {
-        'animationId': animationId.toToken(),
+      _run(h, 'setNodeTransform', {
         'nodeId': node.toToken(),
-        'property': 'translation',
-        'keys': [
-          {
-            'time': 0.0,
-            'translation': {'x': 0.0, 'y': 1.0, 'z': 0.0},
-          },
-          {
-            'time': 1.0,
-            'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-          },
-        ],
+        'translation': {'x': 1.0, 'y': 1.0, 'z': 1.0},
       });
+      _run(h, 'createAnimation', {'name': 'Clip'});
+      final animationId = h.doc.animations.keys.last;
+      _run(h, 'keyPose', {
+        'animationId': animationId.toToken(),
+        'time': 0.0,
+        'nodeIds': [node.toToken()],
+      });
+      expect(h.doc.animations[animationId]!.channels, hasLength(3));
       h.history.undo();
-      final animation = h.doc.animations[animationId]!;
-      expect(animation.channels.where((c) => c.target == node), isEmpty);
+      expect(h.doc.animations[animationId]!.channels, isEmpty);
     });
+  });
+
+  test('undo removes the whole batch at once', () {
+    final h = _harness();
+    final node = _addCube(h, 'Cube');
+    _run(h, 'createAnimation', {'name': 'Bounce'});
+    final animationId = h.doc.animations.keys.last;
+    _run(h, 'setAnimationKeyframes', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'keys': [
+        {
+          'time': 0.0,
+          'translation': {'x': 0.0, 'y': 1.0, 'z': 0.0},
+        },
+        {
+          'time': 1.0,
+          'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+        },
+      ],
+    });
+    h.history.undo();
+    final animation = h.doc.animations[animationId]!;
+    expect(animation.channels.where((c) => c.target == node), isEmpty);
   });
 }

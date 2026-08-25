@@ -717,8 +717,94 @@ final List<CommandEntry> animationCommands = [
   createAnimation,
   deleteAnimation,
   renameAnimation,
+  keyPose,
   setAnimationKeyframe,
   setAnimationKeyframes,
   removeAnimationKeyframe,
   moveAnimationKeyframe,
 ];
+
+final keyPose = CommandEntry(
+  name: 'keyPose',
+  doc:
+      'Capture the current transforms of several nodes as keyframes of one '
+      'animation at a single time — the editor\'s Key button as a command. '
+      'Every node gets translation, rotation, and scale channels (created '
+      'on demand), all committed as a single undoable step.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(name: 'time', type: ParamType.number, label: 'Time'),
+    ParamSpec(
+      name: 'nodeIds',
+      type: ParamType.nodeRefList,
+      label: 'Nodes',
+      description:
+          'The nodes to capture; each one\'s whole current local transform '
+          'is keyed at [time].',
+    ),
+  ],
+  execute: (ctx, params) {
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final time = requireDouble(params, 'time');
+    if (time.isNegative || time.isNaN) {
+      throw CommandException('Keyframe time must be a non-negative number');
+    }
+    final nodeIds = requireNodeIdList(params, 'nodeIds');
+    if (nodeIds.isEmpty) {
+      throw const CommandException('"nodeIds" must name at least one node');
+    }
+    // Validate every node before touching anything, so a typo in a list of
+    // ten does not leave nine keyed and the transaction half-applied.
+    final nodes = [
+      for (final id in nodeIds)
+        ctx.document.node(id) ??
+            (throw CommandException('Node not found: ${id.toToken()}')),
+    ];
+    final properties = [
+      AnimationProperty.translation,
+      AnimationProperty.rotation,
+      AnimationProperty.scale,
+    ];
+    // Each channel write builds on the spec the previous one produced,
+    // so the accumulated transaction keeps every new channel.
+    final records = <ChangeRecord>[];
+    var working = animation;
+    for (var i = 0; i < nodes.length; i++) {
+      final id = nodeIds[i];
+      final node = nodes[i];
+      final trs = _currentTrs(node);
+      for (final property in properties) {
+        final channel = _channelOf(working, id, property);
+        final data = channel == null
+            ? _KeyframeData([], [])
+            : _readKeyframes(ctx.document, channel);
+        final value = switch (property) {
+          AnimationProperty.translation => [...trs.translation.storage],
+          AnimationProperty.rotation => [...trs.rotation.storage],
+          AnimationProperty.scale => [...trs.scale.storage],
+          AnimationProperty.weights => const <double>[],
+        };
+        _upsert(data, time, value);
+        final (channelRecords, updated) = _writeChannel(
+          ctx,
+          working,
+          id,
+          node.name,
+          property,
+          data,
+        );
+        records.addAll(channelRecords);
+        working = updated;
+      }
+    }
+    return Transaction(name: 'Key pose', records: records);
+  },
+);

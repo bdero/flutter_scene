@@ -12,6 +12,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart' hide NodeChange;
@@ -978,7 +979,9 @@ class EditorToolSurface {
       description:
           "Return full detail for one animation: each channel's target node, "
           'property, and decoded keyframes (a time plus a value per entry; '
-          'rotation values are quaternions, weights are flat lists). At most '
+          'rotation values are quaternions with an eulerDeg '
+          '{yaw, pitch, roll} degrees readout alongside, weights are flat '
+          'lists). At most '
           'maxKeys keyframes per channel are returned (default 200); use '
           'totalKeys and keysTruncated to spot larger channels and page '
           'through them with get_keyframes. Author and edit animations '
@@ -1975,8 +1978,43 @@ class EditorToolSurface {
       'totalKeys': inRange.length,
       'keysTruncated': shown.length < inRange.length,
       'keyframes': [
-        for (final i in shown) {'time': times[i], 'value': valueAt(i)},
+        for (final i in shown)
+          {
+            'time': times[i],
+            'value': valueAt(i),
+            if (channel.property == AnimationProperty.rotation &&
+                floats.length >= i * 4 + 4)
+              'eulerDeg': _eulerDeg(
+                Quaternion(
+                  floats[i * 4],
+                  floats[i * 4 + 1],
+                  floats[i * 4 + 2],
+                  floats[i * 4 + 3],
+                ),
+              ),
+          },
       ],
+    };
+  }
+
+  /// A rotation quaternion as `{yaw, pitch, roll}` in degrees — the exact
+  /// inverse of the `rotationEuler` input the authoring commands accept
+  /// (extracted from the same rotation-matrix layout the engine composes,
+  /// `Matrix4.setFromTranslationRotation`).
+  Map<String, Object?> _eulerDeg(Quaternion q) {
+    final x2 = q.x * 2;
+    final y2 = q.y * 2;
+    final z2 = q.z * 2;
+    final m02 = q.x * z2 + q.w * y2;
+    final m12 = q.y * z2 - q.w * x2;
+    final m10 = q.x * y2 + q.w * z2;
+    final m11 = 1.0 - (q.x * x2 + q.z * z2);
+    final m22 = 1.0 - (q.x * x2 + q.y * y2);
+    const degrees = 180.0 / math.pi;
+    return {
+      'yaw': math.atan2(m02, m22) * degrees,
+      'pitch': -math.asin(m12.clamp(-1.0, 1.0)) * degrees,
+      'roll': math.atan2(m10, m11) * degrees,
     };
   }
 

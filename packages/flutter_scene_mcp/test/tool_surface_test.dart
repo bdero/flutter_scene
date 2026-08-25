@@ -299,6 +299,70 @@ void main() {
         throwsA(isA<ToolError>()),
       );
     });
+
+    test('rotation keyframes carry an eulerDeg readback', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      // Author in degrees; the readback must round-trip.
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'rotation',
+          'time': 0.0,
+          'rotationEuler': {'yaw': 90.0, 'pitch': 0.0, 'roll': 0.0},
+        },
+      });
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'time': 0.0,
+          'translation': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+        },
+      });
+
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      for (final channel in (detail['channels'] as List)) {
+        final c = channel as Map;
+        if (c['property'] != 'rotation') continue;
+        final keyframe = (c['keyframes'] as List).single as Map;
+        final euler = keyframe['eulerDeg'] as Map;
+        expect(euler['yaw'], closeTo(90.0, 1e-4));
+        expect(euler['pitch'], closeTo(0.0, 1e-4));
+        expect(euler['roll'], closeTo(0.0, 1e-4));
+      }
+      // Translation channels carry no eulerDeg.
+      final translation =
+          (detail['channels'] as List)
+                  .where((c) => (c as Map)['property'] == 'translation')
+                  .single
+              as Map;
+      expect(
+        ((translation['keyframes'] as List).single as Map)['eulerDeg'],
+        isNull,
+      );
+    });
   });
 
   group('command gateway', () {
