@@ -17,14 +17,44 @@ and is exactly one undoable edit, identical to the same action in the UI.
 There is no side channel, so nothing you do can drift from what the user
 sees or what saves to disk.**
 
-## Connect
+## Prerequisite and connect
 
-The editor app hosts the server automatically. Bridge it to your stdio
-client:
+A human starts the editor app and opens a scene; the server is hosted by
+that running app — you cannot launch the GUI or create the port yourself.
 
-```sh
-dart run flutter_scene_mcp:flutter_scene_mcp_connect 7007
+**How you connect depends on your MCP host.** The editor speaks MCP over
+`127.0.0.1:7007`. Most agent hosts reach it by launching the bundled stdio
+bridge as their server command — register it once in your client's MCP
+config (the `mcpServers` shape Claude Code and most hosts use):
+
+```json
+{
+  "mcpServers": {
+    "flutter-scene-editor": {
+      "command": "dart",
+      "args": ["run", "flutter_scene_mcp:flutter_scene_mcp_connect", "7007"]
+    }
+  }
+}
 ```
+
+The bridge is a transparent pipe: your host launches it, talks MCP over its
+stdio, and it forwards to the editor. After editing the config, restart or
+reload your host's MCP connections; the editor's tools then appear through
+your normal `tools/list`.
+
+If your host dials TCP directly instead of spawning commands, open
+newline-delimited MCP to `127.0.0.1:7007` yourself — same protocol, no
+bridge.
+
+Invocation notes:
+
+- Tools arrive through the standard flow (`tools/list`, then `tools/call`);
+  nothing here uses custom protocol extensions.
+- Screenshots come back as **image content blocks**, not text.
+- Command failures are ordinary tool results with `isError: true` and a
+  human-readable message — read the message; it names the bad parameter.
+- One registered connection survives New/Open document swaps in the editor.
 
 One connection survives New/Open document swaps. The server is localhost
 and unauthenticated by design — never forward the port beyond the machine.

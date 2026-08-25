@@ -23,7 +23,7 @@ Discover anything not listed here with `search_commands {query}`.
 | --- | --- |
 | `control_animation_preview` | Drive the playhead: `{ref?, seek?, playing?, loop?, speed?, stop?}` in order select → stop → loop → speed → seek → play. Returns transport state |
 | `frame_node {ref}` | Aim camera at a node's bounds |
-| `move_viewport_camera` / camera read tools | Compose screenshots |
+| `set_viewport_camera` / `get_viewport_camera` | Orbit pose compose for screenshots |
 | `import_model {path, parentId?, scale?}` | `.glb/.gltf` as linked prefab instance |
 | `import_environment {path}` | Panorama as environment lighting/sky |
 | `new_document` / `open_document {path}` / `save_document {path?}` | Document lifecycle |
