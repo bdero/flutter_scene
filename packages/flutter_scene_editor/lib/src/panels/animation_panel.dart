@@ -729,6 +729,36 @@ class _AnimationPanelState extends State<AnimationPanel> {
               ),
             ),
             const Spacer(),
+            if (_channelOfSelectedKey case final selectedChannel?) ...[
+              _PanelTip(
+                message:
+                    'How this channel interpolates between its keyframes.\n\n'
+                    'Linear blends smoothly between neighbors; Step holds '
+                    'each keyframe\'s value until the next one is reached.',
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Lin')),
+                    ButtonSegment(value: true, label: Text('Step')),
+                  ],
+                  selected: {
+                    selectedChannel.interpolation ==
+                        AnimationInterpolation.step,
+                  },
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  onSelectionChanged: (selection) => unawaited(
+                    _setChannelInterpolation(
+                      selection.first
+                          ? AnimationInterpolation.step
+                          : AnimationInterpolation.linear,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
             _PanelTip(
               message: 'Delete this keyframe.\n\n'
                   'The channel interpolates across the gap; removing the last '
@@ -756,6 +786,31 @@ class _AnimationPanelState extends State<AnimationPanel> {
         ],
       ),
     );
+  }
+
+  /// The channel of the currently selected key, or null when nothing is
+  /// selected or its channel no longer exists.
+  AnimationChannelSpec? get _channelOfSelectedKey {
+    final key = _selectedKey;
+    final id = _animationId;
+    if (key == null || id == null) return null;
+    for (final channel in _controller.document.animations[id]!.channels) {
+      if (channel.target == key.target && channel.property == key.property) {
+        return channel;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _setChannelInterpolation(AnimationInterpolation mode) async {
+    final key = _selectedKey;
+    if (key == null) return;
+    await _controller.run('setChannelInterpolation', {
+      'animationId': _animationId?.toToken(),
+      'nodeId': key.target.toToken(),
+      'property': key.property.name,
+      'interpolation': mode.name,
+    });
   }
 
   String _nodeName(LocalId id) =>
