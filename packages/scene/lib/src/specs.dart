@@ -1115,6 +1115,13 @@ enum AnimationInterpolation {
 
   /// Hold the previous keyframe's value until the next one is reached.
   step,
+
+  /// Cubic Hermite between neighboring keyframes, using per-keyframe
+  /// tangents. The keyframes payload then stores, per keyframe, three
+  /// vectors in glTF CUBICSPLINE order — `[inTangent, value, outTangent]`
+  /// (three times the usual per-key size). Tangents are in units of
+  /// value per second.
+  cubic,
 }
 
 /// One animation channel: a keyframe timeline driving one [property] of one

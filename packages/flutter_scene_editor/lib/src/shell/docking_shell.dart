@@ -385,10 +385,8 @@ class _TabGroupState extends State<_TabGroup> {
                         panel: widget.panelById(id),
                         id: id,
                         selected: id == active,
-                        closable:
-                            widget.panelById(id)?.closable ?? false,
-                        onTap: () =>
-                            widget.onSelect(group.panels.indexOf(id)),
+                        closable: widget.panelById(id)?.closable ?? false,
+                        onTap: () => widget.onSelect(group.panels.indexOf(id)),
                         onHide: () => widget.onHide(id),
                         onFloat: widget.onFloat == null
                             ? null

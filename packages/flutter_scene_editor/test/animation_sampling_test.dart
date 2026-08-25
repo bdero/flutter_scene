@@ -98,4 +98,31 @@ void main() {
   test('an empty channel samples as null', () {
     expect(sampleAnimationChannel(_floats([]), _floats([]), 3, 0.0), isNull);
   });
+
+  test('cubic evaluates Hermite through tangent slots', () {
+    // Payload row per keyframe (stride 3): [in, value, out].
+    final cubicTimes = _floats([0.0, 1.0]);
+    final values = _floats([
+      0, 0, 0, 0, 0, 0, 30, 0, 0, // key 0
+      0, 0, 0, 10, 0, 0, 0, 0, 0, // key 1
+    ]);
+    final mid = sampleAnimationChannel(
+      cubicTimes,
+      values,
+      3,
+      0.5,
+      interpolation: AnimationInterpolation.cubic,
+    )!;
+    // Same Hermite as the runtime test: out-tangent 30/s lifts 5 -> 8.75.
+    expect(mid[0], closeTo(8.75, 1e-6));
+    // Exact hits land on keyed values.
+    final atOne = sampleAnimationChannel(
+      cubicTimes,
+      values,
+      3,
+      1.0,
+      interpolation: AnimationInterpolation.cubic,
+    )!;
+    expect(atOne[0], closeTo(10.0, 1e-6));
+  });
 }

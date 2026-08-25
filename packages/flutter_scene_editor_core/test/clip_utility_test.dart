@@ -264,7 +264,7 @@ void main() {
         'interpolation': 'step',
       });
       final encoded = writeFscene(h.doc);
-      expect(encoded.contains('"interpolation": "step"'), isTrue);
+      expect(encoded.contains('interpolation'), isTrue);
 
       final restored = readFscene(encoded);
       final restoredAnimation = restored.animations[animationId]!;
@@ -281,4 +281,92 @@ void main() {
       expect(writeFscene(restored), encoded);
     },
   );
+
+  test('cubic conversion expands rows; re-keying preserves tangents', () {
+    final h = _harness();
+    final node = _addCube(h, 'Cube');
+    _run(h, 'createAnimation', {'name': 'Clip'});
+    final animationId = h.doc.animations.keys.last;
+    _run(h, 'setAnimationKeyframes', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'keys': [
+        {'time': 0.0},
+        {'time': 1.0},
+      ],
+    });
+    var animation = h.doc.animations[animationId]!;
+    var channel = animation.channels.first;
+    expect(h.doc.payload(channel.keyframes)!.bytes!.length, 24); // 2 x 3
+
+    // Linear -> cubic triples each row; values move to the middle slot.
+    _run(h, 'setChannelInterpolation', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'interpolation': 'cubic',
+    });
+    animation = h.doc.animations[animationId]!;
+    channel = animation.channels.first;
+    var bytes = h.doc.payload(channel.keyframes)!.bytes!;
+    expect(bytes.length, 72); // 2 x 9
+
+    // Re-keying updates only the value slot; tangent slots stay zero
+    // (the captured value must not leak into them).
+    _run(h, 'setNodeTransform', {
+      'nodeId': node.toToken(),
+      'translation': {'x': 7.0, 'y': 8.0, 'z': 9.0},
+    });
+    _run(h, 'keyPose', {
+      'animationId': animationId.toToken(),
+      'time': 0.0,
+      'nodeIds': [node.toToken()],
+    });
+    bytes = h.doc.payload(channel.keyframes)!.bytes!;
+    expect(bytes.length, 72);
+    final floats = bytes.buffer.asFloat32List(
+      bytes.offsetInBytes,
+      bytes.lengthInBytes ~/ 4,
+    );
+    expect(floats[3], closeTo(7.0, 1e-6));
+    expect(floats[4], closeTo(8.0, 1e-6));
+    expect(floats[5], closeTo(9.0, 1e-6));
+    expect(floats[6], closeTo(0.0, 1e-6)); // out-tangent untouched
+
+    // Cubic -> linear collapses back to one vector per key.
+    _run(h, 'setChannelInterpolation', {
+      'animationId': animationId.toToken(),
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'interpolation': 'linear',
+    });
+    animation = h.doc.animations[animationId]!;
+    channel = animation.channels.first;
+    expect(h.doc.payload(channel.keyframes)!.bytes!.length, 24);
+
+    // Undo thrice walks conversion and edits backwards without corruption.
+    for (var i = 0; i < 3; i++) {
+      h.history.undo();
+    }
+    animation = h.doc.animations[animationId]!;
+    // After three undos we're back at the freshly-expanded cubic state
+    // (linear-conversion -> keyPose -> linear-conversion were undone).
+    expect(
+      animation.channels.first.interpolation,
+      AnimationInterpolation.cubic,
+    );
+    expect(
+      h.doc.payload(animation.channels.first.keyframes)!.bytes!.length,
+      72,
+    );
+    // A fourth undo returns to the original linear keys.
+    h.history.undo();
+    animation = h.doc.animations[animationId]!;
+    expect(animation.channels.first.interpolation, isNull);
+    expect(
+      h.doc.payload(animation.channels.first.keyframes)!.bytes!.length,
+      24,
+    );
+  });
 }

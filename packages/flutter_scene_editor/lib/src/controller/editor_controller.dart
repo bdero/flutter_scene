@@ -44,10 +44,12 @@ import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
 import '../materials/fmat_library.dart';
+import 'animation_preview_intent.dart';
 import 'animation_sampling.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
-class EditorController extends ChangeNotifier {
+class EditorController extends ChangeNotifier
+    implements AnimationPreviewTarget {
   EditorController._(
     this.session,
     this.scene,
@@ -589,6 +591,7 @@ class EditorController extends ChangeNotifier {
   final ValueNotifier<double> previewPlayhead = ValueNotifier(0);
 
   /// The animation currently loaded on the playhead.
+  @override
   LocalId? get previewAnimationId => _previewAnimation;
 
   /// Whether playback is running.
@@ -617,6 +620,7 @@ class EditorController extends ChangeNotifier {
 
   /// Loads [id] onto the playhead (or unloads when null), resetting the
   /// playhead and restoring any previewed pose.
+  @override
   void selectPreviewAnimation(LocalId? id) {
     _stopTicker();
     _restorePreviewedNodes();
@@ -627,6 +631,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Starts (or resumes) playback of the loaded animation.
+  @override
   void playPreview() {
     final id = _previewAnimation;
     if (id == null || document.animations[id] == null) return;
@@ -642,6 +647,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Pauses playback at the current playhead.
+  @override
   void pausePreview() {
     if (!_previewPlaying) return;
     _stopTicker();
@@ -652,6 +658,7 @@ class EditorController extends ChangeNotifier {
   void togglePreviewPlay() => _previewPlaying ? pausePreview() : playPreview();
 
   /// Pauses and restores every previewed node to its document transform.
+  @override
   void stopPreview() {
     _stopTicker();
     _restorePreviewedNodes();
@@ -662,6 +669,7 @@ class EditorController extends ChangeNotifier {
 
   /// Moves the playhead to [time] (wrapping or clamping per the loop mode)
   /// and applies the pose there.
+  @override
   void seekPreview(double time) {
     final id = _previewAnimation;
     if (id == null) return;
@@ -685,6 +693,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Sets whether playback wraps at the clip's end.
+  @override
   void setPreviewLoop(bool loop) {
     if (_previewLoop == loop) return;
     _previewLoop = loop;
@@ -692,6 +701,7 @@ class EditorController extends ChangeNotifier {
   }
 
   /// Sets the playback speed multiplier (clamped to a sane range).
+  @override
   void setPreviewSpeed(double speed) {
     final next = speed.clamp(0.05, 8.0);
     if (_previewSpeed == next) return;
@@ -749,12 +759,12 @@ class EditorController extends ChangeNotifier {
       final times = _payloadFloats(channel.timeline);
       final values = _payloadFloats(channel.keyframes);
       final stride = channel.property == AnimationProperty.rotation ? 4 : 3;
-      final sampled = _sampleChannel(
+      final sampled = sampleAnimationChannel(
         times,
         values,
         stride,
         t,
-        step: channel.interpolation == AnimationInterpolation.step,
+        interpolation: channel.interpolation,
       );
       if (sampled == null) continue;
       switch (channel.property) {
@@ -785,27 +795,10 @@ class EditorController extends ChangeNotifier {
         bytes.lengthInBytes ~/ 4,
       );
     }
-    return Uint8List.fromList(bytes).buffer.asFloat32List(
-      0,
-      bytes.lengthInBytes ~/ 4,
-    );
+    return Uint8List.fromList(
+      bytes,
+    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
   }
-
-  /// Linearly interpolates a keyframe channel at [t] via the shared,
-  /// headlessly tested sampler in `animation_sampling.dart`.
-  List<double>? _sampleChannel(
-    Float32List times,
-    Float32List values,
-    int stride,
-    double t, {
-    bool step = false,
-  }) => sampleAnimationChannel(
-    times,
-    values,
-    stride,
-    t,
-    interpolation: step ? AnimationInterpolation.step : null,
-  );
 
   /// Imports a glTF binary ([glbBytes]) into the current scene as a new
   /// subtree. See [importSceneIntoScene].
@@ -1497,9 +1490,7 @@ class EditorController extends ChangeNotifier {
   Future<void> _reflect(Transaction transaction) async {
     if (transaction.isEmpty) return;
     // A stage-only edit just re-applies scene-wide settings; no re-realize.
-    if (transaction.records.every(
-      (r) => r.slot == ChangeSlot.stage,
-    )) {
+    if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
       await realizeStage(
         document,
         scene,

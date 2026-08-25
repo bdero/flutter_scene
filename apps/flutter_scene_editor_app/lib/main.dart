@@ -1278,25 +1278,16 @@ class _EditorHomeState extends State<_EditorHome> {
           setDebugMode: _renderGraphMcp.setMode,
           animationPreview: ({animationId, playing, loop, speed, seek, stop}) {
             final controller = _requireController;
-            // Selecting resets the playhead, so only when the animation
-            // actually changes; then stop before seek so one call can reset
-            // and reposition, and seek lands before playing starts.
-            if (animationId != null &&
-                animationId != controller.previewAnimationId) {
-              controller.selectPreviewAnimation(animationId);
-            }
-            if (stop == true) controller.stopPreview();
-            if (loop != null) controller.setPreviewLoop(loop);
-            if (speed != null) controller.setPreviewSpeed(speed);
-            if (seek != null) controller.seekPreview(seek);
-            switch (playing) {
-              case true:
-                controller.playPreview();
-              case false:
-                controller.pausePreview();
-              default:
-                break;
-            }
+            // Ordering lives in applyAnimationPreviewRequest (tested).
+            applyAnimationPreviewRequest(
+              controller,
+              animationId: animationId,
+              playing: playing,
+              loop: loop,
+              speed: speed,
+              seek: seek,
+              stop: stop,
+            );
             final loaded = controller.previewAnimationId;
             return {
               'animation': loaded?.toToken(),

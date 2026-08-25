@@ -361,13 +361,18 @@ void _buildAnimation(
       _ => 3,
     };
     if (property == AnimationProperty.weights && componentCount == 0) continue;
+    // CUBICSPLINE passes through with its tangents; other samplers bake to
+    // one value per keyframe.
     final keyframes = coordinatePolicy.convertAnimationValues(
-      selectGltfKeyframeValues(
-        values,
-        componentCount: componentCount,
-        cubicSpline: isCubic,
-      ),
+      isCubic
+          ? Float32List.fromList(values)
+          : selectGltfKeyframeValues(
+              values,
+              componentCount: componentCount,
+              cubicSpline: false,
+            ),
       targetPath: channel.targetPath,
+      cubicSpline: isCubic,
     );
 
     channels.add(
@@ -381,11 +386,12 @@ void _buildAnimation(
           PayloadEncoding.floats,
         ),
         keyframes: _floatPayload(document, keyframes, PayloadEncoding.floats),
-        // glTF STEP maps directly; CUBICSPLINE stays a linear approximation
-        // of its baked key values (unchanged behavior).
-        interpolation: sampler.interpolation == 'STEP'
-            ? AnimationInterpolation.step
-            : null,
+        // glTF STEP and CUBICSPLINE map directly.
+        interpolation: switch (sampler.interpolation) {
+          'STEP' => AnimationInterpolation.step,
+          'CUBICSPLINE' => AnimationInterpolation.cubic,
+          _ => null,
+        },
       ),
     );
   }

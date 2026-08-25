@@ -173,13 +173,14 @@ class _AnimationPanelState extends State<AnimationPanel> {
     final time = _controller.previewTime;
     for (final nodeId in _controller.selection.ids) {
       if (!_controller.document.nodes.containsKey(nodeId)) continue;
-      for (final p in property == null
-          ? const [
-              AnimationProperty.translation,
-              AnimationProperty.rotation,
-              AnimationProperty.scale,
-            ]
-          : [property]) {
+      for (final p
+          in property == null
+              ? const [
+                  AnimationProperty.translation,
+                  AnimationProperty.rotation,
+                  AnimationProperty.scale,
+                ]
+              : [property]) {
         try {
           await _controller.run('setAnimationKeyframe', {
             'animationId': id.toToken(),
@@ -270,9 +271,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 10,
-                    color: scheme.outline,
-                  ),
+                fontSize: 10,
+                color: scheme.outline,
+              ),
             ),
           ),
           Expanded(
@@ -324,10 +325,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
                           margin: const EdgeInsets.all(16),
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest
-                                .withValues(alpha: 0.92),
-                            border:
-                                Border.all(color: scheme.outlineVariant),
+                            color: scheme.surfaceContainerHighest.withValues(
+                              alpha: 0.92,
+                            ),
+                            border: Border.all(color: scheme.outlineVariant),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -336,10 +337,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
                             '2. Drag the playhead where the pose belongs\n'
                             '3. Pose the node with the viewport gizmo\n'
                             '4. Press Key — repeat at other times',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(height: 1.5),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(height: 1.5),
                           ),
                         ),
                       ),
@@ -387,13 +387,11 @@ class _AnimationPanelState extends State<AnimationPanel> {
   }
 
   /// Adds one keyframe capturing the channel target's current pose.
-  Future<void> _addKeyAt(
-    AnimationChannelSpec channel,
-    double time,
-  ) async {
+  Future<void> _addKeyAt(AnimationChannelSpec channel, double time) async {
     try {
       await _controller.run('setAnimationKeyframe', {
-        'animationId': _controller.previewAnimationId?.toToken() ??
+        'animationId':
+            _controller.previewAnimationId?.toToken() ??
             _animationId?.toToken(),
         'nodeId': channel.target.toToken(),
         'property': channel.property.name,
@@ -421,7 +419,8 @@ class _AnimationPanelState extends State<AnimationPanel> {
           // the action buttons out of the header row.
           Expanded(
             child: _PanelTip(
-              message: 'The animation this panel edits and previews.\n\n'
+              message:
+                  'The animation this panel edits and previews.\n\n'
                   'Pick one here after creating it with + below.',
               child: DropdownButton<LocalId>(
                 value: id,
@@ -456,7 +455,8 @@ class _AnimationPanelState extends State<AnimationPanel> {
             ),
           ),
           _PanelTip(
-            message: 'Rename this animation.\n\nThe name is what you look up '
+            message:
+                'Rename this animation.\n\nThe name is what you look up '
                 'in code when you play the clip at runtime.',
             child: IconButton(
               icon: const Icon(Icons.edit_outlined, size: 16),
@@ -532,47 +532,47 @@ class _AnimationPanelState extends State<AnimationPanel> {
                 _helpStep(
                   '1 · Create',
                   'Press + in this panel\'s header to create an animation '
-                  '(a named clip, e.g. "Spin"). Rename it to something you '
-                  'will recognize in code.',
+                      '(a named clip, e.g. "Spin"). Rename it to something you '
+                      'will recognize in code.',
                 ),
                 _helpStep(
                   '2 · Pose',
                   'Select a node in the Outliner and pose it with the '
-                  'viewport gizmo (move / rotate / scale).',
+                      'viewport gizmo (move / rotate / scale).',
                 ),
                 _helpStep(
                   '3 · Key',
                   'Drag the playhead in this panel to where the pose belongs, '
-                  'then press Key. That captures the node\'s translation, '
-                  'rotation, and scale as one keyframe.',
+                      'then press Key. That captures the node\'s translation, '
+                      'rotation, and scale as one keyframe.',
                 ),
                 _helpStep(
                   '4 · Repeat',
                   'Move the playhead to another time, pose again, press Key '
-                  'again. Between two keys the editor interpolates smoothly; '
-                  'each lane row below shows one animated property with its '
-                  'keys as diamonds.',
+                      'again. Between two keys the editor interpolates smoothly; '
+                      'each lane row below shows one animated property with its '
+                      'keys as diamonds.',
                 ),
                 _helpStep(
                   '5 · Preview',
                   'Press Play. Scrub by dragging the timeline. Stop restores '
-                  'the nodes to their un-animated pose so you can keep '
-                  'editing.',
+                      'the nodes to their un-animated pose so you can keep '
+                      'editing.',
                 ),
                 _helpStep(
                   '6 · Save & play',
                   'Save the scene — keyframes persist beside the .fscene in '
-                  'a .fsceneb sidecar. In your app, load the scene and play '
-                  'the clip from the root\'s parsedAnimations by name '
-                  '(see the flutter_scene docs on AnimationClip).',
+                      'a .fsceneb sidecar. In your app, load the scene and play '
+                      'the clip from the root\'s parsedAnimations by name '
+                      '(see the flutter_scene docs on AnimationClip).',
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'Every edit here is undoable (Cmd+Z) and also available to '
                   'agents through the same commands.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                 ),
               ],
             ),
@@ -612,8 +612,8 @@ class _AnimationPanelState extends State<AnimationPanel> {
             message: controller.previewPlaying
                 ? 'Pause the preview at the current frame.'
                 : 'Play the preview in the viewport.\n\n'
-                    'This is editor-only playback — what ships is the saved '
-                    'keyframes, played by your app.',
+                      'This is editor-only playback — what ships is the saved '
+                      'keyframes, played by your app.',
             child: IconButton(
               icon: Icon(
                 controller.previewPlaying ? Icons.pause : Icons.play_arrow,
@@ -634,10 +634,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
           _PanelTip(
             message: controller.previewLoop
                 ? 'Looping on: playback wraps at the clip\'s end.\n\n'
-                    'Turn off to play once — useful for checking a single '
-                    'pass frame by frame.'
+                      'Turn off to play once — useful for checking a single '
+                      'pass frame by frame.'
                 : 'Looping off: playback stops at the clip\'s end.\n\n'
-                    'Turn on to preview continuously.',
+                      'Turn on to preview continuously.',
             child: IconButton(
               icon: Icon(
                 controller.previewLoop ? Icons.repeat : Icons.arrow_forward,
@@ -657,10 +657,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
               onSelected: controller.setPreviewSpeed,
               itemBuilder: (context) => [
                 for (final speed in const [0.25, 0.5, 1.0, 2.0])
-                  PopupMenuItem(
-                    value: speed,
-                    child: Text('$speed×'),
-                  ),
+                  PopupMenuItem(value: speed, child: Text('$speed×')),
               ],
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -735,32 +732,33 @@ class _AnimationPanelState extends State<AnimationPanel> {
                     'How this channel interpolates between its keyframes.\n\n'
                     'Linear blends smoothly between neighbors; Step holds '
                     'each keyframe\'s value until the next one is reached.',
-                child: SegmentedButton<bool>(
+                child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: false, label: Text('Lin')),
-                    ButtonSegment(value: true, label: Text('Step')),
+                    ButtonSegment(value: 'linear', label: Text('Lin')),
+                    ButtonSegment(value: 'step', label: Text('Step')),
+                    ButtonSegment(value: 'cubic', label: Text('Cubic')),
                   ],
                   selected: {
-                    selectedChannel.interpolation ==
-                        AnimationInterpolation.step,
+                    selectedChannel.interpolation == AnimationInterpolation.step
+                        ? 'step'
+                        : selectedChannel.interpolation ==
+                              AnimationInterpolation.cubic
+                        ? 'cubic'
+                        : 'linear',
                   },
                   showSelectedIcon: false,
                   style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                   ),
-                  onSelectionChanged: (selection) => unawaited(
-                    _setChannelInterpolation(
-                      selection.first
-                          ? AnimationInterpolation.step
-                          : AnimationInterpolation.linear,
-                    ),
-                  ),
+                  onSelectionChanged: (selection) =>
+                      unawaited(_setChannelInterpolation(selection.first)),
                 ),
               ),
               const SizedBox(width: 6),
             ],
             _PanelTip(
-              message: 'Delete this keyframe.\n\n'
+              message:
+                  'Delete this keyframe.\n\n'
                   'The channel interpolates across the gap; removing the last '
                   'key of a channel removes the channel.',
               child: IconButton(
@@ -773,14 +771,14 @@ class _AnimationPanelState extends State<AnimationPanel> {
               child: Text(
                 hasSelection
                     ? 'Press Key to capture the selected nodes\' pose at the '
-                        'playhead.'
+                          'playhead.'
                     : 'Select a node in the Outliner, then press Key to '
-                        'capture its pose.',
+                          'capture its pose.',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.outline,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.outline),
               ),
             ),
         ],
@@ -802,14 +800,14 @@ class _AnimationPanelState extends State<AnimationPanel> {
     return null;
   }
 
-  Future<void> _setChannelInterpolation(AnimationInterpolation mode) async {
+  Future<void> _setChannelInterpolation(String mode) async {
     final key = _selectedKey;
     if (key == null) return;
     await _controller.run('setChannelInterpolation', {
       'animationId': _animationId?.toToken(),
       'nodeId': key.target.toToken(),
       'property': key.property.name,
-      'interpolation': mode.name,
+      'interpolation': mode,
     });
   }
 
@@ -863,25 +861,22 @@ class TimelineViewport {
   static const double minPxPerSecond = 20;
   static const double maxPxPerSecond = 600;
 
-  double get fitPxPerSecond =>
-      laneWidth / (duration > 0 ? duration : 1);
+  double get fitPxPerSecond => laneWidth / (duration > 0 ? duration : 1);
 
   double get pxPerSecond => (zoomPx ?? fitPxPerSecond).clamp(
-        math.min(fitPxPerSecond, minPxPerSecond),
-        math.max(fitPxPerSecond, maxPxPerSecond),
-      );
+    math.min(fitPxPerSecond, minPxPerSecond),
+    math.max(fitPxPerSecond, maxPxPerSecond),
+  );
 
-  double get maxScroll =>
-      math.max(0.0, duration * pxPerSecond - laneWidth);
+  double get maxScroll => math.max(0.0, duration * pxPerSecond - laneWidth);
 
   double get scroll => _scroll.clamp(0.0, maxScroll);
 
   /// The scale after multiplying by [factor], held inside the zoom range.
-  double scaledBy(double factor) =>
-      (pxPerSecond * factor).clamp(
-        math.min(fitPxPerSecond, minPxPerSecond),
-        math.max(fitPxPerSecond, maxPxPerSecond),
-      );
+  double scaledBy(double factor) => (pxPerSecond * factor).clamp(
+    math.min(fitPxPerSecond, minPxPerSecond),
+    math.max(fitPxPerSecond, maxPxPerSecond),
+  );
 
   /// The scroll offset that keeps [anchorTime] centered, at scale [atScale].
   double scrollForAnchor(double anchorTime, double atScale) =>
@@ -900,7 +895,10 @@ const double _rowHeight = 22;
 const double _maxKeyTime = 600;
 
 /// The keyframe times of [channel], read out of its timeline payload.
-List<double> channelTimes(SceneDocument document, AnimationChannelSpec channel) {
+List<double> channelTimes(
+  SceneDocument document,
+  AnimationChannelSpec channel,
+) {
   final bytes = document.payload(channel.timeline)?.bytes;
   if (bytes == null) return const [];
   final Float32List floats;
@@ -910,10 +908,9 @@ List<double> channelTimes(SceneDocument document, AnimationChannelSpec channel) 
       bytes.lengthInBytes ~/ 4,
     );
   } else {
-    floats = Uint8List.fromList(bytes).buffer.asFloat32List(
-      0,
-      bytes.lengthInBytes ~/ 4,
-    );
+    floats = Uint8List.fromList(
+      bytes,
+    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
   }
   return [for (var i = 0; i < floats.length; i++) floats[i]];
 }
@@ -1016,15 +1013,11 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     // Repaint on every playhead tick without rebuilding the parent panel.
     return ListenableBuilder(
       listenable: controller.previewPlayhead,
-      builder: (context, _) =>
-          LayoutBuilder(builder: (context, constraints) {
-        return _buildCanvas(
-          context,
-          scheme,
-          rows,
-          constraints,
-        );
-      }),
+      builder: (context, _) => LayoutBuilder(
+        builder: (context, constraints) {
+          return _buildCanvas(context, scheme, rows, constraints);
+        },
+      ),
     );
   }
 
@@ -1088,8 +1081,9 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         zoom(math.exp(-delta * 0.002), anchorTime: anchor);
       } else {
         setState(() {
-          _scroll =
-              (_scroll + delta / pxPerSecond).clamp(0.0, maxScroll).toDouble();
+          _scroll = (_scroll + delta / pxPerSecond)
+              .clamp(0.0, maxScroll)
+              .toDouble();
         });
       }
     }
@@ -1106,10 +1100,9 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       _pinchScale = event.scale;
       if (event.panDelta.dx != 0) {
         setState(() {
-          _scroll =
-              (_scroll - event.panDelta.dx / pxPerSecond)
-                  .clamp(0.0, maxScroll)
-                  .toDouble();
+          _scroll = (_scroll - event.panDelta.dx / pxPerSecond)
+              .clamp(0.0, maxScroll)
+              .toDouble();
         });
       }
       if ((event.scale - last).abs() > 1e-9) {
@@ -1192,10 +1185,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         child: Stack(
           children: [
             CustomPaint(
-              size: Size(
-                width,
-                math.max(constraints.maxHeight, contentHeight),
-              ),
+              size: Size(width, math.max(constraints.maxHeight, contentHeight)),
               painter: _TimelinePainter(
                 scheme: scheme,
                 rows: rows,
@@ -1230,8 +1220,8 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     double fitPxPerSecond,
     void Function(double factor, {double? anchorTime}) zoom,
   ) {
-    final percent =
-        (( _zoomPx ?? fitPxPerSecond) / fitPxPerSecond * 100).round();
+    final percent = ((_zoomPx ?? fitPxPerSecond) / fitPxPerSecond * 100)
+        .round();
     Widget control(IconData icon, String tip, VoidCallback onTap) => _PanelTip(
       message: tip,
       child: InkWell(
@@ -1329,9 +1319,11 @@ class _TimelinePainter extends CustomPainter {
     final step = _niceStep(visibleSeconds);
     final tStart = scrollSeconds;
     final tEnd = scrollSeconds + visibleSeconds;
-    for (var t = (tStart / step).floorToDouble() * step;
-        t <= tEnd + 1e-6;
-        t += step) {
+    for (
+      var t = (tStart / step).floorToDouble() * step;
+      t <= tEnd + 1e-6;
+      t += step
+    ) {
       // Ticks run across the whole visible window; those past the clip's end
       // are dimmed — that region is empty time the clip can grow into.
       if (t < -1e-6) continue;
@@ -1342,15 +1334,15 @@ class _TimelinePainter extends CustomPainter {
       final x = labelWidth + (t - scrollSeconds) * pxPerSecond;
       canvas.drawLine(Offset(x, 0), Offset(x, _rulerHeight - 3), tickStyle);
       TextPainter(
-        text: TextSpan(
-          text: t.toStringAsFixed(step < 0.25 ? 2 : 1),
-          style: TextStyle(
-            fontSize: 9,
-            color: scheme.outline.withValues(alpha: inClip ? 1.0 : 0.45),
+          text: TextSpan(
+            text: t.toStringAsFixed(step < 0.25 ? 2 : 1),
+            style: TextStyle(
+              fontSize: 9,
+              color: scheme.outline.withValues(alpha: inClip ? 1.0 : 0.45),
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      )
+          textDirection: TextDirection.ltr,
+        )
         ..layout()
         ..paint(canvas, Offset(x + 2, 1));
     }
@@ -1388,31 +1380,31 @@ class _TimelinePainter extends CustomPainter {
             ..color = scheme.surfaceContainerHighest.withValues(alpha: 0.55),
         );
         TextPainter(
-          text: TextSpan(
-            text: entry.title,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: scheme.primary,
+            text: TextSpan(
+              text: entry.title,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: scheme.primary,
+              ),
             ),
-          ),
-          textDirection: TextDirection.ltr,
-          maxLines: 1,
-          ellipsis: '…',
-        )
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+            ellipsis: '…',
+          )
           ..layout(maxWidth: labelWidth - 10)
           ..paint(canvas, Offset(2, top + (_rowHeight - 11) / 2));
         sawChannelInGroup = false;
       } else {
         TextPainter(
-          text: TextSpan(
-            text: entry.title,
-            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-          ),
-          textDirection: TextDirection.ltr,
-          maxLines: 1,
-          ellipsis: '…',
-        )
+            text: TextSpan(
+              text: entry.title,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+            ellipsis: '…',
+          )
           ..layout(maxWidth: labelWidth - 18)
           ..paint(canvas, Offset(12, top + (_rowHeight - 11) / 2));
         sawChannelInGroup = true;
@@ -1436,8 +1428,10 @@ class _TimelinePainter extends CustomPainter {
       final top = _rulerHeight + row * _rowHeight;
       canvas.drawLine(
         Offset(labelWidth + _laneLeftPad, top + _rowHeight / 2),
-        Offset(labelWidth + _laneLeftPad + duration * pxPerSecond - scrollSeconds,
-            top + _rowHeight / 2),
+        Offset(
+          labelWidth + _laneLeftPad + duration * pxPerSecond - scrollSeconds,
+          top + _rowHeight / 2,
+        ),
         Paint()
           ..color = scheme.outlineVariant
           ..strokeWidth = 1.5,
@@ -1481,9 +1475,16 @@ class _TimelinePainter extends CustomPainter {
       ..lineTo(cx, cy + 5)
       ..lineTo(cx - 5, cy)
       ..close();
-    canvas.drawPath(path, Paint()..color = selected ? scheme.primary : scheme.secondary);
+    canvas.drawPath(
+      path,
+      Paint()..color = selected ? scheme.primary : scheme.secondary,
+    );
     if (selected) {
-      canvas.drawCircle(Offset(cx, cy), 7, Paint()..color = scheme.primary.withValues(alpha: 0.2));
+      canvas.drawCircle(
+        Offset(cx, cy),
+        7,
+        Paint()..color = scheme.primary.withValues(alpha: 0.2),
+      );
     }
   }
 
@@ -1526,4 +1527,3 @@ class _PanelTip extends StatelessWidget {
     child: child,
   );
 }
-

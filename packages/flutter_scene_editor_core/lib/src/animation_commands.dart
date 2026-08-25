@@ -47,10 +47,16 @@ AnimationProperty _requireProperty(Map<String, Object?> params) {
   return property.first;
 }
 
-/// The values-per-keyframe stride of [property] (morph-weight channels are
-/// authored through imported models, not these commands).
+/// The values-per-keyframe stride of [property]'s value slot (morph-weight
+/// channels are authored through imported models, not these commands).
 int _strideOf(AnimationProperty property) =>
     property == AnimationProperty.rotation ? 4 : 3;
+
+/// The per-keyframe float count of [channel]'s keyframes payload: the value
+/// stride, tripled for cubic channels whose rows carry tangent slots.
+int _layoutStrideOf(AnimationChannelSpec channel) =>
+    _strideOf(channel.property) *
+    (channel.interpolation == AnimationInterpolation.cubic ? 3 : 1);
 
 /// A channel's keyframes parsed out of the document's payloads: sorted times
 /// and one fixed-stride value list per time.
@@ -69,7 +75,7 @@ _KeyframeData _readKeyframes(SceneDocument document, AnimationChannelSpec c) {
   final times = document.payload(c.timeline)?.bytes;
   final values = document.payload(c.keyframes)?.bytes;
   if (times == null || values == null) return _KeyframeData([], []);
-  final stride = _strideOf(c.property);
+  final layoutStride = _layoutStrideOf(c);
   Float32List floats(Uint8List bytes) {
     if (bytes.offsetInBytes % 4 == 0) {
       return bytes.buffer.asFloat32List(
@@ -87,8 +93,8 @@ _KeyframeData _readKeyframes(SceneDocument document, AnimationChannelSpec c) {
   return _KeyframeData(
     [for (var i = 0; i < timesIn.length; i++) timesIn[i]],
     [
-      for (var i = 0; i * stride + stride <= valuesIn.length; i++)
-        [for (var j = 0; j < stride; j++) valuesIn[i * stride + j]],
+      for (var i = 0; i * layoutStride + layoutStride <= valuesIn.length; i++)
+        [for (var j = 0; j < layoutStride; j++) valuesIn[i * layoutStride + j]],
     ],
   );
 }
@@ -256,6 +262,8 @@ bool _payloadDiffers(PayloadSpec? payload, Uint8List bytes) {
       property: property,
       timeline: timelineId,
       keyframes: keyframesId,
+      // Rewriting a channel must never silently reset its interpolation.
+      interpolation: existing?.interpolation,
     ),
   ];
   final updated = AnimationSpec(animation.id, name: animation.name)
@@ -481,13 +489,21 @@ final setAnimationKeyframe = CommandEntry(
       throw CommandException('Keyframe time must be a non-negative number');
     }
 
-    // An omitted component captures the pose currently on the node.
-    final value = _keyValue(params, property, _currentTrs(node));
-
+    // An omitted component captures the pose currently on the node. On a
+    // cubic channel the row also carries tangent slots, which are kept
+    // when re-keying an existing keyframe.
     final channel = _channelOf(animation, nodeId, property);
     final data = channel == null
         ? _KeyframeData([], [])
         : _readKeyframes(ctx.document, channel);
+    final previousRow = _rowAt(data, time);
+    final value = _keyValue(
+      params,
+      property,
+      _currentTrs(node),
+      interpolation: channel?.interpolation,
+      previousRow: previousRow,
+    );
     _upsert(data, time, value);
     final (records, _) = _writeChannel(
       ctx,
@@ -507,8 +523,10 @@ final setAnimationKeyframe = CommandEntry(
 List<double> _keyValue(
   Map<String, Object?> key,
   AnimationProperty property,
-  TrsTransform trs,
-) {
+  TrsTransform trs, {
+  AnimationInterpolation? interpolation,
+  List<double>? previousRow,
+}) {
   if (property == AnimationProperty.weights) {
     throw CommandException('Morph-weight keyframes are not authorable here');
   }
@@ -519,7 +537,7 @@ List<double> _keyValue(
       'Pass either "rotation" or "rotationEuler", not both',
     );
   }
-  return switch (property) {
+  return _layoutRow(interpolation, property, switch (property) {
     AnimationProperty.translation => [
       ...(optionalVec3(key, 'translation') ?? trs.translation).storage,
     ],
@@ -530,7 +548,39 @@ List<double> _keyValue(
       ...(optionalVec3(key, 'scale') ?? trs.scale).storage,
     ],
     AnimationProperty.weights => const [],
-  };
+  }, previousRow);
+}
+
+/// The row of [data] at [time] (within epsilon), or null.
+List<double>? _rowAt(_KeyframeData data, double time) {
+  for (var i = 0; i < data.times.length; i++) {
+    if ((data.times[i] - time).abs() <= _timeEpsilon) return data.values[i];
+  }
+  return null;
+}
+
+/// Wraps a logical [value] into a full layout-width row. Cubic rows carry
+/// `[inTangent, value, outTangent]`; existing tangent slots in
+/// [previousRow] are preserved so re-keying never drops them.
+List<double> _layoutRow(
+  AnimationInterpolation? interpolation,
+  AnimationProperty property,
+  List<double> logical,
+  List<double>? previousRow,
+) {
+  final stride = _strideOf(property);
+  if (interpolation != AnimationInterpolation.cubic) return logical;
+  final row = List<double>.filled(stride * 3, 0);
+  if (previousRow != null && previousRow.length == stride * 3) {
+    for (var j = 0; j < stride; j++) {
+      row[j] = previousRow[j];
+      row[2 * stride + j] = previousRow[2 * stride + j];
+    }
+  }
+  for (var j = 0; j < stride; j++) {
+    row[stride + j] = logical[j];
+  }
+  return row;
 }
 
 final setAnimationKeyframes = CommandEntry(
@@ -590,7 +640,17 @@ final setAnimationKeyframes = CommandEntry(
       if (time.isNegative || time.isNaN) {
         throw CommandException('Keyframe time must be a non-negative number');
       }
-      _upsert(data, time, _keyValue(key, property, trs));
+      final previousRow = _rowAt(data, time);
+      _upsert(
+        data,
+        time,
+        _layoutRow(
+          channel?.interpolation,
+          property,
+          _keyValue(key, property, trs),
+          previousRow,
+        ),
+      );
     }
     final (records, _) = _writeChannel(
       ctx,
@@ -936,17 +996,26 @@ final mirrorAnimationX = CommandEntry(
       ctx,
       animation,
       'Mirror animation across X',
-      mapValue: (property, value) => switch (property) {
-        AnimationProperty.translation => [-value[0], value[1], value[2]],
-        // Mirroring M·R·M with M = diag(-1,1,1) maps the quaternion
-        // (x, y, z, w) to (-x, y, z, -w).
-        AnimationProperty.rotation => [
-          -value[0],
-          value[1],
-          value[2],
-          -value[3],
-        ],
-        _ => value,
+      // Every stride-sized slot in a row is mirrored — on cubic channels
+      // that includes both tangent slots, which are vectors in the same
+      // space as the values.
+      mapValue: (property, row) {
+        final mapped = [...row];
+        final stride = _strideOf(property);
+        for (var base = 0; base + stride <= mapped.length; base += stride) {
+          switch (property) {
+            case AnimationProperty.translation:
+              mapped[base] = -mapped[base];
+            case AnimationProperty.rotation:
+              // Mirroring M·R·M with M = diag(-1,1,1) maps the quaternion
+              // (x, y, z, w) to (-x, y, z, -w).
+              mapped[base] = -mapped[base];
+              mapped[base + 3] = -mapped[base + 3];
+            default:
+              break;
+          }
+        }
+        return mapped;
       },
     );
   },
@@ -988,12 +1057,44 @@ final setChannelInterpolation = CommandEntry(
     }
     if (mode == null && modeName != 'linear') {
       throw CommandException(
-        'Unknown interpolation "$modeName" (linear or step)',
+        'Unknown interpolation "$modeName" (linear, step, or cubic)',
       );
     }
-    if (_channelOf(animation, nodeId, property) == null) {
-      throw CommandException(
-        'No ${property.name} channel on ${nodeId.toToken()}',
+    final channel =
+        _channelOf(animation, nodeId, property) ??
+        (throw CommandException(
+          'No ${property.name} channel on ${nodeId.toToken()}',
+        ));
+    final wasCubic = channel.interpolation == AnimationInterpolation.cubic;
+    final willBeCubic = mode == AnimationInterpolation.cubic;
+    final records = <ChangeRecord>[];
+    // Switching to or from cubic changes the keyframe payload's row width
+    // (three vectors per key: [inTangent, value, outTangent]). Convert the
+    // payload in place: expanding fills tangent slots with zeros (a
+    // smoothstep-shaped curve), collapsing keeps only keyed values.
+    if (wasCubic != willBeCubic) {
+      final data = _readKeyframes(ctx.document, channel);
+      final stride = _strideOf(property);
+      final convertedRows = <List<double>>[
+        for (final row in data.values)
+          willBeCubic
+              ? [
+                  for (var j = 0; j < stride * 3; j++)
+                    j >= stride && j < 2 * stride ? row[j - stride] : 0,
+                ]
+              : row.sublist(stride, 2 * stride),
+      ];
+      final converted = _KeyframeData(data.times, convertedRows);
+      final (_, valuesBytes) = _encodeKeyframes(converted);
+      records.add(
+        ChangeRecord(
+          targetId: channel.keyframes,
+          slot: ChangeSlot.poolPayload,
+          oldValue: PayloadChange(ctx.document.payload(channel.keyframes)),
+          newValue: PayloadChange(
+            _floatsPayload(channel.keyframes, valuesBytes),
+          ),
+        ),
       );
     }
     final updatedChannels = [
@@ -1005,25 +1106,24 @@ final setChannelInterpolation = CommandEntry(
             property: c.property,
             timeline: c.timeline,
             keyframes: c.keyframes,
-            // Linear is the default and encodes as absent.
-            interpolation: mode == AnimationInterpolation.step ? mode : null,
+            // Linear is the default and encodes as absent; step and cubic
+            // persist by name.
+            interpolation: mode == AnimationInterpolation.linear ? null : mode,
           )
         else
           c,
     ];
     final updated = AnimationSpec(animation.id, name: animation.name)
       ..channels.addAll(updatedChannels);
-    return Transaction(
-      name: 'Set channel interpolation',
-      records: [
-        ChangeRecord(
-          targetId: animation.id,
-          slot: ChangeSlot.poolAnimation,
-          oldValue: AnimationChange(animation),
-          newValue: AnimationChange(updated),
-        ),
-      ],
+    records.add(
+      ChangeRecord(
+        targetId: animation.id,
+        slot: ChangeSlot.poolAnimation,
+        oldValue: AnimationChange(animation),
+        newValue: AnimationChange(updated),
+      ),
     );
+    return Transaction(name: 'Set channel interpolation', records: records);
   },
 );
 
@@ -1106,12 +1206,18 @@ final keyPose = CommandEntry(
         final data = channel == null
             ? _KeyframeData([], [])
             : _readKeyframes(ctx.document, channel);
-        final value = switch (property) {
+        final logical = switch (property) {
           AnimationProperty.translation => [...trs.translation.storage],
           AnimationProperty.rotation => [...trs.rotation.storage],
           AnimationProperty.scale => [...trs.scale.storage],
           AnimationProperty.weights => const <double>[],
         };
+        final value = _layoutRow(
+          channel?.interpolation,
+          property,
+          logical,
+          _rowAt(data, time),
+        );
         _upsert(data, time, value);
         final (channelRecords, updated) = _writeChannel(
           ctx,

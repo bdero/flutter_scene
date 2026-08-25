@@ -1932,34 +1932,49 @@ class EditorToolSurface {
     final times = _channelTimes(channel);
     final valueBytes = session.document.payload(channel.keyframes)?.bytes;
     final floats = valueBytes == null ? Float32List(0) : _floatsOf(valueBytes);
-    final weightStride = times.isEmpty ? 0 : floats.length ~/ times.length;
-    Object? valueAt(int i) => switch (channel.property) {
-      AnimationProperty.rotation =>
-        floats.length >= i * 4 + 4
-            ? {
-                'x': floats[i * 4],
-                'y': floats[i * 4 + 1],
-                'z': floats[i * 4 + 2],
-                'w': floats[i * 4 + 3],
-              }
-            : null,
-      AnimationProperty.weights => [
-        for (
-          var j = 0;
-          j < weightStride && i * weightStride + j < floats.length;
-          j++
-        )
-          floats[i * weightStride + j],
-      ],
-      _ =>
-        floats.length >= i * 3 + 3
-            ? {
-                'x': floats[i * 3],
-                'y': floats[i * 3 + 1],
-                'z': floats[i * 3 + 2],
-              }
-            : null,
-    };
+    final cubic = channel.interpolation == AnimationInterpolation.cubic;
+    // Row width per keyframe: transform channels carry one vector (three
+    // for cubic, [inTangent, value, outTangent]); weights channels carry
+    // one weight vector per morph target.
+    final isRotation = channel.property == AnimationProperty.rotation;
+    final isWeights = channel.property == AnimationProperty.weights;
+    final componentStride = isRotation ? 4 : 3;
+    final rowWidth = isWeights
+        ? (times.isEmpty ? 0 : floats.length ~/ times.length)
+        : componentStride * (cubic ? 3 : 1);
+    final valuesPerKey = isWeights && cubic ? rowWidth ~/ 3 : rowWidth;
+    // The float offset of keyframe [index]'s value slot: cubic rows carry
+    // [inTangent, value, outTangent], so the value sits one component
+    // stride into the row.
+    int baseOf(int index) =>
+        cubic ? index * rowWidth + componentStride : index * rowWidth;
+    Object? valueAt(int index) {
+      final base = baseOf(index);
+      return switch (channel.property) {
+        AnimationProperty.rotation =>
+          floats.length >= base + 4
+              ? {
+                  'x': floats[base],
+                  'y': floats[base + 1],
+                  'z': floats[base + 2],
+                  'w': floats[base + 3],
+                }
+              : null,
+        AnimationProperty.weights => [
+          for (var j = 0; j < valuesPerKey && base + j < floats.length; j++)
+            floats[base + j],
+        ],
+        _ =>
+          floats.length >= base + 3
+              ? {
+                  'x': floats[base],
+                  'y': floats[base + 1],
+                  'z': floats[base + 2],
+                }
+              : null,
+      };
+    }
+
     final inRange = <int>[
       // Times live in float32 payloads while callers pass decimal doubles,
       // so the bounds get a small tolerance (matching the authoring
@@ -1984,13 +1999,13 @@ class EditorToolSurface {
             'time': times[i],
             'value': valueAt(i),
             if (channel.property == AnimationProperty.rotation &&
-                floats.length >= i * 4 + 4)
+                floats.length >= baseOf(i) + 4)
               'eulerDeg': _eulerDeg(
                 Quaternion(
-                  floats[i * 4],
-                  floats[i * 4 + 1],
-                  floats[i * 4 + 2],
-                  floats[i * 4 + 3],
+                  floats[baseOf(i)],
+                  floats[baseOf(i) + 1],
+                  floats[baseOf(i) + 2],
+                  floats[baseOf(i) + 3],
                 ),
               ),
           },

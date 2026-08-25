@@ -7,6 +7,11 @@ enum TimelineInterpolation {
 
   /// Hold the previous keyframe's value until the next one is reached.
   step,
+
+  /// Cubic Hermite using per-keyframe tangents; the value list then holds
+  /// three entries per keyframe in glTF order
+  /// ([inTangent, value, outTangent]).
+  cubic,
 }
 
 /// Computes a per-property animated value from a timeline of keyframes.
@@ -98,6 +103,35 @@ class _TimelineKey {
   _TimelineKey(this.index, this.lerp);
 }
 
+// Cubic Hermite basis functions.
+double _h00(double s) => 2 * s * s * s - 3 * s * s + 1;
+double _h10(double s) => s * s * s - 2 * s * s + s;
+double _h01(double s) => -2 * s * s * s + 3 * s * s;
+double _h11(double s) => s * s * s - s * s;
+
+Vector3 _hermiteVec3(
+  Vector3 v0,
+  Vector3 m0,
+  Vector3 v1,
+  Vector3 m1,
+  double s,
+) => v0 * _h00(s) + m0 * _h10(s) + v1 * _h01(s) + m1 * _h11(s);
+
+/// Component-wise Hermite, normalized afterwards — the standard glTF-style
+/// approximation for CUBICSPLINE rotation samplers.
+Quaternion _hermiteQuat(
+  Quaternion q0,
+  Quaternion m0,
+  Quaternion q1,
+  Quaternion m1,
+  double s,
+) => Quaternion(
+  q0.x * _h00(s) + m0.x * _h10(s) + q1.x * _h01(s) + m1.x * _h11(s),
+  q0.y * _h00(s) + m0.y * _h10(s) + q1.y * _h01(s) + m1.y * _h11(s),
+  q0.z * _h00(s) + m0.z * _h10(s) + q1.z * _h01(s) + m1.z * _h11(s),
+  q0.w * _h00(s) + m0.w * _h10(s) + q1.w * _h01(s) + m1.w * _h11(s),
+)..normalize();
+
 /// Shared keyframe lookup for the per-property timeline resolvers.
 ///
 /// Implementations supply the value-array storage and per-frame
@@ -157,7 +191,24 @@ class TranslationTimelineResolver extends TimelineResolver {
     this._values,
     TimelineInterpolation interpolation,
   ) : super._(times, interpolation) {
-    assert(times.length == _values.length);
+    // A cubic channel carries three vectors per keyframe.
+    assert(
+      _values.length == times.length ||
+          (_interpolation == TimelineInterpolation.cubic &&
+              _values.length == times.length * 3),
+    );
+  }
+
+  /// The Hermite sample between keys [index - 1] and [index].
+  Vector3 _cubicValue(int index, double s) {
+    final dt = _times[index] - _times[index - 1];
+    return _hermiteVec3(
+      _values[(index - 1) * 3 + 1],
+      _values[(index - 1) * 3 + 2] * dt,
+      _values[index * 3 + 1],
+      _values[index * 3] * dt,
+      s,
+    );
   }
 
   @override
@@ -167,9 +218,15 @@ class TranslationTimelineResolver extends TimelineResolver {
     }
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
-    Vector3 value = _values[key.index];
+    // A cubic channel's list holds [inTangent, value, outTangent] triplets.
+    final slot = _interpolation == TimelineInterpolation.cubic
+        ? key.index * 3 + 1
+        : key.index;
+    Vector3 value = _values[slot];
     if (key.lerp < 1) {
-      value = _values[key.index - 1].lerp(value, key.lerp);
+      value = _interpolation == TimelineInterpolation.cubic
+          ? _cubicValue(key.index, key.lerp)
+          : _values[key.index - 1].lerp(value, key.lerp);
     }
 
     target.animatedPose.translation +=
@@ -191,7 +248,27 @@ class RotationTimelineResolver extends TimelineResolver {
     this._values,
     TimelineInterpolation interpolation,
   ) : super._(times, interpolation) {
-    assert(times.length == _values.length);
+    // A cubic channel carries three quaternions per keyframe.
+    assert(
+      _values.length == times.length ||
+          (_interpolation == TimelineInterpolation.cubic &&
+              _values.length == times.length * 3),
+    );
+  }
+
+  /// The Hermite sample between keys [index - 1] and [index], evaluated
+  /// component-wise and normalized.
+  Quaternion _cubicValue(int index, double s) {
+    final dt = _times[index] - _times[index - 1];
+    Quaternion scale(Quaternion q, double f) =>
+        Quaternion(q.x * f, q.y * f, q.z * f, q.w * f);
+    return _hermiteQuat(
+      _values[(index - 1) * 3 + 1],
+      scale(_values[(index - 1) * 3 + 2], dt),
+      _values[index * 3 + 1],
+      scale(_values[index * 3], dt),
+      s,
+    );
   }
 
   @override
@@ -201,9 +278,15 @@ class RotationTimelineResolver extends TimelineResolver {
     }
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
-    Quaternion value = _values[key.index];
+    // A cubic channel's list holds [inTangent, value, outTangent] triplets.
+    final slot = _interpolation == TimelineInterpolation.cubic
+        ? key.index * 3 + 1
+        : key.index;
+    Quaternion value = _values[slot];
     if (key.lerp < 1) {
-      value = _values[key.index - 1].slerp(value, key.lerp);
+      value = _interpolation == TimelineInterpolation.cubic
+          ? _cubicValue(key.index, key.lerp)
+          : _values[key.index - 1].slerp(value, key.lerp);
     }
 
     target.animatedPose.rotation = target.animatedPose.rotation.slerp(
@@ -229,7 +312,24 @@ class ScaleTimelineResolver extends TimelineResolver {
     this._values,
     TimelineInterpolation interpolation,
   ) : super._(times, interpolation) {
-    assert(times.length == _values.length);
+    // A cubic channel carries three vectors per keyframe.
+    assert(
+      _values.length == times.length ||
+          (_interpolation == TimelineInterpolation.cubic &&
+              _values.length == times.length * 3),
+    );
+  }
+
+  /// The Hermite sample between keys [index - 1] and [index].
+  Vector3 _cubicValue(int index, double s) {
+    final dt = _times[index] - _times[index - 1];
+    return _hermiteVec3(
+      _values[(index - 1) * 3 + 1],
+      _values[(index - 1) * 3 + 2] * dt,
+      _values[index * 3 + 1],
+      _values[index * 3] * dt,
+      s,
+    );
   }
 
   @override
@@ -239,9 +339,15 @@ class ScaleTimelineResolver extends TimelineResolver {
     }
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
-    Vector3 value = _values[key.index];
+    // A cubic channel's list holds [inTangent, value, outTangent] triplets.
+    final slot = _interpolation == TimelineInterpolation.cubic
+        ? key.index * 3 + 1
+        : key.index;
+    Vector3 value = _values[slot];
     if (key.lerp < 1) {
-      value = _values[key.index - 1].lerp(value, key.lerp);
+      value = _interpolation == TimelineInterpolation.cubic
+          ? _cubicValue(key.index, key.lerp)
+          : _values[key.index - 1].lerp(value, key.lerp);
     }
 
     Vector3 scale = Vector3(
@@ -278,7 +384,11 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
     TimelineInterpolation interpolation,
   ) : super._(times, interpolation) {
     assert(targetCount >= 0);
-    assert(times.length * targetCount == _values.length);
+    // A cubic channel carries three (in, value, out) weight vectors per
+    // keyframe.
+    final perKey =
+        targetCount * (_interpolation == TimelineInterpolation.cubic ? 3 : 1);
+    assert(times.length * perKey == _values.length);
   }
 
   @override
@@ -293,14 +403,30 @@ class MorphWeightsTimelineResolver extends TimelineResolver {
     }
 
     _TimelineKey key = _getTimelineKey(timeInSeconds);
-    final current = key.index * targetCount;
-    final previous = (key.index - 1) * targetCount;
+    final cubic = _interpolation == TimelineInterpolation.cubic;
+    final stride = targetCount * (cubic ? 3 : 1);
+    final current = key.index * stride;
+    final previous = (key.index - 1) * stride;
     final count = targetCount < animated.length ? targetCount : animated.length;
     for (var i = 0; i < count; i++) {
-      var value = _values[current + i];
+      var value =
+          _values[cubic ? current + targetCount + i : current + i];
       if (key.lerp < 1) {
-        final a = _values[previous + i];
-        value = a + (value - a) * key.lerp;
+        if (cubic) {
+          final dt = _times[key.index] - _times[key.index - 1];
+          final v0 = _values[previous + targetCount + i];
+          final m0 = _values[previous + 2 * targetCount + i] * dt;
+          final v1 = _values[current + targetCount + i];
+          final m1 = _values[current + i] * dt;
+          value =
+              v0 * _h00(key.lerp) +
+              m0 * _h10(key.lerp) +
+              v1 * _h01(key.lerp) +
+              m1 * _h11(key.lerp);
+        } else {
+          final a = _values[previous + i];
+          value = a + (value - a) * key.lerp;
+        }
       }
       animated[i] += (value - bind[i]) * weight;
     }

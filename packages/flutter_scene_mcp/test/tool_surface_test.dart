@@ -1057,6 +1057,60 @@ void documentTests() {
       );
     });
 
+    test('cubic channels decode values from their middle slot', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframes',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'keys': [
+            {'time': 0.0},
+            {'time': 1.0},
+          ],
+        },
+      });
+      await surface.dispatch('run_command', {
+        'command': 'setChannelInterpolation',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'interpolation': 'cubic',
+        },
+      });
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      final channel = (detail['channels'] as List).single as Map;
+      expect(channel['interpolation'], 'cubic');
+      // The keyed values live in each row's middle slot; tangent slots are
+      // not reported as values.
+      for (final keyframe in (channel['keyframes'] as List)) {
+        expect(
+          ((keyframe as Map)['value'] as Map)['x'],
+          anyOf(closeTo(0.0, 1e-6), closeTo(10.0, 1e-6)),
+        );
+      }
+    });
+
     test('an unknown interpolation mode is rejected', () {
       final session = EditorSession(
         SceneDocument(allocator: IdAllocator(session: 1)),

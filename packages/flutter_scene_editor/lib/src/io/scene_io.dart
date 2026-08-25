@@ -360,8 +360,9 @@ Future<void> saveFscene(EditorController controller, String path) async {
 /// [SceneDocument.payloadSource] is rewritten in place at its recorded name;
 /// a fresh one is named after the scene and recorded on the document.
 void _writePayloadSidecar(SceneDocument document, String path) {
-  final hasBytes = document.payloads.values.any((payload) =>
-      payload.bytes != null && payload.bytes!.isNotEmpty);
+  final hasBytes = document.payloads.values.any(
+    (payload) => payload.bytes != null && payload.bytes!.isNotEmpty,
+  );
   if (!hasBytes) return;
   try {
     final source = document.payloadSource;
