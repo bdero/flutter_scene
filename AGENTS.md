@@ -56,6 +56,7 @@ This repo ships a set of on-demand skills under `packages/flutter_scene/skills/`
 - `flutter_scene-looks` copy-paste presets that make a scene look deliberate (lighting plus post).
 - `flutter_scene-procedural` building content from code (terrain, noise, instancing) instead of asset files.
 - `flutter_scene-performance` hitting frame budget (measure which thread is over, then a fixed remediation order).
+- `flutter_scene-editor-authoring` creating and animating scenes through the editor's MCP server (nodes, models, keyframe animation, curve shaping) when the editor MCP tools are available.
 
 Install them into a project:
 
