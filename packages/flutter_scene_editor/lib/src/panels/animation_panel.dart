@@ -3,7 +3,12 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart'
-    show PointerScrollEvent, PointerSignalEvent;
+    show
+        PointerPanZoomEndEvent,
+        PointerPanZoomStartEvent,
+        PointerPanZoomUpdateEvent,
+        PointerScrollEvent,
+        PointerSignalEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
@@ -208,7 +213,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
     final id = _animationId;
     final key = _selectedKey;
     if (id == null || key == null) return;
-    final clamped = toTime.clamp(0.0, _duration).toDouble();
+    // The clip's duration is its last keyframe time, so a key placed (or
+    // dragged) past it is what extends the clip — only guard against absurd
+    // values, not against the current end.
+    final clamped = toTime.clamp(0.0, _maxKeyTime).toDouble();
     if ((clamped - key.time).abs() <= 1e-4) return;
     try {
       await _controller.run('moveAnimationKeyframe', {
@@ -255,7 +263,8 @@ class _AnimationPanelState extends State<AnimationPanel> {
             padding: const EdgeInsets.only(left: 10, right: 10, bottom: 2),
             child: Text(
               'Drag to scrub · double-click a lane to add a key · drag a '
-              'diamond to retime · wheel scrolls · ctrl/cmd+wheel zooms',
+              'diamond to retime · wheel scrolls · ctrl/cmd+wheel or pinch '
+              'zooms (zoom out to reach past the clip\'s end)',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -386,7 +395,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
             _animationId?.toToken(),
         'nodeId': channel.target.toToken(),
         'property': channel.property.name,
-        'time': time.clamp(0.0, _duration).toDouble(),
+        'time': time.clamp(0.0, _maxKeyTime).toDouble(),
       });
     } on Exception catch (error) {
       _showError(error);
@@ -758,8 +767,70 @@ typedef TimelineKey = ({
   double time,
 });
 
+/// Pure view-state math behind [AnimationTimeline]: how the user's zoom and
+/// scroll state maps to a pixel scale and a scrollable range.
+///
+/// The zoom floor sits below fit-to-clip on purpose — zooming out past fit
+/// widens the visible window beyond the clip's end, which is the empty region
+/// where keys are placed to grow the animation's duration. Fit itself always
+/// stays reachable (and is the default while [zoomPx] is null).
+class TimelineViewport {
+  const TimelineViewport({
+    required this.laneWidth,
+    required this.duration,
+    this.zoomPx,
+    double scroll = 0,
+  }) : _scroll = scroll;
+
+  /// Width of the time area in px (pane width minus the label column).
+  final double laneWidth;
+
+  /// The clip's duration in seconds (its last keyframe time).
+  final double duration;
+
+  /// User-set scale in px/s; null means fit-to-width.
+  final double? zoomPx;
+
+  final double _scroll;
+
+  static const double minPxPerSecond = 20;
+  static const double maxPxPerSecond = 600;
+
+  double get fitPxPerSecond =>
+      laneWidth / (duration > 0 ? duration : 1);
+
+  double get pxPerSecond => (zoomPx ?? fitPxPerSecond).clamp(
+        math.min(fitPxPerSecond, minPxPerSecond),
+        math.max(fitPxPerSecond, maxPxPerSecond),
+      );
+
+  double get maxScroll =>
+      math.max(0.0, duration * pxPerSecond - laneWidth);
+
+  double get scroll => _scroll.clamp(0.0, maxScroll);
+
+  /// The scale after multiplying by [factor], held inside the zoom range.
+  double scaledBy(double factor) =>
+      (pxPerSecond * factor).clamp(
+        math.min(fitPxPerSecond, minPxPerSecond),
+        math.max(fitPxPerSecond, maxPxPerSecond),
+      );
+
+  /// The scroll offset that keeps [anchorTime] centered, at scale [atScale].
+  double scrollForAnchor(double anchorTime, double atScale) =>
+      (anchorTime * atScale - laneWidth / 2).clamp(
+        0.0,
+        math.max(0.0, duration * atScale - laneWidth),
+      );
+}
+
 const double _rulerHeight = 18;
 const double _rowHeight = 22;
+
+/// Sanity cap for keyframe times reached by clicking or dragging past the
+/// clip's end. The clip's duration is its last keyframe time, so placing a
+/// key out here is how the clip grows.
+const double _maxKeyTime = 600;
 
 /// The keyframe times of [channel], read out of its timeline payload.
 List<double> channelTimes(SceneDocument document, AnimationChannelSpec channel) {
@@ -832,7 +903,8 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   /// Left edge of the visible window, in seconds.
   double _scroll = 0;
 
-  static const double _maxPxPerSecond = 600;
+  /// Cumulative scale of an in-flight trackpad pinch; null when none.
+  double? _pinchScale;
 
   EditorController get controller => widget.controller;
   AnimationSpec get animation => widget.animation;
@@ -877,46 +949,40 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     final width = constraints.maxWidth;
     const labelWidth = 120.0;
     final laneWidth = math.max(width - labelWidth - 8, 24.0);
-    // Fit-to-width unless the user has zoomed in (px per second scale).
-    final fitPxPerSecond = laneWidth / widget.duration;
-    final pxPerSecond =
-        ((_zoomPx ?? fitPxPerSecond).clamp(
-              fitPxPerSecond,
-              math.max(fitPxPerSecond, _maxPxPerSecond),
-            ))
-            .toDouble();
-    final maxScroll = math.max(0.0, widget.duration * pxPerSecond - laneWidth);
-    _scroll = _scroll.clamp(0.0, maxScroll).toDouble();
+    // Fit-to-width unless the user has zoomed (px per second scale). The
+    // zoom floor sits below fit so the window can show empty time past the
+    // clip's end; fit itself always stays reachable.
+    final viewport = TimelineViewport(
+      laneWidth: laneWidth,
+      duration: widget.duration,
+      zoomPx: _zoomPx,
+      scroll: _scroll,
+    );
+    final pxPerSecond = viewport.pxPerSecond;
+    final maxScroll = viewport.maxScroll;
+    _scroll = viewport.scroll;
     final contentHeight =
         _rulerHeight + math.max(times.length, 1) * _rowHeight + 4;
 
     double xOf(double time) => labelWidth + time * pxPerSecond - _scroll;
 
+    // Times past the clip's end are reachable on purpose: a key dropped out
+    // there extends the clip.
     double timeAt(Offset position) =>
         ((position.dx - labelWidth + _scroll) / pxPerSecond)
-            .clamp(0.0, widget.duration)
+            .clamp(0.0, _maxKeyTime)
             .toDouble();
 
     int rowOf(double dy) => ((dy - _rulerHeight) / _rowHeight).floor();
 
     // Scales by [factor], keeping [anchorTime] fixed under its pixel column.
     void zoom(double factor, {double? anchorTime}) {
-      final next =
-          (pxPerSecond * factor)
-              .clamp(
-                fitPxPerSecond,
-                math.max(fitPxPerSecond, _maxPxPerSecond),
-              )
-              .toDouble();
+      final next = viewport.scaledBy(factor);
       if ((next - pxPerSecond).abs() < 1e-6) return;
       final anchor = anchorTime ?? (_scroll + laneWidth / 2) / pxPerSecond;
       setState(() {
         _zoomPx = next;
-        _scroll =
-            (anchor * next - laneWidth / 2).clamp(
-              0.0,
-              math.max(0.0, widget.duration * next - laneWidth),
-            ).toDouble();
+        _scroll = viewport.scrollForAnchor(anchor, next);
       });
     }
 
@@ -938,6 +1004,33 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
               (_scroll + delta / pxPerSecond).clamp(0.0, maxScroll).toDouble();
         });
       }
+    }
+
+    // Trackpad pinch: two-finger translation pans, spreading or pinching
+    // scales around the window center.
+    void handlePanZoomStart(PointerPanZoomStartEvent event) {
+      _pinchScale = 1;
+    }
+
+    void handlePanZoomUpdate(PointerPanZoomUpdateEvent event) {
+      final last = _pinchScale;
+      if (last == null || last <= 0) return;
+      _pinchScale = event.scale;
+      if (event.panDelta.dx != 0) {
+        setState(() {
+          _scroll =
+              (_scroll - event.panDelta.dx / pxPerSecond)
+                  .clamp(0.0, maxScroll)
+                  .toDouble();
+        });
+      }
+      if ((event.scale - last).abs() > 1e-9) {
+        zoom(event.scale / last);
+      }
+    }
+
+    void handlePanZoomEnd(PointerPanZoomEndEvent event) {
+      _pinchScale = null;
     }
 
     // Nearest keyframe within reach of the pointer, across all lanes — no
@@ -967,6 +1060,9 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
 
     return Listener(
       onPointerSignal: handleWheel,
+      onPointerPanZoomStart: handlePanZoomStart,
+      onPointerPanZoomUpdate: handlePanZoomUpdate,
+      onPointerPanZoomEnd: handlePanZoomEnd,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (details) {
@@ -1025,7 +1121,12 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             Positioned(
               right: 8,
               bottom: 4,
-              child: _zoomControls(context, scheme, fitPxPerSecond, zoom),
+              child: _zoomControls(
+                context,
+                scheme,
+                viewport.fitPxPerSecond,
+                zoom,
+              ),
             ),
           ],
         ),
@@ -1139,26 +1240,46 @@ class _TimelinePainter extends CustomPainter {
       rulerBottom,
       Paint()..color = scheme.outlineVariant,
     );
-    final tickStyle = Paint()
-      ..color = scheme.outline.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
     final visibleSeconds = (size.width - labelWidth - 8) / pxPerSecond;
     final step = _niceStep(visibleSeconds);
-    final textStyle = TextStyle(fontSize: 9, color: scheme.outline);
     final tStart = scrollSeconds;
     final tEnd = scrollSeconds + visibleSeconds;
     for (var t = (tStart / step).floorToDouble() * step;
         t <= tEnd + 1e-6;
         t += step) {
-      if (t < 0 || t > duration + 1e-6) continue;
+      // Ticks run across the whole visible window; those past the clip's end
+      // are dimmed — that region is empty time the clip can grow into.
+      if (t < -1e-6) continue;
+      final inClip = t <= duration + 1e-6;
+      final tickStyle = Paint()
+        ..color = scheme.outline.withValues(alpha: inClip ? 0.5 : 0.22)
+        ..strokeWidth = 1;
       final x = labelWidth + (t - scrollSeconds) * pxPerSecond;
       canvas.drawLine(Offset(x, 0), Offset(x, _rulerHeight - 3), tickStyle);
       TextPainter(
-        text: TextSpan(text: t.toStringAsFixed(step < 0.25 ? 2 : 1), style: textStyle),
+        text: TextSpan(
+          text: t.toStringAsFixed(step < 0.25 ? 2 : 1),
+          style: TextStyle(
+            fontSize: 9,
+            color: scheme.outline.withValues(alpha: inClip ? 1.0 : 0.45),
+          ),
+        ),
         textDirection: TextDirection.ltr,
       )
         ..layout()
         ..paint(canvas, Offset(x + 2, 1));
+    }
+
+    // Clip-end boundary between the clip and the empty region past it.
+    final clipEndX = labelWidth + (duration - scrollSeconds) * pxPerSecond;
+    if (clipEndX >= labelWidth && clipEndX <= size.width) {
+      canvas.drawLine(
+        Offset(clipEndX, 0),
+        Offset(clipEndX, size.height),
+        Paint()
+          ..color = scheme.outlineVariant
+          ..strokeWidth = 1,
+      );
     }
 
     // Lanes. The lane content (line, diamonds, playhead) is clipped to the

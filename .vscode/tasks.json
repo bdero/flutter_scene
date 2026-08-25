@@ -1,0 +1,22 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "flutter run macos",
+			"type": "shell",
+			"command": "flutter",
+			"args": [
+				"run",
+				"-d",
+				"macos",
+				"--enable-flutter-gpu"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}/apps/flutter_scene_editor_app"
+			},
+			"group": "build",
+			"problemMatcher": [],
+			"detail": "apps/flutter_scene_editor_app"
+		}
+	]
+}
