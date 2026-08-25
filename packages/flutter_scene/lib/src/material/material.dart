@@ -421,8 +421,8 @@ abstract class Material {
   gpu.Shader? materialVertexShader(String variant) => null;
 
   /// The per-instance attributes this material declares, or null when it
-  /// declares none (everything but a `.fmat` with an `instance_attributes`
-  /// block).
+  /// declares none. A `.fmat` `instance_attributes` block declares them, as
+  /// does a raw `ShaderMaterial` constructed with `instanceAttributes`.
   ///
   /// The schema widens the instance-rate vertex buffer, so it is part of the
   /// pipeline's vertex layout as well as of what an instanced mesh accepts.

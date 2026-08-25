@@ -45,6 +45,7 @@
 * SH-9 diffuse helpers, `parseDiffuseShSidecar`/`encodeDiffuseShSidecar`, `evaluateDiffuseSphericalHarmonics`, and `describeDiffuseSphericalHarmonics` for verifying imported coefficients.
 * `PhysicallyBasedMaterial.lightmapTexture` adds a baked lightmap that replaces the SH diffuse ambient.
 * `.fmat` `instance_attributes` declare typed per-instance data, set via `InstancedMesh.setInstanceAttribute`.
+* A raw `ShaderMaterial` declares the same per-instance data through `ShaderInstanceAttribute`, so a custom vertex shader reads the `instance_<name>` inputs a `.fmat` would have generated.
 * `PlanarReflectorComponent` renders a mirrored scene capture that `.fmat` materials sample via the `planar_reflection` engine input.
 
 ## 0.23.0
