@@ -21,9 +21,11 @@ import '../shell/editor_dialog.dart';
 /// The Animation panel: author document animations and preview them live.
 ///
 /// One animation loads onto the controller's playhead at a time. Transport
-/// controls play, pause, scrub, and loop it; keyframe lanes show each
-/// channel's keys, which drag to retime, double-tap to add (capturing the
-/// target's current pose), and delete from the lane toolbar. Keying buttons
+/// controls play, pause, scrub, and loop it; the timeline groups each node's
+/// keyframe lanes under a shared header row so a multi-node rig reads as
+/// distinct blocks. Lanes show each channel's keys, which drag to retime,
+/// double-tap to add (capturing the target's current pose), and delete from
+/// the lane toolbar. Keying buttons
 /// capture the selected nodes' current transforms at the playhead. Everything
 /// commits through controller commands, so every edit is undoable and agent
 /// visible.
@@ -767,6 +769,16 @@ typedef TimelineKey = ({
   double time,
 });
 
+/// One visual row of the timeline canvas: either a node group header or one
+/// channel's keyframe lane beneath it. Headers carry only a display title;
+/// lanes additionally carry their channel and its keyframe times.
+typedef _LaneRow = ({
+  bool isHeader,
+  String title,
+  List<double>? times,
+  AnimationChannelSpec? channel,
+});
+
 /// Pure view-state math behind [AnimationTimeline]: how the user's zoom and
 /// scroll state maps to a pixel scale and a scrollable range.
 ///
@@ -913,14 +925,37 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final document = controller.document;
-    final labels = [
-      for (final channel in animation.channels)
-        '${document.nodes[channel.target]?.name ?? 'node'} · '
-            '${channel.property.name}',
-    ];
-    final times = [
-      for (final channel in animation.channels)
-        channelTimes(document, channel),
+    // One header row per animated node followed by that node's property
+    // lanes, keeping each node's first-appearance order: a multi-node
+    // animation reads as distinct blocks rather than interleaved channels.
+    final nodeOrder = <LocalId>[];
+    final channelIndexesByNode = <LocalId, List<int>>{};
+    for (var i = 0; i < animation.channels.length; i++) {
+      final target = animation.channels[i].target;
+      final bucket = channelIndexesByNode[target];
+      if (bucket == null) {
+        channelIndexesByNode[target] = [i];
+        nodeOrder.add(target);
+      } else {
+        bucket.add(i);
+      }
+    }
+    final rows = <_LaneRow>[
+      for (final node in nodeOrder) ...[
+        (
+          isHeader: true,
+          title: document.nodes[node]?.name ?? 'node',
+          times: null,
+          channel: null,
+        ),
+        for (final i in channelIndexesByNode[node]!)
+          (
+            isHeader: false,
+            title: animation.channels[i].property.name,
+            times: channelTimes(document, animation.channels[i]),
+            channel: animation.channels[i],
+          ),
+      ],
     ];
 
     // Repaint on every playhead tick without rebuilding the parent panel.
@@ -931,8 +966,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         return _buildCanvas(
           context,
           scheme,
-          labels,
-          times,
+          rows,
           constraints,
         );
       }),
@@ -942,8 +976,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   Widget _buildCanvas(
     BuildContext context,
     ColorScheme scheme,
-    List<String> labels,
-    List<List<double>> times,
+    List<_LaneRow> rows,
     BoxConstraints constraints,
   ) {
     final width = constraints.maxWidth;
@@ -962,7 +995,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     final maxScroll = viewport.maxScroll;
     _scroll = viewport.scroll;
     final contentHeight =
-        _rulerHeight + math.max(times.length, 1) * _rowHeight + 4;
+        _rulerHeight + math.max(rows.length, 1) * _rowHeight + 4;
 
     double xOf(double time) => labelWidth + time * pxPerSecond - _scroll;
 
@@ -1034,14 +1067,16 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     }
 
     // Nearest keyframe within reach of the pointer, across all lanes — no
-    // need to land precisely on a row.
+    // need to land precisely on a row. Group headers hold no keys.
     TimelineKey? hitKey(Offset position) {
       TimelineKey? nearest;
       var nearestDistance = double.infinity;
-      for (var row = 0; row < times.length; row++) {
-        final channel = animation.channels[row];
+      for (var row = 0; row < rows.length; row++) {
+        final entry = rows[row];
+        final channel = entry.channel;
+        if (entry.isHeader || channel == null) continue;
         final cy = _rulerHeight + row * _rowHeight + _rowHeight / 2;
-        for (final time in times[row]) {
+        for (final time in entry.times!) {
           final dx = position.dx - xOf(time);
           final dy = position.dy - cy;
           final distance = math.sqrt(dx * dx + dy * dy);
@@ -1073,16 +1108,17 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             return;
           }
           final row = rowOf(position.dy);
-          if (row < 0 || row >= times.length) return;
+          if (row < 0 || row >= rows.length) return;
+          // Tapping a node header neither seeks nor deselects; only lanes do.
+          if (rows[row].isHeader) return;
           widget.onTapLane(timeAt(position));
         },
         onDoubleTapDown: (details) {
           final row = rowOf(details.localPosition.dy);
-          if (row < 0 || row >= times.length) return;
-          widget.onDoubleTapLane(
-            animation.channels[row],
-            timeAt(details.localPosition),
-          );
+          if (row < 0 || row >= rows.length) return;
+          final entry = rows[row];
+          if (entry.isHeader || entry.channel == null) return;
+          widget.onDoubleTapLane(entry.channel!, timeAt(details.localPosition));
         },
         onDoubleTap: () {},
         onPanStart: (details) {
@@ -1107,9 +1143,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
               ),
               painter: _TimelinePainter(
                 scheme: scheme,
-                animation: animation,
-                labels: labels,
-                times: times,
+                rows: rows,
                 duration: widget.duration,
                 playhead: controller.previewPlayhead.value,
                 selectedKey: widget.selectedKey,
@@ -1198,9 +1232,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
 class _TimelinePainter extends CustomPainter {
   _TimelinePainter({
     required this.scheme,
-    required this.animation,
-    required this.labels,
-    required this.times,
+    required this.rows,
     required this.duration,
     required this.playhead,
     required this.selectedKey,
@@ -1210,9 +1242,7 @@ class _TimelinePainter extends CustomPainter {
   });
 
   final ColorScheme scheme;
-  final AnimationSpec animation;
-  final List<String> labels;
-  final List<List<double>> times;
+  final List<_LaneRow> rows;
   final double duration;
   final double playhead;
   final TimelineKey? selectedKey;
@@ -1282,38 +1312,72 @@ class _TimelinePainter extends CustomPainter {
       );
     }
 
-    // Lanes. The lane content (line, diamonds, playhead) is clipped to the
-    // lane column so scrolled-out keys never paint over the labels.
+    // Rows. Each node gets a full-width header band plus a hairline separator
+    // closing the previous group, so a multi-node rig reads as distinct
+    // blocks; property lanes sit indented beneath their node's header.
+    var sawChannelInGroup = false;
+    for (var row = 0; row < rows.length; row++) {
+      final entry = rows[row];
+      final top = _rulerHeight + row * _rowHeight;
+      if (entry.isHeader) {
+        if (sawChannelInGroup) {
+          canvas.drawLine(
+            Offset(0, top),
+            Offset(size.width, top),
+            Paint()..color = scheme.outlineVariant.withValues(alpha: 0.7),
+          );
+        }
+        canvas.drawRect(
+          Rect.fromLTWH(0, top, size.width, _rowHeight),
+          Paint()
+            ..color = scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        );
+        TextPainter(
+          text: TextSpan(
+            text: entry.title,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: scheme.primary,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          ellipsis: '…',
+        )
+          ..layout(maxWidth: labelWidth - 10)
+          ..paint(canvas, Offset(2, top + (_rowHeight - 11) / 2));
+        sawChannelInGroup = false;
+      } else {
+        TextPainter(
+          text: TextSpan(
+            text: entry.title,
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          ellipsis: '…',
+        )
+          ..layout(maxWidth: labelWidth - 18)
+          ..paint(canvas, Offset(12, top + (_rowHeight - 11) / 2));
+        sawChannelInGroup = true;
+      }
+    }
+
+    // Lane content (lines, diamonds) is clipped to the lane column so
+    // scrolled-out keys never paint over the labels. Headers carry no lane.
     final laneClip = Rect.fromLTRB(
       labelWidth,
       0,
       size.width - 8 + _laneLeftPad,
       size.height,
     );
-    for (var row = 0; row < labels.length; row++) {
-      final top = _rulerHeight + row * _rowHeight;
-      if (row.isOdd) {
-        canvas.drawRect(
-          Rect.fromLTWH(0, top, size.width, _rowHeight),
-          Paint()..color = scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-        );
-      }
-      TextPainter(
-        text: TextSpan(
-          text: labels[row],
-          style: TextStyle(fontSize: 11, color: scheme.onSurface),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-        ellipsis: '…',
-      )
-        ..layout(maxWidth: labelWidth - 8)
-        ..paint(canvas, Offset(4, top + (_rowHeight - 11) / 2));
-    }
-
     canvas.save();
     canvas.clipRect(laneClip);
-    for (var row = 0; row < labels.length; row++) {
+    for (var row = 0; row < rows.length; row++) {
+      final entry = rows[row];
+      if (entry.isHeader) continue;
+      final channel = entry.channel!;
       final top = _rulerHeight + row * _rowHeight;
       canvas.drawLine(
         Offset(labelWidth + _laneLeftPad, top + _rowHeight / 2),
@@ -1325,7 +1389,7 @@ class _TimelinePainter extends CustomPainter {
       );
 
       // Keyframe diamonds (only those inside the visible window).
-      for (final time in times[row]) {
+      for (final time in entry.times!) {
         final x = labelWidth + time * pxPerSecond - scrollSeconds;
         if (x < labelWidth - 6 || x > size.width - 2) continue;
         _drawDiamond(
@@ -1333,8 +1397,8 @@ class _TimelinePainter extends CustomPainter {
           x,
           top + _rowHeight / 2,
           selectedKey != null &&
-              selectedKey!.target == animation.channels[row].target &&
-              selectedKey!.property == animation.channels[row].property &&
+              selectedKey!.target == channel.target &&
+              selectedKey!.property == channel.property &&
               (selectedKey!.time - time).abs() <= 1e-3,
         );
       }
@@ -1386,8 +1450,7 @@ class _TimelinePainter extends CustomPainter {
       oldDelegate.duration != duration ||
       oldDelegate.scrollSeconds != scrollSeconds ||
       oldDelegate.pxPerSecond != pxPerSecond ||
-      !identical(oldDelegate.times, times) ||
-      !listEquals(oldDelegate.labels, labels);
+      !identical(oldDelegate.rows, rows);
 }
 
 /// A tooltip tuned for the panel's explanatory copy: appears quickly, stays
@@ -1409,10 +1472,3 @@ class _PanelTip extends StatelessWidget {
   );
 }
 
-bool listEquals<T>(List<T> a, List<T> b) {
-  if (a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
