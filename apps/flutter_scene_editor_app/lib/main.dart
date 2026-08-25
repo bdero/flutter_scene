@@ -1276,6 +1276,38 @@ class _EditorHomeState extends State<_EditorHome> {
           renderGraphScan: _renderGraphMcp.scanForNans,
           listDebugModes: _renderGraphMcp.listModes,
           setDebugMode: _renderGraphMcp.setMode,
+          animationPreview: ({animationId, playing, loop, speed, seek}) {
+            final controller = _requireController;
+            // Selecting resets the playhead, so only when the animation
+            // actually changes; then seek before playing so one call can
+            // load, position, and start a clip.
+            if (animationId != null &&
+                animationId != controller.previewAnimationId) {
+              controller.selectPreviewAnimation(animationId);
+            }
+            if (loop != null) controller.setPreviewLoop(loop);
+            if (speed != null) controller.setPreviewSpeed(speed);
+            if (seek != null) controller.seekPreview(seek);
+            switch (playing) {
+              case true:
+                controller.playPreview();
+              case false:
+                controller.pausePreview();
+              default:
+                break;
+            }
+            final loaded = controller.previewAnimationId;
+            return {
+              'animation': loaded?.toToken(),
+              'playing': controller.previewPlaying,
+              'loop': controller.previewLoop,
+              'speed': controller.previewSpeed,
+              'time': controller.previewTime,
+              'duration': loaded == null
+                  ? 0.0
+                  : controller.previewDuration(loaded),
+            };
+          },
         ),
       );
       debugPrint('Editor MCP server listening on 127.0.0.1:7007');

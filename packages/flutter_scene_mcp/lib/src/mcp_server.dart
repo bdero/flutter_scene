@@ -32,7 +32,9 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
             '(Root/Cube) first, id token as a fallback. For animations, use '
             'list_animations / get_animation to read them and the '
             'createAnimation / setAnimationKeyframe commands through '
-            'run_command to author them.',
+            'run_command to author them; control_animation_preview (when '
+            'offered) plays the result on the editor\'s playhead so a '
+            'screenshot_viewport shows the posed frame.',
       );
 
   /// The tool surface every call is delegated to.

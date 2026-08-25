@@ -224,6 +224,20 @@ typedef DeviceLister = Future<Map<String, Object?>> Function({bool refresh});
 /// Selects the target device by id for the open project.
 typedef DeviceSelector = Future<void> Function(String id);
 
+/// Drives the host's animation preview transport (the Animation panel's
+/// playhead): loads an animation onto the playhead, seeks it, plays or
+/// pauses, and sets loop mode and speed. Returns the resulting transport
+/// state ({animation, playing, loop, speed, time, duration}). Null in a
+/// headless session.
+typedef AnimationPreviewControl =
+    Map<String, Object?> Function({
+      LocalId? animationId,
+      bool? playing,
+      bool? loop,
+      double? speed,
+      double? seek,
+    });
+
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
   /// Creates a surface over [session].
@@ -275,6 +289,7 @@ class EditorToolSurface {
     this.renderGraphScan,
     this.listDebugModes,
     this.setDebugMode,
+    this.animationPreview,
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
@@ -388,6 +403,10 @@ class EditorToolSurface {
   /// Selects a viewport debug output.
   final DebugModeSet? setDebugMode;
 
+  /// Drives the animation preview playhead; null in a headless session
+  /// (there is no Animation panel to drive).
+  final AnimationPreviewControl? animationPreview;
+
   SceneQuery get _query => session.query;
 
   /// The curated tools an agent is offered up front. The full command set is
@@ -416,6 +435,46 @@ class EditorToolSurface {
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (readCamera != null) ..._cameraTools,
+    if (animationPreview != null)
+      const ToolDefinition(
+        name: 'control_animation_preview',
+        description:
+            'Drive the editor\'s animation preview playhead (the Animation '
+            'panel): load an animation onto it, seek to a time to inspect '
+            'the posed frame, play or pause, and set looping and speed. Any '
+            'subset of the fields may be given; omitted fields keep their '
+            'current values. Returns the transport state. Pair with '
+            'screenshot_viewport to see the posed frame.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'ref': {
+              'type': 'string',
+              'description':
+                  'Load this animation (id token or exact name) onto the '
+                  'playhead, resetting its time.',
+            },
+            'seek': {
+              'type': 'number',
+              'description': 'Move the playhead to this time in seconds.',
+            },
+            'playing': {
+              'type': 'boolean',
+              'description': 'Start playback (true) or pause it (false).',
+            },
+            'loop': {
+              'type': 'boolean',
+              'description':
+                  'Whether playback wraps at the clip\'s end (default on).',
+            },
+            'speed': {
+              'type': 'number',
+              'description': 'Playback speed multiplier.',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
     if (newDocument != null)
       const ToolDefinition(
         name: 'new_document',
@@ -1029,6 +1088,38 @@ class EditorToolSurface {
       case 'clear_selection':
         session.selection.clear();
         return _selectionResult();
+      case 'control_animation_preview':
+        final control = animationPreview;
+        if (control == null) {
+          throw const ToolError('No animation preview control in this session');
+        }
+        bool? boolOf(Object? value, String name) => switch (value) {
+          null => null,
+          final bool flag => flag,
+          _ => throw ToolError('"$name" must be a boolean'),
+        };
+        double? timeOf(Object? value, String name) => switch (value) {
+          null => null,
+          final num seconds => seconds.toDouble(),
+          _ => throw ToolError('"$name" must be a number'),
+        };
+        final ref = args['ref'];
+        if (ref != null) {
+          if (ref is! String || ref.isEmpty) {
+            throw const ToolError(
+              '"ref" must be a non-empty animation id token or exact name',
+            );
+          }
+        }
+        return control(
+          animationId: ref == null
+              ? null
+              : _resolveAnimation(_requireAnimationRef(args)).id,
+          playing: boolOf(args['playing'], 'playing'),
+          loop: boolOf(args['loop'], 'loop'),
+          speed: timeOf(args['speed'], 'speed'),
+          seek: timeOf(args['seek'], 'seek'),
+        );
       case 'new_document':
         final creator = newDocument;
         if (creator == null) {

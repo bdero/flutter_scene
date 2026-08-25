@@ -23,6 +23,103 @@ void main() {
     });
   });
 
+  group('animation preview control', () {
+    final calls = <Map<String, Object?>>[];
+    Map<String, Object?> control({
+      LocalId? animationId,
+      bool? playing,
+      bool? loop,
+      double? speed,
+      double? seek,
+    }) {
+      calls.add({
+        if (animationId != null) 'animation': animationId.toToken(),
+        if (playing != null) 'playing': playing,
+        if (loop != null) 'loop': loop,
+        if (speed != null) 'speed': speed,
+        if (seek != null) 'seek': seek,
+      });
+      return {
+        'animation': animationId?.toToken(),
+        'playing': playing ?? false,
+        'time': seek ?? 0.0,
+      };
+    }
+
+    EditorToolSurface surfaceWithPreview() {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      return EditorToolSurface(() => session, animationPreview: control);
+    }
+
+    test('is offered only when a provider is present', () {
+      expect(
+        _surface().bootstrapTools().map((t) => t.name),
+        isNot(contains('control_animation_preview')),
+      );
+      expect(
+        surfaceWithPreview().bootstrapTools().map((t) => t.name),
+        contains('control_animation_preview'),
+      );
+    });
+
+    test('without a provider, dispatch throws ToolError', () {
+      expect(
+        () => _surface().dispatch('control_animation_preview', {}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('preview'),
+          ),
+        ),
+      );
+    });
+
+    test('resolves an animation ref onto the playhead', () async {
+      final surface = surfaceWithPreview();
+      calls.clear();
+      await surface.dispatch('run_command', {
+        'command': 'createAnimation',
+        'params': {'name': 'Spin'},
+      });
+      final id =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+
+      final state = await surface.dispatch('control_animation_preview', {
+        'ref': 'Spin',
+        'seek': 0.5,
+        'playing': true,
+      });
+      expect(state['animation'], id);
+      expect(calls.single['animation'], id);
+      expect(calls.single['seek'], 0.5);
+      expect(calls.single['playing'], true);
+    });
+
+    test('omitted fields pass null through', () async {
+      calls.clear();
+      await surfaceWithPreview().dispatch('control_animation_preview', {
+        'loop': false,
+      });
+      expect(calls.single, {'loop': false});
+    });
+
+    test('a bad ref surfaces as ToolError', () {
+      expect(
+        () => surfaceWithPreview().dispatch('control_animation_preview', {
+          'ref': 'Nope',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+  });
+
   group('command gateway', () {
     test('search_commands finds a command with its argument schema', () async {
       final result = await _surface().dispatch('search_commands', {
