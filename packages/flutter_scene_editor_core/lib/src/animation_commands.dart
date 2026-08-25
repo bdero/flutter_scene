@@ -712,6 +712,246 @@ final moveAnimationKeyframe = CommandEntry(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Whole-clip utilities.
+// ---------------------------------------------------------------------------
+
+/// Rebuilds every channel of [animation] by mapping its keyframe times
+/// (and optionally values), committing all writes as one transaction.
+/// Channel writes accumulate on each other's spec so nothing is clobbered.
+Transaction _rewriteAnimation(
+  CommandContext ctx,
+  AnimationSpec animation,
+  String label, {
+  double Function(double time)? mapTime,
+  List<double> Function(AnimationProperty property, List<double> value)?
+  mapValue,
+}) {
+  final records = <ChangeRecord>[];
+  var working = animation;
+  for (final channel in animation.channels) {
+    final data = _readKeyframes(ctx.document, channel);
+    if (mapTime != null) {
+      for (var i = 0; i < data.times.length; i++) {
+        data.times[i] = mapTime(data.times[i]);
+      }
+    }
+    if (mapValue != null) {
+      for (var i = 0; i < data.values.length; i++) {
+        data.values[i] = mapValue(channel.property, data.values[i]);
+      }
+    }
+    final (channelRecords, updated) = _writeChannel(
+      ctx,
+      working,
+      channel.target,
+      channel.targetName,
+      channel.property,
+      data,
+    );
+    records.addAll(channelRecords);
+    working = updated;
+  }
+  return Transaction(name: label, records: records);
+}
+
+final duplicateAnimation = CommandEntry(
+  name: 'duplicateAnimation',
+  doc:
+      'Duplicate an animation into a new clip with copied keyframe payloads '
+      'targeting the same nodes — the starting point for variations.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(
+      name: 'name',
+      type: ParamType.string,
+      label: 'Name',
+      required: false,
+      description: "The copy's name (default '<original name> copy').",
+    ),
+  ],
+  execute: (ctx, params) {
+    final source = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final id = ctx.document.newId();
+    final name = optionalString(params, 'name') ?? '${source.name} copy';
+    final records = <ChangeRecord>[];
+    final channels = <AnimationChannelSpec>[];
+    for (final channel in source.channels) {
+      Uint8List copied(PayloadSpec? payload) => payload?.bytes == null
+          ? Uint8List(0)
+          : Uint8List.fromList(payload!.bytes!);
+      final timelineId = ctx.document.newId();
+      final keyframesId = ctx.document.newId();
+      records.addAll([
+        ChangeRecord(
+          targetId: timelineId,
+          slot: ChangeSlot.poolPayload,
+          oldValue: const PayloadChange(null),
+          newValue: PayloadChange(
+            _floatsPayload(
+              timelineId,
+              copied(ctx.document.payload(channel.timeline)),
+            ),
+          ),
+        ),
+        ChangeRecord(
+          targetId: keyframesId,
+          slot: ChangeSlot.poolPayload,
+          oldValue: const PayloadChange(null),
+          newValue: PayloadChange(
+            _floatsPayload(
+              keyframesId,
+              copied(ctx.document.payload(channel.keyframes)),
+            ),
+          ),
+        ),
+      ]);
+      channels.add(
+        AnimationChannelSpec(
+          target: channel.target,
+          targetName: channel.targetName,
+          property: channel.property,
+          timeline: timelineId,
+          keyframes: keyframesId,
+        ),
+      );
+    }
+    final spec = AnimationSpec(id, name: name)..channels.addAll(channels);
+    records.add(
+      ChangeRecord(
+        targetId: id,
+        slot: ChangeSlot.poolAnimation,
+        oldValue: const AnimationChange(null),
+        newValue: AnimationChange(spec),
+      ),
+    );
+    return Transaction(name: 'Duplicate animation', records: records);
+  },
+);
+
+final shiftAnimationTime = CommandEntry(
+  name: 'shiftAnimationTime',
+  doc:
+      'Move every keyframe of an animation by an offset in seconds. A shift '
+      'that would push any keyframe before t=0 is rejected.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(name: 'offset', type: ParamType.number, label: 'Offset'),
+  ],
+  execute: (ctx, params) {
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final offset = requireDouble(params, 'offset');
+    if (offset.isNaN) {
+      throw CommandException('Offset must be a number');
+    }
+    if (offset < 0) {
+      for (final channel in animation.channels) {
+        final times = _readKeyframes(ctx.document, channel).times;
+        if (times.isNotEmpty && times.first + offset < 0) {
+          throw CommandException(
+            'Shifting by $offset s would move a keyframe to '
+            '${times.first + offset} s; keyframe times cannot be negative',
+          );
+        }
+      }
+    }
+    return _rewriteAnimation(
+      ctx,
+      animation,
+      'Shift animation',
+      mapTime: (time) => time + offset,
+    );
+  },
+);
+
+final scaleAnimationTime = CommandEntry(
+  name: 'scaleAnimationTime',
+  doc:
+      "Stretch or compress an animation's timing: every keyframe time is "
+      'multiplied by [factor] (> 1 slows the clip down, < 1 speeds it up).',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(name: 'factor', type: ParamType.number, label: 'Factor'),
+  ],
+  execute: (ctx, params) {
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final factor = requireDouble(params, 'factor');
+    if (factor.isNaN || factor <= 0) {
+      throw CommandException('Factor must be a positive number');
+    }
+    return _rewriteAnimation(
+      ctx,
+      animation,
+      'Scale animation timing',
+      mapTime: (time) => time * factor,
+    );
+  },
+);
+
+final mirrorAnimationX = CommandEntry(
+  name: 'mirrorAnimationX',
+  doc:
+      'Mirror an animation across the X=0 plane: each channel\'s translation '
+      'x flips sign and each rotation is remapped to its mirrored '
+      'orientation (the standard walk-cycle flip). Scales and morph weights '
+      'are unchanged.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+  ],
+  execute: (ctx, params) {
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    return _rewriteAnimation(
+      ctx,
+      animation,
+      'Mirror animation across X',
+      mapValue: (property, value) => switch (property) {
+        AnimationProperty.translation => [-value[0], value[1], value[2]],
+        // Mirroring M·R·M with M = diag(-1,1,1) maps the quaternion
+        // (x, y, z, w) to (-x, y, z, -w).
+        AnimationProperty.rotation => [
+          -value[0],
+          value[1],
+          value[2],
+          -value[3],
+        ],
+        _ => value,
+      },
+    );
+  },
+);
+
 /// The animation authoring commands.
 final List<CommandEntry> animationCommands = [
   createAnimation,
@@ -722,6 +962,10 @@ final List<CommandEntry> animationCommands = [
   setAnimationKeyframes,
   removeAnimationKeyframe,
   moveAnimationKeyframe,
+  duplicateAnimation,
+  shiftAnimationTime,
+  scaleAnimationTime,
+  mirrorAnimationX,
 ];
 
 final keyPose = CommandEntry(
