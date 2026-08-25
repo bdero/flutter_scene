@@ -5,13 +5,31 @@
 
 import 'dart:typed_data';
 
+// ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
+import 'package:vector_math/vector_math.dart' show Matrix4, Vector3;
 // The revision counter the frame's scene-input summary is cached against is
 // internal, and asserting the invalidation is the point of the last test here.
 // ignore: implementation_imports
 import 'package:flutter_scene/src/material/material.dart'
     show materialSceneInputsRevision;
 import 'package:flutter_test/flutter_test.dart';
+
+class _StubGeometry extends Geometry {
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Matrix4 modelTransform,
+    Matrix4 cameraTransform,
+    Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
+  }) {
+    throw UnsupportedError('Stub geometry is not renderable');
+  }
+}
 
 void main() {
   group('ShaderMaterial uniform block storage', () {
@@ -71,6 +89,34 @@ void main() {
       expect(opaque.isOpaque(), isTrue);
       opaque.isOpaqueOverride = false;
       expect(opaque.isOpaque(), isFalse);
+    });
+  });
+
+  group('ShaderMaterial instance attributes', () {
+    test('raw materials declare values accepted by InstancedMesh', () {
+      final material = ShaderMaterial(
+        instanceAttributes: const [
+          ShaderInstanceAttribute('seed', ShaderInstanceAttributeType.float),
+          ShaderInstanceAttribute('state', ShaderInstanceAttributeType.vec3),
+        ],
+      );
+      final mesh = InstancedMesh(geometry: _StubGeometry(), material: material);
+      final index = mesh.addInstance(Matrix4.identity());
+      mesh
+        ..setInstanceAttribute(index, 'seed', 3.0)
+        ..setInstanceAttribute(index, 'state', Vector3(1.0, 2.0, 3.0));
+    });
+
+    test('rejects duplicate raw instance attribute names', () {
+      expect(
+        () => ShaderMaterial(
+          instanceAttributes: const [
+            ShaderInstanceAttribute('seed', ShaderInstanceAttributeType.float),
+            ShaderInstanceAttribute('seed', ShaderInstanceAttributeType.vec2),
+          ],
+        ),
+        throwsArgumentError,
+      );
     });
   });
 

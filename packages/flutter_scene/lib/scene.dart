@@ -97,7 +97,8 @@ export 'src/material/physically_based_material.dart'
     show AlphaMode, PhysicallyBasedMaterial, TextureTransform;
 export 'src/material/preprocessed_material.dart' show PreprocessedMaterial;
 export 'src/material/preprocessed_sky.dart' show PreprocessedSky;
-export 'src/material/shader_material.dart' show ShaderMaterial;
+export 'src/material/shader_material.dart'
+    show ShaderInstanceAttribute, ShaderInstanceAttributeType, ShaderMaterial;
 export 'src/material/shader_stage.dart' show MeshVariant, ShaderStage;
 export 'src/material/shadow_catcher_material.dart'
     show ShadowCatcherMaterial, ShadowCatcherMode;
