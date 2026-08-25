@@ -7,6 +7,7 @@ import 'package:flutter_scene_editor_core/src/change.dart';
 import 'package:flutter_scene_editor_core/src/command.dart';
 import 'package:flutter_scene_editor_core/src/history.dart';
 import 'package:test/test.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// A document plus a history and a registry wired to it, for command tests.
 ({SceneDocument doc, EditHistory history, CommandRegistry registry})
@@ -262,57 +263,54 @@ void main() {
     });
 
     group('animation persistence', () {
-      test(
-        '.fscene text keeps the animation manifest (bytes live in the '
-        'sidecar)',
-        () {
-          final source = _harness();
-          _run(source, 'createAnimation', {'name': 'Bounce'});
-          final animationId = source.doc.animations.keys.single;
-          final node = _addCube(source, 'Cube');
-          for (final entry in {
-            0.0: {'x': 0.0, 'y': 0.0, 'z': 0.0},
-            1.0: {'x': 0.0, 'y': 3.0, 'z': 0.0},
-          }.entries) {
-            _run(source, 'setAnimationKeyframe', {
-              'animationId': animationId.toToken(),
-              'nodeId': node.toToken(),
-              'property': 'translation',
-              'time': entry.key,
-              'translation': entry.value,
-            });
-          }
+      test('.fscene text keeps the animation manifest (bytes live in the '
+          'sidecar)', () {
+        final source = _harness();
+        _run(source, 'createAnimation', {'name': 'Bounce'});
+        final animationId = source.doc.animations.keys.single;
+        final node = _addCube(source, 'Cube');
+        for (final entry in {
+          0.0: {'x': 0.0, 'y': 0.0, 'z': 0.0},
+          1.0: {'x': 0.0, 'y': 3.0, 'z': 0.0},
+        }.entries) {
+          _run(source, 'setAnimationKeyframe', {
+            'animationId': animationId.toToken(),
+            'nodeId': node.toToken(),
+            'property': 'translation',
+            'time': entry.key,
+            'translation': entry.value,
+          });
+        }
 
-          final text = writeFscene(source.doc);
-          final restored = readFscene(text);
+        final text = writeFscene(source.doc);
+        final restored = readFscene(text);
 
-          expect(restored.animations, hasLength(1));
-          final animation = restored.animations.values.single;
-          expect(animation.name, 'Bounce');
-          expect(animation.channels, hasLength(1));
-          // Node ids are stable across serialization within one session.
-          expect(animation.channels.single.target, node);
-          // The payload manifest survives; the bytes ride in a .fsceneb
-          // sidecar (see saveFscene).
-          expect(restored.payload(animation.channels.single.timeline), isNotNull);
-          expect(
-            restored.payload(animation.channels.single.keyframes),
-            isNotNull,
-          );
+        expect(restored.animations, hasLength(1));
+        final animation = restored.animations.values.single;
+        expect(animation.name, 'Bounce');
+        expect(animation.channels, hasLength(1));
+        // Node ids are stable across serialization within one session.
+        expect(animation.channels.single.target, node);
+        // The payload manifest survives; the bytes ride in a .fsceneb
+        // sidecar (see saveFscene).
+        expect(restored.payload(animation.channels.single.timeline), isNotNull);
+        expect(
+          restored.payload(animation.channels.single.keyframes),
+          isNotNull,
+        );
 
-          // The full byte-faithful form round trips through the container.
-          final container = Uint8List.fromList(writeFsceneb(source.doc));
-          final withBytes = readFsceneb(container);
-          final (times, values) = _channelData(
-            withBytes,
-            withBytes.animations[animationId]!,
-            node,
-            AnimationProperty.translation,
-          );
-          expect(times, [0.0, 1.0]);
-          expect(values[1][1], 3.0);
-        },
-      );
+        // The full byte-faithful form round trips through the container.
+        final container = Uint8List.fromList(writeFsceneb(source.doc));
+        final withBytes = readFsceneb(container);
+        final (times, values) = _channelData(
+          withBytes,
+          withBytes.animations[animationId]!,
+          node,
+          AnimationProperty.translation,
+        );
+        expect(times, [0.0, 1.0]);
+        expect(values[1][1], 3.0);
+      });
     });
   });
 
@@ -341,6 +339,198 @@ void main() {
       );
       expect(times.single, closeTo(0.5, 1e-6));
       expect(rotations.single, [0.0, 0.0, 0.0, 1.0]);
+    });
+  });
+
+  group('euler rotation input', () {
+    test('setNodeTransform converts degrees to a quaternion', () async {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'setNodeTransform', {
+        'nodeId': node.toToken(),
+        'rotationEuler': {'yaw': 90.0, 'pitch': 0.0, 'roll': 0.0},
+      });
+      final trs = h.doc.node(node)!.transform as TrsTransform;
+      // Compose through the same path the engine renders with.
+      final matrix = Matrix4.compose(
+        Vector3.zero(),
+        trs.rotation,
+        Vector3(1, 1, 1),
+      );
+      // A +90 degree yaw around Y (right-handed) maps +X onto -Z.
+      final rotated = matrix.transformed3(Vector3(1, 0, 0));
+      expect(rotated.x, closeTo(0.0, 1e-6));
+      expect(rotated.y, closeTo(0.0, 1e-6));
+      expect(rotated.z, closeTo(-1.0, 1e-6));
+    });
+
+    test('setAnimationKeyframe accepts rotationEuler keys', () async {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'Spin'});
+      final animationId = h.doc.animations.keys.last;
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'rotation',
+        'time': 1.0,
+        'rotationEuler': {'yaw': 180.0, 'pitch': 0.0, 'roll': 0.0},
+      });
+      final animation = h.doc.animations[animationId]!;
+      final (times, rotations) = _channelData(
+        h.doc,
+        animation,
+        node,
+        AnimationProperty.rotation,
+      );
+      expect(times.single, closeTo(1.0, 1e-6));
+      // A 180 degree yaw about Y is (0, 1, 0, ~0).
+      expect(rotations.single[0], closeTo(0.0, 1e-6));
+      expect(rotations.single[1], closeTo(1.0, 1e-6));
+      expect(rotations.single[3], closeTo(0.0, 1e-6));
+    });
+
+    test('passing both rotation forms fails loudly', () async {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'Spin'});
+      final animationId = h.doc.animations.keys.last;
+      expect(
+        () => _run(h, 'setAnimationKeyframe', {
+          'animationId': animationId.toToken(),
+          'nodeId': node.toToken(),
+          'property': 'rotation',
+          'time': 0.0,
+          'rotation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
+          'rotationEuler': {'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0},
+        }),
+        throwsA(
+          isA<CommandException>().having(
+            (e) => e.message,
+            'message',
+            contains('not both'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('batch keyframes', () {
+    test('setAnimationKeyframes writes many keys in one transaction', () {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'Bounce'});
+      final animationId = h.doc.animations.keys.last;
+      _run(h, 'setAnimationKeyframes', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'keys': [
+          {
+            'time': 1.0,
+            'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+          },
+          {
+            'time': 0.0,
+            'translation': {'x': 0.0, 'y': 2.0, 'z': 0.0},
+          },
+          {
+            'time': 0.5,
+            'translation': {'x': 0.0, 'y': 4.0, 'z': 0.0},
+          },
+        ],
+      });
+      final animation = h.doc.animations[animationId]!;
+      final (times, values) = _channelData(
+        h.doc,
+        animation,
+        node,
+        AnimationProperty.translation,
+      );
+      // Unsorted input lands sorted.
+      expect(times, [
+        closeTo(0.0, 1e-6),
+        closeTo(0.5, 1e-6),
+        closeTo(1.0, 1e-6),
+      ]);
+      expect(values[0], [0.0, 2.0, 0.0]);
+      expect(values[1], [0.0, 4.0, 0.0]);
+      expect(values[2], [0.0, 0.0, 0.0]);
+    });
+
+    test('omitted components capture the current pose per key', () {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'Drift'});
+      final animationId = h.doc.animations.keys.last;
+      _run(h, 'setNodeTransform', {
+        'nodeId': node.toToken(),
+        'translation': {'x': 3.0, 'y': 0.0, 'z': 0.0},
+      });
+      _run(h, 'setAnimationKeyframes', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'keys': [
+          {'time': 0.0},
+          {
+            'time': 1.0,
+            'translation': {'x': -3.0, 'y': 0.0, 'z': 0.0},
+          },
+        ],
+      });
+      final animation = h.doc.animations[animationId]!;
+      final (_, values) = _channelData(
+        h.doc,
+        animation,
+        node,
+        AnimationProperty.translation,
+      );
+      expect(values[0], [3.0, 0.0, 0.0]);
+      expect(values[1], [-3.0, 0.0, 0.0]);
+    });
+
+    test('empty or non-list "keys" is rejected', () {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'X'});
+      final animationId = h.doc.animations.keys.last;
+      for (final bad in [<Object>[], 'nope']) {
+        expect(
+          () => _run(h, 'setAnimationKeyframes', {
+            'animationId': animationId.toToken(),
+            'nodeId': node.toToken(),
+            'property': 'translation',
+            'keys': bad,
+          }),
+          throwsA(isA<CommandException>()),
+        );
+      }
+    });
+
+    test('undo removes the whole batch at once', () {
+      final h = _harness();
+      final node = _addCube(h, 'Cube');
+      _run(h, 'createAnimation', {'name': 'Bounce'});
+      final animationId = h.doc.animations.keys.last;
+      _run(h, 'setAnimationKeyframes', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'keys': [
+          {
+            'time': 0.0,
+            'translation': {'x': 0.0, 'y': 1.0, 'z': 0.0},
+          },
+          {
+            'time': 1.0,
+            'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+          },
+        ],
+      });
+      h.history.undo();
+      final animation = h.doc.animations[animationId]!;
+      expect(animation.channels.where((c) => c.target == node), isEmpty);
     });
   });
 }

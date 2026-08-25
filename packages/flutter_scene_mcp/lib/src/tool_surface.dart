@@ -236,10 +236,20 @@ typedef AnimationPreviewControl =
       bool? loop,
       double? speed,
       double? seek,
+      bool? stop,
     });
 
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
+  /// The default cap on keyframes returned per channel by `get_animation`
+  /// and `get_keyframes`. The tool descriptions quote this as "200"; the
+  /// tests pin the behavior so the two cannot drift apart silently.
+  static const int _defaultMaxKeys = 200;
+
+  /// Tolerance for time-range bounds against float32-stored keyframe times
+  /// (mirrors the authoring commands' keyframe-time epsilon).
+  static const double _rangeEpsilon = 1e-4;
+
   /// Creates a surface over [session].
   ///
   /// When [screenshot] is supplied (by a running editor), a
@@ -457,6 +467,12 @@ class EditorToolSurface {
             'seek': {
               'type': 'number',
               'description': 'Move the playhead to this time in seconds.',
+            },
+            'stop': {
+              'type': 'boolean',
+              'description':
+                  'Stop playback: pause, reset the playhead to 0, and '
+                  'restore every previewed node to its document transform.',
             },
             'playing': {
               'type': 'boolean',
@@ -962,10 +978,13 @@ class EditorToolSurface {
       description:
           "Return full detail for one animation: each channel's target node, "
           'property, and decoded keyframes (a time plus a value per entry; '
-          'rotation values are quaternions, weights are flat lists). Author '
-          'and edit animations through the createAnimation / '
-          'setAnimationKeyframe / moveAnimationKeyframe / '
-          'removeAnimationKeyframe commands via run_command.',
+          'rotation values are quaternions, weights are flat lists). At most '
+          'maxKeys keyframes per channel are returned (default 200); use '
+          'totalKeys and keysTruncated to spot larger channels and page '
+          'through them with get_keyframes. Author and edit animations '
+          'through the createAnimation / setAnimationKeyframe / '
+          'moveAnimationKeyframe / removeAnimationKeyframe commands via '
+          'run_command.',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -973,8 +992,56 @@ class EditorToolSurface {
             'type': 'string',
             'description': 'An animation id token or exact name.',
           },
+          'maxKeys': {
+            'type': 'integer',
+            'description':
+                'Cap on keyframes returned per channel (default 200). '
+                'Larger channels report keysTruncated.',
+          },
         },
         'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'get_keyframes',
+      description:
+          "Page through one animation channel's decoded keyframes by time "
+          'range — the safe way to read large imported clips without '
+          'flooding context. Returns entries with fromTime <= time <= '
+          'toTime, capped at maxKeys, plus totalKeys in range and '
+          'keysTruncated so you know to page further.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description': 'An animation id token or exact name.',
+          },
+          'node': {
+            'type': 'string',
+            'description':
+                "The channel's target node (slash path or id "
+                'token).',
+          },
+          'property': {
+            'type': 'string',
+            'description': 'translation, rotation, scale, or weights.',
+          },
+          'fromTime': {
+            'type': 'number',
+            'description': 'Inclusive lower time bound in seconds.',
+          },
+          'toTime': {
+            'type': 'number',
+            'description': 'Inclusive upper time bound in seconds.',
+          },
+          'maxKeys': {
+            'type': 'integer',
+            'description': 'Cap on keyframes returned (default 200).',
+          },
+        },
+        'required': ['ref', 'node', 'property'],
         'additionalProperties': false,
       },
     ),
@@ -1079,7 +1146,19 @@ class EditorToolSurface {
           ],
         };
       case 'get_animation':
-        return _animationDetail(_resolveAnimation(_requireAnimationRef(args)));
+        return _animationDetail(
+          _resolveAnimation(_requireAnimationRef(args)),
+          maxKeys: switch (args['maxKeys']) {
+            null => null,
+            final int keys when keys >= 1 => keys,
+            final int _ => throw const ToolError(
+              '"maxKeys" must be at least 1',
+            ),
+            _ => throw const ToolError('"maxKeys" must be an integer'),
+          },
+        );
+      case 'get_keyframes':
+        return _keyframeWindow(args);
       case 'get_selection':
         return _selectionResult();
       case 'select_node':
@@ -1119,6 +1198,7 @@ class EditorToolSurface {
           loop: boolOf(args['loop'], 'loop'),
           speed: timeOf(args['speed'], 'speed'),
           seek: timeOf(args['seek'], 'seek'),
+          stop: boolOf(args['stop'], 'stop'),
         );
       case 'new_document':
         final creator = newDocument;
@@ -1812,12 +1892,18 @@ class EditorToolSurface {
 
   /// Full detail for one animation, with each channel's keyframes decoded
   /// out of its float32 timeline/keyframes payloads.
-  Map<String, Object?> _animationDetail(AnimationSpec animation) => {
+  /// Full detail for one animation, with each channel's keyframes decoded,
+  /// capped at [maxKeys] entries per channel.
+  Map<String, Object?> _animationDetail(
+    AnimationSpec animation, {
+    int? maxKeys,
+  }) => {
     'id': animation.id.toToken(),
     'name': animation.name,
     'duration': _animationDuration(animation),
     'channels': [
-      for (final channel in animation.channels) _channelDetail(channel),
+      for (final channel in animation.channels)
+        _channelWindow(channel, null, null, maxKeys ?? _defaultMaxKeys),
     ],
   };
 
@@ -1828,51 +1914,112 @@ class EditorToolSurface {
     if (_query.namePathOf(channel.target) case final path?) 'path': path,
   };
 
-  /// One channel's decoded keyframes. Rotation carries a quaternion per
-  /// keyframe, translation and scale a vec3, and weights the flattened glTF
-  /// shape (one weight per morph target per keyframe).
-  Map<String, Object?> _channelDetail(AnimationChannelSpec channel) {
+  /// One channel's decoded keyframes within an optional inclusive time
+  /// range, capped at [maxKeys] entries. `totalKeys` counts every keyframe
+  /// in range and `keysTruncated` says when the cap bit, so callers know to
+  /// page with get_keyframes instead of flooding context. Rotation carries
+  /// a quaternion per keyframe, translation and scale a vec3, and weights
+  /// the flattened glTF shape (one weight per morph target per keyframe).
+  Map<String, Object?> _channelWindow(
+    AnimationChannelSpec channel,
+    double? fromTime,
+    double? toTime,
+    int maxKeys,
+  ) {
     final times = _channelTimes(channel);
     final valueBytes = session.document.payload(channel.keyframes)?.bytes;
     final floats = valueBytes == null ? Float32List(0) : _floatsOf(valueBytes);
     final weightStride = times.isEmpty ? 0 : floats.length ~/ times.length;
+    Object? valueAt(int i) => switch (channel.property) {
+      AnimationProperty.rotation =>
+        floats.length >= i * 4 + 4
+            ? {
+                'x': floats[i * 4],
+                'y': floats[i * 4 + 1],
+                'z': floats[i * 4 + 2],
+                'w': floats[i * 4 + 3],
+              }
+            : null,
+      AnimationProperty.weights => [
+        for (
+          var j = 0;
+          j < weightStride && i * weightStride + j < floats.length;
+          j++
+        )
+          floats[i * weightStride + j],
+      ],
+      _ =>
+        floats.length >= i * 3 + 3
+            ? {
+                'x': floats[i * 3],
+                'y': floats[i * 3 + 1],
+                'z': floats[i * 3 + 2],
+              }
+            : null,
+    };
+    final inRange = <int>[
+      // Times live in float32 payloads while callers pass decimal doubles,
+      // so the bounds get a small tolerance (matching the authoring
+      // commands' keyframe-time epsilon) instead of exact comparison.
+      for (var i = 0; i < times.length; i++)
+        if ((fromTime == null || times[i] >= fromTime - _rangeEpsilon) &&
+            (toTime == null || times[i] <= toTime + _rangeEpsilon))
+          i,
+    ];
+    final shown = inRange.length > maxKeys
+        ? inRange.sublist(0, maxKeys)
+        : inRange;
     return {
       'target': _channelTarget(channel),
       'property': channel.property.name,
+      'totalKeys': inRange.length,
+      'keysTruncated': shown.length < inRange.length,
       'keyframes': [
-        for (var i = 0; i < times.length; i++)
-          {
-            'time': times[i],
-            'value': switch (channel.property) {
-              AnimationProperty.rotation =>
-                floats.length >= i * 4 + 4
-                    ? {
-                        'x': floats[i * 4],
-                        'y': floats[i * 4 + 1],
-                        'z': floats[i * 4 + 2],
-                        'w': floats[i * 4 + 3],
-                      }
-                    : null,
-              AnimationProperty.weights => [
-                for (
-                  var j = 0;
-                  j < weightStride && i * weightStride + j < floats.length;
-                  j++
-                )
-                  floats[i * weightStride + j],
-              ],
-              _ =>
-                floats.length >= i * 3 + 3
-                    ? {
-                        'x': floats[i * 3],
-                        'y': floats[i * 3 + 1],
-                        'z': floats[i * 3 + 2],
-                      }
-                    : null,
-            },
-          },
+        for (final i in shown) {'time': times[i], 'value': valueAt(i)},
       ],
     };
+  }
+
+  /// The `get_keyframes` tool: one channel's keyframes over a time range.
+  Map<String, Object?> _keyframeWindow(Map<String, Object?> args) {
+    final animation = _resolveAnimation(_requireAnimationRef(args));
+    final nodeArg = args['node'];
+    if (nodeArg is! String || nodeArg.isEmpty) {
+      throw const ToolError('"node" must be a non-empty node ref');
+    }
+    final target = _resolve(_requireRef({'ref': nodeArg})).id;
+    final propertyArg = args['property'];
+    AnimationProperty? property;
+    for (final p in AnimationProperty.values) {
+      if (p.name == propertyArg) property = p;
+    }
+    if (property == null) {
+      throw ToolError(
+        '"property" must be one of translation, rotation, scale, weights; '
+        'got $propertyArg',
+      );
+    }
+    AnimationChannelSpec? channel;
+    for (final c in animation.channels) {
+      if (c.target == target && c.property == property) {
+        channel = c;
+      }
+    }
+    if (channel == null) {
+      throw ToolError('No $propertyArg channel on ${args['node']}');
+    }
+    double? bound(String key) => switch (args[key]) {
+      null => null,
+      final num seconds => seconds.toDouble(),
+      _ => throw ToolError('"$key" must be a number'),
+    };
+    final maxKeys = switch (args['maxKeys']) {
+      null => _defaultMaxKeys,
+      final int keys when keys >= 1 => keys,
+      final int _ => throw const ToolError('"maxKeys" must be at least 1'),
+      _ => throw const ToolError('"maxKeys" must be an integer'),
+    };
+    return _channelWindow(channel, bound('fromTime'), bound('toTime'), maxKeys);
   }
 
   /// A payload chunk's bytes as float32s (chunks can be unaligned views).

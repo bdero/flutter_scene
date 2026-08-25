@@ -1276,15 +1276,16 @@ class _EditorHomeState extends State<_EditorHome> {
           renderGraphScan: _renderGraphMcp.scanForNans,
           listDebugModes: _renderGraphMcp.listModes,
           setDebugMode: _renderGraphMcp.setMode,
-          animationPreview: ({animationId, playing, loop, speed, seek}) {
+          animationPreview: ({animationId, playing, loop, speed, seek, stop}) {
             final controller = _requireController;
             // Selecting resets the playhead, so only when the animation
-            // actually changes; then seek before playing so one call can
-            // load, position, and start a clip.
+            // actually changes; then stop before seek so one call can reset
+            // and reposition, and seek lands before playing starts.
             if (animationId != null &&
                 animationId != controller.previewAnimationId) {
               controller.selectPreviewAnimation(animationId);
             }
+            if (stop == true) controller.stopPreview();
             if (loop != null) controller.setPreviewLoop(loop);
             if (speed != null) controller.setPreviewSpeed(speed);
             if (seek != null) controller.seekPreview(seek);

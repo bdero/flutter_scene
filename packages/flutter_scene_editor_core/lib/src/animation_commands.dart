@@ -77,10 +77,9 @@ _KeyframeData _readKeyframes(SceneDocument document, AnimationChannelSpec c) {
         bytes.lengthInBytes ~/ 4,
       );
     }
-    return Uint8List.fromList(bytes).buffer.asFloat32List(
-      0,
-      bytes.lengthInBytes ~/ 4,
-    );
+    return Uint8List.fromList(
+      bytes,
+    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
   }
 
   final timesIn = floats(times);
@@ -89,9 +88,7 @@ _KeyframeData _readKeyframes(SceneDocument document, AnimationChannelSpec c) {
     [for (var i = 0; i < timesIn.length; i++) timesIn[i]],
     [
       for (var i = 0; i * stride + stride <= valuesIn.length; i++)
-        [
-          for (var j = 0; j < stride; j++) valuesIn[i * stride + j],
-        ],
+        [for (var j = 0; j < stride; j++) valuesIn[i * stride + j]],
     ],
   );
 }
@@ -110,10 +107,7 @@ _KeyframeData _readKeyframes(SceneDocument document, AnimationChannelSpec c) {
       valuesOut[o++] = component;
     }
   }
-  return (
-    timesOut.buffer.asUint8List(),
-    valuesOut.buffer.asUint8List(),
-  );
+  return (timesOut.buffer.asUint8List(), valuesOut.buffer.asUint8List());
 }
 
 /// The channel of [animation] driving [property] of [target], or null.
@@ -255,8 +249,7 @@ bool _payloadDiffers(PayloadSpec? payload, Uint8List bytes) {
 
   final channels = [
     for (final c in animation.channels)
-      if (c.target != target || c.property != property)
-        c,
+      if (c.target != target || c.property != property) c,
     AnimationChannelSpec(
       target: target,
       targetName: targetName,
@@ -428,7 +421,9 @@ final setAnimationKeyframe = CommandEntry(
   name: 'setAnimationKeyframe',
   doc:
       'Add or update one keyframe of an animation channel. Omitted value '
-      'components capture the target node\'s current transform.',
+      'components capture the target node\'s current transform. Rotation '
+      'accepts a "rotation" quaternion or a "rotationEuler" '
+      '{yaw, pitch, roll} object in degrees.',
   category: 'Animation',
   paramSchema: const [
     ParamSpec(
@@ -452,6 +447,16 @@ final setAnimationKeyframe = CommandEntry(
       required: false,
     ),
     ParamSpec(
+      name: 'rotationEuler',
+      type: ParamType.euler,
+      label: 'Rotation (Euler)',
+      required: false,
+      description:
+          'Rotation as {yaw, pitch, roll} in DEGREES (yaw around Y, pitch '
+          'around X, roll around Z). Pass either this or "rotation", not '
+          'both.',
+    ),
+    ParamSpec(
       name: 'scale',
       type: ParamType.vec3,
       label: 'Scale',
@@ -459,8 +464,10 @@ final setAnimationKeyframe = CommandEntry(
     ),
   ],
   execute: (ctx, params) {
-    final animation =
-        _requireAnimation(ctx, _requireAnimationId(params, 'animationId'));
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
     final nodeId = requireNodeId(params, 'nodeId');
     final node =
         ctx.document.node(nodeId) ??
@@ -475,16 +482,7 @@ final setAnimationKeyframe = CommandEntry(
     }
 
     // An omitted component captures the pose currently on the node.
-    final trs = _currentTrs(node);
-    final List<double> value = switch (property) {
-      AnimationProperty.translation =>
-        [...(optionalVec3(params, 'translation') ?? trs.translation).storage],
-      AnimationProperty.rotation =>
-        [...(optionalQuaternion(params, 'rotation') ?? trs.rotation).storage],
-      AnimationProperty.scale =>
-        [...(optionalVec3(params, 'scale') ?? trs.scale).storage],
-      AnimationProperty.weights => const [],
-    };
+    final value = _keyValue(params, property, _currentTrs(node));
 
     final channel = _channelOf(animation, nodeId, property);
     final data = channel == null
@@ -500,6 +498,109 @@ final setAnimationKeyframe = CommandEntry(
       data,
     );
     return Transaction(name: 'Set keyframe', records: records);
+  },
+);
+
+/// Resolves one keyframe's stored value from its param map: the explicitly
+/// given components (quaternion or Euler degrees for rotation), falling back
+/// to the captured [trs] pose per component.
+List<double> _keyValue(
+  Map<String, Object?> key,
+  AnimationProperty property,
+  TrsTransform trs,
+) {
+  if (property == AnimationProperty.weights) {
+    throw CommandException('Morph-weight keyframes are not authorable here');
+  }
+  final quaternion = optionalQuaternion(key, 'rotation');
+  final euler = optionalEuler(key, 'rotationEuler');
+  if (quaternion != null && euler != null) {
+    throw const CommandException(
+      'Pass either "rotation" or "rotationEuler", not both',
+    );
+  }
+  return switch (property) {
+    AnimationProperty.translation => [
+      ...(optionalVec3(key, 'translation') ?? trs.translation).storage,
+    ],
+    AnimationProperty.rotation => [
+      ...((quaternion ?? euler) ?? trs.rotation).storage,
+    ],
+    AnimationProperty.scale => [
+      ...(optionalVec3(key, 'scale') ?? trs.scale).storage,
+    ],
+    AnimationProperty.weights => const [],
+  };
+}
+
+final setAnimationKeyframes = CommandEntry(
+  name: 'setAnimationKeyframes',
+  doc:
+      'Add or update several keyframes of one animation channel in a single '
+      'undoable step. Each entry of "keys" carries a "time" plus optional '
+      '"translation", "rotation" ({x, y, z, w}), "rotationEuler" '
+      '({yaw, pitch, roll} degrees), or "scale"; omitted components capture '
+      'the target node\'s current transform.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
+    ParamSpec(
+      name: 'keys',
+      type: ParamType.objectList,
+      label: 'Keys',
+      description:
+          'One {time, translation?, rotation?, rotationEuler?, scale?} '
+          'object per keyframe; times need not be sorted.',
+    ),
+  ],
+  execute: (ctx, params) {
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final nodeId = requireNodeId(params, 'nodeId');
+    final node =
+        ctx.document.node(nodeId) ??
+        (throw CommandException('Node not found: ${nodeId.toToken()}'));
+    final property = _requireProperty(params);
+    final keysParam = params['keys'];
+    if (keysParam is! List || keysParam.isEmpty) {
+      throw const CommandException(
+        '"keys" must be a non-empty list of keyframe objects',
+      );
+    }
+    final trs = _currentTrs(node);
+
+    final channel = _channelOf(animation, nodeId, property);
+    final data = channel == null
+        ? _KeyframeData([], [])
+        : _readKeyframes(ctx.document, channel);
+    for (final entry in keysParam) {
+      if (entry is! Map) {
+        throw const CommandException('Every key must be an object');
+      }
+      final key = Map<String, Object?>.from(entry);
+      final time = requireDouble(key, 'time');
+      if (time.isNegative || time.isNaN) {
+        throw CommandException('Keyframe time must be a non-negative number');
+      }
+      _upsert(data, time, _keyValue(key, property, trs));
+    }
+    final (records, _) = _writeChannel(
+      ctx,
+      animation,
+      nodeId,
+      node.name,
+      property,
+      data,
+    );
+    return Transaction(name: 'Set keyframes', records: records);
   },
 );
 
@@ -521,8 +622,10 @@ final removeAnimationKeyframe = CommandEntry(
   ],
   execute: (ctx, params) {
     final document = ctx.document;
-    final animation =
-        _requireAnimation(ctx, _requireAnimationId(params, 'animationId'));
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
     final nodeId = requireNodeId(params, 'nodeId');
     final property = _requireProperty(params);
     final time = requireDouble(params, 'time');
@@ -571,8 +674,10 @@ final moveAnimationKeyframe = CommandEntry(
     ParamSpec(name: 'toTime', type: ParamType.number, label: 'To'),
   ],
   execute: (ctx, params) {
-    final animation =
-        _requireAnimation(ctx, _requireAnimationId(params, 'animationId'));
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
     final nodeId = requireNodeId(params, 'nodeId');
     final property = _requireProperty(params);
     final fromTime = requireDouble(params, 'fromTime');
@@ -613,6 +718,7 @@ final List<CommandEntry> animationCommands = [
   deleteAnimation,
   renameAnimation,
   setAnimationKeyframe,
+  setAnimationKeyframes,
   removeAnimationKeyframe,
   moveAnimationKeyframe,
 ];

@@ -31,6 +31,7 @@ void main() {
       bool? loop,
       double? speed,
       double? seek,
+      bool? stop,
     }) {
       calls.add({
         if (animationId != null) 'animation': animationId.toToken(),
@@ -38,6 +39,7 @@ void main() {
         if (loop != null) 'loop': loop,
         if (speed != null) 'speed': speed,
         if (seek != null) 'seek': seek,
+        if (stop != null) 'stop': stop,
       });
       return {
         'animation': animationId?.toToken(),
@@ -114,6 +116,185 @@ void main() {
       expect(
         () => surfaceWithPreview().dispatch('control_animation_preview', {
           'ref': 'Nope',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+
+    test('an empty ref is rejected, not silently ignored', () {
+      expect(
+        () => surfaceWithPreview().dispatch('control_animation_preview', {
+          'ref': '',
+        }),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('non-empty'),
+          ),
+        ),
+      );
+    });
+
+    test('stop passes through to the host', () async {
+      final surface = surfaceWithPreview();
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final id =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      calls.clear();
+      await surface.dispatch('control_animation_preview', {
+        'ref': id,
+        'stop': true,
+      });
+      expect(calls.single['stop'], true);
+    });
+  });
+
+  group('keyframe truncation', () {
+    /// A surface with one node and a 250-key animation channel.
+    Future<(EditorToolSurface, String, String)> largeChannel() async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      // 250 keys at 0.01 s spacing, authored through the real batch command.
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframes',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'keys': [
+            for (var i = 0; i < 250; i++)
+              {
+                'time': i * 0.01,
+                'translation': {'x': i * 1.0, 'y': 0.0, 'z': 0.0},
+              },
+          ],
+        },
+      });
+      return (surface, animationId, nodeId);
+    }
+
+    test('get_animation caps keyframes per channel by default', () async {
+      final (surface, animationId, _) = await largeChannel();
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      final channel = (detail['channels'] as List).single as Map;
+      expect(channel['totalKeys'], 250);
+      expect(channel['keysTruncated'], isTrue);
+      expect((channel['keyframes'] as List), hasLength(200));
+    });
+
+    test('maxKeys raises or lowers the cap', () async {
+      final (surface, animationId, _) = await largeChannel();
+      final full = await surface.dispatch('get_animation', {
+        'ref': animationId,
+        'maxKeys': 250,
+      });
+      final channel = (full['channels'] as List).single as Map;
+      expect(channel['keysTruncated'], isFalse);
+      expect((channel['keyframes'] as List), hasLength(250));
+
+      final tiny = await surface.dispatch('get_animation', {
+        'ref': animationId,
+        'maxKeys': 5,
+      });
+      expect(
+        ((tiny['channels'] as List).single as Map)['keyframes'],
+        hasLength(5),
+      );
+    });
+
+    test('a maxKeys below 1 is rejected', () async {
+      final (surface, animationId, _) = await largeChannel();
+      expect(
+        () => surface.dispatch('get_animation', {
+          'ref': animationId,
+          'maxKeys': 0,
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+
+    test('get_keyframes pages a channel by time range', () async {
+      final (surface, animationId, nodeId) = await largeChannel();
+      final page = await surface.dispatch('get_keyframes', {
+        'ref': animationId,
+        'node': nodeId,
+        'property': 'translation',
+        'fromTime': 0.4,
+        'toTime': 0.6,
+      });
+      expect(page['totalKeys'], 21); // 0.40..0.60 inclusive at 0.01 spacing.
+      expect(page['keysTruncated'], isFalse);
+      final times = [
+        for (final k in (page['keyframes'] as List)) (k as Map)['time'],
+      ];
+      expect(times.first, closeTo(0.4, 1e-6));
+      expect(times.last, closeTo(0.6, 1e-6));
+
+      // The cap still applies within the range.
+      final capped = await surface.dispatch('get_keyframes', {
+        'ref': animationId,
+        'node': nodeId,
+        'property': 'translation',
+        'fromTime': 0.0,
+        'toTime': 2.49,
+        'maxKeys': 10,
+      });
+      expect(capped['totalKeys'], 250);
+      expect(capped['keysTruncated'], isTrue);
+      expect((capped['keyframes'] as List), hasLength(10));
+    });
+
+    test('get_keyframes validates its channel arguments', () async {
+      final (surface, animationId, nodeId) = await largeChannel();
+      // Unknown property.
+      expect(
+        () => surface.dispatch('get_keyframes', {
+          'ref': animationId,
+          'node': nodeId,
+          'property': 'colour',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+      // A node with no channel of that property.
+      await surface.dispatch('run_command', {
+        'command': 'createNode',
+        'params': {'name': 'Other'},
+      });
+      expect(
+        () => surface.dispatch('get_keyframes', {
+          'ref': animationId,
+          'node': 'Other',
+          'property': 'translation',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+      // Missing node argument.
+      expect(
+        () => surface.dispatch('get_keyframes', {
+          'ref': animationId,
+          'property': 'translation',
         }),
         throwsA(isA<ToolError>()),
       );
