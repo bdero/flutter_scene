@@ -1,3 +1,7 @@
+## 0.1.2
+
+* Widen the `flutter_scene` constraint to `^0.23.0`. No API changes.
+
 ## 0.1.1
 
 * Add `registerFmodAudioBackend()`, so documents naming `fmod` as their audio engine realize an `FmodAudioEngine`.

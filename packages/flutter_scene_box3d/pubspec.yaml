@@ -2,7 +2,7 @@ name: flutter_scene_box3d
 description: box3d physics backend for flutter_scene. Implements the physics simulation contract from package:scene against the box3d engine.
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
-version: 0.2.0
+version: 0.2.1
 
 topics:
   - physics
