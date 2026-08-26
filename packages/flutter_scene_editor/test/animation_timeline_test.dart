@@ -25,7 +25,9 @@ const double _rowHeight = 22;
 
 double _laneRowCenterY() => _rulerTop + _rowHeight / 2;
 
-Future<(EditorController, LocalId)> pumpTimeline(WidgetTester tester) async {
+/// A controller over a fresh document: one node plus a 1s translation
+/// animation with keys at t = 0 and t = 1.
+Future<(EditorController, LocalId)> pumpScene() async {
   await Scene.initializeStaticResources();
   final document = SceneDocument();
   final nodeId = document.newId();
@@ -42,6 +44,11 @@ Future<(EditorController, LocalId)> pumpTimeline(WidgetTester tester) async {
     });
   }
   addTearDown(controller.dispose);
+  return (controller, animationId);
+}
+
+Future<(EditorController, LocalId)> pumpTimeline(WidgetTester tester) async {
+  final (controller, animationId) = await pumpScene();
 
   await tester.pumpWidget(
     MaterialApp(
@@ -51,10 +58,11 @@ Future<(EditorController, LocalId)> pumpTimeline(WidgetTester tester) async {
           height: 200,
           child: AnimationTimeline(
             controller: controller,
-            animation: document.animations[animationId]!,
+            animation: controller.document.animations[animationId]!,
             duration: controller.previewDuration(animationId),
             selectedKey: null,
             draggingKey: false,
+            dragFromTime: null,
             onTapLane: (_) {},
             onScrub: (_) {},
             onSelectKey: (_) {},
@@ -63,6 +71,27 @@ Future<(EditorController, LocalId)> pumpTimeline(WidgetTester tester) async {
             onDragKeyEnd: () {},
             onDoubleTapLane: (_, __) {},
           ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  return (controller, animationId);
+}
+
+/// Pumps the full [AnimationPanel] (its own timeline state, key handling and
+/// transport) instead of the bare [AnimationTimeline], so gesture-driven key
+/// edits in the panel state run end to end.
+Future<(EditorController, LocalId)> pumpPanel(WidgetTester tester) async {
+  final (controller, animationId) = await pumpScene();
+
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 600,
+          height: 320,
+          child: AnimationPanel(controller: controller),
         ),
       ),
     ),
@@ -213,13 +242,13 @@ void main() {
 
     // Zoom in first so there is something to pan through.
     await zoomWithWheel(tester, 3, const Offset(0, -480));
-    expect(_painterField(tester, 'scrollSeconds'), 0.0);
+    expect(_painterField(tester, 'scrollPx'), 0.0);
 
     final pointer = TestPointer(3, PointerDeviceKind.mouse);
     pointer.hover(tester.getCenter(find.byType(AnimationTimeline)));
     await tester.sendEventToBinding(pointer.scroll(const Offset(0, 200)));
     await tester.pump();
-    expect(_painterField(tester, 'scrollSeconds'), greaterThan(0.0));
+    expect(_painterField(tester, 'scrollPx'), greaterThan(0.0));
   });
 
   testWidgets('trackpad pinch zooms the timeline', (tester) async {
@@ -236,5 +265,74 @@ void main() {
     await gesture.panZoomEnd();
 
     expect(_painterField(tester, 'pxPerSecond'), greaterThan(fit));
+  });
+
+  testWidgets('dragging a keyframe diamond retimes it', (tester) async {
+    final (controller, animationId) = await pumpPanel(tester);
+    List<double> times() => channelTimes(
+      controller.document,
+      controller.document.animations[animationId]!.channels.single,
+    );
+    expect(times(), [0.0, 1.0]);
+
+    // Fit mode: a 600px pane with a 1s clip gives 472 lane px/s, so the
+    // t = 1s diamond sits at x = 120 + 472 = 592 in the timeline's own
+    // coordinate space (the panel wraps the timeline below its keybar).
+    final timelineRect = tester.getRect(find.byType(AnimationTimeline));
+    final start = timelineRect.topLeft + Offset(592, _laneRowCenterY());
+    final gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    // Small steps keep the pan-start pointer (which sits at the point the
+    // gesture was accepted, a few px in) inside the diamond's 12px hit reach,
+    // while the total accumulates toward −236px ⇒ −0.5s.
+    for (var i = 0; i < 59; i++) {
+      await gesture.moveBy(const Offset(-4, 0));
+      await tester.pump();
+    }
+    await gesture.up();
+    // The commit runs as a controller command; settle until it lands.
+    await tester.pumpAndSettle();
+
+    final moved = times();
+    expect(moved.length, 2);
+    expect(moved, contains(closeTo(0.0, 1e-4)));
+    expect(moved, contains(closeTo(0.5, 0.04)));
+    expect(moved.any((t) => (t - 1.0).abs() < 1e-3), isFalse);
+  });
+
+  testWidgets('resizing the pane rescales the timeline at the same zoom', (
+    tester,
+  ) async {
+    final (controller, _) = await pumpPanel(tester);
+    final before = _painterField(tester, 'pxPerSecond');
+    expect(before, closeTo(472.0, 0.5));
+
+    // Zoom out through the pill so the scale is user-locked to an absolute
+    // value (previously this froze the timeline from following the pane).
+    // Out, not in: the 600 px/s ceiling would clip the ratio we assert below.
+    await tester.tap(find.byIcon(Icons.zoom_out_map));
+    await tester.pump();
+    final zoomed = _painterField(tester, 'pxPerSecond');
+    expect(zoomed, lessThan(before));
+
+    // Widen the pane 600 → 900 (lane 472 → 772): the timeline must stretch
+    // too, keeping the same zoom percentage (px per second × lane ratio).
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 320,
+            child: AnimationPanel(controller: controller),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final widened = _painterField(tester, 'pxPerSecond');
+    expect(widened / zoomed, closeTo(772 / 472, 0.01));
   });
 }

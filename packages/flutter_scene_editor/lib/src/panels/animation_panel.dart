@@ -284,6 +284,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
                   animation: animation,
                   duration: _duration,
                   draggingKey: _dragging,
+                  dragFromTime: _dragging ? _selectedKey?.time : null,
                   selectedKey: (_dragging && _selectedKey != null)
                       ? (
                           target: _selectedKey!.target,
@@ -302,8 +303,11 @@ class _AnimationPanelState extends State<AnimationPanel> {
                     _dragging = true;
                     _dragOffset = 0;
                   }),
-                  onDragKeyUpdate: (offset) =>
-                      setState(() => _dragOffset = offset),
+                  // onPanUpdate reports per-event deltas, so the offset is a
+                  // running sum of how far the pointer has travelled since the
+                  // pan began (not a positional snapshot).
+                  onDragKeyUpdate: (delta) =>
+                      setState(() => _dragOffset += delta),
                   onDragKeyEnd: () {
                     final key = _selectedKey;
                     final offset = _dragOffset;
@@ -927,6 +931,7 @@ class AnimationTimeline extends StatefulWidget {
     required this.duration,
     required this.selectedKey,
     required this.draggingKey,
+    this.dragFromTime,
     required this.onTapLane,
     required this.onScrub,
     required this.onSelectKey,
@@ -947,6 +952,11 @@ class AnimationTimeline extends StatefulWidget {
   /// playhead).
   final bool draggingKey;
 
+  /// The dragged keyframe's original time, so its old diamond is hidden while
+  /// it is re-rendered at the cursor's in-flight position. Null when no drag
+  /// is in progress.
+  final double? dragFromTime;
+
   final ValueChanged<double> onTapLane;
   final ValueChanged<double> onScrub;
   final ValueChanged<TimelineKey> onSelectKey;
@@ -961,8 +971,10 @@ class AnimationTimeline extends StatefulWidget {
 }
 
 class _AnimationTimelineState extends State<AnimationTimeline> {
-  /// Horizontal scale in px/s; null fits the whole clip to the pane width.
-  double? _zoomPx;
+  /// Horizontal zoom as a multiple of fit-to-width; null fits the whole clip
+  /// to the pane width. Stored as a factor (not an absolute px/s) so resizing
+  /// the pane rescales the timeline at the same zoom percentage.
+  double? _zoomFactor;
 
   /// Left edge of the visible window, in seconds.
   double _scroll = 0;
@@ -1030,13 +1042,20 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     final width = constraints.maxWidth;
     const labelWidth = 120.0;
     final laneWidth = math.max(width - labelWidth - 8, 24.0);
-    // Fit-to-width unless the user has zoomed (px per second scale). The
-    // zoom floor sits below fit so the window can show empty time past the
-    // clip's end; fit itself always stays reachable.
+    // Fit-to-width unless the user has zoomed. The zoom floor sits below fit
+    // so the window can show empty time past the clip's end; fit itself always
+    // stays reachable. The zoom is kept as a multiple of fit so resizing the
+    // pane rescales the timeline at the same zoom percentage.
+    final fitViewport = TimelineViewport(
+      laneWidth: laneWidth,
+      duration: widget.duration,
+    );
+    final fitPxPerSecond = fitViewport.fitPxPerSecond;
+    final zoomFactor = _zoomFactor;
     final viewport = TimelineViewport(
       laneWidth: laneWidth,
       duration: widget.duration,
-      zoomPx: _zoomPx,
+      zoomPx: zoomFactor == null ? null : fitPxPerSecond * zoomFactor,
       scroll: _scroll,
     );
     final pxPerSecond = viewport.pxPerSecond;
@@ -1062,7 +1081,8 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       if ((next - pxPerSecond).abs() < 1e-6) return;
       final anchor = anchorTime ?? (_scroll + laneWidth / 2) / pxPerSecond;
       setState(() {
-        _zoomPx = next;
+        _zoomFactor =
+            fitPxPerSecond > 0 ? next / fitPxPerSecond : _zoomFactor;
         _scroll = viewport.scrollForAnchor(anchor, next);
       });
     }
@@ -1081,9 +1101,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         zoom(math.exp(-delta * 0.002), anchorTime: anchor);
       } else {
         setState(() {
-          _scroll = (_scroll + delta / pxPerSecond)
-              .clamp(0.0, maxScroll)
-              .toDouble();
+          _scroll = (_scroll + delta).clamp(0.0, maxScroll).toDouble();
         });
       }
     }
@@ -1100,7 +1118,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       _pinchScale = event.scale;
       if (event.panDelta.dx != 0) {
         setState(() {
-          _scroll = (_scroll - event.panDelta.dx / pxPerSecond)
+          _scroll = (_scroll - event.panDelta.dx)
               .clamp(0.0, maxScroll)
               .toDouble();
         });
@@ -1192,8 +1210,9 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
                 duration: widget.duration,
                 playhead: controller.previewPlayhead.value,
                 selectedKey: widget.selectedKey,
+                dragFromTime: widget.dragFromTime,
                 labelWidth: labelWidth,
-                scrollSeconds: _scroll,
+                scrollPx: _scroll,
                 pxPerSecond: pxPerSecond,
               ),
             ),
@@ -1203,7 +1222,6 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
               child: _zoomControls(
                 context,
                 scheme,
-                viewport.fitPxPerSecond,
                 zoom,
               ),
             ),
@@ -1217,11 +1235,9 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   Widget _zoomControls(
     BuildContext context,
     ColorScheme scheme,
-    double fitPxPerSecond,
     void Function(double factor, {double? anchorTime}) zoom,
   ) {
-    final percent = ((_zoomPx ?? fitPxPerSecond) / fitPxPerSecond * 100)
-        .round();
+    final percent = ((_zoomFactor ?? 1.0) * 100).round();
     Widget control(IconData icon, String tip, VoidCallback onTap) => _PanelTip(
       message: tip,
       child: InkWell(
@@ -1263,7 +1279,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             Icons.center_focus_strong,
             'Fit the whole clip back into the panel',
             () => setState(() {
-              _zoomPx = null;
+              _zoomFactor = null;
               _scroll = 0;
             }),
           ),
@@ -1281,8 +1297,9 @@ class _TimelinePainter extends CustomPainter {
     required this.duration,
     required this.playhead,
     required this.selectedKey,
+    required this.dragFromTime,
     required this.labelWidth,
-    required this.scrollSeconds,
+    required this.scrollPx,
     required this.pxPerSecond,
   });
 
@@ -1291,10 +1308,16 @@ class _TimelinePainter extends CustomPainter {
   final double duration;
   final double playhead;
   final TimelineKey? selectedKey;
+
+  /// Original time of a keyframe being dragged, so the painter hides its old
+  /// diamond and renders the dragging copy at the in-flight position.
+  final double? dragFromTime;
   final double labelWidth;
 
-  /// Left edge of the visible window, in seconds.
-  final double scrollSeconds;
+  /// Left edge of the visible window, in pixels (0 = the lane's left edge,
+  /// right after the label column). Mirrors the viewport's pixel-based
+  /// `_scroll` so painted content, hit-testing, and scrolling all agree.
+  final double scrollPx;
 
   /// Horizontal scale in px/s (fit-to-width when unzoomed).
   final double pxPerSecond;
@@ -1317,8 +1340,8 @@ class _TimelinePainter extends CustomPainter {
     );
     final visibleSeconds = (size.width - labelWidth - 8) / pxPerSecond;
     final step = _niceStep(visibleSeconds);
-    final tStart = scrollSeconds;
-    final tEnd = scrollSeconds + visibleSeconds;
+    final tStart = scrollPx / pxPerSecond;
+    final tEnd = tStart + visibleSeconds;
     for (
       var t = (tStart / step).floorToDouble() * step;
       t <= tEnd + 1e-6;
@@ -1331,7 +1354,7 @@ class _TimelinePainter extends CustomPainter {
       final tickStyle = Paint()
         ..color = scheme.outline.withValues(alpha: inClip ? 0.5 : 0.22)
         ..strokeWidth = 1;
-      final x = labelWidth + (t - scrollSeconds) * pxPerSecond;
+      final x = labelWidth + t * pxPerSecond - scrollPx;
       canvas.drawLine(Offset(x, 0), Offset(x, _rulerHeight - 3), tickStyle);
       TextPainter(
           text: TextSpan(
@@ -1348,7 +1371,7 @@ class _TimelinePainter extends CustomPainter {
     }
 
     // Clip-end boundary between the clip and the empty region past it.
-    final clipEndX = labelWidth + (duration - scrollSeconds) * pxPerSecond;
+    final clipEndX = labelWidth + duration * pxPerSecond - scrollPx;
     if (clipEndX >= labelWidth && clipEndX <= size.width) {
       canvas.drawLine(
         Offset(clipEndX, 0),
@@ -1429,7 +1452,7 @@ class _TimelinePainter extends CustomPainter {
       canvas.drawLine(
         Offset(labelWidth + _laneLeftPad, top + _rowHeight / 2),
         Offset(
-          labelWidth + _laneLeftPad + duration * pxPerSecond - scrollSeconds,
+          labelWidth + _laneLeftPad + duration * pxPerSecond - scrollPx,
           top + _rowHeight / 2,
         ),
         Paint()
@@ -1439,7 +1462,12 @@ class _TimelinePainter extends CustomPainter {
 
       // Keyframe diamonds (only those inside the visible window).
       for (final time in entry.times!) {
-        final x = labelWidth + time * pxPerSecond - scrollSeconds;
+        // A lifted keyframe (mid-drag) hides its old diamond; the dragging
+        // copy is drawn at the cursor's in-flight time right after.
+        if (dragFromTime != null && (time - dragFromTime!).abs() <= 1e-3) {
+          continue;
+        }
+        final x = labelWidth + time * pxPerSecond - scrollPx;
         if (x < labelWidth - 6 || x > size.width - 2) continue;
         _drawDiamond(
           canvas,
@@ -1451,11 +1479,24 @@ class _TimelinePainter extends CustomPainter {
               (selectedKey!.time - time).abs() <= 1e-3,
         );
       }
+
+      // The keyframe being dragged renders at its in-flight position so the
+      // diamond follows the cursor until the move is committed on release.
+      if (dragFromTime != null &&
+          selectedKey != null &&
+          selectedKey!.target == channel.target &&
+          selectedKey!.property == channel.property) {
+        final x =
+            labelWidth + selectedKey!.time * pxPerSecond - scrollPx;
+        if (x >= labelWidth - 6 && x <= size.width - 2) {
+          _drawDiamond(canvas, x, top + _rowHeight / 2, true);
+        }
+      }
     }
 
     // Playhead (clipped to the visible window).
     if (playhead >= tStart && playhead <= tEnd) {
-      final x = labelWidth + (playhead - scrollSeconds) * pxPerSecond;
+      final x = labelWidth + playhead * pxPerSecond - scrollPx;
       canvas.drawLine(
         Offset(x, 0),
         Offset(x, size.height),
@@ -1503,8 +1544,9 @@ class _TimelinePainter extends CustomPainter {
   bool shouldRepaint(_TimelinePainter oldDelegate) =>
       oldDelegate.playhead != playhead ||
       oldDelegate.selectedKey != selectedKey ||
+      oldDelegate.dragFromTime != dragFromTime ||
       oldDelegate.duration != duration ||
-      oldDelegate.scrollSeconds != scrollSeconds ||
+      oldDelegate.scrollPx != scrollPx ||
       oldDelegate.pxPerSecond != pxPerSecond ||
       !identical(oldDelegate.rows, rows);
 }
