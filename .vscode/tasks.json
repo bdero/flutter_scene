@@ -2,21 +2,27 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "flutter run macos",
 			"type": "shell",
-			"command": "flutter",
-			"args": [
-				"run",
-				"-d",
-				"macos",
-				"--enable-flutter-gpu"
-			],
+			"label": "open app editor macos",
+			"command": "open apps/flutter_scene_editor_app/build/macos/Build/Products/Release/Flutter\\ Scene\\ Editor.app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "build app editor macos",
+			"command": "flutter build macos && open build/macos/Build/Products/Release/Flutter\\ Scene\\ Editor.app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
 			"options": {
 				"cwd": "${workspaceFolder}/apps/flutter_scene_editor_app"
-			},
-			"group": "build",
-			"problemMatcher": [],
-			"detail": "apps/flutter_scene_editor_app"
+			}
 		}
 	]
 }
