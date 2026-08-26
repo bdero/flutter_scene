@@ -46,6 +46,7 @@ import '../io/glb_import_options.dart';
 import '../materials/fmat_library.dart';
 import 'animation_preview_intent.dart';
 import 'animation_sampling.dart';
+import 'animation_target_resolution.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
 class EditorController extends ChangeNotifier
@@ -767,16 +768,12 @@ class EditorController extends ChangeNotifier
       }
       _captureIfNeeded(channel.target);
       // Name-targeted channels drive a node inside the channel's target
-      // subtree: a member name equal to the live node's own name resolves
-      // to the node itself (plain, self-bound bone channels), otherwise it
-      // is a descendant (a bone inside an imported instance). This mirrors
-      // the runtime bind resolver (AnimationClip._bindToTarget), so preview
-      // scrubbing and playback drive exactly what playback will drive. Both
-      // cases capture the pre-preview pose so stopping restores it.
+      // subtree (see [resolveChannelTarget], which mirrors the runtime bind
+      // resolver AnimationClip._bindToTarget). Being null means the target
+      // matched neither the live node itself nor a descendant, so the channel
+      // is skipped.
       if (channel.targetName != null) {
-        final member = live.name == channel.targetName
-            ? live
-            : live.getChildByName(channel.targetName!);
+        final member = resolveChannelTarget(live, channel.targetName);
         if (member == null) continue;
         // Descendant members have no document node of their own to restore
         // from; the self case was already captured above, keyed by node id.
