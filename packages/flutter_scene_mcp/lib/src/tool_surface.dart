@@ -1915,6 +1915,8 @@ class EditorToolSurface {
   Map<String, Object?> _channelTarget(AnimationChannelSpec channel) => {
     'id': channel.target.toToken(),
     if (_query.namePathOf(channel.target) case final path?) 'path': path,
+    // Prefab-member channels carry the member's name (e.g. a bone).
+    if (channel.targetName != null) 'member': channel.targetName,
   };
 
   /// One channel's decoded keyframes within an optional inclusive time

@@ -737,7 +737,17 @@ class EditorController extends ChangeNotifier
       if (live != null) applyTransformSpec(live, entry.value);
     }
     _prePreviewTransforms.clear();
+    // Prefab members (bones inside imported instances) are restored from
+    // their captured live transforms; they have no document node to look up.
+    for (final entry in _prePreviewMemberTransforms.entries) {
+      applyTransformSpec(entry.key, entry.value);
+    }
+    _prePreviewMemberTransforms.clear();
   }
+
+  /// Live transforms of prefab-member nodes (bones), keyed by the live node
+  /// itself — they have no document spec to restore from.
+  final Map<Node, TransformSpec> _prePreviewMemberTransforms = {};
 
   void _captureIfNeeded(LocalId nodeId) {
     if (_prePreviewTransforms.containsKey(nodeId)) return;
@@ -751,11 +761,27 @@ class EditorController extends ChangeNotifier
   /// authored in the editor and are ignored here.
   void _applyPose(AnimationSpec spec, double t) {
     for (final channel in spec.channels) {
-      final live = _liveById[channel.target];
+      var live = _liveById[channel.target];
       if (live == null || channel.property == AnimationProperty.weights) {
         continue;
       }
       _captureIfNeeded(channel.target);
+      // Name-targeted channels drive prefab members: resolve the bone by
+      // name inside the instance's live subtree, exactly like the runtime
+      // binds channels. Captured so stop restores it.
+      if (channel.targetName != null) {
+        final member = live.getChildByName(channel.targetName!);
+        if (member == null) continue;
+        _prePreviewMemberTransforms.putIfAbsent(
+          member,
+          () => TrsTransform(
+            translation: member.position.clone(),
+            rotation: member.rotation.clone(),
+            scale: member.scale.clone(),
+          ),
+        );
+        live = member;
+      }
       final times = _payloadFloats(channel.timeline);
       final values = _payloadFloats(channel.keyframes);
       final stride = channel.property == AnimationProperty.rotation ? 4 : 3;

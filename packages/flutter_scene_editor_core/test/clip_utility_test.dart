@@ -451,4 +451,87 @@ void main() {
       throwsA(isA<CommandException>()),
     );
   });
+
+  test('name-targeted channels key prefab members without colliding', () {
+    final h = _harness();
+    final instance = _addCube(h, 'Lunar');
+    _run(h, 'createAnimation', {'name': 'Rig'});
+    final animationId = h.doc.animations.keys.last;
+
+    // Two bones of one instance, both rotation channels.
+    _run(h, 'setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': instance.toToken(),
+      'targetName': 'Bone_000',
+      'property': 'rotation',
+      'time': 0.0,
+      'rotationEuler': {'yaw': 0.0, 'pitch': 0.0, 'roll': 0.0},
+    });
+    _run(h, 'setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': instance.toToken(),
+      'targetName': 'Bone_001',
+      'property': 'rotation',
+      'time': 0.0,
+      'rotationEuler': {'yaw': 90.0, 'pitch': 0.0, 'roll': 0.0},
+    });
+
+    var animation = h.doc.animations[animationId]!;
+    final boneChannels = animation.channels
+        .where((c) => c.target == instance)
+        .toList();
+    expect(boneChannels, hasLength(2));
+    expect(boneChannels.map((c) => c.targetName).toSet(), {
+      'Bone_000',
+      'Bone_001',
+    });
+
+    // Re-keying one bone leaves the other untouched.
+    _run(h, 'setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': instance.toToken(),
+      'targetName': 'Bone_000',
+      'property': 'rotation',
+      'time': 1.0,
+      'rotationEuler': {'yaw': 180.0, 'pitch': 0.0, 'roll': 0.0},
+    });
+    animation = h.doc.animations[animationId]!;
+    var bone000Keys = 0;
+    var bone001Keys = 0;
+    for (final channel in animation.channels.where(
+      (c) => c.target == instance,
+    )) {
+      final bytes = h.doc.payload(channel.timeline)!.bytes!;
+      final times = bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+      if (channel.targetName == 'Bone_000') {
+        bone000Keys = times.length;
+      } else {
+        bone001Keys = times.length;
+      }
+    }
+    expect(bone000Keys, 2);
+    expect(bone001Keys, 1);
+
+    // Removing the member's only key deletes its channel (documented
+    // behavior) — and leaves the sibling bone untouched.
+    _run(h, 'removeAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': instance.toToken(),
+      'targetName': 'Bone_001',
+      'property': 'rotation',
+      'time': 0.0,
+    });
+    animation = h.doc.animations[animationId]!;
+    expect(
+      animation.channels.where((c) => c.targetName == 'Bone_001'),
+      isEmpty,
+    );
+    expect(
+      animation.channels.where((c) => c.targetName == 'Bone_000'),
+      hasLength(1),
+    );
+  });
 }

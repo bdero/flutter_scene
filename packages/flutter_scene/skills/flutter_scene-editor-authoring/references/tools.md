@@ -50,9 +50,9 @@ Discover anything not listed here with `search_commands {query}`.
 | `deleteAnimation` | `animationId` |
 | `renameAnimation` | `animationId`, `name` |
 | `keyPose` | `animationId`, `time`, `nodeIds[]` — full TRS of every node, one transaction |
-| `setAnimationKeyframe` | `animationId`, `nodeId`, `property` (`translation`\|`rotation`\|`scale`), `time`, value components optional: `translation` / `rotation` XOR `rotationEuler` / `scale`; on cubic also `inTangent`/`outTangent` |
+| `setAnimationKeyframe` | `animationId`, `nodeId`, `targetName?` (prefab member, e.g. a bone), `property` (`translation`\|`rotation`\|`scale`), `time`, value components optional: `translation` / `rotation` XOR `rotationEuler` / `scale`; on cubic also `inTangent`/`outTangent` |
 | `setAnimationKeyframes` | Same channel targeting, plus `keys: [{time, ...value}, ...]` — many keys, one transaction |
-| `removeAnimationKeyframe` | `animationId`, `nodeId`, `property`, `time` (last key removed deletes the channel) |
+| `removeAnimationKeyframe` | `animationId`, `nodeId`, `targetName?`, `property`, `time` (last key removed deletes the channel) |
 | `moveAnimationKeyframe` | `animationId`, `nodeId`, `property`, `fromTime`, `toTime` |
 | `setChannelInterpolation` | `animationId`, `nodeId`, `property`, `interpolation: linear\|step\|cubic` — converts payload layout on cubic switches |
 | `shiftAnimationTime` | `animationId`, `offset` — rejects pre-zero results |

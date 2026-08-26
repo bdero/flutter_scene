@@ -120,10 +120,19 @@ _KeyframeData _readKeyframes(SceneDocument document, AnimationChannelSpec c) {
 AnimationChannelSpec? _channelOf(
   AnimationSpec animation,
   LocalId target,
-  AnimationProperty property,
-) {
+  AnimationProperty property, {
+  String? targetName,
+  bool memberTargeting = false,
+}) {
   for (final channel in animation.channels) {
-    if (channel.target == target && channel.property == property) {
+    if (channel.target != target || channel.property != property) {
+      continue;
+    }
+    // Member targeting (a bone inside an imported instance) discriminates
+    // by name so two bones of one instance never share a channel. Plain
+    // node authoring matches the first channel regardless of its stored
+    // binding name — a renamed node must keep re-keying the same channel.
+    if (!memberTargeting || (channel.targetName ?? '') == targetName) {
       return channel;
     }
   }
@@ -198,9 +207,16 @@ bool _payloadDiffers(PayloadSpec? payload, Uint8List bytes) {
   LocalId target,
   String? targetName,
   AnimationProperty property,
-  _KeyframeData data,
-) {
-  final existing = _channelOf(animation, target, property);
+  _KeyframeData data, {
+  bool memberTargeting = false,
+}) {
+  final existing = _channelOf(
+    animation,
+    target,
+    property,
+    targetName: targetName,
+    memberTargeting: memberTargeting,
+  );
   final (timesBytes, valuesBytes) = _encodeKeyframes(data);
 
   // Payload ids are minted up front; unused ones are simply never recorded
@@ -255,7 +271,10 @@ bool _payloadDiffers(PayloadSpec? payload, Uint8List bytes) {
 
   final channels = [
     for (final c in animation.channels)
-      if (c.target != target || c.property != property) c,
+      if (c.target != target ||
+          c.property != property ||
+          (memberTargeting && (c.targetName ?? '') != (targetName ?? '')))
+        c,
     AnimationChannelSpec(
       target: target,
       targetName: targetName,
@@ -322,7 +341,10 @@ List<ChangeRecord>? _pruneChannelRecords(
     final updated = AnimationSpec(animation.id, name: animation.name)
       ..channels.addAll([
         for (final c in animation.channels)
-          if (c.target != channel.target || c.property != channel.property) c,
+          if (c.target != channel.target ||
+              c.property != channel.property ||
+              (c.targetName ?? '') != (channel.targetName ?? ''))
+            c,
       ]);
     return [
       ChangeRecord(
@@ -442,6 +464,15 @@ final setAnimationKeyframe = CommandEntry(
       label: 'Animation',
     ),
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(
+      name: 'targetName',
+      type: ParamType.string,
+      label: 'Member',
+      required: false,
+      description:
+          'Prefab member to animate inside the instance [nodeId] (for '
+          'example a bone such as Bone_012). Omit for plain nodes.',
+    ),
     ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
     ParamSpec(name: 'time', type: ParamType.number, label: 'Time'),
     ParamSpec(
@@ -494,7 +525,16 @@ final setAnimationKeyframe = CommandEntry(
     // An omitted component captures the pose currently on the node. On a
     // cubic channel the row also carries tangent slots, which are kept
     // when re-keying an existing keyframe.
-    final channel = _channelOf(animation, nodeId, property);
+    final memberName = optionalString(params, 'targetName');
+    final targetName =
+        memberName ?? _effectiveTargetName(params, ctx.document, nodeId);
+    final channel = _channelOf(
+      animation,
+      nodeId,
+      property,
+      targetName: targetName,
+      memberTargeting: memberName != null,
+    );
     final data = channel == null
         ? _KeyframeData([], [])
         : _readKeyframes(ctx.document, channel);
@@ -511,9 +551,10 @@ final setAnimationKeyframe = CommandEntry(
       ctx,
       animation,
       nodeId,
-      node.name,
+      targetName,
       property,
       data,
+      memberTargeting: memberName != null,
     );
     return Transaction(name: 'Set keyframe', records: records);
   },
@@ -583,6 +624,20 @@ List<double>? _rowAt(_KeyframeData data, double time) {
   return null;
 }
 
+/// The effective channel target-name for [nodeId]: an explicit prefab
+/// member name (a bone inside an imported instance), else the node's own
+/// name — which is what plain-node channels store as their binding
+/// fallback.
+String? _effectiveTargetName(
+  Map<String, Object?> params,
+  SceneDocument document,
+  LocalId nodeId,
+) {
+  final member = optionalString(params, 'targetName');
+  if (member != null) return member;
+  return document.node(nodeId)?.name;
+}
+
 /// Wraps a logical [value] into a full layout-width row. Cubic rows carry
 /// `[inTangent, value, outTangent]`: existing tangent slots in
 /// [previousRow] are preserved so re-keying never drops them, while
@@ -647,6 +702,15 @@ final setAnimationKeyframes = CommandEntry(
       label: 'Animation',
     ),
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(
+      name: 'targetName',
+      type: ParamType.string,
+      label: 'Member',
+      required: false,
+      description:
+          'Prefab member to animate inside the instance [nodeId] (for '
+          'example a bone such as Bone_012). Omit for plain nodes.',
+    ),
     ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
     ParamSpec(
       name: 'keys',
@@ -675,8 +739,17 @@ final setAnimationKeyframes = CommandEntry(
       );
     }
     final trs = _currentTrs(node);
+    final memberName = optionalString(params, 'targetName');
+    final targetName =
+        memberName ?? _effectiveTargetName(params, ctx.document, nodeId);
 
-    final channel = _channelOf(animation, nodeId, property);
+    final channel = _channelOf(
+      animation,
+      nodeId,
+      property,
+      targetName: targetName,
+      memberTargeting: memberName != null,
+    );
     final data = channel == null
         ? _KeyframeData([], [])
         : _readKeyframes(ctx.document, channel);
@@ -705,9 +778,10 @@ final setAnimationKeyframes = CommandEntry(
       ctx,
       animation,
       nodeId,
-      node.name,
+      targetName,
       property,
       data,
+      memberTargeting: memberName != null,
     );
     return Transaction(name: 'Set keyframes', records: records);
   },
@@ -726,6 +800,15 @@ final removeAnimationKeyframe = CommandEntry(
       label: 'Animation',
     ),
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(
+      name: 'targetName',
+      type: ParamType.string,
+      label: 'Member',
+      required: false,
+      description:
+          'Prefab member to animate inside the instance [nodeId] (for '
+          'example a bone such as Bone_012). Omit for plain nodes.',
+    ),
     ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
     ParamSpec(name: 'time', type: ParamType.number, label: 'Time'),
   ],
@@ -738,8 +821,16 @@ final removeAnimationKeyframe = CommandEntry(
     final nodeId = requireNodeId(params, 'nodeId');
     final property = _requireProperty(params);
     final time = requireDouble(params, 'time');
+    final targetName = _effectiveTargetName(params, document, nodeId);
+    final memberName = optionalString(params, 'targetName');
     final channel =
-        _channelOf(animation, nodeId, property) ??
+        _channelOf(
+          animation,
+          nodeId,
+          property,
+          targetName: targetName,
+          memberTargeting: memberName != null,
+        ) ??
         (throw CommandException(
           'No ${property.name} channel on ${nodeId.toToken()}',
         ));
@@ -762,6 +853,7 @@ final removeAnimationKeyframe = CommandEntry(
       channel.targetName,
       property,
       data,
+      memberTargeting: true,
     );
     return Transaction(name: 'Remove keyframe', records: records);
   },
@@ -778,6 +870,15 @@ final moveAnimationKeyframe = CommandEntry(
       label: 'Animation',
     ),
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(
+      name: 'targetName',
+      type: ParamType.string,
+      label: 'Member',
+      required: false,
+      description:
+          'Prefab member to animate inside the instance [nodeId] (for '
+          'example a bone such as Bone_012). Omit for plain nodes.',
+    ),
     ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
     ParamSpec(name: 'fromTime', type: ParamType.number, label: 'From'),
     ParamSpec(name: 'toTime', type: ParamType.number, label: 'To'),
@@ -794,8 +895,17 @@ final moveAnimationKeyframe = CommandEntry(
     if (toTime.isNegative || toTime.isNaN) {
       throw CommandException('Keyframe time must be a non-negative number');
     }
+    final memberName = optionalString(params, 'targetName');
+    final targetName =
+        memberName ?? _effectiveTargetName(params, ctx.document, nodeId);
     final channel =
-        _channelOf(animation, nodeId, property) ??
+        _channelOf(
+          animation,
+          nodeId,
+          property,
+          targetName: targetName,
+          memberTargeting: memberName != null,
+        ) ??
         (throw CommandException(
           'No ${property.name} channel on ${nodeId.toToken()}',
         ));
@@ -816,6 +926,7 @@ final moveAnimationKeyframe = CommandEntry(
       channel.targetName,
       property,
       data,
+      memberTargeting: true,
     );
     return Transaction(name: 'Move keyframe', records: records);
   },
@@ -857,6 +968,9 @@ Transaction _rewriteAnimation(
       channel.targetName,
       channel.property,
       data,
+      // Whole-clip rewrites target each channel explicitly, so sibling
+      // member channels of the same instance are preserved.
+      memberTargeting: true,
     );
     records.addAll(channelRecords);
     working = updated;
@@ -1084,6 +1198,15 @@ final setChannelInterpolation = CommandEntry(
       label: 'Animation',
     ),
     ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(
+      name: 'targetName',
+      type: ParamType.string,
+      label: 'Member',
+      required: false,
+      description:
+          'Prefab member to animate inside the instance [nodeId] (for '
+          'example a bone such as Bone_012). Omit for plain nodes.',
+    ),
     ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
     ParamSpec(
       name: 'interpolation',
@@ -1109,8 +1232,17 @@ final setChannelInterpolation = CommandEntry(
         'Unknown interpolation "$modeName" (linear, step, or cubic)',
       );
     }
+    final memberName = optionalString(params, 'targetName');
+    final targetName =
+        memberName ?? _effectiveTargetName(params, ctx.document, nodeId);
     final channel =
-        _channelOf(animation, nodeId, property) ??
+        _channelOf(
+          animation,
+          nodeId,
+          property,
+          targetName: targetName,
+          memberTargeting: memberName != null,
+        ) ??
         (throw CommandException(
           'No ${property.name} channel on ${nodeId.toToken()}',
         ));
@@ -1148,7 +1280,9 @@ final setChannelInterpolation = CommandEntry(
     }
     final updatedChannels = [
       for (final c in animation.channels)
-        if (c.target == nodeId && c.property == property)
+        if (c.target == nodeId &&
+            c.property == property &&
+            (c.targetName ?? '') == (targetName ?? ''))
           AnimationChannelSpec(
             target: c.target,
             targetName: c.targetName,
@@ -1251,7 +1385,14 @@ final keyPose = CommandEntry(
       final node = nodes[i];
       final trs = _currentTrs(node);
       for (final property in properties) {
-        final channel = _channelOf(working, id, property);
+        // keyPose targets plain document nodes, whose channels store the
+        // node's own name as their binding fallback.
+        final channel = _channelOf(
+          working,
+          id,
+          property,
+          targetName: node.name,
+        );
         final data = channel == null
             ? _KeyframeData([], [])
             : _readKeyframes(ctx.document, channel);

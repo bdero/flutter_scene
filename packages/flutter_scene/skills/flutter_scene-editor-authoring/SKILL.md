@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-editor-authoring
-version: 1
+version: 2
 description: Drive the Flutter Scene Editor through its MCP server to create and modify nodes, import models, and author keyframe animations end to end. Use whenever an agent may edit a scene via the editor MCP tools (describe_scene, run_command, control_animation_preview, get_animation, screenshot_viewport) or is asked to build, animate, or verify scene content in a running editor.
 ---
 
@@ -73,6 +73,39 @@ and unauthenticated by design — never forward the port beyond the machine.
 Address nodes by slash path (`Root/Body`) or id token; animations accept an
 exact name or id token.
 
+## The animations tab and the preview
+
+The Animation panel edits **exactly one clip at a time** on a shared
+playhead. That playhead is what `control_animation_preview` drives: loading
+a clip with `control_animation_preview {ref: <clip>}` selects it on the tab
+(and resets its time), so subsequent key authoring, scrubbing, and playback
+all act on the clip the panel is showing. `get_selection` does **not** select
+a clip — clip selection is the preview's `ref`, node selection is a separate
+concept.
+
+Make the clip you intend to edit the loaded one first:
+
+- No clip loaded, or the tab is showing the wrong one →
+  `control_animation_preview {ref: <animationId or exact name>}`.
+- The panel falls back to editing the document's first animation when
+  nothing is explicitly loaded — never assume which clip that is.
+
+The transport mirrors the panel's controls exactly:
+
+| Panel control | MCP |
+| --- | --- |
+| Load clip / playhead | `control_animation_preview {ref}` |
+| Scrub | `control_animation_preview {seek: <seconds>}` |
+| Play / pause | `control_animation_preview {playing: true/false}` |
+| Loop toggle | `control_animation_preview {loop: true/false}` |
+| Speed | `control_animation_preview {speed: <multiplier>}` |
+| Stop (restore posed nodes) | `control_animation_preview {stop: true}` |
+
+One call may set any subset — they apply in the order select → stop → loop →
+speed → seek → play, so a single request can load, reset, and start a clip.
+`stop` also restores every previewed (including member) node to its rest
+pose, so seek-then-stop is the way to clear a provisional pose.
+
 ## Node and model loop
 
 1. **Create or import.** `createNode {name, parentId?}` for empties;
@@ -119,10 +152,32 @@ created on demand the first time a key lands on them.
    Omitted value components capture the node's current pose. Rotation keys
    accept `rotation` quaternions, `rotationEuler` degrees, or tangent slots
    on cubic channels (see below).
-4. **Shape timing.** `shiftAnimationTime {offset}` (rejects pushing any key
+4. **Animate imported rigs (bones).** Linked models keep their bones
+   inside the prefab; target a bone by pairing `nodeId` (the instance) with
+   `targetName` (the member's name, e.g. `Bone_012`) on any key command:
+
+   ```
+   setAnimationKeyframe {
+     animationId, nodeId: <instance>, targetName: 'Bone_012',
+     property: 'rotation', time: 0.5,
+     rotationEuler: {yaw: 20, pitch: 0, roll: 0}
+   }
+   ```
+
+   Channels bind by name inside the instance's subtree at runtime, so head
+   look-around, ear twitches, and limb motion all work. `get_animation`
+   reports each channel's `member` name. Cubic channels also accept
+   `inTangent`/`outTangent` per key.
+5. **Shape timing.** `shiftAnimationTime {offset}` (rejects pushing any key
    below t=0), `scaleAnimationTime {factor}` (> 1 slows), and retime single
    keys with `moveAnimationKeyframe`. `duplicateAnimation` copies a clip as
    the base for variations.
+6. **Remove and prune.** `removeAnimationKeyframe {animationId, nodeId,
+   property, time}` deletes one key — removing a channel's **last** key
+   deletes that channel (the tab's delete-key behavior). For members add
+   `targetName`. `deleteAnimation {animationId}` removes a clip and all its
+   keyframe payloads. Undo is one transaction per command, so a mistaken
+   removal is one `undo` away.
 
 ## Curve shaping
 
@@ -153,6 +208,11 @@ decode quaternions to check a heading; cubic keys also report their
 1. `control_animation_preview {ref, seek: <keyTime>}` parks the playhead on
    a key; `screenshot_viewport` shows the posed frame. Exact hits land on
    the key's own value in both preview and runtime.
+2. **The playhead is shared with the human.** What you scrub or play is
+   what the Animation tab shows in the editor — the user can see your keys,
+   your curve mode, and the posed frame live. Load the clip you intend
+   (`control_animation_preview {ref}`) before authoring so the panel
+   reflects your work, not a stale clip.
 2. Step mode holds the previous key until the next — seek just past a key,
    not onto it, when checking hold behavior.
 3. `get_animation` confirms times, values, tangents, and duration survived.
