@@ -766,20 +766,30 @@ class EditorController extends ChangeNotifier
         continue;
       }
       _captureIfNeeded(channel.target);
-      // Name-targeted channels drive prefab members: resolve the bone by
-      // name inside the instance's live subtree, exactly like the runtime
-      // binds channels. Captured so stop restores it.
+      // Name-targeted channels drive a node inside the channel's target
+      // subtree: a member name equal to the live node's own name resolves
+      // to the node itself (plain, self-bound bone channels), otherwise it
+      // is a descendant (a bone inside an imported instance). This mirrors
+      // the runtime bind resolver (AnimationClip._bindToTarget), so preview
+      // scrubbing and playback drive exactly what playback will drive. Both
+      // cases capture the pre-preview pose so stopping restores it.
       if (channel.targetName != null) {
-        final member = live.getChildByName(channel.targetName!);
+        final member = live.name == channel.targetName
+            ? live
+            : live.getChildByName(channel.targetName!);
         if (member == null) continue;
-        _prePreviewMemberTransforms.putIfAbsent(
-          member,
-          () => TrsTransform(
-            translation: member.position.clone(),
-            rotation: member.rotation.clone(),
-            scale: member.scale.clone(),
-          ),
-        );
+        // Descendant members have no document node of their own to restore
+        // from; the self case was already captured above, keyed by node id.
+        if (!identical(member, live)) {
+          _prePreviewMemberTransforms.putIfAbsent(
+            member,
+            () => TrsTransform(
+              translation: member.position.clone(),
+              rotation: member.rotation.clone(),
+              scale: member.scale.clone(),
+            ),
+          );
+        }
         live = member;
       }
       final times = _payloadFloats(channel.timeline);
