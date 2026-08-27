@@ -244,14 +244,23 @@ class Animator {
     String? initial,
   }) : assert(states.isNotEmpty, 'An animator needs at least one state.'),
        _states = {for (final state in states) state.name: state},
-       _transitions = List<AnimatorTransition>.unmodifiable(transitions) {
-    _current = initial != null && _states.containsKey(initial)
+       transitions = List<AnimatorTransition>.unmodifiable(transitions) {
+    initialState = initial != null && _states.containsKey(initial)
         ? initial
         : states.first.name;
+    _current = initialState;
   }
 
   final Map<String, AnimatorState> _states;
-  final List<AnimatorTransition> _transitions;
+
+  /// The transitions, in the order they are tried.
+  final List<AnimatorTransition> transitions;
+
+  /// The state this machine started in.
+  ///
+  /// Retained separately from [current], which moves: writing a machine back
+  /// out has to record where it begins, not where it happens to be.
+  late final String initialState;
 
   /// The parameters transitions read. Set these from gameplay.
   final AnimatorParameters parameters = AnimatorParameters();
@@ -340,7 +349,7 @@ class Animator {
   /// it read. First rather than best: the order they were declared in is the
   /// priority, which is easier to reason about than a scoring rule.
   void _takeTransition() {
-    for (final transition in _transitions) {
+    for (final transition in transitions) {
       if (!_states.containsKey(transition.to)) continue;
       if (!transition.matches(_current, parameters)) continue;
       for (final condition in transition.conditions) {
