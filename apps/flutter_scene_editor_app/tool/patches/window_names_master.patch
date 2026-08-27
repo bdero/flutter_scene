@@ -1,0 +1,100 @@
+Rename the windowing API to the Flutter master names.
+
+The editor source targets 3.47 stable, which is what AGENTS.md tells everyone
+to run, what flutter.version pins, and what the distribution builds against.
+Master dropped the "Regular" prefix (WindowController, Window,
+WindowControllerDelegate) and re-exports ScrollCacheExtent through
+material.dart, so the source does not compile there as written.
+
+Apply this only to work on the master channel, and reverse it before
+committing:
+
+  git apply apps/flutter_scene_editor_app/tool/patches/window_names_master.patch
+  git apply -R apps/flutter_scene_editor_app/tool/patches/window_names_master.patch
+
+Delete it once the distribution pin moves to a stable that carries the rename
+(3.50), where master and stable agree.
+
+--- a/apps/flutter_scene_editor_app/lib/main.dart
++++ b/apps/flutter_scene_editor_app/lib/main.dart
+@@ -30,7 +30,7 @@
+   // (flutter/flutter#30701) and the dart-define arrives on its own.
+   isWindowingEnabled = true;
+   WidgetsFlutterBinding.ensureInitialized();
+-  final controller = RegularWindowController(
++  final controller = WindowController(
+     size: const Size(1280, 800),
+     // The runner styles the window with a hidden title bar by this title
+     // (see AppDelegate.swift); keep the two in sync.
+@@ -38,13 +38,13 @@
+     delegate: _MainWindowDelegate(),
+   );
+   runWidget(
+-    RegularWindow(controller: controller, child: const FlutterSceneEditorApp()),
++    Window(controller: controller, child: const FlutterSceneEditorApp()),
+   );
+ }
+ 
+ /// Quits the app when the main editor window closes, taking any floating
+ /// panel windows with it.
+-class _MainWindowDelegate with RegularWindowControllerDelegate {
++class _MainWindowDelegate with WindowControllerDelegate {
+   @override
+   void onWindowDestroyed() {
+     exit(0);
+--- a/packages/flutter_scene_editor/lib/src/panels/outliner_panel.dart
++++ b/packages/flutter_scene_editor/lib/src/panels/outliner_panel.dart
+@@ -4,8 +4,6 @@
+ import 'package:scene/scene.dart';
+ // ignore: implementation_imports
+ import 'package:flutter/material.dart';
+-// Not re-exported through material.dart on 3.47 stable.
+-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+ import 'package:flutter/services.dart';
+ 
+ import '../controller/editor_controller.dart';
+--- a/packages/flutter_scene_editor/lib/src/shell/docking_shell.dart
++++ b/packages/flutter_scene_editor/lib/src/shell/docking_shell.dart
+@@ -81,7 +81,7 @@
+ 
+   // One native window per floating panel, keyed by panel id and kept in sync
+   // with the layout's floating list.
+-  final Map<String, RegularWindowController> _floatControllers = {};
++  final Map<String, WindowController> _floatControllers = {};
+ 
+   @override
+   void initState() {
+@@ -139,7 +139,7 @@
+     for (final id in _layout.floating) {
+       _floatControllers.putIfAbsent(
+         id,
+-        () => RegularWindowController(
++        () => WindowController(
+           size: const Size(480, 640),
+           title: _panelById(id)?.title ?? id,
+           delegate: _FloatWindowDelegate(() => _redock(id)),
+@@ -168,7 +168,7 @@
+         views: [
+           for (final id in _layout.floating)
+             if (_floatControllers[id] != null)
+-              RegularWindow(
++              Window(
+                 controller: _floatControllers[id]!,
+                 child: _FloatWindowScaffold(
+                   theme: theme,
+@@ -226,13 +226,13 @@
+ 
+ /// Re-docks the panel instead of destroying the window outright when the user
+ /// clicks the native close button; the shell then tears the window down.
+-class _FloatWindowDelegate with RegularWindowControllerDelegate {
++class _FloatWindowDelegate with WindowControllerDelegate {
+   _FloatWindowDelegate(this.onCloseRequested);
+ 
+   final VoidCallback onCloseRequested;
+ 
+   @override
+-  void onWindowCloseRequested(RegularWindowController controller) {
++  void onWindowCloseRequested(WindowController controller) {
+     onCloseRequested();
+   }
+ }
