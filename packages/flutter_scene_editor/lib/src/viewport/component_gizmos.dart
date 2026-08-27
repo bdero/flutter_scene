@@ -165,6 +165,7 @@ IconData? componentGlyph(String? name) => switch (name) {
   'physics' => Icons.animation_outlined,
   'light' => Icons.light_mode_outlined,
   'path' => Icons.route_outlined,
+  'grid' => Icons.grid_on_outlined,
   'component' => Icons.settings_input_component_outlined,
   _ => null,
 };
