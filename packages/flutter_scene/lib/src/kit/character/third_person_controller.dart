@@ -109,6 +109,18 @@ class ThirdPersonControllerComponent extends Component {
     _jumpBufferTimer = jumpBufferWindow;
   }
 
+  /// The movement input last given to [setMoveInput], +Y forward. A copy;
+  /// mutating it does not steer the character.
+  vm.Vector2 get moveInput => _moveInput.clone();
+
+  /// Whether [setMoveInput] was last told the character is running.
+  bool get isRunning => _isRunning;
+
+  /// Whether a [jump] request is still inside its buffer window, waiting for
+  /// the character to touch the ground. For a debug overlay or the editor's
+  /// inspector.
+  bool get hasBufferedJump => _jumpBufferTimer > 0.0;
+
   Node get _rootNode {
     Node curr = node;
     while (curr.parent != null) {
