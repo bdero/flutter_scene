@@ -4,7 +4,6 @@ import 'package:scene/src/navigation/nav_config.dart';
 import 'package:scene/src/navigation/nav_geometry.dart';
 import 'package:scene/src/navigation/regions.dart';
 import 'package:test/test.dart';
-import 'package:vector_math/vector_math.dart';
 
 /// An axis-aligned floor quad spanning [min] to [max] on XZ at [y].
 void addFloorRect(
