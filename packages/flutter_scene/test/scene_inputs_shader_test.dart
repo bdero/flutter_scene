@@ -17,9 +17,9 @@ File _resolveFile(String relativePath) {
 
 void main() {
   final header = _resolveFile('shaders/scene_inputs.glsl').readAsStringSync();
-  // The generated accessors the header has to agree with.
+  // The `.fmat` accessors the header has to agree with.
   final emitter = _resolveFile(
-    'lib/src/fmat/fmat_emitter.dart',
+    'shaders/material_scene_inputs.glsl',
   ).readAsStringSync();
 
   test('each sampler is behind the define that declares it', () {

@@ -373,6 +373,7 @@ const Map<String, String> _engineInputSamplers = <String, String>{
   'scene_color': 'scene_opaque_color',
   'filtered_scene_color': 'scene_filtered_color',
   'scene_depth': 'scene_depth',
+  'planar_reflection': 'planar_reflection',
 };
 
 /// The accessors whose presence in the author's code already keeps each
@@ -381,6 +382,7 @@ final Map<String, RegExp> _engineInputAccessors = <String, RegExp>{
   'scene_color': RegExp(r'\bGetSceneColor(Filtered)?\b'),
   'filtered_scene_color': RegExp(r'\bGetSceneColorFiltered\b'),
   'scene_depth': RegExp(r'\bGetSceneDepth\b|\bGetSceneWorldPosition\b'),
+  'planar_reflection': RegExp(r'\bGetPlanarReflection\b'),
 };
 
 /// The scalar keep-alive term for a fragment (or sky) shader, or null when the

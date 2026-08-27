@@ -543,7 +543,7 @@ void main() {
   test('the standard path takes its dielectric F0 from FragInfo', () {
     final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
     final uniforms = File(
-      'shaders/material_engine_lighting.glsl',
+      'shaders/material_scene_inputs.glsl',
     ).readAsStringSync();
     // The physical path still derives its own from the material inputs; the
     // standard path reads the CPU-packed product, so scalar ior and specular
@@ -745,7 +745,7 @@ void main() {
       'shaders/material_shadow_sampling.glsl',
     ).readAsStringSync();
     final uniforms = File(
-      'shaders/material_engine_lighting.glsl',
+      'shaders/material_scene_inputs.glsl',
     ).readAsStringSync();
 
     // The overlap rides an already-declared slot, so no uniform or sampler is
