@@ -47,6 +47,9 @@ void main() {
     'followCameraController',
     'firstPersonCameraController',
     'rtsCameraController',
+    'cameraDirector',
+    'cameraSequence',
+    'pathFollower',
   ]) {
     test('$type round-trips as a delta against schema defaults', () {
       final codec = registry.codecFor(type)!;

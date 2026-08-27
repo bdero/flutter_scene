@@ -200,4 +200,46 @@ void main() {
       expect(position.z, closeTo(0.0, 1e-5));
     });
   });
+
+  test('rebuild keeps each tile\'s height, yaw and scale', () {
+    // rebuild() used to write a bare translation, so changing the grid
+    // silently flattened every tile that had been lifted, turned or scaled --
+    // exactly the case its own doc tells you to call it for.
+    var grid = const SquareGrid(cellSize: 1.0);
+    final layer = GridTileLayer(
+      grid: grid,
+      geometry: _StubGeometry(),
+      material: _StubMaterial(),
+    );
+    const cell = GridCoord(2, 3);
+    layer.set(cell, height: 1.5, yaw: 0.8, scale: Vector3(2.0, 2.0, 2.0));
+
+    grid = const SquareGrid(cellSize: 4.0);
+    layer.grid = grid;
+    layer.rebuild();
+
+    final look = layer.appearanceOf(cell)!;
+    expect(look.height, 1.5);
+    expect(look.yaw, 0.8);
+    expect(look.scale!.x, 2.0);
+
+    final center = grid.center(cell);
+    final placed = layer.mesh.getInstanceTransform(0);
+    expect(placed.getTranslation().y, closeTo(center.y + 1.5, 1e-6));
+    expect(placed.getTranslation().x, closeTo(center.x, 1e-6));
+  });
+
+  test('removing a tile forgets its appearance', () {
+    final layer = GridTileLayer(
+      grid: const SquareGrid(cellSize: 1.0),
+      geometry: _StubGeometry(),
+      material: _StubMaterial(),
+    );
+    const cell = GridCoord(0, 0);
+    layer.set(cell, height: 2.0);
+    expect(layer.appearanceOf(cell), isNotNull);
+    expect(layer.remove(cell), isTrue);
+    expect(layer.appearanceOf(cell), isNull);
+    expect(layer.tiles, isEmpty);
+  });
 }

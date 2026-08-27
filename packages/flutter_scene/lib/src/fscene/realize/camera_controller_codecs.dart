@@ -26,6 +26,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/animation.dart' show Curve, Curves;
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -34,7 +35,9 @@ import 'package:scene/schema.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/camera_controllers/camera_controller.dart';
+import 'package:flutter_scene/src/camera_controllers/camera_director.dart';
 import 'package:flutter_scene/src/camera_controllers/camera_path.dart';
+import 'package:flutter_scene/src/camera_controllers/camera_sequence.dart';
 import 'package:flutter_scene/src/camera_controllers/dolly_camera_controller.dart';
 import 'package:flutter_scene/src/camera_controllers/first_person_camera_controller.dart';
 import 'package:flutter_scene/src/camera_controllers/fly_camera_controller.dart';
@@ -45,6 +48,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
+import 'package:flutter_scene/src/kit/camera/camera_shake.dart';
 import 'package:flutter_scene/src/node.dart';
 
 /// Registers the camera-controller codecs into [registry].
@@ -55,7 +59,9 @@ void registerCameraControllerCodecs(FsceneComponentRegistry registry) {
     ..register(FollowCameraControllerCodec())
     ..register(FirstPersonCameraControllerCodec())
     ..register(RtsCameraControllerCodec())
-    ..register(DollyCameraControllerCodec());
+    ..register(DollyCameraControllerCodec())
+    ..register(CameraDirectorCodec())
+    ..register(CameraSequenceCodec());
 }
 
 // --- Shared conventions ---
@@ -1200,4 +1206,441 @@ CameraPath? _decodePath(PropertyValue? value) {
   if (points.length < 2) return null;
   final closed = value.values['closed'];
   return CameraPath(points, closed: closed is BoolValue && closed.value);
+}
+
+// --- Cinematics ---
+
+/// The blend curves a document can name. Curves are functions, so they
+/// travel as a name rather than as data; anything outside this set stays
+/// code-provided and falls back to the default on load.
+const _curveNames = <String>[
+  'linear',
+  'ease',
+  'easeIn',
+  'easeOut',
+  'easeInOut',
+  'easeInCubic',
+  'easeOutCubic',
+  'easeInOutCubic',
+  'easeOutBack',
+];
+
+const _curvesByName = <String, Curve>{
+  'linear': Curves.linear,
+  'ease': Curves.ease,
+  'easeIn': Curves.easeIn,
+  'easeOut': Curves.easeOut,
+  'easeInOut': Curves.easeInOut,
+  'easeInCubic': Curves.easeInCubic,
+  'easeOutCubic': Curves.easeOutCubic,
+  'easeInOutCubic': Curves.easeInOutCubic,
+  'easeOutBack': Curves.easeOutBack,
+};
+
+String _curveName(Curve curve) {
+  for (final entry in _curvesByName.entries) {
+    if (identical(entry.value, curve)) return entry.key;
+  }
+  return 'easeInOut';
+}
+
+const _blendFields = [
+  ComponentPropertyDef(
+    'duration',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(0.75),
+    doc: 'Seconds the blend takes. Zero or less is a cut.',
+  ),
+  ComponentPropertyDef(
+    'curve',
+    ComponentPropertyKind.string,
+    defaultValue: StringValue('easeInOut'),
+    options: _curveNames,
+    doc: 'Easing applied across the blend.',
+  ),
+];
+
+MapValue _encodeBlend(CameraBlend blend) => MapValue({
+  'duration': DoubleValue(blend.duration),
+  'curve': StringValue(_curveName(blend.curve)),
+});
+
+CameraBlend? _decodeBlend(PropertyValue? value) {
+  if (value is! MapValue) return null;
+  final duration = switch (value.values['duration']) {
+    DoubleValue(value: final v) => v,
+    IntValue(value: final v) => v.toDouble(),
+    _ => 0.75,
+  };
+  final name = switch (value.values['curve']) {
+    StringValue(value: final v) => v,
+    _ => 'easeInOut',
+  };
+  return CameraBlend(duration, curve: _curvesByName[name] ?? Curves.easeInOut);
+}
+
+const _shakeFields = [
+  ComponentPropertyDef(
+    'decayRate',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1.2),
+    doc: 'Trauma bled off per second.',
+  ),
+  ComponentPropertyDef(
+    'frequency',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(25.0),
+    doc: 'Noise frequency; higher is a faster rattle.',
+  ),
+  ComponentPropertyDef(
+    'maxTranslation',
+    ComponentPropertyKind.vec3,
+    doc: 'Displacement at full trauma, in local units.',
+  ),
+  ComponentPropertyDef(
+    'maxRotation',
+    ComponentPropertyKind.vec3,
+    doc: 'Pitch/yaw/roll at full trauma, in radians.',
+  ),
+];
+
+CameraShake? _decodeShake(PropertyValue? value) {
+  if (value is! MapValue) return null;
+  double read(String name, double fallback) => switch (value.values[name]) {
+    DoubleValue(value: final v) => v,
+    IntValue(value: final v) => v.toDouble(),
+    _ => fallback,
+  };
+  Vector3 readVec(String name, Vector3 fallback) =>
+      switch (value.values[name]) {
+        Vec3Value(value: final v) => v.clone(),
+        _ => fallback,
+      };
+  return CameraShake(
+    decayRate: read('decayRate', 1.2),
+    frequency: read('frequency', 25.0),
+    maxTranslation: readVec('maxTranslation', Vector3(0.2, 0.2, 0.1)),
+    maxRotation: readVec('maxRotation', Vector3(0.06, 0.06, 0.04)),
+  );
+}
+
+/// Resolves the node a referenced controller lives on. Controllers are
+/// components, and the document has no component reference, so a shot names
+/// the node and the codec finds the controller on it — the same way a joint
+/// names the node holding the body it attaches to.
+T? _componentOn<T extends Component>(RealizeContext context, LocalId id) {
+  final node = context.resolveNode?.call(id);
+  return node?.getComponent<T>();
+}
+
+/// Codec for [CameraDirector]: the shot stack, its default blend, and its
+/// shake layer.
+///
+/// The registered cameras are restored after every node exists, since a
+/// director usually names cameras that are realized later in the document.
+class CameraDirectorCodec extends DeclarativeComponentCodec<CameraDirector> {
+  @override
+  String get type => 'cameraDirector';
+
+  @override
+  ComponentSchema get schema =>
+      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+
+  @override
+  List<ComponentField<CameraDirector>> get fields => [
+    ComponentField(
+      ComponentPropertyDef(
+        'defaultBlend',
+        ComponentPropertyKind.object,
+        objectFields: _blendFields,
+        // Declared so an untouched director serializes empty, like every
+        // other component.
+        defaultValue: _encodeBlend(_kDefaultBlend),
+        doc: 'The blend used when the live camera changes on its own.',
+      ),
+      read: (c, _) => _encodeBlend(c.defaultBlend),
+      write: (c, v, _) {
+        final blend = _decodeBlend(v);
+        if (blend != null) c.defaultBlend = blend;
+      },
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'shake',
+        ComponentPropertyKind.object,
+        objectFields: _shakeFields,
+        doc: 'Shake layered over the blended pose, or absent for none.',
+      ),
+      read: (c, _) {
+        final shake = c.shake;
+        if (shake == null) return null;
+        // Trauma is live state, not configuration: a scene should not load
+        // already shaking.
+        return MapValue({
+          'decayRate': DoubleValue(shake.decayRate),
+          'frequency': DoubleValue(shake.frequency),
+          'maxTranslation': Vec3Value(shake.maxTranslation.clone()),
+          'maxRotation': Vec3Value(shake.maxRotation.clone()),
+        });
+      },
+      write: (c, v, _) => c.shake = _decodeShake(v),
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'shots',
+        ComponentPropertyKind.list,
+        itemDef: ComponentPropertyDef(
+          'shot',
+          ComponentPropertyKind.object,
+          objectFields: [
+            ComponentPropertyDef(
+              'node',
+              ComponentPropertyKind.nodeRef,
+              doc: 'The node carrying the camera controller.',
+            ),
+            ComponentPropertyDef(
+              'priority',
+              ComponentPropertyKind.number,
+              defaultValue: DoubleValue(0),
+              doc: 'Higher wins when no explicit blend is running.',
+            ),
+            ComponentPropertyDef(
+              'name',
+              ComponentPropertyKind.string,
+              doc: 'An optional label for this shot.',
+            ),
+          ],
+        ),
+        doc: 'The cameras this director stacks, in registration order.',
+      ),
+      read: (c, _) {
+        final entries = <PropertyValue>[];
+        for (final shot in c.registrations) {
+          final ref = shot.camera.isAttached
+              ? nodeRefOf(shot.camera.node)
+              : null;
+          if (ref == null) {
+            debugPrint(
+              'fscene: cameraDirector shot skipped (its controller is not on '
+              'a document node, so there is nothing to reference)',
+            );
+            continue;
+          }
+          entries.add(
+            MapValue({
+              'node': ref,
+              'priority': DoubleValue(shot.priority),
+              if (shot.name != null) 'name': StringValue(shot.name!),
+            }),
+          );
+        }
+        return entries.isEmpty ? null : ListValue(entries);
+      },
+    ),
+  ];
+
+  @override
+  CameraDirector create(PropertyReader props) {
+    final director = CameraDirector(
+      defaultBlend: _decodeBlend(props.value('defaultBlend')) ?? _kDefaultBlend,
+      shake: _decodeShake(props.value('shake')),
+    );
+    final raw = props.value('shots');
+    if (raw is! ListValue) return director;
+    final context = props.context;
+    // Deferred: the cameras a director names are usually realized after it.
+    context.afterRealize.add(() {
+      for (final entry in raw.values) {
+        if (entry is! MapValue) continue;
+        final ref = entry.values['node'];
+        if (ref is! NodeRefValue) continue;
+        final camera = _componentOn<CameraController>(context, ref.id);
+        if (camera == null) {
+          debugPrint(
+            'fscene: cameraDirector shot dropped (no camera controller on '
+            'node ${ref.id})',
+          );
+          continue;
+        }
+        final priority = switch (entry.values['priority']) {
+          DoubleValue(value: final v) => v,
+          IntValue(value: final v) => v.toDouble(),
+          _ => 0.0,
+        };
+        final name = switch (entry.values['name']) {
+          StringValue(value: final v) => v,
+          _ => null,
+        };
+        director.add(camera, priority: priority, name: name);
+      }
+    });
+    return director;
+  }
+}
+
+const _kDefaultBlend = CameraBlend(0.75);
+
+/// Codec for [CameraSequence]: a shot list played through a director.
+///
+/// Both the director and each shot's camera are named by the node that
+/// carries them, and both are resolved after the whole document is realized.
+class CameraSequenceCodec extends DeclarativeComponentCodec<CameraSequence> {
+  @override
+  String get type => 'cameraSequence';
+
+  @override
+  ComponentSchema get schema =>
+      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+
+  @override
+  List<ComponentField<CameraSequence>> get fields => [
+    ComponentField(
+      const ComponentPropertyDef(
+        'director',
+        ComponentPropertyKind.nodeRef,
+        doc: 'The node carrying the director this sequence drives.',
+      ),
+      read: (c, _) => c.director.isAttached ? nodeRefOf(c.director.node) : null,
+    ),
+    ComponentField.boolean(
+      'loop',
+      defaultValue: false,
+      doc: 'Whether the sequence restarts from the first shot when it ends.',
+      get: (c) => c.loop,
+      set: (c, v) => c.loop = v,
+    ),
+    ComponentField.boolean(
+      'releaseOnComplete',
+      defaultValue: true,
+      doc: 'Whether finishing hands the camera back to priority.',
+      get: (c) => c.releaseOnComplete,
+      set: (c, v) => c.releaseOnComplete = v,
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'releaseBlend',
+        ComponentPropertyKind.object,
+        objectFields: _blendFields,
+        doc: 'How to blend when handing back, or absent for the default.',
+      ),
+      read: (c, _) {
+        final blend = c.releaseBlend;
+        return blend == null ? null : _encodeBlend(blend);
+      },
+      write: (c, v, _) => c.releaseBlend = _decodeBlend(v),
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'shots',
+        ComponentPropertyKind.list,
+        itemDef: ComponentPropertyDef(
+          'shot',
+          ComponentPropertyKind.object,
+          objectFields: [
+            ComponentPropertyDef(
+              'node',
+              ComponentPropertyKind.nodeRef,
+              doc: 'The node carrying the camera this shot shows.',
+            ),
+            ComponentPropertyDef(
+              'hold',
+              ComponentPropertyKind.number,
+              defaultValue: DoubleValue(3.0),
+              doc: 'Seconds on screen, measured from when its blend starts.',
+            ),
+            ComponentPropertyDef(
+              'blendIn',
+              ComponentPropertyKind.object,
+              objectFields: _blendFields,
+              doc: 'How to arrive, or absent for the director default.',
+            ),
+          ],
+        ),
+        doc: 'The cut list, in order.',
+      ),
+      read: (c, _) {
+        final entries = <PropertyValue>[];
+        for (final shot in c.shots) {
+          final ref = shot.camera.isAttached
+              ? nodeRefOf(shot.camera.node)
+              : null;
+          if (ref == null) {
+            debugPrint(
+              'fscene: cameraSequence shot skipped (its camera is not on a '
+              'document node)',
+            );
+            continue;
+          }
+          final blendIn = shot.blendIn;
+          entries.add(
+            MapValue({
+              'node': ref,
+              'hold': DoubleValue(shot.hold),
+              if (blendIn != null) 'blendIn': _encodeBlend(blendIn),
+            }),
+          );
+        }
+        return entries.isEmpty ? null : ListValue(entries);
+      },
+    ),
+  ];
+
+  @override
+  CameraSequence create(PropertyReader props) {
+    final context = props.context;
+    // A sequence cannot exist without a director, and neither it nor the
+    // cameras are realized yet, so build against a placeholder and fill both
+    // in once the document is complete.
+    final placeholder = CameraDirector();
+    final sequence = CameraSequence(
+      placeholder,
+      loop: props.boolean('loop'),
+      releaseOnComplete: props.boolean('releaseOnComplete'),
+      releaseBlend: _decodeBlend(props.value('releaseBlend')),
+    );
+    final directorRef = props.value('director');
+    final raw = props.value('shots');
+    context.afterRealize.add(() {
+      if (directorRef is NodeRefValue) {
+        final director = _componentOn<CameraDirector>(context, directorRef.id);
+        if (director == null) {
+          debugPrint(
+            'fscene: cameraSequence has no director on node '
+            '${directorRef.id}; it will not play',
+          );
+        } else {
+          sequence.director = director;
+        }
+      }
+      if (raw is! ListValue) return;
+      final shots = <CameraShot>[];
+      for (final entry in raw.values) {
+        if (entry is! MapValue) continue;
+        final ref = entry.values['node'];
+        if (ref is! NodeRefValue) continue;
+        final camera = _componentOn<CameraController>(context, ref.id);
+        if (camera == null) {
+          debugPrint(
+            'fscene: cameraSequence shot dropped (no camera controller on '
+            'node ${ref.id})',
+          );
+          continue;
+        }
+        final hold = switch (entry.values['hold']) {
+          DoubleValue(value: final v) => v,
+          IntValue(value: final v) => v.toDouble(),
+          _ => 3.0,
+        };
+        shots.add(
+          CameraShot(
+            camera,
+            hold: hold <= 0 ? 3.0 : hold,
+            blendIn: _decodeBlend(entry.values['blendIn']),
+          ),
+        );
+      }
+      if (shots.isNotEmpty) sequence.setShots(shots);
+    });
+    return sequence;
+  }
 }

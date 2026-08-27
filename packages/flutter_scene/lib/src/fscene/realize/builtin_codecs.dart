@@ -30,6 +30,7 @@ import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/camera_controller_codecs.dart';
+import 'package:flutter_scene/src/fscene/realize/kit_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/physics_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
@@ -73,6 +74,7 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(AudioListenerCodec())
     ..register(AudioEngineCodec());
   registerCameraControllerCodecs(registry);
+  registerKitComponentCodecs(registry);
   registerPhysicsComponentCodecs(registry);
 }
 
