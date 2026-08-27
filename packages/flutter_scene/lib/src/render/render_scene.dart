@@ -30,13 +30,31 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 /// [worldTransform] each frame; the render passes iterate the flat
 /// [RenderScene] and never walk the node tree.
 class RenderItem {
-  RenderItem({required this.geometry, required this.material});
+  RenderItem({required this.geometry, required Material material})
+    : _material = material,
+      geometryIdentity = identityHashCode(geometry),
+      materialIdentity = identityHashCode(material);
 
   /// Vertex and index data for this primitive.
   final Geometry geometry;
 
   /// Shader and per-material parameters.
-  Material material;
+  Material get material => _material;
+  set material(Material value) {
+    if (identical(_material, value)) return;
+    _material = value;
+    materialIdentity = identityHashCode(value);
+  }
+
+  Material _material;
+
+  /// Identity sort keys for [geometry] and [material], cached so the batching
+  /// sorts in the depth prepass and shadow encoder compare plain integers.
+  /// Those comparators run O(n log n) times per pass per frame, and
+  /// identityHashCode is a runtime call that installs a hash in the object
+  /// header on first use. [materialIdentity] is refreshed by the setter above.
+  final int geometryIdentity;
+  int materialIdentity;
 
   /// Level-of-detail state, set by an [LodComponent] when the item is
   /// registered. When non-null the encoder picks one of its levels per view
