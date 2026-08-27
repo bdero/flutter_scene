@@ -210,10 +210,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
   Future<void> _ensureEdgeKeys(LocalId id, double playhead) async {
     final spec = _controller.document.animations[id];
     if (spec == null) return;
-    bool hasKeyAt(AnimationChannelSpec channel, double time) =>
-        channelTimes(_controller.document, channel).any(
-          (t) => (t - time).abs() <= 1e-3,
-        );
+    bool hasKeyAt(AnimationChannelSpec channel, double time) => channelTimes(
+      _controller.document,
+      channel,
+    ).any((t) => (t - time).abs() <= 1e-3);
 
     // Plain node authoring matches a path's first channel regardless of its
     // stored binding name (the same rule setAnimationKeyframe applies), so
@@ -282,8 +282,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
   Future<void> _cleanUnusedPaths() async {
     final id = _animationId;
     if (id == null) return;
-    final before =
-        _controller.document.animations[id]?.channels.length ?? 0;
+    final before = _controller.document.animations[id]?.channels.length ?? 0;
     final confirmed = await showEditorDialog<bool>(
       context,
       builder: (context) => AlertDialog(
@@ -313,8 +312,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
         'animationId': id.toToken(),
       });
       final removed =
-          before -
-          (_controller.document.animations[id]?.channels.length ?? 0);
+          before - (_controller.document.animations[id]?.channels.length ?? 0);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -398,13 +396,16 @@ class _AnimationPanelState extends State<AnimationPanel> {
           _keyBar(scheme),
           // Always-visible legend for the canvas gestures below.
           Padding(
-            padding: const EdgeInsets.only(left: 10, right: 10, bottom: 2),
+            padding: const EdgeInsets.only(
+              left: 10,
+              right: 10,
+              bottom: 6,
+              top: 6,
+            ),
             child: Text(
               'Drag to scrub · double-click a lane to add a key · drag a '
               'diamond to retime · wheel scrolls · ctrl/cmd+wheel or pinch '
               'zooms (zoom out to reach past the clip\'s end)',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontSize: 10,
                 color: scheme.outline,
@@ -1260,8 +1261,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       if ((next - pxPerSecond).abs() < 1e-6) return;
       final anchor = anchorTime ?? (_scroll + laneWidth / 2) / pxPerSecond;
       setState(() {
-        _zoomFactor =
-            fitPxPerSecond > 0 ? next / fitPxPerSecond : _zoomFactor;
+        _zoomFactor = fitPxPerSecond > 0 ? next / fitPxPerSecond : _zoomFactor;
         _scroll = viewport.scrollForAnchor(anchor, next);
       });
     }
@@ -1431,7 +1431,8 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
                         minWidth: 16,
                         minHeight: 16,
                       ),
-                      onPressed: () => widget.onRemoveChannel!(rows[i].channel!),
+                      onPressed: () =>
+                          widget.onRemoveChannel!(rows[i].channel!),
                       icon: const Icon(Icons.close, size: 12),
                       color: scheme.outline,
                     ),
@@ -1440,11 +1441,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             Positioned(
               right: 8,
               bottom: 4,
-              child: _zoomControls(
-                context,
-                scheme,
-                zoom,
-              ),
+              child: _zoomControls(context, scheme, zoom),
             ),
           ],
         ),
@@ -1453,7 +1450,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   }
 
   /// Height of the compact Lin | Step | Cubic pill inside a header row.
-  static const double _interpControlHeight = 18;
+  static const double _interpControlHeight = 14;
 
   /// The per-bone interpolation mode: one control per node group, aligned
   /// with the bone's label row, driving every lane beneath it. Mixed groups
@@ -1477,7 +1474,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           'Linear blends smoothly; Step holds each key\'s value until the '
           'next one is reached; Cubic uses per-key tangents for eased '
           'motion.${mixed ? '\n\nThis bone\'s paths mix modes right now — '
-              'picking one applies it to all of them.' : ''}',
+                    'picking one applies it to all of them.' : ''}',
       child: SegmentedButton<String>(
         segments: const [
           ButtonSegment(value: 'linear', label: Text('Lin')),
@@ -1780,8 +1777,7 @@ class _TimelinePainter extends CustomPainter {
           selectedKey != null &&
           selectedKey!.target == channel.target &&
           selectedKey!.property == channel.property) {
-        final x =
-            labelWidth + selectedKey!.time * pxPerSecond - scrollPx;
+        final x = labelWidth + selectedKey!.time * pxPerSecond - scrollPx;
         if (x >= labelWidth - 6 && x <= size.width - 2) {
           _drawDiamond(canvas, x, top + _rowHeight / 2, true);
         }
