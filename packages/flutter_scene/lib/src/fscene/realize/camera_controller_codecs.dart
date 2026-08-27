@@ -232,8 +232,15 @@ class OrbitCameraControllerCodec
   String get type => 'orbitCameraController';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<OrbitCameraController>> get fields => [
@@ -364,8 +371,15 @@ class FlyCameraControllerCodec
   String get type => 'flyCameraController';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<FlyCameraController>> get fields => [
@@ -469,8 +483,15 @@ class FollowCameraControllerCodec
   String get type => 'followCameraController';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<FollowCameraController>> get fields => [
@@ -668,8 +689,15 @@ class FirstPersonCameraControllerCodec
   String get type => 'firstPersonCameraController';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<FirstPersonCameraController>> get fields => [
@@ -827,8 +855,15 @@ class RtsCameraControllerCodec
   String get type => 'rtsCameraController';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<RtsCameraController>> get fields => [
@@ -1083,8 +1118,15 @@ class DollyCameraControllerCodec
   String get type => 'dollyCameraController';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<DollyCameraController>> get fields => [
@@ -1343,8 +1385,15 @@ class CameraDirectorCodec extends DeclarativeComponentCodec<CameraDirector> {
   String get type => 'cameraDirector';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<CameraDirector>> get fields => [
@@ -1489,8 +1538,15 @@ class CameraSequenceCodec extends DeclarativeComponentCodec<CameraSequence> {
   String get type => 'cameraSequence';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'camera', properties: propertySchema);
+  String? get category => 'Cameras';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'camera',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<CameraSequence>> get fields => [
