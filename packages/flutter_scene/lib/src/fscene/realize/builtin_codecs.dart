@@ -88,6 +88,9 @@ class EnvironmentVolumeCodec
   @override
   String get type => 'environmentVolume';
 
+  @override
+  String? get category => 'Rendering';
+
   // The teal the editor's old hard-coded volume overlay used, solid for the
   // region and faint for the blend shell.
   static const _regionColor = GizmoColor(0.204, 0.839, 0.784);
@@ -96,6 +99,7 @@ class EnvironmentVolumeCodec
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'environment',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -213,6 +217,9 @@ class EnvironmentVolumeCodec
 class MeshCodec extends ComponentCodec {
   @override
   String get type => 'mesh';
+
+  @override
+  String? get category => 'Mesh';
 
   // The single-primitive form, plus the multi-primitive `primitives` list
   // described as a list of {geometry, material} pairs.
@@ -829,8 +836,12 @@ class DirectionalLightCodec
   String get type => 'directionalLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-sun',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1028,8 +1039,12 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
   String get type => 'pointLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-point',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1089,8 +1104,12 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
   String get type => 'spotLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-spot',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1253,8 +1272,12 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
   String get type => 'camera';
 
   @override
+  String? get category => 'Cameras';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'camera',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1459,6 +1482,9 @@ class MaterialsVariantsCodec extends ComponentCodec {
   @override
   String get type => 'materialsVariants';
 
+  @override
+  String? get category => 'Mesh';
+
   // TODO(materials-variants-schema): the nested bindings list is not
   // schema-described (like the mesh codec's multi-primitive form), so the
   // editor inspector cannot edit it; describe it once the schema system
@@ -1639,6 +1665,9 @@ class ReflectionProbeCodec
   @override
   String get type => 'reflectionProbe';
 
+  @override
+  String? get category => 'Rendering';
+
   // Violet, distinct from the environment volume's teal.
   static const _boxColor = GizmoColor(0.71, 0.48, 0.95);
   static const _blendColor = GizmoColor(0.71, 0.48, 0.95, 0.33);
@@ -1646,6 +1675,7 @@ class ReflectionProbeCodec
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'environment',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1720,8 +1750,12 @@ class RectAreaLightCodec
   String get type => 'rectAreaLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-area',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1791,11 +1825,15 @@ class IrradianceVolumeCodec
   @override
   String get type => 'irradianceVolume';
 
+  @override
+  String? get category => 'Rendering';
+
   static const _boxColor = GizmoColor(0.2, 0.8, 0.6);
 
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light',
     properties: propertySchema,
     gizmo: const GizmoSpec([

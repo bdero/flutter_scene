@@ -29,8 +29,15 @@ class PathFollowerCodec
   String get type => 'pathFollower';
 
   @override
-  ComponentSchema get schema =>
-      ComponentSchema(type, icon: 'path', properties: propertySchema);
+  String? get category => 'Navigation';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'path',
+    properties: propertySchema,
+  );
 
   @override
   List<ComponentField<PathFollowerComponent>> get fields => [

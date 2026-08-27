@@ -757,8 +757,12 @@ class ParticleEmitterCodec
   String get type => 'particleEmitter';
 
   @override
+  String? get category => 'Effects';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'particles',
     properties: propertySchema,
     gizmo: const GizmoSpec([GizmoIcon()]),
@@ -882,8 +886,12 @@ class MeshParticleEmitterCodec
   String get type => 'meshParticleEmitter';
 
   @override
+  String? get category => 'Effects';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'particles',
     properties: propertySchema,
     gizmo: const GizmoSpec([GizmoIcon()]),
