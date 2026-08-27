@@ -26,23 +26,16 @@ void main(List<String> args) async {
   final version = _pubspecVersion('$appDir/pubspec.yaml');
 
   if (options.build) {
-    _assertWindowingEnabled();
     _clearStaleProduct(appDir, options.platform);
-    // The source tracks the master SDK's windowing names; the pinned stable
-    // uses the older ones. Rename for the build and reverse after, so a local
-    // build never leaves the tree on stable names.
-    final repoRoot = Directory('$appDir/../..').absolute.path;
-    final namePatch = '$appDir/tool/patches/window_names_stable.patch';
-    _run('git', ['apply', namePatch], cwd: repoRoot);
-    try {
-      _run('flutter', [
-        'build',
-        options.platform,
-        options.platform == 'macos' ? '--release' : '--profile',
-      ], cwd: appDir);
-    } finally {
-      _run('git', ['apply', '-R', namePatch], cwd: repoRoot);
-    }
+    // The source is written in the 3.47 stable windowing names, which is what
+    // flutter.version pins, so the build needs no patching. Working on the
+    // master channel is the case that patches (tool/patches/
+    // window_names_master.patch), and it must be reversed before packaging.
+    _run('flutter', [
+      'build',
+      options.platform,
+      options.platform == 'macos' ? '--release' : '--profile',
+    ], cwd: appDir);
   }
 
   final bundle = _builtBundle(appDir, options.platform);
@@ -114,27 +107,6 @@ final class _Options {
       keychain: keychain,
     );
   }
-}
-
-// The editor exits at startup without windowing, and `flutter config
-// --enable-windowing` is a silent no-op on a channel where the feature is
-// unavailable, so an unguarded build would package cleanly and be dead.
-void _assertWindowingEnabled() {
-  final result = _run('flutter', ['config', '--list']);
-  final line = const LineSplitter()
-      .convert(result.stdout as String)
-      .firstWhere(
-        (l) => l.trim().startsWith('enable-windowing:'),
-        orElse: () => '',
-      );
-  if (line.contains('true') && !line.contains('Unavailable')) {
-    return;
-  }
-  _fail(
-    'Windowing is not enabled for this Flutter SDK, so the editor would exit '
-    'at startup. Apply tool/patches/windowing_stable.patch to the SDK, then '
-    'run "flutter config --enable-windowing".',
-  );
 }
 
 // Once Gatekeeper assesses a signed bundle, macOS stamps restricted

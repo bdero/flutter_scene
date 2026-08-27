@@ -35,18 +35,45 @@ jobs:
         run: flutter pub get
       - name: Enable asset building
         run: flutter config --enable-native-assets --enable-dart-data-assets
+      # The editor UI is written in the 3.47 stable windowing names. Master
+      # renamed that API and re-exports ScrollCacheExtent, so a master run
+      # patches the three affected files first and reverses it afterwards.
+      # Both channels analyze the whole workspace either way.
+      - name: Rename windowing API for master
+        if: env.FLUTTER_CHANNEL == 'master'
+        run: git apply apps/flutter_scene_editor_app/tool/patches/window_names_master.patch
+
       - name: Lint analysis
-        # The editor UI builds on Flutter master-only APIs (multi-window,
-        # ScrollCacheExtent), so a stable run analyzes everything else rather
-        # than failing on a package stable was never expected to compile.
-        run: |
-          if [ "$FLUTTER_CHANNEL" = "stable" ]; then
-            dart analyze $(ls -d packages/* | grep -v 'flutter_scene_editor$') examples
-          else
-            dart analyze packages examples
-          fi
+        run: dart analyze packages examples apps
+
+      - name: Restore windowing API names
+        if: always() && env.FLUTTER_CHANNEL == 'master'
+        run: git apply -R apps/flutter_scene_editor_app/tool/patches/window_names_master.patch
+
       - name: Dart format
         run: dart format --output none --set-exit-if-changed $(find . -name '**.dart' -not -path '*/build/*')
+
+  # The editor app is otherwise only built at release time, which is how it
+  # drifted out of compiling on the channel AGENTS.md tells everyone to run.
+  editor_app:
+    name: Build editor app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+      - name: Resolve workspace dependencies
+        run: flutter pub get
+      - name: Enable asset building
+        run: flutter config --enable-native-assets --enable-dart-data-assets
+      - name: Rename windowing API for master
+        if: env.FLUTTER_CHANNEL == 'master'
+        run: git apply apps/flutter_scene_editor_app/tool/patches/window_names_master.patch
+      - name: Build
+        working-directory: apps/flutter_scene_editor_app
+        run: flutter build macos --debug
 
   test:
     name: Test ${{ matrix.package }}

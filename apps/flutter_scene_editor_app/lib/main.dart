@@ -21,17 +21,16 @@ import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
 
 void main() {
-  if (!isWindowingEnabled) {
-    // The runner creates no window of its own, so without the flag there is
-    // nothing to render into.
-    stderr.writeln(
-      'The Flutter Scene Editor requires the windowing feature. '
-      'Run "flutter config --enable-windowing" and rebuild.',
-    );
-    exit(1);
-  }
+  // The windowing guards in the framework read this at call time, and the
+  // flag is a plain mutable bool rather than a const, so opting in here is
+  // equivalent to the FLUTTER_ENABLED_FEATURE_FLAGS dart-define the tool
+  // refuses to pass on stable. The runner creates no window of its own, so
+  // without the opt-in every windowing call throws and there is nothing to
+  // render into. Drop this once windowing reaches stable upstream
+  // (flutter/flutter#30701) and the dart-define arrives on its own.
+  isWindowingEnabled = true;
   WidgetsFlutterBinding.ensureInitialized();
-  final controller = WindowController(
+  final controller = RegularWindowController(
     size: const Size(1280, 800),
     // The runner styles the window with a hidden title bar by this title
     // (see AppDelegate.swift); keep the two in sync.
@@ -39,13 +38,13 @@ void main() {
     delegate: _MainWindowDelegate(),
   );
   runWidget(
-    Window(controller: controller, child: const FlutterSceneEditorApp()),
+    RegularWindow(controller: controller, child: const FlutterSceneEditorApp()),
   );
 }
 
 /// Quits the app when the main editor window closes, taking any floating
 /// panel windows with it.
-class _MainWindowDelegate with WindowControllerDelegate {
+class _MainWindowDelegate with RegularWindowControllerDelegate {
   @override
   void onWindowDestroyed() {
     exit(0);
