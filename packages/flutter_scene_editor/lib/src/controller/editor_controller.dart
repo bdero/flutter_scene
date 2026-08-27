@@ -668,6 +668,29 @@ class EditorController extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Restores the authored pose over the animated one in place: when a
+  /// preview is loaded, its targets (and any previewed prefab members, such
+  /// as bones) snap back to what the Outliner and Inspector show; with no
+  /// preview loaded, the selected nodes do. The animation stays loaded and
+  /// capture state survives, so playback and scrubbing keep working.
+  void restoreOriginalPose() {
+    final id = _previewAnimation;
+    if (id != null && document.animations[id] != null) {
+      _restorePreviewedNodes(keepCaptures: true);
+      notifyListeners();
+      return;
+    }
+    var touched = false;
+    for (final nodeId in selection.ids) {
+      final spec = document.nodes[nodeId]?.transform;
+      final live = _liveById[nodeId];
+      if (spec == null || live == null) continue;
+      applyTransformSpec(live, spec);
+      touched = true;
+    }
+    if (touched) notifyListeners();
+  }
+
   /// Moves the playhead to [time] (wrapping or clamping per the loop mode)
   /// and applies the pose there.
   @override
@@ -732,18 +755,29 @@ class EditorController extends ChangeNotifier
     }
   }
 
-  void _restorePreviewedNodes() {
+  void _restorePreviewedNodes({bool keepCaptures = false}) {
     for (final entry in _prePreviewTransforms.entries) {
       final live = _liveById[entry.key];
-      if (live != null) applyTransformSpec(live, entry.value);
+      if (live == null) continue;
+      // Restore from the document, not from the moment-of-capture snapshot:
+      // the authored pose legitimately changes while a preview session runs
+      // (posing a node between keys), and the captured object would go
+      // stale. Stop must land on exactly what the Outliner shows — never a
+      // stale or last-animated pose.
+      applyTransformSpec(
+        live,
+        document.nodes[entry.key]?.transform ?? entry.value,
+      );
     }
-    _prePreviewTransforms.clear();
-    // Prefab members (bones inside imported instances) are restored from
-    // their captured live transforms; they have no document node to look up.
-    for (final entry in _prePreviewMemberTransforms.entries) {
-      applyTransformSpec(entry.key, entry.value);
+    if (!keepCaptures) {
+      _prePreviewTransforms.clear();
+      // Prefab members (bones inside imported instances) are restored from
+      // their captured live transforms; they have no document node to look up.
+      for (final entry in _prePreviewMemberTransforms.entries) {
+        applyTransformSpec(entry.key, entry.value);
+      }
+      _prePreviewMemberTransforms.clear();
     }
-    _prePreviewMemberTransforms.clear();
   }
 
   /// Live transforms of prefab-member nodes (bones), keyed by the live node

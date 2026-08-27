@@ -167,6 +167,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
   }
 
   /// Captures the selected nodes' current transforms at the playhead.
+  ///
+  /// Pressing Key also anchors the pose at the timeline's start and end:
+  /// those two edge keys keep every playthrough starting and ending on a
+  /// captured crystal instead of dead time, whatever moment was keyed last.
   Future<void> _keySelection(AnimationProperty? property) async {
     final id = _animationId;
     if (id == null) return;
@@ -192,6 +196,103 @@ class _AnimationPanelState extends State<AnimationPanel> {
           _showError(error);
         }
       }
+    }
+    if (property == null) await _ensureEdgeKeys(id, time);
+  }
+
+  /// Keys the selected nodes' current pose at t = 0 and at the clip's end
+  /// (skipping whichever edge already holds the playhead's fresh keys), so
+  /// the timeline always shows a crystal at its start and end after Keying.
+  Future<void> _ensureEdgeKeys(LocalId id, double playhead) async {
+    final nodeIds = [
+      for (final nodeId in _controller.selection.ids)
+        if (_controller.document.nodes.containsKey(nodeId))
+          nodeId.toToken(),
+    ];
+    if (nodeIds.isEmpty) return;
+    final end = _controller.previewDuration(id);
+    for (final edge in {0.0, if (end > 1e-4) end}) {
+      // An edge under the playhead is already keyed by the capture above.
+      if ((edge - playhead).abs() <= 1e-3) continue;
+      try {
+        await _controller.run('keyPose', {
+          'animationId': id.toToken(),
+          'time': edge,
+          'nodeIds': nodeIds,
+        });
+      } on Exception catch (error) {
+        _showError(error);
+      }
+    }
+  }
+
+  /// Removes an entire channel (a node/property path) from the animation —
+  /// the ✕ beside a lane label.
+  Future<void> _removeChannel(AnimationChannelSpec channel) async {
+    final id = _animationId;
+    if (id == null) return;
+    try {
+      await _controller.run('removeChannel', {
+        'animationId': id.toToken(),
+        'nodeId': channel.target.toToken(),
+        'property': channel.property.name,
+        if (channel.targetName != null) 'targetName': channel.targetName,
+      });
+    } on Exception catch (error) {
+      _showError(error);
+    }
+  }
+
+  /// The cleanup behind the header's broom button: drops paths that carry no
+  /// motion (constant channels, missing payloads, targets that are gone).
+  Future<void> _cleanUnusedPaths() async {
+    final id = _animationId;
+    if (id == null) return;
+    final before =
+        _controller.document.animations[id]?.channels.length ?? 0;
+    final confirmed = await showEditorDialog<bool>(
+      context,
+      builder: (context) => AlertDialog(
+        title: const Text('Clean unused paths'),
+        content: const Text(
+          'Removes every path that carries no motion: channels whose '
+          'keyframes all hold the same value, channels without keyframes, '
+          'and channels whose target node no longer exists.\n\n'
+          'The animation keeps every path that actually animates. Undoable '
+          'like any edit.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Clean'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _animationId != id) return;
+    try {
+      await _controller.run('cleanAnimationChannels', {
+        'animationId': id.toToken(),
+      });
+      final removed =
+          before -
+          (_controller.document.animations[id]?.channels.length ?? 0);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            removed > 0
+                ? 'Removed $removed unused path${removed == 1 ? '' : 's'}.'
+                : 'Nothing needed cleaning — every path animates.',
+          ),
+        ),
+      );
+    } on Exception catch (error) {
+      _showError(error);
     }
   }
 
@@ -320,6 +421,8 @@ class _AnimationPanelState extends State<AnimationPanel> {
                     }
                   },
                   onDoubleTapLane: (channel, time) => _addKeyAt(channel, time),
+                  onRemoveChannel: (channel) =>
+                      unawaited(_removeChannel(channel)),
                 ),
                 if (animation.channels.isEmpty)
                   Positioned.fill(
@@ -469,6 +572,16 @@ class _AnimationPanelState extends State<AnimationPanel> {
           ),
           _PanelTip(
             message:
+                'Clean unused paths.\n\nRemoves channels that carry no '
+                'motion — constant keyframes, empty payloads, or targets '
+                'whose node is gone. Keeps every path that animates.',
+            child: IconButton(
+              icon: const Icon(Icons.cleaning_services_outlined, size: 16),
+              onPressed: animation == null ? null : _cleanUnusedPaths,
+            ),
+          ),
+          _PanelTip(
+            message:
                 'Delete this animation and all of its keyframes.\n\n'
                 'Undoable like any edit.',
             child: IconButton(
@@ -560,8 +673,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
                 _helpStep(
                   '5 · Preview',
                   'Press Play. Scrub by dragging the timeline. Stop restores '
-                      'the nodes to their un-animated pose so you can keep '
-                      'editing.',
+                      'the nodes to their authored pose (what the Outliner '
+                      'shows); the viewport\'s original-pose button does the '
+                      'same without touching the playhead.',
                 ),
                 _helpStep(
                   '6 · Save & play',
@@ -701,7 +815,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
           _PanelTip(
             message:
                 'Key the pose: captures translation, rotation, and scale of '
-                'every selected node at the playhead.\n\n'
+                'every selected node at the playhead — and anchors the pose '
+                'at the timeline\'s start and end too, so every playthrough '
+                'begins and ends on a captured key.\n\n'
                 'How to use: select a node in the Outliner → drag the '
                 'playhead to a time → move/rotate/scale it with the viewport '
                 'gizmo → press Key. Move the playhead, pose again, press Key '
@@ -827,13 +943,15 @@ typedef TimelineKey = ({
 });
 
 /// One visual row of the timeline canvas: either a node group header or one
-/// channel's keyframe lane beneath it. Headers carry only a display title;
+/// channel's keyframe lane beneath it. Headers carry only a display title
+/// plus the group's channels (for the header-row interpolation control);
 /// lanes additionally carry their channel and its keyframe times.
 typedef _LaneRow = ({
   bool isHeader,
   String title,
   List<double>? times,
   AnimationChannelSpec? channel,
+  List<AnimationChannelSpec>? groupChannels,
 });
 
 /// Pure view-state math behind [AnimationTimeline]: how the user's zoom and
@@ -939,6 +1057,7 @@ class AnimationTimeline extends StatefulWidget {
     required this.onDragKeyUpdate,
     required this.onDragKeyEnd,
     required this.onDoubleTapLane,
+    this.onRemoveChannel,
   });
 
   final EditorController controller;
@@ -965,6 +1084,11 @@ class AnimationTimeline extends StatefulWidget {
   final VoidCallback onDragKeyEnd;
   final void Function(AnimationChannelSpec channel, double time)
   onDoubleTapLane;
+
+  /// Removes an entire channel (a node/property path) from the animation —
+  /// the lane's ✕ button. Null hides those buttons (bare-timeline embeds
+  /// without editing chrome).
+  final void Function(AnimationChannelSpec channel)? onRemoveChannel;
 
   @override
   State<AnimationTimeline> createState() => _AnimationTimelineState();
@@ -1004,6 +1128,22 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         bucket.add(i);
       }
     }
+    // A bone's lanes always read in the same order — translation, rotation,
+    // scale — regardless of which channel happened to be authored first.
+    int rankOf(AnimationProperty property) => switch (property) {
+      AnimationProperty.translation => 0,
+      AnimationProperty.rotation => 1,
+      AnimationProperty.scale => 2,
+      AnimationProperty.weights => 3,
+    };
+    for (final bucket in channelIndexesByNode.values) {
+      bucket.sort((a, b) {
+        final byRank = rankOf(
+          animation.channels[a].property,
+        ).compareTo(rankOf(animation.channels[b].property));
+        return byRank != 0 ? byRank : a.compareTo(b);
+      });
+    }
     final rows = <_LaneRow>[
       for (final node in nodeOrder) ...[
         (
@@ -1011,6 +1151,9 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           title: document.nodes[node]?.name ?? 'node',
           times: null,
           channel: null,
+          groupChannels: [
+            for (final i in channelIndexesByNode[node]!) animation.channels[i],
+          ],
         ),
         for (final i in channelIndexesByNode[node]!)
           (
@@ -1018,6 +1161,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             title: animation.channels[i].property.name,
             times: channelTimes(document, animation.channels[i]),
             channel: animation.channels[i],
+            groupChannels: null,
           ),
       ],
     ];
@@ -1216,6 +1360,48 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
                 pxPerSecond: pxPerSecond,
               ),
             ),
+            // Header and lane extras sit above the canvas paint, so their hit
+            // testing wins over the gesture handlers wrapping this stack
+            // (scrubbing, key drags).
+            for (var i = 0; i < rows.length; i++)
+              if (rows[i].isHeader &&
+                  (rows[i].groupChannels?.isNotEmpty ?? false))
+                Positioned(
+                  left: labelWidth + 6,
+                  top:
+                      _rulerHeight +
+                      i * _rowHeight +
+                      (_rowHeight - _interpControlHeight) / 2,
+                  child: _groupInterpolationControl(
+                    context,
+                    scheme,
+                    rows[i].groupChannels!,
+                  ),
+                ),
+            for (var i = 0; i < rows.length; i++)
+              if (!rows[i].isHeader && widget.onRemoveChannel != null)
+                Positioned(
+                  left: labelWidth - 20,
+                  top: _rulerHeight + i * _rowHeight + (_rowHeight - 16) / 2,
+                  child: _PanelTip(
+                    message:
+                        'Remove this ${rows[i].title} path from this '
+                        'bone\'s timeline.\n\nThe channel and its keys are '
+                        'deleted; undoable like any edit.',
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      iconSize: 12,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      onPressed: () => widget.onRemoveChannel!(rows[i].channel!),
+                      icon: const Icon(Icons.close, size: 12),
+                      color: scheme.outline,
+                    ),
+                  ),
+                ),
             Positioned(
               right: 8,
               bottom: 4,
@@ -1227,6 +1413,79 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Height of the compact Lin | Step | Cubic pill inside a header row.
+  static const double _interpControlHeight = 18;
+
+  /// The per-bone interpolation mode: one control per node group, aligned
+  /// with the bone's label row, driving every lane beneath it. Mixed groups
+  /// select nothing until a mode is picked (which then applies to all).
+  Widget _groupInterpolationControl(
+    BuildContext context,
+    ColorScheme scheme,
+    List<AnimationChannelSpec> channels,
+  ) {
+    String normalize(AnimationInterpolation? value) =>
+        value == AnimationInterpolation.step
+        ? 'step'
+        : value == AnimationInterpolation.cubic
+        ? 'cubic'
+        : 'linear';
+    final common = normalize(channels.first.interpolation);
+    final mixed = channels.any((c) => normalize(c.interpolation) != common);
+    return _PanelTip(
+      message:
+          'How this bone\'s paths interpolate between keyframes.\n\n'
+          'Linear blends smoothly; Step holds each key\'s value until the '
+          'next one is reached; Cubic uses per-key tangents for eased '
+          'motion.${mixed ? '\n\nThis bone\'s paths mix modes right now — '
+              'picking one applies it to all of them.' : ''}',
+      child: SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'linear', label: Text('Lin')),
+          ButtonSegment(value: 'step', label: Text('Step')),
+          ButtonSegment(value: 'cubic', label: Text('Cubic')),
+        ],
+        selected: mixed ? const <String>{} : {common},
+        emptySelectionAllowed: true,
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          minimumSize: WidgetStatePropertyAll(Size(0, _interpControlHeight)),
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+          textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 9)),
+          side: WidgetStatePropertyAll(BorderSide(width: 0.5)),
+        ),
+        onSelectionChanged: (selection) {
+          // Re-tapping the already-shown mode selects it again; keep that a
+          // no-op. An empty selection (only reachable in mixed state) does
+          // nothing until a mode is actually picked.
+          final mode = selection.isEmpty ? null : selection.first;
+          if (mode == null || (!mixed && mode == common)) return;
+          unawaited(() async {
+            for (final channel in channels) {
+              try {
+                await controller.run('setChannelInterpolation', {
+                  'animationId': animation.id.toToken(),
+                  'nodeId': channel.target.toToken(),
+                  'property': channel.property.name,
+                  if (channel.targetName != null)
+                    'targetName': channel.targetName,
+                  'interpolation': mode,
+                });
+              } on Exception catch (error) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('$error')));
+              }
+            }
+          }());
+        },
       ),
     );
   }

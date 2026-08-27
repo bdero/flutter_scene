@@ -621,4 +621,193 @@ void main() {
     final animation = h.doc.animations[animationId]!;
     expect(animation.channels.where((c) => c.target == node), isEmpty);
   });
+
+  group('removeChannel', () {
+    Map<String, Object?> translateKey(
+      String animationToken,
+      LocalId node,
+      double t,
+      double y,
+    ) => {
+      'animationId': animationToken,
+      'nodeId': node.toToken(),
+      'property': 'translation',
+      'time': t,
+      'translation': {'x': 0.0, 'y': y, 'z': 0.0},
+    };
+
+    test('drops one path, keeps sibling paths of the same bone', () {
+      final h = _harness();
+      final node = _addCube(h, 'Bone');
+      _run(h, 'createAnimation', {'name': 'Spin'});
+      final animationId = h.doc.animations.keys.single;
+      // A moving translation path plus a scale path the author keeps.
+      for (final t in const [0.0, 1.0]) {
+        _run(h, 'setAnimationKeyframe', translateKey(animationId.toToken(), node, t, t));
+        _run(h, 'setAnimationKeyframe', {
+          'animationId': animationId.toToken(),
+          'nodeId': node.toToken(),
+          'property': 'scale',
+          'time': t,
+          'scale': {'x': 1.0, 'y': 1.0, 'z': 1.0},
+        });
+      }
+
+      _run(h, 'removeChannel', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+      });
+
+      final animation = h.doc.animations[animationId]!;
+      expect(animation.channels.map((c) => c.property.name), ['scale']);
+    });
+
+    test('is undoable', () {
+      final h = _harness();
+      final node = _addCube(h, 'Bone');
+      _run(h, 'createAnimation', {'name': 'Spin'});
+      final animationId = h.doc.animations.keys.single;
+      _run(
+        h,
+        'setAnimationKeyframe',
+        translateKey(animationId.toToken(), node, 0.0, 0.0),
+      );
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'scale',
+        'time': 0.0,
+      });
+      expect(h.doc.animations[animationId]!.channels, hasLength(2));
+      _run(h, 'removeChannel', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+      });
+      expect(h.doc.animations[animationId]!.channels, hasLength(1));
+
+      expect(h.history.undo(), isTrue);
+      expect(h.doc.animations[animationId]!.channels, hasLength(2));
+    });
+
+    test('removing the last channel removes the animation', () {
+      final h = _harness();
+      final node = _addCube(h, 'Bone');
+      _run(h, 'createAnimation', {'name': 'Spin'});
+      final animationId = h.doc.animations.keys.single;
+      _run(
+        h,
+        'setAnimationKeyframe',
+        translateKey(animationId.toToken(), node, 0.0, 0.0),
+      );
+
+      _run(h, 'removeChannel', {
+        'animationId': animationId.toToken(),
+        'nodeId': node.toToken(),
+        'property': 'translation',
+      });
+
+      expect(h.doc.animations.containsKey(animationId), isFalse);
+    });
+
+    test('rejects an unknown path', () {
+      final h = _harness();
+      final node = _addCube(h, 'Bone');
+      _run(h, 'createAnimation', {'name': 'Spin'});
+      final animationId = h.doc.animations.keys.single;
+      expect(
+        () => _run(h, 'removeChannel', {
+          'animationId': animationId.toToken(),
+          'nodeId': node.toToken(),
+          'property': 'rotation',
+        }),
+        throwsA(isA<CommandException>()),
+      );
+    });
+  });
+
+  group('cleanAnimationChannels', () {
+    test('keeps moving paths and drops constant ones and dead targets', () {
+      final h = _harness();
+      final mover = _addCube(h, 'Mover');
+      final still = _addCube(h, 'Still');
+      final doomed = _addCube(h, 'Doomed');
+      _run(h, 'createAnimation', {'name': 'Show'});
+      final animationId = h.doc.animations.keys.single;
+      final token = animationId.toToken();
+
+      // The one path worth keeping: translation actually varies.
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': token,
+        'nodeId': mover.toToken(),
+        'property': 'translation',
+        'time': 0.0,
+        'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+      });
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': token,
+        'nodeId': mover.toToken(),
+        'property': 'translation',
+        'time': 1.0,
+        'translation': {'x': 5.0, 'y': 0.0, 'z': 0.0},
+      });
+      // Constant keys — captured by Keying without ever touching the pose.
+      for (final time in const [0.0, 1.0]) {
+        _run(h, 'setAnimationKeyframe', {
+          'animationId': token,
+          'nodeId': still.toToken(),
+          'property': 'rotation',
+          'time': time,
+        });
+      }
+      // Keys on a node that is about to disappear become dead weight.
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': token,
+        'nodeId': doomed.toToken(),
+        'property': 'scale',
+        'time': 0.0,
+      });
+      _run(h, 'deleteNode', {'nodeId': doomed.toToken()});
+
+      _run(h, 'cleanAnimationChannels', {'animationId': token});
+
+      final animation = h.doc.animations[animationId]!;
+      expect(animation.channels, hasLength(1));
+      expect(animation.channels.single.target, mover);
+      expect(
+        animation.channels.single.property,
+        AnimationProperty.translation,
+      );
+
+      // Undo restores every dropped path at once.
+      expect(h.history.undo(), isTrue);
+      expect(h.doc.animations[animationId]!.channels, hasLength(3));
+    });
+
+    test('rejects the edit when nothing is unused', () {
+      final h = _harness();
+      final node = _addCube(h, 'Mover');
+      _run(h, 'createAnimation', {'name': 'Show'});
+      final token = h.doc.animations.keys.single.toToken();
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': token,
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'time': 0.0,
+        'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+      });
+      _run(h, 'setAnimationKeyframe', {
+        'animationId': token,
+        'nodeId': node.toToken(),
+        'property': 'translation',
+        'time': 1.0,
+        'translation': {'x': 3.0, 'y': 0.0, 'z': 0.0},
+      });
+      expect(
+        () => _run(h, 'cleanAnimationChannels', {'animationId': token}),
+        throwsA(isA<CommandException>()),
+      );
+    });
+  });
 }

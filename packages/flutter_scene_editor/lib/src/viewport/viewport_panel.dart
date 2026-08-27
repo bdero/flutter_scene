@@ -1058,6 +1058,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    _RestorePoseButton(controller: _ctrl),
+                    const SizedBox(height: 4),
                     _ViewportSettingsButton(
                       showFps: _showFps,
                       onToggleFps: (value) => setState(() => _showFps = value),
@@ -1251,6 +1253,41 @@ class _AxisGuidePainter extends CustomPainter {
       pivot != oldDelegate.pivot ||
       direction != oldDelegate.direction ||
       color != oldDelegate.color;
+}
+
+/// Original-pose restore: snaps animated (or selected) nodes back to their
+/// authored pose without unloading the animation or touching the playhead.
+class _RestorePoseButton extends StatelessWidget {
+  const _RestorePoseButton({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Original pose\n\n'
+          'Puts every node of the loaded animation back to its authored pose '
+          '(what the Outliner shows) — bones included — while keeping the '
+          'animation loaded on the playhead.\n\n'
+          'With no animation loaded it resets the selected nodes instead.',
+      child: InkWell(
+        onTap: controller.restoreOriginalPose,
+        child: Container(
+          width: 28,
+          height: 24,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: const Icon(
+            Icons.restore,
+            size: 15,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Component-gizmo visibility menu: the master toggle plus one checkbox per

@@ -1321,11 +1321,156 @@ final List<CommandEntry> animationCommands = [
   setChannelInterpolation,
   removeAnimationKeyframe,
   moveAnimationKeyframe,
+  removeChannel,
+  cleanAnimationChannels,
   duplicateAnimation,
   shiftAnimationTime,
   scaleAnimationTime,
   mirrorAnimationX,
 ];
+
+/// The records dropping every channel of [animation] that [isUnused] flags.
+///
+/// When nothing matches, returns null so callers can reject the edit rather
+/// than committing a no-op. When every channel matches, the whole animation
+/// goes (channels own their payloads exclusively).
+(List<ChangeRecord>, int)? _dropMatchingChannels(
+  SceneDocument document,
+  AnimationSpec animation,
+  bool Function(AnimationChannelSpec channel) isUnused,
+) {
+  final removedCount = animation.channels.where(isUnused).length;
+  if (removedCount == 0) return null;
+  final records = <ChangeRecord>[];
+  if (removedCount == animation.channels.length) {
+    records.addAll(_removalRecords(document, animation));
+  } else {
+    final updated = AnimationSpec(animation.id, name: animation.name)
+      ..channels.addAll([
+        for (final c in animation.channels)
+          if (!isUnused(c)) c,
+      ]);
+    records.add(
+      ChangeRecord(
+        targetId: animation.id,
+        slot: ChangeSlot.poolAnimation,
+        oldValue: AnimationChange(animation),
+        newValue: AnimationChange(updated),
+      ),
+    );
+  }
+  return (records, removedCount);
+}
+
+/// A channel is "unused" when animating it cannot affect anything the author
+/// sees: its target node is gone, its payloads never carried keys, or every
+/// keyframe holds the same value (constant through the whole clip).
+bool _isUnusedChannel(SceneDocument document, AnimationChannelSpec channel) {
+  if (document.node(channel.target) == null) return true;
+  final data = _readKeyframes(document, channel);
+  if (data.times.isEmpty) return true;
+  const epsilon = 1e-6;
+  final first = data.values.first;
+  for (var i = 1; i < data.values.length; i++) {
+    final row = data.values[i];
+    if (row.length != first.length) return false;
+    for (var j = 0; j < row.length; j++) {
+      if ((row[j] - first[j]).abs() > epsilon) return false;
+    }
+  }
+  return true;
+}
+
+final removeChannel = CommandEntry(
+  name: 'removeChannel',
+  doc:
+      'Remove one channel — a node/property path such as a bone\'s rotation — '
+      'from an animation entirely. Removing the animation\'s last channel '
+      'removes the animation.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(
+      name: 'targetName',
+      type: ParamType.string,
+      label: 'Member',
+      required: false,
+      description:
+          'Prefab member the channel drives inside the instance [nodeId] '
+          '(for example a bone such as Bone_012). Omit for plain nodes.',
+    ),
+    ParamSpec(name: 'property', type: ParamType.string, label: 'Property'),
+  ],
+  execute: (ctx, params) {
+    final document = ctx.document;
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final nodeId = requireNodeId(params, 'nodeId');
+    final property = _requireProperty(params);
+    final memberName = optionalString(params, 'targetName');
+    final targetName =
+        memberName ?? _effectiveTargetName(params, document, nodeId);
+    final channel =
+        _channelOf(
+          animation,
+          nodeId,
+          property,
+          targetName: targetName,
+          memberTargeting: memberName != null,
+        ) ??
+        (throw CommandException(
+          'No ${property.name} channel on ${nodeId.toToken()}',
+        ));
+    // Dropping the channel keeps (per the other prune paths) its exclusive
+    // payloads in the pool when sibling channels remain; dropping the last
+    // channel takes the whole animation's payloads with it.
+    final records =
+        _pruneChannelRecords(document, animation, channel) ??
+        _removalRecords(document, animation);
+    return Transaction(name: 'Remove channel', records: records);
+  },
+);
+
+final cleanAnimationChannels = CommandEntry(
+  name: 'cleanAnimationChannels',
+  doc:
+      'Remove every unused path of an animation in one step: channels whose '
+      'target node no longer exists, channels without keyframes, and '
+      'channels whose keyframes all hold the same value (paths that carry '
+      'no motion). Undoable like any edit.',
+  category: 'Animation',
+  paramSchema: const [
+    ParamSpec(
+      name: 'animationId',
+      type: ParamType.resourceRef,
+      label: 'Animation',
+    ),
+  ],
+  execute: (ctx, params) {
+    final document = ctx.document;
+    final animation = _requireAnimation(
+      ctx,
+      _requireAnimationId(params, 'animationId'),
+    );
+    final (records, _) =
+        _dropMatchingChannels(
+          document,
+          animation,
+          (channel) => _isUnusedChannel(document, channel),
+        ) ??
+        (throw const CommandException(
+          'No unused paths — every channel carries motion',
+        ));
+    return Transaction(name: 'Clean unused channels', records: records);
+  },
+);
 
 final keyPose = CommandEntry(
   name: 'keyPose',
