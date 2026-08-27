@@ -647,6 +647,40 @@ void main() {
       expect(only<WedgeGeometrySpec>().size, Vector3(2, 1, 4));
     });
 
+    test('a terrain round-trips its generator parameters', () {
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: TerrainGeometrySpec(
+            width: 128,
+            depth: 96,
+            columns: 129,
+            rows: 97,
+            amplitude: 12.5,
+            frequency: 0.004,
+            octaves: 6,
+            seed: 4242,
+          ),
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc));
+      final terrain =
+          (back.resources.values.single as GeometryResource).procedural
+              as TerrainGeometrySpec;
+      expect(terrain.width, 128);
+      expect(terrain.depth, 96);
+      expect(terrain.columns, 129);
+      expect(terrain.rows, 97);
+      expect(terrain.amplitude, 12.5);
+      expect(terrain.frequency, 0.004);
+      expect(terrain.octaves, 6);
+      // The seed is the whole reason this is eight numbers and not a
+      // megabyte, so it has to survive exactly.
+      expect(terrain.seed, 4242);
+    });
+
     test('a malformed wedge size falls back rather than throwing', () {
       final doc = SceneDocument();
       doc.addResource(

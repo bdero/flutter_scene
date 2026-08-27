@@ -1376,6 +1376,27 @@ Map<String, dynamic> _encodeProcedural(ProceduralGeometry p) => switch (p) {
     'shape': 'wedge',
     'size': [size.x, size.y, size.z],
   },
+  TerrainGeometrySpec(
+    :final width,
+    :final depth,
+    :final columns,
+    :final rows,
+    :final amplitude,
+    :final frequency,
+    :final octaves,
+    :final seed,
+  ) =>
+    {
+      'shape': 'terrain',
+      'width': width,
+      'depth': depth,
+      'columns': columns,
+      'rows': rows,
+      'amplitude': amplitude,
+      'frequency': frequency,
+      'octaves': octaves,
+      'seed': seed,
+    },
   IcosphereGeometrySpec(:final radius, :final subdivisions) => {
     'shape': 'icosphere',
     'radius': radius,
@@ -1440,6 +1461,17 @@ ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
         size: size is List && size.length == 3
             ? Vector3(_d(size[0]), _d(size[1]), _d(size[2]))
             : Vector3(1, 1, 1),
+      );
+    case 'terrain':
+      return TerrainGeometrySpec(
+        width: _d(json['width'] ?? 64.0),
+        depth: _d(json['depth'] ?? 64.0),
+        columns: json['columns'] as int? ?? 65,
+        rows: json['rows'] as int? ?? 65,
+        amplitude: _d(json['amplitude'] ?? 8.0),
+        frequency: _d(json['frequency'] ?? 0.02),
+        octaves: json['octaves'] as int? ?? 4,
+        seed: json['seed'] as int? ?? 1337,
       );
     case 'icosphere':
       return IcosphereGeometrySpec(

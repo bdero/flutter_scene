@@ -20,6 +20,7 @@ import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
+import 'package:flutter_scene/src/geometry/terrain.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -839,6 +840,26 @@ class ResourceRealizer {
       segments: segments,
     ),
     WedgeGeometrySpec(:final size) => WedgeGeometry(size),
+    TerrainGeometrySpec(
+      :final width,
+      :final depth,
+      :final columns,
+      :final rows,
+      :final amplitude,
+      :final frequency,
+      :final octaves,
+      :final seed,
+    ) =>
+      TerrainGeometry.noise(
+        width: width,
+        depth: depth,
+        columns: columns,
+        rows: rows,
+        amplitude: amplitude,
+        frequency: frequency,
+        octaves: octaves,
+        seed: seed,
+      ),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
       IcosphereGeometry(radius: radius, subdivisions: subdivisions),
   };

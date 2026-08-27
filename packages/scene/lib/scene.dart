@@ -19,6 +19,7 @@ export 'src/specs.dart'
         ComponentSpec,
         ConstantEnvironment,
         CuboidGeometrySpec,
+        TerrainGeometrySpec,
         WedgeGeometrySpec,
         DiscGeometrySpec,
         CylinderGeometrySpec,

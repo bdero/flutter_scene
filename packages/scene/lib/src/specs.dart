@@ -302,6 +302,50 @@ class CuboidGeometrySpec extends ProceduralGeometry {
   final bool debugColors;
 }
 
+/// A height-field terrain generated from fractal noise.
+///
+/// Described by its parameters rather than by its samples: the same seed
+/// always produces the same ground, so a document carries a few numbers
+/// instead of a megabyte of heights.
+/// {@category Documents}
+class TerrainGeometrySpec extends ProceduralGeometry {
+  /// Creates a terrain spec.
+  TerrainGeometrySpec({
+    this.width = 64.0,
+    this.depth = 64.0,
+    this.columns = 65,
+    this.rows = 65,
+    this.amplitude = 8.0,
+    this.frequency = 0.02,
+    this.octaves = 4,
+    this.seed = 1337,
+  });
+
+  /// World size across X.
+  final double width;
+
+  /// World size across Z.
+  final double depth;
+
+  /// Height samples across X; one more than the quads.
+  final int columns;
+
+  /// Height samples across Z.
+  final int rows;
+
+  /// Peak height above and below zero.
+  final double amplitude;
+
+  /// Noise scale, in world units.
+  final double frequency;
+
+  /// How many layers of detail are summed.
+  final int octaves;
+
+  /// The seed; the same one always gives the same ground.
+  final int seed;
+}
+
 /// A cylinder or cone about the Y axis; a smaller [topRadius] tapers it, and
 /// zero makes a cone.
 /// {@category Documents}

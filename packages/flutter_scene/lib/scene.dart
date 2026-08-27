@@ -60,6 +60,8 @@ export 'src/geometry/primitives.dart'
         SphereGeometry,
         TorusGeometry,
         WedgeGeometry;
+export 'src/geometry/terrain.dart'
+    show HeightField, TerrainGeometry, buildTerrainArrays;
 export 'src/geometry/polyline_geometry.dart'
     show DashPattern, PolylineCap, PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'
