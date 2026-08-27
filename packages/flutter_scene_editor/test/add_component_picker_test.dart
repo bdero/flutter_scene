@@ -3,8 +3,8 @@
 import 'package:flutter_scene_editor/src/panels/inspector_panel.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-ComponentTypeInfo _info({String? category, String? provenance}) =>
-    (category: category, provenance: provenance);
+ComponentTypeInfo _info({String? category, String? icon, String? provenance}) =>
+    (category: category, icon: icon, provenance: provenance);
 
 void main() {
   group('category', () {
@@ -106,6 +106,55 @@ void main() {
       expect(
         matchesComponentQuery('camera', _info(category: 'Cameras'), 'audio'),
         isFalse,
+      );
+    });
+  });
+
+  group('glyphs', () {
+    test('a declared icon wins over the category fallback', () {
+      // Compared against a category whose fallback is something else, since a
+      // schema icon that happens to match its category's glyph (light-point
+      // in Rendering) is indistinguishable either way, and rightly so.
+      expect(
+        componentPickerGlyph(_info(category: 'Physics', icon: 'camera')),
+        componentPickerGlyph(_info(icon: 'camera')),
+      );
+      expect(
+        componentPickerGlyph(_info(category: 'Physics', icon: 'camera')),
+        isNot(componentPickerGlyph(_info(category: 'Physics'))),
+      );
+    });
+
+    test('every category has a glyph of its own', () {
+      const categories = [
+        'Mesh',
+        'Effects',
+        'Rendering',
+        'Cameras',
+        'Physics',
+        'Audio',
+        'Navigation',
+        'UI',
+        'Scripts',
+        'Packages',
+      ];
+      final glyphs = {
+        for (final category in categories)
+          category: componentPickerGlyph(_info(category: category)),
+      };
+      // Distinct, or the grouping reads as noise rather than as structure.
+      expect(glyphs.values.toSet(), hasLength(categories.length));
+    });
+
+    test('a type declaring nothing still gets a glyph', () {
+      // A row with no icon would read as a gap in the list.
+      expect(componentPickerGlyph(_info()), isNotNull);
+    });
+
+    test('an unknown icon name falls back rather than blanking', () {
+      expect(
+        componentPickerGlyph(_info(category: 'Physics', icon: 'no-such-icon')),
+        componentPickerGlyph(_info(category: 'Physics')),
       );
     });
   });
