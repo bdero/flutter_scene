@@ -20,12 +20,15 @@ const API_KEYS = (process.env.TELEGRAM_API_KEYS || '')
   .filter(Boolean);
 
 // Basic config with safe fallbacks.
-const TELEGRAM_BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN;
-const PROVIDER            = process.env.TELEGRAM_PROVIDER || 'openrouter';
-const MODEL               = process.env.TELEGRAM_MODEL || undefined;
-const CWD                 = process.env.TELEGRAM_CWD || __dirname;
-const ALLOWED_USER_ID     = process.env.TELEGRAM_ALLOWED_USER_ID || undefined;
-const RESTART_DELAY_MS    = parseInt(process.env.TELEGRAM_RESTART_DELAY_MS || '2000', 10);
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const MODEL = process.env.TELEGRAM_MODEL || undefined;
+const CWD = process.env.TELEGRAM_CWD || __dirname;
+const ALLOWED_USER_ID = process.env.TELEGRAM_ALLOWED_USER_ID || undefined;
+const RESTART_DELAY_MS = parseInt(process.env.TELEGRAM_RESTART_DELAY_MS || '2000', 10);
+const AVAILABLE_MODELS = (process.env.TELEGRAM_AVAILABLE_MODELS || '')
+  .split(/[,;\s]+/)
+  .map((k) => k.trim())
+  .filter(Boolean);;
 
 // Validates minimum configuration before starting.
 if (!TELEGRAM_BOT_TOKEN) {
@@ -38,12 +41,15 @@ if (API_KEYS.length === 0) {
 }
 
 let currentKeyIndex = 0;
+let currentModelIndex = 0;
 let clineProcess = null;
 let restarting = false;
 
 function startCline() {
   const currentKey = API_KEYS[currentKeyIndex];
+  const currentModel = AVAILABLE_MODELS[currentModelIndex];
   console.log(`\n[Rotator] Starting connector with key #${currentKeyIndex + 1}...`);
+  console.log(`current model: #${AVAILABLE_MODELS[currentModelIndex]} from: ${AVAILABLE_MODELS}`);
 
   // Builds the arguments. The key is rotated via `--api-key` / `--provider`
   // (which the Telegram connector actually reads) — NOT via inherited env var.
@@ -51,7 +57,7 @@ function startCline() {
     'connect', 'telegram',
     '-k', TELEGRAM_BOT_TOKEN,   // required — read from env TELEGRAM_BOT_TOKEN
     '-i',                       // keeps the process in the foreground
-    '--provider', PROVIDER,
+    '--model', currentModel,    // rotated model 
     '--api-key', currentKey,    // rotated key via flag (not via inherited env)
     '--cwd', CWD,
   ];
@@ -67,6 +73,7 @@ function startCline() {
   // connected but silent, that is normal operation (waiting for a message).
   const handleOutput = (stream, data) => {
     const output = data.toString();
+    console.log(`data: ${output}`);
     if (stream === 'stdout') process.stdout.write(output);
     else process.stderr.write(output);
 
@@ -90,8 +97,15 @@ function startCline() {
 }
 
 function rotateKeyAndRestart() {
-  // Advances to the next key (wraps back to the first at the end of the list).
-  currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+  // Advances to the next model if the all api keys were used.
+  if (currentKeyIndex == API_KEYS.length) {
+    currentModelIndex = (currentModelIndex + 1) % AVAILABLE_MODELS.length;
+    currentKeyIndex = 0;
+  } else {
+    // Advances to the next key (wraps back to the first at the end of the list).
+    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+  }
+  
   scheduleRestart(true);
 }
 
@@ -104,6 +118,7 @@ function scheduleRestart(manualKill) {
 
 // Handles script shutdown (Ctrl+C) — does not restart and gives the child time to stop.
 process.on('SIGINT', () => {
+  console.log('sigint');
   restarting = true;
   if (clineProcess) clineProcess.kill('SIGTERM');
   setTimeout(() => process.exit(0), 500);

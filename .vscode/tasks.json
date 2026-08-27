@@ -23,6 +23,19 @@
 			"options": {
 				"cwd": "${workspaceFolder}/apps/flutter_scene_editor_app"
 			}
+		},
+		{
+			"type": "shell",
+			"label": "open connector",
+			"command": "node tool/connector/telegram_connector.js",
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"options": {
+				"cwd": "${workspaceFolder}",
+			}
 		}
 	]
 }
