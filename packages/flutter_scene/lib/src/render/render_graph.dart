@@ -1,6 +1,8 @@
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
+import 'package:flutter_scene/src/texture/texture_registry.dart'
+    show gpuTextureBytes;
 
 /// A typed scratch store passed between [RenderPass]es within a single
 /// frame.
@@ -103,6 +105,9 @@ class ObservedTexturePool extends TransientTexturePool {
 
   @override
   void clear() => _inner.clear();
+
+  @override
+  int get residentBytes => _inner.residentBytes;
 }
 
 /// Description of a transient GPU texture requested from a
@@ -239,8 +244,22 @@ class TransientTexturePool {
 
   /// Drops all cached textures. The next [acquire] for any descriptor
   /// reallocates. Call when the output size changes so stale-sized
-  /// textures aren't kept alive.
+  /// textures aren't kept alive, or to give the memory back under pressure.
+  ///
+  /// Safe at any point in a frame: a pass that has already acquired a texture
+  /// holds its own reference, so this releases only the pool's claim.
   void clear() => _rings.clear();
+
+  /// Resident bytes of every texture the pool holds, summed across mip chains.
+  int get residentBytes {
+    var bytes = 0;
+    for (final ring in _rings.values) {
+      for (final texture in ring) {
+        if (texture != null) bytes += gpuTextureBytes(texture);
+      }
+    }
+    return bytes;
+  }
 }
 
 /// Per-frame state handed to every [RenderGraphPass] when the graph

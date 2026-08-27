@@ -26,6 +26,7 @@ import 'god_rays.dart';
 import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
+import 'memory_pressure.dart';
 import 'mesh.dart';
 import 'node.dart';
 import 'raycast.dart';
@@ -390,6 +391,7 @@ base class Scene implements SceneGraph {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
     }
+    listenForMemoryPressure();
     _initializeStaticResources =
         Future.wait([
               loadBaseShaderLibrary(),

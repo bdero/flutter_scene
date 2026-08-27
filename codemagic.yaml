@@ -97,6 +97,13 @@ workflows:
           flutter config --enable-macos-desktop --enable-native-assets
           --enable-dart-data-assets
       - *script_pub_get
+      - name: GPU memory accounting
+        script: |
+          cd "$CM_BUILD_DIR/examples/smoke_render"
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/memory_pressure_test.dart \
+            -d macos --enable-impeller --enable-flutter-gpu
       - name: Render smoke scenes
         script: |
           cd "$CM_BUILD_DIR/examples/smoke_render"

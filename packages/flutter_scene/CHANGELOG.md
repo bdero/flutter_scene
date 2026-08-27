@@ -1,3 +1,10 @@
+## Unreleased
+
+* `releaseTransientRenderTargets` drops the render graph's pooled attachments (shadow atlas, scene color, depth, the post-process chain) and reports the bytes released. The pool has no eviction of its own, so it settles at the high-water mark of every attachment shape any frame has needed and holds that for the life of the process.
+* The engine now releases those attachments automatically on platform memory pressure, which every Flutter platform reports: iOS on a memory warning and on backgrounding, Android from `onTrimMemory`. Previously nothing in the package listened, so the notification arrived and no GPU memory was given back. Everything dropped is reallocated by the next frame that needs it; loaded textures and scene templates are untouched.
+* `takeMemoryReport` counts a `render targets` category, so the pooled attachments are visible alongside textures and scene templates.
+* `releaseRenderTargetsOnMemoryPressure` turns the automatic release off for apps that would rather choose their own moment. The listener stays registered, so it can be flipped at any time.
+
 ## 0.23.0
 
 * Build hooks no longer crash on a target OS `package:code_assets` cannot name, which is how a third-party embedder announces tvOS or visionOS.
