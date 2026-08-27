@@ -24,6 +24,19 @@
 library;
 
 export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
+export 'src/animation/animator.dart'
+    show
+        Animator,
+        AnimatorComparison,
+        AnimatorCondition,
+        AnimatorMotion,
+        AnimatorParameters,
+        AnimatorState,
+        AnimatorTransition,
+        BlendMotion,
+        BlendStop,
+        ClipMotion;
+export 'src/animation/animator_component.dart' show AnimatorComponent;
 
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
