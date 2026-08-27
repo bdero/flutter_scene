@@ -658,6 +658,20 @@ class _ActionButtons extends StatelessWidget {
                           ? () => session.restart()
                           : null,
                     ),
+                  if (session.supportsPause)
+                    _iconButton(
+                      context,
+                      icon: session.paused
+                          ? Icons.play_arrow
+                          : Icons.pause_outlined,
+                      tooltip: session.paused
+                          ? 'Release the app'
+                          : 'Hold the app',
+                      active: session.paused,
+                      onPressed: session.state == AppSessionState.running
+                          ? () => session.setPaused(!session.paused)
+                          : null,
+                    ),
                   _iconButton(
                     context,
                     icon: Icons.stop,

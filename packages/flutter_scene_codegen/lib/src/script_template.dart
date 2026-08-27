@@ -9,15 +9,71 @@ library;
 /// The Dart identifier rules this template needs: an upper-camel class name
 /// that is not a reserved word.
 const _reservedWords = <String>{
-  'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch',
-  'class', 'const', 'continue', 'covariant', 'default', 'deferred', 'do',
-  'dynamic', 'else', 'enum', 'export', 'extends', 'extension', 'external',
-  'factory', 'false', 'final', 'finally', 'for', 'function', 'get', 'hide',
-  'if', 'implements', 'import', 'in', 'interface', 'is', 'late', 'library',
-  'mixin', 'new', 'null', 'on', 'operator', 'part', 'required', 'rethrow',
-  'return', 'sealed', 'set', 'show', 'static', 'super', 'switch', 'sync',
-  'this', 'throw', 'true', 'try', 'typedef', 'var', 'void', 'when', 'while',
-  'with', 'yield',
+  'abstract',
+  'as',
+  'assert',
+  'async',
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'covariant',
+  'default',
+  'deferred',
+  'do',
+  'dynamic',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'extension',
+  'external',
+  'factory',
+  'false',
+  'final',
+  'finally',
+  'for',
+  'function',
+  'get',
+  'hide',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'interface',
+  'is',
+  'late',
+  'library',
+  'mixin',
+  'new',
+  'null',
+  'on',
+  'operator',
+  'part',
+  'required',
+  'rethrow',
+  'return',
+  'sealed',
+  'set',
+  'show',
+  'static',
+  'super',
+  'switch',
+  'sync',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typedef',
+  'var',
+  'void',
+  'when',
+  'while',
+  'with',
+  'yield',
 };
 
 /// Why [componentClassNameError] rejected a name, or null when it is usable.
@@ -42,15 +98,14 @@ String componentClassName(String name) {
       .trim()
       .split(RegExp(r'[^A-Za-z0-9]+'))
       .where((part) => part.isNotEmpty);
-  return parts
-      .map((part) => part[0].toUpperCase() + part.substring(1))
-      .join();
+  return parts.map((part) => part[0].toUpperCase() + part.substring(1)).join();
 }
 
 /// The document type tag for [className]: its lower-camel form, which is what
 /// every built-in component uses (`pointLight`, `cameraDirector`).
-String componentTypeTag(String className) =>
-    className.isEmpty ? className : className[0].toLowerCase() + className.substring(1);
+String componentTypeTag(String className) => className.isEmpty
+    ? className
+    : className[0].toLowerCase() + className.substring(1);
 
 /// The file [className] is written to, relative to `lib/components/`.
 String componentFileName(String className) {

@@ -423,4 +423,80 @@ void main() {
     process.exit(0);
     await pumpEventQueue();
   });
+
+  test('setPaused holds and releases every isolate', () async {
+    final paused = <String>[];
+    final resumed = <String>[];
+    final socket = FakeVmSocket({
+      'getVM': (_) => {
+        'isolates': [
+          {'id': 'isolates/1'},
+          {'id': 'isolates/2'},
+        ],
+      },
+      'pause': (params) {
+        paused.add(params['isolateId']! as String);
+        return {'type': 'Success'};
+      },
+      'resume': (params) {
+        resumed.add(params['isolateId']! as String);
+        return {'type': 'Success'};
+      },
+    });
+    final vmSession = await runningSession(socket);
+
+    expect(vmSession.paused, isFalse);
+    expect(await vmSession.setPaused(true), isTrue);
+    expect(vmSession.paused, isTrue);
+    // Every isolate, not just the main one: a background isolate that kept
+    // running would mutate state behind a frozen frame.
+    expect(paused, ['isolates/1', 'isolates/2']);
+
+    // Asking for the state it is already in is a no-op, not a second call.
+    expect(await vmSession.setPaused(true), isTrue);
+    expect(paused, hasLength(2));
+
+    expect(await vmSession.setPaused(false), isTrue);
+    expect(vmSession.paused, isFalse);
+    expect(resumed, ['isolates/1', 'isolates/2']);
+  });
+
+  test('setPaused reports failure when the VM refuses', () async {
+    final socket = FakeVmSocket({
+      'getVM': (_) => {
+        'isolates': [
+          {'id': 'isolates/1'},
+        ],
+      },
+      // No 'pause' handler: the fake answers unknown methods with an error,
+      // which is what a VM that will not hold looks like.
+    });
+    final vmSession = await runningSession(socket);
+
+    expect(await vmSession.setPaused(true), isFalse);
+    expect(vmSession.paused, isFalse, reason: 'a refused hold is not a hold');
+    expect(
+      lines.where((line) => line.$1.contains('Could not hold')),
+      hasLength(1),
+    );
+  });
+
+  test('a hold does not survive the app leaving the running state', () async {
+    final socket = FakeVmSocket({
+      'getVM': (_) => {
+        'isolates': [
+          {'id': 'isolates/1'},
+        ],
+      },
+      'pause': (_) => {'type': 'Success'},
+    });
+    final vmSession = await runningSession(socket);
+    expect(await vmSession.setPaused(true), isTrue);
+    expect(vmSession.paused, isTrue);
+
+    // The isolates it applied to are gone, so the flag cannot outlive them.
+    process.exit(0);
+    await pumpEventQueue();
+    expect(vmSession.paused, isFalse);
+  });
 }
