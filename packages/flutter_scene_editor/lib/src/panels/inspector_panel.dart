@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
+import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
 import '../inspector/particle_value_editors.dart';
@@ -1089,9 +1090,34 @@ class _AddComponentBar extends StatelessWidget {
   }
 }
 
-/// What the picker knows about one component type: the category its schema
-/// declares (if any) and where the editor learned about it.
-typedef ComponentTypeInfo = ({String? category, String? provenance});
+/// What the picker knows about one component type: the category and icon its
+/// schema declares (if any) and where the editor learned about it.
+typedef ComponentTypeInfo = ({
+  String? category,
+  String? icon,
+  String? provenance,
+});
+
+/// The glyph shown beside [type] in the picker.
+///
+/// A schema's own icon wins; otherwise the row falls back to its category's
+/// glyph, so every row carries something. A component that declares nothing
+/// and sits in no category still reads as a component rather than as a gap.
+IconData componentPickerGlyph(ComponentTypeInfo info) =>
+    componentGlyph(info.icon) ??
+    switch (addComponentCategory(info)) {
+      'Mesh' => Icons.view_in_ar_outlined,
+      'Effects' => Icons.auto_awesome_outlined,
+      'Rendering' => Icons.lightbulb_outline,
+      'Cameras' => Icons.videocam_outlined,
+      'Physics' => Icons.animation_outlined,
+      'Audio' => Icons.volume_up_outlined,
+      'Navigation' => Icons.route_outlined,
+      'UI' => Icons.widgets_outlined,
+      'Scripts' => Icons.code,
+      'Packages' => Icons.inventory_2_outlined,
+      _ => Icons.settings_input_component_outlined,
+    };
 
 /// Where a type sits in the picker: its declared category, "Scripts" for a
 /// project's own components, "Packages" for a dependency's, and "Other" for
@@ -1156,10 +1182,15 @@ Future<String?> showAddComponentPicker(
   required EditorController controller,
   required List<String> available,
 }) {
-  ComponentTypeInfo infoOf(String type) => (
-    category: controller.componentSchemaFor(type)?.category,
-    provenance: controller.foreignTypeProvenance[type],
-  );
+  ComponentTypeInfo infoOf(String type) {
+    final schema = controller.componentSchemaFor(type);
+    return (
+      category: schema?.category,
+      icon: schema?.icon,
+      provenance: controller.foreignTypeProvenance[type],
+    );
+  }
+
   final search = TextEditingController();
   return showFDialog<String>(
     context: context,
@@ -1231,8 +1262,7 @@ Future<String?> showAddComponentPicker(
                                 for (final type in group.value)
                                   _ComponentPickerRow(
                                     type: type,
-                                    provenance:
-                                        controller.foreignTypeProvenance[type],
+                                    info: infoOf(type),
                                     onTap: () => Navigator.pop(context, type),
                                   ),
                               ],
@@ -1252,28 +1282,35 @@ Future<String?> showAddComponentPicker(
 class _ComponentPickerRow extends StatelessWidget {
   const _ComponentPickerRow({
     required this.type,
-    required this.provenance,
+    required this.info,
     required this.onTap,
   });
 
   final String type;
-  final String? provenance;
+  final ComponentTypeInfo info;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final provenance = info.provenance;
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
         child: Row(
           children: [
+            Icon(
+              componentPickerGlyph(info),
+              size: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
             Expanded(child: Text(type, style: const TextStyle(fontSize: 12))),
             // Types the editor knows by schema but did not compile show where
             // that schema came from.
             if (provenance != null)
               Text(
-                provenance == 'live' ? 'project' : provenance!,
+                provenance == 'live' ? 'project' : provenance,
                 style: const TextStyle(fontSize: 9, color: Colors.grey),
               ),
           ],
