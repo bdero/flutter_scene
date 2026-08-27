@@ -725,6 +725,15 @@ FmatMaterial _build(
         fileName: fileName,
       );
     }
+    // The planar capture binds through the lit engine bind set; the screen
+    // inputs above ride the FragInfo block, which unlit shaders also carry.
+    if (engineInputs.contains('planar_reflection') &&
+        shadingModel == FmatShadingModel.unlit) {
+      throw FmatException(
+        '`planar_reflection` requires a lit shading model.',
+        fileName: fileName,
+      );
+    }
   }
 
   // `scene_color_reach` is how far past its own surface the shader samples the
