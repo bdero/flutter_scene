@@ -83,7 +83,7 @@ Either path installs the same skills.
 
 - `examples/flutter_app` is the example app (many examples). It commits no platform scaffolding, so generate the platform you want first (`cd examples/flutter_app && flutter create . --platforms=macos --org dev.bdero --project-name example_app`), then `flutter run -d macos --enable-flutter-gpu`.
 - `examples/smoke_render` is a headless cross-backend render harness and commits its scaffolding, so it runs straight from a checkout.
-- `apps/flutter_scene_editor_app` is the standalone editor.
+- `apps/flutter_scene_editor_app` is the standalone editor. It commits its platform scaffolding, so it runs straight from a checkout: `cd apps/flutter_scene_editor_app && flutter run -d macos --enable-flutter-gpu`. Working on the master channel needs one patch first; see the app's README.
 
 ## Where to look
 
