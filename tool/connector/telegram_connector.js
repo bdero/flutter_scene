@@ -67,10 +67,11 @@ function log(...args) {
   console.log(line);
 }
 
-// Matches rate-limit / quota / capacity errors wherever they surface: plain
-// "429", the OpenRouter "daily free limit reached" text, or the JSON body of a
-// Telegram-delivered bridge error (code INFERENCE_CAP_ERROR).
-const LIMIT_RE = /INFERENCE_CAP_ERROR|daily free limit|Error 429|\b429\b|rate limit|quota|too many requests|limit reached/i;
+// Matches rate-limit / quota / capacity errors. Kept to strong patterns so
+// unrelated numbers (e.g. token counts) can't trigger a false rotation — the
+// real errors always carry INFERENCE_CAP_ERROR, "daily free limit", or an
+// explicit "Error 429"/"rate limit"/"too many requests".
+const LIMIT_RE = /INFERENCE_CAP_ERROR|daily free limit|Error 429|rate limit|too many requests|quota exceeded/i;
 // Only react to telegram-connector entries in the shared cline.log.
 const IS_TELEGRAM_RE = /"component"\s*:\s*"telegram-connect"/;
 
@@ -326,12 +327,138 @@ function onLimitSignal(line) {
   scheduleRestart(nextKey, nextModel);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Turn activity — acknowledge heavy tasks in the chat so they don't feel stuck,
+// and surface progress in the wrapper log.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TURN_ACK_TEXT = '🧠 Working on it — heavy tasks can take a few minutes. You\'ll get the answer here when it\'s done.';
+const TURN_PING_TEXT = (mins) => `⏳ Still working… (${mins} min elapsed)`;
+const TURN_PING_INTERVAL_MS = 5 * 60 * 1000; // progress ping cadence (every 5 min)
+const TURN_MAX_PINGS = 12;                   // safety cap (~60 min of pings)
+const TURN_ACK_THROTTLE_MS = 15 * 1000;      // don't re-ack bursts of messages
+
+let activeTurn = null;                       // { chatId, startedAt, pings, timer }
+let lastAckAt = 0;
+
+// Sends a chat message through the Telegram Bot API as the same bot.
+async function sendTelegramMessage(chatId, text) {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, disable_notification: true }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!body.ok) log(`[Telegram] sendMessage failed: ${body.description || `HTTP ${res.status}`}`);
+    return body.ok === true;
+  } catch (err) {
+    log(`[Telegram] sendMessage error: ${err.message}`);
+    return false;
+  }
+}
+
+// Last chat id seen in any telegram-connect log line; fallback when a line
+// lacks a threadId (e.g. some "message received" entries).
+let lastSeenChatId = null;
+
+// Turns "telegram:123456" thread ids (also works for group ids) into chat ids.
+function extractChatId(line) {
+  const m = line.match(/"threadId":"telegram:(-?\d+)"/);
+  if (m) {
+    lastSeenChatId = m[1];
+    return m[1];
+  }
+  return lastSeenChatId;               // fallback: last chat seen in the logs
+}
+
+function stopTurn() {
+  if (activeTurn && activeTurn.timer) clearInterval(activeTurn.timer);
+  activeTurn = null;
+}
+
+// Fired when the connector logs that a user message arrived: acknowledge it in
+// the chat right away and start progress pings until the reply is sent.
+function onTurnStarted(line) {
+  const chatId = extractChatId(line);
+  const now = Date.now();
+  if (!chatId) {
+    log('[Turn] Message received, but no chat id found in the log line.');
+    return;
+  }
+
+  // Another message from the same chat while we're already working: just reset
+  // the elapsed clock, no new acknowledgement.
+  if (activeTurn && activeTurn.chatId === chatId) {
+    activeTurn.startedAt = now;
+    activeTurn.pings = 0;
+    log('[Turn] Follow-up message received; still working.');
+    return;
+  }
+
+  stopTurn();
+  activeTurn = { chatId, startedAt: now, pings: 0, timer: null };
+  activeTurn.timer = setInterval(() => {
+    if (!activeTurn) return;
+    if (activeTurn.pings >= TURN_MAX_PINGS) {
+      log('[Turn] Ping cap reached; going quiet until the reply lands.');
+      stopTurn();
+      return;
+    }
+    activeTurn.pings++;
+    const mins = Math.round((Date.now() - activeTurn.startedAt) / 60000);
+    sendTelegramMessage(activeTurn.chatId, TURN_PING_TEXT(mins));
+  }, TURN_PING_INTERVAL_MS);
+
+  // If every key/model combo is parked on quota, say so instead of a generic ack.
+  const allBlocked = nextCombo() === null;
+  const text = allBlocked
+    ? `⛔ All API keys/models are on cooldown right now (until ${new Date(earliestUnblock()).toISOString().slice(11, 16)} UTC). Your message is queued — I'll answer when quota resets.`
+    : TURN_ACK_TEXT;
+
+  if (now - lastAckAt < TURN_ACK_THROTTLE_MS) return;   // burst guard
+  lastAckAt = now;
+  log(`[Turn] Task started for chat ${chatId} — sending acknowledgement${allBlocked ? ' (quota exhausted notice)' : ''}.`);
+  sendTelegramMessage(chatId, text);
+}
+
+function onTurnDone(ok) {
+  if (!activeTurn) return;
+  const mins = Math.round((Date.now() - activeTurn.startedAt) / 60000);
+  log(`[Turn] Task ${ok ? 'completed' : 'failed'} after ~${mins} min (chat ${activeTurn.chatId}).`);
+  stopTurn();
+}
+
+// Maps connector log messages to turn events.
+function handleTurnEvent(line) {
+  const msg = (line.match(/"msg":"([^"]+)"/) || [])[1] || '';
+
+  if (msg === 'Telegram message received') { onTurnStarted(line); return; }
+  if (msg === 'Telegram reply completed') { onTurnDone(true); return; }
+  if (msg === 'Telegram reply failed' || msg === 'Telegram turn handling failed') {
+    onTurnDone(false);   // the limit path logs the details
+    return;
+  }
+  if (msg === 'Telegram thread started RPC session' || msg === 'Telegram thread reusing RPC session') {
+    const sessionId = (line.match(/"sessionId":"([^"]+)"/) || [])[1] || '?';
+    log(`[Turn] ${msg} (session ${sessionId})`);
+  }
+}
+
 // Polls the connector's own logs. The shared cline.log carries the
 // telegram-connect bridge errors (most reliable signal); the per-bot log is a
 // secondary source.
 function pollLogs() {
   tailLog(SHARED_CLINE_LOG, (line) => {
-    if (IS_TELEGRAM_RE.test(line) && LIMIT_RE.test(line)) onLimitSignal(line);
+    if (!IS_TELEGRAM_RE.test(line)) return;
+    if (LIMIT_RE.test(line)) {
+      // This line is the failed turn itself: end the turn (stops progress
+      // pings) before the rotation path takes over.
+      onTurnDone(false);
+      onLimitSignal(line);
+      return;
+    }
+    handleTurnEvent(line);
   });
 
   let botLogs = [];
