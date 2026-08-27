@@ -87,6 +87,13 @@ class OrbitCameraController extends CameraController {
   /// Distance from [target] to the camera.
   double get distance => _distance;
 
+  /// Rotation around world up, in radians (its eased, current value).
+  double get azimuth => _azimuth;
+
+  /// Elevation above the target, in radians (its eased, current value),
+  /// within [[minPolar], [maxPolar]].
+  double get polar => _polar;
+
   /// Rotates the orbit by [deltaAzimuth] (around world up) and [deltaPolar]
   /// (elevation), radians. Polar is clamped to [[minPolar], [maxPolar]].
   void orbitBy(double deltaAzimuth, double deltaPolar) {
