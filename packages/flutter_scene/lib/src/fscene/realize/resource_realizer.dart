@@ -804,6 +804,41 @@ class ResourceRealizer {
         radialSegments: radialSegments,
         tubularSegments: tubularSegments,
       ),
+    CylinderGeometrySpec(
+      :final bottomRadius,
+      :final topRadius,
+      :final height,
+      :final radialSegments,
+      :final heightSegments,
+      :final bottomCap,
+      :final topCap,
+    ) =>
+      CylinderGeometry(
+        bottomRadius: bottomRadius,
+        topRadius: topRadius,
+        height: height,
+        radialSegments: radialSegments,
+        heightSegments: heightSegments,
+        bottomCap: bottomCap,
+        topCap: topCap,
+      ),
+    CapsuleGeometrySpec(
+      :final radius,
+      :final height,
+      :final radialSegments,
+      :final capRings,
+    ) =>
+      CapsuleGeometry(
+        radius: radius,
+        height: height,
+        radialSegments: radialSegments,
+        capRings: capRings,
+      ),
+    DiscGeometrySpec(:final radius, :final segments) => DiscGeometry(
+      radius: radius,
+      segments: segments,
+    ),
+    WedgeGeometrySpec(:final size) => WedgeGeometry(size),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
       IcosphereGeometry(radius: radius, subdivisions: subdivisions),
   };
