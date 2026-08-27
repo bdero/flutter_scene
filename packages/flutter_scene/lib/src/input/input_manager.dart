@@ -160,6 +160,12 @@ final class InputManager implements InputSink, InputControlReader {
   /// tick signatures and for sources that need it later; the manager itself
   /// does not currently integrate over time.
   void update(double deltaSeconds) {
+    // Polled backends publish first, so their state lands in the window this
+    // call is about to close rather than the one after it.
+    for (final source in _sources) {
+      source.poll(deltaSeconds);
+    }
+
     // Promote the window that just closed to the frame being queried, and
     // recycle the outgoing maps as the next window's storage.
     final start = _frameStart;

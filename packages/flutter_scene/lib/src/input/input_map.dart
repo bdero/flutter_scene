@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
+import 'package:flutter_scene/src/input/gamepad.dart';
 import 'package:flutter_scene/src/input/input_binding.dart';
 import 'package:flutter_scene/src/input/input_control.dart';
 
@@ -78,10 +79,18 @@ final class InputMap extends ChangeNotifier {
   /// camera controllers already take, so a project has something working
   /// before anyone opens a rebinding screen.
   ///
-  /// `move` (WASD, +Y forward), `look` (mouse delta), `jump` (space),
-  /// `sprint` (left shift), `elevate` (Q/E, +1 up, for a fly camera),
-  /// `interact` (E), `fire` (primary mouse), `aim` (secondary mouse),
-  /// `pause` (escape).
+  /// Every action carries a keyboard-and-mouse binding and a gamepad one, so a
+  /// player can pick up a pad mid-session without rebinding anything; an action
+  /// takes the strongest of its bindings, so the two never fight.
+  ///
+  /// `move` (WASD or left stick, +Y forward), `look` (mouse delta or right
+  /// stick), `jump` (space, gamepad south), `sprint` (left shift, L3),
+  /// `elevate` (Q/E or the shoulders, +1 up, for a fly camera), `interact`
+  /// (E, gamepad west), `fire` (primary mouse, right trigger), `aim`
+  /// (secondary mouse, left trigger), `pause` (escape, start).
+  ///
+  /// The gamepad bindings name positions, not letters, so `south` is the
+  /// bottom face button on every vendor's pad. See [GamepadButton].
   factory InputMap.defaults() => InputMap([
     InputAction('move', InputActionKind.vector2, [
       CompositeVector2Binding(
@@ -96,6 +105,19 @@ final class InputMap extends ChangeNotifier {
         left: InputControl.key(LogicalKeyboardKey.arrowLeft),
         right: InputControl.key(LogicalKeyboardKey.arrowRight),
       ),
+      StickBinding(
+        x: InputControl.gamepad(GamepadAxis.leftX),
+        y: InputControl.gamepad(GamepadAxis.leftY),
+        // A pad reports Y positive downward; the engine convention is +Y
+        // forward.
+        invertY: true,
+      ),
+      CompositeVector2Binding(
+        up: InputControl.gamepad(GamepadButton.dpadUp),
+        down: InputControl.gamepad(GamepadButton.dpadDown),
+        left: InputControl.gamepad(GamepadButton.dpadLeft),
+        right: InputControl.gamepad(GamepadButton.dpadRight),
+      ),
     ]),
     InputAction('look', InputActionKind.vector2, [
       const StickBinding(
@@ -105,12 +127,19 @@ final class InputMap extends ChangeNotifier {
         // Mouse Y grows downward; the engine's input convention is +Y up.
         invertY: true,
       ),
+      StickBinding(
+        x: InputControl.gamepad(GamepadAxis.rightX),
+        y: InputControl.gamepad(GamepadAxis.rightY),
+        invertY: true,
+      ),
     ]),
     InputAction('jump', InputActionKind.button, [
       ButtonBinding(InputControl.key(LogicalKeyboardKey.space)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.south)),
     ]),
     InputAction('sprint', InputActionKind.button, [
       ButtonBinding(InputControl.key(LogicalKeyboardKey.shiftLeft)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.leftStick)),
     ]),
     // Q/E, the fly-camera convention. E is also `interact`: a project flying a
     // debug camera is not usually also interacting, and `actionsUsing` surfaces
@@ -120,18 +149,34 @@ final class InputMap extends ChangeNotifier {
         positive: InputControl.key(LogicalKeyboardKey.keyE),
         negative: InputControl.key(LogicalKeyboardKey.keyQ),
       ),
+      AxisBinding(
+        positive: InputControl.gamepad(GamepadButton.rightShoulder),
+        negative: InputControl.gamepad(GamepadButton.leftShoulder),
+      ),
     ]),
     InputAction('interact', InputActionKind.button, [
       ButtonBinding(InputControl.key(LogicalKeyboardKey.keyE)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.west)),
     ]),
     InputAction('fire', InputActionKind.button, [
       const ButtonBinding(InputControl.mouseButton(1)),
+      // A trigger is analog, so the binding says how far is far enough
+      // rather than waiting for the hard stop at 1.
+      ButtonBinding(
+        InputControl.gamepad(GamepadButton.rightTrigger),
+        threshold: 0.3,
+      ),
     ]),
     InputAction('aim', InputActionKind.button, [
       const ButtonBinding(InputControl.mouseButton(2)),
+      ButtonBinding(
+        InputControl.gamepad(GamepadButton.leftTrigger),
+        threshold: 0.3,
+      ),
     ]),
     InputAction('pause', InputActionKind.button, [
       ButtonBinding(InputControl.key(LogicalKeyboardKey.escape)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.start)),
     ]),
   ]);
 

@@ -45,6 +45,15 @@ final class InputControl {
     : device = InputDevice.mouse,
       id = 'button$button';
 
+  /// The control for [control] on gamepad [pad], where [control] is a
+  /// [GamepadButton] or [GamepadAxis] id.
+  ///
+  /// [pad] is the player slot, so a split-screen game binds player two to
+  /// `pad: 1`. A source that supports only one pad publishes under 0.
+  InputControl.gamepad(String control, {int pad = 0})
+    : device = 'gamepad$pad',
+      id = control;
+
   /// Which device published this control.
   final String device;
 

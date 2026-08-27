@@ -34,6 +34,14 @@ abstract class InputSource {
 
   /// Stops publishing and releases any platform listeners.
   void detach();
+
+  /// Called once per frame by `InputManager.update`, before the frame's edges
+  /// are resolved, so anything published here belongs to the frame opening.
+  ///
+  /// For a backend that must ask the platform for state rather than being
+  /// handed it: the browser's Gamepad API and every native gamepad API are
+  /// polled, not evented. The event-driven sources do nothing here.
+  void poll(double deltaSeconds) {}
 }
 
 /// Publishes physical keyboard state, driven by Flutter's [HardwareKeyboard].
