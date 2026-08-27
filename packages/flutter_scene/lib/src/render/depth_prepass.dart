@@ -387,6 +387,8 @@ class _DepthPrepassEncoder {
   /// consecutive objects that share one only bind it once.
   gpu.RenderPipeline? _boundPipeline;
   final List<RenderItem> _records = [];
+  // See SceneEncoder._batchScratch: refilled per group, read-only downstream.
+  final List<InstanceDataBatch> _batchScratch = [];
 
   /// Records [item]'s depth, unless it is hidden, rejected by its layer
   /// mask, or outside this encoder's set (prepass-participating items
@@ -406,20 +408,16 @@ class _DepthPrepassEncoder {
 
   void flush() {
     _records.sort((a, b) {
-      final byMaterial = identityHashCode(
-        a.material,
-      ).compareTo(identityHashCode(b.material));
+      final byMaterial = a.materialIdentity.compareTo(b.materialIdentity);
       if (byMaterial != 0) return byMaterial;
-      return identityHashCode(
-        a.geometry,
-      ).compareTo(identityHashCode(b.geometry));
+      return a.geometryIdentity.compareTo(b.geometryIdentity);
     });
     var index = 0;
     while (index < _records.length) {
       final first = _records[index];
       final end = depthBatchEnd(_records, index);
       if (end > index + 1) {
-        final batches = <InstanceDataBatch>[];
+        final batches = _batchScratch..clear();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _records[batchIndex];
           batches.add(
