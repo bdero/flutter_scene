@@ -52,28 +52,44 @@ final class InputManager implements InputSink, InputControlReader {
   /// The actions this manager resolves.
   final InputMap map;
 
-  /// The value at which a control counts as digitally pressed for edge
-  /// tracking. Per-binding thresholds still govern [isPressed].
-  static const double _digitalThreshold = 0.5;
-
   final List<InputSource> _sources = [];
 
-  // Control values as published, and as they stood at the last frame
-  // boundary. Edge queries compare the two.
+  // Control values as published.
   final Map<InputControl, double> _current = {};
-  final Map<InputControl, double> _previous = {};
 
-  // Controls that are only valid for the frame they arrived in (mouse
-  // movement, scroll). Zeroed by the next update.
-  final Set<InputControl> _deltas = {};
+  // Delta controls (mouse movement, scroll), which are meaningful only for the
+  // frame they arrived in: a held value would read as an infinitely spinning
+  // camera. They are double-buffered for the same reason the button windows
+  // below are. Zeroing them at the top of [update] instead throws away every
+  // pixel of movement that arrived while the app was between ticks, which is
+  // all of it, and mouse look never moves.
+  Map<InputControl, double> _frameDeltas = {};
+  Map<InputControl, double> _windowDeltas = {};
 
-  // Controls that crossed the digital threshold at any point since the last
-  // [update], not just at the frame boundary. Without these a tap that both
-  // begins and ends between two frames is invisible to the edge queries: the
-  // boundary comparison sees released before and released after. That is the
-  // dropped-jump bug, and it gets worse the higher the frame rate.
-  final Set<InputControl> _pressedEdges = {};
-  final Set<InputControl> _releasedEdges = {};
+  // The frame model.
+  //
+  // A source publishes when the platform delivers an event, which is between
+  // ticks, not during one. So an edge query cannot be a comparison against the
+  // values as they stand when [update] runs: by then the press has already
+  // landed, and a control that went down a millisecond ago is indistinguishable
+  // from one that has been held for a minute. That is the dropped-jump bug, and
+  // it gets worse the higher the frame rate.
+  //
+  // Instead each [update] closes a window and opens the next, and a closed
+  // window records, per control, the value it opened with, the highest value
+  // reached inside it, and the value it closed with. Every edge query is a
+  // threshold test over those three, which is exact for any
+  // [ButtonBinding.threshold] (an analog trigger included) and catches a tap
+  // that both began and ended inside one window. The maps are swapped rather
+  // than reallocated, so a steady-state frame allocates none of this.
+  Map<InputControl, double> _frameStart = {};
+  Map<InputControl, double> _frameMax = {};
+
+  // The window still accumulating. Its opening values double as the closing
+  // values of the frame being queried, since [update] seeds them from the live
+  // state at the instant the frame opened.
+  Map<InputControl, double> _windowStart = {};
+  Map<InputControl, double> _windowMax = {};
 
   /// Whether action queries return neutral values regardless of device state.
   ///
@@ -102,53 +118,85 @@ final class InputManager implements InputSink, InputControlReader {
     }
     _sources.clear();
     _current.clear();
-    _previous.clear();
-    _deltas.clear();
-    _pressedEdges.clear();
-    _releasedEdges.clear();
+    _frameDeltas.clear();
+    _windowDeltas.clear();
+    _frameStart.clear();
+    _frameMax.clear();
+    _windowStart.clear();
+    _windowMax.clear();
   }
 
   @override
   void publish(InputControl control, double value) {
-    final previous = _current[control] ?? 0;
+    final before = _current[control] ?? 0;
     _current[control] = value;
-    _deltas.remove(control);
-    if (previous < _digitalThreshold && value >= _digitalThreshold) {
-      _pressedEdges.add(control);
-    } else if (previous >= _digitalThreshold && value < _digitalThreshold) {
-      _releasedEdges.add(control);
-    }
+    // A control published as a level is no longer a delta control.
+    _frameDeltas.remove(control);
+    _windowDeltas.remove(control);
+    // Seeded from the value before this publish, so a window that opens with a
+    // control at rest and sees it go down and back up still records the peak.
+    final high = _windowMax[control] ?? before;
+    _windowMax[control] = value > high ? value : high;
   }
 
   @override
   void publishDelta(InputControl control, double value) {
     // Accumulate: several pointer events can land within one frame, and
     // overwriting would drop all but the last.
-    _current[control] = (_current[control] ?? 0) + value;
-    _deltas.add(control);
+    _windowDeltas[control] = (_windowDeltas[control] ?? 0) + value;
   }
 
   @override
-  double readControl(InputControl control) => _current[control] ?? 0;
+  double readControl(InputControl control) =>
+      _frameDeltas[control] ?? _current[control] ?? 0;
 
   /// Advances the frame boundary. Call once per frame, before reading actions.
+  ///
+  /// Everything published since the previous call belongs to the frame this
+  /// call opens, so a press that arrived while the app was between ticks is
+  /// visible to the tick that follows it.
   ///
   /// [deltaSeconds] is accepted for symmetry with the rest of the engine's
   /// tick signatures and for sources that need it later; the manager itself
   /// does not currently integrate over time.
   void update(double deltaSeconds) {
-    _previous
+    // Promote the window that just closed to the frame being queried, and
+    // recycle the outgoing maps as the next window's storage.
+    final start = _frameStart;
+    final high = _frameMax;
+    _frameStart = _windowStart;
+    _frameMax = _windowMax;
+    _windowStart = start
       ..clear()
       ..addAll(_current);
-    for (final control in _deltas) {
-      _current[control] = 0;
-    }
-    _deltas.clear();
-    _pressedEdges.clear();
-    _releasedEdges.clear();
+    _windowMax = high..clear();
+
+    // The movement accumulated since the previous call belongs to the frame
+    // this call opens, and is gone by the one after it.
+    final deltas = _frameDeltas;
+    _frameDeltas = _windowDeltas;
+    _windowDeltas = deltas..clear();
   }
 
-  double _readPrevious(InputControl control) => _previous[control] ?? 0;
+  // The three numbers every edge query is a threshold test over. A control the
+  // closed window never saw reads as flat at the value it opened with.
+  double _openedAt(InputControl control) => _frameStart[control] ?? 0;
+  double _closedAt(InputControl control) =>
+      _windowStart[control] ?? _openedAt(control);
+  double _highOf(InputControl control) =>
+      _frameMax[control] ?? _openedAt(control);
+
+  /// Whether [control] reached [threshold] during the frame having opened
+  /// below it.
+  bool _rose(InputControl control, double threshold) =>
+      _openedAt(control) < threshold && _highOf(control) >= threshold;
+
+  /// Whether [control] closed the frame below [threshold] having been at or
+  /// above it during the frame, which covers a press held in from the previous
+  /// frame and a tap that began and ended inside this one.
+  bool _fell(InputControl control, double threshold) =>
+      _closedAt(control) < threshold &&
+      (_openedAt(control) >= threshold || _highOf(control) >= threshold);
 
   InputAction _require(String name, InputActionKind kind) {
     final action = map[name];
@@ -175,39 +223,30 @@ final class InputManager implements InputSink, InputControlReader {
     return false;
   }
 
-  bool _wasPressedAtBoundary(InputAction action) {
-    for (final binding in action.bindings) {
-      final button = binding as ButtonBinding;
-      if (_readPrevious(button.control) >= button.threshold) return true;
-    }
-    return false;
-  }
-
-  bool _anyControlIn(InputAction action, Set<InputControl> edges) {
-    if (edges.isEmpty) return false;
-    for (final binding in action.bindings) {
-      if (edges.contains((binding as ButtonBinding).control)) return true;
-    }
-    return false;
-  }
-
-  /// Whether the button action [name] went down since the previous [update].
+  /// Whether the button action [name] went down during this frame.
   ///
   /// True for a tap that both began and ended within the frame, so a fast
-  /// press is never dropped.
+  /// press is never dropped, and true on the tick that follows the press
+  /// rather than the one that precedes it.
   bool wasPressedThisFrame(String name) {
     if (!enabled) return false;
     final action = _require(name, InputActionKind.button);
-    if (_anyControlIn(action, _pressedEdges)) return true;
-    return isPressed(name) && !_wasPressedAtBoundary(action);
+    for (final binding in action.bindings) {
+      final button = binding as ButtonBinding;
+      if (_rose(button.control, button.threshold)) return true;
+    }
+    return false;
   }
 
-  /// Whether the button action [name] came up since the previous [update].
+  /// Whether the button action [name] came up during this frame.
   bool wasReleasedThisFrame(String name) {
     if (!enabled) return false;
     final action = _require(name, InputActionKind.button);
-    if (_anyControlIn(action, _releasedEdges)) return true;
-    return !isPressed(name) && _wasPressedAtBoundary(action);
+    for (final binding in action.bindings) {
+      final button = binding as ButtonBinding;
+      if (_fell(button.control, button.threshold)) return true;
+    }
+    return false;
   }
 
   /// The value of the axis action [name].
@@ -259,8 +298,13 @@ final class InputManager implements InputSink, InputControlReader {
   /// does not deserve an action. Prefer actions everywhere else.
   double rawControl(InputControl control) => enabled ? readControl(control) : 0;
 
-  /// Every control that went from released to pressed since the previous
-  /// [update], for a rebinding screen to capture.
-  Iterable<InputControl> get pressedThisFrame =>
-      List<InputControl>.unmodifiable(_pressedEdges);
+  /// Every control that went from released to pressed during this frame, for
+  /// a rebinding screen to capture.
+  ///
+  /// Uses the same 0.5 crossing every device agrees on, since a rebinding
+  /// screen is listening for "any control", not for one action's threshold.
+  Iterable<InputControl> get pressedThisFrame => [
+    for (final control in _frameMax.keys)
+      if (_rose(control, 0.5)) control,
+  ];
 }

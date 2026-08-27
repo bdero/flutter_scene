@@ -5,8 +5,9 @@ import 'package:flutter_scene/input.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('InputScope routes keyboard through focus into the manager',
-      (tester) async {
+  testWidgets('InputScope routes keyboard through focus into the manager', (
+    tester,
+  ) async {
     final input = InputManager();
     addTearDown(input.dispose);
 
@@ -82,6 +83,9 @@ void main() {
 
     await gesture.moveTo(const Offset(120, 100));
     await tester.pump();
+    // A delta belongs to the frame the next update opens, so the tick has to
+    // run before the movement is readable.
+    input.update(0.016);
     expect(input.rawControl(InputControl.mouseDeltaX), closeTo(20, 1e-6));
 
     await gesture.up();
