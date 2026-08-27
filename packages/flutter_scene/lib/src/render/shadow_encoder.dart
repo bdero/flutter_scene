@@ -116,8 +116,8 @@ class ShadowEncoder {
   /// consecutive casters that share one only bind it once.
   gpu.RenderPipeline? _boundPipeline;
   final List<RenderItem> _records = [];
-  // See SceneEncoder._batchScratch: refilled per group, read-only downstream.
-  final List<InstanceDataBatch> _batchScratch = [];
+  // See SceneEncoder._batchPool: refilled per group, read-only downstream.
+  final InstanceDataBatchPool _batchPool = InstanceDataBatchPool();
 
   /// Records [item]'s depth, unless it is hidden, translucent (no shadow),
   /// or culled by the light frustum.
@@ -157,12 +157,11 @@ class ShadowEncoder {
       final first = _records[index];
       final end = depthBatchEnd(_records, index);
       if (end > index + 1) {
-        final batches = _batchScratch..clear();
+        _batchPool.reset();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
-          batches.add(
-            instanceDataBatchFor(_records[batchIndex], indices: null),
-          );
+          _batchPool.addFor(_records[batchIndex], indices: null);
         }
+        final batches = _batchPool.batches;
         _encode(first, batches: batches);
         index = end;
         continue;
@@ -309,13 +308,11 @@ class ShadowEncoder {
       final packedWinding = item.instanceWorldWindingFlipped;
       final cached = packedWorldData == null || packedWinding == null
           ? null
-          : [
-              InstanceDataBatch.cached(
-                packedWorldData: packedWorldData,
-                packedWindingFlipped: packedWinding,
-                attributeFloats: item.instanceAttributeFloats,
-              ),
-            ];
+          : transientInstancePackingScratch.singleCachedBatch(
+              packedWorldData: packedWorldData,
+              packedWindingFlipped: packedWinding,
+              attributeFloats: item.instanceAttributeFloats,
+            );
       final PackedInstances packed = depthVertex == null
           ? (cached == null
                 ? packInstanceData(
