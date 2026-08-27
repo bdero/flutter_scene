@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/fmat/material_registry.dart' show fmatSourcePathOf;
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
@@ -452,6 +453,7 @@ base class SceneEncoder {
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
   static final List<_OpaqueRecord> _opaqueRecordPool = [];
+  static final Set<(Geometry, Material)> _rejectedPairs = {};
   static final List<_TranslucentRecord> _translucentRecordPool = [];
   static const int _recordPoolLimit = 8192;
 
@@ -517,18 +519,38 @@ base class SceneEncoder {
     Material material,
     double fade,
   ) {
+    // A geometry/material pair the pipeline rejected stays skipped; creation
+    // is retried once, not per frame.
+    if (_rejectedPairs.contains((geometry, material))) return;
     // A material with a `vertex { }` block supplies its own vertex shader for
     // this geometry's mesh type; otherwise the engine's standard one is used.
-    final pipeline = resolvePipeline(
-      material.materialVertexShader(geometry.materialVertexVariant) ??
-          geometry.vertexShader,
-      material.fragmentShaderForLighting(_lighting),
-      // A material declaring `instance_attributes` widens the instance-rate
-      // slot, so the pipeline depends on the material as well as the geometry.
-      vertexLayout: geometry.instancedVertexLayoutFor(
-        material.instanceAttributes,
-      ),
-    );
+    final gpu.RenderPipeline pipeline;
+    try {
+      pipeline = resolvePipeline(
+        material.materialVertexShader(geometry.materialVertexVariant) ??
+            geometry.vertexShader,
+        material.fragmentShaderForLighting(_lighting),
+        // A material declaring `instance_attributes` widens the instance-rate
+        // slot, so the pipeline depends on the material as well as the geometry.
+        vertexLayout: geometry.instancedVertexLayoutFor(
+          material.instanceAttributes,
+        ),
+      );
+    } on Exception catch (error) {
+      // A pairing the backend cannot build, most often a custom-attribute
+      // geometry drawn by a material with no vertex stage declaring those
+      // attributes. Throwing out of paint blanks the whole frame, so skip the
+      // draw and say why once.
+      _rejectedPairs.add((geometry, material));
+      debugPrint(
+        'flutter_scene: skipping a draw whose pipeline failed to build. '
+        'geometry ${geometry.runtimeType}'
+        '${geometry.hasCustomAttributes ? ' (custom vertex attributes)' : ''} '
+        'with material ${fmatSourcePathOf(material) ?? material.runtimeType}. '
+        '$error',
+      );
+      return;
+    }
 
     if (material.isOpaque()) {
       _opaqueRecords.add(
