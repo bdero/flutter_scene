@@ -15,6 +15,8 @@ import 'package:scene/schema.dart';
 
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
+import 'package:flutter_scene/src/animation/animator.dart';
+import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
 import 'package:flutter_scene/src/kit/grid/grid_tiles.dart';
@@ -24,7 +26,8 @@ import 'package:flutter_scene/src/kit/interaction/path_follower_component.dart';
 void registerKitComponentCodecs(FsceneComponentRegistry registry) {
   registry
     ..register(PathFollowerCodec())
-    ..register(GridTileLayerCodec());
+    ..register(GridTileLayerCodec())
+    ..register(AnimatorCodec());
 }
 
 /// Codec for [PathFollowerComponent], which walks a node along a route from
@@ -393,4 +396,333 @@ class GridTileLayerCodec extends ComponentCodec {
       },
     );
   }
+}
+
+// --- Animator ---
+
+const _conditionFields = [
+  ComponentPropertyDef(
+    'parameter',
+    ComponentPropertyKind.string,
+    doc: 'The parameter read.',
+  ),
+  ComponentPropertyDef(
+    'comparison',
+    ComponentPropertyKind.string,
+    defaultValue: StringValue('isTrue'),
+    options: ['greater', 'less', 'isTrue', 'isFalse', 'triggered'],
+    doc: 'How the parameter is compared.',
+  ),
+  ComponentPropertyDef(
+    'threshold',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(0),
+    doc: 'The value compared against, for greater and less.',
+  ),
+];
+
+const _stopFields = [
+  ComponentPropertyDef(
+    'at',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(0),
+    doc: 'The parameter value this clip is pinned to.',
+  ),
+  ComponentPropertyDef(
+    'clip',
+    ComponentPropertyKind.string,
+    doc: "The animation's name on the model.",
+  ),
+];
+
+const _stateFields = [
+  ComponentPropertyDef(
+    'name',
+    ComponentPropertyKind.string,
+    doc: 'The state name transitions refer to.',
+  ),
+  ComponentPropertyDef(
+    'clip',
+    ComponentPropertyKind.string,
+    doc: 'The single clip this state plays; omit when it blends.',
+  ),
+  ComponentPropertyDef(
+    'blendParameter',
+    ComponentPropertyKind.string,
+    doc: 'The parameter driving the blend; omit for a single clip.',
+  ),
+  ComponentPropertyDef(
+    'stops',
+    ComponentPropertyKind.list,
+    itemDef: ComponentPropertyDef(
+      'stop',
+      ComponentPropertyKind.object,
+      objectFields: _stopFields,
+    ),
+    doc: 'The clips blended across, for a blend state.',
+  ),
+  ComponentPropertyDef(
+    'loop',
+    ComponentPropertyKind.boolean,
+    defaultValue: BoolValue(true),
+    doc: 'Whether the state\'s clips loop.',
+  ),
+  ComponentPropertyDef(
+    'speed',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1),
+    doc: 'Playback rate applied to the state\'s clips.',
+  ),
+];
+
+const _transitionFields = [
+  ComponentPropertyDef(
+    'from',
+    ComponentPropertyKind.string,
+    doc: 'The state left, or absent to apply in any state.',
+  ),
+  ComponentPropertyDef(
+    'to',
+    ComponentPropertyKind.string,
+    doc: 'The state entered.',
+  ),
+  ComponentPropertyDef(
+    'duration',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(0.2),
+    doc: 'Cross-fade length in seconds. Zero is a cut.',
+  ),
+  ComponentPropertyDef(
+    'conditions',
+    ComponentPropertyKind.list,
+    itemDef: ComponentPropertyDef(
+      'condition',
+      ComponentPropertyKind.object,
+      objectFields: _conditionFields,
+    ),
+    doc: 'Every condition must hold. Empty holds immediately.',
+  ),
+];
+
+String _string(PropertyValue? value, [String fallback = '']) =>
+    value is StringValue ? value.value : fallback;
+
+/// Codec for [AnimatorComponent]: the states, what each plays, and the
+/// transitions between them.
+///
+/// The machine is constructor-only. An [Animator]'s states and transitions do
+/// not change once it is built — a running machine moves between them, it does
+/// not rewrite them — so the whole graph is read back out and rebuilt on load
+/// rather than written property by property.
+class AnimatorCodec extends ComponentCodec {
+  @override
+  String get type => 'animator';
+
+  @override
+  String? get category => 'Animation';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'animator',
+    properties: propertySchema,
+  );
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => const [
+    ComponentPropertyDef(
+      'initial',
+      ComponentPropertyKind.string,
+      doc: 'The state the machine starts in.',
+    ),
+    ComponentPropertyDef(
+      'states',
+      ComponentPropertyKind.list,
+      itemDef: ComponentPropertyDef(
+        'state',
+        ComponentPropertyKind.object,
+        objectFields: _stateFields,
+      ),
+      doc: 'Every state, with what it plays.',
+    ),
+    ComponentPropertyDef(
+      'transitions',
+      ComponentPropertyKind.list,
+      itemDef: ComponentPropertyDef(
+        'transition',
+        ComponentPropertyKind.object,
+        objectFields: _transitionFields,
+      ),
+      doc: 'The transitions, in the order they are tried.',
+    ),
+  ];
+
+  @override
+  Type get componentType => AnimatorComponent;
+
+  @override
+  bool claims(Component component) => component is AnimatorComponent;
+
+  @override
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    final states = <AnimatorState>[];
+    final rawStates = spec.properties['states'];
+    if (rawStates is ListValue) {
+      for (final entry in rawStates.values) {
+        final state = _decodeState(entry);
+        if (state != null) states.add(state);
+      }
+    }
+    if (states.isEmpty) {
+      debugPrint('fscene: animator skipped (it declares no usable state)');
+      return null;
+    }
+
+    final transitions = <AnimatorTransition>[];
+    final rawTransitions = spec.properties['transitions'];
+    if (rawTransitions is ListValue) {
+      for (final entry in rawTransitions.values) {
+        final transition = _decodeTransition(entry);
+        if (transition != null) transitions.add(transition);
+      }
+    }
+
+    final initial = _string(spec.properties['initial']);
+    return AnimatorComponent(
+      Animator(
+        states: states,
+        transitions: transitions,
+        initial: initial.isEmpty ? null : initial,
+      ),
+    );
+  }
+
+  AnimatorState? _decodeState(PropertyValue? value) {
+    if (value is! MapValue) return null;
+    final name = _string(value.values['name']);
+    if (name.isEmpty) return null;
+
+    final blendParameter = _string(value.values['blendParameter']);
+    final rawStops = value.values['stops'];
+    final stops = <BlendStop>[
+      if (rawStops is ListValue)
+        for (final entry in rawStops.values)
+          if (entry is MapValue && _string(entry.values['clip']).isNotEmpty)
+            (
+              at: _num(entry.values['at'], 0),
+              clip: _string(entry.values['clip']),
+            ),
+    ];
+
+    final AnimatorMotion motion;
+    if (blendParameter.isNotEmpty && stops.isNotEmpty) {
+      motion = BlendMotion(blendParameter, stops);
+    } else {
+      final clip = _string(value.values['clip']);
+      // A state that names neither a clip nor a blend has nothing to play,
+      // and a machine that can enter it would freeze there.
+      if (clip.isEmpty) return null;
+      motion = ClipMotion(clip);
+    }
+
+    return AnimatorState(
+      name,
+      motion,
+      loop: switch (value.values['loop']) {
+        BoolValue(value: final v) => v,
+        _ => true,
+      },
+      speed: _num(value.values['speed'], 1),
+    );
+  }
+
+  AnimatorTransition? _decodeTransition(PropertyValue? value) {
+    if (value is! MapValue) return null;
+    final to = _string(value.values['to']);
+    if (to.isEmpty) return null;
+    final from = _string(value.values['from']);
+    final rawConditions = value.values['conditions'];
+    return AnimatorTransition(
+      to: to,
+      from: from.isEmpty ? null : from,
+      duration: _num(value.values['duration'], 0.2),
+      conditions: [
+        if (rawConditions is ListValue)
+          for (final entry in rawConditions.values)
+            if (entry is MapValue &&
+                _string(entry.values['parameter']).isNotEmpty)
+              AnimatorCondition(
+                _string(entry.values['parameter']),
+                _comparison(_string(entry.values['comparison'], 'isTrue')),
+                threshold: _num(entry.values['threshold'], 0),
+              ),
+      ],
+    );
+  }
+
+  static AnimatorComparison _comparison(String name) {
+    for (final value in AnimatorComparison.values) {
+      if (value.name == name) return value;
+    }
+    debugPrint('fscene: unknown animator comparison "$name"; using isTrue');
+    return AnimatorComparison.isTrue;
+  }
+
+  @override
+  ComponentSpec? serialize(Component component, SerializeContext context) {
+    if (component is! AnimatorComponent) return null;
+    final animator = component.animator;
+    return ComponentSpec(
+      type,
+      properties: {
+        'initial': StringValue(animator.initialState),
+        'states': ListValue([
+          for (final state in animator.states) _encodeState(state),
+        ]),
+        if (animator.transitions.isNotEmpty)
+          'transitions': ListValue([
+            for (final transition in animator.transitions)
+              _encodeTransition(transition),
+          ]),
+      },
+    );
+  }
+
+  MapValue _encodeState(AnimatorState state) {
+    final motion = state.motion;
+    return MapValue({
+      'name': StringValue(state.name),
+      if (motion is ClipMotion) 'clip': StringValue(motion.clip),
+      if (motion is BlendMotion) ...{
+        'blendParameter': StringValue(motion.parameter),
+        'stops': ListValue([
+          for (final stop in motion.stops)
+            MapValue({
+              'at': DoubleValue(stop.at),
+              'clip': StringValue(stop.clip),
+            }),
+        ]),
+      },
+      if (!state.loop) 'loop': const BoolValue(false),
+      if (state.speed != 1) 'speed': DoubleValue(state.speed),
+    });
+  }
+
+  MapValue _encodeTransition(AnimatorTransition transition) => MapValue({
+    if (transition.from case final from?) 'from': StringValue(from),
+    'to': StringValue(transition.to),
+    if (transition.duration != 0.2)
+      'duration': DoubleValue(transition.duration),
+    if (transition.conditions.isNotEmpty)
+      'conditions': ListValue([
+        for (final condition in transition.conditions)
+          MapValue({
+            'parameter': StringValue(condition.parameter),
+            'comparison': StringValue(condition.comparison.name),
+            if (condition.threshold != 0)
+              'threshold': DoubleValue(condition.threshold),
+          }),
+      ]),
+  });
 }

@@ -1112,6 +1112,7 @@ IconData componentPickerGlyph(ComponentTypeInfo info) =>
       'Cameras' => Icons.videocam_outlined,
       'Physics' => Icons.animation_outlined,
       'Audio' => Icons.volume_up_outlined,
+      'Animation' => Icons.movie_filter_outlined,
       'Navigation' => Icons.route_outlined,
       'UI' => Icons.widgets_outlined,
       'Scripts' => Icons.code,
