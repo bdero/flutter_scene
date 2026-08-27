@@ -1195,6 +1195,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (label: 'Disc', command: 'createDiscGeometry'),
     (label: 'Torus', command: 'createTorusGeometry'),
     (label: 'Icosphere', command: 'createIcosphereGeometry'),
+    (label: 'Terrain', command: 'createTerrainGeometry'),
   ];
 
   // Adds a sub-scene as a prefab instance node. The source is stored relative

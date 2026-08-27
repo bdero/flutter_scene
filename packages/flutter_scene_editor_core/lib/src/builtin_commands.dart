@@ -1087,6 +1087,54 @@ final createWedgeGeometry = CommandEntry(
   },
 );
 
+final createTerrainGeometry = CommandEntry(
+  name: 'createTerrainGeometry',
+  doc: 'Create a procedural noise terrain geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.number,
+      label: 'Size',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'amplitude',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'seed',
+      type: ParamType.number,
+      label: 'Seed',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One size drives both axes: a square patch is the common case, and an
+    // oblong one is a scale on the node.
+    final size = params['size'] == null ? 64.0 : requireDouble(params, 'size');
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TerrainGeometrySpec(
+        width: size,
+        depth: size,
+        amplitude: params['amplitude'] == null
+            ? 8.0
+            : requireDouble(params, 'amplitude'),
+        seed: params['seed'] == null
+            ? 1337
+            : requireDouble(params, 'seed').round(),
+      ),
+    );
+    return Transaction(
+      name: 'Create terrain',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
 final createMaterial = CommandEntry(
   name: 'createMaterial',
   doc: 'Create a material resource of the given type.',
@@ -3193,6 +3241,7 @@ final List<CommandEntry> builtinCommands = [
   createDiscGeometry,
   createIcosphereGeometry,
   createWedgeGeometry,
+  createTerrainGeometry,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,

@@ -142,6 +142,7 @@ export 'package:scene/scene.dart'
         ComponentSpec,
         ConstantEnvironment,
         CuboidGeometrySpec,
+        TerrainGeometrySpec,
         WedgeGeometrySpec,
         DiscGeometrySpec,
         CylinderGeometrySpec,
