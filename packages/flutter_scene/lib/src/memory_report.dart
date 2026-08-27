@@ -5,6 +5,7 @@ library;
 import 'package:flutter/foundation.dart';
 
 import 'importer/scene_registry.dart';
+import 'surface.dart';
 import 'texture/texture_registry.dart';
 
 /// One category of resident GPU memory.
@@ -34,7 +35,8 @@ class MemoryCategory {
 /// A snapshot of what flutter_scene is keeping resident.
 ///
 /// Covers what the engine's shared caches pin, which is the memory an app has
-/// no other way to see or release. It does not cover resources the app holds
+/// no other way to see or release. Render targets are the exception: they can
+/// be released directly with [releaseTransientRenderTargets]. It does not cover resources the app holds
 /// itself (a [Texture2D] you constructed and kept), and it is a measure of
 /// what is *pinned*, not of what the GPU has actually reclaimed. Dropping the
 /// last reference to a resource makes it collectable, but the reclaim happens
@@ -69,6 +71,15 @@ MemoryReport takeMemoryReport() {
       name: 'textures',
       bytes: textures.bytes,
       count: textures.count,
+    ),
+    // The render graph's transient attachments, across every live surface.
+    // Counted by surface rather than by texture: the pool keys a ring per
+    // attachment shape, so a texture count would say more about the shapes a
+    // frame happened to need than about anything an app can act on.
+    MemoryCategory(
+      name: 'render targets',
+      bytes: Surface.liveTransientBytes,
+      count: Surface.liveCount,
     ),
     // A template's footprint is spread across the geometry, materials, and
     // textures it realized, which are not individually measurable from here
