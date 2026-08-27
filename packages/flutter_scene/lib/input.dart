@@ -28,6 +28,7 @@ export 'src/input/input_binding.dart'
         InputControlReader,
         StickBinding;
 export 'src/input/input_control.dart' show InputControl, InputDevice;
+export 'src/input/input_controllers.dart' show FlyCameraInput, ThirdPersonInput;
 export 'src/input/input_manager.dart' show InputManager;
 export 'src/input/input_map.dart' show InputAction, InputMap;
 export 'src/input/input_scope.dart' show InputScope;

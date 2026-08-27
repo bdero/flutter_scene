@@ -67,7 +67,10 @@ sealed class InputBinding {
     }
 
     return switch (json['type']) {
-      'button' => ButtonBinding(control('control'), threshold: number('threshold', 0.5)),
+      'button' => ButtonBinding(
+        control('control'),
+        threshold: number('threshold', 0.5),
+      ),
       'axis' => AxisBinding(
         negative: control('negative'),
         positive: control('positive'),
@@ -89,7 +92,10 @@ sealed class InputBinding {
         deadzone: number('deadzone', 0.15),
         invertY: json['invertY'] == true,
       ),
-      final other => throw FormatException('Unknown binding type "$other"', json),
+      final other => throw FormatException(
+        'Unknown binding type "$other"',
+        json,
+      ),
     };
   }
 }
@@ -157,11 +163,7 @@ final class AxisBinding extends InputBinding {
 /// (pass -1 to invert) and a magnitude [deadzone].
 /// {@category Picking and input}
 final class AnalogAxisBinding extends InputBinding {
-  const AnalogAxisBinding(
-    this.control, {
-    this.scale = 1,
-    this.deadzone = 0,
-  });
+  const AnalogAxisBinding(this.control, {this.scale = 1, this.deadzone = 0});
 
   final InputControl control;
   final double scale;

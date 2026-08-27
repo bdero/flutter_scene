@@ -79,8 +79,9 @@ final class InputMap extends ChangeNotifier {
   /// before anyone opens a rebinding screen.
   ///
   /// `move` (WASD, +Y forward), `look` (mouse delta), `jump` (space),
-  /// `sprint` (left shift), `interact` (E), `fire` (primary mouse),
-  /// `aim` (secondary mouse), `pause` (escape).
+  /// `sprint` (left shift), `elevate` (Q/E, +1 up, for a fly camera),
+  /// `interact` (E), `fire` (primary mouse), `aim` (secondary mouse),
+  /// `pause` (escape).
   factory InputMap.defaults() => InputMap([
     InputAction('move', InputActionKind.vector2, [
       CompositeVector2Binding(
@@ -110,6 +111,15 @@ final class InputMap extends ChangeNotifier {
     ]),
     InputAction('sprint', InputActionKind.button, [
       ButtonBinding(InputControl.key(LogicalKeyboardKey.shiftLeft)),
+    ]),
+    // Q/E, the fly-camera convention. E is also `interact`: a project flying a
+    // debug camera is not usually also interacting, and `actionsUsing` surfaces
+    // the overlap for a rebinding screen that wants to resolve it.
+    InputAction('elevate', InputActionKind.axis, [
+      AxisBinding(
+        positive: InputControl.key(LogicalKeyboardKey.keyE),
+        negative: InputControl.key(LogicalKeyboardKey.keyQ),
+      ),
     ]),
     InputAction('interact', InputActionKind.button, [
       ButtonBinding(InputControl.key(LogicalKeyboardKey.keyE)),
@@ -151,8 +161,8 @@ final class InputMap extends ChangeNotifier {
 
   /// Every action that reads [control], for showing conflicts in a rebinding
   /// UI before the change is committed.
-  Iterable<InputAction> actionsUsing(InputControl control) => _actions.values
-      .where(
+  Iterable<InputAction> actionsUsing(InputControl control) =>
+      _actions.values.where(
         (action) => action.bindings.any(
           (binding) => binding.controls.contains(control),
         ),

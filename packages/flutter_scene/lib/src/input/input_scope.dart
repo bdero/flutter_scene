@@ -45,9 +45,8 @@ class InputScope extends StatefulWidget {
   final FocusNode? focusNode;
 
   /// The nearest enclosing scope's manager, or null when there is none.
-  static InputManager? maybeOf(BuildContext context) => context
-      .dependOnInheritedWidgetOfExactType<_InputScopeMarker>()
-      ?.manager;
+  static InputManager? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_InputScopeMarker>()?.manager;
 
   /// The nearest enclosing scope's manager. Throws when there is no
   /// [InputScope] above [context].
@@ -72,7 +71,8 @@ class _InputScopeState extends State<InputScope> {
   FocusNode? _ownedFocusNode;
 
   FocusNode get _focusNode =>
-      widget.focusNode ?? (_ownedFocusNode ??= FocusNode(debugLabel: 'InputScope'));
+      widget.focusNode ??
+      (_ownedFocusNode ??= FocusNode(debugLabel: 'InputScope'));
 
   @override
   void initState() {
