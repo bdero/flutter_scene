@@ -16,6 +16,13 @@ export 'src/extractor.dart'
         extractComponents;
 export 'src/generator.dart'
     show codecClassNameFor, generateCodecLibrary, generateProjectRegistrar;
+export 'src/script_template.dart'
+    show
+        componentClassName,
+        componentClassNameError,
+        componentFileName,
+        componentScriptSource,
+        componentTypeTag;
 export 'src/manifest.dart'
     show
         ComponentManifest,
