@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -902,8 +903,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onCopy: _ctrl.copySelection,
                   onPaste: _ctrl.paste,
                   onDelete: _deleteSelected,
-                  onAddCube: _addCube,
-                  onAddSphere: _addSphere,
+                  onAddPrimitive: _addPrimitiveByCommand,
                   onAddPrefab: _addPrefabInstance,
                   onNewComponentScript: widget.projectRootDirectory == null
                       ? null
@@ -1183,13 +1183,19 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
   // Adds a cube: creates geometry, material, node, and attaches a mesh
   // component in four commands, reading back new resource ids after each.
-  Future<void> _addCube() async {
-    await _addPrimitive('createCuboidGeometry');
-  }
-
-  Future<void> _addSphere() async {
-    await _addPrimitive('createSphereGeometry');
-  }
+  // The primitives the engine can build, in the order they appear in the
+  // menu: the ones a level is blocked out with first.
+  static const primitiveCommands = <({String label, String command})>[
+    (label: 'Cube', command: 'createCuboidGeometry'),
+    (label: 'Sphere', command: 'createSphereGeometry'),
+    (label: 'Plane', command: 'createPlaneGeometry'),
+    (label: 'Cylinder', command: 'createCylinderGeometry'),
+    (label: 'Capsule', command: 'createCapsuleGeometry'),
+    (label: 'Wedge', command: 'createWedgeGeometry'),
+    (label: 'Disc', command: 'createDiscGeometry'),
+    (label: 'Torus', command: 'createTorusGeometry'),
+    (label: 'Icosphere', command: 'createIcosphereGeometry'),
+  ];
 
   // Adds a sub-scene as a prefab instance node. The source is stored relative
   // to the open scene's directory when possible (portable), absolute otherwise.
@@ -1227,7 +1233,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _addPrimitive(String geoCommand) async {
+  void _addPrimitiveByCommand(String command) {
+    final primitive = primitiveCommands.firstWhere(
+      (entry) => entry.command == command,
+    );
+    unawaited(_addPrimitive(primitive.command, primitive.label));
+  }
+
+  Future<void> _addPrimitive(String geoCommand, String nodeName) async {
     // Step 1: count resources before geometry creation.
     final beforeGeo = Set.of(_ctrl.document.resources.keys);
     await _ctrl.run(geoCommand);
@@ -1249,9 +1262,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
     // Step 3: create a scene node.
     final beforeNodes = Set.of(_ctrl.document.nodes.keys);
-    await _ctrl.run('createNode', {
-      'name': geoCommand == 'createCuboidGeometry' ? 'Cube' : 'Sphere',
-    });
+    await _ctrl.run('createNode', {'name': nodeName});
     final nodeId = _ctrl.document.nodes.keys.firstWhere(
       (id) => !beforeNodes.contains(id),
     );
@@ -1345,8 +1356,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onCopy,
     required this.onPaste,
     required this.onDelete,
-    required this.onAddCube,
-    required this.onAddSphere,
+    required this.onAddPrimitive,
     required this.onAddPrefab,
     required this.onNewComponentScript,
     required this.onPaletteOpen,
@@ -1389,8 +1399,9 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onPaste;
   final VoidCallback onDelete;
-  final VoidCallback onAddCube;
-  final VoidCallback onAddSphere;
+
+  /// Runs the named `create…Geometry` command and builds a node around it.
+  final ValueChanged<String> onAddPrimitive;
   final VoidCallback onAddPrefab;
 
   /// Writes a new component script into the open project. Null with no
@@ -1545,8 +1556,16 @@ class _EditorMenuBar extends StatelessWidget {
             _Menu(
               label: 'Add',
               items: [
-                _MenuItem(label: 'Cube', onTap: onAddCube),
-                _MenuItem(label: 'Sphere', onTap: onAddSphere),
+                _MenuItem(
+                  label: '3D Object',
+                  children: [
+                    for (final primitive in _EditorShellState.primitiveCommands)
+                      _MenuItem(
+                        label: primitive.label,
+                        onTap: () => onAddPrimitive(primitive.command),
+                      ),
+                  ],
+                ),
                 _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
                 _MenuItem(
                   label: 'Component Script…',
