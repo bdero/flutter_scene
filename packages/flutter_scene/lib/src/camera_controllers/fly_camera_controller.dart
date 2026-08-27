@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera_controllers/camera_controller.dart';
+import 'package:flutter_scene/src/camera_pose.dart';
 
 /// A free-look flying camera: drag to look, WASD to move on the look plane
 /// (strafing ignores pitch so looking down does not drift into the floor),
@@ -156,9 +157,8 @@ class FlyCameraController extends CameraController {
   }
 
   @override
-  void update(double deltaSeconds) {
-    final dt = clampDeltaSeconds(deltaSeconds);
-    final lookR = smoothingResponse(dt);
+  void advance(double deltaSeconds) {
+    final lookR = smoothingResponse(deltaSeconds);
     _yaw += (_yawGoal - _yaw) * lookR;
     _pitch += (_pitchGoal - _pitch) * lookR;
 
@@ -206,10 +206,10 @@ class FlyCameraController extends CameraController {
         speed * (boosted ? boostMultiplier : 1.0) / math.max(length, 1.0),
       );
     }
-    final moveR = settleResponse(movementSmoothing, dt);
+    final moveR = settleResponse(movementSmoothing, deltaSeconds);
     _velocity.addScaled(targetVelocity - _velocity, moveR);
-    if (_velocity.length2 > 1e-12) _position.addScaled(_velocity, dt);
+    if (_velocity.length2 > 1e-12) _position.addScaled(_velocity, deltaSeconds);
 
-    node.lookAtFrom(_position, _position + forward);
+    setPose(CameraPose.lookAt(_position, _position + forward));
   }
 }

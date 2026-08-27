@@ -16,6 +16,19 @@ abstract class CameraProjection {
   /// Returns the projection matrix for a render target of the given
   /// [aspectRatio] (width / height).
   Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter});
+
+  /// Interpolates this lens toward [to] by [weight] in `[0, 1]`, for a
+  /// [CameraDirector] blending between two shots that each specify a lens.
+  ///
+  /// The default snaps at the halfway point, which is the only meaningful
+  /// answer between two projections that do not share a parameterization
+  /// (a perspective lens and an orthographic one describe different things,
+  /// and the matrices between them are not a lens). Projections of the same
+  /// kind override this to interpolate their parameters, so a perspective
+  /// pair gives a smooth focal-length change and an orthographic pair gives
+  /// a smooth zoom.
+  CameraProjection lerpTo(CameraProjection to, double weight) =>
+      weight < 0.5 ? this : to;
 }
 
 /// A standard pinhole perspective projection.
@@ -42,6 +55,89 @@ class PerspectiveProjection extends CameraProjection {
   @override
   Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
       _matrix4Perspective(fovRadiansY, aspectRatio, near, far, jitter: jitter);
+
+  /// Interpolates the field of view and the clip range toward another
+  /// perspective lens, producing the focal-length ramp behind a dolly zoom.
+  /// Falls back to the snapping default against any other kind of lens.
+  @override
+  CameraProjection lerpTo(CameraProjection to, double weight) {
+    if (to is! PerspectiveProjection) return super.lerpTo(to, weight);
+    double mix(double a, double b) => a + (b - a) * weight;
+    return PerspectiveProjection(
+      fovRadiansY: mix(fovRadiansY, to.fovRadiansY),
+      near: mix(near, to.near),
+      far: mix(far, to.far),
+    );
+  }
+}
+
+/// A parallel projection: geometry keeps its size regardless of distance and
+/// parallel lines stay parallel.
+///
+/// This is the lens for strategy, isometric, top-down, and 2.5D games, and
+/// for CAD-style technical views. Unlike a perspective lens it has no field
+/// of view; the view is a box, and [height] (the vertical extent in world
+/// units) is what "zooming" changes. The horizontal extent follows from the
+/// render target's aspect ratio.
+///
+/// **Effects that reconstruct a view ray from depth do not run under an
+/// orthographic lens**: shadows, GTAO, screen-space reflections, screen-space
+/// global illumination, depth of field, god rays, TAA, and planar
+/// reflections all require a perspective projection and are skipped rather
+/// than rendered wrongly. Bloom, tone mapping, LUT color grading, fog, FXAA,
+/// and SMAA are unaffected, as is everything in the forward pass, so an
+/// orthographic scene still lights and shades normally.
+///
+/// Unlike a perspective lens, [near] may be zero or negative: there is no
+/// division by view-space depth, so pulling the near plane behind the eye
+/// simply widens the depth range instead of degenerating it.
+/// {@category Scene graph}
+class OrthographicProjection extends CameraProjection {
+  /// Creates an orthographic lens showing [height] world units vertically
+  /// over a [near]..[far] depth range.
+  OrthographicProjection({
+    this.height = 10.0,
+    this.near = 0.1,
+    this.far = 1000.0,
+  });
+
+  /// The vertical extent of the view, in world units. Halving this doubles
+  /// the apparent size of everything, the orthographic equivalent of zoom.
+  double height;
+
+  /// Distance to the near clipping plane. May be zero or negative.
+  double near;
+
+  /// Distance to the far clipping plane. Must be greater than [near].
+  double far;
+
+  /// The horizontal extent of the view in world units, for a target of the
+  /// given [aspectRatio] (width / height).
+  double widthFor(double aspectRatio) => height * aspectRatio;
+
+  @override
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
+      _matrix4Orthographic(
+        height * aspectRatio,
+        height,
+        near,
+        far,
+        jitter: jitter,
+      );
+
+  /// Interpolates the view size and the clip range toward another
+  /// orthographic lens, producing a smooth zoom. Falls back to the snapping
+  /// default against any other kind of lens.
+  @override
+  CameraProjection lerpTo(CameraProjection to, double weight) {
+    if (to is! OrthographicProjection) return super.lerpTo(to, weight);
+    double mix(double a, double b) => a + (b - a) * weight;
+    return OrthographicProjection(
+      height: mix(height, to.height),
+      near: mix(near, to.near),
+      far: mix(far, to.far),
+    );
+  }
 }
 
 /// A view onto a scene: a world-space eye [position] and orientation paired
@@ -312,6 +408,147 @@ class PerspectiveCamera extends Camera {
     near: fovNear,
     far: fovFar,
   );
+
+  @override
+  Vector3 get forward => (target - position).normalized();
+
+  @override
+  Matrix4 getViewMatrix() => _matrix4LookAt(position, target, up);
+}
+
+Matrix4 _matrix4Orthographic(
+  double width,
+  double height,
+  double zNear,
+  double zFar, {
+  Vector2? jitter,
+}) {
+  assert(
+    width > 0 && height > 0,
+    'The orthographic view box is degenerate (width $width, height $height). '
+    'OrthographicProjection.height must be greater than 0, and the render '
+    'target must have a positive aspect ratio.',
+  );
+  assert(
+    zFar > zNear,
+    'The camera clip range is degenerate (near $zNear, far $zFar). far must be '
+    'greater than near, or the depth mapping collapses and the scene renders '
+    'empty or Z-fights. Unlike a perspective lens, an orthographic near plane '
+    'may be zero or negative.',
+  );
+  // Matches the engine's clip convention (the perspective path above): +Z is
+  // the view direction and depth maps onto [0, 1]. With w fixed at 1, jitter
+  // is already in NDC units and lands in the translation column.
+  final depth = zFar - zNear;
+  return Matrix4(
+    2.0 / width,
+    0.0,
+    0.0,
+    0.0, //
+    0.0,
+    2.0 / height,
+    0.0,
+    0.0, //
+    0.0,
+    0.0,
+    1.0 / depth,
+    0.0, //
+    jitter?.x ?? 0.0,
+    jitter?.y ?? 0.0,
+    -zNear / depth,
+    1.0, //
+  );
+}
+
+/// A camera with a parallel ([OrthographicProjection]) lens, the orthographic
+/// counterpart of [PerspectiveCamera].
+///
+/// Defined by an eye [position], a look-at [target], an [up] direction, the
+/// vertical view [height] in world units, and a [near]/[far] clip range.
+/// Zooming changes [height] rather than a field of view or the distance to
+/// the subject.
+///
+/// For a classic isometric view, look along `(1, -1, 1)` from a distance:
+///
+/// ```dart
+/// final camera = OrthographicCamera(
+///   position: Vector3(20, 20, -20),
+///   target: Vector3.zero(),
+///   height: 12,
+/// );
+/// ```
+///
+/// See [OrthographicProjection] for the post-processing effects a parallel
+/// lens cannot support.
+/// {@category Scene graph}
+class OrthographicCamera extends Camera {
+  /// Creates an [OrthographicCamera]. Omitting everything yields an eye at
+  /// `(0, 0, -5)` looking at the origin with `+Y` up, showing 10 world units
+  /// vertically.
+  OrthographicCamera({
+    this.height = 10.0,
+    Vector3? position,
+    Vector3? target,
+    Vector3? up,
+    this.near = 0.1,
+    this.far = 1000.0,
+  }) : position = position ?? Vector3(0, 0, -5),
+       target = target ?? Vector3(0, 0, 0),
+       up = up ?? Vector3(0, 1, 0);
+
+  /// Places a camera to frame [bounds] so it fills the view.
+  ///
+  /// The camera looks at the bounds' center from [direction] (the offset from
+  /// the center toward the eye; defaults to `(0, 0, -1)`). Because a parallel
+  /// lens does not shrink with distance, the fit comes entirely from
+  /// [height]: it is set to the bounds' bounding-sphere diameter times
+  /// [margin]. The eye is pulled back far enough that the whole model stays
+  /// inside the clip range on any view direction.
+  factory OrthographicCamera.framing(
+    Aabb3 bounds, {
+    Vector3? direction,
+    Vector3? up,
+    double margin = 1.1,
+  }) {
+    final center = bounds.center;
+    final radius = max((bounds.max - bounds.min).length * 0.5, 1e-4);
+    final distance = radius * 4;
+    final dir = (direction ?? Vector3(0, 0, -1)).normalized();
+    return OrthographicCamera(
+      height: radius * 2 * margin,
+      position: center + dir * distance,
+      target: center,
+      up: up,
+      near: distance - radius * 2,
+      far: distance + radius * 2,
+    );
+  }
+
+  /// The vertical extent of the view, in world units.
+  double height;
+
+  /// World-space position of the camera (the eye point).
+  @override
+  Vector3 position;
+
+  /// World-space point the camera is looking at.
+  Vector3 target;
+
+  /// World-space "up" direction used to orient the camera around the view
+  /// vector. Typically `Vector3(0, 1, 0)`; for a straight top-down view use
+  /// `Vector3(0, 0, 1)`, since up may not be parallel to the view direction.
+  @override
+  Vector3 up;
+
+  /// Distance to the near clipping plane. May be zero or negative.
+  double near;
+
+  /// Distance to the far clipping plane. Must be greater than [near].
+  double far;
+
+  @override
+  CameraProjection get projection =>
+      OrthographicProjection(height: height, near: near, far: far);
 
   @override
   Vector3 get forward => (target - position).normalized();

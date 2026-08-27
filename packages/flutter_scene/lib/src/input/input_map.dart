@@ -180,6 +180,85 @@ final class InputMap extends ChangeNotifier {
     ]),
   ]);
 
+  /// The conventional action set for an overhead game: a strategy title, a
+  /// city builder, a tactics grid, a top-down shooter.
+  ///
+  /// It is a different set rather than an addition to [InputMap.defaults]
+  /// because the verbs genuinely differ. An overhead game has no jump and no
+  /// sprint; it has a camera that rotates and zooms on its own controls, and
+  /// a pointer that selects and commands. `move` keeps its name and its
+  /// bindings so a shared `RtsCameraController.applyInput` and any code
+  /// reading `move` work across both maps.
+  ///
+  ///  * `move` — pan the camera (WASD, arrows, left stick).
+  ///  * `rotate` — turn the camera (Q/E, shoulder buttons).
+  ///  * `zoom` — the wheel, or the right stick's vertical axis.
+  ///  * `select` / `command` — primary and secondary pointer buttons.
+  ///  * `addToSelection` — shift, for extending a selection.
+  ///  * `pause` — escape.
+  factory InputMap.strategyDefaults() => InputMap([
+    InputAction('move', InputActionKind.vector2, [
+      CompositeVector2Binding(
+        up: InputControl.key(LogicalKeyboardKey.keyW),
+        down: InputControl.key(LogicalKeyboardKey.keyS),
+        left: InputControl.key(LogicalKeyboardKey.keyA),
+        right: InputControl.key(LogicalKeyboardKey.keyD),
+      ),
+      CompositeVector2Binding(
+        up: InputControl.key(LogicalKeyboardKey.arrowUp),
+        down: InputControl.key(LogicalKeyboardKey.arrowDown),
+        left: InputControl.key(LogicalKeyboardKey.arrowLeft),
+        right: InputControl.key(LogicalKeyboardKey.arrowRight),
+      ),
+      StickBinding(
+        x: InputControl.gamepad(GamepadAxis.leftX),
+        y: InputControl.gamepad(GamepadAxis.leftY),
+        invertY: true,
+      ),
+    ]),
+    InputAction('rotate', InputActionKind.axis, [
+      AxisBinding(
+        positive: InputControl.key(LogicalKeyboardKey.keyE),
+        negative: InputControl.key(LogicalKeyboardKey.keyQ),
+      ),
+      AxisBinding(
+        positive: InputControl.gamepad(GamepadButton.rightShoulder),
+        negative: InputControl.gamepad(GamepadButton.leftShoulder),
+      ),
+    ]),
+    InputAction('zoom', InputActionKind.axis, [
+      // The wheel reports whole notches, not a -1..1 range, so it is scaled
+      // down to something a per-frame zoom step can use directly. Negated
+      // because scrolling down (positive) zooms out.
+      const AnalogAxisBinding(InputControl.mouseScroll, scale: -1 / 120),
+      AxisBinding(
+        positive: InputControl.key(LogicalKeyboardKey.equal),
+        negative: InputControl.key(LogicalKeyboardKey.minus),
+      ),
+      AnalogAxisBinding(
+        InputControl.gamepad(GamepadAxis.rightY),
+        scale: -1,
+        deadzone: 0.15,
+      ),
+    ]),
+    InputAction('select', InputActionKind.button, [
+      const ButtonBinding(InputControl.mouseButton(1)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.south)),
+    ]),
+    InputAction('command', InputActionKind.button, [
+      const ButtonBinding(InputControl.mouseButton(2)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.east)),
+    ]),
+    InputAction('addToSelection', InputActionKind.button, [
+      ButtonBinding(InputControl.key(LogicalKeyboardKey.shiftLeft)),
+      ButtonBinding(InputControl.key(LogicalKeyboardKey.shiftRight)),
+    ]),
+    InputAction('pause', InputActionKind.button, [
+      ButtonBinding(InputControl.key(LogicalKeyboardKey.escape)),
+      ButtonBinding(InputControl.gamepad(GamepadButton.start)),
+    ]),
+  ]);
+
   final Map<String, InputAction> _actions = {};
 
   /// Every registered action, in insertion order.

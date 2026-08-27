@@ -146,14 +146,33 @@ export 'src/asset_helpers.dart'
         imageFromAsset,
         imageFromBytes;
 export 'src/camera.dart'
-    show Camera, CameraProjection, PerspectiveCamera, PerspectiveProjection;
-export 'src/camera_controllers/camera_controller.dart' show CameraController;
+    show
+        Camera,
+        CameraProjection,
+        OrthographicCamera,
+        OrthographicProjection,
+        PerspectiveCamera,
+        PerspectiveProjection;
+export 'src/camera_controllers/camera_controller.dart'
+    show CameraController, CameraDirectorBinding;
+export 'src/camera_controllers/camera_director.dart'
+    show CameraBlend, CameraDirector;
+export 'src/camera_controllers/camera_path.dart' show CameraPath;
+export 'src/camera_controllers/camera_sequence.dart'
+    show CameraSequence, CameraShot;
+export 'src/camera_controllers/dolly_camera_controller.dart'
+    show DollyCameraController;
+export 'src/camera_controllers/first_person_camera_controller.dart'
+    show FirstPersonCameraController, HeadBob;
 export 'src/camera_controllers/fly_camera_controller.dart'
     show FlyCameraController;
 export 'src/camera_controllers/follow_camera_controller.dart'
     show FollowCameraController;
 export 'src/camera_controllers/orbit_camera_controller.dart'
     show OrbitCameraController;
+export 'src/camera_controllers/rts_camera_controller.dart'
+    show EdgeScroll, RtsCameraController;
+export 'src/camera_pose.dart' show CameraPose;
 export 'src/components/camera_component.dart' show CameraComponent, NodeCamera;
 export 'src/components/component.dart' show Component;
 export 'src/components/directional_light_component.dart'
