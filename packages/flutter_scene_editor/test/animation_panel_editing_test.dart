@@ -149,6 +149,36 @@ void main() {
     // All three properties got the playhead pose, so they exist too.
     expect(channelOf(controller, animationId, nodeId, 'rotation'), isNotNull);
     expect(channelOf(controller, animationId, nodeId, 'scale'), isNotNull);
+
+    // Edge keys keep their pose: a deliberate lift at t=1 survives Keying
+    // elsewhere on the timeline.
+    await controller.run('setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': nodeId.toToken(),
+      'property': 'translation',
+      'time': 1.0,
+      'translation': {'x': 0.0, 'y': 9.0, 'z': 0.0},
+    });
+    controller.seekPreview(0.5);
+    await tester.pump();
+    await tester.tap(find.text('Key'));
+    await tester.pumpAndSettle();
+
+    final channel = channelOf(
+      controller,
+      animationId,
+      nodeId,
+      'translation',
+    )!;
+    final bytes =
+        controller.document.payload(channel.keyframes)!.bytes!;
+    final values = bytes.buffer.asFloat32List(
+      bytes.offsetInBytes,
+      bytes.lengthInBytes ~/ 4,
+    );
+    expect(values[values.length - 3], closeTo(9.0, 1e-4));
+    expect(values[values.length - 2], closeTo(0.0, 1e-4));
+    expect(values[values.length - 1], closeTo(0.0, 1e-4));
   });
 
   testWidgets('the lane ✕ removes the channel from the timeline', (tester) async {

@@ -168,9 +168,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
 
   /// Captures the selected nodes' current transforms at the playhead.
   ///
-  /// Pressing Key also anchors the pose at the timeline's start and end:
-  /// those two edge keys keep every playthrough starting and ending on a
-  /// captured crystal instead of dead time, whatever moment was keyed last.
+  /// Pressing Key also adds crystals at the timeline's start and end where
+  /// none exist, so every playthrough starts and ends on a captured key —
+  /// without touching edge keys the author placed deliberately.
   Future<void> _keySelection(AnimationProperty? property) async {
     final id = _animationId;
     if (id == null) return;
@@ -200,28 +200,62 @@ class _AnimationPanelState extends State<AnimationPanel> {
     if (property == null) await _ensureEdgeKeys(id, time);
   }
 
-  /// Keys the selected nodes' current pose at t = 0 and at the clip's end
-  /// (skipping whichever edge already holds the playhead's fresh keys), so
-  /// the timeline always shows a crystal at its start and end after Keying.
+  /// Adds the missing edge crystals: a key at t = 0 and at the clip's end
+  /// for every selected node's translation, rotation, and scale path that
+  /// does not have one yet.
+  ///
+  /// Additive on purpose — an edge key the author placed deliberately keeps
+  /// its pose. Keying mid-clip must never rewrite the timeline's endpoints,
+  /// or posing at t = 0.5 would clobber a carefully keyed start pose.
   Future<void> _ensureEdgeKeys(LocalId id, double playhead) async {
-    final nodeIds = [
-      for (final nodeId in _controller.selection.ids)
-        if (_controller.document.nodes.containsKey(nodeId))
-          nodeId.toToken(),
-    ];
-    if (nodeIds.isEmpty) return;
+    final spec = _controller.document.animations[id];
+    if (spec == null) return;
+    bool hasKeyAt(AnimationChannelSpec channel, double time) =>
+        channelTimes(_controller.document, channel).any(
+          (t) => (t - time).abs() <= 1e-3,
+        );
+
+    // Plain node authoring matches a path's first channel regardless of its
+    // stored binding name (the same rule setAnimationKeyframe applies), so
+    // panel-built channels are found here after undos and renames too.
+    AnimationChannelSpec? channelFor(
+      LocalId nodeId,
+      AnimationProperty property,
+    ) {
+      for (final channel in spec.channels) {
+        if (channel.target == nodeId && channel.property == property) {
+          return channel;
+        }
+      }
+      return null;
+    }
+
     final end = _controller.previewDuration(id);
-    for (final edge in {0.0, if (end > 1e-4) end}) {
-      // An edge under the playhead is already keyed by the capture above.
-      if ((edge - playhead).abs() <= 1e-3) continue;
-      try {
-        await _controller.run('keyPose', {
-          'animationId': id.toToken(),
-          'time': edge,
-          'nodeIds': nodeIds,
-        });
-      } on Exception catch (error) {
-        _showError(error);
+    final edges = {0.0, if (end > 1e-4) end};
+    for (final nodeId in _controller.selection.ids) {
+      if (!_controller.document.nodes.containsKey(nodeId)) continue;
+      for (final property in const [
+        AnimationProperty.translation,
+        AnimationProperty.rotation,
+        AnimationProperty.scale,
+      ]) {
+        for (final edge in edges) {
+          // An edge under the playhead is already keyed by the capture
+          // above; an edge already carrying a crystal stays untouched.
+          if ((edge - playhead).abs() <= 1e-3) continue;
+          final channel = channelFor(nodeId, property);
+          if (channel != null && hasKeyAt(channel, edge)) continue;
+          try {
+            await _controller.run('setAnimationKeyframe', {
+              'animationId': id.toToken(),
+              'nodeId': nodeId.toToken(),
+              'property': property.name,
+              'time': edge,
+            });
+          } on Exception catch (error) {
+            _showError(error);
+          }
+        }
       }
     }
   }
@@ -815,9 +849,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
           _PanelTip(
             message:
                 'Key the pose: captures translation, rotation, and scale of '
-                'every selected node at the playhead — and anchors the pose '
-                'at the timeline\'s start and end too, so every playthrough '
-                'begins and ends on a captured key.\n\n'
+                'every selected node at the playhead — and adds crystals at '
+                'the timeline\'s start and end where none exist, so every '
+                'playthrough begins and ends on a captured key. Existing '
+                'edge keys keep their pose.\n\n'
                 'How to use: select a node in the Outliner → drag the '
                 'playhead to a time → move/rotate/scale it with the viewport '
                 'gizmo → press Key. Move the playhead, pose again, press Key '

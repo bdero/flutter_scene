@@ -769,13 +769,13 @@ class EditorController extends ChangeNotifier
         document.nodes[entry.key]?.transform ?? entry.value,
       );
     }
+    // Prefab members (bones inside imported instances) are restored from
+    // their captured live transforms; they have no document node to look up.
+    for (final entry in _prePreviewMemberTransforms.entries) {
+      applyTransformSpec(entry.key, entry.value);
+    }
     if (!keepCaptures) {
       _prePreviewTransforms.clear();
-      // Prefab members (bones inside imported instances) are restored from
-      // their captured live transforms; they have no document node to look up.
-      for (final entry in _prePreviewMemberTransforms.entries) {
-        applyTransformSpec(entry.key, entry.value);
-      }
       _prePreviewMemberTransforms.clear();
     }
   }
