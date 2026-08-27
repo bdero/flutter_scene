@@ -70,7 +70,74 @@ int depthBatchEnd(List<RenderItem> records, int start) {
   return end;
 }
 
+/// Recycles [InstanceDataBatch] objects across frames.
+///
+/// A batch describes where one group's instance data lives and is read, never
+/// retained, by the pack call it is handed to. Because that lifetime ends
+/// inside the same flush that created it, the encoders refill a fixed set of
+/// batch objects rather than allocating one per batched group per frame, which
+/// on a scene with many batched runs was one of the larger per-frame
+/// allocation sources left in the encoders.
+///
+/// Call [reset] before filling, then [addFor] once per group; [batches] is the
+/// live list, valid until the next [reset].
+final class InstanceDataBatchPool {
+  final List<InstanceDataBatch> _live = [];
+  final List<InstanceDataBatch> _spare = [];
+
+  /// The batches filled since the last [reset], in fill order.
+  List<InstanceDataBatch> get batches => _live;
+
+  /// Returns every live batch to the free list. The batches themselves are
+  /// kept, so a steady-state frame allocates none.
+  void reset() {
+    _spare.addAll(_live);
+    _live.clear();
+  }
+
+  /// Fills the next batch from [item], the pooled spelling of
+  /// [instanceDataBatchFor].
+  void addFor(
+    RenderItem item, {
+    required List<int>? indices,
+    bool? windingFlipped,
+  }) {
+    final batch = _spare.isEmpty
+        ? InstanceDataBatch.pooled()
+        : _spare.removeLast();
+    _live.add(batch);
+    fillInstanceDataBatch(
+      batch,
+      item,
+      indices: indices,
+      windingFlipped: windingFlipped,
+    );
+  }
+}
+
+/// Describes [item]'s instance data in a freshly allocated batch.
+///
+/// The encoders use [InstanceDataBatchPool.addFor] instead, which fills a
+/// recycled batch; this spelling remains for one-off callers.
 InstanceDataBatch instanceDataBatchFor(
+  RenderItem item, {
+  required List<int>? indices,
+  bool? windingFlipped,
+}) {
+  final batch = InstanceDataBatch.pooled();
+  fillInstanceDataBatch(
+    batch,
+    item,
+    indices: indices,
+    windingFlipped: windingFlipped,
+  );
+  return batch;
+}
+
+/// Points [batch] at [item]'s instance data, overwriting every field so a
+/// recycled batch carries nothing from its previous group.
+void fillInstanceDataBatch(
+  InstanceDataBatch batch,
   RenderItem item, {
   required List<int>? indices,
   bool? windingFlipped,
@@ -78,10 +145,11 @@ InstanceDataBatch instanceDataBatchFor(
   final resolvedWinding = windingFlipped ?? item.windingFlipped;
   final instances = item.instanceTransforms;
   if (instances == null) {
-    return InstanceDataBatch.single(
+    batch.setSingle(
       nodeTransform: item.worldTransform,
       nodeWindingFlipped: resolvedWinding,
     );
+    return;
   }
   final packedWorldData = item.instanceWorldData;
   final packedWinding = item.instanceWorldWindingFlipped;
@@ -92,14 +160,15 @@ InstanceDataBatch instanceDataBatchFor(
   if (resolvedWinding == item.windingFlipped &&
       packedWorldData != null &&
       packedWinding != null) {
-    return InstanceDataBatch.cached(
+    batch.setCached(
       packedWorldData: packedWorldData,
       packedWindingFlipped: packedWinding,
       indices: indices,
       attributeFloats: attributeFloats,
     );
+    return;
   }
-  return InstanceDataBatch(
+  batch.setInstances(
     nodeTransform: item.worldTransform,
     instances: instances,
     colors: item.instanceColors!,

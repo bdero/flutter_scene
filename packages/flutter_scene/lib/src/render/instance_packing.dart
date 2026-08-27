@@ -33,6 +33,55 @@ class InstancePackingScratch {
     return Uint8List.sublistView(_batchWinding, 0, length);
   }
 
+  // A one-element batch list, for the callers that pack a single group rather
+  // than a batched run. Like the buffers above it is refilled and consumed
+  // within one pack call, so one instance serves every synchronous encoder.
+  late final List<InstanceDataBatch> _singleBatch = [
+    InstanceDataBatch.pooled(),
+  ];
+
+  /// A one-element batch list filled from world data a mesh already packed.
+  /// Valid until the next call to either single-batch method.
+  List<InstanceDataBatch> singleCachedBatch({
+    required Float32List packedWorldData,
+    required Uint8List packedWindingFlipped,
+    List<int>? indices,
+    int attributeFloats = 0,
+  }) {
+    _singleBatch[0].setCached(
+      packedWorldData: packedWorldData,
+      packedWindingFlipped: packedWindingFlipped,
+      indices: indices,
+      attributeFloats: attributeFloats,
+    );
+    return _singleBatch;
+  }
+
+  /// A one-element batch list filled from a mesh's own transform and color
+  /// lists. Valid until the next call to either single-batch method.
+  List<InstanceDataBatch> singleInstanceBatch({
+    required Matrix4 nodeTransform,
+    required List<Matrix4> instances,
+    required List<Vector4> colors,
+    required bool nodeWindingFlipped,
+    List<bool>? instanceWindingFlipped,
+    List<int>? indices,
+    Float32List? attributeData,
+    int attributeFloats = 0,
+  }) {
+    _singleBatch[0].setInstances(
+      nodeTransform: nodeTransform,
+      instances: instances,
+      colors: colors,
+      nodeWindingFlipped: nodeWindingFlipped,
+      instanceWindingFlipped: instanceWindingFlipped,
+      indices: indices,
+      attributeData: attributeData,
+      attributeFloats: attributeFloats,
+    );
+    return _singleBatch;
+  }
+
   static Float32List _growFloat(Float32List current, int length) =>
       current.length >= length ? current : Float32List(_capacity(length));
 
@@ -116,87 +165,163 @@ class PackedInstanceData implements PackedInstances {
 }
 
 /// One retained instance group consumed by [packInstanceDataBatches].
+///
+/// A batch is a short-lived description of where one group's instance data
+/// lives; it owns none of that data and is read, never retained, by the pack
+/// call it is handed to. That lifetime is what lets the encoders recycle
+/// batches through an `InstanceDataBatchPool` instead of allocating one per
+/// group per frame, so the fields are mutable and each `set` method below
+/// rewrites *every* one of them. A `set` that left a field alone would leak
+/// the previous occupant's state into the next group.
 class InstanceDataBatch {
-  InstanceDataBatch({
-    required this.nodeTransform,
+  /// An empty batch, for a pool to fill through one of the `set` methods.
+  ///
+  /// The named constructors below are the allocating spellings, for callers
+  /// that pack a group once rather than every frame.
+  InstanceDataBatch.pooled();
+
+  factory InstanceDataBatch({
+    required Matrix4 nodeTransform,
     required List<Matrix4> instances,
     required List<Vector4> colors,
-    required this.nodeWindingFlipped,
-    this.instanceWindingFlipped,
-    this.indices,
-    this.attributeData,
-    this.attributeFloats = 0,
-  }) : instances = instances,
-       colors = colors,
-       packedWorldData = null,
-       packedWindingFlipped = null,
-       assert(instances.length == colors.length),
-       assert(
-         instanceWindingFlipped == null ||
-             instanceWindingFlipped.length == instances.length,
-       ),
-       assert(indices == null || indices.length <= instances.length),
-       assert(attributeFloats == 0 || attributeData != null);
+    required bool nodeWindingFlipped,
+    List<bool>? instanceWindingFlipped,
+    List<int>? indices,
+    Float32List? attributeData,
+    int attributeFloats = 0,
+  }) => InstanceDataBatch.pooled()
+    ..setInstances(
+      nodeTransform: nodeTransform,
+      instances: instances,
+      colors: colors,
+      nodeWindingFlipped: nodeWindingFlipped,
+      instanceWindingFlipped: instanceWindingFlipped,
+      indices: indices,
+      attributeData: attributeData,
+      attributeFloats: attributeFloats,
+    );
 
-  InstanceDataBatch.single({
-    required this.nodeTransform,
-    required this.nodeWindingFlipped,
-  }) : instances = null,
-       colors = null,
-       packedWorldData = null,
-       packedWindingFlipped = null,
-       instanceWindingFlipped = null,
-       indices = null,
-       attributeData = null,
-       attributeFloats = 0;
+  factory InstanceDataBatch.single({
+    required Matrix4 nodeTransform,
+    required bool nodeWindingFlipped,
+  }) => InstanceDataBatch.pooled()
+    ..setSingle(
+      nodeTransform: nodeTransform,
+      nodeWindingFlipped: nodeWindingFlipped,
+    );
 
-  InstanceDataBatch.cached({
+  factory InstanceDataBatch.cached({
     required Float32List packedWorldData,
     required Uint8List packedWindingFlipped,
-    this.indices,
-    this.attributeFloats = 0,
-  }) : nodeTransform = _identity,
-       instances = null,
-       colors = null,
-       packedWorldData = packedWorldData,
-       packedWindingFlipped = packedWindingFlipped,
-       nodeWindingFlipped = false,
-       instanceWindingFlipped = null,
-       attributeData = null,
-       assert(
-         packedWorldData.length % (kInstanceRecordFloats + attributeFloats) ==
-             0,
-       ),
-       assert(
-         packedWindingFlipped.length ==
-             packedWorldData.length ~/
-                 (kInstanceRecordFloats + attributeFloats),
-       ),
-       assert(
-         indices == null ||
-             indices.length <=
-                 packedWorldData.length ~/
-                     (kInstanceRecordFloats + attributeFloats),
-       );
+    List<int>? indices,
+    int attributeFloats = 0,
+  }) => InstanceDataBatch.pooled()
+    ..setCached(
+      packedWorldData: packedWorldData,
+      packedWindingFlipped: packedWindingFlipped,
+      indices: indices,
+      attributeFloats: attributeFloats,
+    );
 
   static final Matrix4 _identity = Matrix4.identity();
 
-  final Matrix4 nodeTransform;
-  final List<Matrix4>? instances;
-  final List<Vector4>? colors;
-  final Float32List? packedWorldData;
-  final Uint8List? packedWindingFlipped;
-  final bool nodeWindingFlipped;
-  final List<bool>? instanceWindingFlipped;
-  final List<int>? indices;
+  Matrix4 nodeTransform = _identity;
+  List<Matrix4>? instances;
+  List<Vector4>? colors;
+  Float32List? packedWorldData;
+  Uint8List? packedWindingFlipped;
+  bool nodeWindingFlipped = false;
+  List<bool>? instanceWindingFlipped;
+  List<int>? indices;
 
   /// Per-instance custom attribute floats for the unpacked path,
   /// [attributeFloats] per instance in declaration order. Null when the batch
   /// carries none.
-  final Float32List? attributeData;
+  Float32List? attributeData;
 
   /// Custom attribute floats this batch's source records carry.
-  final int attributeFloats;
+  int attributeFloats = 0;
+
+  /// Fills this batch with one node-transform instance.
+  void setSingle({
+    required Matrix4 nodeTransform,
+    required bool nodeWindingFlipped,
+  }) {
+    this.nodeTransform = nodeTransform;
+    this.nodeWindingFlipped = nodeWindingFlipped;
+    instances = null;
+    colors = null;
+    packedWorldData = null;
+    packedWindingFlipped = null;
+    instanceWindingFlipped = null;
+    indices = null;
+    attributeData = null;
+    attributeFloats = 0;
+  }
+
+  /// Fills this batch from a mesh's own transform and color lists, which the
+  /// pack call composes with [nodeTransform] as it copies.
+  void setInstances({
+    required Matrix4 nodeTransform,
+    required List<Matrix4> instances,
+    required List<Vector4> colors,
+    required bool nodeWindingFlipped,
+    List<bool>? instanceWindingFlipped,
+    List<int>? indices,
+    Float32List? attributeData,
+    int attributeFloats = 0,
+  }) {
+    assert(instances.length == colors.length);
+    assert(
+      instanceWindingFlipped == null ||
+          instanceWindingFlipped.length == instances.length,
+    );
+    assert(indices == null || indices.length <= instances.length);
+    assert(attributeFloats == 0 || attributeData != null);
+    this.nodeTransform = nodeTransform;
+    this.instances = instances;
+    this.colors = colors;
+    this.nodeWindingFlipped = nodeWindingFlipped;
+    this.instanceWindingFlipped = instanceWindingFlipped;
+    this.indices = indices;
+    this.attributeData = attributeData;
+    this.attributeFloats = attributeFloats;
+    packedWorldData = null;
+    packedWindingFlipped = null;
+  }
+
+  /// Fills this batch from world data a mesh already packed, the path that
+  /// skips recomposing transforms every frame.
+  void setCached({
+    required Float32List packedWorldData,
+    required Uint8List packedWindingFlipped,
+    List<int>? indices,
+    int attributeFloats = 0,
+  }) {
+    assert(
+      packedWorldData.length % (kInstanceRecordFloats + attributeFloats) == 0,
+    );
+    assert(
+      packedWindingFlipped.length ==
+          packedWorldData.length ~/ (kInstanceRecordFloats + attributeFloats),
+    );
+    assert(
+      indices == null ||
+          indices.length <=
+              packedWorldData.length ~/
+                  (kInstanceRecordFloats + attributeFloats),
+    );
+    this.packedWorldData = packedWorldData;
+    this.packedWindingFlipped = packedWindingFlipped;
+    this.indices = indices;
+    this.attributeFloats = attributeFloats;
+    nodeTransform = _identity;
+    nodeWindingFlipped = false;
+    instances = null;
+    colors = null;
+    instanceWindingFlipped = null;
+    attributeData = null;
+  }
 
   /// Floats one source record occupies in [packedWorldData].
   int get sourceRecordFloats => kInstanceRecordFloats + attributeFloats;
@@ -494,18 +619,28 @@ PackedInstanceData packInstanceData(
   assert(instances.length == colors.length);
   if (sortBackToFrontFrom == null) {
     return packInstanceDataBatches(
-      [
-        InstanceDataBatch(
-          nodeTransform: nodeTransform,
-          instances: instances,
-          colors: colors,
-          nodeWindingFlipped: nodeWindingFlipped,
-          instanceWindingFlipped: instanceWindingFlipped,
-          indices: indices,
-          attributeData: attributeData,
-          attributeFloats: attributeData == null ? 0 : attributeFloats,
-        ),
-      ],
+      scratch?.singleInstanceBatch(
+            nodeTransform: nodeTransform,
+            instances: instances,
+            colors: colors,
+            nodeWindingFlipped: nodeWindingFlipped,
+            instanceWindingFlipped: instanceWindingFlipped,
+            indices: indices,
+            attributeData: attributeData,
+            attributeFloats: attributeData == null ? 0 : attributeFloats,
+          ) ??
+          [
+            InstanceDataBatch(
+              nodeTransform: nodeTransform,
+              instances: instances,
+              colors: colors,
+              nodeWindingFlipped: nodeWindingFlipped,
+              instanceWindingFlipped: instanceWindingFlipped,
+              indices: indices,
+              attributeData: attributeData,
+              attributeFloats: attributeData == null ? 0 : attributeFloats,
+            ),
+          ],
       attributeFloats: attributeFloats,
       scratch: scratch,
     );

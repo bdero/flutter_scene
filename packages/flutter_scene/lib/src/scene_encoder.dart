@@ -37,7 +37,9 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
   ) : _item = item,
       _geometry = geometry,
       _material = material,
-      _pipeline = pipeline;
+      _pipeline = pipeline,
+      geometryKey = identityHashCode(geometry),
+      materialKey = identityHashCode(material);
   RenderItem? _item;
   RenderItem get item => _item!;
   // The geometry and material to draw, which differ from the item's own when
@@ -77,10 +79,17 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     this.pipelineKey = pipelineKey;
     this.depth = depth;
     this.windingFlipped = windingFlipped;
+    geometryKey = identityHashCode(geometry);
+    materialKey = identityHashCode(material);
   }
 
-  int get geometryKey => identityHashCode(geometry);
-  int get materialKey => identityHashCode(material);
+  // Identity sort keys, cached at submit time rather than recomputed per
+  // comparison. The opaque sort reads them O(n log n) times, and
+  // identityHashCode is a runtime call that installs a hash in the object
+  // header on first use, so computing them once per record keeps the
+  // comparator to plain integer compares.
+  late int geometryKey;
+  late int materialKey;
   @override
   int get lightListOffset => item.lightListOffset;
   @override
@@ -322,9 +331,27 @@ double sceneSortDepth(
   Vector3 cameraPosition,
   Vector3 cameraForward,
 ) {
-  final localCenter = localBounds?.center ?? Vector3.zero();
-  final worldCenter = worldTransform.transformed3(localCenter);
-  return (worldCenter - cameraPosition).dot(cameraForward);
+  // Kept allocation-free. This runs once per submitted draw per view, and
+  // views multiply with the shadow, depth-prepass, and reflection passes.
+  // `Aabb3.center` clones, `transformed3` clones, and `-` allocates again,
+  // so the vector_math spelling costs three Vector3s per call.
+  var cx = 0.0;
+  var cy = 0.0;
+  var cz = 0.0;
+  if (localBounds != null) {
+    final min = localBounds.min;
+    final max = localBounds.max;
+    cx = (min.x + max.x) * 0.5;
+    cy = (min.y + max.y) * 0.5;
+    cz = (min.z + max.z) * 0.5;
+  }
+  final m = worldTransform.storage;
+  final worldX = m[0] * cx + m[4] * cy + m[8] * cz + m[12];
+  final worldY = m[1] * cx + m[5] * cy + m[9] * cz + m[13];
+  final worldZ = m[2] * cx + m[6] * cy + m[10] * cz + m[14];
+  return (worldX - cameraPosition.x) * cameraForward.x +
+      (worldY - cameraPosition.y) * cameraForward.y +
+      (worldZ - cameraPosition.z) * cameraForward.z;
 }
 
 /// Render pipelines keyed by their (vertex shader, fragment shader, vertex
@@ -453,6 +480,11 @@ base class SceneEncoder {
   final List<_TranslucentRecord> _translucentRecords = [];
   static final List<_OpaqueRecord> _opaqueRecordPool = [];
   static final List<_TranslucentRecord> _translucentRecordPool = [];
+  // Refilled per batch group and consumed synchronously by
+  // packInstanceDataBatches, which only reads it. The pool reuses both the
+  // list and the batch objects in it, so a scene with many batched groups
+  // allocates neither per group per frame.
+  final InstanceDataBatchPool _batchPool = InstanceDataBatchPool();
   static const int _recordPoolLimit = 8192;
 
   /// View frustum derived from the camera's view-projection matrix at
@@ -707,7 +739,11 @@ base class SceneEncoder {
   }
 
   double _depthOfPoint(double x, double y, double z) {
-    return (Vector3(x, y, z) - _camera.position).dot(_camera.forward);
+    final position = _camera.position;
+    final forward = _camera.forward;
+    return (x - position.x) * forward.x +
+        (y - position.y) * forward.y +
+        (z - position.z) * forward.z;
   }
 
   // Binds [pipeline] unless it is already the bound one. `clearBindings`
@@ -949,14 +985,12 @@ base class SceneEncoder {
             packedWorldData != null &&
             packedWorldWindingFlipped != null
         ? packInstanceDataBatches(
-            [
-              InstanceDataBatch.cached(
-                packedWorldData: packedWorldData,
-                packedWindingFlipped: packedWorldWindingFlipped,
-                indices: instanceIndices,
-                attributeFloats: attributeFloats,
-              ),
-            ],
+            transientInstancePackingScratch.singleCachedBatch(
+              packedWorldData: packedWorldData,
+              packedWindingFlipped: packedWorldWindingFlipped,
+              indices: instanceIndices,
+              attributeFloats: attributeFloats,
+            ),
             attributeFloats: attributeFloats,
             scratch: transientInstancePackingScratch,
           )
@@ -1093,22 +1127,20 @@ base class SceneEncoder {
 
       final end = opaqueBatchEnd(_opaqueRecords, index);
       if (end > index + 1) {
-        final batches = <InstanceDataBatch>[];
+        _batchPool.reset();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _opaqueRecords[batchIndex].item;
-          batches.add(
-            instanceDataBatchFor(
-              item,
-              indices: item.visibleInstanceIndices,
-              windingFlipped: _opaqueRecords[batchIndex].windingFlipped,
-            ),
+          _batchPool.addFor(
+            item,
+            indices: item.visibleInstanceIndices,
+            windingFlipped: _opaqueRecords[batchIndex].windingFlipped,
           );
         }
         _encodeInstancedBatches(
           record.pipeline,
           record.geometry,
           record.material,
-          batches,
+          _batchPool.batches,
           record.fade,
         );
         index = end;

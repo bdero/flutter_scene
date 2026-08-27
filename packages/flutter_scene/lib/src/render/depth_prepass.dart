@@ -387,6 +387,8 @@ class _DepthPrepassEncoder {
   /// consecutive objects that share one only bind it once.
   gpu.RenderPipeline? _boundPipeline;
   final List<RenderItem> _records = [];
+  // See SceneEncoder._batchPool: refilled per group, read-only downstream.
+  final InstanceDataBatchPool _batchPool = InstanceDataBatchPool();
 
   /// Records [item]'s depth, unless it is hidden, rejected by its layer
   /// mask, or outside this encoder's set (prepass-participating items
@@ -406,26 +408,21 @@ class _DepthPrepassEncoder {
 
   void flush() {
     _records.sort((a, b) {
-      final byMaterial = identityHashCode(
-        a.material,
-      ).compareTo(identityHashCode(b.material));
+      final byMaterial = a.materialIdentity.compareTo(b.materialIdentity);
       if (byMaterial != 0) return byMaterial;
-      return identityHashCode(
-        a.geometry,
-      ).compareTo(identityHashCode(b.geometry));
+      return a.geometryIdentity.compareTo(b.geometryIdentity);
     });
     var index = 0;
     while (index < _records.length) {
       final first = _records[index];
       final end = depthBatchEnd(_records, index);
       if (end > index + 1) {
-        final batches = <InstanceDataBatch>[];
+        _batchPool.reset();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _records[batchIndex];
-          batches.add(
-            instanceDataBatchFor(item, indices: item.visibleInstanceIndices),
-          );
+          _batchPool.addFor(item, indices: item.visibleInstanceIndices);
         }
+        final batches = _batchPool.batches;
         _encode(first, batches: batches);
         index = end;
         continue;
@@ -614,14 +611,12 @@ class _DepthPrepassEncoder {
       final packedWinding = item.instanceWorldWindingFlipped;
       final cached = packedWorldData == null || packedWinding == null
           ? null
-          : [
-              InstanceDataBatch.cached(
-                packedWorldData: packedWorldData,
-                packedWindingFlipped: packedWinding,
-                indices: item.visibleInstanceIndices,
-                attributeFloats: item.instanceAttributeFloats,
-              ),
-            ];
+          : transientInstancePackingScratch.singleCachedBatch(
+              packedWorldData: packedWorldData,
+              packedWindingFlipped: packedWinding,
+              indices: item.visibleInstanceIndices,
+              attributeFloats: item.instanceAttributeFloats,
+            );
       final PackedInstances packed = depthVertex == null
           ? (cached == null
                 ? packInstanceData(
