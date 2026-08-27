@@ -244,7 +244,7 @@ class _TimelinePainter extends CustomPainter {
   double _niceStep(double duration) {
     if (duration <= 0) return 1;
     final raw = duration / 8;
-    final steps = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0];
+    const steps = [0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0];
     for (final step in steps) {
       if (raw <= step) return step;
     }

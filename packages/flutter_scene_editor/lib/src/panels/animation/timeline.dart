@@ -215,7 +215,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
 
     // Trackpad pinch: two-finger translation pans, spreading or pinching
     // scales around the window center.
-    void handlePanZoomStart(PointerPanZoomStartEvent event) {
+    void handlePanZoomStart(PointerPanZoomStartEvent _) {
       _pinchScale = 1;
     }
 
@@ -235,7 +235,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       }
     }
 
-    void handlePanZoomEnd(PointerPanZoomEndEvent event) {
+    void handlePanZoomEnd(PointerPanZoomEndEvent _) {
       _pinchScale = null;
     }
 
@@ -293,7 +293,6 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           if (entry.isHeader || entry.channel == null) return;
           widget.onDoubleTapLane(entry.channel!, timeAt(details.localPosition));
         },
-        onDoubleTap: () {},
         onPanStart: (details) {
           final key = hitKey(details.localPosition);
           if (key != null) widget.onDragKeyStart(key);
@@ -337,7 +336,6 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
                       (_rowHeight - _interpControlHeight) / 2,
                   child: _groupInterpolationControl(
                     context,
-                    scheme,
                     rows[i].groupChannels!,
                   ),
                 ),
@@ -385,7 +383,6 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   /// select nothing until a mode is picked (which then applies to all).
   Widget _groupInterpolationControl(
     BuildContext context,
-    ColorScheme scheme,
     List<AnimationChannelSpec> channels,
   ) {
     String normalize(AnimationInterpolation? value) =>
