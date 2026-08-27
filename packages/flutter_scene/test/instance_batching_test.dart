@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/instance_batching.dart';
+import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -207,6 +208,91 @@ void main() {
       );
       expect(alternateWinding.packedWorldData, isNull);
       expect(alternateWinding.nodeWindingFlipped, isTrue);
+    });
+  });
+
+  group('instance data batch pool', () {
+    test('reuses batch objects across resets', () {
+      final geometry = _StubGeometry();
+      final material = _StubMaterial();
+      final pool = InstanceDataBatchPool();
+
+      pool
+        ..addFor(_item(geometry, material), indices: null)
+        ..addFor(_item(geometry, material), indices: null);
+      expect(pool.batches, hasLength(2));
+      final first = pool.batches[0];
+      final second = pool.batches[1];
+
+      pool.reset();
+      expect(pool.batches, isEmpty);
+
+      pool
+        ..addFor(_item(geometry, material), indices: null)
+        ..addFor(_item(geometry, material), indices: null);
+      // The identities are the previous frame's, in some order: a steady-state
+      // frame allocates no batches at all.
+      expect(pool.batches, hasLength(2));
+      expect(pool.batches, containsAll(<Object>[first, second]));
+    });
+
+    test('a recycled batch keeps nothing from its previous group', () {
+      final geometry = _StubGeometry();
+      final material = _StubMaterial();
+      final pool = InstanceDataBatchPool();
+
+      final cachedItem = _item(geometry, material)
+        ..instanceTransforms = [Matrix4.identity(), Matrix4.identity()]
+        ..instanceColors = [Vector4.all(1), Vector4.all(1)]
+        ..instanceWorldData = Float32List(40)
+        ..instanceWorldWindingFlipped = Uint8List(2)
+        ..visibleInstanceIndices = [1];
+      pool.addFor(cachedItem, indices: cachedItem.visibleInstanceIndices);
+      expect(pool.batches.single.packedWorldData, isNotNull);
+      expect(pool.batches.single.indices, [1]);
+
+      // Refilling from a plain mesh must clear the cached path's fields, or
+      // the pack call reads the previous group's world data for this one.
+      pool
+        ..reset()
+        ..addFor(_item(geometry, material), indices: null);
+      final recycled = pool.batches.single;
+      expect(recycled.packedWorldData, isNull);
+      expect(recycled.packedWindingFlipped, isNull);
+      expect(recycled.instances, isNull);
+      expect(recycled.colors, isNull);
+      expect(recycled.indices, isNull);
+      expect(recycled.attributeData, isNull);
+      expect(recycled.attributeFloats, 0);
+      expect(recycled.length, 1);
+
+      // And the reverse: an unpacked fill followed by a cached one.
+      pool
+        ..reset()
+        ..addFor(cachedItem, indices: null);
+      expect(pool.batches.single.instances, isNull);
+      expect(pool.batches.single.colors, isNull);
+      expect(pool.batches.single.packedWorldData, isNotNull);
+    });
+
+    test('the shared scratch hands back one reused single-batch list', () {
+      final scratch = InstancePackingScratch();
+      final first = scratch.singleCachedBatch(
+        packedWorldData: Float32List(40),
+        packedWindingFlipped: Uint8List(2),
+        indices: [1],
+      );
+      expect(first.single.indices, [1]);
+
+      final second = scratch.singleInstanceBatch(
+        nodeTransform: Matrix4.identity(),
+        instances: [Matrix4.identity()],
+        colors: [Vector4.all(1)],
+        nodeWindingFlipped: false,
+      );
+      expect(second, same(first));
+      expect(second.single.packedWorldData, isNull);
+      expect(second.single.indices, isNull);
     });
   });
 }
