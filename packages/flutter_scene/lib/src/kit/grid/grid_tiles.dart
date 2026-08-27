@@ -65,6 +65,12 @@ class GridTileLayer extends Component {
   final Map<GridCoord, int> _indexOf = <GridCoord, int>{};
   final List<GridCoord> _cellAt = <GridCoord>[];
 
+  // What each tile was placed with, kept because the instance batch stores
+  // only the composed matrix. Without it [rebuild] could not put a tile back
+  // the way it was, and a layer could not be written to a document.
+  final Map<GridCoord, GridTileAppearance> _look =
+      <GridCoord, GridTileAppearance>{};
+
   InstancedMeshComponent? _drawer;
 
   /// The instanced mesh behind this layer, for material changes and for
@@ -101,6 +107,13 @@ class GridTileLayer extends Component {
       Vector3(center.x, center.y + height, center.z),
       Quaternion.axisAngle(Vector3(0.0, 1.0, 0.0), yaw),
       scale ?? Vector3(1.0, 1.0, 1.0),
+    );
+
+    _look[cell] = GridTileAppearance(
+      height: height,
+      yaw: yaw,
+      scale: scale?.clone(),
+      color: color?.clone(),
     );
 
     final existing = _indexOf[cell];
@@ -145,6 +158,7 @@ class GridTileLayer extends Component {
   bool remove(GridCoord cell) {
     final index = _indexOf.remove(cell);
     if (index == null) return false;
+    _look.remove(cell);
 
     // Swap-remove keeps the instance list dense, so the batch never carries
     // holes. Only the tile that moved needs its index repaired.
@@ -163,6 +177,7 @@ class GridTileLayer extends Component {
   void clear() {
     _indexOf.clear();
     _cellAt.clear();
+    _look.clear();
     _mesh.clearInstances();
   }
 
@@ -172,10 +187,29 @@ class GridTileLayer extends Component {
   /// tiles follow it.
   void rebuild() {
     for (var i = 0; i < _cellAt.length; i++) {
-      final center = grid.center(_cellAt[i]);
-      _mesh.setInstanceTransform(i, Matrix4.translation(center));
+      final cell = _cellAt[i];
+      final center = grid.center(cell);
+      final look = _look[cell] ?? const GridTileAppearance();
+      _mesh.setInstanceTransform(
+        i,
+        Matrix4.compose(
+          Vector3(center.x, center.y + look.height, center.z),
+          Quaternion.axisAngle(Vector3(0.0, 1.0, 0.0), look.yaw),
+          look.scale ?? Vector3(1.0, 1.0, 1.0),
+        ),
+      );
     }
   }
+
+  /// How the tile on [cell] was placed, or null when the cell is empty.
+  GridTileAppearance? appearanceOf(GridCoord cell) => _look[cell];
+
+  /// Every tile with the appearance it was placed with, in no particular
+  /// order. This is what a layer serializes.
+  Iterable<({GridCoord cell, GridTileAppearance look})> get tiles =>
+      _cellAt.map(
+        (cell) => (cell: cell, look: _look[cell] ?? const GridTileAppearance()),
+      );
 
   @override
   void onAttach() {
