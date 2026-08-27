@@ -552,9 +552,10 @@ base class SceneEncoder {
   static final List<_OpaqueRecord> _opaqueRecordPool = [];
   static final List<_TranslucentRecord> _translucentRecordPool = [];
   // Refilled per batch group and consumed synchronously by
-  // packInstanceDataBatches, which only reads it. Reused so a scene with
-  // many batched groups does not allocate one list per group per frame.
-  final List<InstanceDataBatch> _batchScratch = [];
+  // packInstanceDataBatches, which only reads it. The pool reuses both the
+  // list and the batch objects in it, so a scene with many batched groups
+  // allocates neither per group per frame.
+  final InstanceDataBatchPool _batchPool = InstanceDataBatchPool();
   static const int _recordPoolLimit = 8192;
 
   /// View frustum derived from the camera's view-projection matrix at
@@ -1060,14 +1061,12 @@ base class SceneEncoder {
             packedWorldData != null &&
             packedWorldWindingFlipped != null
         ? packInstanceDataBatches(
-            [
-              InstanceDataBatch.cached(
-                packedWorldData: packedWorldData,
-                packedWindingFlipped: packedWorldWindingFlipped,
-                indices: instanceIndices,
-                attributeFloats: attributeFloats,
-              ),
-            ],
+            transientInstancePackingScratch.singleCachedBatch(
+              packedWorldData: packedWorldData,
+              packedWindingFlipped: packedWorldWindingFlipped,
+              indices: instanceIndices,
+              attributeFloats: attributeFloats,
+            ),
             attributeFloats: attributeFloats,
             scratch: transientInstancePackingScratch,
           )
@@ -1204,22 +1203,20 @@ base class SceneEncoder {
 
       final end = opaqueBatchEnd(_opaqueRecords, index);
       if (end > index + 1) {
-        final batches = _batchScratch..clear();
+        _batchPool.reset();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _opaqueRecords[batchIndex].item;
-          batches.add(
-            instanceDataBatchFor(
-              item,
-              indices: item.visibleInstanceIndices,
-              windingFlipped: _opaqueRecords[batchIndex].windingFlipped,
-            ),
+          _batchPool.addFor(
+            item,
+            indices: item.visibleInstanceIndices,
+            windingFlipped: _opaqueRecords[batchIndex].windingFlipped,
           );
         }
         _encodeInstancedBatches(
           record.pipeline,
           record.geometry,
           record.material,
-          batches,
+          _batchPool.batches,
           record.fade,
         );
         index = end;
