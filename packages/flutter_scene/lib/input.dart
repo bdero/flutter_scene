@@ -30,10 +30,17 @@ export 'src/input/input_binding.dart'
 export 'src/input/gamepad.dart'
     show GamepadAxis, GamepadButton, GamepadInputSource;
 export 'src/input/input_control.dart' show InputControl, InputDevice;
-export 'src/input/input_controllers.dart' show FlyCameraInput, ThirdPersonInput;
+export 'src/input/input_controllers.dart'
+    show
+        FirstPersonCameraInput,
+        FlyCameraInput,
+        RtsCameraInput,
+        ThirdPersonInput;
 export 'src/input/input_manager.dart' show InputManager;
 export 'src/input/input_map.dart' show InputAction, InputMap;
 export 'src/input/input_scope.dart' show InputScope;
 export 'src/input/input_source.dart'
     show InputSink, InputSource, KeyboardInputSource, PointerInputSource;
+export 'src/input/pointer_lock.dart' show PointerLock;
+export 'src/input/pointer_lock_base.dart' show PointerLockSource;
 export 'src/input/web_gamepad_source.dart' show WebGamepadSource;
