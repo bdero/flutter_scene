@@ -30,6 +30,7 @@ import '../project/app_session.dart';
 import '../project/project_runner.dart';
 import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
+import '../panels/animation_panel.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
@@ -41,6 +42,7 @@ import 'editor_dialog.dart';
 /// title shown on tabs and in the View menu.
 const Map<String, String> _panelTitles = {
   'viewport': 'Viewport',
+  'animation': 'Animation',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
   'assets': 'Assets',
@@ -1018,6 +1020,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                               cameraHandle: widget.viewportCameraHandle,
                               gizmoPreferences: widget.gizmoPreferences,
                             ),
+                          ),
+                          DockPanel(
+                            id: 'animation',
+                            title: 'Animation',
+                            child: AnimationPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'outliner',

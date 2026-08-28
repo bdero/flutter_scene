@@ -466,6 +466,21 @@ class EditorController extends ChangeNotifier {
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
 
+  /// The root the document was realized under, or null before the first
+  /// realize.
+  ///
+  /// The scene's parsed animations hang off this node, so it is where a clip
+  /// is instantiated and bound. Panels driving playback read it; nothing
+  /// should mutate the graph through it, since the controller owns realizing
+  /// and re-realizing it.
+  Node? get realizedRoot => _realizedRoot;
+
+  /// A counter bumped whenever the document is re-realized, so a panel
+  /// holding something derived from the live graph (an animation clip bound
+  /// to [realizedRoot], say) can tell its binding is stale.
+  int get realizeEpoch => _realizeEpoch;
+  int _realizeEpoch = 0;
+
   /// The live material on [id]'s first mesh primitive (the material a preview
   /// should show), or null when the node has no realized mesh.
   Material? liveMeshMaterial(LocalId id) {
@@ -1665,6 +1680,12 @@ class EditorController extends ChangeNotifier {
       case PrefabOverrideAspect.layers:
         live.layers = spec.layers;
         return true;
+      case PrefabOverrideAspect.lightChannelMask:
+        live.lightChannelMask = spec.lightChannelMask;
+        return true;
+      case PrefabOverrideAspect.raycastable:
+        live.raycastable = spec.raycastable;
+        return true;
       case PrefabOverrideAspect.transform:
         live.localTransform = spec.transform.toMatrix4();
         return true;
@@ -1923,6 +1944,7 @@ class EditorController extends ChangeNotifier {
     scene.add(root);
     _resourceRealizer = realizer;
     _realizedRoot = root;
+    _realizeEpoch++;
     // Apply the document's scene-wide settings (environment/lighting, exposure,
     // tone mapping, anti-aliasing) to the live scene.
     await realizeStage(

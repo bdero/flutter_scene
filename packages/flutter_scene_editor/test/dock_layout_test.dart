@@ -29,8 +29,15 @@ void main() {
     expect(left.axis, Axis.vertical);
     expect((left.children[0] as DockTabs).panels, ['outliner']);
     expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
-    expect((root.children[1] as DockTabs).panels, ['viewport']);
     expect((root.children[2] as DockTabs).panels, ['inspector']);
+
+    // The centre column stacks the timeline under the viewport, where a
+    // playhead scrubbing the scene belongs.
+    final centre = root.children[1] as DockSplit;
+    expect(centre.axis, Axis.vertical);
+    expect((centre.children[0] as DockTabs).panels, ['viewport']);
+    expect((centre.children[1] as DockTabs).panels, ['animation']);
+    expect(centre.weights, [0.72, 0.28]);
   });
 
   test('json round-trips', () {
