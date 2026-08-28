@@ -186,6 +186,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
   final TerrainToolController _terrainTool = TerrainToolController();
 
   TerrainStroke? _stroke;
+  final Stopwatch _strokeClock = Stopwatch();
+
+  /// Where the brush would land, for the cursor ring. Null when the pointer
+  /// is not over terrain.
+  vm.Vector3? _brushPoint;
 
   /// The sculpting target for the current selection, or null when the
   /// selected node is not terrain realized from a document.
@@ -215,6 +220,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
       geometry: target.geometry,
       resourceId: target.resourceId,
     );
+    _strokeClock
+      ..reset()
+      ..start();
+    // The first dab has no elapsed time to measure, so it gets a frame's
+    // worth rather than zero, which would make a click do nothing.
     _sculptAt(position, viewSize, 1 / 60);
     return true;
   }
@@ -226,14 +236,41 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // A pointer dragged off the terrain pauses the stroke rather than ending
     // it, so crossing a gap and coming back is still one stroke.
     if (point == null) return;
-    stroke.dab(_terrainTool.brush, point, deltaSeconds);
+    _brushPoint = point;
+    stroke.dab(_brushFor(_terrainTool.brush), point, deltaSeconds);
     setState(() {});
+  }
+
+  /// Holding alt digs instead of raising, the way every sculpting tool does,
+  /// rather than making the user swap the sign of the strength by hand.
+  TerrainBrush _brushFor(TerrainBrush brush) {
+    if (brush.kind != TerrainBrushKind.raise) return brush;
+    if (!HardwareKeyboard.instance.isAltPressed) return brush;
+    return TerrainBrush(
+      kind: brush.kind,
+      radius: brush.radius,
+      strength: -brush.strength,
+      falloff: brush.falloff,
+      targetHeight: brush.targetHeight,
+    );
+  }
+
+  /// The elapsed time since the previous dab, so a slow drag moves the ground
+  /// as far as a fast one over the same distance.
+  double _dabSeconds() {
+    final elapsed = _strokeClock.elapsedMicroseconds / 1000000;
+    _strokeClock
+      ..reset()
+      ..start();
+    // A stall should not land a single enormous dab.
+    return elapsed.clamp(0.0, 1 / 20);
   }
 
   /// Ends the stroke, writing it to the document as one undoable step.
   void _endSculpt() {
     final stroke = _stroke;
     _stroke = null;
+    _strokeClock.stop();
     if (stroke == null || !stroke.touched) return;
     unawaited(
       _ctrl.run('setTerrainHeights', {
@@ -292,9 +329,24 @@ class _ViewportPanelState extends State<ViewportPanel> {
     );
   }
 
+  /// Follows the pointer with the brush ring while the tool is armed.
+  void _onPointerHover(PointerHoverEvent event, Size viewSize) {
+    if (!_terrainTool.active) return;
+    final target = _terrainTarget();
+    if (target == null) return;
+    _viewSize = viewSize;
+    final point = _groundUnder(
+      event.localPosition,
+      viewSize,
+      target.geometry.field,
+    );
+    if (point == _brushPoint) return;
+    setState(() => _brushPoint = point);
+  }
+
   void _onPointerMove(PointerMoveEvent event) {
     if (_stroke != null) {
-      _sculptAt(event.localPosition, _viewSize, 1 / 60);
+      _sculptAt(event.localPosition, _viewSize, _dabSeconds());
       return;
     }
     if (_freeLookActive) {
@@ -975,6 +1027,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               behavior: HitTestBehavior.opaque,
                               onPointerDown: (e) => _onPointerDown(e, size),
                               onPointerMove: _onPointerMove,
+                              onPointerHover: (event) =>
+                                  _onPointerHover(event, size),
                               onPointerUp: _onPointerUp,
                               onPointerCancel: _onPointerCancel,
                               onPointerSignal: _onPointerSignal,
@@ -1067,6 +1121,36 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                 setState(() => _terrainTool.active = value),
                           ),
                         ),
+                        if (_terrainTool.active)
+                          if (_brushPoint case final point?)
+                            if (_terrainTarget() case final target?)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: TerrainBrushCursorPainter(
+                                      center: point,
+                                      brush: _terrainTool.brush,
+                                      field: target.geometry.field,
+                                      color: editorAccentColor,
+                                      project: (world) => projectToScreen(
+                                        world,
+                                        _camera.camera,
+                                        _viewSize,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        if (_terrainTool.active)
+                          Positioned(
+                            top: 40,
+                            left: 8,
+                            child: ListenableBuilder(
+                              listenable: _terrainTool,
+                              builder: (context, _) =>
+                                  TerrainBrushPalette(tool: _terrainTool),
+                            ),
+                          ),
                         // Constrained-axis guide line for the modal transform.
                         if (_modal case final modal?)
                           if (_modalAxisScreenDir(modal) case final dir?)

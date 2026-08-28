@@ -3,8 +3,11 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import '../shell/editor_theme.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart' show LocalId;
 import 'package:vector_math/vector_math.dart' as vm;
@@ -113,4 +116,239 @@ class TerrainStroke {
     return (geometry: geometry, resourceId: id);
   }
   return null;
+}
+
+/// The floating brush palette shown while sculpting is armed.
+///
+/// It sits over the viewport rather than in the inspector because a brush is
+/// adjusted mid-stroke, between dabs, and reaching across the window for the
+/// radius breaks that rhythm.
+class TerrainBrushPalette extends StatelessWidget {
+  /// Shows and edits [tool]'s brush.
+  const TerrainBrushPalette({required this.tool, super.key});
+
+  /// The tool whose brush this edits.
+  final TerrainToolController tool;
+
+  static const _kinds = <(TerrainBrushKind, IconData, String)>[
+    (TerrainBrushKind.raise, Icons.landscape, 'Raise, or lower with Alt'),
+    (TerrainBrushKind.smooth, Icons.blur_on, 'Smooth'),
+    (TerrainBrushKind.flatten, Icons.layers_clear, 'Flatten'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final brush = tool.brush;
+    return Container(
+      width: 208,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: BoxDecoration(
+        color: editorPanelColor.withValues(alpha: 0.95),
+        border: Border.all(color: editorLineColor),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Terrain', style: editorSubheadText),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final (kind, icon, tip) in _kinds)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Tooltip(
+                    message: tip,
+                    child: InkWell(
+                      onTap: () => tool.updateBrush(kind: kind),
+                      child: Container(
+                        width: 30,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: brush.kind == kind
+                              ? editorAccentColor
+                              : editorRaisedColor,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Icon(
+                          icon,
+                          size: editorIconSize,
+                          color: brush.kind == kind
+                              ? editorSurfaceColor
+                              : editorTextColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _BrushSlider(
+            label: 'Size',
+            value: brush.radius,
+            min: 0.5,
+            max: 40,
+            onChanged: (value) => tool.updateBrush(radius: value),
+          ),
+          _BrushSlider(
+            label: 'Strength',
+            value: brush.strength,
+            min: 0.1,
+            max: 10,
+            onChanged: (value) => tool.updateBrush(strength: value),
+          ),
+          _BrushSlider(
+            label: 'Falloff',
+            value: brush.falloff,
+            min: 0,
+            max: 1,
+            onChanged: (value) => tool.updateBrush(falloff: value),
+          ),
+          if (brush.kind == TerrainBrushKind.flatten)
+            _BrushSlider(
+              label: 'Height',
+              value: brush.targetHeight,
+              min: -20,
+              max: 20,
+              onChanged: (value) => tool.updateBrush(targetHeight: value),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A labelled slider with its value shown, the shape every brush setting
+/// takes.
+class _BrushSlider extends StatelessWidget {
+  const _BrushSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          SizedBox(width: 52, child: Text(label, style: editorDetailText)),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                overlayShape: SliderComponentShape.noOverlay,
+              ),
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 30,
+            child: Text(
+              value.toStringAsFixed(value.abs() < 10 ? 1 : 0),
+              style: editorDetailText,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Draws the brush's footprint on the ground.
+///
+/// A ring on the surface rather than a circle on the glass: the brush reaches
+/// a radius in world units, so on a slope or in perspective its footprint is
+/// not a screen-space circle, and drawing one would lie about where the
+/// stroke will land.
+class TerrainBrushCursorPainter extends CustomPainter {
+  /// Draws [brush] centred on [center], sampling the ground from [field].
+  TerrainBrushCursorPainter({
+    required this.center,
+    required this.brush,
+    required this.field,
+    required this.project,
+    required this.color,
+  });
+
+  /// Where the pointer meets the ground.
+  final vm.Vector3 center;
+
+  /// The brush being drawn.
+  final TerrainBrush brush;
+
+  /// The ground the ring follows.
+  final HeightField field;
+
+  /// Maps a world point into the view, or null when it is behind the camera.
+  final Offset? Function(vm.Vector3 point) project;
+
+  /// The ring's colour.
+  final Color color;
+
+  static const _segments = 48;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    void ring(double radius, double opacity, double width) {
+      if (radius <= 0) return;
+      final path = Path();
+      var started = false;
+      for (var i = 0; i <= _segments; i++) {
+        final angle = i / _segments * 2 * math.pi;
+        final x = center.x + math.cos(angle) * radius;
+        final z = center.z + math.sin(angle) * radius;
+        final point = project(vm.Vector3(x, field.heightAtWorld(x, z), z));
+        // A ring crossing behind the camera is drawn in pieces rather than
+        // joined across the screen by a stray chord.
+        if (point == null) {
+          started = false;
+          continue;
+        }
+        if (!started) {
+          path.moveTo(point.dx, point.dy);
+          started = true;
+        } else {
+          path.lineTo(point.dx, point.dy);
+        }
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = width
+          ..color = color.withValues(alpha: opacity),
+      );
+    }
+
+    // The rim, and the edge where the brush stops being at full strength, so
+    // the falloff is something you can see rather than a number.
+    ring(brush.radius, 0.9, 1.5);
+    ring(brush.radius * brush.falloff.clamp(0.0, 1.0), 0.35, 1);
+  }
+
+  @override
+  bool shouldRepaint(TerrainBrushCursorPainter old) =>
+      old.center != center ||
+      old.brush.radius != brush.radius ||
+      old.brush.falloff != brush.falloff ||
+      old.color != color;
 }
