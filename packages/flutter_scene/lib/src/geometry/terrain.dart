@@ -11,6 +11,8 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:vector_math/vector_math.dart';
+
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_scene/src/noise/fast_noise_lite.dart';
@@ -149,6 +151,60 @@ class HeightField {
     final h01 = sample(c, r + 1);
     final h11 = sample(c + 1, r + 1);
     return _mix(_mix(h00, h10, fu), _mix(h01, h11, fu), fv);
+  }
+
+  /// Where a ray from [origin] along [direction] first meets the ground, or
+  /// null when it never does within [maxDistance].
+  ///
+  /// Marches the ray comparing its height against the field's, then bisects
+  /// the step that crossed. Against the mesh this would be a triangle
+  /// raycast; against the field it is a handful of samples, it needs no mesh
+  /// to exist yet, and it stays exact as the ground is sculpted under it.
+  ///
+  /// The march step is half a cell, so a ray cannot pass through a ridge
+  /// thinner than the grid can represent in the first place.
+  Vector3? raycast(
+    Vector3 origin,
+    Vector3 direction, {
+    double maxDistance = 1000.0,
+    int refinements = 24,
+  }) {
+    final ray = direction.normalized();
+    final step = math.min(width / (columns - 1), depth / (rows - 1)) * 0.5;
+    if (step <= 0) return null;
+
+    double above(double t) {
+      final p = origin + ray * t;
+      return p.y - heightAtWorld(p.x, p.z);
+    }
+
+    var previousT = 0.0;
+    var previousAbove = above(0);
+    // A ray that starts underground has already "hit"; report where it
+    // entered rather than hunting forward for a crossing that is behind it.
+    if (previousAbove <= 0) return origin.clone();
+
+    for (var t = step; t <= maxDistance; t += step) {
+      final current = above(t);
+      if (current <= 0) {
+        // Bisect the crossing step. The surface is piecewise bilinear, so a
+        // fixed number of halvings lands well inside a pixel.
+        var low = previousT;
+        var high = t;
+        for (var i = 0; i < refinements; i++) {
+          final mid = (low + high) * 0.5;
+          if (above(mid) > 0) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        return origin + ray * ((low + high) * 0.5);
+      }
+      previousT = t;
+      previousAbove = current;
+    }
+    return null;
   }
 
   static double _mix(double a, double b, double t) => a + (b - a) * t;

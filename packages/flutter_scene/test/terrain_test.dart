@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene/src/geometry/terrain.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart';
 
 /// A 3x3 field over a 2x2 patch: a ramp rising along +X, flat along Z.
 HeightField rampField() => HeightField(
@@ -212,6 +213,65 @@ void main() {
         ),
         isNull,
       );
+    });
+  });
+
+  group('raycasting', () {
+    /// A flat field at height zero spanning -10..10.
+    HeightField flat() => HeightField(
+      heights: Float32List(21 * 21),
+      columns: 21,
+      rows: 21,
+      width: 20,
+      depth: 20,
+    );
+
+    test('a ray straight down lands on the ground under it', () {
+      final hit = flat().raycast(Vector3(3, 10, -4), Vector3(0, -1, 0))!;
+      expect(hit.x, closeTo(3, 1e-3));
+      expect(hit.y, closeTo(0, 1e-3));
+      expect(hit.z, closeTo(-4, 1e-3));
+    });
+
+    test('it finds the raised ground, not the old flat level', () {
+      final field = flat();
+      // A plateau two units up around the middle.
+      for (var r = 8; r <= 12; r++) {
+        for (var c = 8; c <= 12; c++) {
+          field.heights[r * 21 + c] = 2;
+        }
+      }
+      final hit = field.raycast(Vector3(0, 10, 0), Vector3(0, -1, 0))!;
+      expect(hit.y, closeTo(2, 1e-3));
+    });
+
+    test('a ray angled across the ground still lands on it', () {
+      final hit = flat().raycast(Vector3(-8, 6, 0), Vector3(1, -1, 0))!;
+      expect(hit.y, closeTo(0, 1e-3));
+      expect(hit.x, closeTo(-2, 1e-2), reason: 'it fell six units over six');
+    });
+
+    test('a ray pointing away from the ground misses', () {
+      expect(flat().raycast(Vector3(0, 5, 0), Vector3(0, 1, 0)), isNull);
+    });
+
+    test('a ray that runs out of distance misses', () {
+      expect(
+        flat().raycast(Vector3(0, 5, 0), Vector3(0, -1, 0), maxDistance: 1),
+        isNull,
+      );
+    });
+
+    test('a ray starting underground reports where it started', () {
+      // Rather than hunting forward for a crossing that is behind it.
+      final hit = flat().raycast(Vector3(1, -3, 1), Vector3(0, -1, 0))!;
+      expect(hit.y, closeTo(-3, 1e-9));
+    });
+
+    test('it hits a slope at the right height', () {
+      // The ramp field rises along +X from 0 to 2 across -1..1.
+      final hit = rampField().raycast(Vector3(0, 5, 0), Vector3(0, -1, 0))!;
+      expect(hit.y, closeTo(1, 1e-3), reason: 'the middle of the ramp');
     });
   });
 }
