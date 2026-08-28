@@ -1,4 +1,4 @@
-import 'dart:async' show Completer, Timer;
+import 'dart:async' show Completer, FutureExtensions, Timer;
 import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -163,7 +163,12 @@ base class Scene implements SceneGraph {
   bool _cachedHasStaticShadowCasters = false;
 
   Scene() {
-    initializeStaticResources();
+    // Kicked off, not awaited: rendering is gated on isReadyToRender, and a
+    // SceneView shows its loadingBuilder until then. initializeStaticResources
+    // completes with its error for callers that do await it, and has already
+    // logged the failure by the time this handler runs, so this only keeps an
+    // unawaited future from being reported a second time as an unhandled error.
+    initializeStaticResources().ignore();
     root.registerAsRoot(this);
   }
 
@@ -402,7 +407,7 @@ base class Scene implements SceneGraph {
             .then((_) {
               _readyToRender = true;
             })
-            .onError((e, stacktrace) {
+            .onError<Object>((e, stacktrace) {
               // Only a successful load marks the scene ready to render;
               // rendering with these resources missing throws mid-frame.
               // The memoized future is reset so a later call retries.
@@ -412,6 +417,12 @@ base class Scene implements SceneGraph {
                 stackTrace: stacktrace,
               );
               _initializeStaticResources = null;
+              // Rethrow so an awaiting caller sees the real cause. Completing
+              // normally here left the failure visible only through
+              // `dart:developer` log(), which web does not surface, and sent
+              // the developer to the baseShaderLibrary getter's "await
+              // initializeStaticResources()" instead — the call they just made.
+              Error.throwWithStackTrace(e, stacktrace);
             });
     return _initializeStaticResources!;
   }

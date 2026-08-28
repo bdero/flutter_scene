@@ -49,6 +49,12 @@ out vec4 frag_color;
 // cross-fade.
 const float kBackgroundSharpHandoff = 0.15;
 
+// |direction.y| where the sharp background starts handing off from the source
+// equirect to the cube: sin(58 degrees), the elevation by which a pixel already
+// sweeps about twice the U range it does at the horizon. Below it the source is
+// the sharper of the two and its mapping is well behaved.
+const float kPoleBlendStart = 0.85;
+
 void main() {
   vec3 direction = normalize(v_ray);
   float blurriness = clamp(skybox_info.blurriness, 0.0, 1.0);
@@ -66,6 +72,19 @@ void main() {
     vec3 sharp = texture(environment_background, uv).rgb;
     sharp =
         skybox_info.source_is_linear > 0.5 ? sharp : SRGBToLinear(sharp);
+#ifdef FLUTTER_SCENE_RADIANCE_CUBE
+    // The equirect mapping crowds its texels toward the poles. One texel spans
+    // the same azimuth everywhere but only cos(elevation) of arc, so overhead
+    // its footprint is far wider than it is tall and the bilinear tap smears
+    // along that axis, which is the star-burst. The cube's band 0 is the same
+    // mirror level (roughness 0) with no such singularity, so fade to it as the
+    // anisotropy climbs. The source still carries the horizon, where it is the
+    // sharper of the two and where a viewer usually looks. Cube layouts only:
+    // the band atlas is itself an equirect and would bring the poles with it.
+    float pole = smoothstep(kPoleBlendStart, 1.0, abs(direction.y));
+    sharp = mix(
+        sharp, SampleRadianceEnv(prefiltered_radiance, direction, 0.0), pole);
+#endif
     // Hand off sharp -> cube over the low band, then let the cube's roughness
     // LOD (blurred is sampled at roughness = blurriness) carry the blur. A
     // plain mix by blurriness overlays a crisp and a blurred image across the
