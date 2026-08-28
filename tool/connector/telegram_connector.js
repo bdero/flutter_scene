@@ -31,6 +31,12 @@ const AVAILABLE_MODELS = (process.env.TELEGRAM_AVAILABLE_MODELS || '')
   .map((k) => k.trim())
   .filter(Boolean);
 
+// The numeric bot user ID is the first segment of the token (before the ':').
+// We use it to filter shared cline.log entries so that multiple duplicated
+// instances (each with a different TELEGRAM_BOT_TOKEN) don't cross-react to
+// each other's log entries (e.g. Instance A handling Instance B's messages).
+const BOT_USER_ID = TELEGRAM_BOT_TOKEN;
+
 // Model list for rotation. Falls back to a single slot holding the default
 // model (empty string = let cline use its own configured default; buildArgs
 // then omits the --model flag) so the key×model rotation grid never divides
@@ -73,6 +79,27 @@ function log(...args) {
 const LIMIT_RE = /INFERENCE_CAP_ERROR|daily free limit|Error 429|rate limit|too many requests|quota exceeded/i;
 // Only react to telegram-connector entries in the shared cline.log.
 const IS_TELEGRAM_RE = /"component"\s*:\s*"telegram-connect"/;
+const BOT_USER_ID_RE = /"botUserId"\s*:\s*"([^"]+)"/;
+const PID_RE = /"pid"\s*:\s*(\d+)/;
+
+// The PID of the currently running cline child process (our own child). We use
+// it to filter shared cline.log entries for lines that lack a botUserId field.
+let currentClinePid = null;
+
+// Filter: is this log line from OUR bot? Uses botUserId where available,
+// falls back to child PID. This prevents cross-talk between duplicated
+// instances that share the same ~/.cline/data/logs/cline.log file.
+function isOurBot(line) {
+  const m = line.match(BOT_USER_ID_RE);
+  if (m) return m[1] === BOT_USER_ID;
+  // Fall back to PID matching for lines that lack botUserId.
+  if (currentClinePid !== null) {
+    const pidMatch = line.match(PID_RE);
+    if (pidMatch) return parseInt(pidMatch[1], 10) === currentClinePid;
+  }
+  // Can't determine bot identity — accept as potential match (best-effort).
+  return true;
+}
 
 let clineProcess = null;
 let restarting = false;
@@ -101,11 +128,19 @@ function runCline(args) {
 // Kills any connector still polling this bot token from an earlier run. Leftover
 // background daemons steal Telegram updates and answer the user — the wrapper
 // never hears the errors they get.
+// NOTE: The pgrep pattern is scoped to THIS bot token so that multiple
+// duplicated instances (each with a different TELEGRAM_BOT_TOKEN) don't
+// kill each other's connectors.
+// We do NOT call `cline connect --stop` here — that's a global command that
+// stops *any* running connector, not just ours. Instead we kill via pgrep,
+// which is now token-scoped.
 function purgeStale() {
-  runCline(['connect', '--stop']);
 
   try {
-    const out = execFileSync('pgrep', ['-f', 'connect telegram'], { encoding: 'utf8' });
+    // Only match processes carrying THIS bot token — not generic "connect
+    // telegram" which would catch and kill other bot instances.
+    const pattern = `connect telegram.*${TELEGRAM_BOT_TOKEN}`;
+    const out = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
     const myPid = process.pid;
     const childPid = clineProcess ? clineProcess.pid : -1;
     for (const raw of out.split('\n')) {
@@ -117,7 +152,7 @@ function purgeStale() {
       } catch (_) {}
     }
   } catch (_) {
-    // pgrep absent, or no matching processes — nothing to purge.
+    // pgrep absent, no matching processes, or token pattern didn't match — nothing to purge.
   }
 }
 
@@ -184,7 +219,9 @@ function stopCurrent() {
       log(`[Rotator] Failed to kill cline: ${err.message}`);
     }
   }
-  runCline(['connect', '--stop']);
+  // NOTE: Removed `runCline(['connect', '--stop'])` — that's a global command
+  // that stops ANY running connector, not just ours. SIGTERM on clineProcess
+  // is sufficient and doesn't interfere with other bot instances.
 }
 
 function scheduleRestart(index, modelIndex, delay = RESTART_DELAY_MS) {
@@ -224,6 +261,7 @@ function startCline(index, modelIndex) {
   // /dev/null for stdin, and an immediate EOF there can make the foreground
   // connector quit right after starting.
   clineProcess = spawn('cline', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  currentClinePid = clineProcess.pid;
 
   clineProcess.on('error', (err) => {
     log(`[Rotator] Failed to start cline: ${err.message}`);
@@ -231,6 +269,7 @@ function startCline(index, modelIndex) {
 
   clineProcess.on('close', (code) => {
     if (restarting) return;            // a rotation's timer will take over
+    currentClinePid = null;
     clineProcess = null;
 
     const elapsedMs = Date.now() - startedAt;
@@ -484,10 +523,12 @@ function handleTurnEvent(line) {
 
 // Polls the connector's own logs. The shared cline.log carries the
 // telegram-connect bridge errors (most reliable signal); the per-bot log is a
-// secondary source.
+// secondary source. Both are filtered by isOurBot() so multiple duplicated
+// instances don't cross-react to each other's log entries.
 function pollLogs() {
   tailLog(SHARED_CLINE_LOG, (line) => {
     if (!IS_TELEGRAM_RE.test(line)) return;
+    if (!isOurBot(line)) return;
     if (LIMIT_RE.test(line)) {
       // This line is the failed turn itself: end the turn (stops progress
       // pings) before the rotation path takes over.
@@ -506,7 +547,7 @@ function pollLogs() {
   } catch (_) {}
   for (const file of botLogs) {
     tailLog(file, (line) => {
-      if (LIMIT_RE.test(line)) onLimitSignal(line);
+      if (LIMIT_RE.test(line) && isOurBot(line)) onLimitSignal(line);
     });
   }
 }
