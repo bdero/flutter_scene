@@ -215,18 +215,26 @@ class HeightField {
 /// Normals come from the height field by central difference rather than from
 /// the triangles, so neighbouring quads agree along their shared edge and the
 /// surface shades smoothly instead of faceting.
-PrimitiveArrays buildTerrainArrays(HeightField field) {
+/// Writes rows [fromRow]..[toRow] of [field] into the given arrays.
+///
+/// Split out of [buildTerrainArrays] so sculpting can refresh the band a
+/// stroke touched instead of the whole map: a brush covering one percent of
+/// a terrain should cost one percent of the work, not all of it.
+void writeTerrainRows(
+  HeightField field, {
+  required Float32List positions,
+  required Float32List? normals,
+  required Float32List? texCoords,
+  required int fromRow,
+  required int toRow,
+}) {
   final columns = field.columns;
-  final rows = field.rows;
-  final vertexCount = columns * rows;
-  final positions = Float32List(vertexCount * 3);
-  final normals = Float32List(vertexCount * 3);
-  final texCoords = Float32List(vertexCount * 2);
-
   final stepX = field.width / (columns - 1);
-  final stepZ = field.depth / (rows - 1);
+  final stepZ = field.depth / (field.rows - 1);
+  final first = math.max(0, fromRow);
+  final last = math.min(field.rows - 1, toRow);
 
-  for (var r = 0; r < rows; r++) {
+  for (var r = first; r <= last; r++) {
     final z = -field.depth / 2 + stepZ * r;
     for (var c = 0; c < columns; c++) {
       final x = -field.width / 2 + stepX * c;
@@ -235,21 +243,43 @@ PrimitiveArrays buildTerrainArrays(HeightField field) {
       positions[v * 3 + 1] = field.sample(c, r);
       positions[v * 3 + 2] = z;
 
-      // Central difference over the two neighbours on each axis; the clamp in
-      // sample() makes the border one-sided instead of out of range.
-      final dx =
-          (field.sample(c + 1, r) - field.sample(c - 1, r)) / (2 * stepX);
-      final dz =
-          (field.sample(c, r + 1) - field.sample(c, r - 1)) / (2 * stepZ);
-      final length = math.sqrt(dx * dx + 1.0 + dz * dz);
-      normals[v * 3] = -dx / length;
-      normals[v * 3 + 1] = 1.0 / length;
-      normals[v * 3 + 2] = -dz / length;
+      if (normals != null) {
+        // Central difference over the two neighbours on each axis; the clamp
+        // in sample() makes the border one-sided instead of out of range.
+        final dx =
+            (field.sample(c + 1, r) - field.sample(c - 1, r)) / (2 * stepX);
+        final dz =
+            (field.sample(c, r + 1) - field.sample(c, r - 1)) / (2 * stepZ);
+        final length = math.sqrt(dx * dx + 1.0 + dz * dz);
+        normals[v * 3] = -dx / length;
+        normals[v * 3 + 1] = 1.0 / length;
+        normals[v * 3 + 2] = -dz / length;
+      }
 
-      texCoords[v * 2] = c / (columns - 1);
-      texCoords[v * 2 + 1] = r / (rows - 1);
+      if (texCoords != null) {
+        texCoords[v * 2] = c / (columns - 1);
+        texCoords[v * 2 + 1] = r / (field.rows - 1);
+      }
     }
   }
+}
+
+PrimitiveArrays buildTerrainArrays(HeightField field) {
+  final columns = field.columns;
+  final rows = field.rows;
+  final vertexCount = columns * rows;
+  final positions = Float32List(vertexCount * 3);
+  final normals = Float32List(vertexCount * 3);
+  final texCoords = Float32List(vertexCount * 2);
+
+  writeTerrainRows(
+    field,
+    positions: positions,
+    normals: normals,
+    texCoords: texCoords,
+    fromRow: 0,
+    toRow: rows - 1,
+  );
 
   final indices = <int>[];
   for (var r = 0; r < rows - 1; r++) {
@@ -320,7 +350,9 @@ class TerrainGeometry extends MeshGeometry {
     this.field,
     PrimitiveArrays arrays, {
     required bool sculptable,
-  }) : super.fromArrays(
+  }) : _positions = arrays.positions,
+       _normals = arrays.normals,
+       super.fromArrays(
          positions: arrays.positions,
          normals: arrays.normals,
          texCoords: arrays.texCoords,
@@ -333,6 +365,11 @@ class TerrainGeometry extends MeshGeometry {
 
   /// The samples this mesh was built from.
   final HeightField field;
+
+  // Kept so a partial rebuild can rewrite a band rather than allocating a
+  // fresh set of arrays for every dab of a stroke.
+  final Float32List _positions;
+  final Float32List? _normals;
 
   /// The ground height at world ([x], [z]), for a camera or a character that
   /// needs to sit on the surface. Delegates to [HeightField.heightAtWorld].
@@ -351,10 +388,32 @@ class TerrainGeometry extends MeshGeometry {
   /// Normals are recomputed across the whole field rather than the edited
   /// range, because a sample's normal is a difference of its neighbours: the
   /// ring just outside a stroke changes even though its height did not.
-  void rebuildFromField() {
-    final arrays = buildTerrainArrays(field);
-    updatePositions(arrays.positions);
-    final normals = arrays.normals;
-    if (normals != null) updateNormals(normals);
+  /// Pass [fromRow] and [toRow] to refresh only the band a stroke touched.
+  /// Omit them to refresh everything, which is what a fresh field wants.
+  void rebuildFromField({int? fromRow, int? toRow}) {
+    // Normals read one sample either side, so the band has to be one row
+    // wider than the heights that moved or the seam shows at its edge.
+    final first = fromRow == null ? 0 : math.max(0, fromRow - 1);
+    final last = toRow == null
+        ? field.rows - 1
+        : math.min(field.rows - 1, toRow + 1);
+
+    writeTerrainRows(
+      field,
+      positions: _positions,
+      normals: _normals,
+      // The grid does not move sideways, so texture coordinates never change.
+      texCoords: null,
+      fromRow: first,
+      toRow: last,
+    );
+
+    final start = first * field.columns;
+    final count = (last - first + 1) * field.columns;
+    updatePositions(_positions, dirtyStart: start, dirtyCount: count);
+    final normals = _normals;
+    if (normals != null) {
+      updateNormals(normals, dirtyStart: start, dirtyCount: count);
+    }
   }
 }

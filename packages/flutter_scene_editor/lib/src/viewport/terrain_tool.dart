@@ -89,7 +89,9 @@ class TerrainStroke {
     );
     if (range == null) return;
     _touched = true;
-    geometry.rebuildFromField();
+    // Only the rows the dab reached; a small brush on a large terrain should
+    // not rewrite the whole map every pointer move.
+    geometry.rebuildFromField(fromRow: range.minRow, toRow: range.maxRow);
   }
 
   /// The finished samples, as the command takes them.

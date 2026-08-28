@@ -274,4 +274,64 @@ void main() {
       expect(hit.y, closeTo(1, 1e-3), reason: 'the middle of the ramp');
     });
   });
+
+  group('partial rebuilds', () {
+    test('a band writes the rows it covers and leaves the rest', () {
+      // writeTerrainRows is what a banded rebuild calls; this checks it
+      // touches exactly the band, since a rebuild that quietly wrote
+      // everything would pass every visual test and cost the same as before.
+      final field = HeightField(
+        heights: Float32List.fromList(
+          List<double>.generate(5 * 5, (i) => i.toDouble()),
+        ),
+        columns: 5,
+        rows: 5,
+        width: 4,
+        depth: 4,
+      );
+      final positions = Float32List(5 * 5 * 3);
+
+      writeTerrainRows(
+        field,
+        positions: positions,
+        normals: null,
+        texCoords: null,
+        fromRow: 2,
+        toRow: 3,
+      );
+
+      // Rows 0, 1 and 4 are untouched, so their heights are still zero.
+      for (final row in [0, 1, 4]) {
+        for (var c = 0; c < 5; c++) {
+          expect(positions[(row * 5 + c) * 3 + 1], 0, reason: 'row $row');
+        }
+      }
+      // Rows 2 and 3 carry the field's samples.
+      for (final row in [2, 3]) {
+        for (var c = 0; c < 5; c++) {
+          expect(
+            positions[(row * 5 + c) * 3 + 1],
+            field.sample(c, row),
+            reason: 'row $row',
+          );
+        }
+      }
+    });
+
+    test('a band clamps to the field rather than running off it', () {
+      final field = rampField();
+      final positions = Float32List(3 * 3 * 3);
+      expect(
+        () => writeTerrainRows(
+          field,
+          positions: positions,
+          normals: null,
+          texCoords: null,
+          fromRow: -5,
+          toRow: 99,
+        ),
+        returnsNormally,
+      );
+    });
+  });
 }
