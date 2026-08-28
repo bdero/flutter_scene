@@ -448,7 +448,26 @@ class _SceneViewState extends State<SceneView>
   Future<void> _startRevealWatch() async {
     final generation = ++_revealGeneration;
     final start = DateTime.now();
-    await Scene.initializeStaticResources();
+    try {
+      await Scene.initializeStaticResources();
+    } catch (error, stack) {
+      // The static resources now report their failure instead of completing
+      // normally. Nothing here can recover -- without them no frame can be
+      // drawn -- so the view stays on its loading widget, but the cause is
+      // reported rather than left as an unhandled error on this future.
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'flutter_scene',
+          context: ErrorDescription(
+            'while initializing the engine resources a SceneView needs to '
+            'draw its first frame. The view stays on its loading widget.',
+          ),
+        ),
+      );
+      return;
+    }
     if (!mounted || generation != _revealGeneration) return;
     await widget.loading?.ready;
     if (!mounted || generation != _revealGeneration) return;
