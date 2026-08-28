@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
+import 'package:flutter_scene/src/kit/environment/lightning_component.dart';
 import 'package:flutter_scene/src/kit/environment/water_component.dart';
 import 'package:flutter_scene/src/kit/grid/grid_tiles.dart';
 import 'package:flutter_scene/src/kit/interaction/path_follower_component.dart';
@@ -31,7 +32,8 @@ void registerKitComponentCodecs(FsceneComponentRegistry registry) {
     ..register(GridTileLayerCodec())
     ..register(AnimatorCodec())
     ..register(ScatterLayerCodec())
-    ..register(WaterCodec());
+    ..register(WaterCodec())
+    ..register(LightningCodec());
 }
 
 /// Codec for [PathFollowerComponent], which walks a node along a route from
@@ -1037,5 +1039,111 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
     shallowColor: props.vec4('shallowColor'),
     deepColor: props.vec4('deepColor'),
     animate: props.boolean('animate'),
+  );
+}
+
+/// Codec for [LightningComponent].
+///
+/// The sky and the light it drives are not properties: the component finds
+/// the scene's own weather sky on mount, and an authored reference to a live
+/// object has nowhere to point in a document. What is authored is the storm's
+/// shape: how often it strikes, how far away, and how dark it holds the sky.
+class LightningCodec extends DeclarativeComponentCodec<LightningComponent> {
+  @override
+  String get type => 'lightning';
+
+  @override
+  String? get category => 'Environment';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'lightning',
+    properties: propertySchema,
+  );
+
+  @override
+  List<ComponentField<LightningComponent>> get fields => [
+    ComponentField.number(
+      'minInterval',
+      defaultValue: 4.0,
+      doc: 'Shortest gap between strikes, in seconds.',
+      constraints: const [Range.nonNegative(), SoftRange(0.5, 60)],
+      get: (c) => c.minInterval,
+      set: (c, v) => c.minInterval = v,
+    ),
+    ComponentField.number(
+      'maxInterval',
+      defaultValue: 14.0,
+      doc: 'Longest gap between strikes, in seconds.',
+      constraints: const [Range.nonNegative(), SoftRange(0.5, 120)],
+      get: (c) => c.maxInterval,
+      set: (c, v) => c.maxInterval = v,
+    ),
+    ComponentField.number(
+      'minDistance',
+      defaultValue: 300.0,
+      doc:
+          'Nearest a bolt can strike, in world units. Distance sets both how '
+          'bright the flash is and how long the thunder takes to arrive.',
+      constraints: const [Range.nonNegative(), SoftRange(10, 5000)],
+      get: (c) => c.minDistance,
+      set: (c, v) => c.minDistance = v,
+    ),
+    ComponentField.number(
+      'maxDistance',
+      defaultValue: 4000.0,
+      doc: 'Furthest a bolt can strike, in world units.',
+      constraints: const [Range.nonNegative(), SoftRange(10, 20000)],
+      get: (c) => c.maxDistance,
+      set: (c, v) => c.maxDistance = v,
+    ),
+    ComponentField.number(
+      'speedOfSound',
+      defaultValue: 343.0,
+      doc:
+          'World units per second sound travels, which is what delays the '
+          'thunder. Scale it with the world\'s units.',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.speedOfSound,
+      set: (c, v) => c.speedOfSound = v,
+    ),
+    ComponentField.number(
+      'flashDuration',
+      defaultValue: 0.42,
+      doc: 'How long a flash lasts, in seconds.',
+      constraints: const [Range.nonNegative(), SoftRange(0.05, 2)],
+      get: (c) => c.flashDuration,
+      set: (c, v) => c.flashDuration = v,
+    ),
+    ComponentField.number(
+      'lightIntensity',
+      defaultValue: 12.0,
+      doc: 'Peak intensity added to the driven light at the top of a strike.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 60)],
+      get: (c) => c.lightIntensity,
+      set: (c, v) => c.lightIntensity = v,
+    ),
+    ComponentField.number(
+      'stormDarkening',
+      defaultValue: 0.7,
+      doc: 'How overcast the sky is held while the storm runs.',
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.stormDarkening,
+      set: (c, v) => c.stormDarkening = v,
+    ),
+  ];
+
+  @override
+  LightningComponent create(PropertyReader props) => LightningComponent(
+    minInterval: props.number('minInterval'),
+    maxInterval: props.number('maxInterval'),
+    minDistance: props.number('minDistance'),
+    maxDistance: props.number('maxDistance'),
+    speedOfSound: props.number('speedOfSound'),
+    flashDuration: props.number('flashDuration'),
+    lightIntensity: props.number('lightIntensity'),
+    stormDarkening: props.number('stormDarkening'),
   );
 }

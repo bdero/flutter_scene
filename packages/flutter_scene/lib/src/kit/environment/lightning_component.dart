@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -65,8 +66,13 @@ class LightningComponent extends Component {
     _scheduleNext();
   }
 
-  /// The sky whose flash and overcast this drives. Null still fires strikes
-  /// and thunder, which is what a storm heard from indoors needs.
+  /// The sky whose flash and overcast this drives.
+  ///
+  /// Left null, the component finds the scene's own skybox on mount when it
+  /// is a [WeatherSkySource], which is what makes a storm work as an authored
+  /// component rather than only as one wired up in code. Still null after
+  /// that (no scene, or a sky with no clouds) it fires strikes and thunder
+  /// without a flash, which is a storm heard from indoors.
   WeatherSkySource? sky;
 
   /// A light flashed with each strike, its intensity scaled by the envelope.
@@ -176,8 +182,25 @@ class LightningComponent extends Component {
   }
 
   @override
+  void onMount() {
+    sky ??= _sceneSky();
+  }
+
+  /// The scene's skybox, when it is a weather sky.
+  WeatherSkySource? _sceneSky() {
+    if (!isAttached) return null;
+    final owner = node.internalRenderScene?.owner;
+    if (owner is! Scene) return null;
+    final source = owner.skybox?.source;
+    return source is WeatherSkySource ? source : null;
+  }
+
+  @override
   void update(double deltaSeconds) {
     if (deltaSeconds <= 0) return;
+    // A sky assigned after mount (the editor swapping the stage's skybox
+    // under a live scene) is picked up on the next tick rather than never.
+    sky ??= _sceneSky();
 
     final target = sky;
     if (target != null) {

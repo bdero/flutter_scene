@@ -169,6 +169,7 @@ base class Scene implements SceneGraph {
     // logged the failure by the time this handler runs, so this only keeps an
     // unawaited future from being reported a second time as an unhandled error.
     initializeStaticResources().ignore();
+    renderScene.owner = this;
     root.registerAsRoot(this);
   }
 

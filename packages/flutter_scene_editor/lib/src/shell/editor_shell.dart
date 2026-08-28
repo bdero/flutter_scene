@@ -32,6 +32,7 @@ import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
 import '../panels/vfx_panel.dart';
+import '../panels/weather_panel.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
@@ -45,6 +46,7 @@ const Map<String, String> _panelTitles = {
   'viewport': 'Viewport',
   'animation': 'Animation',
   'effects': 'Effects',
+  'weather': 'Weather',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
   'assets': 'Assets',
@@ -1034,6 +1036,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: VfxPanel(controller: _ctrl),
                           ),
                           DockPanel(
+                            id: 'weather',
+                            title: 'Weather',
+                            child: WeatherPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
                             id: 'outliner',
                             title: 'Outliner',
                             child: OutlinerPanel(controller: _ctrl),
@@ -1341,6 +1348,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (group: 'Audio', label: 'Audio Source', type: 'audioSource'),
     (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
     (group: 'Environment', label: 'Water', type: 'water'),
+    (group: 'Environment', label: 'Lightning', type: 'lightning'),
     (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
     (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
     (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),

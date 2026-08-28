@@ -446,6 +446,14 @@ class RenderItem {
 /// [Bvh]; unbounded items (no [RenderItem.worldBounds], or
 /// [RenderItem.frustumCulled] off) are always visited.
 class RenderScene {
+  /// The scene that owns this, set by [Scene] at construction.
+  ///
+  /// The back-reference a component needs to reach scene-wide state its own
+  /// node cannot see: the skybox a storm driver flashes, the environment a
+  /// look depends on. Null only for a render scene built outside a [Scene]
+  /// (the tests' stub graphs).
+  Object? owner;
+
   /// Every registered render item, in no particular order.
   final List<RenderItem> items = [];
 
