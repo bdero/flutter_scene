@@ -31,6 +31,7 @@ import '../project/project_runner.dart';
 import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
+import '../panels/flow_panel.dart';
 import '../panels/nav_mesh_panel.dart';
 import '../panels/vfx_panel.dart';
 import '../panels/weather_panel.dart';
@@ -49,6 +50,7 @@ const Map<String, String> _panelTitles = {
   'effects': 'Effects',
   'weather': 'Weather',
   'navigation': 'Navigation',
+  'flow': 'Flow',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
   'assets': 'Assets',
@@ -1048,6 +1050,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: NavMeshPanel(controller: _ctrl),
                           ),
                           DockPanel(
+                            id: 'flow',
+                            title: 'Flow',
+                            child: FlowPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
                             id: 'outliner',
                             title: 'Outliner',
                             child: OutlinerPanel(controller: _ctrl),
@@ -1356,6 +1363,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
     (group: 'Environment', label: 'Water', type: 'water'),
     (group: 'Environment', label: 'Lightning', type: 'lightning'),
+    (group: 'Scripting', label: 'Flow Graph', type: 'flow'),
     (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
     (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
     (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),
@@ -1734,6 +1742,7 @@ class _EditorMenuBar extends StatelessWidget {
                       'Effects',
                       'Audio',
                       'Volume',
+                      'Scripting',
                     ])
                       if (_EditorShellState.objectsIn(group).length == 1)
                         _MenuItem(

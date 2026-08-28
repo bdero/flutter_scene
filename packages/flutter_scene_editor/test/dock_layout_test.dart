@@ -41,7 +41,7 @@ void main() {
     final centre = root.children[1] as DockSplit;
     expect(centre.axis, Axis.vertical);
     expect((centre.children[0] as DockTabs).panels, ['viewport']);
-    expect((centre.children[1] as DockTabs).panels, ['animation']);
+    expect((centre.children[1] as DockTabs).panels, ['animation', 'flow']);
     expect(centre.weights, [0.72, 0.28]);
   });
 

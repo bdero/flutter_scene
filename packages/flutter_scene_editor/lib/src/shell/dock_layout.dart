@@ -26,7 +26,7 @@ DockLayout defaultEditorDockLayout() {
           Axis.vertical,
           [
             DockTabs(['viewport']),
-            DockTabs(['animation']),
+            DockTabs(['animation', 'flow']),
           ],
           [0.72, 0.28],
         ),
