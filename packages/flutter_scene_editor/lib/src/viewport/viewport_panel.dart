@@ -1132,7 +1132,6 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           },
                           child: OrbitCameraController(
                             camera: _camera,
-                            dragThreshold: _primaryDragThreshold,
                             isLocked: () =>
                                 _draggingGizmo ||
                                 _modal != null ||

@@ -194,6 +194,12 @@ class _EditorHomeState extends State<_EditorHome> {
     controller.componentSourcePaths.addAll(_componentSourcePaths);
     controller.sourceFileOpener = (path) =>
         openSourceInEditor(_settings.editorCommand, path);
+    controller.nodeFramer = (id) {
+      final bounds = controller.liveNode(id)?.combinedWorldBounds;
+      if (bounds == null) return false;
+      _cameraHandle.frame(bounds);
+      return true;
+    };
   }
 
   // The latest foreign component schemas by type, with their provenance.

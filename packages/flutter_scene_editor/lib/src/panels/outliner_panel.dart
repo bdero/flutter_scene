@@ -567,6 +567,13 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
 
     rowContent = InkWell(
       onTap: () => _handleTap(ctrl, node.id),
+      // Double-click frames the node, for when the view has wandered far
+      // enough that finding it by hand is the harder job. It selects first,
+      // so the result matches what the F key would do from here.
+      onDoubleTap: () {
+        ctrl.selection.selectOnly(node.id);
+        ctrl.nodeFramer?.call(node.id);
+      },
       // The row paints its own background, which sits over the ink overlay,
       // so hover has to be tracked rather than left to the splash.
       onHover: (hovered) {
