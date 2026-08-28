@@ -22,6 +22,7 @@ import 'package:scene/scene.dart' show LocalId;
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
+import 'scatter_tool.dart';
 import 'terrain_tool.dart';
 import 'transform_gizmo.dart';
 import 'viewport_camera_handle.dart';
@@ -184,6 +185,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // --- pointer handling ----------------------------------------------------
 
   final TerrainToolController _terrainTool = TerrainToolController();
+  final ScatterToolController _scatterTool = ScatterToolController();
+  ScatterStroke? _scatterStroke;
 
   TerrainStroke? _stroke;
   final Stopwatch _strokeClock = Stopwatch();
@@ -200,6 +203,89 @@ class _ViewportPanelState extends State<ViewportPanel> {
     return terrainTargetOf(
       _ctrl.liveNode(primary),
       (geometry) => resourceOrigin(geometry)?.resourceId,
+    );
+  }
+
+  /// The scatter layer on the selection, or null when there is none.
+  ScatterLayer? _scatterTarget() {
+    final primary = _ctrl.selection.primary;
+    if (primary == null) return null;
+    return scatterLayerOf(_ctrl.liveNode(primary));
+  }
+
+  /// The height field anything painted should sit on: the first terrain in
+  /// the scene. Painting onto a scene with no terrain drops instances on the
+  /// plane, which is the sensible fallback rather than a refusal.
+  HeightField? _groundField() {
+    for (final id in _ctrl.document.nodes.keys) {
+      final node = _ctrl.liveNode(id);
+      final target = terrainTargetOf(node, (geometry) => null);
+      if (target != null) return target.geometry.field;
+      final primitives = node?.mesh?.primitives;
+      if (primitives == null) continue;
+      for (final primitive in primitives) {
+        final geometry = primitive.geometry;
+        if (geometry is TerrainGeometry) return geometry.field;
+      }
+    }
+    return null;
+  }
+
+  /// Starts a painting stroke when the tool is armed over a scatter layer.
+  bool _beginScatter(Offset position, Size viewSize) {
+    final layer = _scatterTarget();
+    final primary = _ctrl.selection.primary;
+    if (layer == null || primary == null) return false;
+    _scatterStroke = ScatterStroke(layer: layer, nodeId: primary);
+    _strokeClock
+      ..reset()
+      ..start();
+    _scatterAt(position, viewSize, 1 / 60);
+    return true;
+  }
+
+  void _scatterAt(Offset position, Size viewSize, double deltaSeconds) {
+    final stroke = _scatterStroke;
+    if (stroke == null) return;
+    final field = _groundField();
+    final point = field == null
+        ? _pointOnGroundPlane(position, viewSize)
+        : _groundUnder(position, viewSize, field);
+    if (point == null) return;
+    _brushPoint = point;
+    stroke.dab(
+      _scatterTool.brush,
+      _scatterTool.action,
+      point,
+      deltaSeconds,
+      heightAt: field?.heightAtWorld,
+    );
+    setState(() {});
+  }
+
+  /// Where the pointer crosses y = 0, for a scene with no terrain to land on.
+  vm.Vector3? _pointOnGroundPlane(Offset position, Size viewSize) {
+    final ray = _camera.camera.screenPointToRay(position, viewSize);
+    final direction = ray.direction.normalized();
+    if (direction.y.abs() < 1e-6) return null;
+    final t = -ray.origin.y / direction.y;
+    if (t < 0) return null;
+    return ray.origin + direction * t;
+  }
+
+  /// Ends the painting stroke, writing the placements as one undoable step.
+  void _endScatter() {
+    final stroke = _scatterStroke;
+    _scatterStroke = null;
+    _strokeClock.stop();
+    if (stroke == null || !stroke.changed) return;
+    unawaited(
+      _ctrl.setComponentPropertyRouted(
+        _ctrl.selection.primary!,
+        'scatterLayer',
+        'placements',
+        stroke.encodedPlacements(),
+      ),
     );
   }
 
@@ -304,6 +390,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_terrainTool.active && _beginSculpt(event.localPosition, viewSize)) {
       return;
     }
+    if (_scatterTool.active && _beginScatter(event.localPosition, viewSize)) {
+      return;
+    }
     final primary = _ctrl.selection.primary;
     if (primary != null) {
       final live = _ctrl.liveNode(primary);
@@ -349,6 +438,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _sculptAt(event.localPosition, _viewSize, _dabSeconds());
       return;
     }
+    if (_scatterStroke != null) {
+      _scatterAt(event.localPosition, _viewSize, _dabSeconds());
+      return;
+    }
     if (_freeLookActive) {
       unawaited(
         _freeLookPointer
@@ -387,6 +480,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   void _onPointerUp(PointerUpEvent event) {
     if (_stroke != null) {
       _endSculpt();
+      return;
+    }
+    if (_scatterStroke != null) {
+      _endScatter();
       return;
     }
     if (_freeLookActive && event.buttons & kSecondaryMouseButton == 0) {
@@ -449,6 +546,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // moved on screen, and silently reverting it would look like the edit
     // was lost rather than cancelled.
     if (_stroke != null) _endSculpt();
+    if (_scatterStroke != null) _endScatter();
     if (_freeLookActive) _endFreeLook();
     if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;
     if (_draggingGizmo) {
@@ -1117,8 +1215,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             onChanged: _setMode,
                             sculpting: _terrainTool.active,
                             canSculpt: _terrainTarget() != null,
-                            onSculptingChanged: (value) =>
-                                setState(() => _terrainTool.active = value),
+                            onSculptingChanged: (value) => setState(() {
+                              _terrainTool.active = value;
+                              // The two brushes both want the primary button,
+                              // so arming one disarms the other.
+                              if (value) _scatterTool.active = false;
+                            }),
+                            painting: _scatterTool.active,
+                            canPaint: _scatterTarget() != null,
+                            onPaintingChanged: (value) => setState(() {
+                              _scatterTool.active = value;
+                              if (value) _terrainTool.active = false;
+                            }),
                           ),
                         ),
                         if (_terrainTool.active)
@@ -1297,6 +1405,9 @@ class _GizmoModeBar extends StatelessWidget {
     required this.sculpting,
     required this.onSculptingChanged,
     required this.canSculpt,
+    required this.painting,
+    required this.onPaintingChanged,
+    required this.canPaint,
   });
   final GizmoMode mode;
   final void Function(GizmoMode) onChanged;
@@ -1307,6 +1418,13 @@ class _GizmoModeBar extends StatelessWidget {
 
   /// Whether the selection is terrain the brush could reach.
   final bool canSculpt;
+
+  /// Whether the scatter brush has the primary button.
+  final bool painting;
+  final ValueChanged<bool> onPaintingChanged;
+
+  /// Whether the selection carries a scatter layer to paint into.
+  final bool canPaint;
 
   @override
   Widget build(BuildContext context) {
@@ -1358,6 +1476,30 @@ class _GizmoModeBar extends StatelessWidget {
                   color: !canSculpt
                       ? editorMutedTextColor
                       : sculpting
+                      ? Colors.black
+                      : Colors.white,
+                ),
+              ),
+            ),
+          ),
+          Tooltip(
+            message: canPaint
+                ? 'Paint objects'
+                : 'Select a node with a scatter layer to paint into',
+            child: InkWell(
+              onTap: canPaint ? () => onPaintingChanged(!painting) : null,
+              child: Container(
+                width: 28,
+                height: 24,
+                color: painting
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.black.withValues(alpha: 0.55),
+                child: Icon(
+                  Icons.forest_outlined,
+                  size: editorIconSizeLarge,
+                  color: !canPaint
+                      ? editorMutedTextColor
+                      : painting
                       ? Colors.black
                       : Colors.white,
                 ),
