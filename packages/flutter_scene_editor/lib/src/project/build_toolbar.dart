@@ -184,7 +184,7 @@ class _InstallationDropdown extends StatelessWidget {
                       buildInfo: buildInfo,
                     ),
                   ),
-                const Icon(Icons.flutter_dash, size: 13),
+                const Icon(Icons.flutter_dash, size: 14),
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 150),
@@ -253,7 +253,7 @@ class _InstallationBadge extends StatelessWidget {
           child: Icon(
             error ? Icons.error_outline : Icons.warning_amber_outlined,
             size: 12,
-            color: error ? Colors.redAccent : Colors.orangeAccent,
+            color: error ? editorErrorColor : editorWarningColor,
           ),
         );
       },
@@ -289,7 +289,7 @@ class _ConfigurationDropdown extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.tune, size: 13, color: scheme.onSurfaceVariant),
+              Icon(Icons.tune, size: 14, color: scheme.onSurfaceVariant),
               const SizedBox(width: 4),
               Text(
                 'No project',
@@ -310,7 +310,7 @@ class _ConfigurationDropdown extends StatelessWidget {
                   : Icons.info_outline,
               size: 12,
               color: versionCheck.severity == VersionCheckSeverity.warning
-                  ? Colors.orangeAccent
+                  ? editorWarningColor
                   : scheme.onSurfaceVariant,
             ),
           );
@@ -360,7 +360,7 @@ class _ConfigurationDropdown extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (badge != null) ...[badge, const SizedBox(width: 4)],
-                const Icon(Icons.tune, size: 13),
+                const Icon(Icons.tune, size: 14),
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 130),
@@ -439,7 +439,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
             children: [
               Icon(
                 Icons.devices_outlined,
-                size: 13,
+                size: 14,
                 color: scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 4),
@@ -461,7 +461,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
           MenuItemButton(
             child: Text(
               'Failed to list devices, $_error',
-              style: const TextStyle(color: Colors.redAccent),
+              style: const TextStyle(color: editorErrorColor),
             ),
           )
         else if (_devices == null || _devices!.isEmpty)
@@ -507,7 +507,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.devices_outlined, size: 13),
+                const Icon(Icons.devices_outlined, size: 14),
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 120),
@@ -713,7 +713,7 @@ class _ActionButtons extends StatelessWidget {
               : null,
           child: Icon(
             icon,
-            size: 15,
+            size: 16,
             color: active
                 ? scheme.primary
                 : onPressed == null

@@ -225,7 +225,7 @@ class ProjectionToggle extends StatelessWidget {
           ),
           child: Icon(
             orthographic ? Icons.grid_on : Icons.vrpano_outlined,
-            size: 15,
+            size: 16,
             color: orthographic ? Colors.black : Colors.white,
           ),
         ),

@@ -425,7 +425,7 @@ class _ComponentEditor extends StatelessWidget {
         padding: EdgeInsets.symmetric(vertical: 2),
         child: Text(
           '(no editable properties)',
-          style: TextStyle(fontSize: 11, color: Colors.grey),
+          style: TextStyle(fontSize: 11, color: editorMutedTextColor),
         ),
       );
     }
@@ -1056,7 +1056,9 @@ class _AddComponentBar extends StatelessWidget {
         if (!present.contains(type)) type,
     ];
     final enabled = available.isNotEmpty;
-    final tint = enabled ? Theme.of(context).colorScheme.primary : Colors.grey;
+    final tint = enabled
+        ? Theme.of(context).colorScheme.primary
+        : editorMutedTextColor;
     return Align(
       alignment: Alignment.centerLeft,
       child: TextButton(
@@ -1214,10 +1216,7 @@ Future<String?> showAddComponentPicker(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Add Component',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
+                  const Text('Add Component', style: editorDialogTitleText),
                   const SizedBox(height: 10),
                   FTextField(
                     control: FTextFieldControl.managed(
@@ -1235,7 +1234,7 @@ Future<String?> showAddComponentPicker(
                               'No component matches.',
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.grey,
+                                color: editorMutedTextColor,
                               ),
                             ),
                           )
@@ -1255,7 +1254,7 @@ Future<String?> showAddComponentPicker(
                                     style: const TextStyle(
                                       fontSize: 9,
                                       letterSpacing: 1.1,
-                                      color: Colors.grey,
+                                      color: editorMutedTextColor,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -1312,7 +1311,10 @@ class _ComponentPickerRow extends StatelessWidget {
             if (provenance != null)
               Text(
                 provenance == 'live' ? 'project' : provenance,
-                style: const TextStyle(fontSize: 9, color: Colors.grey),
+                style: const TextStyle(
+                  fontSize: 9,
+                  color: editorMutedTextColor,
+                ),
               ),
           ],
         ),
@@ -1404,7 +1406,10 @@ class _PrefabActions extends StatelessWidget {
                 child: Text(
                   '${instance.source.key}  ($overrides override'
                   '${overrides == 1 ? '' : 's'})',
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: editorMutedTextColor,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1556,7 +1561,7 @@ class _ReadOnlyRow extends StatelessWidget {
             width: 90,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1564,7 +1569,7 @@ class _ReadOnlyRow extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1783,7 +1788,10 @@ class _ResourceRefRow extends StatelessWidget {
             child: ids.isEmpty
                 ? Text(
                     '(no ${resourceKind ?? 'resource'} resources)',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: editorMutedTextColor,
+                    ),
                   )
                 : ReferencePicker(
                     entries: [
@@ -1980,10 +1988,7 @@ class _MiniNumberState extends State<_MiniNumber> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            widget.label,
-            style: const TextStyle(fontSize: 9, color: Colors.grey),
-          ),
+          Text(widget.label, style: editorMicroText),
           const SizedBox(width: 2),
           Expanded(
             child: FTextField(

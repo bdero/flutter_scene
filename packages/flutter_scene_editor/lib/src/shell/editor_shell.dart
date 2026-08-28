@@ -294,7 +294,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     showEditorDialog<void>(
       context,
       builder: (context) => AlertDialog(
-        title: const Text('Shader toolchain', style: TextStyle(fontSize: 14)),
+        title: const Text('Shader toolchain', style: editorDialogTitleText),
         content: SelectableText(
           message,
           style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
@@ -430,15 +430,15 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   children: [
                     const Text(
                       'New Component Script',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: editorDialogTitleText,
                     ),
                     const SizedBox(height: 6),
                     const Text(
                       'Written to lib/components and picked up on save.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: editorMutedTextColor,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     FTextField(
@@ -503,10 +503,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Save Layout',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                const Text('Save Layout', style: editorDialogTitleText),
                 const SizedBox(height: 14),
                 FTextField(
                   control: FTextFieldControl.managed(controller: controller),
@@ -574,10 +571,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   children: [
                     const Text(
                       'Overwrite Layout?',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: editorDialogTitleText,
                     ),
                     const SizedBox(height: 10),
                     Text('Replace the saved layout “$name”?'),
@@ -622,10 +616,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Manage Layouts',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+              const Text('Manage Layouts', style: editorDialogTitleText),
               const SizedBox(height: 12),
               if (widget.namedLayouts.isEmpty)
                 const Padding(
@@ -904,6 +895,13 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onPaste: _ctrl.paste,
                   onDelete: _deleteSelected,
                   onAddPrimitive: _addPrimitiveByCommand,
+                  onAddEmpty: () => unawaited(_addEmptyNode()),
+                  onAddObject: (type) {
+                    final entry = componentObjects.firstWhere(
+                      (candidate) => candidate.type == type,
+                    );
+                    unawaited(_addComponentObject(entry.type, entry.label));
+                  },
                   onAddPrefab: _addPrefabInstance,
                   onNewComponentScript: widget.projectRootDirectory == null
                       ? null
@@ -1241,6 +1239,52 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     unawaited(_addPrimitive(primitive.command, primitive.label));
   }
 
+  /// Scene objects that are a node plus one component, grouped the way the
+  /// Add menu shows them. A primitive needs geometry and a material built
+  /// first; these do not, so they share one two-command path.
+  static const componentObjects = <({String group, String label, String type})>[
+    (group: 'Camera', label: 'Camera', type: 'camera'),
+    (group: 'Light', label: 'Directional Light', type: 'directionalLight'),
+    (group: 'Light', label: 'Point Light', type: 'pointLight'),
+    (group: 'Light', label: 'Spot Light', type: 'spotLight'),
+    (group: 'Light', label: 'Area Light', type: 'rectAreaLight'),
+    (group: 'Effects', label: 'Particle Emitter', type: 'particleEmitter'),
+    (group: 'Effects', label: 'Trail', type: 'trail'),
+    (group: 'Audio', label: 'Audio Source', type: 'audioSource'),
+    (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
+    (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
+    (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
+    (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),
+  ];
+
+  /// The [componentObjects] in one group, in declaration order.
+  static Iterable<({String group, String label, String type})> objectsIn(
+    String group,
+  ) => componentObjects.where((entry) => entry.group == group);
+
+  /// Creates an empty node, the parent everything else gets grouped under.
+  Future<void> _addEmptyNode() async {
+    final before = Set.of(_ctrl.document.nodes.keys);
+    await _ctrl.run('createNode', {'name': 'Node'});
+    _ctrl.selection.selectOnly(
+      _ctrl.document.nodes.keys.firstWhere((id) => !before.contains(id)),
+    );
+  }
+
+  /// Creates a node carrying one component, named for what it is.
+  Future<void> _addComponentObject(String componentType, String label) async {
+    final before = Set.of(_ctrl.document.nodes.keys);
+    await _ctrl.run('createNode', {'name': label});
+    final nodeId = _ctrl.document.nodes.keys.firstWhere(
+      (id) => !before.contains(id),
+    );
+    await _ctrl.run('addComponent', {
+      'nodeId': nodeId.toToken(),
+      'componentType': componentType,
+    });
+    _ctrl.selection.selectOnly(nodeId);
+  }
+
   Future<void> _addPrimitive(String geoCommand, String nodeName) async {
     // Step 1: count resources before geometry creation.
     final beforeGeo = Set.of(_ctrl.document.resources.keys);
@@ -1358,6 +1402,8 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onPaste,
     required this.onDelete,
     required this.onAddPrimitive,
+    required this.onAddEmpty,
+    required this.onAddObject,
     required this.onAddPrefab,
     required this.onNewComponentScript,
     required this.onPaletteOpen,
@@ -1403,6 +1449,12 @@ class _EditorMenuBar extends StatelessWidget {
 
   /// Runs the named `create…Geometry` command and builds a node around it.
   final ValueChanged<String> onAddPrimitive;
+
+  /// Creates an empty node, the parent other objects get grouped under.
+  final VoidCallback onAddEmpty;
+
+  /// Creates a node carrying the named component type.
+  final ValueChanged<String> onAddObject;
   final VoidCallback onAddPrefab;
 
   /// Writes a new component script into the open project. Null with no
@@ -1557,6 +1609,7 @@ class _EditorMenuBar extends StatelessWidget {
             _Menu(
               label: 'Add',
               items: [
+                _MenuItem(label: 'Empty Node', onTap: onAddEmpty),
                 _MenuItem(
                   label: '3D Object',
                   children: [
@@ -1565,6 +1618,35 @@ class _EditorMenuBar extends StatelessWidget {
                         label: primitive.label,
                         onTap: () => onAddPrimitive(primitive.command),
                       ),
+                    for (final group in const [
+                      'Camera',
+                      'Light',
+                      'Effects',
+                      'Audio',
+                      'Volume',
+                    ])
+                      if (_EditorShellState.objectsIn(group).length == 1)
+                        _MenuItem(
+                          label: _EditorShellState.objectsIn(
+                            group,
+                          ).single.label,
+                          onTap: () => onAddObject(
+                            _EditorShellState.objectsIn(group).single.type,
+                          ),
+                        )
+                      else
+                        _MenuItem(
+                          label: group,
+                          children: [
+                            for (final entry in _EditorShellState.objectsIn(
+                              group,
+                            ))
+                              _MenuItem(
+                                label: entry.label,
+                                onTap: () => onAddObject(entry.type),
+                              ),
+                          ],
+                        ),
                   ],
                 ),
                 _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),

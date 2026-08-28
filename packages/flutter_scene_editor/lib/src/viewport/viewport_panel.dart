@@ -1136,7 +1136,7 @@ class _GizmoModeBar extends StatelessWidget {
                 : Colors.black.withValues(alpha: 0.55),
             child: Icon(
               icon,
-              size: 15,
+              size: 16,
               color: active ? Colors.black : Colors.white,
             ),
           ),
@@ -1299,7 +1299,7 @@ class _GizmoMenuButton extends StatelessWidget {
             ),
             child: Icon(
               Icons.place_outlined,
-              size: 15,
+              size: 16,
               color: preferences.enabled ? Colors.white : Colors.white38,
             ),
           ),
@@ -1383,7 +1383,7 @@ class _DebugOutputButtonState extends State<_DebugOutputButton> {
         ),
         child: Icon(
           Icons.layers_outlined,
-          size: 15,
+          size: 16,
           color: active ? Colors.black : Colors.white,
         ),
       ),
@@ -1441,7 +1441,7 @@ class _ViewportSettingsButton extends StatelessWidget {
           color: Colors.black.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: const Icon(Icons.settings, size: 15, color: Colors.white),
+        child: const Icon(Icons.settings, size: 16, color: Colors.white),
       ),
     );
   }

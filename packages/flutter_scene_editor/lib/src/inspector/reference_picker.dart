@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
+import '../shell/editor_theme.dart';
 import '../shell/editor_dialog.dart';
 
 typedef ReferencePickerEntry = ({LocalId id, String label});
@@ -51,7 +52,7 @@ class ReferencePicker extends StatelessWidget {
     if (entries.isEmpty) {
       return Text(
         emptyLabel,
-        style: const TextStyle(fontSize: 11, color: Colors.grey),
+        style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
       );
     }
     return FButton(
@@ -59,7 +60,7 @@ class ReferencePicker extends StatelessWidget {
       size: .xs,
       mainAxisAlignment: .spaceBetween,
       onPress: () => _open(context),
-      suffix: const Icon(Icons.unfold_more, size: 13),
+      suffix: const Icon(Icons.unfold_more, size: 14),
       child: Flexible(
         child: Text(
           _valueLabel,
@@ -111,10 +112,7 @@ class _ReferencePickerDialogState extends State<_ReferencePickerDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Select reference',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
+            const Text('Select reference', style: editorDialogTitleText),
             const SizedBox(height: 12),
             FTextField(
               control: FTextFieldControl.managed(
@@ -214,7 +212,7 @@ class _ReferencePickerRowState extends State<_ReferencePickerRow> {
                     SizedBox(
                       width: 18,
                       child: widget.selected
-                          ? const Icon(Icons.check, size: 13)
+                          ? const Icon(Icons.check, size: 14)
                           : null,
                     ),
                     Expanded(

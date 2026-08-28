@@ -3,11 +3,13 @@ import 'dart:math' as math;
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
+import 'package:forui/forui.dart';
 import 'package:flutter/material.dart';
 // Not re-exported through material.dart on 3.47 stable.
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
+import '../shell/editor_theme.dart';
 import '../controller/editor_controller.dart';
 
 /// Scene-tree outliner panel.
@@ -39,6 +41,15 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
     if (oldWidget.controller != widget.controller) _collapsed.clear();
   }
 
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
   void _setExpanded(LocalId id, bool expanded) {
     setState(() {
       if (expanded) {
@@ -55,20 +66,53 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
       listenable: controller,
       builder: (context, _) {
         final roots = controller.displayRoots();
+        final filtering = _query.trim().isNotEmpty;
+        final filter = filtering
+            ? outlinerFilterMatches(
+                roots: roots,
+                childrenOf: controller.displayChildren,
+                nameOf: (id) => controller.displayNode(id)?.name ?? '',
+                query: _query,
+              )
+            : null;
         final entries = _visibleEntries(
           controller,
           roots: roots,
           collapsed: _collapsed,
+          filter: filter,
         );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (roots.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+                child: FTextField(
+                  control: FTextFieldControl.managed(
+                    controller: _search,
+                    onChange: (value) => setState(() => _query = value.text),
+                  ),
+                  hint: 'Filter by name',
+                  prefixBuilder: (context, styles, child) => const Padding(
+                    padding: EdgeInsets.only(left: 8, right: 4),
+                    child: Icon(
+                      Icons.search,
+                      size: 14,
+                      color: editorMutedTextColor,
+                    ),
+                  ),
+                ),
+              ),
             Expanded(
               child: roots.isEmpty
                   ? const Center(
+                      child: Text('Empty scene', style: editorDetailText),
+                    )
+                  : filtering && entries.isEmpty
+                  ? Center(
                       child: Text(
-                        'Empty scene',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        'No node matches "${_query.trim()}"',
+                        style: editorDetailText,
                       ),
                     )
                   : ListView.builder(
@@ -149,12 +193,82 @@ class _VisibleInsertion extends _VisibleEntry {
   final int depth;
 }
 
+/// The nodes an outliner filter keeps: every node whose name matches [query],
+/// plus their ancestors and their descendants.
+///
+/// Ancestors are kept so a match is shown where it actually lives rather than
+/// as a flat list — the tree is most of what the outliner is for, and a hit
+/// three levels down means nothing without the branch above it. Descendants
+/// are kept because filtering to a container is how you look *inside* one;
+/// showing "lights" with nothing under it answers the wrong question.
+///
+/// An empty or blank query keeps everything, so the caller does not have to
+/// special-case "not filtering".
+Set<LocalId> outlinerFilterMatches({
+  required List<LocalId> roots,
+  required List<LocalId> Function(LocalId id) childrenOf,
+  required String Function(LocalId id) nameOf,
+  required String query,
+}) {
+  final needle = query.trim().toLowerCase();
+  final keep = <LocalId>{};
+  if (needle.isEmpty) {
+    void keepAll(LocalId id) {
+      keep.add(id);
+      for (final child in childrenOf(id)) {
+        keepAll(child);
+      }
+    }
+
+    for (final root in roots) {
+      keepAll(root);
+    }
+    return keep;
+  }
+
+  void keepSubtree(LocalId id) {
+    keep.add(id);
+    for (final child in childrenOf(id)) {
+      keepSubtree(child);
+    }
+  }
+
+  // Returns whether anything at or below [id] matched, so a parent learns it
+  // has to stay from the same walk that tested its children.
+  bool visit(LocalId id, List<LocalId> ancestors) {
+    final matched = nameOf(id).toLowerCase().contains(needle);
+    var descendantMatched = false;
+    final path = [...ancestors, id];
+    for (final child in childrenOf(id)) {
+      if (visit(child, path)) descendantMatched = true;
+    }
+    if (!matched && !descendantMatched) return false;
+    if (matched) {
+      keepSubtree(id);
+    } else {
+      keep.add(id);
+    }
+    keep.addAll(ancestors);
+    return true;
+  }
+
+  for (final root in roots) {
+    visit(root, const []);
+  }
+  return keep;
+}
+
 List<_VisibleEntry> _visibleEntries(
   EditorController controller, {
   required List<LocalId> roots,
   required Set<LocalId> collapsed,
+  Set<LocalId>? filter,
 }) {
   final entries = <_VisibleEntry>[];
+  // While filtering, the tree is a result list: reordering it would drop a
+  // node against a view that hides its siblings, and collapsing it would hide
+  // the very match being looked for.
+  final filtering = filter != null;
 
   void addContainer(
     LocalId? parentId,
@@ -163,15 +277,16 @@ List<_VisibleEntry> _visibleEntries(
     bool draggable,
   ) {
     for (final id in childIds) {
+      if (filtering && !filter.contains(id)) continue;
       final node = controller.displayNode(id);
       if (node == null) continue;
-      if (draggable) {
+      if (draggable && !filtering) {
         entries.add(
           _VisibleInsertion(container: parentId, beforeId: id, depth: depth),
         );
       }
       final children = controller.displayChildren(id);
-      final expanded = !collapsed.contains(id);
+      final expanded = filtering || !collapsed.contains(id);
       entries.add(
         _VisibleNode(
           node: node,
@@ -191,7 +306,7 @@ List<_VisibleEntry> _visibleEntries(
         );
       }
     }
-    if (draggable) {
+    if (draggable && !filtering) {
       entries.add(
         _VisibleInsertion(container: parentId, beforeId: null, depth: depth),
       );
