@@ -77,6 +77,114 @@ void main() {
       expect(c.distance, closeTo(20.0, 1e-6));
     });
 
+    group('frame', () {
+      Aabb3 unitBounds() =>
+          Aabb3.minMax(Vector3(-1, -1, -1), Vector3(1, 1, 1));
+
+      // The bounding sphere of a 2-unit cube.
+      final radius = Vector3(2, 2, 2).length * 0.5;
+
+      test('solves the distance from the lens, not the diameter', () {
+        final node = Node()..addComponent(CameraComponent());
+        final c = OrbitCameraController(smoothing: 0.0)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0);
+        c.update(1 / 60);
+
+        // 45 degrees vertical, landscape, so the vertical field is the narrow
+        // one: the sphere subtends exactly the view height at r / sin(fov/2).
+        final expected = radius / math.sin(45 * math.pi / 180 / 2);
+        expect(c.distance, closeTo(expected, 1e-6));
+      });
+
+      test('a narrow lens pulls the camera back', () {
+        final node = Node()
+          ..addComponent(
+            CameraComponent(
+              projection: PerspectiveProjection(
+                fovRadiansY: 20 * math.pi / 180,
+              ),
+            ),
+          );
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0);
+        c.warmUp();
+        expect(
+          c.distance,
+          closeTo(radius / math.sin(10 * math.pi / 180), 1e-6),
+        );
+      });
+
+      test('a portrait viewport fits the horizontal field instead', () {
+        final node = Node()..addComponent(CameraComponent());
+        final tall = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(400, 800);
+        node.addComponent(tall);
+        tall.frame(unitBounds(), margin: 1.0);
+        tall.warmUp();
+
+        final halfY = 45 * math.pi / 180 / 2;
+        final halfX = math.atan(math.tan(halfY) * 400 / 800);
+        expect(tall.distance, closeTo(radius / math.sin(halfX), 1e-6));
+        // Narrower than the vertical field, so it must sit further back than
+        // the landscape framing would.
+        expect(tall.distance, greaterThan(radius / math.sin(halfY)));
+      });
+
+      test('an explicit field of view overrides the lens', () {
+        final node = Node()..addComponent(CameraComponent());
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(
+          unitBounds(),
+          margin: 1.0,
+          fovRadiansY: 90 * math.pi / 180,
+        );
+        c.warmUp();
+        expect(
+          c.distance,
+          closeTo(radius / math.sin(45 * math.pi / 180), 1e-6),
+        );
+      });
+
+      test('an orthographic lens keeps the diameter fit', () {
+        final node = Node()
+          ..addComponent(
+            CameraComponent(projection: OrthographicProjection()),
+          );
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0);
+        c.warmUp();
+        expect(c.distance, closeTo(radius * 2, 1e-6));
+      });
+
+      test('an unattached controller falls back to the engine default', () {
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        c.frame(unitBounds(), margin: 1.0);
+        c.warmUp();
+        expect(
+          c.distance,
+          closeTo(radius / math.sin(45 * math.pi / 180 / 2), 1e-6),
+        );
+      });
+
+      test('the distance stays inside the dolly limits', () {
+        final node = Node()..addComponent(CameraComponent());
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 3.0);
+        node.addComponent(c);
+        c.frame(Aabb3.minMax(Vector3(-50, -50, -50), Vector3(50, 50, 50)));
+        c.warmUp();
+        expect(c.distance, closeTo(3.0, 1e-9));
+      });
+    });
+
     test('settling is frame-rate independent for a fixed goal', () {
       Node makeAt(double dt, int steps) {
         final node = Node();

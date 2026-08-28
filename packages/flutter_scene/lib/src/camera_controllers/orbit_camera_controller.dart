@@ -3,8 +3,10 @@ import 'dart:ui' show Offset;
 
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/camera_controllers/camera_controller.dart';
 import 'package:flutter_scene/src/camera_pose.dart';
+import 'package:flutter_scene/src/components/camera_component.dart';
 
 /// Orbits the camera around a fixed [target] point: drag rotates, scroll or
 /// pinch dollies in and out, and a two-finger or secondary drag pans the
@@ -121,15 +123,57 @@ class OrbitCameraController extends CameraController {
     _targetGoal += shift;
   }
 
-  /// Frames [bounds] by centering the target and dollying to fit its bounding
-  /// sphere, with [margin] padding.
-  // TODO(camera): make framing field-of-view aware (needs the CameraComponent
-  // projection) so it fills the view exactly, like PerspectiveCamera.framing.
-  void frame(Aabb3 bounds, {double margin = 1.5}) {
+  /// Frames [bounds] by centering the target and dollying so its bounding
+  /// sphere fills the view, with [margin] above `1` for padding.
+  ///
+  /// The distance is solved from the lens rather than from the sphere's
+  /// diameter alone. The field of view comes from [fovRadiansY] when given,
+  /// otherwise from the [CameraComponent] on this controller's node, and
+  /// otherwise from the engine's 45-degree default. Both axes are considered:
+  /// a portrait viewport's horizontal field of view is the narrow one, and
+  /// fitting only the vertical there would crop the sides.
+  ///
+  /// An orthographic lens has no distance-dependent framing, so it keeps the
+  /// diameter fit; set [OrthographicProjection.height] to frame it.
+  void frame(Aabb3 bounds, {double margin = 1.1, double? fovRadiansY}) {
     _targetGoal = bounds.center;
     final radius = math.max((bounds.max - bounds.min).length * 0.5, 1e-4);
-    _distanceGoal = (radius * 2 * margin).clamp(minDistance, maxDistance);
+    final fov = fovRadiansY ?? _lensFovRadiansY();
+    if (fov == null) {
+      _distanceGoal = (radius * 2 * margin).clamp(minDistance, maxDistance);
+      return;
+    }
+    // Half-angle of the narrower of the two fields of view. The horizontal
+    // one follows from the vertical and the viewport's aspect ratio, the same
+    // way the projection matrix derives it at render time.
+    final halfY = fov * 0.5;
+    final height = viewportSize.height;
+    final aspect = height > 0 ? viewportSize.width / height : 1.0;
+    final halfX = math.atan(math.tan(halfY) * aspect);
+    final half = halfX < halfY ? halfX : halfY;
+    _distanceGoal = (radius / math.sin(half) * margin).clamp(
+      minDistance,
+      maxDistance,
+    );
   }
+
+  /// The vertical field of view of the lens this controller drives.
+  ///
+  /// Null only when the lens is explicitly not a perspective one, which is
+  /// the case that has no distance-dependent framing. A controller with no
+  /// camera attached yet still frames as a perspective camera, on the engine
+  /// default, rather than falling back to a fit that ignores the lens
+  /// entirely.
+  double? _lensFovRadiansY() {
+    if (!isAttached) return _defaultFovRadiansY;
+    final projection = node.getComponent<CameraComponent>()?.projection;
+    if (projection == null) return _defaultFovRadiansY;
+    return projection is PerspectiveProjection ? projection.fovRadiansY : null;
+  }
+
+  /// The engine's default vertical field of view, matching
+  /// [PerspectiveProjection]'s own default.
+  static const double _defaultFovRadiansY = 45 * degrees2Radians;
 
   @override
   void handleDragUpdate(Offset delta) {
