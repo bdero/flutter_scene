@@ -534,10 +534,7 @@ class _InlineNumberState extends State<_InlineNumber> {
       padding: const EdgeInsets.only(left: 12, top: 1, bottom: 1),
       child: Row(
         children: [
-          Text(
-            widget.label,
-            style: const TextStyle(fontSize: 9, color: editorMutedTextColor),
-          ),
+          Text(widget.label, style: editorMicroText),
           const SizedBox(width: 2),
           Expanded(
             child: SizedBox(

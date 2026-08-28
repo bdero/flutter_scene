@@ -54,7 +54,24 @@ const TextStyle editorDialogTitleText = TextStyle(
   fontSize: 15,
   fontWeight: FontWeight.w600,
 );
+
+/// The editor's type ramp. Four steps, and nothing between them: a panel
+/// reads as part of one program when every label at the same level is the
+/// same size, and stops when three dialogs pick three different title sizes.
+///
+/// micro (9) dense hints and axis letters, detail (11) secondary text,
+/// body (12) the default, subhead (13) a group heading inside a panel, and
+/// [editorDialogTitleText] (15) the title of a dialog or a panel.
 const TextStyle editorBodyText = TextStyle(fontSize: 12);
+
+/// A group heading inside a panel.
+const TextStyle editorSubheadText = TextStyle(
+  fontSize: 13,
+  fontWeight: FontWeight.w600,
+);
+
+/// The smallest readable label: an axis letter, a unit, a count.
+const TextStyle editorMicroText = TextStyle(fontSize: 9, color: _mutedText);
 const TextStyle editorDetailText = TextStyle(fontSize: 11, color: _mutedText);
 
 /// The accent-barred section header the inspector's sections use, shared so

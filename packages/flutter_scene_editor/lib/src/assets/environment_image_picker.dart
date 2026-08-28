@@ -87,7 +87,7 @@ class _EnvironmentImagePickerDialogState
           children: [
             const Text(
               'Choose environment image',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              style: editorDialogTitleText,
             ),
             const SizedBox(height: 10),
             FTextField(

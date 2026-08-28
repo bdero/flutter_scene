@@ -42,7 +42,7 @@ class _ManagedCheckoutProgress extends StatelessWidget {
               children: [
                 const Text(
                   'Creating managed Flutter checkout',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  style: editorDialogTitleText,
                 ),
                 const SizedBox(height: 10),
                 for (final phase in ManagedCheckoutPhase.values)

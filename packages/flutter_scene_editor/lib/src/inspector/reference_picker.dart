@@ -112,10 +112,7 @@ class _ReferencePickerDialogState extends State<_ReferencePickerDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Select reference',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
+            const Text('Select reference', style: editorDialogTitleText),
             const SizedBox(height: 12),
             FTextField(
               control: FTextFieldControl.managed(

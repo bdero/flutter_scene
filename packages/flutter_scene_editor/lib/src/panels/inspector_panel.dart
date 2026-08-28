@@ -1216,10 +1216,7 @@ Future<String?> showAddComponentPicker(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'Add Component',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
+                  const Text('Add Component', style: editorDialogTitleText),
                   const SizedBox(height: 10),
                   FTextField(
                     control: FTextFieldControl.managed(
@@ -1991,10 +1988,7 @@ class _MiniNumberState extends State<_MiniNumber> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            widget.label,
-            style: const TextStyle(fontSize: 9, color: editorMutedTextColor),
-          ),
+          Text(widget.label, style: editorMicroText),
           const SizedBox(width: 2),
           Expanded(
             child: FTextField(

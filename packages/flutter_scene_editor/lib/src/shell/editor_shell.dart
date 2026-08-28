@@ -294,7 +294,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     showEditorDialog<void>(
       context,
       builder: (context) => AlertDialog(
-        title: const Text('Shader toolchain', style: TextStyle(fontSize: 14)),
+        title: const Text('Shader toolchain', style: editorDialogTitleText),
         content: SelectableText(
           message,
           style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
@@ -430,10 +430,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   children: [
                     const Text(
                       'New Component Script',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: editorDialogTitleText,
                     ),
                     const SizedBox(height: 6),
                     const Text(
@@ -506,10 +503,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Save Layout',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                const Text('Save Layout', style: editorDialogTitleText),
                 const SizedBox(height: 14),
                 FTextField(
                   control: FTextFieldControl.managed(controller: controller),
@@ -577,10 +571,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   children: [
                     const Text(
                       'Overwrite Layout?',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: editorDialogTitleText,
                     ),
                     const SizedBox(height: 10),
                     Text('Replace the saved layout “$name”?'),
@@ -625,10 +616,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Manage Layouts',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+              const Text('Manage Layouts', style: editorDialogTitleText),
               const SizedBox(height: 12),
               if (widget.namedLayouts.isEmpty)
                 const Padding(
