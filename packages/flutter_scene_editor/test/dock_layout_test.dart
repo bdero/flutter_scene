@@ -33,6 +33,7 @@ void main() {
       'inspector',
       'effects',
       'weather',
+      'navigation',
     ]);
 
     // The centre column stacks the timeline under the viewport, where a

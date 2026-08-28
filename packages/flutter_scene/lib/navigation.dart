@@ -29,6 +29,8 @@ library;
 
 export 'package:scene/navigation.dart';
 
+export 'src/navigation/nav_mesh_surface_component.dart'
+    show NavBakeResult, NavMeshSurfaceComponent;
 export 'src/navigation/scene_nav_geometry.dart'
     show
         NavCollectOptions,

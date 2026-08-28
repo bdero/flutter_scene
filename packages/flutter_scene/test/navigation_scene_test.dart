@@ -3,6 +3,7 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter_scene/kit.dart';
 import 'package:flutter_scene/navigation.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -193,5 +194,153 @@ void main() {
 
   test('an empty scene bakes to null rather than throwing', () {
     expect(bakeSceneNavMesh(Node(name: 'empty'), config: config), isNull);
+  });
+
+  group('NavMeshSurfaceComponent', () {
+    Node level() => Node(name: 'level')..add(floorNode('ground_floor', 20));
+
+    test('bakes the subtree it is attached to', () {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+
+      expect(surface.mesh, isNull, reason: 'nothing before the first bake');
+      final result = surface.bake();
+      expect(result.isEmpty, isFalse);
+      expect(surface.mesh, isNotNull);
+      expect(result.report.trianglesIncluded, 2);
+      expect(result.describe(), contains('polygons'));
+    });
+
+    test('the include pattern is what keeps characters out of the bake', () {
+      final root = level()..add(floorNode('enemy', 4, at: Vector3(0, 6, 0)));
+
+      final everything = NavMeshSurfaceComponent(config: config);
+      root.addComponent(everything);
+      expect(everything.bake().report.nodesIncluded, 2);
+
+      final staticOnly = NavMeshSurfaceComponent(
+        config: config,
+        includePattern: 'floor',
+      );
+      root.addComponent(staticOnly);
+      expect(staticOnly.bake().report.nodesIncluded, 1);
+    });
+
+    test('blocked water carves the ground under it', () {
+      final root = level();
+      final pool = Node(name: 'pool')
+        ..addComponent(
+          WaterComponent(size: 30, traversal: WaterTraversal.blocked),
+        );
+      root.add(pool);
+
+      final carving = NavMeshSurfaceComponent(config: config);
+      root.addComponent(carving);
+      final carved = carving.bake();
+      expect(carved.volumeCount, 1);
+      expect(
+        carved.isEmpty,
+        isTrue,
+        reason: 'the pool covers the whole floor, so nothing is walkable',
+      );
+
+      final ignoring = NavMeshSurfaceComponent(
+        config: config,
+        includeWaterVolumes: false,
+      );
+      root.addComponent(ignoring);
+      final ignored = ignoring.bake();
+      expect(ignored.volumeCount, 0);
+      expect(ignored.isEmpty, isFalse);
+    });
+
+    test('swimmable water paints its area instead of carving', () {
+      final root = level();
+      root.add(
+        Node(name: 'pond')
+          ..addComponent(
+            WaterComponent(size: 30, traversal: WaterTraversal.swimmable),
+          ),
+      );
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+      final result = surface.bake();
+      expect(result.volumeCount, 0, reason: 'nothing to carve');
+      expect(result.isEmpty, isFalse, reason: 'still crossable');
+    });
+
+    test('the query is built once and dropped when the mesh changes', () {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+      expect(surface.query, isNull);
+
+      surface.bake();
+      final query = surface.query;
+      expect(query, isNotNull);
+      expect(surface.query, same(query), reason: 'kept across calls');
+
+      surface.clear();
+      expect(surface.query, isNull);
+      expect(surface.mesh, isNull);
+    });
+
+    test('the baked mesh round-trips through its encoded form', () {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+      surface.bake();
+      final polygons = surface.mesh!.polygonCount;
+
+      final bytes = surface.encode()!;
+      surface.clear();
+      expect(surface.encode(), isNull);
+
+      surface.decode(bytes);
+      expect(surface.mesh!.polygonCount, polygons);
+      expect(surface.mesh!.config.agentRadius, config.agentRadius);
+    });
+
+    test('outline segments trace every polygon edge, lifted off the floor', () {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+      surface.bake();
+
+      final flat = surface.outlineSegments(lift: 0);
+      final lifted = surface.outlineSegments(lift: 0.5);
+      expect(flat, isNotEmpty);
+      expect(flat.length.isEven, isTrue, reason: 'emitted as pairs');
+      expect(lifted, hasLength(flat.length));
+      // The lift is relative to the mesh's own vertices, which sit at the
+      // voxel height above the floor rather than exactly on it. An overlay
+      // that assumed y = 0 would z-fight on any surface but a flat one.
+      for (var i = 0; i < flat.length; i++) {
+        expect(lifted[i].y - flat[i].y, closeTo(0.5, 1e-4));
+        expect(lifted[i].x, flat[i].x);
+        expect(lifted[i].z, flat[i].z);
+      }
+    });
+
+    test('an empty bake says why rather than reporting success', () {
+      final root = Node(name: 'level');
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+      final result = surface.bake();
+      expect(result.isEmpty, isTrue);
+      expect(result.describe(), contains('No walkable surface'));
+    });
+
+    test('a clone shares the baked mesh rather than copying it', () {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(config: config);
+      root.addComponent(surface);
+      surface.bake();
+
+      final clone = surface.cloneFor(Node())! as NavMeshSurfaceComponent;
+      expect(clone.mesh, same(surface.mesh));
+      expect(clone.config.agentRadius, config.agentRadius);
+    });
   });
 }
