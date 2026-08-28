@@ -9,11 +9,14 @@ const path = require('path');
 //
 //   export TELEGRAM_BOT_TOKEN="123456789:ABCDEF..."
 //   export TELEGRAM_API_KEYS="sk-or-v1-AAAA..., sk-or-v1-BBBB..."   # keys for rotation
-//   export TELEGRAM_PROVIDER="openrouter"      # (optional) default: openrouter
-//   export TELEGRAM_MODEL="YOUR-MODEL"          # (optional) model to use
+//   export TELEGRAM_AVAILABLE_MODELS="model-a,model-b"   # models to rotate (REQUIRED)
 //   export TELEGRAM_CWD="/path/to/workspace"    # (optional) default: this directory
 //   export TELEGRAM_ALLOWED_USER_ID="123..."    # (optional) restrict to a user
 //   export TELEGRAM_RESTART_DELAY_MS="2000"     # (optional) delay before restarting
+//
+// Rotation grid: keys × models. A "daily free limit" 429 blocks only the
+// current (key, model) combo; the wrapper restarts on the next free combo.
+// --model is ALWAYS passed explicitly — cline's own default is never used.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Reads the keys for rotation, accepting comma, space, or `;` as separators.
@@ -35,12 +38,14 @@ const AVAILABLE_MODELS = (process.env.TELEGRAM_AVAILABLE_MODELS || '')
 // We use it to filter shared cline.log entries so that multiple duplicated
 // instances (each with a different TELEGRAM_BOT_TOKEN) don't cross-react to
 // each other's log entries (e.g. Instance A handling Instance B's messages).
-const BOT_USER_ID = TELEGRAM_BOT_TOKEN;
+const BOT_USER_ID = (TELEGRAM_BOT_TOKEN || '').split(':')[0];
 
-// Model list for rotation. Falls back to a single slot holding the default
-// model (empty string = let cline use its own configured default; buildArgs
-// then omits the --model flag) so the key×model rotation grid never divides
-// by zero when TELEGRAM_AVAILABLE_MODELS is unset.
+// Model list for rotation. The wrapper ALWAYS controls the model explicitly —
+// `--model` is never omitted, so the key×model cooldown grid reflects exactly
+// what the connector runs. With K keys and M models there are K×M combos; a
+// "daily free limit" hit blocks only one combo and rotation moves on, which
+// makes a full cooldown (all combos blocked) unlikely unless every key is
+// exhausted on every model.
 const MODELS = AVAILABLE_MODELS;
 
 // Validates minimum configuration before starting.
@@ -50,6 +55,12 @@ if (!TELEGRAM_BOT_TOKEN) {
 }
 if (API_KEYS.length === 0) {
   console.error('[Rotator] ERROR: environment variable TELEGRAM_API_KEYS is not set.');
+  process.exit(1);
+}
+if (MODELS.length === 0) {
+  console.error('[Rotator] ERROR: environment variable TELEGRAM_AVAILABLE_MODELS is not set.');
+  console.error('[Rotator] The wrapper always controls model switching explicitly — set it to the');
+  console.error('[Rotator] comma-separated models to rotate, e.g. TELEGRAM_AVAILABLE_MODELS="model-a,model-b".');
   process.exit(1);
 }
 
@@ -135,17 +146,19 @@ function runCline(args) {
 // stops *any* running connector, not just ours. Instead we kill via pgrep,
 // which is now token-scoped.
 function purgeStale() {
-
   try {
     // Only match processes carrying THIS bot token — not generic "connect
     // telegram" which would catch and kill other bot instances.
     const pattern = `connect telegram.*${TELEGRAM_BOT_TOKEN}`;
     const out = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
     const myPid = process.pid;
-    const childPid = clineProcess ? clineProcess.pid : -1;
     for (const raw of out.split('\n')) {
       const pid = parseInt(raw, 10);
-      if (!pid || pid === myPid || pid === childPid) continue;
+      // NOTE: no childPid skip — if our own child ignored SIGTERM and is hung,
+      // this SIGKILL is the only thing that will actually stop it. Without it,
+      // the hung connector keeps polling the bot and replying with limit
+      // errors while its replacement fights it over getUpdates.
+      if (!pid || pid === myPid) continue;
       try {
         process.kill(pid, 'SIGKILL');
         log(`[Rotator] Killed stale connector pid ${pid}`);
@@ -165,8 +178,9 @@ function buildArgs(index, modelIndex) {
     '-k', TELEGRAM_BOT_TOKEN,
     '--api-key', API_KEYS[index],
   ];
-  const currentModel = MODELS[modelIndex];
-  if (currentModel) args.push('--model', currentModel);
+  // Always pass --model explicitly: never let cline fall back to its own
+  // default, so the key×model cooldown grid matches what actually runs.
+  args.push('--model', MODELS[modelIndex]);
   if (ALLOWED_USER_ID) args.push('--allowed-user-id', ALLOWED_USER_ID);
   return args;
 }
@@ -211,17 +225,49 @@ function earliestUnblock() {
   return earliest === Infinity ? Date.now() + COOLDOWN_DEFAULT_MS : earliest;
 }
 
-function stopCurrent() {
-  if (clineProcess && clineProcess.exitCode === null && !clineProcess.killed) {
-    try {
-      clineProcess.kill('SIGTERM');
-    } catch (err) {
-      log(`[Rotator] Failed to kill cline: ${err.message}`);
-    }
+// How long to wait after SIGTERM before force-killing a connector that ignores
+// graceful shutdown. A hung connector keeps polling the bot and replying with
+// limit errors while the replacement connector fights it over getUpdates.
+const STOP_GRACE_MS = 3000;
+
+// Stops the current connector. SIGTERM first, escalating to SIGKILL if the
+// process doesn't exit within STOP_GRACE_MS. Calls onStopped() once the child
+// is actually gone (or immediately when there is nothing to stop) — callers
+// must not assume the connector is dead until then. Token-scoped by design:
+// never touches connectors belonging to other bot instances.
+function stopCurrent(onStopped) {
+  const finish = () => { if (onStopped) onStopped(); };
+  const child = clineProcess;
+  if (!child || child.exitCode !== null || child.killed) {
+    finish();
+    return;
   }
-  // NOTE: Removed `runCline(['connect', '--stop'])` — that's a global command
-  // that stops ANY running connector, not just ours. SIGTERM on clineProcess
-  // is sufficient and doesn't interfere with other bot instances.
+
+  let finished = false;
+  const once = () => {
+    if (finished) return;
+    finished = true;
+    finish();
+  };
+  child.once('close', once);
+
+  try {
+    child.kill('SIGTERM');
+  } catch (err) {
+    log(`[Rotator] Failed to kill cline: ${err.message}`);
+  }
+
+  // Escalate if the connector ignores SIGTERM.
+  setTimeout(() => {
+    if (finished || child.exitCode !== null) return;
+    try {
+      child.kill('SIGKILL');
+      log('[Rotator] Connector ignored SIGTERM; sent SIGKILL.');
+    } catch (_) {}
+  }, STOP_GRACE_MS);
+
+  // Absolute safety net: never wait forever for the child to exit.
+  setTimeout(once, STOP_GRACE_MS + 5000);
 }
 
 function scheduleRestart(index, modelIndex, delay = RESTART_DELAY_MS) {
@@ -235,18 +281,22 @@ function scheduleRestart(index, modelIndex, delay = RESTART_DELAY_MS) {
   }
   restarting = true;
 
-  stopCurrent();
-  purgeStale();                      // no stale daemons left to steal updates
+  // Wait until the old connector is actually dead (SIGTERM, then SIGKILL
+  // escalation) before purging and starting the replacement — two pollers on
+  // one bot token conflict over Telegram getUpdates.
+  stopCurrent(() => {
+    purgeStale();                    // no stale daemons left to steal updates
 
-  setTimeout(() => {                  // wait before restarting
-    restarting = false;
-    if (pendingRotation) {
-      [index, modelIndex] = pendingRotation;
-      pendingRotation = null;
-      log(`[Rotator] Applying queued rotation: key #${index}, model #${modelIndex}.`);
-    }
-    startCline(index, modelIndex);
-  }, delay);
+    setTimeout(() => {               // wait before restarting
+      restarting = false;
+      if (pendingRotation) {
+        [index, modelIndex] = pendingRotation;
+        pendingRotation = null;
+        log(`[Rotator] Applying queued rotation: key #${index}, model #${modelIndex}.`);
+      }
+      startCline(index, modelIndex);
+    }, delay);
+  });
 }
 
 function startCline(index, modelIndex) {
@@ -556,8 +606,9 @@ function pollLogs() {
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     log(`[Rotator] ${sig} received; stopping connector.`);
-    stopCurrent();
-    process.exit(0);
+    // Wait for the child to actually die (incl. SIGKILL escalation) so a hung
+    // connector isn't orphaned to keep polling the bot after we exit.
+    stopCurrent(() => process.exit(0));
   });
 }
 
