@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_scene/src/noise/curl.dart';
 import 'package:flutter_scene/src/noise/fast_noise_lite.dart';
 import 'package:flutter_scene/src/noise/noise_pixels.dart';
@@ -165,6 +167,103 @@ void main() {
     test('different seed pins a different value', () {
       final n = FastNoiseLite(seed: 9999);
       expect(n.getNoise2(10.0, 20.0), closeTo(0.704530627003459, tol));
+    });
+  });
+
+  group('32-bit wraparound (the web path, pinned on the VM)', () {
+    // On the VM `_mul32` takes the native branch, so these pin the split
+    // multiply that dart2js runs instead. Ground truth is BigInt, which has
+    // no width limit at all, rather than the 64-bit ints that make the native
+    // branch trivially correct.
+    final two32 = BigInt.from(0x100000000);
+    final two31 = BigInt.from(0x80000000);
+
+    int wrap32(BigInt v) {
+      final m = v % two32;
+      final u = m.isNegative ? m + two32 : m;
+      return (u >= two31 ? u - two32 : u).toInt();
+    }
+
+    test('the split multiply matches BigInt over the full 32-bit range', () {
+      final random = math.Random(20260828);
+      // The corners first: sign boundaries and the primes the hashing uses.
+      const corners = [
+        0, 1, -1, 2, -2,
+        0x7FFFFFFF, -0x80000000, 0x40000000, -0x40000000,
+        0x27d4eb2d, 501125321, 1136930381, 1720413743,
+        0xFFFF, 0x10000, 0x10001, -0xFFFF, -0x10000,
+      ];
+      for (final a in corners) {
+        for (final b in corners) {
+          expect(
+            noiseMul32Split(a, b),
+            wrap32(BigInt.from(a) * BigInt.from(b)),
+            reason: '$a * $b',
+          );
+        }
+      }
+      for (var i = 0; i < 5000; i++) {
+        final a = random.nextInt(0x100000000) - 0x80000000;
+        final b = random.nextInt(0x100000000) - 0x80000000;
+        expect(
+          noiseMul32Split(a, b),
+          wrap32(BigInt.from(a) * BigInt.from(b)),
+          reason: '$a * $b',
+        );
+      }
+    });
+
+    test('the split multiply agrees with the native branch', () {
+      final random = math.Random(4242);
+      for (var i = 0; i < 5000; i++) {
+        final a = random.nextInt(0x100000000) - 0x80000000;
+        final b = random.nextInt(0x100000000) - 0x80000000;
+        expect(noiseMul32Split(a, b), (a * b).toSigned(32), reason: '$a * $b');
+      }
+    });
+
+    test('a lattice coordinate past 2^24 still hashes exactly', () {
+      // Beyond here `coordinate * prime` exceeds 2^53, which is where a
+      // straight multiply on the web starts dropping low bits.
+      for (final coordinate in [1 << 24, (1 << 24) + 1, 1 << 28, -(1 << 28)]) {
+        expect(
+          noiseHash2(1337, coordinate, 7),
+          wrap32(
+            (BigInt.from(1337) ^
+                    BigInt.from(wrap32(BigInt.from(coordinate) * BigInt.from(501125321))) ^
+                    BigInt.from(wrap32(BigInt.from(7) * BigInt.from(1136930381)))) *
+                BigInt.from(0x27d4eb2d),
+          ),
+          reason: 'x = $coordinate',
+        );
+      }
+    });
+
+    test('noiseHash2/noiseHash3 match BigInt across seeds and coordinates', () {
+      final random = math.Random(99);
+      for (var i = 0; i < 500; i++) {
+        final seed = random.nextInt(0x100000000) - 0x80000000;
+        final x = random.nextInt(1 << 20) - (1 << 19);
+        final y = random.nextInt(1 << 20) - (1 << 19);
+        final z = random.nextInt(1 << 20) - (1 << 19);
+        final xp = BigInt.from(wrap32(BigInt.from(x) * BigInt.from(501125321)));
+        final yp = BigInt.from(
+          wrap32(BigInt.from(y) * BigInt.from(1136930381)),
+        );
+        final zp = BigInt.from(
+          wrap32(BigInt.from(z) * BigInt.from(1720413743)),
+        );
+        expect(
+          noiseHash2(seed, x, y),
+          wrap32((BigInt.from(seed) ^ xp ^ yp) * BigInt.from(0x27d4eb2d)),
+          reason: 'hash2($seed, $x, $y)',
+        );
+        expect(
+          noiseHash3(seed, x, y, z),
+          wrap32((BigInt.from(seed) ^ xp ^ yp ^ zp) * BigInt.from(0x27d4eb2d)),
+          reason: 'hash3($seed, $x, $y, $z)',
+        );
+      }
     });
   });
 

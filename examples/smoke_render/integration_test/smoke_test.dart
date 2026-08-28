@@ -415,19 +415,9 @@ void main() {
       return v * 0.5 + 0.5;
     }
 
-    // The value comparison uses the Dart FastNoiseLite as the reference. On
-    // the web (dart2js) that reference is itself wrong: Dart ints are JS
-    // doubles there, so the noise's 32-bit integer hash multiplies overflow
-    // 2^53 and lose their low bits (and the 3D lattice math overflows
-    // entirely), before `toSigned(32)` can wrap. The GPU shader noise is
-    // correct on the web (it has been checked bit-for-bit against the native
-    // Metal output), so only the CPU-side reference is unreliable there.
-    // Verify the shader compiled and rendered on the web (the markers
-    // located above prove that), and skip the numeric comparison until the
-    // Dart integer math is made web-safe.
-    // TODO(noise-web): give the Dart hash a Math.imul-style 32-bit multiply
-    // so `FastNoiseLite` matches native on the web, then drop this guard.
-    if (kIsWeb) return;
+    // The value comparison uses the Dart FastNoiseLite as the reference, which
+    // is web-safe: its hashing runs through a split 32-bit multiply on
+    // dart2js, pinned against BigInt in `test/noise_test.dart`.
 
     // Float rows: the GPU evaluates the noise in float32 and every backend's
     // compiler rounds a little differently, so these tolerances are set above
