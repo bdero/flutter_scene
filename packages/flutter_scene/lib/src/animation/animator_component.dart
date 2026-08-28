@@ -93,5 +93,6 @@ class AnimatorComponent extends Component {
       switch (motion) {
         ClipMotion(:final clip) => [clip],
         BlendMotion(:final stops) => stops.map((stop) => stop.clip),
+        BlendMotion2D(:final stops) => stops.map((stop) => stop.clip),
       };
 }
