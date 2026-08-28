@@ -24,10 +24,10 @@ export 'src/navigation/compact_heightfield.dart'
     show CompactHeightfield, buildCompactHeightfield, erodeWalkableArea;
 export 'src/navigation/contours.dart' show Contour, ContourSet, buildContours;
 export 'src/navigation/heightfield.dart'
-    show Heightfield, HeightSpan, rasterizeNavGeometry;
+    show Heightfield, HeightSpan, applyNavVolumes, rasterizeNavGeometry;
 export 'src/navigation/nav_config.dart' show NavMeshConfig;
 export 'src/navigation/nav_geometry.dart'
-    show NavArea, NavGeometry, NavGeometryBuilder;
+    show NavArea, NavGeometry, NavGeometryBuilder, NavVolume;
 export 'src/navigation/nav_mesh.dart'
     show NavMesh, navMeshFromPolyMesh, navNoPolygon;
 export 'src/navigation/nav_mesh_builder.dart' show NavBakeStage, buildNavMesh;

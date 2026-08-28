@@ -1333,6 +1333,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (group: 'Effects', label: 'Trail', type: 'trail'),
     (group: 'Audio', label: 'Audio Source', type: 'audioSource'),
     (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
+    (group: 'Environment', label: 'Water', type: 'water'),
     (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
     (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
     (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),
@@ -1707,6 +1708,7 @@ class _EditorMenuBar extends StatelessWidget {
                     for (final group in const [
                       'Camera',
                       'Light',
+                      'Environment',
                       'Effects',
                       'Audio',
                       'Volume',

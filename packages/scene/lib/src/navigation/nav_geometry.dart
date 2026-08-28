@@ -28,6 +28,51 @@ abstract final class NavArea {
   static const int max = 63;
 }
 
+/// A world-space box that overrides the area of the spans inside it, applied
+/// after voxelization.
+///
+/// The per-triangle area on [NavGeometry] describes a *surface*: it says what
+/// the floor is made of. A volume describes a *space*, which is the only way
+/// to express some things at all. Water an agent cannot enter is the clearest
+/// case: tagging the water surface non-walkable does nothing, because the lake
+/// bed underneath is a separate surface and stays perfectly walkable, so the
+/// agent simply paths along the bottom. Carving the volume removes both.
+///
+/// This is Recast's convex volume, restricted to an axis-aligned box: the
+/// shapes anyone actually marks (a pool, a pit, a room) are boxes, and a box
+/// test is three comparisons per span rather than a polygon crossing.
+/// {@category Navigation}
+class NavVolume {
+  /// Creates a volume covering [min] to [max] that stamps [area] onto the
+  /// spans whose surface falls inside it.
+  ///
+  /// [NavArea.nonWalkable] erases those spans outright, which is how a
+  /// no-go zone is carved.
+  NavVolume({
+    required this.min,
+    required this.max,
+    this.area = NavArea.nonWalkable,
+  });
+
+  /// The box's low corner, world space.
+  final Vector3 min;
+
+  /// The box's high corner, world space.
+  final Vector3 max;
+
+  /// The area stamped onto the spans inside.
+  final int area;
+
+  /// Whether the span surface at ([x], [y], [z]) falls inside this box.
+  bool contains(double x, double y, double z) =>
+      x >= min.x &&
+      x <= max.x &&
+      y >= min.y &&
+      y <= max.y &&
+      z >= min.z &&
+      z <= max.z;
+}
+
 /// Triangles for a nav mesh bake, in world space.
 ///
 /// This is deliberately a flat triangle soup rather than a scene graph: the

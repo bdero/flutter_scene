@@ -410,3 +410,32 @@ void _rasterizeTriangle(
   }
   return (lowCount, highCount);
 }
+
+/// Stamps each of [volumes] onto the spans of [field] whose walkable surface
+/// falls inside it, later volumes winning over earlier ones.
+///
+/// Runs between voxelization and the compact build, which is the one moment
+/// where the surfaces exist as spans but nothing has been filtered or eroded
+/// yet: a span set to [NavArea.nonWalkable] here is dropped rather than
+/// stored, so a carved volume costs nothing downstream.
+///
+/// A span's *top* is what is tested, since that is the surface an agent would
+/// stand on. A volume that only clips the underside of a floor leaves it
+/// walkable, which is what anyone drawing a box around a pool expects.
+void applyNavVolumes(Heightfield field, List<NavVolume> volumes) {
+  if (volumes.isEmpty) return;
+  for (var z = 0; z < field.depth; z++) {
+    for (var x = 0; x < field.width; x++) {
+      final worldX = field.min.x + (x + 0.5) * field.cellSize;
+      final worldZ = field.min.z + (z + 0.5) * field.cellSize;
+      var span = field.spanAt(x, z);
+      while (span != null) {
+        final worldY = field.min.y + span.max * field.cellHeight;
+        for (final volume in volumes) {
+          if (volume.contains(worldX, worldY, worldZ)) span.area = volume.area;
+        }
+        span = span.next;
+      }
+    }
+  }
+}

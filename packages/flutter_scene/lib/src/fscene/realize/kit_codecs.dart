@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
+import 'package:flutter_scene/src/kit/environment/water_component.dart';
 import 'package:flutter_scene/src/kit/grid/grid_tiles.dart';
 import 'package:flutter_scene/src/kit/interaction/path_follower_component.dart';
 import 'package:flutter_scene/src/kit/scatter/scatter_layer.dart';
@@ -29,7 +30,8 @@ void registerKitComponentCodecs(FsceneComponentRegistry registry) {
     ..register(PathFollowerCodec())
     ..register(GridTileLayerCodec())
     ..register(AnimatorCodec())
-    ..register(ScatterLayerCodec());
+    ..register(ScatterLayerCodec())
+    ..register(WaterCodec());
 }
 
 /// Codec for [PathFollowerComponent], which walks a node along a route from
@@ -931,4 +933,109 @@ class ScatterLayerCodec extends ComponentCodec {
       },
     );
   }
+}
+
+/// Codec for [WaterComponent].
+///
+/// The surface's mesh and material are not properties: the component builds
+/// both from the style, and an authored override of either would be undone
+/// the next time the style changed. What is authored is the shape of the body
+/// of water, how it looks, and whether anything can cross it.
+class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
+  @override
+  String get type => 'water';
+
+  @override
+  String? get category => 'Environment';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'water',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      // The footprint, drawn as the square the surface actually covers, so
+      // its extent is visible before the water is deep enough to see. Bound
+      // to size, so dragging the field redraws the outline.
+      GizmoWireRect(
+        width: GizmoScalar.bind('size'),
+        height: GizmoScalar.bind('size'),
+        axis: [0, 1, 0],
+        color: GizmoColor(0.30, 0.68, 0.85),
+      ),
+    ]),
+  );
+
+  @override
+  List<ComponentField<WaterComponent>> get fields => [
+    ComponentField.number(
+      'size',
+      defaultValue: 40.0,
+      doc: 'Extent across X and Z, in world units, centred on the node.',
+      constraints: const [Range.nonNegative(), SoftRange(1, 500)],
+      get: (c) => c.size,
+    ),
+    ComponentField.integer(
+      'resolution',
+      defaultValue: 48,
+      doc:
+          'Quads per side. The surface is displaced on the CPU each frame, so '
+          'the cost of this is quadratic; lower it before anything else when '
+          'the frame budget is tight.',
+      constraints: const [IntRange(2, 512)],
+      get: (c) => c.resolution,
+    ),
+    ComponentField.enumString(
+      'style',
+      values: WaterStyle.values,
+      defaultValue: WaterStyle.realistic,
+      doc: 'Which look to build: faceted, lit, or sunlit.',
+      get: (c) => c.style,
+      set: (c, v) => c.style = v,
+    ),
+    ComponentField.enumString(
+      'traversal',
+      values: WaterTraversal.values,
+      defaultValue: WaterTraversal.swimmable,
+      doc:
+          'How agents may cross the surface. The nav bake reads this: '
+          'walkable bakes as ground, swimmable as costly ground a path routes '
+          'around, blocked as a hole.',
+      get: (c) => c.traversal,
+      set: (c, v) => c.traversal = v,
+    ),
+    ComponentField.vec4(
+      'shallowColor',
+      defaultValue: () => Vector4(0.13, 0.52, 0.62, 0.86),
+      doc: 'Linear RGBA at the surface.',
+      get: (c) => c.shallowColor,
+      set: (c, v) => c.shallowColor.setFrom(v),
+    ),
+    ComponentField.vec4(
+      'deepColor',
+      defaultValue: () => Vector4(0.02, 0.13, 0.22, 1.0),
+      doc: 'Linear RGBA light attenuates toward with depth.',
+      get: (c) => c.deepColor,
+      set: (c, v) => c.deepColor.setFrom(v),
+    ),
+    ComponentField.boolean(
+      'animate',
+      defaultValue: true,
+      doc: 'Whether the waves advance with time.',
+      get: (c) => c.animate,
+      set: (c, v) => c.animate = v,
+    ),
+  ];
+
+  @override
+  WaterComponent create(PropertyReader props) => WaterComponent(
+    size: props.number('size'),
+    resolution: props.integer('resolution'),
+    style: props.enumValue('style', WaterStyle.values),
+    traversal: props.enumValue('traversal', WaterTraversal.values),
+    shallowColor: props.vec4('shallowColor'),
+    deepColor: props.vec4('deepColor'),
+    animate: props.boolean('animate'),
+  );
 }

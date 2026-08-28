@@ -39,11 +39,15 @@ enum NavBakeStage {
 NavMesh? buildNavMesh(
   NavGeometry geometry,
   NavMeshConfig config, {
+  List<NavVolume> volumes = const [],
   void Function(NavBakeStage stage)? onStage,
 }) {
   onStage?.call(NavBakeStage.voxelize);
   final field = rasterizeNavGeometry(geometry, config);
   if (field == null) return null;
+  // Between voxelize and compact: the surfaces are spans, and a span erased
+  // here never reaches the mesh at all.
+  applyNavVolumes(field, volumes);
 
   onStage?.call(NavBakeStage.filterAndCompact);
   final compact = buildCompactHeightfield(field, config);
