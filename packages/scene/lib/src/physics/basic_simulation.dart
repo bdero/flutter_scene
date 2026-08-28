@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart';
 
+import 'aabb_bvh.dart';
 import 'joint_desc.dart';
 import 'material.dart';
 import 'pose_target.dart';
@@ -74,6 +76,22 @@ class BasicSimulation extends PhysicsSimulation {
   final StreamController<SimCollisionEvent> _events =
       StreamController<SimCollisionEvent>.broadcast();
 
+  // --- Broad phase ---
+  //
+  // A hierarchy over the colliders' world AABBs, so a query runs the exact
+  // shape test only on what it can actually reach. Bodies here move whenever
+  // their owner moves the pose target, with no notification, so the boxes are
+  // re-read on every query; only the topology is cached, and it is refit
+  // (O(n), no sort, no allocation) rather than rebuilt unless the collider
+  // set itself changed.
+  final List<_BasicCollider> _phaseColliders = [];
+  final List<int> _phaseHandles = [];
+  final List<Matrix4> _phasePoses = [];
+  Float32List _phaseBoxes = Float32List(0);
+  AabbBvh? _phaseBvh;
+  int _colliderSetVersion = 0;
+  int _phaseVersion = -1;
+
   @override
   Stream<SimCollisionEvent> get collisions => _events.stream;
 
@@ -84,6 +102,49 @@ class BasicSimulation extends PhysicsSimulation {
       body.target.worldRotation,
       Vector3(1, 1, 1),
     ).multiplied(collider.localPose);
+  }
+
+  /// Re-reads every collider's world pose and box, then refreshes the
+  /// hierarchy: a refit while the collider set is unchanged, a rebuild
+  /// otherwise.
+  ///
+  /// Returns the number of live colliders. The poses it computes are kept in
+  /// [_phasePoses] so the query that follows does not compose them again.
+  int _refreshBroadPhase() {
+    final count = _colliders.length;
+    final rebuild = _phaseVersion != _colliderSetVersion;
+    if (rebuild) {
+      _phaseColliders.clear();
+      _phaseHandles.clear();
+      _phasePoses.clear();
+      _colliders.forEach((handle, collider) {
+        _phaseHandles.add(handle);
+        _phaseColliders.add(collider);
+        _phasePoses.add(Matrix4.zero());
+      });
+      if (_phaseBoxes.length < count * 6) {
+        _phaseBoxes = Float32List(count * 6);
+      }
+    }
+    for (var i = 0; i < count; i++) {
+      final pose = _colliderWorldPose(_phaseColliders[i]);
+      _phasePoses[i].setFrom(pose);
+      final box = shapeWorldAabb(_phaseColliders[i].shape, pose);
+      final o = i * 6;
+      _phaseBoxes[o] = box.min.x;
+      _phaseBoxes[o + 1] = box.min.y;
+      _phaseBoxes[o + 2] = box.min.z;
+      _phaseBoxes[o + 3] = box.max.x;
+      _phaseBoxes[o + 4] = box.max.y;
+      _phaseBoxes[o + 5] = box.max.z;
+    }
+    if (rebuild) {
+      _phaseBvh = count == 0 ? null : AabbBvh.build(_phaseBoxes, count);
+      _phaseVersion = _colliderSetVersion;
+    } else {
+      _phaseBvh?.refit(_phaseBoxes);
+    }
+    return count;
   }
 
   // --- Bodies ---
@@ -109,6 +170,7 @@ class BasicSimulation extends PhysicsSimulation {
   void destroyBody(int bodyHandle) {
     _bodies.remove(bodyHandle);
     _colliders.removeWhere((_, c) => c.bodyHandle == bodyHandle);
+    _colliderSetVersion++;
   }
 
   @override
@@ -221,12 +283,14 @@ class BasicSimulation extends PhysicsSimulation {
       collisionMask,
       localPose ?? Matrix4.identity(),
     );
+    _colliderSetVersion++;
     return [handle];
   }
 
   @override
   void destroyCollider(int colliderHandle) {
     _colliders.remove(colliderHandle);
+    _colliderSetVersion++;
     _prevTriggerPairs.removeWhere(
       (p) => p.a == colliderHandle || p.b == colliderHandle,
     );
@@ -287,33 +351,50 @@ class BasicSimulation extends PhysicsSimulation {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
+    _refreshBroadPhase();
+    final bvh = _phaseBvh;
+    if (bvh == null) return null;
+    final direction = ray.direction.normalized();
     SimRaycastHit? best;
-    _colliders.forEach((handle, collider) {
-      if (!_passesFilters(
-        collider,
-        layerMask: layerMask,
-        includeFixed: includeFixed,
-        includeKinematic: includeKinematic,
-        includeTriggers: includeTriggers,
-      )) {
-        return;
-      }
-      final hit = rayHitsShape(
-        ray,
-        collider.shape,
-        _colliderWorldPose(collider),
-        maxDistance,
-      );
-      if (hit == null) return;
-      if (best == null || hit.distance < best!.distance) {
-        best = SimRaycastHit(
-          colliderHandle: handle,
-          worldPoint: hit.worldPoint,
-          worldNormal: hit.worldNormal,
-          distance: hit.distance,
+    bvh.queryRay(
+      ray.origin.x,
+      ray.origin.y,
+      ray.origin.z,
+      direction.x,
+      direction.y,
+      direction.z,
+      maxDistance,
+      (i) {
+        final collider = _phaseColliders[i];
+        if (!_passesFilters(
+          collider,
+          layerMask: layerMask,
+          includeFixed: includeFixed,
+          includeKinematic: includeKinematic,
+          includeTriggers: includeTriggers,
+        )) {
+          return;
+        }
+        // Candidates arrive unordered, so the exact test still runs against
+        // the caller's full distance; the hierarchy has already rejected
+        // everything the ray cannot reach at all.
+        final hit = rayHitsShape(
+          ray,
+          collider.shape,
+          _phasePoses[i],
+          best == null ? maxDistance : best!.distance,
         );
-      }
-    });
+        if (hit == null) return;
+        if (best == null || hit.distance < best!.distance) {
+          best = SimRaycastHit(
+            colliderHandle: _phaseHandles[i],
+            worldPoint: hit.worldPoint,
+            worldNormal: hit.worldNormal,
+            distance: hit.distance,
+          );
+        }
+      },
+    );
     return best;
   }
 
@@ -328,32 +409,46 @@ class BasicSimulation extends PhysicsSimulation {
     bool includeTriggers = false,
   }) {
     final hits = <SimRaycastHit>[];
-    _colliders.forEach((handle, collider) {
-      if (!_passesFilters(
-        collider,
-        layerMask: layerMask,
-        includeFixed: includeFixed,
-        includeKinematic: includeKinematic,
-        includeTriggers: includeTriggers,
-      )) {
-        return;
-      }
-      final hit = rayHitsShape(
-        ray,
-        collider.shape,
-        _colliderWorldPose(collider),
-        maxDistance,
-      );
-      if (hit == null) return;
-      hits.add(
-        SimRaycastHit(
-          colliderHandle: handle,
-          worldPoint: hit.worldPoint,
-          worldNormal: hit.worldNormal,
-          distance: hit.distance,
-        ),
-      );
-    });
+    _refreshBroadPhase();
+    final bvh = _phaseBvh;
+    if (bvh == null) return hits;
+    final direction = ray.direction.normalized();
+    bvh.queryRay(
+      ray.origin.x,
+      ray.origin.y,
+      ray.origin.z,
+      direction.x,
+      direction.y,
+      direction.z,
+      maxDistance,
+      (i) {
+        final collider = _phaseColliders[i];
+        if (!_passesFilters(
+          collider,
+          layerMask: layerMask,
+          includeFixed: includeFixed,
+          includeKinematic: includeKinematic,
+          includeTriggers: includeTriggers,
+        )) {
+          return;
+        }
+        final hit = rayHitsShape(
+          ray,
+          collider.shape,
+          _phasePoses[i],
+          maxDistance,
+        );
+        if (hit == null) return;
+        hits.add(
+          SimRaycastHit(
+            colliderHandle: _phaseHandles[i],
+            worldPoint: hit.worldPoint,
+            worldNormal: hit.worldNormal,
+            distance: hit.distance,
+          ),
+        );
+      },
+    );
     hits.sort((a, b) => a.distance.compareTo(b.distance));
     return hits;
   }
@@ -369,20 +464,44 @@ class BasicSimulation extends PhysicsSimulation {
     bool includeTriggers = false,
   }) {
     final out = <SimOverlapHit>[];
-    _colliders.forEach((handle, collider) {
-      if (!_passesFilters(
-        collider,
-        layerMask: layerMask,
-        includeFixed: includeFixed,
-        includeKinematic: includeKinematic,
-        includeTriggers: includeTriggers,
-      )) {
-        return;
-      }
-      final aabb = shapeWorldAabb(collider.shape, _colliderWorldPose(collider));
-      if (!sphereOverlapsAabb(center, radius, aabb)) return;
-      out.add(SimOverlapHit(colliderHandle: handle));
-    });
+    _refreshBroadPhase();
+    final bvh = _phaseBvh;
+    if (bvh == null) return out;
+    final boxes = _phaseBoxes;
+    bvh.queryAabb(
+      center.x - radius,
+      center.y - radius,
+      center.z - radius,
+      center.x + radius,
+      center.y + radius,
+      center.z + radius,
+      (i) {
+        if (!_passesFilters(
+          _phaseColliders[i],
+          layerMask: layerMask,
+          includeFixed: includeFixed,
+          includeKinematic: includeKinematic,
+          includeTriggers: includeTriggers,
+        )) {
+          return;
+        }
+        // The hierarchy rejected on the probe's own AABB; the exact
+        // sphere-vs-box test still has to run on what survives. The box is
+        // the one [_refreshBroadPhase] just computed, so no shape scan.
+        final o = i * 6;
+        if (!sphereOverlapsAabb(
+          center,
+          radius,
+          Aabb3.minMax(
+            Vector3(boxes[o], boxes[o + 1], boxes[o + 2]),
+            Vector3(boxes[o + 3], boxes[o + 4], boxes[o + 5]),
+          ),
+        )) {
+          return;
+        }
+        out.add(SimOverlapHit(colliderHandle: _phaseHandles[i]));
+      },
+    );
     return out;
   }
 
@@ -397,30 +516,49 @@ class BasicSimulation extends PhysicsSimulation {
     bool includeDynamic = true,
     bool includeTriggers = false,
   }) {
-    // Conservative AABB-of-OBB approximation.
-    // TODO(exact-obb-overlap): SAT-test the probe OBB against each
-    // collider for exact results; the current AABB-of-OBB produces
-    // false positives at corners when the probe is rotated.
+    // The hierarchy is descended with the probe's enclosing AABB, which is
+    // only a broad-phase reject; every survivor then gets the exact
+    // separating-axis test against the real oriented probe, so a rotated
+    // probe no longer reports the colliders that only touched the corners of
+    // its bounding box.
     final probePose = Matrix4.compose(center, rotation, Vector3(1, 1, 1));
     final probeAabb = shapeWorldAabb(
       BoxShape(halfExtents: halfExtents),
       probePose,
     );
     final out = <SimOverlapHit>[];
-    _colliders.forEach((handle, collider) {
-      if (!_passesFilters(
-        collider,
-        layerMask: layerMask,
-        includeFixed: includeFixed,
-        includeKinematic: includeKinematic,
-        includeTriggers: includeTriggers,
-      )) {
-        return;
-      }
-      final aabb = shapeWorldAabb(collider.shape, _colliderWorldPose(collider));
-      if (!_aabbOverlap(probeAabb, aabb)) return;
-      out.add(SimOverlapHit(colliderHandle: handle));
-    });
+    _refreshBroadPhase();
+    final bvh = _phaseBvh;
+    if (bvh == null) return out;
+    bvh.queryAabb(
+      probeAabb.min.x,
+      probeAabb.min.y,
+      probeAabb.min.z,
+      probeAabb.max.x,
+      probeAabb.max.y,
+      probeAabb.max.z,
+      (i) {
+        final collider = _phaseColliders[i];
+        if (!_passesFilters(
+          collider,
+          layerMask: layerMask,
+          includeFixed: includeFixed,
+          includeKinematic: includeKinematic,
+          includeTriggers: includeTriggers,
+        )) {
+          return;
+        }
+        if (!obbOverlapsShape(
+          probePose,
+          halfExtents,
+          collider.shape,
+          _phasePoses[i],
+        )) {
+          return;
+        }
+        out.add(SimOverlapHit(colliderHandle: _phaseHandles[i]));
+      },
+    );
     return out;
   }
 
@@ -442,46 +580,58 @@ class BasicSimulation extends PhysicsSimulation {
       );
     }
     // Sphere cast = raycast against each collider's AABB inflated by the
-    // sphere radius; closest hit wins.
+    // sphere radius; closest hit wins. The hierarchy is descended with the
+    // ray inflated the same way, by widening the search distance and testing
+    // the inflated box per candidate.
     final origin = from.getTranslation();
     final ray = Ray.originDirection(origin, direction);
+    _refreshBroadPhase();
+    final bvh = _phaseBvh;
+    if (bvh == null) return null;
+    final unit = direction.normalized();
+    final boxes = _phaseBoxes;
+    final radius = shape.radius;
     SimShapeCastHit? best;
-    _colliders.forEach((handle, collider) {
-      if (!_passesFilters(
-        collider,
-        layerMask: layerMask,
-        includeFixed: includeFixed,
-        includeKinematic: includeKinematic,
-        includeTriggers: includeTriggers,
-      )) {
-        return;
-      }
-      final aabb = shapeWorldAabb(collider.shape, _colliderWorldPose(collider));
-      final inflated = Aabb3.minMax(
-        aabb.min - Vector3.all(shape.radius),
-        aabb.max + Vector3.all(shape.radius),
-      );
-      final hit = aabbRaycast(ray, inflated, distance);
-      if (hit == null) return;
-      if (best == null || hit.distance < best!.distance) {
-        best = SimShapeCastHit(
-          colliderHandle: handle,
-          worldPoint: hit.worldPoint,
-          worldNormal: hit.worldNormal,
-          distance: hit.distance,
+    // Nodes are tested against the un-inflated ray, so grow the traversal by
+    // the sphere radius on each side: a collider whose inflated box the ray
+    // enters has its own box within radius of the ray's line.
+    bvh.queryRay(
+      origin.x - unit.x * radius,
+      origin.y - unit.y * radius,
+      origin.z - unit.z * radius,
+      unit.x,
+      unit.y,
+      unit.z,
+      distance + radius * 2,
+      (i) {
+        if (!_passesFilters(
+          _phaseColliders[i],
+          layerMask: layerMask,
+          includeFixed: includeFixed,
+          includeKinematic: includeKinematic,
+          includeTriggers: includeTriggers,
+        )) {
+          return;
+        }
+        final o = i * 6;
+        final inflated = Aabb3.minMax(
+          Vector3(boxes[o] - radius, boxes[o + 1] - radius, boxes[o + 2] - radius),
+          Vector3(boxes[o + 3] + radius, boxes[o + 4] + radius, boxes[o + 5] + radius),
         );
-      }
-    });
+        final hit = aabbRaycast(ray, inflated, distance);
+        if (hit == null) return;
+        if (best == null || hit.distance < best!.distance) {
+          best = SimShapeCastHit(
+            colliderHandle: _phaseHandles[i],
+            worldPoint: hit.worldPoint,
+            worldNormal: hit.worldNormal,
+            distance: hit.distance,
+          );
+        }
+      },
+    );
     return best;
   }
-
-  bool _aabbOverlap(Aabb3 a, Aabb3 b) =>
-      a.min.x <= b.max.x &&
-      a.max.x >= b.min.x &&
-      a.min.y <= b.max.y &&
-      a.max.y >= b.min.y &&
-      a.min.z <= b.max.z &&
-      a.max.z >= b.min.z;
 
   // --- Stepping ---
 
@@ -498,39 +648,54 @@ class BasicSimulation extends PhysicsSimulation {
 
   void _stepTriggers() {
     if (_colliders.isEmpty) return;
+    final count = _refreshBroadPhase();
+    final bvh = _phaseBvh;
+    if (bvh == null) return;
 
-    final triggers = <int, _BasicCollider>{};
-    final solids = <int, _BasicCollider>{};
-    _colliders.forEach((handle, collider) {
-      (collider.isTrigger ? triggers : solids)[handle] = collider;
-    });
-    if (triggers.isEmpty) {
+    var anyTrigger = false;
+    for (var i = 0; i < count; i++) {
+      if (_phaseColliders[i].isTrigger) {
+        anyTrigger = true;
+        break;
+      }
+    }
+    if (!anyTrigger) {
       _prevTriggerPairs.clear();
       return;
     }
 
+    // Each trigger asks the hierarchy for the colliders near it rather than
+    // sweeping the whole world, and the world poses and boxes computed by the
+    // refresh above are reused instead of being composed again per pair.
     final newPairs = <_Pair>{};
-    final triggerAabbs = <int, Aabb3>{
-      for (final MapEntry(key: handle, value: t) in triggers.entries)
-        handle: shapeWorldAabb(t.shape, _colliderWorldPose(t)),
-    };
-    triggers.forEach((triggerHandle, trigger) {
-      final aTrigger = triggerAabbs[triggerHandle]!;
-      solids.forEach((otherHandle, other) {
-        if (!_layerMatch(trigger, other)) return;
-        final aOther = shapeWorldAabb(other.shape, _colliderWorldPose(other));
-        if (!_aabbOverlap(aTrigger, aOther)) return;
-        if (!shapesOverlap(
-          trigger.shape,
-          _colliderWorldPose(trigger),
-          other.shape,
-          _colliderWorldPose(other),
-        )) {
-          return;
-        }
-        newPairs.add(_Pair(triggerHandle, otherHandle));
-      });
-    });
+    final boxes = _phaseBoxes;
+    for (var t = 0; t < count; t++) {
+      final trigger = _phaseColliders[t];
+      if (!trigger.isTrigger) continue;
+      final o = t * 6;
+      bvh.queryAabb(
+        boxes[o],
+        boxes[o + 1],
+        boxes[o + 2],
+        boxes[o + 3],
+        boxes[o + 4],
+        boxes[o + 5],
+        (i) {
+          final other = _phaseColliders[i];
+          if (other.isTrigger) return;
+          if (!_layerMatch(trigger, other)) return;
+          if (!shapesOverlap(
+            trigger.shape,
+            _phasePoses[t],
+            other.shape,
+            _phasePoses[i],
+          )) {
+            return;
+          }
+          newPairs.add(_Pair(_phaseHandles[t], _phaseHandles[i]));
+        },
+      );
+    }
 
     for (final pair in newPairs) {
       if (_prevTriggerPairs.contains(pair)) continue;
@@ -557,6 +722,11 @@ class BasicSimulation extends PhysicsSimulation {
     _events.close();
     _bodies.clear();
     _colliders.clear();
+    _colliderSetVersion++;
+    _phaseColliders.clear();
+    _phaseHandles.clear();
+    _phasePoses.clear();
+    _phaseBvh = null;
     _prevTriggerPairs.clear();
   }
 }
