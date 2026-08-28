@@ -9,6 +9,8 @@ Discover anything not listed here with `search_commands {query}`.
 | --- | --- |
 | `describe_scene` | Node tree (ids, slash paths, components) + animation summary |
 | `get_node {ref}` | One node's transform, components, children |
+| `get_armature {ref}` | Every skin in the node's subtree plus the bone hierarchy: member name (what `targetName` takes), id, path, parent, `animated` flag |
+| `get_skin {ref, skin?}` | One skin in full: joints in skinning order with transforms, skeleton root, bound meshes |
 | `list_animations` | Every clip: id token, name, duration, channels' targets |
 | `get_animation {ref, maxKeys?}` | Full keyframes per channel; caps at 200 keys/channel, reports `totalKeys` + `keysTruncated` |
 | `get_keyframes {ref, node, property, fromTime?, toTime?, maxKeys?}` | Page one channel by time range |
@@ -22,6 +24,7 @@ Discover anything not listed here with `search_commands {query}`.
 | Tool | Effect |
 | --- | --- |
 | `control_animation_preview` | Drive the playhead: `{ref?, seek?, playing?, loop?, speed?, stop?}` in order select → stop → loop → speed → seek → play. Returns transport state |
+| `highlight_bones {ref, bones?}` | Mark bones of a rig in the viewport (same member names `targetName` takes); empty list clears. Unknown names are rejected with the rig's bone list |
 | `frame_node {ref}` | Aim camera at a node's bounds |
 | `set_viewport_camera` / `get_viewport_camera` | Orbit pose compose for screenshots |
 | `import_model {path, parentId?, scale?}` | `.glb/.gltf` as linked prefab instance |

@@ -1300,6 +1300,11 @@ class _EditorHomeState extends State<_EditorHome> {
                   : controller.previewDuration(loaded),
             };
           },
+          // The composed (prefab-expanded) view, so get_armature / get_skin
+          // see imported rigs' bones, which live only there.
+          composedDocument: () => _controller?.displayDocument,
+          highlightBones: (instance, bones) =>
+              _requireController.setBoneHighlight(instance, bones),
         ),
       );
       debugPrint('Editor MCP server listening on 127.0.0.1:7007');

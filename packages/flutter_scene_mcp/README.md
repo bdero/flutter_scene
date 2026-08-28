@@ -16,9 +16,10 @@ dart run flutter_scene_mcp:flutter_scene_mcp_connect 7007
 
 The tool set is tiered: a small curated set of perception tools
 (`describe_scene`, `list_animations`, `get_animation`, `get_keyframes`,
-`screenshot_viewport`, ...), plus `search_commands` and `run_command` as a
-gateway into the editor's full command registry. Every `run_command` call is
-a single undoable edit, identical to the same action in the editor UI.
+`get_armature`, `get_skin`, `screenshot_viewport`, ...), plus
+`search_commands` and `run_command` as a gateway into the editor's full
+command registry. Every `run_command` call is a single undoable edit,
+identical to the same action in the editor UI.
 
 ## Security model
 

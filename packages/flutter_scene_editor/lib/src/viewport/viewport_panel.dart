@@ -14,6 +14,7 @@ import '../controller/editor_controller.dart';
 import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
+import 'bone_highlight.dart';
 import 'debug_visualize.dart';
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
@@ -114,6 +115,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _ctrl.addListener(_onControllerChanged);
     // Repaint overlays while a drag in any viewport previews a transform.
     _ctrl.previewEpoch.addListener(_onControllerChanged);
+    _ctrl.highlightedBones.addListener(_onControllerChanged);
     _gizmoPrefs.addListener(_onControllerChanged);
     widget.cameraHandle?.attach(_camera, _bumpView);
   }
@@ -124,8 +126,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       oldWidget.controller.previewEpoch.removeListener(_onControllerChanged);
+      oldWidget.controller.highlightedBones.removeListener(
+        _onControllerChanged,
+      );
       _ctrl.addListener(_onControllerChanged);
       _ctrl.previewEpoch.addListener(_onControllerChanged);
+      _ctrl.highlightedBones.addListener(_onControllerChanged);
       _bumpView();
     }
     if (oldWidget.gizmoPreferences != widget.gizmoPreferences) {
@@ -146,6 +152,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     widget.cameraHandle?.detach(_camera);
     _ctrl.removeListener(_onControllerChanged);
     _ctrl.previewEpoch.removeListener(_onControllerChanged);
+    _ctrl.highlightedBones.removeListener(_onControllerChanged);
     _gizmoPrefs.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
@@ -924,6 +931,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               preferences: _gizmoPrefs,
                               hits: _componentGizmoHits,
                               cache: _componentGizmoCache,
+                            ),
+                            size: size,
+                          ),
+                        ),
+                        IgnorePointer(
+                          child: CustomPaint(
+                            painter: BoneHighlightPainter(
+                              controller: _ctrl,
+                              camera: cam,
                             ),
                             size: size,
                           ),

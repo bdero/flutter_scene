@@ -61,14 +61,15 @@ and unauthenticated by design — never forward the port beyond the machine.
 
 ## Tool tiers
 
-- **Perceive:** `describe_scene`, `get_node`, `list_animations`,
+- **Perceive:** `describe_scene`, `get_node`, `get_armature`,
+  `get_skin`, `list_animations`,
   `get_animation`, `get_keyframes`, `list_resources`, `screenshot_viewport`,
   `screenshot_window`.
 - **Mutate:** `search_commands` + `run_command`. Discover first; every match
   returns its argument schema ready to pass.
 - **Host-only extras** (appear when the editor supplies them):
-  `control_animation_preview`, `frame_node`, camera tools, project
-  build/run tools.
+  `control_animation_preview`, `highlight_bones`, `frame_node`, camera
+  tools, project build/run tools.
 
 Address nodes by slash path (`Root/Body`) or id token; animations accept an
 exact name or id token.

@@ -1132,4 +1132,215 @@ void documentTests() {
       );
     });
   });
+
+  group('armature perception', () {
+    // A native rig authored in one document: Hips -> Spine bones, one skin
+    // binding a mesh node, one animation channel driving Hips.
+    (EditorSession, LocalId, LocalId) nativeRigSession() {
+      final doc = SceneDocument(allocator: IdAllocator(session: 1));
+      final hips = doc.addNode(
+        NodeSpec(id: doc.newId(), name: 'Hips'),
+        root: true,
+      );
+      final spine = doc.addNode(
+        NodeSpec(
+          id: doc.newId(),
+          name: 'Spine',
+          transform: TrsTransform(translation: Vector3(0, 1, 0)),
+        ),
+      );
+      hips.children.add(spine.id);
+      final skin = doc.addSkin(
+        SkinSpec(
+          doc.newId(),
+          joints: [hips.id, spine.id],
+          inverseBindMatrices: doc.newId(),
+          skeleton: hips.id,
+        ),
+      );
+      doc.addNode(
+        NodeSpec(id: doc.newId(), name: 'Body', skin: skin.id),
+        root: true,
+      );
+      final session = EditorSession(doc);
+      session.run('createAnimation', {'name': 'Walk'});
+      final animationId = (session.document.animations.values.single).id;
+      session.run('setAnimationKeyframe', {
+        'animationId': animationId.toToken(),
+        'nodeId': hips.id.toToken(),
+        'property': 'translation',
+        'time': 0,
+        'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+      });
+      return (session, skin.id, hips.id);
+    }
+
+    test('get_armature describes the skin and the bone hierarchy', () async {
+      final (session, skinId, _) = nativeRigSession();
+      final surface = EditorToolSurface(() => session);
+      final result =
+          await surface.dispatch('get_armature', {'ref': 'Body'}) as Map;
+      expect(result['view'], 'document');
+      expect(result['node']['name'], 'Body');
+      final skins = result['skins'] as List;
+      expect((skins.single as Map)['id'], skinId.toToken());
+      expect((skins.single as Map)['jointCount'], 2);
+      final bones = [
+        for (final b in result['bones'] as List) b as Map,
+      ];
+      expect(bones.map((b) => b['name']), ['Hips', 'Spine']);
+      expect(bones[0]['parent'], isNull);
+      expect(bones[1]['parent'], 'Hips');
+      // Hips is keyed by the animation; Spine is not yet.
+      expect(bones[0]['animated'], isTrue);
+      expect(bones[1]['animated'], isFalse);
+    });
+
+    test('get_skin returns skinning order, transforms, and bound meshes',
+        () async {
+      final (session, skinId, _) = nativeRigSession();
+      final surface = EditorToolSurface(() => session);
+      final result = await surface.dispatch('get_skin', {'ref': 'Body'});
+      expect(result['id'], skinId.toToken());
+      expect(result['jointCount'], 2);
+      expect((result['skeleton'] as Map)['name'], 'Hips');
+      final joints = [
+        for (final j in result['joints'] as List) j as Map,
+      ];
+      expect(joints.map((j) => j['name']), ['Hips', 'Spine']);
+      expect(joints[1]['jointIndex'], 1);
+      expect(joints[1]['transform'], isNotNull);
+      final meshes = [
+        for (final m in result['boundMeshes'] as List) m as Map,
+      ];
+      expect(meshes.map((m) => m['name']), ['Body']);
+    });
+
+    test('a node with no bound skin is a self-correctable error', () async {
+      final (session, _, _) = nativeRigSession();
+      final surface = EditorToolSurface(() => session);
+      expect(
+        () => surface.dispatch('get_skin', {'ref': 'Hips'}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('No skin'),
+          ),
+        ),
+      );
+    });
+
+    test('get_armature reads imported rigs through the composed view',
+        () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final rig = session.document.addNode(
+        NodeSpec(id: session.document.newId(), name: 'Rig'),
+        root: true,
+      );
+      // The composed expansion: the rig id survives the merge, bones hang
+      // under it, and one skin binds them.
+      final composed = SceneDocument(allocator: IdAllocator(session: 2));
+      composed.addNode(NodeSpec(id: rig.id, name: 'Rig'), root: true);
+      final upper = composed.addNode(
+        NodeSpec(id: composed.newId(), name: 'Bone_012'),
+      );
+      composed.nodes[rig.id]!.children.add(upper.id);
+      final skin = composed.addSkin(
+        SkinSpec(
+          composed.newId(),
+          joints: [upper.id],
+          inverseBindMatrices: composed.newId(),
+          skeleton: upper.id,
+        ),
+      );
+      final body = composed.addNode(
+        NodeSpec(id: composed.newId(), name: 'Body', skin: skin.id),
+      );
+      composed.nodes[upper.id]!.children.add(body.id);
+      var composedReads = 0;
+      final surface = EditorToolSurface(
+        () => session,
+        composedDocument: () {
+          composedReads++;
+          return composed;
+        },
+      );
+      final result = await surface.dispatch('get_armature', {'ref': 'Rig'});
+      expect(composedReads, 1);
+      expect(result['view'], 'composed');
+      final bones = [
+        for (final b in result['bones'] as List) b as Map,
+      ];
+      expect(bones.map((b) => b['name']), ['Bone_012']);
+    });
+
+    test('highlight_bones is host-only and validates against the rig',
+        () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final rig = session.document.addNode(
+        NodeSpec(id: session.document.newId(), name: 'Rig'),
+        root: true,
+      );
+      final composed = SceneDocument(allocator: IdAllocator(session: 2));
+      composed.addNode(NodeSpec(id: rig.id, name: 'Rig'), root: true);
+      final bone = composed.addNode(
+        NodeSpec(id: composed.newId(), name: 'Bone_012'),
+      );
+      composed.nodes[rig.id]!.children.add(bone.id);
+
+      // Headless: the tool does not exist.
+      expect(
+        () => EditorToolSurface(() => session).dispatch('highlight_bones', {
+          'ref': 'Rig',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+
+      final applied = <(LocalId, List<String>)>[];
+      List<String> highlight(LocalId instance, List<String> bones) {
+        applied.add((instance, bones));
+        return bones;
+      }
+
+      final surface = EditorToolSurface(
+        () => session,
+        composedDocument: () => composed,
+        highlightBones: highlight,
+      );
+      final names = await surface.dispatch('highlight_bones', {
+        'ref': 'Rig',
+        'bones': ['Bone_012'],
+      });
+      expect(names, {
+        'node': rig.id.toToken(),
+        'highlighted': ['Bone_012'],
+      });
+      expect(applied.single.$1, rig.id);
+
+      // An unknown bone name is rejected with the rig's full bone list, so
+      // an agent can self-correct without another tool call.
+      expect(
+        () => surface.dispatch('highlight_bones', {
+          'ref': 'Rig',
+          'bones': ['Bone_999'],
+        }),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('Bone_999'), contains('Bone_012')),
+          ),
+        ),
+      );
+
+      // Empty bones clears.
+      await surface.dispatch('highlight_bones', {'ref': 'Rig'});
+      expect(applied.last.$2, isEmpty);
+    });
+  });
 }

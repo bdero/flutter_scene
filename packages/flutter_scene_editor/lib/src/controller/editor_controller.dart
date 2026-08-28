@@ -151,6 +151,27 @@ class EditorController extends ChangeNotifier
   List<LocalId> displayChildren(LocalId id) =>
       displayDocument.nodes[id]?.children ?? const [];
 
+  /// Applies the MCP `highlight_bones` request for [instance]: resolves
+  /// [bones] (prefab member names) against the composed rig and stores the
+  /// resulting bone ids on [highlightedBones]. Echoes [bones] back unchanged,
+  /// because the MCP surface validates them against this rig before calling —
+  /// the requested list is the single source of truth. An empty [bones] list
+  /// clears the highlight; an unknown name here is a no-op.
+  List<String> setBoneHighlight(LocalId instance, List<String> bones) {
+    final composed = _composed;
+    final resolved = <LocalId>{};
+    if (composed != null && bones.isNotEmpty) {
+      for (final id in SceneQuery(composed).subtreeOf(instance)) {
+        final name = composed.nodes[id]?.name;
+        if (name != null && bones.contains(name)) {
+          resolved.add(id);
+        }
+      }
+    }
+    highlightedBones.value = resolved;
+    return bones;
+  }
+
   /// The message of the most recent command failure, for the UI to surface.
   /// Set when [run] throws so a fire-and-forget edit (an inspector field, a
   /// menu action) does not fail silently. The shell shows it and resets it.
@@ -590,6 +611,11 @@ class EditorController extends ChangeNotifier
   /// rebuilding every listening panel (the controller's notifyListeners
   /// rebuilds the whole editor).
   final ValueNotifier<double> previewPlayhead = ValueNotifier(0);
+
+  /// The bones currently highlighted through the MCP `highlight_bones` tool,
+  /// as composed node ids ([liveNode] resolves these), so the viewport draws
+  /// the sticks the agent asked for.
+  final ValueNotifier<Set<LocalId>> highlightedBones = ValueNotifier(const {});
 
   /// The animation currently loaded on the playhead.
   @override
@@ -2256,6 +2282,11 @@ class EditorController extends ChangeNotifier
     _recordBuiltRadianceSizes();
     _liveById.clear();
     _sourceIdByLive.clear();
+    // Bone-highlight ids refer to the previous live scene; drop them on any
+    // full re-realize (new document, prefab/glTF import, material fallback,
+    // recompose) so a structural rebuild never leaves stray sticks pointing
+    // at nodes that no longer exist.
+    highlightedBones.value = const {};
     _index(root, null);
     // Re-apply selection highlights to the freshly realized live nodes.
     _syncHighlights();
@@ -2496,6 +2527,7 @@ class EditorController extends ChangeNotifier
     lastError.dispose();
     previewEpoch.dispose();
     previewPlayhead.dispose();
+    highlightedBones.dispose();
     scene.removeAll();
     super.dispose();
   }

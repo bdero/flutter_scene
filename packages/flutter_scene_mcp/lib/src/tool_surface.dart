@@ -239,6 +239,24 @@ typedef AnimationPreviewControl =
       double? seek,
       bool? stop,
     });
+/// Reads the prefab-expanded (composed) view of the open scene, or null when
+/// the host has none (a headless session, or a scene with no prefab
+/// instances). Imported rigs' bones exist only in the composed view, so
+/// `get_armature` and `get_skin` read through it when it still contains the
+/// resolved node and fall back to the editing document otherwise.
+typedef ComposedDocumentReader = SceneDocument? Function();
+
+/// Highlights [bones] (prefab member names) of the prefab instance [instance]
+/// in the running editor's viewport, so the human sees exactly which bones
+/// the agent is targeting. An empty [bones] list clears the highlight for the
+/// instance. Returns the highlighted names after applying. Null in a
+/// headless session.
+typedef BoneHighlighter = List<String> Function(
+  LocalId instance,
+  List<String> bones,
+);
+
+/// Drives the host's animation preview transport (the Animation panel's
 
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
@@ -301,6 +319,8 @@ class EditorToolSurface {
     this.listDebugModes,
     this.setDebugMode,
     this.animationPreview,
+    this.composedDocument,
+    this.highlightBones,
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
@@ -418,6 +438,14 @@ class EditorToolSurface {
   /// (there is no Animation panel to drive).
   final AnimationPreviewControl? animationPreview;
 
+  /// Reads the composed (prefab-expanded) scene; null in a headless session.
+  /// See [ComposedDocumentReader] for why armature tools prefer it.
+  final ComposedDocumentReader? composedDocument;
+
+  /// Draws/clears the viewport's bone-highlight overlay; null in a headless
+  /// session (there is no viewport to draw on).
+  final BoneHighlighter? highlightBones;
+
   SceneQuery get _query => session.query;
 
   /// The curated tools an agent is offered up front. The full command set is
@@ -489,6 +517,38 @@ class EditorToolSurface {
               'description': 'Playback speed multiplier.',
             },
           },
+          'additionalProperties': false,
+        },
+      ),
+    if (highlightBones != null)
+      const ToolDefinition(
+        name: 'highlight_bones',
+        description:
+            'Highlight bones of a rig (a linked model instance) in the '
+            'editor viewport so the human can see exactly which bones you '
+            'are about to animate. Bones are addressed by member name, the '
+            'same names targetName takes on the animation key commands. '
+            'Call again with a different list to change the highlight, or '
+            'with an empty bones list to clear it. Unknown bone names are '
+            'rejected with the rig\'s bone list so you can self-correct. '
+            'Returns the highlighted names.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'ref': {
+              'type': 'string',
+              'description':
+                  'The rig: a linked model instance (slash path or id token).',
+            },
+            'bones': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description':
+                  'Bone member names to highlight (e.g. ["Bone_012"]). '
+                  'Empty or omitted clears the highlight.',
+            },
+          },
+          'required': ['ref'],
           'additionalProperties': false,
         },
       ),
@@ -968,6 +1028,58 @@ class EditorToolSurface {
       },
     ),
     ToolDefinition(
+      name: 'get_armature',
+      description:
+          'Return the armature view for one node: every skin bound in its '
+          'subtree, and the full bone hierarchy (each bone\'s member name — '
+          'the string targetName takes on the animation key commands — id '
+          'token, slash path, parent, children, and whether animation '
+          'channels already target it). For a linked model instance this '
+          'reads the prefab-expanded view, so imported rigs are fully '
+          'visible. Start here before authoring skeletal animation.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description':
+                'A rig instance, a skinned mesh, or any node in their '
+                'subtree (slash path or id token).',
+          },
+        },
+        'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'get_skin',
+      description:
+          "Return full detail for one skin: its joints in skinning order "
+          '(the order the inverse-bind matrices are indexed by), each '
+          "joint's transform, parent, and slash path, the skeleton root, "
+          'and every mesh bound to the skin. Complements get_armature, '
+          'which shows the whole hierarchy compactly.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description':
+                'A node bound to the skin, or a rig instance (slash path '
+                'or id token).',
+          },
+          'skin': {
+            'type': 'string',
+            'description':
+                'A skin id token; only needed when the subtree binds more '
+                'than one skin.',
+          },
+        },
+        'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
       name: 'list_animations',
       description:
           'List every animation in the document with its id token, name, '
@@ -1141,6 +1253,12 @@ class EditorToolSurface {
         };
       case 'get_node':
         return _nodeDetail(_resolve(_requireRef(args)));
+      case 'get_armature':
+        return _armatureResult(_resolve(_requireRef(args)));
+      case 'get_skin':
+        return _skinResult(_resolve(_requireRef(args)), args);
+      case 'highlight_bones':
+        return _highlightBonesResult(args);
       case 'list_animations':
         return {
           'animations': [
@@ -1753,6 +1871,269 @@ class EditorToolSurface {
         : _query.namePathOf(session.selection.primary!),
     'selected': [for (final id in session.selection.ids) id.toToken()],
   };
+
+  // --- armature perception --------------------------------------------------
+
+  /// The document, query, and resolved node armature tools read. Prefers the
+  /// host's composed (prefab-expanded) view when it still contains [node]'s
+  /// id — imported rigs' bones exist only there — and falls back to the
+  /// editing document (which carries natively-authored skins).
+  (SceneDocument, SceneQuery, NodeSpec) _armatureView(NodeSpec node) {
+    final composed = composedDocument?.call();
+    if (composed != null && composed.nodes.containsKey(node.id)) {
+      return (composed, SceneQuery(composed), composed.nodes[node.id]!);
+    }
+    return (session.document, _query, node);
+  }
+
+  /// Whether an animation channel drives this bone. Two channel shapes
+  /// count: a plain channel targets the bone node itself (native skins), and
+  /// a member channel targets the rig root with the bone's member name in
+  /// [targetName] (imported rigs, in both the host and composed views).
+  bool _boneIsAnimated(
+    SceneDocument doc, {
+    required LocalId rigId,
+    required LocalId boneId,
+    required String? memberName,
+  }) {
+    for (final animation in doc.animations.values) {
+      for (final channel in animation.channels) {
+        // A plain channel targets the bone node itself (targetName is only
+        // a fallback binding the commands keep in sync).
+        if (channel.target == boneId) return true;
+        // A member channel targets the rig root and names the bone.
+        if (channel.target == rigId && channel.targetName == memberName) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// One bone row shared by `get_armature` and `get_skin`.
+  Map<String, Object?> _boneEntry(
+    SceneDocument doc,
+    SceneQuery query, {
+    required NodeSpec bone,
+    required NodeSpec? parent,
+    required LocalId rigId,
+    bool withTransform = false,
+  }) => {
+    'name': bone.name,
+    'id': bone.id.toToken(),
+    'path': query.namePathOf(bone.id),
+    if (parent != null) 'parent': parent.name,
+    'animated': _boneIsAnimated(
+      doc,
+      rigId: rigId,
+      boneId: bone.id,
+      memberName: bone.name,
+    ),
+    if (withTransform) 'transform': _transformJson(bone.transform),
+  };
+
+  /// The compact per-skin shape carried by `get_armature`.
+  Map<String, Object?> _skinSummary(
+    SceneDocument doc,
+    LocalId skinId,
+  ) {
+    final skin = doc.skin(skinId);
+    final skeleton = skin?.skeleton;
+    return {
+      'id': skinId.toToken(),
+      'jointCount': skin?.joints.length ?? 0,
+      if (skeleton != null)
+        'skeleton': {
+          'id': skeleton.toToken(),
+          'name': doc.node(skeleton)?.name,
+        },
+    };
+  }
+
+  /// The armature result: skins bound in the node's subtree plus the union
+  /// joint hierarchy, as a compact parent/child map an agent can walk.
+  Map<String, Object?> _armatureResult(NodeSpec hostNode) {
+    final (doc, query, node) = _armatureView(hostNode);
+
+    final skinIds = <LocalId>[];
+    for (final id in query.subtreeOf(node.id)) {
+      final spec = doc.node(id);
+      final skin = spec?.skin;
+      if (skin != null && !skinIds.contains(skin)) skinIds.add(skin);
+    }
+
+    final rigId = node.id;
+    // Union of every skin's joint nodes, in first-seen skin order.
+    final jointIds = <LocalId>[];
+    for (final skinId in skinIds) {
+      for (final joint in doc.skin(skinId)?.joints ?? const <LocalId>[]) {
+        if (!jointIds.contains(joint)) jointIds.add(joint);
+      }
+    }
+
+    final bones = <Map<String, Object?>>[];
+    for (final jointId in jointIds) {
+      final bone = doc.node(jointId);
+      if (bone == null) continue; // a skin referencing a missing joint
+      final parentId = query.parentOf(jointId);
+      bones.add(
+        _boneEntry(
+          doc,
+          query,
+          bone: bone,
+          parent: parentId == null ? null : doc.node(parentId),
+          rigId: rigId,
+        ),
+      );
+    }
+
+    return {
+      'node': {
+        'id': hostNode.id.toToken(),
+        'name': hostNode.name,
+        'path': _query.namePathOf(hostNode.id),
+      },
+      // Which view the bones came from: composed means prefab-expanded
+      // (imported rig); document means natively-authored skin.
+      'view': identical(doc, session.document) ? 'document' : 'composed',
+      'skins': [for (final skinId in skinIds) _skinSummary(doc, skinId)],
+      'bones': bones,
+    };
+  }
+
+  /// Parses an id token, or null when [token] is not one (a name or path).
+  LocalId? _tryParseId(String token) {
+    try {
+      return LocalId.parse(token);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// The `get_skin` result: skinning-order joints with transforms, the
+  /// skeleton root, and every mesh bound to the skin.
+  Map<String, Object?> _skinResult(
+    NodeSpec hostNode,
+    Map<String, Object?> args,
+  ) {
+    final (doc, query, node) = _armatureView(hostNode);
+
+    final skinIdsInSubtree = <LocalId>[];
+    for (final id in query.subtreeOf(node.id)) {
+      final spec = doc.node(id);
+      final skin = spec?.skin;
+      if (skin != null && !skinIdsInSubtree.contains(skin)) {
+        skinIdsInSubtree.add(skin);
+      }
+    }
+    if (skinIdsInSubtree.isEmpty) {
+      final label = hostNode.name.isEmpty
+          ? hostNode.id.toToken()
+          : hostNode.name;
+      throw ToolError('No skin is bound in the subtree of $label');
+    }
+
+    final requested = args['skin'];
+    final LocalId skinId;
+    if (requested is String && requested.isNotEmpty) {
+      final parsed = _tryParseId(requested);
+      if (parsed == null || !skinIdsInSubtree.contains(parsed)) {
+        throw ToolError(
+          'No skin "$requested" is bound in this subtree; bound skins: '
+          '[${skinIdsInSubtree.map((s) => s.toToken()).join(', ')}]',
+        );
+      }
+      skinId = parsed;
+    } else if (skinIdsInSubtree.length > 1) {
+      throw ToolError(
+        'This subtree binds ${skinIdsInSubtree.length} skins; pass a "skin" '
+        'id token: [${skinIdsInSubtree.map((s) => s.toToken()).join(', ')}]',
+      );
+    } else {
+      skinId = skinIdsInSubtree.first;
+    }
+
+    final skin = doc.skin(skinId);
+    final rigId = node.id;
+    final joints = [...(skin?.joints ?? const <LocalId>[])];
+
+    return {
+      'id': skinId.toToken(),
+      // Joint order is the order the skin's inverse-bind matrices are
+      // indexed by — the skinning contract, not just a list.
+      'jointOrder': [for (final j in joints) j.toToken()],
+      'jointCount': joints.length,
+      if (skin?.skeleton case final skeleton?)
+        'skeleton': {
+          'id': skeleton.toToken(),
+          'name': doc.node(skeleton)?.name,
+          'path': query.namePathOf(skeleton),
+        },
+      'joints': [
+        for (final (index, jointId) in joints.indexed)
+          if (doc.node(jointId) case final bone?)
+            () {
+              final parentId = query.parentOf(bone.id);
+              return {
+                ..._boneEntry(
+                  doc,
+                  query,
+                  bone: bone,
+                  parent: parentId == null ? null : doc.node(parentId),
+                  rigId: rigId,
+                  withTransform: true,
+                ),
+                'jointIndex': index,
+              };
+            }(),
+      ],
+      // Every node bound to this skin (the meshes it deforms).
+      'boundMeshes': [
+        for (final entry in doc.nodes.entries)
+          if (entry.value.skin == skinId)
+            {
+              'id': entry.key.toToken(),
+              'name': entry.value.name,
+              'path': query.namePathOf(entry.key),
+            },
+      ],
+    };
+  }
+
+  /// The `highlight_bones` result: validates the request against the rig,
+  /// applies the highlight through the host, and echoes the names.
+  Map<String, Object?> _highlightBonesResult(Map<String, Object?> args) {
+    final highlight = highlightBones;
+    if (highlight == null) {
+      throw const ToolError('No bone highlight control in this session');
+    }
+    final node = _resolve(_requireRef(args));
+    final names = [
+      for (final bone in args['bones'] as List? ?? const [])
+        if (bone is String && bone.isNotEmpty) bone,
+    ];
+    // Validate against the rig before touching the host, so a typo comes
+    // back as a self-correctable ToolError naming the rig's bones.
+    if (names.isNotEmpty) {
+      final (_, query, _) = _armatureView(node);
+      final boneNames = {
+        for (final id in query.subtreeOf(node.id))
+          if (query.node(id)?.name case final name?) name,
+      };
+      final unknown = [
+        for (final name in names)
+          if (!boneNames.contains(name)) name,
+      ];
+      if (unknown.isNotEmpty) {
+        final label = node.name.isEmpty ? node.id.toToken() : node.name;
+        final sorted = boneNames.toList()..sort();
+        throw ToolError(
+          'No bone(s) $unknown on $label. Bones: $sorted',
+        );
+      }
+    }
+    return {'node': node.id.toToken(), 'highlighted': highlight(node.id, names)};
+  }
 
   Map<String, Object?> _nodeTree(NodeSpec node) => {
     'id': node.id.toToken(),
