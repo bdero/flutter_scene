@@ -205,14 +205,22 @@ void main() {
       'geometry',
       'material',
       'primitives',
+      'visible',
+      'castsShadow',
       'morphWeights',
     ]);
     expect(mesh.propertySchema[0].kind, ComponentPropertyKind.resourceRef);
     expect(mesh.propertySchema[0].defaultValue, isNull); // required
     expect(mesh.propertySchema[2].kind, ComponentPropertyKind.list);
     expect(mesh.propertySchema[2].itemDef, isNotNull);
-    expect(mesh.propertySchema[3].kind, ComponentPropertyKind.list);
-    expect(mesh.propertySchema[3].itemDef!.kind, ComponentPropertyKind.number);
+    expect(mesh.propertySchema[5].kind, ComponentPropertyKind.list);
+    expect(mesh.propertySchema[5].itemDef!.kind, ComponentPropertyKind.number);
+    // Both per-primitive flags are described on the list entry too, so a
+    // multi-primitive mesh can carry them per entry.
+    expect(
+      mesh.propertySchema[2].itemDef!.objectFields!.map((d) => d.name),
+      ['geometry', 'material', 'visible', 'castsShadow'],
+    );
   });
 
   test('directional light is rotation-aimed and preserves shadow controls', () {

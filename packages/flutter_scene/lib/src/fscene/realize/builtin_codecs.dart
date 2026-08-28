@@ -207,6 +207,14 @@ class EnvironmentVolumeCodec
   }
 }
 
+/// One primitive read out of, or written into, a mesh component spec.
+typedef _PrimitiveRef = ({
+  LocalId geometry,
+  LocalId material,
+  bool visible,
+  bool castsShadow,
+});
+
 /// Codec for [MeshComponent]. Realizes a mesh from geometry/material resource
 /// references through the context's resource realizer, and serializes a mesh
 /// back by recovering the resources it was realized from.
@@ -257,8 +265,36 @@ class MeshCodec extends ComponentCodec {
             ComponentPropertyKind.resourceRef,
             resourceKind: 'material',
           ),
+          ComponentPropertyDef(
+            'visible',
+            ComponentPropertyKind.boolean,
+            defaultValue: BoolValue(true),
+            doc: 'Whether this primitive draws.',
+          ),
+          ComponentPropertyDef(
+            'castsShadow',
+            ComponentPropertyKind.boolean,
+            defaultValue: BoolValue(true),
+            doc: 'Whether this primitive renders into shadow maps.',
+          ),
         ],
       ),
+    ),
+    ComponentPropertyDef(
+      'visible',
+      ComponentPropertyKind.boolean,
+      defaultValue: BoolValue(true),
+      doc:
+          'Whether the single primitive draws (the single-primitive form; a '
+          'primitives list carries its own per-entry flag).',
+    ),
+    ComponentPropertyDef(
+      'castsShadow',
+      ComponentPropertyKind.boolean,
+      defaultValue: BoolValue(true),
+      doc:
+          'Whether the single primitive renders into shadow maps (the '
+          'single-primitive form).',
     ),
     ComponentPropertyDef(
       'morphWeights',
@@ -288,17 +324,16 @@ class MeshCodec extends ComponentCodec {
       debugPrint('fscene: mesh component has no geometry/material references');
       return null;
     }
-    // TODO(fscene): serialize MeshPrimitive.visible/castsShadow (property
-    // defs above, plus the write side in serialize()). Every realized
-    // primitive keeps the field defaults for now.
     final component = MeshComponent(
       Mesh.primitives(
         primitives: [
-          for (final (geometryId, materialId) in pairs)
+          for (final entry in pairs)
             MeshPrimitive(
-              realizer.geometry(geometryId),
-              realizer.material(materialId),
-            ),
+                realizer.geometry(entry.geometry),
+                realizer.material(entry.material),
+              )
+              ..visible = entry.visible
+              ..castsShadow = entry.castsShadow,
         ],
       ),
     );
@@ -315,7 +350,7 @@ class MeshCodec extends ComponentCodec {
   @override
   ComponentSpec? serialize(Component component, SerializeContext context) {
     if (component is! MeshComponent) return null;
-    final pairs = <(LocalId, LocalId)>[];
+    final pairs = <_PrimitiveRef>[];
     for (final primitive in component.mesh.primitives) {
       final geometryId = _serializeResource(primitive.geometry, context);
       final materialId = _serializeResource(primitive.material, context);
@@ -326,16 +361,26 @@ class MeshCodec extends ComponentCodec {
         );
         continue;
       }
-      pairs.add((geometryId, materialId));
+      pairs.add((
+        geometry: geometryId,
+        material: materialId,
+        visible: primitive.visible,
+        castsShadow: primitive.castsShadow,
+      ));
     }
     if (pairs.isEmpty) return null;
     final weights = _serializedMorphWeights(component);
     if (pairs.length == 1) {
+      final only = pairs.first;
       return ComponentSpec(
         type,
         properties: {
-          'geometry': ResourceRefValue(pairs.first.$1),
-          'material': ResourceRefValue(pairs.first.$2),
+          'geometry': ResourceRefValue(only.geometry),
+          'material': ResourceRefValue(only.material),
+          // Written only as a delta from the default, so the common mesh
+          // stays two references.
+          if (!only.visible) 'visible': const BoolValue(false),
+          if (!only.castsShadow) 'castsShadow': const BoolValue(false),
           if (weights != null) 'morphWeights': weights,
         },
       );
@@ -344,10 +389,12 @@ class MeshCodec extends ComponentCodec {
       type,
       properties: {
         'primitives': ListValue([
-          for (final (geometryId, materialId) in pairs)
+          for (final entry in pairs)
             MapValue({
-              'geometry': ResourceRefValue(geometryId),
-              'material': ResourceRefValue(materialId),
+              'geometry': ResourceRefValue(entry.geometry),
+              'material': ResourceRefValue(entry.material),
+              if (!entry.visible) 'visible': const BoolValue(false),
+              if (!entry.castsShadow) 'castsShadow': const BoolValue(false),
             }),
         ]),
         if (weights != null) 'morphWeights': weights,
@@ -357,10 +404,10 @@ class MeshCodec extends ComponentCodec {
 
   // Reads the mesh's primitive references, accepting both the single-primitive
   // shorthand (`geometry`/`material`) and the `primitives` list.
-  List<(LocalId, LocalId)> _primitivePairs(ComponentSpec spec) {
+  List<_PrimitiveRef> _primitivePairs(ComponentSpec spec) {
     final primitives = spec.properties['primitives'];
     if (primitives is ListValue) {
-      final out = <(LocalId, LocalId)>[];
+      final out = <_PrimitiveRef>[];
       for (final entry in primitives.values) {
         if (entry is MapValue) {
           final pair = _pair(entry.values);
@@ -373,14 +420,23 @@ class MeshCodec extends ComponentCodec {
     return pair == null ? const [] : [pair];
   }
 
-  (LocalId, LocalId)? _pair(Map<String, PropertyValue> props) {
+  _PrimitiveRef? _pair(Map<String, PropertyValue> props) {
     final geometry = props['geometry'];
     final material = props['material'];
-    if (geometry is ResourceRefValue && material is ResourceRefValue) {
-      return (geometry.id, material.id);
+    if (geometry is! ResourceRefValue || material is! ResourceRefValue) {
+      return null;
     }
-    return null;
+    return (
+      geometry: geometry.id,
+      material: material.id,
+      visible: _flag(props['visible']),
+      castsShadow: _flag(props['castsShadow']),
+    );
   }
+
+  // Absent means the default, which for both flags is true.
+  static bool _flag(PropertyValue? value) =>
+      value is BoolValue ? value.value : true;
 
   // The owning node's live morph weights, when they differ from the
   // geometry's defaults; null keeps the component free of the property.
