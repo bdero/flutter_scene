@@ -174,4 +174,64 @@ void main() {
       );
     });
   });
+
+  test('a 2D blend round-trips its plane', () {
+    final component = AnimatorComponent(
+      Animator(
+        states: [
+          AnimatorState(
+            'strafe',
+            BlendMotion2D('moveX', 'moveY', const [
+              (x: 0, y: 0, clip: 'Idle'),
+              (x: 0, y: 1, clip: 'Forward'),
+              (x: -1, y: 0, clip: 'Left'),
+            ]),
+          ),
+        ],
+      ),
+    );
+
+    final back = realize(write(component)!)!.animator;
+    final motion = back.states.single.motion as BlendMotion2D;
+    expect(motion.parameterX, 'moveX');
+    expect(motion.parameterY, 'moveY');
+    expect(motion.stops.map((s) => s.clip), ['Idle', 'Forward', 'Left']);
+    expect(motion.stops.last.x, -1);
+    expect(motion.stops[1].y, 1);
+
+    // And it still blends after the trip.
+    back.parameters.setNumber('moveY', 1);
+    expect(back.evaluate(0), {'Forward': 1.0});
+  });
+
+  test('one blend parameter is 1D, two is 2D', () {
+    // The second parameter's presence is what picks the form, so a document
+    // written by hand cannot land between the two.
+    ComponentSpec specWith(Map<String, PropertyValue> extra) => ComponentSpec(
+      'animator',
+      properties: {
+        'states': ListValue([
+          MapValue({
+            'name': const StringValue('s'),
+            'blendParameter': const StringValue('a'),
+            'stops': ListValue([
+              MapValue({'clip': const StringValue('A')}),
+            ]),
+            ...extra,
+          }),
+        ]),
+      },
+    );
+
+    expect(
+      realize(specWith({}))!.animator.states.single.motion,
+      isA<BlendMotion>(),
+    );
+    expect(
+      realize(
+        specWith({'blendParameterY': const StringValue('b')}),
+      )!.animator.states.single.motion,
+      isA<BlendMotion2D>(),
+    );
+  });
 }

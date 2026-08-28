@@ -279,4 +279,117 @@ void main() {
       expect(animator.isBlending, isFalse);
     });
   });
+
+  group('2D blends', () {
+    // The directional locomotion set: idle in the middle, a clip each way.
+    BlendMotion2D directional() => BlendMotion2D('x', 'y', const [
+      (x: 0, y: 0, clip: 'idle'),
+      (x: 0, y: 1, clip: 'forward'),
+      (x: 0, y: -1, clip: 'back'),
+      (x: 1, y: 0, clip: 'right'),
+      (x: -1, y: 0, clip: 'left'),
+    ]);
+
+    Map<String, double> at(double x, double y) {
+      final parameters = AnimatorParameters()
+        ..setNumber('x', x)
+        ..setNumber('y', y);
+      return directional().weights(parameters);
+    }
+
+    test('landing on a stop plays that clip alone', () {
+      expect(at(0, 1), {'forward': 1.0});
+      expect(at(-1, 0), {'left': 1.0});
+      expect(at(0, 0), {'idle': 1.0});
+    });
+
+    test('weights always sum to one', () {
+      for (final point in const [
+        (0.0, 0.0),
+        (0.5, 0.5),
+        (-0.3, 0.8),
+        (2.0, 2.0),
+        (0.25, -0.75),
+      ]) {
+        final total = at(point.$1, point.$2).values.fold(0.0, (a, b) => a + b);
+        expect(total, closeTo(1.0, 1e-9), reason: 'at $point');
+      }
+    });
+
+    test('between two stops it mixes those two, not the opposite ones', () {
+      // Halfway between idle and forward should not wake up the back clip.
+      final weights = at(0, 0.5);
+      expect(weights['forward'], greaterThan(0));
+      expect(weights.containsKey('back'), isFalse);
+      expect(weights.containsKey('left'), isFalse);
+      expect(weights.containsKey('right'), isFalse);
+    });
+
+    test('a diagonal draws on both neighbouring directions', () {
+      final weights = at(0.5, 0.5);
+      expect(weights['forward'], greaterThan(0));
+      expect(weights['right'], greaterThan(0));
+      expect(weights.containsKey('back'), isFalse);
+      expect(weights.containsKey('left'), isFalse);
+      // Symmetric input, symmetric output.
+      expect(weights['forward'], closeTo(weights['right']!, 1e-9));
+    });
+
+    test('the strongest weight is the direction actually being moved', () {
+      final weights = at(0.2, 0.9);
+      final strongest = weights.entries.reduce(
+        (a, b) => a.value >= b.value ? a : b,
+      );
+      expect(strongest.key, 'forward');
+    });
+
+    test('far outside the set the nearest clip takes over', () {
+      // Every band is closed out there, so rather than returning nothing it
+      // falls back to whichever stop is closest.
+      expect(at(0, 50), {'forward': 1.0});
+      expect(at(-50, 0), {'left': 1.0});
+    });
+
+    test('two stops naming one clip sum rather than overwrite', () {
+      // The same clip can be pinned in several places -- a turn used for both
+      // directions -- and its weight is the total of them, not the last one.
+      const positions = [(x: -1.0, y: 0.0), (x: 1.0, y: 0.0), (x: 0.0, y: 1.0)];
+      final shared = BlendMotion2D('x', 'y', [
+        (x: positions[0].x, y: positions[0].y, clip: 'turn'),
+        (x: positions[1].x, y: positions[1].y, clip: 'turn'),
+        (x: positions[2].x, y: positions[2].y, clip: 'forward'),
+      ]);
+      final distinct = BlendMotion2D('x', 'y', [
+        (x: positions[0].x, y: positions[0].y, clip: 'left'),
+        (x: positions[1].x, y: positions[1].y, clip: 'right'),
+        (x: positions[2].x, y: positions[2].y, clip: 'forward'),
+      ]);
+
+      final parameters = AnimatorParameters();
+      final merged = shared.weights(parameters);
+      final apart = distinct.weights(parameters);
+
+      expect(merged['turn'], closeTo(apart['left']! + apart['right']!, 1e-9));
+      expect(merged['forward'], closeTo(apart['forward']!, 1e-9));
+      expect(merged.values.fold(0.0, (a, b) => a + b), closeTo(1.0, 1e-9));
+    });
+
+    test('coincident stops do not divide by zero', () {
+      final motion = BlendMotion2D('x', 'y', const [
+        (x: 0, y: 0, clip: 'a'),
+        (x: 0, y: 0, clip: 'b'),
+      ]);
+      final weights = motion.weights(AnimatorParameters());
+      expect(weights.values.fold(0.0, (a, b) => a + b), closeTo(1.0, 1e-9));
+    });
+
+    test('a single stop is that clip everywhere', () {
+      final motion = BlendMotion2D('x', 'y', const [
+        (x: 3, y: 4, clip: 'only'),
+      ]);
+      expect(motion.weights(AnimatorParameters()..setNumber('x', -100)), {
+        'only': 1.0,
+      });
+    });
+  });
 }

@@ -426,7 +426,12 @@ const _stopFields = [
     'at',
     ComponentPropertyKind.number,
     defaultValue: DoubleValue(0),
-    doc: 'The parameter value this clip is pinned to.',
+    doc: 'The parameter value this clip is pinned to, on a 1D blend.',
+  ),
+  ComponentPropertyDef(
+    'position',
+    ComponentPropertyKind.vec2,
+    doc: 'Where this clip sits on the plane, on a 2D blend.',
   ),
   ComponentPropertyDef(
     'clip',
@@ -450,6 +455,11 @@ const _stateFields = [
     'blendParameter',
     ComponentPropertyKind.string,
     doc: 'The parameter driving the blend; omit for a single clip.',
+  ),
+  ComponentPropertyDef(
+    'blendParameterY',
+    ComponentPropertyKind.string,
+    doc: 'The second blend parameter; its presence makes the blend 2D.',
   ),
   ComponentPropertyDef(
     'stops',
@@ -604,20 +614,41 @@ class AnimatorCodec extends ComponentCodec {
     if (name.isEmpty) return null;
 
     final blendParameter = _string(value.values['blendParameter']);
+    final blendParameterY = _string(value.values['blendParameterY']);
     final rawStops = value.values['stops'];
-    final stops = <BlendStop>[
+    final entries = <MapValue>[
       if (rawStops is ListValue)
         for (final entry in rawStops.values)
           if (entry is MapValue && _string(entry.values['clip']).isNotEmpty)
-            (
-              at: _num(entry.values['at'], 0),
-              clip: _string(entry.values['clip']),
-            ),
+            entry,
     ];
 
     final AnimatorMotion motion;
-    if (blendParameter.isNotEmpty && stops.isNotEmpty) {
-      motion = BlendMotion(blendParameter, stops);
+    if (blendParameter.isNotEmpty &&
+        blendParameterY.isNotEmpty &&
+        entries.isNotEmpty) {
+      motion = BlendMotion2D(blendParameter, blendParameterY, [
+        for (final entry in entries)
+          (
+            x: switch (entry.values['position']) {
+              Vec2Value(value: final v) => v.x,
+              _ => 0.0,
+            },
+            y: switch (entry.values['position']) {
+              Vec2Value(value: final v) => v.y,
+              _ => 0.0,
+            },
+            clip: _string(entry.values['clip']),
+          ),
+      ]);
+    } else if (blendParameter.isNotEmpty && entries.isNotEmpty) {
+      motion = BlendMotion(blendParameter, [
+        for (final entry in entries)
+          (
+            at: _num(entry.values['at'], 0),
+            clip: _string(entry.values['clip']),
+          ),
+      ]);
     } else {
       final clip = _string(value.values['clip']);
       // A state that names neither a clip nor a blend has nothing to play,
@@ -700,6 +731,17 @@ class AnimatorCodec extends ComponentCodec {
           for (final stop in motion.stops)
             MapValue({
               'at': DoubleValue(stop.at),
+              'clip': StringValue(stop.clip),
+            }),
+        ]),
+      },
+      if (motion is BlendMotion2D) ...{
+        'blendParameter': StringValue(motion.parameterX),
+        'blendParameterY': StringValue(motion.parameterY),
+        'stops': ListValue([
+          for (final stop in motion.stops)
+            MapValue({
+              'position': Vec2Value(Vector2(stop.x, stop.y)),
               'clip': StringValue(stop.clip),
             }),
         ]),

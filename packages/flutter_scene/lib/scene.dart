@@ -34,7 +34,9 @@ export 'src/animation/animator.dart'
         AnimatorState,
         AnimatorTransition,
         BlendMotion,
+        BlendMotion2D,
         BlendStop,
+        BlendStop2D,
         ClipMotion;
 export 'src/animation/animator_component.dart' show AnimatorComponent;
 

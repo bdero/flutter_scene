@@ -168,6 +168,94 @@ class BlendMotion extends AnimatorMotion {
   }
 }
 
+/// One stop in a [BlendMotion2D]: a clip pinned to a point on the plane.
+/// {@category Animation}
+typedef BlendStop2D = ({double x, double y, String clip});
+
+/// A two-dimensional blend: clips placed on a plane, mixed by where a pair of
+/// parameters currently sits.
+///
+/// The directional locomotion case — forward, back and both strafes around an
+/// idle — where neither axis alone describes the motion.
+///
+/// Weights come from gradient band interpolation. For each stop, every other
+/// stop defines a band: how far the sample has travelled from this stop
+/// toward that one. The stop's weight is how much band is left after the
+/// most restrictive of them. The result is one at a stop, smooth between
+/// them, and it needs no triangulation of the stops, which matters because
+/// nobody wants to author a mesh to describe four directions.
+/// {@category Animation}
+class BlendMotion2D extends AnimatorMotion {
+  /// Blends [stops] across [parameterX] and [parameterY].
+  BlendMotion2D(this.parameterX, this.parameterY, List<BlendStop2D> stops)
+    : assert(stops.isNotEmpty, 'A blend needs at least one stop.'),
+      stops = List<BlendStop2D>.unmodifiable(stops);
+
+  /// The parameter driving the horizontal axis.
+  final String parameterX;
+
+  /// The parameter driving the vertical axis.
+  final String parameterY;
+
+  /// The stops, in the order given.
+  final List<BlendStop2D> stops;
+
+  @override
+  Map<String, double> weights(AnimatorParameters parameters) {
+    if (stops.length == 1) return {stops.first.clip: 1.0};
+    final px = parameters.number(parameterX);
+    final py = parameters.number(parameterY);
+
+    final raw = <double>[];
+    for (final stop in stops) {
+      var weight = 1.0;
+      for (final other in stops) {
+        if (identical(other, stop)) continue;
+        final dx = other.x - stop.x;
+        final dy = other.y - stop.y;
+        final lengthSq = dx * dx + dy * dy;
+        // Two stops in the same place cannot define a direction; neither
+        // constrains the other.
+        if (lengthSq <= 0) continue;
+        final toSampleX = px - stop.x;
+        final toSampleY = py - stop.y;
+        final along = (toSampleX * dx + toSampleY * dy) / lengthSq;
+        final remaining = 1.0 - along;
+        if (remaining < weight) weight = remaining;
+      }
+      raw.add(weight < 0 ? 0.0 : weight);
+    }
+
+    var total = 0.0;
+    for (final weight in raw) {
+      total += weight;
+    }
+    // Every band closed: the sample sits outside every stop's influence, so
+    // fall back to the nearest rather than returning nothing at all.
+    if (total <= 0) {
+      var best = 0;
+      var bestDistance = double.infinity;
+      for (var i = 0; i < stops.length; i++) {
+        final dx = px - stops[i].x;
+        final dy = py - stops[i].y;
+        final distance = dx * dx + dy * dy;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = i;
+        }
+      }
+      return {stops[best].clip: 1.0};
+    }
+
+    final merged = <String, double>{};
+    for (var i = 0; i < stops.length; i++) {
+      if (raw[i] <= 0) continue;
+      merged[stops[i].clip] = (merged[stops[i].clip] ?? 0.0) + raw[i] / total;
+    }
+    return merged;
+  }
+}
+
 /// One state of an [Animator].
 /// {@category Animation}
 class AnimatorState {
