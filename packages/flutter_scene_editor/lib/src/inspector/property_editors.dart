@@ -80,14 +80,17 @@ class PropertyField extends StatelessWidget {
               width: 90,
               child: Text(
                 descriptor.label,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: editorMutedTextColor,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 4),
             Text(
               '(${descriptor.type.name})',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
             ),
           ],
         ),

@@ -47,6 +47,13 @@ They do not exist here, or they break the build.
 
 Cold assumptions undersell the engine. Before hand-rolling any of these, know they exist: **directional, point, spot, and area lights, shadows (PCSS and contact shadows), GTAO ambient occlusion, screen-space reflections, SSGI, depth of field, god rays, fog, auto exposure, LUT color grading, bloom, anti-aliasing, tone mapping, instancing, and LOD**, plus ten built-in primitive geometries and `GeometryBuilder` for custom meshes. Custom `ShaderMaterial` output is linear HDR premultiplied by alpha; the engine applies exposure, tone mapping, and the display transform afterward.
 
+The same is true above the renderer. Do not hand-roll a camera, a grid, or click-to-move:
+
+- **Cameras.** `OrbitCameraController`, `FlyCameraController`, `FollowCameraController` (with wall-collision retraction), `FirstPersonCameraController` (head bob, additive recoil), `RtsCameraController` (plus `.isometric()` and `.topDown()`, edge scrolling, terrain follow, map bounds), and `DollyCameraController` riding an arc-length-parameterized `CameraPath`. Both lenses exist: `PerspectiveProjection` and `OrthographicProjection`.
+- **Cinematics.** Every controller produces a `CameraPose`, and a `CameraDirector` blends between them by priority or by an explicit `blendTo`, so a cut from one camera to another is one call. `CameraSequence` plays a shot list through it. `CameraRig.firstPerson(...)`, `.thirdPerson(...)`, `.isometric(...)` and the rest assemble node, camera, director, and controller in one call.
+- **Grids.** `package:flutter_scene/grid.dart`: `SquareGrid` and `HexGrid` (axial coordinates), `GridMap` for per-cell state, `findGridPath` for A* over your own cost function, `GridPicking` to turn a click into a cell, and `GridTileLayer` to draw a tile map as one instanced batch. Isometric is a camera, not a tiling: use a `SquareGrid`.
+- **Pointer and selection.** `ScenePicker` resolves a click to the *object* rather than the mesh under the cursor, and does marquee selection; `SceneSelection` holds what is selected; `PathFollowerComponent` walks a route from either pathfinder, moving a node itself or steering a character controller. `PointerLock` captures the mouse for first-person look (web only — check `isSupported`).
+
 ## The agent skills
 
 This repo ships a set of on-demand skills under `packages/flutter_scene/skills/`, each loaded by a coding assistant when its topic comes up:
@@ -76,7 +83,7 @@ Either path installs the same skills.
 
 - `examples/flutter_app` is the example app (many examples). It commits no platform scaffolding, so generate the platform you want first (`cd examples/flutter_app && flutter create . --platforms=macos --org dev.bdero --project-name example_app`), then `flutter run -d macos --enable-flutter-gpu`.
 - `examples/smoke_render` is a headless cross-backend render harness and commits its scaffolding, so it runs straight from a checkout.
-- `apps/flutter_scene_editor_app` is the standalone editor.
+- `apps/flutter_scene_editor_app` is the standalone editor. It commits its platform scaffolding, so it runs straight from a checkout: `cd apps/flutter_scene_editor_app && flutter run -d macos --enable-flutter-gpu`. Working on the master channel needs one patch first; see the app's README.
 
 ## Where to look
 

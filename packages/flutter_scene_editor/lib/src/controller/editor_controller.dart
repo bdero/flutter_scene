@@ -400,6 +400,14 @@ class EditorController extends ChangeNotifier {
   /// the editor-command setting.
   Future<void> Function(String path)? sourceFileOpener;
 
+  /// Moves the camera to frame a node, reporting whether it had bounds to
+  /// frame. Wired by the host, which owns the viewport camera.
+  ///
+  /// Lets a panel that is nowhere near the viewport — the outliner — ask for
+  /// the same framing the F key does, rather than reaching for a camera it
+  /// has no business holding.
+  bool Function(LocalId id)? nodeFramer;
+
   /// Registers placeholder codecs for [schemas] whose types have no codec in
   /// this controller's registry, so documents carrying them realize as inert
   /// data bags, the inspector edits them from the schema, and Add Component

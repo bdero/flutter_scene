@@ -671,6 +671,10 @@ base class Node implements SceneGraph {
   // layer, so the per-frame pre-pass refreshes their render items
   // without scanning the full component list.
   final List<MeshComponent> _meshComponents = [];
+
+  // Components that correct an animated pose, ticked after the subtree.
+  // Kept in their own list so the common node pays one emptiness check.
+  final List<Component> _lateComponents = [];
   final List<InstancedMeshComponent> _instancedMeshComponents = [];
 
   /// Attaches [component] to this node.
@@ -683,6 +687,7 @@ base class Node implements SceneGraph {
       throw Exception('Component is already attached to a node');
     }
     _components.add(component);
+    if (component.wantsLateUpdate) _lateComponents.add(component);
     if (component is MeshComponent) {
       _meshComponents.add(component);
       markBoundsDirty();
@@ -714,6 +719,7 @@ base class Node implements SceneGraph {
     } else if (component is InstancedMeshComponent) {
       _instancedMeshComponents.remove(component);
     }
+    _lateComponents.remove(component);
   }
 
   /// Returns the first attached component of type [T], or `null`.
@@ -1509,6 +1515,16 @@ base class Node implements SceneGraph {
       children,
       (child) => child.scenePrePass(deltaSeconds, _effectiveVisible),
     );
+
+    // After the subtree, so anything correcting an animated pose sees the
+    // pose it is correcting. Empty for almost every node, so the common case
+    // is one list check.
+    if (_lateComponents.isNotEmpty) {
+      _visitMutable(
+        _lateComponents,
+        (component) => component.lateTick(deltaSeconds),
+      );
+    }
   }
 
   /// Walks this node's subtree once per physics substep and dispatches

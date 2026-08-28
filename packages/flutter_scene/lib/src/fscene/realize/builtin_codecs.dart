@@ -29,6 +29,8 @@ import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
+import 'package:flutter_scene/src/fscene/realize/camera_controller_codecs.dart';
+import 'package:flutter_scene/src/fscene/realize/kit_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/physics_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
@@ -71,6 +73,8 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(AudioSourceCodec())
     ..register(AudioListenerCodec())
     ..register(AudioEngineCodec());
+  registerCameraControllerCodecs(registry);
+  registerKitComponentCodecs(registry);
   registerPhysicsComponentCodecs(registry);
 }
 
@@ -84,6 +88,9 @@ class EnvironmentVolumeCodec
   @override
   String get type => 'environmentVolume';
 
+  @override
+  String? get category => 'Rendering';
+
   // The teal the editor's old hard-coded volume overlay used, solid for the
   // region and faint for the blend shell.
   static const _regionColor = GizmoColor(0.204, 0.839, 0.784);
@@ -92,6 +99,7 @@ class EnvironmentVolumeCodec
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'environment',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -209,6 +217,9 @@ class EnvironmentVolumeCodec
 class MeshCodec extends ComponentCodec {
   @override
   String get type => 'mesh';
+
+  @override
+  String? get category => 'Mesh';
 
   // The single-primitive form, plus the multi-primitive `primitives` list
   // described as a list of {geometry, material} pairs.
@@ -825,8 +836,12 @@ class DirectionalLightCodec
   String get type => 'directionalLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-sun',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1024,8 +1039,12 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
   String get type => 'pointLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-point',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1085,8 +1104,12 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
   String get type => 'spotLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-spot',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1238,16 +1261,23 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
 
 /// Codec for [CameraComponent]. Handles perspective projections; the node
 /// transform supplies the view.
-// TODO(camera-projection-union): describe orthographic/off-axis projections
-// as a tagged union once they exist on CameraProjection (the flat keys stay
-// for document compatibility).
+// Perspective and orthographic lenses are described by a flat `projection`
+// tag plus that lens's own keys, not by a ComponentPropertyKind.union: the
+// flat keys are what documents written before orthographic existed already
+// carry, and they still mean exactly what they meant then.
+// TODO(camera-projection-union): revisit if off-axis projections land, which
+// would add enough per-lens keys to be worth a real union plus a migration.
 class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
   @override
   String get type => 'camera';
 
   @override
+  String? get category => 'Cameras';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'camera',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1263,30 +1293,75 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
 
   @override
   List<ComponentField<CameraComponent>> get fields => [
-    // Single-option until orthographic exists (the projection-union TODO
-    // above); options render as a dropdown rather than free text.
+    // Declared first so a lens swap lands before the per-lens keys below are
+    // applied; otherwise they would write into the outgoing projection.
     ComponentField(
       const ComponentPropertyDef(
         'projection',
         ComponentPropertyKind.string,
         defaultValue: StringValue('perspective'),
-        doc: 'The projection model.',
-        options: ['perspective'],
+        doc:
+            'The lens model. A perspective lens converges with distance; an '
+            'orthographic one does not, and sizes its view by height rather '
+            'than by field of view.',
+        options: ['perspective', 'orthographic'],
       ),
-      read: (c, _) => const StringValue('perspective'),
+      read: (c, _) => StringValue(_tagOf(c.projection)),
+      // Swapping lenses carries the clip range across, since both lenses have
+      // one, so toggling back and forth does not quietly rewrite near/far.
+      write: (c, v, _) {
+        if (v is! StringValue || _tagOf(c.projection) == v.value) return;
+        final near = _nearOf(c.projection);
+        final far = _farOf(c.projection);
+        c.projection = v.value == 'orthographic'
+            ? OrthographicProjection(near: near, far: far)
+            : PerspectiveProjection(near: near, far: far);
+      },
     ),
-    ComponentField.number(
-      'fovRadiansY',
-      defaultValue: 45 * degrees2Radians,
-      doc: 'Vertical field of view, in radians.',
-      constraints: [
-        Range(1 * degrees2Radians, 179 * degrees2Radians),
-        const AngleRadians(),
-      ],
-      get: (c) => _perspective(c).fovRadiansY,
-      set: (c, v) {
+    // Each lens serializes only its own size key: read returns null for the
+    // lens that does not have one, which leaves it out of the document
+    // rather than writing a meaningless value.
+    ComponentField(
+      ComponentPropertyDef(
+        'fovRadiansY',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(45 * degrees2Radians),
+        doc: 'Vertical field of view, in radians. Perspective lenses only.',
+        constraints: [
+          Range(1 * degrees2Radians, 179 * degrees2Radians),
+          const AngleRadians(),
+        ],
+      ),
+      read: (c, _) => switch (c.projection) {
+        PerspectiveProjection(:final fovRadiansY) => DoubleValue(fovRadiansY),
+        _ => null,
+      },
+      write: (c, v, _) {
         final projection = c.projection;
-        if (projection is PerspectiveProjection) projection.fovRadiansY = v;
+        if (v is DoubleValue && projection is PerspectiveProjection) {
+          projection.fovRadiansY = v.value;
+        }
+      },
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'height',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(10),
+        doc:
+            'Vertical extent of the view, in world units. Orthographic '
+            'lenses only; halving it doubles the apparent size of everything.',
+        constraints: [Range(0.0001, null)],
+      ),
+      read: (c, _) => switch (c.projection) {
+        OrthographicProjection(:final height) => DoubleValue(height),
+        _ => null,
+      },
+      write: (c, v, _) {
+        final projection = c.projection;
+        if (v is DoubleValue && projection is OrthographicProjection) {
+          projection.height = v.value;
+        }
       },
     ),
     ComponentField.number(
@@ -1294,10 +1369,14 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
       defaultValue: 0.1,
       doc: 'Near clip distance.',
       constraints: const [Range(0.0001, null)],
-      get: (c) => _perspective(c).near,
+      get: _nearOfComponent,
       set: (c, v) {
-        final projection = c.projection;
-        if (projection is PerspectiveProjection) projection.near = v;
+        switch (c.projection) {
+          case PerspectiveProjection p:
+            p.near = v;
+          case OrthographicProjection p:
+            p.near = v;
+        }
       },
     ),
     ComponentField.number(
@@ -1305,10 +1384,14 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
       defaultValue: 1000.0,
       doc: 'Far clip distance.',
       constraints: const [Range(0.0001, null)],
-      get: (c) => _perspective(c).far,
+      get: _farOfComponent,
       set: (c, v) {
-        final projection = c.projection;
-        if (projection is PerspectiveProjection) projection.far = v;
+        switch (c.projection) {
+          case PerspectiveProjection p:
+            p.far = v;
+          case OrthographicProjection p:
+            p.far = v;
+        }
       },
     ),
     // Constructor-only; a serialized true restores this camera as the
@@ -1324,13 +1407,35 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
     ),
   ];
 
-  static PerspectiveProjection _perspective(CameraComponent c) =>
-      c.projection as PerspectiveProjection;
+  /// The document tag for [projection], and the inverse of the lens the
+  /// `projection` field's write and [create] build.
+  static String _tagOf(CameraProjection projection) =>
+      projection is OrthographicProjection ? 'orthographic' : 'perspective';
 
+  static double _nearOf(CameraProjection projection) => switch (projection) {
+    PerspectiveProjection(:final near) => near,
+    OrthographicProjection(:final near) => near,
+    _ => 0.1,
+  };
+
+  static double _farOf(CameraProjection projection) => switch (projection) {
+    PerspectiveProjection(:final far) => far,
+    OrthographicProjection(:final far) => far,
+    _ => 1000.0,
+  };
+
+  static double _nearOfComponent(CameraComponent c) => _nearOf(c.projection);
+
+  static double _farOfComponent(CameraComponent c) => _farOf(c.projection);
+
+  // A camera carrying some other CameraProjection is not describable by these
+  // keys, so it is left to a codec that understands it rather than saved as
+  // something it is not.
   @override
   bool claims(Component component) =>
       component is CameraComponent &&
-      component.projection is PerspectiveProjection;
+      (component.projection is PerspectiveProjection ||
+          component.projection is OrthographicProjection);
 
   @override
   ComponentSpec? serialize(Component component, SerializeContext context) =>
@@ -1338,11 +1443,17 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
 
   @override
   CameraComponent create(PropertyReader props) => CameraComponent(
-    projection: PerspectiveProjection(
-      fovRadiansY: props.number('fovRadiansY'),
-      near: props.number('near'),
-      far: props.number('far'),
-    ),
+    projection: props.string('projection') == 'orthographic'
+        ? OrthographicProjection(
+            height: props.number('height'),
+            near: props.number('near'),
+            far: props.number('far'),
+          )
+        : PerspectiveProjection(
+            fovRadiansY: props.number('fovRadiansY'),
+            near: props.number('near'),
+            far: props.number('far'),
+          ),
     activateOnMount: props.boolean('activateOnMount'),
   );
 }
@@ -1370,6 +1481,9 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
 class MaterialsVariantsCodec extends ComponentCodec {
   @override
   String get type => 'materialsVariants';
+
+  @override
+  String? get category => 'Mesh';
 
   // TODO(materials-variants-schema): the nested bindings list is not
   // schema-described (like the mesh codec's multi-primitive form), so the
@@ -1551,6 +1665,9 @@ class ReflectionProbeCodec
   @override
   String get type => 'reflectionProbe';
 
+  @override
+  String? get category => 'Rendering';
+
   // Violet, distinct from the environment volume's teal.
   static const _boxColor = GizmoColor(0.71, 0.48, 0.95);
   static const _blendColor = GizmoColor(0.71, 0.48, 0.95, 0.33);
@@ -1558,6 +1675,7 @@ class ReflectionProbeCodec
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'environment',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1632,8 +1750,12 @@ class RectAreaLightCodec
   String get type => 'rectAreaLight';
 
   @override
+  String? get category => 'Rendering';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light-area',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -1703,11 +1825,15 @@ class IrradianceVolumeCodec
   @override
   String get type => 'irradianceVolume';
 
+  @override
+  String? get category => 'Rendering';
+
   static const _boxColor = GizmoColor(0.2, 0.8, 0.6);
 
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'light',
     properties: propertySchema,
     gizmo: const GizmoSpec([

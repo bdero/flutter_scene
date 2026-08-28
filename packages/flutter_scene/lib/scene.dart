@@ -24,6 +24,24 @@
 library;
 
 export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
+export 'src/animation/animator.dart'
+    show
+        Animator,
+        AnimatorComparison,
+        AnimatorCondition,
+        AnimatorMotion,
+        AnimatorParameters,
+        AnimatorState,
+        AnimatorTransition,
+        BlendMotion,
+        BlendMotion2D,
+        BlendStop,
+        BlendStop2D,
+        ClipMotion;
+export 'src/animation/animator_component.dart' show AnimatorComponent;
+export 'src/animation/ik_constraint_component.dart' show IkConstraintComponent;
+export 'src/animation/two_bone_ik.dart'
+    show TwoBoneSolution, solveTwoBoneIk, twoBoneMidAfter, twoBoneTipAfter;
 
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
@@ -60,6 +78,12 @@ export 'src/geometry/primitives.dart'
         SphereGeometry,
         TorusGeometry,
         WedgeGeometry;
+export 'src/geometry/terrain.dart'
+    show HeightField, TerrainGeometry, buildTerrainArrays;
+export 'src/kit/scatter/scatter_layer.dart'
+    show ScatterBrush, ScatterLayer, ScatterPlacement, scatterInBrush;
+export 'src/geometry/terrain_brush.dart'
+    show TerrainBrush, TerrainBrushKind, sculptTerrain;
 export 'src/geometry/polyline_geometry.dart'
     show DashPattern, PolylineCap, PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'
@@ -146,14 +170,33 @@ export 'src/asset_helpers.dart'
         imageFromAsset,
         imageFromBytes;
 export 'src/camera.dart'
-    show Camera, CameraProjection, PerspectiveCamera, PerspectiveProjection;
-export 'src/camera_controllers/camera_controller.dart' show CameraController;
+    show
+        Camera,
+        CameraProjection,
+        OrthographicCamera,
+        OrthographicProjection,
+        PerspectiveCamera,
+        PerspectiveProjection;
+export 'src/camera_controllers/camera_controller.dart'
+    show CameraController, CameraDirectorBinding;
+export 'src/camera_controllers/camera_director.dart'
+    show CameraBlend, CameraDirector;
+export 'src/camera_controllers/camera_path.dart' show CameraPath;
+export 'src/camera_controllers/camera_sequence.dart'
+    show CameraSequence, CameraShot;
+export 'src/camera_controllers/dolly_camera_controller.dart'
+    show DollyCameraController;
+export 'src/camera_controllers/first_person_camera_controller.dart'
+    show FirstPersonCameraController, HeadBob;
 export 'src/camera_controllers/fly_camera_controller.dart'
     show FlyCameraController;
 export 'src/camera_controllers/follow_camera_controller.dart'
     show FollowCameraController;
 export 'src/camera_controllers/orbit_camera_controller.dart'
     show OrbitCameraController;
+export 'src/camera_controllers/rts_camera_controller.dart'
+    show EdgeScroll, RtsCameraController;
+export 'src/camera_pose.dart' show CameraPose;
 export 'src/components/camera_component.dart' show CameraComponent, NodeCamera;
 export 'src/components/component.dart' show Component;
 export 'src/components/directional_light_component.dart'

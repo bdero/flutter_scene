@@ -32,6 +32,9 @@ environment:
 
 dependencies:
   code_assets: ^1.2.1
+  # Compiles a project's own C/C++ component sources; see
+  # buildNativeComponents in build_hooks.dart.
+  native_toolchain_c: ^0.19.3
   scene: ^0.3.0
   # Offline glTF import (build hook + CLI) arg parsing. Build-time only.
   args: ^2.5.0

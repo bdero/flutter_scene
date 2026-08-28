@@ -7,6 +7,8 @@
 /// [registerBuiltinCommands].
 library;
 
+import 'dart:convert';
+
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart' hide NodeChange;
@@ -846,6 +848,452 @@ final createSphereGeometry = CommandEntry(
       name: 'Create sphere',
       records: [_addResourceRecord(resource)],
     );
+  },
+);
+
+final createPlaneGeometry = CommandEntry(
+  name: 'createPlaneGeometry',
+  doc: 'Create a procedural plane geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'width',
+      type: ParamType.number,
+      label: 'Width',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'depth',
+      type: ParamType.number,
+      label: 'Depth',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: PlaneGeometrySpec(
+        width: params['width'] == null ? 1.0 : requireDouble(params, 'width'),
+        depth: params['depth'] == null ? 1.0 : requireDouble(params, 'depth'),
+      ),
+    );
+    return Transaction(
+      name: 'Create plane',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createCylinderGeometry = CommandEntry(
+  name: 'createCylinderGeometry',
+  doc: 'Create a procedural cylinder geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'topRadius',
+      type: ParamType.number,
+      label: 'Top radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One radius drives both ends unless a top radius is given, so the common
+    // case is a cylinder and a cone is one field away.
+    final radius = params['radius'] == null
+        ? 0.5
+        : requireDouble(params, 'radius');
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: CylinderGeometrySpec(
+        bottomRadius: radius,
+        topRadius: params['topRadius'] == null
+            ? radius
+            : requireDouble(params, 'topRadius'),
+        height: params['height'] == null
+            ? 1.0
+            : requireDouble(params, 'height'),
+      ),
+    );
+    return Transaction(
+      name: 'Create cylinder',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createCapsuleGeometry = CommandEntry(
+  name: 'createCapsuleGeometry',
+  doc: 'Create a procedural capsule geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: CapsuleGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+        height: params['height'] == null
+            ? 1.0
+            : requireDouble(params, 'height'),
+      ),
+    );
+    return Transaction(
+      name: 'Create capsule',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createTorusGeometry = CommandEntry(
+  name: 'createTorusGeometry',
+  doc: 'Create a procedural torus geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'tubeRadius',
+      type: ParamType.number,
+      label: 'Tube radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TorusGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+        tubeRadius: params['tubeRadius'] == null
+            ? 0.15
+            : requireDouble(params, 'tubeRadius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create torus',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createDiscGeometry = CommandEntry(
+  name: 'createDiscGeometry',
+  doc: 'Create a procedural disc geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: DiscGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create disc',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createIcosphereGeometry = CommandEntry(
+  name: 'createIcosphereGeometry',
+  doc: 'Create a procedural icosphere geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: IcosphereGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create icosphere',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createWedgeGeometry = CommandEntry(
+  name: 'createWedgeGeometry',
+  doc: 'Create a procedural wedge geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.vec3,
+      label: 'Size',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: WedgeGeometrySpec(
+        size: optionalVec3(params, 'size') ?? Vector3(1, 1, 1),
+      ),
+    );
+    return Transaction(
+      name: 'Create wedge',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createTerrainGeometry = CommandEntry(
+  name: 'createTerrainGeometry',
+  doc: 'Create a procedural noise terrain geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.number,
+      label: 'Size',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'amplitude',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'seed',
+      type: ParamType.number,
+      label: 'Seed',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One size drives both axes: a square patch is the common case, and an
+    // oblong one is a scale on the node.
+    final size = params['size'] == null ? 64.0 : requireDouble(params, 'size');
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TerrainGeometrySpec(
+        width: size,
+        depth: size,
+        amplitude: params['amplitude'] == null
+            ? 8.0
+            : requireDouble(params, 'amplitude'),
+        seed: params['seed'] == null
+            ? 1337
+            : requireDouble(params, 'seed').round(),
+      ),
+    );
+    return Transaction(
+      name: 'Create terrain',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+/// Turns a plane geometry into a flat terrain so it can be sculpted.
+///
+/// A plane is two triangles by default: there is nowhere to put a hill. This
+/// swaps its spec for a terrain of the same size at a grid fine enough to
+/// sculpt, with no noise, so the shape on screen does not change -- it just
+/// becomes something that can be pushed around.
+///
+/// A plane that was already subdivided keeps its own resolution rather than
+/// being coarsened or refined behind the user's back.
+final makeTerrainSculptable = CommandEntry(
+  name: 'makeTerrainSculptable',
+  doc: 'Convert a plane geometry into a flat, sculptable terrain.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'resourceId', type: ParamType.resourceRef, label: 'Plane'),
+    ParamSpec(
+      name: 'resolution',
+      type: ParamType.number,
+      label: 'Samples per side',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final plane = resource.procedural;
+    if (plane is TerrainGeometrySpec) {
+      throw const CommandException('That geometry is already sculptable');
+    }
+    if (plane is! PlaneGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a plane');
+    }
+
+    final requested = params['resolution'] == null
+        ? 0
+        : requireDouble(params, 'resolution').round();
+    // A subdivided plane already says how fine it wants to be; an
+    // unsubdivided one needs a grid that can hold a shape at all.
+    final columns = requested > 1
+        ? requested
+        : (plane.segmentsX > 1 ? plane.segmentsX + 1 : 65);
+    final rows = requested > 1
+        ? requested
+        : (plane.segmentsZ > 1 ? plane.segmentsZ + 1 : 65);
+
+    return Transaction(
+      name: 'Make sculptable',
+      records: [
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              procedural: TerrainGeometrySpec(
+                width: plane.width,
+                depth: plane.depth,
+                columns: columns,
+                rows: rows,
+                // Flat: converting must not change what is on screen.
+                amplitude: 0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  },
+);
+
+/// Replaces a terrain's height samples.
+///
+/// One command per stroke rather than per pointer move: a stroke is many
+/// brush dabs and only one thing the user did, so this takes the finished
+/// samples rather than a brush to replay. Undo is the previous heightmap,
+/// which is the whole map — heightmaps are the one thing in a scene big
+/// enough for that to be worth saying out loud.
+final setTerrainHeights = CommandEntry(
+  name: 'setTerrainHeights',
+  doc: "Replace a terrain geometry's height samples.",
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'resourceId',
+      type: ParamType.resourceRef,
+      label: 'Terrain',
+    ),
+    ParamSpec(name: 'heights', type: ParamType.string, label: 'Samples'),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final terrain = resource.procedural;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a terrain');
+    }
+
+    final bytes = base64Decode(requireString(params, 'heights'));
+    final expected = terrain.columns * terrain.rows * 4;
+    if (bytes.lengthInBytes != expected) {
+      throw CommandException(
+        'Expected $expected bytes for a ${terrain.columns} by '
+        '${terrain.rows} terrain, got ${bytes.lengthInBytes}',
+      );
+    }
+
+    // The first stroke on a generated terrain mints its heightmap; later
+    // ones replace the bytes in the payload it already has.
+    final payloadId = terrain.heights ?? ctx.document.newId();
+    final records = <ChangeRecord>[
+      ChangeRecord(
+        targetId: payloadId,
+        slot: ChangeSlot.poolPayload,
+        oldValue: PayloadChange(ctx.document.payload(payloadId)),
+        newValue: PayloadChange(
+          PayloadSpec(
+            payloadId,
+            encoding: PayloadEncoding.floats,
+            length: terrain.columns * terrain.rows,
+            bytes: bytes,
+          ),
+        ),
+      ),
+    ];
+    if (terrain.heights == null) {
+      records.add(
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              procedural: TerrainGeometrySpec(
+                width: terrain.width,
+                depth: terrain.depth,
+                columns: terrain.columns,
+                rows: terrain.rows,
+                amplitude: terrain.amplitude,
+                frequency: terrain.frequency,
+                octaves: terrain.octaves,
+                seed: terrain.seed,
+                heights: payloadId,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Transaction(name: 'Sculpt terrain', records: records);
   },
 );
 
@@ -2948,6 +3396,16 @@ final List<CommandEntry> builtinCommands = [
   setComponentProperties,
   createCuboidGeometry,
   createSphereGeometry,
+  createPlaneGeometry,
+  createCylinderGeometry,
+  createCapsuleGeometry,
+  createTorusGeometry,
+  createDiscGeometry,
+  createIcosphereGeometry,
+  createWedgeGeometry,
+  createTerrainGeometry,
+  setTerrainHeights,
+  makeTerrainSculptable,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,

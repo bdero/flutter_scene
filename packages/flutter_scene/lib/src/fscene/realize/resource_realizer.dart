@@ -20,6 +20,7 @@ import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
+import 'package:flutter_scene/src/geometry/terrain.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -804,9 +805,126 @@ class ResourceRealizer {
         radialSegments: radialSegments,
         tubularSegments: tubularSegments,
       ),
+    CylinderGeometrySpec(
+      :final bottomRadius,
+      :final topRadius,
+      :final height,
+      :final radialSegments,
+      :final heightSegments,
+      :final bottomCap,
+      :final topCap,
+    ) =>
+      CylinderGeometry(
+        bottomRadius: bottomRadius,
+        topRadius: topRadius,
+        height: height,
+        radialSegments: radialSegments,
+        heightSegments: heightSegments,
+        bottomCap: bottomCap,
+        topCap: topCap,
+      ),
+    CapsuleGeometrySpec(
+      :final radius,
+      :final height,
+      :final radialSegments,
+      :final capRings,
+    ) =>
+      CapsuleGeometry(
+        radius: radius,
+        height: height,
+        radialSegments: radialSegments,
+        capRings: capRings,
+      ),
+    DiscGeometrySpec(:final radius, :final segments) => DiscGeometry(
+      radius: radius,
+      segments: segments,
+    ),
+    WedgeGeometrySpec(:final size) => WedgeGeometry(size),
+    TerrainGeometrySpec(
+      :final width,
+      :final depth,
+      :final columns,
+      :final rows,
+      :final amplitude,
+      :final frequency,
+      :final octaves,
+      :final seed,
+      :final heights,
+    ) =>
+      // Sculptable so the editor can push edited samples without rebuilding
+      // the geometry. Terrain keeps its samples on the CPU regardless, so
+      // this costs a buffer strategy rather than a copy of the map.
+      TerrainGeometry(
+        sculptable: true,
+        _terrainField(
+          heights: heights,
+          width: width,
+          depth: depth,
+          columns: columns,
+          rows: rows,
+          amplitude: amplitude,
+          frequency: frequency,
+          octaves: octaves,
+          seed: seed,
+        ),
+      ),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
       IcosphereGeometry(radius: radius, subdivisions: subdivisions),
   };
+
+  /// The samples for a terrain: the stored heightmap when it has one, the
+  /// generator otherwise.
+  ///
+  /// A heightmap that does not match the declared grid is refused rather than
+  /// stretched over it, since reading a truncated one produces a cliff at
+  /// whatever row it ran out on. Falling back to the generator gives ground
+  /// that at least looks deliberate, and says so.
+  HeightField _terrainField({
+    required LocalId? heights,
+    required double width,
+    required double depth,
+    required int columns,
+    required int rows,
+    required double amplitude,
+    required double frequency,
+    required int octaves,
+    required int seed,
+  }) {
+    HeightField generated() => HeightField.noise(
+      width: width,
+      depth: depth,
+      columns: columns,
+      rows: rows,
+      amplitude: amplitude,
+      frequency: frequency,
+      octaves: octaves,
+      seed: seed,
+    );
+    if (heights == null) return generated();
+    final bytes = document.payloads[heights]?.bytes;
+    if (bytes == null) {
+      debugPrint(
+        'fscene: terrain heightmap $heights has no bytes loaded; '
+        'generating from its parameters instead',
+      );
+      return generated();
+    }
+    final field = HeightField.fromBytes(
+      bytes,
+      columns: columns,
+      rows: rows,
+      width: width,
+      depth: depth,
+    );
+    if (field == null) {
+      debugPrint(
+        'fscene: terrain heightmap $heights does not hold $columns x $rows '
+        'samples; generating from its parameters instead',
+      );
+      return generated();
+    }
+    return field;
+  }
 
   Material _buildMaterial(LocalId id) {
     final res = document.resource(id);

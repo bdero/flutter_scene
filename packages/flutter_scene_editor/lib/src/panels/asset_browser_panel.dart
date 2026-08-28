@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_thumbnail.dart';
@@ -161,7 +162,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
                 padding: EdgeInsets.all(16),
                 child: Text(
                   'Open a project (or save the scene) to browse assets.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: editorMutedTextColor),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -195,7 +196,8 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
 
   Widget _toolbar(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+      height: editorToolbarHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Row(
         children: [
@@ -274,7 +276,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           ),
           child: Icon(
             icon,
-            size: 15,
+            size: 16,
             color: selected ? scheme.primary : scheme.onSurfaceVariant,
           ),
         ),
@@ -486,7 +488,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
       visualDensity: VisualDensity.compact,
-      leading: Icon(_embeddedIcon(r.kind), size: 18),
+      leading: Icon(_embeddedIcon(r.kind), size: 16),
       title: Row(
         children: [
           Flexible(
@@ -505,7 +507,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         subtitle,
         style: TextStyle(
           fontSize: 11,
-          color: r.isUnused ? Colors.orange : Colors.grey,
+          color: r.isUnused ? editorWarningColor : editorMutedTextColor,
         ),
       ),
       trailing: r.isUnused
@@ -720,7 +722,7 @@ class _DirectoryRow extends StatelessWidget {
             children: [
               Icon(
                 expanded ? Icons.expand_more : Icons.chevron_right,
-                size: 15,
+                size: 16,
                 color: scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 2),
@@ -780,7 +782,7 @@ class _FileListRow extends StatelessWidget {
               padding: EdgeInsets.only(left: depth * 14.0 + 19, right: 4),
               child: Row(
                 children: [
-                  Icon(_fileIcon(asset.kind), size: 15, color: scheme.primary),
+                  Icon(_fileIcon(asset.kind), size: 16, color: scheme.primary),
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
@@ -800,7 +802,7 @@ class _FileListRow extends StatelessWidget {
                         borderRadius: BorderRadius.circular(3),
                         child: const Padding(
                           padding: EdgeInsets.all(4),
-                          child: Icon(Icons.open_in_new, size: 13),
+                          child: Icon(Icons.open_in_new, size: 14),
                         ),
                       ),
                     ),

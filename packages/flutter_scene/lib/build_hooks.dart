@@ -28,6 +28,8 @@
 /// ```
 library;
 
+export 'src/native/build_native_components.dart' show buildNativeComponents;
+
 // Native uses the real dart:io implementations; web/wasm resolves to stubs so
 // dart:io (and package:hooks) stay off the wasm dependency graph, keeping the
 // package WASM-compatible. Build hooks only ever run on the native host.

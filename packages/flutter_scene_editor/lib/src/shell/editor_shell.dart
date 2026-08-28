@@ -1,8 +1,19 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' show Scene;
+import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
+    show
+        componentClassName,
+        componentClassNameError,
+        componentFileName,
+        componentScriptSource,
+        hookWithNativeComponents,
+        nativeComponentBinding,
+        nativeComponentHookCall,
+        nativeComponentSource;
 import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
@@ -287,7 +298,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     showEditorDialog<void>(
       context,
       builder: (context) => AlertDialog(
-        title: const Text('Shader toolchain', style: TextStyle(fontSize: 14)),
+        title: const Text('Shader toolchain', style: editorDialogTitleText),
         content: SelectableText(
           message,
           style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
@@ -350,6 +361,202 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     widget.onDockLayoutChanged?.call(replacement.toJsonString());
   }
 
+  /// Writes a new annotated component into the project and opens it.
+  ///
+  /// The host already watches `lib/` and regenerates codecs on save, so the
+  /// file appearing is the whole gesture: the type shows up in Add Component
+  /// with a generated inspector without anything else being run.
+  Future<void> _newComponentScript() async {
+    final root = widget.projectRootDirectory;
+    if (root == null) return;
+
+    final typed = await _promptForComponentName();
+    if (typed == null || !mounted) return;
+
+    final className = componentClassName(typed);
+    final directory = Directory('$root/lib/components');
+    final file = File('${directory.path}/${componentFileName(className)}');
+
+    if (file.existsSync()) {
+      _report('${file.path.substring(root.length + 1)} already exists.');
+      // Opening it is more useful than refusing outright: the name they typed
+      // is almost certainly the component they meant to go back to.
+      _ctrl.sourceFileOpener?.call(file.path);
+      return;
+    }
+
+    try {
+      directory.createSync(recursive: true);
+      file.writeAsStringSync(componentScriptSource(className));
+    } on FileSystemException catch (e) {
+      _report('Could not write the script, ${e.message}');
+      return;
+    }
+
+    _report('Created ${file.path.substring(root.length + 1)}');
+    _ctrl.sourceFileOpener?.call(file.path);
+  }
+
+  /// Writes a native component: the C++ that does the work, the Dart
+  /// component that owns it, and the build-hook line that compiles them.
+  ///
+  /// All three at once, because any one alone is broken. The C++ without the
+  /// hook never compiles; the Dart without the C++ throws at the symbol
+  /// lookup; the hook without either does nothing.
+  Future<void> _newNativeComponentScript() async {
+    final root = widget.projectRootDirectory;
+    if (root == null) return;
+
+    final typed = await _promptForComponentName(native: true);
+    if (typed == null || !mounted) return;
+
+    final className = componentClassName(typed);
+    final fileName = componentFileName(className);
+    final dartFile = File('$root/lib/components/$fileName');
+    final nativeFile = File(
+      '$root/native/${fileName.replaceAll('.dart', '.cpp')}',
+    );
+
+    if (dartFile.existsSync() || nativeFile.existsSync()) {
+      _report('$className already exists.');
+      _ctrl.sourceFileOpener?.call(
+        dartFile.existsSync() ? dartFile.path : nativeFile.path,
+      );
+      return;
+    }
+
+    try {
+      Directory('$root/lib/components').createSync(recursive: true);
+      Directory('$root/native').createSync(recursive: true);
+      nativeFile.writeAsStringSync(nativeComponentSource(className));
+      dartFile.writeAsStringSync(nativeComponentBinding(className));
+    } on FileSystemException catch (e) {
+      _report('Could not write the component, ${e.message}');
+      return;
+    }
+
+    _wireNativeBuildHook(root);
+    _report('Created $className. Rebuild to compile its native half.');
+    // The C++ first: it is the half being written, and the Dart wrapper is
+    // mostly already correct.
+    _ctrl.sourceFileOpener?.call(nativeFile.path);
+  }
+
+  /// Adds the native build step to the project's hook, or says what to add
+  /// when the hook is not the shape it expects.
+  void _wireNativeBuildHook(String root) {
+    final hook = File('$root/hook/build.dart');
+    if (!hook.existsSync()) {
+      _report('No hook/build.dart; add $nativeComponentHookCall to one.');
+      return;
+    }
+    final updated = hookWithNativeComponents(hook.readAsStringSync());
+    // Null means it is already wired, or the hook is hand-written enough that
+    // guessing where the line goes would be worse than asking.
+    if (updated == null) return;
+    try {
+      hook.writeAsStringSync(updated);
+    } on FileSystemException {
+      _report('Add this to hook/build.dart: $nativeComponentHookCall');
+    }
+  }
+
+  void _report(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Asks for a component name, re-prompting while the name would not compile.
+  Future<String?> _promptForComponentName({bool native = false}) async {
+    final controller = TextEditingController();
+    String? error;
+    return showFDialog<String>(
+      context: context,
+      builder: (context, style, animation) => StatefulBuilder(
+        builder: (context, setLocal) {
+          void submit() {
+            final value = controller.text.trim();
+            final problem = componentClassNameError(value);
+            if (problem != null) {
+              setLocal(() => error = problem);
+              return;
+            }
+            Navigator.pop(context, value);
+          }
+
+          return FDialog(
+            animation: animation,
+            builder: (context, style) => Padding(
+              padding: const EdgeInsets.all(18),
+              child: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      native ? 'New Native Component' : 'New Component Script',
+                      style: editorDialogTitleText,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Written to lib/components and picked up on save.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: editorMutedTextColor,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FTextField(
+                      control: FTextFieldControl.managed(
+                        controller: controller,
+                      ),
+                      autofocus: true,
+                      hint: 'Component name (Spinner, HealthBar)',
+                      onSubmit: (_) => submit(),
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFE08276),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        FButton(
+                          variant: .outline,
+                          size: .xs,
+                          mainAxisSize: .min,
+                          onPress: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FButton(
+                          size: .xs,
+                          mainAxisSize: .min,
+                          onPress: submit,
+                          child: const Text('Create'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _saveCurrentLayoutAs() async {
     final controller = TextEditingController();
     final name = await showFDialog<String>(
@@ -364,10 +571,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Save Layout',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
+                const Text('Save Layout', style: editorDialogTitleText),
                 const SizedBox(height: 14),
                 FTextField(
                   control: FTextFieldControl.managed(controller: controller),
@@ -435,10 +639,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   children: [
                     const Text(
                       'Overwrite Layout?',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: editorDialogTitleText,
                     ),
                     const SizedBox(height: 10),
                     Text('Replace the saved layout “$name”?'),
@@ -483,10 +684,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'Manage Layouts',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+              const Text('Manage Layouts', style: editorDialogTitleText),
               const SizedBox(height: 12),
               if (widget.namedLayouts.isEmpty)
                 const Padding(
@@ -764,9 +962,22 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onCopy: _ctrl.copySelection,
                   onPaste: _ctrl.paste,
                   onDelete: _deleteSelected,
-                  onAddCube: _addCube,
-                  onAddSphere: _addSphere,
+                  onAddPrimitive: _addPrimitiveByCommand,
+                  onAddEmpty: () => unawaited(_addEmptyNode()),
+                  onAddObject: (type) {
+                    final entry = componentObjects.firstWhere(
+                      (candidate) => candidate.type == type,
+                    );
+                    unawaited(_addComponentObject(entry.type, entry.label));
+                  },
                   onAddPrefab: _addPrefabInstance,
+                  onNewComponentScript: widget.projectRootDirectory == null
+                      ? null
+                      : _newComponentScript,
+                  onNewNativeComponentScript:
+                      widget.projectRootDirectory == null
+                      ? null
+                      : () => unawaited(_newNativeComponentScript()),
                   onPaletteOpen: () => setState(() => _paletteOpen = true),
                   isPanelVisible: _dockLayout.isVisible,
                   onTogglePanel: _togglePanel,
@@ -1042,13 +1253,22 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
   // Adds a cube: creates geometry, material, node, and attaches a mesh
   // component in four commands, reading back new resource ids after each.
-  Future<void> _addCube() async {
-    await _addPrimitive('createCuboidGeometry');
-  }
-
-  Future<void> _addSphere() async {
-    await _addPrimitive('createSphereGeometry');
-  }
+  // The primitives the engine can build, in the order they appear in the
+  // menu: the ones a level is blocked out with first.
+  static const primitiveCommands = <({String label, String command})>[
+    (label: 'Cube', command: 'createCuboidGeometry'),
+    (label: 'Sphere', command: 'createSphereGeometry'),
+    (label: 'Plane', command: 'createPlaneGeometry'),
+    (label: 'Cylinder', command: 'createCylinderGeometry'),
+    (label: 'Capsule', command: 'createCapsuleGeometry'),
+    (label: 'Wedge', command: 'createWedgeGeometry'),
+    (label: 'Disc', command: 'createDiscGeometry'),
+    (label: 'Torus', command: 'createTorusGeometry'),
+    (label: 'Icosphere', command: 'createIcosphereGeometry'),
+    // No Terrain entry: a plane becomes terrain the moment it is sculpted,
+    // so a second object that is only a plane with hills already on it is one
+    // concept too many.
+  ];
 
   // Adds a sub-scene as a prefab instance node. The source is stored relative
   // to the open scene's directory when possible (portable), absolute otherwise.
@@ -1086,7 +1306,60 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _addPrimitive(String geoCommand) async {
+  void _addPrimitiveByCommand(String command) {
+    final primitive = primitiveCommands.firstWhere(
+      (entry) => entry.command == command,
+    );
+    unawaited(_addPrimitive(primitive.command, primitive.label));
+  }
+
+  /// Scene objects that are a node plus one component, grouped the way the
+  /// Add menu shows them. A primitive needs geometry and a material built
+  /// first; these do not, so they share one two-command path.
+  static const componentObjects = <({String group, String label, String type})>[
+    (group: 'Camera', label: 'Camera', type: 'camera'),
+    (group: 'Light', label: 'Directional Light', type: 'directionalLight'),
+    (group: 'Light', label: 'Point Light', type: 'pointLight'),
+    (group: 'Light', label: 'Spot Light', type: 'spotLight'),
+    (group: 'Light', label: 'Area Light', type: 'rectAreaLight'),
+    (group: 'Effects', label: 'Particle Emitter', type: 'particleEmitter'),
+    (group: 'Effects', label: 'Trail', type: 'trail'),
+    (group: 'Audio', label: 'Audio Source', type: 'audioSource'),
+    (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
+    (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
+    (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
+    (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),
+  ];
+
+  /// The [componentObjects] in one group, in declaration order.
+  static Iterable<({String group, String label, String type})> objectsIn(
+    String group,
+  ) => componentObjects.where((entry) => entry.group == group);
+
+  /// Creates an empty node, the parent everything else gets grouped under.
+  Future<void> _addEmptyNode() async {
+    final before = Set.of(_ctrl.document.nodes.keys);
+    await _ctrl.run('createNode', {'name': 'Node'});
+    _ctrl.selection.selectOnly(
+      _ctrl.document.nodes.keys.firstWhere((id) => !before.contains(id)),
+    );
+  }
+
+  /// Creates a node carrying one component, named for what it is.
+  Future<void> _addComponentObject(String componentType, String label) async {
+    final before = Set.of(_ctrl.document.nodes.keys);
+    await _ctrl.run('createNode', {'name': label});
+    final nodeId = _ctrl.document.nodes.keys.firstWhere(
+      (id) => !before.contains(id),
+    );
+    await _ctrl.run('addComponent', {
+      'nodeId': nodeId.toToken(),
+      'componentType': componentType,
+    });
+    _ctrl.selection.selectOnly(nodeId);
+  }
+
+  Future<void> _addPrimitive(String geoCommand, String nodeName) async {
     // Step 1: count resources before geometry creation.
     final beforeGeo = Set.of(_ctrl.document.resources.keys);
     await _ctrl.run(geoCommand);
@@ -1108,9 +1381,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
     // Step 3: create a scene node.
     final beforeNodes = Set.of(_ctrl.document.nodes.keys);
-    await _ctrl.run('createNode', {
-      'name': geoCommand == 'createCuboidGeometry' ? 'Cube' : 'Sphere',
-    });
+    await _ctrl.run('createNode', {'name': nodeName});
     final nodeId = _ctrl.document.nodes.keys.firstWhere(
       (id) => !beforeNodes.contains(id),
     );
@@ -1204,9 +1475,12 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onCopy,
     required this.onPaste,
     required this.onDelete,
-    required this.onAddCube,
-    required this.onAddSphere,
+    required this.onAddPrimitive,
+    required this.onAddEmpty,
+    required this.onAddObject,
     required this.onAddPrefab,
+    required this.onNewComponentScript,
+    required this.onNewNativeComponentScript,
     required this.onPaletteOpen,
     required this.isPanelVisible,
     required this.onTogglePanel,
@@ -1247,9 +1521,24 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onPaste;
   final VoidCallback onDelete;
-  final VoidCallback onAddCube;
-  final VoidCallback onAddSphere;
+
+  /// Runs the named `create…Geometry` command and builds a node around it.
+  final ValueChanged<String> onAddPrimitive;
+
+  /// Creates an empty node, the parent other objects get grouped under.
+  final VoidCallback onAddEmpty;
+
+  /// Creates a node carrying the named component type.
+  final ValueChanged<String> onAddObject;
   final VoidCallback onAddPrefab;
+
+  /// Writes a new component script into the open project. Null with no
+  /// project open, which disables the menu item rather than hiding it.
+  final VoidCallback? onNewComponentScript;
+
+  /// Scaffolds a C++ component and the Dart component that owns it. Null
+  /// with no project open, for the same reason.
+  final VoidCallback? onNewNativeComponentScript;
   final VoidCallback onPaletteOpen;
   final bool Function(String panelId) isPanelVisible;
   final ValueChanged<String> onTogglePanel;
@@ -1399,9 +1688,55 @@ class _EditorMenuBar extends StatelessWidget {
             _Menu(
               label: 'Add',
               items: [
-                _MenuItem(label: 'Cube', onTap: onAddCube),
-                _MenuItem(label: 'Sphere', onTap: onAddSphere),
+                _MenuItem(label: 'Empty Node', onTap: onAddEmpty),
+                _MenuItem(
+                  label: '3D Object',
+                  children: [
+                    for (final primitive in _EditorShellState.primitiveCommands)
+                      _MenuItem(
+                        label: primitive.label,
+                        onTap: () => onAddPrimitive(primitive.command),
+                      ),
+                    for (final group in const [
+                      'Camera',
+                      'Light',
+                      'Effects',
+                      'Audio',
+                      'Volume',
+                    ])
+                      if (_EditorShellState.objectsIn(group).length == 1)
+                        _MenuItem(
+                          label: _EditorShellState.objectsIn(
+                            group,
+                          ).single.label,
+                          onTap: () => onAddObject(
+                            _EditorShellState.objectsIn(group).single.type,
+                          ),
+                        )
+                      else
+                        _MenuItem(
+                          label: group,
+                          children: [
+                            for (final entry in _EditorShellState.objectsIn(
+                              group,
+                            ))
+                              _MenuItem(
+                                label: entry.label,
+                                onTap: () => onAddObject(entry.type),
+                              ),
+                          ],
+                        ),
+                  ],
+                ),
                 _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
+                _MenuItem(
+                  label: 'Component Script…',
+                  onTap: onNewComponentScript,
+                ),
+                _MenuItem(
+                  label: 'Native Component…',
+                  onTap: onNewNativeComponentScript,
+                ),
               ],
             ),
             // Built when the menu opens so the checkmarks reflect hides made

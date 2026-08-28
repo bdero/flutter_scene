@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera_controllers/camera_controller.dart';
+import 'package:flutter_scene/src/camera_pose.dart';
 
 /// Orbits the camera around a fixed [target] point: drag rotates, scroll or
 /// pinch dollies in and out, and a two-finger or secondary drag pans the
@@ -86,6 +87,13 @@ class OrbitCameraController extends CameraController {
   /// Distance from [target] to the camera.
   double get distance => _distance;
 
+  /// Rotation around world up, in radians (its eased, current value).
+  double get azimuth => _azimuth;
+
+  /// Elevation above the target, in radians (its eased, current value),
+  /// within [[minPolar], [maxPolar]].
+  double get polar => _polar;
+
   /// Rotates the orbit by [deltaAzimuth] (around world up) and [deltaPolar]
   /// (elevation), radians. Polar is clamped to [[minPolar], [maxPolar]].
   void orbitBy(double deltaAzimuth, double deltaPolar) {
@@ -154,13 +162,13 @@ class OrbitCameraController extends CameraController {
       dollyBy(-scrollDelta * scrollSensitivity);
 
   @override
-  void update(double deltaSeconds) {
-    final r = smoothingResponse(clampDeltaSeconds(deltaSeconds));
+  void advance(double deltaSeconds) {
+    final r = smoothingResponse(deltaSeconds);
     _azimuth += (_azimuthGoal - _azimuth) * r;
     _polar += (_polarGoal - _polar) * r;
     _distance += (_distanceGoal - _distance) * r;
     _target += (_targetGoal - _target) * r;
-    node.lookAtFrom(_eyeFor(_target), _target);
+    setPose(CameraPose.lookAt(_eyeFor(_target), _target));
   }
 
   // The camera eye for a given pivot, from the current azimuth/polar/distance.
