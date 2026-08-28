@@ -12,6 +12,7 @@ uniform FrameInfo {
 frame_info;
 
 #include <depth_bias.glsl>
+#include <normal_transform.glsl>
 
 // This attribute layout is expected to be identical to that within
 // `impeller/scene/importer/scene.fbs`.
@@ -59,7 +60,7 @@ void main() {
   vertex.normal = in_normal;
   vertex.tangent = tangent;
   vertex.world_position = model_position.xyz;
-  vertex.world_normal = mat3(model_transform) * in_normal;
+  vertex.world_normal = WorldNormalMatrix(mat3(model_transform)) * in_normal;
   vec3 world_tangent = mat3(model_transform) * tangent.xyz;
   float tangent_length_squared = dot(world_tangent, world_tangent);
   float tangent_sign = determinant(mat3(model_transform)) < 0.0
