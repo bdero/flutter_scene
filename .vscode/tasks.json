@@ -27,7 +27,7 @@
 		{
 			"type": "shell",
 			"label": "open connector",
-			"command": "node tool/connector/telegram_connector.js",
+			"command": "node ~/Projects/telegram_connector.js FSCENE",
 			"problemMatcher": [],
 			"group": {
 				"kind": "build",
