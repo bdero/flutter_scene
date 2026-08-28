@@ -1150,7 +1150,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               child: SceneView(
                                 _ctrl.scene,
                                 viewsBuilder: (_) => [
-                                  RenderView(camera: cam),
+                                  RenderView(
+                                    camera: cam,
+                                    // The editor's own quality. Null leaves
+                                    // the scene's setting alone, so the
+                                    // default view is what the game sees.
+                                    renderScale:
+                                        _gizmoPrefs.viewportRenderScale == 1.0
+                                        ? null
+                                        : _gizmoPrefs.viewportRenderScale,
+                                  ),
                                   if (pipCamera != null && pipRect != null)
                                     RenderView(
                                       camera: pipCamera,
@@ -1686,6 +1695,18 @@ class _GizmoMenuButton extends StatelessWidget {
               checked: preferences.enabled,
               action: () => preferences.enabled = !preferences.enabled,
             ),
+            const PopupMenuDivider(height: 8),
+            // Editor-only resolution. The scene's own renderScale is a
+            // document property and would follow the game out of the editor;
+            // this does not.
+            for (final scale in const [1.0, 0.75, 0.5, 0.25])
+              _checkedItem(
+                label: scale == 1.0
+                    ? 'Viewport resolution: full'
+                    : 'Viewport resolution: ${(scale * 100).round()}%',
+                checked: preferences.viewportRenderScale == scale,
+                action: () => preferences.viewportRenderScale = scale,
+              ),
             if (schemas.isNotEmpty) const PopupMenuDivider(height: 8),
             for (final schema in schemas)
               _checkedItem(
