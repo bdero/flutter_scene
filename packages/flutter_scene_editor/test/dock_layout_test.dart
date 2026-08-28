@@ -29,7 +29,7 @@ void main() {
     expect(left.axis, Axis.vertical);
     expect((left.children[0] as DockTabs).panels, ['outliner']);
     expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
-    expect((root.children[2] as DockTabs).panels, ['inspector']);
+    expect((root.children[2] as DockTabs).panels, ['inspector', 'effects']);
 
     // The centre column stacks the timeline under the viewport, where a
     // playhead scrubbing the scene belongs.

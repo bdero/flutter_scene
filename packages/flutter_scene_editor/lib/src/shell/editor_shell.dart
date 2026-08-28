@@ -31,6 +31,7 @@ import '../project/project_runner.dart';
 import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
+import '../panels/vfx_panel.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
@@ -43,6 +44,7 @@ import 'editor_dialog.dart';
 const Map<String, String> _panelTitles = {
   'viewport': 'Viewport',
   'animation': 'Animation',
+  'effects': 'Effects',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
   'assets': 'Assets',
@@ -1025,6 +1027,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'animation',
                             title: 'Animation',
                             child: AnimationPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
+                            id: 'effects',
+                            title: 'Effects',
+                            child: VfxPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'outliner',

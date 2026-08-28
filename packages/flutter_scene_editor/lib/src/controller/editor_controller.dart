@@ -348,6 +348,19 @@ class EditorController extends ChangeNotifier {
   /// The component type names that can be added to a node.
   List<String> componentTypes() => _componentRegistry.types.toList();
 
+  /// Serializes a live [component] into the property map its codec would
+  /// write, or null when nothing claims it.
+  ///
+  /// The way to seed an authored component from one built in code: a preset
+  /// effect, a rig assembled by a helper. The properties come back in the same
+  /// shape `setComponentProperties` takes, so the result is an ordinary
+  /// undoable edit rather than a second way into the document.
+  Map<String, PropertyValue>? capturePropertiesOf(Component component) {
+    return _componentRegistry
+        .serialize(component, SerializeContext(document))
+        ?.properties;
+  }
+
   /// The declared editable properties of component [type] (empty when the type
   /// declares none, or is unknown).
   List<ComponentPropertyDef> componentSchema(String type) =>
