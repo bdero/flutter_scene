@@ -28,8 +28,10 @@ const int kPrefilterBandWidth = 512;
 const int kPrefilterBandHeight = 256;
 
 /// Default width (and height) of the prefiltered radiance cube's base mip.
-/// Sizes the convolved reflection/ambient cube, not the visible background
-/// (which samples the full-resolution source); see
+/// Sizes the convolved reflection/ambient cube. The visible background is the
+/// full-resolution source over most of the sky, but band 0 of this cube stands
+/// in for it toward the poles, where the source's equirect mapping star-bursts,
+/// so this also bounds how sharp the sky reads overhead. See
 /// `EnvironmentMap.radianceCubeSize`.
 const int kRadianceCubeSize = 512;
 

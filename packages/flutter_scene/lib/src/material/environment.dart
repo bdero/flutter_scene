@@ -130,11 +130,16 @@ base class EnvironmentMap {
   static bool useMipRadianceLayout = true;
 
   /// Base-mip face size of the prefiltered radiance cubemap new environments
-  /// build (the convolved reflection/ambient cube, not the visible background).
+  /// build (the convolved reflection/ambient cube).
   /// Higher is sharper reflections at more memory (a cube is `6 * size^2`
   /// texels plus mips); 256-512 is a good default, up to ~2048. Equivalent to
   /// Godot's `Sky.radiance_size`. Applies only on backends that build the cube
   /// (see [effectiveMipRadianceLayout]); affects environments built afterward.
+  ///
+  /// It also bounds how sharp the visible sky reads overhead: the background
+  /// samples the full-resolution source across the horizon, but hands off to
+  /// this cube's band 0 toward the poles, where the source's equirect mapping
+  /// star-bursts. Raise it for a high-resolution HDR whose zenith looks soft.
   static int radianceCubeSize = kRadianceCubeSize;
 
   /// Whether the active Flutter GPU backend can build and sample the mip
