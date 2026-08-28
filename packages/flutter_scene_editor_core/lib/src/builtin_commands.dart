@@ -14,6 +14,7 @@ import 'dart:typed_data';
 import 'package:scene/scene.dart' hide NodeChange;
 import 'package:vector_math/vector_math.dart';
 
+import 'animation_commands.dart';
 import 'change.dart';
 import 'clone.dart';
 import 'command.dart';
@@ -3433,4 +3434,5 @@ final List<CommandEntry> builtinCommands = [
   attachToPrefabMember,
   attachExistingToPrefabMember,
   detachFromPrefab,
+  ...animationCommands,
 ];

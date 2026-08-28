@@ -85,6 +85,21 @@ export 'src/builtin_commands.dart'
         environmentResourceWithSunProperties,
         registerBuiltinCommands;
 
+// Animation authoring: clips, channels, and keyframes.
+export 'src/animation_commands.dart'
+    show
+        animationCommands,
+        createAnimation,
+        deleteAnimation,
+        renameAnimation,
+        addAnimationChannel,
+        removeAnimationChannel,
+        setAnimationKeyTime,
+        setAnimationKeyValue,
+        insertAnimationKey,
+        deleteAnimationKey,
+        encodeAnimationValues;
+
 // Subtree cloning (duplicate, copy, paste).
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
 
