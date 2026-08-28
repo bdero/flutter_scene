@@ -21,13 +21,15 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
 import 'package:flutter_scene/src/kit/grid/grid_tiles.dart';
 import 'package:flutter_scene/src/kit/interaction/path_follower_component.dart';
+import 'package:flutter_scene/src/kit/scatter/scatter_layer.dart';
 
 /// Registers the kit component codecs into [registry].
 void registerKitComponentCodecs(FsceneComponentRegistry registry) {
   registry
     ..register(PathFollowerCodec())
     ..register(GridTileLayerCodec())
-    ..register(AnimatorCodec());
+    ..register(AnimatorCodec())
+    ..register(ScatterLayerCodec());
 }
 
 /// Codec for [PathFollowerComponent], which walks a node along a route from
@@ -767,4 +769,166 @@ class AnimatorCodec extends ComponentCodec {
           }),
       ]),
   });
+}
+
+// --- Scattered instances ---
+
+const _placementFields = [
+  ComponentPropertyDef(
+    'position',
+    ComponentPropertyKind.vec3,
+    doc: 'Where the instance stands.',
+  ),
+  ComponentPropertyDef(
+    'yaw',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(0),
+    doc: 'Its turn about the vertical axis, in radians.',
+  ),
+  ComponentPropertyDef(
+    'scale',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1),
+    doc: 'A uniform scale.',
+  ),
+];
+
+/// Codec for [ScatterLayer]: the instanced geometry and every placement.
+///
+/// Hand-written for the same reason the tile layer's is: the geometry and
+/// material are resource references, so realizing one can fail.
+///
+/// Placements are written out one by one rather than as a seed and a density.
+/// A painted set is not a formula — the whole point is that individual trees
+/// were moved, removed, and put back — so it is stored as what it is.
+class ScatterLayerCodec extends ComponentCodec {
+  @override
+  String get type => 'scatterLayer';
+
+  @override
+  String? get category => 'Mesh';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'scatter',
+    properties: propertySchema,
+  );
+
+  @override
+  List<ComponentPropertyDef> get propertySchema => const [
+    ComponentPropertyDef(
+      'geometry',
+      ComponentPropertyKind.resourceRef,
+      doc: 'The geometry drawn once per instance.',
+      resourceKind: 'geometry',
+    ),
+    ComponentPropertyDef(
+      'material',
+      ComponentPropertyKind.resourceRef,
+      doc: 'The material the instances are drawn with.',
+      resourceKind: 'material',
+    ),
+    ComponentPropertyDef(
+      'cullInstances',
+      ComponentPropertyKind.boolean,
+      defaultValue: BoolValue(true),
+      doc: 'Test each instance against the view separately.',
+    ),
+    ComponentPropertyDef(
+      'placements',
+      ComponentPropertyKind.list,
+      itemDef: ComponentPropertyDef(
+        'placement',
+        ComponentPropertyKind.object,
+        objectFields: _placementFields,
+      ),
+      doc: 'Every scattered instance.',
+    ),
+  ];
+
+  @override
+  Type get componentType => ScatterLayer;
+
+  @override
+  bool claims(Component component) => component is ScatterLayer;
+
+  @override
+  Component? realize(ComponentSpec spec, RealizeContext context) {
+    final realizer = context.resources;
+    if (realizer == null) {
+      debugPrint('fscene: scatterLayer skipped (no resource realizer)');
+      return null;
+    }
+    final geometryRef = spec.properties['geometry'];
+    final materialRef = spec.properties['material'];
+    if (geometryRef is! ResourceRefValue || materialRef is! ResourceRefValue) {
+      debugPrint(
+        'fscene: scatterLayer skipped (it needs both a geometry and a '
+        'material reference)',
+      );
+      return null;
+    }
+
+    final layer = ScatterLayer(
+      geometry: realizer.geometry(geometryRef.id),
+      material: realizer.material(materialRef.id),
+      cullInstances: switch (spec.properties['cullInstances']) {
+        BoolValue(value: final v) => v,
+        _ => true,
+      },
+    );
+
+    final placements = spec.properties['placements'];
+    if (placements is ListValue) {
+      for (final entry in placements.values) {
+        if (entry is! MapValue) continue;
+        final position = entry.values['position'];
+        // A placement with nowhere to stand is dropped rather than piled at
+        // the origin, where it would look like a bug in the brush.
+        if (position is! Vec3Value) continue;
+        layer.add(
+          ScatterPlacement(
+            position: position.value.clone(),
+            yaw: _num(entry.values['yaw'], 0),
+            scale: _num(entry.values['scale'], 1),
+          ),
+        );
+      }
+    }
+    return layer;
+  }
+
+  @override
+  ComponentSpec? serialize(Component component, SerializeContext context) {
+    if (component is! ScatterLayer) return null;
+    final geometry = resourceRefOf(component.mesh.geometry, context);
+    final material = resourceRefOf(component.mesh.material, context);
+    if (geometry == null || material == null) {
+      debugPrint(
+        'fscene: scatterLayer not saved (its geometry or material was built '
+        'in code and has no source resource to reference)',
+      );
+      return null;
+    }
+    return ComponentSpec(
+      type,
+      properties: {
+        'geometry': geometry,
+        'material': material,
+        if (!component.mesh.cullInstances)
+          'cullInstances': const BoolValue(false),
+        if (!component.isEmpty)
+          'placements': ListValue([
+            for (final placement in component.placements)
+              MapValue({
+                'position': Vec3Value(placement.position.clone()),
+                if (placement.yaw != 0) 'yaw': DoubleValue(placement.yaw),
+                if (placement.scale != 1) 'scale': DoubleValue(placement.scale),
+              }),
+          ]),
+      },
+    );
+  }
 }

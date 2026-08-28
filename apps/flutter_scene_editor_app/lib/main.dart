@@ -194,6 +194,12 @@ class _EditorHomeState extends State<_EditorHome> {
     controller.componentSourcePaths.addAll(_componentSourcePaths);
     controller.sourceFileOpener = (path) =>
         openSourceInEditor(_settings.editorCommand, path);
+    controller.nodeFramer = (id) {
+      final bounds = controller.liveNode(id)?.combinedWorldBounds;
+      if (bounds == null) return false;
+      _cameraHandle.frame(bounds);
+      return true;
+    };
   }
 
   // The latest foreign component schemas by type, with their provenance.
@@ -379,6 +385,9 @@ class _EditorHomeState extends State<_EditorHome> {
   void _setProject(FProject? project) {
     setState(() => _project = project);
     _sourceWatch?.cancel();
+    _nativeWatch?.cancel();
+    _nativeDebounce?.cancel();
+    _nativeWatch = null;
     _sourceWatch = null;
     _sourceDebounce?.cancel();
     _sourceDebounce = null;
@@ -389,11 +398,15 @@ class _EditorHomeState extends State<_EditorHome> {
       _loadCachedComponentSchemas(project);
       _loadPackageManifestSchemas(project);
       _startComponentSourceWatch(project);
+      _startNativeSourceWatch(project);
     }
   }
 
   StreamSubscription<FileSystemEvent>? _sourceWatch;
   Timer? _sourceDebounce;
+  StreamSubscription<FileSystemEvent>? _nativeWatch;
+  Timer? _nativeDebounce;
+  bool _nativeRelaunching = false;
 
   /// Adopts component schemas shipped by the project's resolved dependencies
   /// (their flutter_scene_components.json manifests), so installing a
@@ -686,6 +699,68 @@ class _EditorHomeState extends State<_EditorHome> {
     unawaited(() async {
       if (await _session.reloadScenes()) return;
       await _session.restart(reason: 'save');
+    }());
+  }
+
+  /// Watches the project's native/ sources. A save there rebuilds and
+  /// relaunches the running app, on the same per-project toggle scene saves
+  /// use.
+  ///
+  /// The editor itself never restarts: it does not load the project's native
+  /// library, the Play session does.
+  void _startNativeSourceWatch(FProject project) {
+    final native = Directory('${project.resolvedProjectRoot}/native');
+    if (!native.existsSync()) return;
+    _nativeWatch = native.watch(recursive: true).listen((event) {
+      final path = event.path;
+      if (!path.endsWith('.c') &&
+          !path.endsWith('.cc') &&
+          !path.endsWith('.cpp') &&
+          !path.endsWith('.h') &&
+          !path.endsWith('.hpp')) {
+        return;
+      }
+      _nativeDebounce?.cancel();
+      // A compiler writing object files next to sources can fire a burst;
+      // one relaunch per burst is the intent.
+      _nativeDebounce = Timer(
+        const Duration(milliseconds: 600),
+        _onNativeSourceChanged,
+      );
+    });
+  }
+
+  /// Rebuilds and relaunches so a native change takes effect.
+  ///
+  /// A hot restart is not enough. It restarts the Dart isolate inside a
+  /// process that already has the old library loaded, so the new one is never
+  /// opened and the app keeps running the code that was there at launch. Only
+  /// a fresh process picks it up.
+  void _onNativeSourceChanged() {
+    if (!_restartOnSceneSave) return;
+    if (_session.state != AppSessionState.running) return;
+    if (_nativeRelaunching) return;
+    _nativeRelaunching = true;
+    _runner.addLine(
+      'Native source changed; rebuilding and relaunching (a hot restart '
+      'would keep the library already loaded).',
+      ConsoleLineKind.status,
+    );
+    unawaited(() async {
+      try {
+        await _session.stop();
+        // Wait for the process to actually go; launching over a session that
+        // is still stopping is refused.
+        for (var i = 0; i < 100; i++) {
+          if (!_session.active) break;
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }
+        await _startPlaySession();
+      } catch (e) {
+        _runner.addLine('Relaunch failed, $e', ConsoleLineKind.error);
+      } finally {
+        _nativeRelaunching = false;
+      }
     }());
   }
 
@@ -1286,6 +1361,10 @@ class _EditorHomeState extends State<_EditorHome> {
   @override
   void dispose() {
     _mcpServer?.close();
+    _sourceWatch?.cancel();
+    _sourceDebounce?.cancel();
+    _nativeWatch?.cancel();
+    _nativeDebounce?.cancel();
     _session.dispose();
     _controller?.dispose();
     super.dispose();

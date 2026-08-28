@@ -849,20 +849,82 @@ class ResourceRealizer {
       :final frequency,
       :final octaves,
       :final seed,
+      :final heights,
     ) =>
-      TerrainGeometry.noise(
-        width: width,
-        depth: depth,
-        columns: columns,
-        rows: rows,
-        amplitude: amplitude,
-        frequency: frequency,
-        octaves: octaves,
-        seed: seed,
+      // Sculptable so the editor can push edited samples without rebuilding
+      // the geometry. Terrain keeps its samples on the CPU regardless, so
+      // this costs a buffer strategy rather than a copy of the map.
+      TerrainGeometry(
+        sculptable: true,
+        _terrainField(
+          heights: heights,
+          width: width,
+          depth: depth,
+          columns: columns,
+          rows: rows,
+          amplitude: amplitude,
+          frequency: frequency,
+          octaves: octaves,
+          seed: seed,
+        ),
       ),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
       IcosphereGeometry(radius: radius, subdivisions: subdivisions),
   };
+
+  /// The samples for a terrain: the stored heightmap when it has one, the
+  /// generator otherwise.
+  ///
+  /// A heightmap that does not match the declared grid is refused rather than
+  /// stretched over it, since reading a truncated one produces a cliff at
+  /// whatever row it ran out on. Falling back to the generator gives ground
+  /// that at least looks deliberate, and says so.
+  HeightField _terrainField({
+    required LocalId? heights,
+    required double width,
+    required double depth,
+    required int columns,
+    required int rows,
+    required double amplitude,
+    required double frequency,
+    required int octaves,
+    required int seed,
+  }) {
+    HeightField generated() => HeightField.noise(
+      width: width,
+      depth: depth,
+      columns: columns,
+      rows: rows,
+      amplitude: amplitude,
+      frequency: frequency,
+      octaves: octaves,
+      seed: seed,
+    );
+    if (heights == null) return generated();
+    final bytes = document.payloads[heights]?.bytes;
+    if (bytes == null) {
+      debugPrint(
+        'fscene: terrain heightmap $heights has no bytes loaded; '
+        'generating from its parameters instead',
+      );
+      return generated();
+    }
+    final field = HeightField.fromBytes(
+      bytes,
+      columns: columns,
+      rows: rows,
+      width: width,
+      depth: depth,
+    );
+    if (field == null) {
+      debugPrint(
+        'fscene: terrain heightmap $heights does not hold $columns x $rows '
+        'samples; generating from its parameters instead',
+      );
+      return generated();
+    }
+    return field;
+  }
 
   Material _buildMaterial(LocalId id) {
     final res = document.resource(id);

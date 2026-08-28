@@ -9,7 +9,11 @@ import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
         componentClassName,
         componentClassNameError,
         componentFileName,
-        componentScriptSource;
+        componentScriptSource,
+        hookWithNativeComponents,
+        nativeComponentBinding,
+        nativeComponentHookCall,
+        nativeComponentSource;
 import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
@@ -393,6 +397,70 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     _ctrl.sourceFileOpener?.call(file.path);
   }
 
+  /// Writes a native component: the C++ that does the work, the Dart
+  /// component that owns it, and the build-hook line that compiles them.
+  ///
+  /// All three at once, because any one alone is broken. The C++ without the
+  /// hook never compiles; the Dart without the C++ throws at the symbol
+  /// lookup; the hook without either does nothing.
+  Future<void> _newNativeComponentScript() async {
+    final root = widget.projectRootDirectory;
+    if (root == null) return;
+
+    final typed = await _promptForComponentName(native: true);
+    if (typed == null || !mounted) return;
+
+    final className = componentClassName(typed);
+    final fileName = componentFileName(className);
+    final dartFile = File('$root/lib/components/$fileName');
+    final nativeFile = File(
+      '$root/native/${fileName.replaceAll('.dart', '.cpp')}',
+    );
+
+    if (dartFile.existsSync() || nativeFile.existsSync()) {
+      _report('$className already exists.');
+      _ctrl.sourceFileOpener?.call(
+        dartFile.existsSync() ? dartFile.path : nativeFile.path,
+      );
+      return;
+    }
+
+    try {
+      Directory('$root/lib/components').createSync(recursive: true);
+      Directory('$root/native').createSync(recursive: true);
+      nativeFile.writeAsStringSync(nativeComponentSource(className));
+      dartFile.writeAsStringSync(nativeComponentBinding(className));
+    } on FileSystemException catch (e) {
+      _report('Could not write the component, ${e.message}');
+      return;
+    }
+
+    _wireNativeBuildHook(root);
+    _report('Created $className. Rebuild to compile its native half.');
+    // The C++ first: it is the half being written, and the Dart wrapper is
+    // mostly already correct.
+    _ctrl.sourceFileOpener?.call(nativeFile.path);
+  }
+
+  /// Adds the native build step to the project's hook, or says what to add
+  /// when the hook is not the shape it expects.
+  void _wireNativeBuildHook(String root) {
+    final hook = File('$root/hook/build.dart');
+    if (!hook.existsSync()) {
+      _report('No hook/build.dart; add $nativeComponentHookCall to one.');
+      return;
+    }
+    final updated = hookWithNativeComponents(hook.readAsStringSync());
+    // Null means it is already wired, or the hook is hand-written enough that
+    // guessing where the line goes would be worse than asking.
+    if (updated == null) return;
+    try {
+      hook.writeAsStringSync(updated);
+    } on FileSystemException {
+      _report('Add this to hook/build.dart: $nativeComponentHookCall');
+    }
+  }
+
   void _report(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -401,7 +469,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   /// Asks for a component name, re-prompting while the name would not compile.
-  Future<String?> _promptForComponentName() async {
+  Future<String?> _promptForComponentName({bool native = false}) async {
     final controller = TextEditingController();
     String? error;
     return showFDialog<String>(
@@ -428,8 +496,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'New Component Script',
+                    Text(
+                      native ? 'New Native Component' : 'New Component Script',
                       style: editorDialogTitleText,
                     ),
                     const SizedBox(height: 6),
@@ -906,6 +974,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onNewComponentScript: widget.projectRootDirectory == null
                       ? null
                       : _newComponentScript,
+                  onNewNativeComponentScript:
+                      widget.projectRootDirectory == null
+                      ? null
+                      : () => unawaited(_newNativeComponentScript()),
                   onPaletteOpen: () => setState(() => _paletteOpen = true),
                   isPanelVisible: _dockLayout.isVisible,
                   onTogglePanel: _togglePanel,
@@ -1193,7 +1265,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (label: 'Disc', command: 'createDiscGeometry'),
     (label: 'Torus', command: 'createTorusGeometry'),
     (label: 'Icosphere', command: 'createIcosphereGeometry'),
-    (label: 'Terrain', command: 'createTerrainGeometry'),
+    // No Terrain entry: a plane becomes terrain the moment it is sculpted,
+    // so a second object that is only a plane with hills already on it is one
+    // concept too many.
   ];
 
   // Adds a sub-scene as a prefab instance node. The source is stored relative
@@ -1406,6 +1480,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onAddObject,
     required this.onAddPrefab,
     required this.onNewComponentScript,
+    required this.onNewNativeComponentScript,
     required this.onPaletteOpen,
     required this.isPanelVisible,
     required this.onTogglePanel,
@@ -1460,6 +1535,10 @@ class _EditorMenuBar extends StatelessWidget {
   /// Writes a new component script into the open project. Null with no
   /// project open, which disables the menu item rather than hiding it.
   final VoidCallback? onNewComponentScript;
+
+  /// Scaffolds a C++ component and the Dart component that owns it. Null
+  /// with no project open, for the same reason.
+  final VoidCallback? onNewNativeComponentScript;
   final VoidCallback onPaletteOpen;
   final bool Function(String panelId) isPanelVisible;
   final ValueChanged<String> onTogglePanel;
@@ -1653,6 +1732,10 @@ class _EditorMenuBar extends StatelessWidget {
                 _MenuItem(
                   label: 'Component Script…',
                   onTap: onNewComponentScript,
+                ),
+                _MenuItem(
+                  label: 'Native Component…',
+                  onTap: onNewNativeComponentScript,
                 ),
               ],
             ),

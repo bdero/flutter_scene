@@ -16,6 +16,13 @@ export 'src/extractor.dart'
         extractComponents;
 export 'src/generator.dart'
     show codecClassNameFor, generateCodecLibrary, generateProjectRegistrar;
+export 'src/native_script_template.dart'
+    show
+        hookBuildsNativeComponents,
+        hookWithNativeComponents,
+        nativeComponentBinding,
+        nativeComponentHookCall,
+        nativeComponentSource;
 export 'src/script_template.dart'
     show
         componentClassName,

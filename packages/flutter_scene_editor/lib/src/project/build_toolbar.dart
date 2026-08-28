@@ -613,8 +613,9 @@ class _ActionButtons extends StatelessWidget {
                   context,
                   icon: Icons.autorenew,
                   tooltip: restartOnSave
-                      ? 'Restart on scene save is on'
-                      : 'Restart the running app on scene save',
+                      ? 'Refresh on save is on (scenes and native sources)'
+                      : 'Refresh the running app when a scene or a native '
+                            'source is saved',
                   active: restartOnSave,
                   onPressed: onToggleRestartOnSave,
                 ),

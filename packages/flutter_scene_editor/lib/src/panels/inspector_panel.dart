@@ -90,22 +90,28 @@ class _NodeInspector extends StatelessWidget {
               isMember: isMember,
               source: _instanceSource(instanceId),
             ),
-          EditorSectionHeader(label: 'Node'),
-          // Name field.
-          _StringRow(
-            label: 'Name',
-            value: node.name,
-            onSubmit: (v) => controller.setNodeNameRouted(node.id, v),
-          ),
-          // Visibility toggle.
-          _BoolRow(
-            label: 'Visible',
-            value: node.visible,
-            onChanged: (v) => controller.setNodeVisibleRouted(node.id, v),
+          EditorCollapsibleSection(
+            key: const ValueKey('section:node'),
+            label: 'Node',
+            icon: Icons.category_outlined,
+            // The node's own visibility, in the same place a component's
+            // enabled flag sits, so the header means one thing throughout.
+            enabled: node.visible,
+            onEnabledChanged: (value) =>
+                controller.setNodeVisibleRouted(node.id, value),
+            child: _StringRow(
+              label: 'Name',
+              value: node.name,
+              onSubmit: (v) => controller.setNodeNameRouted(node.id, v),
+            ),
           ),
           const SizedBox(height: 8),
-          EditorSectionHeader(label: 'Transform'),
-          _TransformEditor(node: node, controller: controller),
+          EditorCollapsibleSection(
+            key: const ValueKey('section:transform'),
+            label: 'Transform',
+            icon: Icons.open_with,
+            child: _TransformEditor(node: node, controller: controller),
+          ),
           // Components.
           for (final component in node.components) ...[
             const SizedBox(height: 8),
@@ -366,8 +372,27 @@ class _ComponentSection extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onSecondaryTapUp: (details) =>
               _showContextMenu(context, details.globalPosition),
-          child: EditorSectionHeader(
-            label: 'Component: ${component.type}',
+          child: EditorCollapsibleSection(
+            // Keyed by type so folding one component does not fold whichever
+            // component happens to take its place after a reorder.
+            key: ValueKey('component:${component.type}'),
+            label: component.type,
+            icon: componentPickerGlyph((
+              category: controller.componentSchemaFor(component.type)?.category,
+              icon: controller.componentSchemaFor(component.type)?.icon,
+              provenance: controller.foreignTypeProvenance[component.type],
+            )),
+            enabled: switch (component.properties['enabled']) {
+              BoolValue(value: final value) => value,
+              // Absent means the default, which is on.
+              _ => true,
+            },
+            onEnabledChanged: (value) => controller.setComponentPropertyRouted(
+              node.id,
+              component.type,
+              'enabled',
+              value,
+            ),
             trailing: canRemove
                 ? _IconAction(
                     icon: Icons.close,
@@ -378,12 +403,12 @@ class _ComponentSection extends StatelessWidget {
                     ),
                   )
                 : null,
+            child: _ComponentEditor(
+              node: node,
+              component: component,
+              controller: controller,
+            ),
           ),
-        ),
-        _ComponentEditor(
-          node: node,
-          component: component,
-          controller: controller,
         ),
       ],
     );
@@ -727,11 +752,22 @@ class _SchemaPropertyRow extends StatelessWidget {
           controller: controller,
           onChanged: onChanged,
         );
-      case ComponentPropertyKind.matrix4:
       case ComponentPropertyKind.list:
+        // A list with no item descriptor says nothing about what it holds, so
+        // there is no editor to offer for it.
+        if (def.itemDef == null) {
+          return _ReadOnlyRow(label: label, text: '(list)');
+        }
+        return _ListRow(
+          label: label,
+          def: def,
+          value: value is ListValue ? value as ListValue : null,
+          controller: controller,
+          onChanged: onChanged,
+        );
+      case ComponentPropertyKind.matrix4:
       case ComponentPropertyKind.map:
-        // TODO(component-property-editors): matrix4, structured list, and
-        // open-map editors (lists land with the components that need them).
+        // TODO(component-property-editors): matrix4 and open-map editors.
         return _ReadOnlyRow(label: label, text: '(${def.kind.name})');
     }
   }
@@ -781,6 +817,208 @@ Object? _rawFromValue(PropertyValue? value) => switch (value) {
 
 /// Nested-object editor: renders the declared fields and resubmits the whole
 /// object on any field change.
+/// Edits a list of structured entries: LOD levels, animator states, the
+/// waypoints of a camera path.
+///
+/// Entries fold, because a list of five objects with six fields each is
+/// unreadable open. Each carries its index, since order is meaningful in
+/// every list the schema declares — a LOD's levels run coarse to fine, a
+/// blend's stops run along their parameter.
+class _ListRow extends StatefulWidget {
+  const _ListRow({
+    required this.label,
+    required this.def,
+    required this.value,
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final String label;
+  final ComponentPropertyDef def;
+  final ListValue? value;
+  final EditorController controller;
+  final void Function(Object?) onChanged;
+
+  @override
+  State<_ListRow> createState() => _ListRowState();
+}
+
+class _ListRowState extends State<_ListRow> {
+  int? _open;
+
+  ComponentPropertyDef get _itemDef => widget.def.itemDef!;
+
+  List<PropertyValue> get _entries =>
+      widget.value?.values ?? const <PropertyValue>[];
+
+  /// The smallest number of entries the schema will accept, so removal can
+  /// stop rather than producing something that fails to load.
+  int get _minimum => widget.def.constraint<MinCount>()?.count ?? 0;
+
+  void _submit(List<PropertyValue> entries) =>
+      widget.onChanged([for (final entry in entries) _rawFromValue(entry)]);
+
+  void _add() {
+    final entries = [..._entries];
+    // A new entry starts from the item's declared defaults rather than empty,
+    // so it is valid the moment it exists.
+    entries.add(
+      _itemDef.kind == ComponentPropertyKind.object
+          ? MapValue({
+              for (final field in _itemDef.objectFields ?? const [])
+                if (field.defaultValue case final value?) field.name: value,
+            })
+          : _itemDef.defaultValue ?? const BoolValue(false),
+    );
+    setState(() => _open = entries.length - 1);
+    _submit(entries);
+  }
+
+  void _removeAt(int index) {
+    final entries = [..._entries]..removeAt(index);
+    setState(() => _open = null);
+    _submit(entries);
+  }
+
+  void _move(int index, int by) {
+    final target = index + by;
+    if (target < 0 || target >= _entries.length) return;
+    final entries = [..._entries];
+    final moved = entries.removeAt(index);
+    entries.insert(target, moved);
+    setState(() => _open = target);
+    _submit(entries);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = _entries;
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${widget.label}  (${entries.length})',
+                  style: editorDetailText,
+                ),
+              ),
+              _IconAction(
+                icon: Icons.add,
+                tooltip: 'Add ${widget.label}',
+                onPressed: _add,
+              ),
+            ],
+          ),
+          if (entries.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text('Empty', style: editorDetailText),
+            ),
+          for (var i = 0; i < entries.length; i++)
+            _ListEntry(
+              index: i,
+              open: _open == i,
+              canRemove: entries.length > _minimum,
+              onToggle: () => setState(() => _open = _open == i ? null : i),
+              onRemove: () => _removeAt(i),
+              onMoveUp: i == 0 ? null : () => _move(i, -1),
+              onMoveDown: i == entries.length - 1 ? null : () => _move(i, 1),
+              child: _SchemaPropertyRow(
+                componentType: '',
+                def: _itemDef,
+                value: entries[i],
+                controller: widget.controller,
+                // Entries go back out as raw values, so an edited one is
+                // spliced into the raw list rather than converted back into a
+                // PropertyValue first.
+                onChanged: (raw) {
+                  final next = [
+                    for (final entry in _entries) _rawFromValue(entry),
+                  ];
+                  next[i] = raw;
+                  widget.onChanged(next);
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One entry of a [_ListRow]: a numbered header with reorder and remove, and
+/// the entry's own editor beneath when open.
+class _ListEntry extends StatelessWidget {
+  const _ListEntry({
+    required this.index,
+    required this.open,
+    required this.canRemove,
+    required this.onToggle,
+    required this.onRemove,
+    required this.onMoveUp,
+    required this.onMoveDown,
+    required this.child,
+  });
+
+  final int index;
+  final bool open;
+  final bool canRemove;
+  final VoidCallback onToggle;
+  final VoidCallback onRemove;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(
+                  open ? Icons.arrow_drop_down : Icons.arrow_right,
+                  size: editorIconSizeLarge,
+                  color: editorMutedTextColor,
+                ),
+                Expanded(child: Text('$index', style: editorDetailText)),
+                _IconAction(
+                  icon: Icons.arrow_upward,
+                  tooltip: 'Move up',
+                  onPressed: onMoveUp,
+                ),
+                _IconAction(
+                  icon: Icons.arrow_downward,
+                  tooltip: 'Move down',
+                  onPressed: onMoveDown,
+                ),
+                _IconAction(
+                  icon: Icons.close,
+                  tooltip: canRemove ? 'Remove' : 'The list needs this entry',
+                  onPressed: canRemove ? onRemove : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (open)
+          Padding(
+            padding: const EdgeInsets.only(left: 10, bottom: 4),
+            child: child,
+          ),
+      ],
+    );
+  }
+}
+
 class _ObjectRow extends StatelessWidget {
   const _ObjectRow({
     required this.label,
@@ -1526,7 +1764,11 @@ class _IconAction extends StatelessWidget {
     this.tooltip,
   });
   final IconData icon;
-  final VoidCallback onPressed;
+
+  /// Null disables the button. IconButton greys itself, which is the right
+  /// signal for an action that exists but cannot apply right now — moving the
+  /// first entry of a list up, say.
+  final VoidCallback? onPressed;
   final String? tooltip;
 
   @override
@@ -1536,7 +1778,7 @@ class _IconAction extends StatelessWidget {
       height: 18,
       child: IconButton(
         padding: EdgeInsets.zero,
-        iconSize: 14,
+        iconSize: editorIconSize,
         tooltip: tooltip,
         icon: Icon(icon),
         onPressed: onPressed,
@@ -1794,9 +2036,11 @@ class _ResourceRefRow extends StatelessWidget {
                     ),
                   )
                 : ReferencePicker(
-                    entries: [
+                    entries: () => [
                       for (final id in ids) (id: id, label: _label(id)),
                     ],
+                    isEmpty: ids.isEmpty,
+                    valueLabel: value == null ? null : _label(value!),
                     value: value,
                     emptyLabel: '(no ${resourceKind ?? 'resource'} resources)',
                     onChanged: (id) => onChanged({'\$resource': id.toToken()}),
@@ -1896,7 +2140,8 @@ class _NodeRefRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nodes = controller.document.nodes.values.toList();
+    final nodes = controller.document.nodes;
+    final current = value == null ? null : nodes[value];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -1912,13 +2157,21 @@ class _NodeRefRow extends StatelessWidget {
           const SizedBox(width: 4),
           Expanded(
             child: ReferencePicker(
-              entries: [
-                for (final node in nodes)
+              // Built when the picker opens; a scene's node list is long and
+              // nothing shows it until someone asks.
+              entries: () => [
+                for (final node in nodes.values)
                   (
                     id: node.id,
                     label: node.name.isEmpty ? node.id.toToken() : node.name,
                   ),
               ],
+              isEmpty: nodes.isEmpty,
+              valueLabel: current == null
+                  ? null
+                  : (current.name.isEmpty
+                        ? current.id.toToken()
+                        : current.name),
               value: value,
               emptyLabel: '(no nodes)',
               onChanged: (id) => onChanged({'\$node': id.toToken()}),

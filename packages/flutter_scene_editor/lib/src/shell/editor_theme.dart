@@ -118,6 +118,120 @@ class EditorSectionHeader extends StatelessWidget {
 /// larger one for a standalone affordance. Anything between them is variation
 /// nobody chose, and a row of icons at 13, 14 and 15 reads as misaligned even
 /// when it is not.
+/// A section that folds away, with an optional enable toggle and icon in its
+/// header.
+///
+/// An inspector is a stack of sections and only one or two matter at a time,
+/// so being able to fold the rest is what keeps a node with eight components
+/// readable. The whole header is the hit target, since a disclosure triangle
+/// alone is a small thing to aim at repeatedly.
+class EditorCollapsibleSection extends StatefulWidget {
+  /// Creates a section titled [label] wrapping [child].
+  const EditorCollapsibleSection({
+    required this.label,
+    required this.child,
+    this.icon,
+    this.enabled,
+    this.onEnabledChanged,
+    this.trailing,
+    this.initiallyExpanded = true,
+    super.key,
+  });
+
+  /// The section's title.
+  final String label;
+
+  /// The section's body, built only while expanded.
+  final Widget child;
+
+  /// An optional glyph shown before the label.
+  final IconData? icon;
+
+  /// The state of the header's checkbox, or null for no checkbox.
+  final bool? enabled;
+
+  /// Called when the header's checkbox is toggled.
+  final ValueChanged<bool>? onEnabledChanged;
+
+  /// Actions shown at the end of the header.
+  final Widget? trailing;
+
+  /// Whether the section starts open.
+  final bool initiallyExpanded;
+
+  @override
+  State<EditorCollapsibleSection> createState() =>
+      _EditorCollapsibleSectionState();
+}
+
+class _EditorCollapsibleSectionState extends State<EditorCollapsibleSection> {
+  late bool _expanded = widget.initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.enabled;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 3, top: 2),
+            padding: const EdgeInsets.fromLTRB(4, 4, 2, 4),
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(color: _signal, width: 2),
+                bottom: BorderSide(color: _line),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _expanded ? Icons.arrow_drop_down : Icons.arrow_right,
+                  size: editorIconSizeLarge,
+                  color: _mutedText,
+                ),
+                if (enabled != null)
+                  SizedBox(
+                    width: 22,
+                    height: 18,
+                    child: Checkbox(
+                      value: enabled,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (value) =>
+                          widget.onEnabledChanged?.call(value ?? false),
+                    ),
+                  ),
+                if (widget.icon case final icon?) ...[
+                  Icon(icon, size: editorIconSize, color: _mutedText),
+                  const SizedBox(width: 5),
+                ],
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.15,
+                      color: _text,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (widget.trailing case final trailing?) trailing,
+              ],
+            ),
+          ),
+        ),
+        // Built only while open: a folded section of thirty property editors
+        // should cost nothing to have around.
+        if (_expanded) widget.child,
+      ],
+    );
+  }
+}
+
 const double editorIconSize = 14;
 
 /// A standalone or emphasised icon: a toolbar button, an empty-state glyph.

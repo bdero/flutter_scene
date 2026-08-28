@@ -15,9 +15,15 @@ import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
 import 'debug_visualize.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/realize/resource_origin.dart'
+    show resourceOrigin;
+import 'package:scene/scene.dart' show LocalId;
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
+import 'scatter_tool.dart';
+import 'terrain_tool.dart';
 import 'transform_gizmo.dart';
 import 'viewport_camera_handle.dart';
 
@@ -159,6 +165,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // properties; camera movement alone does not reach this handler, so the
     // gizmo snapshot cache survives orbit drags.
     _componentGizmoCache.invalidate();
+    _groundFieldCached = false;
     _bumpView();
   }
 
@@ -178,6 +185,233 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   // --- pointer handling ----------------------------------------------------
 
+  final TerrainToolController _terrainTool = TerrainToolController();
+  final ScatterToolController _scatterTool = ScatterToolController();
+  ScatterStroke? _scatterStroke;
+
+  TerrainStroke? _stroke;
+  final Stopwatch _strokeClock = Stopwatch();
+
+  /// Where the brush would land, for the cursor ring. Null when the pointer
+  /// is not over terrain.
+  vm.Vector3? _brushPoint;
+
+  /// The sculpting target for the current selection, or null when the
+  /// selected node is not terrain realized from a document.
+  ({TerrainGeometry geometry, LocalId resourceId})? _terrainTarget() {
+    final primary = _ctrl.selection.primary;
+    if (primary == null) return null;
+    return terrainTargetOf(
+      _ctrl.liveNode(primary),
+      (geometry) => resourceOrigin(geometry)?.resourceId,
+    );
+  }
+
+  /// The scatter layer on the selection, or null when there is none.
+  ScatterLayer? _scatterTarget() {
+    final primary = _ctrl.selection.primary;
+    if (primary == null) return null;
+    return scatterLayerOf(_ctrl.liveNode(primary));
+  }
+
+  // Finding the ground walks the whole document, and the answer is asked for
+  // once per build while a brush is armed. It only changes when the document
+  // does, so it is found once and kept until then. Sculpting mutates the
+  // field in place rather than replacing it, so a stroke does not invalidate
+  // this.
+  HeightField? _groundFieldValue;
+  bool _groundFieldCached = false;
+
+  /// The height field anything painted should sit on: the first terrain in
+  /// the scene. Painting onto a scene with no terrain drops instances on the
+  /// plane, which is the sensible fallback rather than a refusal.
+  HeightField? _groundField() {
+    if (_groundFieldCached) return _groundFieldValue;
+    _groundFieldCached = true;
+    _groundFieldValue = _findGroundField();
+    return _groundFieldValue;
+  }
+
+  HeightField? _findGroundField() {
+    for (final id in _ctrl.document.nodes.keys) {
+      final node = _ctrl.liveNode(id);
+      final target = terrainTargetOf(node, (geometry) => null);
+      if (target != null) return target.geometry.field;
+      final primitives = node?.mesh?.primitives;
+      if (primitives == null) continue;
+      for (final primitive in primitives) {
+        final geometry = primitive.geometry;
+        if (geometry is TerrainGeometry) return geometry.field;
+      }
+    }
+    return null;
+  }
+
+  /// Starts a painting stroke when the tool is armed over a scatter layer.
+  bool _beginScatter(Offset position, Size viewSize) {
+    final layer = _scatterTarget();
+    final primary = _ctrl.selection.primary;
+    if (layer == null || primary == null) return false;
+    _scatterStroke = ScatterStroke(layer: layer, nodeId: primary);
+    _strokeClock
+      ..reset()
+      ..start();
+    _scatterAt(position, viewSize, 1 / 60);
+    return true;
+  }
+
+  void _scatterAt(Offset position, Size viewSize, double deltaSeconds) {
+    final stroke = _scatterStroke;
+    if (stroke == null) return;
+    final field = _groundField();
+    final point = field == null
+        ? _pointOnGroundPlane(position, viewSize)
+        : _groundUnder(position, viewSize, field);
+    if (point == null) return;
+    _brushPoint = point;
+    stroke.dab(
+      _scatterTool.brush,
+      _scatterTool.action,
+      point,
+      deltaSeconds,
+      heightAt: field?.heightAtWorld,
+    );
+    setState(() {});
+  }
+
+  /// Where the pointer crosses y = 0, for a scene with no terrain to land on.
+  vm.Vector3? _pointOnGroundPlane(Offset position, Size viewSize) {
+    final ray = _camera.camera.screenPointToRay(position, viewSize);
+    final direction = ray.direction.normalized();
+    if (direction.y.abs() < 1e-6) return null;
+    final t = -ray.origin.y / direction.y;
+    if (t < 0) return null;
+    return ray.origin + direction * t;
+  }
+
+  /// Ends the painting stroke, writing the placements as one undoable step.
+  void _endScatter() {
+    final stroke = _scatterStroke;
+    _scatterStroke = null;
+    _strokeClock.stop();
+    if (stroke == null || !stroke.changed) return;
+    unawaited(
+      _ctrl.setComponentPropertyRouted(
+        _ctrl.selection.primary!,
+        'scatterLayer',
+        'placements',
+        stroke.encodedPlacements(),
+      ),
+    );
+  }
+
+  /// Where the pointer meets the ground, or null when it misses.
+  vm.Vector3? _groundUnder(Offset position, Size viewSize, HeightField field) {
+    final ray = _camera.camera.screenPointToRay(position, viewSize);
+    return field.raycast(ray.origin, ray.direction);
+  }
+
+  /// The plane under the selection that could become terrain, if any.
+  LocalId? _sculptablePlane() {
+    final primary = _ctrl.selection.primary;
+    if (primary == null) return null;
+    return sculptablePlaneOf(
+      _ctrl.liveNode(primary),
+      (geometry) => resourceOrigin(geometry)?.resourceId,
+    )?.resourceId;
+  }
+
+  /// Starts a stroke when the tool is armed and the pointer is over terrain.
+  bool _beginSculpt(Offset position, Size viewSize) {
+    final target = _terrainTarget();
+    if (target == null) {
+      // A plane is not sculptable until it has a grid to push around. Convert
+      // it as its own undoable step, so it shows in history as the moment the
+      // sheet became ground, and sculpt from the next press.
+      final plane = _sculptablePlane();
+      if (plane == null) return false;
+      unawaited(
+        _ctrl
+            .run('makeTerrainSculptable', {'resourceId': plane.toToken()})
+            .then((_) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Plane is now sculptable. Drag to shape it.'),
+                  ),
+                );
+              }
+            }),
+      );
+      return true;
+    }
+    if (_groundUnder(position, viewSize, target.geometry.field) == null) {
+      return false;
+    }
+    _stroke = TerrainStroke(
+      geometry: target.geometry,
+      resourceId: target.resourceId,
+    );
+    _strokeClock
+      ..reset()
+      ..start();
+    // The first dab has no elapsed time to measure, so it gets a frame's
+    // worth rather than zero, which would make a click do nothing.
+    _sculptAt(position, viewSize, 1 / 60);
+    return true;
+  }
+
+  void _sculptAt(Offset position, Size viewSize, double deltaSeconds) {
+    final stroke = _stroke;
+    if (stroke == null) return;
+    final point = _groundUnder(position, viewSize, stroke.geometry.field);
+    // A pointer dragged off the terrain pauses the stroke rather than ending
+    // it, so crossing a gap and coming back is still one stroke.
+    if (point == null) return;
+    _brushPoint = point;
+    stroke.dab(_brushFor(_terrainTool.brush), point, deltaSeconds);
+    setState(() {});
+  }
+
+  /// Holding alt digs instead of raising, the way every sculpting tool does,
+  /// rather than making the user swap the sign of the strength by hand.
+  TerrainBrush _brushFor(TerrainBrush brush) {
+    if (brush.kind != TerrainBrushKind.raise) return brush;
+    if (!HardwareKeyboard.instance.isAltPressed) return brush;
+    return TerrainBrush(
+      kind: brush.kind,
+      radius: brush.radius,
+      strength: -brush.strength,
+      falloff: brush.falloff,
+      targetHeight: brush.targetHeight,
+    );
+  }
+
+  /// The elapsed time since the previous dab, so a slow drag moves the ground
+  /// as far as a fast one over the same distance.
+  double _dabSeconds() {
+    final elapsed = _strokeClock.elapsedMicroseconds / 1000000;
+    _strokeClock
+      ..reset()
+      ..start();
+    // A stall should not land a single enormous dab.
+    return elapsed.clamp(0.0, 1 / 20);
+  }
+
+  /// Ends the stroke, writing it to the document as one undoable step.
+  void _endSculpt() {
+    final stroke = _stroke;
+    _stroke = null;
+    _strokeClock.stop();
+    if (stroke == null || !stroke.touched) return;
+    unawaited(
+      _ctrl.run('setTerrainHeights', {
+        'resourceId': stroke.resourceId.toToken(),
+        'heights': stroke.encodedHeights(),
+      }),
+    );
+  }
+
   void _onPointerDown(PointerDownEvent event, Size viewSize) {
     _focusNode.requestFocus();
     _viewSize = viewSize;
@@ -196,6 +430,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
       return;
     }
     if (event.buttons & kPrimaryMouseButton == 0) return;
+    // Sculpting takes the primary button ahead of the gizmo: the tool is
+    // explicitly armed, and a brush that fought the move handles would be
+    // unusable over a selected terrain.
+    if (_terrainTool.active && _beginSculpt(event.localPosition, viewSize)) {
+      return;
+    }
+    if (_scatterTool.active && _beginScatter(event.localPosition, viewSize)) {
+      return;
+    }
     final primary = _ctrl.selection.primary;
     if (primary != null) {
       final live = _ctrl.liveNode(primary);
@@ -221,7 +464,31 @@ class _ViewportPanelState extends State<ViewportPanel> {
     );
   }
 
+  /// Follows the pointer with the brush ring while the tool is armed.
+  void _onPointerHover(PointerHoverEvent event, Size viewSize) {
+    if (!_terrainTool.active && !_scatterTool.active) return;
+    _viewSize = viewSize;
+    final field = _terrainTool.active
+        ? _terrainTarget()?.geometry.field
+        : _groundField();
+    final point = field == null
+        ? (_scatterTool.active
+              ? _pointOnGroundPlane(event.localPosition, viewSize)
+              : null)
+        : _groundUnder(event.localPosition, viewSize, field);
+    if (point == _brushPoint) return;
+    setState(() => _brushPoint = point);
+  }
+
   void _onPointerMove(PointerMoveEvent event) {
+    if (_stroke != null) {
+      _sculptAt(event.localPosition, _viewSize, _dabSeconds());
+      return;
+    }
+    if (_scatterStroke != null) {
+      _scatterAt(event.localPosition, _viewSize, _dabSeconds());
+      return;
+    }
     if (_freeLookActive) {
       unawaited(
         _freeLookPointer
@@ -258,6 +525,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    if (_stroke != null) {
+      _endSculpt();
+      return;
+    }
+    if (_scatterStroke != null) {
+      _endScatter();
+      return;
+    }
     if (_freeLookActive && event.buttons & kSecondaryMouseButton == 0) {
       _endFreeLook();
       return;
@@ -314,6 +589,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    // A cancelled stroke still keeps what it drew: the ground has already
+    // moved on screen, and silently reverting it would look like the edit
+    // was lost rather than cancelled.
+    if (_stroke != null) _endSculpt();
+    if (_scatterStroke != null) _endScatter();
     if (_freeLookActive) _endFreeLook();
     if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;
     if (_draggingGizmo) {
@@ -882,7 +1162,6 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           },
                           child: OrbitCameraController(
                             camera: _camera,
-                            dragThreshold: _primaryDragThreshold,
                             isLocked: () =>
                                 _draggingGizmo ||
                                 _modal != null ||
@@ -892,13 +1171,24 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               behavior: HitTestBehavior.opaque,
                               onPointerDown: (e) => _onPointerDown(e, size),
                               onPointerMove: _onPointerMove,
+                              onPointerHover: (event) =>
+                                  _onPointerHover(event, size),
                               onPointerUp: _onPointerUp,
                               onPointerCancel: _onPointerCancel,
                               onPointerSignal: _onPointerSignal,
                               child: SceneView(
                                 _ctrl.scene,
                                 viewsBuilder: (_) => [
-                                  RenderView(camera: cam),
+                                  RenderView(
+                                    camera: cam,
+                                    // The editor's own quality. Null leaves
+                                    // the scene's setting alone, so the
+                                    // default view is what the game sees.
+                                    renderScale:
+                                        _gizmoPrefs.viewportRenderScale == 1.0
+                                        ? null
+                                        : _gizmoPrefs.viewportRenderScale,
+                                  ),
                                   if (pipCamera != null && pipRect != null)
                                     RenderView(
                                       camera: pipCamera,
@@ -978,8 +1268,91 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           child: _GizmoModeBar(
                             mode: _gizmo.mode,
                             onChanged: _setMode,
+                            sculpting: _terrainTool.active,
+                            canSculpt:
+                                _terrainTarget() != null ||
+                                _sculptablePlane() != null,
+                            onSculptingChanged: (value) => setState(() {
+                              _terrainTool.active = value;
+                              // The two brushes both want the primary button,
+                              // so arming one disarms the other.
+                              if (value) _scatterTool.active = false;
+                            }),
+                            painting: _scatterTool.active,
+                            canPaint: _scatterTarget() != null,
+                            onPaintingChanged: (value) => setState(() {
+                              _scatterTool.active = value;
+                              if (value) _terrainTool.active = false;
+                            }),
                           ),
                         ),
+                        if (_scatterTool.active)
+                          if (_brushPoint case final point?)
+                            if (_groundField() case final field?)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: TerrainBrushCursorPainter(
+                                      center: point,
+                                      // The scatter brush has the same
+                                      // footprint as a sculpting one, so it
+                                      // borrows the ring rather than drawing
+                                      // a second kind of circle.
+                                      brush: TerrainBrush(
+                                        radius: _scatterTool.brush.radius,
+                                        falloff: 1,
+                                      ),
+                                      field: field,
+                                      color: editorAccentColor,
+                                      project: (world) => projectToScreen(
+                                        world,
+                                        _camera.camera,
+                                        _viewSize,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        if (_terrainTool.active)
+                          if (_brushPoint case final point?)
+                            if (_terrainTarget() case final target?)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: TerrainBrushCursorPainter(
+                                      center: point,
+                                      brush: _terrainTool.brush,
+                                      field: target.geometry.field,
+                                      color: editorAccentColor,
+                                      project: (world) => projectToScreen(
+                                        world,
+                                        _camera.camera,
+                                        _viewSize,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        if (_scatterTool.active)
+                          Positioned(
+                            top: 40,
+                            left: 8,
+                            child: ListenableBuilder(
+                              listenable: _scatterTool,
+                              builder: (context, _) =>
+                                  ScatterBrushPalette(tool: _scatterTool),
+                            ),
+                          ),
+                        if (_terrainTool.active)
+                          Positioned(
+                            top: 40,
+                            left: 8,
+                            child: ListenableBuilder(
+                              listenable: _terrainTool,
+                              builder: (context, _) =>
+                                  TerrainBrushPalette(tool: _terrainTool),
+                            ),
+                          ),
                         // Constrained-axis guide line for the modal transform.
                         if (_modal case final modal?)
                           if (_modalAxisScreenDir(modal) case final dir?)
@@ -1114,11 +1487,38 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 }
 
-/// Translate/rotate/scale mode selector.
+/// Translate/rotate/scale mode selector, plus the sculpting tool.
+///
+/// Sculpting sits with the gizmo modes because it is one: while it is armed
+/// the primary button belongs to the brush rather than the move handles, so
+/// showing it anywhere else would hide that they are exclusive.
 class _GizmoModeBar extends StatelessWidget {
-  const _GizmoModeBar({required this.mode, required this.onChanged});
+  const _GizmoModeBar({
+    required this.mode,
+    required this.onChanged,
+    required this.sculpting,
+    required this.onSculptingChanged,
+    required this.canSculpt,
+    required this.painting,
+    required this.onPaintingChanged,
+    required this.canPaint,
+  });
   final GizmoMode mode;
   final void Function(GizmoMode) onChanged;
+
+  /// Whether the terrain brush has the primary button.
+  final bool sculpting;
+  final ValueChanged<bool> onSculptingChanged;
+
+  /// Whether the selection is terrain the brush could reach.
+  final bool canSculpt;
+
+  /// Whether the scatter brush has the primary button.
+  final bool painting;
+  final ValueChanged<bool> onPaintingChanged;
+
+  /// Whether the selection carries a scatter layer to paint into.
+  final bool canPaint;
 
   @override
   Widget build(BuildContext context) {
@@ -1152,6 +1552,54 @@ class _GizmoModeBar extends StatelessWidget {
           button(GizmoMode.translate, Icons.open_with, 'Move gizmo'),
           button(GizmoMode.rotate, Icons.threesixty, 'Rotate gizmo'),
           button(GizmoMode.scale, Icons.aspect_ratio, 'Scale gizmo'),
+          Tooltip(
+            message: canSculpt
+                ? 'Sculpt terrain'
+                : 'Select a terrain to sculpt it',
+            child: InkWell(
+              onTap: canSculpt ? () => onSculptingChanged(!sculpting) : null,
+              child: Container(
+                width: 28,
+                height: 24,
+                color: sculpting
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.black.withValues(alpha: 0.55),
+                child: Icon(
+                  Icons.terrain,
+                  size: 16,
+                  color: !canSculpt
+                      ? editorMutedTextColor
+                      : sculpting
+                      ? Colors.black
+                      : Colors.white,
+                ),
+              ),
+            ),
+          ),
+          Tooltip(
+            message: canPaint
+                ? 'Paint objects'
+                : 'Select a node with a scatter layer to paint into',
+            child: InkWell(
+              onTap: canPaint ? () => onPaintingChanged(!painting) : null,
+              child: Container(
+                width: 28,
+                height: 24,
+                color: painting
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.black.withValues(alpha: 0.55),
+                child: Icon(
+                  Icons.forest_outlined,
+                  size: editorIconSizeLarge,
+                  color: !canPaint
+                      ? editorMutedTextColor
+                      : painting
+                      ? Colors.black
+                      : Colors.white,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1278,6 +1726,18 @@ class _GizmoMenuButton extends StatelessWidget {
               checked: preferences.enabled,
               action: () => preferences.enabled = !preferences.enabled,
             ),
+            const PopupMenuDivider(height: 8),
+            // Editor-only resolution. The scene's own renderScale is a
+            // document property and would follow the game out of the editor;
+            // this does not.
+            for (final scale in const [1.0, 0.75, 0.5, 0.25])
+              _checkedItem(
+                label: scale == 1.0
+                    ? 'Viewport resolution: full'
+                    : 'Viewport resolution: ${(scale * 100).round()}%',
+                checked: preferences.viewportRenderScale == scale,
+                action: () => preferences.viewportRenderScale = scale,
+              ),
             if (schemas.isNotEmpty) const PopupMenuDivider(height: 8),
             for (final schema in schemas)
               _checkedItem(
