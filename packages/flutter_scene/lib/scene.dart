@@ -39,6 +39,8 @@ export 'src/animation/animator.dart'
         BlendStop2D,
         ClipMotion;
 export 'src/animation/animator_component.dart' show AnimatorComponent;
+export 'src/animation/two_bone_ik.dart'
+    show TwoBoneSolution, solveTwoBoneIk, twoBoneTipAfter;
 
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
