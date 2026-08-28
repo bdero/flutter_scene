@@ -69,6 +69,25 @@ Tasks 1–4 completed in this working session (see checked items above).
 Verification: `dart analyze lib/src/panels` clean; `animation_timeline_test`
 and `animation_panel_editing_test` pass (one GPU-gated test skips, as before).
 
+### Layout fixes (this session)
+
+- **Interpolation pill no longer covers the first lane.** Measured the pill in
+  a widget test: `SegmentedButton` renders 168×32 because its segments
+  hard-code a 40px minimum height (`segmented_button.dart`,
+  `textButtonMinHeight = 40.0`) that no `ButtonStyle` can override — so the
+  14px-tall row budget was fiction, and the pill spilled ~14px below the
+  header band onto the translation lane's t≈0 diamonds. Replaced it with a
+  hand-rolled `_InterpPill` that honors its height exactly; the timeline
+  header pill is now 14px inside the 22px band, and the keybar pill is 22px.
+  `_InterpPill` is shared by the timeline headers and the key bar.
+- **Key bar heights now agree** (26px Key button / 22px interp pill / 26px
+  delete button — the delete `IconButton` previously enforced its 40px
+  default minimum and inflated the whole row).
+- **Lane labels can no longer run under the lane ✕ button** — the painter's
+  lane title `maxWidth` now reserves the button's 20px instead of 18, ending
+  the title at x=96 before the button at x=100.
+
+
 Note: `tool/connector/telegram_connector.js` shows as modified in git status
 but was **not** touched by this work — it appears to be the session connector
 updating itself. Left as-is.

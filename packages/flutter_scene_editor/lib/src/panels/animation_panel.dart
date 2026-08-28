@@ -770,26 +770,24 @@ class _AnimationPanelState extends State<AnimationPanel> {
                     'How this channel interpolates between its keyframes.\n\n'
                     'Linear blends smoothly between neighbors; Step holds '
                     'each keyframe\'s value until the next one is reached.',
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'linear', label: Text('Lin')),
-                    ButtonSegment(value: 'step', label: Text('Step')),
-                    ButtonSegment(value: 'cubic', label: Text('Cubic')),
+                child: _InterpPill(
+                  height: 22,
+                  segments: [
+                    for (final (mode, label) in const [
+                      ('linear', 'Lin'),
+                      ('step', 'Step'),
+                      ('cubic', 'Cubic'),
+                    ])
+                      (
+                        label: label,
+                        selected: switch (selectedChannel.interpolation) {
+                          AnimationInterpolation.step => mode == 'step',
+                          AnimationInterpolation.cubic => mode == 'cubic',
+                          _ => mode == 'linear',
+                        },
+                        onTap: () => unawaited(_setChannelInterpolation(mode)),
+                      ),
                   ],
-                  selected: {
-                    selectedChannel.interpolation == AnimationInterpolation.step
-                        ? 'step'
-                        : selectedChannel.interpolation ==
-                              AnimationInterpolation.cubic
-                        ? 'cubic'
-                        : 'linear',
-                  },
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onSelectionChanged: (selection) =>
-                      unawaited(_setChannelInterpolation(selection.first)),
                 ),
               ),
               const SizedBox(width: 6),
@@ -801,6 +799,11 @@ class _AnimationPanelState extends State<AnimationPanel> {
                   'key of a channel removes the channel.',
               child: IconButton(
                 icon: const Icon(Icons.delete_outline, size: 16),
+                // Compact to match the 26px Key button and 22px interp pill;
+                // the 40px default minimum inflates the whole key bar.
+                constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
                 onPressed: _deleteSelectedKey,
               ),
             ),

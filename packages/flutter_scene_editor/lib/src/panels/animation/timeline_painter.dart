@@ -140,7 +140,9 @@ class _TimelinePainter extends CustomPainter {
             maxLines: 1,
             ellipsis: '…',
           )
-          ..layout(maxWidth: labelWidth - 18)
+          // End before the lane's ✕ button (left: labelWidth - 20), which
+          // shares the label column with this title.
+          ..layout(maxWidth: labelWidth - 36)
           ..paint(canvas, Offset(12, top + (_rowHeight - 11) / 2));
         sawChannelInGroup = true;
       }

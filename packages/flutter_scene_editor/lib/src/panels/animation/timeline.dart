@@ -506,6 +506,29 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         : 'linear';
     final common = normalize(channels.first.interpolation);
     final mixed = channels.any((c) => normalize(c.interpolation) != common);
+
+    // Re-tapping the already-shown mode is a no-op; in mixed state (nothing
+    // shown selected) picking a mode applies it to every channel.
+    Future<void> apply(String mode) async {
+      if (!mixed && mode == common) return;
+      for (final channel in channels) {
+        try {
+          await controller.run('setChannelInterpolation', {
+            'animationId': animation.id.toToken(),
+            'nodeId': channel.target.toToken(),
+            'property': channel.property.name,
+            if (channel.targetName != null) 'targetName': channel.targetName,
+            'interpolation': mode,
+          });
+        } on Exception catch (error) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$error')));
+        }
+      }
+    }
+
     return _PanelTip(
       message:
           'How this bone\'s paths interpolate between keyframes.\n\n'
@@ -513,49 +536,25 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           'next one is reached; Cubic uses per-key tangents for eased '
           'motion.${mixed ? '\n\nThis bone\'s paths mix modes right now — '
                     'picking one applies it to all of them.' : ''}',
-      child: SegmentedButton<String>(
-        segments: const [
-          ButtonSegment(value: 'linear', label: Text('Lin')),
-          ButtonSegment(value: 'step', label: Text('Step')),
-          ButtonSegment(value: 'cubic', label: Text('Cubic')),
+      child: _InterpPill(
+        height: _interpControlHeight,
+        segments: [
+          (
+            label: 'Lin',
+            selected: !mixed && common == 'linear',
+            onTap: () => unawaited(apply('linear')),
+          ),
+          (
+            label: 'Step',
+            selected: !mixed && common == 'step',
+            onTap: () => unawaited(apply('step')),
+          ),
+          (
+            label: 'Cubic',
+            selected: !mixed && common == 'cubic',
+            onTap: () => unawaited(apply('cubic')),
+          ),
         ],
-        selected: mixed ? const <String>{} : {common},
-        emptySelectionAllowed: true,
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          minimumSize: WidgetStatePropertyAll(Size(0, _interpControlHeight)),
-          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
-          textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 9)),
-          side: WidgetStatePropertyAll(BorderSide(width: 0.5)),
-        ),
-        onSelectionChanged: (selection) {
-          // Re-tapping the already-shown mode selects it again; keep that a
-          // no-op. An empty selection (only reachable in mixed state) does
-          // nothing until a mode is actually picked.
-          final mode = selection.isEmpty ? null : selection.first;
-          if (mode == null || (!mixed && mode == common)) return;
-          unawaited(() async {
-            for (final channel in channels) {
-              try {
-                await controller.run('setChannelInterpolation', {
-                  'animationId': animation.id.toToken(),
-                  'nodeId': channel.target.toToken(),
-                  'property': channel.property.name,
-                  if (channel.targetName != null)
-                    'targetName': channel.targetName,
-                  'interpolation': mode,
-                });
-              } on Exception catch (error) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('$error')));
-              }
-            }
-          }());
-        },
       ),
     );
   }
@@ -616,4 +615,74 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       ),
     );
   }
+}
+
+/// One selectable segment of an [_InterpPill].
+typedef _InterpSegmentSpec = ({
+  String label,
+  bool selected,
+  VoidCallback onTap,
+});
+
+/// A compact horizontally-segmented selector — used for the interpolation
+/// modes. Unlike [SegmentedButton], whose segments enforce a 40px minimum
+/// height that no [ButtonStyle] can override (which made the pill spill out
+/// of the 22px timeline rows onto the lane beneath), this honors any pixel
+/// height exactly.
+class _InterpPill extends StatelessWidget {
+  const _InterpPill({required this.height, required this.segments});
+
+  final double height;
+  final List<_InterpSegmentSpec> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.9),
+        border: Border.all(color: scheme.outlineVariant, width: 0.5),
+        borderRadius: BorderRadius.circular(height / 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < segments.length; i++) ...[
+            if (i > 0) _divider(scheme),
+            _segment(context, scheme, segments[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _segment(
+    BuildContext context,
+    ColorScheme scheme,
+    _InterpSegmentSpec spec,
+  ) => InkWell(
+    onTap: spec.onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 7),
+      child: Center(
+        child: Text(
+          spec.label,
+          style: TextStyle(
+            fontSize: 9,
+            height: 1,
+            fontWeight: spec.selected ? FontWeight.w700 : FontWeight.w400,
+            color: spec.selected ? scheme.primary : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  /// Hairline between two segments of the pill.
+  Widget _divider(ColorScheme scheme) => Container(
+    width: 0.5,
+    margin: EdgeInsets.symmetric(vertical: height / 7),
+    color: scheme.outlineVariant,
+  );
 }
