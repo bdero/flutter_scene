@@ -15,9 +15,14 @@ import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
 import 'debug_visualize.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/fscene/realize/resource_origin.dart'
+    show resourceOrigin;
+import 'package:scene/scene.dart' show LocalId;
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
+import 'terrain_tool.dart';
 import 'transform_gizmo.dart';
 import 'viewport_camera_handle.dart';
 
@@ -178,6 +183,66 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   // --- pointer handling ----------------------------------------------------
 
+  final TerrainToolController _terrainTool = TerrainToolController();
+
+  TerrainStroke? _stroke;
+
+  /// The sculpting target for the current selection, or null when the
+  /// selected node is not terrain realized from a document.
+  ({TerrainGeometry geometry, LocalId resourceId})? _terrainTarget() {
+    final primary = _ctrl.selection.primary;
+    if (primary == null) return null;
+    return terrainTargetOf(
+      _ctrl.liveNode(primary),
+      (geometry) => resourceOrigin(geometry)?.resourceId,
+    );
+  }
+
+  /// Where the pointer meets the ground, or null when it misses.
+  vm.Vector3? _groundUnder(Offset position, Size viewSize, HeightField field) {
+    final ray = _camera.camera.screenPointToRay(position, viewSize);
+    return field.raycast(ray.origin, ray.direction);
+  }
+
+  /// Starts a stroke when the tool is armed and the pointer is over terrain.
+  bool _beginSculpt(Offset position, Size viewSize) {
+    final target = _terrainTarget();
+    if (target == null) return false;
+    if (_groundUnder(position, viewSize, target.geometry.field) == null) {
+      return false;
+    }
+    _stroke = TerrainStroke(
+      geometry: target.geometry,
+      resourceId: target.resourceId,
+    );
+    _sculptAt(position, viewSize, 1 / 60);
+    return true;
+  }
+
+  void _sculptAt(Offset position, Size viewSize, double deltaSeconds) {
+    final stroke = _stroke;
+    if (stroke == null) return;
+    final point = _groundUnder(position, viewSize, stroke.geometry.field);
+    // A pointer dragged off the terrain pauses the stroke rather than ending
+    // it, so crossing a gap and coming back is still one stroke.
+    if (point == null) return;
+    stroke.dab(_terrainTool.brush, point, deltaSeconds);
+    setState(() {});
+  }
+
+  /// Ends the stroke, writing it to the document as one undoable step.
+  void _endSculpt() {
+    final stroke = _stroke;
+    _stroke = null;
+    if (stroke == null || !stroke.touched) return;
+    unawaited(
+      _ctrl.run('setTerrainHeights', {
+        'resourceId': stroke.resourceId.toToken(),
+        'heights': stroke.encodedHeights(),
+      }),
+    );
+  }
+
   void _onPointerDown(PointerDownEvent event, Size viewSize) {
     _focusNode.requestFocus();
     _viewSize = viewSize;
@@ -196,6 +261,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
       return;
     }
     if (event.buttons & kPrimaryMouseButton == 0) return;
+    // Sculpting takes the primary button ahead of the gizmo: the tool is
+    // explicitly armed, and a brush that fought the move handles would be
+    // unusable over a selected terrain.
+    if (_terrainTool.active && _beginSculpt(event.localPosition, viewSize)) {
+      return;
+    }
     final primary = _ctrl.selection.primary;
     if (primary != null) {
       final live = _ctrl.liveNode(primary);
@@ -222,6 +293,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    if (_stroke != null) {
+      _sculptAt(event.localPosition, _viewSize, 1 / 60);
+      return;
+    }
     if (_freeLookActive) {
       unawaited(
         _freeLookPointer
@@ -258,6 +333,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    if (_stroke != null) {
+      _endSculpt();
+      return;
+    }
     if (_freeLookActive && event.buttons & kSecondaryMouseButton == 0) {
       _endFreeLook();
       return;
@@ -314,6 +393,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    // A cancelled stroke still keeps what it drew: the ground has already
+    // moved on screen, and silently reverting it would look like the edit
+    // was lost rather than cancelled.
+    if (_stroke != null) _endSculpt();
     if (_freeLookActive) _endFreeLook();
     if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;
     if (_draggingGizmo) {
@@ -978,6 +1061,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           child: _GizmoModeBar(
                             mode: _gizmo.mode,
                             onChanged: _setMode,
+                            sculpting: _terrainTool.active,
+                            canSculpt: _terrainTarget() != null,
+                            onSculptingChanged: (value) =>
+                                setState(() => _terrainTool.active = value),
                           ),
                         ),
                         // Constrained-axis guide line for the modal transform.
@@ -1114,11 +1201,28 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 }
 
-/// Translate/rotate/scale mode selector.
+/// Translate/rotate/scale mode selector, plus the sculpting tool.
+///
+/// Sculpting sits with the gizmo modes because it is one: while it is armed
+/// the primary button belongs to the brush rather than the move handles, so
+/// showing it anywhere else would hide that they are exclusive.
 class _GizmoModeBar extends StatelessWidget {
-  const _GizmoModeBar({required this.mode, required this.onChanged});
+  const _GizmoModeBar({
+    required this.mode,
+    required this.onChanged,
+    required this.sculpting,
+    required this.onSculptingChanged,
+    required this.canSculpt,
+  });
   final GizmoMode mode;
   final void Function(GizmoMode) onChanged;
+
+  /// Whether the terrain brush has the primary button.
+  final bool sculpting;
+  final ValueChanged<bool> onSculptingChanged;
+
+  /// Whether the selection is terrain the brush could reach.
+  final bool canSculpt;
 
   @override
   Widget build(BuildContext context) {
@@ -1152,6 +1256,30 @@ class _GizmoModeBar extends StatelessWidget {
           button(GizmoMode.translate, Icons.open_with, 'Move gizmo'),
           button(GizmoMode.rotate, Icons.threesixty, 'Rotate gizmo'),
           button(GizmoMode.scale, Icons.aspect_ratio, 'Scale gizmo'),
+          Tooltip(
+            message: canSculpt
+                ? 'Sculpt terrain'
+                : 'Select a terrain to sculpt it',
+            child: InkWell(
+              onTap: canSculpt ? () => onSculptingChanged(!sculpting) : null,
+              child: Container(
+                width: 28,
+                height: 24,
+                color: sculpting
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.black.withValues(alpha: 0.55),
+                child: Icon(
+                  Icons.terrain,
+                  size: 16,
+                  color: !canSculpt
+                      ? editorMutedTextColor
+                      : sculpting
+                      ? Colors.black
+                      : Colors.white,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
