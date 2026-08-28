@@ -174,9 +174,15 @@ class _TimelinePainter extends CustomPainter {
 
       // Keyframe diamonds (only those inside the visible window).
       for (final time in entry.times!) {
-        // A lifted keyframe (mid-drag) hides its old diamond; the dragging
-        // copy is drawn at the cursor's in-flight time right after.
-        if (dragFromTime != null && (time - dragFromTime!).abs() <= 1e-3) {
+        // A lifted keyframe (mid-drag) hides its old diamond on its own
+        // channel only — other channels legitimately hold keys at the same
+        // time, and theirs must stay visible. The dragging copy is drawn at
+        // the cursor's in-flight time right after, on the dragged channel.
+        if (dragFromTime != null &&
+            selectedKey != null &&
+            channel.target == selectedKey!.target &&
+            channel.property == selectedKey!.property &&
+            (time - dragFromTime!).abs() <= 1e-3) {
           continue;
         }
         final x = labelWidth + time * pxPerSecond - scrollPx;
@@ -221,23 +227,33 @@ class _TimelinePainter extends CustomPainter {
   }
 
   void _drawDiamond(Canvas canvas, double cx, double cy, bool selected) {
+    if (selected) {
+      canvas.drawCircle(
+        Offset(cx, cy),
+        8,
+        Paint()..color = scheme.primary.withValues(alpha: 0.25),
+      );
+    }
     final path = Path()
-      ..moveTo(cx, cy - 5)
-      ..lineTo(cx + 5, cy)
-      ..lineTo(cx, cy + 5)
-      ..lineTo(cx - 5, cy)
+      ..moveTo(cx, cy - 5.5)
+      ..lineTo(cx + 5.5, cy)
+      ..lineTo(cx, cy + 5.5)
+      ..lineTo(cx - 5.5, cy)
       ..close();
+    // The fill alone can sit near-identical to the lane band and its line
+    // (surfaceContainerLow / outlineVariant vs secondary), so every crystal
+    // carries a thin foreground outline that reads on any surface tone.
     canvas.drawPath(
       path,
       Paint()..color = selected ? scheme.primary : scheme.secondary,
     );
-    if (selected) {
-      canvas.drawCircle(
-        Offset(cx, cy),
-        7,
-        Paint()..color = scheme.primary.withValues(alpha: 0.2),
-      );
-    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = scheme.onSurface
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
   }
 
   /// A ruler step near [duration] / 8 that keeps readable labels.

@@ -83,12 +83,20 @@ const double _rowHeight = 22;
 const double _maxKeyTime = 600;
 
 /// The keyframe times of [channel], read out of its timeline payload.
+///
+/// The decode is cached on the payload's [ByteData] object itself: payloads
+/// are immutable snapshots, and document edits produce new `ByteData`
+/// objects, so a changed timeline gets a fresh cache entry while stale ones
+/// are garbage-collected with the payloads they belong to. The returned list
+/// is shared between callers — treat it as read-only.
 List<double> channelTimes(
   SceneDocument document,
   AnimationChannelSpec channel,
 ) {
   final bytes = document.payload(channel.timeline)?.bytes;
   if (bytes == null) return const [];
+  final cached = _decodedTimelines[bytes];
+  if (cached != null) return cached;
   final Float32List floats;
   if (bytes.offsetInBytes % 4 == 0) {
     floats = bytes.buffer.asFloat32List(
@@ -100,5 +108,12 @@ List<double> channelTimes(
       bytes,
     ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
   }
-  return [for (var i = 0; i < floats.length; i++) floats[i]];
+  final times = [for (var i = 0; i < floats.length; i++) floats[i]];
+  _decodedTimelines[bytes] = times;
+  return times;
 }
+
+/// Decode cache for [channelTimes], keyed on the payload `ByteData` identity.
+/// An [Expando] (rather than a `Map`) keeps entries alive only as long as
+/// their payload, so there is nothing to invalidate or leak.
+final Expando<List<double>> _decodedTimelines = Expando<List<double>>();

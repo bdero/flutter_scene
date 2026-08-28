@@ -389,8 +389,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
             ),
             child: Text(
               'Drag to scrub · double-click a lane to add a key · drag a '
-              'diamond to retime · wheel scrolls · ctrl/cmd+wheel or pinch '
-              'zooms (zoom out to reach past the clip\'s end)',
+              'diamond to retime · wheel scrolls (vertically when lanes '
+              'overflow) · ctrl/cmd+wheel or pinch zooms (zoom out to reach '
+              'past the clip\'s end)',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontSize: 10,
                 color: scheme.outline,

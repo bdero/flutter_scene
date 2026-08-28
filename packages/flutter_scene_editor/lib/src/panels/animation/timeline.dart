@@ -70,6 +70,15 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   /// Cumulative scale of an in-flight trackpad pinch; null when none.
   double? _pinchScale;
 
+  /// Vertical content scroll (px) for rigs taller than the pane; 0 when the
+  /// whole timeline fits. See `_buildCanvas` for how it is applied and driven.
+  double _scrollY = 0;
+
+  /// Whether the in-flight pan is a vertical content scroll (started on the
+  /// label column while the lanes overflow the pane) rather than a scrub or
+  /// key drag.
+  bool _scrollPan = false;
+
   EditorController get controller => widget.controller;
   AnimationSpec get animation => widget.animation;
 
@@ -130,14 +139,14 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       ],
     ];
 
-    // Repaint on every playhead tick without rebuilding the parent panel.
-    return ListenableBuilder(
-      listenable: controller.previewPlayhead,
-      builder: (context, _) => LayoutBuilder(
-        builder: (context, constraints) {
-          return _buildCanvas(context, scheme, rows, constraints);
-        },
-      ),
+    // The playhead listener now wraps only the canvas paint (see
+    // _buildCanvas): per-tick updates repaint the diamonds and playhead via
+    // the painter without rebuilding the header/label overlays, the panel,
+    // or the parent editor.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return _buildCanvas(context, scheme, rows, constraints);
+      },
     );
   }
 
@@ -172,6 +181,20 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     final contentHeight =
         _rulerHeight + math.max(rows.length, 1) * _rowHeight + 4;
 
+    // Vertical overflow: rigs with many lanes exceed the pane height. The
+    // content scrolls vertically (wheel, or a drag on the label column) while
+    // the ruler stays pinned — it is painted above the translated content —
+    // and the zoom pill and scrollbar stay fixed to the viewport. With tight
+    // pane constraints this is a no-op and the wheel keeps panning time.
+    final hasBoundedHeight = constraints.maxHeight.isFinite;
+    final viewportHeight = hasBoundedHeight
+        ? constraints.maxHeight
+        : contentHeight;
+    final verticalOverflow = hasBoundedHeight
+        ? math.max(0.0, contentHeight - constraints.maxHeight)
+        : 0.0;
+    final scrollY = _scrollY.clamp(0.0, verticalOverflow).toDouble();
+
     double xOf(double time) => labelWidth + time * pxPerSecond - _scroll;
 
     // Times past the clip's end are reachable on purpose: a key dropped out
@@ -182,6 +205,11 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             .toDouble();
 
     int rowOf(double dy) => ((dy - _rulerHeight) / _rowHeight).floor();
+
+    // Pointer events arrive in viewport coordinates; the content is
+    // translated up by scrollY, so lane lookups need the content-space point.
+    Offset contentPos(Offset position) =>
+        Offset(position.dx, position.dy + scrollY);
 
     // Scales by [factor], keeping [anchorTime] fixed under its pixel column.
     void zoom(double factor, {double? anchorTime}) {
@@ -206,6 +234,19 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       if (zooming) {
         final anchor = timeAt(event.localPosition);
         zoom(math.exp(-delta * 0.002), anchorTime: anchor);
+      } else if (verticalOverflow > 0 && event.scrollDelta.dy != 0) {
+        // The rig is taller than the pane: the wheel scrolls the lanes
+        // vertically; a horizontal wheel delta still pans time.
+        setState(() {
+          _scrollY = (_scrollY + event.scrollDelta.dy)
+              .clamp(0.0, verticalOverflow)
+              .toDouble();
+          if (event.scrollDelta.dx != 0) {
+            _scroll = (_scroll + event.scrollDelta.dx)
+                .clamp(0.0, maxScroll)
+                .toDouble();
+          }
+        });
       } else {
         setState(() {
           _scroll = (_scroll + delta).clamp(0.0, maxScroll).toDouble();
@@ -266,6 +307,17 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       return nearestDistance <= 12 ? nearest : null;
     }
 
+    // The scrollbar thumb: proportional to the visible fraction of the
+    // content, positioned by scrollY. Only shown when the lanes overflow.
+    final thumbHeight = math.min(
+      viewportHeight,
+      math.max(24.0, viewportHeight * viewportHeight / contentHeight),
+    );
+    final thumbTop = (scrollY / contentHeight * viewportHeight).clamp(
+      0.0,
+      viewportHeight - thumbHeight,
+    );
+
     return Listener(
       onPointerSignal: handleWheel,
       onPointerPanZoomStart: handlePanZoomStart,
@@ -274,7 +326,7 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapUp: (details) {
-          final position = details.localPosition;
+          final position = contentPos(details.localPosition);
           final key = hitKey(position);
           if (key != null) {
             widget.onSelectKey(key);
@@ -287,17 +339,33 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           widget.onTapLane(timeAt(position));
         },
         onDoubleTapDown: (details) {
-          final row = rowOf(details.localPosition.dy);
+          final position = contentPos(details.localPosition);
+          final row = rowOf(position.dy);
           if (row < 0 || row >= rows.length) return;
           final entry = rows[row];
           if (entry.isHeader || entry.channel == null) return;
           widget.onDoubleTapLane(entry.channel!, timeAt(details.localPosition));
         },
         onPanStart: (details) {
-          final key = hitKey(details.localPosition);
-          if (key != null) widget.onDragKeyStart(key);
+          final key = hitKey(contentPos(details.localPosition));
+          if (key != null) {
+            widget.onDragKeyStart(key);
+            return;
+          }
+          // Dragging the label column pans the lanes vertically when they
+          // overflow the pane; anywhere else the pan scrubs or drags keys.
+          _scrollPan =
+              verticalOverflow > 0 && details.localPosition.dx < labelWidth;
         },
         onPanUpdate: (details) {
+          if (_scrollPan) {
+            setState(() {
+              _scrollY = (_scrollY - details.delta.dy)
+                  .clamp(0.0, verticalOverflow)
+                  .toDouble();
+            });
+            return;
+          }
           // An in-flight key drag moves the diamond; anything else scrubs.
           if (widget.draggingKey) {
             widget.onDragKeyUpdate(details.delta.dx / pxPerSecond);
@@ -305,71 +373,116 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           }
           widget.onScrub(timeAt(details.localPosition));
         },
-        onPanEnd: (_) => widget.onDragKeyEnd(),
-        child: Stack(
-          children: [
-            CustomPaint(
-              size: Size(width, math.max(constraints.maxHeight, contentHeight)),
-              painter: _TimelinePainter(
-                scheme: scheme,
-                rows: rows,
-                duration: widget.duration,
-                playhead: controller.previewPlayhead.value,
-                selectedKey: widget.selectedKey,
-                dragFromTime: widget.dragFromTime,
-                labelWidth: labelWidth,
-                scrollPx: _scroll,
-                pxPerSecond: pxPerSecond,
-              ),
-            ),
-            // Header and lane extras sit above the canvas paint, so their hit
-            // testing wins over the gesture handlers wrapping this stack
-            // (scrubbing, key drags).
-            for (var i = 0; i < rows.length; i++)
-              if (rows[i].isHeader &&
-                  (rows[i].groupChannels?.isNotEmpty ?? false))
-                Positioned(
-                  left: labelWidth + 6,
-                  top:
-                      _rulerHeight +
-                      i * _rowHeight +
-                      (_rowHeight - _interpControlHeight) / 2,
-                  child: _groupInterpolationControl(
-                    context,
-                    rows[i].groupChannels!,
+        onPanEnd: (_) {
+          _scrollPan = false;
+          widget.onDragKeyEnd();
+        },
+        child: SizedBox(
+          width: width,
+          height: viewportHeight,
+          // The viewport Stack clips content outside its bounds; the inner
+          // stack is content-sized and translated up by scrollY so its lane
+          // rows scroll vertically. The ruler is painted at the top of the
+          // content, so it scrolls with the time grid. The zoom pill and
+          // scrollbar below are positioned in the viewport and never scroll.
+          child: Stack(
+            children: [
+              Transform.translate(
+                offset: Offset(0, -scrollY),
+                child: SizedBox(
+                  width: width,
+                  height: contentHeight,
+                  child: Stack(
+                    children: [
+                      // Repaint (and only repaint) on every playhead tick: the
+                      // listener scopes to the canvas paint, so the overlays around it
+                      // don't rebuild during playback.
+                      ListenableBuilder(
+                        listenable: controller.previewPlayhead,
+                        builder: (context, _) => CustomPaint(
+                          size: Size(width, contentHeight),
+                          painter: _TimelinePainter(
+                            scheme: scheme,
+                            rows: rows,
+                            duration: widget.duration,
+                            playhead: controller.previewPlayhead.value,
+                            selectedKey: widget.selectedKey,
+                            dragFromTime: widget.dragFromTime,
+                            labelWidth: labelWidth,
+                            scrollPx: _scroll,
+                            pxPerSecond: pxPerSecond,
+                          ),
+                        ),
+                      ),
+                      // Header and lane extras sit above the canvas paint, so their hit
+                      // testing wins over the gesture handlers wrapping this stack
+                      // (scrubbing, key drags).
+                      for (var i = 0; i < rows.length; i++)
+                        if (rows[i].isHeader &&
+                            (rows[i].groupChannels?.isNotEmpty ?? false))
+                          Positioned(
+                            left: labelWidth + 6,
+                            top:
+                                _rulerHeight +
+                                i * _rowHeight +
+                                (_rowHeight - _interpControlHeight) / 2,
+                            child: _groupInterpolationControl(
+                              context,
+                              rows[i].groupChannels!,
+                            ),
+                          ),
+                      for (var i = 0; i < rows.length; i++)
+                        if (!rows[i].isHeader && widget.onRemoveChannel != null)
+                          Positioned(
+                            left: labelWidth - 20,
+                            top:
+                                _rulerHeight +
+                                i * _rowHeight +
+                                (_rowHeight - 16) / 2,
+                            child: _PanelTip(
+                              message:
+                                  'Remove this ${rows[i].title} path from this '
+                                  'bone\'s timeline.\n\nThe channel and its keys are '
+                                  'deleted; undoable like any edit.',
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                iconSize: 12,
+                                visualDensity: VisualDensity.compact,
+                                constraints: const BoxConstraints(
+                                  minWidth: 16,
+                                  minHeight: 16,
+                                ),
+                                onPressed: () =>
+                                    widget.onRemoveChannel!(rows[i].channel!),
+                                icon: const Icon(Icons.close, size: 12),
+                                color: scheme.outline,
+                              ),
+                            ),
+                          ),
+                    ],
                   ),
                 ),
-            for (var i = 0; i < rows.length; i++)
-              if (!rows[i].isHeader && widget.onRemoveChannel != null)
+              ),
+              if (verticalOverflow > 0)
                 Positioned(
-                  left: labelWidth - 20,
-                  top: _rulerHeight + i * _rowHeight + (_rowHeight - 16) / 2,
-                  child: _PanelTip(
-                    message:
-                        'Remove this ${rows[i].title} path from this '
-                        'bone\'s timeline.\n\nThe channel and its keys are '
-                        'deleted; undoable like any edit.',
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      iconSize: 12,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
-                      ),
-                      onPressed: () =>
-                          widget.onRemoveChannel!(rows[i].channel!),
-                      icon: const Icon(Icons.close, size: 12),
-                      color: scheme.outline,
+                  right: 2,
+                  top: thumbTop,
+                  child: Container(
+                    width: 4,
+                    height: thumbHeight,
+                    decoration: BoxDecoration(
+                      color: scheme.outlineVariant.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                 ),
-            Positioned(
-              right: 8,
-              bottom: 4,
-              child: _zoomControls(context, scheme, zoom),
-            ),
-          ],
+              Positioned(
+                right: 8,
+                bottom: 4,
+                child: _zoomControls(context, scheme, zoom),
+              ),
+            ],
+          ),
         ),
       ),
     );
