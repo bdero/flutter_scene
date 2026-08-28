@@ -90,22 +90,28 @@ class _NodeInspector extends StatelessWidget {
               isMember: isMember,
               source: _instanceSource(instanceId),
             ),
-          EditorSectionHeader(label: 'Node'),
-          // Name field.
-          _StringRow(
-            label: 'Name',
-            value: node.name,
-            onSubmit: (v) => controller.setNodeNameRouted(node.id, v),
-          ),
-          // Visibility toggle.
-          _BoolRow(
-            label: 'Visible',
-            value: node.visible,
-            onChanged: (v) => controller.setNodeVisibleRouted(node.id, v),
+          EditorCollapsibleSection(
+            key: const ValueKey('section:node'),
+            label: 'Node',
+            icon: Icons.category_outlined,
+            // The node's own visibility, in the same place a component's
+            // enabled flag sits, so the header means one thing throughout.
+            enabled: node.visible,
+            onEnabledChanged: (value) =>
+                controller.setNodeVisibleRouted(node.id, value),
+            child: _StringRow(
+              label: 'Name',
+              value: node.name,
+              onSubmit: (v) => controller.setNodeNameRouted(node.id, v),
+            ),
           ),
           const SizedBox(height: 8),
-          EditorSectionHeader(label: 'Transform'),
-          _TransformEditor(node: node, controller: controller),
+          EditorCollapsibleSection(
+            key: const ValueKey('section:transform'),
+            label: 'Transform',
+            icon: Icons.open_with,
+            child: _TransformEditor(node: node, controller: controller),
+          ),
           // Components.
           for (final component in node.components) ...[
             const SizedBox(height: 8),

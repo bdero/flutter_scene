@@ -462,6 +462,7 @@ class _OutlinerNode extends StatefulWidget {
 
 class _OutlinerNodeState extends State<_OutlinerNode> {
   bool _dragTarget = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -476,10 +477,15 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
     final isInstance = ctrl.document.nodes[node.id]?.instance != null;
     final accent = Theme.of(context).colorScheme.primary;
     final prefabTint = Theme.of(context).colorScheme.tertiary;
+    // Drag target, then selection, then hover: the strongest signal wins,
+    // and a hovered row that is already selected should not change under the
+    // pointer.
     final rowColor = _dragTarget
         ? accent.withValues(alpha: 0.2)
         : isSelected
         ? accent.withValues(alpha: 0.15)
+        : _hovered
+        ? accent.withValues(alpha: 0.06)
         : null;
 
     Widget rowContent = Container(
@@ -561,6 +567,12 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
 
     rowContent = InkWell(
       onTap: () => _handleTap(ctrl, node.id),
+      // The row paints its own background, which sits over the ink overlay,
+      // so hover has to be tracked rather than left to the splash.
+      onHover: (hovered) {
+        if (_hovered == hovered) return;
+        setState(() => _hovered = hovered);
+      },
       child: rowContent,
     );
 
