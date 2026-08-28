@@ -11,6 +11,7 @@ import 'dart:isolate';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
@@ -111,6 +112,16 @@ class _EditorHomeState extends State<_EditorHome> {
 
   late final EditorSettingsStore _settingsStore;
   late final EditorSettings _settings;
+
+  /// Cover captures for the launcher's project cards.
+  late final ProjectCoverStore _covers = ProjectCoverStore(
+    Directory('${_settingsDirectory().path}/covers'),
+  );
+
+  /// The launcher's gallery, re-read whenever the recent-projects list
+  /// changes or the user asks for a rescan. Reading it walks the file system,
+  /// so it is not rebuilt on every frame.
+  ProjectLibrary? _library;
 
   // Component-gizmo visibility, shared by every viewport and persisted with
   // the settings.
@@ -694,12 +705,40 @@ class _EditorHomeState extends State<_EditorHome> {
   /// per-project toggle is on. A debug session patches scenes in place over
   /// the VM service; anything else falls back to a hot restart.
   void _onSceneSaved(String path) {
+    unawaited(_captureProjectCover());
     if (!_restartOnSceneSave) return;
     if (_session.state != AppSessionState.running) return;
     unawaited(() async {
       if (await _session.reloadScenes()) return;
       await _session.restart(reason: 'save');
     }());
+  }
+
+  /// Files the viewport as the open project's launcher cover.
+  ///
+  /// Saving is when the scene is in a state worth showing, and the capture is
+  /// already on screen, so this costs one downscaled readback rather than an
+  /// offscreen render. Failures are swallowed: a missing cover falls back to
+  /// the generated placeholder, and nothing about a save should hinge on it.
+  Future<void> _captureProjectCover() async {
+    final project = _project;
+    if (project == null) return;
+    try {
+      final boundary =
+          _viewportKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      await WidgetsBinding.instance.endOfFrame;
+      final image = await boundary.toImage(pixelRatio: 1);
+      try {
+        await _covers.write(project.path, image);
+      } finally {
+        image.dispose();
+      }
+      if (mounted) setState(() => _library = null);
+    } on Object {
+      // A cover is a nicety; a save must not fail over one.
+    }
   }
 
   /// Watches the project's native/ sources. A save there rebuilds and
@@ -946,9 +985,23 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   void _forgetRecentProject(String path) {
-    setState(() => _settings.forgetProject(path));
+    setState(() {
+      _settings.forgetProject(path);
+      _library = null;
+    });
+    _covers.remove(path);
     _persistSettings();
   }
+
+  /// The launcher's gallery, read on first use and after any change that
+  /// could alter it.
+  ProjectLibrary get _projectLibrary =>
+      _library ??= buildProjectLibrary(
+        _settings.recentProjects,
+        coverFor: _covers.pathFor,
+      );
+
+  void _rescanProjects() => setState(() => _library = null);
 
   void _clearRecentScenes() {
     if (_settings.recentScenes.isEmpty) return;
@@ -1466,21 +1519,22 @@ class _EditorHomeState extends State<_EditorHome> {
     // the window's top edge (the editor's menu bar serves that role later).
     return Stack(
       children: [
-        _StartScreen(
+        ProjectLauncher(
           busy: _busy,
           error: _error,
-          onNewProject: _newProject,
-          onOpenProject: _openProject,
-          recentProjects: _settings.recentProjects,
-          onOpenRecentProject: _openProjectPath,
-          onRemoveRecentProject: _forgetRecentProject,
-          onNew: _newScene,
-          onOpen: _openScene,
-          onImport: _importGltf,
+          library: _projectLibrary,
           recentScenes: _settings.recentScenes,
-          onOpenRecent: _openRecentScene,
-          onRemoveRecent: _forgetRecentScene,
-          onClearRecent: _clearRecentScenes,
+          onOpenProject: _openProjectPath,
+          onNewProject: _newProject,
+          onBrowseForProject: _openProject,
+          onForgetProject: _forgetRecentProject,
+          onOpenScene: _openRecentScene,
+          onNewScene: _newScene,
+          onBrowseForScene: _openScene,
+          onImportModel: _importGltf,
+          onForgetScene: _forgetRecentScene,
+          onClearScenes: _clearRecentScenes,
+          onRefresh: _rescanProjects,
         ),
         Positioned(
           top: 0,
@@ -1493,289 +1547,6 @@ class _EditorHomeState extends State<_EditorHome> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _StartScreen extends StatelessWidget {
-  const _StartScreen({
-    required this.busy,
-    required this.error,
-    required this.onNewProject,
-    required this.onOpenProject,
-    required this.recentProjects,
-    required this.onOpenRecentProject,
-    required this.onRemoveRecentProject,
-    required this.onNew,
-    required this.onOpen,
-    required this.onImport,
-    required this.recentScenes,
-    required this.onOpenRecent,
-    required this.onRemoveRecent,
-    required this.onClearRecent,
-  });
-
-  final String? busy;
-  final String? error;
-  final VoidCallback onNewProject;
-  final VoidCallback onOpenProject;
-  final List<String> recentProjects;
-  final ValueChanged<String> onOpenRecentProject;
-  final ValueChanged<String> onRemoveRecentProject;
-  final VoidCallback onNew;
-  final VoidCallback onOpen;
-  final VoidCallback onImport;
-  final List<String> recentScenes;
-  final ValueChanged<String> onOpenRecent;
-  final ValueChanged<String> onRemoveRecent;
-  final VoidCallback onClearRecent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 52),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Image.asset(
-                    'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
-                    width: 104,
-                    height: 104,
-                    cacheWidth: 208,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Scene Editor',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 28),
-                if (busy != null) ...[
-                  const Center(child: CircularProgressIndicator()),
-                  const SizedBox(height: 12),
-                  Text(busy!, textAlign: TextAlign.center),
-                ] else ...[
-                  // A project (an .fproject beside a Flutter app's pubspec)
-                  // is the primary entry point; scenes open inside it.
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: onOpenProject,
-                          icon: const Icon(Icons.folder_special_outlined),
-                          label: const Text('Open project'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton.tonalIcon(
-                          onPressed: onNewProject,
-                          icon: const Icon(Icons.create_new_folder_outlined),
-                          label: const Text('New project'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onNew,
-                          icon: const Icon(Icons.add),
-                          label: const Text('New scene'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onOpen,
-                          icon: const Icon(Icons.folder_open),
-                          label: const Text('Open .fscene'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onImport,
-                          icon: const Icon(Icons.view_in_ar),
-                          label: const Text('Import glTF'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                if (error != null) ...[
-                  const SizedBox(height: 20),
-                  Text(
-                    error!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ],
-                if (recentProjects.isNotEmpty) ...[
-                  const SizedBox(height: 32),
-                  Text(
-                    'Recent projects',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainer,
-                      border: Border.all(color: Theme.of(context).dividerColor),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: recentProjects.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) => _RecentProjectTile(
-                        path: recentProjects[index],
-                        onOpen: () =>
-                            onOpenRecentProject(recentProjects[index]),
-                        onRemove: () =>
-                            onRemoveRecentProject(recentProjects[index]),
-                      ),
-                    ),
-                  ),
-                ],
-                if (recentScenes.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Text(
-                        'Recent scenes',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: onClearRecent,
-                        child: const Text('Clear'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainer,
-                      border: Border.all(color: Theme.of(context).dividerColor),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: recentScenes.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, index) => _RecentSceneTile(
-                        path: recentScenes[index],
-                        onOpen: () => onOpenRecent(recentScenes[index]),
-                        onRemove: () => onRemoveRecent(recentScenes[index]),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RecentProjectTile extends StatelessWidget {
-  const _RecentProjectTile({
-    required this.path,
-    required this.onOpen,
-    required this.onRemove,
-  });
-
-  final String path;
-  final VoidCallback onOpen;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final file = File(path);
-    final missing = !file.existsSync();
-    final base = file.path.split(Platform.pathSeparator).last;
-    final name = base.endsWith('.fproject')
-        ? base.substring(0, base.length - '.fproject'.length)
-        : base;
-    return ListTile(
-      dense: true,
-      leading: Icon(
-        Icons.folder_special_outlined,
-        size: 18,
-        color: missing
-            ? Theme.of(context).colorScheme.error
-            : Theme.of(context).colorScheme.primary,
-      ),
-      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        missing ? 'Missing  ${file.parent.path}' : file.parent.path,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: IconButton(
-        tooltip: 'Remove from recent projects',
-        onPressed: onRemove,
-        icon: const Icon(Icons.close, size: 16),
-      ),
-      onTap: onOpen,
-    );
-  }
-}
-
-class _RecentSceneTile extends StatelessWidget {
-  const _RecentSceneTile({
-    required this.path,
-    required this.onOpen,
-    required this.onRemove,
-  });
-
-  final String path;
-  final VoidCallback onOpen;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final file = File(path);
-    final missing = !file.existsSync();
-    return ListTile(
-      dense: true,
-      leading: Icon(
-        missing ? Icons.insert_drive_file_outlined : Icons.description_outlined,
-        size: 18,
-        color: missing ? Theme.of(context).colorScheme.error : null,
-      ),
-      title: Text(
-        file.path.split(Platform.pathSeparator).last,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        missing ? 'Missing  ${file.parent.path}' : file.parent.path,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: IconButton(
-        tooltip: 'Remove from recent scenes',
-        onPressed: onRemove,
-        icon: const Icon(Icons.close, size: 16),
-      ),
-      onTap: onOpen,
     );
   }
 }

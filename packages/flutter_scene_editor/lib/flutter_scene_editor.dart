@@ -33,6 +33,22 @@ export 'src/materials/fmat_library.dart'
         FmatToolchain,
         findFmatToolchain,
         fmatToolchainForInstallation;
+// The launcher: the project gallery the editor opens to.
+export 'src/launcher/project_covers.dart'
+    show ProjectCoverStore, coverKey, placeholderHue;
+export 'src/launcher/project_launcher.dart'
+    show LauncherTab, ProjectCard, ProjectCover, ProjectLauncher;
+export 'src/launcher/project_library.dart'
+    show
+        ProjectEntry,
+        ProjectLibrary,
+        ProjectSort,
+        buildProjectLibrary,
+        describeAge,
+        projectDisplayName,
+        readProjectEntry,
+        scanForProjects;
+
 export 'src/mcp/render_graph_tools.dart' show RenderGraphMcp;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/panels/console_panel.dart' show ConsolePanel;
