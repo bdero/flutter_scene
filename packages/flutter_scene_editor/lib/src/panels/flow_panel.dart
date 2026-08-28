@@ -43,6 +43,17 @@ class _FlowPanelState extends State<FlowPanel> {
   FlowGraph? _graph;
   LocalId? _graphOwner;
 
+  /// The history position the loaded graph came from.
+  ///
+  /// An undo reverts the document but has no way to reach into the canvas's
+  /// own copy, so the copy is dropped whenever the cursor moves somewhere it
+  /// did not put it. Without this, undoing a wire leaves it on screen.
+  int _graphCursor = -1;
+
+  /// Set across a commit, so the reload check does not throw away the graph
+  /// the panel just wrote.
+  bool _committing = false;
+
   Offset _pan = const Offset(40, 40);
   double _zoom = 1;
 
@@ -60,12 +71,14 @@ class _FlowPanelState extends State<FlowPanel> {
   void initState() {
     super.initState();
     _ctrl.selection.addListener(_onSelectionChanged);
+    _ctrl.history.addListener(_onSelectionChanged);
     _ctrl.addListener(_onSelectionChanged);
   }
 
   @override
   void dispose() {
     _ctrl.selection.removeListener(_onSelectionChanged);
+    _ctrl.history.removeListener(_onSelectionChanged);
     _ctrl.removeListener(_onSelectionChanged);
     super.dispose();
   }
@@ -73,15 +86,19 @@ class _FlowPanelState extends State<FlowPanel> {
   void _onSelectionChanged() {
     if (!mounted) return;
     final id = _ctrl.selection.primary;
-    if (id != _graphOwner) {
+    final cursor = _ctrl.history.cursor;
+    final movedElsewhere =
+        !_committing && _graph != null && cursor != _graphCursor;
+    if (id != _graphOwner || movedElsewhere) {
       setState(() {
         _graph = null;
         _graphOwner = id;
-        _selected = null;
+        _graphCursor = cursor;
+        if (id != _graphOwner) _selected = null;
       });
-    } else {
-      setState(() {});
+      return;
     }
+    setState(() {});
   }
 
   /// The selected node's flow component spec, or null.
@@ -107,6 +124,7 @@ class _FlowPanelState extends State<FlowPanel> {
         ? _tryRead(source.value)
         : FlowGraph();
     _graph = loaded;
+    _graphCursor = _ctrl.history.cursor;
     return loaded;
   }
 
@@ -123,11 +141,17 @@ class _FlowPanelState extends State<FlowPanel> {
     final graph = _graph;
     final view = _componentView;
     if (graph == null || view == null) return;
-    await _ctrl.run('setComponentProperties', {
-      'nodeId': view.nodeId.toToken(),
-      'componentType': 'flow',
-      'properties': {'graph': StringValue(writeFlowGraph(graph))},
-    });
+    _committing = true;
+    try {
+      await _ctrl.run('setComponentProperties', {
+        'nodeId': view.nodeId.toToken(),
+        'componentType': 'flow',
+        'properties': {'graph': StringValue(writeFlowGraph(graph))},
+      });
+    } finally {
+      _committing = false;
+      _graphCursor = _ctrl.history.cursor;
+    }
   }
 
   Future<void> _addFlowComponent() async {
