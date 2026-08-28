@@ -7,6 +7,8 @@
 /// [registerBuiltinCommands].
 library;
 
+import 'dart:convert';
+
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart' hide NodeChange;
@@ -1132,6 +1134,92 @@ final createTerrainGeometry = CommandEntry(
       name: 'Create terrain',
       records: [_addResourceRecord(resource)],
     );
+  },
+);
+
+/// Replaces a terrain's height samples.
+///
+/// One command per stroke rather than per pointer move: a stroke is many
+/// brush dabs and only one thing the user did, so this takes the finished
+/// samples rather than a brush to replay. Undo is the previous heightmap,
+/// which is the whole map — heightmaps are the one thing in a scene big
+/// enough for that to be worth saying out loud.
+final setTerrainHeights = CommandEntry(
+  name: 'setTerrainHeights',
+  doc: "Replace a terrain geometry's height samples.",
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'resourceId',
+      type: ParamType.resourceRef,
+      label: 'Terrain',
+    ),
+    ParamSpec(name: 'heights', type: ParamType.string, label: 'Samples'),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final terrain = resource.procedural;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a terrain');
+    }
+
+    final bytes = base64Decode(requireString(params, 'heights'));
+    final expected = terrain.columns * terrain.rows * 4;
+    if (bytes.lengthInBytes != expected) {
+      throw CommandException(
+        'Expected $expected bytes for a ${terrain.columns} by '
+        '${terrain.rows} terrain, got ${bytes.lengthInBytes}',
+      );
+    }
+
+    // The first stroke on a generated terrain mints its heightmap; later
+    // ones replace the bytes in the payload it already has.
+    final payloadId = terrain.heights ?? ctx.document.newId();
+    final records = <ChangeRecord>[
+      ChangeRecord(
+        targetId: payloadId,
+        slot: ChangeSlot.poolPayload,
+        oldValue: PayloadChange(ctx.document.payload(payloadId)),
+        newValue: PayloadChange(
+          PayloadSpec(
+            payloadId,
+            encoding: PayloadEncoding.floats,
+            length: terrain.columns * terrain.rows,
+            bytes: bytes,
+          ),
+        ),
+      ),
+    ];
+    if (terrain.heights == null) {
+      records.add(
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              procedural: TerrainGeometrySpec(
+                width: terrain.width,
+                depth: terrain.depth,
+                columns: terrain.columns,
+                rows: terrain.rows,
+                amplitude: terrain.amplitude,
+                frequency: terrain.frequency,
+                octaves: terrain.octaves,
+                seed: terrain.seed,
+                heights: payloadId,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Transaction(name: 'Sculpt terrain', records: records);
   },
 );
 
@@ -3242,6 +3330,7 @@ final List<CommandEntry> builtinCommands = [
   createIcosphereGeometry,
   createWedgeGeometry,
   createTerrainGeometry,
+  setTerrainHeights,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,
