@@ -1193,7 +1193,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (label: 'Disc', command: 'createDiscGeometry'),
     (label: 'Torus', command: 'createTorusGeometry'),
     (label: 'Icosphere', command: 'createIcosphereGeometry'),
-    (label: 'Terrain', command: 'createTerrainGeometry'),
+    // No Terrain entry: a plane becomes terrain the moment it is sculpted,
+    // so a second object that is only a plane with hills already on it is one
+    // concept too many.
   ];
 
   // Adds a sub-scene as a prefab instance node. The source is stored relative

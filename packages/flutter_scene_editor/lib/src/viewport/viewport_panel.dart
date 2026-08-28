@@ -311,10 +311,40 @@ class _ViewportPanelState extends State<ViewportPanel> {
     return field.raycast(ray.origin, ray.direction);
   }
 
+  /// The plane under the selection that could become terrain, if any.
+  LocalId? _sculptablePlane() {
+    final primary = _ctrl.selection.primary;
+    if (primary == null) return null;
+    return sculptablePlaneOf(
+      _ctrl.liveNode(primary),
+      (geometry) => resourceOrigin(geometry)?.resourceId,
+    )?.resourceId;
+  }
+
   /// Starts a stroke when the tool is armed and the pointer is over terrain.
   bool _beginSculpt(Offset position, Size viewSize) {
     final target = _terrainTarget();
-    if (target == null) return false;
+    if (target == null) {
+      // A plane is not sculptable until it has a grid to push around. Convert
+      // it as its own undoable step, so it shows in history as the moment the
+      // sheet became ground, and sculpt from the next press.
+      final plane = _sculptablePlane();
+      if (plane == null) return false;
+      unawaited(
+        _ctrl
+            .run('makeTerrainSculptable', {'resourceId': plane.toToken()})
+            .then((_) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Plane is now sculptable. Drag to shape it.'),
+                  ),
+                );
+              }
+            }),
+      );
+      return true;
+    }
     if (_groundUnder(position, viewSize, target.geometry.field) == null) {
       return false;
     }
@@ -1239,7 +1269,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             mode: _gizmo.mode,
                             onChanged: _setMode,
                             sculpting: _terrainTool.active,
-                            canSculpt: _terrainTarget() != null,
+                            canSculpt:
+                                _terrainTarget() != null ||
+                                _sculptablePlane() != null,
                             onSculptingChanged: (value) => setState(() {
                               _terrainTool.active = value;
                               // The two brushes both want the primary button,

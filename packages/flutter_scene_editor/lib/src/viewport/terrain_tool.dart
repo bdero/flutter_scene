@@ -99,6 +99,27 @@ class TerrainStroke {
   String encodedHeights() => base64Encode(geometry.field.toBytes());
 }
 
+/// A plane on [node] that could be made sculptable, with its resource, or
+/// null when there is none.
+///
+/// Sculpting starts from a plane: a flat sheet is the thing anyone reaches
+/// for first, and a separate terrain object to remember is a worse story than
+/// pushing the sheet you already have.
+({LocalId resourceId})? sculptablePlaneOf(
+  Node? node,
+  LocalId? Function(Object geometry) resourceIdOf,
+) {
+  final primitives = node?.mesh?.primitives;
+  if (primitives == null || primitives.isEmpty) return null;
+  for (final primitive in primitives) {
+    final geometry = primitive.geometry;
+    if (geometry is TerrainGeometry) return null;
+    final id = resourceIdOf(geometry);
+    if (id != null) return (resourceId: id);
+  }
+  return null;
+}
+
 /// The terrain under [node], with the resource its samples belong to, or null
 /// when that node is not terrain.
 ///
