@@ -1695,7 +1695,18 @@ pub unsafe extern "C" fn fsr_collider_trimesh(
             ]
         })
         .collect();
-    let Ok(builder) = ColliderBuilder::trimesh(verts, tris) else {
+    // MERGE_DUPLICATE_VERTICES drops the copies a vertex split at a UV or
+    // normal seam left behind, which the collider does not need.
+    // FIX_INTERNAL_EDGES stops a body crossing the mesh from catching on the
+    // shared edge between adjacent triangles and picking up a contact normal
+    // pointing the wrong way, which stops or launches a character that should
+    // slide. Both change the cooked shape rather than the Dart-side data, so
+    // they apply to every triangle mesh rather than hiding behind a knob.
+    let Ok(builder) = ColliderBuilder::trimesh_with_flags(
+        verts,
+        tris,
+        TriMeshFlags::MERGE_DUPLICATE_VERTICES | TriMeshFlags::FIX_INTERNAL_EDGES,
+    ) else {
         return u64::MAX;
     };
     let pose = Pose::from_parts(Vector::new(px, py, pz), Rotation::from_xyzw(qx, qy, qz, qw));
