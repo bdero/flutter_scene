@@ -531,6 +531,7 @@ bool _skySourceTypeMatches(SkySource live, SkySourceSpec spec) =>
       EnvironmentSkySpec() => live is EnvironmentSkySource,
       GradientSkySpec() => live is GradientSkySource,
       PhysicalSkySpec() => live is PhysicalSkySource,
+      WeatherSkySpec() => live is WeatherSkySource,
       FmatSkySpec(:final asset) =>
         live is PreprocessedSky && fmatSourcePathOf(live) == asset.key,
     };
@@ -563,6 +564,32 @@ void _applySkySourceInPlace(SkySource live, SkySourceSpec spec) {
         live.turbidity = s.turbidity;
         live.groundColor.setFrom(s.groundColor);
         live.energy = s.energy;
+      }
+    case WeatherSkySpec s:
+      if (live is WeatherSkySource) {
+        live.sunDirection.setFrom(s.sunDirection);
+        live.sunAngularRadius = s.sunAngularRadius;
+        live.rayleighCoefficient = s.rayleighCoefficient;
+        live.rayleighColor.setFrom(s.rayleighColor);
+        live.mieCoefficient = s.mieCoefficient;
+        live.mieEccentricity = s.mieEccentricity;
+        live.mieColor.setFrom(s.mieColor);
+        live.turbidity = s.turbidity;
+        live.groundColor.setFrom(s.groundColor);
+        live.energy = s.energy;
+        live.coverage = s.coverage;
+        live.density = s.density;
+        live.altitude = s.altitude;
+        live.detail = s.detail;
+        live.softness = s.softness;
+        live.seed = s.seed;
+        live.wind.setFrom(s.wind);
+        live.cloudColor.setFrom(s.cloudColor);
+        live.cloudShading = s.cloudShading;
+        // The flash and the drift are runtime state a driver owns, not
+        // authored values: reapplying the spec must not blank a strike or
+        // rewind the sky mid-storm.
+        live.stormDarkening = s.stormDarkening;
       }
     case FmatSkySpec s:
       if (live is PreprocessedSky) {
@@ -936,6 +963,29 @@ Future<SkySource?> _realizeSkySource(
         groundColor: s.groundColor.clone(),
         energy: s.energy,
       );
+    case WeatherSkySpec s:
+      return WeatherSkySource(
+        sunDirection: s.sunDirection.clone(),
+        sunAngularRadius: s.sunAngularRadius,
+        rayleighCoefficient: s.rayleighCoefficient,
+        rayleighColor: s.rayleighColor.clone(),
+        mieCoefficient: s.mieCoefficient,
+        mieEccentricity: s.mieEccentricity,
+        mieColor: s.mieColor.clone(),
+        turbidity: s.turbidity,
+        groundColor: s.groundColor.clone(),
+        energy: s.energy,
+        coverage: s.coverage,
+        density: s.density,
+        altitude: s.altitude,
+        detail: s.detail,
+        softness: s.softness,
+        seed: s.seed,
+        wind: s.wind.clone(),
+        cloudColor: s.cloudColor.clone(),
+        cloudShading: s.cloudShading,
+        stormDarkening: s.stormDarkening,
+      );
     case FmatSkySpec s:
       try {
         // Prefer the disk loader (the editor compiles the source on demand);
@@ -982,6 +1032,34 @@ SkySourceSpec? _serializeSkySource(SkySource source) {
       sunDirection: source.sunDirection.clone(),
       sunColor: source.sunColor.clone(),
       sunSharpness: source.sunSharpness,
+    );
+  }
+  // Checked before PhysicalSkySource only in the sense that neither extends
+  // the other; both are ShaderSkySource siblings.
+  if (source is WeatherSkySource) {
+    return WeatherSkySpec(
+      sunDirection: source.sunDirection.clone(),
+      sunAngularRadius: source.sunAngularRadius,
+      rayleighCoefficient: source.rayleighCoefficient,
+      rayleighColor: source.rayleighColor.clone(),
+      mieCoefficient: source.mieCoefficient,
+      mieEccentricity: source.mieEccentricity,
+      mieColor: source.mieColor.clone(),
+      turbidity: source.turbidity,
+      groundColor: source.groundColor.clone(),
+      energy: source.energy,
+      coverage: source.coverage,
+      density: source.density,
+      altitude: source.altitude,
+      detail: source.detail,
+      softness: source.softness,
+      seed: source.seed,
+      wind: source.wind.clone(),
+      cloudColor: source.cloudColor.clone(),
+      cloudShading: source.cloudShading,
+      // The flash is transient: a scene saved mid-strike must not reopen
+      // with a white sky frozen on it.
+      stormDarkening: source.stormDarkening,
     );
   }
   if (source is PhysicalSkySource) {

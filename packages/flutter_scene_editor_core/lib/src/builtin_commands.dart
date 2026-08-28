@@ -2187,6 +2187,7 @@ void _applyLookSkybox(
   final sameType =
       (sky == 'gradient' && current is GradientSkySpec) ||
       (sky == 'physical' && current is PhysicalSkySpec) ||
+      (sky == 'weather' && current is WeatherSkySpec) ||
       (sky == 'environment' && current is EnvironmentSkySpec) ||
       (sky == 'fmat' &&
           current is FmatSkySpec &&
@@ -2217,7 +2218,11 @@ void _applyLookSkybox(
       : SkyboxSpec(skySource, intensity: old.skybox?.intensity ?? 1.0);
   // Procedural and shader skies can drive image-based lighting (a shader sky
   // realizes as a ShaderSkySource).
-  final canLight = sky == 'gradient' || sky == 'physical' || sky == 'fmat';
+  final canLight =
+      sky == 'gradient' ||
+      sky == 'physical' ||
+      sky == 'weather' ||
+      sky == 'fmat';
   final priorEnv = old.skyEnvironment;
   next.skyEnvironment = (lightScene && canLight)
       ? SkyEnvironmentSpec(
@@ -2366,6 +2371,35 @@ SkySourceSpec _skySourceFrom(
       groundColor: vec('groundColor', p.groundColor),
       energy: dbl('energy', p.energy),
     ),
+    WeatherSkySpec w => WeatherSkySpec(
+      sunDirection: vec('sunDirection', w.sunDirection),
+      sunAngularRadius: dbl('sunAngularRadius', w.sunAngularRadius),
+      rayleighCoefficient: dbl('rayleighCoefficient', w.rayleighCoefficient),
+      rayleighColor: vec('rayleighColor', w.rayleighColor),
+      mieCoefficient: dbl('mieCoefficient', w.mieCoefficient),
+      mieEccentricity: dbl('mieEccentricity', w.mieEccentricity),
+      mieColor: vec('mieColor', w.mieColor),
+      turbidity: dbl('turbidity', w.turbidity),
+      groundColor: vec('groundColor', w.groundColor),
+      energy: dbl('energy', w.energy),
+      coverage: dbl('coverage', w.coverage),
+      density: dbl('density', w.density),
+      altitude: dbl('altitude', w.altitude),
+      detail: dbl('detail', w.detail),
+      softness: dbl('softness', w.softness),
+      seed: switch (overrides['seed']) {
+        IntValue(:final value) => value,
+        DoubleValue(:final value) => value.round(),
+        _ => w.seed,
+      },
+      wind: Vector2(
+        dbl('windX', w.wind.x),
+        dbl('windY', w.wind.y),
+      ),
+      cloudColor: vec('cloudColor', w.cloudColor),
+      cloudShading: dbl('cloudShading', w.cloudShading),
+      stormDarkening: dbl('stormDarkening', w.stormDarkening),
+    ),
     EnvironmentSkySpec e => EnvironmentSkySpec(
       blurriness: dbl('blurriness', e.blurriness),
     ),
@@ -2376,6 +2410,7 @@ SkySourceSpec _skySourceFrom(
 SkySourceSpec? _defaultSkySource(String type) => switch (type) {
   'gradient' => GradientSkySpec(),
   'physical' => PhysicalSkySpec(),
+  'weather' => WeatherSkySpec(),
   'environment' => EnvironmentSkySpec(),
   _ => null,
 };
@@ -2383,10 +2418,12 @@ SkySourceSpec? _defaultSkySource(String type) => switch (type) {
 Vector3? _specSunDirection(SkySourceSpec? source) => switch (source) {
   GradientSkySpec(:final sunDirection) => sunDirection,
   PhysicalSkySpec(:final sunDirection) => sunDirection,
+  WeatherSkySpec(:final sunDirection) => sunDirection,
   _ => null,
 };
 
-/// Sets the scene skybox (`none`/`environment`/`gradient`/`physical`) and,
+/// Sets the scene skybox
+/// (`none`/`environment`/`gradient`/`physical`/`weather`) and,
 /// when [lightScene] and a procedural sky are chosen, binds that sky as the
 /// scene's image-based lighting. Choosing the type the scene already has keeps
 /// its tuned parameters; switching type starts from that type's defaults (the

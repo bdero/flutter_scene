@@ -227,6 +227,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_sky_physical.frag"
   },
+  "SkyWeatherFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_sky_weather.frag"
+  },
   "SplatsVertex": {
     "type": "vertex",
     "file": "shaders/flutter_scene_splats.vert"

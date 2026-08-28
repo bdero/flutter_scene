@@ -162,6 +162,7 @@ export 'package:scene/scene.dart'
         PayloadEncoding,
         PayloadSpec,
         PhysicalSkySpec,
+        WeatherSkySpec,
         PlaneGeometrySpec,
         PrefabInstanceSpec,
         ProceduralGeometry,

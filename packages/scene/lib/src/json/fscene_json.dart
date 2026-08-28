@@ -644,6 +644,29 @@ Object encodeSkySource(SkySourceSpec source) => switch (source) {
     'groundColor': _vec3Json(s.groundColor),
     'energy': s.energy,
   },
+  WeatherSkySpec s => {
+    'type': 'weather',
+    'sunDirection': _vec3Json(s.sunDirection),
+    'sunAngularRadius': s.sunAngularRadius,
+    'rayleighCoefficient': s.rayleighCoefficient,
+    'rayleighColor': _vec3Json(s.rayleighColor),
+    'mieCoefficient': s.mieCoefficient,
+    'mieEccentricity': s.mieEccentricity,
+    'mieColor': _vec3Json(s.mieColor),
+    'turbidity': s.turbidity,
+    'groundColor': _vec3Json(s.groundColor),
+    'energy': s.energy,
+    'coverage': s.coverage,
+    'density': s.density,
+    'altitude': s.altitude,
+    'detail': s.detail,
+    'softness': s.softness,
+    'seed': s.seed,
+    'wind': [s.wind.x, s.wind.y],
+    'cloudColor': _vec3Json(s.cloudColor),
+    'cloudShading': s.cloudShading,
+    'stormDarkening': s.stormDarkening,
+  },
 };
 
 List<double> _vec3Json(Vector3 v) => [v.x, v.y, v.z];
@@ -1661,6 +1684,44 @@ SkySourceSpec? _decodeSkySource(Object? json) {
       if (m['turbidity'] != null) s.turbidity = _d(m['turbidity']);
       _setVec3(m['groundColor'], (v) => s.groundColor = v);
       if (m['energy'] != null) s.energy = _d(m['energy']);
+      return s;
+    case 'weather':
+      final s = WeatherSkySpec();
+      _setVec3(m['sunDirection'], (v) => s.sunDirection = v);
+      if (m['sunAngularRadius'] != null) {
+        s.sunAngularRadius = _d(m['sunAngularRadius']);
+      }
+      if (m['rayleighCoefficient'] != null) {
+        s.rayleighCoefficient = _d(m['rayleighCoefficient']);
+      }
+      _setVec3(m['rayleighColor'], (v) => s.rayleighColor = v);
+      if (m['mieCoefficient'] != null) {
+        s.mieCoefficient = _d(m['mieCoefficient']);
+      }
+      if (m['mieEccentricity'] != null) {
+        s.mieEccentricity = _d(m['mieEccentricity']);
+      }
+      _setVec3(m['mieColor'], (v) => s.mieColor = v);
+      if (m['turbidity'] != null) s.turbidity = _d(m['turbidity']);
+      _setVec3(m['groundColor'], (v) => s.groundColor = v);
+      if (m['energy'] != null) s.energy = _d(m['energy']);
+      if (m['coverage'] != null) s.coverage = _d(m['coverage']);
+      if (m['density'] != null) s.density = _d(m['density']);
+      if (m['altitude'] != null) s.altitude = _d(m['altitude']);
+      if (m['detail'] != null) s.detail = _d(m['detail']);
+      if (m['softness'] != null) s.softness = _d(m['softness']);
+      if (m['seed'] is num) s.seed = (m['seed'] as num).toInt();
+      final wind = m['wind'];
+      if (wind is List && wind.length >= 2) {
+        s.wind = Vector2(_d(wind[0]), _d(wind[1]));
+      }
+      _setVec3(m['cloudColor'], (v) => s.cloudColor = v);
+      if (m['cloudShading'] != null) {
+        s.cloudShading = _d(m['cloudShading']);
+      }
+      if (m['stormDarkening'] != null) {
+        s.stormDarkening = _d(m['stormDarkening']);
+      }
       return s;
     default:
       return null;

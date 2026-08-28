@@ -356,7 +356,8 @@ export 'src/widget_texture.dart'
 export 'src/shaders.dart' show baseShaderLibrary, loadBaseShaderLibrary;
 export 'src/skin.dart' show Skin;
 export 'src/sky_environment.dart' show SkyEnvironment, SkyEnvironmentRefresh;
-export 'src/sky_sources.dart' show GradientSkySource, PhysicalSkySource;
+export 'src/sky_sources.dart'
+    show GradientSkySource, PhysicalSkySource, WeatherSkySource;
 export 'src/skybox.dart'
     show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox, SunSky;
 export 'src/sun_light.dart' show SunLight;

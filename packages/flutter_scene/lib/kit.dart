@@ -34,6 +34,8 @@ export 'src/kit/environment/day_night_cycle_component.dart'
     show AtmosphericLighting, DayNightCycleComponent;
 export 'src/kit/environment/floating_motion_component.dart'
     show FloatingMotionComponent;
+export 'src/kit/environment/lightning_component.dart'
+    show LightningComponent, LightningStrike, sunDirectionForHour;
 export 'src/kit/environment/water_component.dart'
     show WaterComponent, WaterStyle, WaterTraversal;
 export 'src/kit/environment/water_surface_component.dart'

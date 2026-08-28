@@ -42,6 +42,7 @@ export 'src/specs.dart'
         PayloadEnvironment,
         PayloadSpec,
         PhysicalSkySpec,
+        WeatherSkySpec,
         PlaneGeometrySpec,
         MemberComponent,
         PrefabInstanceSpec,

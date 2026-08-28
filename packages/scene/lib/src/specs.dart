@@ -1553,6 +1553,100 @@ class PhysicalSkySpec extends SkySourceSpec {
   double energy;
 }
 
+/// The built-in daylight sky with a procedural cloud layer and storm
+/// controls.
+/// {@category Documents}
+class WeatherSkySpec extends SkySourceSpec {
+  /// Creates the spec with the runtime defaults.
+  WeatherSkySpec({
+    Vector3? sunDirection,
+    this.sunAngularRadius = 0.0175,
+    this.rayleighCoefficient = 2.0,
+    Vector3? rayleighColor,
+    this.mieCoefficient = 0.005,
+    this.mieEccentricity = 0.8,
+    Vector3? mieColor,
+    this.turbidity = 10.0,
+    Vector3? groundColor,
+    this.energy = 1.0,
+    this.coverage = 0.45,
+    this.density = 0.95,
+    this.altitude = 1.6,
+    this.detail = 0.5,
+    this.softness = 0.12,
+    this.seed = 1337,
+    Vector2? wind,
+    Vector3? cloudColor,
+    this.cloudShading = 0.85,
+    this.stormDarkening = 0.0,
+  }) : sunDirection = sunDirection ?? Vector3(0.4, 0.5, 0.6),
+       rayleighColor = rayleighColor ?? Vector3(0.26, 0.41, 0.58),
+       mieColor = mieColor ?? Vector3(0.69, 0.73, 0.81),
+       groundColor = groundColor ?? Vector3(0.12, 0.12, 0.13),
+       wind = wind ?? Vector2(0.35, 0.1),
+       cloudColor = cloudColor ?? Vector3(1.0, 1.0, 1.02);
+
+  /// Direction toward the sun.
+  Vector3 sunDirection;
+
+  /// Angular radius of the sun disk, in radians.
+  double sunAngularRadius;
+
+  /// Strength of molecular (Rayleigh) scattering.
+  double rayleighCoefficient;
+
+  /// Wavelength tint of the Rayleigh term.
+  Vector3 rayleighColor;
+
+  /// Strength of aerosol (Mie) scattering.
+  double mieCoefficient;
+
+  /// Forward-scattering eccentricity of the Mie term.
+  double mieEccentricity;
+
+  /// Wavelength tint of the Mie term.
+  Vector3 mieColor;
+
+  /// Aerosol density.
+  double turbidity;
+
+  /// The color below the horizon.
+  Vector3 groundColor;
+
+  /// Overall output multiplier.
+  double energy;
+
+  /// How much of the sky the clouds take, `0` clear to `1` overcast.
+  double coverage;
+
+  /// How opaque the clouds are where they are thickest.
+  double density;
+
+  /// How high the cloud layer sits in the dome projection.
+  double altitude;
+
+  /// Extra noise octaves, `0` to `1`.
+  double detail;
+
+  /// How wide the transition from clear sky to cloud is.
+  double softness;
+
+  /// The cloud noise seed.
+  int seed;
+
+  /// Layer-space cloud drift per second.
+  Vector2 wind;
+
+  /// The colour lit cloud tops take.
+  Vector3 cloudColor;
+
+  /// How far a cloud's shadowed underside darkens.
+  double cloudShading;
+
+  /// How overcast the sky is, `0` none to `1` full gloom.
+  double stormDarkening;
+}
+
 /// The stage skybox: the visible background drawn behind all geometry.
 /// {@category Documents}
 class SkyboxSpec {
