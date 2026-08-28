@@ -763,9 +763,11 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.components.isNotEmpty)
       'components': [for (final c in n.components) _encodeComponent(c, idKey)],
     if (n.layers != 1) 'layers': n.layers,
+    if (n.lightChannelMask != 0xFF) 'lightChannelMask': n.lightChannelMask,
     if (n.skin != null) 'skin': idKey(n.skin!),
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
     if (!n.visible) 'visible': false,
+    if (!n.raycastable) 'raycastable': false,
   };
 }
 
@@ -981,11 +983,13 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
       _decodeComponent(Map<String, dynamic>.from(c as Map)),
   ],
   layers: json['layers'] as int? ?? 1,
+  lightChannelMask: json['lightChannelMask'] as int? ?? 0xFF,
   skin: json['skin'] != null ? LocalId.parse(json['skin'] as String) : null,
   instance: json['instance'] != null
       ? _decodeInstance(Map<String, dynamic>.from(json['instance'] as Map))
       : null,
   visible: json['visible'] as bool? ?? true,
+  raycastable: json['raycastable'] as bool? ?? true,
 );
 
 TransformSpec _decodeTransform(Map<String, dynamic> json) {

@@ -121,7 +121,6 @@ base class Node implements SceneGraph {
   /// inherited by children.
   int layers = kRenderLayerDefault;
 
-  // TODO(fscene): serialize this mask (NodeSpec field + json + diff).
   /// The light channels this node's meshes occupy, an 8-bit bitmask. A light
   /// reaches them only when its own channel mask intersects this one
   /// (`light.channelMask & lightChannelMask != 0`), so a light can be aimed at
@@ -161,7 +160,6 @@ base class Node implements SceneGraph {
   /// Disable for geometry that renders but should be transparent to rays
   /// (effects, decals); it then neither blocks nor receives picks. Distinct
   /// from [visible]: invisible nodes are already skipped by default.
-  // TODO(fscene): serialize this flag (NodeSpec field + json + diff).
   bool raycastable = true;
 
   Matrix4 _localTransform;

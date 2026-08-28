@@ -123,7 +123,9 @@ Node _realizeWith(
     final node = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..visible = spec.visible,
+        ..lightChannelMask = spec.lightChannelMask
+        ..visible = spec.visible
+        ..raycastable = spec.raycastable,
       spec.id,
     );
     applyTransformSpec(node, spec.transform);
@@ -269,9 +271,11 @@ NodeSpec _serializeNode(
         : MatrixTransform(node.localTransform.clone()),
     components: components,
     layers: node.layers,
+    lightChannelMask: node.lightChannelMask,
     skin: _serializeSkin(node.skin, document, context, ids),
     instance: lazyInstance,
     visible: node.visible,
+    raycastable: node.raycastable,
   );
   document.addNode(spec);
 

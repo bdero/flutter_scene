@@ -224,9 +224,11 @@ class NodeSpec {
     List<LocalId>? children,
     List<ComponentSpec>? components,
     this.layers = 1,
+    this.lightChannelMask = 0xFF,
     this.skin,
     this.instance,
     this.visible = true,
+    this.raycastable = true,
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
        components = components ?? [];
@@ -249,6 +251,11 @@ class NodeSpec {
   /// The render-layer bitmask (defaults to layer 0).
   int layers;
 
+  /// The light-channel bitmask, 8 bits (defaults to every channel). A light
+  /// reaches this node's meshes only where its own channel mask intersects
+  /// this one.
+  int lightChannelMask;
+
   /// The skin bound to this node, or null.
   LocalId? skin;
 
@@ -258,6 +265,10 @@ class NodeSpec {
   /// Whether this node (and so its subtree) renders. Hidden nodes still
   /// realize and tick; only drawing is skipped.
   bool visible;
+
+  /// Whether scene raycasts test this node's meshes (defaults to true).
+  /// Distinct from [visible]: a hidden node is already skipped by default.
+  bool raycastable;
 }
 
 /// An axis-aligned bounding box in a resource's local space.

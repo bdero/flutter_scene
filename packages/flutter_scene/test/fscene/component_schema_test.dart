@@ -232,6 +232,93 @@ void main() {
     );
   });
 
+  test('every light carries its channel mask', () {
+    for (final type in [
+      'directionalLight',
+      'pointLight',
+      'spotLight',
+      'rectAreaLight',
+    ]) {
+      final codec = registry.codecFor(type)!;
+      final def = codec.propertySchema.firstWhere(
+        (d) => d.name == 'channelMask',
+        orElse: () => fail('$type has no channelMask'),
+      );
+      expect(def.kind, ComponentPropertyKind.integer);
+      expect((def.defaultValue! as IntValue).value, 0xFF);
+    }
+    // The caster mask is directional-only: no other light renders cascades.
+    for (final type in ['pointLight', 'spotLight', 'rectAreaLight']) {
+      expect(
+        registry.codecFor(type)!.propertySchema.map((d) => d.name),
+        isNot(contains('shadowCasterChannelMask')),
+      );
+    }
+  });
+
+  test('channel masks round-trip as a delta from the default', () {
+    final codec = registry.codecFor('directionalLight')!;
+    final doc = SceneDocument();
+    final component = codec.realize(
+      ComponentSpec(
+        'directionalLight',
+        properties: {
+          'channelMask': const IntValue(0x03),
+          'shadowCasterChannelMask': const IntValue(0x01),
+        },
+      ),
+      RealizeContext(doc),
+    )!;
+    final spec = codec.serialize(component, SerializeContext(doc))!;
+    expect((spec.properties['channelMask']! as IntValue).value, 0x03);
+    expect(
+      (spec.properties['shadowCasterChannelMask']! as IntValue).value,
+      0x01,
+    );
+
+    // A light left on every channel writes nothing.
+    final plain = codec.realize(
+      ComponentSpec('directionalLight'),
+      RealizeContext(doc),
+    )!;
+    final plainSpec = codec.serialize(plain, SerializeContext(doc))!;
+    expect(plainSpec.properties, isNot(contains('channelMask')));
+    expect(
+      plainSpec.properties,
+      isNot(contains('shadowCasterChannelMask')),
+    );
+  });
+
+  test('the pinned first cascade bound distinguishes unset from zero', () {
+    final codec = registry.codecFor('directionalLight')!;
+    final doc = SceneDocument();
+
+    // Unset: the key is absent, not a zero that would collapse cascade 0.
+    final auto = codec.realize(
+      ComponentSpec('directionalLight'),
+      RealizeContext(doc),
+    )!;
+    final autoSpec = codec.serialize(auto, SerializeContext(doc))!;
+    expect(autoSpec.properties, isNot(contains('firstCascadeFarBound')));
+
+    final pinned = codec.realize(
+      ComponentSpec(
+        'directionalLight',
+        properties: {
+          'firstCascadeFarBound': const DoubleValue(12.5),
+          'cascadeOverlap': const DoubleValue(0.25),
+        },
+      ),
+      RealizeContext(doc),
+    )!;
+    final spec = codec.serialize(pinned, SerializeContext(doc))!;
+    expect(
+      (spec.properties['firstCascadeFarBound']! as DoubleValue).value,
+      12.5,
+    );
+    expect((spec.properties['cascadeOverlap']! as DoubleValue).value, 0.25);
+  });
+
   test('spot lights declare caster faces and angle constraints', () {
     final spot = registry.codecFor('spotLight')!;
     final names = spot.propertySchema.map((d) => d.name).toSet();

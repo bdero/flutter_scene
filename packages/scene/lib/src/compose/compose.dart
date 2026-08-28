@@ -422,6 +422,12 @@ enum PrefabOverrideAspect {
   /// `layers`.
   layers,
 
+  /// `lightChannelMask`.
+  lightChannelMask,
+
+  /// `raycastable`.
+  raycastable,
+
   /// `transform.matrix` or `transform.trs.<field>`.
   transform,
 
@@ -442,6 +448,10 @@ PrefabOverrideAspect prefabOverrideAspect(String path) {
       return PrefabOverrideAspect.visible;
     case 'layers':
       return PrefabOverrideAspect.layers;
+    case 'lightChannelMask':
+      return PrefabOverrideAspect.lightChannelMask;
+    case 'raycastable':
+      return PrefabOverrideAspect.raycastable;
   }
   final parts = path.split('.');
   if (parts.length >= 2 && parts[0] == 'transform') {
@@ -462,6 +472,14 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
     }
     if (parts[0] == 'layers' && value is IntValue) {
       node.layers = value.value;
+      return;
+    }
+    if (parts[0] == 'lightChannelMask' && value is IntValue) {
+      node.lightChannelMask = value.value;
+      return;
+    }
+    if (parts[0] == 'raycastable' && value is BoolValue) {
+      node.raycastable = value.value;
       return;
     }
     if (parts[0] == 'visible' && value is BoolValue) {
@@ -580,9 +598,11 @@ NodeSpec _remapNode(
   children: [for (final c in node.children) remap(c)],
   components: [for (final c in node.components) _remapComponent(c, remap)],
   layers: node.layers,
+  lightChannelMask: node.lightChannelMask,
   skin: node.skin == null ? null : remap(node.skin!),
   instance: keepInstance ? node.instance : null,
   visible: node.visible,
+  raycastable: node.raycastable,
 );
 
 ComponentSpec _remapComponent(

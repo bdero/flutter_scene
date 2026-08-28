@@ -167,8 +167,6 @@ class DirectionalLight {
   /// proportionally more resolution. Used by [computeCascades].
   double shadowCascadeSplitLambda;
 
-  // TODO(fscene): expose these two through DirectionalLightCodec; the pinned
-  // bound needs a nullable number field, which the codecs have no shape for.
   /// View distance, in world units, at which the first cascade ends. `null`
   /// (the default) lets [shadowCascadeSplitLambda] place it.
   ///
@@ -253,8 +251,6 @@ class DirectionalLight {
   /// self-shadow acne.
   ShadowCasterFaces shadowCasterFaces;
 
-  // TODO(fscene): expose the channel masks through the light codecs, so an
-  // authored scene can carry them.
   /// The light channels this light illuminates, an 8-bit mask (default
   /// `0xFF`, every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on

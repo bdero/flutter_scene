@@ -26,7 +26,9 @@ class NodeChange {
     this.transform = false,
     this.name = false,
     this.layers = false,
+    this.lightChannelMask = false,
     this.visible = false,
+    this.raycastable = false,
     this.reparented = false,
     this.components = false,
     this.skin = false,
@@ -44,8 +46,14 @@ class NodeChange {
   /// The render-layer mask changed.
   final bool layers;
 
+  /// Whether the light-channel mask changed.
+  final bool lightChannelMask;
+
   /// The visibility flag changed.
   final bool visible;
+
+  /// The raycast-participation flag changed.
+  final bool raycastable;
 
   /// The node's parent changed (it moved in the hierarchy).
   final bool reparented;
@@ -141,7 +149,10 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       transform: !_transformsEqual(oldNode.transform, newNode.transform),
       name: oldNode.name != newNode.name,
       layers: oldNode.layers != newNode.layers,
+      lightChannelMask:
+          oldNode.lightChannelMask != newNode.lightChannelMask,
       visible: oldNode.visible != newNode.visible,
+      raycastable: oldNode.raycastable != newNode.raycastable,
       reparented: oldParents[id] != newParents[id],
       components:
           !_componentsEqual(oldNode.components, newNode.components) ||
@@ -157,7 +168,9 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
     if (change.transform ||
         change.name ||
         change.layers ||
+        change.lightChannelMask ||
         change.visible ||
+        change.raycastable ||
         change.reparented ||
         change.components ||
         change.skin) {

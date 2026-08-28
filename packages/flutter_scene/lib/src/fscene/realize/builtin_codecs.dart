@@ -952,6 +952,27 @@ class DirectionalLightCodec
       get: (c) => c.light.shadowCascadeSplitLambda,
       set: (c, v) => c.light.shadowCascadeSplitLambda = v,
     ),
+    ComponentField.optionalNumber(
+      'firstCascadeFarBound',
+      doc:
+          'View distance at which the first cascade ends. Absent lets '
+          'shadowCascadeSplitLambda place it.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 100)],
+      get: (c) => c.light.firstCascadeFarBound,
+      set: (c, v) => c.light.firstCascadeFarBound = v,
+    ),
+    ComponentField.number(
+      'cascadeOverlap',
+      defaultValue: 0.0,
+      doc:
+          'Fraction of each cascade tile, inward from its edge, over which '
+          'it cross-fades into the next.',
+      group: 'Shadows',
+      constraints: const [Range(0, 1), SoftRange(0, 1)],
+      get: (c) => c.light.cascadeOverlap,
+      set: (c, v) => c.light.cascadeOverlap = v,
+    ),
     ComponentField.integer(
       'shadowMapResolution',
       defaultValue: 1024,
@@ -1005,6 +1026,28 @@ class DirectionalLightCodec
       group: 'Shadows',
       get: (c) => c.light.shadowCasterFaces,
       set: (c, v) => c.light.shadowCasterFaces = v,
+    ),
+    ComponentField.integer(
+      'channelMask',
+      defaultValue: 0xFF,
+      doc:
+          'Light channels this light illuminates, an 8-bit mask. A node is '
+          'lit only where this intersects its lightChannelMask.',
+      group: 'Channels',
+      constraints: const [IntRange(0, 0xFF)],
+      get: (c) => c.light.channelMask,
+      set: (c, v) => c.light.channelMask = v,
+    ),
+    ComponentField.integer(
+      'shadowCasterChannelMask',
+      defaultValue: 0xFF,
+      doc:
+          'Light channels whose nodes render into this light\'s shadow map. '
+          'Independent of channelMask: a node can be lit without casting.',
+      group: 'Channels',
+      constraints: const [IntRange(0, 0xFF)],
+      get: (c) => c.light.shadowCasterChannelMask,
+      set: (c, v) => c.light.shadowCasterChannelMask = v,
     ),
     // Constructor-only (DirectionalLightComponent.aimed); absent means the
     // node's rotation aims the light.
@@ -1090,6 +1133,17 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
       constraints: const [Range.nonNegative(), SoftRange(0, 4)],
       get: (c) => c.light.falloffExponent,
       set: (c, v) => c.light.falloffExponent = v,
+    ),
+    ComponentField.integer(
+      'channelMask',
+      defaultValue: 0xFF,
+      doc:
+          'Light channels this light illuminates, an 8-bit mask. A node is '
+          'lit only where this intersects its lightChannelMask.',
+      group: 'Channels',
+      constraints: const [IntRange(0, 0xFF)],
+      get: (c) => c.light.channelMask,
+      set: (c, v) => c.light.channelMask = v,
     ),
   ];
 
@@ -1189,6 +1243,17 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       constraints: const [Range(0, 1.5533430342749532), AngleRadians()],
       get: (c) => c.light.outerConeAngle,
       set: (c, v) => c.light.outerConeAngle = v,
+    ),
+    ComponentField.integer(
+      'channelMask',
+      defaultValue: 0xFF,
+      doc:
+          'Light channels this light illuminates, an 8-bit mask. A node is '
+          'lit only where this intersects its lightChannelMask.',
+      group: 'Channels',
+      constraints: const [IntRange(0, 0xFF)],
+      get: (c) => c.light.channelMask,
+      set: (c, v) => c.light.channelMask = v,
     ),
     ComponentField.boolean(
       'castsShadow',
@@ -1811,6 +1876,17 @@ class RectAreaLightCodec
       constraints: const [Range.nonNegative()],
       get: (c) => c.light.range,
       set: (c, v) => c.light.range = v,
+    ),
+    ComponentField.integer(
+      'channelMask',
+      defaultValue: 0xFF,
+      doc:
+          'Light channels this light illuminates, an 8-bit mask. A node is '
+          'lit only where this intersects its lightChannelMask.',
+      group: 'Channels',
+      constraints: const [IntRange(0, 0xFF)],
+      get: (c) => c.light.channelMask,
+      set: (c, v) => c.light.channelMask = v,
     ),
   ];
 
