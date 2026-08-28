@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../shell/editor_theme.dart';
 import '../project/app_session.dart';
 import '../project/project_runner.dart';
 
@@ -57,8 +58,8 @@ class _ConsolePanelState extends State<ConsolePanel> {
     final scheme = Theme.of(context).colorScheme;
     return switch (kind) {
       ConsoleLineKind.command => scheme.primary,
-      ConsoleLineKind.error => Colors.redAccent,
-      ConsoleLineKind.status => Colors.lightGreen,
+      ConsoleLineKind.error => editorErrorColor,
+      ConsoleLineKind.status => editorSuccessColor,
       ConsoleLineKind.output => scheme.onSurface,
     };
   }
@@ -113,7 +114,10 @@ class _ConsolePanelState extends State<ConsolePanel> {
                 ? const Center(
                     child: Text(
                       'Build or Play output appears here.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: editorMutedTextColor,
+                      ),
                     ),
                   )
                 : SelectionArea(

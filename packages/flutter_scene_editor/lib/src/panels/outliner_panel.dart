@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 
+import '../shell/editor_theme.dart';
 import '../controller/editor_controller.dart';
 
 /// Scene-tree outliner panel.
@@ -68,7 +69,10 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
                   ? const Center(
                       child: Text(
                         'Empty scene',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: editorMutedTextColor,
+                        ),
                       ),
                     )
                   : ListView.builder(

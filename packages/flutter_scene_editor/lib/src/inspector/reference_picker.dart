@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
+import '../shell/editor_theme.dart';
 import '../shell/editor_dialog.dart';
 
 typedef ReferencePickerEntry = ({LocalId id, String label});
@@ -51,7 +52,7 @@ class ReferencePicker extends StatelessWidget {
     if (entries.isEmpty) {
       return Text(
         emptyLabel,
-        style: const TextStyle(fontSize: 11, color: Colors.grey),
+        style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
       );
     }
     return FButton(

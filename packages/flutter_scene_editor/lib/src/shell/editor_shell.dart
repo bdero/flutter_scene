@@ -438,7 +438,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                     const SizedBox(height: 6),
                     const Text(
                       'Written to lib/components and picked up on save.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: editorMutedTextColor,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     FTextField(

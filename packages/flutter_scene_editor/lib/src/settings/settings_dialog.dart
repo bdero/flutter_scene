@@ -507,7 +507,7 @@ class _ValidationBadge extends StatelessWidget {
           child: Icon(
             error ? Icons.error_outline : Icons.warning_amber_outlined,
             size: 13,
-            color: error ? Colors.redAccent : Colors.orangeAccent,
+            color: error ? editorErrorColor : editorWarningColor,
           ),
         );
       },

@@ -38,6 +38,10 @@ const Color editorAccentColor = _signal;
 const Color editorErrorColor = Color(0xFFE57373);
 const Color editorSuccessColor = Color(0xFF7BC67E);
 
+/// Something that needs attention but is not broken: an unused resource, a
+/// toolchain the build will limp along without.
+const Color editorWarningColor = Color(0xFFE0A84E);
+
 /// The bordered-box chrome panel lists and detail panes share.
 BoxDecoration editorPanelBox({Color color = _graphite}) => BoxDecoration(
   color: color,

@@ -253,7 +253,7 @@ class _InstallationBadge extends StatelessWidget {
           child: Icon(
             error ? Icons.error_outline : Icons.warning_amber_outlined,
             size: 12,
-            color: error ? Colors.redAccent : Colors.orangeAccent,
+            color: error ? editorErrorColor : editorWarningColor,
           ),
         );
       },
@@ -310,7 +310,7 @@ class _ConfigurationDropdown extends StatelessWidget {
                   : Icons.info_outline,
               size: 12,
               color: versionCheck.severity == VersionCheckSeverity.warning
-                  ? Colors.orangeAccent
+                  ? editorWarningColor
                   : scheme.onSurfaceVariant,
             ),
           );
@@ -461,7 +461,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
           MenuItemButton(
             child: Text(
               'Failed to list devices, $_error',
-              style: const TextStyle(color: Colors.redAccent),
+              style: const TextStyle(color: editorErrorColor),
             ),
           )
         else if (_devices == null || _devices!.isEmpty)

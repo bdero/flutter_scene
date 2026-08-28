@@ -4,6 +4,7 @@
 // structured property value).
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
+import '../shell/editor_theme.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 // ignore: implementation_imports
@@ -535,7 +536,7 @@ class _InlineNumberState extends State<_InlineNumber> {
         children: [
           Text(
             widget.label,
-            style: const TextStyle(fontSize: 9, color: Colors.grey),
+            style: const TextStyle(fontSize: 9, color: editorMutedTextColor),
           ),
           const SizedBox(width: 2),
           Expanded(
@@ -670,7 +671,7 @@ class _GradientPainter extends CustomPainter {
         final dark = (((x / cell).floor() + (y / cell).floor()) % 2) == 0;
         canvas.drawRect(
           Rect.fromLTWH(x, y, cell, cell),
-          Paint()..color = dark ? Colors.grey.shade700 : Colors.grey.shade500,
+          Paint()..color = dark ? editorLineColor : editorMutedTextColor,
         );
       }
     }

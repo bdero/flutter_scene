@@ -14,6 +14,7 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:vector_math/vector_math.dart' show Vector3;
 
+import '../shell/editor_theme.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_image_picker.dart';
 import '../assets/environment_thumbnail.dart';
@@ -51,7 +52,7 @@ class StageSection extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(0, 0, 0, 8),
           child: Text(
             'Select a node to edit it.',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
+            style: TextStyle(fontSize: 11, color: editorMutedTextColor),
           ),
         ),
         InspectorAccordion(
@@ -1370,7 +1371,7 @@ class SkySection extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               source.asset.key,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1380,7 +1381,7 @@ class SkySection extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 skyError,
-                style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+                style: const TextStyle(fontSize: 11, color: editorErrorColor),
               ),
             ),
           scalar(
@@ -1405,7 +1406,7 @@ class SkySection extends StatelessWidget {
             padding: EdgeInsets.only(top: 4),
             child: Text(
               'Sun direction',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: editorMutedTextColor),
             ),
           ),
           axis('X', sun.x, (v) => Vector3(v, sun.y, sun.z)),

@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
 import '../assets/asset_index.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_thumbnail.dart';
@@ -161,7 +162,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
                 padding: EdgeInsets.all(16),
                 child: Text(
                   'Open a project (or save the scene) to browse assets.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: editorMutedTextColor),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -505,7 +506,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         subtitle,
         style: TextStyle(
           fontSize: 11,
-          color: r.isUnused ? Colors.orange : Colors.grey,
+          color: r.isUnused ? editorWarningColor : editorMutedTextColor,
         ),
       ),
       trailing: r.isUnused
