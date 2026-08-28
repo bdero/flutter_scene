@@ -17,6 +17,7 @@ uniform FrameInfo {
 frame_info;
 
 #include <depth_bias.glsl>
+#include <normal_transform.glsl>
 
 uniform sampler2D joints_texture;
 
@@ -97,7 +98,8 @@ void main() {
   vertex.normal = skinned_normal;
   vertex.tangent = vec4(mat3(skin_matrix) * tangent.xyz, tangent.w);
   vertex.world_position = model_position.xyz;
-  vertex.world_normal = mat3(combined_transform) * in_normal;
+  vertex.world_normal =
+      WorldNormalMatrix(mat3(combined_transform)) * in_normal;
   vec3 world_tangent = mat3(combined_transform) * tangent.xyz;
   float tangent_length_squared = dot(world_tangent, world_tangent);
   float tangent_sign = determinant(mat3(combined_transform)) < 0.0
