@@ -366,8 +366,27 @@ class _ComponentSection extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           onSecondaryTapUp: (details) =>
               _showContextMenu(context, details.globalPosition),
-          child: EditorSectionHeader(
-            label: 'Component: ${component.type}',
+          child: EditorCollapsibleSection(
+            // Keyed by type so folding one component does not fold whichever
+            // component happens to take its place after a reorder.
+            key: ValueKey('component:${component.type}'),
+            label: component.type,
+            icon: componentPickerGlyph((
+              category: controller.componentSchemaFor(component.type)?.category,
+              icon: controller.componentSchemaFor(component.type)?.icon,
+              provenance: controller.foreignTypeProvenance[component.type],
+            )),
+            enabled: switch (component.properties['enabled']) {
+              BoolValue(value: final value) => value,
+              // Absent means the default, which is on.
+              _ => true,
+            },
+            onEnabledChanged: (value) => controller.setComponentPropertyRouted(
+              node.id,
+              component.type,
+              'enabled',
+              value,
+            ),
             trailing: canRemove
                 ? _IconAction(
                     icon: Icons.close,
@@ -378,12 +397,12 @@ class _ComponentSection extends StatelessWidget {
                     ),
                   )
                 : null,
+            child: _ComponentEditor(
+              node: node,
+              component: component,
+              controller: controller,
+            ),
           ),
-        ),
-        _ComponentEditor(
-          node: node,
-          component: component,
-          controller: controller,
         ),
       ],
     );
