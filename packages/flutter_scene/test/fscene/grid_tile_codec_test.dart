@@ -10,8 +10,10 @@ import 'package:flutter_scene/scene.dart'
     show Geometry, Material, Lighting, TransientWriter;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/kit/grid/grid_tiles.dart';
+import 'package:flutter_scene/src/kit/scatter/scatter_layer.dart';
 import 'package:scene/grid.dart';
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart';
 import 'package:vector_math/vector_math.dart';
 
 // Stub resources, so a layer can exist without a Flutter GPU context.
@@ -99,5 +101,50 @@ void main() {
     expect(tiles[const GridCoord(1, -2)]!.height, 0.75);
     expect(tiles[const GridCoord(1, -2)]!.yaw, 0.4);
     expect(tiles[const GridCoord(0, 0)]!.color, Vector4(1, 0, 0, 1));
+  });
+
+  group('scatter layers', () {
+    final scatterCodec = ScatterLayerCodec();
+
+    test('the type is registered and filed under Mesh', () {
+      final registry = defaultComponentRegistry();
+      expect(registry.types, contains('scatterLayer'));
+      expect(registry.codecFor('scatterLayer')!.schema.category, 'Mesh');
+    });
+
+    test('realize refuses without a resource realizer', () {
+      expect(
+        scatterCodec.realize(
+          ComponentSpec('scatterLayer'),
+          RealizeContext(SceneDocument()),
+        ),
+        isNull,
+      );
+    });
+
+    test('placements declare an editable list of objects', () {
+      // Which is what makes a painted set adjustable by hand in the
+      // inspector rather than only by the brush.
+      final def = scatterCodec.propertySchema.firstWhere(
+        (d) => d.name == 'placements',
+      );
+      expect(def.kind, ComponentPropertyKind.list);
+      expect(def.itemDef?.kind, ComponentPropertyKind.object);
+      expect(
+        def.itemDef?.objectFields?.map((f) => f.name),
+        containsAll(['position', 'yaw', 'scale']),
+      );
+    });
+
+    test('serialize declines a layer whose resources came from code', () {
+      final layer = ScatterLayer(
+        geometry: _StubGeometry(),
+        material: _StubMaterial(),
+      )..add(ScatterPlacement(position: Vector3(1, 2, 3)));
+      expect(
+        scatterCodec.serialize(layer, SerializeContext(SceneDocument())),
+        isNull,
+      );
+    });
   });
 }
