@@ -61,9 +61,11 @@ void main() {
         tipPosition: tipPosition(),
         target: target,
       );
-      final mid =
-          rootPosition() +
-          solution.root.rotated(midPosition() - rootPosition());
+      final mid = twoBoneMidAfter(
+        rootPosition: rootPosition(),
+        midPosition: midPosition(),
+        solution: solution,
+      );
       final tip = twoBoneTipAfter(
         rootPosition: rootPosition(),
         midPosition: midPosition(),
@@ -134,8 +136,11 @@ void main() {
         pole: Vector3(0.7, 0, -5),
       );
 
-      Vector3 midOf(TwoBoneSolution s) =>
-          rootPosition() + s.root.rotated(midPosition() - rootPosition());
+      Vector3 midOf(TwoBoneSolution s) => twoBoneMidAfter(
+        rootPosition: rootPosition(),
+        midPosition: midPosition(),
+        solution: s,
+      );
       // Opposite poles put the knee on opposite sides.
       expect(midOf(front).z * midOf(back).z, lessThan(0));
 
