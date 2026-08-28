@@ -2,10 +2,6 @@ import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
-import 'package:flutter_scene_editor_core/src/animation_commands.dart';
-import 'package:flutter_scene_editor_core/src/change.dart';
-import 'package:flutter_scene_editor_core/src/command.dart';
-import 'package:flutter_scene_editor_core/src/history.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 
