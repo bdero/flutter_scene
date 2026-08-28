@@ -71,7 +71,8 @@ class _ConsolePanelState extends State<ConsolePanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          padding: const EdgeInsets.fromLTRB(8, 2, 4, 2),
+          height: editorToolbarHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: Row(
             children: [

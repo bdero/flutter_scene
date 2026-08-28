@@ -1,3 +1,4 @@
+import '../shell/editor_theme.dart';
 import 'package:flutter/material.dart';
 
 import '../controller/editor_controller.dart';
@@ -72,8 +73,8 @@ class _HistoryPanelState extends State<HistoryPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          height: 36,
-          padding: const EdgeInsets.only(left: 10, right: 4),
+          height: editorToolbarHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           color: scheme.surfaceContainerHighest,
           child: Row(
             children: [
@@ -91,7 +92,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
               ),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.undo, size: 17),
+                icon: const Icon(Icons.undo, size: 16),
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 tooltip: history.canUndo
@@ -100,7 +101,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
                 onPressed: history.canUndo ? controller.undo : null,
               ),
               IconButton(
-                icon: const Icon(Icons.redo, size: 17),
+                icon: const Icon(Icons.redo, size: 16),
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 tooltip: history.canRedo

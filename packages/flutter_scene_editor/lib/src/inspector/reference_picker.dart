@@ -60,7 +60,7 @@ class ReferencePicker extends StatelessWidget {
       size: .xs,
       mainAxisAlignment: .spaceBetween,
       onPress: () => _open(context),
-      suffix: const Icon(Icons.unfold_more, size: 13),
+      suffix: const Icon(Icons.unfold_more, size: 14),
       child: Flexible(
         child: Text(
           _valueLabel,
@@ -212,7 +212,7 @@ class _ReferencePickerRowState extends State<_ReferencePickerRow> {
                     SizedBox(
                       width: 18,
                       child: widget.selected
-                          ? const Icon(Icons.check, size: 13)
+                          ? const Icon(Icons.check, size: 14)
                           : null,
                     ),
                     Expanded(

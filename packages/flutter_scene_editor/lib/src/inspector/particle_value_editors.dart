@@ -601,7 +601,7 @@ class _RemoveButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: const Icon(Icons.close, size: 13),
+      icon: const Icon(Icons.close, size: 14),
       tooltip: 'Remove',
       visualDensity: VisualDensity.compact,
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),

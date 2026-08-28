@@ -114,6 +114,19 @@ class EditorSectionHeader extends StatelessWidget {
 }
 
 /// Shared menu metrics so every dropdown and context menu spaces identically.
+/// Icon sizes. Two steps: the default that sits beside body text, and the
+/// larger one for a standalone affordance. Anything between them is variation
+/// nobody chose, and a row of icons at 13, 14 and 15 reads as misaligned even
+/// when it is not.
+const double editorIconSize = 14;
+
+/// A standalone or emphasised icon: a toolbar button, an empty-state glyph.
+const double editorIconSizeLarge = 16;
+
+/// The height of a panel's toolbar strip, so strips line up across panels
+/// sitting side by side.
+const double editorToolbarHeight = 30;
+
 const double editorMenuItemHeight = 28;
 const EdgeInsets editorMenuItemPadding = EdgeInsets.symmetric(horizontal: 10);
 const TextStyle editorMenuItemText = TextStyle(fontSize: 12);
