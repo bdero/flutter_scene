@@ -281,8 +281,16 @@ PrimitiveArrays buildTerrainArrays(HeightField field) {
 /// {@category Geometry}
 class TerrainGeometry extends MeshGeometry {
   /// Builds a terrain mesh over [field].
-  factory TerrainGeometry(HeightField field) =>
-      TerrainGeometry._(field, buildTerrainArrays(field));
+  ///
+  /// Pass [sculptable] to make the vertex buffers updatable, so [rebuild] can
+  /// push edited samples without rebuilding the geometry. The editor wants
+  /// that; a shipped level does not, and fixed buffers are cheaper.
+  factory TerrainGeometry(HeightField field, {bool sculptable = false}) =>
+      TerrainGeometry._(
+        field,
+        buildTerrainArrays(field),
+        sculptable: sculptable,
+      );
 
   /// Builds a noise terrain, the form a document can describe in a few
   /// numbers.
@@ -308,14 +316,20 @@ class TerrainGeometry extends MeshGeometry {
     ),
   );
 
-  TerrainGeometry._(this.field, PrimitiveArrays arrays)
-    : super.fromArrays(
-        positions: arrays.positions,
-        normals: arrays.normals,
-        texCoords: arrays.texCoords,
-        colors: arrays.colors,
-        indices: arrays.indices,
-      );
+  TerrainGeometry._(
+    this.field,
+    PrimitiveArrays arrays, {
+    required bool sculptable,
+  }) : super.fromArrays(
+         positions: arrays.positions,
+         normals: arrays.normals,
+         texCoords: arrays.texCoords,
+         colors: arrays.colors,
+         indices: arrays.indices,
+         storage: sculptable
+             ? GeometryStorage.updatable
+             : GeometryStorage.fixed,
+       );
 
   /// The samples this mesh was built from.
   final HeightField field;
@@ -323,4 +337,24 @@ class TerrainGeometry extends MeshGeometry {
   /// The ground height at world ([x], [z]), for a camera or a character that
   /// needs to sit on the surface. Delegates to [HeightField.heightAtWorld].
   double heightAtWorld(double x, double z) => field.heightAtWorld(x, z);
+
+  /// Pushes the current [field] samples back into the mesh.
+  ///
+  /// Named apart from [MeshGeometry.rebuild], which replaces everything and
+  /// allows the counts to change; this one knows the grid is the same grid.
+  ///
+  /// The grid never changes shape while sculpting — only the heights move —
+  /// so this re-uploads positions and normals and leaves indices and texture
+  /// coordinates alone. Only valid on a geometry built [sculptable]; a fixed
+  /// one has nothing to update.
+  ///
+  /// Normals are recomputed across the whole field rather than the edited
+  /// range, because a sample's normal is a difference of its neighbours: the
+  /// ring just outside a stroke changes even though its height did not.
+  void rebuildFromField() {
+    final arrays = buildTerrainArrays(field);
+    updatePositions(arrays.positions);
+    final normals = arrays.normals;
+    if (normals != null) updateNormals(normals);
+  }
 }

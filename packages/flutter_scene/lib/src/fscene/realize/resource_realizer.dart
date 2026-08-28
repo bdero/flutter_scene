@@ -851,7 +851,11 @@ class ResourceRealizer {
       :final seed,
       :final heights,
     ) =>
+      // Sculptable so the editor can push edited samples without rebuilding
+      // the geometry. Terrain keeps its samples on the CPU regardless, so
+      // this costs a buffer strategy rather than a copy of the map.
       TerrainGeometry(
+        sculptable: true,
         _terrainField(
           heights: heights,
           width: width,
