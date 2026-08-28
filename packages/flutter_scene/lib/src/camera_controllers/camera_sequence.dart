@@ -65,7 +65,13 @@ class CameraSequence extends Component {
   }) : _shots = <CameraShot>[...?shots];
 
   /// The director this sequence drives.
-  final CameraDirector director;
+  ///
+  /// Assignable so a sequence can be pointed at a director that did not exist
+  /// when it was built — which is the normal case when both are loaded from a
+  /// document, where the sequence may be realized first. Changing it while a
+  /// sequence is playing leaves the outgoing director holding the camera;
+  /// [stop] first if that matters.
+  CameraDirector director;
 
   /// Whether the sequence restarts from the first shot when it ends.
   bool loop;

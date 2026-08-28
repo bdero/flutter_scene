@@ -1335,6 +1335,68 @@ Map<String, dynamic> _encodeProcedural(ProceduralGeometry p) => switch (p) {
       'radialSegments': radialSegments,
       'tubularSegments': tubularSegments,
     },
+  CylinderGeometrySpec(
+    :final bottomRadius,
+    :final topRadius,
+    :final height,
+    :final radialSegments,
+    :final heightSegments,
+    :final bottomCap,
+    :final topCap,
+  ) =>
+    {
+      'shape': 'cylinder',
+      'bottomRadius': bottomRadius,
+      'topRadius': topRadius,
+      'height': height,
+      'radialSegments': radialSegments,
+      'heightSegments': heightSegments,
+      'bottomCap': bottomCap,
+      'topCap': topCap,
+    },
+  CapsuleGeometrySpec(
+    :final radius,
+    :final height,
+    :final radialSegments,
+    :final capRings,
+  ) =>
+    {
+      'shape': 'capsule',
+      'radius': radius,
+      'height': height,
+      'radialSegments': radialSegments,
+      'capRings': capRings,
+    },
+  DiscGeometrySpec(:final radius, :final segments) => {
+    'shape': 'disc',
+    'radius': radius,
+    'segments': segments,
+  },
+  WedgeGeometrySpec(:final size) => {
+    'shape': 'wedge',
+    'size': [size.x, size.y, size.z],
+  },
+  TerrainGeometrySpec(
+    :final width,
+    :final depth,
+    :final columns,
+    :final rows,
+    :final amplitude,
+    :final frequency,
+    :final octaves,
+    :final seed,
+  ) =>
+    {
+      'shape': 'terrain',
+      'width': width,
+      'depth': depth,
+      'columns': columns,
+      'rows': rows,
+      'amplitude': amplitude,
+      'frequency': frequency,
+      'octaves': octaves,
+      'seed': seed,
+    },
   IcosphereGeometrySpec(:final radius, :final subdivisions) => {
     'shape': 'icosphere',
     'radius': radius,
@@ -1370,6 +1432,46 @@ ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
         tubeRadius: _d(json['tubeRadius'] ?? 0.15),
         radialSegments: json['radialSegments'] as int? ?? 32,
         tubularSegments: json['tubularSegments'] as int? ?? 16,
+      );
+    case 'cylinder':
+      return CylinderGeometrySpec(
+        bottomRadius: _d(json['bottomRadius'] ?? 0.5),
+        topRadius: _d(json['topRadius'] ?? 0.5),
+        height: _d(json['height'] ?? 1.0),
+        radialSegments: json['radialSegments'] as int? ?? 32,
+        heightSegments: json['heightSegments'] as int? ?? 1,
+        bottomCap: json['bottomCap'] as bool? ?? true,
+        topCap: json['topCap'] as bool? ?? true,
+      );
+    case 'capsule':
+      return CapsuleGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        height: _d(json['height'] ?? 1.0),
+        radialSegments: json['radialSegments'] as int? ?? 32,
+        capRings: json['capRings'] as int? ?? 8,
+      );
+    case 'disc':
+      return DiscGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        segments: json['segments'] as int? ?? 32,
+      );
+    case 'wedge':
+      final size = json['size'];
+      return WedgeGeometrySpec(
+        size: size is List && size.length == 3
+            ? Vector3(_d(size[0]), _d(size[1]), _d(size[2]))
+            : Vector3(1, 1, 1),
+      );
+    case 'terrain':
+      return TerrainGeometrySpec(
+        width: _d(json['width'] ?? 64.0),
+        depth: _d(json['depth'] ?? 64.0),
+        columns: json['columns'] as int? ?? 65,
+        rows: json['rows'] as int? ?? 65,
+        amplitude: _d(json['amplitude'] ?? 8.0),
+        frequency: _d(json['frequency'] ?? 0.02),
+        octaves: json['octaves'] as int? ?? 4,
+        seed: json['seed'] as int? ?? 1337,
       );
     case 'icosphere':
       return IcosphereGeometrySpec(

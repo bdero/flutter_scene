@@ -92,6 +92,13 @@ class FlyCameraController extends CameraController {
   Vector3 get position => _position.clone();
   set position(Vector3 value) => _position = value.clone();
 
+  /// Rotation around world up, in radians (its eased, current value).
+  double get yaw => _yaw;
+
+  /// Look elevation, in radians (its eased, current value), within
+  /// +/-[pitchLimit]. Positive looks up.
+  double get pitch => _pitch;
+
   /// The unit look direction. At yaw 0, pitch 0 this is `(0, 0, -1)`.
   Vector3 get forward {
     final cp = math.cos(_pitch);

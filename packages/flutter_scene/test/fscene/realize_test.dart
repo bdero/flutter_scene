@@ -3,10 +3,13 @@
 // transforms, layers, light/camera components, and the component
 // codec registry); mesh/resource realization is a separate, GPU-bound step.
 
+import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
+import 'package:flutter_scene/src/node.dart';
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/property_read.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
@@ -148,6 +151,106 @@ void main() {
       final spec = back.rootNodes.single.transform as TrsTransform;
       expect(spec.scale.y, -1);
       expect(spec.translation, Vector3(1, 2, 3));
+    });
+  });
+
+  group('camera lenses', () {
+    SceneDocument cameraDoc(Map<String, PropertyValue> properties) {
+      final doc = SceneDocument();
+      doc.createNode(
+        name: 'eye',
+        root: true,
+        components: [ComponentSpec('camera', properties: properties)],
+      );
+      return doc;
+    }
+
+    CameraComponent cameraIn(SceneDocument doc) =>
+        realizeScene(doc).children.single.getComponent<CameraComponent>()!;
+
+    ComponentSpec serializedCamera(Node root) =>
+        serializeScene(root).rootNodes.single.components.single;
+
+    test('a document with no projection key realizes as perspective', () {
+      // Every camera authored before orthographic existed looks like this.
+      final camera = cameraIn(
+        cameraDoc({'fovRadiansY': const DoubleValue(1.2)}),
+      );
+      final projection = camera.projection as PerspectiveProjection;
+      expect(projection.fovRadiansY, 1.2);
+    });
+
+    test('an orthographic document realizes an orthographic lens', () {
+      final camera = cameraIn(
+        cameraDoc({
+          'projection': const StringValue('orthographic'),
+          'height': const DoubleValue(20),
+          'near': const DoubleValue(0.5),
+          'far': const DoubleValue(500),
+        }),
+      );
+      final projection = camera.projection as OrthographicProjection;
+      expect(projection.height, 20);
+      expect(projection.near, 0.5);
+      expect(projection.far, 500);
+    });
+
+    test('an orthographic camera survives a round trip', () {
+      // It used to be dropped outright: claims() only accepted a perspective
+      // projection, so serialize() returned null and the camera vanished.
+      final doc = cameraDoc({
+        'projection': const StringValue('orthographic'),
+        'height': const DoubleValue(8),
+      });
+      final spec = serializedCamera(realizeScene(doc));
+
+      expect(spec.type, 'camera');
+      expect(
+        (spec.properties['projection'] as StringValue).value,
+        'orthographic',
+      );
+      expect((spec.properties['height'] as DoubleValue).value, 8);
+
+      final projection = cameraIn(cameraDoc(spec.properties)).projection;
+      expect((projection as OrthographicProjection).height, 8);
+    });
+
+    test('each lens serializes only its own size key', () {
+      final ortho = serializedCamera(
+        realizeScene(
+          cameraDoc({'projection': const StringValue('orthographic')}),
+        ),
+      );
+      expect(ortho.properties, isNot(contains('fovRadiansY')));
+
+      final perspective = serializedCamera(
+        realizeScene(cameraDoc({'fovRadiansY': const DoubleValue(1.2)})),
+      );
+      expect(perspective.properties, isNot(contains('height')));
+    });
+
+    test('swapping the lens carries the clip range across', () {
+      // near/far belong to both lenses, so toggling must not silently reset
+      // them to the incoming lens's defaults.
+      final camera = cameraIn(
+        cameraDoc({
+          'near': const DoubleValue(0.25),
+          'far': const DoubleValue(750),
+        }),
+      );
+
+      final field = CameraCodec().fields.firstWhere(
+        (f) => f.def.name == 'projection',
+      );
+      field.write!(
+        camera,
+        const StringValue('orthographic'),
+        RealizeContext(SceneDocument()),
+      );
+
+      final projection = camera.projection as OrthographicProjection;
+      expect(projection.near, 0.25);
+      expect(projection.far, 750);
     });
   });
 

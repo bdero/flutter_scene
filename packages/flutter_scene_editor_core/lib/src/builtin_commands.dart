@@ -849,6 +849,292 @@ final createSphereGeometry = CommandEntry(
   },
 );
 
+final createPlaneGeometry = CommandEntry(
+  name: 'createPlaneGeometry',
+  doc: 'Create a procedural plane geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'width',
+      type: ParamType.number,
+      label: 'Width',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'depth',
+      type: ParamType.number,
+      label: 'Depth',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: PlaneGeometrySpec(
+        width: params['width'] == null ? 1.0 : requireDouble(params, 'width'),
+        depth: params['depth'] == null ? 1.0 : requireDouble(params, 'depth'),
+      ),
+    );
+    return Transaction(
+      name: 'Create plane',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createCylinderGeometry = CommandEntry(
+  name: 'createCylinderGeometry',
+  doc: 'Create a procedural cylinder geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'topRadius',
+      type: ParamType.number,
+      label: 'Top radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One radius drives both ends unless a top radius is given, so the common
+    // case is a cylinder and a cone is one field away.
+    final radius = params['radius'] == null
+        ? 0.5
+        : requireDouble(params, 'radius');
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: CylinderGeometrySpec(
+        bottomRadius: radius,
+        topRadius: params['topRadius'] == null
+            ? radius
+            : requireDouble(params, 'topRadius'),
+        height: params['height'] == null
+            ? 1.0
+            : requireDouble(params, 'height'),
+      ),
+    );
+    return Transaction(
+      name: 'Create cylinder',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createCapsuleGeometry = CommandEntry(
+  name: 'createCapsuleGeometry',
+  doc: 'Create a procedural capsule geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: CapsuleGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+        height: params['height'] == null
+            ? 1.0
+            : requireDouble(params, 'height'),
+      ),
+    );
+    return Transaction(
+      name: 'Create capsule',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createTorusGeometry = CommandEntry(
+  name: 'createTorusGeometry',
+  doc: 'Create a procedural torus geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'tubeRadius',
+      type: ParamType.number,
+      label: 'Tube radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TorusGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+        tubeRadius: params['tubeRadius'] == null
+            ? 0.15
+            : requireDouble(params, 'tubeRadius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create torus',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createDiscGeometry = CommandEntry(
+  name: 'createDiscGeometry',
+  doc: 'Create a procedural disc geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: DiscGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create disc',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createIcosphereGeometry = CommandEntry(
+  name: 'createIcosphereGeometry',
+  doc: 'Create a procedural icosphere geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: IcosphereGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create icosphere',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createWedgeGeometry = CommandEntry(
+  name: 'createWedgeGeometry',
+  doc: 'Create a procedural wedge geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.vec3,
+      label: 'Size',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: WedgeGeometrySpec(
+        size: optionalVec3(params, 'size') ?? Vector3(1, 1, 1),
+      ),
+    );
+    return Transaction(
+      name: 'Create wedge',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createTerrainGeometry = CommandEntry(
+  name: 'createTerrainGeometry',
+  doc: 'Create a procedural noise terrain geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.number,
+      label: 'Size',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'amplitude',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'seed',
+      type: ParamType.number,
+      label: 'Seed',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One size drives both axes: a square patch is the common case, and an
+    // oblong one is a scale on the node.
+    final size = params['size'] == null ? 64.0 : requireDouble(params, 'size');
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TerrainGeometrySpec(
+        width: size,
+        depth: size,
+        amplitude: params['amplitude'] == null
+            ? 8.0
+            : requireDouble(params, 'amplitude'),
+        seed: params['seed'] == null
+            ? 1337
+            : requireDouble(params, 'seed').round(),
+      ),
+    );
+    return Transaction(
+      name: 'Create terrain',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
 final createMaterial = CommandEntry(
   name: 'createMaterial',
   doc: 'Create a material resource of the given type.',
@@ -2948,6 +3234,14 @@ final List<CommandEntry> builtinCommands = [
   setComponentProperties,
   createCuboidGeometry,
   createSphereGeometry,
+  createPlaneGeometry,
+  createCylinderGeometry,
+  createCapsuleGeometry,
+  createTorusGeometry,
+  createDiscGeometry,
+  createIcosphereGeometry,
+  createWedgeGeometry,
+  createTerrainGeometry,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,

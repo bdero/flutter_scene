@@ -141,6 +141,16 @@ class CameraDirector extends Component implements CameraDirectorBinding {
   /// Every registered camera, in registration order.
   Iterable<CameraController> get cameras => _shots.map((shot) => shot.camera);
 
+  /// Every registration, in order, with the priority and name [add] was given.
+  ///
+  /// [cameras] drops both, which is enough to drive a blend but not enough to
+  /// write the shot list back out. Read this to serialize or inspect a
+  /// director; change it through [add], [remove], and [setPriority].
+  Iterable<({CameraController camera, double priority, String? name})>
+  get registrations => _shots.map(
+    (shot) => (camera: shot.camera, priority: shot.priority, name: shot.name),
+  );
+
   /// Whether a blend is in progress.
   bool get isBlending => _fromCamera != null || _fromFrozen != null;
 

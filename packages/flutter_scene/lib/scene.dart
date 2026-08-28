@@ -24,6 +24,24 @@
 library;
 
 export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
+export 'src/animation/animator.dart'
+    show
+        Animator,
+        AnimatorComparison,
+        AnimatorCondition,
+        AnimatorMotion,
+        AnimatorParameters,
+        AnimatorState,
+        AnimatorTransition,
+        BlendMotion,
+        BlendMotion2D,
+        BlendStop,
+        BlendStop2D,
+        ClipMotion;
+export 'src/animation/animator_component.dart' show AnimatorComponent;
+export 'src/animation/ik_constraint_component.dart' show IkConstraintComponent;
+export 'src/animation/two_bone_ik.dart'
+    show TwoBoneSolution, solveTwoBoneIk, twoBoneMidAfter, twoBoneTipAfter;
 
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
@@ -60,6 +78,8 @@ export 'src/geometry/primitives.dart'
         SphereGeometry,
         TorusGeometry,
         WedgeGeometry;
+export 'src/geometry/terrain.dart'
+    show HeightField, TerrainGeometry, buildTerrainArrays;
 export 'src/geometry/polyline_geometry.dart'
     show DashPattern, PolylineCap, PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'

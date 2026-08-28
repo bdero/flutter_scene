@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
+import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
 import '../inspector/particle_value_editors.dart';
@@ -1054,59 +1055,266 @@ class _AddComponentBar extends StatelessWidget {
       for (final type in controller.componentTypes())
         if (!present.contains(type)) type,
     ];
+    final enabled = available.isNotEmpty;
+    final tint = enabled ? Theme.of(context).colorScheme.primary : Colors.grey;
     return Align(
       alignment: Alignment.centerLeft,
-      child: PopupMenuButton<String>(
-        enabled: available.isNotEmpty,
-        tooltip: 'Add a component',
-        onSelected: (type) => controller.addComponentRouted(node.id, type),
-        itemBuilder: (_) => [
+      child: TextButton(
+        onPressed: enabled
+            ? () async {
+                final type = await showAddComponentPicker(
+                  context,
+                  controller: controller,
+                  available: available,
+                );
+                if (type != null) {
+                  controller.addComponentRouted(node.id, type);
+                }
+              }
+            : null,
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add, size: 14, color: tint),
+            const SizedBox(width: 4),
+            Text('Add Component', style: TextStyle(fontSize: 11, color: tint)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What the picker knows about one component type: the category and icon its
+/// schema declares (if any) and where the editor learned about it.
+typedef ComponentTypeInfo = ({
+  String? category,
+  String? icon,
+  String? provenance,
+});
+
+/// The glyph shown beside [type] in the picker.
+///
+/// A schema's own icon wins; otherwise the row falls back to its category's
+/// glyph, so every row carries something. A component that declares nothing
+/// and sits in no category still reads as a component rather than as a gap.
+IconData componentPickerGlyph(ComponentTypeInfo info) =>
+    componentGlyph(info.icon) ??
+    switch (addComponentCategory(info)) {
+      'Mesh' => Icons.view_in_ar_outlined,
+      'Effects' => Icons.auto_awesome_outlined,
+      'Rendering' => Icons.lightbulb_outline,
+      'Cameras' => Icons.videocam_outlined,
+      'Physics' => Icons.animation_outlined,
+      'Audio' => Icons.volume_up_outlined,
+      'Animation' => Icons.movie_filter_outlined,
+      'Navigation' => Icons.route_outlined,
+      'UI' => Icons.widgets_outlined,
+      'Scripts' => Icons.code,
+      'Packages' => Icons.inventory_2_outlined,
+      _ => Icons.settings_input_component_outlined,
+    };
+
+/// Where a type sits in the picker: its declared category, "Scripts" for a
+/// project's own components, "Packages" for a dependency's, and "Other" for
+/// anything that declares nothing.
+///
+/// Project components are grouped by where they came from rather than by what
+/// they do, because that is what you are looking for when you have just
+/// written one.
+String addComponentCategory(ComponentTypeInfo info) {
+  final declared = info.category;
+  if (declared != null && declared.isNotEmpty) return declared;
+  return switch (info.provenance) {
+    'live' || 'cache' => 'Scripts',
+    null => 'Other',
+    _ => 'Packages',
+  };
+}
+
+/// Groups [types] by [addComponentCategory], each group sorted by name.
+///
+/// The built-in groups come first and alphabetically, so they keep their
+/// positions as a project grows. After them come the project's own Scripts —
+/// the ones you most often want and the only ones you can edit — then
+/// Packages, then Other as the genuine catch-all.
+List<MapEntry<String, List<String>>> groupComponentTypes(
+  Map<String, ComponentTypeInfo> types,
+) {
+  final groups = <String, List<String>>{};
+  for (final entry in types.entries) {
+    groups
+        .putIfAbsent(addComponentCategory(entry.value), () => [])
+        .add(entry.key);
+  }
+  const last = ['Scripts', 'Packages', 'Other'];
+  int rank(String name) {
+    final index = last.indexOf(name);
+    return index < 0 ? 0 : index + 1;
+  }
+
+  final names = groups.keys.toList()
+    ..sort((a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+  return [for (final name in names) MapEntry(name, groups[name]!..sort())];
+}
+
+/// Whether [type] matches [query], case-insensitively, on its name or its
+/// category — so "phys" finds every physics component, not only the one
+/// spelled that way.
+bool matchesComponentQuery(String type, ComponentTypeInfo info, String query) {
+  if (query.isEmpty) return true;
+  final needle = query.toLowerCase();
+  return type.toLowerCase().contains(needle) ||
+      addComponentCategory(info).toLowerCase().contains(needle);
+}
+
+/// The component picker: a search field over every type this node does not
+/// already carry, grouped by category.
+Future<String?> showAddComponentPicker(
+  BuildContext context, {
+  required EditorController controller,
+  required List<String> available,
+}) {
+  ComponentTypeInfo infoOf(String type) {
+    final schema = controller.componentSchemaFor(type);
+    return (
+      category: schema?.category,
+      icon: schema?.icon,
+      provenance: controller.foreignTypeProvenance[type],
+    );
+  }
+
+  final search = TextEditingController();
+  return showFDialog<String>(
+    context: context,
+    builder: (context, style, animation) => StatefulBuilder(
+      builder: (context, setLocal) {
+        final query = search.text.trim();
+        final matching = <String, ComponentTypeInfo>{
           for (final type in available)
-            PopupMenuItem<String>(
-              value: type,
-              height: editorMenuItemHeight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+            if (matchesComponentQuery(type, infoOf(type), query))
+              type: infoOf(type),
+        };
+        final groups = groupComponentTypes(matching);
+        return FDialog(
+          animation: animation,
+          builder: (context, style) => Padding(
+            padding: const EdgeInsets.all(14),
+            child: SizedBox(
+              width: 380,
+              height: 460,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(type),
-                  // Foreign types (known by schema, realized as data in the
-                  // editor) show where the schema came from.
-                  if (controller.foreignTypeProvenance[type]
-                      case final provenance?) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      provenance == 'live' ? 'project' : provenance,
-                      style: const TextStyle(fontSize: 9, color: Colors.grey),
+                  const Text(
+                    'Add Component',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 10),
+                  FTextField(
+                    control: FTextFieldControl.managed(
+                      controller: search,
+                      onChange: (_) => setLocal(() {}),
                     ),
-                  ],
+                    autofocus: true,
+                    hint: 'Search',
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: matching.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'No component matches.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          )
+                        : ListView(
+                            primary: false,
+                            children: [
+                              for (final group in groups) ...[
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    2,
+                                    10,
+                                    2,
+                                    4,
+                                  ),
+                                  child: Text(
+                                    group.key.toUpperCase(),
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      letterSpacing: 1.1,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                for (final type in group.value)
+                                  _ComponentPickerRow(
+                                    type: type,
+                                    info: infoOf(type),
+                                    onTap: () => Navigator.pop(context, type),
+                                  ),
+                              ],
+                            ],
+                          ),
+                  ),
                 ],
               ),
             ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.add,
-                size: 14,
-                color: available.isEmpty
-                    ? Colors.grey
-                    : Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Add Component',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: available.isEmpty
-                      ? Colors.grey
-                      : Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
           ),
+        );
+      },
+    ),
+  );
+}
+
+class _ComponentPickerRow extends StatelessWidget {
+  const _ComponentPickerRow({
+    required this.type,
+    required this.info,
+    required this.onTap,
+  });
+
+  final String type;
+  final ComponentTypeInfo info;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final provenance = info.provenance;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+        child: Row(
+          children: [
+            Icon(
+              componentPickerGlyph(info),
+              size: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(type, style: const TextStyle(fontSize: 12))),
+            // Types the editor knows by schema but did not compile show where
+            // that schema came from.
+            if (provenance != null)
+              Text(
+                provenance == 'live' ? 'project' : provenance,
+                style: const TextStyle(fontSize: 9, color: Colors.grey),
+              ),
+          ],
         ),
       ),
     );

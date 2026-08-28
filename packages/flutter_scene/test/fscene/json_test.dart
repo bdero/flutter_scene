@@ -578,6 +578,129 @@ void main() {
       expect(icosphere.subdivisions, 3);
     });
 
+    test('the newer primitive shapes round-trip through JSON', () {
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: CylinderGeometrySpec(
+            bottomRadius: 0.9,
+            topRadius: 0.0,
+            height: 3.0,
+            radialSegments: 12,
+            heightSegments: 2,
+            bottomCap: false,
+            topCap: true,
+          ),
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: CapsuleGeometrySpec(
+            radius: 0.4,
+            height: 1.6,
+            radialSegments: 20,
+            capRings: 5,
+          ),
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: DiscGeometrySpec(radius: 2.25, segments: 64),
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: WedgeGeometrySpec(size: Vector3(2, 1, 4)),
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc));
+      T only<T extends ProceduralGeometry>() => back.resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<T>()
+          .single;
+
+      final cylinder = only<CylinderGeometrySpec>();
+      // A zero top radius is a cone, so it must survive as zero rather than
+      // falling back to the default radius.
+      expect(cylinder.topRadius, 0.0);
+      expect(cylinder.bottomRadius, 0.9);
+      expect(cylinder.height, 3.0);
+      expect(cylinder.radialSegments, 12);
+      expect(cylinder.heightSegments, 2);
+      // Likewise false must survive rather than reverting to the default.
+      expect(cylinder.bottomCap, isFalse);
+      expect(cylinder.topCap, isTrue);
+
+      final capsule = only<CapsuleGeometrySpec>();
+      expect(capsule.radius, 0.4);
+      expect(capsule.height, 1.6);
+      expect(capsule.capRings, 5);
+
+      expect(only<DiscGeometrySpec>().radius, 2.25);
+      expect(only<DiscGeometrySpec>().segments, 64);
+      expect(only<WedgeGeometrySpec>().size, Vector3(2, 1, 4));
+    });
+
+    test('a terrain round-trips its generator parameters', () {
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: TerrainGeometrySpec(
+            width: 128,
+            depth: 96,
+            columns: 129,
+            rows: 97,
+            amplitude: 12.5,
+            frequency: 0.004,
+            octaves: 6,
+            seed: 4242,
+          ),
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc));
+      final terrain =
+          (back.resources.values.single as GeometryResource).procedural
+              as TerrainGeometrySpec;
+      expect(terrain.width, 128);
+      expect(terrain.depth, 96);
+      expect(terrain.columns, 129);
+      expect(terrain.rows, 97);
+      expect(terrain.amplitude, 12.5);
+      expect(terrain.frequency, 0.004);
+      expect(terrain.octaves, 6);
+      // The seed is the whole reason this is eight numbers and not a
+      // megabyte, so it has to survive exactly.
+      expect(terrain.seed, 4242);
+    });
+
+    test('a malformed wedge size falls back rather than throwing', () {
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: WedgeGeometrySpec(size: Vector3(2, 1, 4)),
+        ),
+      );
+      // A hand-edited document can carry anything; a wrong-length size must
+      // not take the whole load down.
+      final json = jsonDecode(writeFscene(doc)) as Map<String, Object?>;
+      final resources = json['resources']! as Map;
+      ((resources.values.single as Map)['procedural'] as Map)['size'] = [1, 2];
+      final back = readFscene(jsonEncode(json));
+      final wedge =
+          (back.resources.values.single as GeometryResource).procedural
+              as WedgeGeometrySpec;
+      expect(wedge.size, Vector3(1, 1, 1));
+    });
+
     test('fmat materials and external/encoded textures round-trip', () {
       final doc = SceneDocument();
       final assetTexture = doc.addResource(

@@ -20,6 +20,7 @@ import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
+import 'package:flutter_scene/src/geometry/terrain.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -803,6 +804,61 @@ class ResourceRealizer {
         tubeRadius: tubeRadius,
         radialSegments: radialSegments,
         tubularSegments: tubularSegments,
+      ),
+    CylinderGeometrySpec(
+      :final bottomRadius,
+      :final topRadius,
+      :final height,
+      :final radialSegments,
+      :final heightSegments,
+      :final bottomCap,
+      :final topCap,
+    ) =>
+      CylinderGeometry(
+        bottomRadius: bottomRadius,
+        topRadius: topRadius,
+        height: height,
+        radialSegments: radialSegments,
+        heightSegments: heightSegments,
+        bottomCap: bottomCap,
+        topCap: topCap,
+      ),
+    CapsuleGeometrySpec(
+      :final radius,
+      :final height,
+      :final radialSegments,
+      :final capRings,
+    ) =>
+      CapsuleGeometry(
+        radius: radius,
+        height: height,
+        radialSegments: radialSegments,
+        capRings: capRings,
+      ),
+    DiscGeometrySpec(:final radius, :final segments) => DiscGeometry(
+      radius: radius,
+      segments: segments,
+    ),
+    WedgeGeometrySpec(:final size) => WedgeGeometry(size),
+    TerrainGeometrySpec(
+      :final width,
+      :final depth,
+      :final columns,
+      :final rows,
+      :final amplitude,
+      :final frequency,
+      :final octaves,
+      :final seed,
+    ) =>
+      TerrainGeometry.noise(
+        width: width,
+        depth: depth,
+        columns: columns,
+        rows: rows,
+        amplitude: amplitude,
+        frequency: frequency,
+        octaves: octaves,
+        seed: seed,
       ),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
       IcosphereGeometry(radius: radius, subdivisions: subdivisions),

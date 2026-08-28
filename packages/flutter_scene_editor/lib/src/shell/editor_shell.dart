@@ -1,8 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart' show Scene;
+import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
+    show
+        componentClassName,
+        componentClassNameError,
+        componentFileName,
+        componentScriptSource;
 import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
@@ -348,6 +355,138 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
               defaultEditorDockLayout();
     setState(() => _dockLayout = replacement);
     widget.onDockLayoutChanged?.call(replacement.toJsonString());
+  }
+
+  /// Writes a new annotated component into the project and opens it.
+  ///
+  /// The host already watches `lib/` and regenerates codecs on save, so the
+  /// file appearing is the whole gesture: the type shows up in Add Component
+  /// with a generated inspector without anything else being run.
+  Future<void> _newComponentScript() async {
+    final root = widget.projectRootDirectory;
+    if (root == null) return;
+
+    final typed = await _promptForComponentName();
+    if (typed == null || !mounted) return;
+
+    final className = componentClassName(typed);
+    final directory = Directory('$root/lib/components');
+    final file = File('${directory.path}/${componentFileName(className)}');
+
+    if (file.existsSync()) {
+      _report('${file.path.substring(root.length + 1)} already exists.');
+      // Opening it is more useful than refusing outright: the name they typed
+      // is almost certainly the component they meant to go back to.
+      _ctrl.sourceFileOpener?.call(file.path);
+      return;
+    }
+
+    try {
+      directory.createSync(recursive: true);
+      file.writeAsStringSync(componentScriptSource(className));
+    } on FileSystemException catch (e) {
+      _report('Could not write the script, ${e.message}');
+      return;
+    }
+
+    _report('Created ${file.path.substring(root.length + 1)}');
+    _ctrl.sourceFileOpener?.call(file.path);
+  }
+
+  void _report(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Asks for a component name, re-prompting while the name would not compile.
+  Future<String?> _promptForComponentName() async {
+    final controller = TextEditingController();
+    String? error;
+    return showFDialog<String>(
+      context: context,
+      builder: (context, style, animation) => StatefulBuilder(
+        builder: (context, setLocal) {
+          void submit() {
+            final value = controller.text.trim();
+            final problem = componentClassNameError(value);
+            if (problem != null) {
+              setLocal(() => error = problem);
+              return;
+            }
+            Navigator.pop(context, value);
+          }
+
+          return FDialog(
+            animation: animation,
+            builder: (context, style) => Padding(
+              padding: const EdgeInsets.all(18),
+              child: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'New Component Script',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Written to lib/components and picked up on save.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 14),
+                    FTextField(
+                      control: FTextFieldControl.managed(
+                        controller: controller,
+                      ),
+                      autofocus: true,
+                      hint: 'Component name (Spinner, HealthBar)',
+                      onSubmit: (_) => submit(),
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFE08276),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        FButton(
+                          variant: .outline,
+                          size: .xs,
+                          mainAxisSize: .min,
+                          onPress: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FButton(
+                          size: .xs,
+                          mainAxisSize: .min,
+                          onPress: submit,
+                          child: const Text('Create'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _saveCurrentLayoutAs() async {
@@ -764,9 +903,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onCopy: _ctrl.copySelection,
                   onPaste: _ctrl.paste,
                   onDelete: _deleteSelected,
-                  onAddCube: _addCube,
-                  onAddSphere: _addSphere,
+                  onAddPrimitive: _addPrimitiveByCommand,
                   onAddPrefab: _addPrefabInstance,
+                  onNewComponentScript: widget.projectRootDirectory == null
+                      ? null
+                      : _newComponentScript,
                   onPaletteOpen: () => setState(() => _paletteOpen = true),
                   isPanelVisible: _dockLayout.isVisible,
                   onTogglePanel: _togglePanel,
@@ -1042,13 +1183,20 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
   // Adds a cube: creates geometry, material, node, and attaches a mesh
   // component in four commands, reading back new resource ids after each.
-  Future<void> _addCube() async {
-    await _addPrimitive('createCuboidGeometry');
-  }
-
-  Future<void> _addSphere() async {
-    await _addPrimitive('createSphereGeometry');
-  }
+  // The primitives the engine can build, in the order they appear in the
+  // menu: the ones a level is blocked out with first.
+  static const primitiveCommands = <({String label, String command})>[
+    (label: 'Cube', command: 'createCuboidGeometry'),
+    (label: 'Sphere', command: 'createSphereGeometry'),
+    (label: 'Plane', command: 'createPlaneGeometry'),
+    (label: 'Cylinder', command: 'createCylinderGeometry'),
+    (label: 'Capsule', command: 'createCapsuleGeometry'),
+    (label: 'Wedge', command: 'createWedgeGeometry'),
+    (label: 'Disc', command: 'createDiscGeometry'),
+    (label: 'Torus', command: 'createTorusGeometry'),
+    (label: 'Icosphere', command: 'createIcosphereGeometry'),
+    (label: 'Terrain', command: 'createTerrainGeometry'),
+  ];
 
   // Adds a sub-scene as a prefab instance node. The source is stored relative
   // to the open scene's directory when possible (portable), absolute otherwise.
@@ -1086,7 +1234,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _addPrimitive(String geoCommand) async {
+  void _addPrimitiveByCommand(String command) {
+    final primitive = primitiveCommands.firstWhere(
+      (entry) => entry.command == command,
+    );
+    unawaited(_addPrimitive(primitive.command, primitive.label));
+  }
+
+  Future<void> _addPrimitive(String geoCommand, String nodeName) async {
     // Step 1: count resources before geometry creation.
     final beforeGeo = Set.of(_ctrl.document.resources.keys);
     await _ctrl.run(geoCommand);
@@ -1108,9 +1263,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
     // Step 3: create a scene node.
     final beforeNodes = Set.of(_ctrl.document.nodes.keys);
-    await _ctrl.run('createNode', {
-      'name': geoCommand == 'createCuboidGeometry' ? 'Cube' : 'Sphere',
-    });
+    await _ctrl.run('createNode', {'name': nodeName});
     final nodeId = _ctrl.document.nodes.keys.firstWhere(
       (id) => !beforeNodes.contains(id),
     );
@@ -1204,9 +1357,9 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onCopy,
     required this.onPaste,
     required this.onDelete,
-    required this.onAddCube,
-    required this.onAddSphere,
+    required this.onAddPrimitive,
     required this.onAddPrefab,
+    required this.onNewComponentScript,
     required this.onPaletteOpen,
     required this.isPanelVisible,
     required this.onTogglePanel,
@@ -1247,9 +1400,14 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onPaste;
   final VoidCallback onDelete;
-  final VoidCallback onAddCube;
-  final VoidCallback onAddSphere;
+
+  /// Runs the named `create…Geometry` command and builds a node around it.
+  final ValueChanged<String> onAddPrimitive;
   final VoidCallback onAddPrefab;
+
+  /// Writes a new component script into the open project. Null with no
+  /// project open, which disables the menu item rather than hiding it.
+  final VoidCallback? onNewComponentScript;
   final VoidCallback onPaletteOpen;
   final bool Function(String panelId) isPanelVisible;
   final ValueChanged<String> onTogglePanel;
@@ -1399,9 +1557,21 @@ class _EditorMenuBar extends StatelessWidget {
             _Menu(
               label: 'Add',
               items: [
-                _MenuItem(label: 'Cube', onTap: onAddCube),
-                _MenuItem(label: 'Sphere', onTap: onAddSphere),
+                _MenuItem(
+                  label: '3D Object',
+                  children: [
+                    for (final primitive in _EditorShellState.primitiveCommands)
+                      _MenuItem(
+                        label: primitive.label,
+                        onTap: () => onAddPrimitive(primitive.command),
+                      ),
+                  ],
+                ),
                 _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
+                _MenuItem(
+                  label: 'Component Script…',
+                  onTap: onNewComponentScript,
+                ),
               ],
             ),
             // Built when the menu opens so the checkmarks reflect hides made

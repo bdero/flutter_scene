@@ -5,6 +5,15 @@ import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Properties that exist only on one variant of their component, keyed by
+/// component type. The delta probe below changes one property at a time
+/// against an otherwise-default component, which cannot reach these: a camera
+/// realized from `{height: ...}` alone is a perspective camera, and a
+/// perspective lens has no height.
+const _variantProperties = <String, Set<String>>{
+  'camera': {'height'},
+};
+
 void main() {
   final registry = defaultComponentRegistry();
 
@@ -25,11 +34,22 @@ void main() {
   // and serializing must produce an EMPTY property bag, and a component with
   // one changed value must serialize exactly that key. This locks schema
   // defaults, realize fallbacks, and serialize together so none can drift.
+  // dollyCameraController is absent on purpose: its path is required and has
+  // no default, so an all-defaults instance is not a thing that exists (the
+  // mesh codec's geometry is required the same way).
   for (final type in [
     'directionalLight',
     'pointLight',
     'spotLight',
     'camera',
+    'orbitCameraController',
+    'flyCameraController',
+    'followCameraController',
+    'firstPersonCameraController',
+    'rtsCameraController',
+    'cameraDirector',
+    'cameraSequence',
+    'pathFollower',
   ]) {
     test('$type round-trips as a delta against schema defaults', () {
       final codec = registry.codecFor(type)!;
@@ -47,6 +67,10 @@ void main() {
 
       // Round-trip one non-default value per declared writable property kind.
       for (final def in codec.propertySchema) {
+        // A property that only exists on one variant of its component is out
+        // of reach here: probing it alone realizes the default variant, which
+        // does not have it. Those get a variant-aware test of their own.
+        if (_variantProperties[type]?.contains(def.name) ?? false) continue;
         final defaultValue = def.defaultValue;
         if (defaultValue == null) continue;
         // Stay inside any hard clamp, or the (correct) write-side clamping
@@ -224,12 +248,45 @@ void main() {
     final projection = camera.propertySchema.firstWhere(
       (d) => d.name == 'projection',
     );
-    expect(projection.options, ['perspective']);
+    expect(projection.options, ['perspective', 'orthographic']);
     final fov = camera.propertySchema.firstWhere(
       (d) => d.name == 'fovRadiansY',
     );
     expect(fov.hardMin, greaterThan(0));
     expect(fov.hardMax, lessThan(3.15));
+  });
+
+  // Covers what _variantProperties excludes from the generic delta probe.
+  test('an orthographic camera round-trips as a delta', () {
+    final codec = registry.codecFor('camera')!;
+    final doc = SceneDocument();
+
+    ComponentSpec roundTrip(Map<String, PropertyValue> properties) =>
+        codec.serialize(
+          codec.realize(
+            ComponentSpec('camera', properties: properties),
+            RealizeContext(doc),
+          )!,
+          SerializeContext(doc),
+        )!;
+
+    // The lens tag is the only non-default, so it is the whole delta: an
+    // orthographic camera at its default size writes no size key.
+    expect(
+      roundTrip({
+        'projection': const StringValue('orthographic'),
+      }).properties.keys,
+      ['projection'],
+    );
+
+    final sized = roundTrip({
+      'projection': const StringValue('orthographic'),
+      'height': const DoubleValue(20),
+    });
+    expect(sized.properties.keys, unorderedEquals(['projection', 'height']));
+    expect((sized.properties['height']! as DoubleValue).value, 20);
+    // The perspective-only key must not ride along on an orthographic lens.
+    expect(sized.properties, isNot(contains('fovRadiansY')));
   });
 
   test('builtin visual components declare gizmos that survive JSON', () {

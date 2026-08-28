@@ -149,10 +149,10 @@ double _distToSegment(Offset point, Offset a, Offset b) {
   return (point - (a + Offset(ab.dx * t, ab.dy * t))).distance;
 }
 
-/// The editor's named gizmo glyph set. A schema icon that is not a known
-/// name renders as text (an emoji hint), so foreign components still get a
-/// clickable presence.
-IconData? gizmoGlyph(String? name) => switch (name) {
+/// The editor's named component glyph set, shared by the viewport gizmos and
+/// the component picker. A schema icon that is not a known name renders as
+/// text (an emoji hint), so foreign components still get a presence.
+IconData? componentGlyph(String? name) => switch (name) {
   'light-sun' => Icons.wb_sunny_outlined,
   'light-point' => Icons.lightbulb_outline,
   'light-spot' => Icons.highlight,
@@ -163,6 +163,10 @@ IconData? gizmoGlyph(String? name) => switch (name) {
   'environment' => Icons.blur_on_outlined,
   'particles' => Icons.grain,
   'physics' => Icons.animation_outlined,
+  'light' => Icons.light_mode_outlined,
+  'path' => Icons.route_outlined,
+  'grid' => Icons.grid_on_outlined,
+  'animator' => Icons.account_tree_outlined,
   'component' => Icons.settings_input_component_outlined,
   _ => null,
 };
@@ -557,7 +561,7 @@ class ComponentGizmoPainter extends CustomPainter {
       );
     }
     final name = primitive.glyph ?? codec.schema.icon;
-    final glyph = gizmoGlyph(name);
+    final glyph = componentGlyph(name);
     final String text;
     final TextStyle style;
     if (glyph != null) {

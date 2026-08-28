@@ -133,6 +133,9 @@ class _CodecEmitter {
         ..writeln('    ${_str(schema.type)},');
       if (schema.doc != null) out.writeln('    doc: ${_str(schema.doc!)},');
       if (schema.icon != null) out.writeln('    icon: ${_str(schema.icon!)},');
+      if (schema.category != null) {
+        out.writeln('    category: ${_str(schema.category!)},');
+      }
       if (schema.formerTypes.isNotEmpty) {
         out.writeln('    formerTypes: ${_strList(schema.formerTypes)},');
       }

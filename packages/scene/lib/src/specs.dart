@@ -302,6 +302,134 @@ class CuboidGeometrySpec extends ProceduralGeometry {
   final bool debugColors;
 }
 
+/// A height-field terrain generated from fractal noise.
+///
+/// Described by its parameters rather than by its samples: the same seed
+/// always produces the same ground, so a document carries a few numbers
+/// instead of a megabyte of heights.
+/// {@category Documents}
+class TerrainGeometrySpec extends ProceduralGeometry {
+  /// Creates a terrain spec.
+  TerrainGeometrySpec({
+    this.width = 64.0,
+    this.depth = 64.0,
+    this.columns = 65,
+    this.rows = 65,
+    this.amplitude = 8.0,
+    this.frequency = 0.02,
+    this.octaves = 4,
+    this.seed = 1337,
+  });
+
+  /// World size across X.
+  final double width;
+
+  /// World size across Z.
+  final double depth;
+
+  /// Height samples across X; one more than the quads.
+  final int columns;
+
+  /// Height samples across Z.
+  final int rows;
+
+  /// Peak height above and below zero.
+  final double amplitude;
+
+  /// Noise scale, in world units.
+  final double frequency;
+
+  /// How many layers of detail are summed.
+  final int octaves;
+
+  /// The seed; the same one always gives the same ground.
+  final int seed;
+}
+
+/// A cylinder or cone about the Y axis; a smaller [topRadius] tapers it, and
+/// zero makes a cone.
+/// {@category Documents}
+class CylinderGeometrySpec extends ProceduralGeometry {
+  /// Creates a cylinder spec.
+  CylinderGeometrySpec({
+    this.bottomRadius = 0.5,
+    this.topRadius = 0.5,
+    this.height = 1.0,
+    this.radialSegments = 32,
+    this.heightSegments = 1,
+    this.bottomCap = true,
+    this.topCap = true,
+  });
+
+  /// Radius at the base.
+  final double bottomRadius;
+
+  /// Radius at the top; zero makes a cone.
+  final double topRadius;
+
+  /// Height along Y.
+  final double height;
+
+  /// Segments around the axis.
+  final int radialSegments;
+
+  /// Segments along the axis.
+  final int heightSegments;
+
+  /// Whether the base is closed.
+  final bool bottomCap;
+
+  /// Whether the top is closed.
+  final bool topCap;
+}
+
+/// A capsule about the Y axis: a cylinder with a hemisphere on each end.
+/// {@category Documents}
+class CapsuleGeometrySpec extends ProceduralGeometry {
+  /// Creates a capsule spec.
+  CapsuleGeometrySpec({
+    this.radius = 0.5,
+    this.height = 1.0,
+    this.radialSegments = 32,
+    this.capRings = 8,
+  });
+
+  /// Radius of the shaft and of both caps.
+  final double radius;
+
+  /// Height of the cylindrical section, excluding the caps.
+  final double height;
+
+  /// Segments around the axis.
+  final int radialSegments;
+
+  /// Rings making up each hemisphere.
+  final int capRings;
+}
+
+/// A filled circle in the XZ plane.
+/// {@category Documents}
+class DiscGeometrySpec extends ProceduralGeometry {
+  /// Creates a disc spec.
+  DiscGeometrySpec({this.radius = 0.5, this.segments = 32});
+
+  /// Radius of the disc.
+  final double radius;
+
+  /// Segments around the rim.
+  final int segments;
+}
+
+/// A right-triangular prism, the ramp shape.
+/// {@category Documents}
+class WedgeGeometrySpec extends ProceduralGeometry {
+  /// Creates a wedge spec sized to [size] = `(width, height, run)`.
+  WedgeGeometrySpec({required this.size});
+
+  /// Width, height and run of the ramp.
+  final Vector3 size;
+}
+
 /// A flat plane in the XZ plane.
 /// {@category Documents}
 class PlaneGeometrySpec extends ProceduralGeometry {

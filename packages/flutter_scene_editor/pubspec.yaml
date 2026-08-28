@@ -20,6 +20,8 @@ dependencies:
   file_selector: ^1.0.0
   flutter_scene: ^0.23.0
   scene: ^0.3.0
+  flutter_scene_codegen:
+    path: ../flutter_scene_codegen
   flutter_scene_editor_core:
     path: ../flutter_scene_editor_core
   flutter_scene_mcp:
