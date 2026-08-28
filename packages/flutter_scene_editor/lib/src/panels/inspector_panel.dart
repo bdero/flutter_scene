@@ -2036,9 +2036,11 @@ class _ResourceRefRow extends StatelessWidget {
                     ),
                   )
                 : ReferencePicker(
-                    entries: [
+                    entries: () => [
                       for (final id in ids) (id: id, label: _label(id)),
                     ],
+                    isEmpty: ids.isEmpty,
+                    valueLabel: value == null ? null : _label(value!),
                     value: value,
                     emptyLabel: '(no ${resourceKind ?? 'resource'} resources)',
                     onChanged: (id) => onChanged({'\$resource': id.toToken()}),
@@ -2138,7 +2140,8 @@ class _NodeRefRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final nodes = controller.document.nodes.values.toList();
+    final nodes = controller.document.nodes;
+    final current = value == null ? null : nodes[value];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -2154,13 +2157,21 @@ class _NodeRefRow extends StatelessWidget {
           const SizedBox(width: 4),
           Expanded(
             child: ReferencePicker(
-              entries: [
-                for (final node in nodes)
+              // Built when the picker opens; a scene's node list is long and
+              // nothing shows it until someone asks.
+              entries: () => [
+                for (final node in nodes.values)
                   (
                     id: node.id,
                     label: node.name.isEmpty ? node.id.toToken() : node.name,
                   ),
               ],
+              isEmpty: nodes.isEmpty,
+              valueLabel: current == null
+                  ? null
+                  : (current.name.isEmpty
+                        ? current.id.toToken()
+                        : current.name),
               value: value,
               emptyLabel: '(no nodes)',
               onChanged: (id) => onChanged({'\$node': id.toToken()}),

@@ -165,6 +165,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // properties; camera movement alone does not reach this handler, so the
     // gizmo snapshot cache survives orbit drags.
     _componentGizmoCache.invalidate();
+    _groundFieldCached = false;
     _bumpView();
   }
 
@@ -213,10 +214,25 @@ class _ViewportPanelState extends State<ViewportPanel> {
     return scatterLayerOf(_ctrl.liveNode(primary));
   }
 
+  // Finding the ground walks the whole document, and the answer is asked for
+  // once per build while a brush is armed. It only changes when the document
+  // does, so it is found once and kept until then. Sculpting mutates the
+  // field in place rather than replacing it, so a stroke does not invalidate
+  // this.
+  HeightField? _groundFieldValue;
+  bool _groundFieldCached = false;
+
   /// The height field anything painted should sit on: the first terrain in
   /// the scene. Painting onto a scene with no terrain drops instances on the
   /// plane, which is the sensible fallback rather than a refusal.
   HeightField? _groundField() {
+    if (_groundFieldCached) return _groundFieldValue;
+    _groundFieldCached = true;
+    _groundFieldValue = _findGroundField();
+    return _groundFieldValue;
+  }
+
+  HeightField? _findGroundField() {
     for (final id in _ctrl.document.nodes.keys) {
       final node = _ctrl.liveNode(id);
       final target = terrainTargetOf(node, (geometry) => null);
