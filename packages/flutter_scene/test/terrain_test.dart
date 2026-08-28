@@ -145,4 +145,73 @@ void main() {
       }
     });
   });
+
+  group('stored heightmaps', () {
+    test('a field survives the byte round trip exactly', () {
+      // Sculpted terrain is stored as packed floats, so this is the format
+      // a saved scene actually carries.
+      final field = HeightField.noise(
+        width: 16,
+        depth: 24,
+        columns: 9,
+        rows: 13,
+        seed: 99,
+      );
+      final back = HeightField.fromBytes(
+        field.toBytes(),
+        columns: 9,
+        rows: 13,
+        width: 16,
+        depth: 24,
+      )!;
+      expect(back.heights, field.heights);
+      expect(back.width, 16);
+      expect(back.depth, 24);
+      expect(back.heightAtWorld(2, -3), field.heightAtWorld(2, -3));
+    });
+
+    test('the samples are copied, not aliased onto the payload buffer', () {
+      // Sculpting mutates the field in place; if it were a view over the
+      // document's bytes it would edit the saved copy behind the scenes.
+      final field = rampField();
+      final bytes = field.toBytes();
+      final loaded = HeightField.fromBytes(
+        bytes,
+        columns: 3,
+        rows: 3,
+        width: 2,
+        depth: 2,
+      )!;
+      loaded.heights[0] = 99;
+      expect(field.heights[0], 0, reason: 'the original is untouched');
+    });
+
+    test('a heightmap of the wrong size is refused, not stretched', () {
+      // Reading a truncated map would put a cliff wherever it ran out.
+      final field = rampField();
+      expect(
+        HeightField.fromBytes(
+          field.toBytes(),
+          columns: 4,
+          rows: 4,
+          width: 2,
+          depth: 2,
+        ),
+        isNull,
+      );
+    });
+
+    test('a degenerate grid is refused', () {
+      expect(
+        HeightField.fromBytes(
+          Float32List(1).buffer.asUint8List(),
+          columns: 1,
+          rows: 1,
+          width: 1,
+          depth: 1,
+        ),
+        isNull,
+      );
+    });
+  });
 }

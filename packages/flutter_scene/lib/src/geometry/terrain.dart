@@ -75,6 +75,43 @@ class HeightField {
     );
   }
 
+  /// Reads a field from packed 32-bit floats, row-major, as
+  /// [PayloadEncoding.floats] stores them.
+  ///
+  /// Returns null when the byte count does not match `columns * rows`, since
+  /// a truncated heightmap would otherwise be read as a cliff.
+  static HeightField? fromBytes(
+    Uint8List bytes, {
+    required int columns,
+    required int rows,
+    required double width,
+    required double depth,
+  }) {
+    if (columns < 2 || rows < 2) return null;
+    if (bytes.lengthInBytes != columns * rows * 4) return null;
+    // A copy, not a view: the payload's buffer may be shared, and sculpting
+    // mutates these samples in place.
+    final heights = Float32List(columns * rows);
+    heights.setAll(
+      0,
+      bytes.buffer.asFloat32List(bytes.offsetInBytes, columns * rows),
+    );
+    return HeightField(
+      heights: heights,
+      columns: columns,
+      rows: rows,
+      width: width,
+      depth: depth,
+    );
+  }
+
+  /// The samples as packed 32-bit floats, for a document payload.
+  Uint8List toBytes() => Uint8List.view(
+    heights.buffer,
+    heights.offsetInBytes,
+    heights.lengthInBytes,
+  );
+
   /// The samples, row-major, `columns * rows` of them.
   final Float32List heights;
 

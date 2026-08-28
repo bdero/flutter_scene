@@ -302,11 +302,14 @@ class CuboidGeometrySpec extends ProceduralGeometry {
   final bool debugColors;
 }
 
-/// A height-field terrain generated from fractal noise.
+/// A height-field terrain, either generated from fractal noise or read from a
+/// stored heightmap.
 ///
-/// Described by its parameters rather than by its samples: the same seed
-/// always produces the same ground, so a document carries a few numbers
-/// instead of a megabyte of heights.
+/// Without [heights] it is described by its parameters: the same seed always
+/// produces the same ground, so a document carries a few numbers rather than
+/// a megabyte of samples. Sculpting it bakes those samples into a
+/// [PayloadEncoding.floats] payload and points [heights] at it, which is the
+/// moment terrain stops being a formula and starts being data.
 /// {@category Documents}
 class TerrainGeometrySpec extends ProceduralGeometry {
   /// Creates a terrain spec.
@@ -319,6 +322,7 @@ class TerrainGeometrySpec extends ProceduralGeometry {
     this.frequency = 0.02,
     this.octaves = 4,
     this.seed = 1337,
+    this.heights,
   });
 
   /// World size across X.
@@ -344,6 +348,13 @@ class TerrainGeometrySpec extends ProceduralGeometry {
 
   /// The seed; the same one always gives the same ground.
   final int seed;
+
+  /// A packed-float payload of `columns * rows` samples, row-major, or null
+  /// to generate them from the parameters above.
+  final LocalId? heights;
+
+  /// Whether this terrain carries its own samples rather than a recipe.
+  bool get isSculpted => heights != null;
 }
 
 /// A cylinder or cone about the Y axis; a smaller [topRadius] tapers it, and

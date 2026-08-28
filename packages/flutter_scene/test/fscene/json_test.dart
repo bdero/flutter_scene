@@ -681,6 +681,46 @@ void main() {
       expect(terrain.seed, 4242);
     });
 
+    test('a sculpted terrain keeps its heightmap reference', () {
+      final doc = SceneDocument();
+      final heights = doc.addPayload(
+        PayloadSpec(doc.newId(), encoding: PayloadEncoding.floats),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: TerrainGeometrySpec(
+            columns: 5,
+            rows: 5,
+            heights: heights.id,
+          ),
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc));
+      final terrain = back.resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<TerrainGeometrySpec>()
+          .single;
+      expect(terrain.heights, heights.id);
+      expect(terrain.isSculpted, isTrue);
+    });
+
+    test('a generated terrain carries no heightmap reference', () {
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(doc.newId(), procedural: TerrainGeometrySpec()),
+      );
+      final terrain = readFscene(writeFscene(doc)).resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<TerrainGeometrySpec>()
+          .single;
+      expect(terrain.heights, isNull);
+      expect(terrain.isSculpted, isFalse);
+    });
+
     test('a malformed wedge size falls back rather than throwing', () {
       final doc = SceneDocument();
       doc.addResource(
