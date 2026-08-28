@@ -97,7 +97,7 @@ TwoBoneSolution solveTwoBoneIk({
     midPosition - rootPosition,
     solvedMid - rootPosition,
   );
-  final lowerNow = root.rotated(tipPosition - midPosition);
+  final lowerNow = _rotate(root, tipPosition - midPosition);
   final mid = _rotationBetween(lowerNow, solvedTip - solvedMid);
   return (root: root, mid: mid);
 }
@@ -117,14 +117,17 @@ Quaternion _rotationBetween(Vector3 from, Vector3 to) {
     if (axis.length2 < 1e-12) axis = a.cross(Vector3(1.0, 0.0, 0.0));
     return Quaternion.axisAngle(axis.normalized(), math.pi);
   }
-  // vector_math's axisAngle turns the opposite way to the right-hand rule
-  // its cross product follows, so the axis is b x a rather than a x b. A
-  // probe: axisAngle(z, +90 degrees) sends +x to -y.
-  return Quaternion.axisAngle(b.cross(a).normalized(), math.acos(dot));
+  return Quaternion.axisAngle(a.cross(b).normalized(), math.acos(dot));
 }
 
 /// Where the tip lands for a solved limb, for tests and for a caller checking
 /// whether the target was actually reachable.
+///
+/// Rotates the way a node does, through the matrix its rotation composes
+/// into. That is not the same as [Quaternion.rotated], which turns the
+/// opposite way for the same quaternion — a difference nothing in the API
+/// announces, and one that silently inverts an IK solve if the wrong one is
+/// used to check it.
 /// {@category Animation}
 Vector3 twoBoneTipAfter({
   required Vector3 rootPosition,
@@ -132,9 +135,33 @@ Vector3 twoBoneTipAfter({
   required Vector3 tipPosition,
   required TwoBoneSolution solution,
 }) {
-  final mid = rootPosition + solution.root.rotated(midPosition - rootPosition);
-  final tipFromMid = solution.mid.rotated(
-    solution.root.rotated(tipPosition - midPosition),
+  final mid = twoBoneMidAfter(
+    rootPosition: rootPosition,
+    midPosition: midPosition,
+    solution: solution,
+  );
+  final tipFromMid = _rotate(
+    solution.mid,
+    _rotate(solution.root, tipPosition - midPosition),
   );
   return mid + tipFromMid;
 }
+
+/// Where the mid joint — the knee or elbow — lands for a solved limb.
+///
+/// Useful for drawing a debug marker, for a caller that wants to know where
+/// the joint ended up, and for checking a solve without re-deriving which way
+/// a quaternion turns.
+/// {@category Animation}
+Vector3 twoBoneMidAfter({
+  required Vector3 rootPosition,
+  required Vector3 midPosition,
+  required TwoBoneSolution solution,
+}) => rootPosition + _rotate(solution.root, midPosition - rootPosition);
+
+/// Rotates [v] by [q] the way a node's transform does.
+Vector3 _rotate(Quaternion q, Vector3 v) => Matrix4.compose(
+  Vector3.zero(),
+  q,
+  Vector3(1.0, 1.0, 1.0),
+).transform3(v.clone());
