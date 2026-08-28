@@ -35,8 +35,7 @@ const AVAILABLE_MODELS = (process.env.TELEGRAM_AVAILABLE_MODELS || '')
 // model (empty string = let cline use its own configured default; buildArgs
 // then omits the --model flag) so the key×model rotation grid never divides
 // by zero when TELEGRAM_AVAILABLE_MODELS is unset.
-const DEFAULT_MODEL = process.env.TELEGRAM_MODEL || '';
-const MODELS = AVAILABLE_MODELS.length > 0 ? AVAILABLE_MODELS : [DEFAULT_MODEL];
+const MODELS = AVAILABLE_MODELS;
 
 // Validates minimum configuration before starting.
 if (!TELEGRAM_BOT_TOKEN) {
@@ -337,8 +336,10 @@ const TURN_PING_TEXT = (mins) => `⏳ Still working… (${mins} min elapsed)`;
 const TURN_PING_INTERVAL_MS = 5 * 60 * 1000; // progress ping cadence (every 5 min)
 const TURN_MAX_PINGS = 12;                   // safety cap (~60 min of pings)
 const TURN_ACK_THROTTLE_MS = 15 * 1000;      // don't re-ack bursts of messages
+const TURN_ACK_DELAY_MS = 30 * 1000;          // ack only if no reply lands by then
 
 let activeTurn = null;                       // { chatId, startedAt, pings, timer }
+let pendingAck = null;                       // { chatId, timer } — ack not yet sent
 let lastAckAt = 0;
 
 // Sends a chat message through the Telegram Bot API as the same bot.
@@ -375,29 +376,15 @@ function extractChatId(line) {
 function stopTurn() {
   if (activeTurn && activeTurn.timer) clearInterval(activeTurn.timer);
   activeTurn = null;
+  cancelPendingAck();
 }
 
-// Fired when the connector logs that a user message arrived: acknowledge it in
-// the chat right away and start progress pings until the reply is sent.
-function onTurnStarted(line) {
-  const chatId = extractChatId(line);
-  const now = Date.now();
-  if (!chatId) {
-    log('[Turn] Message received, but no chat id found in the log line.');
-    return;
-  }
-
-  // Another message from the same chat while we're already working: just reset
-  // the elapsed clock, no new acknowledgement.
-  if (activeTurn && activeTurn.chatId === chatId) {
-    activeTurn.startedAt = now;
-    activeTurn.pings = 0;
-    log('[Turn] Follow-up message received; still working.');
-    return;
-  }
-
+// Actually starts tracking a turn: sends the acknowledgement and begins the
+// progress pings. Called only once it's clear the connector hasn't answered
+// instantly, i.e. a genuinely long-running task.
+function startTurn(chatId) {
   stopTurn();
-  activeTurn = { chatId, startedAt: now, pings: 0, timer: null };
+  activeTurn = { chatId, startedAt: Date.now(), pings: 0, timer: null };
   activeTurn.timer = setInterval(() => {
     if (!activeTurn) return;
     if (activeTurn.pings >= TURN_MAX_PINGS) {
@@ -416,13 +403,63 @@ function onTurnStarted(line) {
     ? `⛔ All API keys/models are on cooldown right now (until ${new Date(earliestUnblock()).toISOString().slice(11, 16)} UTC). Your message is queued — I'll answer when quota resets.`
     : TURN_ACK_TEXT;
 
+  const now = Date.now();
   if (now - lastAckAt < TURN_ACK_THROTTLE_MS) return;   // burst guard
   lastAckAt = now;
-  log(`[Turn] Task started for chat ${chatId} — sending acknowledgement${allBlocked ? ' (quota exhausted notice)' : ''}.`);
+  log(`[Turn] Acknowledging chat ${chatId}${allBlocked ? ' (quota exhausted notice)' : ''}.`);
   sendTelegramMessage(chatId, text);
 }
 
+function cancelPendingAck() {
+  if (pendingAck && pendingAck.timer) clearTimeout(pendingAck.timer);
+  pendingAck = null;
+}
+
+// Fired when the connector logs that a user message arrived. The ack is
+// DELAYED: if the connector replies quickly (chat commands like /new, or
+// simple questions), the reply lands first and the ack is cancelled. It only
+// fires when nothing has come back — a genuinely long-running task.
+function onTurnStarted(line) {
+  const chatId = extractChatId(line);
+  if (!chatId) {
+    log('[Turn] Message received, but no chat id found in the log line.');
+    return;
+  }
+
+  // Slash commands (/new, /cwd, /tools, …) are handled instantly by the
+  // connector — never treat them as heavy tasks.
+  const preview = (line.match(/"textPreview":"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+  if (preview.startsWith('/')) {
+    log(`[Turn] Command "${preview}" received — handled instantly, no ack.`);
+    return;
+  }
+
+  // Another message from the same chat while we're already working: just reset
+  // the elapsed clock, no new acknowledgement.
+  if (activeTurn && activeTurn.chatId === chatId) {
+    activeTurn.startedAt = Date.now();
+    activeTurn.pings = 0;
+    log('[Turn] Follow-up message received; still working.');
+    return;
+  }
+
+  cancelPendingAck();
+
+  pendingAck = {
+    chatId,
+    timer: setTimeout(() => {
+      pendingAck = null;
+      log(`[Turn] No reply after ${TURN_ACK_DELAY_MS / 1000}s (chat ${chatId}) — acknowledging so it doesn't feel stuck.`);
+      startTurn(chatId);
+    }, TURN_ACK_DELAY_MS),
+  };
+}
+
 function onTurnDone(ok) {
+  // Cancel any not-yet-sent ack FIRST — a fast reply (like /new) lands while
+  // its acknowledgement is still waiting on the delay timer, and activeTurn
+  // doesn't exist yet in that case.
+  cancelPendingAck();
   if (!activeTurn) return;
   const mins = Math.round((Date.now() - activeTurn.startedAt) / 60000);
   log(`[Turn] Task ${ok ? 'completed' : 'failed'} after ~${mins} min (chat ${activeTurn.chatId}).`);
