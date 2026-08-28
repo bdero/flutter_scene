@@ -7,6 +7,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../inspector/property_editors.dart' show SliderNumberField;
 import '../shell/editor_theme.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart' show LocalId;
@@ -187,88 +188,43 @@ class TerrainBrushPalette extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          _BrushSlider(
+          SliderNumberField(
             label: 'Size',
             value: brush.radius,
             min: 0.5,
             max: 40,
-            onChanged: (value) => tool.updateBrush(radius: value),
+            fractionDigits: 2,
+            onPreview: (_) {},
+            onCommit: (value) => tool.updateBrush(radius: value),
           ),
-          _BrushSlider(
+          SliderNumberField(
             label: 'Strength',
             value: brush.strength,
             min: 0.1,
             max: 10,
-            onChanged: (value) => tool.updateBrush(strength: value),
+            fractionDigits: 2,
+            onPreview: (_) {},
+            onCommit: (value) => tool.updateBrush(strength: value),
           ),
-          _BrushSlider(
+          SliderNumberField(
             label: 'Falloff',
             value: brush.falloff,
             min: 0,
             max: 1,
-            onChanged: (value) => tool.updateBrush(falloff: value),
+            fractionDigits: 2,
+            onPreview: (_) {},
+            onCommit: (value) => tool.updateBrush(falloff: value),
           ),
           if (brush.kind == TerrainBrushKind.flatten)
-            _BrushSlider(
+            SliderNumberField(
               label: 'Height',
               value: brush.targetHeight,
               min: -20,
               max: 20,
-              onChanged: (value) => tool.updateBrush(targetHeight: value),
+              fractionDigits: 2,
+              onPreview: (_) {},
+              onCommit: (value) => tool.updateBrush(targetHeight: value),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A labelled slider with its value shown, the shape every brush setting
-/// takes.
-class _BrushSlider extends StatelessWidget {
-  const _BrushSlider({
-    required this.label,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.onChanged,
-  });
-
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(
-        children: [
-          SizedBox(width: 52, child: Text(label, style: editorDetailText)),
-          Expanded(
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                overlayShape: SliderComponentShape.noOverlay,
-              ),
-              child: Slider(
-                value: value.clamp(min, max),
-                min: min,
-                max: max,
-                onChanged: onChanged,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 30,
-            child: Text(
-              value.toStringAsFixed(value.abs() < 10 ? 1 : 0),
-              style: editorDetailText,
-              textAlign: TextAlign.right,
-            ),
-          ),
         ],
       ),
     );

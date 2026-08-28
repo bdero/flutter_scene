@@ -420,15 +420,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   /// Follows the pointer with the brush ring while the tool is armed.
   void _onPointerHover(PointerHoverEvent event, Size viewSize) {
-    if (!_terrainTool.active) return;
-    final target = _terrainTarget();
-    if (target == null) return;
+    if (!_terrainTool.active && !_scatterTool.active) return;
     _viewSize = viewSize;
-    final point = _groundUnder(
-      event.localPosition,
-      viewSize,
-      target.geometry.field,
-    );
+    final field = _terrainTool.active
+        ? _terrainTarget()?.geometry.field
+        : _groundField();
+    final point = field == null
+        ? (_scatterTool.active
+              ? _pointOnGroundPlane(event.localPosition, viewSize)
+              : null)
+        : _groundUnder(event.localPosition, viewSize, field);
     if (point == _brushPoint) return;
     setState(() => _brushPoint = point);
   }
@@ -1229,6 +1230,33 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             }),
                           ),
                         ),
+                        if (_scatterTool.active)
+                          if (_brushPoint case final point?)
+                            if (_groundField() case final field?)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: TerrainBrushCursorPainter(
+                                      center: point,
+                                      // The scatter brush has the same
+                                      // footprint as a sculpting one, so it
+                                      // borrows the ring rather than drawing
+                                      // a second kind of circle.
+                                      brush: TerrainBrush(
+                                        radius: _scatterTool.brush.radius,
+                                        falloff: 1,
+                                      ),
+                                      field: field,
+                                      color: editorAccentColor,
+                                      project: (world) => projectToScreen(
+                                        world,
+                                        _camera.camera,
+                                        _viewSize,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                         if (_terrainTool.active)
                           if (_brushPoint case final point?)
                             if (_terrainTarget() case final target?)
@@ -1249,6 +1277,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                   ),
                                 ),
                               ),
+                        if (_scatterTool.active)
+                          Positioned(
+                            top: 40,
+                            left: 8,
+                            child: ListenableBuilder(
+                              listenable: _scatterTool,
+                              builder: (context, _) =>
+                                  ScatterBrushPalette(tool: _scatterTool),
+                            ),
+                          ),
                         if (_terrainTool.active)
                           Positioned(
                             top: 40,
