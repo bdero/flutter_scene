@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/audio.dart';
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/audio/velocity_tracker.dart';
 import 'package:flutter_scene/src/fscene/realize/audio_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:test/test.dart';
@@ -457,6 +458,55 @@ void main() {
         context,
       );
       expect(component, isA<AudioListener>());
+    });
+  });
+
+  group('PositionVelocityTracker', () {
+    test('finite-differences steady motion', () {
+      final tracker = PositionVelocityTracker();
+      tracker.deriveFromPosition(Vector3(0, 0, 0), 1 / 60);
+      final v = tracker.deriveFromPosition(Vector3(0.1, 0, 0), 1 / 60);
+      expect(v.x, closeTo(6.0, 1e-6));
+    });
+
+    test('a teleport reports zero, not a one-frame spike', () {
+      final tracker = PositionVelocityTracker();
+      tracker.deriveFromPosition(Vector3.zero(), 1 / 60);
+      // 500 units in a frame is 30 km/s: a respawn, not motion.
+      final jump = tracker.deriveFromPosition(Vector3(500, 0, 0), 1 / 60);
+      expect(jump, Vector3.zero());
+    });
+
+    test('the frame after a teleport derives from where it landed', () {
+      final tracker = PositionVelocityTracker();
+      tracker.deriveFromPosition(Vector3.zero(), 1 / 60);
+      tracker.deriveFromPosition(Vector3(500, 0, 0), 1 / 60);
+      final v = tracker.deriveFromPosition(Vector3(500.1, 0, 0), 1 / 60);
+      // Vector3 stores float32, so a 0.1 step off 500 carries some slop.
+      expect(v.x, closeTo(6.0, 1e-2));
+    });
+
+    test('motion just under the cutoff is still reported', () {
+      final tracker = PositionVelocityTracker(teleportSpeed: 100.0);
+      tracker.deriveFromPosition(Vector3.zero(), 0.1);
+      final v = tracker.deriveFromPosition(Vector3(9.9, 0, 0), 0.1);
+      expect(v.x, closeTo(99.0, 1e-6));
+    });
+
+    test('an infinite cutoff reports every finite difference', () {
+      final tracker = PositionVelocityTracker(
+        teleportSpeed: double.infinity,
+      );
+      tracker.deriveFromPosition(Vector3.zero(), 1 / 60);
+      final v = tracker.deriveFromPosition(Vector3(500, 0, 0), 1 / 60);
+      expect(v.x, closeTo(30000.0, 1e-3));
+    });
+
+    test('reset forgets the history', () {
+      final tracker = PositionVelocityTracker();
+      tracker.deriveFromPosition(Vector3.zero(), 1 / 60);
+      tracker.reset();
+      expect(tracker.deriveFromPosition(Vector3(1, 0, 0), 1 / 60), Vector3.zero());
     });
   });
 }
