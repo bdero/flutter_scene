@@ -23,12 +23,15 @@
 /// project (see the package README).
 library;
 
-export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
+export 'src/animation.dart'
+    show Animation, AnimationClip, AnimationMask, AnimationPlayer;
 export 'src/animation/animator.dart'
     show
         Animator,
         AnimatorComparison,
         AnimatorCondition,
+        AnimatorLayer,
+        AnimatorLayerWeights,
         AnimatorMotion,
         AnimatorParameters,
         AnimatorState,
