@@ -165,7 +165,12 @@ class EditorController extends ChangeNotifier {
     _ensureStageEnvironment(session.document);
     final controller = EditorController._(
       session,
-      Scene(),
+      // The env var forces the per-object light path, for A/B diagnosing
+      // clustered-lighting artifacts without a rebuild.
+      Scene()
+        ..punctualLightClustering =
+            Platform.environment['FLUTTER_SCENE_EDITOR_NO_LIGHT_CLUSTERING'] !=
+            '1',
       baseDirectory,
       componentRegistry ?? defaultComponentRegistry(),
     );
