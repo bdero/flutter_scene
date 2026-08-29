@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render_view.dart';
 import 'package:flutter_scene/src/render/sky_bake.dart';
+import 'package:flutter_scene/src/render/point_shadow.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -79,6 +80,7 @@ class IrradianceFieldBakeStepper {
     required this.lightComponent,
     required this.punctualLighting,
     required this.spotShadowFrame,
+    required this.pointShadowFrame,
     required void Function({
       required RenderView view,
       required gpu.Texture outputColor,
@@ -89,6 +91,7 @@ class IrradianceFieldBakeStepper {
       required DirectionalLightComponent? lightComponent,
       required PunctualLighting punctualLighting,
       required SpotShadowFrame? spotShadowFrame,
+      required PointShadowFrame? pointShadowFrame,
       bool captureLinearColor,
     })
     renderView,
@@ -108,6 +111,7 @@ class IrradianceFieldBakeStepper {
   final DirectionalLightComponent? lightComponent;
   final PunctualLighting punctualLighting;
   final SpotShadowFrame? spotShadowFrame;
+  final PointShadowFrame? pointShadowFrame;
   final void Function({
     required RenderView view,
     required gpu.Texture outputColor,
@@ -118,6 +122,7 @@ class IrradianceFieldBakeStepper {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
     bool captureLinearColor,
   })
   _renderView;
@@ -183,6 +188,7 @@ class IrradianceFieldBakeStepper {
           lightComponent: lightComponent,
           punctualLighting: punctualLighting,
           spotShadowFrame: spotShadowFrame,
+          pointShadowFrame: pointShadowFrame,
           captureLinearColor: true,
         );
         faces.add(face);

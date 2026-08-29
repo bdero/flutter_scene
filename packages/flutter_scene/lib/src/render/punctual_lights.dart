@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/light_culling.dart';
+import 'package:flutter_scene/src/render/point_shadow.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 
@@ -34,11 +35,16 @@ const int kMaxFroxelLights = 255;
 //   col 2: direction.xyz, spot angular scale
 //   col 3: spot angular offset, shadow slot (-1 = none), falloff exponent,
 //          unused
-//   col 4-7: world -> spot-clip matrix for a shadow-casting spot (else unused)
+//   col 4-7: world -> spot-clip matrix for a shadow-casting spot. A
+//          shadow-casting point light instead packs its face-depth mapping and
+//          sampling parameters here (col 4: depth scale/offset, normal bias,
+//          softness; col 5: depth bias, inverse face resolution), and its
+//          col 3 shadow slot is its first atlas tile relative to the cascade
+//          tiles. Unused otherwise.
 // The shader reads these by computed UV, sidestepping the GLSL ES 1.00 ban on
-// dynamically indexing a uniform array in a fragment shader. The spot shadow
-// matrix rides here rather than in its own texture so no extra sampler is
-// needed (the lit shader is at the backend's sampler limit).
+// dynamically indexing a uniform array in a fragment shader. The shadow data
+// rides here rather than in its own texture so no extra sampler is needed
+// (the lit shader is at the backend's sampler limit).
 const int _texelsPerLight = 8;
 const int _floatsPerLight = _texelsPerLight * 4;
 
@@ -63,6 +69,7 @@ class PunctualLighting {
     required this.indexWidth,
     required this.indexHeight,
     this.spotShadowCount = 0,
+    this.pointShadowTileCount = 0,
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
@@ -77,6 +84,7 @@ class PunctualLighting {
       indexWidth = 0,
       indexHeight = 0,
       spotShadowCount = 0,
+      pointShadowTileCount = 0,
       spotShadowDepthBias = 0.0,
       spotShadowNormalBias = 0.0,
       spotShadowSoftness = 0.0,
@@ -108,6 +116,10 @@ class PunctualLighting {
   /// directional cascades in the shared shadow atlas, and their matrices ride
   /// in the params texture). Zero disables spot shadow sampling.
   final int spotShadowCount;
+
+  /// Number of atlas tiles claimed by shadow-casting point lights (two per
+  /// caster, following the spot tiles). Zero disables point shadow sampling.
+  final int pointShadowTileCount;
 
   /// Shared spot-shadow sampling parameters (from the first caster).
   final double spotShadowDepthBias;
@@ -223,6 +235,7 @@ class PunctualLightBuffer {
     required List<RenderItem> items,
     required Bvh bvh,
     SpotShadowFrame? spotShadows,
+    PointShadowFrame? pointShadows,
     bool enableFroxels = true,
   }) {
     final packed = _packLights(
@@ -253,6 +266,7 @@ class PunctualLightBuffer {
     // Stamp each shadow-casting spot's slot (texel 3.y) and world -> spot-clip
     // matrix (texels 4-7) into its parameters row, so the shader can sample the
     // right shared-atlas tile without a separate matrices texture.
+    final spotTileCount = spotShadows?.matrices.length ?? 0;
     if (spotShadows != null) {
       final spotRowStart =
           directionals.where((d) => !identical(d, primaryDirectional)).length +
@@ -267,6 +281,36 @@ class PunctualLightBuffer {
           base + 32,
           spotShadows.matrices[slot].storage,
         );
+      }
+    }
+
+    // Stamp each shadow-casting point light's first atlas tile (texel 3.y,
+    // relative to the cascade tiles, after the spot tiles) and its face-depth
+    // mapping plus sampling parameters (texels 4-5, free for point rows). The
+    // shader reconstructs each cube face's projection analytically from the
+    // light position, so no per-face matrices are needed: window depth is
+    // scale - offset / faceDepth, the standard perspective mapping.
+    final pointTileCount =
+        (pointShadows?.casters.length ?? 0) * kPointShadowTilesPerLight;
+    if (pointShadows != null) {
+      final pointRowStart = directionals
+          .where((d) => !identical(d, primaryDirectional))
+          .length;
+      for (var pi = 0; pi < points.length; pi++) {
+        final slot = pointShadows.slotOf(points[pi]);
+        if (slot < 0) continue;
+        final light = points[pi].light;
+        final near = light.shadowNear;
+        final far = math.max(light.shadowFar, near * (1.0 + 1e-4));
+        final base = (pointRowStart + pi) * _floatsPerLight;
+        packed.params[base + 13] =
+            (spotTileCount + slot * kPointShadowTilesPerLight).toDouble();
+        packed.params[base + 16] = far / (far - near);
+        packed.params[base + 17] = far * near / (far - near);
+        packed.params[base + 18] = light.shadowNormalBias;
+        packed.params[base + 19] = light.shadowSoftness;
+        packed.params[base + 20] = light.shadowDepthBias;
+        packed.params[base + 21] = 1.0 / light.shadowMapResolution;
       }
     }
 
@@ -306,8 +350,6 @@ class PunctualLightBuffer {
     final paramsTexture = _paramsRing.acquire(_texelsPerLight, count);
     paramsTexture.overwrite(packed.params.buffer.asByteData());
 
-    final spotCount = spotShadows?.matrices.length ?? 0;
-
     final indexLength = cull.indices.length;
     if (indexLength == 0) {
       // Every item was culled out (lights exist but reach nothing this frame).
@@ -317,7 +359,8 @@ class PunctualLightBuffer {
         paramsCount: count,
         indexWidth: 0,
         indexHeight: 0,
-        spotShadowCount: spotCount,
+        spotShadowCount: spotTileCount,
+        pointShadowTileCount: pointTileCount,
         spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
         spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
         spotShadowSoftness: spotShadows?.softness ?? 0.0,
@@ -341,7 +384,8 @@ class PunctualLightBuffer {
       paramsCount: count,
       indexWidth: indexWidth,
       indexHeight: indexHeight,
-      spotShadowCount: spotCount,
+      spotShadowCount: spotTileCount,
+      pointShadowTileCount: pointTileCount,
       spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
       spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
       spotShadowSoftness: spotShadows?.softness ?? 0.0,
@@ -691,6 +735,9 @@ class PunctualLightBuffer {
       floats[base + 5] = light.color.y * light.intensity;
       floats[base + 6] = light.color.z * light.intensity;
       floats[base + 7] = light.range > 0.0 ? 1.0 / light.range : 0.0;
+      // Shadow slot (texel 3.y); -1 = no shadow. build() stamps the slot and
+      // face-depth parameters for shadow-casting point lights.
+      floats[base + 13] = -1.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.1);
       cullables.add(
         CullableLight(

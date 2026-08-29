@@ -725,13 +725,17 @@ class EnvironmentEffectsSpec {
     this.globalIlluminationUpdateWhenIdleOnly = false,
     this.globalIlluminationBakeOnly = false,
     this.temporalAntiAliasingEnabled = false,
-    this.temporalAntiAliasingMinimumCurrentWeight = 0.1,
-    this.temporalAntiAliasingVarianceGamma = 1.0,
-    this.temporalAntiAliasingSharpness = 0.0,
-    this.temporalAntiAliasingJitterSequenceLength = 16,
-    this.temporalAntiAliasingJitterScale = 1.0,
-    this.temporalAntiAliasingObjectMotion = true,
-    this.temporalAntiAliasingSkinnedMotion = true,
+    this.temporalAntiAliasingMinimumCurrentWeight = 0.15,
+    this.temporalAntiAliasingVarianceGamma = 1.2,
+    this.temporalAntiAliasingSharpness = 0.15,
+    this.temporalAntiAliasingJitterSequenceLength = 11,
+    this.temporalAntiAliasingJitterScale = 0.46,
+    this.temporalAntiAliasingObjectMotion = false,
+    this.temporalAntiAliasingSkinnedMotion = false,
+    this.smaaThreshold = 0.1,
+    this.smaaMaxSearchSteps = 16,
+    this.smaaMaxDiagonalSearchSteps = 8,
+    this.smaaCornerRounding = 25.0,
     this.fogEnabled = false,
     this.fogMode = 'exponential',
     Vector3? fogColor,
@@ -884,6 +888,10 @@ class EnvironmentEffectsSpec {
             other.temporalAntiAliasingObjectMotion,
         temporalAntiAliasingSkinnedMotion:
             other.temporalAntiAliasingSkinnedMotion,
+        smaaThreshold: other.smaaThreshold,
+        smaaMaxSearchSteps: other.smaaMaxSearchSteps,
+        smaaMaxDiagonalSearchSteps: other.smaaMaxDiagonalSearchSteps,
+        smaaCornerRounding: other.smaaCornerRounding,
         fogEnabled: other.fogEnabled,
         fogMode: other.fogMode,
         fogColor: other.fogColor.clone(),
@@ -1024,6 +1032,12 @@ class EnvironmentEffectsSpec {
   double temporalAntiAliasingJitterScale;
   bool temporalAntiAliasingObjectMotion;
   bool temporalAntiAliasingSkinnedMotion;
+
+  /// SMAA quality (active when the stage's anti-aliasing mode is `smaa`).
+  double smaaThreshold;
+  int smaaMaxSearchSteps;
+  int smaaMaxDiagonalSearchSteps;
+  double smaaCornerRounding;
 
   Vector3 fogColor;
   double fogSkyColorInfluence;

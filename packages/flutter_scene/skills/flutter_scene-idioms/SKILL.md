@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-idioms
-version: 4
+version: 5
 description: Write correct flutter_scene code. Use this whenever building 3D with the flutter_scene Dart/Flutter engine (rendering a scene, geometry, materials, lighting, loading a .glb model, animation, custom shaders). It corrects the wrong assumptions models carry from three.js, Godot, and Unity, and names the APIs and traps that are specific to this engine.
 ---
 

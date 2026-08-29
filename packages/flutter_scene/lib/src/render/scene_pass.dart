@@ -309,10 +309,14 @@ class ScenePass extends RenderGraphPass {
       punctualIndexWidth: froxels?.width ?? _punctualLighting.indexWidth,
       punctualIndexHeight: froxels?.height ?? _punctualLighting.indexHeight,
       froxels: froxels,
-      // Spot shadows share the atlas, so only sample them when it was produced.
+      // Spot and point shadows share the atlas, so only sample them when it
+      // was produced.
       spotShadowCount: shadowMap == null
           ? 0
           : _punctualLighting.spotShadowCount,
+      pointShadowTileCount: shadowMap == null
+          ? 0
+          : _punctualLighting.pointShadowTileCount,
       spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
       spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
       spotShadowSoftness: _punctualLighting.spotShadowSoftness,

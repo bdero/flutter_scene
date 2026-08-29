@@ -1805,6 +1805,55 @@ bool _applyEnvironmentEffects(
     e.autoExposureSpeedDown,
     (v) => e.autoExposureSpeedDown = v,
   );
+  number(
+    'temporalAntiAliasingMinimumCurrentWeight',
+    e.temporalAntiAliasingMinimumCurrentWeight,
+    (v) => e.temporalAntiAliasingMinimumCurrentWeight = v,
+  );
+  number(
+    'temporalAntiAliasingVarianceGamma',
+    e.temporalAntiAliasingVarianceGamma,
+    (v) => e.temporalAntiAliasingVarianceGamma = v,
+  );
+  number(
+    'temporalAntiAliasingSharpness',
+    e.temporalAntiAliasingSharpness,
+    (v) => e.temporalAntiAliasingSharpness = v,
+  );
+  integer(
+    'temporalAntiAliasingJitterSequenceLength',
+    e.temporalAntiAliasingJitterSequenceLength,
+    (v) => e.temporalAntiAliasingJitterSequenceLength = v,
+  );
+  number(
+    'temporalAntiAliasingJitterScale',
+    e.temporalAntiAliasingJitterScale,
+    (v) => e.temporalAntiAliasingJitterScale = v,
+  );
+  boolean(
+    'temporalAntiAliasingObjectMotion',
+    (v) => e.temporalAntiAliasingObjectMotion = v,
+  );
+  boolean(
+    'temporalAntiAliasingSkinnedMotion',
+    (v) => e.temporalAntiAliasingSkinnedMotion = v,
+  );
+  number('smaaThreshold', e.smaaThreshold, (v) => e.smaaThreshold = v);
+  integer(
+    'smaaMaxSearchSteps',
+    e.smaaMaxSearchSteps,
+    (v) => e.smaaMaxSearchSteps = v,
+  );
+  integer(
+    'smaaMaxDiagonalSearchSteps',
+    e.smaaMaxDiagonalSearchSteps,
+    (v) => e.smaaMaxDiagonalSearchSteps = v,
+  );
+  number(
+    'smaaCornerRounding',
+    e.smaaCornerRounding,
+    (v) => e.smaaCornerRounding = v,
+  );
   return changed;
 }
 

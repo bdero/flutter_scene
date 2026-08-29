@@ -6,6 +6,9 @@
 uniform SmaaInfo {
   // (1/width, 1/height, width, height) of the display target.
   vec4 rt_metrics;
+  // Runtime quality (Scene.smaa): threshold, max search steps, max diagonal
+  // search steps, corner rounding percentage.
+  vec4 params;
 }
 smaa_info;
 

@@ -91,6 +91,11 @@ void main() {
           godRaysEnabled: true,
           depthOfFieldEnabled: true,
           autoExposureEnabled: true,
+          temporalAntiAliasingSharpness: 0.4,
+          temporalAntiAliasingJitterSequenceLength: 8,
+          temporalAntiAliasingObjectMotion: true,
+          smaaThreshold: 0.05,
+          smaaMaxSearchSteps: 32,
         );
     });
 
@@ -111,6 +116,11 @@ void main() {
     expect(scene.godRays.enabled, isTrue);
     expect(scene.depthOfField.enabled, isTrue);
     expect(scene.autoExposure.enabled, isTrue);
+    expect(scene.temporalAntiAliasing.sharpness, 0.4);
+    expect(scene.temporalAntiAliasing.jitterSequenceLength, 8);
+    expect(scene.temporalAntiAliasing.objectMotion, isTrue);
+    expect(scene.smaa.threshold, 0.05);
+    expect(scene.smaa.maxSearchSteps, 32);
   });
 
   test(

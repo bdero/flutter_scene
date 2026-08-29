@@ -57,6 +57,7 @@ import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
 import 'render/punctual_lights.dart';
+import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
 import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
@@ -885,6 +886,7 @@ base class Scene implements SceneGraph {
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final pointShadowFrame = collectPointShadows(renderScene.pointLights);
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -894,6 +896,7 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
       enableFroxels: punctualLightClustering,
     );
     return _captureEnvironmentAt(
@@ -906,6 +909,7 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
     );
   }
 
@@ -919,6 +923,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
   }) {
     final pool = _probeCapturePool ??= TransientTexturePool();
     // Faces render with the cube-seam overscan widening so the assembled
@@ -947,6 +952,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
         captureLinearColor: true,
       );
       faces.add(face);
@@ -978,6 +984,7 @@ base class Scene implements SceneGraph {
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final pointShadowFrame = collectPointShadows(renderScene.pointLights);
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -987,6 +994,7 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
       enableFroxels: punctualLightClustering,
     );
     final chosen = renderScene.irradianceVolumeComponents.isNotEmpty
@@ -1019,6 +1027,7 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
       renderView: _renderViewToTexture,
     );
   }
@@ -1219,6 +1228,10 @@ base class Scene implements SceneGraph {
   /// [AntiAliasingMode.taa].
   final TemporalAntiAliasingSettings temporalAntiAliasing =
       TemporalAntiAliasingSettings();
+
+  /// SMAA quality settings. Active when [antiAliasingMode] is
+  /// [AntiAliasingMode.smaa].
+  final SmaaSettings smaa = SmaaSettings();
 
   // TODO(taa-multiview): track TAA history and jitter per view rather than
   // per scene so multiview configurations do not share history.
@@ -1612,8 +1625,10 @@ base class Scene implements SceneGraph {
     // All other directional lights remain in the additional-light buffer.
     final lightComponent = renderScene.primaryDirectionalLight;
 
-    // Select this frame's shadow-casting spots (view-independent).
+    // Select this frame's shadow-casting spots and point lights
+    // (view-independent).
     final spotShadowFrame = collectSpotShadows(visibleSpots);
+    final pointShadowFrame = collectPointShadows(visiblePoints);
 
     // The additional analytic lights (point, spot, and directional lights past
     // the first) are view-independent, so build their shared data texture once
@@ -1627,6 +1642,7 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
       enableFroxels: punctualLightClustering,
     );
 
@@ -1648,6 +1664,7 @@ base class Scene implements SceneGraph {
           lightComponent: lightComponent,
           punctualLighting: punctualLighting,
           spotShadowFrame: spotShadowFrame,
+          pointShadowFrame: pointShadowFrame,
         ),
       );
     }
@@ -1693,6 +1710,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
         capturePlanarReflections: identical(view, planarCaptureView),
       );
       target.markUpdated(now);
@@ -1724,6 +1742,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
         capturePlanarReflections: identical(view, planarCaptureView),
       );
     }
@@ -1925,6 +1944,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
     bool capturePlanarReflections = false,
   }) {
     // Allocate the offscreen render target at physical-pixel resolution so
@@ -1965,6 +1985,7 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
       capturer: capturer,
       capturePlanarReflections: capturePlanarReflections,
     );
@@ -1998,6 +2019,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
     RenderGraphCapturer? capturer,
     // A linear-HDR capture (environment probes): the graph stops after the
     // scene pass and blits the lit scene color into [outputColor], with no
@@ -2153,17 +2175,23 @@ base class Scene implements SceneGraph {
     }
 
     final graph = RenderGraph();
-    // Directional cascades and shadow-casting spots share one atlas (and so one
-    // sampler in the lit shader). All tiles use one resolution, the directional
-    // light's when it casts, otherwise the spots'.
-    if (cascades.isNotEmpty || spotShadowFrame != null) {
+    // Directional cascades, shadow-casting spots, and shadow-casting point
+    // lights share one atlas (and so one sampler in the lit shader). All tiles
+    // use one resolution, the directional light's when it casts, otherwise the
+    // spots', otherwise twice a point caster's face resolution (faces pack
+    // four to a tile at half the tile edge).
+    if (cascades.isNotEmpty ||
+        spotShadowFrame != null ||
+        pointShadowFrame != null) {
       graph.addPass(
         ShadowPass(
           renderScene: renderScene,
           cascades: effectiveCascades,
           tileResolution: cascades.isNotEmpty
               ? light!.shadowMapResolution
-              : spotShadowFrame!.tileResolution,
+              : spotShadowFrame?.tileResolution ??
+                    pointShadowFrame!.casters.first.light.shadowMapResolution *
+                        2,
           casterFaces: cascades.isNotEmpty
               ? light!.shadowCasterFaces
               : ShadowCasterFaces.front,
@@ -2172,6 +2200,7 @@ base class Scene implements SceneGraph {
               : 0xFF,
           cameraPosition: camera.position,
           spotShadows: spotShadowFrame,
+          pointShadows: pointShadowFrame,
           cachePlan: shadowCachePlan,
           // PostShadowInfo describes the directional cascades, so publish it
           // only when they exist (a spot-only atlas has no directional light).
@@ -2790,7 +2819,8 @@ base class Scene implements SceneGraph {
     }
     if (enableSmaa) {
       displaySteps.add(
-        (output) => SmaaPass(output: output, dimensions: pixelSize),
+        (output) =>
+            SmaaPass(output: output, dimensions: pixelSize, settings: smaa),
       );
     }
 

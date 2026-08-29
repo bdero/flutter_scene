@@ -296,7 +296,10 @@ Lights (all in `light.dart`, all fields mutable):
   shadowDepthBias = 0.02, shadowNormalBias = 0.02, shadowAmbientStrength = 0.0, shadowFilter =
   rotatedPoisson, shadowCasterFaces = front, contactShadows = false, contactShadowDistance = 0.3,
   angularRadius = 0.005})`.
-- `PointLight({color, intensity = 1.0, range = 0.0, falloffExponent = 2.0})`. No shadows.
+- `PointLight({color, intensity = 1.0, range = 0.0, falloffExponent = 2.0, castsShadow = false,
+  shadowMapResolution = 512, shadowNear = 0.1, shadowDepthBias = 0.0, shadowNormalBias = 0.1,
+  shadowSoftness = 1.0, shadowCasterFaces = front})`. Shadows render six cube faces into the shared
+  atlas (a limited number of point casters per frame; the rest shade unshadowed).
 - `SpotLight({color, intensity = 1.0, range = 0.0, falloffExponent = 2.0, direction /*(0,-1,0)*/,
   innerConeAngle = 0.0, outerConeAngle = pi/4, castsShadow = false, ...})`.
 - `RectAreaLight({color, intensity = 1.0, width = 1.0, height = 1.0, range = 0.0})`. Local XY plane,
@@ -395,7 +398,9 @@ node-anchored, parallax-corrected, auto-blended probe). Statics: `Scene.initiali
 `Scene.isReadyToRender`, `Scene.physicalCameraExposure`, `Scene.isAntiAliasingModeSupported`,
 `Scene.effectiveAntiAliasingMode`.
 
-`Scene.antiAliasingMode` (`AntiAliasingMode.auto` -> msaa or fxaa; also `none`, `msaa`, `fxaa`, `smaa`),
+`Scene.antiAliasingMode` (`AntiAliasingMode.auto` -> msaa or fxaa; also `none`, `msaa`, `fxaa`,
+`smaa`, `taa`), `Scene.smaa` (`SmaaSettings`: threshold, search steps, corner rounding),
+`Scene.temporalAntiAliasing` (`TemporalAntiAliasingSettings`),
 `Scene.renderScale` (1.0), `Scene.filterQuality` (`FilterQuality.medium`), `Scene.views`
 (`List<RenderView>` for RenderTexture targets).
 

@@ -589,18 +589,25 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   };
   final taa = <String, dynamic>{
     if (e.temporalAntiAliasingEnabled) 'enabled': true,
-    if (e.temporalAntiAliasingMinimumCurrentWeight != 0.1)
+    if (e.temporalAntiAliasingMinimumCurrentWeight != 0.15)
       'minimumCurrentWeight': e.temporalAntiAliasingMinimumCurrentWeight,
-    if (e.temporalAntiAliasingVarianceGamma != 1.0)
+    if (e.temporalAntiAliasingVarianceGamma != 1.2)
       'varianceGamma': e.temporalAntiAliasingVarianceGamma,
-    if (e.temporalAntiAliasingSharpness != 0.0)
+    if (e.temporalAntiAliasingSharpness != 0.15)
       'sharpness': e.temporalAntiAliasingSharpness,
-    if (e.temporalAntiAliasingJitterSequenceLength != 16)
+    if (e.temporalAntiAliasingJitterSequenceLength != 11)
       'jitterSequenceLength': e.temporalAntiAliasingJitterSequenceLength,
-    if (e.temporalAntiAliasingJitterScale != 1.0)
+    if (e.temporalAntiAliasingJitterScale != 0.46)
       'jitterScale': e.temporalAntiAliasingJitterScale,
-    if (!e.temporalAntiAliasingObjectMotion) 'objectMotion': false,
-    if (!e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': false,
+    if (e.temporalAntiAliasingObjectMotion) 'objectMotion': true,
+    if (e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': true,
+  };
+  final smaa = <String, dynamic>{
+    if (e.smaaThreshold != 0.1) 'threshold': e.smaaThreshold,
+    if (e.smaaMaxSearchSteps != 16) 'maxSearchSteps': e.smaaMaxSearchSteps,
+    if (e.smaaMaxDiagonalSearchSteps != 8)
+      'maxDiagonalSearchSteps': e.smaaMaxDiagonalSearchSteps,
+    if (e.smaaCornerRounding != 25.0) 'cornerRounding': e.smaaCornerRounding,
   };
   return {
     if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
@@ -614,6 +621,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (ssr.isNotEmpty) 'screenSpaceReflections': ssr,
     if (gi.isNotEmpty) 'globalIllumination': gi,
     if (taa.isNotEmpty) 'temporalAntiAliasing': taa,
+    if (smaa.isNotEmpty) 'smaa': smaa,
     if (fog.isNotEmpty) 'fog': fog,
     if (godRays.isNotEmpty) 'godRays': godRays,
     if (dof.isNotEmpty) 'depthOfField': dof,
@@ -1122,6 +1130,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
   final ssr = _map(effects['screenSpaceReflections']);
   final gi = _map(effects['globalIllumination']);
   final taa = _map(effects['temporalAntiAliasing']);
+  final smaa = _map(effects['smaa']);
   final fog = _map(effects['fog']);
   final rays = _map(effects['godRays']);
   final dof = _map(effects['depthOfField']);
@@ -1202,15 +1211,20 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     globalIlluminationBakeOnly: gi['bakeOnly'] as bool? ?? false,
     temporalAntiAliasingEnabled: taa['enabled'] as bool? ?? false,
     temporalAntiAliasingMinimumCurrentWeight: _d(
-      taa['minimumCurrentWeight'] ?? 0.1,
+      taa['minimumCurrentWeight'] ?? 0.15,
     ),
-    temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.0),
-    temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.0),
+    temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.2),
+    temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.15),
     temporalAntiAliasingJitterSequenceLength:
-        (taa['jitterSequenceLength'] as num?)?.toInt() ?? 16,
-    temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 1.0),
-    temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? true,
-    temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? true,
+        (taa['jitterSequenceLength'] as num?)?.toInt() ?? 11,
+    temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 0.46),
+    temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? false,
+    temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? false,
+    smaaThreshold: _d(smaa['threshold'] ?? 0.1),
+    smaaMaxSearchSteps: (smaa['maxSearchSteps'] as num?)?.toInt() ?? 16,
+    smaaMaxDiagonalSearchSteps:
+        (smaa['maxDiagonalSearchSteps'] as num?)?.toInt() ?? 8,
+    smaaCornerRounding: _d(smaa['cornerRounding'] ?? 25.0),
     screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
     screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
     screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),

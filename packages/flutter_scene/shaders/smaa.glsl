@@ -42,11 +42,13 @@
 // SMAA_RT_METRICS: (1/width, 1/height, width, height) of the display target.
 #define SMAA_RT_METRICS smaa_info.rt_metrics
 
-// The SMAA_PRESET_HIGH tier.
-#define SMAA_THRESHOLD 0.1
-#define SMAA_MAX_SEARCH_STEPS 16
-#define SMAA_MAX_SEARCH_STEPS_DIAG 8
-#define SMAA_CORNER_ROUNDING 25.0
+// Runtime quality parameters (Scene.smaa), defaulting to the
+// SMAA_PRESET_HIGH tier. Loops bounded by the search steps are dynamically
+// bounded, legal in every compiled dialect (GLSL ES 3.00+).
+#define SMAA_THRESHOLD smaa_info.params.x
+#define SMAA_MAX_SEARCH_STEPS int(smaa_info.params.y)
+#define SMAA_MAX_SEARCH_STEPS_DIAG int(smaa_info.params.z)
+#define SMAA_CORNER_ROUNDING smaa_info.params.w
 #define SMAA_LOCAL_CONTRAST_ADAPTATION_FACTOR 2.0
 
 #define SMAA_AREATEX_MAX_DISTANCE 16.0

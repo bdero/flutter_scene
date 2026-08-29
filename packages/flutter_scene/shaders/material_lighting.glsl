@@ -677,49 +677,22 @@ vec4 EvaluateLighting(MaterialInputs material) {
   }
 
   // Additional analytic lights (point, spot, and directional lights past the
-  // first); point lights do not cast shadows. The scene may hold any number of
-  // lights; per-object culling (or the froxel lookup below) gives this
-  // fragment a contiguous slice of the light-index buffer, and the loop shades
-  // only that slice. Every fetch is a computed-UV texture read, so no uniform
-  // array is dynamically indexed.
+  // first). The scene may hold any number of lights; per-object culling (or
+  // the froxel lookup below) gives this fragment a contiguous slice of the
+  // light-index buffer, and the loop shades only that slice. Every fetch is a
+  // computed-UV texture read, so no uniform array is dynamically indexed.
   //
   // punctual_dims.x is the parameters-texture row count; 0 means the scene has
   // no punctual lights this frame, so ignore any stale per-object count (and
   // never divide by the zero texture height in the fetch helpers).
   //
   // Froxel mode (froxel_grid.z > 0): the fragment's light slice comes from
-  // its froxel instead of the per-draw uniforms, so no draw carries light
-  // state and the loop budget applies per froxel, not per object. The froxel
-  // is derived from the camera basis (not gl_FragCoord, whose vertical origin
-  // differs across backends): view-space position via the camera axes, then
-  // perspective tile mapping with the half-fov tangents, then an exponential
-  // depth slice.
-  int punctual_count = 0;
-  int punctual_offset = 0;
-  if (frag_info.punctual_dims.x >= 0.5) {
-    if (frag_info.froxel_grid.z > 0.5) {
-      vec3 to_frag = -v_viewvector;
-      float view_z = max(dot(to_frag, frag_info.camera_forward.xyz), 1e-4);
-      float ndc_x = dot(to_frag, frag_info.camera_right.xyz) /
-                    max(view_z * frag_info.scene_inputs.w, 1e-6);
-      float ndc_y = dot(to_frag, frag_info.camera_up.xyz) /
-                    max(view_z * frag_info.camera_forward.w, 1e-6);
-      float fnx = frag_info.froxel_grid.x;
-      float fny = frag_info.froxel_grid.y;
-      float fnz = frag_info.froxel_grid.z;
-      float fx = clamp(floor((ndc_x * 0.5 + 0.5) * fnx), 0.0, fnx - 1.0);
-      float fy = clamp(floor((0.5 - ndc_y * 0.5) * fny), 0.0, fny - 1.0);
-      float fz = clamp(floor(log2(view_z) * frag_info.froxel_grid.w +
-                             frag_info.punctual_dims.w),
-                       0.0, fnz - 1.0);
-      vec4 entry = FetchPunctualEntry(int((fz * fny + fy) * fnx + fx + 0.5));
-      punctual_offset = int(entry.r + 0.5);
-      punctual_count = int(entry.g + 0.5);
-    } else {
-      punctual_count = int(frag_info.radiance_blend.z);
-      punctual_offset = int(frag_info.radiance_blend.w);
-    }
-  }
+  // its froxel instead of the per-draw uniforms (PunctualLightSlice in
+  // material_shadow_sampling.glsl), so no draw carries light state and the
+  // loop budget applies per froxel, not per object.
+  vec2 punctual_slice = PunctualLightSlice();
+  int punctual_offset = int(punctual_slice.x + 0.5);
+  int punctual_count = int(punctual_slice.y + 0.5);
   // A dynamically bounded loop: every shader dialect this compiles to is
   // GLSL ES 3.00 or newer, where runtime loop bounds are legal, so no driver
   // can unroll it and the budget is a CPU-side data choice
@@ -819,6 +792,15 @@ vec4 EvaluateLighting(MaterialInputs material) {
         }
 #endif
       }
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+      else if (type > 0.5 && l3.y > -0.5 &&
+               frag_info.spot_shadow_params.x > 0.5) {
+        // Point shadow, when this light's cube faces ride the shared atlas
+        // (l3.y is its first tile after the cascades).
+        radiance *= SamplePointShadow(
+            light_row, l3.y, v_position, GetWorldNormal());
+      }
+#endif
     }
     direct += EvaluateAnalyticLight(
         material, punctual_light_vector, radiance, normal, camera_normal,
