@@ -995,11 +995,10 @@ class _EditorHomeState extends State<_EditorHome> {
 
   /// The launcher's gallery, read on first use and after any change that
   /// could alter it.
-  ProjectLibrary get _projectLibrary =>
-      _library ??= buildProjectLibrary(
-        _settings.recentProjects,
-        coverFor: _covers.pathFor,
-      );
+  ProjectLibrary get _projectLibrary => _library ??= buildProjectLibrary(
+    _settings.recentProjects,
+    coverFor: _covers.pathFor,
+  );
 
   void _rescanProjects() => setState(() => _library = null);
 
