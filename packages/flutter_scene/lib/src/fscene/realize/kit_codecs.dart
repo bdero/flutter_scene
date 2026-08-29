@@ -1243,6 +1243,16 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
       get: (c) => c.deepColor,
       set: (c, v) => c.deepColor.setFrom(v),
     ),
+    ComponentField.number(
+      'choppiness',
+      defaultValue: 1.0,
+      doc:
+          'How hard the water is running: 0 glassy, 1 the waves as authored, '
+          'above that a sea getting up. Weather drives it.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 2.5)],
+      get: (c) => c.choppiness,
+      set: (c, v) => c.choppiness = v,
+    ),
     ComponentField.boolean(
       'animate',
       defaultValue: true,
@@ -1258,6 +1268,7 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
     resolution: props.integer('resolution'),
     style: props.enumValue('style', WaterStyle.values),
     traversal: props.enumValue('traversal', WaterTraversal.values),
+    choppiness: props.number('choppiness'),
     shallowColor: props.vec4('shallowColor'),
     deepColor: props.vec4('deepColor'),
     animate: props.boolean('animate'),
