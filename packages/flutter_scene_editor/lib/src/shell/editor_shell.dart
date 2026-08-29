@@ -25,6 +25,7 @@ import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
 import '../panels/render_graph_panel.dart';
+import '../inspector/scene_settings_dialog.dart';
 import '../render_graph/render_graph_inspector.dart';
 import '../project/app_session.dart';
 import '../project/project_runner.dart';
@@ -995,6 +996,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onNewViewport: _newViewport,
                   onShowToolchain: _showToolchain,
                   onShowSettings: widget.onShowSettings,
+                  onShowSceneSettings: _showSceneSettings,
                   projectName: widget.projectName,
                   onOpenProject: widget.onOpenProject,
                   onNewProject: widget.onNewProject,
@@ -1139,6 +1141,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     _currentPath = path;
     widget.onDocumentPathChanged?.call(path);
   }
+
+  void _showSceneSettings() =>
+      unawaited(showSceneSettings(context, controller: _ctrl));
 
   Future<void> _newScene() async {
     // Asked rather than assumed: an empty scene is a sky and nothing else,
@@ -1531,6 +1536,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onNewViewport,
     required this.onShowToolchain,
     this.onShowSettings,
+    required this.onShowSceneSettings,
     this.projectName,
     this.onOpenProject,
     this.onNewProject,
@@ -1589,6 +1595,9 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onNewViewport;
   final VoidCallback onShowToolchain;
   final VoidCallback? onShowSettings;
+
+  /// Opens the scene's own settings (its lighting, background and rendering).
+  final VoidCallback onShowSceneSettings;
   final String? projectName;
   final VoidCallback? onOpenProject;
   final VoidCallback? onNewProject;
@@ -1694,6 +1703,9 @@ class _EditorMenuBar extends StatelessWidget {
                 ),
                 _MenuItem(label: 'Save', onTap: onSave),
                 _MenuItem(label: 'Save As…', onTap: onSaveAs),
+                const _MenuItem.divider(),
+                // The scene's own settings, distinct from the editor's below.
+                _MenuItem(label: 'Scene Settings…', onTap: onShowSceneSettings),
                 if (onShowSettings != null) ...[
                   const _MenuItem.divider(),
                   _MenuItem(label: 'Settings…', onTap: onShowSettings),

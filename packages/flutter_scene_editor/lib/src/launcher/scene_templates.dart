@@ -94,6 +94,8 @@ SceneTemplate sceneTemplateById(String id) => sceneTemplates.firstWhere(
 SceneDocument buildEmptyScene() {
   final document = SceneDocument();
   _addSky(document);
+  _addSun(document);
+  _addCamera(document);
   return document;
 }
 
@@ -161,6 +163,7 @@ SceneDocument buildStudioScene() {
       ),
     ],
   );
+  _addCamera(document);
   return document;
 }
 
@@ -201,6 +204,7 @@ SceneDocument buildOutdoorScene() {
       ),
     ],
   );
+  _addCamera(document);
   return document;
 }
 
@@ -287,6 +291,7 @@ SceneDocument buildPlaygroundScene() {
       ),
     ],
   );
+  _addCamera(document);
   return document;
 }
 
@@ -305,6 +310,44 @@ void _addSky(SceneDocument document) {
     ),
   );
   document.stage.environmentRef = environment.id;
+}
+
+/// The sun and the camera every scene starts with.
+///
+/// A scene with neither is a scene you cannot light and cannot shoot, and
+/// adding them back is the same two gestures every time. The sun is the one
+/// a template overrides when it wants its own key light; the camera is the
+/// shot the scene is framed for, which the editor's own viewport camera is
+/// not -- that one is where you happen to be looking.
+void _addSun(SceneDocument document, {String name = 'Directional Light'}) {
+  _addNode(
+    document,
+    name: name,
+    rotation: _lookDown(-0.7, -0.62),
+    components: [
+      ComponentSpec(
+        'directionalLight',
+        properties: {
+          'intensity': const DoubleValue(3.4),
+          'castsShadows': const BoolValue(true),
+        },
+      ),
+    ],
+  );
+}
+
+/// A camera set back and above the origin, tilted down at it.
+///
+/// Roughly where you stand to look at something on the floor, so the first
+/// thing rendered through it is the scene rather than the sky.
+void _addCamera(SceneDocument document) {
+  _addNode(
+    document,
+    name: 'Camera',
+    translation: Vector3(0, 2.4, 7.5),
+    rotation: _lookDown(0, -0.18),
+    components: [ComponentSpec('camera')],
+  );
 }
 
 MaterialResource _material(

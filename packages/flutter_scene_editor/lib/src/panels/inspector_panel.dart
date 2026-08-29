@@ -44,7 +44,7 @@ class InspectorPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: node == null
-                    ? StageSection(controller: controller)
+                    ? const _NothingSelected()
                     : _NodeInspector(node: node, controller: controller),
               ),
             ],
@@ -53,6 +53,45 @@ class InspectorPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+/// What the inspector says when nothing is selected.
+///
+/// It used to say it with the scene's settings, which made those the thing
+/// you found by accident and the selected node the thing you went looking
+/// for. They have their own place now, and this says where.
+class _NothingSelected extends StatelessWidget {
+  const _NothingSelected();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.ads_click_outlined,
+            size: 22,
+            color: editorMutedTextColor,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Select a node to edit it.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: editorMutedTextColor),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'The scene\'s own lighting, background and rendering are under '
+            'File \u203a Scene Settings.',
+            textAlign: TextAlign.center,
+            style: editorDetailText,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _NodeInspector extends StatelessWidget {

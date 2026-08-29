@@ -99,10 +99,32 @@ void main() {
     }
   });
 
-  test('the empty one really is empty', () {
+  test('the empty one is a sky, a sun and a camera', () {
+    // "Empty" is the blank page, not a scene you cannot light and cannot
+    // shoot: adding those two back was the same two gestures every time.
     final document = buildEmptyScene();
-    expect(document.nodes, isEmpty);
     expect(document.stage.environmentRef, isNotNull);
+    expect(componentsOfType(document, 'mesh'), isEmpty);
+    expect(componentsOfType(document, 'directionalLight'), hasLength(1));
+    expect(componentsOfType(document, 'camera'), hasLength(1));
+  });
+
+  group('every template', () {
+    for (final template in sceneTemplates) {
+      test('${template.name} starts with a light and a camera', () {
+        final document = template.build();
+        expect(
+          componentsOfType(document, 'directionalLight'),
+          isNotEmpty,
+          reason: 'a scene you cannot light',
+        );
+        expect(
+          componentsOfType(document, 'camera'),
+          hasLength(1),
+          reason: 'a scene you cannot shoot',
+        );
+      });
+    }
   });
 
   test('the studio has something to look at and light to see it by', () {
