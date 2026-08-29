@@ -315,99 +315,95 @@ class _AnimationPanelState extends State<AnimationPanel>
 
   Widget _buildToolbar(BuildContext context, AnimationTimeline? model) {
     final clips = _clips.values.toList();
-    return Container(
-      height: editorToolbarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          _ClipSelector(
-            clips: clips,
-            selected: model?.id,
-            onSelected: (id) => setState(() {
-              _detachPreview();
-              _clipId = id;
-              _time = 0;
-              _selectedKey = null;
-            }),
-            onCreate: () => _ctrl.run(createAnimation.name, {}),
-          ),
-          const SizedBox(width: 8),
-          _TransportButton(
-            icon: Icons.fiber_manual_record,
-            tooltip: model == null
-                ? 'Key the playhead'
-                : 'Key the playhead on '
-                      '${_selectedKey == null ? 'every channel' : 'the selected channel'}',
-            color: editorErrorColor,
-            onPressed: model == null ? null : () => _insertKeyAtPlayhead(model),
-          ),
-          _TransportButton(
-            icon: Icons.first_page,
-            tooltip: 'Go to start',
-            onPressed: model == null ? null : () => _seek(0),
-          ),
-          _TransportButton(
-            icon: Icons.chevron_left,
-            tooltip: 'Previous key',
-            onPressed: model == null
-                ? null
-                : () => _jumpKey(model, forward: false),
-          ),
-          _TransportButton(
-            icon: _playing ? Icons.pause : Icons.play_arrow,
-            tooltip: _playing ? 'Pause' : 'Play',
-            onPressed: model == null ? null : _togglePlay,
-          ),
-          _TransportButton(
-            icon: Icons.chevron_right,
-            tooltip: 'Next key',
-            onPressed: model == null
-                ? null
-                : () => _jumpKey(model, forward: true),
-          ),
-          _TransportButton(
-            icon: Icons.last_page,
-            tooltip: 'Go to end',
-            onPressed: model == null ? null : () => _seek(model.endTime),
-          ),
-          _TransportButton(
-            icon: Icons.repeat,
-            tooltip: 'Loop',
-            active: _looping,
-            onPressed: () => setState(() => _looping = !_looping),
-          ),
-          const SizedBox(width: 8),
-          _NumberField(
-            label: 'Frame',
-            width: 54,
-            value: (_time * _sampleRate).round().toDouble(),
-            onChanged: (value) =>
-                _seek(_sampleRate <= 0 ? value : value / _sampleRate),
-          ),
-          const SizedBox(width: 6),
-          _NumberField(
-            label: 'Samples',
-            width: 48,
-            value: _sampleRate.toDouble(),
-            onChanged: (value) =>
-                setState(() => _sampleRate = value.round().clamp(1, 240)),
-          ),
-          const Spacer(),
-          _TransportButton(
-            icon: Icons.delete_outline,
-            tooltip: 'Delete the selected key',
-            onPressed: model == null || _selectedKey == null
-                ? null
-                : () => _deleteSelectedKey(model),
-          ),
-          const SizedBox(width: 8),
-          _ViewToggle(
-            curves: _curves,
-            onChanged: (value) => setState(() => _curves = value),
-          ),
-        ],
-      ),
+    return EditorToolbar(
+      horizontalPadding: 6,
+      children: [
+        _ClipSelector(
+          clips: clips,
+          selected: model?.id,
+          onSelected: (id) => setState(() {
+            _detachPreview();
+            _clipId = id;
+            _time = 0;
+            _selectedKey = null;
+          }),
+          onCreate: () => _ctrl.run(createAnimation.name, {}),
+        ),
+        const SizedBox(width: 8),
+        _TransportButton(
+          icon: Icons.fiber_manual_record,
+          tooltip: model == null
+              ? 'Key the playhead'
+              : 'Key the playhead on '
+                    '${_selectedKey == null ? 'every channel' : 'the selected channel'}',
+          color: editorErrorColor,
+          onPressed: model == null ? null : () => _insertKeyAtPlayhead(model),
+        ),
+        _TransportButton(
+          icon: Icons.first_page,
+          tooltip: 'Go to start',
+          onPressed: model == null ? null : () => _seek(0),
+        ),
+        _TransportButton(
+          icon: Icons.chevron_left,
+          tooltip: 'Previous key',
+          onPressed: model == null
+              ? null
+              : () => _jumpKey(model, forward: false),
+        ),
+        _TransportButton(
+          icon: _playing ? Icons.pause : Icons.play_arrow,
+          tooltip: _playing ? 'Pause' : 'Play',
+          onPressed: model == null ? null : _togglePlay,
+        ),
+        _TransportButton(
+          icon: Icons.chevron_right,
+          tooltip: 'Next key',
+          onPressed: model == null
+              ? null
+              : () => _jumpKey(model, forward: true),
+        ),
+        _TransportButton(
+          icon: Icons.last_page,
+          tooltip: 'Go to end',
+          onPressed: model == null ? null : () => _seek(model.endTime),
+        ),
+        _TransportButton(
+          icon: Icons.repeat,
+          tooltip: 'Loop',
+          active: _looping,
+          onPressed: () => setState(() => _looping = !_looping),
+        ),
+        const SizedBox(width: 8),
+        _NumberField(
+          label: 'Frame',
+          width: 54,
+          value: (_time * _sampleRate).round().toDouble(),
+          onChanged: (value) =>
+              _seek(_sampleRate <= 0 ? value : value / _sampleRate),
+        ),
+        const SizedBox(width: 6),
+        _NumberField(
+          label: 'Samples',
+          width: 48,
+          value: _sampleRate.toDouble(),
+          onChanged: (value) =>
+              setState(() => _sampleRate = value.round().clamp(1, 240)),
+        ),
+        const Spacer(),
+        _TransportButton(
+          icon: Icons.delete_outline,
+          tooltip: 'Delete the selected key',
+          onPressed: model == null || _selectedKey == null
+              ? null
+              : () => _deleteSelectedKey(model),
+        ),
+        const SizedBox(width: 8),
+        _ViewToggle(
+          curves: _curves,
+          onChanged: (value) => setState(() => _curves = value),
+        ),
+      ],
     );
   }
 
