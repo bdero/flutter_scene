@@ -30,7 +30,7 @@ DockLayout defaultEditorDockLayout() {
           ],
           [0.72, 0.28],
         ),
-        DockTabs(['inspector', 'effects', 'weather', 'navigation']),
+        DockTabs(['inspector', 'weather', 'navigation']),
       ],
       [0.20993533355494798, 0.5575395295519655, 0.23252513689308651],
     ),

@@ -13,6 +13,8 @@ import '../inspector/euler.dart';
 import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
+import '../inspector/particle_emitter_controls.dart';
+import '../inspector/vfx_editing.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
@@ -403,11 +405,29 @@ class _ComponentSection extends StatelessWidget {
                     ),
                   )
                 : null,
-            child: _ComponentEditor(
-              node: node,
-              component: component,
-              controller: controller,
-            ),
+            // An emitter's authored fields are a property bag, but its clock
+            // is not: play, pause and restart reach the running simulation,
+            // and restart is how a one-shot effect is fired at all.
+            child: component.type == vfxComponentType
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ParticleEmitterControls(
+                        controller: controller,
+                        nodeId: node.id,
+                      ),
+                      _ComponentEditor(
+                        node: node,
+                        component: component,
+                        controller: controller,
+                      ),
+                    ],
+                  )
+                : _ComponentEditor(
+                    node: node,
+                    component: component,
+                    controller: controller,
+                  ),
           ),
         ),
       ],

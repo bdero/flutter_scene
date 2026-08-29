@@ -31,7 +31,6 @@ void main() {
     expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
     expect((root.children[2] as DockTabs).panels, [
       'inspector',
-      'effects',
       'weather',
       'navigation',
     ]);
