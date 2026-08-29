@@ -483,7 +483,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   Future<String?> _promptForComponentName({bool native = false}) async {
     final controller = TextEditingController();
     String? error;
-    return showFDialog<String>(
+    return showEditorFDialog<String>(
       context: context,
       builder: (context, style, animation) => StatefulBuilder(
         builder: (context, setLocal) {
@@ -570,7 +570,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
   Future<void> _saveCurrentLayoutAs() async {
     final controller = TextEditingController();
-    final name = await showFDialog<String>(
+    final name = await showEditorFDialog<String>(
       context: context,
       builder: (context, style, animation) => FDialog(
         animation: animation,
@@ -636,7 +636,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<bool> _confirmLayoutOverwrite(String name) async {
-    return await showFDialog<bool>(
+    return await showEditorFDialog<bool>(
           context: context,
           builder: (context, style, animation) => FDialog(
             animation: animation,
@@ -684,7 +684,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<void> _manageLayouts() async {
-    await showFDialog<void>(
+    await showEditorFDialog<void>(
       context: context,
       builder: (context, style, animation) => FDialog(
         animation: animation,
