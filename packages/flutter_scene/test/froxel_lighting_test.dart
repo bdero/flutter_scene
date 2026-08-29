@@ -137,6 +137,121 @@ void main() {
     expect(r.overflowedFroxels, greaterThan(0));
   });
 
+  test('no interior point of any influence sphere escapes coverage', () {
+    // The regression behind the visible bugs: the old tile rect projected
+    // center-at-light-depth plus extent-at-near-face, which undercovers by
+    // vx*r/(vz*(vz-r)) and made off-center lights cut off on the ground up
+    // close and vanish outright at distance. Sample many spheres (biased
+    // toward the screen edges and long ranges, where the old math failed)
+    // and many interior points of each; every point must land in a covered
+    // froxel.
+    // A realistic viewport (45-degree vertical fov, wide aspect); the tile
+    // grid lives in ndc, so a narrow fov amplifies the old formula's tan-space
+    // deficit past a whole tile where a square 90-degree frustum hides it.
+    const tanX = 0.8;
+    const tanY = 0.414;
+    final random = math.Random(42);
+    for (var trial = 0; trial < 300; trial++) {
+      final vz = 1.0 + random.nextDouble() * 180.0;
+      final vx = (random.nextDouble() * 2.4 - 1.2) * vz * tanX;
+      final vy = (random.nextDouble() * 2.4 - 1.2) * vz * tanY;
+      final radius = 1.0 + random.nextDouble() * 30.0;
+      final position = Vector3(vx, vy, -vz);
+      final result = PunctualLightBuffer.computeFroxelData(
+        lights: [_pointLight(7, position, radius)],
+        cameraPosition: Vector3.zero(),
+        forward: _forward,
+        right: _right,
+        up: _up,
+        tanHalfFovX: tanX,
+        tanHalfFovY: tanY,
+        maxPerFroxel: kMaxPunctualLights,
+      );
+      int froxelOf(Vector3 world) {
+        final depth = math.max(world.dot(_forward), 1e-4);
+        final ndcX = world.dot(_right) / (depth * tanX);
+        final ndcY = world.dot(_up) / (depth * tanY);
+        final fx = ((ndcX * 0.5 + 0.5) * _nx).floor().clamp(0, _nx - 1);
+        final fy = ((0.5 - ndcY * 0.5) * _ny).floor().clamp(0, _ny - 1);
+        final fz = ((math.log(depth) / math.ln2) * result.zScale + result.zBias)
+            .floor()
+            .clamp(0, _nz - 1);
+        return (fz * _ny + fy) * _nx + fx;
+      }
+
+      for (var sample = 0; sample < 40; sample++) {
+        final direction = Vector3(
+          random.nextDouble() * 2 - 1,
+          random.nextDouble() * 2 - 1,
+          random.nextDouble() * 2 - 1,
+        );
+        if (direction.length2 < 1e-6) continue;
+        direction.normalize();
+        final probe =
+            position + direction * (radius * 0.98 * random.nextDouble());
+        if (probe.z > -0.01) continue; // In front of the camera only.
+        expect(
+          _lightsAt(result.data, froxelOf(probe)),
+          contains(7),
+          reason: 'light $position r=$radius lost at probe $probe',
+        );
+      }
+    }
+  });
+
+  test('the center-plus-extent regression configuration stays covered', () {
+    // A configuration the old tile rect (center at light depth, extent at
+    // the near face) missed by a whole tile, found by brute-force scan; the
+    // corner projection covers it. This was the visible bug, ground seams
+    // near dense lights and off-center lights vanishing at distance.
+    const tanX = 0.8;
+    const tanY = 0.414;
+    final position = Vector3(17.6, -9.108, -22.0);
+    final result = PunctualLightBuffer.computeFroxelData(
+      lights: [_pointLight(0, position, 2.0)],
+      cameraPosition: Vector3.zero(),
+      forward: _forward,
+      right: _right,
+      up: _up,
+      tanHalfFovX: tanX,
+      tanHalfFovY: tanY,
+      maxPerFroxel: kMaxPunctualLights,
+    );
+    final probe = Vector3(16.415, -9.108, -23.485);
+    final depth = -probe.z;
+    final fx = ((probe.x / (depth * tanX) * 0.5 + 0.5) * _nx).floor().clamp(
+      0,
+      _nx - 1,
+    );
+    final fy = ((0.5 - probe.y / (depth * tanY) * 0.5) * _ny).floor().clamp(
+      0,
+      _ny - 1,
+    );
+    final fz = ((math.log(depth) / math.ln2) * result.zScale + result.zBias)
+        .floor()
+        .clamp(0, _nz - 1);
+    expect(_lightsAt(result.data, (fz * _ny + fy) * _nx + fx), contains(0));
+  });
+
+  test('an off-center distant light still reaches its own froxel', () {
+    // The reported symptom shape: a wide-fov edge-of-screen lamp far from
+    // the camera. With the old rect math its entire influence missed the
+    // covered tiles and the light popped out of existence.
+    final position = Vector3(80, 0, -90);
+    final r = _froxelize([_pointLight(0, position, 25.0)]);
+    expect(
+      _lightsAt(r.data, _froxelOf(position, r.zScale, r.zBias)),
+      contains(0),
+    );
+    expect(
+      _lightsAt(
+        r.data,
+        _froxelOf(position + Vector3(20, 0, 0), r.zScale, r.zBias),
+      ),
+      contains(0),
+    );
+  });
+
   test('an overfull froxel keeps its nearest lights', () {
     // 17 lights along +x, all reaching the origin-column froxel at z=-10;
     // the farthest (row 16) must be the one dropped.
