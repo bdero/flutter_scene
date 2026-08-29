@@ -521,28 +521,32 @@ class PunctualLightBuffer {
       final z0 = sliceOf(vz - radius);
       final z1 = sliceOf(vz + radius);
 
-      int x0 = 0, x1 = nx - 1, y0 = 0, y1 = ny - 1;
-      final nearFace = vz - radius;
-      if (nearFace > _froxelNear) {
-        // Project the sphere's extent at its near face, the widest it can
-        // appear; the tile rect over-covers but never misses.
-        final vx = rel.dot(right);
-        final vy = rel.dot(up);
-        final centerX = vx / (vz * tanHalfFovX);
-        final centerY = vy / (vz * tanHalfFovY);
-        final extentX = radius / (nearFace * tanHalfFovX);
-        final extentY = radius / (nearFace * tanHalfFovY);
-        int tileX(double ndc) =>
-            (((ndc * 0.5) + 0.5) * nx).floor().clamp(0, nx - 1);
-        // Tile rows count downward from the top of the view (matching the
-        // shader's 0.5 - ndcY * 0.5 mapping).
-        int tileY(double ndc) =>
-            ((0.5 - ndc * 0.5) * ny).floor().clamp(0, ny - 1);
-        x0 = tileX(centerX - extentX);
-        x1 = tileX(centerX + extentX);
-        y0 = tileY(centerY + extentY);
-        y1 = tileY(centerY - extentY);
-      }
+      // The tile rect projects the sphere's view-space AABB corner-extreme
+      // over depth-extreme: a positive lateral extreme appears widest at the
+      // AABB's near face, a negative one at its far face. (Projecting a
+      // center-plus-extent instead undercovers by vx*r/(vz*(vz-r)), which
+      // blows up near the camera and, for off-center lights, stays wider
+      // than the light's shrinking on-screen influence at distance, so the
+      // light visibly cuts off or vanishes.) A sphere reaching the near
+      // window degenerates to huge extents and clamps to full coverage.
+      final zNearFace = math.max(vz - radius, _froxelNear);
+      final zFarFace = vz + radius;
+      double ndcMax(double v) =>
+          v + radius >= 0 ? (v + radius) / zNearFace : (v + radius) / zFarFace;
+      double ndcMin(double v) =>
+          v - radius <= 0 ? (v - radius) / zNearFace : (v - radius) / zFarFace;
+      final vx = rel.dot(right);
+      final vy = rel.dot(up);
+      int tileX(double ndc) =>
+          (((ndc * 0.5) + 0.5) * nx).floor().clamp(0, nx - 1);
+      // Tile rows count downward from the top of the view (matching the
+      // shader's 0.5 - ndcY * 0.5 mapping).
+      int tileY(double ndc) =>
+          ((0.5 - ndc * 0.5) * ny).floor().clamp(0, ny - 1);
+      final x0 = tileX(ndcMin(vx) / tanHalfFovX);
+      final x1 = tileX(ndcMax(vx) / tanHalfFovX);
+      final y0 = tileY(ndcMax(vy) / tanHalfFovY);
+      final y1 = tileY(ndcMin(vy) / tanHalfFovY);
       for (var z = z0; z <= z1; z++) {
         for (var y = y0; y <= y1; y++) {
           final rowBase = (z * ny + y) * nx;
