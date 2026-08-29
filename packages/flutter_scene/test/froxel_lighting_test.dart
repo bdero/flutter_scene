@@ -38,7 +38,7 @@ _froxelize(List<CullableLight> lights) => PunctualLightBuffer.computeFroxelData(
   up: _up,
   tanHalfFovX: 1.0,
   tanHalfFovY: 1.0,
-  maxPerFroxel: kMaxPunctualLights,
+  maxPerFroxel: kMaxFroxelLights,
 );
 
 /// The shader's froxel lookup, mirrored: world position to froxel index.
@@ -129,11 +129,11 @@ void main() {
   test('froxels cap their lists and count the overflow', () {
     final position = Vector3(0, 0, -10);
     final r = _froxelize([
-      for (var i = 0; i < kMaxPunctualLights + 3; i++)
+      for (var i = 0; i < kMaxFroxelLights + 3; i++)
         _pointLight(i, position, 1.0),
     ]);
     final lights = _lightsAt(r.data, _froxelOf(position, r.zScale, r.zBias));
-    expect(lights, hasLength(kMaxPunctualLights));
+    expect(lights, hasLength(kMaxFroxelLights));
     expect(r.overflowedFroxels, greaterThan(0));
   });
 
@@ -165,7 +165,7 @@ void main() {
         up: _up,
         tanHalfFovX: tanX,
         tanHalfFovY: tanY,
-        maxPerFroxel: kMaxPunctualLights,
+        maxPerFroxel: kMaxFroxelLights,
       );
       int froxelOf(Vector3 world) {
         final depth = math.max(world.dot(_forward), 1e-4);
@@ -215,7 +215,7 @@ void main() {
       up: _up,
       tanHalfFovX: tanX,
       tanHalfFovY: tanY,
-      maxPerFroxel: kMaxPunctualLights,
+      maxPerFroxel: kMaxFroxelLights,
     );
     final probe = Vector3(16.415, -9.108, -23.485);
     final depth = -probe.z;
@@ -252,17 +252,38 @@ void main() {
     );
   });
 
-  test('an overfull froxel keeps its nearest lights', () {
-    // 17 lights along +x, all reaching the origin-column froxel at z=-10;
-    // the farthest (row 16) must be the one dropped.
+  test('a dense cluster within the froxel budget is never truncated', () {
+    // The Bistro regression: worst-case unions of 21-28 lights reach single
+    // far froxels, and the old 16-per-froxel budget truncated them into
+    // tile-shaped lighting seams. The froxel budget must hold such clusters
+    // whole.
     final r = _froxelize([
-      for (var i = 0; i < kMaxPunctualLights + 1; i++)
-        _pointLight(i, Vector3(i * 0.4, 0, -10), 8.0),
+      for (var i = 0; i < 26; i++)
+        _pointLight(
+          i,
+          Vector3((i % 6) * 2.0 - 5.0, 0, -20.0 - i ~/ 6 * 2.0),
+          25.0,
+        ),
+    ]);
+    expect(r.overflowedFroxels, 0);
+    final probe = Vector3(0, 0, -22);
+    expect(
+      _lightsAt(r.data, _froxelOf(probe, r.zScale, r.zBias)),
+      hasLength(26),
+    );
+  });
+
+  test('an overfull froxel keeps its nearest lights', () {
+    // One more light than the budget, all reaching the origin-column froxel
+    // at z=-10; the farthest must be the one dropped.
+    final r = _froxelize([
+      for (var i = 0; i < kMaxFroxelLights + 1; i++)
+        _pointLight(i, Vector3(i * 0.2, 0, -10), 12.0),
     ]);
     final probe = Vector3(0, 0, -10);
     final kept = _lightsAt(r.data, _froxelOf(probe, r.zScale, r.zBias));
-    expect(kept, hasLength(kMaxPunctualLights));
-    expect(kept, isNot(contains(kMaxPunctualLights)));
+    expect(kept, hasLength(kMaxFroxelLights));
+    expect(kept, isNot(contains(kMaxFroxelLights)));
     expect(kept, contains(0));
   });
 

@@ -28,6 +28,14 @@ import 'package:flutter_scene/src/render/spot_shadow.dart';
 /// data-texture path here as the base-tier fallback.
 const int kMaxPunctualLights = 16;
 
+/// The froxel path's per-froxel light budget. Must match `MAX_FROXEL_LIGHTS`
+/// in `shaders/material_shadow_sampling.glsl` (the shared fragment loop runs
+/// to that bound, ended early by the active count). Wider than the per-object
+/// budget because a distant froxel can span a large world volume whose light
+/// union exceeds any single object's; a truncated union shows as tile-shaped
+/// lighting seams.
+const int kMaxFroxelLights = 32;
+
 // A punctual light is one row of the parameters texture, eight RGBA32F texels
 // wide:
 //   col 0: position.xyz, type   (0 directional, 1 point, 2 spot)
@@ -428,7 +436,7 @@ class PunctualLightBuffer {
       up: up,
       tanHalfFovX: tanHalfFovX,
       tanHalfFovY: tanHalfFovY,
-      maxPerFroxel: kMaxPunctualLights,
+      maxPerFroxel: kMaxFroxelLights,
     );
     _overflowedItemCount += result.overflowedFroxels;
     final texture = _froxelRing.acquire(_froxelTexWidth, result.height);

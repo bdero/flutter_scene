@@ -728,7 +728,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
       punctual_offset = int(frag_info.radiance_blend.w);
     }
   }
-  for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
+  for (int i = 0; i < MAX_FROXEL_LIGHTS; i++) {
     if (i >= punctual_count) {
       break;
     }

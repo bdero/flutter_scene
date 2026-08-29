@@ -284,6 +284,13 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 // loop bound; the active count (frag_info.radiance_blend.z) ends it early.
 #define MAX_PUNCTUAL_LIGHTS 16
 
+// The froxel path's per-froxel budget; must match kMaxFroxelLights in
+// lib/src/render/punctual_lights.dart. Wider than the per-object budget
+// because a distant froxel can span a large world volume whose light union
+// is bigger than any one object's; the shared loop below runs to this bound
+// and the active count ends it early, so small counts cost nothing extra.
+#define MAX_FROXEL_LIGHTS 32
+
 // A shadow catcher's no-shadow variant declares no punctual textures (its
 // only punctual consumer is the spot loop the guard above removed), so the
 // fetch helpers compile out with them.
