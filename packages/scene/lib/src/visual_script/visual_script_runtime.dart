@@ -1,4 +1,4 @@
-/// Running a [FlowGraph]: the node-type registry, the evaluation context, and
+/// Running a [VisualScriptGraph]: the node-type registry, the evaluation context, and
 /// the interpreter that walks the wires.
 ///
 /// Exec pushes and data pulls. An event node starts a run and hands control
@@ -10,16 +10,16 @@ library;
 
 import 'package:vector_math/vector_math.dart';
 
-import 'flow_graph.dart';
-import 'flow_trace.dart';
+import 'visual_script_graph.dart';
+import 'visual_script_trace.dart';
 
 /// What a node can do while it runs.
 ///
 /// The host supplies this. Everything a graph can reach outside its own
 /// values goes through it, so the interpreter itself has no idea what a scene
 /// is and the same graph runs in a test with a stub.
-/// {@category Flow}
-abstract class FlowHost {
+/// {@category Visual scripting}
+abstract class VisualScriptHost {
   /// Seconds since the previous tick, for the nodes that integrate.
   double get deltaSeconds;
 
@@ -44,9 +44,9 @@ abstract class FlowHost {
 }
 
 /// A host that does nothing, for a graph exercised without a scene.
-/// {@category Flow}
-class NullFlowHost implements FlowHost {
-  NullFlowHost({this.deltaSeconds = 1 / 60, this.elapsedSeconds = 0});
+/// {@category Visual scripting}
+class NullVisualScriptHost implements VisualScriptHost {
+  NullVisualScriptHost({this.deltaSeconds = 1 / 60, this.elapsedSeconds = 0});
 
   @override
   double deltaSeconds;
@@ -83,22 +83,22 @@ class NullFlowHost implements FlowHost {
 }
 
 /// The state one run of a graph carries.
-/// {@category Flow}
-class FlowContext {
-  FlowContext({required this.graph, required this.host, this.trace}) {
+/// {@category Visual scripting}
+class VisualScriptContext {
+  VisualScriptContext({required this.graph, required this.host, this.trace}) {
     for (final variable in graph.variables) {
       variables[variable.name] = variable.initial;
     }
   }
 
-  final FlowGraph graph;
-  final FlowHost host;
+  final VisualScriptGraph graph;
+  final VisualScriptHost host;
 
   /// Where to record what the run did, or null to record nothing.
   ///
   /// Null by default, so a graph nobody is watching pays a null check per
   /// node rather than the bookkeeping.
-  final FlowTrace? trace;
+  final VisualScriptTrace? trace;
 
   /// The graph's variables, seeded from their initial values.
   final Map<String, Object?> variables = {};
@@ -137,8 +137,8 @@ class FlowContext {
 }
 
 /// What a node's evaluation produced.
-/// {@category Flow}
-typedef FlowResult = ({
+/// {@category Visual scripting}
+typedef VisualScriptResult = ({
   /// Values on the node's output data pins, keyed by pin id.
   Map<String, Object?> outputs,
 
@@ -151,9 +151,9 @@ typedef FlowResult = ({
 });
 
 /// A registered node type: what it looks like, and what it does.
-/// {@category Flow}
-class FlowNodeType {
-  const FlowNodeType({
+/// {@category Visual scripting}
+class VisualScriptNodeType {
+  const VisualScriptNodeType({
     required this.id,
     required this.label,
     required this.category,
@@ -163,7 +163,7 @@ class FlowNodeType {
     this.isEvent = false,
   });
 
-  /// The stable id a [FlowNodeSpec] names.
+  /// The stable id a [VisualScriptNodeSpec] names.
   final String id;
 
   /// The title drawn on the node.
@@ -179,21 +179,21 @@ class FlowNodeType {
   /// have no exec input.
   final bool isEvent;
 
-  final List<FlowPin> pins;
+  final List<VisualScriptPin> pins;
 
   /// Runs the node. [inputs] holds every input pin's resolved value; the
   /// result carries the output values and which exec pin to follow.
-  final FlowResult Function(
-    FlowContext context,
-    FlowNodeSpec node,
+  final VisualScriptResult Function(
+    VisualScriptContext context,
+    VisualScriptNodeSpec node,
     Map<String, Object?> inputs,
   )
   evaluate;
 
-  Iterable<FlowPin> get inputs => pins.where((pin) => pin.isInput);
-  Iterable<FlowPin> get outputs => pins.where((pin) => !pin.isInput);
+  Iterable<VisualScriptPin> get inputs => pins.where((pin) => pin.isInput);
+  Iterable<VisualScriptPin> get outputs => pins.where((pin) => !pin.isInput);
 
-  FlowPin? pin(String id) {
+  VisualScriptPin? pin(String id) {
     for (final pin in pins) {
       if (pin.id == id) return pin;
     }
@@ -202,22 +202,25 @@ class FlowNodeType {
 }
 
 /// The node types a graph may use.
-/// {@category Flow}
-class FlowRegistry {
-  final Map<String, FlowNodeType> _types = {};
+/// {@category Visual scripting}
+class VisualScriptRegistry {
+  final Map<String, VisualScriptNodeType> _types = {};
 
-  void register(FlowNodeType type) {
+  void register(VisualScriptNodeType type) {
     if (_types.containsKey(type.id)) {
-      throw StateError('Flow node type already registered: ${type.id}');
+      throw StateError(
+        'Visual script node type already registered: ${type.id}',
+      );
     }
     _types[type.id] = type;
   }
 
-  void registerAll(Iterable<FlowNodeType> types) => types.forEach(register);
+  void registerAll(Iterable<VisualScriptNodeType> types) =>
+      types.forEach(register);
 
-  FlowNodeType? operator [](String id) => _types[id];
+  VisualScriptNodeType? operator [](String id) => _types[id];
 
-  Iterable<FlowNodeType> get all => _types.values;
+  Iterable<VisualScriptNodeType> get all => _types.values;
 
   /// The registered categories, in first-registration order.
   List<String> get categories {
@@ -228,24 +231,24 @@ class FlowRegistry {
     return seen;
   }
 
-  List<FlowNodeType> inCategory(String category) => [
+  List<VisualScriptNodeType> inCategory(String category) => [
     for (final type in _types.values)
       if (type.category == category) type,
   ];
 }
 
 /// Walks a graph.
-/// {@category Flow}
-class FlowInterpreter {
-  FlowInterpreter(this.registry);
+/// {@category Visual scripting}
+class VisualScriptInterpreter {
+  VisualScriptInterpreter(this.registry);
 
-  final FlowRegistry registry;
+  final VisualScriptRegistry registry;
 
   /// Runs every node of type [eventType] as a starting point.
   ///
   /// Returns how many events fired, so a caller can tell a graph with no
   /// matching event from one that ran.
-  int fire(FlowContext context, String eventType) {
+  int fire(VisualScriptContext context, String eventType) {
     var fired = 0;
     for (final node in context.graph.nodes) {
       if (node.type != eventType) continue;
@@ -262,12 +265,12 @@ class FlowInterpreter {
   /// stack gives when the branches are pushed in reverse; recursion would
   /// give the same order but put the step budget's worth of frames on the
   /// real stack, and the budget is deliberately larger than that is safe.
-  void _run(FlowContext context, FlowNodeSpec start) {
-    final pending = <FlowNodeSpec>[start];
+  void _run(VisualScriptContext context, VisualScriptNodeSpec start) {
+    final pending = <VisualScriptNodeSpec>[start];
     while (pending.isNotEmpty) {
-      if (++context.steps > FlowContext.maxSteps) {
+      if (++context.steps > VisualScriptContext.maxSteps) {
         context.error =
-            'The graph ran for ${FlowContext.maxSteps} steps without '
+            'The graph ran for ${VisualScriptContext.maxSteps} steps without '
             'finishing, which is a loop in the exec wires.';
         return;
       }
@@ -310,13 +313,13 @@ class FlowInterpreter {
   /// Resolves every input pin of [node]: the wire if there is one, otherwise
   /// the literal typed into it, otherwise the pin's default.
   Map<String, Object?> _resolveInputs(
-    FlowContext context,
-    FlowNodeSpec node,
-    FlowNodeType type,
+    VisualScriptContext context,
+    VisualScriptNodeSpec node,
+    VisualScriptNodeType type,
   ) {
     final values = <String, Object?>{};
     for (final pin in type.inputs) {
-      if (pin.type == FlowType.exec) continue;
+      if (pin.type == VisualScriptType.exec) continue;
       final link = context.graph.inputTo(node.id, pin.id);
       if (link != null) {
         values[pin.id] = evaluateOutput(context, link.fromNode, link.fromPin);
@@ -336,16 +339,20 @@ class FlowInterpreter {
   /// pull is evaluated twice; caching would need a notion of when a value
   /// goes stale, and at the size a hand-authored graph reaches, recomputing a
   /// multiply is cheaper than tracking that.
-  Object? evaluateOutput(FlowContext context, int nodeId, String pinId) {
+  Object? evaluateOutput(
+    VisualScriptContext context,
+    int nodeId,
+    String pinId,
+  ) {
     if (!context.pulling.add(nodeId)) {
       context.error =
           'Node $nodeId feeds itself, which is a cycle in the data wires.';
       return null;
     }
     try {
-      if (++context.steps > FlowContext.maxSteps) {
+      if (++context.steps > VisualScriptContext.maxSteps) {
         context.error =
-            'The graph ran for ${FlowContext.maxSteps} steps without '
+            'The graph ran for ${VisualScriptContext.maxSteps} steps without '
             'finishing.';
         return null;
       }
@@ -379,8 +386,8 @@ class FlowInterpreter {
 }
 
 /// Coerces [value] to a double, or [fallback].
-/// {@category Flow}
-double flowNumber(Object? value, [double fallback = 0]) => switch (value) {
+/// {@category Visual scripting}
+double scriptNumber(Object? value, [double fallback = 0]) => switch (value) {
   double v => v,
   int v => v.toDouble(),
   bool v => v ? 1 : 0,
@@ -389,8 +396,8 @@ double flowNumber(Object? value, [double fallback = 0]) => switch (value) {
 };
 
 /// Coerces [value] to an int, or [fallback].
-/// {@category Flow}
-int flowInteger(Object? value, [int fallback = 0]) => switch (value) {
+/// {@category Visual scripting}
+int scriptInteger(Object? value, [int fallback = 0]) => switch (value) {
   int v => v,
   double v => v.round(),
   bool v => v ? 1 : 0,
@@ -402,8 +409,8 @@ int flowInteger(Object? value, [int fallback = 0]) => switch (value) {
 ///
 /// A number is true when nonzero and a string when non-empty, which is what a
 /// Branch fed a count or a name is asking for.
-/// {@category Flow}
-bool flowBool(Object? value, [bool fallback = false]) => switch (value) {
+/// {@category Visual scripting}
+bool scriptBool(Object? value, [bool fallback = false]) => switch (value) {
   bool v => v,
   double v => v != 0,
   int v => v != 0,
@@ -413,8 +420,8 @@ bool flowBool(Object? value, [bool fallback = false]) => switch (value) {
 };
 
 /// Coerces [value] to a vector, or zero.
-/// {@category Flow}
-Vector3 flowVector(Object? value) => switch (value) {
+/// {@category Visual scripting}
+Vector3 scriptVector(Object? value) => switch (value) {
   Vector3 v => v,
   double v => Vector3.all(v),
   int v => Vector3.all(v.toDouble()),
@@ -422,8 +429,8 @@ Vector3 flowVector(Object? value) => switch (value) {
 };
 
 /// Renders [value] the way a Print node shows it.
-/// {@category Flow}
-String flowString(Object? value) => switch (value) {
+/// {@category Visual scripting}
+String scriptString(Object? value) => switch (value) {
   null => 'null',
   Vector3 v =>
     '(${v.x.toStringAsFixed(3)}, ${v.y.toStringAsFixed(3)}, '

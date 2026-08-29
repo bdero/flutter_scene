@@ -1,29 +1,33 @@
 /// The node types that only make sense with a scene: reading and writing a
 /// node's transform, aiming it, playing its animations, and removing it.
 ///
-/// Every one of them goes through the [FlowHost] rather than touching a
+/// Every one of them goes through the [VisualScriptHost] rather than touching a
 /// `Node` directly, so a graph stays testable against a stub and an
 /// application can substitute its own host to bound what a graph may do.
 library;
 
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 
-FlowResult _out(Map<String, Object?> outputs) =>
+VisualScriptResult _out(Map<String, Object?> outputs) =>
     (outputs: outputs, next: const <String>[]);
-FlowResult _then() =>
+VisualScriptResult _then() =>
     (outputs: const <String, Object?>{}, next: const <String>['then']);
 
-const FlowPin _execIn = FlowPin(id: 'exec', label: '', type: FlowType.exec);
-const FlowPin _execOut = FlowPin(
+const VisualScriptPin _execIn = VisualScriptPin(
+  id: 'exec',
+  label: '',
+  type: VisualScriptType.exec,
+);
+const VisualScriptPin _execOut = VisualScriptPin(
   id: 'then',
   label: '',
-  type: FlowType.exec,
+  type: VisualScriptType.exec,
   isInput: false,
 );
-const FlowPin _target = FlowPin(
+const VisualScriptPin _target = VisualScriptPin(
   id: 'target',
   label: 'Target',
-  type: FlowType.string,
+  type: VisualScriptType.string,
   defaultValue: '',
   doc:
       'A descendant by name, as "turret". Empty is the node the graph is '
@@ -37,26 +41,28 @@ String _path(Object? target, String property) {
   return name.endsWith('/') ? '$name$property' : '$name/$property';
 }
 
-final FlowNodeType getPosition = FlowNodeType(
+final VisualScriptNodeType getPosition = VisualScriptNodeType(
   id: 'scene.getPosition',
   label: 'Get Position',
   category: 'Scene',
   doc: "Reads a node's local position.",
   pins: const [
     _target,
-    FlowPin(
+    VisualScriptPin(
       id: 'value',
       label: 'Position',
-      type: FlowType.vector3,
+      type: VisualScriptType.vector3,
       isInput: false,
     ),
   ],
   evaluate: (context, node, inputs) => _out({
-    'value': flowVector(context.host.read(_path(inputs['target'], 'position'))),
+    'value': scriptVector(
+      context.host.read(_path(inputs['target'], 'position')),
+    ),
   }),
 );
 
-final FlowNodeType setPosition = FlowNodeType(
+final VisualScriptNodeType setPosition = VisualScriptNodeType(
   id: 'scene.setPosition',
   label: 'Set Position',
   category: 'Scene',
@@ -64,7 +70,11 @@ final FlowNodeType setPosition = FlowNodeType(
   pins: const [
     _execIn,
     _target,
-    FlowPin(id: 'value', label: 'Position', type: FlowType.vector3),
+    VisualScriptPin(
+      id: 'value',
+      label: 'Position',
+      type: VisualScriptType.vector3,
+    ),
     _execOut,
   ],
   evaluate: (context, node, inputs) {
@@ -76,26 +86,26 @@ final FlowNodeType setPosition = FlowNodeType(
   },
 );
 
-final FlowNodeType getScale = FlowNodeType(
+final VisualScriptNodeType getScale = VisualScriptNodeType(
   id: 'scene.getScale',
   label: 'Get Scale',
   category: 'Scene',
   doc: "Reads a node's local scale.",
   pins: const [
     _target,
-    FlowPin(
+    VisualScriptPin(
       id: 'value',
       label: 'Scale',
-      type: FlowType.vector3,
+      type: VisualScriptType.vector3,
       isInput: false,
     ),
   ],
   evaluate: (context, node, inputs) => _out({
-    'value': flowVector(context.host.read(_path(inputs['target'], 'scale'))),
+    'value': scriptVector(context.host.read(_path(inputs['target'], 'scale'))),
   }),
 );
 
-final FlowNodeType setScale = FlowNodeType(
+final VisualScriptNodeType setScale = VisualScriptNodeType(
   id: 'scene.setScale',
   label: 'Set Scale',
   category: 'Scene',
@@ -103,7 +113,11 @@ final FlowNodeType setScale = FlowNodeType(
   pins: const [
     _execIn,
     _target,
-    FlowPin(id: 'value', label: 'Scale', type: FlowType.vector3),
+    VisualScriptPin(
+      id: 'value',
+      label: 'Scale',
+      type: VisualScriptType.vector3,
+    ),
     _execOut,
   ],
   evaluate: (context, node, inputs) {
@@ -112,7 +126,7 @@ final FlowNodeType setScale = FlowNodeType(
   },
 );
 
-final FlowNodeType setVisible = FlowNodeType(
+final VisualScriptNodeType setVisible = VisualScriptNodeType(
   id: 'scene.setVisible',
   label: 'Set Visible',
   category: 'Scene',
@@ -120,10 +134,10 @@ final FlowNodeType setVisible = FlowNodeType(
   pins: const [
     _execIn,
     _target,
-    FlowPin(
+    VisualScriptPin(
       id: 'value',
       label: 'Visible',
-      type: FlowType.boolean,
+      type: VisualScriptType.boolean,
       defaultValue: true,
     ),
     _execOut,
@@ -134,7 +148,7 @@ final FlowNodeType setVisible = FlowNodeType(
   },
 );
 
-final FlowNodeType translateNode = FlowNodeType(
+final VisualScriptNodeType translateNode = VisualScriptNodeType(
   id: 'scene.translate',
   label: 'Translate',
   category: 'Scene',
@@ -143,7 +157,7 @@ final FlowNodeType translateNode = FlowNodeType(
       'rather than a per-frame jump, or the speed follows the frame rate.',
   pins: const [
     _execIn,
-    FlowPin(id: 'by', label: 'By', type: FlowType.vector3),
+    VisualScriptPin(id: 'by', label: 'By', type: VisualScriptType.vector3),
     _execOut,
   ],
   evaluate: (context, node, inputs) {
@@ -152,14 +166,18 @@ final FlowNodeType translateNode = FlowNodeType(
   },
 );
 
-final FlowNodeType lookAtPoint = FlowNodeType(
+final VisualScriptNodeType lookAtPoint = VisualScriptNodeType(
   id: 'scene.lookAt',
   label: 'Look At',
   category: 'Scene',
   doc: 'Aims the node at a world-space point.',
   pins: const [
     _execIn,
-    FlowPin(id: 'target', label: 'Point', type: FlowType.vector3),
+    VisualScriptPin(
+      id: 'target',
+      label: 'Point',
+      type: VisualScriptType.vector3,
+    ),
     _execOut,
   ],
   evaluate: (context, node, inputs) {
@@ -168,31 +186,36 @@ final FlowNodeType lookAtPoint = FlowNodeType(
   },
 );
 
-final FlowNodeType playAnimation = FlowNodeType(
+final VisualScriptNodeType playAnimation = VisualScriptNodeType(
   id: 'scene.playAnimation',
   label: 'Play Animation',
   category: 'Scene',
   doc: "Starts one of the node's parsed animations.",
   pins: const [
     _execIn,
-    FlowPin(id: 'name', label: 'Name', type: FlowType.string, defaultValue: ''),
-    FlowPin(
+    VisualScriptPin(
+      id: 'name',
+      label: 'Name',
+      type: VisualScriptType.string,
+      defaultValue: '',
+    ),
+    VisualScriptPin(
       id: 'loop',
       label: 'Loop',
-      type: FlowType.boolean,
+      type: VisualScriptType.boolean,
       defaultValue: false,
     ),
-    FlowPin(
+    VisualScriptPin(
       id: 'speed',
       label: 'Speed',
-      type: FlowType.number,
+      type: VisualScriptType.number,
       defaultValue: 1.0,
     ),
     _execOut,
-    FlowPin(
+    VisualScriptPin(
       id: 'found',
       label: 'Found',
-      type: FlowType.boolean,
+      type: VisualScriptType.boolean,
       isInput: false,
       doc: 'False when the node carries no animation by that name.',
     ),
@@ -209,14 +232,19 @@ final FlowNodeType playAnimation = FlowNodeType(
   ),
 );
 
-final FlowNodeType stopAnimation = FlowNodeType(
+final VisualScriptNodeType stopAnimation = VisualScriptNodeType(
   id: 'scene.stopAnimation',
   label: 'Stop Animation',
   category: 'Scene',
   doc: 'Unbinds a clip this graph started, so the node returns to its pose.',
   pins: const [
     _execIn,
-    FlowPin(id: 'name', label: 'Name', type: FlowType.string, defaultValue: ''),
+    VisualScriptPin(
+      id: 'name',
+      label: 'Name',
+      type: VisualScriptType.string,
+      defaultValue: '',
+    ),
     _execOut,
   ],
   evaluate: (context, node, inputs) {
@@ -225,7 +253,7 @@ final FlowNodeType stopAnimation = FlowNodeType(
   },
 );
 
-final FlowNodeType destroyNode = FlowNodeType(
+final VisualScriptNodeType destroyNode = VisualScriptNodeType(
   id: 'scene.destroy',
   label: 'Destroy',
   category: 'Scene',
@@ -237,7 +265,7 @@ final FlowNodeType destroyNode = FlowNodeType(
   },
 );
 
-final FlowNodeType callAction = FlowNodeType(
+final VisualScriptNodeType callAction = VisualScriptNodeType(
   id: 'scene.call',
   label: 'Call Action',
   category: 'Scene',
@@ -246,15 +274,20 @@ final FlowNodeType callAction = FlowNodeType(
       'graph something the built-in nodes do not cover.',
   pins: const [
     _execIn,
-    FlowPin(
+    VisualScriptPin(
       id: 'action',
       label: 'Action',
-      type: FlowType.string,
+      type: VisualScriptType.string,
       defaultValue: '',
     ),
-    FlowPin(id: 'value', label: 'Value', type: FlowType.any),
+    VisualScriptPin(id: 'value', label: 'Value', type: VisualScriptType.any),
     _execOut,
-    FlowPin(id: 'result', label: 'Result', type: FlowType.any, isInput: false),
+    VisualScriptPin(
+      id: 'result',
+      label: 'Result',
+      type: VisualScriptType.any,
+      isInput: false,
+    ),
   ],
   evaluate: (context, node, inputs) => (
     outputs: {
@@ -266,7 +299,7 @@ final FlowNodeType callAction = FlowNodeType(
   ),
 );
 
-final FlowNodeType setWeather = FlowNodeType(
+final VisualScriptNodeType setWeather = VisualScriptNodeType(
   id: 'scene.setWeather',
   label: 'Set Weather',
   category: 'Scene',
@@ -275,20 +308,20 @@ final FlowNodeType setWeather = FlowNodeType(
       'weather sky for there to be clouds to change.',
   pins: const [
     _execIn,
-    FlowPin(
+    VisualScriptPin(
       id: 'weather',
       label: 'Weather',
-      type: FlowType.string,
+      type: VisualScriptType.string,
       defaultValue: 'clear',
       doc:
           'One of clear, fair, overcast, fog, rain, storm, snow. The same '
           'names the editor offers.',
     ),
     _execOut,
-    FlowPin(
+    VisualScriptPin(
       id: 'changed',
       label: 'Changed',
-      type: FlowType.boolean,
+      type: VisualScriptType.boolean,
       isInput: false,
       doc: 'False when the name is unknown or the sky has no clouds.',
     ),
@@ -303,34 +336,34 @@ final FlowNodeType setWeather = FlowNodeType(
   ),
 );
 
-final FlowNodeType setTimeOfDay = FlowNodeType(
+final VisualScriptNodeType setTimeOfDay = VisualScriptNodeType(
   id: 'scene.setTimeOfDay',
   label: 'Set Time of Day',
   category: 'Scene',
   doc: "Points the sky's sun at an hour on the clock.",
   pins: const [
     _execIn,
-    FlowPin(
+    VisualScriptPin(
       id: 'hour',
       label: 'Hour',
-      type: FlowType.number,
+      type: VisualScriptType.number,
       defaultValue: 12.0,
       doc: '0 to 24. 12 is noon; 6 and 18 are the two horizons.',
     ),
-    FlowPin(
+    VisualScriptPin(
       id: 'tilt',
       label: 'Arc tilt',
-      type: FlowType.number,
+      type: VisualScriptType.number,
       defaultValue: 0.35,
       doc:
           "How far off vertical the sun's arc runs, which is what makes a "
           'latitude and a season.',
     ),
     _execOut,
-    FlowPin(
+    VisualScriptPin(
       id: 'changed',
       label: 'Changed',
-      type: FlowType.boolean,
+      type: VisualScriptType.boolean,
       isInput: false,
       doc: 'False when the scene\'s sky has no sun.',
     ),
@@ -346,23 +379,23 @@ final FlowNodeType setTimeOfDay = FlowNodeType(
   ),
 );
 
-const FlowPin _animatorName = FlowPin(
+const VisualScriptPin _animatorName = VisualScriptPin(
   id: 'name',
   label: 'Parameter',
-  type: FlowType.string,
+  type: VisualScriptType.string,
   defaultValue: '',
   doc: 'The name a transition condition reads.',
 );
 
-const FlowPin _animatorSet = FlowPin(
+const VisualScriptPin _animatorSet = VisualScriptPin(
   id: 'set',
   label: 'Set',
-  type: FlowType.boolean,
+  type: VisualScriptType.boolean,
   isInput: false,
   doc: 'False when the node carries no animator.',
 );
 
-final FlowNodeType setAnimatorNumber = FlowNodeType(
+final VisualScriptNodeType setAnimatorNumber = VisualScriptNodeType(
   id: 'animator.setNumber',
   label: 'Set Animator Number',
   category: 'Animation',
@@ -372,10 +405,10 @@ final FlowNodeType setAnimatorNumber = FlowNodeType(
   pins: const [
     _execIn,
     _animatorName,
-    FlowPin(
+    VisualScriptPin(
       id: 'value',
       label: 'Value',
-      type: FlowType.number,
+      type: VisualScriptType.number,
       defaultValue: 0.0,
     ),
     _execOut,
@@ -392,7 +425,7 @@ final FlowNodeType setAnimatorNumber = FlowNodeType(
   ),
 );
 
-final FlowNodeType setAnimatorFlag = FlowNodeType(
+final VisualScriptNodeType setAnimatorFlag = VisualScriptNodeType(
   id: 'animator.setFlag',
   label: 'Set Animator Flag',
   category: 'Animation',
@@ -400,10 +433,10 @@ final FlowNodeType setAnimatorFlag = FlowNodeType(
   pins: const [
     _execIn,
     _animatorName,
-    FlowPin(
+    VisualScriptPin(
       id: 'value',
       label: 'Value',
-      type: FlowType.boolean,
+      type: VisualScriptType.boolean,
       defaultValue: true,
     ),
     _execOut,
@@ -420,7 +453,7 @@ final FlowNodeType setAnimatorFlag = FlowNodeType(
   ),
 );
 
-final FlowNodeType animatorTrigger = FlowNodeType(
+final VisualScriptNodeType animatorTrigger = VisualScriptNodeType(
   id: 'animator.trigger',
   label: 'Trigger Animator',
   category: 'Animation',
@@ -436,20 +469,25 @@ final FlowNodeType animatorTrigger = FlowNodeType(
   ),
 );
 
-final FlowNodeType animatorState = FlowNodeType(
+final VisualScriptNodeType animatorState = VisualScriptNodeType(
   id: 'animator.state',
   label: 'Animator State',
   category: 'Animation',
   doc: 'The state the machine is currently in.',
   pins: const [
-    FlowPin(
+    VisualScriptPin(
       id: 'layer',
       label: 'Layer',
-      type: FlowType.string,
+      type: VisualScriptType.string,
       defaultValue: '',
       doc: 'Empty reads the base layer.',
     ),
-    FlowPin(id: 'state', label: 'State', type: FlowType.string, isInput: false),
+    VisualScriptPin(
+      id: 'state',
+      label: 'State',
+      type: VisualScriptType.string,
+      isInput: false,
+    ),
   ],
   evaluate: (context, node, inputs) => _out({
     'state': context.host.invoke('animatorState', {'layer': inputs['layer']}),
@@ -457,8 +495,8 @@ final FlowNodeType animatorState = FlowNodeType(
 );
 
 /// The scene-facing node types, in palette order.
-/// {@category Flow}
-final List<FlowNodeType> sceneFlowNodes = [
+/// {@category Visual scripting}
+final List<VisualScriptNodeType> sceneVisualScriptNodes = [
   getPosition,
   setPosition,
   getScale,
@@ -479,6 +517,6 @@ final List<FlowNodeType> sceneFlowNodes = [
 ];
 
 /// A registry holding the standard node types and the scene-facing ones.
-/// {@category Flow}
-FlowRegistry sceneFlowRegistry() =>
-    standardFlowRegistry()..registerAll(sceneFlowNodes);
+/// {@category Visual scripting}
+VisualScriptRegistry sceneVisualScriptRegistry() =>
+    standardVisualScriptRegistry()..registerAll(sceneVisualScriptNodes);

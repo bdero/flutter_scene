@@ -1,8 +1,9 @@
-/// The Flow dock panel: the canvas a visual script is drawn on.
+/// The Visual Scripter dock panel: the canvas a visual script is drawn on.
 ///
 /// Nodes are dragged around, pins are dragged between to wire them, and the
 /// palette adds more. The graph being edited belongs to the selected node's
-/// Flow component, and every edit is committed back through the command layer
+/// visual script component, and every edit is committed back through the
+/// command layer
 /// so it is undoable like any other.
 ///
 /// The canvas is one [CustomPaint] over a transformed coordinate space rather
@@ -14,33 +15,33 @@ library;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_scene/flow.dart';
+import 'package:flutter_scene/visual_script.dart';
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
-import 'flow_layout.dart';
+import 'visual_script_layout.dart';
 
-/// The Flow panel.
-class FlowPanel extends StatefulWidget {
-  const FlowPanel({super.key, required this.controller});
+/// The Visual Scripter panel.
+class VisualScripterPanel extends StatefulWidget {
+  const VisualScripterPanel({super.key, required this.controller});
 
   final EditorController controller;
 
   @override
-  State<FlowPanel> createState() => _FlowPanelState();
+  State<VisualScripterPanel> createState() => _FlowPanelState();
 }
 
-class _FlowPanelState extends State<FlowPanel> {
+class _FlowPanelState extends State<VisualScripterPanel> {
   EditorController get _ctrl => widget.controller;
 
-  final FlowRegistry _registry = sceneFlowRegistry();
+  final VisualScriptRegistry _registry = sceneVisualScriptRegistry();
 
   /// The graph being edited. Held here rather than read from the document on
   /// every frame, because a drag mutates it many times per second and only
   /// the release is worth an undo step.
-  FlowGraph? _graph;
+  VisualScriptGraph? _graph;
   LocalId? _graphOwner;
 
   /// The history position the loaded graph came from.
@@ -68,7 +69,7 @@ class _FlowPanelState extends State<FlowPanel> {
   Offset _dragOffset = Offset.zero;
 
   /// The wire being drawn, if any: where it started and where the pointer is.
-  FlowPortRef? _wireFrom;
+  VisualScriptPortRef? _wireFrom;
   Offset? _wirePointer;
 
   bool _paletteOpen = false;
@@ -114,7 +115,9 @@ class _FlowPanelState extends State<FlowPanel> {
     final node = _ctrl.document.node(id);
     if (node == null) return null;
     for (final component in node.components) {
-      if (component.type == 'flow') return (nodeId: id, spec: component);
+      if (component.type == visualScriptComponentType) {
+        return (nodeId: id, spec: component);
+      }
     }
     return null;
   }
@@ -124,10 +127,10 @@ class _FlowPanelState extends State<FlowPanel> {
   ///
   /// The document holds the script; this is the thing actually running it,
   /// and the only place a trace can come from.
-  FlowComponent? get _liveComponent {
+  VisualScriptComponent? get _liveComponent {
     final view = _componentView;
     if (view == null) return null;
-    return _ctrl.liveNode(view.nodeId)?.getComponent<FlowComponent>();
+    return _ctrl.liveNode(view.nodeId)?.getComponent<VisualScriptComponent>();
   }
 
   void _toggleTracing() {
@@ -139,7 +142,7 @@ class _FlowPanelState extends State<FlowPanel> {
   }
 
   /// Loads the graph from the document, once per selection.
-  FlowGraph? _ensureGraph() {
+  VisualScriptGraph? _ensureGraph() {
     final existing = _graph;
     if (existing != null) return existing;
     final view = _componentView;
@@ -147,17 +150,17 @@ class _FlowPanelState extends State<FlowPanel> {
     final source = view.spec.properties['graph'];
     final loaded = source is StringValue && source.value.isNotEmpty
         ? _tryRead(source.value)
-        : FlowGraph();
+        : VisualScriptGraph();
     _graph = loaded;
     _graphCursor = _ctrl.history.cursor;
     return loaded;
   }
 
-  FlowGraph _tryRead(String source) {
+  VisualScriptGraph _tryRead(String source) {
     try {
-      return readFlowGraph(source);
+      return readVisualScript(source);
     } on FormatException {
-      return FlowGraph();
+      return VisualScriptGraph();
     }
   }
 
@@ -170,8 +173,8 @@ class _FlowPanelState extends State<FlowPanel> {
     try {
       await _ctrl.run('setComponentProperties', {
         'nodeId': view.nodeId.toToken(),
-        'componentType': 'flow',
-        'properties': {'graph': StringValue(writeFlowGraph(graph))},
+        'componentType': visualScriptComponentType,
+        'properties': {'graph': StringValue(writeVisualScript(graph))},
       });
     } finally {
       _committing = false;
@@ -184,7 +187,7 @@ class _FlowPanelState extends State<FlowPanel> {
     if (id == null) return;
     await _ctrl.run('addComponent', {
       'nodeId': id.toToken(),
-      'componentType': 'flow',
+      'componentType': visualScriptComponentType,
     });
     setState(() => _graph = null);
   }
@@ -193,11 +196,12 @@ class _FlowPanelState extends State<FlowPanel> {
 
   Offset _toCanvas(Offset screen) => (screen - _pan) / _zoom;
 
-  FlowLayout _layout(FlowGraph graph) => FlowLayout(graph, _registry);
+  VisualScriptLayout _layout(VisualScriptGraph graph) =>
+      VisualScriptLayout(graph, _registry);
 
   // --- interaction ---------------------------------------------------------
 
-  void _onPointerDown(PointerDownEvent event, FlowGraph graph) {
+  void _onPointerDown(PointerDownEvent event, VisualScriptGraph graph) {
     final at = _toCanvas(event.localPosition);
     final layout = _layout(graph);
 
@@ -238,7 +242,7 @@ class _FlowPanelState extends State<FlowPanel> {
     setState(() => _selected = null);
   }
 
-  void _onPointerMove(PointerMoveEvent event, FlowGraph graph) {
+  void _onPointerMove(PointerMoveEvent event, VisualScriptGraph graph) {
     final at = _toCanvas(event.localPosition);
     if (_wireFrom != null) {
       setState(() => _wirePointer = at);
@@ -256,7 +260,10 @@ class _FlowPanelState extends State<FlowPanel> {
     setState(() => _pan += event.delta);
   }
 
-  Future<void> _onPointerUp(PointerUpEvent event, FlowGraph graph) async {
+  Future<void> _onPointerUp(
+    PointerUpEvent event,
+    VisualScriptGraph graph,
+  ) async {
     final from = _wireFrom;
     if (from != null) {
       final at = _toCanvas(event.localPosition);
@@ -269,7 +276,7 @@ class _FlowPanelState extends State<FlowPanel> {
         final output = from.isInput ? target : from;
         final input = from.isInput ? from : target;
         graph.connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: output.node,
             fromPin: output.pin,
             toNode: input.node,
@@ -277,7 +284,7 @@ class _FlowPanelState extends State<FlowPanel> {
           ),
           // Only exec outputs are singular; a value feeds as many inputs as
           // want it.
-          execOutputIsSingular: _typeOf(graph, output) == FlowType.exec,
+          execOutputIsSingular: _typeOf(graph, output) == VisualScriptType.exec,
         );
         await _commit();
       }
@@ -289,14 +296,18 @@ class _FlowPanelState extends State<FlowPanel> {
     }
   }
 
-  FlowType? _typeOf(FlowGraph graph, FlowPortRef port) {
+  VisualScriptType? _typeOf(VisualScriptGraph graph, VisualScriptPortRef port) {
     final spec = graph.node(port.node);
     if (spec == null) return null;
     return _registry[spec.type]?.pin(port.pin)?.type;
   }
 
   /// Whether a wire from one port to the other is legal.
-  bool _canConnect(FlowGraph graph, FlowPortRef a, FlowPortRef b) {
+  bool _canConnect(
+    VisualScriptGraph graph,
+    VisualScriptPortRef a,
+    VisualScriptPortRef b,
+  ) {
     if (a.node == b.node) return false;
     if (a.isInput == b.isInput) return false;
     final output = a.isInput ? b : a;
@@ -307,7 +318,7 @@ class _FlowPanelState extends State<FlowPanel> {
     return from.connectsTo(to);
   }
 
-  Future<void> _deleteSelected(FlowGraph graph) async {
+  Future<void> _deleteSelected(VisualScriptGraph graph) async {
     final selected = _selected;
     if (selected == null) return;
     graph.removeNode(selected);
@@ -315,7 +326,10 @@ class _FlowPanelState extends State<FlowPanel> {
     await _commit();
   }
 
-  Future<void> _addNode(FlowNodeType type, FlowGraph graph) async {
+  Future<void> _addNode(
+    VisualScriptNodeType type,
+    VisualScriptGraph graph,
+  ) async {
     // Drop it in the middle of what is on screen, so it lands where the eye
     // is rather than at the origin.
     final centre = _toCanvas(
@@ -358,12 +372,12 @@ class _FlowPanelState extends State<FlowPanel> {
     );
   }
 
-  Widget _buildToolbar(BuildContext context, FlowGraph? graph) {
+  Widget _buildToolbar(BuildContext context, VisualScriptGraph? graph) {
     return EditorToolbar(
       children: [
         const Icon(Icons.account_tree_outlined, size: 14),
         const SizedBox(width: 6),
-        Text('Flow', style: editorBodyText),
+        Text('Visual Scripter', style: editorBodyText),
         const SizedBox(width: 12),
         if (graph != null) ...[
           Text(
@@ -414,7 +428,7 @@ class _FlowPanelState extends State<FlowPanel> {
     );
   }
 
-  Widget _buildCanvas(FlowGraph graph) {
+  Widget _buildCanvas(VisualScriptGraph graph) {
     return Listener(
       onPointerDown: (event) => _onPointerDown(event, graph),
       onPointerMove: (event) => _onPointerMove(event, graph),
@@ -441,7 +455,7 @@ class _FlowPanelState extends State<FlowPanel> {
       child: ClipRect(
         child: CustomPaint(
           size: Size.infinite,
-          painter: FlowCanvasPainter(
+          painter: VisualScriptCanvasPainter(
             graph: graph,
             registry: _registry,
             pan: _pan,
@@ -487,7 +501,7 @@ class _NoGraph extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'A Flow component holds a graph: events on the left, wired '
+            'A visual script holds a graph: events on the left, wired '
             'forward through what should happen.',
             textAlign: TextAlign.center,
             style: editorDetailText,
@@ -497,7 +511,7 @@ class _NoGraph extends StatelessWidget {
             FilledButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add a Flow component'),
+              label: const Text('Add a visual script'),
             ),
           ],
         ],
@@ -514,8 +528,8 @@ class _Palette extends StatefulWidget {
     required this.onDismiss,
   });
 
-  final FlowRegistry registry;
-  final ValueChanged<FlowNodeType> onPick;
+  final VisualScriptRegistry registry;
+  final ValueChanged<VisualScriptNodeType> onPick;
   final VoidCallback onDismiss;
 
   @override
@@ -603,7 +617,7 @@ class _PaletteState extends State<_Palette> {
 class _PaletteRow extends StatelessWidget {
   const _PaletteRow({required this.type, required this.onTap});
 
-  final FlowNodeType type;
+  final VisualScriptNodeType type;
   final VoidCallback onTap;
 
   @override

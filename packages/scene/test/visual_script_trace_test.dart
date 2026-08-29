@@ -3,18 +3,26 @@
 // them apart: which branch fired, what went down each wire, and what never
 // ran at all.
 
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:test/test.dart';
 
 /// A graph that branches on a variable and sets another either way, so a run
 /// leaves a visible fork. Returns the graph and the node ids worth naming.
-({FlowGraph graph, int branch, int read, int yes, int no}) branching({
+({VisualScriptGraph graph, int branch, int read, int yes, int no}) branching({
   required bool flag,
 }) {
-  final graph = FlowGraph(
+  final graph = VisualScriptGraph(
     variables: [
-      FlowVariable(name: 'taken', type: FlowType.string, initial: ''),
-      FlowVariable(name: 'flag', type: FlowType.boolean, initial: flag),
+      VisualScriptVariable(
+        name: 'taken',
+        type: VisualScriptType.string,
+        initial: '',
+      ),
+      VisualScriptVariable(
+        name: 'flag',
+        type: VisualScriptType.boolean,
+        initial: flag,
+      ),
     ],
   );
 
@@ -30,7 +38,7 @@ import 'package:test/test.dart';
 
   graph
     ..connect(
-      FlowLink(
+      VisualScriptLink(
         fromNode: start.id,
         fromPin: 'then',
         toNode: branch.id,
@@ -38,7 +46,7 @@ import 'package:test/test.dart';
       ),
     )
     ..connect(
-      FlowLink(
+      VisualScriptLink(
         fromNode: read.id,
         fromPin: 'value',
         toNode: branch.id,
@@ -46,7 +54,7 @@ import 'package:test/test.dart';
       ),
     )
     ..connect(
-      FlowLink(
+      VisualScriptLink(
         fromNode: branch.id,
         fromPin: 'true',
         toNode: yes.id,
@@ -54,7 +62,7 @@ import 'package:test/test.dart';
       ),
     )
     ..connect(
-      FlowLink(
+      VisualScriptLink(
         fromNode: branch.id,
         fromPin: 'false',
         toNode: no.id,
@@ -71,20 +79,28 @@ import 'package:test/test.dart';
   );
 }
 
-({FlowContext context, FlowTrace trace}) run(FlowGraph graph) {
-  final trace = FlowTrace();
-  final context = FlowContext(graph: graph, host: NullFlowHost(), trace: trace);
-  FlowInterpreter(standardFlowRegistry()).fire(context, 'event.start');
+({VisualScriptContext context, VisualScriptTrace trace}) run(
+  VisualScriptGraph graph,
+) {
+  final trace = VisualScriptTrace();
+  final context = VisualScriptContext(
+    graph: graph,
+    host: NullVisualScriptHost(),
+    trace: trace,
+  );
+  VisualScriptInterpreter(
+    standardVisualScriptRegistry(),
+  ).fire(context, 'event.start');
   return (context: context, trace: trace);
 }
 
 /// A graph that runs itself forever, for the budget cases.
-FlowGraph runaway() {
-  final graph = FlowGraph();
+VisualScriptGraph runaway() {
+  final graph = VisualScriptGraph();
   final start = graph.add('event.start');
   final sequence = graph.add('flow.sequence');
   graph.connect(
-    FlowLink(
+    VisualScriptLink(
       fromNode: start.id,
       fromPin: 'then',
       toNode: sequence.id,
@@ -93,7 +109,7 @@ FlowGraph runaway() {
   );
   // A hand-edited cycle; the canvas will not let one be drawn.
   graph.links.add(
-    FlowLink(
+    VisualScriptLink(
       fromNode: sequence.id,
       fromPin: 'a',
       toNode: sequence.id,
@@ -106,8 +122,13 @@ FlowGraph runaway() {
 void main() {
   test('a run with nothing watching records nothing', () {
     final built = branching(flag: true);
-    final context = FlowContext(graph: built.graph, host: NullFlowHost());
-    FlowInterpreter(standardFlowRegistry()).fire(context, 'event.start');
+    final context = VisualScriptContext(
+      graph: built.graph,
+      host: NullVisualScriptHost(),
+    );
+    VisualScriptInterpreter(
+      standardVisualScriptRegistry(),
+    ).fire(context, 'event.start');
     expect(context.trace, isNull);
     expect(context.variables['taken'], 'yes');
   });
@@ -163,13 +184,15 @@ void main() {
   });
 
   test('the step list is bounded but the counts keep going', () {
-    final trace = FlowTrace(maxSteps: 10);
-    final context = FlowContext(
+    final trace = VisualScriptTrace(maxSteps: 10);
+    final context = VisualScriptContext(
       graph: runaway(),
-      host: NullFlowHost(),
+      host: NullVisualScriptHost(),
       trace: trace,
     );
-    FlowInterpreter(standardFlowRegistry()).fire(context, 'event.start');
+    VisualScriptInterpreter(
+      standardVisualScriptRegistry(),
+    ).fire(context, 'event.start');
 
     expect(trace.steps, hasLength(10));
     expect(

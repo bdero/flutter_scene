@@ -1,4 +1,4 @@
-/// The [FlowHost] a graph running inside a scene sees.
+/// The [VisualScriptHost] a graph running inside a scene sees.
 ///
 /// Everything a graph can reach outside its own values goes through here, so
 /// the interpreter stays ignorant of what a scene is and the same graph runs
@@ -6,7 +6,7 @@
 library;
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/animation.dart' show AnimationClip;
@@ -26,9 +26,9 @@ import 'package:flutter_scene/src/skybox.dart' show SunSky;
 /// `turret/position`. That is deliberately the same spelling the animation
 /// channels use, so someone who has bound one already knows how to bind the
 /// other.
-/// {@category Flow}
-class SceneFlowHost implements FlowHost {
-  SceneFlowHost(this.owner, {this.onAction, this.onLog});
+/// {@category Visual scripting}
+class SceneVisualScriptHost implements VisualScriptHost {
+  SceneVisualScriptHost(this.owner, {this.onAction, this.onLog});
 
   /// The node the graph is attached to, and what a bare path resolves
   /// against.
@@ -93,23 +93,23 @@ class SceneFlowHost implements FlowHost {
     final (node, property) = resolved;
     switch (property) {
       case 'position':
-        node.position = flowVector(value);
+        node.position = scriptVector(value);
       case 'position.x':
-        node.position = node.position..x = flowNumber(value);
+        node.position = node.position..x = scriptNumber(value);
       case 'position.y':
-        node.position = node.position..y = flowNumber(value);
+        node.position = node.position..y = scriptNumber(value);
       case 'position.z':
-        node.position = node.position..z = flowNumber(value);
+        node.position = node.position..z = scriptNumber(value);
       case 'scale':
-        node.scale = flowVector(value);
+        node.scale = scriptVector(value);
       case 'scale.x':
-        node.scale = node.scale..x = flowNumber(value);
+        node.scale = node.scale..x = scriptNumber(value);
       case 'scale.y':
-        node.scale = node.scale..y = flowNumber(value);
+        node.scale = node.scale..y = scriptNumber(value);
       case 'scale.z':
-        node.scale = node.scale..z = flowNumber(value);
+        node.scale = node.scale..z = scriptNumber(value);
       case 'visible':
-        node.visible = flowBool(value);
+        node.visible = scriptBool(value);
       default:
         return false;
     }
@@ -120,11 +120,11 @@ class SceneFlowHost implements FlowHost {
   Object? invoke(String action, Map<String, Object?> arguments) {
     switch (action) {
       case 'lookAt':
-        final target = flowVector(arguments['target']);
+        final target = scriptVector(arguments['target']);
         owner.lookAt(target);
         return null;
       case 'translate':
-        final by = flowVector(arguments['by']);
+        final by = scriptVector(arguments['by']);
         owner.position = owner.position + by;
         return null;
       case 'playAnimation':
@@ -144,14 +144,14 @@ class SceneFlowHost implements FlowHost {
         return _withAnimator(
           (a) => a.animator.parameters.setNumber(
             '${arguments['name']}',
-            flowNumber(arguments['value'], 0),
+            scriptNumber(arguments['value'], 0),
           ),
         );
       case 'setAnimatorFlag':
         return _withAnimator(
           (a) => a.animator.parameters.setFlag(
             '${arguments['name']}',
-            value: flowBool(arguments['value']),
+            value: scriptBool(arguments['value']),
           ),
         );
       case 'animatorTrigger':
@@ -218,8 +218,8 @@ class SceneFlowHost implements FlowHost {
       // sky holds it as a plain mutable vector the shader reads at draw time.
       source.sunDirection.setFrom(
         sunDirectionForHour(
-          flowNumber(arguments['hour'], 12),
-          tilt: flowNumber(arguments['tilt'], 0.35),
+          scriptNumber(arguments['hour'], 12),
+          tilt: scriptNumber(arguments['tilt'], 0.35),
         ),
       );
       return true;
@@ -256,8 +256,8 @@ class SceneFlowHost implements FlowHost {
     }
     final clip = _clips[name] ?? owner.createAnimationClip(animation);
     _clips[name] = clip
-      ..loop = flowBool(arguments['loop'])
-      ..playbackTimeScale = flowNumber(arguments['speed'], 1)
+      ..loop = scriptBool(arguments['loop'])
+      ..playbackTimeScale = scriptNumber(arguments['speed'], 1)
       ..play();
     return true;
   }
@@ -273,5 +273,5 @@ class SceneFlowHost implements FlowHost {
   }
 
   /// A vector as the engine's own type, for a caller reading a graph's output.
-  static vm.Vector3 vector(Object? value) => flowVector(value);
+  static vm.Vector3 vector(Object? value) => scriptVector(value);
 }

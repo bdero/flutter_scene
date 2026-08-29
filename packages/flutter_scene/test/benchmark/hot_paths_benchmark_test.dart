@@ -15,7 +15,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_scene/flow.dart';
+import 'package:flutter_scene/visual_script.dart';
 import 'package:flutter_scene/kit.dart';
 import 'package:flutter_scene/navigation.dart';
 import 'package:flutter_scene/scene.dart';
@@ -410,7 +410,7 @@ void main() {
     // ------------------------------------------------------------------
     section('Flow: one graph tick');
     for (final size in const [10, 50, 200]) {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final tick = graph.add('event.tick');
       var previous = tick;
       var previousPin = 'then';
@@ -421,7 +421,7 @@ void main() {
         final set = graph.add('var.set')..literals['name'] = 'v$i';
         graph
           ..connect(
-            FlowLink(
+            VisualScriptLink(
               fromNode: previous.id,
               fromPin: previousPin,
               toNode: set.id,
@@ -429,7 +429,7 @@ void main() {
             ),
           )
           ..connect(
-            FlowLink(
+            VisualScriptLink(
               fromNode: add.id,
               fromPin: 'value',
               toNode: set.id,
@@ -439,10 +439,10 @@ void main() {
         previous = set;
         previousPin = 'then';
       }
-      final host = NullFlowHost();
-      final runner = FlowInterpreter(sceneFlowRegistry());
+      final host = NullVisualScriptHost();
+      final runner = VisualScriptInterpreter(sceneVisualScriptRegistry());
       bench('$size-node chain', () {
-        final context = FlowContext(graph: graph, host: host);
+        final context = VisualScriptContext(graph: graph, host: host);
         runner.fire(context, onTick.id);
       });
     }

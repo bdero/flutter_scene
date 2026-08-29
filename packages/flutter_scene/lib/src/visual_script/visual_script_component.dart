@@ -2,46 +2,46 @@
 library;
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 
 import 'package:flutter_scene/src/components/component.dart';
-import 'package:flutter_scene/src/flow/scene_flow_host.dart';
-import 'package:flutter_scene/src/flow/scene_flow_nodes.dart';
+import 'package:flutter_scene/src/visual_script/scene_visual_script_host.dart';
+import 'package:flutter_scene/src/visual_script/scene_visual_script_nodes.dart';
 import 'package:flutter_scene/src/node.dart';
 
-/// Runs a [FlowGraph] on the node it is attached to.
+/// Runs a [VisualScriptGraph] on the node it is attached to.
 ///
 /// Fires On Start once, On Tick every frame, and On Signal whenever
 /// [raise] is called. The graph's own state (its variables, a Delay's
-/// remaining time, a Do Once's latch) lives in one [FlowContext] that
+/// remaining time, a Do Once's latch) lives in one [VisualScriptContext] that
 /// persists across ticks, so a script written as a state machine behaves like
 /// one.
 ///
 /// An error in the graph -- a loop in the wires, an unknown node type -- is
 /// reported once and then the component stops running it, rather than
 /// repeating the same failure sixty times a second.
-/// {@category Flow}
-class FlowComponent extends Component {
-  FlowComponent({
-    FlowGraph? graph,
-    FlowRegistry? registry,
+/// {@category Visual scripting}
+class VisualScriptComponent extends Component {
+  VisualScriptComponent({
+    VisualScriptGraph? graph,
+    VisualScriptRegistry? registry,
     this.onAction,
     this.onLog,
-  }) : _graph = graph ?? FlowGraph(),
-       registry = registry ?? sceneFlowRegistry();
+  }) : _graph = graph ?? VisualScriptGraph(),
+       registry = registry ?? sceneVisualScriptRegistry();
 
   /// The script this runs. Replacing it restarts from a fresh context, so an
   /// edit in the editor takes effect without a scene reload.
-  FlowGraph get graph => _graph;
-  set graph(FlowGraph value) {
+  VisualScriptGraph get graph => _graph;
+  set graph(VisualScriptGraph value) {
     _graph = value;
     _reset();
   }
 
-  FlowGraph _graph;
+  VisualScriptGraph _graph;
 
   /// The node types the graph may use.
-  final FlowRegistry registry;
+  final VisualScriptRegistry registry;
 
   /// Handles an action the built-in nodes do not cover, so an application can
   /// extend a graph's reach without a new node type.
@@ -55,7 +55,7 @@ class FlowComponent extends Component {
   /// pauses a script rather than restarting it.
   bool running = true;
 
-  FlowTrace? _trace;
+  VisualScriptTrace? _trace;
 
   /// What the last tick did, or null when nothing is watching.
   ///
@@ -63,7 +63,7 @@ class FlowComponent extends Component {
   /// thing, and no amount of staring at the canvas tells them apart. This is
   /// what an editor draws over it: which nodes ran, which branch of a Branch
   /// was taken, and the number that went down each wire.
-  FlowTrace? get trace => _trace;
+  VisualScriptTrace? get trace => _trace;
 
   /// Whether the run is traced.
   ///
@@ -73,13 +73,15 @@ class FlowComponent extends Component {
   bool get tracing => _trace != null;
   set tracing(bool value) {
     if (value == tracing) return;
-    _trace = value ? FlowTrace() : null;
+    _trace = value ? VisualScriptTrace() : null;
     _reset();
   }
 
-  SceneFlowHost? _host;
-  FlowContext? _context;
-  late final FlowInterpreter _interpreter = FlowInterpreter(registry);
+  SceneVisualScriptHost? _host;
+  VisualScriptContext? _context;
+  late final VisualScriptInterpreter _interpreter = VisualScriptInterpreter(
+    registry,
+  );
   bool _started = false;
 
   /// The error the graph stopped on, or null while it is healthy.
@@ -112,7 +114,7 @@ class FlowComponent extends Component {
     _trace?.clear();
     final host = _host;
     if (host == null) return;
-    _context = FlowContext(graph: _graph, host: host, trace: _trace);
+    _context = VisualScriptContext(graph: _graph, host: host, trace: _trace);
   }
 
   /// Builds the host and the run state on first use.
@@ -124,9 +126,9 @@ class FlowComponent extends Component {
   bool _ensureContext() {
     if (_context != null) return true;
     if (!isAttached) return false;
-    final host = SceneFlowHost(node, onAction: onAction, onLog: onLog);
+    final host = SceneVisualScriptHost(node, onAction: onAction, onLog: onLog);
     _host = host;
-    _context = FlowContext(graph: _graph, host: host, trace: _trace);
+    _context = VisualScriptContext(graph: _graph, host: host, trace: _trace);
     _started = false;
     return true;
   }
@@ -187,7 +189,7 @@ class FlowComponent extends Component {
   }
 
   @override
-  Component? cloneFor(Node cloneOwner) => FlowComponent(
+  Component? cloneFor(Node cloneOwner) => VisualScriptComponent(
     // A clone gets its own copy: two objects running one script must not
     // share a Delay's countdown or a variable.
     graph: _graph.copy(),
