@@ -12,6 +12,7 @@
 * `Scene.punctualLightOverflowCount` reports how many drawable items dropped punctual lights last frame because more lights reached them than the per-object budget shades.
 * A `-split<N>` suffix on a glTF node name splits its mesh into grid-cell child meshes at import (whole triangles binned by world-space centroid into `N`-unit cells, children named `Ground_x0_z3`), so a level-spanning mesh culls and receives punctual lights per cell; the split reapplies on every re-import.
 * Punctual lights shade through per-view froxel clustering (screen tiles crossed with exponential depth slices, each shading only the lights that reach it), removing the per-object light cap, so a large mesh reached by many lights shades them all and no draw carries light state. Perspective views cluster automatically; orthographic views and frames using light channel masks keep the per-object lists, and `Scene.punctualLightClustering` disables clustering for comparison.
+* The punctual light loop is dynamically bounded (every compiled shader dialect is GLSL ES 3.00 or newer), so drivers cannot unroll it, and a froxel holds up to 255 lights.
 
 ## 0.23.1
 
