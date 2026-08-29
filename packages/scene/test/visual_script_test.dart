@@ -1,54 +1,71 @@
 // The visual scripting runtime: how exec and data wires behave, what each
 // standard node does, and that a graph survives its text form.
 
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// A graph plus the pieces needed to run it.
-({FlowGraph graph, NullFlowHost host, FlowInterpreter runner}) rig() => (
-  graph: FlowGraph(),
-  host: NullFlowHost(),
-  runner: FlowInterpreter(standardFlowRegistry()),
+({
+  VisualScriptGraph graph,
+  NullVisualScriptHost host,
+  VisualScriptInterpreter runner,
+})
+rig() => (
+  graph: VisualScriptGraph(),
+  host: NullVisualScriptHost(),
+  runner: VisualScriptInterpreter(standardVisualScriptRegistry()),
 );
 
 void main() {
-  group('FlowType.connectsTo', () {
+  group('VisualScriptType.connectsTo', () {
     test('exec only ever meets exec', () {
-      expect(FlowType.exec.connectsTo(FlowType.exec), isTrue);
-      expect(FlowType.exec.connectsTo(FlowType.number), isFalse);
-      expect(FlowType.number.connectsTo(FlowType.exec), isFalse);
-      expect(FlowType.any.connectsTo(FlowType.exec), isFalse);
+      expect(VisualScriptType.exec.connectsTo(VisualScriptType.exec), isTrue);
+      expect(
+        VisualScriptType.exec.connectsTo(VisualScriptType.number),
+        isFalse,
+      );
+      expect(
+        VisualScriptType.number.connectsTo(VisualScriptType.exec),
+        isFalse,
+      );
+      expect(VisualScriptType.any.connectsTo(VisualScriptType.exec), isFalse);
     });
 
     test('any connects both ways', () {
-      expect(FlowType.any.connectsTo(FlowType.vector3), isTrue);
-      expect(FlowType.string.connectsTo(FlowType.any), isTrue);
+      expect(VisualScriptType.any.connectsTo(VisualScriptType.vector3), isTrue);
+      expect(VisualScriptType.string.connectsTo(VisualScriptType.any), isTrue);
     });
 
     test('an integer flows into a number, not the other way', () {
-      expect(FlowType.integer.connectsTo(FlowType.number), isTrue);
       expect(
-        FlowType.number.connectsTo(FlowType.integer),
+        VisualScriptType.integer.connectsTo(VisualScriptType.number),
+        isTrue,
+      );
+      expect(
+        VisualScriptType.number.connectsTo(VisualScriptType.integer),
         isFalse,
         reason: 'silently truncating an index surfaces three systems later',
       );
     });
 
     test('unrelated types do not connect', () {
-      expect(FlowType.vector3.connectsTo(FlowType.boolean), isFalse);
+      expect(
+        VisualScriptType.vector3.connectsTo(VisualScriptType.boolean),
+        isFalse,
+      );
     });
   });
 
   group('graph editing', () {
     test('an input takes one wire; the new one replaces the old', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final a = graph.add('math.add');
       final b = graph.add('math.add');
       final sink = graph.add('debug.print');
 
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: a.id,
           fromPin: 'value',
           toNode: sink.id,
@@ -56,7 +73,7 @@ void main() {
         ),
       );
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: b.id,
           fromPin: 'value',
           toNode: sink.id,
@@ -68,13 +85,13 @@ void main() {
     });
 
     test('an exec output also takes one wire', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final first = graph.add('debug.print');
       final second = graph.add('debug.print');
 
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: first.id,
@@ -82,7 +99,7 @@ void main() {
         ),
       );
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: second.id,
@@ -93,12 +110,12 @@ void main() {
     });
 
     test('a data output feeds as many inputs as want it', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final source = graph.add('math.add');
       final one = graph.add('debug.print');
       final two = graph.add('debug.print');
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: source.id,
           fromPin: 'value',
           toNode: one.id,
@@ -107,7 +124,7 @@ void main() {
         execOutputIsSingular: false,
       );
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: source.id,
           fromPin: 'value',
           toNode: two.id,
@@ -119,11 +136,11 @@ void main() {
     });
 
     test('removing a node takes its wires with it', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final a = graph.add('math.add');
       final b = graph.add('debug.print');
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: a.id,
           fromPin: 'value',
           toNode: b.id,
@@ -136,7 +153,7 @@ void main() {
     });
 
     test('ids are not reused after a delete', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final first = graph.add('math.add');
       graph.removeNode(first.id);
       final second = graph.add('math.add');
@@ -148,7 +165,7 @@ void main() {
     });
 
     test('a copy is independent', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final node = graph.add('math.add')..literals['a'] = 3.0;
       final copy = graph.copy();
       copy.node(node.id)!.literals['a'] = 9.0;
@@ -162,7 +179,7 @@ void main() {
     test('an event with nothing wired does nothing but still fires', () {
       final r = rig();
       r.graph.add('event.start');
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       expect(r.runner.fire(context, onStart.id), 1);
       expect(r.host.messages, isEmpty);
     });
@@ -174,7 +191,7 @@ void main() {
         ..literals['label'] = 'hello'
         ..literals['value'] = 42;
       r.graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: print.id,
@@ -182,7 +199,7 @@ void main() {
         ),
       );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(r.host.messages, ['hello: 42']);
     });
@@ -198,7 +215,7 @@ void main() {
 
       r.graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: start.id,
             fromPin: 'then',
             toNode: print.id,
@@ -206,7 +223,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: add.id,
             fromPin: 'value',
             toNode: multiply.id,
@@ -214,7 +231,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: multiply.id,
             fromPin: 'value',
             toNode: print.id,
@@ -222,7 +239,7 @@ void main() {
           ),
         );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(r.host.messages, ['50.0']);
     });
@@ -232,7 +249,7 @@ void main() {
       final start = r.graph.add('event.start');
       final print = r.graph.add('debug.print');
       r.graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: print.id,
@@ -240,7 +257,7 @@ void main() {
         ),
       );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       // The label defaults to empty and the value to null.
       expect(r.host.messages, ['null']);
@@ -256,7 +273,7 @@ void main() {
         final no = r.graph.add('debug.print')..literals['value'] = 'no';
         r.graph
           ..connect(
-            FlowLink(
+            VisualScriptLink(
               fromNode: start.id,
               fromPin: 'then',
               toNode: gate.id,
@@ -264,7 +281,7 @@ void main() {
             ),
           )
           ..connect(
-            FlowLink(
+            VisualScriptLink(
               fromNode: gate.id,
               fromPin: 'true',
               toNode: yes.id,
@@ -272,14 +289,14 @@ void main() {
             ),
           )
           ..connect(
-            FlowLink(
+            VisualScriptLink(
               fromNode: gate.id,
               fromPin: 'false',
               toNode: no.id,
               toPin: 'exec',
             ),
           );
-        final context = FlowContext(graph: r.graph, host: r.host);
+        final context = VisualScriptContext(graph: r.graph, host: r.host);
         r.runner.fire(context, onStart.id);
         return r.host.messages.single;
       }
@@ -297,7 +314,7 @@ void main() {
       final three = r.graph.add('debug.print')..literals['value'] = '3';
       r.graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: start.id,
             fromPin: 'then',
             toNode: seq.id,
@@ -305,7 +322,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: seq.id,
             fromPin: 'a',
             toNode: one.id,
@@ -313,7 +330,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: seq.id,
             fromPin: 'b',
             toNode: two.id,
@@ -321,7 +338,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: seq.id,
             fromPin: 'c',
             toNode: three.id,
@@ -329,7 +346,7 @@ void main() {
           ),
         );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(r.host.messages, ['1', '2', '3']);
     });
@@ -343,17 +360,27 @@ void main() {
       final a = r.graph.add('flow.gate');
       final b = r.graph.add('flow.gate');
       r.graph.links.addAll([
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: a.id,
           toPin: 'exec',
         ),
-        FlowLink(fromNode: a.id, fromPin: 'then', toNode: b.id, toPin: 'exec'),
-        FlowLink(fromNode: b.id, fromPin: 'then', toNode: a.id, toPin: 'exec'),
+        VisualScriptLink(
+          fromNode: a.id,
+          fromPin: 'then',
+          toNode: b.id,
+          toPin: 'exec',
+        ),
+        VisualScriptLink(
+          fromNode: b.id,
+          fromPin: 'then',
+          toNode: a.id,
+          toPin: 'exec',
+        ),
       ]);
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(context.error, contains('loop in the exec wires'));
     });
@@ -368,13 +395,23 @@ void main() {
       final b = r.graph.add('math.add');
       r.graph
         ..connect(
-          FlowLink(fromNode: a.id, fromPin: 'value', toNode: b.id, toPin: 'a'),
+          VisualScriptLink(
+            fromNode: a.id,
+            fromPin: 'value',
+            toNode: b.id,
+            toPin: 'a',
+          ),
         )
         ..connect(
-          FlowLink(fromNode: b.id, fromPin: 'value', toNode: a.id, toPin: 'a'),
+          VisualScriptLink(
+            fromNode: b.id,
+            fromPin: 'value',
+            toNode: a.id,
+            toPin: 'a',
+          ),
         );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.evaluateOutput(context, a.id, 'value');
       expect(context.error, contains('cycle in the data wires'));
     });
@@ -389,7 +426,7 @@ void main() {
       final print = r.graph.add('debug.print');
       r.graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: start.id,
             fromPin: 'then',
             toNode: print.id,
@@ -397,7 +434,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: source.id,
             fromPin: 'value',
             toNode: sum.id,
@@ -406,7 +443,7 @@ void main() {
           execOutputIsSingular: false,
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: source.id,
             fromPin: 'value',
             toNode: sum.id,
@@ -415,7 +452,7 @@ void main() {
           execOutputIsSingular: false,
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: sum.id,
             fromPin: 'value',
             toNode: print.id,
@@ -423,7 +460,7 @@ void main() {
           ),
         );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(context.error, isNull);
       expect(r.host.messages, ['10.0'], reason: '(2 + 3) twice');
@@ -434,14 +471,14 @@ void main() {
       final start = r.graph.add('event.start');
       final bogus = r.graph.add('nothing.here');
       r.graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: bogus.id,
           toPin: 'exec',
         ),
       );
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(context.error, contains('nothing.here'));
     });
@@ -455,7 +492,7 @@ void main() {
       final print = r.graph.add('debug.print')..literals['value'] = 'fired';
       r.graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: tick.id,
             fromPin: 'then',
             toNode: once.id,
@@ -463,7 +500,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: once.id,
             fromPin: 'then',
             toNode: print.id,
@@ -471,7 +508,7 @@ void main() {
           ),
         );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       for (var i = 0; i < 5; i++) {
         r.runner.fire(context, onTick.id);
       }
@@ -485,7 +522,7 @@ void main() {
       final print = r.graph.add('debug.print')..literals['value'] = 'now';
       r.graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: tick.id,
             fromPin: 'then',
             toNode: wait.id,
@@ -493,7 +530,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: wait.id,
             fromPin: 'then',
             toNode: print.id,
@@ -501,7 +538,7 @@ void main() {
           ),
         );
 
-      final context = FlowContext(
+      final context = VisualScriptContext(
         graph: r.graph,
         host: r.host..deltaSeconds = 1 / 60,
       );
@@ -526,7 +563,11 @@ void main() {
     test('variables persist across ticks', () {
       final r = rig();
       r.graph.variables.add(
-        FlowVariable(name: 'count', type: FlowType.number, initial: 0.0),
+        VisualScriptVariable(
+          name: 'count',
+          type: VisualScriptType.number,
+          initial: 0.0,
+        ),
       );
       final tick = r.graph.add('event.tick');
       final read = r.graph.add('var.get')..literals['name'] = 'count';
@@ -534,7 +575,7 @@ void main() {
       final write = r.graph.add('var.set')..literals['name'] = 'count';
       r.graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: tick.id,
             fromPin: 'then',
             toNode: write.id,
@@ -542,7 +583,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: read.id,
             fromPin: 'value',
             toNode: add.id,
@@ -550,7 +591,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: add.id,
             fromPin: 'value',
             toNode: write.id,
@@ -558,7 +599,7 @@ void main() {
           ),
         );
 
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       for (var i = 0; i < 4; i++) {
         r.runner.fire(context, onTick.id);
       }
@@ -570,7 +611,7 @@ void main() {
     Object? evaluate(String type, Map<String, Object?> literals, String pin) {
       final r = rig();
       final node = r.graph.add(type)..literals.addAll(literals);
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       return r.runner.evaluateOutput(context, node.id, pin);
     }
 
@@ -648,7 +689,7 @@ void main() {
         ..literals['rate'] = 1.0
         ..literals['min'] = 10.0
         ..literals['max'] = 20.0;
-      final context = FlowContext(graph: r.graph, host: r.host);
+      final context = VisualScriptContext(graph: r.graph, host: r.host);
       final seen = <double>[];
       for (var i = 0; i < 60; i++) {
         r.host.elapsedSeconds = i / 60;
@@ -660,15 +701,15 @@ void main() {
     });
 
     test('every standard node is registered exactly once', () {
-      final registry = standardFlowRegistry();
-      expect(registry.all, hasLength(standardFlowNodes.length));
-      for (final type in standardFlowNodes) {
+      final registry = standardVisualScriptRegistry();
+      expect(registry.all, hasLength(standardVisualScriptNodes.length));
+      for (final type in standardVisualScriptNodes) {
         expect(registry[type.id], same(type), reason: type.id);
       }
     });
 
     test('every node type declares a doc and unique pin ids', () {
-      for (final type in standardFlowNodes) {
+      for (final type in standardVisualScriptNodes) {
         expect(type.doc, isNotEmpty, reason: type.id);
         final ids = <String>{};
         for (final pin in type.pins) {
@@ -678,8 +719,10 @@ void main() {
     });
 
     test('an event has no exec input; everything else that flows has one', () {
-      for (final type in standardFlowNodes) {
-        final execIn = type.inputs.any((pin) => pin.type == FlowType.exec);
+      for (final type in standardVisualScriptNodes) {
+        final execIn = type.inputs.any(
+          (pin) => pin.type == VisualScriptType.exec,
+        );
         if (type.isEvent) {
           expect(execIn, isFalse, reason: '${type.id} is an event');
         }
@@ -689,9 +732,13 @@ void main() {
 
   group('serialization', () {
     test('a graph round-trips through its text form', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       graph.variables.add(
-        FlowVariable(name: 'speed', type: FlowType.number, initial: 2.5),
+        VisualScriptVariable(
+          name: 'speed',
+          type: VisualScriptType.number,
+          initial: 2.5,
+        ),
       );
       final start = graph.add('event.tick');
       final make = graph.add('vector.make')
@@ -701,7 +748,7 @@ void main() {
       final print = graph.add('debug.print')..literals['label'] = 'v';
       graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: start.id,
             fromPin: 'then',
             toNode: print.id,
@@ -709,7 +756,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: make.id,
             fromPin: 'value',
             toNode: print.id,
@@ -717,7 +764,7 @@ void main() {
           ),
         );
 
-      final restored = readFlowGraph(writeFlowGraph(graph));
+      final restored = readVisualScript(writeVisualScript(graph));
       expect(restored.nodes, hasLength(3));
       expect(restored.links, hasLength(2));
       expect(restored.nextNodeId, graph.nextNodeId);
@@ -732,15 +779,15 @@ void main() {
         reason: 'a vector literal is tagged so it does not decode as a list',
       );
       expect(restored.variable('speed')!.initial, 2.5);
-      expect(restored.variable('speed')!.type, FlowType.number);
+      expect(restored.variable('speed')!.type, VisualScriptType.number);
     });
 
     test('a second round trip is byte-identical', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       graph.add('event.start');
       graph.add('debug.print');
-      final once = writeFlowGraph(graph);
-      expect(writeFlowGraph(readFlowGraph(once)), once);
+      final once = writeVisualScript(graph);
+      expect(writeVisualScript(readVisualScript(once)), once);
     });
 
     test('a restored graph still runs', () {
@@ -748,7 +795,7 @@ void main() {
       final start = r.graph.add('event.start');
       final print = r.graph.add('debug.print')..literals['value'] = 'ok';
       r.graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: print.id,
@@ -756,8 +803,8 @@ void main() {
         ),
       );
 
-      final restored = readFlowGraph(writeFlowGraph(r.graph));
-      final context = FlowContext(graph: restored, host: r.host);
+      final restored = readVisualScript(writeVisualScript(r.graph));
+      final context = VisualScriptContext(graph: restored, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(r.host.messages, ['ok']);
     });
@@ -765,7 +812,7 @@ void main() {
     test('a counter behind the ids in use is lifted past them', () {
       // A hand-edited file would otherwise hand a fresh node an id a wire
       // already points at.
-      final graph = decodeFlowGraph({
+      final graph = decodeVisualScript({
         'nextNodeId': 1,
         'nodes': [
           {'id': 9, 'type': 'math.add', 'x': 0, 'y': 0},
@@ -776,7 +823,7 @@ void main() {
     });
 
     test('malformed entries are skipped rather than throwing', () {
-      final graph = decodeFlowGraph({
+      final graph = decodeVisualScript({
         'nodes': [
           {'id': 1, 'type': 'math.add', 'x': 0, 'y': 0},
           {'type': 'no.id'},
@@ -792,7 +839,7 @@ void main() {
     });
 
     test('a graph that is not an object is refused', () {
-      expect(() => readFlowGraph('[]'), throwsFormatException);
+      expect(() => readVisualScript('[]'), throwsFormatException);
     });
   });
 }
