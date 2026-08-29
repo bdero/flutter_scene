@@ -90,6 +90,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // Items that dropped punctual lights last frame (over the per-object cap);
   // nonzero shows the lighting warning badge.
   final _lightOverflow = ValueNotifier<int>(0);
+  final _shadowOverflow = ValueNotifier<int>(0);
   // Holds keyboard focus while the viewport is the active surface, so the
   // app-level shortcuts (undo, delete) fire after the viewport is clicked.
   final _focusNode = FocusNode(debugLabel: 'editorViewport');
@@ -214,6 +215,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _viewEpoch.dispose();
     _fps.dispose();
     _lightOverflow.dispose();
+    _shadowOverflow.dispose();
     _focusNode.dispose();
     _freeLookPointer.dispose();
     super.dispose();
@@ -249,6 +251,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     final overflow = _ctrl.scene.punctualLightOverflowCount;
     if (overflow != _lightOverflow.value) _lightOverflow.value = overflow;
+    final shadows = _ctrl.scene.shadowCasterOverflowCount;
+    if (shadows != _shadowOverflow.value) _shadowOverflow.value = shadows;
     if (_freeLookActive && _freeLook.move(deltaSeconds)) {
       _syncOrbitToFreeLook();
       _bumpView();
@@ -1360,6 +1364,33 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                   text: overflow == 1
                                       ? '1 light-budget overflow'
                                       : '$overflow light-budget overflows',
+                                  color: const Color(0xCC8A6D1F),
+                                ),
+                              ),
+                            ),
+                    ),
+                    // Lights whose authored shadow is not being drawn. Silent
+                    // otherwise: the light still lights, so the missing shadow
+                    // reads as a lighting bug rather than a budget.
+                    ValueListenableBuilder<int>(
+                      valueListenable: _shadowOverflow,
+                      builder: (context, dropped, _) => dropped <= 0
+                          ? const SizedBox.shrink()
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Tooltip(
+                                message:
+                                    'More lights ask to cast a shadow than '
+                                    'the shared shadow atlas holds, so these '
+                                    'lights light the scene but throw no '
+                                    'shadow. Turn off Casts shadow on the '
+                                    'lights that do not need one; the ones '
+                                    'that keep their slot are highlighted in '
+                                    'the viewport.',
+                                child: _InfoBadge(
+                                  text: dropped == 1
+                                      ? '1 shadow over budget'
+                                      : '$dropped shadows over budget',
                                   color: const Color(0xCC8A6D1F),
                                 ),
                               ),

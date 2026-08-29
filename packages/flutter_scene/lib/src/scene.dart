@@ -21,7 +21,9 @@ import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
 import 'components/irradiance_volume_component.dart';
 import 'components/planar_reflector_component.dart';
+import 'components/point_light_component.dart';
 import 'components/reflection_probe_component.dart';
+import 'components/spot_light_component.dart';
 import 'fog.dart';
 import 'god_rays.dart';
 import 'light.dart';
@@ -454,6 +456,58 @@ base class Scene implements SceneGraph {
   /// {@category Lighting and environment}
   int get punctualLightOverflowCount =>
       _punctualLightBuffer.overflowedItemCount;
+
+  // The lights that held a shadow slot last frame, by identity, plus how many
+  // asked for one and missed. Refreshed once per frame alongside the caster
+  // selection; empty until the first frame renders.
+  final Set<Object> _grantedShadowCasters = Set.identity();
+  int _shadowCasterOverflowCount = 0;
+
+  /// How many lights asked to cast a shadow last frame but got no slot in the
+  /// shared shadow atlas, which caps shadow-casting spots and point lights
+  /// separately (see `kMaxSpotShadows` and `kMaxPointShadows`).
+  ///
+  /// Those lights still light the scene; they just throw no shadow, silently.
+  /// A nonzero value means the scene asks for more shadowed local lights than
+  /// the atlas holds, so some authored shadows are not being drawn.
+  /// {@category Lighting and environment}
+  int get shadowCasterOverflowCount => _shadowCasterOverflowCount;
+
+  /// Whether [lightComponent] (a `SpotLightComponent` or
+  /// `PointLightComponent`) held a shadow slot last frame.
+  ///
+  /// False for a light that does not cast at all, and also for one whose
+  /// `castsShadow` is set but which lost the slot to the budget. Editors pair
+  /// this with [shadowCasterOverflowCount] to point at the specific lights
+  /// whose authored shadow is not being drawn.
+  /// {@category Lighting and environment}
+  bool isShadowCasterGranted(Object lightComponent) =>
+      _grantedShadowCasters.contains(lightComponent);
+
+  // Records this frame's caster selection for the two queries above.
+  void _recordShadowCasterBudget({
+    required List<SpotLightComponent> spots,
+    required List<PointLightComponent> points,
+    required SpotShadowFrame? spotShadows,
+    required PointShadowFrame? pointShadows,
+  }) {
+    _grantedShadowCasters.clear();
+    final granted =
+        (spotShadows?.casters.length ?? 0) +
+        (pointShadows?.casters.length ?? 0);
+    if (spotShadows != null) _grantedShadowCasters.addAll(spotShadows.casters);
+    if (pointShadows != null) {
+      _grantedShadowCasters.addAll(pointShadows.casters);
+    }
+    var requested = 0;
+    for (final spot in spots) {
+      if (spot.light.castsShadow) requested++;
+    }
+    for (final point in points) {
+      if (point.light.castsShadow) requested++;
+    }
+    _shadowCasterOverflowCount = requested - granted;
+  }
 
   /// Whether punctual lights shade through per-view froxel clustering (the
   /// view frustum subdivided into screen tiles and depth slices, each shading
@@ -1647,6 +1701,12 @@ base class Scene implements SceneGraph {
     // (view-independent).
     final spotShadowFrame = collectSpotShadows(visibleSpots);
     final pointShadowFrame = collectPointShadows(visiblePoints);
+    _recordShadowCasterBudget(
+      spots: visibleSpots,
+      points: visiblePoints,
+      spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
+    );
 
     // The additional analytic lights (point, spot, and directional lights past
     // the first) are view-independent, so build their shared data texture once

@@ -69,6 +69,26 @@ void main() {
     expect(frame.slotOf(points.last), -1);
   });
 
+  test('the caster budget reports what it dropped', () {
+    // The selection is first-in-list, so the lights past the cap are the tail;
+    // what matters here is that the count of dropped casters is exposed rather
+    // than the shortfall being silent.
+    final points = [
+      for (var i = 0; i < kMaxPointShadows + 3; i++)
+        _point(castsShadow: true, at: Vector3(i.toDouble(), 5, 0)),
+    ];
+    final frame = collectPointShadows(points)!;
+    final granted = frame.casters.length;
+    final requested = points.where((p) => p.light.castsShadow).length;
+    expect(granted, kMaxPointShadows);
+    expect(requested - granted, 3);
+    // Every light past the cap reports no slot, which is what the editor
+    // marks in the viewport and the inspector.
+    for (final point in points.skip(kMaxPointShadows)) {
+      expect(frame.slotOf(point), -1);
+    }
+  });
+
   test('packLights leaves point rows with no shadow slot', () {
     final (floats, count) = PunctualLightBuffer.packLights(
       directionals: [],
