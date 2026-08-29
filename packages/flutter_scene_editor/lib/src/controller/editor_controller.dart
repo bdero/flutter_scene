@@ -330,6 +330,17 @@ class EditorController extends ChangeNotifier {
   /// The current selection.
   Selection get selection => session.selection;
 
+  /// The outliner listens here; setting a node id asks it to expand the
+  /// node's ancestors and scroll the row into view.
+  final ValueNotifier<LocalId?> outlinerReveal = ValueNotifier(null);
+
+  /// Asks the outliner to reveal [id] (expand ancestors, scroll to the row).
+  void revealInOutliner(LocalId id) {
+    // Re-notify even for a repeated id, a second create lands on a fresh row.
+    outlinerReveal.value = null;
+    outlinerReveal.value = id;
+  }
+
   /// Read-only scene-graph queries.
   SceneQuery get query => session.query;
 
