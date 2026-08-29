@@ -1464,8 +1464,62 @@ class _EditorHomeState extends State<_EditorHome> {
         projectRunner: _runner,
         appSession: _session,
         onDocumentSaved: _onSceneSaved,
-        trailing: [
+        // One configuration, drawn twice: what is being built sits at the
+        // toolbar's left, and the transport in the middle of the window.
+        toolbarLeading: [
           BuildToolbar(
+            part: BuildToolbarPart.selectors,
+
+            settings: _settings,
+            buildInfo: _buildInfo,
+            inspector: _inspector,
+            runner: _runner,
+            session: _session,
+            project: _project,
+            selectedConfiguration: _selectedBuildConfiguration,
+            onSelectInstallation: (id) {
+              if (_settings.selectedInstallationId == id) return;
+              setState(() => _settings.selectedInstallationId = id);
+              _persistSettings();
+              _onInstallationSelectionChanged();
+            },
+            onSelectConfiguration: (id) {
+              final project = _project;
+              if (project == null) return;
+              setState(
+                () => _settings.selectedBuildConfigurations[project.path] = id,
+              );
+              _persistSettings();
+            },
+            deviceCatalog: _deviceCatalog,
+            selectedDevice: _selectedDevice,
+            onSelectDevice: _selectDevice,
+            onManageInstallations: _showSettings,
+            onEditConfigs: _project == null ? null : _editBuildConfigs,
+            onPlay: () {
+              // The throw lands in the future, not here; handle it there so
+              // launch-blocked errors still reach the console.
+              unawaited(
+                _startPlaySession().catchError((Object e) {
+                  _runner.addLine(
+                    e is FormatException ? e.message : '$e',
+                    ConsoleLineKind.error,
+                  );
+                  return false;
+                }),
+              );
+            },
+            onRunTask: _runTask,
+            restartOnSave: _restartOnSceneSave,
+            onToggleRestartOnSave: _project == null
+                ? null
+                : _toggleRestartOnSceneSave,
+          ),
+        ],
+        toolbarCentre: [
+          BuildToolbar(
+            part: BuildToolbarPart.transport,
+
             settings: _settings,
             buildInfo: _buildInfo,
             inspector: _inspector,
