@@ -91,8 +91,10 @@ void main() {
     test('a pin knows whether it is an input', () {
       final r = rig();
       final node = r.graph.add('math.add', position: Vector2(0, 0));
-      expect(r.layout.portAt(r.layout.portCentre(node.id, 'a')!)!.isInput,
-          isTrue);
+      expect(
+        r.layout.portAt(r.layout.portCentre(node.id, 'a')!)!.isInput,
+        isTrue,
+      );
       expect(
         r.layout.portAt(r.layout.portCentre(node.id, 'value')!)!.isInput,
         isFalse,

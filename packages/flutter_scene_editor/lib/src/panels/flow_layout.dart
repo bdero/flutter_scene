@@ -56,9 +56,7 @@ class FlowLayout {
 
   Rect boundsOf(FlowNodeSpec node) {
     final type = registry[node.type];
-    final height = type == null
-        ? flowHeaderHeight + 6
-        : heightOf(type);
+    final height = type == null ? flowHeaderHeight + 6 : heightOf(type);
     return Rect.fromLTWH(
       node.position.x,
       node.position.y,
@@ -86,10 +84,7 @@ class FlowLayout {
         flowHeaderHeight +
         index * flowRowHeight +
         flowRowHeight / 2;
-    return Offset(
-      node.position.x + (pin.isInput ? 0 : flowNodeWidth),
-      y,
-    );
+    return Offset(node.position.x + (pin.isInput ? 0 : flowNodeWidth), y);
   }
 
   /// The pin under [at], within a grab radius, or null.
@@ -221,14 +216,7 @@ class FlowCanvasPainter extends CustomPainter {
     final reach = math.max(40.0, (to.dx - from.dx).abs() * 0.5);
     final path = Path()
       ..moveTo(from.dx, from.dy)
-      ..cubicTo(
-        from.dx + reach,
-        from.dy,
-        to.dx - reach,
-        to.dy,
-        to.dx,
-        to.dy,
-      );
+      ..cubicTo(from.dx + reach, from.dy, to.dx - reach, to.dy, to.dx, to.dy);
     canvas.drawPath(
       path,
       Paint()
@@ -343,9 +331,7 @@ class FlowCanvasPainter extends CustomPainter {
     painter.paint(
       canvas,
       Offset(
-        isInput
-            ? centre.dx + 9
-            : centre.dx - 9 - painter.width,
+        isInput ? centre.dx + 9 : centre.dx - 9 - painter.width,
         centre.dy - painter.height / 2,
       ),
     );
@@ -353,11 +339,11 @@ class FlowCanvasPainter extends CustomPainter {
 
   void _text(Canvas canvas, String text, Offset at, TextStyle style) {
     TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )
       ..layout(maxWidth: flowNodeWidth - 16)
       ..paint(canvas, at);
   }

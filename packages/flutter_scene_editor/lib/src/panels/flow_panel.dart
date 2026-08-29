@@ -180,9 +180,7 @@ class _FlowPanelState extends State<FlowPanel> {
     if (port != null) {
       // Grabbing a connected input pulls the wire off it, which is how one is
       // rerouted rather than deleted and drawn again.
-      final existing = port.isInput
-          ? graph.inputTo(port.node, port.pin)
-          : null;
+      final existing = port.isInput ? graph.inputTo(port.node, port.pin) : null;
       if (existing != null) {
         graph.disconnect(existing);
         setState(() {
@@ -532,12 +530,9 @@ class _PaletteState extends State<_Palette> {
                             isDense: true,
                             hintText: 'Search nodes',
                             border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.symmetric(
-                              horizontal: 8,
-                            ),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8),
                           ),
-                          onChanged: (value) =>
-                              setState(() => _query = value),
+                          onChanged: (value) => setState(() => _query = value),
                         ),
                       ),
                     ),

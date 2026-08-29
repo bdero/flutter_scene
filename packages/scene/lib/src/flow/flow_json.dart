@@ -79,8 +79,7 @@ FlowGraph decodeFlowGraph(Map<String, Object?> json) {
         type: type,
         position: Vector2(_double(map['x']), _double(map['y'])),
         literals: {
-          for (final entry
-              in ((map['literals'] as Map?) ?? const {}).entries)
+          for (final entry in ((map['literals'] as Map?) ?? const {}).entries)
             '${entry.key}': _decodeValue(entry.value),
         },
       ),
@@ -144,7 +143,9 @@ FlowGraph readFlowGraph(String source) {
 /// Vectors are the one value that is not already JSON, so they are tagged
 /// rather than written as a bare list, which would decode as a list.
 Object? _encodeValue(Object? value) => switch (value) {
-  Vector3 v => {r'$vec3': [v.x, v.y, v.z]},
+  Vector3 v => {
+    r'$vec3': [v.x, v.y, v.z],
+  },
   _ => value,
 };
 

@@ -153,16 +153,8 @@ class WaterComponent extends Component {
     final crest = _crestHeight;
     final centre = worldTransform?.getTranslation() ?? vm.Vector3.zero();
     return NavVolume(
-      min: vm.Vector3(
-        centre.x - half,
-        centre.y - depth,
-        centre.z - half,
-      ),
-      max: vm.Vector3(
-        centre.x + half,
-        centre.y + crest,
-        centre.z + half,
-      ),
+      min: vm.Vector3(centre.x - half, centre.y - depth, centre.z - half),
+      max: vm.Vector3(centre.x + half, centre.y + crest, centre.z + half),
     );
   }
 

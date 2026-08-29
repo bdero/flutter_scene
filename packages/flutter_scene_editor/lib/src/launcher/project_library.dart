@@ -96,7 +96,10 @@ class ProjectLibrary {
   /// typing part of a directory finds a project whose name does not contain
   /// it. Broken entries sort last within any order, since the point of the
   /// gallery is to get into a project.
-  List<ProjectEntry> view({String query = '', ProjectSort sort = ProjectSort.recent}) {
+  List<ProjectEntry> view({
+    String query = '',
+    ProjectSort sort = ProjectSort.recent,
+  }) {
     final needle = query.trim().toLowerCase();
     final matched = [
       for (final entry in entries)

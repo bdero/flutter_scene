@@ -106,7 +106,12 @@ void main() {
 
   group('the settings that make each effect what it is', () {
     test('the one-shot effects burst and do not loop', () {
-      for (final id in const ['muzzleFlash', 'impactSparks', 'dustPuff', 'explosion']) {
+      for (final id in const [
+        'muzzleFlash',
+        'impactSparks',
+        'dustPuff',
+        'explosion',
+      ]) {
         final system = vfxPresetById(id)!.buildSystem();
         expect(system.looping, isFalse, reason: id);
         expect(system.spawner.rate, 0, reason: '$id is a burst, not a stream');
@@ -153,7 +158,6 @@ void main() {
       expect(vfxPresetById('rain')!.buildSystem().gravity.y, lessThan(0));
       expect(vfxPresetById('smoke')!.buildSystem().gravity.y, greaterThan(0));
     });
-
   });
 
   group('the look half', () {
@@ -163,8 +167,7 @@ void main() {
       if (_gpuAvailable()) await Scene.initializeStaticResources();
     });
 
-    ParticleEmitterComponent built(String id) =>
-        vfxPresetById(id)!.build();
+    ParticleEmitterComponent built(String id) => vfxPresetById(id)!.build();
 
     test('sparks and rain stretch along their velocity', () {
       for (final id in const ['impactSparks', 'rain']) {
@@ -183,11 +186,7 @@ void main() {
         );
       }
       for (final id in const ['smoke', 'groundFog', 'snow', 'dustPuff']) {
-        expect(
-          built(id).material.blendMode,
-          SpriteBlendMode.alpha,
-          reason: id,
-        );
+        expect(built(id).material.blendMode, SpriteBlendMode.alpha, reason: id);
       }
     }, skip: _gpuAvailable() ? null : 'Requires a GPU device.');
 

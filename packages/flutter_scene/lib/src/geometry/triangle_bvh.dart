@@ -51,8 +51,12 @@ class TriangleBvh {
     // Per-triangle AABB and centroid, computed once so neither the sort nor
     // the node build has to re-read the position stream.
     final triBounds = Float32List(n * 6);
-    var minCx = double.infinity, minCy = double.infinity, minCz = double.infinity;
-    var maxCx = -double.infinity, maxCy = -double.infinity, maxCz = -double.infinity;
+    var minCx = double.infinity,
+        minCy = double.infinity,
+        minCz = double.infinity;
+    var maxCx = -double.infinity,
+        maxCy = -double.infinity,
+        maxCz = -double.infinity;
     final centroids = Float32List(n * 3);
     for (var t = 0; t < n; t++) {
       final a = sourceTriVerts[t * 3] * 3;
@@ -93,7 +97,8 @@ class TriangleBvh {
       final qx = ((centroids[t * 3] - minCx) * scaleX).toInt();
       final qy = ((centroids[t * 3 + 1] - minCy) * scaleY).toInt();
       final qz = ((centroids[t * 3 + 2] - minCz) * scaleZ).toInt();
-      keys[t] = _spreadBits(qx) | (_spreadBits(qy) << 1) | (_spreadBits(qz) << 2);
+      keys[t] =
+          _spreadBits(qx) | (_spreadBits(qy) << 1) | (_spreadBits(qz) << 2);
     }
 
     // Radix-sort triangle indices by Morton key, three 10-bit passes.
@@ -148,8 +153,12 @@ class TriangleBvh {
       final node = nodeCount++;
       final o = node * 6;
       if (hi - lo <= _leafSize) {
-        var bMinX = double.infinity, bMinY = double.infinity, bMinZ = double.infinity;
-        var bMaxX = -double.infinity, bMaxY = -double.infinity, bMaxZ = -double.infinity;
+        var bMinX = double.infinity,
+            bMinY = double.infinity,
+            bMinZ = double.infinity;
+        var bMaxX = -double.infinity,
+            bMaxY = -double.infinity,
+            bMaxZ = -double.infinity;
         for (var slot = lo; slot < hi; slot++) {
           final t = order[slot] * 6;
           if (triBounds[t] < bMinX) bMinX = triBounds[t];
@@ -278,8 +287,28 @@ class TriangleBvh {
       }
 
       final right = children[node * 2 + 1];
-      final tLeft = _slab(bounds, left * 6, ox, oy, oz, invX, invY, invZ, limit);
-      final tRight = _slab(bounds, right * 6, ox, oy, oz, invX, invY, invZ, limit);
+      final tLeft = _slab(
+        bounds,
+        left * 6,
+        ox,
+        oy,
+        oz,
+        invX,
+        invY,
+        invZ,
+        limit,
+      );
+      final tRight = _slab(
+        bounds,
+        right * 6,
+        ox,
+        oy,
+        oz,
+        invX,
+        invY,
+        invZ,
+        limit,
+      );
       if (tLeft < 0) {
         if (tRight >= 0) {
           stack[top] = right;
@@ -369,7 +398,6 @@ class TriangleBvh {
     return tMin > tMax ? -1.0 : tMin;
   }
 
-
   // Spreads the low 10 bits of [value] so consecutive bits land three apart
   // (Morton interleave).
   static int _spreadBits(int value) {
@@ -381,4 +409,3 @@ class TriangleBvh {
     return x;
   }
 }
-
