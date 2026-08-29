@@ -17,6 +17,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/sprite_material.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/emitter_shape.dart';
+import 'package:flutter_scene/src/particles/particle_collision.dart';
 import 'package:flutter_scene/src/particles/particle_module.dart';
 import 'package:flutter_scene/src/particles/particle_system.dart';
 import 'package:flutter_scene/src/particles/spawner.dart';
@@ -173,7 +174,64 @@ MapValue? encodeParticleModule(ParticleModule module) {
   if (module is RotationModule) {
     return MapValue({'kind': const StringValue('rotation')});
   }
+  if (module is CollisionModule) {
+    return MapValue({
+      'kind': const StringValue('collision'),
+      'response': StringValue(module.response.name),
+      'restitution': DoubleValue(module.restitution),
+      'friction': DoubleValue(module.friction),
+      'radius': DoubleValue(module.radius),
+      'lifetimeLoss': DoubleValue(module.lifetimeLoss),
+      'colliders': ListValue([
+        for (final collider in module.colliders)
+          if (encodeParticleCollider(collider) case final encoded?) encoded,
+      ]),
+    });
+  }
   return null;
+}
+
+/// Encodes one collider as a tagged map, or null for a shape the format does
+/// not carry (a project's own subclass).
+MapValue? encodeParticleCollider(ParticleCollider collider) => switch (
+  collider
+) {
+  ParticlePlane() => MapValue({
+    'kind': const StringValue('plane'),
+    'normal': Vec3Value(collider.normal),
+    'distance': DoubleValue(collider.distance),
+  }),
+  ParticleSphere() => MapValue({
+    'kind': const StringValue('sphere'),
+    'centre': Vec3Value(collider.centre),
+    'radius': DoubleValue(collider.radius),
+  }),
+  ParticleBox() => MapValue({
+    'kind': const StringValue('box'),
+    'centre': Vec3Value(collider.centre),
+    'halfExtents': Vec3Value(collider.halfExtents),
+  }),
+};
+
+/// Decodes one collider, or null when the entry names no known shape.
+ParticleCollider? decodeParticleCollider(PropertyValue? value) {
+  if (value is! MapValue) return null;
+  final m = value.values;
+  return switch (_str(m, 'kind', '')) {
+    'plane' => ParticlePlane(
+      normal: _vec3(m, 'normal', Vector3(0, 1, 0)),
+      distance: _num(m, 'distance', 0.0),
+    ),
+    'sphere' => ParticleSphere(
+      centre: _vec3(m, 'centre', Vector3.zero()),
+      radius: _num(m, 'radius', 1.0),
+    ),
+    'box' => ParticleBox(
+      centre: _vec3(m, 'centre', Vector3.zero()),
+      halfExtents: _vec3(m, 'halfExtents', Vector3.all(0.5)),
+    ),
+    _ => null,
+  };
 }
 
 /// Decodes a [ParticleModule] from [value], or null when the entry is
@@ -198,8 +256,30 @@ ParticleModule? decodeParticleModule(PropertyValue? value) {
       seed: _int(m, 'seed', 1337),
     ),
     'rotation' => const RotationModule(),
+    'collision' => _decodeCollision(m),
     _ => null,
   };
+}
+
+CollisionModule _decodeCollision(Map<String, PropertyValue> m) {
+  final raw = m['colliders'];
+  final colliders = <ParticleCollider>[
+    if (raw is ListValue)
+      for (final entry in raw.values)
+        if (decodeParticleCollider(entry) case final collider?) collider,
+  ];
+  final response = _str(m, 'response', 'bounce');
+  return CollisionModule(
+    colliders: colliders,
+    response: ParticleCollisionResponse.values.firstWhere(
+      (value) => value.name == response,
+      orElse: () => ParticleCollisionResponse.bounce,
+    ),
+    restitution: _num(m, 'restitution', 0.35),
+    friction: _num(m, 'friction', 0.2),
+    radius: _num(m, 'radius', 0.0),
+    lifetimeLoss: _num(m, 'lifetimeLoss', 0.0),
+  );
 }
 
 FlipbookModule _decodeFlipbook(Map<String, PropertyValue> m) {
@@ -552,6 +632,89 @@ final ComponentPropertyDef _moduleItemDef = ComponentPropertyDef(
       ),
     ],
     'rotation': const [],
+    'collision': const [
+      ComponentPropertyDef(
+        'response',
+        ComponentPropertyKind.string,
+        defaultValue: StringValue('bounce'),
+        options: ['bounce', 'slide', 'stick', 'kill'],
+        doc:
+            'What a hit does: reflect, run along the surface, stop dead, or '
+            'die on contact.',
+      ),
+      ComponentPropertyDef(
+        'restitution',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(0.35),
+        doc: 'How much of the speed into the surface a bounce keeps.',
+        constraints: [Range(0, 1), SoftRange(0, 1)],
+      ),
+      ComponentPropertyDef(
+        'friction',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(0.2),
+        doc: 'How much of the speed along the surface a hit sheds.',
+        constraints: [Range(0, 1), SoftRange(0, 1)],
+      ),
+      ComponentPropertyDef(
+        'radius',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(0.0),
+        doc:
+            'The radius a particle collides with, so a puff stops short of a '
+            'wall rather than half inside it.',
+        constraints: [Range.nonNegative(), SoftRange(0, 2)],
+      ),
+      ComponentPropertyDef(
+        'lifetimeLoss',
+        ComponentPropertyKind.number,
+        defaultValue: DoubleValue(0.0),
+        doc: 'How much of the remaining life a hit costs.',
+        constraints: [Range(0, 1), SoftRange(0, 1)],
+      ),
+      ComponentPropertyDef(
+        'colliders',
+        ComponentPropertyKind.list,
+        doc:
+            'Surfaces tested, in the emitter\'s own space. Cost is the live '
+            'particle count times this, so a handful is the design point.',
+        itemDef: ComponentPropertyDef(
+          'collider',
+          ComponentPropertyKind.union,
+          unionVariants: {
+            'plane': [
+              ComponentPropertyDef(
+                'normal',
+                ComponentPropertyKind.vec3,
+                doc: 'Outward normal; everything on this side is clear.',
+              ),
+              ComponentPropertyDef(
+                'distance',
+                ComponentPropertyKind.number,
+                defaultValue: DoubleValue(0),
+                doc: 'How far along the normal the plane sits.',
+              ),
+            ],
+            'sphere': [
+              ComponentPropertyDef('centre', ComponentPropertyKind.vec3),
+              ComponentPropertyDef(
+                'radius',
+                ComponentPropertyKind.number,
+                defaultValue: DoubleValue(1),
+                constraints: [Range.nonNegative()],
+              ),
+            ],
+            'box': [
+              ComponentPropertyDef('centre', ComponentPropertyKind.vec3),
+              ComponentPropertyDef(
+                'halfExtents',
+                ComponentPropertyKind.vec3,
+              ),
+            ],
+          },
+        ),
+      ),
+    ],
   },
 );
 

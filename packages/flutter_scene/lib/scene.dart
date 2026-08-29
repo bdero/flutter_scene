@@ -239,6 +239,14 @@ export 'src/particles/vfx_presets.dart'
         vfxPresets,
         vfxPresetsIn;
 export 'src/particles/particle_storage.dart' show ParticleStorage;
+export 'src/particles/particle_collision.dart'
+    show
+        CollisionModule,
+        ParticleBox,
+        ParticleCollider,
+        ParticleCollisionResponse,
+        ParticlePlane,
+        ParticleSphere;
 export 'src/particles/particle_module.dart'
     show
         AccelerationModule,
