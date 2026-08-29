@@ -790,6 +790,7 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.skin != null) 'skin': idKey(n.skin!),
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
     if (!n.visible) 'visible': false,
+    if (n.shadowCastingMode != 'on') 'shadowCasting': n.shadowCastingMode,
   };
 }
 
@@ -1033,6 +1034,7 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
       ? _decodeInstance(Map<String, dynamic>.from(json['instance'] as Map))
       : null,
   visible: json['visible'] as bool? ?? true,
+  shadowCastingMode: json['shadowCasting'] as String? ?? 'on',
 );
 
 TransformSpec _decodeTransform(Map<String, dynamic> json) {

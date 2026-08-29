@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
@@ -118,8 +119,24 @@ class RenderItem {
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
 
-  /// Mirrors the owning node's `castsShadows` setting, refreshed each frame.
-  bool castsShadows = true;
+  /// Mirrors the owning node's `shadowCastingMode`, anded with the owning
+  /// primitive's own opt-out, refreshed each frame.
+  ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
+
+  /// Whether this item renders into shadow maps at all.
+  bool get castsShadows => shadowCastingMode != ShadowCastingMode.off;
+
+  /// Whether this item casts from every face, ignoring material culling.
+  bool get shadowDoubleSided =>
+      shadowCastingMode == ShadowCastingMode.doubleSided;
+
+  /// Whether this item draws into the color image this frame: visible, its
+  /// primitive shown, and not a shadows-only caster. The shadow passes test
+  /// [castsShadows] instead, so the two are independent.
+  bool get drawsColor =>
+      visible &&
+      primitiveVisible &&
+      shadowCastingMode != ShadowCastingMode.shadowsOnly;
 
   /// The owning node's joints texture and its edge length in texels, or
   /// null/0 for an unskinned node. Refreshed each frame from the node's
@@ -784,9 +801,7 @@ class RenderScene {
   }) {
     final inputs = <RenderInput>{};
     void collect(RenderItem item) {
-      if (!item.visible ||
-          !item.primitiveVisible ||
-          (item.layers & layerMask) == 0) {
+      if (!item.drawsColor || (item.layers & layerMask) == 0) {
         return;
       }
       inputs.addAll(item.material.sceneInputs);

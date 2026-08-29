@@ -422,6 +422,9 @@ enum PrefabOverrideAspect {
   /// `layers`.
   layers,
 
+  /// `shadowCasting`.
+  shadowCasting,
+
   /// `transform.matrix` or `transform.trs.<field>`.
   transform,
 
@@ -442,6 +445,8 @@ PrefabOverrideAspect prefabOverrideAspect(String path) {
       return PrefabOverrideAspect.visible;
     case 'layers':
       return PrefabOverrideAspect.layers;
+    case 'shadowCasting':
+      return PrefabOverrideAspect.shadowCasting;
   }
   final parts = path.split('.');
   if (parts.length >= 2 && parts[0] == 'transform') {
@@ -466,6 +471,10 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
     }
     if (parts[0] == 'visible' && value is BoolValue) {
       node.visible = value.value;
+      return;
+    }
+    if (parts[0] == 'shadowCasting' && value is StringValue) {
+      node.shadowCastingMode = value.value;
       return;
     }
   }

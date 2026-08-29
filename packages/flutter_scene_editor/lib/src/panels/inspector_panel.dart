@@ -109,12 +109,18 @@ class _NodeInspector extends StatelessWidget {
     }
     final uniformName = nodes.every((n) => n.name == node.name);
     final uniformVisible = nodes.every((n) => n.visible == node.visible);
+    final uniformShadowCasting = nodes.every(
+      (n) => n.shadowCastingMode == node.shadowCastingMode,
+    );
     // Whether every node's material ref matches, so the shared material can
     // be edited inline for the whole selection.
     bool uniformRef(String type, String key) {
       final refs = [
         for (final n in nodes)
-          n.components.where((c) => c.type == type).firstOrNull?.properties[key],
+          n.components
+              .where((c) => c.type == type)
+              .firstOrNull
+              ?.properties[key],
       ];
       final first = refs.first;
       if (first is! ResourceRefValue) return false;
@@ -156,6 +162,25 @@ class _NodeInspector extends StatelessWidget {
               }
             },
           ),
+          // How the node's meshes cast; only meaningful for mesh-bearing
+          // nodes, so it follows the mesh into the selection.
+          if (sharedTypes.contains('mesh'))
+            EnumRow(
+              label: 'Shadows',
+              value: uniformShadowCasting ? node.shadowCastingMode : null,
+              options: const ['on', 'off', 'doubleSided', 'shadowsOnly'],
+              labels: const {
+                'on': 'Cast',
+                'off': 'Do not cast',
+                'doubleSided': 'Cast double-sided',
+                'shadowsOnly': 'Shadows only',
+              },
+              onChanged: (v) {
+                for (final n in nodes) {
+                  controller.setNodeShadowCastingRouted(n.id, v);
+                }
+              },
+            ),
           const SizedBox(height: 8),
           EditorSectionHeader(label: 'Transform'),
           _TransformEditor(nodes: nodes, controller: controller),
@@ -790,7 +815,7 @@ class _SchemaPropertyRow extends StatelessWidget {
         final current = value is IntValue ? (value as IntValue).value : 0;
         if (powerOfTwo != null) {
           final powers = _powersOfTwo(powerOfTwo);
-          return _EnumRow(
+          return EnumRow(
             label: label,
             value: '$current',
             options: [for (final power in powers) '$power'],
@@ -846,7 +871,7 @@ class _SchemaPropertyRow extends StatelessWidget {
       case ComponentPropertyKind.string:
       case ComponentPropertyKind.assetRef:
         if (def.options != null) {
-          return _EnumRow(
+          return EnumRow(
             label: label,
             value: mixed
                 ? null
@@ -1134,7 +1159,7 @@ class _UnionRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _EnumRow(
+          EnumRow(
             label: label,
             value: tag,
             options: variants.keys.toList(),
@@ -1635,17 +1660,23 @@ class _ReadOnlyRow extends StatelessWidget {
 }
 
 /// A dropdown for a string property with a fixed set of [options].
-class _EnumRow extends StatelessWidget {
-  const _EnumRow({
+@visibleForTesting
+class EnumRow extends StatelessWidget {
+  const EnumRow({
     required this.label,
     required this.value,
     required this.options,
     required this.onChanged,
+    this.labels,
   });
   final String label;
   final String? value;
   final List<String> options;
   final void Function(String) onChanged;
+
+  /// Display text per option, for values whose identifier reads poorly in a
+  /// menu. Options missing here show their raw value.
+  final Map<String, String>? labels;
 
   @override
   Widget build(BuildContext context) {
@@ -1665,7 +1696,13 @@ class _EnumRow extends StatelessWidget {
           const SizedBox(width: 4),
           Expanded(
             child: FSelect<String>(
-              items: {for (final option in options) option: option},
+              // Keyed by display label, valued by the option itself (FSelect
+              // takes Map<String, T>); with no labels the two coincide, which
+              // is why the plain form reads as option: option.
+              items: {
+                for (final option in options)
+                  (labels?[option] ?? option): option,
+              },
               control: FSelectControl.lifted(
                 value: current,
                 onChange: (v) {
@@ -2371,5 +2408,3 @@ class _DoubleRowState extends State<_DoubleRow> {
     );
   }
 }
-
-

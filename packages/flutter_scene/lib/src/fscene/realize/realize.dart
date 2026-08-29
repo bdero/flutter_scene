@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/animation.dart' as engine;
 
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
@@ -19,6 +20,17 @@ import 'package:flutter_scene/src/skin.dart';
 /// authored decomposition; recovering it from the composed matrix puts a
 /// mirrored axis's negative scale on X, which breaks animation blending
 /// on mirrored bones. Also used by scene hot reload.
+/// The [ShadowCastingMode] a document's `shadowCastingMode` name realizes to.
+///
+/// An unknown or absent name resolves to [ShadowCastingMode.on], so a
+/// document written by a newer engine still loads.
+/// {@category Assets and loading}
+ShadowCastingMode shadowCastingModeFromName(String name) =>
+    ShadowCastingMode.values.firstWhere(
+      (mode) => mode.name == name,
+      orElse: () => ShadowCastingMode.on,
+    );
+
 void applyTransformSpec(Node node, TransformSpec spec) {
   switch (spec) {
     case TrsTransform(:final translation, :final rotation, :final scale):
@@ -123,7 +135,8 @@ Node _realizeWith(
     final node = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..visible = spec.visible,
+        ..visible = spec.visible
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode),
       spec.id,
     );
     applyTransformSpec(node, spec.transform);
@@ -272,6 +285,7 @@ NodeSpec _serializeNode(
     skin: _serializeSkin(node.skin, document, context, ids),
     instance: lazyInstance,
     visible: node.visible,
+    shadowCastingMode: node.shadowCastingMode.name,
   );
   document.addNode(spec);
 

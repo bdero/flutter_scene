@@ -281,6 +281,42 @@ final setNodeVisible = CommandEntry(
   },
 );
 
+const _shadowCastingModes = ['off', 'on', 'doubleSided', 'shadowsOnly'];
+
+final setNodeShadowCasting = CommandEntry(
+  name: 'setNodeShadowCasting',
+  doc:
+      'Set a node\'s shadow casting mode: off, on, doubleSided, or '
+      'shadowsOnly (casts while staying out of the color image).',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(name: 'mode', type: ParamType.string, label: 'Shadow casting'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final mode = requireString(params, 'mode');
+    if (!_shadowCastingModes.contains(mode)) {
+      throw CommandException(
+        'Unknown shadow casting mode "$mode"; expected one of '
+        '${_shadowCastingModes.join(', ')}.',
+      );
+    }
+    return Transaction(
+      name: 'Set shadow casting',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.shadowCastingMode,
+          oldValue: StringChange(node.shadowCastingMode),
+          newValue: StringChange(mode),
+        ),
+      ],
+    );
+  },
+);
+
 final setNodeLayers = CommandEntry(
   name: 'setNodeLayers',
   doc: 'Set a node\'s render-layer bitmask.',
@@ -3329,6 +3365,7 @@ void registerBuiltinCommands(CommandRegistry registry) {
 final List<CommandEntry> builtinCommands = [
   setNodeName,
   setNodeVisible,
+  setNodeShadowCasting,
   setNodeLayers,
   setNodeTransform,
   createNode,

@@ -306,6 +306,11 @@ Lights (all in `light.dart`, all fields mutable):
   emits along +Z, no shadows.
 - `SunLight(SunSky source, {castsShadow = true, ...})` drives `Scene.directionalLight` from a sky.
 
+`Node.shadowCastingMode` (`ShadowCastingMode` = `on` (default) | `off` | `doubleSided` |
+`shadowsOnly`) selects how a node's meshes cast; `Node.castsShadows` is a deprecated two-state
+view of it. Every light also has `shadowCasterChannelMask` (8-bit), tested against
+`Node.lightChannelMask`, to drop casters from one light's map.
+
 `ShadowCasterFaces` = `front` | `back` | `both`. `DirectionalShadowFilter` = `rotatedPoisson` |
 `fixedPcf` | `pcss`. `ShadowCascade`, `Lighting` (per-draw state) are exported.
 

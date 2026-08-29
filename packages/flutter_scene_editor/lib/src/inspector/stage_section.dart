@@ -83,7 +83,10 @@ class StageSection extends StatelessWidget {
             ),
             InspectorAccordionItem(
               title: const Text('Rendering'),
-              child: StageRenderControls(controller: controller),
+              child: StageRenderControls(
+                controller: controller,
+                environment: environment,
+              ),
             ),
           ],
         ),
@@ -437,9 +440,17 @@ class ColorManagementControls extends StatelessWidget {
 }
 
 class StageRenderControls extends StatelessWidget {
-  const StageRenderControls({super.key, required this.controller});
+  const StageRenderControls({
+    super.key,
+    required this.controller,
+    this.environment,
+  });
 
   final EditorController controller;
+
+  /// The environment resource carrying the anti-aliasing tuning shown under
+  /// the mode selector; null leaves the selected mode's settings out.
+  final EnvironmentResource? environment;
 
   void _set(String key, Object value) => controller.run('setStageProperties', {
     'properties': {key: value},
@@ -465,6 +476,13 @@ class StageRenderControls extends StatelessWidget {
             onChanged: (v) => v == null ? null : _set('antiAliasingMode', v),
           ),
         ),
+        // The selected technique's own settings, inline under the selector.
+        // Only TAA and SMAA have any; the rest leave this out entirely.
+        _AntiAliasingSettings(
+          controller: controller,
+          environment: environment,
+          mode: stage.antiAliasingMode,
+        ),
         SliderNumberField(
           label: 'Render scale',
           value: stage.renderScale,
@@ -486,6 +504,174 @@ class StageRenderControls extends StatelessWidget {
             onChanged: (v) => v == null ? null : _set('filterQuality', v),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// The selected anti-aliasing technique's own settings, shown inline under the
+/// mode selector in the Rendering box. They live on the environment resource
+/// (like the other authored effects) while the mode itself lives on the stage,
+/// so this reads the stage's mode and writes environment properties.
+class _AntiAliasingSettings extends StatelessWidget {
+  const _AntiAliasingSettings({
+    required this.controller,
+    required this.environment,
+    required this.mode,
+  });
+
+  final EditorController controller;
+  final EnvironmentResource? environment;
+  final String mode;
+
+  void _set(String key, Object value) {
+    final env = environment;
+    if (env == null) return;
+    controller.run('setEnvironmentProperties', {
+      'environmentId': env.id.toToken(),
+      'properties': {key: value},
+    });
+  }
+
+  void _preview(String key, Object value) {
+    final env = environment;
+    if (env == null) return;
+    controller.previewEnvironmentProperty(env.id, key, value);
+  }
+
+  Widget _slider(
+    String label,
+    String key,
+    double value, {
+    double min = 0,
+    double max = 1,
+  }) => SliderNumberField(
+    label: label,
+    value: value,
+    min: min,
+    max: max,
+    onPreview: (v) => _preview(key, v),
+    onCommit: (v) => _set(key, v),
+  );
+
+  Widget _integer(
+    String label,
+    String key,
+    int value, {
+    required int min,
+    required int max,
+  }) => SliderNumberField(
+    label: label,
+    value: value.toDouble(),
+    min: min.toDouble(),
+    max: max.toDouble(),
+    scrubStep: 1,
+    snapStep: 1,
+    fractionDigits: 0,
+    onPreview: (v) => _preview(key, v.round()),
+    onCommit: (v) => _set(key, v.round()),
+  );
+
+  Widget _toggle(String label, String key, bool value, {String? description}) =>
+      InspectorSwitch(
+        label: label,
+        description: description,
+        value: value,
+        onChanged: (v) => _set(key, v),
+        padding: const EdgeInsets.symmetric(vertical: 5),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final env = environment;
+    if (env == null || (mode != 'taa' && mode != 'smaa')) {
+      return const SizedBox.shrink();
+    }
+    final e = env.effects;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+          child: Text(
+            mode == 'taa' ? 'Temporal AA' : 'SMAA',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+        ),
+        if (mode == 'taa') ...[
+          _slider(
+            'Current weight',
+            'temporalAntiAliasingMinimumCurrentWeight',
+            e.temporalAntiAliasingMinimumCurrentWeight,
+            min: 0.01,
+          ),
+          _slider(
+            'Variance gamma',
+            'temporalAntiAliasingVarianceGamma',
+            e.temporalAntiAliasingVarianceGamma,
+            min: 0.5,
+            max: 2,
+          ),
+          _slider(
+            'Sharpness',
+            'temporalAntiAliasingSharpness',
+            e.temporalAntiAliasingSharpness,
+          ),
+          _integer(
+            'Jitter sequence',
+            'temporalAntiAliasingJitterSequenceLength',
+            e.temporalAntiAliasingJitterSequenceLength,
+            min: 1,
+            max: 32,
+          ),
+          _slider(
+            'Jitter scale',
+            'temporalAntiAliasingJitterScale',
+            e.temporalAntiAliasingJitterScale,
+          ),
+          _toggle(
+            'Object motion',
+            'temporalAntiAliasingObjectMotion',
+            e.temporalAntiAliasingObjectMotion,
+            description:
+                'Moving objects render a velocity buffer so they reproject '
+                'without trails.',
+          ),
+          _toggle(
+            'Skinned motion',
+            'temporalAntiAliasingSkinnedMotion',
+            e.temporalAntiAliasingSkinnedMotion,
+            description: 'Skinned deformation contributes velocity.',
+          ),
+        ] else ...[
+          _slider(
+            'Edge threshold',
+            'smaaThreshold',
+            e.smaaThreshold,
+            min: 0.02,
+            max: 0.3,
+          ),
+          _integer(
+            'Search steps',
+            'smaaMaxSearchSteps',
+            e.smaaMaxSearchSteps,
+            min: 4,
+            max: 112,
+          ),
+          _integer(
+            'Diagonal steps',
+            'smaaMaxDiagonalSearchSteps',
+            e.smaaMaxDiagonalSearchSteps,
+            min: 1,
+            max: 20,
+          ),
+          _slider(
+            'Corner rounding',
+            'smaaCornerRounding',
+            e.smaaCornerRounding,
+            max: 100,
+          ),
+        ],
       ],
     );
   }
@@ -1171,102 +1357,6 @@ class EnvironmentEffectsControls extends StatelessWidget {
             children: [
               _toggle('Enabled', 'filmGrainEnabled', e.filmGrainEnabled),
               _slider('Intensity', 'filmGrainIntensity', e.filmGrainIntensity),
-            ],
-          ),
-        ),
-        // Anti-aliasing tuning. Which technique runs is the stage's
-        // anti-aliasing mode (the Rendering section); the indicator lights
-        // when that mode selects this group.
-        InspectorAccordionItem(
-          title: _title(
-            context,
-            'Temporal AA',
-            controller.document.stage.antiAliasingMode == 'taa',
-          ),
-          child: Column(
-            children: [
-              _slider(
-                'Current weight',
-                'temporalAntiAliasingMinimumCurrentWeight',
-                e.temporalAntiAliasingMinimumCurrentWeight,
-                min: 0.01,
-              ),
-              _slider(
-                'Variance gamma',
-                'temporalAntiAliasingVarianceGamma',
-                e.temporalAntiAliasingVarianceGamma,
-                min: 0.5,
-                max: 2,
-              ),
-              _slider(
-                'Sharpness',
-                'temporalAntiAliasingSharpness',
-                e.temporalAntiAliasingSharpness,
-              ),
-              _integer(
-                'Jitter sequence',
-                'temporalAntiAliasingJitterSequenceLength',
-                e.temporalAntiAliasingJitterSequenceLength,
-                min: 1,
-                max: 32,
-              ),
-              _slider(
-                'Jitter scale',
-                'temporalAntiAliasingJitterScale',
-                e.temporalAntiAliasingJitterScale,
-              ),
-              _toggle(
-                'Object motion',
-                'temporalAntiAliasingObjectMotion',
-                e.temporalAntiAliasingObjectMotion,
-                description:
-                    'Moving objects render a velocity buffer so they '
-                    'reproject without trails.',
-              ),
-              _toggle(
-                'Skinned motion',
-                'temporalAntiAliasingSkinnedMotion',
-                e.temporalAntiAliasingSkinnedMotion,
-                description: 'Skinned deformation contributes velocity.',
-              ),
-            ],
-          ),
-        ),
-        InspectorAccordionItem(
-          title: _title(
-            context,
-            'SMAA',
-            controller.document.stage.antiAliasingMode == 'smaa',
-          ),
-          child: Column(
-            children: [
-              _slider(
-                'Edge threshold',
-                'smaaThreshold',
-                e.smaaThreshold,
-                min: 0.02,
-                max: 0.3,
-              ),
-              _integer(
-                'Search steps',
-                'smaaMaxSearchSteps',
-                e.smaaMaxSearchSteps,
-                min: 4,
-                max: 112,
-              ),
-              _integer(
-                'Diagonal steps',
-                'smaaMaxDiagonalSearchSteps',
-                e.smaaMaxDiagonalSearchSteps,
-                min: 1,
-                max: 20,
-              ),
-              _slider(
-                'Corner rounding',
-                'smaaCornerRounding',
-                e.smaaCornerRounding,
-                max: 100,
-              ),
             ],
           ),
         ),

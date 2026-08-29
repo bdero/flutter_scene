@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene_editor/src/assets/environment_thumbnail.dart';
 import 'package:flutter_scene_editor/src/inspector/live_fields.dart';
+import 'package:flutter_scene_editor/src/panels/inspector_panel.dart';
 import 'package:flutter_scene_editor/src/inspector/property_editors.dart';
 import 'package:flutter_scene_editor/src/shell/editor_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -386,6 +387,49 @@ void main() {
       expect(result[2], 2, reason: name);
       expect((result[0] as Uint8List).length, 4 * 2 * 4, reason: name);
     }
+  });
+
+  // Regression: FSelect takes Map<String, T> keyed by DISPLAY LABEL. Building
+  // it the other way round (option keys, label values) leaves the control
+  // unable to resolve its current value, which threw and blanked the whole
+  // node inspector behind an error box.
+  testWidgets('enum row maps display labels to option values', (tester) async {
+    await tester.pumpWidget(
+      themed(
+        EnumRow(
+          label: 'Shadows',
+          value: 'shadowsOnly',
+          options: const ['on', 'off', 'shadowsOnly'],
+          labels: const {
+            'on': 'Cast',
+            'off': 'Do not cast',
+            'shadowsOnly': 'Shadows only',
+          },
+          onChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    // The selection shows its human label, never the raw identifier.
+    expect(find.text('Shadows only'), findsOneWidget);
+    expect(find.text('shadowsOnly'), findsNothing);
+  });
+
+  testWidgets('enum row without labels shows the raw option', (tester) async {
+    await tester.pumpWidget(
+      themed(
+        EnumRow(
+          label: 'Quality',
+          value: 'medium',
+          options: const ['low', 'medium', 'high'],
+          onChanged: (_) {},
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('medium'), findsOneWidget);
   });
 }
 

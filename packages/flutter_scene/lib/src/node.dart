@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
@@ -150,11 +151,28 @@ base class Node implements SceneGraph {
   /// camera-dependent displacement.
   bool shadowStatic = false;
 
-  /// Whether this node's meshes cast shadows. Defaults to `true`.
+  /// How this node's meshes cast shadows. Defaults to [ShadowCastingMode.on].
   ///
-  /// This does not affect whether the meshes receive shadows. The value is not
-  /// inherited by children.
-  bool castsShadows = true;
+  /// [ShadowCastingMode.off] excludes them from every shadow map (they still
+  /// draw); [ShadowCastingMode.shadowsOnly] does the reverse, casting while
+  /// staying out of the color image. This does not affect whether the meshes
+  /// receive shadows. Ands with each `MeshPrimitive.castsShadow`, and is not
+  /// inherited by children; set it on each mesh-bearing node.
+  /// {@category Scene graph}
+  ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
+
+  /// Whether this node's meshes cast shadows.
+  ///
+  /// A two-state view of [shadowCastingMode]: reading reports whether the
+  /// mode casts at all, and writing selects [ShadowCastingMode.on] or
+  /// [ShadowCastingMode.off]. Prefer setting the mode directly, which also
+  /// reaches the double-sided and shadows-only cases.
+  @Deprecated('Use shadowCastingMode instead.')
+  bool get castsShadows => shadowCastingMode != ShadowCastingMode.off;
+
+  @Deprecated('Use shadowCastingMode instead.')
+  set castsShadows(bool value) =>
+      shadowCastingMode = value ? ShadowCastingMode.on : ShadowCastingMode.off;
 
   /// Whether scene raycasts (`Scene.raycast`) test this node's meshes.
   ///

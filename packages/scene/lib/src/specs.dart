@@ -227,6 +227,7 @@ class NodeSpec {
     this.skin,
     this.instance,
     this.visible = true,
+    this.shadowCastingMode = 'on',
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
        components = components ?? [];
@@ -258,6 +259,11 @@ class NodeSpec {
   /// Whether this node (and so its subtree) renders. Hidden nodes still
   /// realize and tick; only drawing is skipped.
   bool visible;
+
+  /// How this node's meshes cast shadows: `off`, `on` (the default),
+  /// `doubleSided`, or `shadowsOnly`. Names match the renderer's
+  /// `ShadowCastingMode`; an unknown name realizes as `on`.
+  String shadowCastingMode;
 }
 
 /// An axis-aligned bounding box in a resource's local space.

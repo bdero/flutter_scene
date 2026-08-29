@@ -2,6 +2,7 @@
 
 ## 0.4.0
 
+- `NodeSpec.shadowCastingMode` carries a node's shadow casting mode (`off`, `on`, `doubleSided`, `shadowsOnly`), delta-serialized and overridable on prefab instances through the `shadowCasting` path.
 - `EnvironmentEffectsSpec` carries SMAA quality (`smaaThreshold`, `smaaMaxSearchSteps`, `smaaMaxDiagonalSearchSteps`, `smaaCornerRounding`), delta-serialized like the other effects.
 - The spec's temporal anti-aliasing defaults now match the renderer's.
 

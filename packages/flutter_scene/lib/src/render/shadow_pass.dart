@@ -72,7 +72,7 @@ class ShadowPass extends RenderGraphPass {
   final ShadowCasterFaces _casterFaces;
 
   // The directional light's shadow-caster channels. Applies to the cascade
-  // tiles only; spot tiles take every caster.
+  // tiles only; spot and point tiles use their own light's mask.
   final int _casterChannelMask;
   final SpotShadowFrame? _spotShadows;
   final PointShadowFrame? _pointShadows;
@@ -230,7 +230,12 @@ class ShadowPass extends RenderGraphPass {
     final spots = _spotShadows;
     if (spots != null) {
       for (var s = 0; s < spots.matrices.length; s++) {
-        renderTile(_cascades.length + s, spots.matrices[s], spots.casterFaces);
+        renderTile(
+          _cascades.length + s,
+          spots.matrices[s],
+          spots.casterFaces,
+          casterChannelMask: spots.casterChannelMasks[s],
+        );
       }
     }
     final pointFrame = _pointShadows;
@@ -259,6 +264,7 @@ class ShadowPass extends RenderGraphPass {
             pointFrame.faceMatrix(s, f),
             _cameraPosition,
             pointFrame.casterFaces,
+            casterChannelMask: pointFrame.casterChannelMasks[s],
           );
           _renderScene.cull(encoder.frustum, encoder.submitCulled);
           encoder.flush();
