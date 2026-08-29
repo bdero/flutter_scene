@@ -41,6 +41,7 @@ import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
 import 'docking_shell.dart';
+import 'editor_status_bar.dart';
 import 'editor_theme.dart';
 import 'editor_toolbar_row.dart';
 import 'editor_dialog.dart';
@@ -1146,12 +1147,33 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+                EditorStatusBar(
+                  runner: widget.projectRunner,
+                  onOpenConsole: _openConsole,
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Brings the Console up, which is what the status bar is a shortcut to.
+  ///
+  /// Shows it when it is hidden, and raises its tab when it is behind
+  /// another: a status line you cannot click through to is a status line that
+  /// tells you something happened and nothing about what.
+  void _openConsole() {
+    setState(() {
+      if (!_dockLayout.isVisible('console')) _dockLayout.showPanel('console');
+      final group = _dockLayout.groupOf('console');
+      if (group != null) {
+        final index = group.panels.indexOf('console');
+        if (index >= 0) group.active = index;
+      }
+    });
+    widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
   }
 
   // -------------------------------------------------------------------------
