@@ -229,6 +229,25 @@ void main() {
       );
     });
 
+    test('a -split name hint splits the mesh into grid cells at import', () {
+      final document = importGlbToSceneDocument(_splitHintGlb());
+      final node = document.nodes.values.singleWhere((n) => n.name == 'Ground');
+      expect(node.components.where((c) => c.type == 'mesh'), isEmpty);
+      // Two triangles a world apart on x; native coordinates negate z, so
+      // the z in [0, 1] source geometry bins into the z-1 cell.
+      final names = [for (final c in node.children) document.nodes[c]!.name]
+        ..sort();
+      expect(names, ['Ground_x0_z-1', 'Ground_x2_z-1']);
+      // Re-importing reproduces the same split with the same ids, so the
+      // hint is safe to leave on a source asset.
+      final again = importGlbToSceneDocument(_splitHintGlb());
+      expect(again.nodes.keys.toSet(), document.nodes.keys.toSet());
+      expect(
+        [for (final c in again.nodes.values) c.name]..sort(),
+        [for (final c in document.nodes.values) c.name]..sort(),
+      );
+    });
+
     test('emits a native-space document and a generator', () {
       final path = _resolve('examples/assets_src/fcar.glb');
       if (!File(path).existsSync()) {
@@ -435,6 +454,71 @@ void main() {
       expect(checked, greaterThan(0));
     });
   });
+}
+
+// A node named `Ground-split1` with two triangles a world apart along +X
+// (x in [0, 1] and [2, 3], z in [0, 1]), so a 1-unit grid split puts each in
+// its own cell.
+Uint8List _splitHintGlb() {
+  final buffer = BytesBuilder();
+  buffer.add(
+    Float32List.fromList([
+      // Triangle 1.
+      0, 0, 0, 1, 0, 0, 0, 0, 1,
+      // Triangle 2.
+      2, 0, 0, 3, 0, 0, 2, 0, 1,
+    ]).buffer.asUint8List(),
+  );
+  buffer.add(
+    Float32List.fromList([
+      for (var i = 0; i < 6; i++) ...[0, 1, 0],
+    ]).buffer.asUint8List(),
+  );
+  buffer.add(Uint16List.fromList([0, 1, 2, 3, 4, 5]).buffer.asUint8List());
+  final binary = buffer.takeBytes();
+  final json = {
+    'asset': {'version': '2.0'},
+    'scene': 0,
+    'scenes': [
+      {
+        'nodes': [0],
+      },
+    ],
+    'nodes': [
+      {'name': 'Ground-split1', 'mesh': 0},
+    ],
+    'meshes': [
+      {
+        'primitives': [
+          {
+            'attributes': {'POSITION': 0, 'NORMAL': 1},
+            'indices': 2,
+          },
+        ],
+      },
+    ],
+    'buffers': [
+      {'byteLength': binary.length},
+    ],
+    'bufferViews': [
+      {'buffer': 0, 'byteOffset': 0, 'byteLength': 72},
+      {'buffer': 0, 'byteOffset': 72, 'byteLength': 72},
+      {'buffer': 0, 'byteOffset': 144, 'byteLength': 12},
+    ],
+    'accessors': [
+      {
+        'bufferView': 0,
+        'componentType': 5126,
+        'count': 6,
+        'type': 'VEC3',
+        'min': [0, 0, 0],
+        'max': [3, 0, 1],
+      },
+      {'bufferView': 1, 'componentType': 5126, 'count': 6, 'type': 'VEC3'},
+      {'bufferView': 2, 'componentType': 5123, 'count': 6, 'type': 'SCALAR'},
+    ],
+  };
+  return _glb(json, binary);
 }
 
 Uint8List _jointedStaticGlb() {

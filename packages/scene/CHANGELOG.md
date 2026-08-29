@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Added grid mesh splitting shared by editors and import pipelines: `splitTriangleMeshByGrid` bins whole triangles by world-space centroid into per-cell vertex/index buffers, and `applyMeshSplitHints` applies `-split<N>` node-name hints across a document (split children named `Ground_x0_z3`, hint stripped, orphaned source data removed).
+- Added `documentWorldMatrix`, `countResourceReferences`, and `isPayloadReferenced` document utilities.
+
 ## 0.3.0
 
 - Standardized model-space front-face winding to Counter-Clockwise (CCW) in `.fscene` format version 5; version 4 documents migrate by swapping index pairs during realization.

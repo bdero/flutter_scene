@@ -10,6 +10,7 @@
 * A render pipeline build that stalls a frame (8ms or more, always on its first draw) is reported in debug builds with the material and geometry that triggered it, so the fix (drawing it once behind a load screen) has a target.
 * `SceneView` measures `onTick` deltas with a wall clock instead of the ticker's frame-begin timestamps, whose deltas alternate between tiny and double-length values under GPU load and stagger any motion integrated against them. The new `SceneView.clock` injects a clock for tests and time-controlling drivers; the ambient `package:clock` clock (faked under `flutter_test`) is the default.
 * `Scene.punctualLightOverflowCount` reports how many drawable items dropped punctual lights last frame because more lights reached them than the per-object budget shades.
+* A `-split<N>` suffix on a glTF node name splits its mesh into grid-cell child meshes at import (whole triangles binned by world-space centroid into `N`-unit cells, children named `Ground_x0_z3`), so a level-spanning mesh culls and receives punctual lights per cell; the split reapplies on every re-import.
 
 ## 0.23.1
 
