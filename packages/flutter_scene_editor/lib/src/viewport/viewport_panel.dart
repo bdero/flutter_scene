@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:developer' as dev;
+import 'dart:math' as math;
 import 'dart:math';
 
 import 'package:flutter/gestures.dart';
@@ -110,6 +113,54 @@ class _ViewportPanelState extends State<ViewportPanel> {
   @override
   void initState() {
     super.initState();
+    // TODO(freelook-profiling): temporary tick stats dump, remove before
+    // merge.
+    try {
+      dev.registerExtension('ext.fse.tickStats', (method, params) async {
+        final log = List.of(_tickLog);
+        if (params['clear'] == 'true') _tickLog.clear();
+        final free = [
+          for (final e in log)
+            if (e.$3) e,
+        ];
+        String stats(List<(double, double, bool)> list, int slot) {
+          if (list.isEmpty) return '[]';
+          final values = [for (final e in list) slot == 0 ? e.$1 : e.$2]
+            ..sort();
+          double pct(double p) =>
+              values[(values.length * p).floor().clamp(0, values.length - 1)];
+          final avg = values.reduce((a, b) => a + b) / values.length;
+          return jsonEncode({
+            'n': values.length,
+            'avg': avg,
+            'p50': pct(.5),
+            'p90': pct(.9),
+            'p99': pct(.99),
+            'max': values.last,
+          });
+        }
+        return dev.ServiceExtensionResponse.result(
+          jsonEncode({
+            'all_tickDt': stats(log, 0),
+            'all_wallDt': stats(log, 1),
+            'free_tickDt': stats(free, 0),
+            'free_wallDt': stats(free, 1),
+            'freeTicks': free.length,
+            'recent': [
+              for (final e in log.skip(math.max(0, log.length - 40)))
+                [
+                  (e.$1 * 1000).round(),
+                  (e.$2 * 1000).round(),
+                  e.$3 ? 1 : 0,
+                ],
+            ],
+          }),
+        );
+      });
+    } catch (_) {
+      // A second viewport already registered it; stats read that one's log
+      // (the list is static, so all viewports feed it).
+    }
     _ctrl.addListener(_onControllerChanged);
     // Repaint overlays while a drag in any viewport previews a transform.
     _ctrl.previewEpoch.addListener(_onControllerChanged);
@@ -163,13 +214,27 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   void _bumpView() => _viewEpoch.value++;
 
+  // TODO(freelook-profiling): temporary tick cadence recorder, remove before
+  // merge.
+  static final List<(double, double, bool)> _tickLog = [];
+
+  // Movement integrates against wall time between ticks, not the ticker's
+  // deltas. Under load the ticker's frame-begin timestamps alias (a 4ms/80ms
+  // alternation while frames present evenly), which made held-key motion
+  // stagger; wall time between ticks tracks the even presentation cadence.
+  final Stopwatch _moveClock = Stopwatch()..start();
+
   void _onTick(Duration elapsed, double deltaSeconds) {
-    if (deltaSeconds > 0) {
-      final inst = 1.0 / deltaSeconds;
+    final wallDt = _moveClock.elapsedMicroseconds / 1e6;
+    _moveClock.reset();
+    if (_tickLog.length >= 2000) _tickLog.removeRange(0, 1000);
+    _tickLog.add((deltaSeconds, wallDt, _freeLookActive));
+    if (wallDt > 0) {
+      final inst = 1.0 / wallDt;
       final prev = _fps.value;
       _fps.value = prev == 0 ? inst : prev * 0.9 + inst * 0.1;
     }
-    if (_freeLookActive && _freeLook.move(deltaSeconds)) {
+    if (_freeLookActive && _freeLook.move(wallDt)) {
       _syncOrbitToFreeLook();
       _bumpView();
     }
