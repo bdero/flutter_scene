@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show FmatType;
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
@@ -26,6 +27,9 @@ const String kDecalFadeParameter = 'decal_fade';
 /// moving or reparenting a placed decal is enough; names the material does not
 /// declare are skipped. The projection lives in those parameters, so each decal
 /// needs its own material instance.
+///
+/// Unprojecting the receiving surface needs the opaque depth and a perspective
+/// camera, so a decal draws nothing under an [OrthographicCamera].
 ///
 /// ```dart
 /// final decal = DecalNode(material: await loadFmatMaterial('assets/scorch_decal.fmat'))
@@ -131,10 +135,13 @@ base class DecalNode extends Node {
 
   @override
   void scenePrePass(double deltaSeconds, [bool ancestorsVisible = true]) {
+    // Components and the animation player tick in super, so the inverse is
+    // written after it: a decal driven by its own component would otherwise
+    // paint from last frame's transform while its box drew at this frame's.
+    super.scenePrePass(deltaSeconds, ancestorsVisible);
     // The world transform can change without project() running (the node or an
     // ancestor moved), so the inverse is refreshed from it each frame.
     if (worldTransformVersion != _writtenTransformVersion) _writeParameters();
-    super.scenePrePass(deltaSeconds, ancestorsVisible);
   }
 
   void _writeParameters() {
@@ -155,11 +162,10 @@ void writeDecalParameters(
   required Matrix4 inverse,
   required double fade,
 }) {
-  final names = parameters.parameterNames;
-  if (names.contains(kDecalInverseParameter)) {
+  if (parameters.hasParameterOfType(kDecalInverseParameter, FmatType.mat4)) {
     parameters.setMat4(kDecalInverseParameter, inverse);
   }
-  if (names.contains(kDecalFadeParameter)) {
+  if (parameters.hasParameterOfType(kDecalFadeParameter, FmatType.float_)) {
     parameters.setFloat(kDecalFadeParameter, fade);
   }
 }

@@ -5,7 +5,7 @@
 // Binding it costs no texture unit, which is what makes it safe for unlit.
 //
 // The scene-color and scene-depth samplers compile in only when the material
-// declares them (FLUTTER_SCENE_SCENE_COLOR / FLUTTER_SCENE_SCENE_DEPTH, written
+// declares them (FLUTTER_SCENE_SCENE_COLOR/FLUTTER_SCENE_SCENE_DEPTH, written
 // by the `.fmat` emitter). A declared-but-unread resource has backend-dependent
 // liveness, so what a shader declares is decided here at compile time, never at
 // bind time.
@@ -220,6 +220,11 @@ vec3 GetSceneColor(vec2 uv_offset) {
 }
 #endif
 
+// The depth reported when no opaque depth is bound. Far enough that a
+// depth-difference effect fades out instead of popping, and that an unprojected
+// point lands well outside any projection volume.
+const float kSceneDepthUnavailable = 1.0e8;
+
 #ifdef FLUTTER_SCENE_SCENE_DEPTH
 // The opaque linear (planar view-space) depth, world units. Explicitly highp:
 // the impeller headers default samplers to mediump, which quantizes far depth.
@@ -229,19 +234,25 @@ uniform highp sampler2D scene_depth;
 // depth when unavailable, so depth-difference effects fade out instead of
 // popping.
 float GetSceneDepth(vec2 uv_offset) {
-  if (frag_info.scene_inputs.y < 0.5) return 1.0e8;
+  if (frag_info.scene_inputs.y < 0.5) return kSceneDepthUnavailable;
   vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
   return texture(scene_depth, uv).r;
 }
 
 // The world-space point on the opaque surface behind this fragment, offset in
 // screen UV. The inverse of ProjectWorldOffsetToScreenUv, reusing the same
-// camera basis and half-fov tangents. Returns this fragment's own world
-// position when depth is unavailable or the camera is not perspective.
+// camera basis and half-fov tangents.
+//
+// When depth is unavailable or the camera is not perspective, this returns a
+// point at the same huge sentinel depth GetSceneDepth reports, so a reader
+// fades out or falls outside its own volume. Returning the fragment's own
+// position instead would sit exactly on a projection volume's boundary, where
+// round-off splits a decal's inside test across its box faces.
 vec3 GetSceneWorldPosition(vec2 uv_offset) {
   if (frag_info.scene_inputs.y < 0.5 || frag_info.scene_inputs.w <= 0.0 ||
       frag_info.camera_forward.w <= 0.0) {
-    return v_position;
+    return v_position + v_viewvector +
+           frag_info.camera_forward.xyz * kSceneDepthUnavailable;
   }
   vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
   float view_z = texture(scene_depth, uv).r;

@@ -385,8 +385,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // declared resource through it (the MaterialParams block, any unreferenced
     // sampler, and the engine scene inputs) so none can be optimized out; the
     // emitter declares it whenever the material has a parameter or an engine
-    // input, so this condition must match.
-    if (parameters.hasAnyParameters || _sceneInputs.isNotEmpty) {
+    // input, so this condition must match. `planar_reflection` is an engine
+    // input to the emitter but not a scene input here, so it is named
+    // separately.
+    if (parameters.hasAnyParameters ||
+        _sceneInputs.isNotEmpty ||
+        _usesPlanarReflection) {
       pass.bindUniform(
         shader.getUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),

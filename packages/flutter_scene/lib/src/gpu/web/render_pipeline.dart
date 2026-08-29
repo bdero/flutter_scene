@@ -12,14 +12,17 @@ base class RenderPipeline {
     final gl = _gpuContext._gl;
     final program = gl.createProgram();
     if (program == null) {
-      throw StateError('Failed to create WebGL program');
+      // Native flutter_gpu reports a pipeline it cannot build as an
+      // Exception, and the renderer's guard is scoped to that, so a failure
+      // here must not be an Error or it blanks the frame on WebGL2 alone.
+      throw Exception('Failed to create WebGL program');
     }
     _program = program;
 
     final vs = vertexShader._glShader;
     final fs = fragmentShader._glShader;
     if (vs == null || fs == null) {
-      throw StateError('Shader objects were not compiled before linking');
+      throw Exception('Shader objects were not compiled before linking');
     }
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
