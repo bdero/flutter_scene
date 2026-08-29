@@ -837,29 +837,37 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _performRaycast(Offset position, Size viewSize) {
+    // Ctrl/Cmd-click toggles the hit node in and out of the selection
+    // instead of replacing it (and a toggle click on empty space keeps the
+    // selection).
+    final keys = HardwareKeyboard.instance;
+    final toggle = keys.isMetaPressed || keys.isControlPressed;
+    void apply(LocalId? id) {
+      if (id == null) {
+        if (!toggle) _ctrl.selection.clear();
+        return;
+      }
+      if (toggle) {
+        _ctrl.selection.toggle(id);
+      } else {
+        _ctrl.selection.selectOnly(id);
+      }
+    }
+
     // Component gizmos win over the scene raycast: a gizmo is often a
     // meshless node's only clickable presence, and screen-space slop is what
     // users expect when clicking thin lines.
     final gizmoHit = _componentGizmoHits.hitTest(position);
     if (gizmoHit != null) {
-      _ctrl.selection.selectOnly(gizmoHit);
+      apply(gizmoHit);
       _bumpView();
       return;
     }
     final ray = _camera.camera.screenPointToRay(position, viewSize);
     final hit = _ctrl.scene.raycast(ray);
-    if (hit == null) {
-      _ctrl.selection.clear();
-    } else {
-      // Resolve the hit to the source node the editor can act on (the node
-      // itself, or the enclosing prefab instance for prefab-internal geometry).
-      final id = _ctrl.sourceIdForLiveNode(hit.node);
-      if (id != null) {
-        _ctrl.selection.selectOnly(id);
-      } else {
-        _ctrl.selection.clear();
-      }
-    }
+    // Resolve the hit to the source node the editor can act on (the node
+    // itself, or the enclosing prefab instance for prefab-internal geometry).
+    apply(hit == null ? null : _ctrl.sourceIdForLiveNode(hit.node));
     _bumpView();
   }
 

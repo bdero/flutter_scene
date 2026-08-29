@@ -427,6 +427,7 @@ class ColorEditor extends StatefulWidget {
     this.channelMax = 1.0,
     this.showAlpha = true,
     this.channelBuilder,
+    this.mixed = false,
   });
 
   final String label;
@@ -446,6 +447,11 @@ class ColorEditor extends StatefulWidget {
 
   /// Optional compact numeric editor used instead of a read-only value.
   final ColorChannelBuilder? channelBuilder;
+
+  /// A multi-selection whose colors disagree; the editor still seeds from
+  /// the given channels and a commit applies to the whole selection.
+  /// TODO(multi-mixed-color): dash the channel readouts until edited.
+  final bool mixed;
 
   @override
   State<ColorEditor> createState() => _ColorEditorState();
