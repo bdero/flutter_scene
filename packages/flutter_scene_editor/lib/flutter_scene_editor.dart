@@ -28,6 +28,7 @@ export 'src/io/scene_io.dart'
         openFscene,
         pickModelPath,
         pickOpenPath,
+        pickSavePath,
         saveFscene;
 export 'src/materials/fmat_library.dart'
     show

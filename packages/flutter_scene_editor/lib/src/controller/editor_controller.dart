@@ -544,6 +544,42 @@ class EditorController extends ChangeNotifier
     }
   }
 
+  /// Runs [commands] in order as one user gesture.
+  ///
+  /// Each command still executes and commits through the session exactly as
+  /// in [run] — the document advances between commands, so a batch can be
+  /// built from reads of the pre-batch document, and undo granularity is
+  /// unchanged — but the live-scene reflection and the full-editor
+  /// `notifyListeners()` happen once for the whole batch instead of once per
+  /// command. Keying a whole rig or re-interpolating every channel of an
+  /// animation lands with one rebuild instead of dozens.
+  ///
+  /// A command whose name is unknown or params are invalid does not stop the
+  /// batch: the failure is recorded on [lastError] and the remaining commands
+  /// still run (matching the per-command `try`/`catch` this replaces), then
+  /// the first error is rethrown for the caller to surface.
+  Future<List<Transaction>> runAll(
+    List<(String name, Map<String, Object?> params)> commands,
+  ) async {
+    final committed = <Transaction>[];
+    Object? firstError;
+    for (final (name, params) in commands) {
+      try {
+        final transaction = session.run(name, params);
+        if (!transaction.isEmpty) {
+          await _reflect(transaction);
+          committed.add(transaction);
+        }
+      } catch (error) {
+        firstError ??= error;
+        lastError.value = '$name, $error';
+      }
+    }
+    if (committed.isNotEmpty) notifyListeners();
+    if (firstError != null) throw firstError;
+    return committed;
+  }
+
   /// Grafts an already-imported [source] document (from a `.glb` or `.gltf`)
   /// into the current scene as a new subtree under [parentId] (or the scene
   /// roots when null or missing), as one undoable edit. The imported root
@@ -634,14 +670,27 @@ class EditorController extends ChangeNotifier
   double get previewTime => _previewTime;
 
   /// The clip duration of animation [id]: its last keyframe time.
+  ///
+  /// Runs on every playback tick (the seek clamp and the non-loop end check),
+  /// so the scan is cached on the animation spec's object identity. Animation
+  /// commands replace whole pool entries — a fresh [AnimationSpec] per edit,
+  /// never an in-place channel write — so an unchanged spec object cannot
+  /// carry stale keyframe times (the same guarantee the timeline's payload
+  /// decode cache relies on). An [Expando] keyed by spec keeps the cache
+  /// bounded and lets entries die with their animations.
+  final Expando<double> _durationCache = Expando<double>();
+
   double previewDuration(LocalId id) {
     final spec = document.animations[id];
     if (spec == null) return 0;
+    final cached = _durationCache[spec];
+    if (cached != null) return cached;
     var end = 0.0;
     for (final channel in spec.channels) {
       final times = _payloadFloats(channel.timeline);
       if (times.isNotEmpty && times.last > end) end = times.last;
     }
+    _durationCache[spec] = end;
     return end;
   }
 
@@ -879,19 +928,41 @@ class EditorController extends ChangeNotifier
   }
 
   /// A payload's bytes as float32s (native-endian, matching the emitter).
+  ///
+  /// The decode is cached on the payload's [ByteData] object itself. Payloads
+  /// are immutable snapshots, and edits install fresh `ByteData` objects
+  /// (core's animation commands rebuild payloads on every change and only ever
+  /// read old bytes), so a stale entry can never be served; unused entries are
+  /// garbage-collected with the payloads they belong to. Called per channel
+  /// twice on every playback tick ([_onTick] → `seekPreview` → [_applyPose],
+  /// plus the non-loop end check's `previewDuration`), so decoding it every
+  /// call would dominate the frame budget on wide rigs.
   Float32List _payloadFloats(LocalId id) {
     final bytes = document.payload(id)?.bytes;
     if (bytes == null) return Float32List(0);
+    final cached = _payloadFloatCache[bytes];
+    if (cached != null) return cached;
+    final Float32List floats;
     if (bytes.offsetInBytes % 4 == 0) {
-      return bytes.buffer.asFloat32List(
+      floats = bytes.buffer.asFloat32List(
         bytes.offsetInBytes,
         bytes.lengthInBytes ~/ 4,
       );
+    } else {
+      floats = Uint8List.fromList(
+        bytes,
+      ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
     }
-    return Uint8List.fromList(
-      bytes,
-    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
+    _payloadFloatCache[bytes] = floats;
+    return floats;
   }
+
+  /// Decode cache for [_payloadFloats], keyed on the payload `ByteData`
+  /// identity. An [Expando] (rather than a `Map`) keeps entries alive only as
+  /// long as their payload, so there is nothing to invalidate or leak. The
+  /// returned views/copies are shared between callers — treat them as
+  /// read-only.
+  final Expando<Float32List> _payloadFloatCache = Expando<Float32List>();
 
   /// Imports a glTF binary ([glbBytes]) into the current scene as a new
   /// subtree. See [importSceneIntoScene].

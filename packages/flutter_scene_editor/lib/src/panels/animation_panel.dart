@@ -183,27 +183,31 @@ class _AnimationPanelState extends State<AnimationPanel> {
     final id = _animationId;
     if (id == null) return;
     final time = _controller.previewTime;
-    for (final nodeId in _controller.selection.ids) {
-      if (!_controller.document.nodes.containsKey(nodeId)) continue;
-      for (final p
-          in property == null
-              ? const [
-                  AnimationProperty.translation,
-                  AnimationProperty.rotation,
-                  AnimationProperty.scale,
-                ]
-              : [property]) {
-        try {
-          await _controller.run('setAnimationKeyframe', {
-            'animationId': id.toToken(),
-            'nodeId': nodeId.toToken(),
-            'property': p.name,
-            'time': time,
-          });
-        } on Exception catch (error) {
-          _showError(error);
-        }
-      }
+    final commands = <(String, Map<String, Object?>)>[
+      for (final nodeId in _controller.selection.ids)
+        if (_controller.document.nodes.containsKey(nodeId))
+          for (final p
+              in property == null
+                  ? const [
+                      AnimationProperty.translation,
+                      AnimationProperty.rotation,
+                      AnimationProperty.scale,
+                    ]
+                  : [property])
+            (
+              'setAnimationKeyframe',
+              {
+                'animationId': id.toToken(),
+                'nodeId': nodeId.toToken(),
+                'property': p.name,
+                'time': time,
+              },
+            ),
+    ];
+    try {
+      await _controller.runAll(commands);
+    } on Exception catch (error) {
+      _showError(error);
     }
     if (property == null) await _ensureEdgeKeys(id, time);
   }
@@ -240,6 +244,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
 
     final end = _controller.previewDuration(id);
     final edges = {0.0, if (end > 1e-4) end};
+    final commands = <(String, Map<String, Object?>)>[];
     for (final nodeId in _controller.selection.ids) {
       if (!_controller.document.nodes.containsKey(nodeId)) continue;
       for (final property in const [
@@ -249,22 +254,29 @@ class _AnimationPanelState extends State<AnimationPanel> {
       ]) {
         for (final edge in edges) {
           // An edge under the playhead is already keyed by the capture
-          // above; an edge already carrying a crystal stays untouched.
+          // above; an edge already carrying a crystal stays untouched. The
+          // two edges of one path are distinct times, so deciding both from
+          // the pre-batch document is safe: adding one never keys the other.
           if ((edge - playhead).abs() <= 1e-3) continue;
           final channel = channelFor(nodeId, property);
           if (channel != null && hasKeyAt(channel, edge)) continue;
-          try {
-            await _controller.run('setAnimationKeyframe', {
+          commands.add((
+            'setAnimationKeyframe',
+            {
               'animationId': id.toToken(),
               'nodeId': nodeId.toToken(),
               'property': property.name,
               'time': edge,
-            });
-          } on Exception catch (error) {
-            _showError(error);
-          }
+            },
+          ));
         }
       }
+    }
+    if (commands.isEmpty) return;
+    try {
+      await _controller.runAll(commands);
+    } on Exception catch (error) {
+      _showError(error);
     }
   }
 

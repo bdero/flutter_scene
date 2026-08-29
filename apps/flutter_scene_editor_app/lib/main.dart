@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -31,26 +32,77 @@ void main() {
     exit(1);
   }
   WidgetsFlutterBinding.ensureInitialized();
+  // Every close path (the traffic-light button and the OS quit request)
+  // funnels through this gate, so an unsaved document is prompted once no
+  // matter how the user tried to leave.
+  final closeGate = _CloseGate();
   final controller = WindowController(
     size: const Size(1280, 800),
     // The runner styles the window with a hidden title bar by this title
     // (see AppDelegate.swift); keep the two in sync.
     title: 'Scene Editor',
-    delegate: _MainWindowDelegate(),
+    delegate: _MainWindowDelegate(closeGate),
   );
   runWidget(
-    Window(controller: controller, child: const FlutterSceneEditorApp()),
+    Window(
+      controller: controller,
+      child: _FlutterSceneEditorApp(closeGate: closeGate),
+    ),
   );
+}
+
+/// Routes every request to leave the app through one confirmation: the main
+/// window's close request and the framework's cancelable app-exit request
+/// (Cmd+Q on macOS) both resolve through [confirmClose], so the Save / Don't
+/// Save / Cancel prompt appears exactly once and both paths honor the same
+/// decision.
+class _CloseGate {
+  /// Set by the editor home; runs the confirmation when the open document
+  /// has unsaved edits.
+  Future<AppExitResponse> Function()? onConfirmClose;
+
+  /// Set once the user approved leaving, so a follow-up quit request racing
+  /// the window teardown cannot stack a second prompt.
+  bool approved = false;
+
+  Future<AppExitResponse> confirmClose() async {
+    final confirm = onConfirmClose;
+    if (confirm == null) return AppExitResponse.exit;
+    final response = await confirm();
+    if (response == AppExitResponse.exit) approved = true;
+    return response;
+  }
 }
 
 /// Quits the app when the main editor window closes, taking any floating
 /// panel windows with it.
+///
+/// The close button normally destroys the window outright; instead the user
+/// is asked first (through [_CloseGate]) and the window is only destroyed
+/// once they confirm — "Cancel" keeps the editor running.
 class _MainWindowDelegate with WindowControllerDelegate {
+  _MainWindowDelegate(this._closeGate);
+
+  final _CloseGate _closeGate;
+
+  @override
+  void onWindowCloseRequested(WindowController controller) {
+    unawaited(() async {
+      final response = await _closeGate.confirmClose();
+      if (response == AppExitResponse.exit && !controller.isDestroyed) {
+        controller.destroy();
+      }
+    }());
+  }
+
   @override
   void onWindowDestroyed() {
     exit(0);
   }
 }
+
+/// What the user chose in the pre-close prompt.
+enum _CloseChoice { save, discard, cancel }
 
 /// Window services the runner exposes for the hidden-title-bar chrome.
 const _windowChannel = MethodChannel('scene_editor/window');
@@ -70,8 +122,11 @@ const double _windowControlsInset = 78;
 /// Launches a start screen to create a new scene or open an existing
 /// `.fscene`, then drops into the full editor. A localhost MCP server is
 /// hosted so an agent can drive the live editor (see `socket_host.dart`).
-class FlutterSceneEditorApp extends StatelessWidget {
-  const FlutterSceneEditorApp({super.key});
+class _FlutterSceneEditorApp extends StatelessWidget {
+  const _FlutterSceneEditorApp({required this.closeGate});
+
+  /// Routes window-close and quit requests to the editor's confirmation.
+  final _CloseGate closeGate;
 
   @override
   Widget build(BuildContext context) {
@@ -80,22 +135,35 @@ class FlutterSceneEditorApp extends StatelessWidget {
       theme: editorDarkTheme(),
       debugShowCheckedModeBanner: false,
       builder: (context, child) => EditorThemeScope(child: child!),
-      home: const _EditorHome(),
+      home: _EditorHome(closeGate: closeGate),
     );
   }
 }
 
 class _EditorHome extends StatefulWidget {
-  const _EditorHome();
+  const _EditorHome({required this.closeGate});
+
+  final _CloseGate closeGate;
 
   @override
   State<_EditorHome> createState() => _EditorHomeState();
 }
 
 class _EditorHomeState extends State<_EditorHome> {
+  late final _CloseGate _closeGate = widget.closeGate;
   EditorController? _controller;
   String? _busy;
   String? _error;
+
+  // Serialized document at last open or save. The close confirmation
+  // compares the live document against this, so transient session state
+  // (a gizmo drag that never committed, an animation preview sampling)
+  // cannot falsely mark the scene as modified.
+  String? _savedDocument;
+
+  // Gates the OS-level quit request (Cmd+Q): the engine asks the framework
+  // whether it may terminate, and our confirmation answers.
+  AppLifecycleListener? _exitListener;
 
   // Key on the viewport's RepaintBoundary so the MCP screenshot tool can
   // capture exactly what the user sees.
@@ -154,6 +222,13 @@ class _EditorHomeState extends State<_EditorHome> {
       hiddenTypes: _settings.hiddenGizmoTypes,
     );
     _gizmoPreferences.addListener(_persistGizmoPreferences);
+    // Both ways of leaving the editor — the window's close button and the
+    // OS quit request — funnel through the gate, prompting (and optionally
+    // saving) unsaved changes before the app exits.
+    _closeGate.onConfirmClose = _confirmClose;
+    _exitListener = AppLifecycleListener(
+      onExitRequested: () => _closeGate.confirmClose(),
+    );
     unawaited(
       EditorBuildInfo.load(
         'packages/flutter_scene_editor_app/editor_build_info.json',
@@ -681,13 +756,124 @@ class _EditorHomeState extends State<_EditorHome> {
   /// The scene was written to disk; refresh the running session when the
   /// per-project toggle is on. A debug session patches scenes in place over
   /// the VM service; anything else falls back to a hot restart.
+  ///
+  /// Also records the freshly written document as the saved baseline: any
+  /// later close prompt compares the live session against it, and a document
+  /// saved through this app (File menu, MCP, or the close dialog) is never
+  /// flagged as having unsaved changes.
   void _onSceneSaved(String path) {
+    _savedDocument = _controller?.session.toFscene();
     if (!_restartOnSceneSave) return;
     if (_session.state != AppSessionState.running) return;
     unawaited(() async {
       if (await _session.reloadScenes()) return;
       await _session.restart(reason: 'save');
     }());
+  }
+
+  /// Whether the open document differs from what was last written to disk
+  /// (or, for a never-saved scene, from its freshly created state).
+  bool get _hasUnsavedChanges {
+    final controller = _controller;
+    if (controller == null) return false;
+    return _savedDocument != controller.session.toFscene();
+  }
+
+  // One prompt at a time: a close request arriving while the confirmation is
+  // already on screen (close button plus Cmd+Q together) yields to the one
+  // showing and does not stack a second dialog.
+  bool _closePromptOpen = false;
+
+  /// The save / don't save / cancel flow behind every request to leave the
+  /// editor (the window's close button and the OS quit request). Returns
+  /// [AppExitResponse.exit] to allow leaving, [AppExitResponse.cancel] to
+  /// stay. On "Save" the scene is written through the same path as the File
+  /// menu (Save As when it has no path yet); cancelling that save dialog, or
+  /// a failed write, keeps the editor open.
+  Future<AppExitResponse> _confirmClose() async {
+    // A previous decision already approved leaving; a follow-up quit request
+    // racing the teardown must not prompt again.
+    if (_closeGate.approved) return AppExitResponse.exit;
+    if (_closePromptOpen) return AppExitResponse.cancel;
+    if (!_hasUnsavedChanges) return AppExitResponse.exit;
+    if (!mounted || _controller == null) return AppExitResponse.exit;
+
+    _closePromptOpen = true;
+    final _CloseChoice? choice;
+    try {
+      choice = await showEditorDialog<_CloseChoice>(
+        context,
+        builder: (context) => AlertDialog(
+          title: const Text('Save changes before closing?'),
+          content: Text(
+            _scenePath == null
+                ? 'Your scene has unsaved changes. Save it before closing?'
+                : 'Your scene has unsaved changes. Save them before closing?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(_CloseChoice.discard),
+              child: const Text("Don't Save"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(_CloseChoice.cancel),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(_CloseChoice.save),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      _closePromptOpen = false;
+    }
+    switch (choice) {
+      case _CloseChoice.save:
+        return await _saveBeforeClosing()
+            ? AppExitResponse.exit
+            : AppExitResponse.cancel;
+      case _CloseChoice.discard:
+        return AppExitResponse.exit;
+      case _CloseChoice.cancel:
+      case null:
+        return AppExitResponse.cancel;
+    }
+  }
+
+  /// Writes the open document (prompting for a path when it has none),
+  /// mirroring the shell's Save / Save As. Returns true when the write
+  /// completed, false when the user cancelled the file dialog or the write
+  /// failed (in which case the close should be aborted).
+  Future<bool> _saveBeforeClosing() async {
+    final controller = _controller;
+    if (controller == null) return true;
+    var path = _scenePath;
+    if (path == null) {
+      path = await pickSavePath(
+        suggestedName: 'scene.fscene',
+        initialDirectory: controller.baseDirectory,
+      );
+      if (path == null || !mounted) return false;
+    }
+    try {
+      await saveFscene(controller, path);
+      controller.setBaseDirectory(File(path).parent.path);
+      // Records the saved baseline and handles restart-on-save; must run
+      // before _setScenePath so the freshly saved document is never flagged
+      // unsaved by the teardown racing the confirmation.
+      _onSceneSaved(path);
+      if (mounted) _setScenePath(path);
+      return true;
+    } on IOException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      }
+      return false;
+    }
   }
 
   /// The MCP get_app_state payload.
@@ -836,6 +1022,9 @@ class _EditorHomeState extends State<_EditorHome> {
     // MCP) gets the project-first hooks (recents, ancestor discovery, last
     // scene).
     _setScenePath(path);
+    // A freshly opened (or brand-new) document is by definition saved;
+    // subsequent edits are what mark it modified.
+    _savedDocument = controller.session.toFscene();
     old?.dispose();
   }
 
@@ -1315,6 +1504,8 @@ class _EditorHomeState extends State<_EditorHome> {
 
   @override
   void dispose() {
+    _exitListener?.dispose();
+    _closeGate.onConfirmClose = null;
     _mcpServer?.close();
     _session.dispose();
     _controller?.dispose();
@@ -1349,6 +1540,7 @@ class _EditorHomeState extends State<_EditorHome> {
           _configureController(newCtrl);
           final old = _controller;
           setState(() => _controller = newCtrl);
+          _savedDocument = newCtrl.session.toFscene();
           old?.dispose();
         },
         onShowSettings: _showSettings,

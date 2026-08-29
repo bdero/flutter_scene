@@ -508,24 +508,30 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     final mixed = channels.any((c) => normalize(c.interpolation) != common);
 
     // Re-tapping the already-shown mode is a no-op; in mixed state (nothing
-    // shown selected) picking a mode applies it to every channel.
+    // shown selected) picking a mode applies it to every channel — one
+    // batched run, so the editor rebuilds once instead of per channel.
     Future<void> apply(String mode) async {
       if (!mixed && mode == common) return;
-      for (final channel in channels) {
-        try {
-          await controller.run('setChannelInterpolation', {
-            'animationId': animation.id.toToken(),
-            'nodeId': channel.target.toToken(),
-            'property': channel.property.name,
-            if (channel.targetName != null) 'targetName': channel.targetName,
-            'interpolation': mode,
-          });
-        } on Exception catch (error) {
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('$error')));
-        }
+      final commands = <(String, Map<String, Object?>)>[
+        for (final channel in channels)
+          (
+            'setChannelInterpolation',
+            {
+              'animationId': animation.id.toToken(),
+              'nodeId': channel.target.toToken(),
+              'property': channel.property.name,
+              if (channel.targetName != null) 'targetName': channel.targetName,
+              'interpolation': mode,
+            },
+          ),
+      ];
+      try {
+        await controller.runAll(commands);
+      } on Exception catch (error) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$error')));
       }
     }
 
