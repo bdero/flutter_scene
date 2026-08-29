@@ -21,6 +21,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:scene/scene.dart';
 
+import '../animator/animator_editor.dart';
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
 import 'animation_timeline_model.dart';
@@ -41,6 +42,24 @@ const double _tailSeconds = 0.5;
 
 /// Identifies one keyframe: which channel, which key.
 typedef _KeyRef = ({int channel, int key});
+
+/// Which half of the animation tooling is shown.
+///
+/// Authoring a clip and wiring clips into a character are two different jobs
+/// over the same material, and they want opposite layouts: a timeline is wide
+/// and short, a state machine is a canvas. One panel, two modes, rather than
+/// two dock tabs that are each empty half the time.
+enum AnimationMode {
+  /// Keyframes on a clip.
+  timeline('Timeline'),
+
+  /// The state machine over the clips.
+  animator('Animator');
+
+  const AnimationMode(this.label);
+
+  final String label;
+}
 
 /// The Animation panel.
 class AnimationPanel extends StatefulWidget {
@@ -296,14 +315,36 @@ class _AnimationPanelState extends State<AnimationPanel>
   double _sheetWidth(AnimationTimeline model) =>
       math.max((model.endTime + _tailSeconds) * _pixelsPerSecond, 200);
 
+  AnimationMode _mode = AnimationMode.timeline;
+
   @override
   Widget build(BuildContext context) {
+    if (_mode == AnimationMode.animator) {
+      // The timeline's playhead drives the live scene; leaving it attached
+      // while the animator is shown would fight the machine for the pose.
+      _detachPreview();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ModeBar(
+            mode: _mode,
+            onChanged: (mode) => setState(() => _mode = mode),
+          ),
+          Expanded(child: AnimatorEditor(controller: _ctrl)),
+        ],
+      );
+    }
+
     final model = _buildModel();
     _syncPreview();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _ModeBar(
+          mode: _mode,
+          onChanged: (mode) => setState(() => _mode = mode),
+        ),
         _buildToolbar(context, model),
         if (model == null)
           const Expanded(child: _EmptyState())
@@ -1274,4 +1315,55 @@ class _CurvePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CurvePainter old) => true;
+}
+
+/// The switch between authoring a clip and wiring the machine over them.
+class _ModeBar extends StatelessWidget {
+  const _ModeBar({required this.mode, required this.onChanged});
+
+  final AnimationMode mode;
+  final ValueChanged<AnimationMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 24,
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    decoration: const BoxDecoration(
+      color: editorPanelColor,
+      border: Border(bottom: BorderSide(color: editorLineColor)),
+    ),
+    child: Row(
+      children: [
+        for (final candidate in AnimationMode.values)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: GestureDetector(
+              onTap: () => onChanged(candidate),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                decoration: BoxDecoration(
+                  color: candidate == mode
+                      ? editorRaisedColor
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: candidate == mode
+                        ? editorAccentColor
+                        : Colors.transparent,
+                  ),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  candidate.label,
+                  style: editorBodyText.copyWith(
+                    color: candidate == mode
+                        ? editorTextColor
+                        : editorMutedTextColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
 }
