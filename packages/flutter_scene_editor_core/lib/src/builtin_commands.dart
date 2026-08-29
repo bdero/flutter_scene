@@ -1709,6 +1709,75 @@ bool _applyEnvironmentEffects(
     e.screenSpaceReflectionsResolutionScale,
     (v) => e.screenSpaceReflectionsResolutionScale = v,
   );
+  boolean('globalIlluminationEnabled', (v) => e.globalIlluminationEnabled = v);
+  string(
+    'globalIlluminationVolumeMode',
+    e.globalIlluminationVolumeMode,
+    (v) => e.globalIlluminationVolumeMode = v,
+  );
+  vector(
+    'globalIlluminationResolution',
+    e.globalIlluminationResolution,
+    (v) => e.globalIlluminationResolution = v,
+  );
+  vector(
+    'globalIlluminationExtents',
+    e.globalIlluminationExtents,
+    (v) => e.globalIlluminationExtents = v,
+  );
+  number(
+    'globalIlluminationIntensity',
+    e.globalIlluminationIntensity,
+    (v) => e.globalIlluminationIntensity = v,
+  );
+  number(
+    'globalIlluminationHysteresis',
+    e.globalIlluminationHysteresis,
+    (v) => e.globalIlluminationHysteresis = v,
+  );
+  number(
+    'globalIlluminationShadowBias',
+    e.globalIlluminationShadowBias,
+    (v) => e.globalIlluminationShadowBias = v,
+  );
+  number(
+    'globalIlluminationVisibility',
+    e.globalIlluminationVisibility,
+    (v) => e.globalIlluminationVisibility = v,
+  );
+  number(
+    'globalIlluminationVisibilityBias',
+    e.globalIlluminationVisibilityBias,
+    (v) => e.globalIlluminationVisibilityBias = v,
+  );
+  integer(
+    'globalIlluminationProbeUpdateBudget',
+    e.globalIlluminationProbeUpdateBudget,
+    (v) => e.globalIlluminationProbeUpdateBudget = v,
+  );
+  string(
+    'globalIlluminationInjectionResolution',
+    e.globalIlluminationInjectionResolution,
+    (v) => e.globalIlluminationInjectionResolution = v,
+  );
+  number(
+    'globalIlluminationFireflyClamp',
+    e.globalIlluminationFireflyClamp,
+    (v) => e.globalIlluminationFireflyClamp = v,
+  );
+  number(
+    'globalIlluminationEmissiveBoost',
+    e.globalIlluminationEmissiveBoost,
+    (v) => e.globalIlluminationEmissiveBoost = v,
+  );
+  boolean(
+    'globalIlluminationUpdateWhenIdleOnly',
+    (v) => e.globalIlluminationUpdateWhenIdleOnly = v,
+  );
+  boolean(
+    'globalIlluminationBakeOnly',
+    (v) => e.globalIlluminationBakeOnly = v,
+  );
   boolean('fogEnabled', (v) => e.fogEnabled = v);
   string('fogMode', e.fogMode, (v) => e.fogMode = v);
   vector('fogColor', e.fogColor, (v) => e.fogColor = v);

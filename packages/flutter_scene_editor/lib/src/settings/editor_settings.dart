@@ -19,6 +19,7 @@ class EditorSettings {
     Map<String, String>? lastScenes,
     String? editorCommand,
     this.gizmosEnabled = true,
+    this.giProbesVisible = false,
     Set<String>? hiddenGizmoTypes,
   }) : hiddenGizmoTypes = Set.of(hiddenGizmoTypes ?? const {}),
        editorCommand = editorCommand ?? defaultEditorCommand,
@@ -119,6 +120,8 @@ class EditorSettings {
       },
       gizmosEnabled:
           json['gizmos'] is! Map || (json['gizmos'] as Map)['enabled'] != false,
+      giProbesVisible:
+          json['gizmos'] is Map && (json['gizmos'] as Map)['giProbes'] == true,
       hiddenGizmoTypes: {
         if (json['gizmos'] is Map &&
             (json['gizmos'] as Map)['hiddenTypes'] is List)
@@ -167,6 +170,9 @@ class EditorSettings {
   /// The viewport component-gizmo master toggle.
   bool gizmosEnabled;
 
+  /// Whether the global-illumination probe lattice draws in the viewport.
+  bool giProbesVisible;
+
   /// Component types whose gizmos are hidden. Encoding the hidden set (not
   /// the shown set) keeps newly installed component types visible by
   /// default.
@@ -191,9 +197,10 @@ class EditorSettings {
     if (selectedInstallationId != null)
       'selectedInstallationId': selectedInstallationId,
     if (editorCommand != defaultEditorCommand) 'editorCommand': editorCommand,
-    if (!gizmosEnabled || hiddenGizmoTypes.isNotEmpty)
+    if (!gizmosEnabled || hiddenGizmoTypes.isNotEmpty || giProbesVisible)
       'gizmos': {
         if (!gizmosEnabled) 'enabled': false,
+        if (giProbesVisible) 'giProbes': true,
         if (hiddenGizmoTypes.isNotEmpty)
           'hiddenTypes': hiddenGizmoTypes.toList()..sort(),
       },

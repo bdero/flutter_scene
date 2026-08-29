@@ -105,6 +105,16 @@ void main() {
     expect(reloaded.hiddenGizmoTypes, {'collider'});
   });
 
+  test('GI probe visibility round trips and stays off by default', () {
+    final settings = EditorSettings();
+    expect(settings.giProbesVisible, isFalse);
+    expect(settings.toJsonString(), isNot(contains('giProbes')));
+
+    settings.giProbesVisible = true;
+    final reloaded = EditorSettings.fromJsonString(settings.toJsonString());
+    expect(reloaded.giProbesVisible, isTrue);
+  });
+
   test('restart-on-scene-save round trips per project and forgets', () {
     final settings = EditorSettings(
       restartOnSceneSave: {'/p/a.fproject': true},

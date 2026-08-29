@@ -509,6 +509,26 @@ class StageRenderControls extends StatelessWidget {
   }
 }
 
+/// A muted explanatory line inside an inspector group, for stating why a
+/// control is absent or inert rather than leaving the reader guessing.
+class _InspectorHint extends StatelessWidget {
+  const _InspectorHint(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 11,
+        color: context.theme.colors.mutedForeground,
+      ),
+    ),
+  );
+}
+
 /// The selected anti-aliasing technique's own settings, shown inline under the
 /// mode selector in the Rendering box. They live on the environment resource
 /// (like the other authored effects) while the mode itself lives on the stage,
@@ -760,6 +780,21 @@ class EnvironmentEffectsControls extends StatelessWidget {
       ],
       onChanged: (v) => v == null ? null : _set(key, v),
     ),
+  );
+
+  Widget _vectorStepped(
+    String label,
+    String key,
+    Vector3 value, {
+    required double step,
+  }) => Vec3Field(
+    label: label,
+    x: value.x,
+    y: value.y,
+    z: value.z,
+    scrubStep: step,
+    snapStep: step,
+    onSubmit: (value) => _set(key, value),
   );
 
   Widget _vector(String label, String key, Vector3 value) => Vec3Field(
@@ -1145,6 +1180,138 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 e.screenSpaceReflectionsResolutionScale,
                 min: 0.25,
                 max: 1,
+              ),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          title: _title(
+            context,
+            'Global illumination',
+            e.globalIlluminationEnabled,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _toggle(
+                'Enabled',
+                'globalIlluminationEnabled',
+                e.globalIlluminationEnabled,
+              ),
+              _select(
+                'Volume',
+                'globalIlluminationVolumeMode',
+                e.globalIlluminationVolumeMode,
+                const [
+                  ('fitScene', 'Fit scene'),
+                  ('followCamera', 'Follow camera'),
+                  ('component', 'Placed volumes'),
+                ],
+              ),
+              // Bounds and density are per-volume when volumes are placed
+              // (the component supplies them), and global otherwise.
+              if (e.globalIlluminationVolumeMode == 'component')
+                const _InspectorHint(
+                  'Bounds and probe counts come from the Irradiance Volume '
+                  'components placed in the scene.',
+                )
+              else ...[
+                _vectorStepped(
+                  'Probe counts',
+                  'globalIlluminationResolution',
+                  e.globalIlluminationResolution,
+                  step: 1,
+                ),
+                _vector(
+                  'Extents',
+                  'globalIlluminationExtents',
+                  e.globalIlluminationExtents,
+                ),
+              ],
+              _slider(
+                'Intensity',
+                'globalIlluminationIntensity',
+                e.globalIlluminationIntensity,
+                max: 4,
+              ),
+              _toggle(
+                'Bake only',
+                'globalIlluminationBakeOnly',
+                e.globalIlluminationBakeOnly,
+                description:
+                    'Freeze the field instead of updating it each frame.',
+              ),
+              // TODO(gi-bake-action): drive Scene.bakeIrradianceField from a
+              // Bake button here, stepping the returned stepper across frames
+              // with a progress indicator; the settings alone cannot start a
+              // bake.
+              InspectorAccordion(
+                identity: environment?.id,
+                children: [
+                  InspectorAccordionItem(
+                    title: const Text('Advanced'),
+                    child: Column(
+                      children: [
+                        _slider(
+                          'Hysteresis',
+                          'globalIlluminationHysteresis',
+                          e.globalIlluminationHysteresis,
+                        ),
+                        _slider(
+                          'Shadow bias',
+                          'globalIlluminationShadowBias',
+                          e.globalIlluminationShadowBias,
+                          max: 2,
+                        ),
+                        _slider(
+                          'Visibility',
+                          'globalIlluminationVisibility',
+                          e.globalIlluminationVisibility,
+                        ),
+                        _slider(
+                          'Visibility bias',
+                          'globalIlluminationVisibilityBias',
+                          e.globalIlluminationVisibilityBias,
+                          max: 1,
+                        ),
+                        _integer(
+                          'Probe update budget',
+                          'globalIlluminationProbeUpdateBudget',
+                          e.globalIlluminationProbeUpdateBudget,
+                          min: 0,
+                          max: 4096,
+                        ),
+                        _select(
+                          'Injection resolution',
+                          'globalIlluminationInjectionResolution',
+                          e.globalIlluminationInjectionResolution,
+                          const [
+                            ('half', 'Half'),
+                            ('quarter', 'Quarter'),
+                            ('eighth', 'Eighth'),
+                          ],
+                        ),
+                        _slider(
+                          'Firefly clamp',
+                          'globalIlluminationFireflyClamp',
+                          e.globalIlluminationFireflyClamp,
+                          max: 32,
+                        ),
+                        _slider(
+                          'Emissive boost',
+                          'globalIlluminationEmissiveBoost',
+                          e.globalIlluminationEmissiveBoost,
+                          max: 8,
+                        ),
+                        _toggle(
+                          'Update when idle only',
+                          'globalIlluminationUpdateWhenIdleOnly',
+                          e.globalIlluminationUpdateWhenIdleOnly,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

@@ -132,6 +132,7 @@ export 'src/global_illumination.dart'
     show
         GlobalIlluminationSettings,
         IrradianceInjectionResolution,
+        IrradianceProbeGrid,
         IrradianceVolumeMode;
 export 'src/render/irradiance_bake.dart'
     show IrradianceFieldBake, IrradianceFieldBakeStepper;

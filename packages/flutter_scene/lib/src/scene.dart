@@ -1219,6 +1219,24 @@ base class Scene implements SceneGraph {
 
   final IrradianceFieldState _irradianceField = IrradianceFieldState();
 
+  /// The probe lattice the global-illumination field is filling this frame,
+  /// or null when the field is off or has not run a frame yet.
+  ///
+  /// The placement depends on the volume mode, the camera, and the scene
+  /// bounds, and is resolved per frame inside the renderer, so this is the
+  /// only reliable source for drawing where the probes actually are.
+  /// {@category Lighting and environment}
+  IrradianceProbeGrid? get globalIlluminationProbeGrid {
+    final placement = _irradianceField.placement;
+    final layout = _irradianceField.layout;
+    if (placement == null || layout == null) return null;
+    return IrradianceProbeGrid(
+      origin: placement.origin,
+      spacing: placement.spacing,
+      counts: layout.resolution,
+    );
+  }
+
   /// Discards the accumulated irradiance field so it refills from scratch,
   /// for a hard camera cut or a wholesale lighting change that should not
   /// converge in over the hysteresis tail.
