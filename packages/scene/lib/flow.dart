@@ -22,6 +22,14 @@
 /// `package:scene/scene.dart` does not carry it.
 library;
 
+export 'src/flow/blueprint_source.dart'
+    show
+        BlueprintDiagnostic,
+        BlueprintParseResult,
+        blueprintEquivalent,
+        blueprintSourceVersion,
+        parseBlueprint,
+        printBlueprint;
 export 'src/flow/flow_graph.dart'
     show FlowGraph, FlowLink, FlowNodeSpec, FlowPin, FlowType, FlowVariable;
 export 'src/flow/flow_json.dart'
