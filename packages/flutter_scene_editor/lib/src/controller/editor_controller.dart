@@ -749,12 +749,24 @@ class EditorController extends ChangeNotifier {
     LocalId dragged,
     LocalId? parent,
     int index,
+  ) => reparentGroupToContainer([dragged], parent, index);
+
+  /// Reparents every node in [ids] into [parent] (the root list when null)
+  /// at [index], as one undoable edit. Used by a multi-selection drag; ids
+  /// nested under other moved ids and moves that would create a cycle are
+  /// skipped by the command.
+  Future<void> reparentGroupToContainer(
+    List<LocalId> ids,
+    LocalId? parent,
+    int? index,
   ) async {
-    await _detachIfAttached(dragged);
-    await run('reparentNode', {
-      'nodeId': dragged.toToken(),
+    for (final id in ids) {
+      await _detachIfAttached(id);
+    }
+    await run('reparentNodes', {
+      'nodeIds': [for (final id in ids) id.toToken()],
       if (parent != null) 'newParentId': parent.toToken(),
-      'index': index,
+      if (index != null) 'index': index,
     });
   }
 
@@ -1462,6 +1474,7 @@ class EditorController extends ChangeNotifier {
         _reflectInstanceDelta(transaction)) {
       return;
     }
+    if (_reflectReparentedNodes(transaction)) return;
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -1768,6 +1781,73 @@ class EditorController extends ChangeNotifier {
       _sourceIdByLive[entry.value] = entry.key;
     }
     _syncHighlights();
+    return true;
+  }
+
+  // Moves live nodes for a reparent or reorder (children/roots list records,
+  // plus the world-preserving transform records that ride along), so an
+  // outliner drag does not re-realize the scene.
+  bool _reflectReparentedNodes(Transaction transaction) {
+    if (_composed != null || _realizedRoot == null) return false;
+    if (transaction.records.any(
+      (record) =>
+          record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots &&
+          record.slot != ChangeSlot.transform,
+    )) {
+      return false;
+    }
+    final containers = [
+      for (final record in transaction.records)
+        if (record.slot != ChangeSlot.transform) record,
+    ];
+    if (containers.isEmpty) return false;
+    // A list change that adds or removes nodes is structural (delete,
+    // restore, graft), not a reparent; every mentioned id must be a live
+    // document node already.
+    for (final record in containers) {
+      for (final change in [record.oldValue, record.newValue]) {
+        if (change is! IdListChange) return false;
+        for (final id in change.value) {
+          if (!document.nodes.containsKey(id) ||
+              !_liveById.containsKey(id)) {
+            return false;
+          }
+        }
+      }
+      if (record.slot == ChangeSlot.children &&
+          (!document.nodes.containsKey(record.targetId) ||
+              !_liveById.containsKey(record.targetId))) {
+        return false;
+      }
+    }
+    // Reattach any node whose live parent no longer matches the document.
+    for (final record in containers) {
+      final Node parentLive;
+      final List<LocalId> current;
+      if (record.slot == ChangeSlot.roots) {
+        parentLive = _realizedRoot!;
+        current = document.roots;
+      } else {
+        parentLive = _liveById[record.targetId]!;
+        current = document.nodes[record.targetId]!.children;
+      }
+      for (final id in current) {
+        final live = _liveById[id]!;
+        if (!identical(live.parent, parentLive)) {
+          live.parent?.remove(live);
+          parentLive.add(live);
+        }
+      }
+    }
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.transform) continue;
+      final docNode = document.nodes[record.targetId];
+      final live = _liveById[record.targetId];
+      if (docNode != null && live != null) {
+        live.localTransform = docNode.transform.toMatrix4();
+      }
+    }
     return true;
   }
 

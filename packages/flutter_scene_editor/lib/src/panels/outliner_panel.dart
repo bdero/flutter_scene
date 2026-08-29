@@ -316,6 +316,21 @@ List<LocalId> _flatten(EditorController c) {
   return out;
 }
 
+/// The nodes a drag carries, the whole top-level selection when the dragged
+/// row is part of it, otherwise just the dragged row. Ordered as the
+/// outliner shows them.
+List<LocalId> _dragGroup(EditorController c, LocalId dragged) {
+  if (!c.selection.contains(dragged) || c.selection.ids.length < 2) {
+    return [dragged];
+  }
+  final tops = c.topLevelSelection().toSet();
+  final ordered = [
+    for (final id in _flatten(c))
+      if (tops.contains(id)) id,
+  ];
+  return ordered.isEmpty ? [dragged] : ordered;
+}
+
 /// Applies the platform selection gesture for a tap on [id].
 void _handleTap(EditorController c, LocalId id) {
   final keys = HardwareKeyboard.instance;
@@ -376,18 +391,20 @@ class _InsertionLineState extends State<_InsertionLine> {
 
   void _drop(LocalId dragged) {
     final c = widget.controller;
+    final group = _dragGroup(c, dragged);
+    final groupSet = group.toSet();
     final ids = widget.container == null
         ? c.displayRoots()
         : c.displayChildren(widget.container!);
     final without = [
       for (final id in ids)
-        if (id != dragged) id,
+        if (!groupSet.contains(id)) id,
     ];
     final before = widget.beforeId;
     final at = (before == null || !without.contains(before))
         ? without.length
         : without.indexOf(before);
-    c.reparentToContainer(dragged, widget.container, at);
+    c.reparentGroupToContainer(group, widget.container, at);
   }
 
   @override
@@ -559,7 +576,15 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       },
       onAcceptWithDetails: (details) {
         setState(() => _dragTarget = false);
-        ctrl.dropOnNode(details.data, node.id);
+        final group = _dragGroup(ctrl, details.data);
+        if (group.length == 1 || ctrl.isPrefabMember(node.id)) {
+          // Prefab targets graft one node at a time through the attach path.
+          for (final id in group) {
+            ctrl.dropOnNode(id, node.id);
+          }
+        } else {
+          ctrl.reparentGroupToContainer(group, node.id, null);
+        }
       },
       onLeave: (_) => setState(() => _dragTarget = false),
       onMove: (_) => setState(() => _dragTarget = true),
@@ -567,15 +592,29 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
         if (!widget.draggable || isMember) return rowContent;
         return Draggable<LocalId>(
           data: node.id,
-          feedback: Material(
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Text(
-                node.name.isEmpty ? node.id.toToken() : node.name,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
+          // Built when the drag starts, so a multi-selection drag labels
+          // itself with the group size without per-row cost per rebuild.
+          feedback: Builder(
+            builder: (context) {
+              final count = _dragGroup(ctrl, node.id).length;
+              return Material(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    count > 1
+                        ? '$count nodes'
+                        : node.name.isEmpty
+                        ? node.id.toToken()
+                        : node.name,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              );
+            },
           ),
           child: rowContent,
         );

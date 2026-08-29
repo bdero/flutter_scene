@@ -511,6 +511,92 @@ final reparentNode = CommandEntry(
   },
 );
 
+/// Moves several nodes into one container as a single undoable edit (a
+/// multi-selection drag in the outliner). Ids nested under another moved id
+/// and ids whose subtree contains the destination are skipped.
+final reparentNodes = CommandEntry(
+  name: 'reparentNodes',
+  doc:
+      'Move several nodes under a new parent (or the root list) at once, '
+      'optionally at a specific index.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
+    ParamSpec(
+      name: 'newParentId',
+      type: ParamType.nodeRef,
+      label: 'New parent',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'index',
+      type: ParamType.integer,
+      label: 'Index',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'keepWorldTransform',
+      type: ParamType.boolean,
+      label: 'Keep world transform',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final newParent = optionalNodeId(params, 'newParentId');
+    if (newParent != null) _requireNode(ctx, newParent);
+    final index = optionalInt(params, 'index');
+    final keepWorld = params['keepWorldTransform'] != false;
+    final moved = [
+      for (final id in _topLevel(doc, requireNodeIdList(params, 'nodeIds')))
+        if (newParent == null || !_subtree(doc, id).contains(newParent)) id,
+    ];
+    if (moved.isEmpty) {
+      return Transaction(name: 'Reparent nodes', records: _empty);
+    }
+    final oldParents = {for (final id in moved) id: _parentOf(doc, id)};
+    // Build every touched container's final list once, so one record per
+    // container carries all removals and the grouped insertion together.
+    final lists = <LocalId?, List<LocalId>>{};
+    List<LocalId> listFor(LocalId? parent) =>
+        lists.putIfAbsent(parent, () => List.of(_containerOf(doc, parent)));
+    for (final id in moved) {
+      listFor(oldParents[id]).remove(id);
+    }
+    final destination = listFor(newParent);
+    final at = index == null
+        ? destination.length
+        : index.clamp(0, destination.length);
+    destination.insertAll(at, moved);
+    final records = <ChangeRecord>[];
+    for (final entry in lists.entries) {
+      final old = List.of(_containerOf(doc, entry.key));
+      if (_sameOrder(old, entry.value)) continue;
+      records.add(_containerRecord(doc, entry.key, old, entry.value));
+    }
+    if (keepWorld) {
+      for (final id in moved) {
+        if (oldParents[id] == newParent) continue;
+        final node = doc.nodes[id]!;
+        records.add(
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.transform,
+            oldValue: TransformChange(node.transform),
+            newValue: TransformChange(
+              _worldPreservingLocal(doc, id, newParent),
+            ),
+          ),
+        );
+      }
+    }
+    return Transaction(
+      name: moved.length == 1 ? 'Reparent node' : 'Reparent nodes',
+      records: records,
+    );
+  },
+);
+
 /// Clones one or more node subtrees in place. Each top-level node in [nodeIds]
 /// is deep-copied with fresh ids and inserted right after the original among
 /// its siblings; nodes nested under another selected node are skipped.
@@ -2941,6 +3027,7 @@ final List<CommandEntry> builtinCommands = [
   deleteNode,
   deleteNodes,
   reparentNode,
+  reparentNodes,
   duplicateNodes,
   pasteNodes,
   addComponent,
