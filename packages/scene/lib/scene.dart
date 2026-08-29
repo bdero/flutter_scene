@@ -33,6 +33,8 @@ export 'src/specs.dart'
         MatrixTransform,
         MorphTargetsSpec,
         NodeSpec,
+        EditorCameraSpec,
+        EditorStateSpec,
         PayloadEncoding,
         PayloadEnvironment,
         PayloadSpec,

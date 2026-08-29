@@ -1528,6 +1528,50 @@ class SkyEnvironmentSpec {
   SunLightSpec? sunLight;
 }
 
+/// The editor viewport camera pose a document carries for the editor's
+/// benefit. The runtime ignores it.
+/// {@category Documents}
+class EditorCameraSpec {
+  /// Creates a pose record.
+  EditorCameraSpec({
+    required this.azimuth,
+    required this.elevation,
+    required this.radius,
+    required this.target,
+    this.orthographic = false,
+  });
+
+  /// Orbit azimuth in radians.
+  final double azimuth;
+
+  /// Orbit elevation in radians.
+  final double elevation;
+
+  /// Orbit distance from [target].
+  final double radius;
+
+  /// The orbit target in world space.
+  final Vector3 target;
+
+  /// Whether the viewport was orthographic.
+  final bool orthographic;
+}
+
+/// Editor-only document state (viewport camera, selection), written by the
+/// editor on save and restored on open. The runtime ignores it.
+/// {@category Documents}
+class EditorStateSpec {
+  /// Creates an editor-state record.
+  EditorStateSpec({this.camera, List<LocalId>? selection})
+    : selection = selection ?? [];
+
+  /// The primary viewport's camera pose, or null when none was attached.
+  EditorCameraSpec? camera;
+
+  /// The selected node ids, primary last (matching `Selection.set` order).
+  final List<LocalId> selection;
+}
+
 /// One serialized view of the scene: a camera node bound to a target and
 /// the view's render settings (the runtime `RenderView`).
 /// {@category Documents}

@@ -182,6 +182,16 @@ class EditorController extends ChangeNotifier {
         controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
+    // Restore the document's carried editor state. The selection applies
+    // here; the shell reads [restoredEditorState] for the camera pose.
+    final editorState = session.document.editor;
+    if (editorState != null) {
+      controller.restoredEditorState = editorState;
+      final valid = editorState.selection
+          .where(session.document.nodes.containsKey)
+          .toList();
+      if (valid.isNotEmpty) session.selection.set(valid);
+    }
     return controller;
   }
 
@@ -333,6 +343,15 @@ class EditorController extends ChangeNotifier {
   /// The outliner listens here; setting a node id asks it to expand the
   /// node's ancestors and scroll the row into view.
   final ValueNotifier<LocalId?> outlinerReveal = ValueNotifier(null);
+
+  /// Builds the editor-state block a save writes into the document (camera
+  /// pose plus selection). The app shell provides it; null saves whatever
+  /// the document already carries.
+  EditorStateSpec Function()? editorStateProvider;
+
+  /// The editor state the opened document carried, for the shell to restore
+  /// the viewport camera once it is up. Selection restores at open.
+  EditorStateSpec? restoredEditorState;
 
   /// Asks the outliner to reveal [id] (expand ancestors, scroll to the row).
   void revealInOutliner(LocalId id) {
