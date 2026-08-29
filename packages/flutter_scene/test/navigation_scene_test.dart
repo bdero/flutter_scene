@@ -258,10 +258,9 @@ void main() {
     test('swimmable water paints its area instead of carving', () {
       final root = level();
       root.add(
-        Node(name: 'pond')
-          ..addComponent(
-            WaterComponent(size: 30, traversal: WaterTraversal.swimmable),
-          ),
+        Node(name: 'pond')..addComponent(
+          WaterComponent(size: 30, traversal: WaterTraversal.swimmable),
+        ),
       );
       final surface = NavMeshSurfaceComponent(config: config);
       root.addComponent(surface);
@@ -330,6 +329,53 @@ void main() {
       final result = surface.bake();
       expect(result.isEmpty, isTrue);
       expect(result.describe(), contains('No walkable surface'));
+    });
+
+    test('a tiled bake needs a tiling rather than inventing one', () {
+      final surface = NavMeshSurfaceComponent(config: config);
+      level().addComponent(surface);
+      expect(surface.bakeTiledAsync(), throwsStateError);
+    });
+
+    test('a tiled bake covers the world and paths across the seams', () async {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+
+      final seen = <int>[];
+      final result = await surface.bakeTiledAsync(
+        concurrency: 2,
+        onProgress: (done, total) => seen.add(done),
+      );
+
+      expect(result.tiles.tileCount, greaterThan(1));
+      expect(seen, isNotEmpty);
+      expect(seen.last, seen.length, reason: 'one report per tile, in order');
+      expect(
+        surface.mesh,
+        isNull,
+        reason: 'a tiled world has no single mesh to hand back',
+      );
+      expect(surface.tileSet, same(result.tiles));
+      expect(result.describe(), contains('tiles'));
+
+      // Corner to corner crosses several tile seams, so a path only exists if
+      // the links between them formed.
+      final path = surface.tiledQuery()!.findPath(
+        Vector3(-9, 0, -9),
+        Vector3(9, 0, 9),
+      );
+      expect(path.status, NavPathStatus.complete);
+      expect(path.points.length, greaterThan(1));
+      expect(path.points.last.x, closeTo(9, 1.0));
+      expect(path.points.last.z, closeTo(9, 1.0));
+
+      surface.clear();
+      expect(surface.tileSet, isNull);
+      expect(surface.tiledQuery(), isNull);
     });
 
     test('a clone shares the baked mesh rather than copying it', () {

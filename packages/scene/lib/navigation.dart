@@ -21,7 +21,11 @@
 library;
 
 export 'src/navigation/compact_heightfield.dart'
-    show CompactHeightfield, buildCompactHeightfield, erodeWalkableArea;
+    show
+        CompactHeightfield,
+        buildCompactHeightfield,
+        cutToInterior,
+        erodeWalkableArea;
 export 'src/navigation/contours.dart' show Contour, ContourSet, buildContours;
 export 'src/navigation/heightfield.dart'
     show Heightfield, HeightSpan, applyNavVolumes, rasterizeNavGeometry;
@@ -30,7 +34,20 @@ export 'src/navigation/nav_geometry.dart'
     show NavArea, NavGeometry, NavGeometryBuilder, NavVolume;
 export 'src/navigation/nav_mesh.dart'
     show NavMesh, navMeshFromPolyMesh, navNoPolygon;
-export 'src/navigation/nav_mesh_builder.dart' show NavBakeStage, buildNavMesh;
+export 'src/navigation/nav_mesh_builder.dart'
+    show NavBakeStage, NavInterior, buildNavMesh;
+export 'src/navigation/nav_tile_bake.dart'
+    show
+        NavTileJob,
+        NavTiledBakeResult,
+        bakeNavMeshTiled,
+        bakeNavTile,
+        navTileRange,
+        planNavTileBake;
+export 'src/navigation/nav_tile_query.dart' show NavTileMeshQuery, NavTilePath;
+export 'src/navigation/nav_tiles.dart'
+    show NavTileConfig, NavTileKey, NavTileLink, NavTilePolygon, NavTileSet;
+
 export 'src/navigation/nav_mesh_codec.dart'
     show decodeNavMesh, encodeNavMesh, navMeshVersion;
 export 'src/navigation/nav_query.dart'

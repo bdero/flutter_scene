@@ -47,9 +47,15 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
   bool _includeWaterVolumes = true;
   bool _advancedOpen = false;
 
+  bool _tiled = false;
+  double _tileCells = 64;
+
   NavBakeResult? _result;
+  NavTiledBakeResult? _tiledResult;
   NavBakeStage? _stage;
   bool _baking = false;
+  int _tilesDone = 0;
+  int _tilesTotal = 0;
   String? _error;
 
   NavMeshConfig get _config => NavMeshConfig(
@@ -71,6 +77,8 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
 
   Node? get _root => _ctrl.realizedRoot;
 
+  NavTileConfig get _tiling => NavTileConfig(tileCells: _tileCells.round());
+
   Future<void> _bake() async {
     final root = _root;
     if (root == null || _baking) return;
@@ -79,6 +87,9 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
       _error = null;
       _stage = null;
       _result = null;
+      _tiledResult = null;
+      _tilesDone = 0;
+      _tilesTotal = 0;
     });
     try {
       final surface = NavMeshSurfaceComponent(
@@ -86,12 +97,29 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
         includePattern: _includePattern,
         includeInstances: _includeInstances,
         includeWaterVolumes: _includeWaterVolumes,
+        tiling: _tiled ? _tiling : null,
       );
-      // Off the calling isolate: a large level is seconds of work, and the
-      // editor still has to draw while it runs.
-      final result = await surface.bakeAsync(root: root);
-      if (!mounted) return;
-      setState(() => _result = result);
+      // Off the calling isolate either way: a large level is seconds of work
+      // and the editor still has to draw while it runs. Tiled, it is also
+      // several tiles at a time.
+      if (_tiled) {
+        final result = await surface.bakeTiledAsync(
+          root: root,
+          onProgress: (done, total) {
+            if (!mounted) return;
+            setState(() {
+              _tilesDone = done;
+              _tilesTotal = total;
+            });
+          },
+        );
+        if (!mounted) return;
+        setState(() => _tiledResult = result);
+      } else {
+        final result = await surface.bakeAsync(root: root);
+        if (!mounted) return;
+        setState(() => _result = result);
+      }
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _error = '$error');
@@ -102,6 +130,7 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
 
   void _clear() => setState(() {
     _result = null;
+    _tiledResult = null;
     _error = null;
   });
 
@@ -183,6 +212,39 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
                 onChanged: (v) => setState(() => _includeWaterVolumes = v),
               ),
               const SizedBox(height: 12),
+              const EditorSectionHeader(label: 'Tiling'),
+              _Toggle(
+                label: 'Bake in tiles',
+                hint:
+                    'Cuts the world into squares baked in parallel, one tile '
+                    'in memory at a time, and lets an edited corner rebake on '
+                    'its own. Worth it past a few hundred units a side.',
+                value: _tiled,
+                onChanged: (v) => setState(() => _tiled = v),
+              ),
+              if (_tiled) ...[
+                _Field(
+                  label: 'Tile size',
+                  hint:
+                      'Voxels per side. Every tile pays for a border, so tiny '
+                      'tiles spend more time on margins than on middles.',
+                  value: _tileCells,
+                  min: 16,
+                  max: 256,
+                  decimals: 0,
+                  divisions: 30,
+                  onChanged: (v) => setState(() => _tileCells = v),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 4),
+                  child: Text(
+                    '${_tiling.tileSize(_config).toStringAsFixed(1)} units a '
+                    'side, ${defaultNavBakeConcurrency()} baking at once.',
+                    style: editorMicroText,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
               _AdvancedSection(
                 open: _advancedOpen,
                 onToggle: () => setState(() => _advancedOpen = !_advancedOpen),
@@ -250,6 +312,9 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
           baking: _baking,
           stage: _stage,
           result: _result,
+          tiledResult: _tiledResult,
+          tilesDone: _tilesDone,
+          tilesTotal: _tilesTotal,
           error: _error,
           onBake: _bake,
           onClear: _clear,
@@ -451,6 +516,9 @@ class _BakeBar extends StatelessWidget {
     required this.baking,
     required this.stage,
     required this.result,
+    required this.tiledResult,
+    required this.tilesDone,
+    required this.tilesTotal,
     required this.error,
     required this.onBake,
     required this.onClear,
@@ -460,21 +528,31 @@ class _BakeBar extends StatelessWidget {
   final bool baking;
   final NavBakeStage? stage;
   final NavBakeResult? result;
+  final NavTiledBakeResult? tiledResult;
+  final int tilesDone;
+  final int tilesTotal;
   final String? error;
   final VoidCallback onBake;
   final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
+    final tiled = tiledResult;
     final message =
         error ??
         (baking
-            ? 'Baking${stage == null ? '' : ' (${stage!.name})'}…'
-            : result?.describe() ??
+            ? (tilesTotal > 0
+                  ? 'Baking tile $tilesDone of $tilesTotal…'
+                  : 'Baking${stage == null ? '' : ' (${stage!.name})'}…')
+            : tiled?.describe() ??
+                  result?.describe() ??
                   (ready
                       ? 'Nothing baked yet.'
                       : 'Open a scene to bake its navigation.'));
-    final bad = error != null || (result?.isEmpty ?? false);
+    final bad =
+        error != null ||
+        (result?.isEmpty ?? false) ||
+        (tiled != null && tiled.tiles.tileCount == 0);
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
       decoration: const BoxDecoration(
@@ -489,6 +567,14 @@ class _BakeBar extends StatelessWidget {
                 ? editorDetailText.copyWith(color: editorWarningColor)
                 : editorDetailText,
           ),
+          if (baking && tilesTotal > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: LinearProgressIndicator(
+                value: tilesDone / tilesTotal,
+                minHeight: 3,
+              ),
+            ),
           if (result != null && !result!.isEmpty && result!.volumeCount > 0)
             Text(
               '${result!.volumeCount} volume'
@@ -508,7 +594,9 @@ class _BakeBar extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: result == null || baking ? null : onClear,
+                  onPressed: (result == null && tiledResult == null) || baking
+                      ? null
+                      : onClear,
                   child: const Text('Clear'),
                 ),
               ),
@@ -543,6 +631,8 @@ class _Field extends StatelessWidget {
     this.min = 0,
     this.max = 1,
     this.suffix = '',
+    this.decimals = 2,
+    this.divisions,
   });
 
   final String label;
@@ -551,6 +641,12 @@ class _Field extends StatelessWidget {
   final double min;
   final double max;
   final String suffix;
+
+  /// Digits after the point in the readout. Zero for a count of things.
+  final int decimals;
+
+  /// Steps the slider snaps to, for a value that is only meaningful whole.
+  final int? divisions;
   final ValueChanged<double> onChanged;
 
   @override
@@ -562,10 +658,7 @@ class _Field extends StatelessWidget {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 108,
-                child: Text(label, style: editorBodyText),
-              ),
+              SizedBox(width: 108, child: Text(label, style: editorBodyText)),
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(trackHeight: 2),
@@ -573,6 +666,7 @@ class _Field extends StatelessWidget {
                     value: value.clamp(min, max),
                     min: min,
                     max: max,
+                    divisions: divisions,
                     onChanged: onChanged,
                   ),
                 ),
@@ -580,7 +674,7 @@ class _Field extends StatelessWidget {
               SizedBox(
                 width: 46,
                 child: Text(
-                  '${value.toStringAsFixed(2)}$suffix',
+                  '${value.toStringAsFixed(decimals)}$suffix',
                   style: editorBodyText,
                   textAlign: TextAlign.right,
                 ),
@@ -619,10 +713,7 @@ class _TextField extends StatelessWidget {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 108,
-                child: Text(label, style: editorBodyText),
-              ),
+              SizedBox(width: 108, child: Text(label, style: editorBodyText)),
               Expanded(
                 child: SizedBox(
                   height: 24,
@@ -672,10 +763,7 @@ class _Toggle extends StatelessWidget {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 108,
-                child: Text(label, style: editorBodyText),
-              ),
+              SizedBox(width: 108, child: Text(label, style: editorBodyText)),
               Transform.scale(
                 scale: 0.75,
                 child: Switch(value: value, onChanged: onChanged),

@@ -162,10 +162,17 @@ class Heightfield {
 /// A triangle's walkability is decided here, from its normal against
 /// [NavMeshConfig.walkableSlopeCosine], unless the geometry names an area for
 /// it. Returns null when the geometry is empty.
-Heightfield? rasterizeNavGeometry(NavGeometry geometry, NavMeshConfig config) {
-  final bounds = geometry.bounds;
-  if (bounds == null || geometry.triangleCount == 0) return null;
-  final field = Heightfield.forBounds(bounds.$1, bounds.$2, config);
+Heightfield? rasterizeNavGeometry(
+  NavGeometry geometry,
+  NavMeshConfig config, {
+  (Vector3, Vector3)? bounds,
+}) {
+  // An explicit extent is what a tiled bake needs: every tile's field has to
+  // sit on one global cell grid, or the boundary between two tiles lands part
+  // of a cell apart in each and their edges never line up.
+  final extent = bounds ?? geometry.bounds;
+  if (extent == null || geometry.triangleCount == 0) return null;
+  final field = Heightfield.forBounds(extent.$1, extent.$2, config);
 
   final vertices = geometry.vertices;
   final indices = geometry.indices;

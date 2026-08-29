@@ -31,7 +31,12 @@ const double _frameMs = 16.67;
 /// Runs [body] [runs] times after [warmup] untimed runs, and reports the best
 /// time. The best rather than the mean: this is measuring how fast the code
 /// can go, and the tail is the machine's other work, not the code's.
-void bench(String label, void Function() body, {int runs = 20, int warmup = 5}) {
+void bench(
+  String label,
+  void Function() body, {
+  int runs = 20,
+  int warmup = 5,
+}) {
   for (var i = 0; i < warmup; i++) {
     body();
   }
@@ -115,7 +120,7 @@ void main() {
     return;
   }
 
-  test('hot paths', () {
+  test('hot paths', () async {
     // ignore: avoid_print
     print(
       '\nDart VM (JIT), ${Platform.operatingSystem} '
@@ -137,7 +142,11 @@ void main() {
 
     // ------------------------------------------------------------------
     section('Particles: one simulation step');
-    for (final entry in const [(500, 'sparse'), (2000, 'rain'), (8000, 'heavy')]) {
+    for (final entry in const [
+      (500, 'sparse'),
+      (2000, 'rain'),
+      (8000, 'heavy'),
+    ]) {
       final system = ParticleSystem(
         maxParticles: entry.$1,
         shape: const SphereEmitterShape(radius: 2),
@@ -171,9 +180,14 @@ void main() {
     for (final n in const [32, 64, 128]) {
       final (positions, indices) = grid(n);
       final triangles = indices.length ~/ 3;
-      bench('build over $triangles triangles', () {
-        TriangleBvh.build(positions, indices);
-      }, runs: 8, warmup: 2);
+      bench(
+        'build over $triangles triangles',
+        () {
+          TriangleBvh.build(positions, indices);
+        },
+        runs: 8,
+        warmup: 2,
+      );
     }
     {
       final (positions, indices) = grid(128);
@@ -190,7 +204,11 @@ void main() {
 
     // ------------------------------------------------------------------
     section('Nav mesh: a full bake');
-    for (final entry in const [(40.0, 3, 'room'), (120.0, 8, 'level'), (300.0, 16, 'world')]) {
+    for (final entry in const [
+      (40.0, 3, 'room'),
+      (120.0, 8, 'level'),
+      (300.0, 16, 'world'),
+    ]) {
       final geometry = level(entry.$1, entry.$2);
       const config = NavMeshConfig(
         cellSize: 0.3,
@@ -204,6 +222,68 @@ void main() {
         () => buildNavMesh(geometry, config),
         runs: 5,
         warmup: 1,
+      );
+    }
+
+    // ------------------------------------------------------------------
+    section('Nav mesh: tiled vs single-shot');
+    for (final entry in const [(120.0, 8, 'level'), (300.0, 16, 'world')]) {
+      final geometry = level(entry.$1, entry.$2);
+      const config = NavMeshConfig(
+        cellSize: 0.3,
+        cellHeight: 0.2,
+        agentRadius: 0.5,
+        agentHeight: 2,
+      );
+      bench(
+        '${entry.$1.toInt()} ${entry.$3}: tiled, 64-cell tiles',
+        () => bakeNavMeshTiled(
+          geometry,
+          config,
+          tiling: const NavTileConfig(tileCells: 64),
+        ),
+        runs: 3,
+        warmup: 1,
+      );
+      bench(
+        '${entry.$1.toInt()} ${entry.$3}: tiled, 128-cell tiles',
+        () => bakeNavMeshTiled(
+          geometry,
+          config,
+          tiling: const NavTileConfig(tileCells: 128),
+        ),
+        runs: 3,
+        warmup: 1,
+      );
+    }
+
+    // ------------------------------------------------------------------
+    section('Nav mesh: tiled across isolates');
+    // ignore: avoid_print
+    print(
+      '  ${defaultNavBakeConcurrency()} lanes on '
+      '${Platform.numberOfProcessors} cores',
+    );
+    for (final entry in const [(120.0, 8, 'level'), (300.0, 16, 'world')]) {
+      final geometry = level(entry.$1, entry.$2);
+      const config = NavMeshConfig(
+        cellSize: 0.3,
+        cellHeight: 0.2,
+        agentRadius: 0.5,
+        agentHeight: 2,
+      );
+      final watch = Stopwatch()..start();
+      final result = await bakeNavMeshTiledAsync(
+        geometry,
+        config,
+        tiling: const NavTileConfig(tileCells: 64),
+      );
+      watch.stop();
+      // ignore: avoid_print
+      print(
+        '  ${'${entry.$1.toInt()} ${entry.$3}: parallel, 64-cell tiles'.padRight(46)} '
+        '${(watch.elapsedMicroseconds / 1000).toStringAsFixed(3).padLeft(9)} ms'
+        '  (${result.tiles.tileCount} tiles)',
       );
     }
 
@@ -223,8 +303,7 @@ void main() {
       void close() {
         if (open == null) return;
         watch.stop();
-        totals[open!] =
-            (totals[open!] ?? 0) + watch.elapsedMicroseconds / 1000;
+        totals[open!] = (totals[open!] ?? 0) + watch.elapsedMicroseconds / 1000;
         open = null;
       }
 
@@ -265,18 +344,22 @@ void main() {
           ..literals['b'] = 1.0;
         final set = graph.add('var.set')..literals['name'] = 'v$i';
         graph
-          ..connect(FlowLink(
-            fromNode: previous.id,
-            fromPin: previousPin,
-            toNode: set.id,
-            toPin: 'exec',
-          ))
-          ..connect(FlowLink(
-            fromNode: add.id,
-            fromPin: 'value',
-            toNode: set.id,
-            toPin: 'value',
-          ));
+          ..connect(
+            FlowLink(
+              fromNode: previous.id,
+              fromPin: previousPin,
+              toNode: set.id,
+              toPin: 'exec',
+            ),
+          )
+          ..connect(
+            FlowLink(
+              fromNode: add.id,
+              fromPin: 'value',
+              toNode: set.id,
+              toPin: 'value',
+            ),
+          );
         previous = set;
         previousPin = 'then';
       }
