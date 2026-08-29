@@ -445,6 +445,14 @@ base class Scene implements SceneGraph {
   // extra directional lights. Rebuilt once per frame in [render].
   final PunctualLightBuffer _punctualLightBuffer = PunctualLightBuffer();
 
+  /// How many drawable items dropped punctual lights last frame because more
+  /// lights reached them than the per-object budget can shade. Zero when every
+  /// item fit. A persistent nonzero value means light ranges need authoring
+  /// (an unranged light reaches everything) or large meshes need splitting.
+  /// {@category Lighting and environment}
+  int get punctualLightOverflowCount =>
+      _punctualLightBuffer.overflowedItemCount;
+
   /// The scene's primary camera.
   ///
   /// A `SceneView` with no `camera`, `cameraBuilder`, or `viewsBuilder`
