@@ -29,6 +29,10 @@ const Color _accentColor = Color(0xFFFF8C1A);
 /// The muted default gizmo color.
 const Color _baseColor = Color(0xCCB9C4CE);
 
+/// Warning tint for unbounded reach (a light with no range defeats light
+/// culling, so its representative sphere/cone draws loud instead of hiding).
+const Color _unboundedWarningColor = Color(0xFFE6B84D);
+
 /// Screen size (pixels) one world unit of decorative gizmo geometry (arrows,
 /// literal line art) targets, before the primitive's own scalar applies.
 const double _decorativePixels = 44.0;
@@ -361,11 +365,20 @@ class ComponentGizmoPainter extends CustomPainter {
             _strokeWorldSegment(a, b, color, segments);
           }
         case GizmoWireSphere():
-          final radius = _inflated(
+          var radius = _inflated(
             snapshot.scalar(primitive.radius),
             snapshot.scalar(primitive.inflate),
           );
-          if (radius == null || radius <= 0) break;
+          if (radius == null) break;
+          // A bound radius of zero means unbounded reach (an unranged light);
+          // draw a representative sphere in the warning tint so infinite
+          // influence is loud instead of invisible.
+          var sphereColor = color;
+          if (radius <= 0) {
+            if (primitive.radius.bind == null) break;
+            radius = decorativeScale * 3;
+            sphereColor = _unboundedWarningColor;
+          }
           final center = _listVector(primitive.center);
           for (var axis = 0; axis < 3; axis++) {
             final (u, v) = _axisPlane(axis);
@@ -375,7 +388,7 @@ class ComponentGizmoPainter extends CustomPainter {
               u,
               v,
               radius,
-              color,
+              sphereColor,
               segments,
             );
           }
@@ -432,8 +445,13 @@ class ComponentGizmoPainter extends CustomPainter {
           final angle = snapshot.scalar(primitive.angle);
           var range = snapshot.scalar(primitive.range);
           if (angle == null || range == null) break;
-          // Unranged (infinite) cones draw a representative reach.
-          if (range <= 0) range = decorativeScale * 3;
+          // Unranged (infinite) cones draw a representative reach in the
+          // warning tint; no range means light culling cannot bound them.
+          var coneColor = color;
+          if (range <= 0) {
+            range = decorativeScale * 3;
+            coneColor = _unboundedWarningColor;
+          }
           var axis = _listVector(primitive.axis);
           if (primitive.axisBind != null) {
             axis = snapshot.vector(primitive.axisBind!) ?? axis;
@@ -443,12 +461,20 @@ class ComponentGizmoPainter extends CustomPainter {
           final (u, v) = _perpendicular(axis);
           final radius = math.tan(angle.clamp(0, math.pi / 2 - 0.01)) * range;
           final base = axis * range;
-          _strokeLocalCircle(transform, base, u, v, radius, color, segments);
+          _strokeLocalCircle(
+            transform,
+            base,
+            u,
+            v,
+            radius,
+            coneColor,
+            segments,
+          );
           for (final spoke in [u, -u, v, -v]) {
             _strokeWorldSegment(
               transform.transformed3(vm.Vector3.zero()),
               transform.transformed3(base + spoke * radius),
-              color,
+              coneColor,
               segments,
             );
           }

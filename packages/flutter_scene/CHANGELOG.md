@@ -9,6 +9,7 @@
 * A draw whose render pipeline the backend rejects is skipped with a one-time console message naming the material and geometry, instead of failing the whole frame from inside paint.
 * A render pipeline build that stalls a frame (8ms or more, always on its first draw) is reported in debug builds with the material and geometry that triggered it, so the fix (drawing it once behind a load screen) has a target.
 * `SceneView` measures `onTick` deltas with a wall clock instead of the ticker's frame-begin timestamps, whose deltas alternate between tiny and double-length values under GPU load and stagger any motion integrated against them. The new `SceneView.clock` injects a clock for tests and time-controlling drivers; the ambient `package:clock` clock (faked under `flutter_test`) is the default.
+* `Scene.punctualLightOverflowCount` reports how many drawable items dropped punctual lights last frame because more lights reached them than the per-object budget shades.
 
 ## 0.23.1
 

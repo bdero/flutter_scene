@@ -1030,7 +1030,7 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
     properties: propertySchema,
     gizmo: const GizmoSpec([
       GizmoIcon(color: GizmoColor.bind('color')),
-      // Zero range means infinite and draws nothing.
+      // Reach sphere; zero range draws the unbounded warning.
       GizmoWireSphere(
         radius: GizmoScalar.bind('range'),
         visibility: GizmoVisibility.selected,
@@ -1645,6 +1645,11 @@ class RectAreaLightCodec
         height: GizmoScalar.bind('height'),
       ),
       GizmoArrow(length: GizmoScalar(0.6)),
+      // Reach sphere; zero range draws the unbounded warning.
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('range'),
+        visibility: GizmoVisibility.selected,
+      ),
     ]),
   );
 

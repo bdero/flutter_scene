@@ -154,6 +154,13 @@ class PunctualLightBuffer {
 
   bool _warnedOverflow = false;
 
+  /// How many items dropped lights in the most recent [build] (each was
+  /// reached by more than [kMaxPunctualLights] punctual lights). Zero when
+  /// every item fit its budget. Editors surface this; games can poll it to
+  /// catch lighting authoring problems.
+  int get overflowedItemCount => _overflowedItemCount;
+  int _overflowedItemCount = 0;
+
   /// Packs the scene's [directionals] (skipping [primaryDirectional], which
   /// the shadow-capable `FragInfo` path already shades), [points], and [spots]
   /// into the parameters buffer, culls them against [items] using [bvh], and
@@ -179,6 +186,7 @@ class PunctualLightBuffer {
     );
     final count = packed.count;
     if (count == 0) {
+      _overflowedItemCount = 0;
       return const PunctualLighting.empty();
     }
 
@@ -208,6 +216,7 @@ class PunctualLightBuffer {
       lights: packed.cullables,
       maxPerItem: kMaxPunctualLights,
     );
+    _overflowedItemCount = cull.overflowedItemCount;
 
     assert(() {
       if (cull.overflowed && !_warnedOverflow) {

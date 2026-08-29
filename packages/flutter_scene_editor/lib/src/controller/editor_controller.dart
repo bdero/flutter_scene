@@ -570,6 +570,9 @@ class EditorController extends ChangeNotifier {
     session.commitExternal(
       Transaction(name: 'Import glTF', records: graft.records),
     );
+    if (graft.records.any((r) => r.slot == ChangeSlot.poolPayload)) {
+      payloadsDirty = true;
+    }
     await _realizeAll();
     if (graft.rootIds.isNotEmpty) {
       selection.selectOnly(graft.rootIds.first);
@@ -952,9 +955,11 @@ class EditorController extends ChangeNotifier {
           .where((c) => c.type == type)
           .firstOrNull;
       if (node == null || existing == null) continue;
-      final coerced = optionalPropertyMap({
-        'properties': raw,
-      }, 'properties', schema: componentSchemaFor(type));
+      final coerced = optionalPropertyMap(
+        {'properties': raw},
+        'properties',
+        schema: componentSchemaFor(type),
+      );
       final merged = ComponentSpec(
         type,
         properties: {...existing.properties, ...coerced},
@@ -993,13 +998,25 @@ class EditorController extends ChangeNotifier {
     'value': value,
   });
 
+  /// Authoring defaults seeded onto components the editor creates, where the
+  /// schema default is a trap. Lights default to `range = 0` (infinite reach),
+  /// which defeats light culling; an editor-created light starts bounded and
+  /// the author widens it deliberately.
+  static const Map<String, Map<String, Object?>> _creationDefaults = {
+    'pointLight': {'range': 10.0},
+    'spotLight': {'range': 10.0},
+    'rectAreaLight': {'range': 8.0},
+  };
+
   /// Adds component [type] to node [id], routed: a source-document node gets
   /// a plain component; a prefab member records it on the enclosing instance.
   Future<void> addComponentRouted(LocalId id, String type) {
+    final defaults = _creationDefaults[type];
     if (document.nodes.containsKey(id)) {
       return run('addComponent', {
         'nodeId': id.toToken(),
         'componentType': type,
+        if (defaults != null) 'properties': defaults,
       });
     }
     final origin = memberOrigin(id);
@@ -1008,6 +1025,7 @@ class EditorController extends ChangeNotifier {
       'nodeId': origin.instanceId.toToken(),
       'memberId': origin.prefabLocalId.toToken(),
       'componentType': type,
+      if (defaults != null) 'properties': defaults,
     });
   }
 
@@ -1407,8 +1425,17 @@ class EditorController extends ChangeNotifier {
     ChangeSlot.name,
   };
 
+  /// Whether any committed, undone, or redone transaction has touched the
+  /// payload pool since the last save. When set, a save must rewrite the
+  /// payload sidecar or the new bytes are lost on reopen (the lean `.fscene`
+  /// text carries only descriptors). Cleared by the save path.
+  bool payloadsDirty = false;
+
   Future<void> _reflect(Transaction transaction) async {
     if (transaction.isEmpty) return;
+    if (transaction.records.any((r) => r.slot == ChangeSlot.poolPayload)) {
+      payloadsDirty = true;
+    }
     // A stage-only edit just re-applies scene-wide settings; no re-realize.
     if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
       await realizeStage(
@@ -1809,8 +1836,7 @@ class EditorController extends ChangeNotifier {
       for (final change in [record.oldValue, record.newValue]) {
         if (change is! IdListChange) return false;
         for (final id in change.value) {
-          if (!document.nodes.containsKey(id) ||
-              !_liveById.containsKey(id)) {
+          if (!document.nodes.containsKey(id) || !_liveById.containsKey(id)) {
             return false;
           }
         }

@@ -75,6 +75,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
   final _fallbackGizmoPrefs = GizmoPreferences();
   final _viewEpoch = ValueNotifier<int>(0);
   final _fps = ValueNotifier<double>(0);
+  // Items that dropped punctual lights last frame (over the per-object cap);
+  // nonzero shows the lighting warning badge.
+  final _lightOverflow = ValueNotifier<int>(0);
   // Holds keyboard focus while the viewport is the active surface, so the
   // app-level shortcuts (undo, delete) fire after the viewport is clicked.
   final _focusNode = FocusNode(debugLabel: 'editorViewport');
@@ -139,6 +142,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             'max': values.last,
           });
         }
+
         return dev.ServiceExtensionResponse.result(
           jsonEncode({
             'all_tickDt': stats(log, 0),
@@ -148,11 +152,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             'freeTicks': free.length,
             'recent': [
               for (final e in log.skip(math.max(0, log.length - 40)))
-                [
-                  (e.$1 * 1000).round(),
-                  (e.$2 * 1000).round(),
-                  e.$3 ? 1 : 0,
-                ],
+                [(e.$1 * 1000).round(), (e.$2 * 1000).round(), e.$3 ? 1 : 0],
             ],
           }),
         );
@@ -199,6 +199,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _gizmoPrefs.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
+    _lightOverflow.dispose();
     _focusNode.dispose();
     _freeLookPointer.dispose();
     super.dispose();
@@ -232,6 +233,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
       final prev = _fps.value;
       _fps.value = prev == 0 ? inst : prev * 0.9 + inst * 0.1;
     }
+    final overflow = _ctrl.scene.punctualLightOverflowCount;
+    if (overflow != _lightOverflow.value) _lightOverflow.value = overflow;
     if (_freeLookActive && _freeLook.move(deltaSeconds)) {
       _syncOrbitToFreeLook();
       _bumpView();
@@ -1230,6 +1233,28 @@ class _ViewportPanelState extends State<ViewportPanel> {
                         ),
                       ),
                     ],
+                    ValueListenableBuilder<int>(
+                      valueListenable: _lightOverflow,
+                      builder: (context, overflow, _) => overflow == 0
+                          ? const SizedBox.shrink()
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Tooltip(
+                                message:
+                                    'These objects are reached by more '
+                                    'punctual lights than the per-object '
+                                    'budget shades; the excess is dropped. '
+                                    'Give lights a range, or split large '
+                                    'meshes.',
+                                child: _InfoBadge(
+                                  text: overflow == 1
+                                      ? '1 object drops lights'
+                                      : '$overflow objects drop lights',
+                                  color: const Color(0xCC8A6D1F),
+                                ),
+                              ),
+                            ),
+                    ),
                   ],
                 ),
               ),
@@ -1286,14 +1311,17 @@ class _GizmoModeBar extends StatelessWidget {
 }
 
 class _InfoBadge extends StatelessWidget {
-  const _InfoBadge({required this.text});
+  const _InfoBadge({required this.text, this.color});
   final String text;
+
+  /// Background override (a warning tint); null is the neutral scrim.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
+        color: color ?? Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Padding(
@@ -1591,7 +1619,6 @@ class _ViewportSettingsButton extends StatelessWidget {
     );
   }
 }
-
 
 /// Per-node start state captured when a transform drag begins.
 class _TransformTarget {
