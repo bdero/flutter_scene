@@ -587,7 +587,7 @@ base class SceneEncoder {
   /// emits them. A translucent instanced item is queued as one draw per
   /// instance so each can be depth-sorted independently.
   void submit(RenderItem item) {
-    if (!item.visible || !item.primitiveVisible) return;
+    if (!item.drawsColor) return;
     if ((item.layers & _layerMask) == 0) return;
     if (_cullInstances) {
       if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;

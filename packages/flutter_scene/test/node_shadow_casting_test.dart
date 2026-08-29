@@ -41,12 +41,83 @@ void main() {
     expect(renderScene.items.single.castsShadows, isTrue);
   });
 
+  test('the deprecated castsShadows flag maps onto the mode', () {
+    final node = Node();
+    expect(node.shadowCastingMode, ShadowCastingMode.on);
+    // ignore: deprecated_member_use_from_same_package
+    expect(node.castsShadows, isTrue);
+    // ignore: deprecated_member_use_from_same_package
+    node.castsShadows = false;
+    expect(node.shadowCastingMode, ShadowCastingMode.off);
+    node.shadowCastingMode = ShadowCastingMode.shadowsOnly;
+    // ignore: deprecated_member_use_from_same_package
+    expect(node.castsShadows, isTrue);
+  });
+
+  test('shadow casting modes split the color and shadow gates', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    Node meshNode(ShadowCastingMode mode) =>
+        Node(mesh: Mesh(_StubGeometry(), _StubMaterial()))
+          ..shadowCastingMode = mode;
+    final on = meshNode(ShadowCastingMode.on);
+    final off = meshNode(ShadowCastingMode.off);
+    final doubleSided = meshNode(ShadowCastingMode.doubleSided);
+    final shadowsOnly = meshNode(ShadowCastingMode.shadowsOnly);
+    root
+      ..add(on)
+      ..add(off)
+      ..add(doubleSided)
+      ..add(shadowsOnly);
+
+    root.scenePrePass(0);
+
+    RenderItem itemOf(Node node) => renderScene.items.firstWhere(
+      (item) => identical(item.sourceNode, node),
+    );
+    // Casting and drawing are independent: only `off` stops casting, and only
+    // `shadowsOnly` stops drawing.
+    expect(itemOf(on).castsShadows, isTrue);
+    expect(itemOf(on).drawsColor, isTrue);
+    expect(itemOf(off).castsShadows, isFalse);
+    expect(itemOf(off).drawsColor, isTrue);
+    expect(itemOf(doubleSided).castsShadows, isTrue);
+    expect(itemOf(doubleSided).shadowDoubleSided, isTrue);
+    expect(itemOf(doubleSided).drawsColor, isTrue);
+    expect(itemOf(shadowsOnly).castsShadows, isTrue);
+    expect(itemOf(shadowsOnly).drawsColor, isFalse);
+    // A hidden node draws nothing whatever its mode says.
+    shadowsOnly.visible = false;
+    on.visible = false;
+    root.scenePrePass(0);
+    expect(itemOf(on).drawsColor, isFalse);
+    expect(itemOf(shadowsOnly).castsShadows, isTrue);
+  });
+
+  test('a primitive opting out collapses the node mode to off', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final mesh = Mesh(_StubGeometry(), _StubMaterial());
+    mesh.primitives.single.castsShadow = false;
+    root.add(
+      Node(mesh: mesh)..shadowCastingMode = ShadowCastingMode.shadowsOnly,
+    );
+
+    root.scenePrePass(0);
+
+    final item = renderScene.items.single;
+    expect(item.shadowCastingMode, ShadowCastingMode.off);
+    // Collapsing to off restores the color draw the shadows-only mode had
+    // suppressed, so an excluded primitive never becomes invisible.
+    expect(item.drawsColor, isTrue);
+  });
+
   test('castsShadows reaches mesh and instanced render items', () {
     final renderScene = RenderScene();
     final root = Node()..debugMountInto(renderScene);
     final meshNode = Node(mesh: Mesh(_StubGeometry(), _StubMaterial()))
-      ..castsShadows = false;
-    final instancedNode = Node()..castsShadows = false;
+      ..shadowCastingMode = ShadowCastingMode.off;
+    final instancedNode = Node()..shadowCastingMode = ShadowCastingMode.off;
     instancedNode.addComponent(
       InstancedMeshComponent(
         InstancedMesh(geometry: _StubGeometry(), material: _StubMaterial())
@@ -94,7 +165,7 @@ void main() {
     root.scenePrePass(0);
 
     caster
-      ..castsShadows = false
+      ..shadowCastingMode = ShadowCastingMode.off
       ..frustumCulled = false
       ..layers = 4
       ..highlightColor = Vector4(1, 0, 1, 1);

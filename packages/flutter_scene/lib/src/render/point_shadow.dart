@@ -24,12 +24,20 @@ const int kPointShadowTilesPerLight = 2;
 /// face mode, taken from the first caster; every other shadow parameter is
 /// per-light (each rides its own params-texture row).
 class PointShadowFrame {
-  PointShadowFrame({required this.casters, required this.casterFaces});
+  PointShadowFrame({
+    required this.casters,
+    required this.casterFaces,
+    required this.casterChannelMasks,
+  });
 
   /// The shadow-casting point components, index = slot.
   final List<PointLightComponent> casters;
 
   final ShadowCasterFaces casterFaces;
+
+  /// Each caster's shadow-caster channel mask (parallel to [casters]); a node
+  /// renders into that light's faces only when its light channels intersect.
+  final List<int> casterChannelMasks;
 
   /// World -> clip matrix for face [face] of the caster in [slot].
   Matrix4 faceMatrix(int slot, int face) => casters[slot].light
@@ -53,5 +61,8 @@ PointShadowFrame? collectPointShadows(List<PointLightComponent> points) {
   return PointShadowFrame(
     casters: casters,
     casterFaces: casters.first.light.shadowCasterFaces,
+    casterChannelMasks: [
+      for (final caster in casters) caster.light.shadowCasterChannelMask,
+    ],
   );
 }

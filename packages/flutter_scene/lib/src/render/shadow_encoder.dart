@@ -186,7 +186,12 @@ class ShadowEncoder {
     // second-depth trick has no meaning for cutout sheets.
     final masked = item.material.depthAlphaMasked;
     final fragmentShader = masked ? _maskedDepthShader : _depthShader;
-    final cullMode = masked ? item.material.renderCullMode : _casterCullMode;
+    // A double-sided caster records every face regardless of the light's
+    // caster-face mode or the material's culling, which is what closes the
+    // light leak through single-sided geometry.
+    final cullMode = item.shadowDoubleSided
+        ? gpu.CullMode.none
+        : (masked ? item.material.renderCullMode : _casterCullMode);
     if (cullMode != _currentCullMode) {
       _renderPass.setCullMode(cullMode);
       _currentCullMode = cullMode;

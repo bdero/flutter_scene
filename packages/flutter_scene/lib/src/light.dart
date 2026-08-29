@@ -35,6 +35,34 @@ enum ShadowCasterFaces {
   both,
 }
 
+/// How a node's meshes participate in shadow casting, set through
+/// `Node.shadowCastingMode`.
+///
+/// Independent of whether the meshes are visible in the color image, except
+/// for [shadowsOnly], which is defined as the combination of the two.
+/// {@category Lighting and environment}
+enum ShadowCastingMode {
+  /// The meshes never render into any shadow map. They still draw normally,
+  /// so they are lit but throw no shadow. Use for geometry whose shadow is
+  /// noise (foliage cards, decals, effects) or already baked into the scene.
+  off,
+
+  /// The meshes cast shadows from the faces the light sees, respecting each
+  /// material's own culling. The default.
+  on,
+
+  /// The meshes cast from every face, ignoring material culling. Fixes light
+  /// leaking through single-sided geometry (a wall or ground plane modelled
+  /// as one-sided), at the cost of rendering both faces into the map.
+  doubleSided,
+
+  /// The meshes render into shadow maps but never into the color image, so
+  /// they throw a shadow while staying invisible. Use for an off-screen or
+  /// stand-in occluder: a cheap proxy casting in place of an expensive mesh,
+  /// or geometry outside the frame that must still darken what is in it.
+  shadowsOnly,
+}
+
 /// The sampling pattern used for directional shadow filtering.
 /// {@category Lighting and environment}
 enum DirectionalShadowFilter {
@@ -540,6 +568,7 @@ class PointLight {
     this.shadowSoftness = 1.0,
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
+    this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// Linear RGB color of the light.
@@ -600,10 +629,18 @@ class PointLight {
   /// either side never intersects. Channels do not affect image-based
   /// (environment) lighting, which every node receives.
   ///
-  /// Gates the lighting only; every caster still renders into this light's
-  /// shadow faces.
+  /// Gates the lighting only; [shadowCasterChannelMask] selects what renders
+  /// into this light's shadow faces.
   /// {@category Lighting and environment}
   int channelMask;
+
+  /// The light channels whose nodes render into this light's shadow faces, an
+  /// 8-bit mask (default `0xFF`, every channel). A node casts only when
+  /// `shadowCasterChannelMask & node.lightChannelMask` is nonzero.
+  ///
+  /// Deliberately independent of [channelMask], the same way a spot's is.
+  /// {@category Lighting and environment}
+  int shadowCasterChannelMask;
 
   /// The far plane of the shadow faces: the light's [range], or a default
   /// reach when the range is infinite (mirrors [SpotLight]).
@@ -749,6 +786,7 @@ class SpotLight {
     this.shadowSoftness = 1.0,
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
+    this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
@@ -812,20 +850,26 @@ class SpotLight {
   /// the general default.
   ShadowCasterFaces shadowCasterFaces;
 
-  // TODO(light-channels-spot-casters): add a spot caster mask alongside
-  // DirectionalLight.shadowCasterChannelMask, so a spot's shadow map can drop
-  // casters the way a cascade can.
   /// The light channels this spot illuminates, an 8-bit mask (default `0xFF`,
   /// every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
   /// either side never intersects. Channels do not affect image-based
   /// (environment) lighting, which every node receives.
   ///
-  /// Gates the lighting only. Every caster still renders into this spot's
-  /// shadow map; only [DirectionalLight.shadowCasterChannelMask] filters
-  /// casters.
+  /// Gates the lighting only; [shadowCasterChannelMask] selects what renders
+  /// into this spot's shadow map.
   /// {@category Lighting and environment}
   int channelMask;
+
+  /// The light channels whose nodes render into this spot's shadow map, an
+  /// 8-bit mask (default `0xFF`, every channel). A node casts only when
+  /// `shadowCasterChannelMask & node.lightChannelMask` is nonzero.
+  ///
+  /// Deliberately independent of [channelMask]: a node excluded from the
+  /// lighting still casts unless this mask drops it too, so hiding geometry
+  /// from a spot takes clearing it here as well.
+  /// {@category Lighting and environment}
+  int shadowCasterChannelMask;
 
   /// The world -> clip matrix that renders and samples this spot's perspective
   /// shadow map, for a light at [worldPosition] aimed along [worldDirection]

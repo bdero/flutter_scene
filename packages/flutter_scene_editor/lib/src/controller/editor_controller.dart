@@ -845,6 +845,16 @@ class EditorController extends ChangeNotifier {
     return run('setNodeVisible', {'nodeId': id.toToken(), 'visible': visible});
   }
 
+  /// Sets how node [id]'s meshes cast shadows (an override when [id] is
+  /// prefab content).
+  Future<void> setNodeShadowCastingRouted(LocalId id, String mode) {
+    if (!isEditableNode(id)) return Future.value();
+    if (isPrefabMember(id)) {
+      return _override(memberOrigin(id)!, 'shadowCasting', mode);
+    }
+    return run('setNodeShadowCasting', {'nodeId': id.toToken(), 'mode': mode});
+  }
+
   /// Sets node [id]'s transform (overrides per supplied component when [id] is
   /// prefab content).
   Future<void> setNodeTransformRouted(
@@ -1427,6 +1437,7 @@ class EditorController extends ChangeNotifier {
     ChangeSlot.transform,
     ChangeSlot.visible,
     ChangeSlot.layers,
+    ChangeSlot.shadowCastingMode,
     ChangeSlot.name,
   };
 
@@ -2032,6 +2043,11 @@ class EditorController extends ChangeNotifier {
       case PrefabOverrideAspect.layers:
         live.layers = spec.layers;
         return true;
+      case PrefabOverrideAspect.shadowCasting:
+        live.shadowCastingMode = shadowCastingModeFromName(
+          spec.shadowCastingMode,
+        );
+        return true;
       case PrefabOverrideAspect.transform:
         live.localTransform = spec.transform.toMatrix4();
         return true;
@@ -2243,6 +2259,11 @@ class EditorController extends ChangeNotifier {
         case ChangeSlot.layers:
           live?.layers = docNode.layers;
           composedNode?.layers = docNode.layers;
+        case ChangeSlot.shadowCastingMode:
+          live?.shadowCastingMode = shadowCastingModeFromName(
+            docNode.shadowCastingMode,
+          );
+          composedNode?.shadowCastingMode = docNode.shadowCastingMode;
         case ChangeSlot.name:
           composedNode?.name = docNode.name;
         default:

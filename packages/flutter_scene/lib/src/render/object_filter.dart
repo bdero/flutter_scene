@@ -127,7 +127,7 @@ class _ObjectMaskEncoder {
   gpu.RenderPipeline? _boundPipeline;
 
   void submit(RenderItem item) {
-    if (!item.visible) return;
+    if (!item.drawsColor) return;
     if (!_filter._matches(item, _layerMask)) return;
     _renderPass.clearBindings();
     final geometry = item.geometry;
