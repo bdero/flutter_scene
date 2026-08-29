@@ -14,6 +14,7 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
+import 'package:flutter_scene/src/kit/environment/gerstner_field.dart';
 import 'package:flutter_scene/src/kit/environment/water_surface_component.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/mesh.dart';
@@ -153,16 +154,8 @@ class WaterComponent extends Component {
     final crest = _crestHeight;
     final centre = worldTransform?.getTranslation() ?? vm.Vector3.zero();
     return NavVolume(
-      min: vm.Vector3(
-        centre.x - half,
-        centre.y - depth,
-        centre.z - half,
-      ),
-      max: vm.Vector3(
-        centre.x + half,
-        centre.y + crest,
-        centre.z + half,
-      ),
+      min: vm.Vector3(centre.x - half, centre.y - depth, centre.z - half),
+      max: vm.Vector3(centre.x + half, centre.y + crest, centre.z + half),
     );
   }
 
@@ -243,7 +236,13 @@ class WaterComponent extends Component {
 
   /// The wave field, shared with [surfaceHeightAt] so gameplay and the mesh
   /// never disagree about where the surface is.
-  late final WaterSurfaceComponent _field = WaterSurfaceComponent(waves: waves);
+  late final WaterSurfaceComponent _analytic = WaterSurfaceComponent(
+    waves: waves,
+  );
+
+  /// The grid displacer. Holds the phase tables that make a frame cheap, so
+  /// it lives as long as the component rather than the call.
+  final GerstnerField _field = GerstnerField();
 
   MeshGeometry? _geometry;
   MeshComponent? _mesh;
@@ -266,7 +265,7 @@ class WaterComponent extends Component {
   /// Exact against the same wave field the mesh is displaced with, so a boat
   /// floating on this sits on the water rather than near it.
   double surfaceHeightAt(double x, double z) =>
-      _field.evaluateAt(vm.Vector2(x, z), _time).displacement.y;
+      _analytic.evaluateAt(vm.Vector2(x, z), _time).displacement.y;
 
   /// Whether ([x], [z]) is inside this surface's footprint.
   bool covers(double x, double z) {
@@ -290,6 +289,7 @@ class WaterComponent extends Component {
     _positions = null;
     _normals = null;
     _builtStyle = null;
+    _field.invalidate();
   }
 
   @override
@@ -326,6 +326,7 @@ class WaterComponent extends Component {
     _restPositions = Float32List.fromList(positions);
     _positions = positions;
     _normals = normals;
+    _field.invalidate();
 
     final geometry = MeshGeometry.fromArrays(
       positions: positions,
@@ -444,10 +445,8 @@ class WaterComponent extends Component {
 
   /// Displaces the rest grid by the wave field and re-uploads it.
   ///
-  /// Scalar over the typed arrays, with the wave constants hoisted out of the
-  /// vertex loop: this runs on every vertex on every frame, and the trig is
-  /// already the expensive part without recomputing `2*pi/wavelength` a
-  /// hundred thousand times.
+  /// The arithmetic lives in [GerstnerField], which is where the per-frame
+  /// cost is and which needs no GPU; this is the part that owns the mesh.
   void _displace() {
     final rest = _restPositions;
     final positions = _positions;
@@ -456,97 +455,19 @@ class WaterComponent extends Component {
     if (rest == null || positions == null || normals == null) return;
     if (geometry == null) return;
 
-    final count = rest.length ~/ 3;
-    final active = <GerstnerWave>[
-      for (final wave in waves)
-        if (wave.amplitude > 0 && wave.wavelength > 0) wave,
-    ];
-    if (active.isEmpty) {
-      positions.setAll(0, rest);
-      for (var i = 0; i < count; i++) {
-        normals[i * 3] = 0;
-        normals[i * 3 + 1] = 1;
-        normals[i * 3 + 2] = 0;
-      }
-    } else {
-      final waveCount = active.length;
-      final k = Float64List(waveCount);
-      final dx = Float64List(waveCount);
-      final dz = Float64List(waveCount);
-      final amplitude = Float64List(waveCount);
-      final q = Float64List(waveCount);
-      final phaseOffset = Float64List(waveCount);
-      for (var w = 0; w < waveCount; w++) {
-        final wave = active[w];
-        final wavenumber = 2 * math.pi / wave.wavelength;
-        k[w] = wavenumber;
-        dx[w] = wave.direction.x;
-        dz[w] = wave.direction.y;
-        amplitude[w] = wave.amplitude;
-        // Matches WaterSurfaceComponent's normalization, so the mesh and
-        // surfaceHeightAt describe the same surface.
-        q[w] = wave.steepness / (wavenumber * wave.amplitude * waves.length);
-        phaseOffset[w] =
-            -(wave.speed * math.sqrt(9.81 / wavenumber) * wavenumber) * _time;
-      }
-
-      for (var i = 0; i < count; i++) {
-        final x = rest[i * 3];
-        final z = rest[i * 3 + 2];
-        var px = x, py = 0.0, pz = z;
-        // The tangent and binormal accumulate the derivative of the
-        // displacement, and their cross product is the exact surface normal:
-        // finite differences over neighbours would be a second pass and would
-        // still be wrong at the seams of an unwelded grid.
-        var tx = 1.0, ty = 0.0, tz = 0.0;
-        var bx = 0.0, by = 0.0, bz = 1.0;
-
-        for (var w = 0; w < waveCount; w++) {
-          final phase = k[w] * (dx[w] * x + dz[w] * z) + phaseOffset[w];
-          final cosP = math.cos(phase);
-          final sinP = math.sin(phase);
-          final a = amplitude[w];
-          final qa = q[w] * a;
-          final ka = k[w] * a;
-
-          px += qa * dx[w] * cosP;
-          py += a * sinP;
-          pz += qa * dz[w] * cosP;
-
-          tx += -q[w] * dx[w] * dx[w] * ka * sinP;
-          ty += dx[w] * ka * cosP;
-          tz += -q[w] * dx[w] * dz[w] * ka * sinP;
-
-          bx += -q[w] * dx[w] * dz[w] * ka * sinP;
-          by += dz[w] * ka * cosP;
-          bz += -q[w] * dz[w] * dz[w] * ka * sinP;
-        }
-
-        positions[i * 3] = px;
-        positions[i * 3 + 1] = py;
-        positions[i * 3 + 2] = pz;
-
-        var nx = by * tz - bz * ty;
-        var ny = bz * tx - bx * tz;
-        var nz = bx * ty - by * tx;
-        final length = math.sqrt(nx * nx + ny * ny + nz * nz);
-        if (length > 1e-9) {
-          final inverse = 1 / length;
-          nx *= inverse;
-          ny *= inverse;
-          nz *= inverse;
-        } else {
-          nx = 0;
-          ny = 1;
-          nz = 0;
-        }
-        normals[i * 3] = nx;
-        normals[i * 3 + 1] = ny;
-        normals[i * 3 + 2] = nz;
-      }
-
-      if (style == WaterStyle.lowPoly) _flattenFaceNormals(positions, normals);
-    }
+    _field.setRest(rest);
+    // Normalized by the whole spectrum rather than by the waves that happen
+    // to be contributing, so silencing one wave does not change the shape of
+    // the others -- and so this agrees with surfaceHeightAt, which normalizes
+    // the same way.
+    _field.displace(
+      waves,
+      _time,
+      positions,
+      normals,
+      normalization: waves.length,
+    );
+    if (style == WaterStyle.lowPoly) _flattenFaceNormals(positions, normals);
 
     geometry.updatePositions(positions);
     geometry.updateNormals(normals);
