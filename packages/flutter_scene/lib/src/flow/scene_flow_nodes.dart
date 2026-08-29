@@ -266,6 +266,86 @@ final FlowNodeType callAction = FlowNodeType(
   ),
 );
 
+final FlowNodeType setWeather = FlowNodeType(
+  id: 'scene.setWeather',
+  label: 'Set Weather',
+  category: 'Scene',
+  doc:
+      "Puts the scene's sky into a named weather state. The scene needs a "
+      'weather sky for there to be clouds to change.',
+  pins: const [
+    _execIn,
+    FlowPin(
+      id: 'weather',
+      label: 'Weather',
+      type: FlowType.string,
+      defaultValue: 'clear',
+      doc:
+          'One of clear, fair, overcast, fog, rain, storm, snow. The same '
+          'names the editor offers.',
+    ),
+    _execOut,
+    FlowPin(
+      id: 'changed',
+      label: 'Changed',
+      type: FlowType.boolean,
+      isInput: false,
+      doc: 'False when the name is unknown or the sky has no clouds.',
+    ),
+  ],
+  evaluate: (context, node, inputs) => (
+    outputs: {
+      'changed': context.host.invoke('setWeather', {
+        'weather': inputs['weather'],
+      }),
+    },
+    next: const <String>['then'],
+  ),
+);
+
+final FlowNodeType setTimeOfDay = FlowNodeType(
+  id: 'scene.setTimeOfDay',
+  label: 'Set Time of Day',
+  category: 'Scene',
+  doc: "Points the sky's sun at an hour on the clock.",
+  pins: const [
+    _execIn,
+    FlowPin(
+      id: 'hour',
+      label: 'Hour',
+      type: FlowType.number,
+      defaultValue: 12.0,
+      doc: '0 to 24. 12 is noon; 6 and 18 are the two horizons.',
+    ),
+    FlowPin(
+      id: 'tilt',
+      label: 'Arc tilt',
+      type: FlowType.number,
+      defaultValue: 0.35,
+      doc:
+          "How far off vertical the sun's arc runs, which is what makes a "
+          'latitude and a season.',
+    ),
+    _execOut,
+    FlowPin(
+      id: 'changed',
+      label: 'Changed',
+      type: FlowType.boolean,
+      isInput: false,
+      doc: 'False when the scene\'s sky has no sun.',
+    ),
+  ],
+  evaluate: (context, node, inputs) => (
+    outputs: {
+      'changed': context.host.invoke('setTimeOfDay', {
+        'hour': inputs['hour'],
+        'tilt': inputs['tilt'],
+      }),
+    },
+    next: const <String>['then'],
+  ),
+);
+
 /// The scene-facing node types, in palette order.
 /// {@category Flow}
 final List<FlowNodeType> sceneFlowNodes = [
@@ -279,6 +359,8 @@ final List<FlowNodeType> sceneFlowNodes = [
   playAnimation,
   stopAnimation,
   destroyNode,
+  setWeather,
+  setTimeOfDay,
   callAction,
 ];
 

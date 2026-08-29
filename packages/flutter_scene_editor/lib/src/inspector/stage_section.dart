@@ -15,6 +15,7 @@ import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../shell/editor_theme.dart';
+import 'weather_controls.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_image_picker.dart';
 import '../assets/environment_thumbnail.dart';
@@ -1203,6 +1204,14 @@ class SkySection extends StatelessWidget {
   final LocalId? volumeNodeId;
   final bool showHeading;
 
+  /// Whether the weather controls lead the section.
+  ///
+  /// The stage's sky only. A volume's sky is a local override of the look in
+  /// one region; weather is scene-wide -- it adds rain to the whole level and
+  /// a lightning driver to it -- so offering it per volume would promise
+  /// something a volume cannot do.
+  bool get _showWeather => volumeNodeId == null;
+
   @override
   Widget build(BuildContext context) {
     final env = environment;
@@ -1355,6 +1364,13 @@ class SkySection extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 4),
             child: Text('Background', style: TextStyle(fontSize: 13)),
           ),
+        // Weather leads: picking one is the fastest way to a sky that looks
+        // like somewhere, and it sets the mode below on its way past.
+        if (_showWeather) ...[
+          WeatherControls(controller: controller),
+          const SizedBox(height: 14),
+          const EditorSectionHeader(label: 'Sky'),
+        ],
         LabeledControlRow(
           label: 'Mode',
           control: DropdownButton<String>(
