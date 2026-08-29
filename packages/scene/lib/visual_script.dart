@@ -22,9 +22,16 @@
 /// `package:scene/scene.dart` does not carry it.
 library;
 
+export 'src/visual_script/blueprint.dart'
+    show
+        Blueprint,
+        BlueprintRunner,
+        defaultConstructionScriptName,
+        defaultEventGraphName;
 export 'src/visual_script/visual_script_graph.dart'
     show
         VisualScriptGraph,
+        VisualScriptGraphKind,
         VisualScriptLink,
         VisualScriptNodeSpec,
         VisualScriptPin,
@@ -32,6 +39,10 @@ export 'src/visual_script/visual_script_graph.dart'
         VisualScriptVariable;
 export 'src/visual_script/visual_script_json.dart'
     show
+        decodeBlueprint,
+        encodeBlueprint,
+        readBlueprint,
+        writeBlueprint,
         decodeVisualScript,
         encodeVisualScript,
         visualScriptVersion,

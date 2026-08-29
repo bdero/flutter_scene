@@ -85,9 +85,18 @@ class NullVisualScriptHost implements VisualScriptHost {
 /// The state one run of a graph carries.
 /// {@category Visual scripting}
 class VisualScriptContext {
-  VisualScriptContext({required this.graph, required this.host, this.trace}) {
+  VisualScriptContext({
+    required this.graph,
+    required this.host,
+    this.trace,
+    Map<String, Object?>? variables,
+  }) : variables = variables ?? {} {
+    // putIfAbsent rather than assignment: a blueprint's graphs share one map,
+    // already seeded from the blueprint's own variables, and a second graph
+    // declaring the same name must not reset what the first one has been
+    // doing with it.
     for (final variable in graph.variables) {
-      variables[variable.name] = variable.initial;
+      this.variables.putIfAbsent(variable.name, () => variable.initial);
     }
   }
 
@@ -100,8 +109,12 @@ class VisualScriptContext {
   /// node rather than the bookkeeping.
   final VisualScriptTrace? trace;
 
-  /// The graph's variables, seeded from their initial values.
-  final Map<String, Object?> variables = {};
+  /// The variables in scope, seeded from their initial values.
+  ///
+  /// Shared across a blueprint's graphs when one is passed in, because a
+  /// variable belongs to the blueprint rather than to the graph that happens
+  /// to read it.
+  final Map<String, Object?> variables;
 
   /// Per-node scratch, for the node types that remember something between
   /// ticks (a delay's remaining time, a Do Once's latch).

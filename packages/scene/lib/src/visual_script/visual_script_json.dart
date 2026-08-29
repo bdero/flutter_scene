@@ -8,6 +8,7 @@ import 'dart:convert';
 
 import 'package:vector_math/vector_math.dart';
 
+import 'blueprint.dart';
 import 'visual_script_graph.dart';
 
 /// The format version written, so a reader can tell an old file from a
@@ -19,6 +20,8 @@ const int visualScriptVersion = 1;
 Map<String, Object?> encodeVisualScript(VisualScriptGraph graph) => {
   'version': visualScriptVersion,
   'nextNodeId': graph.nextNodeId,
+  if (graph.name.isNotEmpty) 'name': graph.name,
+  if (graph.kind != VisualScriptGraphKind.eventGraph) 'kind': graph.kind.name,
   'nodes': [
     for (final node in graph.nodes)
       {
@@ -66,6 +69,14 @@ VisualScriptGraph decodeVisualScript(Map<String, Object?> json) {
     nextNodeId: json['nextNodeId'] is num
         ? (json['nextNodeId']! as num).toInt()
         : 1,
+    name: json['name'] is String ? json['name']! as String : '',
+    // A graph written before kinds existed is an event graph, which is what
+    // every graph was.
+    kind:
+        VisualScriptGraphKind.values
+            .where((kind) => kind.name == json['kind'])
+            .firstOrNull ??
+        VisualScriptGraphKind.eventGraph,
   );
   for (final raw in (json['nodes'] as List? ?? const [])) {
     if (raw is! Map) continue;
@@ -164,3 +175,75 @@ Object? _decodeValue(Object? value) {
 }
 
 double _double(Object? value) => value is num ? value.toDouble() : 0;
+
+/// Encodes [blueprint] as a JSON object.
+///
+/// The graphs carry their own kinds and names; the variables sit on the
+/// blueprint, because that is where they belong once there is more than one
+/// graph to share them.
+/// {@category Visual scripting}
+Map<String, Object?> encodeBlueprint(Blueprint blueprint) => {
+  'version': visualScriptVersion,
+  if (blueprint.name.isNotEmpty) 'name': blueprint.name,
+  if (blueprint.variables.isNotEmpty)
+    'variables': [
+      for (final variable in blueprint.variables)
+        {
+          'name': variable.name,
+          'type': variable.type.name,
+          if (variable.initial != null)
+            'initial': _encodeValue(variable.initial),
+        },
+    ],
+  'graphs': [for (final graph in blueprint.graphs) encodeVisualScript(graph)],
+};
+
+/// Decodes a blueprint written by [encodeBlueprint].
+///
+/// A document holding a bare graph rather than a blueprint reads as a
+/// blueprint with that one event graph in it, which is what it was.
+/// {@category Visual scripting}
+Blueprint decodeBlueprint(Map<String, Object?> json) {
+  final raw = json['graphs'];
+  if (raw is! List) return Blueprint.of(decodeVisualScript(json));
+  final blueprint = Blueprint(
+    name: json['name'] is String ? json['name']! as String : '',
+  );
+  for (final entry in raw) {
+    if (entry is! Map) continue;
+    blueprint.graphs.add(decodeVisualScript(entry.cast<String, Object?>()));
+  }
+  for (final entry in (json['variables'] as List? ?? const [])) {
+    if (entry is! Map) continue;
+    final map = entry.cast<String, Object?>();
+    final name = map['name'];
+    if (name is! String) continue;
+    blueprint.variables.add(
+      VisualScriptVariable(
+        name: name,
+        type:
+            VisualScriptType.values
+                .where((type) => type.name == map['type'])
+                .firstOrNull ??
+            VisualScriptType.any,
+        initial: _decodeValue(map['initial']),
+      ),
+    );
+  }
+  return blueprint;
+}
+
+/// [blueprint] as its canonical JSON text.
+/// {@category Visual scripting}
+String writeBlueprint(Blueprint blueprint) =>
+    jsonEncode(encodeBlueprint(blueprint));
+
+/// Reads a blueprint from [source].
+/// {@category Visual scripting}
+Blueprint readBlueprint(String source) {
+  final decoded = jsonDecode(source);
+  if (decoded is! Map) {
+    throw const FormatException('A blueprint is a JSON object');
+  }
+  return decodeBlueprint(decoded.cast<String, Object?>());
+}

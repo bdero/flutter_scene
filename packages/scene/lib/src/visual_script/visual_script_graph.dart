@@ -158,6 +158,39 @@ class VisualScriptVariable {
   final Object? initial;
 }
 
+/// What a graph in a blueprint is for.
+///
+/// The distinction is Unreal's, and it is about *when* a graph runs rather
+/// than what is in it. All four hold the same kind of nodes.
+/// {@category Visual scripting}
+enum VisualScriptGraphKind {
+  /// Runtime events: begin play, tick, a signal raised from elsewhere. The
+  /// graph most scripts are, and the default.
+  eventGraph('Event Graph'),
+
+  /// Runs once while the object is being built, before it is live.
+  ///
+  /// The place to say what an instance *is* -- where its parts sit, how many
+  /// of them there are -- as opposed to what it does once it is running.
+  constructionScript('Construction Script'),
+
+  /// A named routine with one entry, called from elsewhere in the blueprint
+  /// and returning to its caller.
+  function('Function'),
+
+  /// A named routine inlined at each call site.
+  ///
+  /// The difference from a function that matters: a macro may have several
+  /// exec outputs, because it is pasted in rather than called and returned
+  /// from. That is what lets one wrap a branch.
+  macro('Macro');
+
+  const VisualScriptGraphKind(this.label);
+
+  /// What the editor calls this kind.
+  final String label;
+}
+
 /// A visual script: nodes, the wires between them, and its variables.
 /// {@category Visual scripting}
 class VisualScriptGraph {
@@ -166,9 +199,20 @@ class VisualScriptGraph {
     List<VisualScriptLink>? links,
     List<VisualScriptVariable>? variables,
     this.nextNodeId = 1,
+    this.name = '',
+    this.kind = VisualScriptGraphKind.eventGraph,
   }) : nodes = nodes ?? [],
        links = links ?? [],
        variables = variables ?? [];
+
+  /// What this graph is called inside its blueprint.
+  ///
+  /// Empty for a graph that stands alone. A function or a macro is called by
+  /// this name, so within one blueprint it has to be unique.
+  String name;
+
+  /// When this graph runs.
+  VisualScriptGraphKind kind;
 
   final List<VisualScriptNodeSpec> nodes;
   final List<VisualScriptLink> links;
@@ -247,6 +291,8 @@ class VisualScriptGraph {
 
   /// A deep copy, so an editor can edit one and keep the other to revert to.
   VisualScriptGraph copy() => VisualScriptGraph(
+    name: name,
+    kind: kind,
     nodes: [
       for (final node in nodes)
         VisualScriptNodeSpec(
