@@ -1594,6 +1594,16 @@ class _GizmoMenuButton extends StatelessWidget {
               checked: preferences.enabled,
               action: () => preferences.enabled = !preferences.enabled,
             ),
+            const PopupMenuDivider(height: 8),
+            // The probe lattice is engine data rather than a component gizmo,
+            // so it sits outside the per-type list and past the master toggle.
+            _checkedItem(
+              label: 'Show GI probes',
+              checked: preferences.showGiProbes,
+              enabled: preferences.enabled,
+              action: () =>
+                  preferences.showGiProbes = !preferences.showGiProbes,
+            ),
             if (schemas.isNotEmpty) const PopupMenuDivider(height: 8),
             for (final schema in schemas)
               _checkedItem(

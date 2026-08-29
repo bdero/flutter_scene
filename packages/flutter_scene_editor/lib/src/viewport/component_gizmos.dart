@@ -23,6 +23,45 @@ import 'package:vector_math/vector_math.dart' as vm;
 import '../controller/editor_controller.dart';
 import 'transform_gizmo.dart' show projectToScreen;
 
+/// The probes of [grid] within [maxDistance] of [eye], at most [limit] of
+/// them, nearest first.
+///
+/// Bounding by distance (not by probe count) is what keeps a large field
+/// legible; [limit] is only a backstop so a huge or badly configured field
+/// degrades to a partial picture instead of stalling the paint. Nearest-first
+/// ordering means a truncated draw keeps the probes the viewer is looking at.
+@visibleForTesting
+List<vm.Vector3> probesWithinDistance(
+  IrradianceProbeGrid grid,
+  vm.Vector3 eye,
+  double maxDistance, {
+  required int limit,
+}) {
+  final countX = grid.counts.x.round();
+  final countY = grid.counts.y.round();
+  final countZ = grid.counts.z.round();
+  if (countX <= 0 || countY <= 0 || countZ <= 0 || maxDistance <= 0) {
+    return const [];
+  }
+  final maxDistanceSq = maxDistance * maxDistance;
+  final found = <(double, vm.Vector3)>[];
+  for (var z = 0; z < countZ; z++) {
+    for (var y = 0; y < countY; y++) {
+      for (var x = 0; x < countX; x++) {
+        final position = grid.probePosition(x, y, z);
+        final distanceSq = position.distanceToSquared(eye);
+        if (distanceSq > maxDistanceSq) continue;
+        found.add((distanceSq, position));
+      }
+    }
+  }
+  if (found.length > limit) {
+    found.sort((a, b) => a.$1.compareTo(b.$1));
+    found.length = limit;
+  }
+  return [for (final entry in found) entry.$2];
+}
+
 /// The selection accent, matching the engine-side outline highlight color.
 const Color _accentColor = Color(0xFFFF8C1A);
 
@@ -32,6 +71,15 @@ const Color _baseColor = Color(0xCCB9C4CE);
 /// Warning tint for unbounded reach (a light with no range defeats light
 /// culling, so its representative sphere/cone draws loud instead of hiding).
 const Color _unboundedWarningColor = Color(0xFFE6B84D);
+
+/// Irradiance probe markers: a cool tint that reads as engine data rather
+/// than authored geometry, drawn small so a dense lattice stays legible.
+const Color _probeColor = Color(0xAA6FD3C7);
+const double _probeRadius = 2.0;
+const double _probeWidth = 1.0;
+
+/// Hard backstop on probes drawn per paint, independent of the draw distance.
+const int _maxProbeDraws = 4000;
 
 /// Screen size (pixels) one world unit of decorative gizmo geometry (arrows,
 /// literal line art) targets, before the primitive's own scalar applies.
@@ -57,13 +105,41 @@ class GizmoPreferences extends ChangeNotifier {
   /// Whether gizmos for [type] currently draw.
   bool isTypeVisible(String type) => _enabled && !_hiddenTypes.contains(type);
 
+  bool _showGiProbes = false;
+  double _giProbeDrawDistance = 30.0;
+
+  /// Whether the global-illumination probe lattice draws in the viewport.
+  /// Off by default: a field can hold thousands of probes, so this is a
+  /// deliberate authoring aid rather than ambient chrome.
+  bool get showGiProbes => _showGiProbes;
+  set showGiProbes(bool value) {
+    if (_showGiProbes == value) return;
+    _showGiProbes = value;
+    notifyListeners();
+  }
+
+  /// How far from the camera probes still draw, in world units. Bounding the
+  /// draw radius (rather than the probe count) is what keeps a large field
+  /// legible and cheap to paint.
+  double get giProbeDrawDistance => _giProbeDrawDistance;
+  set giProbeDrawDistance(double value) {
+    if (_giProbeDrawDistance == value) return;
+    _giProbeDrawDistance = value;
+    notifyListeners();
+  }
+
   void setTypeHidden(String type, bool hidden) {
     final changed = hidden ? _hiddenTypes.add(type) : _hiddenTypes.remove(type);
     if (changed) notifyListeners();
   }
 
   /// Seeds from persisted settings without notifying.
-  void load({required bool enabled, required Iterable<String> hiddenTypes}) {
+  void load({
+    required bool enabled,
+    required Iterable<String> hiddenTypes,
+    bool showGiProbes = false,
+  }) {
+    _showGiProbes = showGiProbes;
     _enabled = enabled;
     _hiddenTypes
       ..clear()
@@ -249,6 +325,7 @@ class ComponentGizmoPainter extends CustomPainter {
     // environment refs) into a throwaway document, discarded per paint.
     _scratch = SerializeContext(doc.SceneDocument());
     _visit(controller.scene.root);
+    if (preferences.showGiProbes) _paintIrradianceProbes();
     for (final entry in _strokes.entries) {
       canvas.drawPath(
         entry.value,
@@ -264,6 +341,38 @@ class ComponentGizmoPainter extends CustomPainter {
     }
     for (final (primitive, codec, center, color, selected) in _icons) {
       _paintIcon(primitive, codec, center, color, selected);
+    }
+  }
+
+  /// Draws the live irradiance probe lattice as small screen-space rings.
+  ///
+  /// Reads the grid the renderer actually resolved this frame
+  /// (`Scene.globalIlluminationProbeGrid`) rather than re-deriving it from the
+  /// settings, since the placement depends on the volume mode, the camera, and
+  /// the scene bounds. Probes past the draw distance are skipped, and the
+  /// whole pass gives up past [_maxProbeDraws] so a huge field degrades to a
+  /// partial picture instead of stalling the paint.
+  void _paintIrradianceProbes() {
+    final grid = controller.scene.globalIlluminationProbeGrid;
+    if (grid == null) return;
+    final probes = probesWithinDistance(
+      grid,
+      camera.position,
+      preferences.giProbeDrawDistance,
+      limit: _maxProbeDraws,
+    );
+    for (final position in probes) {
+      final screen = projectToScreen(position, camera, _size);
+      if (screen == null) continue;
+      if (screen.dx < 0 ||
+          screen.dy < 0 ||
+          screen.dx > _size.width ||
+          screen.dy > _size.height) {
+        continue;
+      }
+      (_strokes[(_probeColor.toARGB32(), _probeWidth)] ??= Path()).addOval(
+        Rect.fromCircle(center: screen, radius: _probeRadius),
+      );
     }
   }
 

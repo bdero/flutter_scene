@@ -152,6 +152,7 @@ class _EditorHomeState extends State<_EditorHome> {
     _gizmoPreferences.load(
       enabled: _settings.gizmosEnabled,
       hiddenTypes: _settings.hiddenGizmoTypes,
+      showGiProbes: _settings.giProbesVisible,
     );
     _gizmoPreferences.addListener(_persistGizmoPreferences);
     unawaited(
@@ -876,6 +877,7 @@ class _EditorHomeState extends State<_EditorHome> {
     _settings.hiddenGizmoTypes
       ..clear()
       ..addAll(_gizmoPreferences.hiddenTypes);
+    _settings.giProbesVisible = _gizmoPreferences.showGiProbes;
     _persistSettings();
   }
 
