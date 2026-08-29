@@ -36,6 +36,7 @@ export 'src/visual_script/scene_visual_script_nodes.dart'
         setAnimatorFlag,
         setAnimatorNumber,
         setPosition,
+        spawnNode,
         setScale,
         setTimeOfDay,
         setVisible,

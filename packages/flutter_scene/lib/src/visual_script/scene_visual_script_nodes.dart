@@ -494,6 +494,60 @@ final VisualScriptNodeType animatorState = VisualScriptNodeType(
   }),
 );
 
+final VisualScriptNodeType spawnNode = VisualScriptNodeType(
+  id: 'scene.spawn',
+  label: 'Spawn',
+  category: 'Scene',
+  doc:
+      'Puts a copy of a template already in the scene into it. A template '
+      'rather than an asset path because a node runs inside one tick and '
+      'loading a file does not, so the usual arrangement is a hidden template '
+      'parked off to one side.',
+  pins: const [
+    _execIn,
+    VisualScriptPin(
+      id: 'template',
+      label: 'Template',
+      type: VisualScriptType.string,
+      defaultValue: '',
+      doc: 'The name of the node to copy.',
+    ),
+    VisualScriptPin(
+      id: 'at',
+      label: 'At',
+      type: VisualScriptType.vector3,
+      doc: "Where the copy goes, in its parent's space.",
+    ),
+    VisualScriptPin(
+      id: 'parent',
+      label: 'Parent',
+      type: VisualScriptType.string,
+      defaultValue: '',
+      doc:
+          'What to put it under. Empty is the scene root, so a spawned thing '
+          'outlives whatever spawned it.',
+    ),
+    _execOut,
+    VisualScriptPin(
+      id: 'spawned',
+      label: 'Spawned',
+      type: VisualScriptType.string,
+      isInput: false,
+      doc: "The copy's name, or empty when there was no such template.",
+    ),
+  ],
+  evaluate: (context, node, inputs) => (
+    outputs: {
+      'spawned': context.host.invoke('spawn', {
+        'template': inputs['template'],
+        'at': inputs['at'],
+        'parent': inputs['parent'],
+      }),
+    },
+    next: const <String>['then'],
+  ),
+);
+
 /// The scene-facing node types, in palette order.
 /// {@category Visual scripting}
 final List<VisualScriptNodeType> sceneVisualScriptNodes = [
@@ -507,6 +561,7 @@ final List<VisualScriptNodeType> sceneVisualScriptNodes = [
   playAnimation,
   stopAnimation,
   destroyNode,
+  spawnNode,
   setWeather,
   setTimeOfDay,
   setAnimatorNumber,
