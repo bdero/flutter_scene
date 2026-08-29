@@ -91,6 +91,13 @@ final class InstanceDataBatchPool {
   /// Returns every live batch to the free list. The batches themselves are
   /// kept, so a steady-state frame allocates none.
   void reset() {
+    for (final batch in _live) {
+      // Dropped on the way to the free list, or a spare batch keeps its last
+      // group's instance data reachable until something reuses that slot,
+      // which may never happen. Unloading a large instanced mesh would leave
+      // its packed transforms alive in the pool.
+      batch.clearPayload();
+    }
     _spare.addAll(_live);
     _live.clear();
   }

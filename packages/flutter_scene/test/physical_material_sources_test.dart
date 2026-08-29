@@ -767,4 +767,63 @@ void main() {
       contains('return CotangentFrame(normal, view_vector, uv);'),
     );
   });
+
+  test('vertex bodies carry normals by the inverse-transpose', () {
+    final helper = File('shaders/normal_transform.glsl').readAsStringSync();
+    final unskinned = File(
+      'shaders/flutter_scene_unskinned_body.glsl',
+    ).readAsStringSync();
+    final skinned = File(
+      'shaders/flutter_scene_skinned_body.glsl',
+    ).readAsStringSync();
+
+    // mat3(model) is the inverse-transpose only for rotation, uniform scale,
+    // and reflection, so both bodies have to route the normal through the
+    // helper or a non-uniformly scaled node lights like the wrong shape.
+    for (final body in [unskinned, skinned]) {
+      expect(body, contains('#include <normal_transform.glsl>'));
+      expect(body, contains('WorldNormalMatrix('));
+      expect(
+        body.contains('world_normal = mat3(model_transform) * in_normal'),
+        isFalse,
+      );
+    }
+    // Positions and tangents still transform by the model matrix.
+    expect(unskinned, contains('mat3(model_transform) * tangent.xyz'));
+    expect(skinned, contains('mat3(combined_transform) * tangent.xyz'));
+
+    // Cofactors, not transpose(inverse(M)): the two differ by the determinant,
+    // whose magnitude the later normalize removes and whose sign the helper
+    // applies, so this spelling needs no division and no inverse() (which
+    // GLSL ES 1.00 lacks).
+    expect(helper, contains('cross(linear[1], linear[2])'));
+    expect(helper, contains('cofactor * sign(det)'));
+    final body = helper
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+    expect(body.contains('inverse('), isFalse);
+    expect(body.contains('transpose('), isFalse);
+    // The singular test compares against zero, not an epsilon. A determinant
+    // scales as the cube of the model's scale, so a fixed threshold would
+    // reject a legitimately small model and hand back the wrong normal.
+    expect(helper, contains('if (det == 0.0)'));
+  });
+
+  test('the sharp sky hands off to the cube toward the poles', () {
+    final skybox = File(
+      'shaders/flutter_scene_skybox_environment.frag',
+    ).readAsStringSync();
+
+    // Cube layouts only. The band atlas is itself an equirect, so handing off
+    // to it would bring the pole singularity along.
+    expect(skybox, contains('#ifdef FLUTTER_SCENE_RADIANCE_CUBE'));
+    expect(
+      skybox,
+      contains('smoothstep(kPoleBlendStart, 1.0, abs(direction.y))'),
+    );
+    // Guarded rather than folded into a mix, whose arguments both evaluate.
+    // The blend is zero over most of the screen at eye level.
+    expect(skybox, contains('if (pole > 0.0)'));
+  });
 }

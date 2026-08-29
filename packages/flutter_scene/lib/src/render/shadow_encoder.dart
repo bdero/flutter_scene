@@ -343,6 +343,7 @@ class ShadowEncoder {
                     scratch: transientInstancePackingScratch,
                   ));
       _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
+      transientInstancePackingScratch.releaseSingleBatch();
       return;
     }
 

@@ -649,6 +649,7 @@ class _DepthPrepassEncoder {
                     scratch: transientInstancePackingScratch,
                   ));
       _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
+      transientInstancePackingScratch.releaseSingleBatch();
       return;
     }
 
