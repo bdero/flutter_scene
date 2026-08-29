@@ -388,4 +388,3 @@ class AabbBvh {
     return x;
   }
 }
-

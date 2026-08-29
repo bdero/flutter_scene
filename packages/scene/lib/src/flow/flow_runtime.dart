@@ -214,8 +214,10 @@ class FlowRegistry {
     return seen;
   }
 
-  List<FlowNodeType> inCategory(String category) =>
-      [for (final type in _types.values) if (type.category == category) type];
+  List<FlowNodeType> inCategory(String category) => [
+    for (final type in _types.values)
+      if (type.category == category) type,
+  ];
 }
 
 /// Walks a graph.

@@ -125,14 +125,15 @@ void main() {
 
     test('several strikes in flight all arrive, in order', () {
       final heard = <double>[];
-      final storm = LightningComponent(
-        minInterval: 1000,
-        maxInterval: 1000,
-        speedOfSound: 340,
-        onThunder: (s) => heard.add(s.distance),
-      )
-        ..strike(distance: 3400)
-        ..strike(distance: 680);
+      final storm =
+          LightningComponent(
+              minInterval: 1000,
+              maxInterval: 1000,
+              speedOfSound: 340,
+              onThunder: (s) => heard.add(s.distance),
+            )
+            ..strike(distance: 3400)
+            ..strike(distance: 680);
 
       for (var i = 0; i < 15 * 60; i++) {
         storm.update(1 / 60);

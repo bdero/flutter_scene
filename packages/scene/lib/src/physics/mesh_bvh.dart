@@ -380,7 +380,6 @@ class MeshBvh {
     return tMin > tMax ? -1.0 : tMin;
   }
 
-
   // Spreads the low 10 bits of [value] so consecutive bits land three apart
   // (Morton interleave).
   static int _spreadBits(int value) {
@@ -392,4 +391,3 @@ class MeshBvh {
     return x;
   }
 }
-
