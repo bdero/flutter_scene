@@ -3007,6 +3007,467 @@ final detachFromPrefab = CommandEntry(
 );
 
 // ---------------------------------------------------------------------------
+// Mesh splitting.
+// ---------------------------------------------------------------------------
+
+class _VertexLayoutInfo {
+  const _VertexLayoutInfo(this.bytesPerVertex, this.soaStreams);
+
+  final int bytesPerVertex;
+
+  /// Per-vertex byte widths of the concatenated attribute streams, or null
+  /// for an interleaved layout.
+  final List<int>? soaStreams;
+}
+
+/// Payload vertex layouts the splitter can slice. Skinned and morph-target
+/// geometry is excluded; splitting it would also need joint and delta-slab
+/// re-binning.
+///
+/// TODO(vertex-layout-contract): these mirror the importer's layout
+/// constants; move the layout descriptors into package:scene so every core
+/// shares one definition.
+const Map<String, _VertexLayoutInfo> _splittableLayouts = {
+  'unskinned_soa_uv1_tangent': _VertexLayoutInfo(72, [12, 12, 8, 8, 16, 16]),
+  'unskinned_soa': _VertexLayoutInfo(48, [12, 12, 8, 16]),
+  'unskinned_uv1_tangent': _VertexLayoutInfo(72, null),
+  'unskinned': _VertexLayoutInfo(48, null),
+};
+
+/// How many times [resourceId] is referenced from component properties and
+/// prefab-instance override values across the document.
+int _resourceReferenceCount(SceneDocument doc, LocalId resourceId) {
+  var count = 0;
+  int inValue(PropertyValue value) => switch (value) {
+    ResourceRefValue(:final id) => id == resourceId ? 1 : 0,
+    ListValue(:final values) => values.fold(0, (n, v) => n + inValue(v)),
+    MapValue(:final values) => values.values.fold(0, (n, v) => n + inValue(v)),
+    _ => 0,
+  };
+  for (final node in doc.nodes.values) {
+    for (final component in node.components) {
+      count += component.properties.values.fold(0, (n, v) => n + inValue(v));
+    }
+    final instance = node.instance;
+    if (instance != null) {
+      for (final override in instance.overrides) {
+        count += inValue(override.value);
+      }
+      for (final mc in instance.memberComponents) {
+        count += mc.component.properties.values.fold(
+          0,
+          (n, v) => n + inValue(v),
+        );
+      }
+    }
+  }
+  return count;
+}
+
+/// Whether any resource other than [excluding] references payload [id].
+bool _payloadReferencedElsewhere(
+  SceneDocument doc,
+  LocalId id,
+  LocalId excluding,
+) {
+  for (final resource in doc.resources.values) {
+    if (resource.id == excluding) continue;
+    switch (resource) {
+      case GeometryResource():
+        if (resource.vertices == id ||
+            resource.indices == id ||
+            resource.morphTargets?.deltas == id) {
+          return true;
+        }
+      case TextureResource():
+        if (resource.payload == id) return true;
+      case EnvironmentResource():
+        final env = resource.environment;
+        if (env is PayloadEnvironment && env.payload == id) return true;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
+final splitMeshByGrid = CommandEntry(
+  name: 'splitMeshByGrid',
+  doc:
+      'Split each node\'s mesh into per-cell child meshes on a world-aligned '
+      'grid, so each piece culls and receives punctual lights independently. '
+      'Triangles bin whole by centroid (never clipped), attribute data is '
+      'copied verbatim, and children get deterministic names like '
+      '"Ground_x0_z3". The source node keeps its transform and children and '
+      'loses its mesh component.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
+    ParamSpec(
+      name: 'cellSize',
+      type: ParamType.number,
+      label: 'Cell size',
+      description: 'World-space grid cell size in meters.',
+    ),
+    ParamSpec(
+      name: 'axes',
+      type: ParamType.string,
+      label: 'Axes',
+      description:
+          'Grid axes, a subset of "xyz" (default "xz", the ground plane).',
+      required: false,
+      defaultValue: 'xz',
+    ),
+    ParamSpec(
+      name: 'origin',
+      type: ParamType.vec3,
+      label: 'Grid origin',
+      description:
+          'World-space grid anchor (default the world origin, which keeps '
+          'cell assignment stable across re-imports).',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final ids = requireNodeIdList(params, 'nodeIds');
+    final cellSize = requireDouble(params, 'cellSize');
+    if (cellSize <= 0) {
+      throw const CommandException('cellSize must be positive');
+    }
+    final axesText = optionalString(params, 'axes', orElse: 'xz')!;
+    final axes = <int>[];
+    for (final ch in axesText.split('')) {
+      final axis = 'xyz'.indexOf(ch);
+      if (axis < 0 || axes.contains(axis)) {
+        throw CommandException(
+          'axes must be a subset of "xyz", got "$axesText"',
+        );
+      }
+      axes.add(axis);
+    }
+    if (axes.isEmpty) {
+      throw const CommandException('axes must name at least one axis');
+    }
+    final origin = optionalVec3(params, 'origin') ?? Vector3.zero();
+
+    final records = <ChangeRecord>[];
+    for (final id in ids) {
+      final node = _requireNode(ctx, id);
+      if (node.skin != null) {
+        throw CommandException(
+          'Node ${id.toToken()} is skinned; splitting skinned meshes is not '
+          'supported',
+        );
+      }
+      final meshIndex = node.components.indexWhere((c) => c.type == 'mesh');
+      if (meshIndex < 0) {
+        throw CommandException('Node ${id.toToken()} has no mesh component');
+      }
+      final mesh = node.components[meshIndex];
+      final geometryRef = mesh.properties['geometry'];
+      if (geometryRef is! ResourceRefValue) {
+        throw CommandException(
+          'Node ${id.toToken()}\'s mesh has no geometry reference',
+        );
+      }
+      final geometry = doc.resources[geometryRef.id];
+      if (geometry is! GeometryResource) {
+        throw CommandException(
+          'Geometry resource not found: ${geometryRef.id.toToken()}',
+        );
+      }
+      if (geometry.procedural != null) {
+        throw CommandException(
+          'Node ${id.toToken()} uses procedural geometry; only payload '
+          'geometry can be split',
+        );
+      }
+      if (geometry.morphTargets != null) {
+        throw CommandException(
+          'Node ${id.toToken()}\'s geometry has morph targets; splitting '
+          'morphed meshes is not supported',
+        );
+      }
+      if (geometry.topology != 'triangle') {
+        throw CommandException(
+          'Node ${id.toToken()}\'s geometry has topology '
+          '"${geometry.topology}"; only triangle meshes can be split',
+        );
+      }
+      final vertexPayload = doc.payloads[geometry.vertices];
+      final vertexBytes = vertexPayload?.bytes;
+      if (vertexPayload == null || vertexBytes == null) {
+        throw CommandException(
+          'Vertex payload bytes for node ${id.toToken()} are not loaded',
+        );
+      }
+      final layout = _splittableLayouts[vertexPayload.layout];
+      if (layout == null) {
+        throw CommandException(
+          'Vertex layout "${vertexPayload.layout}" of node ${id.toToken()} '
+          'cannot be split',
+        );
+      }
+      final vertexCount = vertexBytes.length ~/ layout.bytesPerVertex;
+      if (vertexCount * layout.bytesPerVertex != vertexBytes.length) {
+        throw CommandException(
+          'Vertex payload of node ${id.toToken()} is not a whole number of '
+          '${layout.bytesPerVertex}-byte vertices',
+        );
+      }
+
+      final List<int> indices;
+      PayloadSpec? indexPayload;
+      if (geometry.indices != null) {
+        indexPayload = doc.payloads[geometry.indices];
+        final indexBytes = indexPayload?.bytes;
+        if (indexPayload == null || indexBytes == null) {
+          throw CommandException(
+            'Index payload bytes for node ${id.toToken()} are not loaded',
+          );
+        }
+        indices = indexPayload.format == 'uint32'
+            ? Uint32List.sublistView(indexBytes)
+            : Uint16List.sublistView(indexBytes);
+      } else {
+        indices = List<int>.generate(vertexCount, (i) => i);
+      }
+      if (indices.length % 3 != 0) {
+        throw CommandException(
+          'Index data of node ${id.toToken()} is not a whole number of '
+          'triangles',
+        );
+      }
+
+      // Positions: the SoA position stream leads the buffer; the interleaved
+      // record also starts with position, so both read as float triples at a
+      // per-layout stride.
+      final floats = Float32List.sublistView(vertexBytes);
+      final positionStride = layout.soaStreams == null
+          ? layout.bytesPerVertex ~/ 4
+          : 3;
+
+      // Bin triangles whole by world-space centroid. A per-node split of a
+      // shared geometry duplicates data; acceptable, the source geometry is
+      // removed only when nothing else references it.
+      final world = _worldMatrix(doc, id);
+      final cells = <(int, int, int), List<int>>{};
+      final local = Vector3.zero();
+      final centroid = Vector3.zero();
+      for (var tri = 0; tri < indices.length; tri += 3) {
+        centroid.setZero();
+        for (var corner = 0; corner < 3; corner++) {
+          final v = indices[tri + corner] * positionStride;
+          local.setValues(floats[v], floats[v + 1], floats[v + 2]);
+          centroid.add(world.transformed3(local));
+        }
+        centroid.scale(1 / 3);
+        var cx = 0, cy = 0, cz = 0;
+        for (final axis in axes) {
+          final c = ((centroid[axis] - origin[axis]) / cellSize).floor();
+          if (axis == 0) cx = c;
+          if (axis == 1) cy = c;
+          if (axis == 2) cz = c;
+        }
+        (cells[(cx, cy, cz)] ??= []).add(tri);
+      }
+      if (cells.length <= 1) continue;
+
+      // Deterministic output order.
+      final cellKeys = cells.keys.toList()
+        ..sort((a, b) {
+          if (a.$1 != b.$1) return a.$1.compareTo(b.$1);
+          if (a.$2 != b.$2) return a.$2.compareTo(b.$2);
+          return a.$3.compareTo(b.$3);
+        });
+
+      final baseName = node.name.isEmpty ? 'Mesh' : node.name;
+      final childIds = <LocalId>[];
+      for (final key in cellKeys) {
+        final triangles = cells[key]!;
+        // Remap vertices in first-use order and rebuild the index list.
+        final remap = <int, int>{};
+        final cellIndices = <int>[];
+        for (final tri in triangles) {
+          for (var corner = 0; corner < 3; corner++) {
+            final old = indices[tri + corner];
+            cellIndices.add(remap.putIfAbsent(old, () => remap.length));
+          }
+        }
+        final cellVertexCount = remap.length;
+        final oldByNew = List<int>.filled(cellVertexCount, 0);
+        remap.forEach((old, fresh) => oldByNew[fresh] = old);
+
+        // Copy attribute data verbatim through the remap.
+        final cellVertexBytes = Uint8List(
+          cellVertexCount * layout.bytesPerVertex,
+        );
+        final streams = layout.soaStreams;
+        if (streams == null) {
+          final stride = layout.bytesPerVertex;
+          for (var fresh = 0; fresh < cellVertexCount; fresh++) {
+            cellVertexBytes.setRange(
+              fresh * stride,
+              (fresh + 1) * stride,
+              vertexBytes,
+              oldByNew[fresh] * stride,
+            );
+          }
+        } else {
+          var srcBase = 0, dstBase = 0;
+          for (final streamBytes in streams) {
+            for (var fresh = 0; fresh < cellVertexCount; fresh++) {
+              cellVertexBytes.setRange(
+                dstBase + fresh * streamBytes,
+                dstBase + (fresh + 1) * streamBytes,
+                vertexBytes,
+                srcBase + oldByNew[fresh] * streamBytes,
+              );
+            }
+            srcBase += vertexCount * streamBytes;
+            dstBase += cellVertexCount * streamBytes;
+          }
+        }
+
+        // Local-space bounds from the actual triangles, not the cell.
+        final min = Vector3.all(double.infinity);
+        final max = Vector3.all(double.negativeInfinity);
+        for (final old in oldByNew) {
+          final v = old * positionStride;
+          for (var c = 0; c < 3; c++) {
+            final value = floats[v + c];
+            if (value < min[c]) min[c] = value;
+            if (value > max[c]) max[c] = value;
+          }
+        }
+
+        final wideIndices = cellVertexCount > 0xFFFF;
+        final cellIndexBytes = wideIndices
+            ? Uint32List.fromList(cellIndices).buffer.asUint8List()
+            : Uint16List.fromList(cellIndices).buffer.asUint8List();
+
+        final newVertexPayload = PayloadSpec(
+          doc.newId(),
+          encoding: PayloadEncoding.vertexBuffer,
+          layout: vertexPayload.layout,
+          length: cellVertexBytes.length,
+          bytes: cellVertexBytes,
+        );
+        final newIndexPayload = PayloadSpec(
+          doc.newId(),
+          encoding: PayloadEncoding.indexBuffer,
+          format: wideIndices ? 'uint32' : 'uint16',
+          length: cellIndexBytes.length,
+          bytes: cellIndexBytes,
+        );
+        final newGeometry = GeometryResource(
+          doc.newId(),
+          vertices: newVertexPayload.id,
+          indices: newIndexPayload.id,
+          bounds: BoundsSpec(min: min, max: max),
+          legacyWinding: geometry.legacyWinding,
+        );
+        final suffix = [
+          for (final axis in axes)
+            '${'xyz'[axis]}${[key.$1, key.$2, key.$3][axis]}',
+        ].join('_');
+        final child = NodeSpec(
+          id: doc.newId(),
+          name: '${baseName}_$suffix',
+          components: [
+            ComponentSpec(
+              'mesh',
+              properties: {
+                ...mesh.properties,
+                'geometry': ResourceRefValue(newGeometry.id),
+              },
+            ),
+          ],
+        );
+        childIds.add(child.id);
+
+        records
+          ..add(
+            ChangeRecord(
+              targetId: newVertexPayload.id,
+              slot: ChangeSlot.poolPayload,
+              oldValue: const PayloadChange(null),
+              newValue: PayloadChange(newVertexPayload),
+            ),
+          )
+          ..add(
+            ChangeRecord(
+              targetId: newIndexPayload.id,
+              slot: ChangeSlot.poolPayload,
+              oldValue: const PayloadChange(null),
+              newValue: PayloadChange(newIndexPayload),
+            ),
+          )
+          ..add(_addResourceRecord(newGeometry))
+          ..add(
+            ChangeRecord(
+              targetId: child.id,
+              slot: ChangeSlot.poolNode,
+              oldValue: const NodeChange(null),
+              newValue: NodeChange(child),
+            ),
+          );
+      }
+
+      records
+        ..add(
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.components,
+            oldValue: ComponentListChange(List.of(node.components)),
+            newValue: ComponentListChange([
+              for (final c in node.components)
+                if (!identical(c, mesh)) c,
+            ]),
+          ),
+        )
+        ..add(
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.children,
+            oldValue: IdListChange(List.of(node.children)),
+            newValue: IdListChange([...node.children, ...childIds]),
+          ),
+        );
+
+      // Drop the source geometry and its payloads when this mesh was their
+      // only user, so the split does not permanently double the stored bytes.
+      if (_resourceReferenceCount(doc, geometry.id) == 1) {
+        records.add(
+          ChangeRecord(
+            targetId: geometry.id,
+            slot: ChangeSlot.poolResource,
+            oldValue: ResourceChange(geometry),
+            newValue: const ResourceChange(null),
+          ),
+        );
+        for (final payload in [vertexPayload, indexPayload]) {
+          if (payload == null) continue;
+          if (_payloadReferencedElsewhere(doc, payload.id, geometry.id)) {
+            continue;
+          }
+          records.add(
+            ChangeRecord(
+              targetId: payload.id,
+              slot: ChangeSlot.poolPayload,
+              oldValue: PayloadChange(payload),
+              newValue: const PayloadChange(null),
+            ),
+          );
+        }
+      }
+    }
+    return Transaction(name: 'Split mesh by grid', records: records);
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Registration.
 // ---------------------------------------------------------------------------
 
@@ -3030,6 +3491,7 @@ final List<CommandEntry> builtinCommands = [
   reparentNodes,
   duplicateNodes,
   pasteNodes,
+  splitMeshByGrid,
   addComponent,
   removeComponent,
   setComponentProperties,
