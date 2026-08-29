@@ -164,10 +164,9 @@ double majorTickStep({
   final frame = sampleRate > 0 ? 1 / sampleRate : 1 / 60;
   final target = minimumPixels / pixelsPerSecond;
   if (target <= frame) return frame;
-  final decade = math.pow(
-    10,
-    (math.log(target) / math.ln10).floorToDouble(),
-  ).toDouble();
+  final decade = math
+      .pow(10, (math.log(target) / math.ln10).floorToDouble())
+      .toDouble();
   for (final multiple in const [1.0, 2.0, 5.0]) {
     if (decade * multiple >= target) return decade * multiple;
   }

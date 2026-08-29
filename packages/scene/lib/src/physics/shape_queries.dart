@@ -179,9 +179,15 @@ bool obbOverlapsObb(
   }
   final d = bXform.getTranslation()..sub(aXform.getTranslation());
   final t = Vector3(
-    d.x * aXform.entry(0, 0) + d.y * aXform.entry(1, 0) + d.z * aXform.entry(2, 0),
-    d.x * aXform.entry(0, 1) + d.y * aXform.entry(1, 1) + d.z * aXform.entry(2, 1),
-    d.x * aXform.entry(0, 2) + d.y * aXform.entry(1, 2) + d.z * aXform.entry(2, 2),
+    d.x * aXform.entry(0, 0) +
+        d.y * aXform.entry(1, 0) +
+        d.z * aXform.entry(2, 0),
+    d.x * aXform.entry(0, 1) +
+        d.y * aXform.entry(1, 1) +
+        d.z * aXform.entry(2, 1),
+    d.x * aXform.entry(0, 2) +
+        d.y * aXform.entry(1, 2) +
+        d.z * aXform.entry(2, 2),
   );
 
   // A's three face normals.

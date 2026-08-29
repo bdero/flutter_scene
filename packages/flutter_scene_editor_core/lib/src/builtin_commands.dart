@@ -2392,10 +2392,7 @@ SkySourceSpec _skySourceFrom(
         DoubleValue(:final value) => value.round(),
         _ => w.seed,
       },
-      wind: Vector2(
-        dbl('windX', w.wind.x),
-        dbl('windY', w.wind.y),
-      ),
+      wind: Vector2(dbl('windX', w.wind.x), dbl('windY', w.wind.y)),
       cloudColor: vec('cloudColor', w.cloudColor),
       cloudShading: dbl('cloudShading', w.cloudShading),
       stormDarkening: dbl('stormDarkening', w.stormDarkening),

@@ -544,3 +544,35 @@ int _neighbourSpan(
   final nz = z + navDirOffsetZ[dir];
   return compact.cellIndex[nx + nz * compact.width] + offset;
 }
+
+/// Marks every span outside the interior rectangle non-walkable, so a tiled
+/// bake's output stops exactly at the tile boundary.
+///
+/// Run after [erodeWalkableArea] and before the partition, which is the only
+/// point where it is right: a tile is voxelized with a border of extra cells
+/// so erosion and region growing see across the seam and agree with the
+/// neighbouring tile, and the border must then be cut before contours are
+/// traced or the tile would emit polygons over its neighbour's ground.
+///
+/// [interiorMinX], [interiorMinZ], [interiorMaxX], and [interiorMaxZ] are
+/// column indices into this field, half-open on the max side.
+void cutToInterior(
+  CompactHeightfield compact,
+  int interiorMinX,
+  int interiorMinZ,
+  int interiorMaxX,
+  int interiorMaxZ,
+) {
+  for (var z = 0; z < compact.depth; z++) {
+    final insideZ = z >= interiorMinZ && z < interiorMaxZ;
+    for (var x = 0; x < compact.width; x++) {
+      if (insideZ && x >= interiorMinX && x < interiorMaxX) continue;
+      final column = x + z * compact.width;
+      final start = compact.cellIndex[column];
+      final end = start + compact.cellCount[column];
+      for (var i = start; i < end; i++) {
+        compact.areas[i] = NavArea.nonWalkable;
+      }
+    }
+  }
+}

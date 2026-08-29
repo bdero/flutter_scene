@@ -504,13 +504,11 @@ void main() {
           random.nextDouble() * 200 - 100,
           random.nextDouble() * 200 - 100,
         );
-        final direction =
-            Vector3(
-                random.nextDouble() * 2 - 1,
-                random.nextDouble() * 2 - 1,
-                random.nextDouble() * 2 - 1,
-              )
-              ..normalize();
+        final direction = Vector3(
+          random.nextDouble() * 2 - 1,
+          random.nextDouble() * 2 - 1,
+          random.nextDouble() * 2 - 1,
+        )..normalize();
         final ray = Ray.originDirection(origin, direction);
         // Against the float32 values the hierarchy stores, so a box within a
         // float32 ulp of the ray does not disagree with itself.

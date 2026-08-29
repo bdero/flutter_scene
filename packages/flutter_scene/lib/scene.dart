@@ -232,12 +232,7 @@ export 'src/components/mesh_particle_emitter_component.dart'
 export 'src/components/trail_component.dart' show TrailComponent;
 export 'src/particles/particle_system.dart' show ParticleSystem;
 export 'src/particles/vfx_presets.dart'
-    show
-        VfxCategory,
-        VfxPreset,
-        vfxPresetById,
-        vfxPresets,
-        vfxPresetsIn;
+    show VfxCategory, VfxPreset, vfxPresetById, vfxPresets, vfxPresetsIn;
 export 'src/particles/particle_storage.dart' show ParticleStorage;
 export 'src/particles/particle_module.dart'
     show

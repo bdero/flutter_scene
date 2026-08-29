@@ -494,9 +494,7 @@ void main() {
     });
 
     test('an infinite cutoff reports every finite difference', () {
-      final tracker = PositionVelocityTracker(
-        teleportSpeed: double.infinity,
-      );
+      final tracker = PositionVelocityTracker(teleportSpeed: double.infinity);
       tracker.deriveFromPosition(Vector3.zero(), 1 / 60);
       final v = tracker.deriveFromPosition(Vector3(500, 0, 0), 1 / 60);
       expect(v.x, closeTo(30000.0, 1e-3));
@@ -506,7 +504,10 @@ void main() {
       final tracker = PositionVelocityTracker();
       tracker.deriveFromPosition(Vector3.zero(), 1 / 60);
       tracker.reset();
-      expect(tracker.deriveFromPosition(Vector3(1, 0, 0), 1 / 60), Vector3.zero());
+      expect(
+        tracker.deriveFromPosition(Vector3(1, 0, 0), 1 / 60),
+        Vector3.zero(),
+      );
     });
   });
 }

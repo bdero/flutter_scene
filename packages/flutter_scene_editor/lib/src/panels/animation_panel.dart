@@ -133,9 +133,7 @@ class _AnimationPanelState extends State<AnimationPanel>
 
   AnimationTimeline? _buildModel() {
     final clip = _clip;
-    return clip == null
-        ? null
-        : buildAnimationTimeline(_ctrl.document, clip);
+    return clip == null ? null : buildAnimationTimeline(_ctrl.document, clip);
   }
 
   // --- live preview --------------------------------------------------------
@@ -342,9 +340,7 @@ class _AnimationPanelState extends State<AnimationPanel>
                 : 'Key the playhead on '
                       '${_selectedKey == null ? 'every channel' : 'the selected channel'}',
             color: editorErrorColor,
-            onPressed: model == null
-                ? null
-                : () => _insertKeyAtPlayhead(model),
+            onPressed: model == null ? null : () => _insertKeyAtPlayhead(model),
           ),
           _TransportButton(
             icon: Icons.first_page,
@@ -394,9 +390,8 @@ class _AnimationPanelState extends State<AnimationPanel>
             label: 'Samples',
             width: 48,
             value: _sampleRate.toDouble(),
-            onChanged: (value) => setState(
-              () => _sampleRate = value.round().clamp(1, 240),
-            ),
+            onChanged: (value) =>
+                setState(() => _sampleRate = value.round().clamp(1, 240)),
           ),
           const Spacer(),
           _TransportButton(
@@ -448,13 +443,11 @@ class _AnimationPanelState extends State<AnimationPanel>
                   onToggleGroup: (target) => setState(() {
                     if (!_collapsed.remove(target)) _collapsed.add(target);
                   }),
-                  onRemoveTrack: (track) => _ctrl.run(
-                    removeAnimationChannel.name,
-                    {
-                      'animationId': model.id.toToken(),
-                      'channel': track.channelIndex,
-                    },
-                  ),
+                  onRemoveTrack: (track) =>
+                      _ctrl.run(removeAnimationChannel.name, {
+                        'animationId': model.id.toToken(),
+                        'channel': track.channelIndex,
+                      }),
                 ),
               ),
             ],
@@ -477,7 +470,10 @@ class _AnimationPanelState extends State<AnimationPanel>
               verticalScroll: _rowScroll,
               onScrub: _seek,
               onZoom: (factor) => setState(() {
-                _pixelsPerSecond = (_pixelsPerSecond * factor).clamp(8.0, 2000.0);
+                _pixelsPerSecond = (_pixelsPerSecond * factor).clamp(
+                  8.0,
+                  2000.0,
+                );
               }),
               onSelectKey: (key) => setState(() => _selectedKey = key),
               onDragKey: (key, time) => setState(() {
@@ -1232,7 +1228,10 @@ class _CurvePainter extends CustomPainter {
     double yFor(double value) {
       if (span <= 1e-9) return top + _rowHeight / 2;
       final normalized = (value - low) / span;
-      return top + _rowHeight - padding - normalized * (_rowHeight - padding * 2);
+      return top +
+          _rowHeight -
+          padding -
+          normalized * (_rowHeight - padding * 2);
     }
 
     for (var component = 0; component < track.stride; component++) {
@@ -1267,9 +1266,7 @@ class _CurvePainter extends CustomPainter {
           ),
           selected ? 3 : 2,
           Paint()
-            ..color = selected
-                ? editorAccentColor
-                : _componentColor(component),
+            ..color = selected ? editorAccentColor : _componentColor(component),
         );
       }
     }
