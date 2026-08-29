@@ -228,8 +228,10 @@ VfxPreset? vfxPresetById(String id) {
 
 /// The presets in [category], in catalogue order.
 /// {@category Particles}
-List<VfxPreset> vfxPresetsIn(VfxCategory category) =>
-    [for (final preset in vfxPresets) if (preset.category == category) preset];
+List<VfxPreset> vfxPresetsIn(VfxCategory category) => [
+  for (final preset in vfxPresets)
+    if (preset.category == category) preset,
+];
 
 // ---------------------------------------------------------------------------
 // Builders.
@@ -261,9 +263,7 @@ ParticleSystem _smokeSystem() => ParticleSystem(
       frequency: 0.35,
       scroll: Vector3(0, 0.4, 0),
     ),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1, to: 3.2)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 3.2))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -292,11 +292,7 @@ ParticleSystem _fireSystem() => ParticleSystem(
   startRotation: const UniformFloat(0, math.pi * 2),
   gravity: Vector3(0, 1.4, 0),
   modules: [
-    TurbulenceModule(
-      strength: 2.2,
-      frequency: 1.5,
-      scroll: Vector3(0, 1.6, 0),
-    ),
+    TurbulenceModule(strength: 2.2, frequency: 1.5, scroll: Vector3(0, 1.6, 0)),
     SizeOverLifeModule(
       CurveFloat(
         ParticleCurve(const [
@@ -337,9 +333,7 @@ ParticleSystem _steamSystem() => ParticleSystem(
   startRotation: const UniformFloat(0, math.pi * 2),
   modules: [
     LinearDragModule(2.4),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1, to: 5.5)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 5.5))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -368,11 +362,7 @@ ParticleSystem _embersSystem() => ParticleSystem(
   gravity: Vector3(0, 0.8, 0),
   modules: [
     LinearDragModule(0.7),
-    TurbulenceModule(
-      strength: 1.8,
-      frequency: 0.9,
-      scroll: Vector3(0, 0.8, 0),
-    ),
+    TurbulenceModule(strength: 1.8, frequency: 0.9, scroll: Vector3(0, 0.8, 0)),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -394,10 +384,7 @@ ParticleSystem _muzzleFlashSystem() => ParticleSystem(
   shape: const ConeEmitterShape(angle: 0.55, radius: 0.02),
   // No steady rate: the whole effect is one burst at t = 0, which is what
   // makes restarting the emitter the way to fire it.
-  spawner: Spawner(
-    rate: 0,
-    bursts: const [ParticleBurst(time: 0, count: 14)],
-  ),
+  spawner: Spawner(rate: 0, bursts: const [ParticleBurst(time: 0, count: 14)]),
   looping: false,
   duration: 0.5,
   lifetime: const UniformFloat(0.04, 0.09),
@@ -405,9 +392,7 @@ ParticleSystem _muzzleFlashSystem() => ParticleSystem(
   startSize: const UniformFloat(0.18, 0.34),
   startRotation: const UniformFloat(0, math.pi * 2),
   modules: [
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1.4, to: 0.2)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1.4, to: 0.2))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -427,10 +412,7 @@ void _muzzleFlashStyle(ParticleEmitterComponent emitter) {
 ParticleSystem _impactSparksSystem() => ParticleSystem(
   maxParticles: 160,
   shape: const ConeEmitterShape(angle: 0.75, radius: 0.05),
-  spawner: Spawner(
-    rate: 0,
-    bursts: const [ParticleBurst(time: 0, count: 40)],
-  ),
+  spawner: Spawner(rate: 0, bursts: const [ParticleBurst(time: 0, count: 40)]),
   looping: false,
   duration: 1.5,
   lifetime: const UniformFloat(0.25, 0.7),
@@ -470,10 +452,7 @@ void _impactSparksStyle(ParticleEmitterComponent emitter) {
 ParticleSystem _dustPuffSystem() => ParticleSystem(
   maxParticles: 90,
   shape: const SphereEmitterShape(radius: 0.2, hemisphere: true),
-  spawner: Spawner(
-    rate: 0,
-    bursts: const [ParticleBurst(time: 0, count: 18)],
-  ),
+  spawner: Spawner(rate: 0, bursts: const [ParticleBurst(time: 0, count: 18)]),
   looping: false,
   duration: 2,
   lifetime: const UniformFloat(0.6, 1.1),
@@ -492,9 +471,7 @@ ParticleSystem _dustPuffSystem() => ParticleSystem(
       friction: 0.35,
       radius: 0.15,
     ),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1, to: 2.4)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 2.4))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -535,9 +512,7 @@ ParticleSystem _explosionSystem() => ParticleSystem(
   modules: [
     LinearDragModule(2.2),
     TurbulenceModule(strength: 2.6, frequency: 0.8),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 0.7, to: 2.6)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 0.7, to: 2.6))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -612,9 +587,7 @@ ParticleSystem _rainSystem() => ParticleSystem(
   // a CollisionModule with the right plane and drops stop where they land.
   modules: [
     ColorOverLifeModule(
-      GradientColor(
-        ColorGradient.constant(_rgba(0.55, 0.62, 0.72, 0.5)),
-      ),
+      GradientColor(ColorGradient.constant(_rgba(0.55, 0.62, 0.72, 0.5))),
     ),
   ],
 );

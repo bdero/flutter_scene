@@ -374,7 +374,11 @@ class _ParticleGauge extends StatelessWidget {
             message:
                 'At the cap: spawns are being dropped. Raise maxParticles, or '
                 'lower the rate or the lifetime.',
-            child: Icon(Icons.warning_amber, size: 13, color: editorWarningColor),
+            child: Icon(
+              Icons.warning_amber,
+              size: 13,
+              color: editorWarningColor,
+            ),
           ),
         ],
       ],

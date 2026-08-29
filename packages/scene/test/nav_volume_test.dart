@@ -50,10 +50,7 @@ int polygonsOf(NavMesh? mesh) => mesh?.polygonCount ?? 0;
 void main() {
   group('NavVolume', () {
     test('contains tests the closed box', () {
-      final volume = NavVolume(
-        min: Vector3(-1, -1, -1),
-        max: Vector3(1, 1, 1),
-      );
+      final volume = NavVolume(min: Vector3(-1, -1, -1), max: Vector3(1, 1, 1));
       expect(volume.contains(0, 0, 0), isTrue);
       expect(volume.contains(1, 1, 1), isTrue, reason: 'the corner counts');
       expect(volume.contains(1.01, 0, 0), isFalse);
@@ -69,10 +66,7 @@ void main() {
         geometry,
         _config,
         volumes: [
-          NavVolume(
-            min: Vector3(-10, -1, -10),
-            max: Vector3(10, 1, 10),
-          ),
+          NavVolume(min: Vector3(-10, -1, -10), max: Vector3(10, 1, 10)),
         ],
       );
       expect(
@@ -88,10 +82,7 @@ void main() {
         geometry,
         _config,
         volumes: [
-          NavVolume(
-            min: Vector3(-10, 5, -10),
-            max: Vector3(10, 8, 10),
-          ),
+          NavVolume(min: Vector3(-10, 5, -10), max: Vector3(10, 8, 10)),
         ],
       );
       expect(polygonsOf(mesh), greaterThan(0));
@@ -111,10 +102,7 @@ void main() {
         geometry,
         _config,
         volumes: [
-          NavVolume(
-            min: Vector3(-10, -5, -10),
-            max: Vector3(10, 1, 10),
-          ),
+          NavVolume(min: Vector3(-10, -5, -10), max: Vector3(10, 1, 10)),
         ],
       );
       expect(
@@ -151,10 +139,7 @@ void main() {
         geometry,
         _config,
         volumes: [
-          NavVolume(
-            min: Vector3(-10, -1, -10),
-            max: Vector3(10, 1, 10),
-          ),
+          NavVolume(min: Vector3(-10, -1, -10), max: Vector3(10, 1, 10)),
           NavVolume(
             min: Vector3(-10, -1, -10),
             max: Vector3(10, 1, 10),

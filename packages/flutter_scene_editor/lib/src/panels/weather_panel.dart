@@ -304,10 +304,7 @@ class _WeatherPanelState extends State<WeatherPanel> {
             selected: _applied == preset.id,
             onTap: () => _apply(preset),
           ),
-        if (sky != null) ...[
-          const SizedBox(height: 12),
-          _SkyReadout(sky: sky),
-        ],
+        if (sky != null) ...[const SizedBox(height: 12), _SkyReadout(sky: sky)],
       ],
     );
   }
@@ -464,10 +461,7 @@ class _SkyReadout extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
         children: [
-          SizedBox(
-            width: 96,
-            child: Text(label, style: editorDetailText),
-          ),
+          SizedBox(width: 96, child: Text(label, style: editorDetailText)),
           Text(value, style: editorBodyText),
         ],
       ),

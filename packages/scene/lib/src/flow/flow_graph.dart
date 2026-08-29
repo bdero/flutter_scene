@@ -192,11 +192,7 @@ class FlowGraph {
 
   /// Adds [node] with a fresh id and returns it.
   FlowNodeSpec add(String type, {Vector2? position}) {
-    final node = FlowNodeSpec(
-      id: nextNodeId++,
-      type: type,
-      position: position,
-    );
+    final node = FlowNodeSpec(id: nextNodeId++, type: type, position: position);
     nodes.add(node);
     return node;
   }

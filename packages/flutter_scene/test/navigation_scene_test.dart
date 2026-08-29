@@ -258,10 +258,9 @@ void main() {
     test('swimmable water paints its area instead of carving', () {
       final root = level();
       root.add(
-        Node(name: 'pond')
-          ..addComponent(
-            WaterComponent(size: 30, traversal: WaterTraversal.swimmable),
-          ),
+        Node(name: 'pond')..addComponent(
+          WaterComponent(size: 30, traversal: WaterTraversal.swimmable),
+        ),
       );
       final surface = NavMeshSurfaceComponent(config: config);
       root.addComponent(surface);
@@ -330,6 +329,146 @@ void main() {
       final result = surface.bake();
       expect(result.isEmpty, isTrue);
       expect(result.describe(), contains('No walkable surface'));
+    });
+
+    test('a tiled bake needs a tiling rather than inventing one', () {
+      final surface = NavMeshSurfaceComponent(config: config);
+      level().addComponent(surface);
+      expect(surface.bakeTiledAsync(), throwsStateError);
+    });
+
+    test('a tiled bake covers the world and paths across the seams', () async {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+
+      final seen = <int>[];
+      final result = await surface.bakeTiledAsync(
+        concurrency: 2,
+        onProgress: (done, total) => seen.add(done),
+      );
+
+      expect(result.tiles.tileCount, greaterThan(1));
+      expect(seen, isNotEmpty);
+      expect(seen.last, seen.length, reason: 'one report per tile, in order');
+      expect(
+        surface.mesh,
+        isNull,
+        reason: 'a tiled world has no single mesh to hand back',
+      );
+      expect(surface.tileSet, same(result.tiles));
+      expect(result.describe(), contains('tiles'));
+
+      // Corner to corner crosses several tile seams, so a path only exists if
+      // the links between them formed.
+      final path = surface.tiledQuery()!.findPath(
+        Vector3(-9, 0, -9),
+        Vector3(9, 0, 9),
+      );
+      expect(path.status, NavPathStatus.complete);
+      expect(path.points.length, greaterThan(1));
+      expect(path.points.last.x, closeTo(9, 1.0));
+      expect(path.points.last.z, closeTo(9, 1.0));
+
+      surface.clear();
+      expect(surface.tileSet, isNull);
+      expect(surface.tiledQuery(), isNull);
+    });
+
+    test('a rebake needs a tiling, the same as a bake', () {
+      final surface = NavMeshSurfaceComponent(config: config);
+      level().addComponent(surface);
+      expect(surface.rebakeChangedAsync(), throwsStateError);
+    });
+
+    test(
+      'the first rebake has nothing to compare, so it bakes it all',
+      () async {
+        final root = level();
+        final surface = NavMeshSurfaceComponent(
+          config: config,
+          tiling: const NavTileConfig(tileCells: 32),
+        );
+        root.addComponent(surface);
+
+        expect(surface.changedTiles(), isNull, reason: 'nothing baked yet');
+        final result = await surface.rebakeChangedAsync(concurrency: 2);
+        expect(result.tiles.tileCount, greaterThan(1));
+        expect(surface.bakeFingerprints, isNotNull);
+      },
+    );
+
+    test('an untouched scene rebakes nothing', () async {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+      final first = await surface.bakeTiledAsync(concurrency: 2);
+      final tiles = first.tiles.tileCount;
+      final polygons = first.tiles.polygonCount;
+
+      expect(surface.changedTiles(), isEmpty);
+      final again = await surface.rebakeChangedAsync(concurrency: 2);
+      expect(again.tiles.tileCount, tiles);
+      expect(again.tiles.polygonCount, polygons);
+    });
+
+    test('moving a node rebakes its tiles and not the world', () async {
+      final root = Node(name: 'level')..add(floorNode('ground_floor', 60));
+      final crate = floorNode('crate', 4, at: Vector3(-24, 0.4, -24));
+      root.add(crate);
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+      await surface.bakeTiledAsync(concurrency: 2);
+      final total = surface.bakeFingerprints!.tileCount;
+      expect(total, greaterThan(8));
+
+      crate.position = Vector3(24, 0.4, 24);
+      final changed = surface.changedTiles()!;
+      expect(changed, isNotEmpty);
+      expect(
+        changed.length,
+        lessThan(total),
+        reason: 'a local edit must not invalidate the world',
+      );
+
+      var rebaked = 0;
+      await surface.rebakeChangedAsync(
+        concurrency: 2,
+        onProgress: (done, planned) => rebaked = planned,
+      );
+      expect(rebaked, lessThan(total));
+      expect(surface.tiledQuery(), isNotNull);
+    });
+
+    test('a set installed from a document rebakes whole, once', () async {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+      final baked = await surface.bakeTiledAsync(concurrency: 2);
+
+      // What loading a scene does: the tiles arrive without the world they
+      // were taken from, so there is nothing to diff against.
+      final loaded = NavMeshSurfaceComponent(config: config)
+        ..tileSet = baked.tiles;
+      root.addComponent(loaded);
+      expect(loaded.bakeFingerprints, isNull);
+      expect(loaded.changedTiles(), isNull);
+
+      await loaded.rebakeChangedAsync(concurrency: 2);
+      expect(loaded.bakeFingerprints, isNotNull);
+      expect(loaded.changedTiles(), isEmpty);
     });
 
     test('a clone shares the baked mesh rather than copying it', () {

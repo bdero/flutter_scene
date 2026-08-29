@@ -95,19 +95,13 @@ void main() {
         extraPaths: [first],
       );
       expect(library.entries, hasLength(2));
-      expect(
-        [for (final e in library.entries) e.name],
-        ['Second', 'First'],
-      );
+      expect([for (final e in library.entries) e.name], ['Second', 'First']);
       expect(library.entries[1].recentIndex, 1, reason: 'kept its recency');
     });
 
     test('a cover resolver decorates the entries', () {
       final path = writeProject(root, 'Art');
-      final library = buildProjectLibrary(
-        [path],
-        coverFor: (p) => '$p.png',
-      );
+      final library = buildProjectLibrary([path], coverFor: (p) => '$p.png');
       expect(library.entries.single.coverPath, '$path.png');
     });
   });
@@ -197,15 +191,12 @@ void main() {
       writeProject(root, 'Nested');
       File('${root.path}/Loose.fproject').writeAsStringSync('{}');
       Directory('${root.path}/deep/deeper').createSync(recursive: true);
-      File(
-        '${root.path}/deep/deeper/TooDeep.fproject',
-      ).writeAsStringSync('{}');
+      File('${root.path}/deep/deeper/TooDeep.fproject').writeAsStringSync('{}');
 
       final found = scanForProjects(root.path);
-      expect(
-        [for (final p in found) p.split('/').last],
-        containsAll(<String>['Loose.fproject', 'Nested.fproject']),
-      );
+      expect([
+        for (final p in found) p.split('/').last,
+      ], containsAll(<String>['Loose.fproject', 'Nested.fproject']));
       expect(
         found.any((p) => p.endsWith('TooDeep.fproject')),
         isFalse,

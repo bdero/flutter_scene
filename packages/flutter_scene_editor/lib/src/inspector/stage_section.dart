@@ -1672,26 +1672,10 @@ class SkySection extends StatelessWidget {
                       min: 0.005,
                       max: 0.5,
                     ),
-                    scalar(
-                      'Shading',
-                      'cloudShading',
-                      source.cloudShading,
-                    ),
+                    scalar('Shading', 'cloudShading', source.cloudShading),
                     colorField('Cloud color', 'cloudColor', source.cloudColor),
-                    scalar(
-                      'Wind X',
-                      'windX',
-                      source.wind.x,
-                      min: -3,
-                      max: 3,
-                    ),
-                    scalar(
-                      'Wind Z',
-                      'windY',
-                      source.wind.y,
-                      min: -3,
-                      max: 3,
-                    ),
+                    scalar('Wind X', 'windX', source.wind.x, min: -3, max: 3),
+                    scalar('Wind Z', 'windY', source.wind.y, min: -3, max: 3),
                   ],
                 ),
               ),
@@ -1701,11 +1685,7 @@ class SkySection extends StatelessWidget {
                   children: [
                     // Drains the sky toward its own extinction colour rather
                     // than toward grey, so an overcast sunset stays warm.
-                    scalar(
-                      'Overcast',
-                      'stormDarkening',
-                      source.stormDarkening,
-                    ),
+                    scalar('Overcast', 'stormDarkening', source.stormDarkening),
                   ],
                 ),
               ),

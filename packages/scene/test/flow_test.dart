@@ -48,10 +48,20 @@ void main() {
       final sink = graph.add('debug.print');
 
       graph.connect(
-        FlowLink(fromNode: a.id, fromPin: 'value', toNode: sink.id, toPin: 'value'),
+        FlowLink(
+          fromNode: a.id,
+          fromPin: 'value',
+          toNode: sink.id,
+          toPin: 'value',
+        ),
       );
       graph.connect(
-        FlowLink(fromNode: b.id, fromPin: 'value', toNode: sink.id, toPin: 'value'),
+        FlowLink(
+          fromNode: b.id,
+          fromPin: 'value',
+          toNode: sink.id,
+          toPin: 'value',
+        ),
       );
       expect(graph.links, hasLength(1));
       expect(graph.inputTo(sink.id, 'value')!.fromNode, b.id);
@@ -64,10 +74,20 @@ void main() {
       final second = graph.add('debug.print');
 
       graph.connect(
-        FlowLink(fromNode: start.id, fromPin: 'then', toNode: first.id, toPin: 'exec'),
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: first.id,
+          toPin: 'exec',
+        ),
       );
       graph.connect(
-        FlowLink(fromNode: start.id, fromPin: 'then', toNode: second.id, toPin: 'exec'),
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: second.id,
+          toPin: 'exec',
+        ),
       );
       expect(graph.outputsFrom(start.id, 'then'), hasLength(1));
     });
@@ -78,11 +98,21 @@ void main() {
       final one = graph.add('debug.print');
       final two = graph.add('debug.print');
       graph.connect(
-        FlowLink(fromNode: source.id, fromPin: 'value', toNode: one.id, toPin: 'value'),
+        FlowLink(
+          fromNode: source.id,
+          fromPin: 'value',
+          toNode: one.id,
+          toPin: 'value',
+        ),
         execOutputIsSingular: false,
       );
       graph.connect(
-        FlowLink(fromNode: source.id, fromPin: 'value', toNode: two.id, toPin: 'value'),
+        FlowLink(
+          fromNode: source.id,
+          fromPin: 'value',
+          toNode: two.id,
+          toPin: 'value',
+        ),
         execOutputIsSingular: false,
       );
       expect(graph.outputsFrom(source.id, 'value'), hasLength(2));
@@ -93,7 +123,12 @@ void main() {
       final a = graph.add('math.add');
       final b = graph.add('debug.print');
       graph.connect(
-        FlowLink(fromNode: a.id, fromPin: 'value', toNode: b.id, toPin: 'value'),
+        FlowLink(
+          fromNode: a.id,
+          fromPin: 'value',
+          toNode: b.id,
+          toPin: 'value',
+        ),
       );
       graph.removeNode(a.id);
       expect(graph.nodes, hasLength(1));
@@ -139,7 +174,12 @@ void main() {
         ..literals['label'] = 'hello'
         ..literals['value'] = 42;
       r.graph.connect(
-        FlowLink(fromNode: start.id, fromPin: 'then', toNode: print.id, toPin: 'exec'),
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: print.id,
+          toPin: 'exec',
+        ),
       );
 
       final context = FlowContext(graph: r.graph, host: r.host);
@@ -157,12 +197,30 @@ void main() {
       final print = r.graph.add('debug.print');
 
       r.graph
-        ..connect(FlowLink(
-          fromNode: start.id, fromPin: 'then', toNode: print.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: add.id, fromPin: 'value', toNode: multiply.id, toPin: 'a'))
-        ..connect(FlowLink(
-          fromNode: multiply.id, fromPin: 'value', toNode: print.id, toPin: 'value'));
+        ..connect(
+          FlowLink(
+            fromNode: start.id,
+            fromPin: 'then',
+            toNode: print.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: add.id,
+            fromPin: 'value',
+            toNode: multiply.id,
+            toPin: 'a',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: multiply.id,
+            fromPin: 'value',
+            toNode: print.id,
+            toPin: 'value',
+          ),
+        );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
@@ -173,8 +231,14 @@ void main() {
       final r = rig();
       final start = r.graph.add('event.start');
       final print = r.graph.add('debug.print');
-      r.graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+      r.graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: print.id,
+          toPin: 'exec',
+        ),
+      );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
@@ -186,16 +250,35 @@ void main() {
       String run(bool condition) {
         final r = rig();
         final start = r.graph.add('event.start');
-        final gate = r.graph.add('flow.branch')..literals['condition'] = condition;
+        final gate = r.graph.add('flow.branch')
+          ..literals['condition'] = condition;
         final yes = r.graph.add('debug.print')..literals['value'] = 'yes';
         final no = r.graph.add('debug.print')..literals['value'] = 'no';
         r.graph
-          ..connect(FlowLink(
-            fromNode: start.id, fromPin: 'then', toNode: gate.id, toPin: 'exec'))
-          ..connect(FlowLink(
-            fromNode: gate.id, fromPin: 'true', toNode: yes.id, toPin: 'exec'))
-          ..connect(FlowLink(
-            fromNode: gate.id, fromPin: 'false', toNode: no.id, toPin: 'exec'));
+          ..connect(
+            FlowLink(
+              fromNode: start.id,
+              fromPin: 'then',
+              toNode: gate.id,
+              toPin: 'exec',
+            ),
+          )
+          ..connect(
+            FlowLink(
+              fromNode: gate.id,
+              fromPin: 'true',
+              toNode: yes.id,
+              toPin: 'exec',
+            ),
+          )
+          ..connect(
+            FlowLink(
+              fromNode: gate.id,
+              fromPin: 'false',
+              toNode: no.id,
+              toPin: 'exec',
+            ),
+          );
         final context = FlowContext(graph: r.graph, host: r.host);
         r.runner.fire(context, onStart.id);
         return r.host.messages.single;
@@ -213,14 +296,38 @@ void main() {
       final two = r.graph.add('debug.print')..literals['value'] = '2';
       final three = r.graph.add('debug.print')..literals['value'] = '3';
       r.graph
-        ..connect(FlowLink(
-          fromNode: start.id, fromPin: 'then', toNode: seq.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: seq.id, fromPin: 'a', toNode: one.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: seq.id, fromPin: 'b', toNode: two.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: seq.id, fromPin: 'c', toNode: three.id, toPin: 'exec'));
+        ..connect(
+          FlowLink(
+            fromNode: start.id,
+            fromPin: 'then',
+            toNode: seq.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: seq.id,
+            fromPin: 'a',
+            toNode: one.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: seq.id,
+            fromPin: 'b',
+            toNode: two.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: seq.id,
+            fromPin: 'c',
+            toNode: three.id,
+            toPin: 'exec',
+          ),
+        );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
@@ -236,7 +343,12 @@ void main() {
       final a = r.graph.add('flow.gate');
       final b = r.graph.add('flow.gate');
       r.graph.links.addAll([
-        FlowLink(fromNode: start.id, fromPin: 'then', toNode: a.id, toPin: 'exec'),
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: a.id,
+          toPin: 'exec',
+        ),
         FlowLink(fromNode: a.id, fromPin: 'then', toNode: b.id, toPin: 'exec'),
         FlowLink(fromNode: b.id, fromPin: 'then', toNode: a.id, toPin: 'exec'),
       ]);
@@ -255,10 +367,12 @@ void main() {
       final a = r.graph.add('math.add');
       final b = r.graph.add('math.add');
       r.graph
-        ..connect(FlowLink(
-          fromNode: a.id, fromPin: 'value', toNode: b.id, toPin: 'a'))
-        ..connect(FlowLink(
-          fromNode: b.id, fromPin: 'value', toNode: a.id, toPin: 'a'));
+        ..connect(
+          FlowLink(fromNode: a.id, fromPin: 'value', toNode: b.id, toPin: 'a'),
+        )
+        ..connect(
+          FlowLink(fromNode: b.id, fromPin: 'value', toNode: a.id, toPin: 'a'),
+        );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       r.runner.evaluateOutput(context, a.id, 'value');
@@ -274,18 +388,40 @@ void main() {
       final sum = r.graph.add('math.add');
       final print = r.graph.add('debug.print');
       r.graph
-        ..connect(FlowLink(
-          fromNode: start.id, fromPin: 'then', toNode: print.id, toPin: 'exec'))
         ..connect(
-          FlowLink(fromNode: source.id, fromPin: 'value', toNode: sum.id, toPin: 'a'),
+          FlowLink(
+            fromNode: start.id,
+            fromPin: 'then',
+            toNode: print.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: source.id,
+            fromPin: 'value',
+            toNode: sum.id,
+            toPin: 'a',
+          ),
           execOutputIsSingular: false,
         )
         ..connect(
-          FlowLink(fromNode: source.id, fromPin: 'value', toNode: sum.id, toPin: 'b'),
+          FlowLink(
+            fromNode: source.id,
+            fromPin: 'value',
+            toNode: sum.id,
+            toPin: 'b',
+          ),
           execOutputIsSingular: false,
         )
-        ..connect(FlowLink(
-          fromNode: sum.id, fromPin: 'value', toNode: print.id, toPin: 'value'));
+        ..connect(
+          FlowLink(
+            fromNode: sum.id,
+            fromPin: 'value',
+            toNode: print.id,
+            toPin: 'value',
+          ),
+        );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
@@ -297,8 +433,14 @@ void main() {
       final r = rig();
       final start = r.graph.add('event.start');
       final bogus = r.graph.add('nothing.here');
-      r.graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: bogus.id, toPin: 'exec'));
+      r.graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: bogus.id,
+          toPin: 'exec',
+        ),
+      );
       final context = FlowContext(graph: r.graph, host: r.host);
       r.runner.fire(context, onStart.id);
       expect(context.error, contains('nothing.here'));
@@ -312,10 +454,22 @@ void main() {
       final once = r.graph.add('flow.doOnce');
       final print = r.graph.add('debug.print')..literals['value'] = 'fired';
       r.graph
-        ..connect(FlowLink(
-          fromNode: tick.id, fromPin: 'then', toNode: once.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: once.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+        ..connect(
+          FlowLink(
+            fromNode: tick.id,
+            fromPin: 'then',
+            toNode: once.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: once.id,
+            fromPin: 'then',
+            toNode: print.id,
+            toPin: 'exec',
+          ),
+        );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       for (var i = 0; i < 5; i++) {
@@ -330,16 +484,35 @@ void main() {
       final wait = r.graph.add('flow.delay')..literals['seconds'] = 0.1;
       final print = r.graph.add('debug.print')..literals['value'] = 'now';
       r.graph
-        ..connect(FlowLink(
-          fromNode: tick.id, fromPin: 'then', toNode: wait.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: wait.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+        ..connect(
+          FlowLink(
+            fromNode: tick.id,
+            fromPin: 'then',
+            toNode: wait.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: wait.id,
+            fromPin: 'then',
+            toNode: print.id,
+            toPin: 'exec',
+          ),
+        );
 
-      final context = FlowContext(graph: r.graph, host: r.host..deltaSeconds = 1 / 60);
+      final context = FlowContext(
+        graph: r.graph,
+        host: r.host..deltaSeconds = 1 / 60,
+      );
       for (var i = 0; i < 6; i++) {
         r.runner.fire(context, onTick.id);
       }
-      expect(r.host.messages, isEmpty, reason: 'a tenth of a second is 6 frames');
+      expect(
+        r.host.messages,
+        isEmpty,
+        reason: 'a tenth of a second is 6 frames',
+      );
       r.runner.fire(context, onTick.id);
       expect(r.host.messages, ['now']);
 
@@ -360,12 +533,30 @@ void main() {
       final add = r.graph.add('math.add')..literals['b'] = 1.0;
       final write = r.graph.add('var.set')..literals['name'] = 'count';
       r.graph
-        ..connect(FlowLink(
-          fromNode: tick.id, fromPin: 'then', toNode: write.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: read.id, fromPin: 'value', toNode: add.id, toPin: 'a'))
-        ..connect(FlowLink(
-          fromNode: add.id, fromPin: 'value', toNode: write.id, toPin: 'value'));
+        ..connect(
+          FlowLink(
+            fromNode: tick.id,
+            fromPin: 'then',
+            toNode: write.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: read.id,
+            fromPin: 'value',
+            toNode: add.id,
+            toPin: 'a',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: add.id,
+            fromPin: 'value',
+            toNode: write.id,
+            toPin: 'value',
+          ),
+        );
 
       final context = FlowContext(graph: r.graph, host: r.host);
       for (var i = 0; i < 4; i++) {
@@ -395,12 +586,19 @@ void main() {
     });
 
     test('clamp holds the range, even an inverted one', () {
-      expect(evaluate('math.clamp', {'value': 5.0, 'min': 0.0, 'max': 1.0}, 'out'), 1.0);
-      expect(evaluate('math.clamp', {'value': -5.0, 'min': 0.0, 'max': 1.0}, 'out'), 0.0);
+      expect(
+        evaluate('math.clamp', {'value': 5.0, 'min': 0.0, 'max': 1.0}, 'out'),
+        1.0,
+      );
+      expect(
+        evaluate('math.clamp', {'value': -5.0, 'min': 0.0, 'max': 1.0}, 'out'),
+        0.0,
+      );
       expect(
         evaluate('math.clamp', {'value': 5.0, 'min': 1.0, 'max': 0.0}, 'out'),
         1.0,
-        reason: 'an inverted range collapses to its low end rather than throwing',
+        reason:
+            'an inverted range collapses to its low end rather than throwing',
       );
     });
 
@@ -421,30 +619,25 @@ void main() {
     });
 
     test('vectors are made, broken, added, and scaled', () {
-      final made = evaluate(
-        'vector.make',
-        {'x': 1.0, 'y': 2.0, 'z': 3.0},
-        'value',
-      );
+      final made = evaluate('vector.make', {
+        'x': 1.0,
+        'y': 2.0,
+        'z': 3.0,
+      }, 'value');
       expect(made, Vector3(1, 2, 3));
+      expect(evaluate('vector.break', {'value': Vector3(4, 5, 6)}, 'y'), 5.0);
       expect(
-        evaluate('vector.break', {'value': Vector3(4, 5, 6)}, 'y'),
-        5.0,
-      );
-      expect(
-        evaluate(
-          'vector.add',
-          {'a': Vector3(1, 1, 1), 'b': Vector3(2, 0, 0)},
-          'value',
-        ),
+        evaluate('vector.add', {
+          'a': Vector3(1, 1, 1),
+          'b': Vector3(2, 0, 0),
+        }, 'value'),
         Vector3(3, 1, 1),
       );
       expect(
-        evaluate(
-          'vector.scale',
-          {'a': Vector3(1, 2, 3), 'scale': 2.0},
-          'value',
-        ),
+        evaluate('vector.scale', {
+          'a': Vector3(1, 2, 3),
+          'scale': 2.0,
+        }, 'value'),
         Vector3(2, 4, 6),
       );
     });
@@ -459,9 +652,7 @@ void main() {
       final seen = <double>[];
       for (var i = 0; i < 60; i++) {
         r.host.elapsedSeconds = i / 60;
-        seen.add(
-          r.runner.evaluateOutput(context, node.id, 'value')! as double,
-        );
+        seen.add(r.runner.evaluateOutput(context, node.id, 'value')! as double);
       }
       expect(seen.every((v) => v >= 10 - 1e-9 && v <= 20 + 1e-9), isTrue);
       expect(seen.reduce((a, b) => a > b ? a : b), greaterThan(19));
@@ -509,10 +700,22 @@ void main() {
       make.position.setValues(120, -40);
       final print = graph.add('debug.print')..literals['label'] = 'v';
       graph
-        ..connect(FlowLink(
-          fromNode: start.id, fromPin: 'then', toNode: print.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: make.id, fromPin: 'value', toNode: print.id, toPin: 'value'));
+        ..connect(
+          FlowLink(
+            fromNode: start.id,
+            fromPin: 'then',
+            toNode: print.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: make.id,
+            fromPin: 'value',
+            toNode: print.id,
+            toPin: 'value',
+          ),
+        );
 
       final restored = readFlowGraph(writeFlowGraph(graph));
       expect(restored.nodes, hasLength(3));
@@ -544,8 +747,14 @@ void main() {
       final r = rig();
       final start = r.graph.add('event.start');
       final print = r.graph.add('debug.print')..literals['value'] = 'ok';
-      r.graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+      r.graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: print.id,
+          toPin: 'exec',
+        ),
+      );
 
       final restored = readFlowGraph(writeFlowGraph(r.graph));
       final context = FlowContext(graph: restored, host: r.host);

@@ -217,10 +217,12 @@ void main() {
     expect(mesh.propertySchema[5].itemDef!.kind, ComponentPropertyKind.number);
     // Both per-primitive flags are described on the list entry too, so a
     // multi-primitive mesh can carry them per entry.
-    expect(
-      mesh.propertySchema[2].itemDef!.objectFields!.map((d) => d.name),
-      ['geometry', 'material', 'visible', 'castsShadow'],
-    );
+    expect(mesh.propertySchema[2].itemDef!.objectFields!.map((d) => d.name), [
+      'geometry',
+      'material',
+      'visible',
+      'castsShadow',
+    ]);
   });
 
   test('directional light is rotation-aimed and preserves shadow controls', () {
@@ -291,10 +293,7 @@ void main() {
     )!;
     final plainSpec = codec.serialize(plain, SerializeContext(doc))!;
     expect(plainSpec.properties, isNot(contains('channelMask')));
-    expect(
-      plainSpec.properties,
-      isNot(contains('shadowCasterChannelMask')),
-    );
+    expect(plainSpec.properties, isNot(contains('shadowCasterChannelMask')));
   });
 
   test('the pinned first cascade bound distinguishes unset from zero', () {

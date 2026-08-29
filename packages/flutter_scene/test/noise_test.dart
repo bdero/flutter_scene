@@ -188,10 +188,24 @@ void main() {
       final random = math.Random(20260828);
       // The corners first: sign boundaries and the primes the hashing uses.
       const corners = [
-        0, 1, -1, 2, -2,
-        0x7FFFFFFF, -0x80000000, 0x40000000, -0x40000000,
-        0x27d4eb2d, 501125321, 1136930381, 1720413743,
-        0xFFFF, 0x10000, 0x10001, -0xFFFF, -0x10000,
+        0,
+        1,
+        -1,
+        2,
+        -2,
+        0x7FFFFFFF,
+        -0x80000000,
+        0x40000000,
+        -0x40000000,
+        0x27d4eb2d,
+        501125321,
+        1136930381,
+        1720413743,
+        0xFFFF,
+        0x10000,
+        0x10001,
+        -0xFFFF,
+        -0x10000,
       ];
       for (final a in corners) {
         for (final b in corners) {
@@ -230,8 +244,12 @@ void main() {
           noiseHash2(1337, coordinate, 7),
           wrap32(
             (BigInt.from(1337) ^
-                    BigInt.from(wrap32(BigInt.from(coordinate) * BigInt.from(501125321))) ^
-                    BigInt.from(wrap32(BigInt.from(7) * BigInt.from(1136930381)))) *
+                    BigInt.from(
+                      wrap32(BigInt.from(coordinate) * BigInt.from(501125321)),
+                    ) ^
+                    BigInt.from(
+                      wrap32(BigInt.from(7) * BigInt.from(1136930381)),
+                    )) *
                 BigInt.from(0x27d4eb2d),
           ),
           reason: 'x = $coordinate',

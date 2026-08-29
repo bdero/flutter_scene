@@ -15,6 +15,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/kit/environment/water_component.dart';
+import 'package:flutter_scene/src/navigation/nav_tile_bake_async.dart';
 import 'package:flutter_scene/src/navigation/scene_nav_geometry.dart';
 import 'package:flutter_scene/src/node.dart';
 
@@ -74,6 +75,7 @@ class NavMeshSurfaceComponent extends Component {
     this.includeInstances = true,
     this.includeWaterVolumes = true,
     this.blockedWaterDepth = 50.0,
+    this.tiling,
     List<NavVolume>? volumes,
     NavMesh? mesh,
   }) : volumes = volumes ?? [],
@@ -106,6 +108,18 @@ class NavMeshSurfaceComponent extends Component {
   /// Extra volumes carved or painted after voxelization: a no-go zone, a
   /// costly area, a doorway worth marking.
   final List<NavVolume> volumes;
+
+  /// How the world is cut into tiles, or null to bake it in one piece.
+  ///
+  /// Tiling bounds peak memory to a single tile's voxel field, lets tiles
+  /// bake in parallel, and makes editing one corner of a world a rebake of
+  /// one tile. On one thread it is roughly time neutral -- the borders are
+  /// what it costs -- so it earns its keep through [bakeTiledAsync] and
+  /// through not having to rebake a world to move a crate.
+  ///
+  /// Worth turning on past a few hundred units a side; below that a
+  /// single-shot bake is already instant and simpler.
+  NavTileConfig? tiling;
 
   NavMesh? _mesh;
 
@@ -207,8 +221,163 @@ class NavMeshSurfaceComponent extends Component {
     );
   }
 
-  /// Throws the baked mesh away.
-  void clear() => mesh = null;
+  /// Throws the baked mesh, and any tiles, away.
+  void clear() {
+    mesh = null;
+    _tiles = null;
+    _fingerprints = null;
+  }
+
+  NavTileSet? _tiles;
+
+  /// The tiled result, when the last bake was a tiled one.
+  ///
+  /// Null after a single-shot bake. A caller wanting one mesh reads [mesh]; a
+  /// caller wanting to rebake one tile, or to path across a world too large
+  /// for a single mesh, wants this.
+  ///
+  /// Settable so a loader can install a set decoded from a document without
+  /// rebaking it, and so [tiling] can be adopted from what was loaded rather
+  /// than having to be restated.
+  NavTileSet? get tileSet => _tiles;
+  set tileSet(NavTileSet? value) {
+    _tiles = value;
+    // The world these tiles came from was not walked here, so nothing can be
+    // compared against them until something bakes.
+    _fingerprints = null;
+    if (value != null) tiling = value.tiling;
+  }
+
+  /// Bakes the subtree at [root] tile by tile, several tiles at a time.
+  ///
+  /// Requires [tiling]. The result is kept as [tileSet] and [mesh] is left
+  /// alone: a tiled world has no single mesh, and handing back one tile's
+  /// worth as though it were the world would be a quiet lie.
+  Future<NavTiledBakeResult> bakeTiledAsync({
+    Node? root,
+    int? concurrency,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final settings = tiling;
+    if (settings == null) {
+      throw StateError(
+        'bakeTiledAsync needs a tiling; set NavMeshSurfaceComponent.tiling, '
+        'or call bakeAsync for a single-piece bake.',
+      );
+    }
+    final target = root ?? node;
+    final report = NavCollectReport();
+    final geometry = collectNavGeometry(
+      target,
+      options: collectOptions(),
+      report: report,
+    );
+    final result = await bakeNavMeshTiledAsync(
+      geometry,
+      config,
+      tiling: settings,
+      volumes: volumesFor(target),
+      concurrency: concurrency,
+      onProgress: onProgress,
+    );
+    _tiles = result.tiles;
+    _fingerprints = fingerprintNavTiles(
+      geometry,
+      config,
+      tiling: settings,
+      origin: result.tiles.origin,
+    );
+    return result;
+  }
+
+  NavTileFingerprints? _fingerprints;
+
+  /// What each tile was baked from, taken at the last tiled bake.
+  ///
+  /// Null before one, and after a set is installed from a document: a bake
+  /// that travelled through a file did not bring the world it came from, so
+  /// the first rebake in a fresh session has nothing to compare against and
+  /// does the whole world once.
+  NavTileFingerprints? get bakeFingerprints => _fingerprints;
+
+  /// The tiles the subtree at [root] no longer agrees with, or null when
+  /// there is nothing to compare against.
+  ///
+  /// Cheap next to a bake -- one pass to bucket the triangles and one to hash
+  /// them -- so it is reasonable to ask before every rebake rather than
+  /// tracking edits as they happen.
+  Set<NavTileKey>? changedTiles({Node? root}) {
+    final before = _fingerprints;
+    final settings = tiling;
+    if (before == null || settings == null || _tiles == null) return null;
+    final target = root ?? node;
+    final geometry = collectNavGeometry(target, options: collectOptions());
+    return changedNavTiles(
+      before,
+      fingerprintNavTiles(
+        geometry,
+        config,
+        tiling: settings,
+        origin: _tiles!.origin,
+      ),
+    );
+  }
+
+  /// Rebakes only the tiles the scene no longer agrees with.
+  ///
+  /// The point of tiling while authoring: moving one crate costs the tiles
+  /// the crate touched, in both the square it left and the square it arrived
+  /// in. Falls back to a full [bakeTiledAsync] when there is nothing to
+  /// compare against -- no tiles yet, or a set loaded from a document whose
+  /// world was not walked in this session.
+  Future<NavTiledBakeResult> rebakeChangedAsync({
+    Node? root,
+    int? concurrency,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final settings = tiling;
+    if (settings == null) {
+      throw StateError(
+        'rebakeChangedAsync needs a tiling; set '
+        'NavMeshSurfaceComponent.tiling, or call bakeAsync for a '
+        'single-piece bake.',
+      );
+    }
+    final tiles = _tiles;
+    final before = _fingerprints;
+    if (tiles == null || before == null) {
+      return bakeTiledAsync(
+        root: root,
+        concurrency: concurrency,
+        onProgress: onProgress,
+      );
+    }
+
+    final target = root ?? node;
+    final geometry = collectNavGeometry(target, options: collectOptions());
+    final after = fingerprintNavTiles(
+      geometry,
+      config,
+      tiling: settings,
+      origin: tiles.origin,
+    );
+    final result = await rebakeNavTilesAsync(
+      tiles,
+      geometry,
+      changedNavTiles(before, after),
+      volumes: volumesFor(target),
+      concurrency: concurrency,
+      onProgress: onProgress,
+    );
+    _fingerprints = after;
+    return result;
+  }
+
+  /// A query across [tileSet], or null when the last bake was not tiled.
+  NavTileMeshQuery? tiledQuery() {
+    final tiles = _tiles;
+    return tiles == null ? null : NavTileMeshQuery(tiles);
+  }
 
   /// The baked mesh as bytes, for a document payload, or null when nothing is
   /// baked.
@@ -262,6 +431,7 @@ class NavMeshSurfaceComponent extends Component {
     includeInstances: includeInstances,
     includeWaterVolumes: includeWaterVolumes,
     blockedWaterDepth: blockedWaterDepth,
+    tiling: tiling,
     volumes: List.of(volumes),
     // The baked mesh is shared rather than copied: it is immutable, and a
     // clone of a level wants the same navigation, not a second copy of a

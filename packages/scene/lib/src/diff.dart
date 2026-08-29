@@ -149,8 +149,7 @@ SceneDiff diffScene(SceneDocument oldDocument, SceneDocument newDocument) {
       transform: !_transformsEqual(oldNode.transform, newNode.transform),
       name: oldNode.name != newNode.name,
       layers: oldNode.layers != newNode.layers,
-      lightChannelMask:
-          oldNode.lightChannelMask != newNode.lightChannelMask,
+      lightChannelMask: oldNode.lightChannelMask != newNode.lightChannelMask,
       visible: oldNode.visible != newNode.visible,
       raycastable: oldNode.raycastable != newNode.raycastable,
       reparented: oldParents[id] != newParents[id],

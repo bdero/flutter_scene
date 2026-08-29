@@ -227,12 +227,7 @@ final FlowNodeType getVariable = FlowNodeType(
   doc: 'Reads one of the graph\'s variables.',
   pins: const [
     FlowPin(id: 'name', label: 'Name', type: FlowType.string, defaultValue: ''),
-    FlowPin(
-      id: 'value',
-      label: 'Value',
-      type: FlowType.any,
-      isInput: false,
-    ),
+    FlowPin(id: 'value', label: 'Value', type: FlowType.any, isInput: false),
   ],
   evaluate: (context, node, inputs) =>
       _out({'value': context.variables['${inputs['name']}']}),
@@ -278,13 +273,13 @@ FlowNodeType _binaryNumber(
   category: 'Math',
   doc: doc,
   pins: [
-    const FlowPin(id: 'a', label: 'A', type: FlowType.number, defaultValue: 0.0),
-    FlowPin(
-      id: 'b',
-      label: 'B',
+    const FlowPin(
+      id: 'a',
+      label: 'A',
       type: FlowType.number,
-      defaultValue: defaultB,
+      defaultValue: 0.0,
     ),
+    FlowPin(id: 'b', label: 'B', type: FlowType.number, defaultValue: defaultB),
     const FlowPin(
       id: 'value',
       label: 'Result',
@@ -333,20 +328,13 @@ final FlowNodeType clampNumber = FlowNodeType(
     FlowPin(id: 'value', label: 'Value', type: FlowType.number),
     FlowPin(id: 'min', label: 'Min', type: FlowType.number, defaultValue: 0.0),
     FlowPin(id: 'max', label: 'Max', type: FlowType.number, defaultValue: 1.0),
-    FlowPin(
-      id: 'out',
-      label: 'Result',
-      type: FlowType.number,
-      isInput: false,
-    ),
+    FlowPin(id: 'out', label: 'Result', type: FlowType.number, isInput: false),
   ],
   evaluate: (context, node, inputs) {
     final low = flowNumber(inputs['min']);
     final high = flowNumber(inputs['max']);
     final value = flowNumber(inputs['value']);
-    return _out({
-      'out': high < low ? low : value.clamp(low, high),
-    });
+    return _out({'out': high < low ? low : value.clamp(low, high)});
   },
 );
 
@@ -640,7 +628,8 @@ final FlowNodeType printValue = FlowNodeType(
   id: 'debug.print',
   label: 'Print',
   category: 'Debug',
-  doc: 'Writes a value to the host\'s log. The first thing to reach for when '
+  doc:
+      'Writes a value to the host\'s log. The first thing to reach for when '
       'a graph is not doing what it looks like it should.',
   pins: const [
     _execIn,
