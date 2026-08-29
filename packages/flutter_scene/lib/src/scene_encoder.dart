@@ -2,7 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -10,6 +11,8 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/fmat/material_registry.dart'
+    show fmatSourcePathOf;
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
@@ -368,6 +371,13 @@ double sceneSortDepth(
 final Map<(gpu.Shader, gpu.Shader, int), gpu.RenderPipeline> _pipelineCache =
     {};
 
+/// Pipeline keys the backend refused to build, so a rejected pairing is not
+/// retried every frame. Keyed exactly like [_pipelineCache] and evicted with
+/// it, so one bad shader variant does not disable the variants that build, and
+/// a hot-reloaded shader gets a fresh attempt instead of staying invisible
+/// until restart.
+final Set<(gpu.Shader, gpu.Shader, int)> _rejectedPipelines = {};
+
 /// Returns the cached render pipeline for ([vertexShader], [fragmentShader],
 /// [vertexLayout]), building and caching it on first use.
 ///
@@ -378,13 +388,35 @@ gpu.RenderPipeline resolvePipeline(
   gpu.Shader vertexShader,
   gpu.Shader fragmentShader, {
   VertexLayoutDescriptor? vertexLayout,
+  String Function()? debugContext,
 }) {
   final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
-  return _pipelineCache[key] ??= gpu.gpuContext.createRenderPipeline(
+  final cached = _pipelineCache[key];
+  if (cached != null) return cached;
+  final stopwatch = kDebugMode || profileRendering
+      ? (Stopwatch()..start())
+      : null;
+  final pipeline = gpu.gpuContext.createRenderPipeline(
     vertexShader,
     fragmentShader,
     vertexLayout: vertexLayout?.toGpuLayout(),
   );
+  if (stopwatch != null) {
+    stopwatch.stop();
+    // A backend pipeline build is synchronous and lands mid-frame the first
+    // time a shader pair draws, so a slow one is frame jank. Surface it so
+    // the fix (pre-warming the draw during a load screen) has a target.
+    if (stopwatch.elapsedMilliseconds >= 8) {
+      debugPrint(
+        'flutter_scene: pipeline build took '
+        '${stopwatch.elapsedMilliseconds}ms mid-frame'
+        '${debugContext != null ? ' for ${debugContext()}' : ''}. '
+        'Draw this material once during a load screen to move the cost '
+        'off the first visible frame.',
+      );
+    }
+  }
+  return _pipelineCache[key] = pipeline;
 }
 
 /// Drops cached pipelines that use any of [shaders] (as vertex or fragment) so
@@ -400,6 +432,45 @@ void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
   _pipelineCache.removeWhere(
     (key, _) => shaders.contains(key.$1) || shaders.contains(key.$2),
   );
+  _rejectedPipelines.removeWhere(
+    (key) => shaders.contains(key.$1) || shaders.contains(key.$2),
+  );
+}
+
+/// [resolvePipeline], returning null instead of throwing when the backend
+/// refuses to build the pipeline, and remembering the refusal so it is
+/// attempted once rather than every frame.
+///
+/// Used by the scene encoder, where a pairing the backend cannot build (most
+/// often a custom-attribute geometry drawn by a material whose vertex stage
+/// does not declare those attributes) reaches the renderer from user data.
+/// Throwing there escapes `paint` and blanks the frame, so the draw is skipped
+/// and the reason reported once instead. Shader resolution and layout
+/// validation stay outside this guard, so a missing shader or a malformed
+/// layout still surfaces.
+gpu.RenderPipeline? tryResolvePipeline(
+  gpu.Shader vertexShader,
+  gpu.Shader fragmentShader, {
+  VertexLayoutDescriptor? vertexLayout,
+  String Function()? debugContext,
+}) {
+  final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
+  if (_rejectedPipelines.contains(key)) return null;
+  try {
+    return resolvePipeline(
+      vertexShader,
+      fragmentShader,
+      vertexLayout: vertexLayout,
+      debugContext: debugContext,
+    );
+  } on Exception catch (error) {
+    _rejectedPipelines.add(key);
+    debugPrint(
+      'flutter_scene: skipping a draw whose pipeline failed to build'
+      '${debugContext != null ? ' (${debugContext()})' : ''}. $error',
+    );
+    return null;
+  }
 }
 
 /// Records draw calls for one frame's color pass into a single
@@ -551,7 +622,7 @@ base class SceneEncoder {
   ) {
     // A material with a `vertex { }` block supplies its own vertex shader for
     // this geometry's mesh type; otherwise the engine's standard one is used.
-    final pipeline = resolvePipeline(
+    final pipeline = tryResolvePipeline(
       material.materialVertexShader(geometry.materialVertexVariant) ??
           geometry.vertexShader,
       material.fragmentShaderForLighting(_lighting),
@@ -560,7 +631,12 @@ base class SceneEncoder {
       vertexLayout: geometry.instancedVertexLayoutFor(
         material.instanceAttributes,
       ),
+      debugContext: () =>
+          '${fmatSourcePathOf(material) ?? material.runtimeType} on '
+          '${geometry.runtimeType}'
+          '${geometry.hasCustomAttributes ? ' with custom vertex attributes' : ''}',
     );
+    if (pipeline == null) return;
 
     if (material.isOpaque()) {
       _opaqueRecords.add(
@@ -1479,6 +1555,9 @@ base class SceneEncoder {
     while (_translucentCursor < end) {
       final record = _translucentRecords[_translucentCursor++];
       _renderPass.setDepthWriteEnable(record.material.translucentDepthWrite);
+      // Set per record, like the depth write above, so a projection volume
+      // drawn with `always` cannot leak that test into the next draw.
+      _renderPass.setDepthCompareOperation(record.material.depthCompare);
       record.material.lightListOffset = record.lightListOffset;
       record.material.lightListCount = record.lightListCount;
       record.material.lightChannelMask = record.item.lightChannelMask;

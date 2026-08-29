@@ -190,6 +190,13 @@ String emitFragmentGlsl(
   if (material.engineInputs.contains('filtered_scene_color')) {
     sb.writeln('#define FLUTTER_SCENE_SKIP_SSAO');
   }
+  // Compile the scene-input samplers and their accessors in or out by what the
+  // material declares (see material_scene_inputs.glsl); a declared-but-unread
+  // resource has backend-dependent liveness, so it is never a bind-time choice.
+  for (final input in material.engineInputs) {
+    final define = _engineInputDefines[input];
+    if (define != null) sb.writeln('#define $define');
+  }
   sb.writeln('#include <material_varyings.glsl>');
   sb.writeln('#include <pbr.glsl>');
   if (material.shadingModel != FmatShadingModel.shadowCatcher) {
@@ -207,6 +214,11 @@ String emitFragmentGlsl(
   } else if (lit) {
     sb.writeln('#include <material_engine_lighting.glsl>');
     sb.writeln('#include <material_lighting.glsl>');
+  } else if (material.engineInputs.isNotEmpty) {
+    // An unlit material with engine inputs takes the FragInfo block and the
+    // scene-input accessors without any of the lighting samplers. The block
+    // costs no texture unit, so this stays clear of the sampler budget.
+    sb.writeln('#include <material_scene_inputs.glsl>');
   }
   sb.writeln();
 
@@ -225,10 +237,12 @@ String emitFragmentGlsl(
     sb.writeln('$kMaterialParamsInstance;');
     sb.writeln();
   }
-  if (uniforms.isNotEmpty || samplers.isNotEmpty) {
-    // Bound to zero by the runtime; main() folds the parameters into a term
-    // multiplied by it so no declared parameter resource can be optimized out
-    // (the runtime binds them all unconditionally, and binding an
+  if (uniforms.isNotEmpty ||
+      samplers.isNotEmpty ||
+      material.engineInputs.isNotEmpty) {
+    // Bound to zero by the runtime; main() folds the parameters and the engine
+    // scene inputs into a term multiplied by it so no declared resource can be
+    // optimized out (the runtime binds them all unconditionally, and binding an
     // optimized-out uniform or sampler is unsafe).
     sb.writeln('uniform $kFragmentKeepAliveBlock { vec4 keep_alive; }');
     sb.writeln('$kFragmentKeepAliveInstance;');
@@ -240,44 +254,11 @@ String emitFragmentGlsl(
   }
   if (samplers.isNotEmpty) sb.writeln();
 
-  // Engine scene-input samplers and accessors, only for materials that
-  // declared them (the lit framework sits near Metal's 16-sampler ceiling,
-  // so these must never be unconditional). The gates and screen-UV helpers
-  // ride the engine lighting block (scene_inputs / ssao_params.zw).
-  if (material.engineInputs.contains('scene_color')) {
-    sb.writeln('// The accumulated scene color behind this draw (linear HDR).');
-    sb.writeln('uniform sampler2D scene_opaque_color;');
-    sb.writeln('// Samples the composed scene behind this fragment, offset in');
-    sb.writeln('// screen UV (pass vec2(0.0) for no distortion). Returns the');
-    sb.writeln("// fragment's own black when the snapshot is unavailable.");
-    sb.writeln('vec3 GetSceneColor(vec2 uv_offset) {');
-    sb.writeln('  if (frag_info.scene_inputs.x < 0.5) return vec3(0.0);');
-    sb.writeln(
-      '  vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), '
-      'vec2(0.999));',
-    );
-    sb.writeln('  return texture(scene_opaque_color, uv).rgb;');
-    sb.writeln('}');
-    sb.writeln();
-  }
+  // The roughness-filtered scene-color atlas, sampled through
+  // GetSceneColorFiltered. Its sampler follows scene_opaque_color, which the
+  // shared include declared above.
   if (material.engineInputs.contains('filtered_scene_color')) {
     sb.writeln('#include <filtered_scene_color.glsl>');
-    sb.writeln();
-  }
-  if (material.engineInputs.contains('scene_depth')) {
-    sb.writeln('// The opaque linear (planar view-space) depth, world units.');
-    sb.writeln('uniform sampler2D scene_depth;');
-    sb.writeln('// The opaque depth behind this fragment, offset in screen');
-    sb.writeln('// UV. Returns a huge depth when unavailable, so');
-    sb.writeln('// depth-difference effects fade out instead of popping.');
-    sb.writeln('float GetSceneDepth(vec2 uv_offset) {');
-    sb.writeln('  if (frag_info.scene_inputs.y < 0.5) return 1.0e8;');
-    sb.writeln(
-      '  vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), '
-      'vec2(0.999));',
-    );
-    sb.writeln('  return texture(scene_depth, uv).r;');
-    sb.writeln('}');
     sb.writeln();
   }
   if (material.engineInputs.contains('planar_reflection')) {
@@ -326,6 +307,7 @@ String emitFragmentGlsl(
       '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
   }
+  final additive = material.blending == FmatBlending.additive;
   if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     sb.writeln(
       '  // Shadow catcher: the surface color is the composed overlay,',
@@ -336,13 +318,27 @@ String emitFragmentGlsl(
       'material.base_color.a;',
     );
   } else if (lit) {
-    sb.writeln('  frag_color = EvaluateLighting(material);');
+    if (additive) {
+      // Zero the output alpha so an additive draw never darkens the
+      // destination, keeping the premultiplied color.
+      sb.writeln('  vec4 lit = EvaluateLighting(material);');
+      sb.writeln('  frag_color = vec4(lit.rgb, 0.0);');
+    } else {
+      sb.writeln('  frag_color = EvaluateLighting(material);');
+    }
   } else {
     sb.writeln('  // Unlit: output the surface color, premultiplied by alpha.');
-    sb.writeln(
-      '  frag_color = vec4(material.base_color.rgb, 1.0) * '
-      'material.base_color.a;',
-    );
+    if (additive) {
+      sb.writeln(
+        '  frag_color = vec4(material.base_color.rgb * '
+        'material.base_color.a, 0.0);',
+      );
+    } else {
+      sb.writeln(
+        '  frag_color = vec4(material.base_color.rgb, 1.0) * '
+        'material.base_color.a;',
+      );
+    }
   }
   sb.writeln('}');
 
@@ -364,20 +360,50 @@ String _paramsKeepAliveScalar(FmatParameter p) {
   };
 }
 
-/// The scalar keep-alive term for a fragment (or sky) shader, or null when
-/// the material declares no parameters (no keep-alive block is emitted then).
+/// The define that compiles each `engine_inputs` entry's sampler and accessors
+/// into `material_scene_inputs.glsl`. `filtered_scene_color` has none; it rides
+/// `scene_color` and brings its own include.
+const Map<String, String> _engineInputDefines = <String, String>{
+  'scene_color': 'FLUTTER_SCENE_SCENE_COLOR',
+  'scene_depth': 'FLUTTER_SCENE_SCENE_DEPTH',
+};
+
+/// The sampler each entry declares, for the keep-alive fetch.
+const Map<String, String> _engineInputSamplers = <String, String>{
+  'scene_color': 'scene_opaque_color',
+  'filtered_scene_color': 'scene_filtered_color',
+  'scene_depth': 'scene_depth',
+  'planar_reflection': 'planar_reflection',
+};
+
+/// The accessors whose presence in the author's code already keeps each
+/// entry's sampler live, so it needs no keep-alive fetch.
+final Map<String, RegExp> _engineInputAccessors = <String, RegExp>{
+  'scene_color': RegExp(r'\bGetSceneColor(Filtered)?\b'),
+  'filtered_scene_color': RegExp(r'\bGetSceneColorFiltered\b'),
+  'scene_depth': RegExp(r'\bGetSceneDepth\b|\bGetSceneWorldPosition\b'),
+  'planar_reflection': RegExp(r'\bGetPlanarReflection\b'),
+};
+
+/// The scalar keep-alive term for a fragment (or sky) shader, or null when the
+/// material declares no parameters and no engine inputs (no keep-alive block is
+/// emitted then).
 ///
 /// Folds in a MaterialParams read plus a zero-multiplied fetch of every
 /// sampler [source] never mentions, so the runtime can bind every declared
 /// parameter resource safely. Samplers the author's code references are
 /// skipped (their real fetch keeps them live and they pay nothing here);
-/// the whole-word check errs toward the extra fetch when unsure.
+/// the whole-word check errs toward the extra fetch when unsure. The engine
+/// scene inputs are covered the same way, by the accessors that read them, and
+/// an unlit material also reads FragInfo so the block it binds survives.
 String? _fragmentKeepAliveTerm(
   FmatMaterial material,
   List<FmatParameter> uniforms,
   List<FmatParameter> samplers,
 ) {
-  if (uniforms.isEmpty && samplers.isEmpty) return null;
+  if (uniforms.isEmpty && samplers.isEmpty && material.engineInputs.isEmpty) {
+    return null;
+  }
   final terms = <String>[
     if (uniforms.isNotEmpty) _paramsKeepAliveScalar(uniforms.first),
     for (final p in samplers)
@@ -387,6 +413,12 @@ String? _fragmentKeepAliveTerm(
         p.type == FmatType.samplerCube
             ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
             : 'texture(${p.name}, vec2(0.0)).x',
+    if (material.shadingModel == FmatShadingModel.unlit &&
+        material.engineInputs.isNotEmpty)
+      'frag_info.scene_inputs.x',
+    for (final input in material.engineInputs)
+      if (!_engineInputAccessors[input]!.hasMatch(material.fragmentSource))
+        'texture(${_engineInputSamplers[input]!}, vec2(0.0)).x',
   ];
   // Every declared resource is already referenced; the block still needs a
   // live operand of its own so it cannot be folded away.
@@ -688,8 +720,12 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'blending': material.blending.name,
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,
+    if (material.depthTest != FmatDepthTest.lessEqual)
+      'depth_test': material.depthTest.token,
     if (material.engineInputs.isNotEmpty)
       'engine_inputs': material.engineInputs,
+    if (material.sceneColorReach != null)
+      'scene_color_reach': material.sceneColorReach,
     'uniform_block': kMaterialParamsBlock,
     // Declared order plus the resolved record offsets, so the runtime lays out
     // the instance-rate buffer without re-deriving the padding rule.

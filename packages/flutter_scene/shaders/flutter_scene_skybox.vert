@@ -30,9 +30,9 @@ void main() {
   // geometry at that pixel would occupy, with no orientation flip needed.
   vec4 world =
       frame_info.inverse_view_projection * vec4(position, 1.0, 1.0);
-  vec3 ray = world.xyz / world.w;
-  v_ray = mat3(frame_info.environment_transform) * ray;
+  v_ray = mat3(frame_info.environment_transform) * world.xyz;
   // Sit at the far plane so geometry (depth-tested lessEqual against the
   // cleared far value) always draws in front.
   gl_Position = vec4(position, 1.0, 1.0);
 }
+

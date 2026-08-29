@@ -1256,9 +1256,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   SmokeScene('instanced_lighting', () {
     final scene = Scene();
     final arena = GeometryBufferArena(blockSizeInBytes: 1024 * 1024);
-    final cubeData = CuboidGeometry(
-      vm.Vector3(0.5, 0.5, 0.5),
-    ).extractMeshData();
+    final cubeData = CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5))
+        .extractMeshData();
     scene.add(
       _directionalLightNode(vm.Vector3(-0.4, -1.0, -0.35), DirectionalLight()),
     );
@@ -1523,6 +1522,51 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           UnlitMaterial()..baseColorFactor = vm.Vector4(0.2, 0.9, 1.0, 1.0),
         ),
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.5, 0)),
+    );
+    return (scene: scene, camera: _shadowCamera());
+  }, preload: loadSmokeMaterials),
+  // A projected box decal over a ground plane and one prop. The decal's
+  // fragments unproject the opaque depth into the box's local space, so the
+  // mark conforms to both the ground and the cuboid standing in it rather than
+  // to the box's own faces. Its own correctness is a per-backend depth-precision
+  // question, which is why it gets a scene of its own.
+  SmokeScene('decal', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(vm.Vector3(-0.4, -1.0, -0.35), DirectionalLight()),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.6, depth: 3.6),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.76, 0.72, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    // A prop standing in the projection, so the mark climbs its side and top.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          CuboidGeometry(vm.Vector3(0.7, 0.7, 0.7)),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.30, 0.55, 0.85, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.6
+            ..vertexColorWeight = 0.0,
+        ),
+      )..localTransform = vm.Matrix4.translation(vm.Vector3(0.55, 0.35, -0.35)),
+    );
+    scene.add(
+      DecalNode(material: _fmatMaterial('Decal'))..project(
+        point: vm.Vector3(0, 0.25, 0),
+        normal: vm.Vector3(0, 1, 0),
+        size: 2.2,
+        depth: 1.6,
+      ),
     );
     return (scene: scene, camera: _shadowCamera());
   }, preload: loadSmokeMaterials),

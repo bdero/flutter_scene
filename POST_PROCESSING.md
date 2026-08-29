@@ -1,15 +1,15 @@
 # Post-processing in flutter_scene
 
-flutter_scene applies post-processing in two ways: a suite of built-in
-effects you turn on and tune, and custom effects you author as fragment
-shaders. Both are configured per scene through `Scene.postProcess`.
-
-Everything is off by default, so a fresh scene does no extra work.
+flutter_scene applies post-processing in three ways: a suite of built-in
+parametric effects you turn on and tune, custom fragment shaders authored as
+a `PostEffect`, and custom fragment shaders authored as a `CustomRenderPass`
+(the richer option, which can read scene depth, normals, and the shadow
+map). All three are off by default, so a fresh scene does no extra work.
 
 ## Built-in effects
 
-`Scene.postProcess` holds one settings object per effect. Each has an
-`enabled` flag (off by default) and typed parameters:
+Most built-in effects live on `Scene.postProcess`, one settings object per
+effect, each with an `enabled` flag (off by default) and typed parameters:
 
 ```dart
 final scene = Scene();
@@ -55,12 +55,91 @@ scene.postProcess.filmGrain
   ..intensity = 0.3;  // animated noise strength
 ```
 
-The effects run in a fixed order. Bloom and color grading operate on the
-linear HDR scene color before tone mapping; vignette, chromatic
-aberration, and film grain are applied around the tone-map step. You do
-not reorder the built-ins; you turn them on and tune them.
+A few effects that need more than a flat settings object, or that read
+scene geometry, live directly on `Scene` instead of `Scene.postProcess`:
+`Scene.depthOfField`, `Scene.godRays`, `Scene.screenSpaceReflections`,
+`Scene.autoExposure`, and `Scene.screenDistortion`. Each still follows the
+settings-object-with-`enabled` shape; see their dartdoc for parameters.
 
-## Custom effects
+### Radial screen distortion
+
+`Scene.screenDistortion` drives a ring distortion (plus an optional
+chromatic split) expanding from a screen point, for shockwaves and impact
+pulses. It holds a list of `DistortionPulse`s (up to
+`ScreenDistortionSettings.maxPulses`, currently 4) so several can be live at
+once; each pulse is plain data you animate per frame:
+
+```dart
+scene.screenDistortion.enabled = true;
+final pulse = DistortionPulse(strength: 0.0);
+scene.screenDistortion.pulses.add(pulse);
+
+// Per frame, while the pulse plays.
+final uv = scene.camera!.projectToScreenUv(blastWorldPosition, viewportSize);
+if (uv != null) {
+  pulse
+    ..center = uv
+    ..radius = elapsed * 1.6
+    ..strength = 0.03 * (1.0 - elapsed / 0.7).clamp(0.0, 1.0)
+    ..chromaticAberration = 0.6;
+}
+
+// When it ends.
+scene.screenDistortion.pulses.remove(pulse);
+```
+
+`Camera.projectToScreenUv` is the counterpart of `Camera.worldToScreen` that
+returns normalized screen UV (origin top-left) instead of pixels, for
+placing a pulse from a world-space impact point; it returns null when the
+point is behind the camera.
+
+Distortion runs on the display-referred image after tone mapping, so it
+warps bloom along with the rest of the frame and reads the same
+`Scene.postProcess.chromaticAberration` does; the two are independent and
+will double up if both are on, so drive one or the other for a given pulse.
+
+## The full pass order
+
+The built-in pipeline is a fixed sequence; you turn stages on and tune
+them, you do not reorder them. From `Scene.render` for one view, in order:
+
+1. Shadow map (cascades and/or spot shadows), when a shadow-casting light
+   needs one.
+2. The depth prepass (and ambient occlusion, if enabled), when a
+   perspective camera and any consumer (occlusion, reflections, a material
+   sampling scene depth, or a custom pass) need scene depth.
+3. The scene itself draws into linear HDR scene color, opaque then
+   translucent.
+4. Screen-space reflections refine the lit HDR color in place, when
+   enabled.
+5. God rays add volumetric in-scattered light, when enabled (`Scene.godRays`,
+   requires a shadow-casting directional light and a perspective camera).
+6. User `CustomRenderPass`es at `RenderStage.afterScene` run, in the order
+   added.
+7. Depth of field defocuses the HDR image, when enabled.
+8. `PostEffect`s at `PostInsertion.beforeTonemap` run, in
+   `postProcess.customEffects` list order.
+9. Auto exposure meters the HDR image and derives the correction factor the
+   resolve applies, when enabled.
+10. Bloom runs in HDR and is composited back in by the resolve.
+11. User `CustomRenderPass`es at `RenderStage.beforeToneMapping` run.
+12. The resolve pass produces the first display-referred image: chromatic
+    aberration (sample-time UV split), exposure, color grading, the tone
+    mapping operator, display encoding, then vignette and film grain.
+13. Screen distortion warps the display image, when a pulse is live
+    (`Scene.screenDistortion`).
+14. User `CustomRenderPass`es at `RenderStage.afterToneMapping` run.
+15. FXAA anti-aliases the image, when the scene's anti-aliasing mode is
+    `AntiAliasingMode.fxaa`.
+16. `PostEffect`s at `PostInsertion.afterTonemap` run.
+17. User `CustomRenderPass`es at `RenderStage.afterAntiAliasing` run.
+18. The selection outline composites around highlighted nodes, last, when
+    any node has a `Node.highlightColor` set.
+
+Every step is skipped entirely when its settings are off (or, for the
+depth prepass, when nothing needs it), so an unused stage costs nothing.
+
+## Custom effects: PostEffect
 
 A `PostEffect` is a fragment shader that reads the current color and
 writes a new one. It is the post-processing counterpart of
@@ -193,22 +272,43 @@ void main() {
 }
 ```
 
-## How effects compose
+## Custom effects: CustomRenderPass
 
-Built-in effects run in their fixed order. Custom effects run in
-`customEffects` list order, each at its chosen insertion point: every
-`beforeTonemap` effect runs (before bloom and tone mapping), then the
-built-in resolve, then every `afterTonemap` effect. Each custom effect
-reads the previous result and writes the next, so order in the list
-matters.
+A `CustomRenderPass` is the richer extension point: an object with a
+`RenderStage` (one of the four named anchors in the pass order above), a
+declared `Set<RenderInput>`, and a `RenderPassContext` that offers
+`applyShader` (the same full-screen-shader step `PostEffect` runs) and
+`drawObjects` (render a filtered set of nodes flat into a mask texture,
+for outlines and highlights). The built-in god rays, screen-space
+reflections, depth of field, and screen distortion passes are all ordinary
+`CustomRenderPass`es, so anything they do, a custom one can.
+
+Declaring a `RenderInput` (`depth`, `normals`, `shadowMap`) makes the
+engine produce that buffer for the frame and exposes it on the context, so
+a custom pass can read scene geometry, not just color:
+
+```dart
+class TintPass extends CustomRenderPass {
+  TintPass(this.shader);
+  final gpu.Shader shader;
+  @override
+  String get name => 'tint';
+  @override
+  RenderStage get stage => RenderStage.afterToneMapping;
+  @override
+  void execute(RenderPassContext context) {
+    context.applyShader(shader); // reads input_color, writes the chain
+  }
+}
+
+scene.addRenderPass(TintPass(shader));
+```
 
 ## Limitations
 
-- **One pass per custom effect.** Each custom effect is its own
-  full-screen pass. Stacking many has a per-pass cost; the built-in suite
-  is folded into a single pass and is cheaper.
-- **No depth input yet.** Custom effects receive scene color but not scene
-  depth. Depth-based effects are a planned addition.
+- **One pass per custom effect.** Each `PostEffect` or `CustomRenderPass`
+  is its own full-screen pass. Stacking many has a per-pass cost; the
+  built-in suite is folded into a single resolve pass and is cheaper.
 - **Editing a shader's contents needs a clean rebuild.** The shader build
   hook only re-runs on a manifest change, not on a content-only edit to an
   existing shader. After editing a `.frag`, remove the `.dart_tool` and

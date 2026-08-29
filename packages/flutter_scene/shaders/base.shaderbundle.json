@@ -123,6 +123,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_god_rays.frag"
   },
+  "ScreenDistortionFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_screen_distortion.frag"
+  },
   "SsaoFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_ssao.frag"

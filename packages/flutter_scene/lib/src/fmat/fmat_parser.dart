@@ -563,12 +563,14 @@ FmatMaterial _build(
     'blending',
     'culling',
     'depth_write',
+    'depth_test',
     'parameters',
     'varyings',
     'attributes',
     'instance_attributes',
     'requires',
     'engine_inputs',
+    'scene_color_reach',
   };
   for (final key in tree.keys) {
     if (!knownKeys.contains(key)) {
@@ -610,6 +612,30 @@ FmatMaterial _build(
     throw FmatException('`depth_write` must be a boolean.', fileName: fileName);
   }
   final depthWrite = depthWriteValue as bool? ?? false;
+
+  // `depth_test` picks the translucent pass's depth comparison. `always` is for
+  // a projection volume whose own faces sit behind the surface it shades.
+  final depthTestValue = tree['depth_test'];
+  var depthTest = FmatDepthTest.lessEqual;
+  if (depthTestValue != null) {
+    final ident = depthTestValue is _Ident ? depthTestValue : null;
+    final parsed = ident == null ? null : FmatDepthTest.fromToken(ident.name);
+    if (parsed == null) {
+      throw FmatException(
+        '`depth_test` must be `less_equal` or `always`.',
+        fileName: fileName,
+        line: ident?.line,
+      );
+    }
+    depthTest = parsed;
+  }
+  if (depthTest != FmatDepthTest.lessEqual && blending == FmatBlending.opaque) {
+    throw FmatException(
+      '`depth_test` applies to the translucent pass, so it needs '
+      '`blending: alpha` or `blending: additive`.',
+      fileName: fileName,
+    );
+  }
 
   final parameters = _buildParameters(tree['parameters'], fileName);
   final varyings = _buildVaryings(tree['varyings'], parameters, fileName);
@@ -660,8 +686,7 @@ FmatMaterial _build(
   // `scene_color` (the accumulated background), `filtered_scene_color` (its
   // roughness-filtered atlas), `scene_depth` (the opaque linear depth), and
   // `planar_reflection` (a PlanarReflectorComponent's mirrored capture).
-  // Lit surface materials only: the samplers and their gates ride the engine-
-  // lighting frame data, which unlit shaders and skies do not carry.
+  // Surface materials only; a sky draws before any of them exist.
   final engineInputs = <String>[];
   final engineInputsRaw = tree['engine_inputs'];
   if (engineInputsRaw != null) {
@@ -700,13 +725,39 @@ FmatMaterial _build(
         fileName: fileName,
       );
     }
-    if (engineInputs.isNotEmpty && shadingModel == FmatShadingModel.unlit) {
+    // The planar capture binds through the lit engine bind set; the screen
+    // inputs above ride the FragInfo block, which unlit shaders also carry.
+    if (engineInputs.contains('planar_reflection') &&
+        shadingModel == FmatShadingModel.unlit) {
       throw FmatException(
-        '`engine_inputs` requires a lit shading model (the samplers ride the '
-        'engine lighting frame data).',
+        '`planar_reflection` requires a lit shading model.',
         fileName: fileName,
       );
     }
+  }
+
+  // `scene_color_reach` is how far past its own surface the shader samples the
+  // scene color, in local units. Omitting it means unbounded, so the draw can
+  // never share a scene-color capture with another reader.
+  final reachValue = tree['scene_color_reach'];
+  if (reachValue != null && reachValue is! num) {
+    throw FmatException(
+      '`scene_color_reach` must be a number.',
+      fileName: fileName,
+    );
+  }
+  final sceneColorReach = (reachValue as num?)?.toDouble();
+  if (sceneColorReach != null && sceneColorReach < 0) {
+    throw FmatException(
+      '`scene_color_reach` must not be negative.',
+      fileName: fileName,
+    );
+  }
+  if (sceneColorReach != null && engineInputs.isEmpty) {
+    throw FmatException(
+      '`scene_color_reach` requires `engine_inputs`.',
+      fileName: fileName,
+    );
   }
 
   // Loose check: the code block must define the expected entry function. We do
@@ -786,6 +837,7 @@ FmatMaterial _build(
     blending: blending,
     culling: culling,
     depthWrite: depthWrite,
+    depthTest: depthTest,
     parameters: parameters,
     fragmentSource: body.content,
     fragmentSourceLine: body.startLine,
@@ -795,6 +847,7 @@ FmatMaterial _build(
     attributes: attributes,
     instanceAttributes: instanceAttributes,
     engineInputs: engineInputs,
+    sceneColorReach: sceneColorReach,
   );
 }
 

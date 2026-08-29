@@ -200,16 +200,26 @@ abstract class Camera {
   /// whether to clamp or cull. [viewSize] is the view's logical size (the
   /// constraints `SceneView` renders into).
   ui.Offset? worldToScreen(Vector3 worldPoint, ui.Size viewSize) {
+    final uv = projectToScreenUv(worldPoint, viewSize);
+    if (uv == null) {
+      return null;
+    }
+    return ui.Offset(uv.x * viewSize.width, uv.y * viewSize.height);
+  }
+
+  /// Maps a world-space point to screen UV (origin top-left, `0..1` across
+  /// [viewport]). The projection [worldToScreen] scales to pixels, so the two
+  /// cannot disagree. Returns null when [worldPoint] is at or behind the
+  /// camera plane. Values outside `0..1` are a point off screen; callers
+  /// decide whether to clamp or cull.
+  Vector2? projectToScreenUv(Vector3 worldPoint, ui.Size viewport) {
     final clip = getViewTransform(
-      viewSize,
+      viewport,
     ).transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
     if (clip.w <= 0) {
       return null;
     }
-    return ui.Offset(
-      (clip.x / clip.w + 1) / 2 * viewSize.width,
-      (1 - clip.y / clip.w) / 2 * viewSize.height,
-    );
+    return Vector2((clip.x / clip.w + 1) / 2, (1 - clip.y / clip.w) / 2);
   }
 
   /// Returns the combined projection-and-view transform for a render target

@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart'
     show Frustum, Matrix3, Matrix4, Plane, Ray, Vector2, Vector3, Vector4;
+
 import 'ambient_occlusion.dart';
 import 'global_illumination.dart';
 import 'audio/audio_engine.dart';
@@ -71,6 +72,7 @@ import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
 import 'render_texture.dart';
 import 'render_view.dart';
+import 'screen_distortion.dart';
 import 'shaders.dart';
 import 'sky_environment.dart';
 import 'skybox.dart';
@@ -1214,6 +1216,14 @@ base class Scene implements SceneGraph {
   final GodRaysSettings godRays = GodRaysSettings();
   late final GodRaysPass _godRaysPass = GodRaysPass(godRays);
 
+  /// Parametric radial screen distortion pulses. Off by default; set
+  /// [ScreenDistortionSettings.enabled] and add a [DistortionPulse] to turn
+  /// it on. Runs on the display-referred image after tone mapping.
+  final ScreenDistortionSettings screenDistortion = ScreenDistortionSettings();
+  late final ScreenDistortionPass _screenDistortionPass = ScreenDistortionPass(
+    screenDistortion,
+  );
+
   /// Depth of field with bokeh. Off by default; set [DepthOfField.enabled]
   /// to turn it on. Requires a [PerspectiveCamera] (it reconstructs blur from
   /// camera depth); skipped otherwise.
@@ -2014,6 +2024,11 @@ base class Scene implements SceneGraph {
         camera.projection is PerspectiveProjection &&
         cascades.isNotEmpty;
 
+    // A pure display-referred image warp; no depth, shadow, or camera
+    // projection needed.
+    final wantScreenDistortion =
+        screenDistortion.enabled && screenDistortion.pulses.isNotEmpty;
+
     // The geometry buffers the enabled custom passes (and god rays) request, so
     // the engine produces depth/normals even without AO/SSR and publishes the
     // shadow uniform for depth-aware passes.
@@ -2296,14 +2311,18 @@ base class Scene implements SceneGraph {
         // so its behavior is unchanged; reflections sample whatever resolution
         // is published. With only reflections on, use full resolution. The
         // depth-mip-chain path (SsaoPass builds the reduced levels) wants a
-        // full-resolution base, so it also renders the prepass full size.
+        // full-resolution base, so it also renders the prepass full size. A
+        // material sampling scene depth reads it as an image, so it also gets
+        // full resolution; a reduced prepass stair-steps every depth-driven
+        // edge it draws.
         final depthDimensions =
             (wantAo &&
                 !ambientOcclusion.depthMipChain &&
                 !enableTaa &&
                 !wantSsr &&
                 !wantCustomNormals &&
-                !wantIrradianceField)
+                !wantIrradianceField &&
+                !bindSceneDepth)
             ? ambientOcclusionTargetSize(pixelSize, ambientOcclusion)
             : pixelSize;
         // Reflections need the interpolated view-space normal, so the prepass
@@ -2700,6 +2719,25 @@ base class Scene implements SceneGraph {
         postProcess: postProcess,
       ),
     );
+
+    // Radial distortion pulses warp the composed image (including bloom)
+    // right after tone mapping, so FXAA cleans up the resampled edges
+    // afterward. Built on the custom-pass API, ahead of any user-added
+    // afterToneMapping passes.
+    if (wantScreenDistortion) {
+      displaySteps.add(
+        (output) => UserRenderGraphPass(
+          pass: _screenDistortionPass,
+          camera: camera,
+          dimensions: pixelSize,
+          destination: output,
+          renderScene: renderScene,
+          viewLayerMask: view.layerMask,
+          passIndex: 0,
+          time: postTime,
+        ),
+      );
+    }
 
     var userPassIndex = 0;
     for (final pass in _passesAt(RenderStage.afterToneMapping)) {

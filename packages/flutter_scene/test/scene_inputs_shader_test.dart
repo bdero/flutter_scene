@@ -17,9 +17,9 @@ File _resolveFile(String relativePath) {
 
 void main() {
   final header = _resolveFile('shaders/scene_inputs.glsl').readAsStringSync();
-  // The generated accessors the header has to agree with.
+  // The `.fmat` accessors the header has to agree with.
   final emitter = _resolveFile(
-    'lib/src/fmat/fmat_emitter.dart',
+    'shaders/material_scene_inputs.glsl',
   ).readAsStringSync();
 
   test('each sampler is behind the define that declares it', () {
@@ -51,11 +51,20 @@ void main() {
     expect(emitter, contains('frag_info.scene_inputs.y < 0.5'));
 
     // Missing color reads black and missing depth reads far, matching
-    // `GetSceneColor` and `GetSceneDepth` in the emitter.
+    // `GetSceneColor` and `GetSceneDepth` in the emitter. The `.fmat` side
+    // names the far sentinel, so the value is locked through the constant and
+    // through the unprojection that reuses it.
     expect(header, contains('vec3 result = vec3(0.0);'));
     expect(header, contains('float result = 1.0e8;'));
     expect(emitter, contains('return vec3(0.0);'));
-    expect(emitter, contains('return 1.0e8;'));
+    expect(emitter, contains('const float kSceneDepthUnavailable = 1.0e8;'));
+    expect(emitter, contains('return kSceneDepthUnavailable;'));
+    // An unavailable depth unprojects to that same distance, so a projection
+    // volume's inside test lands outside instead of on its own boundary.
+    expect(
+      emitter,
+      contains('frag_info.camera_forward.xyz * kSceneDepthUnavailable'),
+    );
   });
 
   test('samples at the same clamped screen UV as a .fmat material', () {

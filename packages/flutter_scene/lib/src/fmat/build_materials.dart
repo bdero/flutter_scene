@@ -124,6 +124,7 @@ const _frameworkShaderFiles = <String>[
   'material_engine_lighting.glsl',
   'material_inputs.glsl',
   'material_lighting.glsl',
+  'material_scene_inputs.glsl',
   'material_shadow_sampling.glsl',
   'material_varyings.glsl',
   'material_vertex.glsl',
@@ -136,6 +137,7 @@ const _frameworkShaderFiles = <String>[
   'ssao_geometry.glsl',
   'texture.glsl',
   'tone_mapping.glsl',
+  'wireframe.glsl',
 ];
 
 /// Compiles `.fmat` custom-material files into a Flutter GPU shader bundle plus
@@ -457,9 +459,8 @@ Future<void> _buildMaterials({
       for (final variant in fragmentVariants.entries) {
         final variantEntryName = variant.key;
         final fragFileName = '$variantEntryName.frag';
-        File(
-          generatedDir.uri.resolve(fragFileName).toFilePath(),
-        ).writeAsStringSync(variant.value);
+        File(generatedDir.uri.resolve(fragFileName).toFilePath())
+            .writeAsStringSync(variant.value);
         manifest[variantEntryName] = <String, Object?>{
           'type': 'fragment',
           // impellerc resolves a bundle entry's `file` relative to the package
@@ -480,9 +481,8 @@ Future<void> _buildMaterials({
           );
         }
         final vertFileName = '$vertexEntry.vert';
-        File(
-          generatedDir.uri.resolve(vertFileName).toFilePath(),
-        ).writeAsStringSync(vertexGlsl);
+        File(generatedDir.uri.resolve(vertFileName).toFilePath())
+            .writeAsStringSync(vertexGlsl);
         manifest[vertexEntry] = <String, Object?>{
           'type': 'vertex',
           'file': 'build/fmat/$bundleName/$vertFileName',

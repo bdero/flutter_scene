@@ -3,11 +3,14 @@
 // and swim in the rising hot air.
 //
 // It samples the opaque scene color (scene_color engine input) at a screen-UV
-// offset driven by upward-scrolling simplex noise. The refracted color is
-// written to emissive, not base_color, so the lit framework does not shade it;
-// base_color is left black with its alpha carrying the plume mask, so the quad
+// offset driven by upward-scrolling simplex noise, and writes the result
+// straight into base_color with the plume mask as its alpha, so the quad
 // cross-fades from the clean background (alpha 0) to fully refracted (alpha 1).
-// Specular is forced off so no environment reflection leaks over the glass.
+// Unlit, because the background is already lit; nothing here wants shading.
+//
+// `scene_color_reach` bounds how far off the quad the shader samples, which
+// lets the engine share one scene-color capture between this and any other
+// reader whose screen rect is disjoint.
 //
 // Occlusion is free: the quad is translucent and depth-tested against the
 // opaque scene, so anything standing in front of the fire correctly hides the
@@ -16,10 +19,14 @@
 
 material {
   name: "CampfireHeat",
-  shading_model: lit,
+  shading_model: unlit,
   blending: alpha,
   culling: none,
   engine_inputs: [scene_color],
+  // Local units sampled past the quad. The displacement is authored in screen
+  // UV, so this is a generous world-space bound at the example's camera
+  // distance; raise it if the plume ever sits much closer to the camera.
+  scene_color_reach: 0.5,
   parameters: [
     // Overall wobble amount, scaled live by the flame's flicker.
     { type: float, name: strength, hint: range(0.0, 2.0, 0.01), default: 1.0 },
@@ -74,13 +81,8 @@ fragment {
         GetSceneColor(offset).g,
         GetSceneColor(offset - dir * split).b);
 
-    // Emissive passthrough of the refracted background; base_color alpha is the
-    // cross-fade mask. Specular off so no reflection tints the glass.
-    material.base_color = vec4(0.0, 0.0, 0.0, mask);
-    material.emissive = refracted;
-    material.metallic = 0.0;
-    material.roughness = 1.0;
-    material.specular = 0.0;
+    // The refracted background, cross-faded in by the plume mask.
+    material.base_color = vec4(refracted, mask);
     PrepareMaterial(material);
   }
 }

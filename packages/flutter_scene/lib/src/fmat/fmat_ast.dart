@@ -44,10 +44,37 @@ enum FmatBlending {
   /// Drawn in the depth-sorted translucent pass with premultiplied
   /// source-over blending.
   alpha,
+
+  /// Drawn in the depth-sorted translucent pass with additive blending
+  /// (the output alpha is forced to zero, so the destination is never
+  /// darkened). Allowed on `lit` and `unlit` alike.
+  additive,
 }
 
 /// Which triangle faces are culled.
 enum FmatCulling { back, front, none }
+
+/// The depth test a translucent material's geometry uses.
+enum FmatDepthTest {
+  /// Occludes against the opaque scene.
+  lessEqual('less_equal'),
+
+  /// Draws regardless of the depth buffer, for a projection volume whose own
+  /// faces sit behind the surface it shades (see `DecalNode`).
+  always('always');
+
+  const FmatDepthTest(this.token);
+
+  /// The spelling used in a `.fmat` and in the generated sidecar.
+  final String token;
+
+  static FmatDepthTest? fromToken(String token) {
+    for (final value in values) {
+      if (value.token == token) return value;
+    }
+    return null;
+  }
+}
 
 /// The type of a material parameter. Scalar and vector types are packed into
 /// the generated `MaterialParams` uniform block; sampler types are declared as
@@ -235,6 +262,7 @@ class FmatMaterial {
     required this.blending,
     required this.culling,
     this.depthWrite = false,
+    this.depthTest = FmatDepthTest.lessEqual,
     required this.parameters,
     required this.fragmentSource,
     required this.fragmentSourceLine,
@@ -244,6 +272,7 @@ class FmatMaterial {
     this.attributes = const [],
     this.instanceAttributes = const [],
     this.engineInputs = const [],
+    this.sceneColorReach,
   });
 
   final String name;
@@ -259,6 +288,9 @@ class FmatMaterial {
   final FmatBlending blending;
   final FmatCulling culling;
   final bool depthWrite;
+
+  /// The depth test used in the translucent pass (`depth_test:`).
+  final FmatDepthTest depthTest;
   final List<FmatParameter> parameters;
 
   /// The verbatim contents of the code block (`fragment { }` for a surface
@@ -307,9 +339,15 @@ class FmatMaterial {
   /// `filtered_scene_color` (its roughness-filtered atlas), and `scene_depth`
   /// (the opaque linear depth). Filtered color requires `scene_color`. The
   /// emitter declares matching samplers and accessors only when listed, and
-  /// the engine produces textures only when a visible material asks. Lit
-  /// surface materials only.
+  /// the engine produces textures only when a visible material asks. Surface
+  /// materials only.
   final List<String> engineInputs;
+
+  /// How far beyond its own surface the shader samples the scene color, in
+  /// local units (`scene_color_reach:`). Null means it may sample anywhere on
+  /// screen, so it can never share a capture with another reader. A declared
+  /// reach lets readers whose inflated screen rects are disjoint share one.
+  final double? sceneColorReach;
 
   /// Parameters packed into the `MaterialParams` uniform block, in declared
   /// order.

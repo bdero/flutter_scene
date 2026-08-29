@@ -1,0 +1,44 @@
+// The projected box decal for the `decal` smoke scene. Same shape as the
+// example app's scorch_decal.fmat (unlit, front-culled, depth_test always,
+// scene_depth unprojected into the box's local space), with the coverage
+// computed procedurally instead of sampled, so the scene needs no texture asset
+// and stays deterministic across backends.
+//
+// What the smoke matrix has to catch here is depth precision: the unprojected
+// world position is compared against the box in world space, so a backend whose
+// linear depth is quantized paints a ragged or missing mark.
+
+material {
+  name: "Decal",
+  shading_model: unlit,
+  blending: alpha,
+  culling: front,
+  depth_test: always,
+  engine_inputs: [scene_depth],
+  scene_color_reach: 0.0,
+
+  parameters: [
+    // World to unit-box transform, written by DecalNode.
+    { type: mat4, name: decal_inverse },
+    { type: float, name: decal_fade, hint: range(0.0, 1.0, 0.01), default: 1.0 },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 local = (material_params.decal_inverse *
+                  vec4(GetSceneWorldPosition(vec2(0.0)), 1.0)).xyz;
+    vec3 outside = step(vec3(0.5), abs(local));
+    if (max(outside.x, max(outside.y, outside.z)) > 0.0) {
+      discard;
+    }
+    // A soft-edged scorch disc with a ring of speckle, so the mark's shape
+    // reads in a visual diff and its edge shows any depth quantization.
+    float r = length(local.xz) * 2.0;
+    float coverage = (1.0 - smoothstep(0.45, 1.0, r)) *
+                     (0.75 + 0.25 * cos(atan(local.z, local.x) * 6.0));
+    material.base_color =
+        vec4(0.0, 0.0, 0.0, coverage * material_params.decal_fade);
+    PrepareMaterial(material);
+  }
+}

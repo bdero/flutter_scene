@@ -115,11 +115,13 @@ into one bundle; each becomes an entry keyed by its `name`.
 | --- | --- | --- | --- |
 | `name` | string (required) | | The bundle entry name and sidecar key. |
 | `shading_model` | `lit`, `unlit` | `lit` | `lit` runs the engine's PBR lighting; `unlit` outputs your color directly. |
-| `blending` | `opaque`, `alpha` | `opaque` | `alpha` routes the material through the depth-sorted translucent pass. |
+| `blending` | `opaque`, `alpha`, `additive` | `opaque` | `alpha` and `additive` both route the material through the depth-sorted translucent pass. `additive` forces the output alpha to zero, so the destination is never darkened, only brightened; allowed on `lit` and `unlit` alike. |
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
+| `depth_test` | `less_equal`, `always` | `less_equal` | The depth test used in the translucent pass, so it needs `blending: alpha` or `additive`. `always` draws regardless of the opaque depth, for a projection volume whose own faces are not the surface being shaded (see Decals). |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
-| `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Lit surface materials only. |
+| `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Surface materials, `lit` or `unlit` (`planar_reflection` is lit only). |
+| `scene_color_reach` | number | unbounded | How far past its own surface the shader samples, in local units. Lets readers whose screen rects are disjoint share one scene-color capture. Requires `engine_inputs`. |
 
 ## Engine inputs (`engine_inputs`)
 
@@ -133,8 +135,10 @@ cost nothing when unused:
   resolve in between. Use it for refraction and translucent compositing.
 - `scene_depth` binds `scene_depth`, the opaque geometry's linear
   (planar view-space) depth in world units. Requesting it forces the depth
-  prepass (already produced when SSAO or reflections are on). Use it for
-  depth-fade absorption, shoreline foam, and soft-particle edges.
+  prepass (already produced when SSAO or reflections are on) and renders it at
+  full resolution, so a depth-driven edge is not stair-stepped by a
+  reduced-resolution occlusion chain. Use it for depth-fade absorption,
+  shoreline foam, and soft-particle edges.
 - `planar_reflection` binds the mirrored scene capture a
   `PlanarReflectorComponent` renders for the surface each frame, plus the
   capture's view-projection for projective sampling. Use it for mirrors and
@@ -150,10 +154,18 @@ Declaring an input emits the sampler and these accessors into your shader:
 vec2  GetScreenUv();                  // this fragment's screen UV
 vec3  GetSceneColor(vec2 uv_offset);  // opaque scene color behind the fragment
 float GetSceneDepth(vec2 uv_offset);  // opaque linear depth behind the fragment
+vec3  GetSceneWorldPosition(vec2 uv_offset);  // that surface's world position
 float GetFragmentViewDepth();         // this fragment's own linear depth
 float GetTime();                      // engine seconds, for animation
 vec4  GetPlanarReflection();          // mirrored capture at this fragment
 ```
+
+`GetSceneWorldPosition` unprojects the opaque surface behind the fragment (it
+needs `scene_depth`), for contact softening, curved-surface thickness, and
+projecting onto whatever is back there. When depth is unavailable or the camera
+is not perspective it returns a point at the same huge depth `GetSceneDepth`
+reports, so a reader fades out or falls outside its own volume rather than
+landing on the fragment it was shading.
 
 `GetPlanarReflection()` returns the mirrored scene color in rgb with `a` 1
 when a capture is bound this draw and 0 otherwise (no reflector routed one,
@@ -180,11 +192,53 @@ vec3 refracted = GetSceneColor(normal_offset * refraction_strength);
 vec3 absorbed = refracted * exp(-absorption * thickness);         // Beer-Lambert
 ```
 
-Only `lit` surface materials may declare engine inputs (the gates and screen
-mapping ride the engine lighting data). Budget note: the lit framework is
-close to Metal's 16-sampler limit, so with both inputs declared keep the
-material's own samplers to two or fewer; prefer in-shader procedural noise
-over noise textures.
+Both `lit` and `unlit` surface materials may declare engine inputs (a sky may
+not; it draws before any of them exist). An `unlit` reader is the right shape
+for refraction and heat haze, where the background is already lit and nothing
+wants shading:
+
+```
+material {
+  name: "HeatHaze",
+  shading_model: unlit,
+  blending: alpha,
+  engine_inputs: [scene_color],
+  scene_color_reach: 0.5,
+}
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(GetSceneColor(wobble), mask);
+    PrepareMaterial(material);
+  }
+}
+```
+
+Budget note: the lit framework is close to Metal's 16-sampler limit, so with
+both inputs declared keep the material's own samplers to two or fewer; prefer
+in-shader procedural noise over noise textures. An `unlit` reader carries none
+of the lighting samplers, so it has the whole budget and compiles to one bundle
+entry instead of four.
+
+## Sharing a scene-color capture (`scene_color_reach`)
+
+Every material that reads `scene_color` needs a snapshot of the scene taken
+before it draws. The engine takes one snapshot per batch of readers, and two
+readers can share a batch only when neither samples into the other's screen
+rect. It cannot know how far a shader samples, so by default a reader is
+treated as sampling anywhere and gets its own snapshot (a full-viewport copy
+plus a render pass each).
+
+Declare the distance the shader actually samples past its own surface, in local
+units, and disjoint readers collapse into one snapshot:
+
+```
+scene_color_reach: 0.25,
+```
+
+The engine scales it by the node's largest world-scale axis and inflates the
+projected screen rect. Author it generously: too small a reach reads stale
+color at the edges, while too large only costs a shared batch. Omit it when the
+shader really can sample anywhere (a full-screen warp).
 
 ## Parameters
 
@@ -360,12 +414,13 @@ Supply the data on the geometry, one value per vertex, matching by name:
 geometry.setCustomAttribute('phase', phaseValues, components: 1);
 ```
 
-Custom attributes require the described-layout (unskinned) geometry path
-(`MeshGeometry` and the built-in primitives use it; skinned meshes do not
-support custom attributes yet). The depth/shadow pass fetches only position, so
-an attribute reads zero there: a displacement driven by a custom attribute is
-not reflected in the shadow, while one driven by `world_position` / a parameter
-is (world position is available in every pass).
+Custom attributes work on both static and skinned meshes; attaching one to a
+skinned mesh switches its vertex layout to a described one, since reflection
+cannot know which slot the stream was bound to (`Geometry.setCustomAttribute`).
+The depth/shadow pass fetches only position, so an attribute reads zero there:
+a displacement driven by a custom attribute is not reflected in the shadow,
+while one driven by `world_position`/a parameter is (world position is
+available in every pass).
 
 ## Custom instance attributes (instance to vertex and fragment)
 
@@ -499,6 +554,185 @@ functions compiles to a large shader. That is fine on real GPU drivers, but a
 software compiler (a device emulator, some headless CI) can run out of memory
 on it; a material that uses one or two functions stays small. Bake to a
 texture when a single field would do.
+
+---
+
+# Barycentric wireframes, `#include <wireframe.glsl>`
+
+A single-pass fragment wireframe reads a per-corner barycentric coordinate
+and measures screen-space distance to the nearest edge with `fwidth`. The
+attribute comes from `MeshData.unweld(attributes: {UnweldAttribute.barycentric})`,
+which triples the mesh into an unindexed soup and writes `(1,0,0)`/`(0,1,0)`/
+`(0,0,1)` per corner under the name `barycentric`.
+
+`unweld` also assigns each corner the flat face normal by default (correct
+for shattering into shards, wrong for a surface that should keep shading
+smooth). Pass `keepVertexNormals: true` to carry the source vertex normals
+through instead:
+
+```dart
+final wired = source.unweld(
+  attributes: {UnweldAttribute.barycentric},
+  keepVertexNormals: true,
+);
+primitive.geometry = MeshGeometry.fromMeshData(wired);
+```
+
+`wireframe.glsl` is an opt-in include, like `noise.glsl`:
+
+```glsl
+float WireframeCoverage(vec3 bary, float width_px); // 1 on an edge, 0 inside
+float EdgeDistancePixels(vec3 bary);                // distance to nearest edge, in px
+```
+
+A worked material, a cyan wire over an otherwise normal lit surface:
+
+```
+material {
+  name: "Wireframe",
+  shading_model: lit,
+  attributes: [ { type: vec3, name: barycentric } ],
+  varyings: [ { type: vec3, name: bary } ],
+  parameters: [
+    { type: vec4, name: wire_color, hint: source_color, default: [0.25, 0.85, 1.0, 1] },
+    { type: float, name: wire_width, hint: range(0.5, 6, 0.1), default: 1.4 },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) { bary = barycentric; }
+}
+
+fragment {
+#include <wireframe.glsl>
+
+  void Surface(inout MaterialInputs material) {
+    float coverage = WireframeCoverage(bary, material_params.wire_width);
+    material.base_color.rgb = mix(material.base_color.rgb,
+                                   material_params.wire_color.rgb, coverage);
+    material.emissive = material_params.wire_color.rgb * coverage;
+    PrepareMaterial(material);
+  }
+}
+```
+
+No loops, no early returns, no integer math, so it is portable to every
+backend without further care.
+
+---
+
+# Decals
+
+A decal paints a mark (a scorch, a melt glow, a sticker) onto surfaces that are
+already drawn. Two tiers, depending on how flat the receiver is.
+
+## Mesh decals, for a flat receiver
+
+A translucent quad parented just above the receiving surface, with a nonzero
+`Material.depthBias` so it wins the depth comparison without moving:
+
+```dart
+final mark = Node(mesh: Mesh(PlaneGeometry(width: 2, depth: 2), scorch))
+  ..position = impactPoint;
+scorch.depthBias = 0.02;
+```
+
+The material is `blending: alpha` with the mark's coverage in `base_color.a`.
+This is the whole technique, and it needs no engine support. It is correct on
+flat ground and wrong on anything curved or stepped, where the quad floats over
+or sinks into the receiver.
+
+## Projected box decals, for any receiver
+
+A `DecalNode` draws a box; each of its fragments unprojects the opaque surface
+behind it, transforms that world point into the box's local space, discards
+outside the box, and shades what is left. The mark conforms to whatever it lands
+on, so it follows terrain, steps, and props.
+
+Unprojection needs the opaque depth and a perspective camera, so a decal draws
+nothing under an `OrthographicCamera`.
+
+```dart
+final decal = DecalNode(material: await loadFmatMaterial('assets/scorch_decal.fmat'))
+  ..project(point: impactPoint, normal: groundNormal, size: 2.4, rotation: rng.nextDouble() * pi);
+scene.add(decal);
+
+// Later, fading it out.
+decal.fade = 1.0 - age / lifetime;
+if (age >= lifetime) scene.remove(decal);
+```
+
+`project` centers the box on `point` with its local Y along `normal`, spanning
+`size` world units across and `depth` along the normal, and the node keeps the
+material's `decal_inverse` (world to unit box) and `decal_fade` parameters in
+sync with its world transform, so a placed decal can still be moved or
+reparented. Names the material does not declare are skipped.
+
+The material carries the projection. Three keys make a box behave as a volume
+rather than as geometry: `culling: front` draws the back faces, so the decal
+survives the camera entering the box; `depth_test: always` keeps those faces
+from being rejected by the surface they paint (they sit behind it); and
+`engine_inputs: [scene_depth]` supplies `GetSceneWorldPosition`.
+
+```
+material {
+  name: "ScorchDecal",
+  shading_model: unlit,
+  blending: alpha,
+  culling: front,
+  depth_test: always,
+  engine_inputs: [scene_depth],
+  scene_color_reach: 0.0,
+
+  parameters: [
+    { type: mat4, name: decal_inverse },
+    { type: float, name: decal_fade, hint: range(0.0, 1.0, 0.01), default: 1.0 },
+    { type: sampler2d, name: decal_texture, hint: default_transparent },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 local = (material_params.decal_inverse *
+                  vec4(GetSceneWorldPosition(vec2(0.0)), 1.0)).xyz;
+    vec3 outside = step(vec3(0.5), abs(local));
+    if (max(outside.x, max(outside.y, outside.z)) > 0.0) {
+      discard;
+    }
+    float coverage = texture(decal_texture, local.xz + 0.5).a *
+                     material_params.decal_fade;
+    // Scorching darkens, which premultiplied source-over gives directly.
+    material.base_color = vec4(0.0, 0.0, 0.0, coverage);
+    PrepareMaterial(material);
+  }
+}
+```
+
+The unit box spans -0.5 to 0.5 on each axis, and the texture is sampled across
+its local XZ. A melt glow is the same material with `blending: additive` and a
+lit color instead of black. The whole thing is an ordinary translucent draw, so
+it sorts with everything else and costs one draw.
+
+Known limitations:
+
+- **One material instance per decal**, since the projection is a `mat4`
+  parameter. Per-instance custom attributes are not exposed, so a hundred
+  simultaneous decals are a hundred draws; pool a fixed set of `DecalNode`s to
+  keep the count bounded.
+- **The decal's normal is the box's, not the receiving surface's.** Correct for
+  a mark projected straight down onto ground, wrong for one that should wrap a
+  corner's shading.
+- **Tinted multiply is not expressible.** Darken-to-black and additive both work
+  in the existing blend model; a brown scorch that multiplies the receiver's
+  color needs a multiply blend mode, which does not exist. The workaround is to
+  declare `scene_color` too and output the product, at the cost of a capture
+  batch.
+- **Decals project onto opaque geometry only**, because the depth prepass is
+  opaque-only. Nothing paints onto glass.
+
+Give `depth` enough room to absorb the depth precision at the decal's distance
+from the camera: the unprojected position is compared against the box in world
+space, so a thin box far from the camera drops fragments.
 
 # The engine contract (both paths)
 
@@ -675,6 +909,27 @@ its declared type.
 
 For a `lit` material, set `PreprocessedMaterial.environment` to override the
 scene-wide image-based-lighting environment for that material.
+
+## Broadcasting a parameter to many materials, `MaterialGroup`
+
+A parameter lives per `PreprocessedMaterial` instance, so driving it across
+every affected object (every enemy caught in a blast radius, say) means
+setting it on each one yourself. `MaterialGroup` does the broadcast:
+
+```dart
+final affected = MaterialGroup(enemiesInRadius.map((e) => e.pulseMaterial));
+// or, to grab every PreprocessedMaterial under a node:
+final affected = MaterialGroup.of(sceneRoot);
+
+// Once per frame.
+affected
+  ..setVec4('wave_origin', origin)
+  ..setFloat('wave_radius', radius);
+```
+
+Unlike `MaterialParameters`, which throws on an unknown name, `MaterialGroup`
+skips a member that doesn't declare the parameter, so one group can span a
+heterogeneous set of materials.
 
 ---
 
@@ -990,14 +1245,16 @@ sampler budget has room for the two inputs.
 # Render state
 
 A `.fmat` material declares render state in its `material` block: `culling`
-(`back` / `front` / `none`) and `blending` (`opaque` / `alpha`). A
+(`back`/`front`/`none`) and `blending` (`opaque`/`alpha`/`additive`). A
 `ShaderMaterial` exposes `cullingMode`, `windingOrder`, and `isOpaqueOverride`
 constructor fields.
 
-Today `blending` is `opaque` (depth-write on, drawn in order) or `alpha`
-(depth-write off, depth-sorted, premultiplied source-over). Additive/multiply
-blend modes and per-material depth state are not configurable yet; they are
-encoder-controlled.
+Today `blending` is `opaque` (depth-write on, drawn in order), `alpha`
+(depth-write off, depth-sorted, premultiplied source-over), or `additive`
+(depth-write off, depth-sorted, output alpha forced to zero so the destination
+is only ever brightened). A translucent material also picks its depth write
+(`depth_write`) and its depth test (`depth_test`). Multiply blending is not
+configurable; it is encoder-controlled.
 
 ---
 
@@ -1041,8 +1298,9 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
 - **Typed codegen.** A future step will generate a typed Dart class per `.fmat`
   (compile-time-checked setters); today you use the name-based
   `MaterialParameters` API.
-- **Additive/multiply blending and per-material depth state** are not yet
-  configurable.
+- **Multiply blending** is not yet configurable (`blending: additive` is,
+  alongside `opaque`/`alpha`, and `depth_write`/`depth_test` cover the
+  translucent depth state).
 - **Per-instance custom attributes** work on unskinned instanced meshes, but a
   declaring material opts out of automatic cross-node batching and reads zero in
   the skinned and depth/shadow variants.

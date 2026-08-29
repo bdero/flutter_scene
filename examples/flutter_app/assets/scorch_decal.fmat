@@ -1,0 +1,51 @@
+// Scorch mark left by an explosion, projected as a box onto whatever opaque
+// surface is inside it, so the mark follows terrain, steps, and props instead
+// of floating on a quad.
+//
+// Each fragment of the box unprojects the opaque surface behind it
+// (GetSceneWorldPosition, from the scene_depth engine input), transforms that
+// world point into the box's local space with the decal_inverse matrix a
+// DecalNode writes, discards outside the unit box, and samples the decal
+// texture across the box's local XZ plane.
+//
+// The render state is what makes a projection volume work. `culling: front`
+// draws the back faces, so the decal survives the camera entering the box, and
+// `depth_test: always` keeps those faces from being rejected by the surface
+// they paint (they sit behind it). Scorching is a darkening, so the output is
+// black with the coverage as alpha, which premultiplied source-over multiplies
+// the receiver down.
+
+material {
+  name: "ScorchDecal",
+  shading_model: unlit,
+  blending: alpha,
+  culling: front,
+  depth_test: always,
+  engine_inputs: [scene_depth],
+  // The shader samples only its own fragment, never off its surface.
+  scene_color_reach: 0.0,
+
+  parameters: [
+    // World to unit-box transform, written by DecalNode.
+    { type: mat4, name: decal_inverse },
+    // Overall opacity, animated to fade the mark out before removing it.
+    { type: float, name: decal_fade, hint: range(0.0, 1.0, 0.01), default: 1.0 },
+    // Coverage in alpha; rgb is unused, so a plain mask works.
+    { type: sampler2d, name: decal_texture, hint: default_transparent },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec3 local = (material_params.decal_inverse *
+                  vec4(GetSceneWorldPosition(vec2(0.0)), 1.0)).xyz;
+    vec3 outside = step(vec3(0.5), abs(local));
+    if (max(outside.x, max(outside.y, outside.z)) > 0.0) {
+      discard;
+    }
+    float coverage = texture(decal_texture, local.xz + 0.5).a *
+                     material_params.decal_fade;
+    material.base_color = vec4(0.0, 0.0, 0.0, coverage);
+    PrepareMaterial(material);
+  }
+}

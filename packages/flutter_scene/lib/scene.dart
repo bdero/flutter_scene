@@ -119,6 +119,7 @@ export 'src/material/exr_decoder.dart' show ExrFormatException, decodeOpenExr;
 export 'src/material/hdr_decoder.dart'
     show DecodedHdr, HdrFormatException, decodeRadianceHdr;
 export 'src/material/material.dart' show Material;
+export 'src/material/material_group.dart' show MaterialGroup;
 export 'src/material/material_parameters.dart' show MaterialParameters;
 export 'src/material/physically_based_material.dart'
     show AlphaMode, PhysicallyBasedMaterial, TextureTransform;
@@ -164,6 +165,8 @@ export 'src/render/irradiance_bake.dart'
 export 'src/render/temporal_anti_aliasing.dart'
     show TemporalAntiAliasingSettings;
 export 'src/god_rays.dart' show GodRaysSettings;
+export 'src/screen_distortion.dart'
+    show DistortionPulse, ScreenDistortionSettings;
 export 'src/screen_space_reflections.dart'
     show ScreenSpaceReflectionsSettings, SsrDebugView;
 export 'src/asset_helpers.dart'
@@ -312,6 +315,7 @@ export 'src/render_texture.dart'
 export 'src/render_view.dart' show RenderView;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
+export 'src/decal.dart' show DecalNode;
 export 'src/node.dart' show Node;
 export 'src/sprite.dart' show Sprite;
 export 'src/texture_atlas.dart'

@@ -79,15 +79,13 @@ Future<Object?> _compileVertexReflection(
 
 void main() {
   test('materials guard their shadow sampler layout', () {
-    final manifest =
-        jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
-            as Map<String, dynamic>;
-    final sampling = File(
-      'shaders/material_shadow_sampling.glsl',
-    ).readAsStringSync();
-    final uniforms = File(
-      'shaders/material_engine_lighting.glsl',
-    ).readAsStringSync();
+    final manifest = jsonDecode(
+      File('shaders/base.shaderbundle.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
+    final sampling = File('shaders/material_shadow_sampling.glsl')
+        .readAsStringSync();
+    final uniforms = File('shaders/material_engine_lighting.glsl')
+        .readAsStringSync();
 
     expect(
       manifest['StandardFragment']['file'],
@@ -170,14 +168,12 @@ void main() {
           generateLightmapVariant: name == 'physical_opaque',
         );
         for (final variant in variants.entries) {
-          final reflection =
-              await _compileReflection(
-                    impellerc,
-                    temp,
-                    variant.key,
-                    variant.value,
-                  )
-                  as Map<String, Object?>;
+          final reflection = await _compileReflection(
+            impellerc,
+            temp,
+            variant.key,
+            variant.value,
+          ) as Map<String, Object?>;
           final samplers = reflection['sampled_images']! as List<Object?>;
           expect(
             samplers,
@@ -234,19 +230,17 @@ void main() {
         'MorphedUnskinnedVertex': 16,
         'MorphedSkinnedVertex': 17,
       };
-      final manifest =
-          jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final manifest = jsonDecode(
+        File('shaders/base.shaderbundle.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       for (final entry in expectedVertexSamplers.entries) {
         final file = (manifest[entry.key] as Map)['file'] as String;
-        final reflection =
-            await _compileVertexReflection(
-                  impellerc,
-                  temp,
-                  entry.key,
-                  File(file).readAsStringSync(),
-                )
-                as Map<String, Object?>;
+        final reflection = await _compileVertexReflection(
+          impellerc,
+          temp,
+          entry.key,
+          File(file).readAsStringSync(),
+        ) as Map<String, Object?>;
         final samplers =
             reflection['sampled_images'] as List<Object?>? ?? const [];
         expect(
@@ -284,14 +278,12 @@ void main() {
         'flutter_scene_standard_lightmap_no_shadow',
         'flutter_scene_standard_lightmap_no_shadow_cube',
       ]) {
-        final reflection =
-            await _compileReflection(
-                  impellerc,
-                  temp,
-                  entry,
-                  File('shaders/$entry.frag').readAsStringSync(),
-                )
-                as Map<String, Object?>;
+        final reflection = await _compileReflection(
+          impellerc,
+          temp,
+          entry,
+          File('shaders/$entry.frag').readAsStringSync(),
+        ) as Map<String, Object?>;
         final samplers = reflection['sampled_images']! as List<Object?>;
         expect(
           samplers,
@@ -355,9 +347,8 @@ void main() {
 
   test('a bound lightmap displaces the SH diffuse ambient', () {
     final lightmap = File('shaders/lightmap.glsl').readAsStringSync();
-    final uniforms = File(
-      'shaders/material_engine_lighting.glsl',
-    ).readAsStringSync();
+    final uniforms = File('shaders/material_engine_lighting.glsl')
+        .readAsStringSync();
     final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
 
     // The sampler takes the texture unit irradiance_field gives up, so a
@@ -391,9 +382,8 @@ void main() {
       );
       final entries = <String, String>{
         ...variants,
-        'flutter_scene_standard': File(
-          'shaders/flutter_scene_standard.frag',
-        ).readAsStringSync(),
+        'flutter_scene_standard': File('shaders/flutter_scene_standard.frag')
+            .readAsStringSync(),
         'flutter_scene_standard_lightmap': File(
           'shaders/flutter_scene_standard_lightmap.frag',
         ).readAsStringSync(),
@@ -404,15 +394,13 @@ void main() {
       for (final backend in _backends) {
         for (final entry in entries.entries) {
           final lit = entry.key.toLowerCase().contains('lightmap');
-          final reflection =
-              await _compileReflection(
-                    impellerc,
-                    temp,
-                    entry.key,
-                    entry.value,
-                    backend: backend,
-                  )
-                  as Map<String, Object?>;
+          final reflection = await _compileReflection(
+            impellerc,
+            temp,
+            entry.key,
+            entry.value,
+            backend: backend,
+          ) as Map<String, Object?>;
           final samplers = reflection['sampled_images']! as List<Object?>;
           expect(
             samplers,
@@ -439,9 +427,9 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   test('the base bundle ships the lightmap standard entries', () {
-    final manifest =
-        jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
-            as Map<String, dynamic>;
+    final manifest = jsonDecode(
+      File('shaders/base.shaderbundle.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
 
     expect(
       manifest['StandardLightmapFragment']['file'],
@@ -462,9 +450,9 @@ void main() {
   });
 
   test('the base bundle ships the no-shadow standard entries', () async {
-    final manifest =
-        jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())
-            as Map<String, dynamic>;
+    final manifest = jsonDecode(
+      File('shaders/base.shaderbundle.json').readAsStringSync(),
+    ) as Map<String, dynamic>;
 
     const entries = {
       'StandardNoShadowFragment': 'flutter_scene_standard_no_shadow',
@@ -485,24 +473,19 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('standard_no_shadow');
     try {
       final impellerc = await findImpellerC();
-      final full =
-          await _compileReflection(
-                impellerc,
-                temp,
-                'StandardFragment',
-                File('shaders/flutter_scene_standard.frag').readAsStringSync(),
-              )
-              as Map<String, Object?>;
-      final slim =
-          await _compileReflection(
-                impellerc,
-                temp,
-                'StandardNoShadowFragment',
-                File(
-                  'shaders/flutter_scene_standard_no_shadow.frag',
-                ).readAsStringSync(),
-              )
-              as Map<String, Object?>;
+      final full = await _compileReflection(
+        impellerc,
+        temp,
+        'StandardFragment',
+        File('shaders/flutter_scene_standard.frag').readAsStringSync(),
+      ) as Map<String, Object?>;
+      final slim = await _compileReflection(
+        impellerc,
+        temp,
+        'StandardNoShadowFragment',
+        File('shaders/flutter_scene_standard_no_shadow.frag')
+            .readAsStringSync(),
+      ) as Map<String, Object?>;
       expect(_hasNamedResource(full, 'shadow_map'), isTrue);
       expect(_hasNamedResource(slim, 'shadow_map'), isFalse);
       // The twins must stay bind-compatible outside the shadow atlas: the
@@ -529,9 +512,8 @@ void main() {
     });
     // One sampler, whose type the define picks, so the layout the backend
     // does not build costs no texture unit.
-    final lighting = File(
-      'shaders/material_engine_lighting.glsl',
-    ).readAsStringSync();
+    final lighting = File('shaders/material_engine_lighting.glsl')
+        .readAsStringSync();
     expect(lighting, contains('uniform RadianceSampler prefiltered_radiance;'));
     expect(
       lighting,
@@ -542,9 +524,8 @@ void main() {
 
   test('the standard path takes its dielectric F0 from FragInfo', () {
     final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
-    final uniforms = File(
-      'shaders/material_engine_lighting.glsl',
-    ).readAsStringSync();
+    final uniforms = File('shaders/material_scene_inputs.glsl')
+        .readAsStringSync();
     // The physical path still derives its own from the material inputs; the
     // standard path reads the CPU-packed product, so scalar ior and specular
     // no longer force the physical variant.
@@ -562,9 +543,8 @@ void main() {
 
   test('lit materials reverse normals on back-facing fragments', () {
     final varyings = File('shaders/material_varyings.glsl').readAsStringSync();
-    final standard = File(
-      'shaders/flutter_scene_standard.frag',
-    ).readAsStringSync();
+    final standard = File('shaders/flutter_scene_standard.frag')
+        .readAsStringSync();
 
     expect(varyings, contains('gl_FrontFacing ? 1.0 : -1.0'));
     expect(standard, contains('vec3 normal = GetWorldNormal();'));
@@ -572,9 +552,8 @@ void main() {
   });
 
   test('transmissive physical materials keep back-face culling', () {
-    final source = File(
-      'lib/src/material/preprocessed_material.dart',
-    ).readAsStringSync();
+    final source = File('lib/src/material/preprocessed_material.dart')
+        .readAsStringSync();
 
     expect(source, contains('pass.setCullMode(renderCullMode);'));
     expect(
@@ -584,9 +563,8 @@ void main() {
   });
 
   test('physical feature textures preserve high-impact inputs first', () {
-    final source = File(
-      'lib/src/material/physical_material_variant.dart',
-    ).readAsStringSync();
+    final source = File('lib/src/material/physical_material_variant.dart')
+        .readAsStringSync();
     final emissive = source.indexOf('(1, d.emissiveTexture)');
     final occlusion = source.indexOf('(2, d.occlusionTexture)');
     final specular = source.indexOf('(3, d.specularTexture)');
@@ -638,8 +616,11 @@ void main() {
     expect(compiled.glsl, contains('GetSceneColorFiltered'));
     expect(compiled.glsl, contains('#define FLUTTER_SCENE_SKIP_SSAO'));
     expect(compiled.glsl, isNot(contains('uniform sampler2D ssao_texture;')));
+    // The scene-color sampler and its accessors compile in through the shared
+    // include, on the define the emitter writes for a declared input.
+    expect(compiled.glsl, contains('#define FLUTTER_SCENE_SCENE_COLOR'));
     expect(
-      compiled.glsl,
+      File('shaders/material_scene_inputs.glsl').readAsStringSync(),
       contains('frag_info.scene_inputs.x < 0.5) return vec3(0.0)'),
     );
     expect(compiled.glsl, contains('texture(emissive_texture'));
@@ -667,13 +648,11 @@ void main() {
 
   test('material texture transforms share channel selection and UV math', () {
     final inputs = File('shaders/material_inputs.glsl').readAsStringSync();
-    final standard = File(
-      'shaders/flutter_scene_standard.frag',
-    ).readAsStringSync();
+    final standard = File('shaders/flutter_scene_standard.frag')
+        .readAsStringSync();
     final unlit = File('shaders/flutter_scene_unlit.frag').readAsStringSync();
-    final depthNormal = File(
-      'shaders/flutter_scene_linear_depth_normal.frag',
-    ).readAsStringSync();
+    final depthNormal = File('shaders/flutter_scene_linear_depth_normal.frag')
+        .readAsStringSync();
 
     expect(inputs, contains('vec2 MaterialTextureUv('));
     expect(inputs, contains('int(rotation.z + 0.5)'));
@@ -691,9 +670,8 @@ void main() {
   });
 
   test('filtered scene color lives in a reviewable shader include', () {
-    final filtered = File(
-      'shaders/filtered_scene_color.glsl',
-    ).readAsStringSync();
+    final filtered = File('shaders/filtered_scene_color.glsl')
+        .readAsStringSync();
 
     expect(filtered, contains('uniform sampler2D scene_filtered_color;'));
     expect(filtered, contains('vec3 SampleTransmissionBand('));
@@ -738,12 +716,10 @@ void main() {
   test('cascade cross-fade collapses to the hard hand-off at zero', () {
     // The cascade sampling lives in the shared shadow-sampling include so the
     // shadow catcher can use it without the lighting framework.
-    final lighting = File(
-      'shaders/material_shadow_sampling.glsl',
-    ).readAsStringSync();
-    final uniforms = File(
-      'shaders/material_engine_lighting.glsl',
-    ).readAsStringSync();
+    final lighting = File('shaders/material_shadow_sampling.glsl')
+        .readAsStringSync();
+    final uniforms = File('shaders/material_scene_inputs.glsl')
+        .readAsStringSync();
 
     // The overlap rides an already-declared slot, so no uniform or sampler is
     // added, and it is packed as a fraction the shader halves into UV space.

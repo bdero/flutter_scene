@@ -69,7 +69,18 @@ void main() {
     // SphericalToEquirectangular.
     vec2 uv = SphericalToEquirectangular(direction);
     uv.y = 1.0 - uv.y;
-    vec3 sharp = texture(environment_background, uv).rgb;
+    // The mip level comes from the projection's own geometry, not from the
+    // UV's screen derivatives. That is what fixes the one pixel line at the
+    // wrap and the fan of wedges at the poles; both are the hardware measuring
+    // an equirect's footprint with a difference that cannot see either
+    // singularity. See SampleEquirectByFootprint.
+    //
+    // Note this is NOT something the radiance cube could have carried instead.
+    // A cube has no pole of its own, but its mirror band is a POINT resample of
+    // this same equirect, so the fan is baked into it; the fix has to happen
+    // where the equirect is read, which is here.
+    vec3 sharp =
+        SampleEquirectByFootprint(environment_background, direction, uv);
     sharp =
         skybox_info.source_is_linear > 0.5 ? sharp : SRGBToLinear(sharp);
 #ifdef FLUTTER_SCENE_RADIANCE_CUBE
