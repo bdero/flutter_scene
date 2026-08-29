@@ -1517,11 +1517,9 @@ class EditorController extends ChangeNotifier {
     if (_composed != null || _realizedRoot == null || realizer == null) {
       return false;
     }
-    // Skins bind and animations resolve targets only during a full realize,
-    // so a document carrying either takes the slow path.
-    if (document.skins.isNotEmpty || document.animations.isNotEmpty) {
-      return false;
-    }
+    // Skins bind only during a full realize, so a skinned document takes the
+    // slow path.
+    if (document.skins.isNotEmpty) return false;
     if (transaction.records.any(
       (record) =>
           record.slot != ChangeSlot.poolNode &&
@@ -1540,6 +1538,20 @@ class EditorController extends ChangeNotifier {
     if (restored.isEmpty) return false;
     for (final spec in restored.values) {
       if (spec.skin != null || spec.instance != null) return false;
+    }
+    // Animation channels bind their target nodes at full realize, so a
+    // restored node that an animation drives would come back unbound; only
+    // such documents take the slow path.
+    if (document.animations.isNotEmpty) {
+      final restoredNames = restored.values.map((s) => s.name).toSet();
+      for (final animation in document.animations.values) {
+        for (final channel in animation.channels) {
+          if (restored.containsKey(channel.target) ||
+              restoredNames.contains(channel.targetName)) {
+            return false;
+          }
+        }
+      }
     }
     // Build the whole restored forest detached, so any bail below leaves the
     // live graph untouched and the full realize can take over.
