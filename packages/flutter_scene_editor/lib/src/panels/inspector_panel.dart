@@ -561,8 +561,23 @@ class _SchemaPropertyRow extends StatelessWidget {
     return powers;
   }
 
+  /// A one-line summary of a value nobody may edit here. Deliberately short:
+  /// a payload token or a byte count says the thing is present, and the
+  /// whole point is that its contents are not a person's business.
+  String _summary() => switch (value) {
+    null => '(not set)',
+    StringValue(:final value) => value.isEmpty ? '(none)' : value,
+    BoolValue(:final value) => '$value',
+    IntValue(:final value) => '$value',
+    DoubleValue(:final value) => '$value',
+    _ => '(set)',
+  };
+
   Widget _buildEditor(BuildContext context) {
     final label = def.name;
+    if (def.constraint<ReadOnly>() != null) {
+      return _ReadOnlyRow(label: label, text: _summary());
+    }
     switch (def.kind) {
       case ComponentPropertyKind.boolean:
         return _BoolRow(

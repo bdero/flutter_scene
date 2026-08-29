@@ -9,11 +9,12 @@
 library;
 
 import 'dart:async';
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show compute, kIsWeb;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:scene/navigation.dart';
 import 'package:vector_math/vector_math.dart';
+
+import 'package:flutter_scene/src/navigation/processor_count.dart';
 
 /// How many tiles to have in flight at once, by default.
 ///
@@ -21,8 +22,7 @@ import 'package:vector_math/vector_math.dart';
 /// bakes leaves nothing for the editor to draw with, and a bake that freezes
 /// the UI it is reporting progress to is worse than a slower one.
 int defaultNavBakeConcurrency() {
-  if (kIsWeb) return 1;
-  final cores = Platform.numberOfProcessors;
+  final cores = platformProcessorCount();
   return cores <= 2 ? 1 : cores - 1;
 }
 

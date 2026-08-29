@@ -479,6 +479,31 @@ class EditorController extends ChangeNotifier {
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
 
+  // Editor-only nodes drawn in the scene but absent from the document: a nav
+  // mesh overlay, a debug draw. Held by key so a re-realize can put them back
+  // -- realizing rebuilds the scene from the document, and anything added
+  // beside the realized root would otherwise vanish on the next recompose.
+  final Map<String, Node> _decorations = {};
+
+  /// Draws [node] in the scene under [key] without putting it in the
+  /// document, replacing whatever that key held. Passing null removes it.
+  ///
+  /// A decoration survives a re-realize. It is not selectable, not saved, and
+  /// not part of the scene anyone ships; it is how the editor shows something
+  /// about the scene that is not in it.
+  void setSceneDecoration(String key, Node? node) {
+    final previous = _decorations.remove(key);
+    if (previous != null) scene.remove(previous);
+    if (node != null) {
+      _decorations[key] = node;
+      scene.add(node);
+    }
+    notifyListeners();
+  }
+
+  /// The decoration under [key], or null.
+  Node? sceneDecoration(String key) => _decorations[key];
+
   /// The root the document was realized under, or null before the first
   /// realize.
   ///
@@ -1955,6 +1980,9 @@ class EditorController extends ChangeNotifier {
     );
     scene.removeAll();
     scene.add(root);
+    for (final decoration in _decorations.values) {
+      scene.add(decoration);
+    }
     _resourceRealizer = realizer;
     _realizedRoot = root;
     _realizeEpoch++;

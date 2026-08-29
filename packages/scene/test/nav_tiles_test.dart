@@ -2,6 +2,8 @@
 // to be crossable where a single-shot bake would have been, or tiling is a
 // way of producing a world that looks navigable and is not.
 
+import 'dart:typed_data';
+
 import 'package:scene/navigation.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -337,6 +339,59 @@ void main() {
             const NavMeshConfig(agentRadius: 0.2, cellSize: 0.3),
           ),
         ),
+      );
+    });
+  });
+
+  group('serialization', () {
+    NavTileSet bakedSet() => bakeNavMeshTiled(
+      floorWithWall(30),
+      _config,
+      tiling: const NavTileConfig(tileCells: 24),
+    ).tiles;
+
+    test('a tile set round-trips through its binary form', () {
+      final original = bakedSet();
+      final restored = decodeNavTileSet(encodeNavTileSet(original));
+
+      expect(restored.tileCount, original.tileCount);
+      expect(restored.polygonCount, original.polygonCount);
+      expect(restored.tiling.tileCells, original.tiling.tileCells);
+      expect(restored.config.agentRadius, original.config.agentRadius);
+      expect(restored.origin, original.origin);
+      for (final key in original.tiles) {
+        expect(
+          restored.tile(key)!.polygonCount,
+          original.tile(key)!.polygonCount,
+        );
+      }
+    });
+
+    test('the restored set is linked, so it still paths across seams', () {
+      final restored = decodeNavTileSet(encodeNavTileSet(bakedSet()));
+      final path = NavTileMeshQuery(
+        restored,
+      ).findPath(Vector3(-13, 0, -13), Vector3(13, 0, 13));
+      expect(path.status, NavPathStatus.complete);
+    });
+
+    test('encoding twice gives the same bytes', () {
+      final set = bakedSet();
+      expect(encodeNavTileSet(set), encodeNavTileSet(set));
+    });
+
+    test('a wrong magic or version is rejected, not misread', () {
+      final bytes = encodeNavTileSet(bakedSet());
+      final wrongMagic = Uint8List.fromList(bytes)..[0] = 0;
+      expect(() => decodeNavTileSet(wrongMagic), throwsFormatException);
+
+      final wrongVersion = Uint8List.fromList(bytes)
+        ..buffer.asByteData().setInt32(4, 99, Endian.little);
+      expect(() => decodeNavTileSet(wrongVersion), throwsFormatException);
+
+      expect(
+        () => decodeNavTileSet(Uint8List.sublistView(bytes, 0, 8)),
+        throwsFormatException,
       );
     });
   });
