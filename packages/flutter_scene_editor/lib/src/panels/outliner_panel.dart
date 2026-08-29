@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:math' as math;
 
@@ -46,29 +45,6 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
   void initState() {
     super.initState();
     controller.outlinerReveal.addListener(_onRevealRequest);
-    // TODO(outliner-profiling): temporary scroll driver for perf measurement,
-    // remove before merge.
-    dev.registerExtension('ext.fse.outlinerScroll', (method, params) async {
-      final to = double.tryParse(params['to'] ?? '');
-      final ms = int.tryParse(params['ms'] ?? '') ?? 0;
-      if (to != null && _scroll.hasClients) {
-        if (ms > 0) {
-          await _scroll.animateTo(
-            to,
-            duration: Duration(milliseconds: ms),
-            curve: Curves.linear,
-          );
-        } else {
-          _scroll.jumpTo(to);
-        }
-      }
-      return dev.ServiceExtensionResponse.result(
-        jsonEncode({
-          'max': _scroll.hasClients ? _scroll.position.maxScrollExtent : 0,
-          'offset': _scroll.hasClients ? _scroll.offset : 0,
-        }),
-      );
-    });
   }
 
   @override
@@ -104,9 +80,7 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
           found = true;
           break;
         }
-        offset += entry is _VisibleInsertion
-            ? _kInsertionExtent
-            : _kRowExtent;
+        offset += entry is _VisibleInsertion ? _kInsertionExtent : _kRowExtent;
       }
       if (!found) return;
       final viewport = _scroll.position.viewportDimension;
@@ -146,11 +120,8 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
         final roots = controller.displayRoots();
         final entries = dev.Timeline.timeSync(
           'outliner.flatten',
-          () => _visibleEntries(
-            controller,
-            roots: roots,
-            collapsed: _collapsed,
-          ),
+          () =>
+              _visibleEntries(controller, roots: roots, collapsed: _collapsed),
         );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
