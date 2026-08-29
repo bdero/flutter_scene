@@ -17,7 +17,7 @@ gpu.ShaderLibrary? _baseShaderLibrary;
 /// synchronous [baseShaderLibrary] getter can name the real cause.
 ///
 /// Without it the getter only knows the library is absent, and says to await
-/// `Scene.initializeStaticResources()` — the very call that already failed.
+/// `Scene.initializeStaticResources()`, the very call that already failed.
 Object? _baseShaderLibraryLoadError;
 
 /// The failure that stopped the last [loadBaseShaderLibrary], or null if it has

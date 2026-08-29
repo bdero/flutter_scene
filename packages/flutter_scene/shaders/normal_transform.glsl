@@ -13,7 +13,7 @@
 mat3 WorldNormalMatrix(mat3 linear) {
   // A collapsed transform (a zero scale on an axis, which is how a node gets
   // hidden by scaling it away) is singular, and inverse() fills every component
-  // with infinities that normalize turns into NaN -- a black hole in the
+  // with infinities that normalize turns into NaN, a black hole in the
   // lighting rather than the degenerate normal the caller already tolerates.
   // Fall back to the linear part there, which is what shipped before this.
   float det = determinant(linear);

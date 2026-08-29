@@ -474,8 +474,8 @@ class _SceneViewState extends State<SceneView>
       await Scene.initializeStaticResources();
     } catch (error, stack) {
       // The static resources now report their failure instead of completing
-      // normally. Nothing here can recover -- without them no frame can be
-      // drawn -- so the view stays on its loading widget, but the cause is
+      // normally. Nothing here can recover (without them no frame can be
+      // drawn), so the view stays on its loading widget, but the cause is
       // reported rather than left as an unhandled error on this future.
       FlutterError.reportError(
         FlutterErrorDetails(
