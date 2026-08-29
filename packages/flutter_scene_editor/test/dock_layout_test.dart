@@ -33,7 +33,6 @@ void main() {
       'inspector',
       'effects',
       'weather',
-      'navigation',
     ]);
 
     // The centre column stacks the timeline under the viewport, where a
@@ -229,5 +228,22 @@ void main() {
       isNull,
     );
     expect(DockLayout.tryParse(null, knownPanels: ['viewport']), isNull);
+  });
+
+  test('a layout saved with the Navigation panel still opens', () {
+    // Navigation moved onto the node carrying the surface, so the id is no
+    // longer a panel. A layout persisted before that must drop it rather
+    // than failing to parse and losing the whole workspace.
+    const saved =
+        '{"root":{"type":"tabs","panels":["inspector","navigation"]},'
+        '"floating":[]}';
+    final layout = DockLayout.tryParse(
+      saved,
+      knownPanels: const ['inspector', 'viewport'],
+      isDynamic: (_) => false,
+    );
+    expect(layout, isNotNull);
+    expect(layout!.panelIds(), isNot(contains('navigation')));
+    expect(layout.panelIds(), contains('inspector'));
   });
 }

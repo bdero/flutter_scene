@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/animation.dart' show AnimationClip;
 import 'package:flutter_scene/src/kit/environment/lightning_component.dart'
     show sunDirectionForHour;
 import 'package:flutter_scene/src/kit/environment/weather.dart';
+import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
@@ -139,6 +140,38 @@ class SceneFlowHost implements FlowHost {
         return _setWeather(arguments);
       case 'setTimeOfDay':
         return _setTimeOfDay(arguments);
+      case 'setAnimatorNumber':
+        return _withAnimator(
+          (a) => a.animator.parameters.setNumber(
+            '${arguments['name']}',
+            flowNumber(arguments['value'], 0),
+          ),
+        );
+      case 'setAnimatorFlag':
+        return _withAnimator(
+          (a) => a.animator.parameters.setFlag(
+            '${arguments['name']}',
+            value: flowBool(arguments['value']),
+          ),
+        );
+      case 'animatorTrigger':
+        return _withAnimator(
+          (a) => a.animator.parameters.trigger('${arguments['name']}'),
+        );
+      case 'animatorState':
+        final animator = _animator;
+        if (animator == null) {
+          log('This node has no animator.');
+          return '';
+        }
+        final layer = '${arguments['layer'] ?? ''}';
+        if (layer.isEmpty) return animator.animator.base.current;
+        final found = animator.animator.layer(layer);
+        if (found == null) {
+          log('No animator layer named "$layer".');
+          return '';
+        }
+        return found.current;
     }
     return onAction?.call(action, arguments);
   }
@@ -193,6 +226,25 @@ class SceneFlowHost implements FlowHost {
     }
     log('The scene\'s sky has no sun to move.');
     return false;
+  }
+
+  /// The animator on the node the graph runs on, or null.
+  ///
+  /// A graph drives a character by setting parameters and letting the machine
+  /// decide what plays, which is the whole point of having a machine: the
+  /// script says "speed is 4" and never says "play the run".
+  AnimatorComponent? get _animator => owner.getComponent<AnimatorComponent>();
+
+  /// Runs [edit] against this node's animator, reporting whether there was
+  /// one to run it against.
+  bool _withAnimator(void Function(AnimatorComponent animator) edit) {
+    final animator = _animator;
+    if (animator == null) {
+      log('This node has no animator to set a parameter on.');
+      return false;
+    }
+    edit(animator);
+    return true;
   }
 
   Object? _playAnimation(Map<String, Object?> arguments) {

@@ -195,57 +195,52 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   }
 
   Widget _toolbar(BuildContext context) {
-    return Container(
-      height: editorToolbarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const Icon(Icons.folder_open, size: 14),
-          const SizedBox(width: 6),
-          const Text('Assets', style: TextStyle(fontSize: 12)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(
-                controller: _filter,
-                onChange: (value) => setState(() => _query = value.text),
-              ),
-              size: .sm,
-              hint: 'Filter',
-              prefixBuilder: (_, _, _) => const Padding(
-                padding: EdgeInsets.only(left: 8, right: 4),
-                child: Icon(Icons.search, size: 14),
-              ),
+    return EditorToolbar(
+      children: [
+        const Icon(Icons.folder_open, size: 14),
+        const SizedBox(width: 6),
+        const Text('Assets', style: TextStyle(fontSize: 12)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: FTextField(
+            control: FTextFieldControl.managed(
+              controller: _filter,
+              onChange: (value) => setState(() => _query = value.text),
+            ),
+            size: .sm,
+            hint: 'Filter',
+            prefixBuilder: (_, _, _) => const Padding(
+              padding: EdgeInsets.only(left: 8, right: 4),
+              child: Icon(Icons.search, size: 14),
             ),
           ),
-          const SizedBox(width: 4),
-          _viewButton(
-            context,
-            mode: _AssetViewMode.list,
-            icon: Icons.view_list_outlined,
-            tooltip: 'List view',
-          ),
-          _viewButton(
-            context,
-            mode: _AssetViewMode.thumbnails,
-            icon: Icons.grid_view_outlined,
-            tooltip: 'Thumbnail view',
-          ),
-          IconButton(
-            tooltip: 'Rescan',
-            visualDensity: VisualDensity.compact,
-            icon: _scanning
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh, size: 16),
-            onPressed: _scanning ? null : _rescan,
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 4),
+        _viewButton(
+          context,
+          mode: _AssetViewMode.list,
+          icon: Icons.view_list_outlined,
+          tooltip: 'List view',
+        ),
+        _viewButton(
+          context,
+          mode: _AssetViewMode.thumbnails,
+          icon: Icons.grid_view_outlined,
+          tooltip: 'Thumbnail view',
+        ),
+        IconButton(
+          tooltip: 'Rescan',
+          visualDensity: VisualDensity.compact,
+          icon: _scanning
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh, size: 16),
+          onPressed: _scanning ? null : _rescan,
+        ),
+      ],
     );
   }
 

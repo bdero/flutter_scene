@@ -72,45 +72,40 @@ class _HistoryPanelState extends State<HistoryPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          height: editorToolbarHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          color: scheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              Text(
-                transactions.isEmpty
-                    ? 'No edits'
-                    : '$cursor of ${transactions.length} applied',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
+        EditorToolbar(
+          children: [
+            Text(
+              transactions.isEmpty
+                  ? 'No edits'
+                  : '$cursor of ${transactions.length} applied',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.undo, size: 16),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                tooltip: history.canUndo
-                    ? 'Undo: ${history.undoLabel}'
-                    : 'Nothing to undo',
-                onPressed: history.canUndo ? controller.undo : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.redo, size: 16),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                tooltip: history.canRedo
-                    ? 'Redo: ${history.redoLabel}'
-                    : 'Nothing to redo',
-                onPressed: history.canRedo ? controller.redo : null,
-              ),
-            ],
-          ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.undo, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              tooltip: history.canUndo
+                  ? 'Undo: ${history.undoLabel}'
+                  : 'Nothing to undo',
+              onPressed: history.canUndo ? controller.undo : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.redo, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              tooltip: history.canRedo
+                  ? 'Redo: ${history.redoLabel}'
+                  : 'Nothing to redo',
+              onPressed: history.canRedo ? controller.redo : null,
+            ),
+          ],
         ),
         Divider(height: 1, color: scheme.outlineVariant),
         Expanded(

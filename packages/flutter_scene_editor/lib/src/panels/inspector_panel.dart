@@ -13,12 +13,14 @@ import '../inspector/euler.dart';
 import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
+import '../inspector/nav_mesh_editor.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
 import '../inspector/resource_origin.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
+import '../shell/editor_dialog.dart';
 import '../shell/editor_theme.dart';
 
 /// Property inspector for the primary selected node.
@@ -403,11 +405,16 @@ class _ComponentSection extends StatelessWidget {
                     ),
                   )
                 : null,
-            child: _ComponentEditor(
-              node: node,
-              component: component,
-              controller: controller,
-            ),
+            // A nav surface is bake settings plus a bake, not a property
+            // bag: the four agent numbers only mean anything drawn together,
+            // and nothing in a schema-driven list runs a bake.
+            child: component.type == 'navMeshSurface'
+                ? NavMeshEditor(controller: controller, nodeId: node.id)
+                : _ComponentEditor(
+                    node: node,
+                    component: component,
+                    controller: controller,
+                  ),
           ),
         ),
       ],
@@ -1448,7 +1455,7 @@ Future<String?> showAddComponentPicker(
   }
 
   final search = TextEditingController();
-  return showFDialog<String>(
+  return showEditorFDialog<String>(
     context: context,
     builder: (context, style, animation) => StatefulBuilder(
       builder: (context, setLocal) {

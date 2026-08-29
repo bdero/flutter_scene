@@ -346,6 +346,116 @@ final FlowNodeType setTimeOfDay = FlowNodeType(
   ),
 );
 
+const FlowPin _animatorName = FlowPin(
+  id: 'name',
+  label: 'Parameter',
+  type: FlowType.string,
+  defaultValue: '',
+  doc: 'The name a transition condition reads.',
+);
+
+const FlowPin _animatorSet = FlowPin(
+  id: 'set',
+  label: 'Set',
+  type: FlowType.boolean,
+  isInput: false,
+  doc: 'False when the node carries no animator.',
+);
+
+final FlowNodeType setAnimatorNumber = FlowNodeType(
+  id: 'animator.setNumber',
+  label: 'Set Animator Number',
+  category: 'Animation',
+  doc:
+      "Sets a number the machine's conditions read. A graph drives a "
+      'character by saying what is true, not by saying which clip to play.',
+  pins: const [
+    _execIn,
+    _animatorName,
+    FlowPin(
+      id: 'value',
+      label: 'Value',
+      type: FlowType.number,
+      defaultValue: 0.0,
+    ),
+    _execOut,
+    _animatorSet,
+  ],
+  evaluate: (context, node, inputs) => (
+    outputs: {
+      'set': context.host.invoke('setAnimatorNumber', {
+        'name': inputs['name'],
+        'value': inputs['value'],
+      }),
+    },
+    next: const <String>['then'],
+  ),
+);
+
+final FlowNodeType setAnimatorFlag = FlowNodeType(
+  id: 'animator.setFlag',
+  label: 'Set Animator Flag',
+  category: 'Animation',
+  doc: "Sets a flag the machine's conditions read. It holds until changed.",
+  pins: const [
+    _execIn,
+    _animatorName,
+    FlowPin(
+      id: 'value',
+      label: 'Value',
+      type: FlowType.boolean,
+      defaultValue: true,
+    ),
+    _execOut,
+    _animatorSet,
+  ],
+  evaluate: (context, node, inputs) => (
+    outputs: {
+      'set': context.host.invoke('setAnimatorFlag', {
+        'name': inputs['name'],
+        'value': inputs['value'],
+      }),
+    },
+    next: const <String>['then'],
+  ),
+);
+
+final FlowNodeType animatorTrigger = FlowNodeType(
+  id: 'animator.trigger',
+  label: 'Trigger Animator',
+  category: 'Animation',
+  doc:
+      'Raises a trigger until a transition consumes it, which is what makes '
+      '"jump" fire once rather than for every frame the button is held.',
+  pins: const [_execIn, _animatorName, _execOut, _animatorSet],
+  evaluate: (context, node, inputs) => (
+    outputs: {
+      'set': context.host.invoke('animatorTrigger', {'name': inputs['name']}),
+    },
+    next: const <String>['then'],
+  ),
+);
+
+final FlowNodeType animatorState = FlowNodeType(
+  id: 'animator.state',
+  label: 'Animator State',
+  category: 'Animation',
+  doc: 'The state the machine is currently in.',
+  pins: const [
+    FlowPin(
+      id: 'layer',
+      label: 'Layer',
+      type: FlowType.string,
+      defaultValue: '',
+      doc: 'Empty reads the base layer.',
+    ),
+    FlowPin(id: 'state', label: 'State', type: FlowType.string, isInput: false),
+  ],
+  evaluate: (context, node, inputs) => _out({
+    'state': context.host.invoke('animatorState', {'layer': inputs['layer']}),
+  }),
+);
+
 /// The scene-facing node types, in palette order.
 /// {@category Flow}
 final List<FlowNodeType> sceneFlowNodes = [
@@ -361,6 +471,10 @@ final List<FlowNodeType> sceneFlowNodes = [
   destroyNode,
   setWeather,
   setTimeOfDay,
+  setAnimatorNumber,
+  setAnimatorFlag,
+  animatorTrigger,
+  animatorState,
   callAction,
 ];
 

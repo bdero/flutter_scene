@@ -497,6 +497,14 @@ const _stateFields = [
     defaultValue: DoubleValue(1),
     doc: 'Playback rate applied to the state\'s clips.',
   ),
+  ComponentPropertyDef(
+    'position',
+    ComponentPropertyKind.vec2,
+    doc:
+        'Where the state sits on an editor\'s canvas. The runtime ignores it '
+        'entirely; it is here so a machine laid out by hand comes back laid '
+        'out the same way.',
+  ),
 ];
 
 const _transitionFields = [
@@ -854,11 +862,8 @@ class AnimatorCodec extends ComponentCodec {
   });
 
   MapValue _encodeMask(AnimationMask mask) => MapValue({
-    'nodes': ListValue([
-      for (final name in mask.nodeNames) StringValue(name),
-    ]),
-    if (!mask.includeDescendants)
-      'includeDescendants': const BoolValue(false),
+    'nodes': ListValue([for (final name in mask.nodeNames) StringValue(name)]),
+    if (!mask.includeDescendants) 'includeDescendants': const BoolValue(false),
     if (mask.weight != 1.0) 'weight': DoubleValue(mask.weight),
     if (mask.outsideWeight != 0.0)
       'outsideWeight': DoubleValue(mask.outsideWeight),
@@ -948,7 +953,8 @@ const _layerFields = [
   ComponentPropertyDef(
     'name',
     ComponentPropertyKind.string,
-    doc: 'The layer\'s name, which also keeps its clips apart from another '
+    doc:
+        'The layer\'s name, which also keeps its clips apart from another '
         'layer\'s playing the same animation.',
   ),
   ComponentPropertyDef(
