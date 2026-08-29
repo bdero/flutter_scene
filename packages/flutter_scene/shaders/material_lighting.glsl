@@ -694,9 +694,40 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // punctual_dims.x is the parameters-texture row count; 0 means the scene has
   // no punctual lights this frame, so ignore any stale per-object count (and
   // never divide by the zero texture height in the fetch helpers).
-  int punctual_count =
-      frag_info.punctual_dims.x < 0.5 ? 0 : int(frag_info.radiance_blend.z);
-  int punctual_offset = int(frag_info.radiance_blend.w);
+  //
+  // Froxel mode (froxel_grid.z > 0): the fragment's light slice comes from
+  // its froxel instead of the per-draw uniforms, so no draw carries light
+  // state and the loop budget applies per froxel, not per object. The froxel
+  // is derived from the camera basis (not gl_FragCoord, whose vertical origin
+  // differs across backends): view-space position via the camera axes, then
+  // perspective tile mapping with the half-fov tangents, then an exponential
+  // depth slice.
+  int punctual_count = 0;
+  int punctual_offset = 0;
+  if (frag_info.punctual_dims.x >= 0.5) {
+    if (frag_info.froxel_grid.z > 0.5) {
+      vec3 to_frag = -v_viewvector;
+      float view_z = max(dot(to_frag, frag_info.camera_forward.xyz), 1e-4);
+      float ndc_x = dot(to_frag, frag_info.camera_right.xyz) /
+                    max(view_z * frag_info.scene_inputs.w, 1e-6);
+      float ndc_y = dot(to_frag, frag_info.camera_up.xyz) /
+                    max(view_z * frag_info.camera_forward.w, 1e-6);
+      float fnx = frag_info.froxel_grid.x;
+      float fny = frag_info.froxel_grid.y;
+      float fnz = frag_info.froxel_grid.z;
+      float fx = clamp(floor((ndc_x * 0.5 + 0.5) * fnx), 0.0, fnx - 1.0);
+      float fy = clamp(floor((0.5 - ndc_y * 0.5) * fny), 0.0, fny - 1.0);
+      float fz = clamp(floor(log2(view_z) * frag_info.froxel_grid.w +
+                             frag_info.punctual_dims.w),
+                       0.0, fnz - 1.0);
+      vec4 entry = FetchPunctualEntry(int((fz * fny + fy) * fnx + fx + 0.5));
+      punctual_offset = int(entry.r + 0.5);
+      punctual_count = int(entry.g + 0.5);
+    } else {
+      punctual_count = int(frag_info.radiance_blend.z);
+      punctual_offset = int(frag_info.radiance_blend.w);
+    }
+  }
   for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
     if (i >= punctual_count) {
       break;
