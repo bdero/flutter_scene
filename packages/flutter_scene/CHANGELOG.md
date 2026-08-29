@@ -10,6 +10,14 @@
 * A render pipeline build that stalls a frame (8ms or more, always on its first draw) is reported in debug builds with the material and geometry that triggered it, so the fix (drawing it once behind a load screen) has a target.
 * `SceneView` measures `onTick` deltas with a wall clock instead of the ticker's frame-begin timestamps, whose deltas alternate between tiny and double-length values under GPU load and stagger any motion integrated against them. The new `SceneView.clock` injects a clock for tests and time-controlling drivers; the ambient `package:clock` clock (faked under `flutter_test`) is the default.
 
+## 0.23.1
+
+* Normals transform by the inverse-transpose of the model matrix, so a node under non-uniform scale or shear lights the same as the shape modelled at that size.
+* Image and HDR skybox backgrounds no longer star-burst at the poles; the sharp path fades to the radiance cube overhead on cube layouts.
+* `Scene.initializeStaticResources()` completes with its error instead of normally, and `baseShaderLibrary` names that cause rather than telling you to await the call that already failed.
+* A rejected collider names the node it was on and the degenerate cases that cause the rejection.
+* Batching comparators cache their identity keys, `sceneSortDepth` allocates nothing, and instance batch objects are pooled, cutting per-frame work that multiplies across shadow, depth-prepass, and reflection views.
+
 ## 0.23.0
 
 * Build hooks no longer crash on a target OS `package:code_assets` cannot name, which is how a third-party embedder announces tvOS or visionOS.
