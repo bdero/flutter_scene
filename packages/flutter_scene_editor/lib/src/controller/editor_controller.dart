@@ -1306,6 +1306,7 @@ class EditorController extends ChangeNotifier {
       return;
     }
     if (_reflectRemovedNodes(transaction)) return;
+    if (_reflectRestoredNodes(transaction)) return;
     if (_reflectAddedNode(transaction)) return;
     if (_reflectComponents(transaction)) return;
     if (transaction.records.every((r) => r.slot == ChangeSlot.instance) &&
@@ -1504,6 +1505,108 @@ class EditorController extends ChangeNotifier {
       _liveById.remove(entry.key);
       _sourceIdByLive.remove(entry.value);
     }
+    return true;
+  }
+
+  // Rebuilds live nodes for a structural restoration (undoing a delete).
+  // Such a transaction touches no resources, so the retained realizer serves
+  // the subtree realize and nothing else rebuilds; without this, undoing a
+  // delete re-realized the whole scene (seconds in a large document).
+  bool _reflectRestoredNodes(Transaction transaction) {
+    final realizer = _resourceRealizer;
+    if (_composed != null || _realizedRoot == null || realizer == null) {
+      return false;
+    }
+    // Skins bind and animations resolve targets only during a full realize,
+    // so a document carrying either takes the slow path.
+    if (document.skins.isNotEmpty || document.animations.isNotEmpty) {
+      return false;
+    }
+    if (transaction.records.any(
+      (record) =>
+          record.slot != ChangeSlot.poolNode &&
+          record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots,
+    )) {
+      return false;
+    }
+    final restored = <LocalId, NodeSpec>{};
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.poolNode) continue;
+      final spec = document.nodes[record.targetId];
+      if (spec == null || _liveById.containsKey(record.targetId)) continue;
+      restored[record.targetId] = spec;
+    }
+    if (restored.isEmpty) return false;
+    for (final spec in restored.values) {
+      if (spec.skin != null || spec.instance != null) return false;
+    }
+    // Build the whole restored forest detached, so any bail below leaves the
+    // live graph untouched and the full realize can take over.
+    final nodes = <LocalId, Node>{};
+    final context = RealizeContext(document, resources: realizer)
+      ..resolveNode = (id) => nodes[id] ?? _liveById[id];
+    for (final spec in restored.values) {
+      final node = tagNodeId(
+        Node(name: spec.name)
+          ..layers = spec.layers
+          ..visible = spec.visible,
+        spec.id,
+      );
+      applyTransformSpec(node, spec.transform);
+      nodes[spec.id] = node;
+    }
+    for (final spec in restored.values) {
+      final node = nodes[spec.id]!;
+      for (final childId in spec.children) {
+        final child = nodes[childId];
+        // A delete captures its entire subtree, so every child of a restored
+        // node is restored with it; anything else is a shape this path does
+        // not understand.
+        if (child == null) return false;
+        node.add(child);
+      }
+      for (final componentSpec in spec.components) {
+        final component = _componentRegistry.realize(componentSpec, context);
+        if (component == null) return false;
+        node.addComponent(component);
+      }
+    }
+    context.runAfterRealize();
+    // Attach each restored top-level subtree under its live parent (or the
+    // realized root for document roots). Live child order may differ from the
+    // document's; the outliner and serialization read the document, and draw
+    // order does not depend on sibling order.
+    final topLevel = restored.keys.where((id) {
+      for (final other in restored.values) {
+        if (other.children.contains(id)) return false;
+      }
+      return true;
+    });
+    final attachments = <(Node, Node)>[];
+    for (final id in topLevel) {
+      Node? parent;
+      if (document.roots.contains(id)) {
+        parent = _realizedRoot;
+      } else {
+        for (final entry in document.nodes.entries) {
+          if (entry.value.children.contains(id)) {
+            parent = _liveById[entry.key];
+            break;
+          }
+        }
+      }
+      if (parent == null) return false;
+      attachments.add((parent, nodes[id]!));
+    }
+    for (final (parent, node) in attachments) {
+      parent.add(node);
+    }
+    for (final entry in nodes.entries) {
+      _liveById[entry.key] = entry.value;
+      _sourceIdByLive[entry.value] = entry.key;
+    }
+    _syncHighlights();
     return true;
   }
 
