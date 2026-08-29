@@ -85,6 +85,9 @@ export 'src/builtin_commands.dart'
         environmentResourceWithSunProperties,
         registerBuiltinCommands;
 
+// Animation authoring commands.
+export 'src/animation_commands.dart' show animationCommands;
+
 // Subtree cloning (duplicate, copy, paste).
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
 

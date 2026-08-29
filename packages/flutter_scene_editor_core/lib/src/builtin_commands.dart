@@ -17,6 +17,8 @@ import 'clone.dart';
 import 'command.dart';
 import 'params.dart';
 
+import 'animation_commands.dart' show animationCommands;
+
 // ---------------------------------------------------------------------------
 // Shared helpers.
 // ---------------------------------------------------------------------------
@@ -327,6 +329,16 @@ final setNodeTransform = CommandEntry(
       required: false,
     ),
     ParamSpec(
+      name: 'rotationEuler',
+      type: ParamType.euler,
+      label: 'Rotation (Euler)',
+      required: false,
+      description:
+          'Rotation as {yaw, pitch, roll} in DEGREES (yaw around Y, pitch '
+          'around X, roll around Z). Pass either this or "rotation", not '
+          'both.',
+    ),
+    ParamSpec(
       name: 'scale',
       type: ParamType.vec3,
       label: 'Scale',
@@ -338,15 +350,19 @@ final setNodeTransform = CommandEntry(
     final node = _requireNode(ctx, id);
     final current = node.transform;
     final trs = current is TrsTransform ? current : null;
+    final quaternion = optionalQuaternion(params, 'rotation');
+    final euler = optionalEuler(params, 'rotationEuler');
+    if (quaternion != null && euler != null) {
+      throw const CommandException(
+        'Pass either "rotation" or "rotationEuler", not both',
+      );
+    }
     final next = TrsTransform(
       translation:
           optionalVec3(params, 'translation') ??
           trs?.translation ??
           Vector3.zero(),
-      rotation:
-          optionalQuaternion(params, 'rotation') ??
-          trs?.rotation ??
-          Quaternion.identity(),
+      rotation: quaternion ?? euler ?? trs?.rotation ?? Quaternion.identity(),
       scale: optionalVec3(params, 'scale') ?? trs?.scale ?? Vector3(1, 1, 1),
     );
     return Transaction(
@@ -2926,7 +2942,7 @@ final detachFromPrefab = CommandEntry(
 
 /// Registers all built-in commands into [registry].
 void registerBuiltinCommands(CommandRegistry registry) {
-  for (final command in builtinCommands) {
+  for (final command in [...builtinCommands, ...animationCommands]) {
     registry.register(command);
   }
 }

@@ -28,7 +28,7 @@ void main() {
     final left = root.children[0] as DockSplit;
     expect(left.axis, Axis.vertical);
     expect((left.children[0] as DockTabs).panels, ['outliner']);
-    expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
+    expect((left.children[1] as DockTabs).panels, ['assets', 'history', 'animation']);
     expect((root.children[1] as DockTabs).panels, ['viewport']);
     expect((root.children[2] as DockTabs).panels, ['inspector']);
   });

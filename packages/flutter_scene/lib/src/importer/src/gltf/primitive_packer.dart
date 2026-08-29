@@ -95,7 +95,10 @@ class PackedMorphTargets {
 ///   texture_coords(2 f32), texture_coords_1(2 f32), color(4 f32),
 ///   tangent(4 f32).
 /// - Skinned (104 bytes/vertex): unskinned + joints(4 f32) +
-///   weights(4 f32).
+///   weights(4 f32). Sources rigged with more than four influences per
+///   vertex are merged down to the strongest four and renormalized
+///   (see [_mergeJointInfluenceSets]); vertices then always blend a full
+///   unit of weight, so skinned meshes hold their authored rest shape.
 ///
 /// When the primitive omits the NORMAL attribute, glTF requires the
 /// client to generate flat normals. A vertex shared by several
@@ -189,22 +192,24 @@ PackedPrimitive packGltfPrimitive({
       includeSkinning &&
       primitive.attributes.containsKey('JOINTS_0') &&
       primitive.attributes.containsKey('WEIGHTS_0');
-  final joints = hasJoints
-      ? _readVec4(
-          primitive.attributes['JOINTS_0']!,
-          accessors,
-          bufferViews,
-          bufferData,
-        )
-      : null;
-  final weights = hasJoints
-      ? _readVec4(
-          primitive.attributes['WEIGHTS_0']!,
-          accessors,
-          bufferViews,
-          bufferData,
-        )
-      : null;
+  Float32List? joints;
+  Float32List? weights;
+  if (hasJoints) {
+    // Assets rigged with more than four influences per vertex (UniRig,
+    // auto-riggers, Blender exports above the engine's budget) spread the
+    // blend across several JOINTS_n/WEIGHTS_n sets. Reading only set 0
+    // would leave vertices far short of a full unit of weight, which draws
+    // them pulled toward the armature origin even in the rest pose.
+    final merged = _mergeJointInfluenceSets(
+      primitive: primitive,
+      accessors: accessors,
+      bufferViews: bufferViews,
+      bufferData: bufferData,
+      vertexCount: vertexCount,
+    );
+    joints = merged.$1;
+    weights = merged.$2;
+  }
 
   // Determine the output vertex set. With authored normals the mesh is
   // kept as-is; without them it is de-indexed for flat normals (see the
@@ -373,6 +378,136 @@ PackedPrimitive packGltfPrimitive({
 /// source vertex, identity unless the primitive was de-indexed for flat
 /// normals). Deltas are additive per spec; a native-baking policy negates
 /// each delta's Z like the base attributes.
+/// The most joint/weight sets a primitive is scanned for. glTF requires
+/// set suffixes to be sequential starting at 0; real exporters stay far
+/// below this.
+const int _maxJointInfluenceSets = 8;
+
+/// Skipped weight threshold when ranking influences: anything at or below
+/// contributes nothing to the blend and only risks displacing a useful
+/// influence out of the four slots.
+const double _minMeaningfulWeight = 1e-6;
+
+/// Merges every `JOINTS_n`/`WEIGHTS_n` attribute pair into one four-slot
+/// influence set per vertex, keeping the strongest influences and
+/// renormalizing so the surviving weights sum to 1.
+///
+/// With four or fewer influences per vertex the merge is exact. Above
+/// four it approximates: the weakest influences are dropped and the
+/// survivors renormalize to a full unit of weight — the same contract
+/// Blender's "Limit Total + Normalize All" applies before export. Slots
+/// that end up empty carry weight 0 bound to the vertex's dominant joint,
+/// so the shader never multiplies an uninitialized index into the joints
+/// texture.
+///
+/// Returns `(joints, weights)`, `vertexCount * 4` floats each.
+(Float32List, Float32List) _mergeJointInfluenceSets({
+  required GltfMeshPrimitive primitive,
+  required List<GltfAccessor> accessors,
+  required List<GltfBufferView> bufferViews,
+  required Uint8List bufferData,
+  required int vertexCount,
+}) {
+  final jointSets = <Float32List>[];
+  final weightSets = <Float32List>[];
+  var droppedSets = false;
+  for (var set = 0; set < _maxJointInfluenceSets; set++) {
+    final jointIdx = primitive.attributes['JOINTS_$set'];
+    final weightIdx = primitive.attributes['WEIGHTS_$set'];
+    if (jointIdx == null && weightIdx == null) continue;
+    if (jointIdx == null || weightIdx == null) {
+      // A lone half-pair cannot bind anything; skip it rather than fail.
+      droppedSets = true;
+      continue;
+    }
+    jointSets.add(
+      _readVec4(jointIdx, accessors, bufferViews, bufferData),
+    );
+    weightSets.add(
+      _readVec4(weightIdx, accessors, bufferViews, bufferData),
+    );
+  }
+
+  final mergedJoints = Float32List(vertexCount * 4);
+  final mergedWeights = Float32List(vertexCount * 4);
+
+  // Influence scratch space: up to [_maxJointInfluenceSets] * 4 entries,
+  // ranked by descending weight with stable order for ties.
+  final infJoint = Int32List(_maxJointInfluenceSets * 4);
+  final infWeight = Float32List(_maxJointInfluenceSets * 4);
+
+  if (weightSets.length > 1 || droppedSets) {
+    sceneLog(
+      'glTF: primitive carries ${weightSets.length} joint/weight influence '
+      'sets${droppedSets ? ' (some incomplete pairs ignored)' : ''}; merged '
+      'to the top 4 influences per vertex and renormalized.',
+    );
+  }
+
+  for (var v = 0; v < vertexCount; v++) {
+    var count = 0;
+    var total = 0.0;
+    for (var s = 0; s < weightSets.length; s++) {
+      final ws = weightSets[s];
+      final js = jointSets[s];
+      for (var c = 0; c < 4; c++) {
+        final w = ws[v * 4 + c];
+        if (w <= _minMeaningfulWeight) continue;
+        total += w;
+        infJoint[count] = js[v * 4 + c].toInt();
+        infWeight[count] = w;
+        count++;
+      }
+    }
+
+    if (count == 0 || total <= 0) {
+      // Degenerate vertex (all-zero weights): pin to set 0 slot 0 so it
+      // follows a real bone instead of collapsing toward the origin.
+      final fallback = weightSets.isEmpty
+          ? 0
+          : jointSets[0][v * 4].toInt();
+      mergedJoints[v * 4] = fallback.toDouble();
+      mergedWeights[v * 4] = 1.0;
+      continue;
+    }
+
+    // Rank by descending weight, insertion sort (count is tiny and the
+    // array is nearly sorted in practice since exporters list strongest
+    // first within each set).
+    for (var i = 1; i < count; i++) {
+      final w = infWeight[i];
+      final j = infJoint[i];
+      var k = i - 1;
+      while (k >= 0 && infWeight[k] < w) {
+        infWeight[k + 1] = infWeight[k];
+        infJoint[k + 1] = infJoint[k];
+        k--;
+      }
+      infWeight[k + 1] = w;
+      infJoint[k + 1] = j;
+    }
+
+    final kept = count < 4 ? count : 4;
+    final dominant = infJoint[0];
+    // Normalize over the KEPT influences so every vertex blends a full
+    // unit of weight even after dropping the tail: this pins the mesh to
+    // its authored shape whenever the joints sit at their bind pose, no
+    // matter how many influences were cut.
+    var keptSum = 0.0;
+    for (var c = 0; c < kept; c++) {
+      keptSum += infWeight[c];
+    }
+    for (var c = 0; c < 4; c++) {
+      mergedJoints[v * 4 + c] =
+          c < kept ? infJoint[c].toDouble() : dominant.toDouble();
+      mergedWeights[v * 4 + c] =
+          c < kept ? infWeight[c] / keptSum : 0.0;
+    }
+  }
+
+  return (mergedJoints, mergedWeights);
+}
+
 PackedMorphTargets? _packMorphTargets(
   GltfMeshPrimitive primitive,
   List<GltfAccessor> accessors,

@@ -23,6 +23,348 @@ void main() {
     });
   });
 
+  group('animation preview control', () {
+    final calls = <Map<String, Object?>>[];
+    Map<String, Object?> control({
+      LocalId? animationId,
+      bool? playing,
+      bool? loop,
+      double? speed,
+      double? seek,
+      bool? stop,
+    }) {
+      calls.add({
+        if (animationId != null) 'animation': animationId.toToken(),
+        if (playing != null) 'playing': playing,
+        if (loop != null) 'loop': loop,
+        if (speed != null) 'speed': speed,
+        if (seek != null) 'seek': seek,
+        if (stop != null) 'stop': stop,
+      });
+      return {
+        'animation': animationId?.toToken(),
+        'playing': playing ?? false,
+        'time': seek ?? 0.0,
+      };
+    }
+
+    EditorToolSurface surfaceWithPreview() {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      return EditorToolSurface(() => session, animationPreview: control);
+    }
+
+    test('is offered only when a provider is present', () {
+      expect(
+        _surface().bootstrapTools().map((t) => t.name),
+        isNot(contains('control_animation_preview')),
+      );
+      expect(
+        surfaceWithPreview().bootstrapTools().map((t) => t.name),
+        contains('control_animation_preview'),
+      );
+    });
+
+    test('without a provider, dispatch throws ToolError', () {
+      expect(
+        () => _surface().dispatch('control_animation_preview', {}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('preview'),
+          ),
+        ),
+      );
+    });
+
+    test('resolves an animation ref onto the playhead', () async {
+      final surface = surfaceWithPreview();
+      calls.clear();
+      await surface.dispatch('run_command', {
+        'command': 'createAnimation',
+        'params': {'name': 'Spin'},
+      });
+      final id =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+
+      final state = await surface.dispatch('control_animation_preview', {
+        'ref': 'Spin',
+        'seek': 0.5,
+        'playing': true,
+      });
+      expect(state['animation'], id);
+      expect(calls.single['animation'], id);
+      expect(calls.single['seek'], 0.5);
+      expect(calls.single['playing'], true);
+    });
+
+    test('omitted fields pass null through', () async {
+      calls.clear();
+      await surfaceWithPreview().dispatch('control_animation_preview', {
+        'loop': false,
+      });
+      expect(calls.single, {'loop': false});
+    });
+
+    test('a bad ref surfaces as ToolError', () {
+      expect(
+        () => surfaceWithPreview().dispatch('control_animation_preview', {
+          'ref': 'Nope',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+
+    test('an empty ref is rejected, not silently ignored', () {
+      expect(
+        () => surfaceWithPreview().dispatch('control_animation_preview', {
+          'ref': '',
+        }),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('non-empty'),
+          ),
+        ),
+      );
+    });
+
+    test('stop passes through to the host', () async {
+      final surface = surfaceWithPreview();
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final id =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      calls.clear();
+      await surface.dispatch('control_animation_preview', {
+        'ref': id,
+        'stop': true,
+      });
+      expect(calls.single['stop'], true);
+    });
+  });
+
+  group('keyframe truncation', () {
+    /// A surface with one node and a 250-key animation channel.
+    Future<(EditorToolSurface, String, String)> largeChannel() async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      // 250 keys at 0.01 s spacing, authored through the real batch command.
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframes',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'keys': [
+            for (var i = 0; i < 250; i++)
+              {
+                'time': i * 0.01,
+                'translation': {'x': i * 1.0, 'y': 0.0, 'z': 0.0},
+              },
+          ],
+        },
+      });
+      return (surface, animationId, nodeId);
+    }
+
+    test('get_animation caps keyframes per channel by default', () async {
+      final (surface, animationId, _) = await largeChannel();
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      final channel = (detail['channels'] as List).single as Map;
+      expect(channel['totalKeys'], 250);
+      expect(channel['keysTruncated'], isTrue);
+      expect((channel['keyframes'] as List), hasLength(200));
+    });
+
+    test('maxKeys raises or lowers the cap', () async {
+      final (surface, animationId, _) = await largeChannel();
+      final full = await surface.dispatch('get_animation', {
+        'ref': animationId,
+        'maxKeys': 250,
+      });
+      final channel = (full['channels'] as List).single as Map;
+      expect(channel['keysTruncated'], isFalse);
+      expect((channel['keyframes'] as List), hasLength(250));
+
+      final tiny = await surface.dispatch('get_animation', {
+        'ref': animationId,
+        'maxKeys': 5,
+      });
+      expect(
+        ((tiny['channels'] as List).single as Map)['keyframes'],
+        hasLength(5),
+      );
+    });
+
+    test('a maxKeys below 1 is rejected', () async {
+      final (surface, animationId, _) = await largeChannel();
+      expect(
+        () => surface.dispatch('get_animation', {
+          'ref': animationId,
+          'maxKeys': 0,
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+
+    test('get_keyframes pages a channel by time range', () async {
+      final (surface, animationId, nodeId) = await largeChannel();
+      final page = await surface.dispatch('get_keyframes', {
+        'ref': animationId,
+        'node': nodeId,
+        'property': 'translation',
+        'fromTime': 0.4,
+        'toTime': 0.6,
+      });
+      expect(page['totalKeys'], 21); // 0.40..0.60 inclusive at 0.01 spacing.
+      expect(page['keysTruncated'], isFalse);
+      final times = [
+        for (final k in (page['keyframes'] as List)) (k as Map)['time'],
+      ];
+      expect(times.first, closeTo(0.4, 1e-6));
+      expect(times.last, closeTo(0.6, 1e-6));
+
+      // The cap still applies within the range.
+      final capped = await surface.dispatch('get_keyframes', {
+        'ref': animationId,
+        'node': nodeId,
+        'property': 'translation',
+        'fromTime': 0.0,
+        'toTime': 2.49,
+        'maxKeys': 10,
+      });
+      expect(capped['totalKeys'], 250);
+      expect(capped['keysTruncated'], isTrue);
+      expect((capped['keyframes'] as List), hasLength(10));
+    });
+
+    test('get_keyframes validates its channel arguments', () async {
+      final (surface, animationId, nodeId) = await largeChannel();
+      // Unknown property.
+      expect(
+        () => surface.dispatch('get_keyframes', {
+          'ref': animationId,
+          'node': nodeId,
+          'property': 'colour',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+      // A node with no channel of that property.
+      await surface.dispatch('run_command', {
+        'command': 'createNode',
+        'params': {'name': 'Other'},
+      });
+      expect(
+        () => surface.dispatch('get_keyframes', {
+          'ref': animationId,
+          'node': 'Other',
+          'property': 'translation',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+      // Missing node argument.
+      expect(
+        () => surface.dispatch('get_keyframes', {
+          'ref': animationId,
+          'property': 'translation',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+
+    test('rotation keyframes carry an eulerDeg readback', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      // Author in degrees; the readback must round-trip.
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'rotation',
+          'time': 0.0,
+          'rotationEuler': {'yaw': 90.0, 'pitch': 0.0, 'roll': 0.0},
+        },
+      });
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'time': 0.0,
+          'translation': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+        },
+      });
+
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      for (final channel in (detail['channels'] as List)) {
+        final c = channel as Map;
+        if (c['property'] != 'rotation') continue;
+        final keyframe = (c['keyframes'] as List).single as Map;
+        final euler = keyframe['eulerDeg'] as Map;
+        expect(euler['yaw'], closeTo(90.0, 1e-4));
+        expect(euler['pitch'], closeTo(0.0, 1e-4));
+        expect(euler['roll'], closeTo(0.0, 1e-4));
+      }
+      // Translation channels carry no eulerDeg.
+      final translation =
+          (detail['channels'] as List)
+                  .where((c) => (c as Map)['property'] == 'translation')
+                  .single
+              as Map;
+      expect(
+        ((translation['keyframes'] as List).single as Map)['eulerDeg'],
+        isNull,
+      );
+    });
+  });
+
   group('command gateway', () {
     test('search_commands finds a command with its argument schema', () async {
       final result = await _surface().dispatch('search_commands', {
@@ -105,6 +447,207 @@ void main() {
         () => _surface().dispatch('get_node', {'ref': 'Nope/Missing'}),
         throwsA(isA<ToolError>()),
       );
+    });
+  });
+  group('animation perception', () {
+    test('bootstrap surface offers the animation tools', () {
+      final names = _surface().bootstrapTools().map((t) => t.name).toSet();
+      expect(names, containsAll(['list_animations', 'get_animation']));
+    });
+
+    test('describe_scene carries an animation summary', () async {
+      final surface = _surface();
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final scene = await surface.dispatch('describe_scene', {});
+      final animations = scene['animations'] as List;
+      expect(animations, hasLength(1));
+      final summary = animations.single as Map;
+      expect(summary['name'], 'Animation');
+      expect(summary['id'], isNotEmpty);
+      expect(summary['duration'], 0.0);
+      expect((summary['channels'] as List), isEmpty);
+    });
+
+    test('keyframes authored via run_command read back decoded', () async {
+      final surface = _surface();
+      // A target node plus a two-keyframe translation channel.
+      await surface.dispatch('run_command', {
+        'command': 'createNode',
+        'params': {'name': 'Cube'},
+      });
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      final nodeId = await _firstRootId(surface);
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'time': 0.0,
+          'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+        },
+      });
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'time': 1.5,
+          'translation': {'x': 2.0, 'y': 4.0, 'z': -1.0},
+        },
+      });
+      // A rotation keyframe exercises the quaternion stride.
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframe',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'rotation',
+          'time': 0.5,
+          'rotation': {
+            'x': 0.0,
+            'y': 0.7071067811865476,
+            'z': 0.0,
+            'w': 0.7071067811865476,
+          },
+        },
+      });
+
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      expect(detail['duration'], 1.5);
+      final channels = detail['channels'] as List;
+      expect(channels, hasLength(2));
+      final translation =
+          channels.firstWhere((c) => (c as Map)['property'] == 'translation')
+              as Map;
+      expect(((translation['target'] as Map)['path']), 'Cube');
+      final keys = translation['keyframes'] as List;
+      expect(keys, hasLength(2));
+      // Keyframes come back time-sorted out of the timeline payload.
+      expect((keys.first as Map)['time'], 0.0);
+      expect((keys.last as Map)['time'], 1.5);
+      expect((keys.last as Map)['value'], {'x': 2.0, 'y': 4.0, 'z': -1.0});
+
+      final rotation =
+          channels.firstWhere((c) => (c as Map)['property'] == 'rotation')
+              as Map;
+      expect(
+        ((rotation['keyframes'].single as Map)['value'] as Map)['w'],
+        closeTo(0.7071067811865476, 1e-6),
+      );
+
+      // The same detail resolves by exact name.
+      final byName = await surface.dispatch('get_animation', {
+        'ref': 'Animation',
+      });
+      expect(byName['id'], animationId);
+
+      // list_animations summarizes without decoding values.
+      final summary =
+          ((await surface.dispatch('list_animations', {}))['animations']
+                      as List)
+                  .single
+              as Map;
+      expect(summary['duration'], 1.5);
+      expect((summary['channels'] as List), hasLength(2));
+    });
+
+    test('get_animation on a missing ref throws ToolError', () {
+      expect(
+        () => _surface().dispatch('get_animation', {'ref': 'Nope'}),
+        throwsA(isA<ToolError>()),
+      );
+      // The missing-ref complaint is about animations, not nodes.
+      expect(
+        () => _surface().dispatch('get_animation', {}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('animation'),
+          ),
+        ),
+      );
+    });
+
+    test('an ambiguous animation name is rejected', () async {
+      final surface = _surface();
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      expect(
+        () => surface.dispatch('get_animation', {'ref': 'Animation'}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('ambiguous'),
+          ),
+        ),
+      );
+    });
+
+    test('weights channels decode with the flattened glTF stride', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      final doc = session.document;
+      await surface.dispatch('run_command', {
+        'command': 'createNode',
+        'params': {'name': 'Mesh'},
+      });
+      // No command authors weight channels (they come from imported models),
+      // so build one directly: 2 keyframes x 2 morph targets.
+      final timelineId = doc.newId();
+      final valuesId = doc.newId();
+      Uint8List floatBytes(List<double> xs) =>
+          Float32List.fromList(xs).buffer.asUint8List();
+      doc.addPayload(
+        PayloadSpec(
+          timelineId,
+          encoding: PayloadEncoding.floats,
+          bytes: floatBytes([0, 1]),
+        ),
+      );
+      doc.addPayload(
+        PayloadSpec(
+          valuesId,
+          encoding: PayloadEncoding.floats,
+          bytes: floatBytes([0.25, 0.5, 0.75, 1.0]),
+        ),
+      );
+      final nodeId = LocalId.parse(await _firstRootId(surface));
+      doc.addAnimation(
+        AnimationSpec(
+          doc.newId(),
+          name: 'Blend',
+          channels: [
+            AnimationChannelSpec(
+              target: nodeId,
+              property: AnimationProperty.weights,
+              timeline: timelineId,
+              keyframes: valuesId,
+            ),
+          ],
+        ),
+      );
+
+      final detail = await surface.dispatch('get_animation', {'ref': 'Blend'});
+      final channel = (detail['channels'] as List).single as Map;
+      expect(channel['property'], 'weights');
+      final keys = channel['keyframes'] as List;
+      expect(keys, hasLength(2));
+      expect((keys.first as Map)['value'], [0.25, 0.5]);
+      expect((keys.last as Map)['value'], [0.75, 1.0]);
     });
   });
 }
@@ -456,5 +999,348 @@ void documentTests() {
     final detail = await surface.dispatch('get_node', {'ref': 'Box'});
     final bounds = detail['worldBounds'] as Map;
     expect((bounds['max'] as Map)['y'], 4);
+  });
+
+  group('channel interpolation', () {
+    test('channels report their interpolation mode', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframes',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'keys': [
+            {'time': 0.0},
+            {'time': 1.0},
+          ],
+        },
+      });
+      // Default is linear.
+      var detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      expect(
+        ((detail['channels'] as List).single as Map)['interpolation'],
+        'linear',
+      );
+
+      await surface.dispatch('run_command', {
+        'command': 'setChannelInterpolation',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'interpolation': 'step',
+        },
+      });
+      detail = await surface.dispatch('get_animation', {'ref': animationId});
+      expect(
+        ((detail['channels'] as List).single as Map)['interpolation'],
+        'step',
+      );
+    });
+
+    test('cubic channels decode values from their middle slot', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      await surface.dispatch('run_command', {'command': 'createNode'});
+      final nodeId =
+          (((await surface.dispatch('describe_scene', {}))['roots'] as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {'command': 'createAnimation'});
+      final animationId =
+          (((await surface.dispatch('list_animations', {}))['animations']
+                          as List)
+                      .single
+                  as Map)['id']
+              as String;
+      await surface.dispatch('run_command', {
+        'command': 'setAnimationKeyframes',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'keys': [
+            {'time': 0.0},
+            {'time': 1.0},
+          ],
+        },
+      });
+      await surface.dispatch('run_command', {
+        'command': 'setChannelInterpolation',
+        'params': {
+          'animationId': animationId,
+          'nodeId': nodeId,
+          'property': 'translation',
+          'interpolation': 'cubic',
+        },
+      });
+      final detail = await surface.dispatch('get_animation', {
+        'ref': animationId,
+      });
+      final channel = (detail['channels'] as List).single as Map;
+      expect(channel['interpolation'], 'cubic');
+      // The keyed values live in each row's middle slot; tangent slots are
+      // not reported as values — they get their own fields instead.
+      for (final keyframe in (channel['keyframes'] as List)) {
+        expect(
+          ((keyframe as Map)['value'] as Map)['x'],
+          anyOf(closeTo(0.0, 1e-6), closeTo(10.0, 1e-6)),
+        );
+        expect((keyframe['inTangent'] as List), hasLength(3));
+        expect((keyframe['outTangent'] as List), hasLength(3));
+      }
+    });
+
+    test('an unknown interpolation mode is rejected', () {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(() => session);
+      expect(
+        () => surface.dispatch('run_command', {
+          'command': 'setChannelInterpolation',
+          'params': {
+            'animationId': '0000008000000',
+            'nodeId': '0000008000001',
+            'property': 'translation',
+            'interpolation': 'bouncy',
+          },
+        }),
+        throwsA(isA<ToolError>()),
+      );
+    });
+  });
+
+  group('armature perception', () {
+    // A native rig authored in one document: Hips -> Spine bones, one skin
+    // binding a mesh node, one animation channel driving Hips.
+    (EditorSession, LocalId, LocalId) nativeRigSession() {
+      final doc = SceneDocument(allocator: IdAllocator(session: 1));
+      final hips = doc.addNode(
+        NodeSpec(id: doc.newId(), name: 'Hips'),
+        root: true,
+      );
+      final spine = doc.addNode(
+        NodeSpec(
+          id: doc.newId(),
+          name: 'Spine',
+          transform: TrsTransform(translation: Vector3(0, 1, 0)),
+        ),
+      );
+      hips.children.add(spine.id);
+      final skin = doc.addSkin(
+        SkinSpec(
+          doc.newId(),
+          joints: [hips.id, spine.id],
+          inverseBindMatrices: doc.newId(),
+          skeleton: hips.id,
+        ),
+      );
+      doc.addNode(
+        NodeSpec(id: doc.newId(), name: 'Body', skin: skin.id),
+        root: true,
+      );
+      final session = EditorSession(doc);
+      session.run('createAnimation', {'name': 'Walk'});
+      final animationId = (session.document.animations.values.single).id;
+      session.run('setAnimationKeyframe', {
+        'animationId': animationId.toToken(),
+        'nodeId': hips.id.toToken(),
+        'property': 'translation',
+        'time': 0,
+        'translation': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+      });
+      return (session, skin.id, hips.id);
+    }
+
+    test('get_armature describes the skin and the bone hierarchy', () async {
+      final (session, skinId, _) = nativeRigSession();
+      final surface = EditorToolSurface(() => session);
+      final result =
+          await surface.dispatch('get_armature', {'ref': 'Body'}) as Map;
+      expect(result['view'], 'document');
+      expect(result['node']['name'], 'Body');
+      final skins = result['skins'] as List;
+      expect((skins.single as Map)['id'], skinId.toToken());
+      expect((skins.single as Map)['jointCount'], 2);
+      final bones = [
+        for (final b in result['bones'] as List) b as Map,
+      ];
+      expect(bones.map((b) => b['name']), ['Hips', 'Spine']);
+      expect(bones[0]['parent'], isNull);
+      expect(bones[1]['parent'], 'Hips');
+      // Hips is keyed by the animation; Spine is not yet.
+      expect(bones[0]['animated'], isTrue);
+      expect(bones[1]['animated'], isFalse);
+    });
+
+    test('get_skin returns skinning order, transforms, and bound meshes',
+        () async {
+      final (session, skinId, _) = nativeRigSession();
+      final surface = EditorToolSurface(() => session);
+      final result = await surface.dispatch('get_skin', {'ref': 'Body'});
+      expect(result['id'], skinId.toToken());
+      expect(result['jointCount'], 2);
+      expect((result['skeleton'] as Map)['name'], 'Hips');
+      final joints = [
+        for (final j in result['joints'] as List) j as Map,
+      ];
+      expect(joints.map((j) => j['name']), ['Hips', 'Spine']);
+      expect(joints[1]['jointIndex'], 1);
+      expect(joints[1]['transform'], isNotNull);
+      final meshes = [
+        for (final m in result['boundMeshes'] as List) m as Map,
+      ];
+      expect(meshes.map((m) => m['name']), ['Body']);
+    });
+
+    test('a node with no bound skin is a self-correctable error', () async {
+      final (session, _, _) = nativeRigSession();
+      final surface = EditorToolSurface(() => session);
+      expect(
+        () => surface.dispatch('get_skin', {'ref': 'Hips'}),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            contains('No skin'),
+          ),
+        ),
+      );
+    });
+
+    test('get_armature reads imported rigs through the composed view',
+        () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final rig = session.document.addNode(
+        NodeSpec(id: session.document.newId(), name: 'Rig'),
+        root: true,
+      );
+      // The composed expansion: the rig id survives the merge, bones hang
+      // under it, and one skin binds them.
+      final composed = SceneDocument(allocator: IdAllocator(session: 2));
+      composed.addNode(NodeSpec(id: rig.id, name: 'Rig'), root: true);
+      final upper = composed.addNode(
+        NodeSpec(id: composed.newId(), name: 'Bone_012'),
+      );
+      composed.nodes[rig.id]!.children.add(upper.id);
+      final skin = composed.addSkin(
+        SkinSpec(
+          composed.newId(),
+          joints: [upper.id],
+          inverseBindMatrices: composed.newId(),
+          skeleton: upper.id,
+        ),
+      );
+      final body = composed.addNode(
+        NodeSpec(id: composed.newId(), name: 'Body', skin: skin.id),
+      );
+      composed.nodes[upper.id]!.children.add(body.id);
+      var composedReads = 0;
+      final surface = EditorToolSurface(
+        () => session,
+        composedDocument: () {
+          composedReads++;
+          return composed;
+        },
+      );
+      final result = await surface.dispatch('get_armature', {'ref': 'Rig'});
+      expect(composedReads, 1);
+      expect(result['view'], 'composed');
+      final bones = [
+        for (final b in result['bones'] as List) b as Map,
+      ];
+      expect(bones.map((b) => b['name']), ['Bone_012']);
+    });
+
+    test('highlight_bones is host-only and validates against the rig',
+        () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final rig = session.document.addNode(
+        NodeSpec(id: session.document.newId(), name: 'Rig'),
+        root: true,
+      );
+      final composed = SceneDocument(allocator: IdAllocator(session: 2));
+      composed.addNode(NodeSpec(id: rig.id, name: 'Rig'), root: true);
+      final bone = composed.addNode(
+        NodeSpec(id: composed.newId(), name: 'Bone_012'),
+      );
+      composed.nodes[rig.id]!.children.add(bone.id);
+
+      // Headless: the tool does not exist.
+      expect(
+        () => EditorToolSurface(() => session).dispatch('highlight_bones', {
+          'ref': 'Rig',
+        }),
+        throwsA(isA<ToolError>()),
+      );
+
+      final applied = <(LocalId, List<String>)>[];
+      List<String> highlight(LocalId instance, List<String> bones) {
+        applied.add((instance, bones));
+        return bones;
+      }
+
+      final surface = EditorToolSurface(
+        () => session,
+        composedDocument: () => composed,
+        highlightBones: highlight,
+      );
+      final names = await surface.dispatch('highlight_bones', {
+        'ref': 'Rig',
+        'bones': ['Bone_012'],
+      });
+      expect(names, {
+        'node': rig.id.toToken(),
+        'highlighted': ['Bone_012'],
+      });
+      expect(applied.single.$1, rig.id);
+
+      // An unknown bone name is rejected with the rig's full bone list, so
+      // an agent can self-correct without another tool call.
+      expect(
+        () => surface.dispatch('highlight_bones', {
+          'ref': 'Rig',
+          'bones': ['Bone_999'],
+        }),
+        throwsA(
+          isA<ToolError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('Bone_999'), contains('Bone_012')),
+          ),
+        ),
+      );
+
+      // Empty bones clears.
+      await surface.dispatch('highlight_bones', {'ref': 'Rig'});
+      expect(applied.last.$2, isEmpty);
+    });
   });
 }

@@ -79,21 +79,39 @@ extension GltfCoordinateConversion on GltfCoordinatePolicy {
   }
 
   /// Converts packed animation values after cubic tangents are removed.
+  /// With [cubicSpline], [values] keeps the glTF triple layout
+  /// ([inTangent, value, outTangent] per keyframe) and every slot converts,
+  /// since tangents are vectors in the same coordinate space.
   Float32List convertAnimationValues(
     Float32List values, {
     required String targetPath,
+    bool cubicSpline = false,
   }) {
     final result = Float32List.fromList(values);
     if (!bakesNative) return result;
     switch (targetPath) {
       case 'translation':
-        for (var i = 2; i < result.length; i += 3) {
-          result[i] = -result[i];
+        final component = cubicSpline ? 9 : 3;
+        for (
+          var base = 0;
+          base + component <= result.length;
+          base += component
+        ) {
+          for (var j = 2; j < component; j += 3) {
+            result[base + j] = -result[base + j];
+          }
         }
       case 'rotation':
-        for (var i = 0; i + 3 < result.length; i += 4) {
-          result[i] = -result[i];
-          result[i + 1] = -result[i + 1];
+        final component = cubicSpline ? 12 : 4;
+        for (
+          var base = 0;
+          base + component <= result.length;
+          base += component
+        ) {
+          for (var j = 0; j < component; j += 4) {
+            result[base + j] = -result[base + j];
+            result[base + j + 1] = -result[base + j + 1];
+          }
         }
     }
     return result;

@@ -1,5 +1,7 @@
 import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/src/builtin_commands.dart';
+import 'package:flutter_scene_editor_core/src/animation_commands.dart'
+    show animationCommands;
 import 'package:flutter_scene_editor_core/src/change.dart';
 import 'package:flutter_scene_editor_core/src/command.dart';
 import 'package:flutter_scene_editor_core/src/history.dart';
@@ -33,7 +35,10 @@ void main() {
     test('all built-ins register and are unique', () {
       final registry = CommandRegistry();
       registerBuiltinCommands(registry);
-      expect(registry.all, hasLength(builtinCommands.length));
+      expect(
+        registry.all,
+        hasLength(builtinCommands.length + animationCommands.length),
+      );
       expect(() => registry.register(setNodeName), throwsStateError);
     });
 
@@ -52,6 +57,7 @@ void main() {
         'nodeId',
         'translation',
         'rotation',
+        'rotationEuler',
         'scale',
       ]);
       expect(ui.first.type, ParamType.nodeRef);

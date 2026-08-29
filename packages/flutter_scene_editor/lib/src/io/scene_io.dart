@@ -349,7 +349,40 @@ Future<void> saveFscene(EditorController controller, String path) async {
   // As stays portable, and fold in absolute refs recorded while the scene
   // was unsaved (the session-only form).
   _rewriteFmatRefsForSave(controller, File(path).absolute.parent.path);
+  // Write the payload sidecar BEFORE serializing the text: the sidecar pass
+  // records `payloadSource` on the document (and silently skips itself when
+  // there is nothing to persist), and the text must carry that reference —
+  // a first save that serialized first shipped a sidecar the build hook
+  // could never discover ("payload has no bytes to embed").
+  _writePayloadSidecar(controller.document, path);
   await File(path).writeAsString(controller.session.toFscene());
+}
+
+/// Writes the document's payload bytes (animation keyframes, embedded
+/// textures) to a `.fsceneb` sidecar beside the `.fscene`. The text format
+/// carries payload descriptors only, so any payload holding bytes would be
+/// lost on reopen without this. A sidecar already referenced by
+/// [SceneDocument.payloadSource] is rewritten in place at its recorded name;
+/// a fresh one is named after the scene and recorded on the document.
+void _writePayloadSidecar(SceneDocument document, String path) {
+  final hasBytes = document.payloads.values.any(
+    (payload) => payload.bytes != null && payload.bytes!.isNotEmpty,
+  );
+  if (!hasBytes) return;
+  try {
+    final source = document.payloadSource;
+    final sidecarPath = source != null
+        ? File(path).parent.uri.resolveUri(Uri.file(source)).toFilePath()
+        : '${path}b';
+    File(sidecarPath).writeAsBytesSync(writeFsceneb(document), flush: true);
+    document.payloadSource ??= Uri.file(
+      File(sidecarPath).uri.pathSegments.last,
+    ).path;
+  } on FileSystemException {
+    // The scene text still saves; the payloads just do not persist.
+  } on FscenebFormatException {
+    // A manifest-only payload cannot be embedded; leave the old sidecar.
+  }
 }
 
 void _rewriteFmatRefsForSave(EditorController controller, String directory) {

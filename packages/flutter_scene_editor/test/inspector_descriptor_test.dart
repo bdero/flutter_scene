@@ -14,6 +14,7 @@ void main() {
         'nodeId',
         'translation',
         'rotation',
+        'rotationEuler',
         'scale',
       ]);
       expect(descs.first.type, ParamType.nodeRef);

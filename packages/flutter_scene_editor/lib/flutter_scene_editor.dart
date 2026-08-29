@@ -15,6 +15,8 @@ export 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
         ViewportScreenshot;
 
 export 'src/controller/editor_controller.dart' show EditorController;
+export 'src/controller/animation_preview_intent.dart'
+    show AnimationPreviewTarget, applyAnimationPreviewRequest;
 export 'src/io/glb_import_options.dart'
     show GlbImportOptions, ImportUpAxis, showGlbImportOptions;
 export 'src/io/scene_io.dart'
@@ -26,6 +28,7 @@ export 'src/io/scene_io.dart'
         openFscene,
         pickModelPath,
         pickOpenPath,
+        pickSavePath,
         saveFscene;
 export 'src/materials/fmat_library.dart'
     show
@@ -35,6 +38,7 @@ export 'src/materials/fmat_library.dart'
         fmatToolchainForInstallation;
 export 'src/mcp/render_graph_tools.dart' show RenderGraphMcp;
 export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
+export 'src/panels/animation_panel.dart' show AnimationPanel;
 export 'src/panels/console_panel.dart' show ConsolePanel;
 export 'src/project/app_session.dart' show AppSession, AppSessionState;
 export 'src/project/build_config_dialog.dart' show showBuildConfigDialog;

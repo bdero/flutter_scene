@@ -7,6 +7,8 @@
 /// the document.
 library;
 
+import 'dart:math' as math;
+
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
 import 'package:vector_math/vector_math.dart';
@@ -96,6 +98,16 @@ Quaternion requireQuaternion(Map<String, Object?> params, String key) {
 Quaternion? optionalQuaternion(Map<String, Object?> params, String key) {
   if (_get(params, key) == null) return null;
   return requireQuaternion(params, key);
+}
+
+/// Reads an optional `{yaw, pitch, roll}` Euler rotation in **degrees**
+/// [key], converted to a quaternion (yaw around Y, pitch around X, roll
+/// around Z), or null when absent.
+Quaternion? optionalEuler(Map<String, Object?> params, String key) {
+  if (_get(params, key) == null) return null;
+  final m = _requireObject(params, key);
+  double radians(String axis) => _num(m, key, axis) * math.pi / 180.0;
+  return Quaternion.euler(radians('yaw'), radians('pitch'), radians('roll'));
 }
 
 /// Reads a required node id token [key].

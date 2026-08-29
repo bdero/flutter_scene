@@ -1,0 +1,41 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "open app editor macos",
+			"command": "open apps/flutter_scene_editor_app/build/macos/Build/Products/Release/Flutter\\ Scene\\ Editor.app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "build app editor macos",
+			"command": "flutter build macos && open build/macos/Build/Products/Release/Flutter\\ Scene\\ Editor.app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}/apps/flutter_scene_editor_app"
+			}
+		},
+		{
+			"type": "shell",
+			"label": "open connector",
+			"command": "node ~/Projects/telegram_connector/main.js FSCENE",
+			"problemMatcher": [],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"options": {
+				"cwd": "${workspaceFolder}",
+			}
+		}
+	]
+}
