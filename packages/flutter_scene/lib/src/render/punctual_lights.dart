@@ -271,6 +271,17 @@ class PunctualLightBuffer {
       }
     }
 
+    // Bump the froxel epoch only when the packed light data actually changed
+    // (compared after the spot-shadow stamping above), so a static view with
+    // static lights reuses last frame's froxel texture.
+    final lastParams = _lastParams;
+    if (lastParams == null ||
+        lastParams.length != packed.params.length ||
+        !_floatsEqual(lastParams, packed.params)) {
+      _buildEpoch++;
+      _lastParams = Float32List.fromList(packed.params);
+    }
+
     final cull = assignLightsToItems(
       items: items,
       bvh: bvh,
@@ -357,6 +368,29 @@ class PunctualLightBuffer {
   List<CullableLight> _cullables = const [];
   bool _froxelsEligible = false;
 
+  // The lights-changed epoch (bumped per build) plus the camera the cached
+  // froxels were built for; a static view reuses last frame's froxel texture
+  // instead of refroxelizing (the Dart-side cost is per camera move, not per
+  // frame).
+  int _buildEpoch = 0;
+  int _froxelCacheEpoch = -1;
+  Float32List? _lastParams;
+
+  static bool _floatsEqual(Float32List a, Float32List b) {
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  final Vector3 _cachePosition = Vector3.zero();
+  final Vector3 _cacheForward = Vector3.zero();
+  final Vector3 _cacheRight = Vector3.zero();
+  double _cacheTanX = 0;
+  double _cacheTanY = 0;
+  int _cacheOverflow = 0;
+  FroxelLighting? _cachedFroxels;
+
   /// Builds this view's froxel clustering from the camera basis the lit
   /// shaders already receive ([tanHalfFovX]/[tanHalfFovY] are the projection's
   /// half-fov tangents). Returns null for a non-perspective view (the
@@ -375,6 +409,17 @@ class PunctualLightBuffer {
         tanHalfFovY <= 0) {
       return null;
     }
+    final cached = _cachedFroxels;
+    if (cached != null &&
+        _froxelCacheEpoch == _buildEpoch &&
+        _cachePosition == cameraPosition &&
+        _cacheForward == forward &&
+        _cacheRight == right &&
+        _cacheTanX == tanHalfFovX &&
+        _cacheTanY == tanHalfFovY) {
+      _overflowedItemCount += _cacheOverflow;
+      return cached;
+    }
     final result = computeFroxelData(
       lights: _cullables,
       cameraPosition: cameraPosition,
@@ -388,7 +433,7 @@ class PunctualLightBuffer {
     _overflowedItemCount += result.overflowedFroxels;
     final texture = _froxelRing.acquire(_froxelTexWidth, result.height);
     texture.overwrite(result.data.buffer.asByteData());
-    return FroxelLighting(
+    final froxels = FroxelLighting(
       texture: texture,
       width: _froxelTexWidth,
       height: result.height,
@@ -398,6 +443,15 @@ class PunctualLightBuffer {
       zScale: result.zScale,
       zBias: result.zBias,
     );
+    _froxelCacheEpoch = _buildEpoch;
+    _cachePosition.setFrom(cameraPosition);
+    _cacheForward.setFrom(forward);
+    _cacheRight.setFrom(right);
+    _cacheTanX = tanHalfFovX;
+    _cacheTanY = tanHalfFovY;
+    _cacheOverflow = result.overflowedFroxels;
+    _cachedFroxels = froxels;
+    return froxels;
   }
 
   /// The GPU-independent froxelization: assigns [lights] to froxels for a
@@ -515,10 +569,7 @@ class PunctualLightBuffer {
         final fz = i ~/ (ny * nx);
         final fy = (i ~/ nx) % ny;
         final fx = i % nx;
-        final depth = math.pow(
-          2.0,
-          (fz + 0.5 - zBias) / zScale,
-        ).toDouble();
+        final depth = math.pow(2.0, (fz + 0.5 - zBias) / zScale).toDouble();
         final ndcX = ((fx + 0.5) / nx) * 2.0 - 1.0;
         final ndcY = -(((fy + 0.5) / ny) * 2.0 - 1.0);
         center
