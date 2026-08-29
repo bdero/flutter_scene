@@ -6,6 +6,8 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter/material.dart' hide Matrix4, Step;
+import 'package:flutter_scene/scene.dart'
+    show Component, PointLightComponent, SpotLightComponent;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
@@ -493,6 +495,35 @@ class _ReadOnlyVec3Row extends StatelessWidget {
 }
 
 /// A component's section header (type name + remove button) and its editor.
+/// Warns that a light's authored shadow is not being drawn because the shared
+/// shadow atlas ran out of slots for its light type. Shown on the light's own
+/// component, where the Casts shadow toggle that appears inert lives.
+class _ShadowBudgetNotice extends StatelessWidget {
+  const _ShadowBudgetNotice();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.warning_amber_rounded, size: 13, color: _warningColor),
+        const SizedBox(width: 5),
+        const Expanded(
+          child: Text(
+            'Casts shadow is on, but the shadow atlas has no slot left for '
+            'this light type, so no shadow is drawn. Turn it off on lights '
+            'that do not need one.',
+            style: TextStyle(fontSize: 11, color: _warningColor),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+const Color _warningColor = Color(0xFFE6B84D);
+
 class _ComponentSection extends StatelessWidget {
   const _ComponentSection({
     required this.nodes,
@@ -561,6 +592,28 @@ class _ComponentSection extends StatelessWidget {
     }
   }
 
+  /// How many of the edited nodes are lights asking for a shadow the shared
+  /// atlas had no slot for. Drives the notice above the component's fields,
+  /// where the Casts shadow toggle that appears to do nothing lives.
+  int _droppedShadowCount() {
+    if (type != 'pointLight' && type != 'spotLight') return 0;
+    var dropped = 0;
+    for (final node in nodes) {
+      final live = controller.liveNode(node.id);
+      if (live == null) continue;
+      for (final component in live.getComponents<Component>()) {
+        final casts = switch (component) {
+          SpotLightComponent(:final light) => light.castsShadow,
+          PointLightComponent(:final light) => light.castsShadow,
+          _ => false,
+        };
+        if (!casts) continue;
+        if (!controller.scene.isShadowCasterGranted(component)) dropped++;
+      }
+    }
+    return dropped;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -581,6 +634,7 @@ class _ComponentSection extends StatelessWidget {
                 : null,
           ),
         ),
+        if (_droppedShadowCount() > 0) const _ShadowBudgetNotice(),
         _ComponentEditor(nodes: nodes, type: type, controller: controller),
       ],
     );

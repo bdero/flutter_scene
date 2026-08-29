@@ -72,6 +72,11 @@ const Color _baseColor = Color(0xCCB9C4CE);
 /// culling, so its representative sphere/cone draws loud instead of hiding).
 const Color _unboundedWarningColor = Color(0xFFE6B84D);
 
+/// Marker for a light whose authored shadow has no atlas slot. A fixed hue
+/// with a dark surround, since it must read against any authored light colour.
+const Color _shadowDroppedColor = Color(0xFFFF6B4A);
+const double _shadowDroppedMarkerRadius = 2.5;
+
 /// Irradiance probe markers: a cool tint that reads as engine data rather
 /// than authored geometry, drawn small so a dense lattice stays legible.
 const Color _probeColor = Color(0xAA6FD3C7);
@@ -306,7 +311,8 @@ class ComponentGizmoPainter extends CustomPainter {
   // filled arrow heads per color, icons deferred to draw above the wires.
   final Map<(int, double), Path> _strokes = {};
   final Map<int, Path> _fills = {};
-  final List<(GizmoIcon, ComponentCodec, Offset, Color, bool)> _icons = [];
+  final List<(GizmoIcon, ComponentCodec, Offset, Color, bool, bool)> _icons =
+      [];
 
   static const double _wireWidth = 1.5;
   static const double _arrowWidth = 2.0;
@@ -339,8 +345,8 @@ class ComponentGizmoPainter extends CustomPainter {
     for (final entry in _fills.entries) {
       canvas.drawPath(entry.value, Paint()..color = Color(entry.key));
     }
-    for (final (primitive, codec, center, color, selected) in _icons) {
-      _paintIcon(primitive, codec, center, color, selected);
+    for (final (primitive, codec, center, color, selected, dropped) in _icons) {
+      _paintIcon(primitive, codec, center, color, selected, dropped);
     }
   }
 
@@ -374,6 +380,18 @@ class ComponentGizmoPainter extends CustomPainter {
         Rect.fromCircle(center: screen, radius: _probeRadius),
       );
     }
+  }
+
+  /// Whether [component] is a light whose authored shadow is not being drawn,
+  /// because the shared shadow atlas ran out of slots for its light type.
+  bool _shadowRequestedButDropped(Component component) {
+    final casts = switch (component) {
+      SpotLightComponent(:final light) => light.castsShadow,
+      PointLightComponent(:final light) => light.castsShadow,
+      _ => false,
+    };
+    if (!casts) return false;
+    return !controller.scene.isShadowCasterGranted(component);
   }
 
   void _addStroke(Offset a, Offset b, Color color, double width) {
@@ -420,6 +438,11 @@ class ComponentGizmoPainter extends CustomPainter {
       for (var axis = 0; axis < 3; axis++) _normalizedAxis(transform, axis),
     ];
 
+    // A light asking for a shadow the atlas had no slot for draws its icon in
+    // the warning tint, so the specific lights over budget are identifiable in
+    // place rather than only as a count.
+    final shadowDropped = _shadowRequestedButDropped(component);
+
     final segments = <(Offset, Offset)>[];
     for (final primitive in gizmo.primitives) {
       if (primitive.visibility == GizmoVisibility.selected && !selected) {
@@ -431,7 +454,14 @@ class ComponentGizmoPainter extends CustomPainter {
       switch (primitive) {
         case GizmoIcon():
           if (originScreen != null && sourceId != null) {
-            _icons.add((primitive, codec, originScreen, color, selected));
+            _icons.add((
+              primitive,
+              codec,
+              originScreen,
+              color,
+              selected,
+              shadowDropped,
+            ));
             hits.addDisc(sourceId, originScreen, primitive.size / 2, depth);
           }
         case GizmoArrow():
@@ -674,6 +704,7 @@ class ComponentGizmoPainter extends CustomPainter {
     Offset center,
     Color color,
     bool selected,
+    bool shadowDropped,
   ) {
     final size = primitive.size;
     _canvas.drawCircle(
@@ -719,6 +750,23 @@ class ComponentGizmoPainter extends CustomPainter {
       _canvas,
       center - Offset(painter.width / 2, painter.height / 2),
     );
+    // A light whose authored shadow got no atlas slot carries a small marker
+    // at the icon's upper right. Drawn as a separate dot rather than a tint,
+    // because an icon's colour is bound to the light's own colour and a warm
+    // light is indistinguishable from any warning tint.
+    if (shadowDropped) {
+      final corner = center + Offset(size * 0.34, -size * 0.34);
+      _canvas.drawCircle(
+        corner,
+        _shadowDroppedMarkerRadius + 1,
+        Paint()..color = Colors.black.withValues(alpha: 0.6),
+      );
+      _canvas.drawCircle(
+        corner,
+        _shadowDroppedMarkerRadius,
+        Paint()..color = _shadowDroppedColor,
+      );
+    }
   }
 
   void _drawArrow(
