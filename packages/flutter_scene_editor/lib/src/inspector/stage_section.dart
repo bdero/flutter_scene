@@ -44,17 +44,11 @@ class StageSection extends StatelessWidget {
     final ref = controller.document.stage.environmentRef;
     final resource = ref == null ? null : controller.document.resource(ref);
     final environment = resource is EnvironmentResource ? resource : null;
+    // No heading of its own: this is the whole content of the Scene Settings
+    // dialog, which is already titled.
     return ListView(
       padding: const EdgeInsets.all(8),
       children: [
-        Text('Scene settings', style: Theme.of(context).textTheme.labelMedium),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(0, 0, 0, 8),
-          child: Text(
-            'Select a node to edit it.',
-            style: TextStyle(fontSize: 11, color: editorMutedTextColor),
-          ),
-        ),
         InspectorAccordion(
           identity: environment?.id,
           initiallyExpanded: const {0, 1},

@@ -184,6 +184,16 @@ class EditorController extends ChangeNotifier {
         controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
+    // Open on the scene's first node rather than on nothing. The inspector's
+    // empty state is the one screen in the editor that answers no question
+    // anybody asked, and a scene has something in it to look at from the
+    // moment it is created. Selected after the listener is attached, so the
+    // node opens carrying its highlight rather than waiting for the next
+    // selection change to notice it.
+    final roots = controller.displayDocument.roots;
+    if (session.selection.isEmpty && roots.isNotEmpty) {
+      session.selection.selectOnly(roots.first);
+    }
     return controller;
   }
 
