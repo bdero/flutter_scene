@@ -38,6 +38,8 @@ export 'src/kit/environment/lightning_component.dart'
     show LightningComponent, LightningStrike, sunDirectionForHour;
 export 'src/kit/environment/water_component.dart'
     show WaterComponent, WaterStyle, WaterTraversal;
+export 'src/kit/environment/buoyancy_component.dart' show BuoyancyComponent;
+export 'src/kit/environment/gerstner_field.dart' show GerstnerField;
 export 'src/kit/environment/water_surface_component.dart'
     show GerstnerWave, WaterSurfaceComponent;
 export 'src/kit/pooling/node_pool.dart' show NodePool;
