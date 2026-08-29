@@ -2,7 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -10,7 +11,8 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/light.dart';
-import 'package:flutter_scene/src/fmat/material_registry.dart' show fmatSourcePathOf;
+import 'package:flutter_scene/src/fmat/material_registry.dart'
+    show fmatSourcePathOf;
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
@@ -352,13 +354,35 @@ gpu.RenderPipeline resolvePipeline(
   gpu.Shader vertexShader,
   gpu.Shader fragmentShader, {
   VertexLayoutDescriptor? vertexLayout,
+  String Function()? debugContext,
 }) {
   final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
-  return _pipelineCache[key] ??= gpu.gpuContext.createRenderPipeline(
+  final cached = _pipelineCache[key];
+  if (cached != null) return cached;
+  final stopwatch = kDebugMode || profileRendering
+      ? (Stopwatch()..start())
+      : null;
+  final pipeline = gpu.gpuContext.createRenderPipeline(
     vertexShader,
     fragmentShader,
     vertexLayout: vertexLayout?.toGpuLayout(),
   );
+  if (stopwatch != null) {
+    stopwatch.stop();
+    // A backend pipeline build is synchronous and lands mid-frame the first
+    // time a shader pair draws, so a slow one is frame jank. Surface it so
+    // the fix (pre-warming the draw during a load screen) has a target.
+    if (stopwatch.elapsedMilliseconds >= 8) {
+      debugPrint(
+        'flutter_scene: pipeline build took '
+        '${stopwatch.elapsedMilliseconds}ms mid-frame'
+        '${debugContext != null ? ' for ${debugContext()}' : ''}. '
+        'Draw this material once during a load screen to move the cost '
+        'off the first visible frame.',
+      );
+    }
+  }
+  return _pipelineCache[key] = pipeline;
 }
 
 /// Drops cached pipelines that use any of [shaders] (as vertex or fragment) so
@@ -535,6 +559,9 @@ base class SceneEncoder {
         vertexLayout: geometry.instancedVertexLayoutFor(
           material.instanceAttributes,
         ),
+        debugContext: () =>
+            '${fmatSourcePathOf(material) ?? material.runtimeType} on '
+            '${geometry.runtimeType}',
       );
     } on Exception catch (error) {
       // A pairing the backend cannot build, most often a custom-attribute
