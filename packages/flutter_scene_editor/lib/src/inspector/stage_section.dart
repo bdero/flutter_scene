@@ -459,6 +459,8 @@ class StageRenderControls extends StatelessWidget {
               DropdownMenuItem(value: 'none', child: Text('None')),
               DropdownMenuItem(value: 'msaa', child: Text('MSAA')),
               DropdownMenuItem(value: 'fxaa', child: Text('FXAA')),
+              DropdownMenuItem(value: 'smaa', child: Text('SMAA')),
+              DropdownMenuItem(value: 'taa', child: Text('TAA')),
             ],
             onChanged: (v) => v == null ? null : _set('antiAliasingMode', v),
           ),
@@ -1169,6 +1171,102 @@ class EnvironmentEffectsControls extends StatelessWidget {
             children: [
               _toggle('Enabled', 'filmGrainEnabled', e.filmGrainEnabled),
               _slider('Intensity', 'filmGrainIntensity', e.filmGrainIntensity),
+            ],
+          ),
+        ),
+        // Anti-aliasing tuning. Which technique runs is the stage's
+        // anti-aliasing mode (the Rendering section); the indicator lights
+        // when that mode selects this group.
+        InspectorAccordionItem(
+          title: _title(
+            context,
+            'Temporal AA',
+            controller.document.stage.antiAliasingMode == 'taa',
+          ),
+          child: Column(
+            children: [
+              _slider(
+                'Current weight',
+                'temporalAntiAliasingMinimumCurrentWeight',
+                e.temporalAntiAliasingMinimumCurrentWeight,
+                min: 0.01,
+              ),
+              _slider(
+                'Variance gamma',
+                'temporalAntiAliasingVarianceGamma',
+                e.temporalAntiAliasingVarianceGamma,
+                min: 0.5,
+                max: 2,
+              ),
+              _slider(
+                'Sharpness',
+                'temporalAntiAliasingSharpness',
+                e.temporalAntiAliasingSharpness,
+              ),
+              _integer(
+                'Jitter sequence',
+                'temporalAntiAliasingJitterSequenceLength',
+                e.temporalAntiAliasingJitterSequenceLength,
+                min: 1,
+                max: 32,
+              ),
+              _slider(
+                'Jitter scale',
+                'temporalAntiAliasingJitterScale',
+                e.temporalAntiAliasingJitterScale,
+              ),
+              _toggle(
+                'Object motion',
+                'temporalAntiAliasingObjectMotion',
+                e.temporalAntiAliasingObjectMotion,
+                description:
+                    'Moving objects render a velocity buffer so they '
+                    'reproject without trails.',
+              ),
+              _toggle(
+                'Skinned motion',
+                'temporalAntiAliasingSkinnedMotion',
+                e.temporalAntiAliasingSkinnedMotion,
+                description: 'Skinned deformation contributes velocity.',
+              ),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          title: _title(
+            context,
+            'SMAA',
+            controller.document.stage.antiAliasingMode == 'smaa',
+          ),
+          child: Column(
+            children: [
+              _slider(
+                'Edge threshold',
+                'smaaThreshold',
+                e.smaaThreshold,
+                min: 0.02,
+                max: 0.3,
+              ),
+              _integer(
+                'Search steps',
+                'smaaMaxSearchSteps',
+                e.smaaMaxSearchSteps,
+                min: 4,
+                max: 112,
+              ),
+              _integer(
+                'Diagonal steps',
+                'smaaMaxDiagonalSearchSteps',
+                e.smaaMaxDiagonalSearchSteps,
+                min: 1,
+                max: 20,
+              ),
+              _slider(
+                'Corner rounding',
+                'smaaCornerRounding',
+                e.smaaCornerRounding,
+                max: 100,
+              ),
             ],
           ),
         ),

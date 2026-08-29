@@ -170,6 +170,17 @@ class EnvironmentSettings {
     this.autoExposureMaxEv = 4.0,
     this.autoExposureSpeedUp = 3.0,
     this.autoExposureSpeedDown = 1.0,
+    this.temporalAntiAliasingMinimumCurrentWeight = 0.15,
+    this.temporalAntiAliasingVarianceGamma = 1.2,
+    this.temporalAntiAliasingSharpness = 0.15,
+    this.temporalAntiAliasingJitterSequenceLength = 11,
+    this.temporalAntiAliasingJitterScale = 0.46,
+    this.temporalAntiAliasingObjectMotion = false,
+    this.temporalAntiAliasingSkinnedMotion = false,
+    this.smaaThreshold = 0.1,
+    this.smaaMaxSearchSteps = 16,
+    this.smaaMaxDiagonalSearchSteps = 8,
+    this.smaaCornerRounding = 25.0,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity(),
        lift = lift ?? Vector3.zero(),
        gamma = gamma ?? Vector3.all(1.0),
@@ -334,6 +345,22 @@ class EnvironmentSettings {
   double autoExposureSpeedUp;
   double autoExposureSpeedDown;
 
+  // Temporal anti-aliasing tuning (active when the scene's antiAliasingMode
+  // is taa; the mode itself is not part of the blendable look).
+  double temporalAntiAliasingMinimumCurrentWeight;
+  double temporalAntiAliasingVarianceGamma;
+  double temporalAntiAliasingSharpness;
+  int temporalAntiAliasingJitterSequenceLength;
+  double temporalAntiAliasingJitterScale;
+  bool temporalAntiAliasingObjectMotion;
+  bool temporalAntiAliasingSkinnedMotion;
+
+  // SMAA quality (active when the scene's antiAliasingMode is smaa).
+  double smaaThreshold;
+  int smaaMaxSearchSteps;
+  int smaaMaxDiagonalSearchSteps;
+  double smaaCornerRounding;
+
   /// Reads the current look of [scene] into a snapshot. The IBL/sky references
   /// are shared (not deep-copied); the scalar look is captured by value.
   factory EnvironmentSettings.fromScene(Scene scene) {
@@ -349,6 +376,8 @@ class EnvironmentSettings {
     final rays = scene.godRays;
     final dof = scene.depthOfField;
     final auto = scene.autoExposure;
+    final taa = scene.temporalAntiAliasing;
+    final smaa = scene.smaa;
     return EnvironmentSettings(
       environment: scene.environment,
       environmentTransform: scene.environmentTransform.clone(),
@@ -475,6 +504,17 @@ class EnvironmentSettings {
       autoExposureMaxEv: auto.maxEv,
       autoExposureSpeedUp: auto.speedUp,
       autoExposureSpeedDown: auto.speedDown,
+      temporalAntiAliasingMinimumCurrentWeight: taa.minimumCurrentWeight,
+      temporalAntiAliasingVarianceGamma: taa.varianceGamma,
+      temporalAntiAliasingSharpness: taa.sharpness,
+      temporalAntiAliasingJitterSequenceLength: taa.jitterSequenceLength,
+      temporalAntiAliasingJitterScale: taa.jitterScale,
+      temporalAntiAliasingObjectMotion: taa.objectMotion,
+      temporalAntiAliasingSkinnedMotion: taa.skinnedMotion,
+      smaaThreshold: smaa.threshold,
+      smaaMaxSearchSteps: smaa.maxSearchSteps,
+      smaaMaxDiagonalSearchSteps: smaa.maxDiagonalSearchSteps,
+      smaaCornerRounding: smaa.cornerRounding,
     );
   }
 
@@ -644,6 +684,21 @@ class EnvironmentSettings {
       ..maxEv = autoExposureMaxEv
       ..speedUp = autoExposureSpeedUp
       ..speedDown = autoExposureSpeedDown;
+
+    scene.temporalAntiAliasing
+      ..minimumCurrentWeight = temporalAntiAliasingMinimumCurrentWeight
+      ..varianceGamma = temporalAntiAliasingVarianceGamma
+      ..sharpness = temporalAntiAliasingSharpness
+      ..jitterSequenceLength = temporalAntiAliasingJitterSequenceLength
+      ..jitterScale = temporalAntiAliasingJitterScale
+      ..objectMotion = temporalAntiAliasingObjectMotion
+      ..skinnedMotion = temporalAntiAliasingSkinnedMotion;
+
+    scene.smaa
+      ..threshold = smaaThreshold
+      ..maxSearchSteps = smaaMaxSearchSteps
+      ..maxDiagonalSearchSteps = smaaMaxDiagonalSearchSteps
+      ..cornerRounding = smaaCornerRounding;
   }
 
   /// Interpolates from [a] to [b] by [t] (0 = [a], 1 = [b]). See the class doc
@@ -948,6 +1003,34 @@ class EnvironmentSettings {
         b.autoExposureSpeedDown,
         t,
       ),
+      temporalAntiAliasingMinimumCurrentWeight: _lerp(
+        a.temporalAntiAliasingMinimumCurrentWeight,
+        b.temporalAntiAliasingMinimumCurrentWeight,
+        t,
+      ),
+      temporalAntiAliasingVarianceGamma: _lerp(
+        a.temporalAntiAliasingVarianceGamma,
+        b.temporalAntiAliasingVarianceGamma,
+        t,
+      ),
+      temporalAntiAliasingSharpness: _lerp(
+        a.temporalAntiAliasingSharpness,
+        b.temporalAntiAliasingSharpness,
+        t,
+      ),
+      temporalAntiAliasingJitterSequenceLength:
+          d.temporalAntiAliasingJitterSequenceLength,
+      temporalAntiAliasingJitterScale: _lerp(
+        a.temporalAntiAliasingJitterScale,
+        b.temporalAntiAliasingJitterScale,
+        t,
+      ),
+      temporalAntiAliasingObjectMotion: d.temporalAntiAliasingObjectMotion,
+      temporalAntiAliasingSkinnedMotion: d.temporalAntiAliasingSkinnedMotion,
+      smaaThreshold: _lerp(a.smaaThreshold, b.smaaThreshold, t),
+      smaaMaxSearchSteps: d.smaaMaxSearchSteps,
+      smaaMaxDiagonalSearchSteps: d.smaaMaxDiagonalSearchSteps,
+      smaaCornerRounding: _lerp(a.smaaCornerRounding, b.smaaCornerRounding, t),
     );
   }
 }

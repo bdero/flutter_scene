@@ -513,7 +513,10 @@ class DirectionalLight {
 /// the node moves the light. The analytic contribution is layered on top of
 /// the image-based-lighting ambient term, the same as [DirectionalLight].
 ///
-/// Point lights do not cast shadows.
+/// When [castsShadow] is true and the scene's point-shadow budget has room,
+/// the renderer renders six perspective depth faces around the light into the
+/// shared shadow atlas and the light is occluded by geometry between it and
+/// the surface.
 /// {@category Lighting and environment}
 class PointLight {
   /// Creates a [PointLight].
@@ -529,6 +532,13 @@ class PointLight {
     this.intensity = 1.0,
     this.range = 0.0,
     this.falloffExponent = 2.0,
+    this.castsShadow = false,
+    this.shadowMapResolution = 512,
+    this.shadowNear = 0.1,
+    this.shadowDepthBias = 0.0,
+    this.shadowNormalBias = 0.1,
+    this.shadowSoftness = 1.0,
+    this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
@@ -549,13 +559,107 @@ class PointLight {
   /// touching distant scenery). Values at or below zero are clamped.
   double falloffExponent;
 
+  /// Whether this light casts a shadow. When true, the renderer renders six
+  /// perspective depth faces around the light if the scene's point-shadow
+  /// budget has room (shadow-casting point lights are limited; the rest
+  /// shade unshadowed). Six faces cost six depth passes, so this is the most
+  /// expensive shadow type per light.
+  bool castsShadow;
+
+  /// Pixel resolution of each (square) cube face's depth tile.
+  int shadowMapResolution;
+
+  /// Near clip distance of each face's shadow frustum. Geometry closer to
+  /// the light than this does not occlude.
+  double shadowNear;
+
+  /// Window-space depth bias subtracted from the receiver before the shadow
+  /// test. Defaults to `0` for the same reason as [SpotLight.shadowDepthBias]
+  /// (a constant bias misbehaves across a perspective depth range); the
+  /// normal-offset bias below does the work instead.
+  double shadowDepthBias;
+
+  /// World-space offset along the surface normal applied to the receiver
+  /// before the shadow lookup ("normal-offset shadows"). The main
+  /// acne/peter-panning control; world-space, so very small scenes may want
+  /// a smaller value.
+  double shadowNormalBias;
+
+  /// Radius of the soft-shadow PCF kernel, in shadow-map texels. `0` gives a
+  /// hard edge.
+  double shadowSoftness;
+
+  /// Which faces are rendered into the shadow map. [ShadowCasterFaces.back]
+  /// (second-depth) suits solid geometry; [ShadowCasterFaces.front] is the
+  /// general default.
+  ShadowCasterFaces shadowCasterFaces;
+
   /// The light channels this light illuminates, an 8-bit mask (default
   /// `0xFF`, every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
   /// either side never intersects. Channels do not affect image-based
   /// (environment) lighting, which every node receives.
+  ///
+  /// Gates the lighting only; every caster still renders into this light's
+  /// shadow faces.
   /// {@category Lighting and environment}
   int channelMask;
+
+  /// The far plane of the shadow faces: the light's [range], or a default
+  /// reach when the range is infinite (mirrors [SpotLight]).
+  double get shadowFar => range > 0.0 ? range : 100.0;
+
+  /// The world -> clip matrix that renders face [face] (0..5, the +X, -X,
+  /// +Y, -Y, +Z, -Z axes) of this light's shadow cube for a light at
+  /// [worldPosition]. A 90 degree square frustum from [shadowNear] to
+  /// [shadowFar]. The per-face basis must stay in lockstep with the
+  /// dominant-axis face selection in material_shadow_sampling.glsl
+  /// (SamplePointShadow), which reconstructs the same mapping analytically.
+  Matrix4 pointShadowFaceViewProjection(Vector3 worldPosition, int face) {
+    final right = _pointFaceRight[face];
+    final up = _pointFaceUp[face];
+    final forward = _pointFaceForward[face];
+    final view = Matrix4(
+      right.x,
+      up.x,
+      forward.x,
+      0.0, //
+      right.y,
+      up.y,
+      forward.y,
+      0.0, //
+      right.z,
+      up.z,
+      forward.z,
+      0.0, //
+      -right.dot(worldPosition),
+      -up.dot(worldPosition),
+      -forward.dot(worldPosition),
+      1.0, //
+    );
+    final projection = PerspectiveProjection(
+      fovRadiansY: math.pi / 2.0,
+      near: shadowNear,
+      far: shadowFar,
+    ).getProjectionMatrix(1.0);
+    return projection * view;
+  }
+
+  static final List<Vector3> _pointFaceForward = [
+    Vector3(1, 0, 0), Vector3(-1, 0, 0), //
+    Vector3(0, 1, 0), Vector3(0, -1, 0), //
+    Vector3(0, 0, 1), Vector3(0, 0, -1), //
+  ];
+  static final List<Vector3> _pointFaceRight = [
+    Vector3(0, 0, -1), Vector3(0, 0, 1), //
+    Vector3(-1, 0, 0), Vector3(1, 0, 0), //
+    Vector3(1, 0, 0), Vector3(-1, 0, 0), //
+  ];
+  static final List<Vector3> _pointFaceUp = [
+    Vector3(0, 1, 0), Vector3(0, 1, 0), //
+    Vector3(0, 0, 1), Vector3(0, 0, 1), //
+    Vector3(0, 1, 0), Vector3(0, 1, 0), //
+  ];
 }
 
 /// A rectangle that emits light from its face, shaded with linearly
@@ -819,6 +923,7 @@ class Lighting {
     this.punctualIndexHeight = 0,
     this.froxels,
     this.spotShadowCount = 0,
+    this.pointShadowTileCount = 0,
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
@@ -923,6 +1028,11 @@ class Lighting {
   /// directional cascades in [shadowMap] and their matrices ride in
   /// [punctualParamsTexture]. Zero disables spot shadow sampling.
   final int spotShadowCount;
+
+  /// Number of atlas tiles claimed by shadow-casting point lights this frame
+  /// (two per caster, each packing four quarter-tile cube faces); they follow
+  /// the spot tiles in [shadowMap]. Zero disables point shadow sampling.
+  final int pointShadowTileCount;
 
   /// Shared spot-shadow sampling parameters.
   final double spotShadowDepthBias;

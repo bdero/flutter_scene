@@ -259,9 +259,11 @@ class EngineLightingUniforms {
     fragInfo[198] = froxels?.nz.toDouble() ?? 0.0;
     fragInfo[199] = froxels?.zScale ?? 0.0;
     // spot_shadow_params [12..15] (more of the unused SH region): the shared
-    // spot-shadow parameters. count 0 disables spot shadow sampling; the shader
-    // also uses count to size the shared shadow atlas (cascades + spot tiles).
-    fragInfo[12] = lighting.spotShadowCount.toDouble();
+    // spot-shadow parameters. x is the total non-cascade tile count (spot
+    // tiles then point-shadow tiles); 0 disables both spot and point shadow
+    // sampling, and the shader uses it to size the shared shadow atlas.
+    fragInfo[12] = (lighting.spotShadowCount + lighting.pointShadowTileCount)
+        .toDouble();
     fragInfo[13] = lighting.spotShadowDepthBias;
     fragInfo[14] = lighting.spotShadowNormalBias;
     fragInfo[15] = lighting.spotShadowSoftness;
