@@ -25,6 +25,18 @@ import 'orientation_gizmo.dart';
 import 'transform_gizmo.dart';
 import 'viewport_camera_handle.dart';
 
+/// How a multi-selection transform chooses its pivot, mirroring Blender's
+/// pivot-point modes. With one node selected the modes are identical.
+enum PivotMode {
+  /// Each selected node rotates and scales about its own origin; positions
+  /// never change under rotate/scale.
+  individualOrigins,
+
+  /// The whole selection rotates and scales about the median of the selected
+  /// nodes' origins, where the gizmo also draws.
+  medianPoint,
+}
+
 /// Interactive viewport: renders the live scene, handles selection via
 /// raycast, and drives a translate gizmo that commits one command per drag.
 ///
@@ -86,6 +98,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   bool _freeLookActive = false;
   bool _showFps = false;
   TransformSpace _transformSpace = TransformSpace.global;
+  PivotMode _pivotMode = PivotMode.medianPoint;
   _PendingSelection? _pendingSelection;
 
   // The pointer's last position over this viewport, kept for starting a
@@ -97,8 +110,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   // The selected node's local transform components at the start of a gizmo
   // drag, decomposed so each mode can rebuild the preview.
-  // Per-node start state for the active drag (primary first), and the pivot
-  // every rotation/scale applies about (the primary's start origin).
+  // Per-node start state for the active drag (primary first), and the shared
+  // pivot (the selection median under PivotMode.medianPoint, else the
+  // primary's start origin; individual-origin transforms ignore it).
   List<_TransformTarget> _dragTargets = const [];
   final vm.Vector3 _dragPivot = vm.Vector3.zero();
   List<vm.Vector3> _activeTransformAxes = transformSpaceAxes(
@@ -267,7 +281,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       if (live != null) {
         final grabbed = _gizmo.grab(
           event.localPosition,
-          live.globalTransform.getTranslation(),
+          _gizmoAnchor(live),
           _axesFor(live),
           _camera.camera,
           viewSize,
@@ -310,7 +324,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_dragTargets.isEmpty) return;
     _gizmo.update(
       event.localPosition,
-      _dragTargets.first.live.globalTransform.getTranslation(),
+      _pivotMode == PivotMode.medianPoint
+          ? _dragPivot + _gizmo.translation
+          : _dragTargets.first.live.globalTransform.getTranslation(),
       _camera.camera,
       _viewSize,
     );
@@ -426,6 +442,38 @@ class _ViewportPanelState extends State<ViewportPanel> {
   List<vm.Vector3> _axesFor(Node live) =>
       transformSpaceAxes(_transformSpace, live.globalTransform);
 
+  /// The median of the selected top-level editable nodes' world origins, or
+  /// null when nothing editable is selected.
+  vm.Vector3? _selectionMedian() {
+    var count = 0;
+    final sum = vm.Vector3.zero();
+    for (final id in _ctrl.topLevelSelection()) {
+      if (!_ctrl.isEditableNode(id)) continue;
+      final live = _ctrl.liveNode(id);
+      if (live == null) continue;
+      sum.add(live.globalTransform.getTranslation());
+      count++;
+    }
+    if (count == 0) return null;
+    return sum..scale(1 / count);
+  }
+
+  /// Where the transform gizmo anchors for [primaryLive]: the selection
+  /// median under [PivotMode.medianPoint], the primary's origin otherwise.
+  vm.Vector3 _gizmoAnchor(Node primaryLive) {
+    if (_pivotMode == PivotMode.medianPoint) {
+      final median = _selectionMedian();
+      if (median != null) return median;
+    }
+    return primaryLive.globalTransform.getTranslation();
+  }
+
+  /// The pivot [target]'s rotate/scale applies about for the current mode.
+  vm.Vector3 _pivotFor(_TransformTarget target) =>
+      _pivotMode == PivotMode.individualOrigins
+      ? target.startGlobal.getTranslation()
+      : _dragPivot;
+
   // Captures start state for every selected top-level editable node, primary
   // first (the pivot and gizmo axes derive from it). A single selection
   // behaves exactly as before; extra nodes ride along about the same pivot.
@@ -447,7 +495,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
       targets.add(_TransformTarget(primaryId, primaryLive));
     }
     _dragTargets = targets;
-    _dragPivot.setFrom(primaryLive.globalTransform.getTranslation());
+    if (_pivotMode == PivotMode.medianPoint && targets.isNotEmpty) {
+      _dragPivot.setZero();
+      for (final target in targets) {
+        _dragPivot.add(target.startGlobal.getTranslation());
+      }
+      _dragPivot.scale(1 / targets.length);
+    } else {
+      _dragPivot.setFrom(primaryLive.globalTransform.getTranslation());
+    }
     _activeTransformAxes = transformSpaceAxes(
       _transformSpace,
       primaryLive.globalTransform,
@@ -470,10 +526,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
       vm.Quaternion.axisAngle(globalAxis, angle),
       vm.Vector3.all(1),
     );
+    final pivot = _pivotFor(target);
     final global =
-        vm.Matrix4.translation(_dragPivot) *
+        vm.Matrix4.translation(pivot) *
         rotation *
-        vm.Matrix4.translation(-_dragPivot) *
+        vm.Matrix4.translation(-pivot) *
         target.startGlobal;
     return globalToLocalTransform(global, target.parentGlobalInverse);
   }
@@ -507,11 +564,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
         );
       }
     }
+    final pivot = _pivotFor(target);
     final global =
-        vm.Matrix4.translation(_dragPivot) *
+        vm.Matrix4.translation(pivot) *
         scale *
-        vm.Matrix4.translation(-_dragPivot) *
+        vm.Matrix4.translation(-pivot) *
         target.startGlobal;
+    return globalToLocalTransform(global, target.parentGlobalInverse);
+  }
+
+  // Scales [target] in its own local frame while pulling its position toward
+  // the shared pivot by [uniform], so a median-point uniform or local-space
+  // scale moves the selection together the way a rotation about the median
+  // does.
+  vm.Matrix4 _scaledLocalAboutPivot(
+    _TransformTarget target,
+    vm.Vector3 scale,
+    double uniform,
+  ) {
+    final local = _scaledLocal(target, scale);
+    final global = target.parentGlobalInverse.clone()
+      ..invert()
+      ..multiply(local);
+    final position = target.startGlobal.getTranslation();
+    global.setTranslation(_dragPivot + (position - _dragPivot) * uniform);
     return globalToLocalTransform(global, target.parentGlobalInverse);
   }
 
@@ -527,18 +603,23 @@ class _ViewportPanelState extends State<ViewportPanel> {
       );
 
   vm.Matrix4 _previewMatrixFor(_TransformTarget target) {
+    final individual = _pivotMode == PivotMode.individualOrigins;
     switch (_gizmo.mode) {
       case GizmoMode.translate:
         return _translatedLocal(target, _gizmo.translation);
       case GizmoMode.rotate:
-        if (_transformSpace == TransformSpace.local) {
+        if (_transformSpace == TransformSpace.local && individual) {
           return _rotatedInLocalSpace(target, _gizmo.activeAxis!, _gizmo.angle);
         }
         return _rotatedLocal(target, _gizmo.axisVec, _gizmo.angle);
       case GizmoMode.scale:
         final axis = _gizmo.activeAxis;
         if (_transformSpace == TransformSpace.local || axis == axisUniform) {
-          return _scaledLocal(target, _gizmo.scale);
+          if (individual) return _scaledLocal(target, _gizmo.scale);
+          final uniform = axis == axisUniform
+              ? _gizmo.scale.x
+              : _gizmo.scale[axis!];
+          return _scaledLocalAboutPivot(target, _gizmo.scale, uniform);
         }
         return _scaledGlobalLocal(target, _gizmo.axisVec, _gizmo.scale[axis!]);
     }
@@ -593,6 +674,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _bumpView();
   }
 
+  void _setPivotMode(PivotMode mode) {
+    if (_pivotMode == mode) return;
+    setState(() => _pivotMode = mode);
+    _bumpView();
+  }
+
   // --- modal transforms (G/R/S) --------------------------------------------
 
   void _startModal(_ModalOp op) {
@@ -601,7 +688,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final live = _ctrl.liveNode(primary);
     if (live == null) return;
     _captureTransformStarts(live);
-    final origin = live.globalTransform.getTranslation();
+    final origin = _pivotMode == PivotMode.medianPoint
+        ? _dragPivot.clone()
+        : live.globalTransform.getTranslation();
     _modal = _ModalTransform(
       op: op,
       origin: origin,
@@ -665,11 +754,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   vm.Matrix4 _modalMatrixFor(_TransformTarget target, _ModalTransform modal) {
+    final individual = _pivotMode == PivotMode.individualOrigins;
     switch (modal.op) {
       case _ModalOp.translate:
         return _translatedLocal(target, _modalTranslation(modal));
       case _ModalOp.rotate:
-        if (_transformSpace == TransformSpace.local && modal.axis != null) {
+        if (_transformSpace == TransformSpace.local &&
+            modal.axis != null &&
+            individual) {
           return _rotatedInLocalSpace(
             target,
             modal.axis!,
@@ -685,7 +777,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
         final factors = _modalScaleFactors(modal);
         final axis = modal.axis;
         if (_transformSpace == TransformSpace.local || axis == null) {
-          return _scaledLocal(target, factors);
+          if (individual) return _scaledLocal(target, factors);
+          final uniform = axis == null ? factors.x : factors[axis];
+          return _scaledLocalAboutPivot(target, factors, uniform);
         }
         return _scaledGlobalLocal(
           target,
@@ -1062,7 +1156,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           IgnorePointer(
                             child: CustomPaint(
                               painter: TransformGizmoPainter(
-                                origin: live.globalTransform.getTranslation(),
+                                origin: _draggingGizmo || _modal != null
+                                    ? (_pivotMode == PivotMode.medianPoint
+                                          ? _dragPivot + _gizmo.translation
+                                          : live.globalTransform
+                                                .getTranslation())
+                                    : _gizmoAnchor(live),
                                 mode: _gizmo.mode,
                                 axes: _draggingGizmo || _modal != null
                                     ? _activeTransformAxes
@@ -1105,9 +1204,19 @@ class _ViewportPanelState extends State<ViewportPanel> {
                         Positioned(
                           top: 8,
                           left: 8,
-                          child: _GizmoModeBar(
-                            mode: _gizmo.mode,
-                            onChanged: _setMode,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _GizmoModeBar(
+                                mode: _gizmo.mode,
+                                onChanged: _setMode,
+                              ),
+                              const SizedBox(width: 8),
+                              _PivotModeBar(
+                                mode: _pivotMode,
+                                onChanged: _setPivotMode,
+                              ),
+                            ],
                           ),
                         ),
                         // Constrained-axis guide line for the modal transform.
@@ -1268,6 +1377,57 @@ class _ViewportPanelState extends State<ViewportPanel> {
 }
 
 /// Translate/rotate/scale mode selector.
+/// Blender-style pivot-point selector for multi-selection transforms.
+class _PivotModeBar extends StatelessWidget {
+  const _PivotModeBar({required this.mode, required this.onChanged});
+  final PivotMode mode;
+  final void Function(PivotMode) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(PivotMode m, IconData icon, String tip) {
+      final active = mode == m;
+      return Tooltip(
+        message: tip,
+        child: InkWell(
+          onTap: () => onChanged(m),
+          child: Container(
+            width: 28,
+            height: 24,
+            color: active
+                ? Theme.of(context).colorScheme.primary
+                : Colors.black.withValues(alpha: 0.55),
+            child: Icon(
+              icon,
+              size: 15,
+              color: active ? Colors.black : Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          button(
+            PivotMode.medianPoint,
+            Icons.adjust,
+            'Pivot around the median point',
+          ),
+          button(
+            PivotMode.individualOrigins,
+            Icons.scatter_plot,
+            'Pivot around individual origins',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GizmoModeBar extends StatelessWidget {
   const _GizmoModeBar({required this.mode, required this.onChanged});
   final GizmoMode mode;
