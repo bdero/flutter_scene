@@ -150,6 +150,13 @@ class _WeatherPanelState extends State<WeatherPanel> {
   double _tilt = 0.35;
   String? _applied;
 
+  // Wind as a heading in degrees rather than a vector, because that is how
+  // anyone describes it. Panel-local until a slider is let go, so dragging
+  // one does not fill the undo history with edits nobody made.
+  double _windHeading = 0;
+  double _windSpeed = 3;
+  double _windGust = 0.35;
+
   @override
   void initState() {
     super.initState();
@@ -304,10 +311,182 @@ class _WeatherPanelState extends State<WeatherPanel> {
             selected: _applied == preset.id,
             onTap: () => _apply(preset),
           ),
+        const SizedBox(height: 14),
+        const EditorSectionHeader(label: 'Wind'),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            _windNode == null
+                ? 'One wind, read by the clouds and by anything blowing '
+                      'through them. Without it every effect drifts on its '
+                      'own constant and a gust reaches none of them.'
+                : 'Driving the scene wind. Clouds, rain and snow all lean '
+                      'with it.',
+            style: editorDetailText,
+          ),
+        ),
+        if (_windNode == null)
+          OutlinedButton(
+            onPressed: _ctrl.document.roots.isEmpty ? null : _addWind,
+            child: const Text('Add wind'),
+          )
+        else ...[
+          _WindDial(
+            heading: _windHeading,
+            speed: _windSpeed,
+            gust: _windGust,
+            onHeadingChanged: (v) => setState(() => _windHeading = v),
+            onSpeedChanged: (v) => setState(() => _windSpeed = v),
+            onGustChanged: (v) => setState(() => _windGust = v),
+            onCommit: _applyWind,
+          ),
+        ],
         if (sky != null) ...[const SizedBox(height: 12), _SkyReadout(sky: sky)],
       ],
     );
   }
+
+  /// The document node carrying the scene's wind, or null when it has none.
+  LocalId? get _windNode {
+    for (final entry in _ctrl.document.nodes.entries) {
+      for (final component in entry.value.components) {
+        if (component.type == 'wind') return entry.key;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _addWind() async {
+    final roots = _ctrl.document.roots;
+    if (roots.isEmpty) return;
+    await _ctrl.run('addComponent', {
+      'nodeId': roots.first.toToken(),
+      'componentType': 'wind',
+    });
+    await _applyWind();
+  }
+
+  Future<void> _applyWind() async {
+    final nodeId = _windNode;
+    if (nodeId == null) return;
+    final radians = _windHeading * math.pi / 180;
+    await _ctrl.run('setComponentProperties', {
+      'nodeId': nodeId.toToken(),
+      'componentType': 'wind',
+      'properties': {
+        'direction': {'x': math.cos(radians), 'y': math.sin(radians)},
+        'speed': _windSpeed,
+        'gustAmplitude': _windGust,
+      },
+    });
+  }
+}
+
+/// Wind as a compass and two sliders: which way, how hard, how gusty.
+///
+/// A heading in degrees rather than a vector, because "north-easterly at 12"
+/// is how anyone thinks about wind and `(0.71, 0.71)` is not.
+class _WindDial extends StatelessWidget {
+  const _WindDial({
+    required this.heading,
+    required this.speed,
+    required this.gust,
+    required this.onHeadingChanged,
+    required this.onSpeedChanged,
+    required this.onGustChanged,
+    required this.onCommit,
+  });
+
+  final double heading;
+  final double speed;
+  final double gust;
+  final ValueChanged<double> onHeadingChanged;
+  final ValueChanged<double> onSpeedChanged;
+  final ValueChanged<double> onGustChanged;
+  final Future<void> Function() onCommit;
+
+  /// What the speed reads as, so the number means weather rather than units.
+  static String _describe(double speed) {
+    if (speed < 0.5) return 'Still';
+    if (speed < 2) return 'Light air';
+    if (speed < 5) return 'Breeze';
+    if (speed < 10) return 'Strong breeze';
+    if (speed < 18) return 'Gale';
+    return 'Storm';
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
+        children: [
+          SizedBox(width: 96, child: Text('Heading', style: editorBodyText)),
+          Expanded(
+            child: Slider(
+              value: heading,
+              max: 360,
+              onChanged: onHeadingChanged,
+              onChangeEnd: (_) => onCommit(),
+            ),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text(
+              '${heading.round()}°',
+              style: editorBodyText,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+      Row(
+        children: [
+          SizedBox(width: 96, child: Text('Speed', style: editorBodyText)),
+          Expanded(
+            child: Slider(
+              value: speed,
+              max: 25,
+              onChanged: onSpeedChanged,
+              onChangeEnd: (_) => onCommit(),
+            ),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text(
+              speed.toStringAsFixed(1),
+              style: editorBodyText,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+      Row(
+        children: [
+          SizedBox(width: 96, child: Text('Gust', style: editorBodyText)),
+          Expanded(
+            child: Slider(
+              value: gust,
+              onChanged: onGustChanged,
+              onChangeEnd: (_) => onCommit(),
+            ),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text(
+              gust.toStringAsFixed(2),
+              style: editorBodyText,
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.only(left: 96, top: 2),
+        child: Text(_describe(speed), style: editorMicroText),
+      ),
+    ],
+  );
 }
 
 /// The clock and the arc it swings the sun through.

@@ -586,6 +586,10 @@ ParticleSystem _rainSystem() => ParticleSystem(
   // the height of the actual ground is something only the author knows. Add
   // a CollisionModule with the right plane and drops stop where they land.
   modules: [
+    // Rain slants; it does not drift. A low response leans it into the wind
+    // and leaves the fall to gravity, which is what separates rain from snow
+    // in the same storm.
+    WindModule(response: 0.5),
     ColorOverLifeModule(
       GradientColor(ColorGradient.constant(_rgba(0.55, 0.62, 0.72, 0.5))),
     ),
@@ -616,6 +620,10 @@ ParticleSystem _snowSystem() => ParticleSystem(
     LinearDragModule(0.6),
     // The drift is the whole effect: without it every flake falls down
     // the same straight line and it reads as static.
+    // A flake weighs nothing, so it goes where the wind goes. Reading the
+    // scene's wind rather than a constant is what makes a gust lean the snow
+    // at the moment it leans the clouds.
+    WindModule(response: 1.6),
     TurbulenceModule(
       strength: 0.55,
       frequency: 0.25,

@@ -254,7 +254,8 @@ export 'src/particles/particle_module.dart'
         ParticleModule,
         RotationModule,
         SizeOverLifeModule,
-        TurbulenceModule;
+        TurbulenceModule,
+        WindModule;
 export 'src/particles/emitter_shape.dart'
     show
         BoxEmitterShape,

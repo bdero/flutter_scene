@@ -25,6 +25,7 @@ import 'package:flutter_scene/src/flow/flow_component.dart';
 import 'package:flutter_scene/src/kit/environment/buoyancy_component.dart';
 import 'package:flutter_scene/src/kit/environment/lightning_component.dart';
 import 'package:flutter_scene/src/kit/environment/water_component.dart';
+import 'package:flutter_scene/src/kit/environment/wind_component.dart';
 import 'package:flutter_scene/src/kit/grid/grid_tiles.dart';
 import 'package:flutter_scene/src/kit/interaction/path_follower_component.dart';
 import 'package:flutter_scene/src/kit/scatter/scatter_layer.dart';
@@ -38,6 +39,7 @@ void registerKitComponentCodecs(FsceneComponentRegistry registry) {
     ..register(ScatterLayerCodec())
     ..register(WaterCodec())
     ..register(BuoyancyCodec())
+    ..register(WindCodec())
     ..register(LightningCodec())
     ..register(FlowCodec());
 }
@@ -1256,12 +1258,6 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
   );
 }
 
-/// Codec for [LightningComponent].
-///
-/// The sky and the light it drives are not properties: the component finds
-/// the scene's own weather sky on mount, and an authored reference to a live
-/// object has nowhere to point in a document. What is authored is the storm's
-/// shape: how often it strikes, how far away, and how dark it holds the sky.
 /// Codec for [BuoyancyComponent].
 ///
 /// The water is not a property: the component finds the surface it is over on
@@ -1386,6 +1382,116 @@ class BuoyancyCodec extends DeclarativeComponentCodec<BuoyancyComponent> {
   );
 }
 
+/// Codec for [WindComponent].
+///
+/// The wind itself is not a property tree of its own. A scene has one wind,
+/// the component drives it, and everything downwind reads it -- so what is
+/// authored is the weather, and the object it is written into is shared
+/// rather than owned.
+class WindCodec extends DeclarativeComponentCodec<WindComponent> {
+  @override
+  String get type => 'wind';
+
+  @override
+  String? get category => 'Environment';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'wind',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      // Which way it blows, drawn at the node, because a wind vector is the
+      // one weather setting with a direction and no other way to see it.
+      GizmoArrow(
+        axis: [1, 0, 0],
+        length: GizmoScalar(2),
+        color: GizmoColor(0.62, 0.80, 0.92),
+      ),
+    ]),
+  );
+
+  @override
+  List<ComponentField<WindComponent>> get fields => [
+    ComponentField.vec2(
+      'direction',
+      defaultValue: () => Vector2(1, 0.25),
+      doc: 'Where the wind is going, on the ground plane.',
+      get: (c) => c.wind.direction,
+      set: (c, v) => c.wind.setDirection(v),
+    ),
+    ComponentField.number(
+      'speed',
+      defaultValue: 3.0,
+      doc: 'Steady speed in world units per second.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 30)],
+      get: (c) => c.wind.speed,
+      set: (c, v) => c.wind.speed = v,
+    ),
+    ComponentField.number(
+      'gustAmplitude',
+      defaultValue: 0.35,
+      doc:
+          'How far the gust swings the speed, as a fraction of it. Zero is a '
+          'fan; one is a squall that stills and doubles.',
+      constraints: const [Range(0, 2), SoftRange(0, 1)],
+      get: (c) => c.wind.gustAmplitude,
+      set: (c, v) => c.wind.gustAmplitude = v,
+    ),
+    ComponentField.number(
+      'gustFrequency',
+      defaultValue: 0.15,
+      doc: 'How often the gust cycles, in hertz.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 2)],
+      get: (c) => c.wind.gustFrequency,
+      set: (c, v) => c.wind.gustFrequency = v,
+    ),
+    ComponentField.boolean(
+      'driveSky',
+      defaultValue: true,
+      doc:
+          'Whether the scene\'s weather sky scrolls with this. Clouds that '
+          'ignore the wind are the most visible way for weather to look '
+          'wrong.',
+      get: (c) => c.driveSky,
+      set: (c, v) => c.driveSky = v,
+    ),
+    ComponentField.number(
+      'skyScale',
+      defaultValue: 0.02,
+      doc:
+          'How fast the cloud layer scrolls per unit of wind speed. Clouds '
+          'are far away, so this is a look rather than a physical quantity.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 0.2)],
+      get: (c) => c.skyScale,
+      set: (c, v) => c.skyScale = v,
+    ),
+  ];
+
+  @override
+  WindComponent create(PropertyReader props) {
+    // Drives the scene's ambient wind, which is what a WindModule with no
+    // wind of its own reads. Two wind components in one scene drive the same
+    // object, and the last one to tick wins -- which is the honest outcome of
+    // a scene that says the wind is two things at once.
+    final component = WindComponent(driveSky: props.boolean('driveSky'))
+      ..skyScale = props.number('skyScale');
+    component.wind
+      ..speed = props.number('speed')
+      ..gustAmplitude = props.number('gustAmplitude')
+      ..gustFrequency = props.number('gustFrequency')
+      ..setDirection(props.vec2('direction'));
+    return component;
+  }
+}
+
+/// Codec for [LightningComponent].
+///
+/// The sky and the light it drives are not properties: the component finds
+/// the scene's own weather sky on mount, and an authored reference to a live
+/// object has nowhere to point in a document. What is authored is the storm's
+/// shape: how often it strikes, how far away, and how dark it holds the sky.
 class LightningCodec extends DeclarativeComponentCodec<LightningComponent> {
   @override
   String get type => 'lightning';

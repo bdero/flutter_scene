@@ -40,6 +40,9 @@ export 'src/kit/environment/water_component.dart'
     show WaterComponent, WaterStyle, WaterTraversal;
 export 'src/kit/environment/buoyancy_component.dart' show BuoyancyComponent;
 export 'src/kit/environment/gerstner_field.dart' show GerstnerField;
+export 'src/kit/environment/wind.dart' show Wind;
+export 'src/kit/environment/wind_component.dart'
+    show WindComponent, windVelocity;
 export 'src/kit/environment/water_surface_component.dart'
     show GerstnerWave, WaterSurfaceComponent;
 export 'src/kit/pooling/node_pool.dart' show NodePool;

@@ -189,6 +189,7 @@ IconData? componentGlyph(String? name) => switch (name) {
   'scatter' => Icons.forest_outlined,
   'water' => Icons.water_outlined,
   'buoyancy' => Icons.sailing_outlined,
+  'wind' => Icons.air_outlined,
   'lightning' => Icons.bolt_outlined,
   'flow' => Icons.schema_outlined,
   'navigation' => Icons.polyline_outlined,

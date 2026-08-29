@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/kit/environment/wind.dart';
 import 'package:flutter_scene/src/noise/curl.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/particle_storage.dart';
@@ -62,6 +65,47 @@ class AccelerationModule extends ParticleModule {
       storage.velX[i] += ax;
       storage.velY[i] += ay;
       storage.velZ[i] += az;
+    }
+  }
+}
+
+/// Pushes particles with the scene's [Wind], gust and all.
+///
+/// The difference between this and an [AccelerationModule] pointed the same
+/// way is that this one *shares*: rain leaning under a gust leans at the
+/// moment the clouds do, because both are reading the same vector on the same
+/// frame. A constant per effect cannot do that, and a storm assembled out of
+/// constants is the one that reads as several effects near each other.
+///
+/// [response] is how much of the wind a particle takes. A leaf takes almost
+/// all of it; a stone takes little. Applied as a drag toward the wind speed
+/// rather than as a shove, so particles reach the wind and travel with it
+/// instead of accelerating forever.
+/// {@category Particles}
+class WindModule extends ParticleModule {
+  /// Blows particles along [wind], or the scene's ambient wind when none is
+  /// given.
+  WindModule({Wind? wind, this.response = 1.0}) : wind = wind ?? Wind.ambient;
+
+  /// The wind read each step.
+  final Wind wind;
+
+  /// How strongly particles are carried, per second. Zero ignores the wind;
+  /// high values pin them to it within a frame.
+  final double response;
+
+  @override
+  void update(ParticleStorage storage, double dt) {
+    if (response <= 0) return;
+    final velocity = wind.velocity;
+    // Exponential approach, so the result does not depend on the step size
+    // and a particle can never overshoot the wind and oscillate.
+    final blend = 1.0 - math.exp(-response * dt);
+    if (blend <= 0) return;
+    final n = storage.aliveCount;
+    for (var i = 0; i < n; i++) {
+      storage.velX[i] += (velocity.x - storage.velX[i]) * blend;
+      storage.velZ[i] += (velocity.z - storage.velZ[i]) * blend;
     }
   }
 }
