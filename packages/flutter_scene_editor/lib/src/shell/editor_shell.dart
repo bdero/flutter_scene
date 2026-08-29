@@ -51,22 +51,25 @@ import 'editor_dialog.dart';
 /// a panel that no longer exists opens onto a tab with nothing behind it, and
 /// three panels were retired in quick succession.
 const Map<String, String> editorPanelTitles = {
-  'viewport': 'Viewport',
+  'scene': 'Scene',
+  'hierarchy': 'Hierarchy',
+  'inspector': 'Inspector',
+  'project': 'Project',
+  'console': 'Console',
   'animation': 'Animation',
   'visual_scripter': 'Visual Scripter',
-  'outliner': 'Outliner',
-  'inspector': 'Inspector',
-  'assets': 'Assets',
   'history': 'History',
-  'console': 'Console',
   'render_graph': 'Render Graph',
 };
 
 List<String> get _panelIds => editorPanelTitles.keys.toList();
 
-/// Extra viewports are created at runtime with ids like `viewport2` and are
+/// Extra scene views are created at runtime with ids like `scene2` and are
 /// admitted through layout persistence as dynamic panels.
-final RegExp _extraViewportPattern = RegExp(r'^viewport\d+$');
+///
+/// `viewport\d+` is still matched, so a layout saved when they were called
+/// that keeps the extra views it had rather than dropping them.
+final RegExp _extraViewportPattern = RegExp(r'^(scene|viewport)\d+$');
 
 /// Intent for undo (Cmd+Z).
 class UndoIntent extends Intent {
@@ -289,7 +292,15 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       ? _ctrl.baseDirectory
       : File(_currentPath!).parent.path;
 
-  /// Runtime-created viewports present anywhere in the layout, in stable
+  /// The trailing number on an extra scene view's id.
+  ///
+  /// Handles both spellings, since a layout saved when they were viewports
+  /// keeps its ids rather than being renumbered out from under whoever
+  /// arranged it.
+  static String _extraViewportNumber(String id) =>
+      RegExp(r'\d+$').firstMatch(id)?.group(0) ?? '';
+
+  /// Runtime-created scene views present anywhere in the layout, in stable
   /// (numeric) order.
   List<String> get _extraViewportIds => {
     ..._dockLayout.panelIds(),
@@ -329,15 +340,17 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void _newViewport() {
     final existing = _extraViewportIds.toSet();
     var n = 2;
-    while (existing.contains('viewport$n')) {
+    // Against both spellings, so a new view never takes the number of one a
+    // saved layout is still holding under its old id.
+    while (existing.contains('scene$n') || existing.contains('viewport$n')) {
       n++;
     }
-    final id = 'viewport$n';
+    final id = 'scene$n';
     setState(() {
       // Split the group holding a docked viewport; when every viewport is
       // floating or hidden, fall back to the last group.
       DockTabs? anchor;
-      for (final candidate in ['viewport', ...existing]) {
+      for (final candidate in ['scene', ...existing]) {
         anchor = _dockLayout.groupOf(candidate);
         if (anchor != null) break;
       }
@@ -1025,8 +1038,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             ?.call(layout.toJsonString()),
                         panels: [
                           DockPanel(
-                            id: 'viewport',
-                            title: 'Viewport',
+                            id: 'scene',
+                            title: 'Scene',
                             child: ViewportPanel(
                               controller: _ctrl,
                               repaintBoundaryKey:
@@ -1046,8 +1059,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: VisualScripterPanel(controller: _ctrl),
                           ),
                           DockPanel(
-                            id: 'outliner',
-                            title: 'Outliner',
+                            id: 'hierarchy',
+                            title: 'Hierarchy',
                             child: OutlinerPanel(controller: _ctrl),
                             actions: IconButton(
                               icon: const Icon(Icons.add, size: 16),
@@ -1062,8 +1075,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: InspectorPanel(controller: _ctrl),
                           ),
                           DockPanel(
-                            id: 'assets',
-                            title: 'Assets',
+                            id: 'project',
+                            title: 'Project',
                             child: AssetBrowserPanel(
                               controller: _ctrl,
                               onImportModel: _importModelFromBrowser,
@@ -1096,7 +1109,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                           for (final id in _extraViewportIds)
                             DockPanel(
                               id: id,
-                              title: 'Viewport ${id.substring(8)}',
+                              title: 'Scene ${_extraViewportNumber(id)}',
                               closable: true,
                               child: ViewportPanel(
                                 controller: _ctrl,

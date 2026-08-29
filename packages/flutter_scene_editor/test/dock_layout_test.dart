@@ -8,8 +8,8 @@ DockLayout _twoColumn() {
     DockSplit(
       Axis.horizontal,
       [
-        DockTabs(['viewport']),
-        DockTabs(['outliner', 'inspector'], active: 1),
+        DockTabs(['scene']),
+        DockTabs(['hierarchy', 'inspector'], active: 1),
       ],
       [0.7, 0.3],
     ),
@@ -17,37 +17,40 @@ DockLayout _twoColumn() {
 }
 
 void main() {
-  test('default editor layout matches the three-column workspace', () {
+  test('the default layout is the arrangement everybody already knows', () {
+    // Hierarchy left, scene in the middle, inspector right, and the project
+    // browser along the bottom under both rather than as a third column.
     final layout = defaultEditorDockLayout();
     final root = layout.root as DockSplit;
-
     expect(root.axis, Axis.horizontal);
-    expect(root.weights[0], closeTo(0.20993533355494798, 1e-12));
-    expect(root.weights[1], closeTo(0.5575395295519655, 1e-12));
-    expect(root.weights[2], closeTo(0.23252513689308651, 1e-12));
+    expect((root.children[1] as DockTabs).panels, ['inspector']);
 
-    final left = root.children[0] as DockSplit;
-    expect(left.axis, Axis.vertical);
-    expect((left.children[0] as DockTabs).panels, ['outliner']);
-    expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
-    expect((root.children[2] as DockTabs).panels, ['inspector']);
+    final main = root.children[0] as DockSplit;
+    expect(main.axis, Axis.vertical);
 
-    // The centre column stacks the timeline under the viewport, where a
-    // playhead scrubbing the scene belongs.
-    final centre = root.children[1] as DockSplit;
-    expect(centre.axis, Axis.vertical);
-    expect((centre.children[0] as DockTabs).panels, ['viewport']);
-    expect((centre.children[1] as DockTabs).panels, [
-      'animation',
-      'visual_scripter',
-    ]);
-    expect(centre.weights, [0.72, 0.28]);
+    final top = main.children[0] as DockSplit;
+    expect(top.axis, Axis.horizontal);
+    expect((top.children[0] as DockTabs).panels, ['hierarchy']);
+    expect((top.children[1] as DockTabs).panels, contains('scene'));
+
+    final shelf = main.children[1] as DockTabs;
+    expect(shelf.panels.first, 'project');
+    expect(shelf.panels, contains('console'));
+  });
+
+  test('the bottom shelf runs under the hierarchy as well as the scene', () {
+    // What makes it a shelf rather than a third column: it is a sibling of
+    // the row holding both, not a sibling of the scene alone.
+    final root = defaultEditorDockLayout().root as DockSplit;
+    final main = root.children[0] as DockSplit;
+    expect(main.children[1], isA<DockTabs>());
+    expect((main.children[0] as DockSplit).children, hasLength(2));
   });
 
   test('json round-trips', () {
     final layout = _twoColumn();
     final restored = DockLayout.fromJsonString(layout.toJsonString());
-    expect(restored.panelIds(), ['viewport', 'outliner', 'inspector']);
+    expect(restored.panelIds(), ['scene', 'hierarchy', 'inspector']);
     final split = restored.root as DockSplit;
     expect(split.axis, Axis.horizontal);
     expect(split.weights, [0.7, 0.3]);
@@ -56,14 +59,14 @@ void main() {
 
   test('removing a group\'s last panel collapses the split', () {
     final layout = _twoColumn();
-    layout.removePanel('viewport');
+    layout.removePanel('scene');
     final tabs = layout.root as DockTabs;
-    expect(tabs.panels, ['outliner', 'inspector']);
+    expect(tabs.panels, ['hierarchy', 'inspector']);
   });
 
   test('removing keeps the active tab pointed at the same panel', () {
     final layout = _twoColumn();
-    layout.removePanel('outliner');
+    layout.removePanel('hierarchy');
     final tabs = (layout.root as DockSplit).children[1] as DockTabs;
     expect(tabs.activePanel, 'inspector');
   });
@@ -72,10 +75,10 @@ void main() {
     final layout = _twoColumn();
     final target = (layout.root as DockSplit).children[0] as DockTabs;
     layout.dock('inspector', target, DockZone.center);
-    expect(target.panels, ['viewport', 'inspector']);
+    expect(target.panels, ['scene', 'inspector']);
     expect(target.activePanel, 'inspector');
     // The source group survives with its remaining tab.
-    expect(layout.panelIds(), ['viewport', 'inspector', 'outliner']);
+    expect(layout.panelIds(), ['scene', 'inspector', 'hierarchy']);
   });
 
   test('same-axis edge dock inserts a sibling and halves the weight', () {
@@ -95,7 +98,7 @@ void main() {
     layout.dock('inspector', target, DockZone.bottom);
     final inner = (layout.root as DockSplit).children[0] as DockSplit;
     expect(inner.axis, Axis.vertical);
-    expect((inner.children[0] as DockTabs).panels, ['viewport']);
+    expect((inner.children[0] as DockTabs).panels, ['scene']);
     expect((inner.children[1] as DockTabs).panels, ['inspector']);
   });
 
@@ -103,8 +106,8 @@ void main() {
     final layout = _twoColumn();
     final target = (layout.root as DockSplit).children[0] as DockTabs;
     final before = layout.toJsonString();
-    layout.dock('viewport', target, DockZone.center);
-    layout.dock('viewport', target, DockZone.left);
+    layout.dock('scene', target, DockZone.center);
+    layout.dock('scene', target, DockZone.left);
     expect(layout.toJsonString(), before);
   });
 
@@ -113,28 +116,28 @@ void main() {
       DockSplit(
         Axis.horizontal,
         [
-          DockTabs(['viewport', 'retired']),
-          DockTabs(['outliner']),
+          DockTabs(['scene', 'retired']),
+          DockTabs(['hierarchy']),
         ],
         [0.5, 0.5],
       ),
     ).toJsonString();
     final layout = DockLayout.tryParse(
       source,
-      knownPanels: ['viewport', 'outliner', 'inspector'],
+      knownPanels: ['scene', 'hierarchy', 'inspector'],
     );
     expect(layout, isNotNull);
-    expect(layout!.panelIds().toSet(), {'viewport', 'outliner', 'inspector'});
+    expect(layout!.panelIds().toSet(), {'scene', 'hierarchy', 'inspector'});
   });
 
   test('hide/show round-trips through the hidden list', () {
     final layout = _twoColumn();
-    layout.hidePanel('viewport');
-    expect(layout.isVisible('viewport'), isFalse);
-    expect(layout.hidden, ['viewport']);
+    layout.hidePanel('scene');
+    expect(layout.isVisible('scene'), isFalse);
+    expect(layout.hidden, ['scene']);
     expect(layout.root, isA<DockTabs>());
-    layout.showPanel('viewport');
-    expect(layout.isVisible('viewport'), isTrue);
+    layout.showPanel('scene');
+    expect(layout.isVisible('scene'), isTrue);
     expect(layout.hidden, isEmpty);
   });
 
@@ -142,7 +145,7 @@ void main() {
     final layout = _twoColumn();
     layout.floatPanel('inspector');
     expect(layout.floating, ['inspector']);
-    expect(layout.panelIds(), ['viewport', 'outliner']);
+    expect(layout.panelIds(), ['scene', 'hierarchy']);
     final target = layout.root as DockSplit;
     layout.dock('inspector', target.children[0] as DockTabs, DockZone.center);
     expect(layout.floating, isEmpty);
@@ -151,12 +154,12 @@ void main() {
 
   test('v2 json round-trips hidden and floating', () {
     final layout = _twoColumn();
-    layout.hidePanel('outliner');
+    layout.hidePanel('hierarchy');
     layout.floatPanel('inspector');
     final restored = DockLayout.fromJsonString(layout.toJsonString());
-    expect(restored.hidden, ['outliner']);
+    expect(restored.hidden, ['hierarchy']);
     expect(restored.floating, ['inspector']);
-    expect(restored.panelIds(), ['viewport']);
+    expect(restored.panelIds(), ['scene']);
   });
 
   test('legacy root-only json still parses', () {
@@ -164,30 +167,30 @@ void main() {
         '{"type":"tabs","panels":["viewport","outliner"],"active":0}';
     final layout = DockLayout.tryParse(
       legacy,
-      knownPanels: ['viewport', 'outliner'],
+      knownPanels: ['scene', 'hierarchy'],
     );
     expect(layout, isNotNull);
-    expect(layout!.panelIds(), ['viewport', 'outliner']);
+    expect(layout!.panelIds(), ['scene', 'hierarchy']);
     expect(layout.hidden, isEmpty);
     expect(layout.floating, isEmpty);
   });
 
   test('tryParse keeps hidden panels hidden and dedupes stale entries', () {
     final source = DockLayout(
-      DockTabs(['viewport', 'outliner']),
-      hidden: ['history', 'outliner', 'retired'],
-      floating: ['assets'],
+      DockTabs(['scene', 'hierarchy']),
+      hidden: ['history', 'hierarchy', 'retired'],
+      floating: ['project'],
     ).toJsonString();
     final layout = DockLayout.tryParse(
       source,
-      knownPanels: ['viewport', 'outliner', 'history', 'assets'],
+      knownPanels: ['scene', 'hierarchy', 'history', 'project'],
     );
     expect(layout, isNotNull);
     // outliner is docked, so the stale hidden entry is dropped; history stays
     // hidden rather than being re-appended; assets stays floating.
-    expect(layout!.panelIds(), ['viewport', 'outliner']);
+    expect(layout!.panelIds(), ['scene', 'hierarchy']);
     expect(layout.hidden, ['history']);
-    expect(layout.floating, ['assets']);
+    expect(layout.floating, ['project']);
   });
 
   test('dock() inserts a brand-new panel id', () {
@@ -200,34 +203,34 @@ void main() {
 
   test('tryParse keeps dynamic panels but never appends them', () {
     final source = DockLayout(
-      DockTabs(['viewport', 'viewport2', 'stale9']),
+      DockTabs(['scene', 'viewport2', 'stale9']),
     ).toJsonString();
     bool isDynamic(String id) =>
         RegExp(r'^viewport\d+$').hasMatch(id) || id == 'stale9';
     final layout = DockLayout.tryParse(
       source,
-      knownPanels: ['viewport'],
+      knownPanels: ['scene'],
       isDynamic: RegExp(r'^viewport\d+$').hasMatch,
     );
     expect(layout, isNotNull);
-    expect(layout!.panelIds(), ['viewport', 'viewport2']);
+    expect(layout!.panelIds(), ['scene', 'viewport2']);
     // A layout without the dynamic panel does not grow one.
-    final bare = DockLayout(DockTabs(['viewport'])).toJsonString();
+    final bare = DockLayout(DockTabs(['scene'])).toJsonString();
     final reparsed = DockLayout.tryParse(
       bare,
-      knownPanels: ['viewport'],
+      knownPanels: ['scene'],
       isDynamic: isDynamic,
     );
-    expect(reparsed!.panelIds(), ['viewport']);
+    expect(reparsed!.panelIds(), ['scene']);
   });
 
   test('tryParse rejects garbage', () {
-    expect(DockLayout.tryParse('not json', knownPanels: ['viewport']), isNull);
+    expect(DockLayout.tryParse('not json', knownPanels: ['scene']), isNull);
     expect(
-      DockLayout.tryParse('{"type":"nope"}', knownPanels: ['viewport']),
+      DockLayout.tryParse('{"type":"nope"}', knownPanels: ['scene']),
       isNull,
     );
-    expect(DockLayout.tryParse(null, knownPanels: ['viewport']), isNull);
+    expect(DockLayout.tryParse(null, knownPanels: ['scene']), isNull);
   });
 
   test('a layout saved with the Navigation panel still opens', () {
@@ -239,7 +242,7 @@ void main() {
         '"floating":[]}';
     final layout = DockLayout.tryParse(
       saved,
-      knownPanels: const ['inspector', 'viewport'],
+      knownPanels: const ['inspector', 'scene'],
       isDynamic: (_) => false,
     );
     expect(layout, isNotNull);
@@ -259,5 +262,72 @@ void main() {
         reason: 'the default layout opens "$id", which is not a panel',
       );
     }
+  });
+
+  group('renamed panels', () {
+    test('a layout saved under the old names keeps its arrangement', () {
+      // Without this the ids are simply unknown: the panels are dropped and
+      // re-appended somewhere else, which does not break the workspace so
+      // much as shuffle it -- harder to notice and just as annoying.
+      const saved =
+          '{"root":{"type":"split","axis":"h","weights":[0.3,0.7],'
+          '"children":['
+          '{"type":"tabs","panels":["outliner"],"active":0},'
+          '{"type":"tabs","panels":["viewport","assets"],"active":0}]},'
+          '"hidden":[],"floating":[]}';
+      final layout = DockLayout.tryParse(
+        saved,
+        knownPanels: const ['scene', 'hierarchy', 'project', 'inspector'],
+      );
+      expect(layout, isNotNull);
+      final root = layout!.root as DockSplit;
+      expect((root.children[0] as DockTabs).panels, ['hierarchy']);
+      expect(
+        (root.children[1] as DockTabs).panels,
+        containsAll(['scene', 'project']),
+      );
+      // The weights it was arranged with survive too.
+      expect(root.weights, [0.3, 0.7]);
+    });
+
+    test('hidden and floating entries are renamed as well', () {
+      const saved =
+          '{"root":{"type":"tabs","panels":["viewport"],"active":0},'
+          '"hidden":["outliner"],"floating":["assets"]}';
+      final layout = DockLayout.tryParse(
+        saved,
+        knownPanels: const ['scene', 'hierarchy', 'project'],
+      );
+      expect(layout!.hidden, ['hierarchy']);
+      expect(layout.floating, ['project']);
+    });
+
+    test('an extra view saved as viewport2 is kept, not renumbered', () {
+      // Renumbering would move somebody's second view out from under the
+      // arrangement they put it in.
+      const saved =
+          '{"root":{"type":"tabs","panels":["viewport","viewport2"],'
+          '"active":0},"hidden":[],"floating":[]}';
+      final layout = DockLayout.tryParse(
+        saved,
+        knownPanels: const ['scene'],
+        isDynamic: RegExp(r'^(scene|viewport)\d+$').hasMatch,
+      );
+      expect(layout!.panelIds(), containsAll(['scene', 'viewport2']));
+    });
+
+    test('a name that was never renamed is left alone', () {
+      for (final id in ['inspector', 'console', 'history', 'animation']) {
+        expect(migratePanelId(id), id);
+      }
+    });
+
+    test('every rename points somewhere, and never at itself', () {
+      for (final entry in renamedPanelIds.entries) {
+        expect(entry.value, isNotEmpty);
+        expect(entry.key, isNot(entry.value));
+        expect(renamedPanelIds.containsKey(entry.value), isFalse);
+      }
+    });
   });
 }
