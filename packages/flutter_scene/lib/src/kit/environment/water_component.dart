@@ -90,7 +90,9 @@ class WaterComponent extends Component {
     vm.Vector4? deepColor,
     List<GerstnerWave>? waves,
     this.animate = true,
-  }) : resolution = resolution < 2 ? 2 : resolution,
+    double choppiness = 1.0,
+  }) : _choppiness = choppiness < 0 ? 0.0 : choppiness,
+       resolution = resolution < 2 ? 2 : resolution,
        shallowColor = shallowColor ?? _defaultShallow.clone(),
        deepColor = deepColor ?? _defaultDeep.clone(),
        waves = waves ?? defaultWavesFor(style);
@@ -126,6 +128,45 @@ class WaterComponent extends Component {
   /// Whether the surface advances with time. False freezes it at its current
   /// phase, which is what an editor viewport wants while scrubbing.
   bool animate;
+
+  /// The spectrum as authored, before [choppiness] scales it.
+  ///
+  /// Kept so raising the sea and lowering it again returns the water to the
+  /// waves it was given, rather than to whatever the last multiplication left
+  /// behind.
+  late final List<GerstnerWave> _baseWaves = List.of(waves);
+
+  double _choppiness;
+
+  /// How hard the water is running: `0` glassy, `1` the spectrum as authored,
+  /// above that a sea getting up.
+  ///
+  /// Scales every wave's crest height and sharpness and leaves its direction
+  /// and wavelength alone, so the shape of the sea stays the shape it was
+  /// given while the weather makes it rougher or calmer. Setting it rewrites
+  /// the live spectrum in place, which is what keeps [surfaceHeightAt] --
+  /// and so anything floating on the water -- agreeing with the mesh.
+  double get choppiness => _choppiness;
+
+  set choppiness(double value) {
+    final next = value < 0 ? 0.0 : value;
+    if ((next - _choppiness).abs() < 1e-6) return;
+    _choppiness = next;
+    _applyChoppiness();
+  }
+
+  void _applyChoppiness() {
+    for (var i = 0; i < waves.length && i < _baseWaves.length; i++) {
+      final base = _baseWaves[i];
+      waves[i] = GerstnerWave(
+        direction: base.direction,
+        amplitude: base.amplitude * _choppiness,
+        wavelength: base.wavelength,
+        speed: base.speed,
+        steepness: (base.steepness * _choppiness).clamp(0.0, 1.0),
+      );
+    }
+  }
 
   /// The nav area this surface's triangles bake as.
   ///
@@ -275,6 +316,9 @@ class WaterComponent extends Component {
 
   @override
   void onMount() {
+    // Touches _baseWaves before anything scales the live list, so the record
+    // of what was authored is the authored spectrum.
+    if (_choppiness != 1.0) _applyChoppiness();
     _rebuild();
   }
 
