@@ -17,6 +17,7 @@ import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
+import 'package:scene/scene.dart' show EditorCameraSpec, EditorStateSpec;
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
 
@@ -177,6 +178,33 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _configureController(EditorController controller) {
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
+    // Saves carry the viewport camera and selection in the document; a
+    // restored pose applies now (buffered until a viewport attaches).
+    controller.editorStateProvider = () {
+      final pose = _cameraHandle.pose;
+      return EditorStateSpec(
+        camera: pose == null
+            ? null
+            : EditorCameraSpec(
+                azimuth: pose.azimuth,
+                elevation: pose.elevation,
+                radius: pose.radius,
+                target: pose.target,
+                orthographic: pose.orthographic,
+              ),
+        selection: controller.selection.ids.toList(),
+      );
+    };
+    final restoredCamera = controller.restoredEditorState?.camera;
+    if (restoredCamera != null) {
+      _cameraHandle.setPose(
+        azimuth: restoredCamera.azimuth,
+        elevation: restoredCamera.elevation,
+        radius: restoredCamera.radius,
+        target: restoredCamera.target,
+        orthographic: restoredCamera.orthographic,
+      );
+    }
     // Foreign component types already learned (cache, package manifests,
     // source extraction, or a live session) carry over to every controller
     // the editor swaps in, keeping their original provenance.

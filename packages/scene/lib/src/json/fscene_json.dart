@@ -234,6 +234,22 @@ Map<String, dynamic> encodeDocument(SceneDocument doc) {
   if (doc.views.isNotEmpty) {
     json['views'] = [for (final view in doc.views) _encodeView(view, idKey)];
   }
+  final editor = doc.editor;
+  if (editor != null) {
+    final camera = editor.camera;
+    json['editor'] = {
+      if (camera != null)
+        'camera': {
+          'azimuth': camera.azimuth,
+          'elevation': camera.elevation,
+          'radius': camera.radius,
+          'target': _vec3Json(camera.target),
+          if (camera.orthographic) 'orthographic': true,
+        },
+      if (editor.selection.isNotEmpty)
+        'selection': [for (final id in editor.selection) idKey(id)],
+    };
+  }
   return json;
 }
 
@@ -940,6 +956,29 @@ SceneDocument decodeDocument(Map<String, dynamic> json) {
   doc.animations.addAll(animations);
   doc.payloads.addAll(payloads);
   doc.views.addAll(views);
+  if (json['editor'] case final Map editorJson) {
+    EditorCameraSpec? camera;
+    if (editorJson['camera'] case final Map cameraJson) {
+      final target = cameraJson['target'] as List? ?? const [0, 0, 0];
+      camera = EditorCameraSpec(
+        azimuth: (cameraJson['azimuth'] as num? ?? 0).toDouble(),
+        elevation: (cameraJson['elevation'] as num? ?? 0).toDouble(),
+        radius: (cameraJson['radius'] as num? ?? 1).toDouble(),
+        target: Vector3(
+          (target[0] as num).toDouble(),
+          (target[1] as num).toDouble(),
+          (target[2] as num).toDouble(),
+        ),
+        orthographic: editorJson['camera']['orthographic'] as bool? ?? false,
+      );
+    }
+    // Selection ids referencing nodes no longer in the document are dropped.
+    final selection = [
+      for (final id in (editorJson['selection'] as List? ?? const []))
+        LocalId.parse(id as String),
+    ].where(nodes.containsKey).toList();
+    doc.editor = EditorStateSpec(camera: camera, selection: selection);
+  }
   return doc;
 }
 

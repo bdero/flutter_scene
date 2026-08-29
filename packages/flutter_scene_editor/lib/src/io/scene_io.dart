@@ -349,6 +349,9 @@ Future<void> saveFscene(EditorController controller, String path) async {
   // As stays portable, and fold in absolute refs recorded while the scene
   // was unsaved (the session-only form).
   _rewriteFmatRefsForSave(controller, File(path).absolute.parent.path);
+  // Carry the current editor state (camera pose, selection) in the document.
+  final editorState = controller.editorStateProvider?.call();
+  if (editorState != null) controller.document.editor = editorState;
   await File(path).writeAsString(controller.session.toFscene());
 }
 
