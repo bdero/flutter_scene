@@ -33,7 +33,6 @@ import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
 import '../panels/flow_panel.dart';
-import '../panels/nav_mesh_panel.dart';
 import '../launcher/scene_templates.dart';
 import '../panels/vfx_panel.dart';
 import '../panels/weather_panel.dart';
@@ -51,7 +50,6 @@ const Map<String, String> _panelTitles = {
   'animation': 'Animation',
   'effects': 'Effects',
   'weather': 'Weather',
-  'navigation': 'Navigation',
   'flow': 'Flow',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
@@ -484,7 +482,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   Future<String?> _promptForComponentName({bool native = false}) async {
     final controller = TextEditingController();
     String? error;
-    return showFDialog<String>(
+    return showEditorFDialog<String>(
       context: context,
       builder: (context, style, animation) => StatefulBuilder(
         builder: (context, setLocal) {
@@ -571,7 +569,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
   Future<void> _saveCurrentLayoutAs() async {
     final controller = TextEditingController();
-    final name = await showFDialog<String>(
+    final name = await showEditorFDialog<String>(
       context: context,
       builder: (context, style, animation) => FDialog(
         animation: animation,
@@ -637,7 +635,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<bool> _confirmLayoutOverwrite(String name) async {
-    return await showFDialog<bool>(
+    return await showEditorFDialog<bool>(
           context: context,
           builder: (context, style, animation) => FDialog(
             animation: animation,
@@ -685,7 +683,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<void> _manageLayouts() async {
-    await showFDialog<void>(
+    await showEditorFDialog<void>(
       context: context,
       builder: (context, style, animation) => FDialog(
         animation: animation,
@@ -1046,11 +1044,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'weather',
                             title: 'Weather',
                             child: WeatherPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'navigation',
-                            title: 'Navigation',
-                            child: NavMeshPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'flow',
@@ -1626,218 +1619,214 @@ class _EditorMenuBar extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onPanStart: onDragStart == null ? null : (_) => onDragStart!(),
-      child: Container(
+      child: EditorToolbar(
         height: 28,
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: Row(
-          children: [
-            SizedBox(width: leadingInset),
-            Image.asset(
-              'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
-              width: 18,
-              height: 18,
-              cacheWidth: 36,
-            ),
-            const SizedBox(width: 6),
-            Text(_title(), style: Theme.of(context).textTheme.labelSmall),
-            const SizedBox(width: 16),
-            _Menu(
-              label: 'File',
-              items: [
-                // Project-first: the project group leads, scenes open inside
-                // its context.
-                if (onOpenProject != null) ...[
-                  _MenuItem(label: 'Open Project…', onTap: onOpenProject),
-                  _MenuItem(label: 'New Project…', onTap: onNewProject),
-                  _MenuItem(
-                    label: 'Open Recent Project',
-                    children: recentProjectPaths.isEmpty
-                        ? const [_MenuItem(label: 'No Recent Projects')]
-                        : [
-                            for (final path in recentProjectPaths)
-                              _MenuItem(
-                                label: path.split(Platform.pathSeparator).last,
-                                detail: File(path).parent.path,
-                                onTap: () => onOpenRecentProject?.call(path),
-                              ),
-                          ],
-                  ),
-                  if (projectName != null) ...[
-                    _MenuItem(
-                      label: 'Edit Build Configurations…',
-                      onTap: onEditBuildConfigs,
-                    ),
-                    _MenuItem(label: 'Close Project', onTap: onCloseProject),
-                  ],
-                  const _MenuItem.divider(),
-                ],
-                _MenuItem(label: 'New Scene', onTap: onNew),
-                _MenuItem(label: 'Open Scene…', onTap: onOpen),
+        horizontalPadding: 0,
+        children: [
+          SizedBox(width: leadingInset),
+          Image.asset(
+            'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
+            width: 18,
+            height: 18,
+            cacheWidth: 36,
+          ),
+          const SizedBox(width: 6),
+          Text(_title(), style: Theme.of(context).textTheme.labelSmall),
+          const SizedBox(width: 16),
+          _Menu(
+            label: 'File',
+            items: [
+              // Project-first: the project group leads, scenes open inside
+              // its context.
+              if (onOpenProject != null) ...[
+                _MenuItem(label: 'Open Project…', onTap: onOpenProject),
+                _MenuItem(label: 'New Project…', onTap: onNewProject),
                 _MenuItem(
-                  label: 'Open Recent Scene',
-                  children: recentScenePaths.isEmpty
-                      ? const [_MenuItem(label: 'No Recent Scenes')]
+                  label: 'Open Recent Project',
+                  children: recentProjectPaths.isEmpty
+                      ? const [_MenuItem(label: 'No Recent Projects')]
                       : [
-                          for (final path in recentScenePaths)
+                          for (final path in recentProjectPaths)
                             _MenuItem(
                               label: path.split(Platform.pathSeparator).last,
-                              detail: File(path).existsSync()
-                                  ? File(path).parent.path
-                                  : 'Missing  ${File(path).parent.path}',
-                              onTap: () => onOpenRecentScene(path),
-                              onRemove: onRemoveRecentScene == null
-                                  ? null
-                                  : () => onRemoveRecentScene!(path),
+                              detail: File(path).parent.path,
+                              onTap: () => onOpenRecentProject?.call(path),
                             ),
-                          const _MenuItem.divider(),
-                          _MenuItem(
-                            label: 'Clear Recent Scenes',
-                            onTap: onClearRecentScenes,
-                          ),
                         ],
                 ),
-                _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
-                _MenuItem(
-                  label: 'Re-import glTF…',
-                  onTap: canReimport ? onReimportGlb : null,
-                ),
-                _MenuItem(label: 'Save', onTap: onSave),
-                _MenuItem(label: 'Save As…', onTap: onSaveAs),
-                const _MenuItem.divider(),
-                // The scene's own settings, distinct from the editor's below.
-                _MenuItem(label: 'Scene Settings…', onTap: onShowSceneSettings),
-                if (onShowSettings != null) ...[
-                  const _MenuItem.divider(),
-                  _MenuItem(label: 'Settings…', onTap: onShowSettings),
-                ],
-              ],
-            ),
-            _Menu(
-              label: 'Edit',
-              items: [
-                _MenuItem(
-                  label: 'Undo',
-                  onTap: controller.history.canUndo ? onUndo : null,
-                ),
-                _MenuItem(
-                  label: 'Redo',
-                  onTap: controller.history.canRedo ? onRedo : null,
-                ),
-                _MenuItem(
-                  label: 'Duplicate',
-                  onTap: controller.selection.isNotEmpty ? onDuplicate : null,
-                ),
-                _MenuItem(
-                  label: 'Copy',
-                  onTap: controller.selection.isNotEmpty ? onCopy : null,
-                ),
-                _MenuItem(
-                  label: 'Paste',
-                  onTap: controller.canPaste ? onPaste : null,
-                ),
-                _MenuItem(
-                  label: 'Delete',
-                  onTap: controller.selection.isNotEmpty ? onDelete : null,
-                ),
-              ],
-            ),
-            _Menu(
-              label: 'Add',
-              items: [
-                _MenuItem(label: 'Empty Node', onTap: onAddEmpty),
-                _MenuItem(
-                  label: '3D Object',
-                  children: [
-                    for (final primitive in _EditorShellState.primitiveCommands)
-                      _MenuItem(
-                        label: primitive.label,
-                        onTap: () => onAddPrimitive(primitive.command),
-                      ),
-                    for (final group in const [
-                      'Camera',
-                      'Light',
-                      'Environment',
-                      'Effects',
-                      'Audio',
-                      'Volume',
-                      'Scripting',
-                    ])
-                      if (_EditorShellState.objectsIn(group).length == 1)
-                        _MenuItem(
-                          label: _EditorShellState.objectsIn(
-                            group,
-                          ).single.label,
-                          onTap: () => onAddObject(
-                            _EditorShellState.objectsIn(group).single.type,
-                          ),
-                        )
-                      else
-                        _MenuItem(
-                          label: group,
-                          children: [
-                            for (final entry in _EditorShellState.objectsIn(
-                              group,
-                            ))
-                              _MenuItem(
-                                label: entry.label,
-                                onTap: () => onAddObject(entry.type),
-                              ),
-                          ],
-                        ),
-                  ],
-                ),
-                _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
-                _MenuItem(
-                  label: 'Component Script…',
-                  onTap: onNewComponentScript,
-                ),
-                _MenuItem(
-                  label: 'Native Component…',
-                  onTap: onNewNativeComponentScript,
-                ),
-              ],
-            ),
-            // Built when the menu opens so the checkmarks reflect hides made
-            // from tab context menus (which don't rebuild this bar).
-            _Menu(
-              label: 'View',
-              itemsBuilder: () => [
-                _MenuItem(label: 'New Viewport', onTap: onNewViewport),
-                _MenuItem(
-                  label: 'Layouts',
-                  children: [
-                    _MenuItem(
-                      label: 'Reset to Default Layout',
-                      onTap: () => onApplyLayout(null),
-                    ),
-                    for (final entry in namedLayouts.entries)
-                      _MenuItem(
-                        label: entry.key,
-                        onTap: () => onApplyLayout(entry.value),
-                      ),
-                    const _MenuItem.divider(),
-                    _MenuItem(
-                      label: 'Save Current Layout As…',
-                      onTap: onSaveCurrentLayout,
-                    ),
-                    _MenuItem(label: 'Manage Layouts…', onTap: onManageLayouts),
-                  ],
-                ),
-                for (final entry in _panelTitles.entries)
+                if (projectName != null) ...[
                   _MenuItem(
-                    label: entry.value,
-                    checked: isPanelVisible(entry.key),
-                    onTap: () => onTogglePanel(entry.key),
+                    label: 'Edit Build Configurations…',
+                    onTap: onEditBuildConfigs,
                   ),
-                _MenuItem(label: 'Shader Toolchain…', onTap: onShowToolchain),
+                  _MenuItem(label: 'Close Project', onTap: onCloseProject),
+                ],
+                const _MenuItem.divider(),
               ],
-            ),
-            _MenuButton(label: 'Commands', onTap: onPaletteOpen),
-            const Spacer(),
-            ...trailing,
-            const SizedBox(width: 6),
-          ],
-        ),
+              _MenuItem(label: 'New Scene', onTap: onNew),
+              _MenuItem(label: 'Open Scene…', onTap: onOpen),
+              _MenuItem(
+                label: 'Open Recent Scene',
+                children: recentScenePaths.isEmpty
+                    ? const [_MenuItem(label: 'No Recent Scenes')]
+                    : [
+                        for (final path in recentScenePaths)
+                          _MenuItem(
+                            label: path.split(Platform.pathSeparator).last,
+                            detail: File(path).existsSync()
+                                ? File(path).parent.path
+                                : 'Missing  ${File(path).parent.path}',
+                            onTap: () => onOpenRecentScene(path),
+                            onRemove: onRemoveRecentScene == null
+                                ? null
+                                : () => onRemoveRecentScene!(path),
+                          ),
+                        const _MenuItem.divider(),
+                        _MenuItem(
+                          label: 'Clear Recent Scenes',
+                          onTap: onClearRecentScenes,
+                        ),
+                      ],
+              ),
+              _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
+              _MenuItem(
+                label: 'Re-import glTF…',
+                onTap: canReimport ? onReimportGlb : null,
+              ),
+              _MenuItem(label: 'Save', onTap: onSave),
+              _MenuItem(label: 'Save As…', onTap: onSaveAs),
+              const _MenuItem.divider(),
+              // The scene's own settings, distinct from the editor's below.
+              _MenuItem(label: 'Scene Settings…', onTap: onShowSceneSettings),
+              if (onShowSettings != null) ...[
+                const _MenuItem.divider(),
+                _MenuItem(label: 'Settings…', onTap: onShowSettings),
+              ],
+            ],
+          ),
+          _Menu(
+            label: 'Edit',
+            items: [
+              _MenuItem(
+                label: 'Undo',
+                onTap: controller.history.canUndo ? onUndo : null,
+              ),
+              _MenuItem(
+                label: 'Redo',
+                onTap: controller.history.canRedo ? onRedo : null,
+              ),
+              _MenuItem(
+                label: 'Duplicate',
+                onTap: controller.selection.isNotEmpty ? onDuplicate : null,
+              ),
+              _MenuItem(
+                label: 'Copy',
+                onTap: controller.selection.isNotEmpty ? onCopy : null,
+              ),
+              _MenuItem(
+                label: 'Paste',
+                onTap: controller.canPaste ? onPaste : null,
+              ),
+              _MenuItem(
+                label: 'Delete',
+                onTap: controller.selection.isNotEmpty ? onDelete : null,
+              ),
+            ],
+          ),
+          _Menu(
+            label: 'Add',
+            items: [
+              _MenuItem(label: 'Empty Node', onTap: onAddEmpty),
+              _MenuItem(
+                label: '3D Object',
+                children: [
+                  for (final primitive in _EditorShellState.primitiveCommands)
+                    _MenuItem(
+                      label: primitive.label,
+                      onTap: () => onAddPrimitive(primitive.command),
+                    ),
+                  for (final group in const [
+                    'Camera',
+                    'Light',
+                    'Environment',
+                    'Effects',
+                    'Audio',
+                    'Volume',
+                    'Scripting',
+                  ])
+                    if (_EditorShellState.objectsIn(group).length == 1)
+                      _MenuItem(
+                        label: _EditorShellState.objectsIn(group).single.label,
+                        onTap: () => onAddObject(
+                          _EditorShellState.objectsIn(group).single.type,
+                        ),
+                      )
+                    else
+                      _MenuItem(
+                        label: group,
+                        children: [
+                          for (final entry in _EditorShellState.objectsIn(
+                            group,
+                          ))
+                            _MenuItem(
+                              label: entry.label,
+                              onTap: () => onAddObject(entry.type),
+                            ),
+                        ],
+                      ),
+                ],
+              ),
+              _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
+              _MenuItem(
+                label: 'Component Script…',
+                onTap: onNewComponentScript,
+              ),
+              _MenuItem(
+                label: 'Native Component…',
+                onTap: onNewNativeComponentScript,
+              ),
+            ],
+          ),
+          // Built when the menu opens so the checkmarks reflect hides made
+          // from tab context menus (which don't rebuild this bar).
+          _Menu(
+            label: 'View',
+            itemsBuilder: () => [
+              _MenuItem(label: 'New Viewport', onTap: onNewViewport),
+              _MenuItem(
+                label: 'Layouts',
+                children: [
+                  _MenuItem(
+                    label: 'Reset to Default Layout',
+                    onTap: () => onApplyLayout(null),
+                  ),
+                  for (final entry in namedLayouts.entries)
+                    _MenuItem(
+                      label: entry.key,
+                      onTap: () => onApplyLayout(entry.value),
+                    ),
+                  const _MenuItem.divider(),
+                  _MenuItem(
+                    label: 'Save Current Layout As…',
+                    onTap: onSaveCurrentLayout,
+                  ),
+                  _MenuItem(label: 'Manage Layouts…', onTap: onManageLayouts),
+                ],
+              ),
+              for (final entry in _panelTitles.entries)
+                _MenuItem(
+                  label: entry.value,
+                  checked: isPanelVisible(entry.key),
+                  onTap: () => onTogglePanel(entry.key),
+                ),
+              _MenuItem(label: 'Shader Toolchain…', onTap: onShowToolchain),
+            ],
+          ),
+          _MenuButton(label: 'Commands', onTap: onPaletteOpen),
+          const Spacer(),
+          ...trailing,
+          const SizedBox(width: 6),
+        ],
       ),
     );
   }

@@ -70,43 +70,35 @@ class _ConsolePanelState extends State<ConsolePanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          height: editorToolbarHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              const Icon(Icons.terminal, size: 14),
-              const SizedBox(width: 6),
-              const Text('Console', style: TextStyle(fontSize: 12)),
-              const Spacer(),
-              if (runner.building)
-                TextButton(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: runner.stopBuild,
-                  child: const Text(
-                    'Stop build',
-                    style: TextStyle(fontSize: 11),
-                  ),
+        EditorToolbar(
+          children: [
+            const Icon(Icons.terminal, size: 14),
+            const SizedBox(width: 6),
+            const Text('Console', style: TextStyle(fontSize: 12)),
+            const Spacer(),
+            if (runner.building)
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
                 ),
-              if (widget.session case final session? when session.active)
-                TextButton(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: session.stop,
-                  child: const Text('Stop', style: TextStyle(fontSize: 11)),
-                ),
-              IconButton(
-                tooltip: 'Clear console',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.block, size: 14),
-                onPressed: runner.clearConsole,
+                onPressed: runner.stopBuild,
+                child: const Text('Stop build', style: TextStyle(fontSize: 11)),
               ),
-            ],
-          ),
+            if (widget.session case final session? when session.active)
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: session.stop,
+                child: const Text('Stop', style: TextStyle(fontSize: 11)),
+              ),
+            IconButton(
+              tooltip: 'Clear console',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.block, size: 14),
+              onPressed: runner.clearConsole,
+            ),
+          ],
         ),
         Expanded(
           child: Container(

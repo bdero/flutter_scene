@@ -153,34 +153,29 @@ class _VfxPanelState extends State<VfxPanel> {
   }
 
   Widget _buildToolbar(BuildContext context) {
-    return Container(
-      height: editorToolbarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const Icon(Icons.auto_awesome, size: 14),
-          const SizedBox(width: 6),
-          Text('Effects', style: editorBodyText),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SizedBox(
-              height: 20,
-              child: TextField(
-                style: editorBodyText,
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Search effects',
-                  hintStyle: editorDetailText,
-                  border: const OutlineInputBorder(),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 6),
-                ),
-                onChanged: (value) => setState(() => _query = value),
+    return EditorToolbar(
+      children: [
+        const Icon(Icons.auto_awesome, size: 14),
+        const SizedBox(width: 6),
+        Text('Effects', style: editorBodyText),
+        const SizedBox(width: 12),
+        Expanded(
+          child: SizedBox(
+            height: 20,
+            child: TextField(
+              style: editorBodyText,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search effects',
+                hintStyle: editorDetailText,
+                border: const OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 6),
               ),
+              onChanged: (value) => setState(() => _query = value),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
