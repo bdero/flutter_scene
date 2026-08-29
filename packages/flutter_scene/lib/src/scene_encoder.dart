@@ -1086,6 +1086,7 @@ base class SceneEncoder {
       packWatch!.stop();
       _instancePackMicros += packWatch.elapsedMicroseconds;
     }
+    transientInstancePackingScratch.releaseSingleBatch();
     final instanceSlot = geometry.vertexStreamCount;
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);

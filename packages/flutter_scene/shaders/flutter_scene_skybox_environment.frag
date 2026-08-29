@@ -92,9 +92,14 @@ void main() {
     // anisotropy climbs. The source still carries the horizon, where it is the
     // sharper of the two and where a viewer usually looks. Cube layouts only:
     // the band atlas is itself an equirect and would bring the poles with it.
+    // Guarded rather than folded into a mix, whose arguments both evaluate.
+    // The blend is zero below 58 degrees, which is most of the screen at eye
+    // level, and those tiles are uniformly zero so they skip the sample.
     float pole = smoothstep(kPoleBlendStart, 1.0, abs(direction.y));
-    sharp = mix(
-        sharp, SampleRadianceEnv(prefiltered_radiance, direction, 0.0), pole);
+    if (pole > 0.0) {
+      sharp = mix(
+          sharp, SampleRadianceEnv(prefiltered_radiance, direction, 0.0), pole);
+    }
 #endif
     // Hand off sharp -> cube over the low band, then let the cube's roughness
     // LOD (blurred is sampled at roughness = blurriness) carry the blur. A
