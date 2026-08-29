@@ -58,7 +58,7 @@ uniform sampler2D ssao_texture;
 #if !defined(FLUTTER_SCENE_SHADOW_CATCHER) || !defined(FLUTTER_SCENE_SKIP_SHADOWS)
 // The additional analytic lights (point, spot, and directional lights past the
 // first) as an RGBA32F data texture: one light per row, four texels wide. Read
-// by computed UV (not a dynamically-indexed uniform array, which GLSL ES 1.00
+// by computed UV (not a dynamically-indexed uniform array, which older GLSL
 // forbids in a fragment shader). frag_info.radiance_blend.z is the row count; a
 // white placeholder is bound and never read when it is zero. Column layout:
 //   0: position.xyz, type (0 directional, 1 point, 2 spot)

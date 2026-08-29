@@ -678,19 +678,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
 
   // Additional analytic lights (point, spot, and directional lights past the
   // first); point lights do not cast shadows. The scene may hold any number of
-  // lights; per-object culling gives this object a contiguous slice of the
-  // light-index buffer, and the loop shades only that slice. The loop bound is
-  // the compile-time per-object budget MAX_PUNCTUAL_LIGHTS; the object's count
-  // ends it early. Every fetch is a computed-UV texture read, so no uniform
+  // lights; per-object culling (or the froxel lookup below) gives this
+  // fragment a contiguous slice of the light-index buffer, and the loop shades
+  // only that slice. Every fetch is a computed-UV texture read, so no uniform
   // array is dynamically indexed.
   //
-  // TODO(lighting): this stays a single uniform-gated loop. A per-draw
-  // (per-object) punctual on/off permutation is rejected: it varies the pipeline
-  // within a frame and defeats material-sorted batching, worst on tile GPUs. A
-  // coarse (per-frame-global / capability-tier) permutation that compiles the
-  // loop out for sun/IBL-only scenes is a possible low-end win, but only if the
-  // never-entered loop is measured to cost occupancy on real hardware. Froxel
-  // clustering is the high-end tier (no per-draw light state).
   // punctual_dims.x is the parameters-texture row count; 0 means the scene has
   // no punctual lights this frame, so ignore any stale per-object count (and
   // never divide by the zero texture height in the fetch helpers).
@@ -728,10 +720,11 @@ vec4 EvaluateLighting(MaterialInputs material) {
       punctual_offset = int(frag_info.radiance_blend.w);
     }
   }
-  for (int i = 0; i < MAX_FROXEL_LIGHTS; i++) {
-    if (i >= punctual_count) {
-      break;
-    }
+  // A dynamically bounded loop: every shader dialect this compiles to is
+  // GLSL ES 3.00 or newer, where runtime loop bounds are legal, so no driver
+  // can unroll it and the budget is a CPU-side data choice
+  // (kMaxPunctualLights per object, kMaxFroxelLights per froxel).
+  for (int i = 0; i < punctual_count; i++) {
     // Resolve this slot to a light row through the per-object index buffer.
     int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
     vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type

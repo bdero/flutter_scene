@@ -277,19 +277,6 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 #undef _TRY_CASCADE
 #endif
 
-// The number of additional analytic lights (point, spot, and directional
-// lights past the first) the loop below can shade in one draw. Must match
-// kMaxPunctualLights in lib/src/render/punctual_lights.dart. The loop is
-// unrolled to this constant bound because GLSL ES 1.00 requires a compile-time
-// loop bound; the active count (frag_info.radiance_blend.z) ends it early.
-#define MAX_PUNCTUAL_LIGHTS 16
-
-// The froxel path's per-froxel budget; must match kMaxFroxelLights in
-// lib/src/render/punctual_lights.dart. Wider than the per-object budget
-// because a distant froxel can span a large world volume whose light union
-// is bigger than any one object's; the shared loop below runs to this bound
-// and the active count ends it early, so small counts cost nothing extra.
-#define MAX_FROXEL_LIGHTS 32
 
 // A shadow catcher's no-shadow variant declares no punctual textures (its
 // only punctual consumer is the spot loop the guard above removed), so the
@@ -298,7 +285,7 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 // Reads column `col` (0..7) of light `light_index`'s row from the
 // punctual_lights parameters texture (8 texels wide, punctual_dims.x rows
 // tall). Fetched by computed UV rather than a dynamically-indexed uniform
-// array, which a GLSL ES 1.00 fragment shader may not do.
+// array, which stays portable across every compiled dialect.
 vec4 FetchPunctualTexel(int light_index, int col) {
   // 8 texels per light row: 0.0625 = 0.5 / 8 centers the first column.
   vec2 uv = vec2((float(col) + 0.5) * 0.125,

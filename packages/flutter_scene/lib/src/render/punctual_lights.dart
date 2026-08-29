@@ -13,28 +13,19 @@ import 'package:flutter_scene/src/render/light_culling.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 
-/// The maximum number of punctual lights that can shade a single item. The
-/// scene may hold any number of lights; per-object culling gives each item only
-/// the lights that reach it, and the fragment loops that slice. Must match
-/// `MAX_PUNCTUAL_LIGHTS` in `shaders/material_lighting.glsl` (the fragment loop
-/// bound is a compile-time constant under GLSL ES 1.00), so this is a per-object
-/// budget, not a global cap.
-///
-/// TODO(lighting): for the massive-scale tier, froxel clustering replaces the
-/// per-object lists (no per-draw light state, CPU cost independent of draw
-/// count); constrained mobile keeps this direct loop. TODO(#188474): with
-/// Flutter GPU storage buffers/compute, a higher-tier variant can read a storage
-/// buffer with a real dynamic loop and assign lights in a compute pass, with the
-/// data-texture path here as the base-tier fallback.
+/// The per-object punctual light budget: how many lights the per-object
+/// culling path lists for a single item (the fallback for non-perspective
+/// views and light-channel-mask frames). The scene may hold any number of
+/// lights; the fragment loop is dynamically bounded (every compiled dialect
+/// is GLSL ES 3.00 or newer), so this is purely the CPU-side list cap that
+/// bounds the per-object index buffer.
 const int kMaxPunctualLights = 16;
 
-/// The froxel path's per-froxel light budget. Must match `MAX_FROXEL_LIGHTS`
-/// in `shaders/material_shadow_sampling.glsl` (the shared fragment loop runs
-/// to that bound, ended early by the active count). Wider than the per-object
-/// budget because a distant froxel can span a large world volume whose light
-/// union exceeds any single object's; a truncated union shows as tile-shaped
-/// lighting seams.
-const int kMaxFroxelLights = 32;
+/// The froxel path's per-froxel light budget, matching Filament's uint8
+/// ceiling. Wide enough that truncation is effectively out of the design
+/// (a froxel's list caps only past 255 overlapping lights, and the nearest
+/// are kept); the fragment loop shades exactly the froxel's count.
+const int kMaxFroxelLights = 255;
 
 // A punctual light is one row of the parameters texture, eight RGBA32F texels
 // wide:
