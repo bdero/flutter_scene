@@ -64,7 +64,7 @@ export 'src/mcp/viewport_capture.dart' show viewportScreenshot;
 export 'src/panels/console_panel.dart' show ConsolePanel;
 export 'src/project/app_session.dart' show AppSession, AppSessionState;
 export 'src/project/build_config_dialog.dart' show showBuildConfigDialog;
-export 'src/project/build_toolbar.dart' show BuildToolbar;
+export 'src/project/build_toolbar.dart' show BuildToolbar, BuildToolbarPart;
 export 'src/project/fproject.dart'
     show
         BuildConfiguration,

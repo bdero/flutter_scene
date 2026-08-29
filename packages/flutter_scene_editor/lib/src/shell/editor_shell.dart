@@ -41,6 +41,7 @@ import 'command_palette.dart';
 import 'dock_layout.dart';
 import 'docking_shell.dart';
 import 'editor_theme.dart';
+import 'editor_toolbar_row.dart';
 import 'editor_dialog.dart';
 
 /// The panels [EditorShell] registers with its [DockingShell], id to the
@@ -160,7 +161,9 @@ class EditorShell extends StatefulWidget {
     this.recentProjectPaths = const [],
     this.onOpenRecentProject,
     this.onEditBuildConfigs,
-    this.trailing = const [],
+    this.menuBarTrailing = const [],
+    this.toolbarLeading = const [],
+    this.toolbarCentre = const [],
     this.projectRunner,
     this.appSession,
     this.onDocumentSaved,
@@ -193,7 +196,16 @@ class EditorShell extends StatefulWidget {
 
   /// Host widgets appended to the menu bar's right side (toolchain and build
   /// controls).
-  final List<Widget> trailing;
+  /// Extra controls at the right of the menu bar.
+  final List<Widget> menuBarTrailing;
+
+  /// The toolbar's left group: what is being built, and for what.
+  final List<Widget> toolbarLeading;
+
+  /// The toolbar's centre: the transport. Drawn dead centre of the window
+  /// rather than at the end of the left group, which is where every editor
+  /// this one is measured against puts it.
+  final List<Widget> toolbarCentre;
 
   /// The host's task subprocess owner; non-null adds the Console panel.
   final ProjectRunner? projectRunner;
@@ -1006,13 +1018,21 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   recentProjectPaths: widget.recentProjectPaths,
                   onOpenRecentProject: widget.onOpenRecentProject,
                   onEditBuildConfigs: widget.onEditBuildConfigs,
-                  trailing: widget.trailing,
+                  trailing: widget.menuBarTrailing,
                   namedLayouts: widget.namedLayouts,
                   onApplyLayout: _applyDockLayout,
                   onSaveCurrentLayout: _saveCurrentLayoutAs,
                   onManageLayouts: _manageLayouts,
                   leadingInset: widget.menuBarLeadingInset,
                   onDragStart: widget.onMenuBarDragStart,
+                ),
+                EditorToolbarRow(
+                  leading: widget.toolbarLeading,
+                  centre: widget.toolbarCentre,
+                  namedLayouts: widget.namedLayouts,
+                  onApplyLayout: _applyDockLayout,
+                  onSaveCurrentLayout: _saveCurrentLayoutAs,
+                  onManageLayouts: _manageLayouts,
                 ),
                 Expanded(
                   child: Stack(

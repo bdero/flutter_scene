@@ -19,9 +19,26 @@ import 'fproject.dart';
 import 'project_runner.dart';
 import 'project_version_check.dart';
 
+/// Which half of the build toolbar to draw.
+///
+/// The selectors belong at the left of the toolbar row and the transport in
+/// the middle of it, so the two are placed by the shell rather than
+/// travelling together as one clump pushed to one side.
+enum BuildToolbarPart {
+  /// Toolchain, configuration and device.
+  selectors,
+
+  /// Play, and what a running session turns that into.
+  transport,
+
+  /// Both, in one row. What a host that lays the bar out itself asks for.
+  both,
+}
+
 class BuildToolbar extends StatelessWidget {
   const BuildToolbar({
     super.key,
+    this.part = BuildToolbarPart.both,
     required this.settings,
     required this.buildInfo,
     required this.inspector,
@@ -41,6 +58,9 @@ class BuildToolbar extends StatelessWidget {
     this.restartOnSave = false,
     this.onToggleRestartOnSave,
   });
+
+  /// Which half to draw.
+  final BuildToolbarPart part;
 
   final EditorSettings settings;
   final EditorBuildInfo buildInfo;
@@ -72,47 +92,55 @@ class BuildToolbar extends StatelessWidget {
     final versionCheck = project == null
         ? FlutterSceneVersionCheck.ok
         : checkFlutterSceneVersion(project!, buildInfo);
+    final selectors = <Widget>[
+      _InstallationDropdown(
+        settings: settings,
+        buildInfo: buildInfo,
+        inspector: inspector,
+        onSelect: onSelectInstallation,
+        onManage: onManageInstallations,
+      ),
+      const SizedBox(width: 4),
+      _ConfigurationDropdown(
+        project: project,
+        selected: selectedConfiguration,
+        versionCheck: versionCheck,
+        onSelect: onSelectConfiguration,
+        onEdit: onEditConfigs,
+        onRunTask: onRunTask,
+      ),
+      const SizedBox(width: 4),
+      _DeviceDropdown(
+        installation: settings.selectedInstallation,
+        catalog: deviceCatalog,
+        selected: selectedDevice,
+        onSelect: onSelectDevice,
+      ),
+    ];
+    final transport = _ActionButtons(
+      settings: settings,
+      buildInfo: buildInfo,
+      inspector: inspector,
+      runner: runner,
+      session: session,
+      project: project,
+      configuration: selectedConfiguration,
+      device: selectedDevice,
+      onPlay: onPlay,
+      restartOnSave: restartOnSave,
+      onToggleRestartOnSave: onToggleRestartOnSave,
+    );
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        _InstallationDropdown(
-          settings: settings,
-          buildInfo: buildInfo,
-          inspector: inspector,
-          onSelect: onSelectInstallation,
-          onManage: onManageInstallations,
-        ),
-        const SizedBox(width: 4),
-        _ConfigurationDropdown(
-          project: project,
-          selected: selectedConfiguration,
-          versionCheck: versionCheck,
-          onSelect: onSelectConfiguration,
-          onEdit: onEditConfigs,
-          onRunTask: onRunTask,
-        ),
-        const SizedBox(width: 4),
-        _DeviceDropdown(
-          installation: settings.selectedInstallation,
-          catalog: deviceCatalog,
-          selected: selectedDevice,
-          onSelect: onSelectDevice,
-        ),
-        const SizedBox(width: 2),
-        _ActionButtons(
-          settings: settings,
-          buildInfo: buildInfo,
-          inspector: inspector,
-          runner: runner,
-          session: session,
-          project: project,
-          configuration: selectedConfiguration,
-          device: selectedDevice,
-          onPlay: onPlay,
-          restartOnSave: restartOnSave,
-          onToggleRestartOnSave: onToggleRestartOnSave,
-        ),
-      ],
+      children: switch (part) {
+        BuildToolbarPart.selectors => selectors,
+        BuildToolbarPart.transport => [transport],
+        BuildToolbarPart.both => [
+          ...selectors,
+          const SizedBox(width: 2),
+          transport,
+        ],
+      },
     );
   }
 }
