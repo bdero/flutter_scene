@@ -21,6 +21,8 @@ export 'src/flow/flow_component.dart' show FlowComponent;
 export 'src/flow/scene_flow_host.dart' show SceneFlowHost;
 export 'src/flow/scene_flow_nodes.dart'
     show
+        animatorState,
+        animatorTrigger,
         callAction,
         destroyNode,
         getPosition,
@@ -29,6 +31,8 @@ export 'src/flow/scene_flow_nodes.dart'
         playAnimation,
         sceneFlowNodes,
         sceneFlowRegistry,
+        setAnimatorFlag,
+        setAnimatorNumber,
         setPosition,
         setScale,
         setVisible,
