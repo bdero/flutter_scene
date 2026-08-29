@@ -3,8 +3,7 @@
 /// Nodes are dragged around, pins are dragged between to wire them, and the
 /// palette adds more. The graph being edited belongs to the selected node's
 /// visual script component, and every edit is committed back through the
-/// command layer
-/// so it is undoable like any other.
+/// command layer so it is undoable like any other.
 ///
 /// The canvas is one [CustomPaint] over a transformed coordinate space rather
 /// than a widget per node. A graph is a hundred small boxes and several
@@ -30,10 +29,10 @@ class VisualScripterPanel extends StatefulWidget {
   final EditorController controller;
 
   @override
-  State<VisualScripterPanel> createState() => _FlowPanelState();
+  State<VisualScripterPanel> createState() => _VisualScripterPanelState();
 }
 
-class _FlowPanelState extends State<VisualScripterPanel> {
+class _VisualScripterPanelState extends State<VisualScripterPanel> {
   EditorController get _ctrl => widget.controller;
 
   final VisualScriptRegistry _registry = sceneVisualScriptRegistry();
@@ -108,7 +107,7 @@ class _FlowPanelState extends State<VisualScripterPanel> {
     setState(() {});
   }
 
-  /// The selected node's flow component spec, or null.
+  /// The selected node's visual script component spec, or null.
   ComponentSpecView? get _componentView {
     final id = _ctrl.selection.primary;
     if (id == null) return null;
@@ -471,7 +470,7 @@ class _FlowPanelState extends State<VisualScripterPanel> {
   }
 }
 
-/// A node's flow component, and which node it is on.
+/// A node's visual script component, and which node it is on.
 typedef ComponentSpecView = ({LocalId nodeId, ComponentSpec spec});
 
 class _NoGraph extends StatelessWidget {

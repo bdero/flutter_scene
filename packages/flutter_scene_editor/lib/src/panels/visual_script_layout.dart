@@ -1,4 +1,4 @@
-/// Where a flow graph's nodes, pins, and wires land on the canvas, and how
+/// Where a visual script's nodes, pins, and wires land on the canvas, and how
 /// they are drawn.
 ///
 /// Kept apart from the panel because it is arithmetic: given a graph and a

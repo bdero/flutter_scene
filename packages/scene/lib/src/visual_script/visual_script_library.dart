@@ -99,7 +99,9 @@ final VisualScriptNodeType onSignal = VisualScriptNodeType(
 );
 
 // ---------------------------------------------------------------------------
-// Control flow.
+// Flow Control: the group Unreal gives these, and the reason the node ids
+// below keep the `flow.` prefix. They are also written into saved graphs, so
+// respelling them would be a migration for no gain.
 // ---------------------------------------------------------------------------
 
 final VisualScriptNodeType branch = VisualScriptNodeType(
