@@ -218,10 +218,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // merge.
   static final List<(double, double, bool)> _tickLog = [];
 
-  // Movement integrates against wall time between ticks, not the ticker's
-  // deltas. Under load the ticker's frame-begin timestamps alias (a 4ms/80ms
-  // alternation while frames present evenly), which made held-key motion
-  // stagger; wall time between ticks tracks the even presentation cadence.
+  // The recorder's wall clock, for comparing SceneView's (now smoothed)
+  // delta against real time between ticks.
   final Stopwatch _moveClock = Stopwatch()..start();
 
   void _onTick(Duration elapsed, double deltaSeconds) {
@@ -229,12 +227,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _moveClock.reset();
     if (_tickLog.length >= 2000) _tickLog.removeRange(0, 1000);
     _tickLog.add((deltaSeconds, wallDt, _freeLookActive));
-    if (wallDt > 0) {
-      final inst = 1.0 / wallDt;
+    if (deltaSeconds > 0) {
+      final inst = 1.0 / deltaSeconds;
       final prev = _fps.value;
       _fps.value = prev == 0 ? inst : prev * 0.9 + inst * 0.1;
     }
-    if (_freeLookActive && _freeLook.move(wallDt)) {
+    if (_freeLookActive && _freeLook.move(deltaSeconds)) {
       _syncOrbitToFreeLook();
       _bumpView();
     }

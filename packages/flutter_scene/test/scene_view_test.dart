@@ -7,6 +7,7 @@
 // available under `flutter test`. These tests skip cleanly when it is absent
 // (matching the rest of the suite) and run on a GPU-enabled harness.
 
+import 'package:clock/clock.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,11 +22,13 @@ Scene? _tryScene() {
   }
 }
 
-Widget _sized(Widget child) =>
-    Center(child: SizedBox(width: 200, height: 200, child: child));
+Widget _sized(Widget child) => Directionality(
+  textDirection: TextDirection.ltr,
+  child: Center(child: SizedBox(width: 200, height: 200, child: child)),
+);
 
 void main() {
-  testWidgets('requires exactly one of camera or cameraBuilder', (
+  testWidgets('allows at most one of camera, cameraBuilder, or viewsBuilder', (
     tester,
   ) async {
     final scene = _tryScene();
@@ -33,7 +36,8 @@ void main() {
       markTestSkipped('No Impeller GPU context');
       return;
     }
-    expect(() => SceneView(scene), throwsAssertionError);
+    // No camera argument falls back to the scene-owned camera.
+    expect(() => SceneView(scene), returnsNormally);
     expect(
       () => SceneView(
         scene,
@@ -113,6 +117,44 @@ void main() {
 
     expect(deltas, isNotEmpty);
     expect(deltas.any((d) => d > 0), isTrue);
+  });
+
+  testWidgets('onTick deltas track the wall clock, not frame timestamps', (
+    tester,
+  ) async {
+    final scene = _tryScene();
+    if (scene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    // A loaded GPU produces frame-begin timestamps that alternate between
+    // tiny and double-length deltas while frames present at an even wall
+    // cadence. Simulate that split, the injected wall clock advances a
+    // steady 42ms per frame while the ticker is pumped 4ms/80ms.
+    var now = DateTime(2026);
+    final deltas = <double>[];
+    await tester.pumpWidget(
+      _sized(
+        SceneView(
+          scene,
+          camera: PerspectiveCamera(),
+          clock: Clock(() => now),
+          onTick: (elapsed, deltaSeconds) => deltas.add(deltaSeconds),
+        ),
+      ),
+    );
+    // Prime one tick so a previous wall instant exists (the very first
+    // delta falls back to the ticker's single-frame elapsed).
+    await tester.pump(const Duration(milliseconds: 16));
+    deltas.clear();
+    for (var i = 0; i < 8; i++) {
+      now = now.add(const Duration(milliseconds: 42));
+      await tester.pump(Duration(milliseconds: i.isEven ? 4 : 80));
+    }
+    expect(deltas, hasLength(8));
+    for (final delta in deltas) {
+      expect(delta, closeTo(0.042, 0.001));
+    }
   });
 
   testWidgets('autoTick: false does not tick', (tester) async {
