@@ -22,23 +22,74 @@ import 'package:flutter_scene/src/node.dart';
 /// repeating the same failure sixty times a second.
 /// {@category Visual scripting}
 class VisualScriptComponent extends Component {
+  /// Runs [blueprint], or the single [graph] that is a blueprint with one
+  /// event graph in it.
+  ///
+  /// Both spellings exist because most scripts are one graph and saying so
+  /// should stay one line, while a script that has grown a construction
+  /// script and three functions is a blueprint and wants to be handed one.
   VisualScriptComponent({
+    Blueprint? blueprint,
     VisualScriptGraph? graph,
     VisualScriptRegistry? registry,
     this.onAction,
     this.onLog,
-  }) : _graph = graph ?? VisualScriptGraph(),
+  }) : assert(
+         blueprint == null || graph == null,
+         'Pass a blueprint or a graph, not both: the graph would be the '
+         'blueprint\'s or a second one, and there is no reading of that.',
+       ),
+       _blueprint = blueprint ?? Blueprint.of(graph ?? VisualScriptGraph()),
        registry = registry ?? sceneVisualScriptRegistry();
 
-  /// The script this runs. Replacing it restarts from a fresh context, so an
+  /// The blueprint this runs. Replacing it restarts from a fresh run, so an
   /// edit in the editor takes effect without a scene reload.
-  VisualScriptGraph get graph => _graph;
-  set graph(VisualScriptGraph value) {
-    _graph = value;
+  Blueprint get blueprint => _blueprint;
+  set blueprint(Blueprint value) {
+    _blueprint = value;
     _reset();
   }
 
-  VisualScriptGraph _graph;
+  Blueprint _blueprint;
+
+  /// The first event graph, which is the whole script for anything that has
+  /// not grown past one.
+  ///
+  /// Setting it replaces that graph and leaves the blueprint's other graphs
+  /// alone, so wiring an event does not delete a construction script.
+  VisualScriptGraph get graph {
+    for (final candidate in _blueprint.graphs) {
+      if (candidate.kind == VisualScriptGraphKind.eventGraph) return candidate;
+    }
+    final added = _blueprint.addGraph(
+      VisualScriptGraph(),
+      kind: VisualScriptGraphKind.eventGraph,
+      name: defaultEventGraphName,
+    );
+    return added;
+  }
+
+  set graph(VisualScriptGraph value) {
+    final graphs = _blueprint.graphs;
+    final index = graphs.indexWhere(
+      (candidate) => candidate.kind == VisualScriptGraphKind.eventGraph,
+    );
+    value
+      ..kind = VisualScriptGraphKind.eventGraph
+      ..name = value.name.isEmpty ? defaultEventGraphName : value.name;
+    if (index < 0) {
+      graphs.add(value);
+    } else {
+      graphs[index] = value;
+    }
+    // The variables a bare graph carries are the blueprint's once it is in
+    // one, or a script assembled graph-first would run with none.
+    for (final variable in value.variables) {
+      if (_blueprint.variables.any((v) => v.name == variable.name)) continue;
+      _blueprint.variables.add(variable);
+    }
+    _reset();
+  }
 
   /// The node types the graph may use.
   final VisualScriptRegistry registry;
@@ -78,21 +129,18 @@ class VisualScriptComponent extends Component {
   }
 
   SceneVisualScriptHost? _host;
-  VisualScriptContext? _context;
-  late final VisualScriptInterpreter _interpreter = VisualScriptInterpreter(
-    registry,
-  );
+  BlueprintRunner? _runner;
   bool _started = false;
 
-  /// The error the graph stopped on, or null while it is healthy.
-  String? get error => _context?.error;
+  /// The error the blueprint stopped on, or null while it is healthy.
+  String? get error => _runner?.error;
 
-  /// The graph's live variables, for a caller inspecting or seeding one.
+  /// The blueprint's live variables, for a caller inspecting or seeding one.
   ///
   /// Null until the component is attached, since the variables belong to a
   /// run and a run needs somewhere to happen.
   Map<String, Object?>? get variables =>
-      _ensureContext() ? _context!.variables : null;
+      _ensureContext() ? _runner!.variables : null;
 
   /// Raises a named signal, which every matching On Signal event picks up on
   /// the next tick.
@@ -114,7 +162,12 @@ class VisualScriptComponent extends Component {
     _trace?.clear();
     final host = _host;
     if (host == null) return;
-    _context = VisualScriptContext(graph: _graph, host: host, trace: _trace);
+    _runner = BlueprintRunner(
+      blueprint: _blueprint,
+      host: host,
+      registry: registry,
+      trace: _trace,
+    );
   }
 
   /// Builds the host and the run state on first use.
@@ -124,11 +177,16 @@ class VisualScriptComponent extends Component {
   /// should run on a node driven by hand in a test exactly as it does on one
   /// in a scene.
   bool _ensureContext() {
-    if (_context != null) return true;
+    if (_runner != null) return true;
     if (!isAttached) return false;
     final host = SceneVisualScriptHost(node, onAction: onAction, onLog: onLog);
     _host = host;
-    _context = VisualScriptContext(graph: _graph, host: host, trace: _trace);
+    _runner = BlueprintRunner(
+      blueprint: _blueprint,
+      host: host,
+      registry: registry,
+      trace: _trace,
+    );
     _started = false;
     return true;
   }
@@ -136,7 +194,7 @@ class VisualScriptComponent extends Component {
   @override
   void onUnmount() {
     _host = null;
-    _context = null;
+    _runner = null;
     _started = false;
   }
 
@@ -144,41 +202,51 @@ class VisualScriptComponent extends Component {
   void update(double deltaSeconds) {
     if (!running) return;
     if (!_ensureContext()) return;
-    final context = _context;
+    final runner = _runner;
     final host = _host;
-    if (context == null || host == null) return;
-    if (context.error != null) return;
+    if (runner == null || host == null) return;
+    if (runner.error != null) return;
 
     host
       ..deltaSeconds = deltaSeconds
       ..elapsedSeconds = host.elapsedSeconds + deltaSeconds;
     // The budget is per tick, not per lifetime: a graph that legitimately
-    // does a lot of work every frame should not run out after a minute.
-    context.steps = 0;
-    // The trace is per tick too, and for the same reason inverted: the
+    // does a lot of work every frame should not run out after a minute. The
+    // trace is per tick too, and for the same reason inverted: the
     // interesting run is the current one, and keeping every frame's would
     // grow without bound and bury the frame anyone is looking at.
-    _trace?.clear();
+    runner.beginTick();
 
     if (!_started) {
       _started = true;
-      _interpreter.fire(context, onStart.id);
+      // Construction first, and only ever once: it says what the instance is,
+      // and the events that follow are about what it does.
+      runner.build();
+      runner.fire(onStart.id);
     }
-    _interpreter.fire(context, onTick.id);
+    runner.fire(onTick.id);
 
     if (host.pendingSignals.isNotEmpty) {
       final raised = Set.of(host.pendingSignals);
       host.pendingSignals.clear();
-      for (final node in context.graph.nodes) {
-        if (node.type != onSignal.id) continue;
-        final name = '${node.literals['name'] ?? 'signal'}';
-        if (raised.contains(name)) _interpreter.fire(context, onSignal.id);
+      for (final graph in runner.blueprint.graphsOfKind(
+        VisualScriptGraphKind.eventGraph,
+      )) {
+        for (final node in graph.nodes) {
+          if (node.type != onSignal.id) continue;
+          final name = '${node.literals['name'] ?? 'signal'}';
+          if (raised.contains(name)) {
+            runner.fire(onSignal.id);
+            break;
+          }
+        }
       }
     }
 
-    final failure = context.error;
+    final failure = runner.error;
     if (failure != null) {
-      final message = 'flow: the graph on "${node.name}" stopped: $failure';
+      final message =
+          'visual script: the blueprint on "${node.name}" stopped: $failure';
       final sink = onLog;
       if (sink != null) {
         sink(message);
@@ -192,7 +260,7 @@ class VisualScriptComponent extends Component {
   Component? cloneFor(Node cloneOwner) => VisualScriptComponent(
     // A clone gets its own copy: two objects running one script must not
     // share a Delay's countdown or a variable.
-    graph: _graph.copy(),
+    blueprint: _blueprint.copy(),
     registry: registry,
     onAction: onAction,
     onLog: onLog,

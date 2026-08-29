@@ -1627,18 +1627,16 @@ class VisualScriptCodec
       'graph',
       defaultValue: '',
       doc:
-          'The script, as the JSON writeVisualScript produces. Edited on the '
-          'Visual Scripter canvas rather than here.',
-      get: (c) => c.graph.nodes.isEmpty && c.graph.variables.isEmpty
-          ? ''
-          : writeVisualScript(c.graph),
+          'The blueprint, as the JSON writeBlueprint produces. Edited on the '
+          'Visual Scripter canvas rather than here. A document written before '
+          'blueprints holds a single graph here, which reads as a blueprint '
+          'with that one event graph in it.',
+      get: (c) =>
+          _blueprintIsEmpty(c.blueprint) ? '' : writeBlueprint(c.blueprint),
       set: (c, v) {
         if (v.isEmpty) return;
-        try {
-          c.graph = readVisualScript(v);
-        } on FormatException catch (error) {
-          debugPrint('fscene: a visual script failed to parse: $error');
-        }
+        final blueprint = _readBlueprintOrNull(v);
+        if (blueprint != null) c.blueprint = blueprint;
       },
     ),
     ComponentField.boolean(
@@ -1655,15 +1653,34 @@ class VisualScriptCodec
   @override
   VisualScriptComponent create(PropertyReader props) {
     final source = props.string('graph');
-    VisualScriptGraph? graph;
-    if (source.isNotEmpty) {
-      try {
-        graph = readVisualScript(source);
-      } on FormatException catch (error) {
-        debugPrint('fscene: a flow graph failed to parse: $error');
-      }
-    }
-    return VisualScriptComponent(graph: graph)
+    final blueprint = source.isEmpty ? null : _readBlueprintOrNull(source);
+    return VisualScriptComponent(blueprint: blueprint)
       ..running = props.boolean('running');
+  }
+}
+
+/// Whether [blueprint] has nothing in it worth writing.
+///
+/// An empty blueprint writes nothing at all, so a component somebody added
+/// and has not drawn in yet does not put a wall of JSON in the document.
+bool _blueprintIsEmpty(Blueprint blueprint) {
+  if (blueprint.variables.isNotEmpty) return false;
+  if (blueprint.graphs.length > 1) return false;
+  for (final graph in blueprint.graphs) {
+    if (graph.nodes.isNotEmpty || graph.variables.isNotEmpty) return false;
+  }
+  return true;
+}
+
+/// Reads a blueprint from [source], or null when it cannot be read.
+///
+/// Reports rather than throws: a document with one unreadable script in it
+/// should open with that script empty, not fail to open.
+Blueprint? _readBlueprintOrNull(String source) {
+  try {
+    return readBlueprint(source);
+  } on FormatException catch (error) {
+    debugPrint('fscene: a visual script failed to parse: $error');
+    return null;
   }
 }

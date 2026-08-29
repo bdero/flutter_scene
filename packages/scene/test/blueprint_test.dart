@@ -311,4 +311,76 @@ void main() {
       );
     });
   });
+
+  group('renaming a variable', () {
+    Blueprint withVariable() {
+      final blueprint = Blueprint(
+        variables: [
+          VisualScriptVariable(
+            name: 'count',
+            type: VisualScriptType.number,
+            initial: 7.0,
+          ),
+        ],
+      );
+      blueprint
+        ..addGraph(counting(), kind: VisualScriptGraphKind.eventGraph)
+        ..addGraph(counting(), kind: VisualScriptGraphKind.function, name: 'F');
+      return blueprint;
+    }
+
+    test('every Get and Set that named it follows', () {
+      // A node names a variable by string, so renaming only the declaration
+      // leaves the graph reading one that is not there -- which reads as null
+      // rather than as an error, so it runs on and does the wrong thing.
+      final blueprint = withVariable();
+      expect(blueprint.renameVariable('count', 'total'), isTrue);
+      for (final graph in blueprint.graphs) {
+        for (final node in graph.nodes) {
+          if (node.type != Blueprint.variableGetType &&
+              node.type != Blueprint.variableSetType) {
+            continue;
+          }
+          expect(node.literals['name'], 'total');
+        }
+      }
+    });
+
+    test('the declaration keeps its type and its initial value', () {
+      final blueprint = withVariable();
+      blueprint.renameVariable('count', 'total');
+      expect(blueprint.variables.single.name, 'total');
+      expect(blueprint.variables.single.type, VisualScriptType.number);
+      expect(blueprint.variables.single.initial, 7.0);
+    });
+
+    test('a name already taken is refused, and changes nothing', () {
+      final blueprint = withVariable()
+        ..variables.add(
+          VisualScriptVariable(name: 'other', type: VisualScriptType.number),
+        );
+      expect(blueprint.renameVariable('count', 'other'), isFalse);
+      expect(blueprint.variables.first.name, 'count');
+    });
+
+    test('renaming what is not there does nothing', () {
+      final blueprint = withVariable();
+      expect(blueprint.renameVariable('ghost', 'total'), isFalse);
+      expect(blueprint.variables.single.name, 'count');
+    });
+
+    test('an empty name is refused', () {
+      final blueprint = withVariable();
+      expect(blueprint.renameVariable('count', ''), isFalse);
+    });
+
+    test('a node reading a different variable is left alone', () {
+      final blueprint = withVariable();
+      final graph = blueprint.graphs.first;
+      final other = graph.add(Blueprint.variableGetType)
+        ..literals['name'] = 'elsewhere';
+      blueprint.renameVariable('count', 'total');
+      expect(other.literals['name'], 'elsewhere');
+    });
+  });
 }

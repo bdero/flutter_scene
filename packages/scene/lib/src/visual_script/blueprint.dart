@@ -120,6 +120,43 @@ class Blueprint {
     }
   }
 
+  /// Renames variable [from] to [to], across every graph that reads it.
+  ///
+  /// Returns false when there is no such variable or the new name is taken.
+  ///
+  /// The Get and Set nodes name a variable by string, so renaming only the
+  /// declaration leaves every node reading one that no longer exists — and an
+  /// unset variable reads as null rather than as an error, so the script goes
+  /// on running and quietly does the wrong thing.
+  bool renameVariable(String from, String to) {
+    if (from == to) return false;
+    if (to.isEmpty) return false;
+    if (variables.any((variable) => variable.name == to)) return false;
+    final index = variables.indexWhere((variable) => variable.name == from);
+    if (index < 0) return false;
+    final existing = variables[index];
+    variables[index] = VisualScriptVariable(
+      name: to,
+      type: existing.type,
+      initial: existing.initial,
+    );
+    for (final graph in graphs) {
+      for (final node in graph.nodes) {
+        if (node.type != variableGetType && node.type != variableSetType) {
+          continue;
+        }
+        if (node.literals['name'] == from) node.literals['name'] = to;
+      }
+    }
+    return true;
+  }
+
+  /// The node type that reads a variable.
+  static const String variableGetType = 'var.get';
+
+  /// The node type that writes one.
+  static const String variableSetType = 'var.set';
+
   /// A deep copy.
   Blueprint copy() => Blueprint(
     name: name,
