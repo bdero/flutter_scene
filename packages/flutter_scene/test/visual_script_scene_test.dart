@@ -588,4 +588,180 @@ void main() {
       expect(component.trace, isNull);
     });
   });
+
+  group('a component running a blueprint', () {
+    test('construction runs once, before the first tick', () {
+      // The two halves have different lives, and the component is what gives
+      // them one: build, then start, then tick.
+      final blueprint = Blueprint(
+        variables: [
+          VisualScriptVariable(
+            name: 'built',
+            type: VisualScriptType.number,
+            initial: 0.0,
+          ),
+        ],
+      );
+      blueprint.addGraph(
+        _bump('built'),
+        kind: VisualScriptGraphKind.constructionScript,
+      );
+      final node = Node(name: 'crate');
+      final component = VisualScriptComponent(blueprint: blueprint);
+      node.addComponent(component);
+
+      component.update(1 / 60);
+      expect(component.variables!['built'], 1.0);
+      component.update(1 / 60);
+      component.update(1 / 60);
+      expect(component.variables!['built'], 1.0, reason: 'it rebuilt');
+    });
+
+    test('an event graph and a construction script share a variable', () {
+      final blueprint = Blueprint(
+        variables: [
+          VisualScriptVariable(
+            name: 'n',
+            type: VisualScriptType.number,
+            initial: 0.0,
+          ),
+        ],
+      );
+      blueprint
+        ..addGraph(_bump('n'), kind: VisualScriptGraphKind.constructionScript)
+        ..addGraph(
+          _bump('n', event: 'event.tick'),
+          kind: VisualScriptGraphKind.eventGraph,
+        );
+      final node = Node(name: 'crate');
+      final component = VisualScriptComponent(blueprint: blueprint);
+      node.addComponent(component);
+
+      component.update(1 / 60);
+      // Construction bumped it, then the tick bumped it again.
+      expect(component.variables!['n'], 2.0);
+    });
+
+    test('setting graph replaces the event graph and keeps the rest', () {
+      // Wiring an event must not delete a construction script.
+      final blueprint = Blueprint()
+        ..addGraph(
+          VisualScriptGraph(),
+          kind: VisualScriptGraphKind.constructionScript,
+          name: 'Build',
+        );
+      final component = VisualScriptComponent(blueprint: blueprint);
+      component.graph = _bump('n');
+      expect(blueprint.graph('Build'), isNotNull);
+      expect(
+        blueprint.graphsOfKind(VisualScriptGraphKind.eventGraph),
+        hasLength(1),
+      );
+    });
+
+    test('a clone gets its own blueprint, not a shared one', () {
+      final component = VisualScriptComponent(graph: _bump('n'));
+      final clone =
+          component.cloneFor(Node(name: 'other'))! as VisualScriptComponent;
+      expect(identical(clone.blueprint, component.blueprint), isFalse);
+      clone.blueprint.graphs.single.nodes.clear();
+      expect(component.blueprint.graphs.single.nodes, isNotEmpty);
+    });
+
+    test('a blueprint round-trips through a component spec', () {
+      final blueprint = Blueprint(name: 'Crate')
+        ..addGraph(
+          _bump('n'),
+          kind: VisualScriptGraphKind.constructionScript,
+          name: 'Build',
+        )
+        ..addGraph(
+          VisualScriptGraph(),
+          kind: VisualScriptGraphKind.function,
+          name: 'Open',
+        );
+
+      final registry = defaultComponentRegistry();
+      final codec = registry.codecFor(visualScriptComponentType)!;
+      final document = SceneDocument();
+      final spec = codec.serialize(
+        VisualScriptComponent(blueprint: blueprint),
+        SerializeContext(document),
+      )!;
+      final restored =
+          codec.realize(spec, RealizeContext(document))!
+              as VisualScriptComponent;
+
+      expect(restored.blueprint.name, 'Crate');
+      expect(
+        restored.blueprint.graph('Build')!.kind,
+        VisualScriptGraphKind.constructionScript,
+      );
+      expect(restored.blueprint.routine('Open'), isNotNull);
+    });
+
+    test('a document holding one graph still opens', () {
+      // Everything saved before blueprints existed.
+      final registry = defaultComponentRegistry();
+      final codec = registry.codecFor(visualScriptComponentType)!;
+      final legacy = ComponentSpec(
+        visualScriptComponentType,
+        properties: {'graph': StringValue(writeVisualScript(_bump('n')))},
+      );
+      final restored =
+          codec.realize(legacy, RealizeContext(SceneDocument()))!
+              as VisualScriptComponent;
+      expect(restored.blueprint.graphs, hasLength(1));
+      expect(
+        restored.blueprint.graphs.single.kind,
+        VisualScriptGraphKind.eventGraph,
+      );
+      expect(restored.graph.nodes, isNotEmpty);
+    });
+
+    test('an empty blueprint writes nothing', () {
+      final registry = defaultComponentRegistry();
+      final codec = registry.codecFor(visualScriptComponentType)!;
+      final spec = codec.serialize(
+        VisualScriptComponent(),
+        SerializeContext(SceneDocument()),
+      )!;
+      expect(spec.properties, isNot(contains('graph')));
+    });
+  });
+}
+
+/// A graph that adds one to [variable] when [event] fires.
+VisualScriptGraph _bump(String variable, {String event = 'event.start'}) {
+  final graph = VisualScriptGraph();
+  final start = graph.add(event);
+  final read = graph.add('var.get')..literals['name'] = variable;
+  final add = graph.add('math.add')..literals['b'] = 1.0;
+  final write = graph.add('var.set')..literals['name'] = variable;
+  graph
+    ..connect(
+      VisualScriptLink(
+        fromNode: start.id,
+        fromPin: 'then',
+        toNode: write.id,
+        toPin: 'exec',
+      ),
+    )
+    ..connect(
+      VisualScriptLink(
+        fromNode: read.id,
+        fromPin: 'value',
+        toNode: add.id,
+        toPin: 'a',
+      ),
+    )
+    ..connect(
+      VisualScriptLink(
+        fromNode: add.id,
+        fromPin: 'value',
+        toNode: write.id,
+        toPin: 'value',
+      ),
+    );
+  return graph;
 }

@@ -11,6 +11,8 @@
 /// thing the canvas does most.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +22,7 @@ import 'package:vector_math/vector_math.dart' show Vector2;
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
+import 'my_blueprint_panel.dart';
 import 'visual_script_layout.dart';
 
 /// The Visual Scripter panel.
@@ -37,11 +40,29 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
 
   final VisualScriptRegistry _registry = sceneVisualScriptRegistry();
 
-  /// The graph being edited. Held here rather than read from the document on
-  /// every frame, because a drag mutates it many times per second and only
+  /// The blueprint being edited. Held here rather than read from the document
+  /// on every frame, because a drag mutates it many times per second and only
   /// the release is worth an undo step.
-  VisualScriptGraph? _graph;
+  Blueprint? _blueprint;
   LocalId? _graphOwner;
+
+  /// Which of the blueprint's graphs the canvas is showing.
+  ///
+  /// By name rather than by reference, so a reload from the document lands on
+  /// the graph that was open rather than on one that no longer exists.
+  String? _openGraphName;
+
+  /// The graph on the canvas, which every gesture below edits.
+  VisualScriptGraph? get _graph {
+    final blueprint = _blueprint;
+    if (blueprint == null) return null;
+    final open = _openGraphName;
+    if (open != null) {
+      final named = blueprint.graph(open);
+      if (named != null) return named;
+    }
+    return blueprint.graphs.isEmpty ? null : blueprint.graphs.first;
+  }
 
   /// The history position the loaded graph came from.
   ///
@@ -94,13 +115,18 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
     final id = _ctrl.selection.primary;
     final cursor = _ctrl.history.cursor;
     final movedElsewhere =
-        !_committing && _graph != null && cursor != _graphCursor;
+        !_committing && _blueprint != null && cursor != _graphCursor;
     if (id != _graphOwner || movedElsewhere) {
       setState(() {
-        _graph = null;
+        _blueprint = null;
+        // The open graph is remembered across a reload of the same node, and
+        // dropped when the selection moves to a different one.
+        if (id != _graphOwner) {
+          _openGraphName = null;
+          _selected = null;
+        }
         _graphOwner = id;
         _graphCursor = cursor;
-        if (id != _graphOwner) _selected = null;
       });
       return;
     }
@@ -140,40 +166,48 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
     _liveComponent?.tracing = _tracing;
   }
 
-  /// Loads the graph from the document, once per selection.
-  VisualScriptGraph? _ensureGraph() {
-    final existing = _graph;
+  /// Loads the blueprint from the document, once per selection.
+  Blueprint? _ensureBlueprint() {
+    final existing = _blueprint;
     if (existing != null) return existing;
     final view = _componentView;
     if (view == null) return null;
     final source = view.spec.properties['graph'];
     final loaded = source is StringValue && source.value.isNotEmpty
         ? _tryRead(source.value)
-        : VisualScriptGraph();
-    _graph = loaded;
+        : Blueprint.of(VisualScriptGraph());
+    // A blueprint with nothing in it still needs somewhere to draw.
+    if (loaded.graphs.isEmpty) {
+      loaded.addGraph(
+        VisualScriptGraph(),
+        kind: VisualScriptGraphKind.eventGraph,
+        name: defaultEventGraphName,
+      );
+    }
+    _blueprint = loaded;
     _graphCursor = _ctrl.history.cursor;
     return loaded;
   }
 
-  VisualScriptGraph _tryRead(String source) {
+  Blueprint _tryRead(String source) {
     try {
-      return readVisualScript(source);
+      return readBlueprint(source);
     } on FormatException {
-      return VisualScriptGraph();
+      return Blueprint.of(VisualScriptGraph());
     }
   }
 
   /// Writes the graph back to the document as one undoable edit.
   Future<void> _commit() async {
-    final graph = _graph;
+    final blueprint = _blueprint;
     final view = _componentView;
-    if (graph == null || view == null) return;
+    if (blueprint == null || view == null) return;
     _committing = true;
     try {
       await _ctrl.run('setComponentProperties', {
         'nodeId': view.nodeId.toToken(),
         'componentType': visualScriptComponentType,
-        'properties': {'graph': StringValue(writeVisualScript(graph))},
+        'properties': {'graph': StringValue(writeBlueprint(blueprint))},
       });
     } finally {
       _committing = false;
@@ -188,7 +222,7 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
       'nodeId': id.toToken(),
       'componentType': visualScriptComponentType,
     });
-    setState(() => _graph = null);
+    setState(() => _blueprint = null);
   }
 
   // --- canvas geometry -----------------------------------------------------
@@ -342,28 +376,142 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
     await _commit();
   }
 
+  Future<void> _addGraph(VisualScriptGraphKind kind) async {
+    final blueprint = _blueprint;
+    if (blueprint == null) return;
+    final added = blueprint.addGraph(VisualScriptGraph(), kind: kind);
+    setState(() {
+      _openGraphName = added.name;
+      _selected = null;
+    });
+    await _commit();
+  }
+
+  Future<void> _renameGraph(VisualScriptGraph graph, String name) async {
+    final blueprint = _blueprint;
+    if (blueprint == null) return;
+    // Through uniqueGraphName, because a function is called by its name and
+    // two graphs sharing one is a call with two possible answers.
+    final wanted = blueprint.graph(name) == null
+        ? name
+        : blueprint.uniqueGraphName(name);
+    final wasOpen = _openGraphName == graph.name;
+    graph.name = wanted;
+    setState(() {
+      if (wasOpen) _openGraphName = wanted;
+    });
+    await _commit();
+  }
+
+  Future<void> _deleteGraph(VisualScriptGraph graph) async {
+    final blueprint = _blueprint;
+    if (blueprint == null) return;
+    blueprint.graphs.remove(graph);
+    setState(() {
+      if (_openGraphName == graph.name) {
+        _openGraphName = blueprint.graphs.isEmpty
+            ? null
+            : blueprint.graphs.first.name;
+        _selected = null;
+      }
+    });
+    await _commit();
+  }
+
+  Future<void> _addVariable() async {
+    final blueprint = _blueprint;
+    if (blueprint == null) return;
+    final taken = {for (final v in blueprint.variables) v.name};
+    var name = 'newVar';
+    for (var i = 2; taken.contains(name); i++) {
+      name = 'newVar$i';
+    }
+    blueprint.variables.add(
+      VisualScriptVariable(
+        name: name,
+        type: VisualScriptType.number,
+        initial: 0.0,
+      ),
+    );
+    setState(() {});
+    await _commit();
+  }
+
+  Future<void> _renameVariable(
+    VisualScriptVariable variable,
+    String name,
+  ) async {
+    final blueprint = _blueprint;
+    if (blueprint == null) return;
+    // Through the blueprint, which carries the rename into every Get and Set
+    // that names it: renaming only the declaration leaves the graph reading a
+    // variable that is not there, which reads as null rather than as an error.
+    if (!blueprint.renameVariable(variable.name, name)) return;
+    setState(() {});
+    await _commit();
+  }
+
+  Future<void> _deleteVariable(VisualScriptVariable variable) async {
+    final blueprint = _blueprint;
+    if (blueprint == null) return;
+    blueprint.variables.remove(variable);
+    setState(() {});
+    await _commit();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final graph = _ensureGraph();
+    final blueprint = _ensureBlueprint();
+    final graph = _graph;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildToolbar(context, graph),
         Expanded(
-          child: graph == null
+          child: blueprint == null || graph == null
               ? _NoGraph(
                   hasSelection: _ctrl.selection.primary != null,
                   onAdd: _addFlowComponent,
                 )
-              : Stack(
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildCanvas(graph),
-                    if (_paletteOpen)
-                      _Palette(
-                        registry: _registry,
-                        onPick: (type) => _addNode(type, graph),
-                        onDismiss: () => setState(() => _paletteOpen = false),
+                    SizedBox(
+                      width: 200,
+                      child: MyBlueprintPanel(
+                        blueprint: blueprint,
+                        openGraph: graph,
+                        onOpenGraph: (picked) => setState(() {
+                          _openGraphName = picked.name;
+                          _selected = null;
+                        }),
+                        onAddGraph: (kind) => unawaited(_addGraph(kind)),
+                        onRenameGraph: (target, name) =>
+                            unawaited(_renameGraph(target, name)),
+                        onDeleteGraph: (target) =>
+                            unawaited(_deleteGraph(target)),
+                        onAddVariable: () => unawaited(_addVariable()),
+                        onRenameVariable: (variable, name) =>
+                            unawaited(_renameVariable(variable, name)),
+                        onDeleteVariable: (variable) =>
+                            unawaited(_deleteVariable(variable)),
                       ),
+                    ),
+                    Container(width: 1, color: editorLineColor),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          _buildCanvas(graph),
+                          if (_paletteOpen)
+                            _Palette(
+                              registry: _registry,
+                              onPick: (type) => _addNode(type, graph),
+                              onDismiss: () =>
+                                  setState(() => _paletteOpen = false),
+                            ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
         ),
@@ -379,6 +527,14 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
         Text('Visual Scripter', style: editorBodyText),
         const SizedBox(width: 12),
         if (graph != null) ...[
+          Icon(
+            MyBlueprintPanel.kindGlyph(graph.kind),
+            size: 12,
+            color: editorMutedTextColor,
+          ),
+          const SizedBox(width: 4),
+          Text(graph.name, style: editorBodyText),
+          const SizedBox(width: 8),
           Text(
             '${graph.nodes.length} nodes, ${graph.links.length} wires',
             style: editorDetailText,
