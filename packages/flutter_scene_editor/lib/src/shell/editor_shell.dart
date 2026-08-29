@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_scene/scene.dart' show Scene;
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
     show
         componentClassName,
@@ -14,6 +13,8 @@ import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
         nativeComponentBinding,
         nativeComponentHookCall,
         nativeComponentSource;
+import 'package:flutter_scene/scene.dart'
+    show Scene, VfxCategory, VfxPreset, vfxPresetsIn;
 import 'package:forui/forui.dart';
 
 import '../controller/editor_controller.dart';
@@ -26,6 +27,7 @@ import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
 import '../panels/render_graph_panel.dart';
 import '../inspector/scene_settings_dialog.dart';
+import '../inspector/vfx_editing.dart';
 import '../render_graph/render_graph_inspector.dart';
 import '../project/app_session.dart';
 import '../project/project_runner.dart';
@@ -34,7 +36,6 @@ import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
 import '../panels/flow_panel.dart';
 import '../launcher/scene_templates.dart';
-import '../panels/vfx_panel.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
@@ -44,10 +45,13 @@ import 'editor_dialog.dart';
 
 /// The panels [EditorShell] registers with its [DockingShell], id to the
 /// title shown on tabs and in the View menu.
-const Map<String, String> _panelTitles = {
+///
+/// Public so a test can check the default layout against it: a layout naming
+/// a panel that no longer exists opens onto a tab with nothing behind it, and
+/// three panels were retired in quick succession.
+const Map<String, String> editorPanelTitles = {
   'viewport': 'Viewport',
   'animation': 'Animation',
-  'effects': 'Effects',
   'flow': 'Flow',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
@@ -57,7 +61,7 @@ const Map<String, String> _panelTitles = {
   'render_graph': 'Render Graph',
 };
 
-List<String> get _panelIds => _panelTitles.keys.toList();
+List<String> get _panelIds => editorPanelTitles.keys.toList();
 
 /// Extra viewports are created at runtime with ids like `viewport2` and are
 /// admitted through layout persistence as dynamic panels.
@@ -987,6 +991,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                       ? null
                       : () => unawaited(_newNativeComponentScript()),
                   onPaletteOpen: () => setState(() => _paletteOpen = true),
+                  onBrowseVfx: _browseVfx,
+                  onAddVfx: (preset) => unawaited(addVfxPreset(_ctrl, preset)),
                   isPanelVisible: _dockLayout.isVisible,
                   onTogglePanel: _togglePanel,
                   onNewViewport: _newViewport,
@@ -1032,11 +1038,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'animation',
                             title: 'Animation',
                             child: AnimationPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'effects',
-                            title: 'Effects',
-                            child: VfxPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'flow',
@@ -1130,6 +1131,17 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
 
   void _showSceneSettings() =>
       unawaited(showSceneSettings(context, controller: _ctrl));
+
+  /// Opens the effect catalogue, and adds what it returns.
+  Future<void> _browseVfx() async {
+    final preset = await showVfxBrowser(
+      context,
+      title: 'Add Effect',
+      action: 'Add',
+    );
+    if (preset == null || !mounted) return;
+    await addVfxPreset(_ctrl, preset);
+  }
 
   Future<void> _newScene() async {
     // Asked rather than assumed: an empty scene is a sky and nothing else,
@@ -1354,7 +1366,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (group: 'Light', label: 'Point Light', type: 'pointLight'),
     (group: 'Light', label: 'Spot Light', type: 'spotLight'),
     (group: 'Light', label: 'Area Light', type: 'rectAreaLight'),
-    (group: 'Effects', label: 'Particle Emitter', type: 'particleEmitter'),
     (group: 'Effects', label: 'Trail', type: 'trail'),
     (group: 'Audio', label: 'Audio Source', type: 'audioSource'),
     (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
@@ -1517,6 +1528,8 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onNewComponentScript,
     required this.onNewNativeComponentScript,
     required this.onPaletteOpen,
+    required this.onBrowseVfx,
+    required this.onAddVfx,
     required this.isPanelVisible,
     required this.onTogglePanel,
     required this.onNewViewport,
@@ -1576,6 +1589,12 @@ class _EditorMenuBar extends StatelessWidget {
   /// with no project open, for the same reason.
   final VoidCallback? onNewNativeComponentScript;
   final VoidCallback onPaletteOpen;
+
+  /// Opens the effect browser.
+  final VoidCallback onBrowseVfx;
+
+  /// Adds one shipped effect to the scene.
+  final void Function(VfxPreset preset) onAddVfx;
   final bool Function(String panelId) isPanelVisible;
   final ValueChanged<String> onTogglePanel;
   final VoidCallback onNewViewport;
@@ -1769,6 +1788,33 @@ class _EditorMenuBar extends StatelessWidget {
                       ),
                 ],
               ),
+              // The catalogue, where adding an effect belongs: the fast
+              // path is knowing the name, and Browse is where you find out
+              // that what goes under a footstep is called Dust Puff.
+              _MenuItem(
+                label: 'VFX',
+                children: [
+                  _MenuItem(label: 'Browse Effects…', onTap: onBrowseVfx),
+                  const _MenuItem.divider(),
+                  for (final category in VfxCategory.values)
+                    _MenuItem(
+                      label: category.label,
+                      children: [
+                        for (final preset in vfxPresetsIn(category))
+                          _MenuItem(
+                            label: preset.name,
+                            detail: preset.description,
+                            onTap: () => onAddVfx(preset),
+                          ),
+                      ],
+                    ),
+                  const _MenuItem.divider(),
+                  _MenuItem(
+                    label: 'Empty Emitter',
+                    onTap: () => onAddObject('particleEmitter'),
+                  ),
+                ],
+              ),
               _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
               _MenuItem(
                 label: 'Component Script…',
@@ -1806,7 +1852,7 @@ class _EditorMenuBar extends StatelessWidget {
                   _MenuItem(label: 'Manage Layouts…', onTap: onManageLayouts),
                 ],
               ),
-              for (final entry in _panelTitles.entries)
+              for (final entry in editorPanelTitles.entries)
                 _MenuItem(
                   label: entry.value,
                   checked: isPanelVisible(entry.key),

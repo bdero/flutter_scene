@@ -14,6 +14,8 @@ import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
 import '../inspector/nav_mesh_editor.dart';
+import '../inspector/particle_emitter_controls.dart';
+import '../inspector/vfx_editing.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
@@ -444,16 +446,37 @@ class _ComponentSection extends StatelessWidget {
                     ),
                   )
                 : null,
-            // A nav surface is bake settings plus a bake, not a property
-            // bag: the four agent numbers only mean anything drawn together,
-            // and nothing in a schema-driven list runs a bake.
-            child: component.type == 'navMeshSurface'
-                ? NavMeshEditor(controller: controller, nodeId: node.id)
-                : _ComponentEditor(
+            child: switch (component.type) {
+              // A nav surface is bake settings plus a bake, not a property
+              // bag: the four agent numbers only mean anything drawn
+              // together, and nothing in a schema-driven list runs a bake.
+              'navMeshSurface' => NavMeshEditor(
+                controller: controller,
+                nodeId: node.id,
+              ),
+              // An emitter's authored fields are a property bag, but its
+              // clock is not: play, pause and restart reach the running
+              // simulation, and restart is how a one-shot is fired at all.
+              vfxComponentType => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ParticleEmitterControls(
+                    controller: controller,
+                    nodeId: node.id,
+                  ),
+                  _ComponentEditor(
                     node: node,
                     component: component,
                     controller: controller,
                   ),
+                ],
+              ),
+              _ => _ComponentEditor(
+                node: node,
+                component: component,
+                controller: controller,
+              ),
+            },
           ),
         ),
       ],
