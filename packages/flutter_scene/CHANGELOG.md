@@ -1,3 +1,14 @@
+## 0.24.0
+
+* Projected box decals via `DecalNode`, an oriented projection volume that paints a `.fmat` material onto whatever opaque surfaces it intersects (scorch marks, splats), with no mesh work at the impact site.
+* Radial screen distortion pulses via `Scene.screenDistortion`, expanding shockwave rings that warp the composed image with optional chromatic fringing.
+* `.fmat` materials accept `blending: additive` alongside `opaque`/`alpha`, and `depth_write`/`depth_test` configure the translucent depth state.
+* Barycentric wireframe helpers, `#include <wireframe.glsl>` plus `MeshData.unweld` barycentric attributes, for wireframe and scan-line overlays on any mesh.
+* `MaterialGroup` pushes one parameter value to a heterogeneous set of materials, skipping names a member does not declare.
+* Unlit `.fmat` materials may declare `engine_inputs`; the screen accessors gain `GetSceneWorldPosition`, materials that read scene depth get it at full resolution, and `scene_color_reach` bounds a reader so disjoint readers share one scene-color capture.
+* A draw whose render pipeline the backend rejects is skipped with a one-time console message naming the material and geometry, instead of failing the whole frame from inside paint.
+* A render pipeline build that stalls a frame (8ms or more, always on its first draw) is reported in debug builds with the material and geometry that triggered it, so the fix (drawing it once behind a load screen) has a target.
+
 ## 0.23.0
 
 * Build hooks no longer crash on a target OS `package:code_assets` cannot name, which is how a third-party embedder announces tvOS or visionOS.
