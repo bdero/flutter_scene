@@ -240,12 +240,7 @@ class FlowCanvasPainter extends CustomPainter {
   /// On the wire rather than in a side panel because the question is always
   /// "what went down *that* one", and a list of values keyed by node id is a
   /// second lookup the reader has to do by hand.
-  void _paintWireLabel(
-    Canvas canvas,
-    Offset at,
-    String text,
-    Color colour,
-  ) {
+  void _paintWireLabel(Canvas canvas, Offset at, String text, Color colour) {
     final painter = TextPainter(
       text: TextSpan(
         text: text,

@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene_editor/src/shell/dock_layout.dart';
+import 'package:flutter_scene_editor/src/shell/editor_shell.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DockLayout _twoColumn() {
@@ -29,10 +30,7 @@ void main() {
     expect(left.axis, Axis.vertical);
     expect((left.children[0] as DockTabs).panels, ['outliner']);
     expect((left.children[1] as DockTabs).panels, ['assets', 'history']);
-    expect((root.children[2] as DockTabs).panels, [
-      'inspector',
-      'weather',
-    ]);
+    expect((root.children[2] as DockTabs).panels, ['inspector']);
 
     // The centre column stacks the timeline under the viewport, where a
     // playhead scrubbing the scene belongs.
@@ -244,5 +242,19 @@ void main() {
     expect(layout, isNotNull);
     expect(layout!.panelIds(), isNot(contains('navigation')));
     expect(layout.panelIds(), contains('inspector'));
+  });
+
+  test('the default layout only names panels that exist', () {
+    // Effects, Weather and Navigation were each retired into the place they
+    // belonged, and a default layout still naming one opens onto a tab with
+    // nothing behind it.
+    final layout = defaultEditorDockLayout();
+    for (final id in layout.panelIds()) {
+      expect(
+        editorPanelTitles.containsKey(id),
+        isTrue,
+        reason: 'the default layout opens "$id", which is not a panel',
+      );
+    }
   });
 }

@@ -193,25 +193,24 @@ MapValue? encodeParticleModule(ParticleModule module) {
 
 /// Encodes one collider as a tagged map, or null for a shape the format does
 /// not carry (a project's own subclass).
-MapValue? encodeParticleCollider(ParticleCollider collider) => switch (
-  collider
-) {
-  ParticlePlane() => MapValue({
-    'kind': const StringValue('plane'),
-    'normal': Vec3Value(collider.normal),
-    'distance': DoubleValue(collider.distance),
-  }),
-  ParticleSphere() => MapValue({
-    'kind': const StringValue('sphere'),
-    'centre': Vec3Value(collider.centre),
-    'radius': DoubleValue(collider.radius),
-  }),
-  ParticleBox() => MapValue({
-    'kind': const StringValue('box'),
-    'centre': Vec3Value(collider.centre),
-    'halfExtents': Vec3Value(collider.halfExtents),
-  }),
-};
+MapValue? encodeParticleCollider(ParticleCollider collider) =>
+    switch (collider) {
+      ParticlePlane() => MapValue({
+        'kind': const StringValue('plane'),
+        'normal': Vec3Value(collider.normal),
+        'distance': DoubleValue(collider.distance),
+      }),
+      ParticleSphere() => MapValue({
+        'kind': const StringValue('sphere'),
+        'centre': Vec3Value(collider.centre),
+        'radius': DoubleValue(collider.radius),
+      }),
+      ParticleBox() => MapValue({
+        'kind': const StringValue('box'),
+        'centre': Vec3Value(collider.centre),
+        'halfExtents': Vec3Value(collider.halfExtents),
+      }),
+    };
 
 /// Decodes one collider, or null when the entry names no known shape.
 ParticleCollider? decodeParticleCollider(PropertyValue? value) {
@@ -706,10 +705,7 @@ final ComponentPropertyDef _moduleItemDef = ComponentPropertyDef(
             ],
             'box': [
               ComponentPropertyDef('centre', ComponentPropertyKind.vec3),
-              ComponentPropertyDef(
-                'halfExtents',
-                ComponentPropertyKind.vec3,
-              ),
+              ComponentPropertyDef('halfExtents', ComponentPropertyKind.vec3),
             ],
           },
         ),

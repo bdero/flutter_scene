@@ -5,6 +5,7 @@
 /// - [SpringArmComponent] and [CameraShake] for camera rigs.
 /// - [ThirdPersonControllerComponent] and [Steering] for character motion.
 /// - [DayNightCycleComponent] and [WaterSurfaceComponent] for atmospheric environments.
+/// - [weatherPresets] and [setSceneWeather] to put a sky into named weather.
 /// - [SoundManager] and [SurfaceFootstepAudio] for game sound.
 /// - [NodePool] and [PoissonDiscSampler] for object recycling and spawning.
 /// - [ScenePicker], [SceneSelection], and [PathFollowerComponent] for
@@ -43,6 +44,8 @@ export 'src/kit/environment/gerstner_field.dart' show GerstnerField;
 export 'src/kit/environment/wind.dart' show Wind;
 export 'src/kit/environment/wind_component.dart'
     show WindComponent, windVelocity;
+export 'src/kit/environment/weather.dart'
+    show WeatherPreset, setSceneWeather, weatherPresetById, weatherPresets;
 export 'src/kit/environment/water_surface_component.dart'
     show GerstnerWave, WaterSurfaceComponent;
 export 'src/kit/pooling/node_pool.dart' show NodePool;

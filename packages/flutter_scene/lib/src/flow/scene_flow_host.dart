@@ -10,8 +10,14 @@ import 'package:scene/flow.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/animation.dart' show AnimationClip;
+import 'package:flutter_scene/src/kit/environment/lightning_component.dart'
+    show sunDirectionForHour;
+import 'package:flutter_scene/src/kit/environment/weather.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/scene.dart';
+import 'package:flutter_scene/src/sky_sources.dart';
+import 'package:flutter_scene/src/skybox.dart' show SunSky;
 
 /// Runs a graph against a live node.
 ///
@@ -130,6 +136,10 @@ class SceneFlowHost implements FlowHost {
       case 'destroy':
         owner.parent?.remove(owner);
         return null;
+      case 'setWeather':
+        return _setWeather(arguments);
+      case 'setTimeOfDay':
+        return _setTimeOfDay(arguments);
       case 'setAnimatorNumber':
         return _withAnimator(
           (a) => a.animator.parameters.setNumber(
@@ -167,6 +177,56 @@ class SceneFlowHost implements FlowHost {
   }
 
   final Map<String, AnimationClip> _clips = {};
+
+  /// The scene this graph's node is mounted in, or null when it is not in
+  /// one. Reached the same way [LightningComponent] reaches the sky it
+  /// flashes, so a graph and a component see the same scene.
+  Scene? get _scene {
+    final root = owner.internalRenderScene?.owner;
+    return root is Scene ? root : null;
+  }
+
+  /// The scene's sky, when it is one with clouds in it.
+  WeatherSkySource? get _weatherSky {
+    final source = _scene?.skybox?.source;
+    return source is WeatherSkySource ? source : null;
+  }
+
+  bool _setWeather(Map<String, Object?> arguments) {
+    final id = '${arguments['weather']}';
+    final preset = weatherPresetById(id);
+    if (preset == null) {
+      log('No weather named "$id".');
+      return false;
+    }
+    final sky = _weatherSky;
+    if (sky == null) {
+      log(
+        'The scene\'s sky has no clouds to change; set it to a weather '
+        'sky first.',
+      );
+      return false;
+    }
+    preset.applyTo(sky);
+    return true;
+  }
+
+  bool _setTimeOfDay(Map<String, Object?> arguments) {
+    final Object? source = _scene?.skybox?.source;
+    if (source is SunSky) {
+      // In place: SunSky exposes the direction as a getter, and every built-in
+      // sky holds it as a plain mutable vector the shader reads at draw time.
+      source.sunDirection.setFrom(
+        sunDirectionForHour(
+          flowNumber(arguments['hour'], 12),
+          tilt: flowNumber(arguments['tilt'], 0.35),
+        ),
+      );
+      return true;
+    }
+    log('The scene\'s sky has no sun to move.');
+    return false;
+  }
 
   /// The animator on the node the graph runs on, or null.
   ///

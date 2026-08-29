@@ -26,6 +26,7 @@ import '../panels/history_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
 import '../panels/render_graph_panel.dart';
+import '../inspector/scene_settings_dialog.dart';
 import '../inspector/vfx_editing.dart';
 import '../render_graph/render_graph_inspector.dart';
 import '../project/app_session.dart';
@@ -35,7 +36,6 @@ import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
 import '../panels/flow_panel.dart';
 import '../launcher/scene_templates.dart';
-import '../panels/weather_panel.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
@@ -45,10 +45,13 @@ import 'editor_dialog.dart';
 
 /// The panels [EditorShell] registers with its [DockingShell], id to the
 /// title shown on tabs and in the View menu.
-const Map<String, String> _panelTitles = {
+///
+/// Public so a test can check the default layout against it: a layout naming
+/// a panel that no longer exists opens onto a tab with nothing behind it, and
+/// three panels were retired in quick succession.
+const Map<String, String> editorPanelTitles = {
   'viewport': 'Viewport',
   'animation': 'Animation',
-  'weather': 'Weather',
   'flow': 'Flow',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
@@ -58,7 +61,7 @@ const Map<String, String> _panelTitles = {
   'render_graph': 'Render Graph',
 };
 
-List<String> get _panelIds => _panelTitles.keys.toList();
+List<String> get _panelIds => editorPanelTitles.keys.toList();
 
 /// Extra viewports are created at runtime with ids like `viewport2` and are
 /// admitted through layout persistence as dynamic panels.
@@ -995,6 +998,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onNewViewport: _newViewport,
                   onShowToolchain: _showToolchain,
                   onShowSettings: widget.onShowSettings,
+                  onShowSceneSettings: _showSceneSettings,
                   projectName: widget.projectName,
                   onOpenProject: widget.onOpenProject,
                   onNewProject: widget.onNewProject,
@@ -1034,11 +1038,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'animation',
                             title: 'Animation',
                             child: AnimationPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'weather',
-                            title: 'Weather',
-                            child: WeatherPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'flow',
@@ -1129,6 +1128,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     _currentPath = path;
     widget.onDocumentPathChanged?.call(path);
   }
+
+  void _showSceneSettings() =>
+      unawaited(showSceneSettings(context, controller: _ctrl));
 
   /// Opens the effect catalogue, and adds what it returns.
   Future<void> _browseVfx() async {
@@ -1533,6 +1535,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onNewViewport,
     required this.onShowToolchain,
     this.onShowSettings,
+    required this.onShowSceneSettings,
     this.projectName,
     this.onOpenProject,
     this.onNewProject,
@@ -1597,6 +1600,9 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onNewViewport;
   final VoidCallback onShowToolchain;
   final VoidCallback? onShowSettings;
+
+  /// Opens the scene's own settings (its lighting, background and rendering).
+  final VoidCallback onShowSceneSettings;
   final String? projectName;
   final VoidCallback? onOpenProject;
   final VoidCallback? onNewProject;
@@ -1701,6 +1707,9 @@ class _EditorMenuBar extends StatelessWidget {
               ),
               _MenuItem(label: 'Save', onTap: onSave),
               _MenuItem(label: 'Save As…', onTap: onSaveAs),
+              const _MenuItem.divider(),
+              // The scene's own settings, distinct from the editor's below.
+              _MenuItem(label: 'Scene Settings…', onTap: onShowSceneSettings),
               if (onShowSettings != null) ...[
                 const _MenuItem.divider(),
                 _MenuItem(label: 'Settings…', onTap: onShowSettings),
@@ -1843,7 +1852,7 @@ class _EditorMenuBar extends StatelessWidget {
                   _MenuItem(label: 'Manage Layouts…', onTap: onManageLayouts),
                 ],
               ),
-              for (final entry in _panelTitles.entries)
+              for (final entry in editorPanelTitles.entries)
                 _MenuItem(
                   label: entry.value,
                   checked: isPanelVisible(entry.key),
