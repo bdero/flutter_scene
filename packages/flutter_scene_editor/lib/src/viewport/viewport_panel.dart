@@ -701,6 +701,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
     }
     if (selectionBounds == null) return false;
+    // A meshless node hulls to a point; frame it like a small object instead
+    // of slamming the camera to point-blank range on its origin.
+    if ((selectionBounds.max - selectionBounds.min).length < 1e-4) {
+      const halfExtent = 0.75;
+      final center = selectionBounds.center;
+      selectionBounds = vm.Aabb3.minMax(
+        center - vm.Vector3.all(halfExtent),
+        center + vm.Vector3.all(halfExtent),
+      );
+    }
     final aspect = _viewSize.height > 0
         ? _viewSize.width / _viewSize.height
         : 1.0;
