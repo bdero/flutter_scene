@@ -9,7 +9,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:scene/grid.dart';
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
@@ -21,7 +21,7 @@ import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
-import 'package:flutter_scene/src/flow/flow_component.dart';
+import 'package:flutter_scene/src/visual_script/visual_script_component.dart';
 import 'package:flutter_scene/src/kit/environment/buoyancy_component.dart';
 import 'package:flutter_scene/src/kit/environment/lightning_component.dart';
 import 'package:flutter_scene/src/kit/environment/water_component.dart';
@@ -41,7 +41,7 @@ void registerKitComponentCodecs(FsceneComponentRegistry registry) {
     ..register(BuoyancyCodec())
     ..register(WindCodec())
     ..register(LightningCodec())
-    ..register(FlowCodec());
+    ..register(VisualScriptCodec());
 }
 
 /// Codec for [PathFollowerComponent], which walks a node along a route from
@@ -1243,6 +1243,16 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
       get: (c) => c.deepColor,
       set: (c, v) => c.deepColor.setFrom(v),
     ),
+    ComponentField.number(
+      'choppiness',
+      defaultValue: 1.0,
+      doc:
+          'How hard the water is running: 0 glassy, 1 the waves as authored, '
+          'above that a sea getting up. Weather drives it.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 2.5)],
+      get: (c) => c.choppiness,
+      set: (c, v) => c.choppiness = v,
+    ),
     ComponentField.boolean(
       'animate',
       defaultValue: true,
@@ -1258,6 +1268,7 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
     resolution: props.integer('resolution'),
     style: props.enumValue('style', WaterStyle.values),
     traversal: props.enumValue('traversal', WaterTraversal.values),
+    choppiness: props.number('choppiness'),
     shallowColor: props.vec4('shallowColor'),
     deepColor: props.vec4('deepColor'),
     animate: props.boolean('animate'),
@@ -1598,16 +1609,17 @@ class LightningCodec extends DeclarativeComponentCodec<LightningComponent> {
   );
 }
 
-/// Codec for [FlowComponent].
+/// Codec for [VisualScriptComponent].
 ///
 /// The graph travels as its own JSON text rather than as a nest of typed
 /// properties. A graph is source: people diff it, merge it, and occasionally
 /// fix one by hand, and a wire list flattened into the component schema would
 /// be unreadable in all three. The property is one string, and the format is
-/// documented by `writeFlowGraph`.
-class FlowCodec extends DeclarativeComponentCodec<FlowComponent> {
+/// documented by `writeVisualScript`.
+class VisualScriptCodec
+    extends DeclarativeComponentCodec<VisualScriptComponent> {
   @override
-  String get type => 'flow';
+  String get type => visualScriptComponentType;
 
   @override
   String? get category => 'Scripting';
@@ -1616,28 +1628,26 @@ class FlowCodec extends DeclarativeComponentCodec<FlowComponent> {
   ComponentSchema get schema => ComponentSchema(
     type,
     category: category,
-    icon: 'flow',
+    icon: 'visualScript',
     properties: propertySchema,
   );
 
   @override
-  List<ComponentField<FlowComponent>> get fields => [
+  List<ComponentField<VisualScriptComponent>> get fields => [
     ComponentField.string(
       'graph',
       defaultValue: '',
       doc:
-          'The script, as the JSON writeFlowGraph produces. Edited on the '
-          'Flow canvas rather than here.',
-      get: (c) => c.graph.nodes.isEmpty && c.graph.variables.isEmpty
-          ? ''
-          : writeFlowGraph(c.graph),
+          'The blueprint, as the JSON writeBlueprint produces. Edited on the '
+          'Visual Scripter canvas rather than here. A document written before '
+          'blueprints holds a single graph here, which reads as a blueprint '
+          'with that one event graph in it.',
+      get: (c) =>
+          _blueprintIsEmpty(c.blueprint) ? '' : writeBlueprint(c.blueprint),
       set: (c, v) {
         if (v.isEmpty) return;
-        try {
-          c.graph = readFlowGraph(v);
-        } on FormatException catch (error) {
-          debugPrint('fscene: a flow graph failed to parse: $error');
-        }
+        final blueprint = _readBlueprintOrNull(v);
+        if (blueprint != null) c.blueprint = blueprint;
       },
     ),
     ComponentField.boolean(
@@ -1652,16 +1662,36 @@ class FlowCodec extends DeclarativeComponentCodec<FlowComponent> {
   ];
 
   @override
-  FlowComponent create(PropertyReader props) {
+  VisualScriptComponent create(PropertyReader props) {
     final source = props.string('graph');
-    FlowGraph? graph;
-    if (source.isNotEmpty) {
-      try {
-        graph = readFlowGraph(source);
-      } on FormatException catch (error) {
-        debugPrint('fscene: a flow graph failed to parse: $error');
-      }
-    }
-    return FlowComponent(graph: graph)..running = props.boolean('running');
+    final blueprint = source.isEmpty ? null : _readBlueprintOrNull(source);
+    return VisualScriptComponent(blueprint: blueprint)
+      ..running = props.boolean('running');
+  }
+}
+
+/// Whether [blueprint] has nothing in it worth writing.
+///
+/// An empty blueprint writes nothing at all, so a component somebody added
+/// and has not drawn in yet does not put a wall of JSON in the document.
+bool _blueprintIsEmpty(Blueprint blueprint) {
+  if (blueprint.variables.isNotEmpty) return false;
+  if (blueprint.graphs.length > 1) return false;
+  for (final graph in blueprint.graphs) {
+    if (graph.nodes.isNotEmpty || graph.variables.isNotEmpty) return false;
+  }
+  return true;
+}
+
+/// Reads a blueprint from [source], or null when it cannot be read.
+///
+/// Reports rather than throws: a document with one unreadable script in it
+/// should open with that script empty, not fail to open.
+Blueprint? _readBlueprintOrNull(String source) {
+  try {
+    return readBlueprint(source);
+  } on FormatException catch (error) {
+    debugPrint('fscene: a visual script failed to parse: $error');
+    return null;
   }
 }

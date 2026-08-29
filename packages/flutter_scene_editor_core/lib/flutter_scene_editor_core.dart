@@ -104,6 +104,7 @@ export 'src/animation_commands.dart'
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
 
 // Cross-document graft (import one document's content into another).
+export 'src/extract.dart' show ExtractedPrefab, extractPrefab;
 export 'src/graft.dart' show graftDocumentRecords, wrapRootsUnderGroup;
 
 // Selection, queries, and the session that ties it all together.

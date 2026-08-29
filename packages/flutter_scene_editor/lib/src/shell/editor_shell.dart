@@ -16,6 +16,7 @@ import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
 import 'package:flutter_scene/scene.dart'
     show Scene, VfxCategory, VfxPreset, vfxPresetsIn;
 import 'package:forui/forui.dart';
+import 'package:scene/scene.dart' show visualScriptComponentType;
 
 import '../controller/editor_controller.dart';
 import '../io/glb_import_options.dart';
@@ -34,7 +35,7 @@ import '../project/project_runner.dart';
 import '../viewport/component_gizmos.dart';
 import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
-import '../panels/flow_panel.dart';
+import '../panels/visual_scripter_panel.dart';
 import '../launcher/scene_templates.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
@@ -56,7 +57,7 @@ const Map<String, String> editorPanelTitles = {
   'project': 'Project',
   'console': 'Console',
   'animation': 'Animation',
-  'flow': 'Flow',
+  'visual_scripter': 'Visual Scripter',
   'history': 'History',
   'render_graph': 'Render Graph',
 };
@@ -1053,9 +1054,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: AnimationPanel(controller: _ctrl),
                           ),
                           DockPanel(
-                            id: 'flow',
-                            title: 'Flow',
-                            child: FlowPanel(controller: _ctrl),
+                            id: 'visual_scripter',
+                            title: 'Visual Scripter',
+                            child: VisualScripterPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'hierarchy',
@@ -1384,7 +1385,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     (group: 'Audio', label: 'Audio Listener', type: 'audioListener'),
     (group: 'Environment', label: 'Water', type: 'water'),
     (group: 'Environment', label: 'Lightning', type: 'lightning'),
-    (group: 'Scripting', label: 'Flow Graph', type: 'flow'),
+    (
+      group: 'Scripting',
+      label: 'Visual Script',
+      type: visualScriptComponentType,
+    ),
     (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
     (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
     (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),

@@ -2,17 +2,17 @@
 // painting both depend on, and it needs no widget to check.
 
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/flow.dart';
-import 'package:flutter_scene_editor/src/panels/flow_layout.dart';
+import 'package:flutter_scene/visual_script.dart';
+import 'package:flutter_scene_editor/src/panels/visual_script_layout.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
 void main() {
-  final registry = sceneFlowRegistry();
+  final registry = sceneVisualScriptRegistry();
 
-  ({FlowGraph graph, FlowLayout layout}) rig() {
-    final graph = FlowGraph();
-    return (graph: graph, layout: FlowLayout(graph, registry));
+  ({VisualScriptGraph graph, VisualScriptLayout layout}) rig() {
+    final graph = VisualScriptGraph();
+    return (graph: graph, layout: VisualScriptLayout(graph, registry));
   }
 
   group('node bounds', () {
@@ -34,7 +34,7 @@ void main() {
       final bounds = r.layout.boundsOf(node);
       expect(bounds.left, 50);
       expect(bounds.top, 70);
-      expect(bounds.width, flowNodeWidth);
+      expect(bounds.width, visualScriptNodeWidth);
     });
 
     test('an unknown type still has a body, so it can be seen and deleted', () {
@@ -51,7 +51,7 @@ void main() {
       final input = r.layout.portCentre(node.id, 'condition')!;
       final output = r.layout.portCentre(node.id, 'true')!;
       expect(input.dx, 0);
-      expect(output.dx, flowNodeWidth);
+      expect(output.dx, visualScriptNodeWidth);
     });
 
     test('pins stack in declaration order', () {
@@ -60,8 +60,8 @@ void main() {
       final x = r.layout.portCentre(node.id, 'x')!;
       final y = r.layout.portCentre(node.id, 'y')!;
       final z = r.layout.portCentre(node.id, 'z')!;
-      expect(y.dy - x.dy, flowRowHeight);
-      expect(z.dy - y.dy, flowRowHeight);
+      expect(y.dy - x.dy, visualScriptRowHeight);
+      expect(z.dy - y.dy, visualScriptRowHeight);
     });
 
     test('an unknown node or pin has no centre', () {
@@ -79,11 +79,13 @@ void main() {
       final centre = r.layout.portCentre(node.id, 'a')!;
       expect(r.layout.portAt(centre)?.pin, 'a');
       expect(
-        r.layout.portAt(centre + const Offset(flowGrabRadius - 1, 0))?.pin,
+        r.layout
+            .portAt(centre + const Offset(visualScriptGrabRadius - 1, 0))
+            ?.pin,
         'a',
       );
       expect(
-        r.layout.portAt(centre + const Offset(flowGrabRadius + 6, 0)),
+        r.layout.portAt(centre + const Offset(visualScriptGrabRadius + 6, 0)),
         isNull,
       );
     });
@@ -123,14 +125,18 @@ void main() {
 
   group('wire colours', () {
     test('exec is the pale one, so the spine of a graph reads first', () {
-      final exec = flowTypeColor(FlowType.exec);
+      final exec = visualScriptTypeColor(VisualScriptType.exec);
       expect(exec.computeLuminance(), greaterThan(0.7));
     });
 
     test('every type has its own colour', () {
       final seen = <Color>{};
-      for (final type in FlowType.values) {
-        expect(seen.add(flowTypeColor(type)), isTrue, reason: type.name);
+      for (final type in VisualScriptType.values) {
+        expect(
+          seen.add(visualScriptTypeColor(type)),
+          isTrue,
+          reason: type.name,
+        );
       }
     });
   });

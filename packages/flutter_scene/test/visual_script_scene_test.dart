@@ -4,21 +4,22 @@
 // GPU-free: nothing here builds geometry, and the host reaches the scene
 // through plain Node properties.
 
-import 'package:flutter_scene/flow.dart';
+import 'package:flutter_scene/visual_script.dart';
 import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:scene/scene.dart' show visualScriptComponentType;
 import 'package:vector_math/vector_math.dart';
 
 /// A node with a graph on it, ticked by hand.
-({Node node, FlowComponent flow, List<String> log}) rig({
-  FlowGraph? graph,
+({Node node, VisualScriptComponent flow, List<String> log}) rig({
+  VisualScriptGraph? graph,
   Object? Function(String, Map<String, Object?>)? onAction,
 }) {
   final log = <String>[];
   final node = Node(name: 'actor');
-  final flow = FlowComponent(
-    graph: graph ?? FlowGraph(),
+  final flow = VisualScriptComponent(
+    graph: graph ?? VisualScriptGraph(),
     onAction: onAction,
     onLog: log.add,
   );
@@ -27,10 +28,14 @@ import 'package:vector_math/vector_math.dart';
 }
 
 /// A graph that does something on every tick, so a trace has content.
-FlowGraph tickingGraph() {
-  final graph = FlowGraph(
+VisualScriptGraph tickingGraph() {
+  final graph = VisualScriptGraph(
     variables: [
-      FlowVariable(name: 'count', type: FlowType.number, initial: 0.0),
+      VisualScriptVariable(
+        name: 'count',
+        type: VisualScriptType.number,
+        initial: 0.0,
+      ),
     ],
   );
   final tick = graph.add('event.tick');
@@ -40,7 +45,7 @@ FlowGraph tickingGraph() {
 
   graph
     ..connect(
-      FlowLink(
+      VisualScriptLink(
         fromNode: tick.id,
         fromPin: 'then',
         toNode: write.id,
@@ -48,10 +53,15 @@ FlowGraph tickingGraph() {
       ),
     )
     ..connect(
-      FlowLink(fromNode: read.id, fromPin: 'value', toNode: add.id, toPin: 'a'),
+      VisualScriptLink(
+        fromNode: read.id,
+        fromPin: 'value',
+        toNode: add.id,
+        toPin: 'a',
+      ),
     )
     ..connect(
-      FlowLink(
+      VisualScriptLink(
         fromNode: add.id,
         fromPin: 'value',
         toNode: write.id,
@@ -62,10 +72,10 @@ FlowGraph tickingGraph() {
 }
 
 void main() {
-  group('SceneFlowHost paths', () {
+  group('SceneVisualScriptHost paths', () {
     test('a bare path is the owning node', () {
       final node = Node(name: 'actor')..position = Vector3(1, 2, 3);
-      final host = SceneFlowHost(node);
+      final host = SceneVisualScriptHost(node);
       expect(host.read('position'), Vector3(1, 2, 3));
       expect(host.read('position.y'), 2.0);
       expect(host.write('position.y', 9.0), isTrue);
@@ -75,14 +85,14 @@ void main() {
     test('a prefixed path is a descendant by name', () {
       final turret = Node(name: 'turret')..position = Vector3(0, 5, 0);
       final node = Node(name: 'tank')..add(turret);
-      final host = SceneFlowHost(node);
+      final host = SceneVisualScriptHost(node);
       expect(host.read('turret/position.y'), 5.0);
       expect(host.write('turret/position.y', 7.0), isTrue);
       expect(turret.position.y, 7.0);
     });
 
     test('a path to nothing reports failure rather than doing nothing', () {
-      final host = SceneFlowHost(Node(name: 'actor'));
+      final host = SceneVisualScriptHost(Node(name: 'actor'));
       expect(host.read('ghost/position'), isNull);
       expect(host.write('ghost/position', Vector3.zero()), isFalse);
       expect(
@@ -97,7 +107,7 @@ void main() {
       final node = Node(name: 'root')
         ..position = Vector3(10, 0, 0)
         ..add(child);
-      final host = SceneFlowHost(node);
+      final host = SceneVisualScriptHost(node);
       expect(host.read('visible'), isTrue);
       expect(host.read('child/worldPosition'), Vector3(11, 0, 0));
       expect(host.write('child/visible', false), isTrue);
@@ -107,7 +117,7 @@ void main() {
 
   group('scene nodes', () {
     test('Set Position writes through the graph', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final make = graph.add('vector.make')
         ..literals['x'] = 4.0
@@ -115,7 +125,7 @@ void main() {
       final set = graph.add('scene.setPosition');
       graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: start.id,
             fromPin: 'then',
             toNode: set.id,
@@ -123,7 +133,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: make.id,
             fromPin: 'value',
             toNode: set.id,
@@ -137,13 +147,13 @@ void main() {
     });
 
     test('Translate accumulates over ticks', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final tick = graph.add('event.tick');
       final step = graph.add('vector.make')..literals['x'] = 1.0;
       final move = graph.add('scene.translate');
       graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: tick.id,
             fromPin: 'then',
             toNode: move.id,
@@ -151,7 +161,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: step.id,
             fromPin: 'value',
             toNode: move.id,
@@ -167,11 +177,11 @@ void main() {
     });
 
     test('a write to a missing target says so instead of silently failing', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final set = graph.add('scene.setPosition')..literals['target'] = 'ghost';
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: set.id,
@@ -186,13 +196,13 @@ void main() {
 
     test('Call Action reaches the application', () {
       final calls = <String>[];
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final call = graph.add('scene.call')
         ..literals['action'] = 'openDoor'
         ..literals['value'] = 3;
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: call.id,
@@ -212,11 +222,11 @@ void main() {
     });
 
     test('Play Animation reports a name the node does not have', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final play = graph.add('scene.playAnimation')..literals['name'] = 'wave';
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: play.id,
@@ -230,7 +240,7 @@ void main() {
     });
 
     test('every scene node declares a doc and unique pin ids', () {
-      for (final type in sceneFlowNodes) {
+      for (final type in sceneVisualScriptNodes) {
         expect(type.doc, isNotEmpty, reason: type.id);
         final ids = <String>{};
         for (final pin in type.pins) {
@@ -240,26 +250,28 @@ void main() {
     });
 
     test('the scene registry holds the standard nodes too', () {
-      final registry = sceneFlowRegistry();
+      final registry = sceneVisualScriptRegistry();
       expect(registry[onTick.id], isNotNull);
       expect(registry[setPosition.id], isNotNull);
       expect(
         registry.all,
-        hasLength(standardFlowNodes.length + sceneFlowNodes.length),
+        hasLength(
+          standardVisualScriptNodes.length + sceneVisualScriptNodes.length,
+        ),
       );
     });
   });
 
-  group('FlowComponent', () {
+  group('VisualScriptComponent', () {
     test('On Start fires once and On Tick every frame', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final tick = graph.add('event.tick');
       final onceMessage = graph.add('debug.print')..literals['value'] = 'start';
       final everyMessage = graph.add('debug.print')..literals['value'] = 'tick';
       graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: start.id,
             fromPin: 'then',
             toNode: onceMessage.id,
@@ -267,7 +279,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: tick.id,
             fromPin: 'then',
             toNode: everyMessage.id,
@@ -283,11 +295,11 @@ void main() {
     });
 
     test('a raised signal reaches its event on the next tick', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final signal = graph.add('event.signal')..literals['name'] = 'open';
       final print = graph.add('debug.print')..literals['value'] = 'opened';
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: signal.id,
           fromPin: 'then',
           toNode: print.id,
@@ -308,11 +320,11 @@ void main() {
     });
 
     test('a signal by another name is not picked up', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final signal = graph.add('event.signal')..literals['name'] = 'open';
       final print = graph.add('debug.print')..literals['value'] = 'opened';
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: signal.id,
           fromPin: 'then',
           toNode: print.id,
@@ -327,9 +339,13 @@ void main() {
     });
 
     test('running false pauses without losing state', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       graph.variables.add(
-        FlowVariable(name: 'n', type: FlowType.number, initial: 0.0),
+        VisualScriptVariable(
+          name: 'n',
+          type: VisualScriptType.number,
+          initial: 0.0,
+        ),
       );
       final tick = graph.add('event.tick');
       final read = graph.add('var.get')..literals['name'] = 'n';
@@ -337,7 +353,7 @@ void main() {
       final write = graph.add('var.set')..literals['name'] = 'n';
       graph
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: tick.id,
             fromPin: 'then',
             toNode: write.id,
@@ -345,7 +361,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: read.id,
             fromPin: 'value',
             toNode: add.id,
@@ -353,7 +369,7 @@ void main() {
           ),
         )
         ..connect(
-          FlowLink(
+          VisualScriptLink(
             fromNode: add.id,
             fromPin: 'value',
             toNode: write.id,
@@ -373,16 +389,20 @@ void main() {
     });
 
     test('restart puts the state back', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       graph.variables.add(
-        FlowVariable(name: 'n', type: FlowType.number, initial: 5.0),
+        VisualScriptVariable(
+          name: 'n',
+          type: VisualScriptType.number,
+          initial: 5.0,
+        ),
       );
       final tick = graph.add('event.tick');
       final write = graph.add('var.set')
         ..literals['name'] = 'n'
         ..literals['value'] = 99.0;
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: tick.id,
           fromPin: 'then',
           toNode: write.id,
@@ -398,11 +418,11 @@ void main() {
     });
 
     test('a broken graph is reported once, not every frame', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final start = graph.add('event.start');
       final bogus = graph.add('does.not.exist');
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: start.id,
           fromPin: 'then',
           toNode: bogus.id,
@@ -420,14 +440,18 @@ void main() {
     });
 
     test('a clone gets its own copy of the script and its state', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       graph.variables.add(
-        FlowVariable(name: 'n', type: FlowType.number, initial: 0.0),
+        VisualScriptVariable(
+          name: 'n',
+          type: VisualScriptType.number,
+          initial: 0.0,
+        ),
       );
       graph.add('event.tick');
       final r = rig(graph: graph);
 
-      final clone = r.flow.cloneFor(Node())! as FlowComponent;
+      final clone = r.flow.cloneFor(Node())! as VisualScriptComponent;
       expect(identical(clone.graph, r.flow.graph), isFalse);
       clone.graph.add('debug.print');
       expect(r.flow.graph.nodes, hasLength(1));
@@ -437,11 +461,11 @@ void main() {
       final r = rig();
       r.flow.update(1 / 60);
 
-      final replacement = FlowGraph();
+      final replacement = VisualScriptGraph();
       final tick = replacement.add('event.tick');
       final print = replacement.add('debug.print')..literals['value'] = 'new';
       replacement.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: tick.id,
           fromPin: 'then',
           toNode: print.id,
@@ -457,11 +481,11 @@ void main() {
 
   group('the document', () {
     test('a graph round-trips through a component spec', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final tick = graph.add('event.tick');
       final move = graph.add('scene.translate');
       graph.connect(
-        FlowLink(
+        VisualScriptLink(
           fromNode: tick.id,
           fromPin: 'then',
           toNode: move.id,
@@ -470,14 +494,15 @@ void main() {
       );
 
       final registry = defaultComponentRegistry();
-      final codec = registry.codecFor('flow')!;
+      final codec = registry.codecFor(visualScriptComponentType)!;
       final document = SceneDocument();
       final spec = codec.serialize(
-        FlowComponent(graph: graph),
+        VisualScriptComponent(graph: graph),
         SerializeContext(document),
       )!;
       final restored =
-          codec.realize(spec, RealizeContext(document))! as FlowComponent;
+          codec.realize(spec, RealizeContext(document))!
+              as VisualScriptComponent;
 
       expect(restored.graph.nodes, hasLength(2));
       expect(restored.graph.links, hasLength(1));
@@ -486,10 +511,10 @@ void main() {
 
     test('an empty graph writes nothing, so a plain component stays plain', () {
       final registry = defaultComponentRegistry();
-      final codec = registry.codecFor('flow')!;
+      final codec = registry.codecFor(visualScriptComponentType)!;
       final document = SceneDocument();
       final spec = codec.serialize(
-        FlowComponent(),
+        VisualScriptComponent(),
         SerializeContext(document),
       )!;
       expect(spec.properties, isNot(contains('graph')));
@@ -497,20 +522,23 @@ void main() {
 
     test('an unparsable graph is reported, not thrown', () {
       final registry = defaultComponentRegistry();
-      final codec = registry.codecFor('flow')!;
+      final codec = registry.codecFor(visualScriptComponentType)!;
       final component = codec.realize(
-        ComponentSpec('flow', properties: {'graph': const StringValue('{{')}),
+        ComponentSpec(
+          visualScriptComponentType,
+          properties: {'graph': const StringValue('{{')},
+        ),
         RealizeContext(SceneDocument()),
       );
-      expect(component, isA<FlowComponent>());
-      expect((component! as FlowComponent).graph.nodes, isEmpty);
+      expect(component, isA<VisualScriptComponent>());
+      expect((component! as VisualScriptComponent).graph.nodes, isEmpty);
     });
   });
 
   group('watching a live graph', () {
     test('a component records nothing until it is asked to', () {
       final node = Node(name: 'script');
-      final component = FlowComponent(graph: tickingGraph());
+      final component = VisualScriptComponent(graph: tickingGraph());
       node.addComponent(component);
       component.update(1 / 60);
 
@@ -520,7 +548,8 @@ void main() {
 
     test('turning it on records what the tick did', () {
       final node = Node(name: 'script');
-      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      final component = VisualScriptComponent(graph: tickingGraph())
+        ..tracing = true;
       node.addComponent(component);
       component.update(1 / 60);
 
@@ -534,7 +563,8 @@ void main() {
       // A graph on a tick event runs every frame; keeping every frame's trace
       // would grow without bound and bury the frame anyone is looking at.
       final node = Node(name: 'script');
-      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      final component = VisualScriptComponent(graph: tickingGraph())
+        ..tracing = true;
       node.addComponent(component);
 
       component.update(1 / 60);
@@ -547,7 +577,8 @@ void main() {
 
     test('turning it off stops recording', () {
       final node = Node(name: 'script');
-      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      final component = VisualScriptComponent(graph: tickingGraph())
+        ..tracing = true;
       node.addComponent(component);
       component.update(1 / 60);
       expect(component.trace, isNotNull);
@@ -557,4 +588,180 @@ void main() {
       expect(component.trace, isNull);
     });
   });
+
+  group('a component running a blueprint', () {
+    test('construction runs once, before the first tick', () {
+      // The two halves have different lives, and the component is what gives
+      // them one: build, then start, then tick.
+      final blueprint = Blueprint(
+        variables: [
+          VisualScriptVariable(
+            name: 'built',
+            type: VisualScriptType.number,
+            initial: 0.0,
+          ),
+        ],
+      );
+      blueprint.addGraph(
+        _bump('built'),
+        kind: VisualScriptGraphKind.constructionScript,
+      );
+      final node = Node(name: 'crate');
+      final component = VisualScriptComponent(blueprint: blueprint);
+      node.addComponent(component);
+
+      component.update(1 / 60);
+      expect(component.variables!['built'], 1.0);
+      component.update(1 / 60);
+      component.update(1 / 60);
+      expect(component.variables!['built'], 1.0, reason: 'it rebuilt');
+    });
+
+    test('an event graph and a construction script share a variable', () {
+      final blueprint = Blueprint(
+        variables: [
+          VisualScriptVariable(
+            name: 'n',
+            type: VisualScriptType.number,
+            initial: 0.0,
+          ),
+        ],
+      );
+      blueprint
+        ..addGraph(_bump('n'), kind: VisualScriptGraphKind.constructionScript)
+        ..addGraph(
+          _bump('n', event: 'event.tick'),
+          kind: VisualScriptGraphKind.eventGraph,
+        );
+      final node = Node(name: 'crate');
+      final component = VisualScriptComponent(blueprint: blueprint);
+      node.addComponent(component);
+
+      component.update(1 / 60);
+      // Construction bumped it, then the tick bumped it again.
+      expect(component.variables!['n'], 2.0);
+    });
+
+    test('setting graph replaces the event graph and keeps the rest', () {
+      // Wiring an event must not delete a construction script.
+      final blueprint = Blueprint()
+        ..addGraph(
+          VisualScriptGraph(),
+          kind: VisualScriptGraphKind.constructionScript,
+          name: 'Build',
+        );
+      final component = VisualScriptComponent(blueprint: blueprint);
+      component.graph = _bump('n');
+      expect(blueprint.graph('Build'), isNotNull);
+      expect(
+        blueprint.graphsOfKind(VisualScriptGraphKind.eventGraph),
+        hasLength(1),
+      );
+    });
+
+    test('a clone gets its own blueprint, not a shared one', () {
+      final component = VisualScriptComponent(graph: _bump('n'));
+      final clone =
+          component.cloneFor(Node(name: 'other'))! as VisualScriptComponent;
+      expect(identical(clone.blueprint, component.blueprint), isFalse);
+      clone.blueprint.graphs.single.nodes.clear();
+      expect(component.blueprint.graphs.single.nodes, isNotEmpty);
+    });
+
+    test('a blueprint round-trips through a component spec', () {
+      final blueprint = Blueprint(name: 'Crate')
+        ..addGraph(
+          _bump('n'),
+          kind: VisualScriptGraphKind.constructionScript,
+          name: 'Build',
+        )
+        ..addGraph(
+          VisualScriptGraph(),
+          kind: VisualScriptGraphKind.function,
+          name: 'Open',
+        );
+
+      final registry = defaultComponentRegistry();
+      final codec = registry.codecFor(visualScriptComponentType)!;
+      final document = SceneDocument();
+      final spec = codec.serialize(
+        VisualScriptComponent(blueprint: blueprint),
+        SerializeContext(document),
+      )!;
+      final restored =
+          codec.realize(spec, RealizeContext(document))!
+              as VisualScriptComponent;
+
+      expect(restored.blueprint.name, 'Crate');
+      expect(
+        restored.blueprint.graph('Build')!.kind,
+        VisualScriptGraphKind.constructionScript,
+      );
+      expect(restored.blueprint.routine('Open'), isNotNull);
+    });
+
+    test('a document holding one graph still opens', () {
+      // Everything saved before blueprints existed.
+      final registry = defaultComponentRegistry();
+      final codec = registry.codecFor(visualScriptComponentType)!;
+      final legacy = ComponentSpec(
+        visualScriptComponentType,
+        properties: {'graph': StringValue(writeVisualScript(_bump('n')))},
+      );
+      final restored =
+          codec.realize(legacy, RealizeContext(SceneDocument()))!
+              as VisualScriptComponent;
+      expect(restored.blueprint.graphs, hasLength(1));
+      expect(
+        restored.blueprint.graphs.single.kind,
+        VisualScriptGraphKind.eventGraph,
+      );
+      expect(restored.graph.nodes, isNotEmpty);
+    });
+
+    test('an empty blueprint writes nothing', () {
+      final registry = defaultComponentRegistry();
+      final codec = registry.codecFor(visualScriptComponentType)!;
+      final spec = codec.serialize(
+        VisualScriptComponent(),
+        SerializeContext(SceneDocument()),
+      )!;
+      expect(spec.properties, isNot(contains('graph')));
+    });
+  });
+}
+
+/// A graph that adds one to [variable] when [event] fires.
+VisualScriptGraph _bump(String variable, {String event = 'event.start'}) {
+  final graph = VisualScriptGraph();
+  final start = graph.add(event);
+  final read = graph.add('var.get')..literals['name'] = variable;
+  final add = graph.add('math.add')..literals['b'] = 1.0;
+  final write = graph.add('var.set')..literals['name'] = variable;
+  graph
+    ..connect(
+      VisualScriptLink(
+        fromNode: start.id,
+        fromPin: 'then',
+        toNode: write.id,
+        toPin: 'exec',
+      ),
+    )
+    ..connect(
+      VisualScriptLink(
+        fromNode: read.id,
+        fromPin: 'value',
+        toNode: add.id,
+        toPin: 'a',
+      ),
+    )
+    ..connect(
+      VisualScriptLink(
+        fromNode: add.id,
+        fromPin: 'value',
+        toNode: write.id,
+        toPin: 'value',
+      ),
+    );
+  return graph;
 }

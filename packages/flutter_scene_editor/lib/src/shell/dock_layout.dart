@@ -18,6 +18,9 @@ const Map<String, String> renamedPanelIds = {
   'viewport': 'scene',
   'outliner': 'hierarchy',
   'assets': 'project',
+  // The Flow canvas became the Visual Scripter; that rename shipped without a
+  // layout migration, which is what this table is for.
+  'flow': 'visual_scripter',
 };
 
 /// The current id for [id], which is [id] unless it was renamed.
@@ -46,7 +49,7 @@ DockLayout defaultEditorDockLayout() {
             ),
             // The bottom shelf runs under the hierarchy and the scene both,
             // which is what makes it a shelf rather than a third column.
-            DockTabs(['project', 'console', 'animation', 'flow']),
+            DockTabs(['project', 'console', 'animation', 'visual_scripter']),
           ],
           [0.68, 0.32],
         ),

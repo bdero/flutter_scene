@@ -9,6 +9,7 @@
 /// later phase; this is the read-and-drag-in first version.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ import '../assets/environment_thumbnail.dart';
 import '../inspector/resource_origin.dart';
 import '../io/file_browser.dart';
 import '../io/scene_io.dart';
+import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
+import 'package:scene/scene.dart' show LocalId, writeFscene;
 
 /// The asset browser panel.
 class AssetBrowserPanel extends StatefulWidget {
@@ -151,6 +154,42 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       _ctrl.document,
     ).where((r) => q.isEmpty || r.label.toLowerCase().contains(q)).toList();
 
+    return DragTarget<LocalId>(
+      onWillAcceptWithDetails: (details) => _scanRoot != null,
+      onAcceptWithDetails: (details) => unawaited(_makePrefab(details.data)),
+      builder: (context, candidate, rejected) => Container(
+        foregroundDecoration: candidate.isEmpty
+            ? null
+            : BoxDecoration(
+                border: Border.all(color: editorAccentColor, width: 2),
+                color: editorAccentColor.withValues(alpha: 0.07),
+              ),
+        child: _buildBrowser(
+          context,
+          visibleFiles,
+          models,
+          scenes,
+          environmentImages,
+          images,
+          materials,
+          embedded,
+          q,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBrowser(
+    BuildContext context,
+    List<FileAsset> visibleFiles,
+    List<FileAsset> models,
+    List<FileAsset> scenes,
+    List<FileAsset> environmentImages,
+    List<FileAsset> images,
+    List<FileAsset> materials,
+    List<EmbeddedResource> embedded,
+    String q,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -582,6 +621,77 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     }
   }
 
+  /// Saves the subtree at [nodeId] as a reusable `.fscene`, and turns the
+  /// node it came from into an instance of it.
+  ///
+  /// The second half is what makes it a prefab rather than a copy: the crate
+  /// in the level and the crate on disk are the same crate afterwards, so
+  /// editing the asset changes the one standing in the scene. It is also what
+  /// both Unity and Unreal do when you drag an object into the content
+  /// browser, and being surprised by that is worse than being asked.
+  Future<void> _makePrefab(LocalId nodeId) async {
+    final root = _scanRoot;
+    final node = _ctrl.document.node(nodeId);
+    if (root == null || node == null) return;
+
+    final extracted = extractPrefab(_ctrl.document, nodeId);
+    final name = node.name.isEmpty ? 'Prefab' : node.name;
+    final file = freePrefabPath(root, name);
+
+    try {
+      await File(file).writeAsString(writeFscene(extracted.document));
+    } on Object catch (error) {
+      _report('Could not write the prefab: $error');
+      return;
+    }
+
+    final relative = file.startsWith('$root${Platform.pathSeparator}')
+        ? file.substring(root.length + 1)
+        : file;
+
+    // The swap is two commands, and so two undo steps, like every other
+    // multi-step gesture here. If the second half fails the first is rolled
+    // back, so a failure leaves the scene as it was rather than holding both
+    // the instance and the node it was made from.
+    final parent = _ctrl.query.parentOf(nodeId);
+    try {
+      final instance = await _ctrl.run('instantiatePrefab', {
+        'prefabAsset': relative,
+        'name': node.name,
+        if (parent != null) 'parentId': parent.toToken(),
+      });
+      try {
+        await _ctrl.run('deleteNode', {'nodeId': nodeId.toToken()});
+      } on Object {
+        if (_ctrl.history.canUndo) await _ctrl.undo();
+        rethrow;
+      }
+      _ctrl.selection.selectOnly(instance.records.first.targetId);
+    } on Object catch (error) {
+      _report('Made $relative, but could not swap the node for it: $error');
+      await _rescan();
+      return;
+    }
+
+    await _rescan();
+    if (!extracted.isComplete) {
+      _report(
+        'Made $relative. ${extracted.droppedNodeReferences.length} '
+        'reference(s) to nodes outside it were cleared: '
+        '${extracted.droppedNodeReferences.join(', ')}.',
+      );
+    } else {
+      _report('Made $relative.');
+    }
+  }
+
+  void _report(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _instantiatePrefab(String path) async {
     final base = _ctrl.baseDirectory;
     final source = (base != null && path.startsWith('$base/'))
@@ -873,5 +983,24 @@ class _FileThumbnailTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// A path under [root] for a prefab called [name] that no file has yet.
+///
+/// The name comes from a node, and a node's name is whatever somebody typed
+/// into it, so it reaches the filesystem having been nowhere near one: a node
+/// called "../../etc/passwd" is a node somebody named that. Everything but
+/// letters, digits, spaces, dashes and underscores goes, which leaves the
+/// result inside [root] by construction rather than by checking afterwards.
+String freePrefabPath(String root, String name) {
+  final safe = name.replaceAll(RegExp(r'[^A-Za-z0-9_\- ]'), '').trim();
+  final base = safe.isEmpty ? 'Prefab' : safe;
+  final separator = Platform.pathSeparator;
+  for (var i = 0; ; i++) {
+    final candidate = i == 0
+        ? '$root$separator$base.fscene'
+        : '$root$separator$base $i.fscene';
+    if (!File(candidate).existsSync()) return candidate;
   }
 }
