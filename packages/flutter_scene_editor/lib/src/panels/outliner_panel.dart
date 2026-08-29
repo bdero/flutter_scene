@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:math' as math;
 
 // ignore: implementation_imports
@@ -28,10 +30,97 @@ class OutlinerPanel extends StatefulWidget {
   State<OutlinerPanel> createState() => _OutlinerPanelState();
 }
 
+/// Fixed row heights, so the list lays out only what is visible and scroll
+/// offsets are exact. Variable extents made a scroll jump through a large
+/// scene lay out thousands of rows in one frame (seconds in the Bistro).
+const double _kRowExtent = 24;
+const double _kInsertionExtent = 6;
+
 class _OutlinerPanelState extends State<OutlinerPanel> {
   final Set<LocalId> _collapsed = {};
+  final ScrollController _scroll = ScrollController();
 
   EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.outlinerReveal.addListener(_onRevealRequest);
+    // TODO(outliner-profiling): temporary scroll driver for perf measurement,
+    // remove before merge.
+    dev.registerExtension('ext.fse.outlinerScroll', (method, params) async {
+      final to = double.tryParse(params['to'] ?? '');
+      final ms = int.tryParse(params['ms'] ?? '') ?? 0;
+      if (to != null && _scroll.hasClients) {
+        if (ms > 0) {
+          await _scroll.animateTo(
+            to,
+            duration: Duration(milliseconds: ms),
+            curve: Curves.linear,
+          );
+        } else {
+          _scroll.jumpTo(to);
+        }
+      }
+      return dev.ServiceExtensionResponse.result(
+        jsonEncode({
+          'max': _scroll.hasClients ? _scroll.position.maxScrollExtent : 0,
+          'offset': _scroll.hasClients ? _scroll.offset : 0,
+        }),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    controller.outlinerReveal.removeListener(_onRevealRequest);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  // Expands ancestors of the requested node and scrolls its row into view
+  // (centered), after the post-reveal frame has rebuilt the list.
+  void _onRevealRequest() {
+    final id = controller.outlinerReveal.value;
+    if (id == null) return;
+    var ancestor = controller.query.parentOf(id);
+    var expandedAny = false;
+    while (ancestor != null) {
+      expandedAny |= _collapsed.remove(ancestor);
+      ancestor = controller.query.parentOf(ancestor);
+    }
+    if (expandedAny) setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final entries = _visibleEntries(
+        controller,
+        roots: controller.displayRoots(),
+        collapsed: _collapsed,
+      );
+      var offset = 0.0;
+      var found = false;
+      for (final entry in entries) {
+        if (entry is _VisibleNode && entry.node.id == id) {
+          found = true;
+          break;
+        }
+        offset += entry is _VisibleInsertion
+            ? _kInsertionExtent
+            : _kRowExtent;
+      }
+      if (!found) return;
+      final viewport = _scroll.position.viewportDimension;
+      final target = (offset - (viewport - _kRowExtent) / 2).clamp(
+        0.0,
+        _scroll.position.maxScrollExtent,
+      );
+      _scroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
 
   @override
   void didUpdateWidget(OutlinerPanel oldWidget) {
@@ -55,10 +144,13 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
       listenable: controller,
       builder: (context, _) {
         final roots = controller.displayRoots();
-        final entries = _visibleEntries(
-          controller,
-          roots: roots,
-          collapsed: _collapsed,
+        final entries = dev.Timeline.timeSync(
+          'outliner.flatten',
+          () => _visibleEntries(
+            controller,
+            roots: roots,
+            collapsed: _collapsed,
+          ),
         );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -72,7 +164,12 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scroll,
                       itemCount: entries.length,
+                      itemExtentBuilder: (index, dimensions) =>
+                          entries[index] is _VisibleInsertion
+                          ? _kInsertionExtent
+                          : _kRowExtent,
                       scrollCacheExtent: const ScrollCacheExtent.pixels(400),
                       itemBuilder: (context, index) {
                         final entry = entries[index];
@@ -307,7 +404,7 @@ class _InsertionLineState extends State<_InsertionLine> {
       },
       builder: (context, candidate, rejected) {
         return Container(
-          height: 6,
+          height: _kInsertionExtent,
           padding: EdgeInsets.only(left: 4.0 + widget.depth * 16.0, right: 4),
           alignment: Alignment.center,
           child: Container(
@@ -369,12 +466,8 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
 
     Widget rowContent = Container(
       color: rowColor,
-      padding: EdgeInsets.only(
-        left: 4.0 + widget.depth * 16.0,
-        right: 4,
-        top: 2,
-        bottom: 2,
-      ),
+      height: _kRowExtent,
+      padding: EdgeInsets.only(left: 4.0 + widget.depth * 16.0, right: 4),
       child: Row(
         children: [
           SizedBox(
