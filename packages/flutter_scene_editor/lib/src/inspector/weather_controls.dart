@@ -173,9 +173,30 @@ class _WeatherControlsState extends State<WeatherControls> {
     }
   }
 
+  /// The node carrying the scene's storm, or null when it has none.
+  LocalId? get _stormNode {
+    for (final entry in _ctrl.document.nodes.entries) {
+      for (final component in entry.value.components) {
+        if (component.type == 'lightning') return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// Adds a storm: the driver, and the light it flashes.
+  ///
+  /// The light is the part that was missing. A lightning driver finds the
+  /// scene's weather sky by itself, but it has no way to reference a light --
+  /// a document cannot point at a live one -- so it adopts a directional
+  /// light on its own node. Without one, a storm under anything but a weather
+  /// sky fired strikes and thunder into a scene where nothing changed.
+  ///
+  /// The light rests at zero and is driven up by each strike, so between
+  /// bolts it contributes nothing.
   Future<void> _addLightning() async {
+    if (_stormNode != null) return;
     final before = Set.of(_ctrl.document.nodes.keys);
-    await _ctrl.run('createNode', {'name': 'Lightning'});
+    await _ctrl.run('createNode', {'name': 'Storm'});
     final nodeId = _ctrl.document.nodes.keys.firstWhere(
       (id) => !before.contains(id),
     );
@@ -183,6 +204,17 @@ class _WeatherControlsState extends State<WeatherControls> {
       'nodeId': nodeId.toToken(),
       'componentType': 'lightning',
     });
+    await _ctrl.run('addComponent', {
+      'nodeId': nodeId.toToken(),
+      'componentType': 'directionalLight',
+      'properties': {'intensity': 0.0, 'castsShadows': false},
+    });
+  }
+
+  Future<void> _removeLightning() async {
+    final nodeId = _stormNode;
+    if (nodeId == null) return;
+    await _ctrl.run('deleteNode', {'nodeId': nodeId.toToken()});
   }
 
   @override
@@ -246,8 +278,45 @@ class _WeatherControlsState extends State<WeatherControls> {
             onCommit: _applyWind,
           ),
         ],
+        const SizedBox(height: 14),
+        const EditorSectionHeader(label: 'Storm'),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            _stormNode == null
+                ? 'Lightning that lights the clouds from inside, and thunder '
+                      'delayed by how far away the bolt was. It comes with a '
+                      'light for the flash, since a strike under a clear sky '
+                      'has no clouds to show it.'
+                : 'Running. Every field of it is on the Storm node; the '
+                      'flash brightness is on the light beside the driver.',
+            style: editorDetailText,
+          ),
+        ),
+        if (_stormNode == null)
+          OutlinedButton(
+            onPressed: _environment == null ? null : _addStorm,
+            child: const Text('Add storm'),
+          )
+        else
+          OutlinedButton(
+            onPressed: _removeLightning,
+            child: const Text('Remove storm'),
+          ),
       ],
     );
+  }
+
+  /// Adds a storm, and the weather sky it needs to be seen against.
+  Future<void> _addStorm() async {
+    if (_sky == null) {
+      await _ctrl.run('setSkybox', {
+        'sky': 'weather',
+        'lightScene': true,
+        'castShadows': false,
+      });
+    }
+    await _addLightning();
   }
 
   /// The document node carrying the scene's wind, or null when it has none.
