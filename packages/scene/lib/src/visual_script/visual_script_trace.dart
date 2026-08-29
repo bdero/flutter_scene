@@ -17,8 +17,8 @@
 library;
 
 /// One node's turn, in the order it happened.
-/// {@category Flow}
-typedef FlowTraceStep = ({
+/// {@category Visual scripting}
+typedef VisualScriptTraceStep = ({
   /// The node that ran.
   int nodeId,
 
@@ -32,51 +32,51 @@ typedef FlowTraceStep = ({
 
 /// Which pin of which node. The key for everything a trace records about
 /// values.
-/// {@category Flow}
-typedef FlowPinRef = ({int nodeId, String pinId});
+/// {@category Visual scripting}
+typedef VisualScriptPinRef = ({int nodeId, String pinId});
 
 /// What one run of a graph did.
 ///
-/// Attach it to a [FlowContext] and it fills as the graph runs. Read it
+/// Attach it to a [VisualScriptContext] and it fills as the graph runs. Read it
 /// afterwards -- a canvas highlighting live wires, a test asserting a branch
 /// was taken, a bug report.
-/// {@category Flow}
-class FlowTrace {
+/// {@category Visual scripting}
+class VisualScriptTrace {
   /// Creates an empty trace holding at most [maxSteps] entries.
   ///
   /// Bounded because a graph on a tick event runs every frame and an
   /// unbounded list would be a leak with a nice name. Past the limit the
   /// counts and the values keep updating and the step list stops growing,
   /// which keeps the expensive part bounded and the useful part live.
-  FlowTrace({this.maxSteps = 512});
+  VisualScriptTrace({this.maxSteps = 512});
 
   /// The most steps [steps] holds.
   final int maxSteps;
 
-  final List<FlowTraceStep> _steps = [];
+  final List<VisualScriptTraceStep> _steps = [];
 
   /// The nodes that ran, in order.
-  List<FlowTraceStep> get steps => List.unmodifiable(_steps);
+  List<VisualScriptTraceStep> get steps => List.unmodifiable(_steps);
 
   /// How many nodes ran, including any past [maxSteps].
   int get stepCount => _stepCount;
   int _stepCount = 0;
 
-  final Map<FlowPinRef, Object?> _values = {};
+  final Map<VisualScriptPinRef, Object?> _values = {};
 
   /// The last value seen on each pin.
   ///
   /// Inputs and outputs both: an input is what the node was handed, an output
   /// is what it produced, and a wire between them is labelled by either.
-  Map<FlowPinRef, Object?> get values => Map.unmodifiable(_values);
+  Map<VisualScriptPinRef, Object?> get values => Map.unmodifiable(_values);
 
-  final Set<FlowPinRef> _fired = {};
+  final Set<VisualScriptPinRef> _fired = {};
 
   /// The exec outputs that were taken.
   ///
   /// What tells a Branch's true wire from its false one on the canvas, which
   /// is the single most useful thing a trace can say.
-  Set<FlowPinRef> get firedExec => Set.unmodifiable(_fired);
+  Set<VisualScriptPinRef> get firedExec => Set.unmodifiable(_fired);
 
   final Set<int> _visited = {};
 

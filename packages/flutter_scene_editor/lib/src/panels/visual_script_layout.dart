@@ -1,4 +1,4 @@
-/// Where a flow graph's nodes, pins, and wires land on the canvas, and how
+/// Where a visual script's nodes, pins, and wires land on the canvas, and how
 /// they are drawn.
 ///
 /// Kept apart from the panel because it is arithmetic: given a graph and a
@@ -9,59 +9,59 @@ library;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/flow.dart';
+import 'package:flutter_scene/visual_script.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../shell/editor_theme.dart';
 
 /// A pin on a node, as the canvas refers to it.
-typedef FlowPortRef = ({int node, String pin, bool isInput});
+typedef VisualScriptPortRef = ({int node, String pin, bool isInput});
 
 /// Node body metrics, in canvas units.
-const double flowNodeWidth = 168;
-const double flowHeaderHeight = 22;
-const double flowRowHeight = 18;
-const double flowPortRadius = 4.5;
-const double flowGrabRadius = 9;
+const double visualScriptNodeWidth = 168;
+const double visualScriptHeaderHeight = 22;
+const double visualScriptRowHeight = 18;
+const double visualScriptPortRadius = 4.5;
+const double visualScriptGrabRadius = 9;
 
 /// The colour a wire and its pins take, by what travels along them.
 ///
 /// Exec is the pale one because it is the spine of a graph and should read
 /// first; the data types are hued so a wire's kind is legible without
 /// following it to either end.
-Color flowTypeColor(FlowType type) => switch (type) {
-  FlowType.exec => const Color(0xFFE8ECF0),
-  FlowType.boolean => const Color(0xFFC0504E),
-  FlowType.number => const Color(0xFF6FC96F),
-  FlowType.integer => const Color(0xFF4EC9B0),
-  FlowType.string => const Color(0xFFD98FD9),
-  FlowType.vector3 => const Color(0xFFE0A84E),
-  FlowType.nodeRef => const Color(0xFF4E86DE),
-  FlowType.any => const Color(0xFF9099A2),
+Color visualScriptTypeColor(VisualScriptType type) => switch (type) {
+  VisualScriptType.exec => const Color(0xFFE8ECF0),
+  VisualScriptType.boolean => const Color(0xFFC0504E),
+  VisualScriptType.number => const Color(0xFF6FC96F),
+  VisualScriptType.integer => const Color(0xFF4EC9B0),
+  VisualScriptType.string => const Color(0xFFD98FD9),
+  VisualScriptType.vector3 => const Color(0xFFE0A84E),
+  VisualScriptType.nodeRef => const Color(0xFF4E86DE),
+  VisualScriptType.any => const Color(0xFF9099A2),
 };
 
 /// Where everything in [graph] sits.
-class FlowLayout {
-  FlowLayout(this.graph, this.registry);
+class VisualScriptLayout {
+  VisualScriptLayout(this.graph, this.registry);
 
-  final FlowGraph graph;
-  final FlowRegistry registry;
+  final VisualScriptGraph graph;
+  final VisualScriptRegistry registry;
 
   /// How many rows a node's body has: the taller of its input and output
   /// columns, since the two run side by side.
-  int rowsOf(FlowNodeType type) =>
+  int rowsOf(VisualScriptNodeType type) =>
       math.max(type.inputs.length, type.outputs.length);
 
-  double heightOf(FlowNodeType type) =>
-      flowHeaderHeight + rowsOf(type) * flowRowHeight + 6;
+  double heightOf(VisualScriptNodeType type) =>
+      visualScriptHeaderHeight + rowsOf(type) * visualScriptRowHeight + 6;
 
-  Rect boundsOf(FlowNodeSpec node) {
+  Rect boundsOf(VisualScriptNodeSpec node) {
     final type = registry[node.type];
-    final height = type == null ? flowHeaderHeight + 6 : heightOf(type);
+    final height = type == null ? visualScriptHeaderHeight + 6 : heightOf(type);
     return Rect.fromLTWH(
       node.position.x,
       node.position.y,
-      flowNodeWidth,
+      visualScriptNodeWidth,
       height,
     );
   }
@@ -82,24 +82,27 @@ class FlowLayout {
     if (index < 0) return null;
     final y =
         node.position.y +
-        flowHeaderHeight +
-        index * flowRowHeight +
-        flowRowHeight / 2;
-    return Offset(node.position.x + (pin.isInput ? 0 : flowNodeWidth), y);
+        visualScriptHeaderHeight +
+        index * visualScriptRowHeight +
+        visualScriptRowHeight / 2;
+    return Offset(
+      node.position.x + (pin.isInput ? 0 : visualScriptNodeWidth),
+      y,
+    );
   }
 
   /// The pin under [at], within a grab radius, or null.
   ///
   /// Searched newest node first, matching the paint order, so a pin on a node
   /// drawn over another is the one that gets grabbed.
-  FlowPortRef? portAt(Offset at) {
+  VisualScriptPortRef? portAt(Offset at) {
     for (final node in graph.nodes.reversed) {
       final type = registry[node.type];
       if (type == null) continue;
       for (final pin in type.pins) {
         final centre = portCentre(node.id, pin.id);
         if (centre == null) continue;
-        if ((centre - at).distance <= flowGrabRadius) {
+        if ((centre - at).distance <= visualScriptGrabRadius) {
           return (node: node.id, pin: pin.id, isInput: pin.isInput);
         }
       }
@@ -117,8 +120,8 @@ class FlowLayout {
 }
 
 /// Draws the canvas: grid, wires, nodes, and the wire being dragged.
-class FlowCanvasPainter extends CustomPainter {
-  FlowCanvasPainter({
+class VisualScriptCanvasPainter extends CustomPainter {
+  VisualScriptCanvasPainter({
     required this.graph,
     required this.registry,
     required this.pan,
@@ -127,22 +130,22 @@ class FlowCanvasPainter extends CustomPainter {
     required this.wireFrom,
     required this.wirePointer,
     this.trace,
-  }) : layout = FlowLayout(graph, registry);
+  }) : layout = VisualScriptLayout(graph, registry);
 
-  final FlowGraph graph;
-  final FlowRegistry registry;
+  final VisualScriptGraph graph;
+  final VisualScriptRegistry registry;
   final Offset pan;
   final double zoom;
   final int? selected;
-  final FlowPortRef? wireFrom;
+  final VisualScriptPortRef? wireFrom;
   final Offset? wirePointer;
 
   /// What the last tick did, or null when nothing is being watched.
   ///
   /// The canvas draws the same graph either way; this is what turns it from a
   /// diagram of what could happen into a picture of what did.
-  final FlowTrace? trace;
-  final FlowLayout layout;
+  final VisualScriptTrace? trace;
+  final VisualScriptLayout layout;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -194,21 +197,21 @@ class FlowCanvasPainter extends CustomPainter {
     }
   }
 
-  FlowType _typeColorType(int nodeId, String pinId) {
+  VisualScriptType _typeColorType(int nodeId, String pinId) {
     final node = graph.node(nodeId);
     final type = node == null ? null : registry[node.type];
-    return type?.pin(pinId)?.type ?? FlowType.any;
+    return type?.pin(pinId)?.type ?? VisualScriptType.any;
   }
 
-  Color _typeColorOf(FlowPortRef port) =>
-      flowTypeColor(_typeColorType(port.node, port.pin));
+  Color _typeColorOf(VisualScriptPortRef port) =>
+      visualScriptTypeColor(_typeColorType(port.node, port.pin));
 
-  void _paintWire(Canvas canvas, FlowLink link) {
+  void _paintWire(Canvas canvas, VisualScriptLink link) {
     final from = layout.portCentre(link.fromNode, link.fromPin);
     final to = layout.portCentre(link.toNode, link.toPin);
     if (from == null || to == null) return;
     final type = _typeColorType(link.fromNode, link.fromPin);
-    final colour = flowTypeColor(type);
+    final colour = visualScriptTypeColor(type);
     final run = trace;
     if (run == null) {
       _paintCurve(canvas, from, to, colour);
@@ -218,7 +221,7 @@ class FlowCanvasPainter extends CustomPainter {
     // With a trace, a wire is one of three things, and telling them apart is
     // the whole point: it carried the run, it exists but the run went the
     // other way, or it is a data wire with a value on it.
-    final isExec = type == FlowType.exec;
+    final isExec = type == VisualScriptType.exec;
     final live = isExec
         ? run.didFire(link.fromNode, link.fromPin)
         : run.visitedNodes.contains(link.fromNode);
@@ -309,7 +312,7 @@ class FlowCanvasPainter extends CustomPainter {
     );
   }
 
-  void _paintNode(Canvas canvas, FlowNodeSpec node) {
+  void _paintNode(Canvas canvas, VisualScriptNodeSpec node) {
     final type = registry[node.type];
     final bounds = layout.boundsOf(node);
     final isSelected = node.id == selected;
@@ -331,7 +334,7 @@ class FlowCanvasPainter extends CustomPainter {
       bounds.left,
       bounds.top,
       bounds.width,
-      flowHeaderHeight,
+      visualScriptHeaderHeight,
     );
     canvas
       ..save()
@@ -356,7 +359,7 @@ class FlowCanvasPainter extends CustomPainter {
       _text(
         canvas,
         'unknown type',
-        Offset(bounds.left + 8, bounds.top + flowHeaderHeight + 3),
+        Offset(bounds.left + 8, bounds.top + visualScriptHeaderHeight + 3),
         editorMicroText.copyWith(color: editorErrorColor),
       );
       return;
@@ -374,16 +377,16 @@ class FlowCanvasPainter extends CustomPainter {
 
   void _paintPin(
     Canvas canvas,
-    FlowNodeSpec node,
-    FlowPin pin,
+    VisualScriptNodeSpec node,
+    VisualScriptPin pin,
     int row, {
     required bool isInput,
   }) {
     final centre = layout.portCentre(node.id, pin.id);
     if (centre == null) return;
-    final color = flowTypeColor(pin.type);
+    final color = visualScriptTypeColor(pin.type);
 
-    if (pin.type == FlowType.exec) {
+    if (pin.type == VisualScriptType.exec) {
       // Exec pins are triangles, so the spine of a graph is distinguishable
       // from its values at a glance rather than by colour alone.
       final path = Path()
@@ -394,10 +397,10 @@ class FlowCanvasPainter extends CustomPainter {
       canvas.drawPath(path, Paint()..color = color);
     } else {
       canvas
-        ..drawCircle(centre, flowPortRadius, Paint()..color = color)
+        ..drawCircle(centre, visualScriptPortRadius, Paint()..color = color)
         ..drawCircle(
           centre,
-          flowPortRadius,
+          visualScriptPortRadius,
           Paint()
             ..color = editorSurfaceColor
             ..style = PaintingStyle.stroke
@@ -410,7 +413,7 @@ class FlowCanvasPainter extends CustomPainter {
     final painter = TextPainter(
       text: TextSpan(text: pin.label, style: style),
       textDirection: TextDirection.ltr,
-    )..layout(maxWidth: flowNodeWidth / 2 - 10);
+    )..layout(maxWidth: visualScriptNodeWidth / 2 - 10);
     painter.paint(
       canvas,
       Offset(
@@ -427,10 +430,10 @@ class FlowCanvasPainter extends CustomPainter {
         maxLines: 1,
         ellipsis: '…',
       )
-      ..layout(maxWidth: flowNodeWidth - 16)
+      ..layout(maxWidth: visualScriptNodeWidth - 16)
       ..paint(canvas, at);
   }
 
   @override
-  bool shouldRepaint(FlowCanvasPainter old) => true;
+  bool shouldRepaint(VisualScriptCanvasPainter old) => true;
 }

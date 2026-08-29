@@ -1,4 +1,4 @@
-/// The [FlowHost] a graph running inside a scene sees.
+/// The [VisualScriptHost] a graph running inside a scene sees.
 ///
 /// Everything a graph can reach outside its own values goes through here, so
 /// the interpreter stays ignorant of what a scene is and the same graph runs
@@ -6,7 +6,7 @@
 library;
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/animation.dart' show AnimationClip;
@@ -26,9 +26,9 @@ import 'package:flutter_scene/src/skybox.dart' show SunSky;
 /// `turret/position`. That is deliberately the same spelling the animation
 /// channels use, so someone who has bound one already knows how to bind the
 /// other.
-/// {@category Flow}
-class SceneFlowHost implements FlowHost {
-  SceneFlowHost(this.owner, {this.onAction, this.onLog});
+/// {@category Visual scripting}
+class SceneVisualScriptHost implements VisualScriptHost {
+  SceneVisualScriptHost(this.owner, {this.onAction, this.onLog});
 
   /// The node the graph is attached to, and what a bare path resolves
   /// against.
@@ -93,23 +93,23 @@ class SceneFlowHost implements FlowHost {
     final (node, property) = resolved;
     switch (property) {
       case 'position':
-        node.position = flowVector(value);
+        node.position = scriptVector(value);
       case 'position.x':
-        node.position = node.position..x = flowNumber(value);
+        node.position = node.position..x = scriptNumber(value);
       case 'position.y':
-        node.position = node.position..y = flowNumber(value);
+        node.position = node.position..y = scriptNumber(value);
       case 'position.z':
-        node.position = node.position..z = flowNumber(value);
+        node.position = node.position..z = scriptNumber(value);
       case 'scale':
-        node.scale = flowVector(value);
+        node.scale = scriptVector(value);
       case 'scale.x':
-        node.scale = node.scale..x = flowNumber(value);
+        node.scale = node.scale..x = scriptNumber(value);
       case 'scale.y':
-        node.scale = node.scale..y = flowNumber(value);
+        node.scale = node.scale..y = scriptNumber(value);
       case 'scale.z':
-        node.scale = node.scale..z = flowNumber(value);
+        node.scale = node.scale..z = scriptNumber(value);
       case 'visible':
-        node.visible = flowBool(value);
+        node.visible = scriptBool(value);
       default:
         return false;
     }
@@ -120,11 +120,11 @@ class SceneFlowHost implements FlowHost {
   Object? invoke(String action, Map<String, Object?> arguments) {
     switch (action) {
       case 'lookAt':
-        final target = flowVector(arguments['target']);
+        final target = scriptVector(arguments['target']);
         owner.lookAt(target);
         return null;
       case 'translate':
-        final by = flowVector(arguments['by']);
+        final by = scriptVector(arguments['by']);
         owner.position = owner.position + by;
         return null;
       case 'playAnimation':
@@ -140,18 +140,20 @@ class SceneFlowHost implements FlowHost {
         return _setWeather(arguments);
       case 'setTimeOfDay':
         return _setTimeOfDay(arguments);
+      case 'spawn':
+        return _spawn(arguments);
       case 'setAnimatorNumber':
         return _withAnimator(
           (a) => a.animator.parameters.setNumber(
             '${arguments['name']}',
-            flowNumber(arguments['value'], 0),
+            scriptNumber(arguments['value'], 0),
           ),
         );
       case 'setAnimatorFlag':
         return _withAnimator(
           (a) => a.animator.parameters.setFlag(
             '${arguments['name']}',
-            value: flowBool(arguments['value']),
+            value: scriptBool(arguments['value']),
           ),
         );
       case 'animatorTrigger':
@@ -218,14 +220,77 @@ class SceneFlowHost implements FlowHost {
       // sky holds it as a plain mutable vector the shader reads at draw time.
       source.sunDirection.setFrom(
         sunDirectionForHour(
-          flowNumber(arguments['hour'], 12),
-          tilt: flowNumber(arguments['tilt'], 0.35),
+          scriptNumber(arguments['hour'], 12),
+          tilt: scriptNumber(arguments['tilt'], 0.35),
         ),
       );
       return true;
     }
     log('The scene\'s sky has no sun to move.');
     return false;
+  }
+
+  /// Clones a template already in the scene and puts the copy in it.
+  ///
+  /// A template rather than an asset path because a node's evaluate is
+  /// synchronous and loading a document is not: a graph cannot wait for a file
+  /// mid-tick. So a blueprint spawns a copy of something the scene already
+  /// holds -- the usual arrangement being a hidden template parked off to one
+  /// side -- which is the same shape as handing Unity's Instantiate a loaded
+  /// prefab rather than a path.
+  ///
+  /// Returns the spawned node's name, or an empty string when there was no
+  /// such template.
+  String _spawn(Map<String, Object?> arguments) {
+    final templateName = '${arguments['template'] ?? ''}';
+    if (templateName.isEmpty) {
+      log('Spawn was given no template to copy.');
+      return '';
+    }
+    final template = _find(templateName);
+    if (template == null) {
+      log('No node named "$templateName" to spawn a copy of.');
+      return '';
+    }
+
+    // The scene root by preference: a spawned thing outliving the node that
+    // spawned it is the usual case, and parenting it to the spawner would take
+    // it away when that node goes.
+    final parentName = '${arguments['parent'] ?? ''}';
+    final parent = parentName.isEmpty
+        ? (_scene?.root ?? owner)
+        : _find(parentName);
+    if (parent == null) {
+      log('No node named "$parentName" to spawn into.');
+      return '';
+    }
+    if (identical(parent, template)) {
+      log('A template cannot be spawned into itself.');
+      return '';
+    }
+
+    final spawned = template.clone();
+    spawned
+      ..name = templateName
+      // Visible whatever the template was: a template is usually parked
+      // hidden, and a spawn nobody can see reads as a spawn that failed.
+      ..visible = true
+      ..position = scriptVector(arguments['at']);
+    parent.add(spawned);
+    return spawned.name;
+  }
+
+  /// The node called [name], searched from the scene root and then from the
+  /// node the graph is on, so a template parked anywhere is reachable.
+  Node? _find(String name) {
+    final root = _scene?.root;
+    if (root != null) {
+      if (root.name == name) return root;
+      final found = root.getChildByName(name);
+      if (found != null) return found;
+    }
+    if (owner.name == name) return owner;
+    return owner.getChildByName(name);
   }
 
   /// The animator on the node the graph runs on, or null.
@@ -256,8 +321,8 @@ class SceneFlowHost implements FlowHost {
     }
     final clip = _clips[name] ?? owner.createAnimationClip(animation);
     _clips[name] = clip
-      ..loop = flowBool(arguments['loop'])
-      ..playbackTimeScale = flowNumber(arguments['speed'], 1)
+      ..loop = scriptBool(arguments['loop'])
+      ..playbackTimeScale = scriptNumber(arguments['speed'], 1)
       ..play();
     return true;
   }
@@ -273,5 +338,5 @@ class SceneFlowHost implements FlowHost {
   }
 
   /// A vector as the engine's own type, for a caller reading a graph's output.
-  static vm.Vector3 vector(Object? value) => flowVector(value);
+  static vm.Vector3 vector(Object? value) => scriptVector(value);
 }

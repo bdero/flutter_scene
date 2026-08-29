@@ -1,7 +1,7 @@
 // Weather as one named thing. The presets are plain data and the sky they
 // drive is a plain object, so none of this needs a GPU.
 
-import 'package:flutter_scene/flow.dart';
+import 'package:flutter_scene/visual_script.dart';
 import 'package:flutter_scene/kit.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,7 +73,7 @@ void main() {
 
   group('the flow nodes', () {
     test('Set Weather and Set Time of Day are in the palette', () {
-      final registry = sceneFlowRegistry();
+      final registry = sceneVisualScriptRegistry();
       expect(registry['scene.setWeather'], isNotNull);
       expect(registry['scene.setTimeOfDay'], isNotNull);
     });
@@ -82,7 +82,7 @@ void main() {
       // The host reaches the sky through the scene the node is mounted in,
       // and a graph can perfectly well be ticked on a detached node.
       final log = <String>[];
-      final host = SceneFlowHost(Node(name: 'actor'), onLog: log.add);
+      final host = SceneVisualScriptHost(Node(name: 'actor'), onLog: log.add);
       expect(host.invoke('setWeather', {'weather': 'rain'}), isFalse);
       expect(host.invoke('setTimeOfDay', {'hour': 9.0}), isFalse);
       expect(log, hasLength(2));
@@ -90,7 +90,7 @@ void main() {
 
     test('an unknown weather name is reported, not guessed at', () {
       final log = <String>[];
-      final host = SceneFlowHost(Node(name: 'actor'), onLog: log.add);
+      final host = SceneVisualScriptHost(Node(name: 'actor'), onLog: log.add);
       expect(host.invoke('setWeather', {'weather': 'brimstone'}), isFalse);
       expect(log.single, contains('brimstone'));
     });

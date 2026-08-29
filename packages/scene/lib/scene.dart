@@ -84,6 +84,8 @@ export 'src/property_value.dart'
         Vec4Value;
 export 'src/diff.dart' show diffScene, NodeChange, SceneDiff;
 export 'src/log.dart' show sceneLog;
+export 'src/component_migration.dart'
+    show migrateComponentType, renamedComponentTypes, visualScriptComponentType;
 export 'src/binary/fsceneb.dart'
     show FscenebFormatException, kFscenebVersion, readFsceneb, writeFsceneb;
 export 'src/json/fscene_json.dart'
