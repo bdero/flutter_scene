@@ -199,7 +199,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       children: [
         const Icon(Icons.folder_open, size: 14),
         const SizedBox(width: 6),
-        const Text('Assets', style: TextStyle(fontSize: 12)),
+        const Text('Project', style: TextStyle(fontSize: 12)),
         const SizedBox(width: 12),
         Expanded(
           child: FTextField(
