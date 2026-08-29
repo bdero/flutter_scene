@@ -876,6 +876,86 @@ class EditorController extends ChangeNotifier {
     });
   }
 
+  /// Commits several nodes' local transforms as one undoable edit (a
+  /// multi-selection drag). Ids with no source node (prefab members) are
+  /// skipped; route those through [setNodeTransformRouted] individually.
+  Future<void> setNodeTransformsBatch(
+    Map<LocalId, TrsTransform> transforms, {
+    String name = 'Set transforms',
+  }) async {
+    final records = <ChangeRecord>[];
+    for (final entry in transforms.entries) {
+      final node = document.nodes[entry.key];
+      if (node == null) continue;
+      records.add(
+        ChangeRecord(
+          targetId: entry.key,
+          slot: ChangeSlot.transform,
+          oldValue: TransformChange(node.transform),
+          newValue: TransformChange(entry.value),
+        ),
+      );
+    }
+    if (records.isEmpty) return;
+    final transaction = Transaction(name: name, records: records);
+    session.applyTransient(transaction);
+    session.commitExternal(transaction);
+    await _reflect(transaction);
+    notifyListeners();
+  }
+
+  /// Merges [raw] into component [type] on every node in [ids], as one
+  /// undoable edit. Ids inside prefab content route through the override
+  /// path individually (their state lives on the instance, not the node).
+  Future<void> setComponentPropertiesOnNodes(
+    Iterable<LocalId> ids,
+    String type,
+    Map<String, Object?> raw,
+  ) async {
+    final records = <ChangeRecord>[];
+    for (final id in ids) {
+      if (!isEditableNode(id)) continue;
+      if (memberOrigin(id) != null) {
+        for (final entry in raw.entries) {
+          await setComponentPropertyRouted(id, type, entry.key, entry.value!);
+        }
+        continue;
+      }
+      final node = document.nodes[id];
+      final existing = node?.components
+          .where((c) => c.type == type)
+          .firstOrNull;
+      if (node == null || existing == null) continue;
+      final coerced = optionalPropertyMap({
+        'properties': raw,
+      }, 'properties', schema: componentSchemaFor(type));
+      final merged = ComponentSpec(
+        type,
+        properties: {...existing.properties, ...coerced},
+      );
+      records.add(
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.components,
+          oldValue: ComponentListChange(List.of(node.components)),
+          newValue: ComponentListChange([
+            for (final component in node.components)
+              if (component.type == type) merged else component,
+          ]),
+        ),
+      );
+    }
+    if (records.isEmpty) return;
+    final transaction = Transaction(
+      name: 'Set component properties ($type)',
+      records: records,
+    );
+    session.applyTransient(transaction);
+    session.commitExternal(transaction);
+    await _reflect(transaction);
+    notifyListeners();
+  }
+
   Future<void> _override(
     PrefabMemberOrigin origin,
     String path,

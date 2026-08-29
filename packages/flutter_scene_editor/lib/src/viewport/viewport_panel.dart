@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 // The editor's own OrbitCameraController (a viewport widget) predates the
 // engine's; hide the engine one here to keep using the local widget.
 import 'package:flutter_scene/scene.dart' hide OrbitCameraController;
+import 'package:scene/scene.dart' show LocalId, TrsTransform;
 import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -90,12 +91,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   // The selected node's local transform components at the start of a gizmo
   // drag, decomposed so each mode can rebuild the preview.
-  final vm.Vector3 _startT = vm.Vector3.zero();
-  final vm.Quaternion _startR = vm.Quaternion.identity();
-  final vm.Vector3 _startS = vm.Vector3(1, 1, 1);
-  final vm.Matrix4 _startLocal = vm.Matrix4.identity();
-  final vm.Matrix4 _startGlobal = vm.Matrix4.identity();
-  final vm.Matrix4 _parentGlobalInverse = vm.Matrix4.identity();
+  // Per-node start state for the active drag (primary first), and the pivot
+  // every rotation/scale applies about (the primary's start origin).
+  List<_TransformTarget> _dragTargets = const [];
+  final vm.Vector3 _dragPivot = vm.Vector3.zero();
   List<vm.Vector3> _activeTransformAxes = transformSpaceAxes(
     TransformSpace.global,
     vm.Matrix4.identity(),
@@ -209,7 +208,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         );
         if (grabbed) {
           _draggingGizmo = true;
-          _captureTransformStart(live);
+          _captureTransformStarts(live);
           return;
         }
       }
@@ -242,18 +241,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _pendingSelection = null;
     }
     if (!_draggingGizmo) return;
-    final primary = _ctrl.selection.primary;
-    if (primary == null) return;
-    final live = _ctrl.liveNode(primary);
-    if (live == null) return;
-
+    if (_dragTargets.isEmpty) return;
     _gizmo.update(
       event.localPosition,
-      live.globalTransform.getTranslation(),
+      _dragTargets.first.live.globalTransform.getTranslation(),
       _camera.camera,
       _viewSize,
     );
-    _ctrl.previewLocalTransform(primary, _previewMatrix());
+    for (final target in _dragTargets) {
+      _ctrl.previewLocalTransform(target.id, _previewMatrixFor(target));
+    }
     _bumpView();
   }
 
@@ -270,41 +267,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
       return;
     }
-    final primary = _ctrl.selection.primary;
-    if (primary != null) {
-      final local = _previewMatrix();
-      final translation = vm.Vector3.zero();
-      final rotation = vm.Quaternion.identity();
-      final scale = vm.Vector3.zero();
-      local.decompose(translation, rotation, scale);
+    if (_dragTargets.isNotEmpty) {
       switch (_gizmo.mode) {
         case GizmoMode.translate:
           if (_gizmo.translation.length2 > 1e-10) {
-            _ctrl.setNodeTransformRouted(
-              primary,
-              translation: _vectorMap(translation),
-            );
+            _commitTransformDrag(_previewMatrixFor, translation: true);
           }
         case GizmoMode.rotate:
           if (_gizmo.angle.abs() > 1e-5) {
-            _ctrl.setNodeTransformRouted(
-              primary,
-              rotation: _quaternionMap(rotation),
-              scale: _transformSpace == TransformSpace.global
-                  ? _vectorMap(scale)
-                  : null,
+            _commitTransformDrag(
+              _previewMatrixFor,
+              rotation: true,
+              translation: _dragTargets.length > 1,
+              scale: _transformSpace == TransformSpace.global,
             );
           }
         case GizmoMode.scale:
-          if ((scale - _startS).length2 > 1e-10) {
-            _ctrl.setNodeTransformRouted(
-              primary,
-              scale: _vectorMap(scale),
+          if ((_gizmo.scale - vm.Vector3.all(1)).length2 > 1e-12) {
+            _commitTransformDrag(
+              _previewMatrixFor,
+              scale: true,
+              translation: _dragTargets.length > 1,
               rotation:
                   _transformSpace == TransformSpace.global &&
-                      _gizmo.activeAxis != axisUniform
-                  ? _quaternionMap(rotation)
-                  : null,
+                  _gizmo.activeAxis != axisUniform,
             );
           }
       }
@@ -317,9 +303,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_freeLookActive) _endFreeLook();
     if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;
     if (_draggingGizmo) {
-      final primary = _ctrl.selection.primary;
-      if (primary != null) {
-        _ctrl.previewLocalTransform(primary, _startLocal.clone());
+      for (final target in _dragTargets) {
+        _ctrl.previewLocalTransform(target.id, target.startLocal.clone());
       }
       _gizmo.end();
       _draggingGizmo = false;
@@ -375,53 +360,76 @@ class _ViewportPanelState extends State<ViewportPanel> {
   List<vm.Vector3> _axesFor(Node live) =>
       transformSpaceAxes(_transformSpace, live.globalTransform);
 
-  void _captureTransformStart(Node live) {
-    _startLocal.setFrom(live.localTransform);
-    _startGlobal.setFrom(live.globalTransform);
-    live.localTransform.decompose(_startT, _startR, _startS);
-    final parent = live.parent;
-    if (parent == null) {
-      _parentGlobalInverse.setIdentity();
-    } else {
-      _parentGlobalInverse.copyInverse(parent.globalTransform);
+  // Captures start state for every selected top-level editable node, primary
+  // first (the pivot and gizmo axes derive from it). A single selection
+  // behaves exactly as before; extra nodes ride along about the same pivot.
+  void _captureTransformStarts(Node primaryLive) {
+    final primaryId = _ctrl.selection.primary;
+    final targets = <_TransformTarget>[];
+    for (final id in _ctrl.topLevelSelection()) {
+      if (!_ctrl.isEditableNode(id)) continue;
+      final live = _ctrl.liveNode(id);
+      if (live == null) continue;
+      final target = _TransformTarget(id, live);
+      if (id == primaryId) {
+        targets.insert(0, target);
+      } else {
+        targets.add(target);
+      }
     }
-    _activeTransformAxes = transformSpaceAxes(_transformSpace, _startGlobal);
+    if (targets.isEmpty && primaryId != null) {
+      targets.add(_TransformTarget(primaryId, primaryLive));
+    }
+    _dragTargets = targets;
+    _dragPivot.setFrom(primaryLive.globalTransform.getTranslation());
+    _activeTransformAxes = transformSpaceAxes(
+      _transformSpace,
+      primaryLive.globalTransform,
+    );
   }
 
-  vm.Matrix4 _globalToLocal(vm.Matrix4 global) =>
-      globalToLocalTransform(global, _parentGlobalInverse);
-
-  vm.Matrix4 _translatedLocal(vm.Vector3 globalDelta) {
-    final global = _startGlobal.clone();
-    global.setTranslation(_startGlobal.getTranslation() + globalDelta);
-    return _globalToLocal(global);
+  vm.Matrix4 _translatedLocal(_TransformTarget target, vm.Vector3 globalDelta) {
+    final global = target.startGlobal.clone();
+    global.setTranslation(target.startGlobal.getTranslation() + globalDelta);
+    return globalToLocalTransform(global, target.parentGlobalInverse);
   }
 
-  vm.Matrix4 _rotatedLocal(vm.Vector3 globalAxis, double angle) {
-    final origin = _startGlobal.getTranslation();
+  vm.Matrix4 _rotatedLocal(
+    _TransformTarget target,
+    vm.Vector3 globalAxis,
+    double angle,
+  ) {
     final rotation = vm.Matrix4.compose(
       vm.Vector3.zero(),
       vm.Quaternion.axisAngle(globalAxis, angle),
       vm.Vector3.all(1),
     );
     final global =
-        vm.Matrix4.translation(origin) *
+        vm.Matrix4.translation(_dragPivot) *
         rotation *
-        vm.Matrix4.translation(-origin) *
-        _startGlobal;
-    return _globalToLocal(global);
+        vm.Matrix4.translation(-_dragPivot) *
+        target.startGlobal;
+    return globalToLocalTransform(global, target.parentGlobalInverse);
   }
 
-  vm.Matrix4 _rotatedInLocalSpace(int axis, double angle) {
-    final localAngle = localAxisRotationAngle(angle, _startGlobal);
+  vm.Matrix4 _rotatedInLocalSpace(
+    _TransformTarget target,
+    int axis,
+    double angle,
+  ) {
+    final localAngle = localAxisRotationAngle(angle, target.startGlobal);
     final rotation =
-        _startR *
+        target.startR *
         vm.Quaternion.axisAngle(vm.Vector3.zero()..[axis] = 1, localAngle);
     rotation.normalize();
-    return vm.Matrix4.compose(_startT, rotation, _startS);
+    return vm.Matrix4.compose(target.startT, rotation, target.startS);
   }
 
-  vm.Matrix4 _scaledGlobalLocal(vm.Vector3 globalAxis, double factor) {
+  vm.Matrix4 _scaledGlobalLocal(
+    _TransformTarget target,
+    vm.Vector3 globalAxis,
+    double factor,
+  ) {
     final scale = vm.Matrix4.identity();
     for (var row = 0; row < 3; row++) {
       for (var column = 0; column < 3; column++) {
@@ -433,37 +441,78 @@ class _ViewportPanelState extends State<ViewportPanel> {
         );
       }
     }
-    final origin = _startGlobal.getTranslation();
     final global =
-        vm.Matrix4.translation(origin) *
+        vm.Matrix4.translation(_dragPivot) *
         scale *
-        vm.Matrix4.translation(-origin) *
-        _startGlobal;
-    return _globalToLocal(global);
+        vm.Matrix4.translation(-_dragPivot) *
+        target.startGlobal;
+    return globalToLocalTransform(global, target.parentGlobalInverse);
   }
 
-  vm.Matrix4 _scaledLocal(vm.Vector3 scale) => vm.Matrix4.compose(
-    _startT,
-    _startR,
-    vm.Vector3(_startS.x * scale.x, _startS.y * scale.y, _startS.z * scale.z),
-  );
+  vm.Matrix4 _scaledLocal(_TransformTarget target, vm.Vector3 scale) =>
+      vm.Matrix4.compose(
+        target.startT,
+        target.startR,
+        vm.Vector3(
+          target.startS.x * scale.x,
+          target.startS.y * scale.y,
+          target.startS.z * scale.z,
+        ),
+      );
 
-  vm.Matrix4 _previewMatrix() {
+  vm.Matrix4 _previewMatrixFor(_TransformTarget target) {
     switch (_gizmo.mode) {
       case GizmoMode.translate:
-        return _translatedLocal(_gizmo.translation);
+        return _translatedLocal(target, _gizmo.translation);
       case GizmoMode.rotate:
         if (_transformSpace == TransformSpace.local) {
-          return _rotatedInLocalSpace(_gizmo.activeAxis!, _gizmo.angle);
+          return _rotatedInLocalSpace(target, _gizmo.activeAxis!, _gizmo.angle);
         }
-        return _rotatedLocal(_gizmo.axisVec, _gizmo.angle);
+        return _rotatedLocal(target, _gizmo.axisVec, _gizmo.angle);
       case GizmoMode.scale:
         final axis = _gizmo.activeAxis;
         if (_transformSpace == TransformSpace.local || axis == axisUniform) {
-          return _scaledLocal(_gizmo.scale);
+          return _scaledLocal(target, _gizmo.scale);
         }
-        return _scaledGlobalLocal(_gizmo.axisVec, _gizmo.scale[axis!]);
+        return _scaledGlobalLocal(target, _gizmo.axisVec, _gizmo.scale[axis!]);
     }
+  }
+
+  // Decomposes each drag target's final matrix and commits everything as one
+  // undoable edit. Fields outside the drag's mode keep their current values.
+  // Prefab-member nodes route through the override path individually.
+  void _commitTransformDrag(
+    vm.Matrix4 Function(_TransformTarget) matrixFor, {
+    bool translation = false,
+    bool rotation = false,
+    bool scale = false,
+  }) {
+    final batch = <LocalId, TrsTransform>{};
+    for (final target in _dragTargets) {
+      final local = matrixFor(target);
+      final t = vm.Vector3.zero();
+      final r = vm.Quaternion.identity();
+      final sc = vm.Vector3.zero();
+      local.decompose(t, r, sc);
+      final source = _ctrl.document.nodes[target.id];
+      if (source == null) {
+        _ctrl.setNodeTransformRouted(
+          target.id,
+          translation: translation ? _vectorMap(t) : null,
+          rotation: rotation ? _quaternionMap(r) : null,
+          scale: scale ? _vectorMap(sc) : null,
+        );
+        continue;
+      }
+      final current = source.transform;
+      final trs = current is TrsTransform ? current : null;
+      batch[target.id] = TrsTransform(
+        translation: translation ? t : (trs?.translation ?? target.startT),
+        rotation: rotation ? r : (trs?.rotation ?? target.startR),
+        scale: scale ? sc : (trs?.scale ?? target.startS),
+      );
+    }
+    if (batch.isNotEmpty) unawaited(_ctrl.setNodeTransformsBatch(batch));
   }
 
   void _setMode(GizmoMode mode) {
@@ -485,7 +534,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (primary == null) return;
     final live = _ctrl.liveNode(primary);
     if (live == null) return;
-    _captureTransformStart(live);
+    _captureTransformStarts(live);
     final origin = live.globalTransform.getTranslation();
     _modal = _ModalTransform(
       op: op,
@@ -500,51 +549,39 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   void _updateModal(Offset pointer) {
     final modal = _modal;
-    final primary = _ctrl.selection.primary;
-    if (modal == null || primary == null) return;
+    if (modal == null || _dragTargets.isEmpty) return;
     modal.pointer = pointer;
-    _ctrl.previewLocalTransform(primary, _modalMatrix(modal));
+    for (final target in _dragTargets) {
+      _ctrl.previewLocalTransform(target.id, _modalMatrixFor(target, modal));
+    }
     _bumpView();
   }
 
   void _commitModal() {
     final modal = _modal;
-    final primary = _ctrl.selection.primary;
-    if (modal == null || primary == null) {
+    if (modal == null || _dragTargets.isEmpty) {
       _modal = null;
       return;
     }
+    vm.Matrix4 matrixFor(_TransformTarget target) =>
+        _modalMatrixFor(target, modal);
     switch (modal.op) {
       case _ModalOp.translate:
-        final local = _modalMatrix(modal);
-        final t = local.getTranslation();
-        _ctrl.setNodeTransformRouted(primary, translation: _vectorMap(t));
+        _commitTransformDrag(matrixFor, translation: true);
       case _ModalOp.rotate:
-        final local = _modalMatrix(modal);
-        final t = vm.Vector3.zero();
-        final r = vm.Quaternion.identity();
-        final s = vm.Vector3.zero();
-        local.decompose(t, r, s);
-        _ctrl.setNodeTransformRouted(
-          primary,
-          rotation: _quaternionMap(r),
-          scale: _transformSpace == TransformSpace.global
-              ? _vectorMap(s)
-              : null,
+        _commitTransformDrag(
+          matrixFor,
+          rotation: true,
+          translation: _dragTargets.length > 1,
+          scale: _transformSpace == TransformSpace.global,
         );
       case _ModalOp.scale:
-        final local = _modalMatrix(modal);
-        final t = vm.Vector3.zero();
-        final r = vm.Quaternion.identity();
-        final s = vm.Vector3.zero();
-        local.decompose(t, r, s);
-        _ctrl.setNodeTransformRouted(
-          primary,
-          scale: _vectorMap(s),
+        _commitTransformDrag(
+          matrixFor,
+          scale: true,
+          translation: _dragTargets.length > 1,
           rotation:
-              _transformSpace == TransformSpace.global && modal.axis != null
-              ? _quaternionMap(r)
-              : null,
+              _transformSpace == TransformSpace.global && modal.axis != null,
         );
     }
     _modal = null;
@@ -552,24 +589,29 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _cancelModal() {
-    final modal = _modal;
-    final primary = _ctrl.selection.primary;
-    if (modal != null && primary != null) {
-      _ctrl.previewLocalTransform(primary, _startLocal.clone());
+    if (_modal != null) {
+      for (final target in _dragTargets) {
+        _ctrl.previewLocalTransform(target.id, target.startLocal.clone());
+      }
     }
     _modal = null;
     _bumpView();
   }
 
-  vm.Matrix4 _modalMatrix(_ModalTransform modal) {
+  vm.Matrix4 _modalMatrixFor(_TransformTarget target, _ModalTransform modal) {
     switch (modal.op) {
       case _ModalOp.translate:
-        return _translatedLocal(_modalTranslation(modal));
+        return _translatedLocal(target, _modalTranslation(modal));
       case _ModalOp.rotate:
         if (_transformSpace == TransformSpace.local && modal.axis != null) {
-          return _rotatedInLocalSpace(modal.axis!, _modalRotationAngle(modal));
+          return _rotatedInLocalSpace(
+            target,
+            modal.axis!,
+            _modalRotationAngle(modal),
+          );
         }
         return _rotatedLocal(
+          target,
           _modalRotationAxis(modal),
           _modalRotationAngle(modal),
         );
@@ -577,9 +619,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
         final factors = _modalScaleFactors(modal);
         final axis = modal.axis;
         if (_transformSpace == TransformSpace.local || axis == null) {
-          return _scaledLocal(factors);
+          return _scaledLocal(target, factors);
         }
-        return _scaledGlobalLocal(_activeTransformAxes[axis], factors[axis]);
+        return _scaledGlobalLocal(
+          target,
+          _activeTransformAxes[axis],
+          factors[axis],
+        );
     }
   }
 
@@ -1473,4 +1519,31 @@ class _ViewportSettingsButton extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// Per-node start state captured when a transform drag begins.
+class _TransformTarget {
+  _TransformTarget(this.id, this.live)
+    : startLocal = live.localTransform.clone(),
+      startGlobal = live.globalTransform.clone(),
+      parentGlobalInverse = vm.Matrix4.identity(),
+      startT = vm.Vector3.zero(),
+      startR = vm.Quaternion.identity(),
+      startS = vm.Vector3(1, 1, 1) {
+    live.localTransform.decompose(startT, startR, startS);
+    final parent = live.parent;
+    if (parent != null) {
+      parentGlobalInverse.copyInverse(parent.globalTransform);
+    }
+  }
+
+  final LocalId id;
+  final Node live;
+  final vm.Matrix4 startLocal;
+  final vm.Matrix4 startGlobal;
+  final vm.Matrix4 parentGlobalInverse;
+  final vm.Vector3 startT;
+  final vm.Quaternion startR;
+  final vm.Vector3 startS;
 }
