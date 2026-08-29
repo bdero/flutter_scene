@@ -16,11 +16,13 @@ import 'package:scene/schema.dart';
 
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
+import 'package:flutter_scene/src/animation.dart' show AnimationMask;
 import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
 import 'package:flutter_scene/src/flow/flow_component.dart';
+import 'package:flutter_scene/src/kit/environment/buoyancy_component.dart';
 import 'package:flutter_scene/src/kit/environment/lightning_component.dart';
 import 'package:flutter_scene/src/kit/environment/water_component.dart';
 import 'package:flutter_scene/src/kit/environment/wind_component.dart';
@@ -36,6 +38,7 @@ void registerKitComponentCodecs(FsceneComponentRegistry registry) {
     ..register(AnimatorCodec())
     ..register(ScatterLayerCodec())
     ..register(WaterCodec())
+    ..register(BuoyancyCodec())
     ..register(WindCodec())
     ..register(LightningCodec())
     ..register(FlowCodec());
@@ -577,6 +580,19 @@ class AnimatorCodec extends ComponentCodec {
       ),
       doc: 'The transitions, in the order they are tried.',
     ),
+    ComponentPropertyDef(
+      'layers',
+      ComponentPropertyKind.list,
+      itemDef: ComponentPropertyDef(
+        'layer',
+        ComponentPropertyKind.object,
+        objectFields: _layerFields,
+      ),
+      doc:
+          'Machines running at once, base first, each over the part of the '
+          'skeleton its mask names. Absent for the usual single-layer '
+          'machine, which is written as states and transitions directly.',
+    ),
   ];
 
   @override
@@ -587,6 +603,23 @@ class AnimatorCodec extends ComponentCodec {
 
   @override
   Component? realize(ComponentSpec spec, RealizeContext context) {
+    // A layered machine is written as layers; a single-layer one is written
+    // flat, which is also what every document written before layers existed
+    // looks like.
+    final rawLayers = spec.properties['layers'];
+    if (rawLayers is ListValue && rawLayers.values.isNotEmpty) {
+      final layers = <AnimatorLayer>[];
+      for (final entry in rawLayers.values) {
+        final layer = _decodeLayer(entry);
+        if (layer != null) layers.add(layer);
+      }
+      if (layers.isEmpty) {
+        debugPrint('fscene: animator skipped (no layer declares a state)');
+        return null;
+      }
+      return AnimatorComponent(Animator.layered(layers));
+    }
+
     final states = <AnimatorState>[];
     final rawStates = spec.properties['states'];
     if (rawStates is ListValue) {
@@ -616,6 +649,61 @@ class AnimatorCodec extends ComponentCodec {
         transitions: transitions,
         initial: initial.isEmpty ? null : initial,
       ),
+    );
+  }
+
+  AnimatorLayer? _decodeLayer(PropertyValue? value) {
+    if (value is! MapValue) return null;
+    final states = <AnimatorState>[];
+    final rawStates = value.values['states'];
+    if (rawStates is ListValue) {
+      for (final entry in rawStates.values) {
+        final state = _decodeState(entry);
+        if (state != null) states.add(state);
+      }
+    }
+    // A layer with nothing to play would freeze whatever it masks, which is
+    // worse than not existing.
+    if (states.isEmpty) return null;
+
+    final transitions = <AnimatorTransition>[];
+    final rawTransitions = value.values['transitions'];
+    if (rawTransitions is ListValue) {
+      for (final entry in rawTransitions.values) {
+        final transition = _decodeTransition(entry);
+        if (transition != null) transitions.add(transition);
+      }
+    }
+
+    final initial = _string(value.values['initial']);
+    final name = _string(value.values['name']);
+    return AnimatorLayer(
+      name: name.isEmpty ? Animator.defaultLayerName : name,
+      states: states,
+      transitions: transitions,
+      initial: initial.isEmpty ? null : initial,
+      weight: _num(value.values['weight'], 1),
+      mask: _decodeMask(value.values['mask']),
+    );
+  }
+
+  AnimationMask? _decodeMask(PropertyValue? value) {
+    if (value is! MapValue) return null;
+    final raw = value.values['nodes'];
+    final names = <String>[
+      if (raw is ListValue)
+        for (final entry in raw.values)
+          if (entry is StringValue && entry.value.isNotEmpty) entry.value,
+    ];
+    if (names.isEmpty) return null;
+    return AnimationMask(
+      names,
+      includeDescendants: switch (value.values['includeDescendants']) {
+        BoolValue(value: final v) => v,
+        _ => true,
+      },
+      weight: _num(value.values['weight'], 1),
+      outsideWeight: _num(value.values['outsideWeight'], 0),
     );
   }
 
@@ -715,6 +803,25 @@ class AnimatorCodec extends ComponentCodec {
   ComponentSpec? serialize(Component component, SerializeContext context) {
     if (component is! AnimatorComponent) return null;
     final animator = component.animator;
+    final base = animator.base;
+    // The flat form when there is nothing a layer says that the flat form
+    // cannot: one layer, full weight, no mask. That keeps the common machine
+    // reading the way it always did in a file people diff.
+    final isPlain =
+        animator.layers.length == 1 &&
+        base.mask == null &&
+        base.weight == 1.0 &&
+        base.name == Animator.defaultLayerName;
+    if (!isPlain) {
+      return ComponentSpec(
+        type,
+        properties: {
+          'layers': ListValue([
+            for (final layer in animator.layers) _encodeLayer(layer),
+          ]),
+        },
+      );
+    }
     return ComponentSpec(
       type,
       properties: {
@@ -730,6 +837,32 @@ class AnimatorCodec extends ComponentCodec {
       },
     );
   }
+
+  MapValue _encodeLayer(AnimatorLayer layer) => MapValue({
+    'name': StringValue(layer.name),
+    'initial': StringValue(layer.initialState),
+    'states': ListValue([
+      for (final state in layer.states) _encodeState(state),
+    ]),
+    if (layer.transitions.isNotEmpty)
+      'transitions': ListValue([
+        for (final transition in layer.transitions)
+          _encodeTransition(transition),
+      ]),
+    if (layer.weight != 1.0) 'weight': DoubleValue(layer.weight),
+    if (layer.mask case final mask?) 'mask': _encodeMask(mask),
+  });
+
+  MapValue _encodeMask(AnimationMask mask) => MapValue({
+    'nodes': ListValue([
+      for (final name in mask.nodeNames) StringValue(name),
+    ]),
+    if (!mask.includeDescendants)
+      'includeDescendants': const BoolValue(false),
+    if (mask.weight != 1.0) 'weight': DoubleValue(mask.weight),
+    if (mask.outsideWeight != 0.0)
+      'outsideWeight': DoubleValue(mask.outsideWeight),
+  });
 
   MapValue _encodeState(AnimatorState state) {
     final motion = state.motion;
@@ -779,6 +912,84 @@ class AnimatorCodec extends ComponentCodec {
       ]),
   });
 }
+
+const _maskFields = [
+  ComponentPropertyDef(
+    'nodes',
+    ComponentPropertyKind.list,
+    itemDef: ComponentPropertyDef('node', ComponentPropertyKind.string),
+    doc: 'The joints the mask is anchored on.',
+  ),
+  ComponentPropertyDef(
+    'includeDescendants',
+    ComponentPropertyKind.boolean,
+    defaultValue: BoolValue(true),
+    doc:
+        'Whether everything under a named joint is covered too, which is how '
+        'one spine name means the whole upper body.',
+  ),
+  ComponentPropertyDef(
+    'weight',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1),
+    doc: 'Strength inside the mask.',
+    constraints: [Range(0, 1)],
+  ),
+  ComponentPropertyDef(
+    'outsideWeight',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(0),
+    doc: 'Strength outside it. Above zero is a partial blend, not a cut.',
+    constraints: [Range(0, 1)],
+  ),
+];
+
+const _layerFields = [
+  ComponentPropertyDef(
+    'name',
+    ComponentPropertyKind.string,
+    doc: 'The layer\'s name, which also keeps its clips apart from another '
+        'layer\'s playing the same animation.',
+  ),
+  ComponentPropertyDef(
+    'initial',
+    ComponentPropertyKind.string,
+    doc: 'The state this layer starts in.',
+  ),
+  ComponentPropertyDef(
+    'weight',
+    ComponentPropertyKind.number,
+    defaultValue: DoubleValue(1),
+    doc: 'How strongly the layer contributes. Zero skips it entirely.',
+    constraints: [Range(0, 1)],
+  ),
+  ComponentPropertyDef(
+    'mask',
+    ComponentPropertyKind.object,
+    objectFields: _maskFields,
+    doc: 'Which joints the layer may move. Absent means all of them.',
+  ),
+  ComponentPropertyDef(
+    'states',
+    ComponentPropertyKind.list,
+    itemDef: ComponentPropertyDef(
+      'state',
+      ComponentPropertyKind.object,
+      objectFields: _stateFields,
+    ),
+    doc: 'Every state on this layer.',
+  ),
+  ComponentPropertyDef(
+    'transitions',
+    ComponentPropertyKind.list,
+    itemDef: ComponentPropertyDef(
+      'transition',
+      ComponentPropertyKind.object,
+      objectFields: _transitionFields,
+    ),
+    doc: 'This layer\'s transitions, in the order they are tried.',
+  ),
+];
 
 // --- Scattered instances ---
 
@@ -1047,12 +1258,130 @@ class WaterCodec extends DeclarativeComponentCodec<WaterComponent> {
   );
 }
 
-/// Codec for [LightningComponent].
+/// Codec for [BuoyancyComponent].
 ///
-/// The sky and the light it drives are not properties: the component finds
-/// the scene's own weather sky on mount, and an authored reference to a live
-/// object has nowhere to point in a document. What is authored is the storm's
-/// shape: how often it strikes, how far away, and how dark it holds the sky.
+/// The water is not a property: the component finds the surface it is over on
+/// mount, and an authored reference to a live object has nowhere to point in
+/// a document. What is authored is how the thing floats.
+class BuoyancyCodec extends DeclarativeComponentCodec<BuoyancyComponent> {
+  @override
+  String get type => 'buoyancy';
+
+  @override
+  String? get category => 'Environment';
+
+  @override
+  ComponentSchema get schema => ComponentSchema(
+    type,
+    category: category,
+    icon: 'buoyancy',
+    properties: propertySchema,
+    gizmo: const GizmoSpec([
+      // The hull footprint, which is where the probes go, so the spread is
+      // visible against the thing it is meant to hold up.
+      GizmoWireRect(
+        width: GizmoScalar.bind('hullSize'),
+        height: GizmoScalar.bind('hullSize'),
+        axis: [0, 1, 0],
+        color: GizmoColor(0.30, 0.68, 0.85),
+      ),
+    ]),
+  );
+
+  @override
+  List<ComponentField<BuoyancyComponent>> get fields => [
+    ComponentField.number(
+      'hullSize',
+      defaultValue: 1.0,
+      doc:
+          'How wide the floating thing is. The probes spread over a square '
+          'this size, so a long boat pitches where a small crate does not.',
+      constraints: const [Range.nonNegative(), SoftRange(0.1, 20)],
+      get: (c) => c.hullSize,
+      set: (c, v) => c.hullSize = v,
+    ),
+    ComponentField.number(
+      'draft',
+      defaultValue: 0.0,
+      doc:
+          'How far the resting waterline sits below the node origin. A hull '
+          'modelled from its deck wants its own depth here.',
+      constraints: const [SoftRange(-5, 5)],
+      get: (c) => c.draft,
+      set: (c, v) => c.draft = v,
+    ),
+    ComponentField.integer(
+      'probeCount',
+      defaultValue: 4,
+      doc:
+          'Probes around the hull: 1 bobs without tilting, 4 is a hull, 8 is '
+          'a long boat that feels a wave pass down its length. One wave-field '
+          'sample each, per frame.',
+      constraints: const [IntRange(1, 8)],
+      get: (c) => c.probeCount,
+      set: (c, v) => c.probeCount = v == 1 || v == 8 ? v : 4,
+    ),
+    ComponentField.number(
+      'strength',
+      defaultValue: 12.0,
+      doc:
+          'How hard the water pushes back per unit of submersion. Near '
+          'gravity floats a thing at its waterline; higher rides high and '
+          'lively.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 40)],
+      get: (c) => c.strength,
+      set: (c, v) => c.strength = v,
+    ),
+    ComponentField.number(
+      'linearDamping',
+      defaultValue: 1.4,
+      doc:
+          'Velocity bled off per second while submerged. Water is not a '
+          'spring; without this a float oscillates forever.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 8)],
+      get: (c) => c.linearDamping,
+      set: (c, v) => c.linearDamping = v,
+    ),
+    ComponentField.number(
+      'angularDamping',
+      defaultValue: 2.2,
+      doc: 'Angular velocity bled off per second while submerged.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 8)],
+      get: (c) => c.angularDamping,
+      set: (c, v) => c.angularDamping = v,
+    ),
+    ComponentField.boolean(
+      'alignToSurface',
+      defaultValue: true,
+      doc:
+          'Whether the node tilts to the surface it is riding. Ignored when '
+          'the node has a rigid body, which gets its tilt from the forces.',
+      get: (c) => c.alignToSurface,
+      set: (c, v) => c.alignToSurface = v,
+    ),
+    ComponentField.number(
+      'alignResponse',
+      defaultValue: 6.0,
+      doc: 'How fast that tilt catches up. Low is a barge, high is a leaf.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 20)],
+      get: (c) => c.alignResponse,
+      set: (c, v) => c.alignResponse = v,
+    ),
+  ];
+
+  @override
+  BuoyancyComponent create(PropertyReader props) => BuoyancyComponent(
+    hullSize: props.number('hullSize'),
+    draft: props.number('draft'),
+    probeCount: props.integer('probeCount'),
+    strength: props.number('strength'),
+    linearDamping: props.number('linearDamping'),
+    angularDamping: props.number('angularDamping'),
+    alignToSurface: props.boolean('alignToSurface'),
+    alignResponse: props.number('alignResponse'),
+  );
+}
+
 /// Codec for [WindComponent].
 ///
 /// The wind itself is not a property tree of its own. A scene has one wind,
@@ -1157,6 +1486,12 @@ class WindCodec extends DeclarativeComponentCodec<WindComponent> {
   }
 }
 
+/// Codec for [LightningComponent].
+///
+/// The sky and the light it drives are not properties: the component finds
+/// the scene's own weather sky on mount, and an authored reference to a live
+/// object has nowhere to point in a document. What is authored is the storm's
+/// shape: how often it strikes, how far away, and how dark it holds the sky.
 class LightningCodec extends DeclarativeComponentCodec<LightningComponent> {
   @override
   String get type => 'lightning';

@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
 import 'package:flutter_scene/src/material/sprite_material.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/emitter_shape.dart';
+import 'package:flutter_scene/src/particles/particle_collision.dart';
 import 'package:flutter_scene/src/particles/particle_module.dart';
 import 'package:flutter_scene/src/particles/particle_system.dart';
 import 'package:flutter_scene/src/particles/spawner.dart';
@@ -227,8 +228,10 @@ VfxPreset? vfxPresetById(String id) {
 
 /// The presets in [category], in catalogue order.
 /// {@category Particles}
-List<VfxPreset> vfxPresetsIn(VfxCategory category) =>
-    [for (final preset in vfxPresets) if (preset.category == category) preset];
+List<VfxPreset> vfxPresetsIn(VfxCategory category) => [
+  for (final preset in vfxPresets)
+    if (preset.category == category) preset,
+];
 
 // ---------------------------------------------------------------------------
 // Builders.
@@ -260,9 +263,7 @@ ParticleSystem _smokeSystem() => ParticleSystem(
       frequency: 0.35,
       scroll: Vector3(0, 0.4, 0),
     ),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1, to: 3.2)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 3.2))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -291,11 +292,7 @@ ParticleSystem _fireSystem() => ParticleSystem(
   startRotation: const UniformFloat(0, math.pi * 2),
   gravity: Vector3(0, 1.4, 0),
   modules: [
-    TurbulenceModule(
-      strength: 2.2,
-      frequency: 1.5,
-      scroll: Vector3(0, 1.6, 0),
-    ),
+    TurbulenceModule(strength: 2.2, frequency: 1.5, scroll: Vector3(0, 1.6, 0)),
     SizeOverLifeModule(
       CurveFloat(
         ParticleCurve(const [
@@ -336,9 +333,7 @@ ParticleSystem _steamSystem() => ParticleSystem(
   startRotation: const UniformFloat(0, math.pi * 2),
   modules: [
     LinearDragModule(2.4),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1, to: 5.5)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 5.5))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -367,11 +362,7 @@ ParticleSystem _embersSystem() => ParticleSystem(
   gravity: Vector3(0, 0.8, 0),
   modules: [
     LinearDragModule(0.7),
-    TurbulenceModule(
-      strength: 1.8,
-      frequency: 0.9,
-      scroll: Vector3(0, 0.8, 0),
-    ),
+    TurbulenceModule(strength: 1.8, frequency: 0.9, scroll: Vector3(0, 0.8, 0)),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -393,10 +384,7 @@ ParticleSystem _muzzleFlashSystem() => ParticleSystem(
   shape: const ConeEmitterShape(angle: 0.55, radius: 0.02),
   // No steady rate: the whole effect is one burst at t = 0, which is what
   // makes restarting the emitter the way to fire it.
-  spawner: Spawner(
-    rate: 0,
-    bursts: const [ParticleBurst(time: 0, count: 14)],
-  ),
+  spawner: Spawner(rate: 0, bursts: const [ParticleBurst(time: 0, count: 14)]),
   looping: false,
   duration: 0.5,
   lifetime: const UniformFloat(0.04, 0.09),
@@ -404,9 +392,7 @@ ParticleSystem _muzzleFlashSystem() => ParticleSystem(
   startSize: const UniformFloat(0.18, 0.34),
   startRotation: const UniformFloat(0, math.pi * 2),
   modules: [
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1.4, to: 0.2)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1.4, to: 0.2))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -426,10 +412,7 @@ void _muzzleFlashStyle(ParticleEmitterComponent emitter) {
 ParticleSystem _impactSparksSystem() => ParticleSystem(
   maxParticles: 160,
   shape: const ConeEmitterShape(angle: 0.75, radius: 0.05),
-  spawner: Spawner(
-    rate: 0,
-    bursts: const [ParticleBurst(time: 0, count: 40)],
-  ),
+  spawner: Spawner(rate: 0, bursts: const [ParticleBurst(time: 0, count: 40)]),
   looping: false,
   duration: 1.5,
   lifetime: const UniformFloat(0.25, 0.7),
@@ -438,6 +421,14 @@ ParticleSystem _impactSparksSystem() => ParticleSystem(
   gravity: Vector3(0, -9.8, 0),
   modules: [
     LinearDragModule(1.6),
+    // Sparks land. Skittering off the floor and dimming as they do is most
+    // of what tells a viewer where the impact was; without it they fall
+    // through it and the shot reads as happening in mid-air.
+    CollisionModule.ground(
+      restitution: 0.4,
+      friction: 0.35,
+      lifetimeLoss: 0.25,
+    ),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -461,10 +452,7 @@ void _impactSparksStyle(ParticleEmitterComponent emitter) {
 ParticleSystem _dustPuffSystem() => ParticleSystem(
   maxParticles: 90,
   shape: const SphereEmitterShape(radius: 0.2, hemisphere: true),
-  spawner: Spawner(
-    rate: 0,
-    bursts: const [ParticleBurst(time: 0, count: 18)],
-  ),
+  spawner: Spawner(rate: 0, bursts: const [ParticleBurst(time: 0, count: 18)]),
   looping: false,
   duration: 2,
   lifetime: const UniformFloat(0.6, 1.1),
@@ -475,9 +463,15 @@ ParticleSystem _dustPuffSystem() => ParticleSystem(
   gravity: Vector3(0, -0.6, 0),
   modules: [
     LinearDragModule(2.8),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 1, to: 2.4)),
+    // A puff is placed on the surface it came off, so the emitter's own
+    // origin is the ground. Sliding rather than bouncing is what dust does:
+    // it rolls out along the floor instead of sinking through it.
+    CollisionModule.ground(
+      response: ParticleCollisionResponse.slide,
+      friction: 0.35,
+      radius: 0.15,
     ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 2.4))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -518,9 +512,7 @@ ParticleSystem _explosionSystem() => ParticleSystem(
   modules: [
     LinearDragModule(2.2),
     TurbulenceModule(strength: 2.6, frequency: 0.8),
-    SizeOverLifeModule(
-      CurveFloat(ParticleCurve.linear(from: 0.7, to: 2.6)),
-    ),
+    SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 0.7, to: 2.6))),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -589,15 +581,17 @@ ParticleSystem _rainSystem() => ParticleSystem(
   startSize: const UniformFloat(0.012, 0.022),
   gravity: Vector3(0, -6, 0),
   prewarm: 1.2,
+  // No collider here on purpose. A rain volume hangs above the scene, so a
+  // ground plane at the emitter's own origin is the sky, not the floor, and
+  // the height of the actual ground is something only the author knows. Add
+  // a CollisionModule with the right plane and drops stop where they land.
   modules: [
     // Rain slants; it does not drift. A low response leans it into the wind
     // and leaves the fall to gravity, which is what separates rain from snow
     // in the same storm.
     WindModule(response: 0.5),
     ColorOverLifeModule(
-      GradientColor(
-        ColorGradient.constant(_rgba(0.55, 0.62, 0.72, 0.5)),
-      ),
+      GradientColor(ColorGradient.constant(_rgba(0.55, 0.62, 0.72, 0.5))),
     ),
   ],
 );

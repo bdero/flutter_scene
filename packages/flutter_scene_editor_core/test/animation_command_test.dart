@@ -57,7 +57,11 @@ import 'package:test/test.dart';
 
 Uint8List _bytes(List<double> values) {
   final floats = Float32List.fromList(values);
-  return Uint8List.view(floats.buffer, floats.offsetInBytes, floats.lengthInBytes);
+  return Uint8List.view(
+    floats.buffer,
+    floats.offsetInBytes,
+    floats.lengthInBytes,
+  );
 }
 
 List<double> floatsOf(SceneDocument doc, LocalId payload) {
@@ -429,9 +433,10 @@ void main() {
   test('encodeAnimationValues round-trips through base64 float32', () {
     final encoded = encodeAnimationValues([1.5, -2.25, 0]);
     final bytes = base64Decode(encoded);
-    expect(
-      Float32List.view(bytes.buffer, bytes.offsetInBytes, 3).toList(),
-      [1.5, -2.25, 0],
-    );
+    expect(Float32List.view(bytes.buffer, bytes.offsetInBytes, 3).toList(), [
+      1.5,
+      -2.25,
+      0,
+    ]);
   });
 }

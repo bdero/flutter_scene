@@ -341,10 +341,7 @@ class _WeatherPanelState extends State<WeatherPanel> {
             onCommit: _applyWind,
           ),
         ],
-        if (sky != null) ...[
-          const SizedBox(height: 12),
-          _SkyReadout(sky: sky),
-        ],
+        if (sky != null) ...[const SizedBox(height: 12), _SkyReadout(sky: sky)],
       ],
     );
   }
@@ -424,10 +421,7 @@ class _WindDial extends StatelessWidget {
     children: [
       Row(
         children: [
-          SizedBox(
-            width: 96,
-            child: Text('Heading', style: editorBodyText),
-          ),
+          SizedBox(width: 96, child: Text('Heading', style: editorBodyText)),
           Expanded(
             child: Slider(
               value: heading,
@@ -646,10 +640,7 @@ class _SkyReadout extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
         children: [
-          SizedBox(
-            width: 96,
-            child: Text(label, style: editorDetailText),
-          ),
+          SizedBox(width: 96, child: Text(label, style: editorDetailText)),
           Text(value, style: editorBodyText),
         ],
       ),

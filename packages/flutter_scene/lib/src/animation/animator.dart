@@ -14,6 +14,8 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter_scene/src/animation.dart' show AnimationMask;
+
 /// The named values a machine's transitions read.
 ///
 /// Numbers and flags hold until changed. A trigger is consumed by the first
@@ -316,21 +318,26 @@ class AnimatorTransition {
   }
 }
 
-/// A clip state machine: states, the transitions between them, and the
-/// cross-fade in progress.
+/// One machine in an [Animator]: a set of states, the transitions between
+/// them, and how much of the skeleton it is allowed to move.
 ///
-/// Drive it by setting [parameters] and calling [evaluate] once a frame. It
-/// returns the weight every clip should have; applying them is the caller's
-/// job (see `AnimatorComponent`).
+/// Layers are what let a character do two things at once. A base layer runs
+/// the legs; an upper-body layer masked to the spine plays an aim or a reload
+/// over the top, at its own weight, driven by its own transitions. Without
+/// them every combination has to be authored as its own clip, which is how a
+/// four-state character becomes a sixteen-clip export.
 /// {@category Animation}
-class Animator {
-  /// Creates a machine over [states], starting in [initial] (the first state
-  /// when omitted).
-  Animator({
+class AnimatorLayer {
+  /// Creates a layer named [name] over [states], starting in [initial] (the
+  /// first state when omitted).
+  AnimatorLayer({
+    required this.name,
     required List<AnimatorState> states,
     List<AnimatorTransition> transitions = const [],
     String? initial,
-  }) : assert(states.isNotEmpty, 'An animator needs at least one state.'),
+    this.weight = 1.0,
+    this.mask,
+  }) : assert(states.isNotEmpty, 'A layer needs at least one state.'),
        _states = {for (final state in states) state.name: state},
        transitions = List<AnimatorTransition>.unmodifiable(transitions) {
     initialState = initial != null && _states.containsKey(initial)
@@ -339,19 +346,29 @@ class Animator {
     _current = initialState;
   }
 
+  /// The layer's name. Also how its clips are told apart from another
+  /// layer's, so two layers can play the same animation at once.
+  final String name;
+
   final Map<String, AnimatorState> _states;
 
   /// The transitions, in the order they are tried.
   final List<AnimatorTransition> transitions;
 
-  /// The state this machine started in.
+  /// The state this layer started in.
   ///
   /// Retained separately from [current], which moves: writing a machine back
   /// out has to record where it begins, not where it happens to be.
   late final String initialState;
 
-  /// The parameters transitions read. Set these from gameplay.
-  final AnimatorParameters parameters = AnimatorParameters();
+  /// How strongly this layer contributes, `0` to `1`.
+  ///
+  /// A layer at zero is skipped entirely rather than applied at no weight,
+  /// so a reload layer costs nothing on the frames nobody is reloading.
+  double weight;
+
+  /// Which nodes this layer may move, or null for all of them.
+  AnimationMask? mask;
 
   late String _current;
   String? _previous;
@@ -373,6 +390,9 @@ class Animator {
 
   /// Every state, by name.
   Iterable<AnimatorState> get states => _states.values;
+
+  /// The state named [name], or null.
+  AnimatorState? state(String name) => _states[name];
 
   /// Jumps straight to [state], with no blend. Unknown names are ignored.
   void play(String state) {
@@ -400,13 +420,13 @@ class Animator {
     _blendDuration = duration;
   }
 
-  /// Advances by [deltaSeconds] and returns the weight of every clip that
-  /// should be playing, by name.
-  ///
-  /// Weights always sum to one, so the caller can hand them straight to
-  /// clips without normalizing again.
-  Map<String, double> evaluate(double deltaSeconds) {
-    _takeTransition();
+  /// Advances this layer by [deltaSeconds] and returns the weight of every
+  /// clip it wants, by name, summing to one.
+  Map<String, double> evaluate(
+    double deltaSeconds,
+    AnimatorParameters parameters,
+  ) {
+    _takeTransition(parameters);
 
     if (_previous != null) {
       _blend += math.max(deltaSeconds, 0.0);
@@ -436,7 +456,7 @@ class Animator {
   /// Takes the first transition whose conditions hold, consuming the triggers
   /// it read. First rather than best: the order they were declared in is the
   /// priority, which is easier to reason about than a scoring rule.
-  void _takeTransition() {
+  void _takeTransition(AnimatorParameters parameters) {
     for (final transition in transitions) {
       if (!_states.containsKey(transition.to)) continue;
       if (!transition.matches(_current, parameters)) continue;
@@ -450,7 +470,7 @@ class Animator {
     }
   }
 
-  Map<String, double> _normalized(Map<String, double> weights) {
+  static Map<String, double> _normalized(Map<String, double> weights) {
     var total = 0.0;
     for (final weight in weights.values) {
       total += weight;
@@ -461,4 +481,137 @@ class Animator {
         if (entry.value > 0) entry.key: entry.value / total,
     };
   }
+}
+
+/// A clip state machine: one or more layers of states, the transitions
+/// between them, and the cross-fades in progress.
+///
+/// Drive it by setting [parameters] and calling [evaluate] once a frame. It
+/// returns the weight every clip should have; applying them is the caller's
+/// job (see `AnimatorComponent`).
+///
+/// The single-layer spelling is the common one and stays the short one: pass
+/// states and transitions straight to the constructor and the machine reads
+/// exactly as it did before layers existed. Pass [layers] when a character
+/// has to do two things at once.
+/// {@category Animation}
+class Animator {
+  /// Creates a machine over [states], starting in [initial] (the first state
+  /// when omitted).
+  Animator({
+    required List<AnimatorState> states,
+    List<AnimatorTransition> transitions = const [],
+    String? initial,
+  }) : layers = List<AnimatorLayer>.unmodifiable([
+         AnimatorLayer(
+           name: defaultLayerName,
+           states: states,
+           transitions: transitions,
+           initial: initial,
+         ),
+       ]);
+
+  /// Creates a machine over [layers], base layer first.
+  ///
+  /// Order is priority: a later layer is applied over an earlier one on the
+  /// nodes its mask covers.
+  Animator.layered(List<AnimatorLayer> layers)
+    : assert(layers.isNotEmpty, 'An animator needs at least one layer.'),
+      layers = List<AnimatorLayer>.unmodifiable(layers);
+
+  /// The name the single-layer constructor gives its one layer.
+  static const String defaultLayerName = 'base';
+
+  /// The layers, base first.
+  final List<AnimatorLayer> layers;
+
+  /// The parameters transitions read, shared by every layer. Set these from
+  /// gameplay.
+  ///
+  /// Shared rather than per layer because the things a machine reacts to --
+  /// speed, grounded, a fire trigger -- are facts about the character, not
+  /// about one of its halves.
+  final AnimatorParameters parameters = AnimatorParameters();
+
+  /// The base layer, which is the only one for a machine built the short way.
+  AnimatorLayer get base => layers.first;
+
+  /// The layer named [name], or null.
+  AnimatorLayer? layer(String name) {
+    for (final layer in layers) {
+      if (layer.name == name) return layer;
+    }
+    return null;
+  }
+
+  /// The base layer's current state.
+  String get current => base.current;
+
+  /// The base layer's outgoing state, or null when settled.
+  String? get previous => base.previous;
+
+  /// Whether the base layer is cross-fading.
+  bool get isBlending => base.isBlending;
+
+  /// How far through the base layer's cross-fade.
+  double get blendProgress => base.blendProgress;
+
+  /// The base layer's starting state.
+  String get initialState => base.initialState;
+
+  /// The base layer's transitions.
+  List<AnimatorTransition> get transitions => base.transitions;
+
+  /// Every state on the base layer.
+  Iterable<AnimatorState> get states => base.states;
+
+  /// Jumps the base layer straight to [state].
+  void play(String state) => base.play(state);
+
+  /// Cross-fades the base layer to [state] over [duration] seconds.
+  void crossFade(String state, double duration) =>
+      base.crossFade(state, duration);
+
+  /// Advances every layer by [deltaSeconds] and returns what each wants
+  /// played, in layer order.
+  ///
+  /// A layer at zero weight is skipped, so it costs nothing on the frames it
+  /// is silent -- but its transitions still run, or a reload layer faded out
+  /// mid-reload would come back where it left off.
+  List<AnimatorLayerWeights> evaluateLayers(double deltaSeconds) {
+    final out = <AnimatorLayerWeights>[];
+    for (final layer in layers) {
+      final weights = layer.evaluate(deltaSeconds, parameters);
+      out.add(
+        AnimatorLayerWeights(
+          layer: layer,
+          weights: layer.weight <= 0 ? const {} : weights,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// Advances the machine and returns the base layer's clip weights.
+  ///
+  /// The single-layer answer, kept because it is what most machines want and
+  /// what every machine wanted before layers. A layered machine wants
+  /// [evaluateLayers], which can say which layer asked for what.
+  Map<String, double> evaluate(double deltaSeconds) {
+    final all = evaluateLayers(deltaSeconds);
+    return all.first.weights;
+  }
+}
+
+/// What one layer wants played this frame.
+/// {@category Animation}
+class AnimatorLayerWeights {
+  const AnimatorLayerWeights({required this.layer, required this.weights});
+
+  /// The layer that asked.
+  final AnimatorLayer layer;
+
+  /// Clip weights within the layer, summing to one. Empty when the layer is
+  /// silent.
+  final Map<String, double> weights;
 }

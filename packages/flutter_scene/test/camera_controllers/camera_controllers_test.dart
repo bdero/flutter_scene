@@ -78,8 +78,7 @@ void main() {
     });
 
     group('frame', () {
-      Aabb3 unitBounds() =>
-          Aabb3.minMax(Vector3(-1, -1, -1), Vector3(1, 1, 1));
+      Aabb3 unitBounds() => Aabb3.minMax(Vector3(-1, -1, -1), Vector3(1, 1, 1));
 
       // The bounding sphere of a 2-unit cube.
       final radius = Vector3(2, 2, 2).length * 0.5;
@@ -139,11 +138,7 @@ void main() {
         final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
           ..viewportSize = const Size(800, 600);
         node.addComponent(c);
-        c.frame(
-          unitBounds(),
-          margin: 1.0,
-          fovRadiansY: 90 * math.pi / 180,
-        );
+        c.frame(unitBounds(), margin: 1.0, fovRadiansY: 90 * math.pi / 180);
         c.warmUp();
         expect(
           c.distance,
@@ -153,9 +148,7 @@ void main() {
 
       test('an orthographic lens keeps the diameter fit', () {
         final node = Node()
-          ..addComponent(
-            CameraComponent(projection: OrthographicProjection()),
-          );
+          ..addComponent(CameraComponent(projection: OrthographicProjection()));
         final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
           ..viewportSize = const Size(800, 600);
         node.addComponent(c);

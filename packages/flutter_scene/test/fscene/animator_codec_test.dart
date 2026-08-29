@@ -1,6 +1,7 @@
 // The animator codec. The machine is constructor-only -- a running animator
 // moves between its states, it does not rewrite them -- so the whole graph is
 // read back out and rebuilt, and a round trip is the test that matters.
+import 'package:flutter_scene/src/animation.dart' show AnimationMask;
 import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
@@ -233,5 +234,141 @@ void main() {
       )!.animator.states.single.motion,
       isA<BlendMotion2D>(),
     );
+  });
+
+  group('layers', () {
+    AnimatorComponent layered() => AnimatorComponent(
+      Animator.layered([
+        AnimatorLayer(
+          name: 'base',
+          states: [
+            AnimatorState(
+              'move',
+              BlendMotion('speed', const [
+                (at: 0, clip: 'Idle'),
+                (at: 4, clip: 'Run'),
+              ]),
+            ),
+          ],
+        ),
+        AnimatorLayer(
+          name: 'upper',
+          states: const [
+            AnimatorState('rest', ClipMotion('Rest')),
+            AnimatorState('aim', ClipMotion('Aim'), loop: false),
+          ],
+          initial: 'rest',
+          transitions: const [
+            AnimatorTransition(
+              to: 'aim',
+              from: 'rest',
+              duration: 0.1,
+              conditions: [
+                AnimatorCondition('aiming', AnimatorComparison.isTrue),
+              ],
+            ),
+          ],
+          weight: 0.8,
+          mask: AnimationMask(const ['spine'], weight: 0.9, outsideWeight: 0.1),
+        ),
+      ]),
+    );
+
+    test('a single-layer machine is still written flat', () {
+      // The common machine has to keep reading the way it always did in a
+      // file people diff.
+      final spec = write(sample())!;
+      expect(spec.properties.containsKey('layers'), isFalse);
+      expect(spec.properties.containsKey('states'), isTrue);
+    });
+
+    test('a layered machine round-trips, masks and all', () {
+      final spec = write(layered())!;
+      expect(spec.properties.containsKey('layers'), isTrue);
+      expect(spec.properties.containsKey('states'), isFalse);
+
+      final restored = realize(spec)!.animator;
+      expect(restored.layers, hasLength(2));
+      expect(restored.base.name, 'base');
+      expect(restored.base.mask, isNull);
+      expect(restored.base.weight, 1.0);
+
+      final upper = restored.layer('upper')!;
+      expect(upper.initialState, 'rest');
+      expect(upper.weight, closeTo(0.8, 1e-9));
+      expect(upper.states.map((s) => s.name), unorderedEquals(['rest', 'aim']));
+      expect(upper.transitions, hasLength(1));
+      expect(upper.transitions.single.duration, closeTo(0.1, 1e-9));
+
+      final mask = upper.mask!;
+      expect(mask.nodeNames, {'spine'});
+      expect(mask.weight, closeTo(0.9, 1e-9));
+      expect(mask.outsideWeight, closeTo(0.1, 1e-9));
+      expect(mask.includeDescendants, isTrue);
+    });
+
+    test('a document written before layers still loads', () {
+      // The flat form is what every existing scene holds, so it has to keep
+      // realizing into a one-layer machine.
+      final restored = realize(write(sample())!)!.animator;
+      expect(restored.layers, hasLength(1));
+      expect(restored.base.name, Animator.defaultLayerName);
+      expect(restored.initialState, 'jump');
+      expect(
+        restored.states.map((s) => s.name),
+        unorderedEquals(['move', 'jump']),
+      );
+      expect(restored.transitions, hasLength(1));
+    });
+
+    test('a layer with no usable state is dropped, not realized empty', () {
+      final spec = ComponentSpec(
+        'animator',
+        properties: {
+          'layers': ListValue([
+            MapValue({
+              'name': const StringValue('base'),
+              'states': ListValue([
+                MapValue({
+                  'name': const StringValue('idle'),
+                  'clip': const StringValue('Idle'),
+                }),
+              ]),
+            }),
+            MapValue({
+              'name': const StringValue('broken'),
+              'states': ListValue([
+                // No clip and no blend: nothing to play.
+                MapValue({'name': const StringValue('nowhere')}),
+              ]),
+            }),
+          ]),
+        },
+      );
+      final restored = realize(spec)!.animator;
+      expect(restored.layers, hasLength(1));
+      expect(restored.base.name, 'base');
+    });
+
+    test('a mask naming nothing is no mask at all', () {
+      final spec = ComponentSpec(
+        'animator',
+        properties: {
+          'layers': ListValue([
+            MapValue({
+              'name': const StringValue('base'),
+              'mask': MapValue({'nodes': ListValue(const [])}),
+              'states': ListValue([
+                MapValue({
+                  'name': const StringValue('idle'),
+                  'clip': const StringValue('Idle'),
+                }),
+              ]),
+            }),
+          ]),
+        },
+      );
+      expect(realize(spec)!.animator.base.mask, isNull);
+    });
   });
 }

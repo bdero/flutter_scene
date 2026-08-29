@@ -52,8 +52,12 @@ double? _rayTriangle(
   double dz,
 ) {
   final ax = p[ia * 3], ay = p[ia * 3 + 1], az = p[ia * 3 + 2];
-  final e1x = p[ib * 3] - ax, e1y = p[ib * 3 + 1] - ay, e1z = p[ib * 3 + 2] - az;
-  final e2x = p[ic * 3] - ax, e2y = p[ic * 3 + 1] - ay, e2z = p[ic * 3 + 2] - az;
+  final e1x = p[ib * 3] - ax,
+      e1y = p[ib * 3 + 1] - ay,
+      e1z = p[ib * 3 + 2] - az;
+  final e2x = p[ic * 3] - ax,
+      e2y = p[ic * 3 + 1] - ay,
+      e2z = p[ic * 3 + 2] - az;
   final px = dy * e2z - dz * e2y;
   final py = dz * e2x - dx * e2z;
   final pz = dx * e2y - dy * e2x;

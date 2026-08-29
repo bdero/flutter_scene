@@ -45,11 +45,7 @@ class ProjectCoverStore {
       if (bytes == null) return;
       directory.createSync(recursive: true);
       fileFor(projectPath).writeAsBytesSync(
-        Uint8List.view(
-          bytes.buffer,
-          bytes.offsetInBytes,
-          bytes.lengthInBytes,
-        ),
+        Uint8List.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes),
       );
     } on FileSystemException {
       // A cover is a nicety; failing to file one must not fail a save.
@@ -77,12 +73,7 @@ class ProjectCoverStore {
     final recorder = ui.PictureRecorder();
     ui.Canvas(recorder).drawImageRect(
       source,
-      ui.Rect.fromLTWH(
-        0,
-        0,
-        source.width.toDouble(),
-        source.height.toDouble(),
-      ),
+      ui.Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble()),
       ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
       ui.Paint()..filterQuality = ui.FilterQuality.medium,
     );

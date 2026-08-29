@@ -9,9 +9,11 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/navigation.dart';
 import 'package:flutter_scene/scene.dart' show Node;
+import 'package:scene/scene.dart' show LocalId, PropertyValue;
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
@@ -28,6 +30,55 @@ class NavMeshPanel extends StatefulWidget {
 
 class _NavMeshPanelState extends State<NavMeshPanel> {
   EditorController get _ctrl => widget.controller;
+
+  /// The document component type this panel authors.
+  static const String _componentType = 'navMeshSurface';
+
+  /// The key the baked mesh is drawn under in the scene.
+  static const String _overlayKey = 'navMesh';
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_onDocumentChanged);
+    // A scene opened with a bake already in it should show it, without
+    // anyone having to press Bake to see what is already there.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _seenEpoch = _ctrl.realizeEpoch;
+      _adoptedFrom = _surfaceNodeId;
+      _adoptSettingsFromDocument();
+      _refreshOverlay();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onDocumentChanged);
+    _ctrl.setSceneDecoration(_overlayKey, null);
+    super.dispose();
+  }
+
+  // The realized scene is rebuilt on a recompose, which takes the live
+  // component with it, and a different scene brings a different bake.
+  int _seenEpoch = -1;
+  LocalId? _adoptedFrom;
+  void _onDocumentChanged() {
+    if (!mounted) return;
+    final epoch = _ctrl.realizeEpoch;
+    final surfaceId = _surfaceNodeId;
+    if (epoch == _seenEpoch && surfaceId == _adoptedFrom) return;
+    _seenEpoch = epoch;
+    // Only when the bake this panel is looking at actually changed. Every
+    // recompose bumps the epoch -- dragging a crate does -- and re-adopting
+    // on each one would throw away settings the user is midway through
+    // tuning for the next bake.
+    if (surfaceId != _adoptedFrom) {
+      _adoptedFrom = surfaceId;
+      _adoptSettingsFromDocument();
+    }
+    _refreshOverlay();
+  }
 
   // The settings live in the panel rather than the document until a bake
   // happens, so tuning the agent does not fill the undo history with edits
@@ -47,9 +98,18 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
   bool _includeWaterVolumes = true;
   bool _advancedOpen = false;
 
+  bool _tiled = false;
+  double _tileCells = 64;
+  bool _showOverlay = true;
+  bool _tintTiles = false;
+
   NavBakeResult? _result;
+  NavTiledBakeResult? _tiledResult;
   NavBakeStage? _stage;
   bool _baking = false;
+  int _tilesDone = 0;
+  int _tilesTotal = 0;
+  int? _rebakedTiles;
   String? _error;
 
   NavMeshConfig get _config => NavMeshConfig(
@@ -71,7 +131,159 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
 
   Node? get _root => _ctrl.realizedRoot;
 
-  Future<void> _bake() async {
+  NavTileConfig get _tiling => NavTileConfig(tileCells: _tileCells.round());
+
+  /// The document node carrying the scene's nav surface, or null when the
+  /// scene has never been baked.
+  ///
+  /// A scene has one nav mesh per agent size and almost always exactly one,
+  /// so this takes the first rather than making the panel a list.
+  LocalId? get _surfaceNodeId {
+    for (final entry in _ctrl.document.nodes.entries) {
+      for (final component in entry.value.components) {
+        if (component.type == _componentType) return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// The live component the last realize built from that node, or null.
+  NavMeshSurfaceComponent? get _liveSurface {
+    final id = _surfaceNodeId;
+    if (id == null) return null;
+    return _ctrl.liveNode(id)?.getComponent<NavMeshSurfaceComponent>();
+  }
+
+  /// Puts the panel's fields back to whatever the scene was last baked with,
+  /// so reopening a scene shows the settings that produced the mesh in it
+  /// rather than the panel's defaults.
+  void _adoptSettingsFromDocument() {
+    final surface = _liveSurface;
+    if (surface == null) return;
+    final config = surface.config;
+    setState(() {
+      _agentRadius = config.agentRadius;
+      _agentHeight = config.agentHeight;
+      _agentMaxClimb = config.agentMaxClimb;
+      _agentMaxSlope = config.agentMaxSlopeDegrees;
+      _cellSize = config.cellSize;
+      _cellHeight = config.cellHeight;
+      _minRegionArea = config.minRegionArea;
+      _mergeRegionArea = config.mergeRegionArea;
+      _maxEdgeLength = config.maxEdgeLength;
+      _maxSimplificationError = config.maxSimplificationError;
+      _includePattern = surface.includePattern;
+      _includeInstances = surface.includeInstances;
+      _includeWaterVolumes = surface.includeWaterVolumes;
+      final tiling = surface.tiling;
+      _tiled = tiling != null;
+      if (tiling != null) _tileCells = tiling.tileCells.toDouble();
+    });
+  }
+
+  /// Draws (or stops drawing) the baked mesh in the viewport.
+  ///
+  /// Built once here rather than per frame: the draw is scene geometry, so
+  /// once it exists it costs a draw call and nothing on the CPU.
+  void _refreshOverlay([NavMeshSurfaceComponent? baked]) {
+    // The freshly baked component when there is one, so a bake draws what it
+    // just built rather than waiting for the document to be realized back
+    // into a component holding an identical mesh.
+    final surface = baked ?? _liveSurface;
+    if (!_showOverlay || surface == null) {
+      _ctrl.setSceneDecoration(_overlayKey, null);
+      return;
+    }
+    final tiles = surface.tileSet;
+    final mesh = surface.mesh;
+    final Node? node;
+    if (tiles != null && tiles.tileCount > 0) {
+      node = navTileSetDebugNode(tiles, tintTiles: _tintTiles);
+    } else if (mesh != null) {
+      node = navMeshDebugNode(mesh);
+    } else {
+      node = null;
+    }
+    _ctrl.setSceneDecoration(_overlayKey, node);
+  }
+
+  /// Writes [surface] into the document: one component, one transaction, one
+  /// undo step. The settings and the bake land together because they belong
+  /// together -- a mesh is only meaningful beside the numbers it came from.
+  Future<void> _commit(NavMeshSurfaceComponent surface) async {
+    final captured = _ctrl.capturePropertiesOf(surface);
+    if (captured == null) return;
+
+    final nodeId = _surfaceNodeId;
+    if (nodeId == null) {
+      // Nothing baked yet. The surface goes on the scene root, since what it
+      // describes is the level rather than any one object in it.
+      final roots = _ctrl.document.roots;
+      if (roots.isEmpty) return;
+      await _ctrl.run('addComponent', {
+        'nodeId': roots.first.toToken(),
+        'componentType': _componentType,
+        'properties': captured,
+      });
+      return;
+    }
+
+    // A capture is a delta against the schema defaults and the write is a
+    // merge, so a setting the user put back to its default would simply not
+    // appear and the previous bake's value would survive. Those are stated
+    // explicitly; everything else stays a delta.
+    final previous =
+        _ctrl.document
+            .node(nodeId)
+            ?.components
+            .where((c) => c.type == _componentType)
+            .firstOrNull
+            ?.properties ??
+        const <String, PropertyValue>{};
+    final properties = <String, PropertyValue>{
+      for (final def in _ctrl.componentSchema(_componentType))
+        if (def.defaultValue != null &&
+            previous.containsKey(def.name) &&
+            !captured.containsKey(def.name))
+          def.name: def.defaultValue!,
+      ...captured,
+    };
+    await _ctrl.run('setComponentProperties', {
+      'nodeId': nodeId.toToken(),
+      'componentType': _componentType,
+      'properties': properties,
+    });
+  }
+
+  /// The surface the last bake ran on, kept so a rebake can compare the
+  /// world against what that bake saw. A settings change retires it: tiles
+  /// baked for a different agent are not tiles this one can keep.
+  NavMeshSurfaceComponent? _surface;
+
+  bool _matchesSettings(NavMeshSurfaceComponent surface) =>
+      mapEquals(surface.config.toJson(), _config.toJson()) &&
+      surface.includePattern == _includePattern &&
+      surface.includeInstances == _includeInstances &&
+      surface.includeWaterVolumes == _includeWaterVolumes &&
+      surface.tiling?.tileCells == (_tiled ? _tiling.tileCells : null);
+
+  NavMeshSurfaceComponent _surfaceForBake({required bool reuse}) {
+    final existing = _surface;
+    if (reuse && existing != null && _matchesSettings(existing)) {
+      return existing;
+    }
+    // A fresh surface carries no fingerprints, so a rebake on one bakes the
+    // world once and has something to compare against next time.
+    return _surface = NavMeshSurfaceComponent(
+      config: _config,
+      includePattern: _includePattern,
+      includeInstances: _includeInstances,
+      includeWaterVolumes: _includeWaterVolumes,
+      tiling: _tiled ? _tiling : null,
+    );
+  }
+
+  Future<void> _bake({bool incremental = false}) async {
     final root = _root;
     if (root == null || _baking) return;
     setState(() {
@@ -79,19 +291,44 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
       _error = null;
       _stage = null;
       _result = null;
+      _tiledResult = null;
+      _tilesDone = 0;
+      _tilesTotal = 0;
+      _rebakedTiles = null;
     });
     try {
-      final surface = NavMeshSurfaceComponent(
-        config: _config,
-        includePattern: _includePattern,
-        includeInstances: _includeInstances,
-        includeWaterVolumes: _includeWaterVolumes,
-      );
-      // Off the calling isolate: a large level is seconds of work, and the
-      // editor still has to draw while it runs.
-      final result = await surface.bakeAsync(root: root);
+      final surface = _surfaceForBake(reuse: incremental);
+      void progress(int done, int total) {
+        if (!mounted) return;
+        setState(() {
+          _tilesDone = done;
+          _tilesTotal = total;
+        });
+      }
+
+      // Off the calling isolate either way: a large level is seconds of work
+      // and the editor still has to draw while it runs. Tiled, it is also
+      // several tiles at a time.
+      if (_tiled) {
+        final result = incremental
+            ? await surface.rebakeChangedAsync(root: root, onProgress: progress)
+            : await surface.bakeTiledAsync(root: root, onProgress: progress);
+        if (!mounted) return;
+        setState(() {
+          _tiledResult = result;
+          if (incremental) _rebakedTiles = _tilesTotal;
+        });
+      } else {
+        final result = await surface.bakeAsync(root: root);
+        if (!mounted) return;
+        setState(() => _result = result);
+      }
+      // The bake is the moment the document changes. Tuning the sliders
+      // beforehand is not an edit -- it changed nothing on screen -- so the
+      // settings ride into history with the mesh they produced.
+      await _commit(surface);
       if (!mounted) return;
-      setState(() => _result = result);
+      _refreshOverlay(surface);
     } on Object catch (error) {
       if (!mounted) return;
       setState(() => _error = '$error');
@@ -100,10 +337,21 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
     }
   }
 
-  void _clear() => setState(() {
-    _result = null;
-    _error = null;
-  });
+  Future<void> _clear() async {
+    setState(() {
+      _result = null;
+      _tiledResult = null;
+      _error = null;
+      _surface = null;
+    });
+    _ctrl.setSceneDecoration(_overlayKey, null);
+    final nodeId = _surfaceNodeId;
+    if (nodeId == null) return;
+    await _ctrl.run('removeComponent', {
+      'nodeId': nodeId.toToken(),
+      'componentType': _componentType,
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +431,66 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
                 onChanged: (v) => setState(() => _includeWaterVolumes = v),
               ),
               const SizedBox(height: 12),
+              const EditorSectionHeader(label: 'Show'),
+              _Toggle(
+                label: 'Draw the mesh',
+                hint:
+                    'The baked surface, over the level it was baked from. It '
+                    'is scene geometry, so it costs a draw call and no frame '
+                    'time.',
+                value: _showOverlay,
+                onChanged: (v) {
+                  setState(() => _showOverlay = v);
+                  _refreshOverlay();
+                },
+              ),
+              if (_showOverlay && _tiled)
+                _Toggle(
+                  label: 'Tint each tile',
+                  hint:
+                      'Gives every tile its own shade, which is how a seam '
+                      'that failed to link is spotted: the mesh looks '
+                      'continuous and the tints show where the boundary is.',
+                  value: _tintTiles,
+                  onChanged: (v) {
+                    setState(() => _tintTiles = v);
+                    _refreshOverlay();
+                  },
+                ),
+              const SizedBox(height: 12),
+              const EditorSectionHeader(label: 'Tiling'),
+              _Toggle(
+                label: 'Bake in tiles',
+                hint:
+                    'Cuts the world into squares baked in parallel, one tile '
+                    'in memory at a time, and lets an edited corner rebake on '
+                    'its own. Worth it past a few hundred units a side.',
+                value: _tiled,
+                onChanged: (v) => setState(() => _tiled = v),
+              ),
+              if (_tiled) ...[
+                _Field(
+                  label: 'Tile size',
+                  hint:
+                      'Voxels per side. Every tile pays for a border, so tiny '
+                      'tiles spend more time on margins than on middles.',
+                  value: _tileCells,
+                  min: 16,
+                  max: 256,
+                  decimals: 0,
+                  divisions: 30,
+                  onChanged: (v) => setState(() => _tileCells = v),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 4),
+                  child: Text(
+                    '${_tiling.tileSize(_config).toStringAsFixed(1)} units a '
+                    'side, ${defaultNavBakeConcurrency()} baking at once.',
+                    style: editorMicroText,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
               _AdvancedSection(
                 open: _advancedOpen,
                 onToggle: () => setState(() => _advancedOpen = !_advancedOpen),
@@ -250,8 +558,14 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
           baking: _baking,
           stage: _stage,
           result: _result,
+          tiledResult: _tiledResult,
+          tilesDone: _tilesDone,
+          tilesTotal: _tilesTotal,
+          rebakedTiles: _rebakedTiles,
           error: _error,
+          canClear: _surfaceNodeId != null,
           onBake: _bake,
+          onRebake: _tiled ? () => _bake(incremental: true) : null,
           onClear: _clear,
         ),
       ],
@@ -451,8 +765,14 @@ class _BakeBar extends StatelessWidget {
     required this.baking,
     required this.stage,
     required this.result,
+    required this.tiledResult,
+    required this.tilesDone,
+    required this.tilesTotal,
+    required this.rebakedTiles,
     required this.error,
+    required this.canClear,
     required this.onBake,
+    required this.onRebake,
     required this.onClear,
   });
 
@@ -460,21 +780,42 @@ class _BakeBar extends StatelessWidget {
   final bool baking;
   final NavBakeStage? stage;
   final NavBakeResult? result;
+  final NavTiledBakeResult? tiledResult;
+  final int tilesDone;
+  final int tilesTotal;
+
+  /// How many tiles the last rebake redid, or null when the last bake was a
+  /// whole one.
+  final int? rebakedTiles;
   final String? error;
+
+  /// Whether the scene has a bake to throw away.
+  final bool canClear;
   final VoidCallback onBake;
+
+  /// Rebakes only what changed, or null when the bake is a single piece and
+  /// there is no such thing.
+  final VoidCallback? onRebake;
   final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
+    final tiled = tiledResult;
     final message =
         error ??
         (baking
-            ? 'Baking${stage == null ? '' : ' (${stage!.name})'}…'
-            : result?.describe() ??
+            ? (tilesTotal > 0
+                  ? 'Baking tile $tilesDone of $tilesTotal…'
+                  : 'Baking${stage == null ? '' : ' (${stage!.name})'}…')
+            : tiled?.describe() ??
+                  result?.describe() ??
                   (ready
                       ? 'Nothing baked yet.'
                       : 'Open a scene to bake its navigation.'));
-    final bad = error != null || (result?.isEmpty ?? false);
+    final bad =
+        error != null ||
+        (result?.isEmpty ?? false) ||
+        (tiled != null && tiled.tiles.tileCount == 0);
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
       decoration: const BoxDecoration(
@@ -489,6 +830,21 @@ class _BakeBar extends StatelessWidget {
                 ? editorDetailText.copyWith(color: editorWarningColor)
                 : editorDetailText,
           ),
+          if (baking && tilesTotal > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: LinearProgressIndicator(
+                value: tilesDone / tilesTotal,
+                minHeight: 3,
+              ),
+            ),
+          if (!baking && rebakedTiles != null && tiled != null)
+            Text(
+              rebakedTiles == 0
+                  ? 'Nothing had changed.'
+                  : '$rebakedTiles of ${tiled.tiles.tileCount} tiles rebaked.',
+              style: editorMicroText,
+            ),
           if (result != null && !result!.isEmpty && result!.volumeCount > 0)
             Text(
               '${result!.volumeCount} volume'
@@ -508,11 +864,29 @@ class _BakeBar extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: result == null || baking ? null : onClear,
+                  onPressed: !canClear || baking ? null : onClear,
                   child: const Text('Clear'),
                 ),
               ),
               const SizedBox(width: 8),
+              // Only for a tiled bake. A single-piece bake has nothing to
+              // redo a part of, and a button that quietly did the whole thing
+              // would be a lie about what it costs.
+              if (onRebake != null) ...[
+                Expanded(
+                  child: Tooltip(
+                    message:
+                        'Rebakes only the tiles the scene no longer agrees '
+                        'with, in the square an object left as well as the '
+                        'one it arrived in.',
+                    child: OutlinedButton(
+                      onPressed: ready && !baking ? onRebake : null,
+                      child: const Text('Rebake'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: FilledButton(
                   onPressed: ready && !baking ? onBake : null,
@@ -543,6 +917,8 @@ class _Field extends StatelessWidget {
     this.min = 0,
     this.max = 1,
     this.suffix = '',
+    this.decimals = 2,
+    this.divisions,
   });
 
   final String label;
@@ -551,6 +927,12 @@ class _Field extends StatelessWidget {
   final double min;
   final double max;
   final String suffix;
+
+  /// Digits after the point in the readout. Zero for a count of things.
+  final int decimals;
+
+  /// Steps the slider snaps to, for a value that is only meaningful whole.
+  final int? divisions;
   final ValueChanged<double> onChanged;
 
   @override
@@ -562,10 +944,7 @@ class _Field extends StatelessWidget {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 108,
-                child: Text(label, style: editorBodyText),
-              ),
+              SizedBox(width: 108, child: Text(label, style: editorBodyText)),
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(trackHeight: 2),
@@ -573,6 +952,7 @@ class _Field extends StatelessWidget {
                     value: value.clamp(min, max),
                     min: min,
                     max: max,
+                    divisions: divisions,
                     onChanged: onChanged,
                   ),
                 ),
@@ -580,7 +960,7 @@ class _Field extends StatelessWidget {
               SizedBox(
                 width: 46,
                 child: Text(
-                  '${value.toStringAsFixed(2)}$suffix',
+                  '${value.toStringAsFixed(decimals)}$suffix',
                   style: editorBodyText,
                   textAlign: TextAlign.right,
                 ),
@@ -619,10 +999,7 @@ class _TextField extends StatelessWidget {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 108,
-                child: Text(label, style: editorBodyText),
-              ),
+              SizedBox(width: 108, child: Text(label, style: editorBodyText)),
               Expanded(
                 child: SizedBox(
                   height: 24,
@@ -672,10 +1049,7 @@ class _Toggle extends StatelessWidget {
         children: [
           Row(
             children: [
-              SizedBox(
-                width: 108,
-                child: Text(label, style: editorBodyText),
-              ),
+              SizedBox(width: 108, child: Text(label, style: editorBodyText)),
               Transform.scale(
                 scale: 0.75,
                 child: Switch(value: value, onChanged: onChanged),

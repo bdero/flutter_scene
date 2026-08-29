@@ -98,10 +98,7 @@ class _ProjectLauncherState extends State<ProjectLauncher> {
       backgroundColor: editorSurfaceColor,
       body: Row(
         children: [
-          _Rail(
-            tab: _tab,
-            onSelected: (tab) => setState(() => _tab = tab),
-          ),
+          _Rail(tab: _tab, onSelected: (tab) => setState(() => _tab = tab)),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

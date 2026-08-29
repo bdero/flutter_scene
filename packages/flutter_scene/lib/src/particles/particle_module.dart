@@ -28,7 +28,19 @@ abstract class ParticleModule {
   void spawn(ParticleStorage storage, int index) {}
 
   /// Advances every live particle by [dt] seconds.
+  ///
+  /// Runs before the system integrates velocity into position, which is what
+  /// a force wants: it is contributing to the velocity that is about to be
+  /// applied.
   void update(ParticleStorage storage, double dt) {}
+
+  /// Runs after the system has integrated positions, before ageing.
+  ///
+  /// For anything that has to react to where a particle actually ended up.
+  /// Collision is the reason this exists: testing the position a particle
+  /// had before it moved lets it pass through a wall for a step and come
+  /// back, which reads as a flicker rather than a bounce.
+  void postIntegrate(ParticleStorage storage, double dt) {}
 }
 
 /// Adds a constant [acceleration] (world units per second squared) to every

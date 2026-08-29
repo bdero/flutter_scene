@@ -615,8 +615,16 @@ class BasicSimulation extends PhysicsSimulation {
         }
         final o = i * 6;
         final inflated = Aabb3.minMax(
-          Vector3(boxes[o] - radius, boxes[o + 1] - radius, boxes[o + 2] - radius),
-          Vector3(boxes[o + 3] + radius, boxes[o + 4] + radius, boxes[o + 5] + radius),
+          Vector3(
+            boxes[o] - radius,
+            boxes[o + 1] - radius,
+            boxes[o + 2] - radius,
+          ),
+          Vector3(
+            boxes[o + 3] + radius,
+            boxes[o + 4] + radius,
+            boxes[o + 5] + radius,
+          ),
         );
         final hit = aabbRaycast(ray, inflated, distance);
         if (hit == null) return;

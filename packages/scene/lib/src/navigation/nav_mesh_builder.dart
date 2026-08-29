@@ -1,6 +1,8 @@
 import 'package:scene/src/navigation/compact_heightfield.dart';
 import 'package:scene/src/navigation/contours.dart';
 import 'package:scene/src/navigation/heightfield.dart';
+import 'package:vector_math/vector_math.dart';
+
 import 'package:scene/src/navigation/nav_config.dart';
 import 'package:scene/src/navigation/nav_geometry.dart';
 import 'package:scene/src/navigation/nav_mesh.dart';
@@ -36,14 +38,24 @@ enum NavBakeStage {
 /// Pure Dart and synchronous. A large world takes seconds, so run it in an
 /// isolate or at build time rather than on the frame that needs it; [onStage]
 /// reports progress for a caller that shows one.
+/// The interior a tiled bake keeps, as column indices into the voxel field.
+///
+/// A tile is voxelized with a border of extra cells so erosion and region
+/// growing see across the seam and agree with the neighbouring tile; this
+/// says which part of the result is actually the tile's.
+/// {@category Navigation}
+typedef NavInterior = ({int minX, int minZ, int maxX, int maxZ});
+
 NavMesh? buildNavMesh(
   NavGeometry geometry,
   NavMeshConfig config, {
   List<NavVolume> volumes = const [],
+  NavInterior? interior,
+  (Vector3, Vector3)? bounds,
   void Function(NavBakeStage stage)? onStage,
 }) {
   onStage?.call(NavBakeStage.voxelize);
-  final field = rasterizeNavGeometry(geometry, config);
+  final field = rasterizeNavGeometry(geometry, config, bounds: bounds);
   if (field == null) return null;
   // Between voxelize and compact: the surfaces are spans, and a span erased
   // here never reaches the mesh at all.
@@ -54,6 +66,18 @@ NavMesh? buildNavMesh(
 
   onStage?.call(NavBakeStage.erode);
   erodeWalkableArea(compact, config.agentRadiusCells);
+  // After erosion, before the partition: the border has done its job of
+  // making this tile agree with its neighbours, and must go before any
+  // contour is traced over it.
+  if (interior != null) {
+    cutToInterior(
+      compact,
+      interior.minX,
+      interior.minZ,
+      interior.maxX,
+      interior.maxZ,
+    );
+  }
 
   onStage?.call(NavBakeStage.partition);
   buildDistanceField(compact);

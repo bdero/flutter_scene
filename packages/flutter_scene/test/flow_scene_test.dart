@@ -26,6 +26,41 @@ import 'package:vector_math/vector_math.dart';
   return (node: node, flow: flow, log: log);
 }
 
+/// A graph that does something on every tick, so a trace has content.
+FlowGraph tickingGraph() {
+  final graph = FlowGraph(
+    variables: [
+      FlowVariable(name: 'count', type: FlowType.number, initial: 0.0),
+    ],
+  );
+  final tick = graph.add('event.tick');
+  final read = graph.add('var.get')..literals['name'] = 'count';
+  final add = graph.add('math.add')..literals['b'] = 1.0;
+  final write = graph.add('var.set')..literals['name'] = 'count';
+
+  graph
+    ..connect(
+      FlowLink(
+        fromNode: tick.id,
+        fromPin: 'then',
+        toNode: write.id,
+        toPin: 'exec',
+      ),
+    )
+    ..connect(
+      FlowLink(fromNode: read.id, fromPin: 'value', toNode: add.id, toPin: 'a'),
+    )
+    ..connect(
+      FlowLink(
+        fromNode: add.id,
+        fromPin: 'value',
+        toNode: write.id,
+        toPin: 'value',
+      ),
+    );
+  return graph;
+}
+
 void main() {
   group('SceneFlowHost paths', () {
     test('a bare path is the owning node', () {
@@ -79,10 +114,22 @@ void main() {
         ..literals['y'] = 5.0;
       final set = graph.add('scene.setPosition');
       graph
-        ..connect(FlowLink(
-          fromNode: start.id, fromPin: 'then', toNode: set.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: make.id, fromPin: 'value', toNode: set.id, toPin: 'value'));
+        ..connect(
+          FlowLink(
+            fromNode: start.id,
+            fromPin: 'then',
+            toNode: set.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: make.id,
+            fromPin: 'value',
+            toNode: set.id,
+            toPin: 'value',
+          ),
+        );
 
       final r = rig(graph: graph);
       r.flow.update(1 / 60);
@@ -95,10 +142,22 @@ void main() {
       final step = graph.add('vector.make')..literals['x'] = 1.0;
       final move = graph.add('scene.translate');
       graph
-        ..connect(FlowLink(
-          fromNode: tick.id, fromPin: 'then', toNode: move.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: step.id, fromPin: 'value', toNode: move.id, toPin: 'by'));
+        ..connect(
+          FlowLink(
+            fromNode: tick.id,
+            fromPin: 'then',
+            toNode: move.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: step.id,
+            fromPin: 'value',
+            toNode: move.id,
+            toPin: 'by',
+          ),
+        );
 
       final r = rig(graph: graph);
       for (var i = 0; i < 3; i++) {
@@ -111,8 +170,14 @@ void main() {
       final graph = FlowGraph();
       final start = graph.add('event.start');
       final set = graph.add('scene.setPosition')..literals['target'] = 'ghost';
-      graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: set.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: set.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(graph: graph);
       r.flow.update(1 / 60);
@@ -126,8 +191,14 @@ void main() {
       final call = graph.add('scene.call')
         ..literals['action'] = 'openDoor'
         ..literals['value'] = 3;
-      graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: call.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: call.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(
         graph: graph,
@@ -144,8 +215,14 @@ void main() {
       final graph = FlowGraph();
       final start = graph.add('event.start');
       final play = graph.add('scene.playAnimation')..literals['name'] = 'wave';
-      graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: play.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: play.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(graph: graph);
       r.flow.update(1 / 60);
@@ -181,10 +258,22 @@ void main() {
       final onceMessage = graph.add('debug.print')..literals['value'] = 'start';
       final everyMessage = graph.add('debug.print')..literals['value'] = 'tick';
       graph
-        ..connect(FlowLink(
-          fromNode: start.id, fromPin: 'then', toNode: onceMessage.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: tick.id, fromPin: 'then', toNode: everyMessage.id, toPin: 'exec'));
+        ..connect(
+          FlowLink(
+            fromNode: start.id,
+            fromPin: 'then',
+            toNode: onceMessage.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: tick.id,
+            fromPin: 'then',
+            toNode: everyMessage.id,
+            toPin: 'exec',
+          ),
+        );
 
       final r = rig(graph: graph);
       for (var i = 0; i < 3; i++) {
@@ -197,8 +286,14 @@ void main() {
       final graph = FlowGraph();
       final signal = graph.add('event.signal')..literals['name'] = 'open';
       final print = graph.add('debug.print')..literals['value'] = 'opened';
-      graph.connect(FlowLink(
-        fromNode: signal.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: signal.id,
+          fromPin: 'then',
+          toNode: print.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(graph: graph);
       r.flow.update(1 / 60);
@@ -216,8 +311,14 @@ void main() {
       final graph = FlowGraph();
       final signal = graph.add('event.signal')..literals['name'] = 'open';
       final print = graph.add('debug.print')..literals['value'] = 'opened';
-      graph.connect(FlowLink(
-        fromNode: signal.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: signal.id,
+          fromPin: 'then',
+          toNode: print.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(graph: graph);
       r.flow.raise('close');
@@ -235,12 +336,30 @@ void main() {
       final add = graph.add('math.add')..literals['b'] = 1.0;
       final write = graph.add('var.set')..literals['name'] = 'n';
       graph
-        ..connect(FlowLink(
-          fromNode: tick.id, fromPin: 'then', toNode: write.id, toPin: 'exec'))
-        ..connect(FlowLink(
-          fromNode: read.id, fromPin: 'value', toNode: add.id, toPin: 'a'))
-        ..connect(FlowLink(
-          fromNode: add.id, fromPin: 'value', toNode: write.id, toPin: 'value'));
+        ..connect(
+          FlowLink(
+            fromNode: tick.id,
+            fromPin: 'then',
+            toNode: write.id,
+            toPin: 'exec',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: read.id,
+            fromPin: 'value',
+            toNode: add.id,
+            toPin: 'a',
+          ),
+        )
+        ..connect(
+          FlowLink(
+            fromNode: add.id,
+            fromPin: 'value',
+            toNode: write.id,
+            toPin: 'value',
+          ),
+        );
 
       final r = rig(graph: graph);
       r.flow.update(1 / 60);
@@ -262,8 +381,14 @@ void main() {
       final write = graph.add('var.set')
         ..literals['name'] = 'n'
         ..literals['value'] = 99.0;
-      graph.connect(FlowLink(
-        fromNode: tick.id, fromPin: 'then', toNode: write.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: tick.id,
+          fromPin: 'then',
+          toNode: write.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(graph: graph);
       r.flow.update(1 / 60);
@@ -276,8 +401,14 @@ void main() {
       final graph = FlowGraph();
       final start = graph.add('event.start');
       final bogus = graph.add('does.not.exist');
-      graph.connect(FlowLink(
-        fromNode: start.id, fromPin: 'then', toNode: bogus.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: start.id,
+          fromPin: 'then',
+          toNode: bogus.id,
+          toPin: 'exec',
+        ),
+      );
 
       final r = rig(graph: graph);
       for (var i = 0; i < 5; i++) {
@@ -309,8 +440,14 @@ void main() {
       final replacement = FlowGraph();
       final tick = replacement.add('event.tick');
       final print = replacement.add('debug.print')..literals['value'] = 'new';
-      replacement.connect(FlowLink(
-        fromNode: tick.id, fromPin: 'then', toNode: print.id, toPin: 'exec'));
+      replacement.connect(
+        FlowLink(
+          fromNode: tick.id,
+          fromPin: 'then',
+          toNode: print.id,
+          toPin: 'exec',
+        ),
+      );
 
       r.flow.graph = replacement;
       r.flow.update(1 / 60);
@@ -323,8 +460,14 @@ void main() {
       final graph = FlowGraph();
       final tick = graph.add('event.tick');
       final move = graph.add('scene.translate');
-      graph.connect(FlowLink(
-        fromNode: tick.id, fromPin: 'then', toNode: move.id, toPin: 'exec'));
+      graph.connect(
+        FlowLink(
+          fromNode: tick.id,
+          fromPin: 'then',
+          toNode: move.id,
+          toPin: 'exec',
+        ),
+      );
 
       final registry = defaultComponentRegistry();
       final codec = registry.codecFor('flow')!;
@@ -361,6 +504,57 @@ void main() {
       );
       expect(component, isA<FlowComponent>());
       expect((component! as FlowComponent).graph.nodes, isEmpty);
+    });
+  });
+
+  group('watching a live graph', () {
+    test('a component records nothing until it is asked to', () {
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph());
+      node.addComponent(component);
+      component.update(1 / 60);
+
+      expect(component.tracing, isFalse);
+      expect(component.trace, isNull);
+    });
+
+    test('turning it on records what the tick did', () {
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      node.addComponent(component);
+      component.update(1 / 60);
+
+      final trace = component.trace!;
+      expect(trace.stepCount, greaterThan(0));
+      expect(trace.visitedNodes, isNotEmpty);
+      expect(trace.describe(), contains('ran'));
+    });
+
+    test('each tick traces itself, not the whole session', () {
+      // A graph on a tick event runs every frame; keeping every frame's trace
+      // would grow without bound and bury the frame anyone is looking at.
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      node.addComponent(component);
+
+      component.update(1 / 60);
+      final first = component.trace!.stepCount;
+      for (var i = 0; i < 20; i++) {
+        component.update(1 / 60);
+      }
+      expect(component.trace!.stepCount, lessThanOrEqualTo(first + 1));
+    });
+
+    test('turning it off stops recording', () {
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      node.addComponent(component);
+      component.update(1 / 60);
+      expect(component.trace, isNotNull);
+
+      component.tracing = false;
+      component.update(1 / 60);
+      expect(component.trace, isNull);
     });
   });
 }

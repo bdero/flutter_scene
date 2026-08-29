@@ -72,7 +72,10 @@ void main() {
     });
 
     test('only blocked water asks for a carve volume', () {
-      expect(WaterComponent(traversal: WaterTraversal.walkable).navVolume(), isNull);
+      expect(
+        WaterComponent(traversal: WaterTraversal.walkable).navVolume(),
+        isNull,
+      );
       expect(
         WaterComponent(traversal: WaterTraversal.swimmable).navVolume(),
         isNull,
@@ -84,10 +87,7 @@ void main() {
     });
 
     test('the carve volume spans the footprint and reaches the bed', () {
-      final water = WaterComponent(
-        size: 20,
-        traversal: WaterTraversal.blocked,
-      );
+      final water = WaterComponent(size: 20, traversal: WaterTraversal.blocked);
       final volume = water.navVolume(depth: 8)!;
       expect(volume.min.x, -10);
       expect(volume.max.x, 10);
@@ -99,10 +99,7 @@ void main() {
     });
 
     test('the carve volume follows the node it is placed on', () {
-      final water = WaterComponent(
-        size: 4,
-        traversal: WaterTraversal.blocked,
-      );
+      final water = WaterComponent(size: 4, traversal: WaterTraversal.blocked);
       final volume = water.navVolume(
         worldTransform: vm.Matrix4.translation(vm.Vector3(100, 5, -20)),
         depth: 2,
@@ -114,9 +111,8 @@ void main() {
     });
 
     test('navAreaOf reads a node, and leaves other nodes to the slope', () {
-      final wet = Node()..addComponent(
-        WaterComponent(traversal: WaterTraversal.walkable),
-      );
+      final wet = Node()
+        ..addComponent(WaterComponent(traversal: WaterTraversal.walkable));
       expect(WaterComponent.navAreaOf(wet), NavArea.walkable);
       expect(WaterComponent.navAreaOf(Node()), NavArea.nonWalkable);
     });
@@ -154,14 +150,17 @@ void main() {
       expect(faceted.first.amplitude, greaterThan(lit.first.amplitude));
     });
 
-    test('shimmer and realistic share a spectrum; only the material differs', () {
-      final shimmer = WaterComponent.defaultWavesFor(WaterStyle.shimmer);
-      final realistic = WaterComponent.defaultWavesFor(WaterStyle.realistic);
-      expect(
-        [for (final w in shimmer) w.wavelength],
-        [for (final w in realistic) w.wavelength],
-      );
-    });
+    test(
+      'shimmer and realistic share a spectrum; only the material differs',
+      () {
+        final shimmer = WaterComponent.defaultWavesFor(WaterStyle.shimmer);
+        final realistic = WaterComponent.defaultWavesFor(WaterStyle.realistic);
+        expect(
+          [for (final w in shimmer) w.wavelength],
+          [for (final w in realistic) w.wavelength],
+        );
+      },
+    );
 
     test('every style has a usable default spectrum', () {
       for (final style in WaterStyle.values) {

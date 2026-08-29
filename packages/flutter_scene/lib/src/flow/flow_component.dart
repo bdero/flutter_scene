@@ -55,6 +55,28 @@ class FlowComponent extends Component {
   /// pauses a script rather than restarting it.
   bool running = true;
 
+  FlowTrace? _trace;
+
+  /// What the last tick did, or null when nothing is watching.
+  ///
+  /// A graph that does nothing looks exactly like a graph that does the wrong
+  /// thing, and no amount of staring at the canvas tells them apart. This is
+  /// what an editor draws over it: which nodes ran, which branch of a Branch
+  /// was taken, and the number that went down each wire.
+  FlowTrace? get trace => _trace;
+
+  /// Whether the run is traced.
+  ///
+  /// Off by default. Turning it on rebuilds the context, which restarts the
+  /// script -- the trace is fixed to a run at construction so the hot path
+  /// stays a null check rather than a flag test per node.
+  bool get tracing => _trace != null;
+  set tracing(bool value) {
+    if (value == tracing) return;
+    _trace = value ? FlowTrace() : null;
+    _reset();
+  }
+
   SceneFlowHost? _host;
   FlowContext? _context;
   late final FlowInterpreter _interpreter = FlowInterpreter(registry);
@@ -87,9 +109,10 @@ class FlowComponent extends Component {
 
   void _reset() {
     _started = false;
+    _trace?.clear();
     final host = _host;
     if (host == null) return;
-    _context = FlowContext(graph: _graph, host: host);
+    _context = FlowContext(graph: _graph, host: host, trace: _trace);
   }
 
   /// Builds the host and the run state on first use.
@@ -103,7 +126,7 @@ class FlowComponent extends Component {
     if (!isAttached) return false;
     final host = SceneFlowHost(node, onAction: onAction, onLog: onLog);
     _host = host;
-    _context = FlowContext(graph: _graph, host: host);
+    _context = FlowContext(graph: _graph, host: host, trace: _trace);
     _started = false;
     return true;
   }
@@ -130,6 +153,10 @@ class FlowComponent extends Component {
     // The budget is per tick, not per lifetime: a graph that legitimately
     // does a lot of work every frame should not run out after a minute.
     context.steps = 0;
+    // The trace is per tick too, and for the same reason inverted: the
+    // interesting run is the current one, and keeping every frame's would
+    // grow without bound and bury the frame anyone is looking at.
+    _trace?.clear();
 
     if (!_started) {
       _started = true;
