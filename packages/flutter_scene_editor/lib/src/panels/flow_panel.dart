@@ -58,6 +58,12 @@ class _FlowPanelState extends State<FlowPanel> {
   double _zoom = 1;
 
   int? _selected;
+
+  /// Whether the canvas shows what the live graph is doing.
+  ///
+  /// Off by default: tracing rebuilds the run's context, which restarts the
+  /// script, and it is not something to do to a scene nobody asked to debug.
+  bool _tracing = false;
   int? _dragging;
   Offset _dragOffset = Offset.zero;
 
@@ -111,6 +117,25 @@ class _FlowPanelState extends State<FlowPanel> {
       if (component.type == 'flow') return (nodeId: id, spec: component);
     }
     return null;
+  }
+
+  /// The live component the selected node realized, or null when the scene
+  /// has not been realized or the selection carries no graph.
+  ///
+  /// The document holds the script; this is the thing actually running it,
+  /// and the only place a trace can come from.
+  FlowComponent? get _liveComponent {
+    final view = _componentView;
+    if (view == null) return null;
+    return _ctrl.liveNode(view.nodeId)?.getComponent<FlowComponent>();
+  }
+
+  void _toggleTracing() {
+    setState(() => _tracing = !_tracing);
+    // Turning it on restarts the script, because the trace is fixed to a run
+    // at construction -- which is what keeps the runtime's hot path a null
+    // check rather than a flag test per node.
+    _liveComponent?.tracing = _tracing;
   }
 
   /// Loads the graph from the document, once per selection.
@@ -362,6 +387,20 @@ class _FlowPanelState extends State<FlowPanel> {
                   : () => _deleteSelected(graph),
             ),
             IconButton(
+              icon: Icon(
+                _tracing ? Icons.visibility : Icons.visibility_outlined,
+                size: 15,
+                color: _tracing ? editorAccentColor : null,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+              tooltip: _tracing
+                  ? 'Stop watching the run'
+                  : 'Watch the run: which wires fire, and what is on them '
+                        '(restarts the script)',
+              onPressed: _toggleTracing,
+            ),
+            IconButton(
               icon: const Icon(Icons.center_focus_strong, size: 15),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 24, height: 24),
@@ -419,6 +458,7 @@ class _FlowPanelState extends State<FlowPanel> {
             selected: _selected,
             wireFrom: _wireFrom,
             wirePointer: _wirePointer,
+            trace: _tracing ? _liveComponent?.trace : null,
           ),
         ),
       ),

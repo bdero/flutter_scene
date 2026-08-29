@@ -10,6 +10,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/flow.dart';
+import 'package:vector_math/vector_math.dart' show Vector3;
 
 import '../shell/editor_theme.dart';
 
@@ -130,6 +131,7 @@ class FlowCanvasPainter extends CustomPainter {
     required this.selected,
     required this.wireFrom,
     required this.wirePointer,
+    this.trace,
   }) : layout = FlowLayout(graph, registry);
 
   final FlowGraph graph;
@@ -139,6 +141,12 @@ class FlowCanvasPainter extends CustomPainter {
   final int? selected;
   final FlowPortRef? wireFrom;
   final Offset? wirePointer;
+
+  /// What the last tick did, or null when nothing is being watched.
+  ///
+  /// The canvas draws the same graph either way; this is what turns it from a
+  /// diagram of what could happen into a picture of what did.
+  final FlowTrace? trace;
   final FlowLayout layout;
 
   @override
@@ -204,12 +212,86 @@ class FlowCanvasPainter extends CustomPainter {
     final from = layout.portCentre(link.fromNode, link.fromPin);
     final to = layout.portCentre(link.toNode, link.toPin);
     if (from == null || to == null) return;
+    final type = _typeColorType(link.fromNode, link.fromPin);
+    final colour = flowTypeColor(type);
+    final run = trace;
+    if (run == null) {
+      _paintCurve(canvas, from, to, colour);
+      return;
+    }
+
+    // With a trace, a wire is one of three things, and telling them apart is
+    // the whole point: it carried the run, it exists but the run went the
+    // other way, or it is a data wire with a value on it.
+    final isExec = type == FlowType.exec;
+    final live = isExec
+        ? run.didFire(link.fromNode, link.fromPin)
+        : run.visitedNodes.contains(link.fromNode);
     _paintCurve(
       canvas,
       from,
       to,
-      flowTypeColor(_typeColorType(link.fromNode, link.fromPin)),
+      live ? colour : colour.withValues(alpha: 0.18),
+      width: live && isExec ? 3.4 : 2.0,
     );
+    if (isExec || !live) return;
+
+    final value = run.valueOf(link.fromNode, link.fromPin);
+    _paintWireLabel(canvas, (from + to) / 2, _short(value), colour);
+  }
+
+  /// The value a data wire is carrying, drawn on it.
+  ///
+  /// On the wire rather than in a side panel because the question is always
+  /// "what went down *that* one", and a list of values keyed by node id is a
+  /// second lookup the reader has to do by hand.
+  void _paintWireLabel(
+    Canvas canvas,
+    Offset at,
+    String text,
+    Color colour,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(fontSize: 9, color: colour, height: 1.1),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final box = Rect.fromCenter(
+      center: at,
+      width: painter.width + 8,
+      height: painter.height + 4,
+    );
+    canvas
+      ..drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(3)),
+        Paint()..color = editorSurfaceColor.withValues(alpha: 0.92),
+      )
+      ..drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(3)),
+        Paint()
+          ..color = colour.withValues(alpha: 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.8,
+      );
+    painter.paint(canvas, box.topLeft + const Offset(4, 2));
+  }
+
+  /// A value in the space a wire label has. Long text is cut rather than
+  /// wrapped: a label that grows covers the graph it is describing.
+  static String _short(Object? value) {
+    if (value == null) return 'null';
+    if (value is double) {
+      return value == value.roundToDouble() && value.abs() < 1e6
+          ? value.toStringAsFixed(0)
+          : value.toStringAsFixed(3);
+    }
+    if (value is Vector3) {
+      return '${_short(value.x)}, ${_short(value.y)}, ${_short(value.z)}';
+    }
+    final text = '$value';
+    return text.length <= 18 ? text : '${text.substring(0, 17)}…';
   }
 
   /// A wire, as a horizontal-tangent bezier.
@@ -217,7 +299,13 @@ class FlowCanvasPainter extends CustomPainter {
   /// The tangent grows with the horizontal gap so a short hop stays tight and
   /// a long one bows out of the way of what is between; a straight line
   /// between two pins on stacked nodes would run through both.
-  void _paintCurve(Canvas canvas, Offset from, Offset to, Color color) {
+  void _paintCurve(
+    Canvas canvas,
+    Offset from,
+    Offset to,
+    Color color, {
+    double width = 1.8,
+  }) {
     final reach = math.max(40.0, (to.dx - from.dx).abs() * 0.5);
     final path = Path()
       ..moveTo(from.dx, from.dy)
@@ -234,7 +322,7 @@ class FlowCanvasPainter extends CustomPainter {
       Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8,
+        ..strokeWidth = width,
     );
   }
 

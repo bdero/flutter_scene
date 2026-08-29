@@ -64,6 +64,8 @@ export 'src/flow/flow_library.dart'
         standardFlowNodes,
         standardFlowRegistry,
         subtractNumbers;
+export 'src/flow/flow_trace.dart'
+    show FlowPinRef, FlowTrace, FlowTraceStep;
 export 'src/flow/flow_runtime.dart'
     show
         FlowContext,
