@@ -423,7 +423,7 @@ base class Scene implements SceneGraph {
               // normally here left the failure visible only through
               // `dart:developer` log(), which web does not surface, and sent
               // the developer to the baseShaderLibrary getter's "await
-              // initializeStaticResources()" instead — the call they just made.
+              // initializeStaticResources()" instead, the call they just made.
               Error.throwWithStackTrace(e, stacktrace);
             });
     return _initializeStaticResources!;
