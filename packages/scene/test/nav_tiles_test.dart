@@ -419,4 +419,190 @@ void main() {
       reason: 'tiling lost or gained more than a tenth of the walkable area',
     );
   });
+
+  group('incremental rebake', () {
+    /// A floor with a block sitting on it at [at], the crate that gets moved.
+    NavGeometry floorWithBlock(double size, Vector2 at) {
+      final half = size / 2;
+      final builder = NavGeometryBuilder();
+      builder.addMesh(
+        positions: [
+          -half, 0, -half, //
+          half, 0, -half, //
+          half, 0, half, //
+          -half, 0, half,
+        ],
+        triangleIndices: [0, 2, 1, 0, 3, 2],
+        area: NavArea.walkable,
+      );
+      // A tall thin box, steep enough on every side to read as an obstacle.
+      const w = 2.0;
+      const h = 3.0;
+      builder.addMesh(
+        positions: [
+          at.x - w, 0, at.y - w, //
+          at.x + w, 0, at.y - w, //
+          at.x + w, h, at.y - w, //
+          at.x - w, h, at.y - w, //
+          at.x - w, 0, at.y + w, //
+          at.x + w, 0, at.y + w, //
+          at.x + w, h, at.y + w, //
+          at.x - w, h, at.y + w,
+        ],
+        triangleIndices: [
+          0, 1, 2, 0, 2, 3, //
+          4, 6, 5, 4, 7, 6, //
+          0, 3, 7, 0, 7, 4, //
+          1, 5, 6, 1, 6, 2,
+        ],
+        area: NavArea.walkable,
+      );
+      return builder.build();
+    }
+
+    const tiling = NavTileConfig(tileCells: 24);
+
+    test('an unchanged world changes no tiles', () {
+      final geometry = floor(40);
+      final before = fingerprintNavTiles(geometry, _config, tiling: tiling);
+      final after = fingerprintNavTiles(geometry, _config, tiling: tiling);
+      expect(changedNavTiles(before, after), isEmpty);
+    });
+
+    test('moving one block changes the tiles it left and arrived in', () {
+      final before = fingerprintNavTiles(
+        floorWithBlock(60, Vector2(-20, -20)),
+        _config,
+        tiling: tiling,
+      );
+      final after = fingerprintNavTiles(
+        floorWithBlock(60, Vector2(20, 20)),
+        _config,
+        tiling: tiling,
+      );
+      final changed = changedNavTiles(before, after);
+
+      expect(changed, isNotEmpty);
+      expect(
+        changed.length,
+        lessThan(before.tileCount),
+        reason: 'a local edit must not invalidate the world',
+      );
+      final size = tiling.tileSize(_config);
+      bool touches(double x, double z) => changed.any(
+        (key) => key.x == (x / size).floor() && key.z == (z / size).floor(),
+      );
+      expect(touches(-20, -20), isTrue, reason: 'the tile it left');
+      expect(touches(20, 20), isTrue, reason: 'the tile it arrived in');
+    });
+
+    test('a fingerprint does not depend on the order triangles arrive', () {
+      final builder = NavGeometryBuilder();
+      final reversed = NavGeometryBuilder();
+      const quads = [-10.0, 0.0, 10.0];
+      for (final x in quads) {
+        builder.addMesh(
+          positions: [x, 0, -5, x + 8, 0, -5, x + 8, 0, 5, x, 0, 5],
+          triangleIndices: [0, 2, 1, 0, 3, 2],
+          area: NavArea.walkable,
+        );
+      }
+      for (final x in quads.reversed) {
+        reversed.addMesh(
+          positions: [x, 0, -5, x + 8, 0, -5, x + 8, 0, 5, x, 0, 5],
+          triangleIndices: [0, 2, 1, 0, 3, 2],
+          area: NavArea.walkable,
+        );
+      }
+      expect(
+        changedNavTiles(
+          fingerprintNavTiles(builder.build(), _config, tiling: tiling),
+          fingerprintNavTiles(reversed.build(), _config, tiling: tiling),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a different tiling is not comparable, so everything changes', () {
+      final geometry = floor(40);
+      final changed = changedNavTiles(
+        fingerprintNavTiles(geometry, _config, tiling: tiling),
+        fingerprintNavTiles(
+          geometry,
+          _config,
+          tiling: const NavTileConfig(tileCells: 32),
+        ),
+      );
+      expect(changed, isNotEmpty);
+    });
+
+    test('a rebake of the changed tiles matches a full bake of the world', () {
+      final before = floorWithBlock(60, Vector2(-20, -20));
+      final after = floorWithBlock(60, Vector2(20, 20));
+
+      final incremental = bakeNavMeshTiled(
+        before,
+        _config,
+        tiling: tiling,
+      ).tiles;
+      final changed = changedNavTiles(
+        fingerprintNavTiles(before, _config, tiling: tiling),
+        fingerprintNavTiles(after, _config, tiling: tiling),
+      );
+      rebakeNavTiles(incremental, after, changed);
+
+      final full = bakeNavMeshTiled(after, _config, tiling: tiling).tiles;
+      expect(incremental.tileCount, full.tileCount);
+      for (final key in full.tiles) {
+        expect(
+          incremental.tile(key)?.polygonCount,
+          full.tile(key)!.polygonCount,
+          reason: 'tile $key differs from a full bake',
+        );
+      }
+    });
+
+    test('a rebake keeps the set crossable', () {
+      final tiles = bakeNavMeshTiled(floor(60), _config, tiling: tiling).tiles;
+      final moved = floorWithBlock(60, Vector2(0, 0));
+      rebakeNavTiles(
+        tiles,
+        moved,
+        changedNavTiles(
+          fingerprintNavTiles(floor(60), _config, tiling: tiling),
+          fingerprintNavTiles(moved, _config, tiling: tiling),
+        ),
+      );
+
+      final path = NavTileMeshQuery(
+        tiles,
+      ).findPath(Vector3(-25, 0, -25), Vector3(25, 0, 25));
+      expect(path.status, NavPathStatus.complete);
+    });
+
+    test('rebaking nothing is not a rebake of everything', () {
+      final tiles = bakeNavMeshTiled(floor(40), _config, tiling: tiling).tiles;
+      final polygons = tiles.polygonCount;
+      final result = rebakeNavTiles(tiles, floor(40), const {});
+      expect(result.tiles.polygonCount, polygons);
+      expect(result.tiles.tileCount, greaterThan(0));
+    });
+
+    test('a tile whose geometry is gone is cleared, not left stale', () {
+      final tiles = bakeNavMeshTiled(floor(60), _config, tiling: tiling).tiles;
+      expect(tiles.tileCount, greaterThan(1));
+
+      // The world shrinks to a corner; every tile the old floor covered and
+      // the new one does not has to empty out.
+      final shrunk = floor(10);
+      final changed = changedNavTiles(
+        fingerprintNavTiles(floor(60), _config, tiling: tiling),
+        fingerprintNavTiles(shrunk, _config, tiling: tiling),
+      );
+      rebakeNavTiles(tiles, shrunk, changed);
+
+      final full = bakeNavMeshTiled(shrunk, _config, tiling: tiling).tiles;
+      expect(tiles.tileCount, full.tileCount);
+    });
+  });
 }

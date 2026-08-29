@@ -225,6 +225,7 @@ class NavMeshSurfaceComponent extends Component {
   void clear() {
     mesh = null;
     _tiles = null;
+    _fingerprints = null;
   }
 
   NavTileSet? _tiles;
@@ -241,6 +242,9 @@ class NavMeshSurfaceComponent extends Component {
   NavTileSet? get tileSet => _tiles;
   set tileSet(NavTileSet? value) {
     _tiles = value;
+    // The world these tiles came from was not walked here, so nothing can be
+    // compared against them until something bakes.
+    _fingerprints = null;
     if (value != null) tiling = value.tiling;
   }
 
@@ -277,6 +281,95 @@ class NavMeshSurfaceComponent extends Component {
       onProgress: onProgress,
     );
     _tiles = result.tiles;
+    _fingerprints = fingerprintNavTiles(
+      geometry,
+      config,
+      tiling: settings,
+      origin: result.tiles.origin,
+    );
+    return result;
+  }
+
+  NavTileFingerprints? _fingerprints;
+
+  /// What each tile was baked from, taken at the last tiled bake.
+  ///
+  /// Null before one, and after a set is installed from a document: a bake
+  /// that travelled through a file did not bring the world it came from, so
+  /// the first rebake in a fresh session has nothing to compare against and
+  /// does the whole world once.
+  NavTileFingerprints? get bakeFingerprints => _fingerprints;
+
+  /// The tiles the subtree at [root] no longer agrees with, or null when
+  /// there is nothing to compare against.
+  ///
+  /// Cheap next to a bake -- one pass to bucket the triangles and one to hash
+  /// them -- so it is reasonable to ask before every rebake rather than
+  /// tracking edits as they happen.
+  Set<NavTileKey>? changedTiles({Node? root}) {
+    final before = _fingerprints;
+    final settings = tiling;
+    if (before == null || settings == null || _tiles == null) return null;
+    final target = root ?? node;
+    final geometry = collectNavGeometry(target, options: collectOptions());
+    return changedNavTiles(
+      before,
+      fingerprintNavTiles(
+        geometry,
+        config,
+        tiling: settings,
+        origin: _tiles!.origin,
+      ),
+    );
+  }
+
+  /// Rebakes only the tiles the scene no longer agrees with.
+  ///
+  /// The point of tiling while authoring: moving one crate costs the tiles
+  /// the crate touched, in both the square it left and the square it arrived
+  /// in. Falls back to a full [bakeTiledAsync] when there is nothing to
+  /// compare against -- no tiles yet, or a set loaded from a document whose
+  /// world was not walked in this session.
+  Future<NavTiledBakeResult> rebakeChangedAsync({
+    Node? root,
+    int? concurrency,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final settings = tiling;
+    if (settings == null) {
+      throw StateError(
+        'rebakeChangedAsync needs a tiling; set '
+        'NavMeshSurfaceComponent.tiling, or call bakeAsync for a '
+        'single-piece bake.',
+      );
+    }
+    final tiles = _tiles;
+    final before = _fingerprints;
+    if (tiles == null || before == null) {
+      return bakeTiledAsync(
+        root: root,
+        concurrency: concurrency,
+        onProgress: onProgress,
+      );
+    }
+
+    final target = root ?? node;
+    final geometry = collectNavGeometry(target, options: collectOptions());
+    final after = fingerprintNavTiles(
+      geometry,
+      config,
+      tiling: settings,
+      origin: tiles.origin,
+    );
+    final result = await rebakeNavTilesAsync(
+      tiles,
+      geometry,
+      changedNavTiles(before, after),
+      volumes: volumesFor(target),
+      concurrency: concurrency,
+      onProgress: onProgress,
+    );
+    _fingerprints = after;
     return result;
   }
 

@@ -114,6 +114,35 @@ NavGeometry level(double size, int walls) {
   return builder.build();
 }
 
+/// [geometry] with a crate on it at [x], the object an incremental rebake
+/// is measured against moving.
+NavGeometry withCrate(NavGeometry geometry, double x) {
+  final builder = NavGeometryBuilder();
+  builder.addMesh(
+    positions: [
+      for (var i = 0; i < geometry.vertices.length; i++) geometry.vertices[i],
+    ],
+    triangleIndices: [
+      for (var i = 0; i < geometry.indices.length; i++) geometry.indices[i],
+    ],
+  );
+  const w = 2.0;
+  const h = 3.0;
+  builder.addMesh(
+    positions: [
+      x - w, 0, x - w, x + w, 0, x - w, x + w, h, x - w, x - w, h, x - w, //
+      x - w, 0, x + w, x + w, 0, x + w, x + w, h, x + w, x - w, h, x + w,
+    ],
+    triangleIndices: [
+      0, 1, 2, 0, 2, 3, //
+      4, 6, 5, 4, 7, 6, //
+      0, 3, 7, 0, 7, 4, //
+      1, 5, 6, 1, 6, 2,
+    ],
+  );
+  return builder.build();
+}
+
 void main() {
   if (!_enabled) {
     test('hot path benchmarks', () {}, skip: 'Set FLUTTER_SCENE_BENCH=1.');
@@ -284,6 +313,53 @@ void main() {
         '  ${'${entry.$1.toInt()} ${entry.$3}: parallel, 64-cell tiles'.padRight(46)} '
         '${(watch.elapsedMicroseconds / 1000).toStringAsFixed(3).padLeft(9)} ms'
         '  (${result.tiles.tileCount} tiles)',
+      );
+    }
+
+    // ------------------------------------------------------------------
+    section('Nav mesh: rebaking one moved crate vs the whole world');
+    for (final entry in const [(120.0, 8, 'level'), (300.0, 16, 'world')]) {
+      const config = NavMeshConfig(
+        cellSize: 0.3,
+        cellHeight: 0.2,
+        agentRadius: 0.5,
+        agentHeight: 2,
+      );
+      const tiling = NavTileConfig(tileCells: 64);
+      final half = entry.$1 / 2;
+      final before = withCrate(level(entry.$1, entry.$2), -half * 0.6);
+      final after = withCrate(level(entry.$1, entry.$2), half * 0.6);
+      final fingerprintBefore = fingerprintNavTiles(
+        before,
+        config,
+        tiling: tiling,
+      );
+      final fingerprintAfter = fingerprintNavTiles(
+        after,
+        config,
+        tiling: tiling,
+      );
+      final changed = changedNavTiles(fingerprintBefore, fingerprintAfter);
+
+      bench(
+        '${entry.$1.toInt()} ${entry.$3}: fingerprint the world',
+        () => fingerprintNavTiles(after, config, tiling: tiling),
+        runs: 5,
+        warmup: 1,
+      );
+      // Baked once, outside the timing: what is being measured is the
+      // rebake, and a full bake inside the loop would be all of it.
+      final baked = bakeNavMeshTiled(before, config, tiling: tiling).tiles;
+      // ignore: avoid_print
+      print(
+        '  ${entry.$1.toInt()} ${entry.$3}: '
+        '${changed.length} of ${baked.tileCount} tiles stale',
+      );
+      bench(
+        '${entry.$1.toInt()} ${entry.$3}: rebake only those',
+        () => rebakeNavTiles(baked, after, changed),
+        runs: 5,
+        warmup: 1,
       );
     }
 
