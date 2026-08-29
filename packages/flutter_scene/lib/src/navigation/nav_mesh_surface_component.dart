@@ -234,7 +234,15 @@ class NavMeshSurfaceComponent extends Component {
   /// Null after a single-shot bake. A caller wanting one mesh reads [mesh]; a
   /// caller wanting to rebake one tile, or to path across a world too large
   /// for a single mesh, wants this.
+  ///
+  /// Settable so a loader can install a set decoded from a document without
+  /// rebaking it, and so [tiling] can be adopted from what was loaded rather
+  /// than having to be restated.
   NavTileSet? get tileSet => _tiles;
+  set tileSet(NavTileSet? value) {
+    _tiles = value;
+    if (value != null) tiling = value.tiling;
+  }
 
   /// Bakes the subtree at [root] tile by tile, several tiles at a time.
   ///

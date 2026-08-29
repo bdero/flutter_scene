@@ -36,6 +36,8 @@ export 'src/navigation/nav_mesh.dart'
     show NavMesh, navMeshFromPolyMesh, navNoPolygon;
 export 'src/navigation/nav_mesh_builder.dart'
     show NavBakeStage, NavInterior, buildNavMesh;
+export 'src/navigation/nav_tile_codec.dart'
+    show decodeNavTileSet, encodeNavTileSet, navTileSetMagic, navTileSetVersion;
 export 'src/navigation/nav_tile_bake.dart'
     show
         NavTileJob,
