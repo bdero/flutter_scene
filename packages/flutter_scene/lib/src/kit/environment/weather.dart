@@ -12,6 +12,8 @@
 /// whoever asked for it.
 library;
 
+import 'package:flutter_scene/src/kit/environment/water_component.dart';
+import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
 
@@ -29,6 +31,7 @@ class WeatherPreset {
     this.density = 0.95,
     this.effect,
     this.lightning = false,
+    this.choppiness = 1.0,
   });
 
   /// A stable id, which is what a document, a script or a graph names.
@@ -63,6 +66,14 @@ class WeatherPreset {
   /// [LightningComponent] driving the sky's flash and the thunder after it.
   final bool lightning;
 
+  /// How hard the water runs under this weather: `0` glassy, `1` the waves as
+  /// authored, above that a sea getting up.
+  ///
+  /// Water that stays glassy through a thunderstorm is the thing that gives
+  /// a weather system away, and the two are the same weather, so the state
+  /// carries both rather than leaving the sea to be remembered separately.
+  final double choppiness;
+
   /// Puts [sky] into this weather. The sun is left where it is: what time it
   /// is and what the weather is doing are two different questions.
   void applyTo(WeatherSkySource sky) {
@@ -87,6 +98,7 @@ const List<WeatherPreset> weatherPresets = [
     turbidity: 6,
     softness: 0.2,
     density: 0.7,
+    choppiness: 0.45,
   ),
   WeatherPreset(
     id: 'fair',
@@ -95,6 +107,7 @@ const List<WeatherPreset> weatherPresets = [
     coverage: 0.45,
     stormDarkening: 0,
     turbidity: 10,
+    choppiness: 0.8,
   ),
   WeatherPreset(
     id: 'overcast',
@@ -104,6 +117,7 @@ const List<WeatherPreset> weatherPresets = [
     stormDarkening: 0.45,
     turbidity: 14,
     softness: 0.28,
+    choppiness: 1.0,
   ),
   WeatherPreset(
     id: 'fog',
@@ -114,6 +128,7 @@ const List<WeatherPreset> weatherPresets = [
     turbidity: 18,
     softness: 0.35,
     effect: 'groundFog',
+    choppiness: 0.5,
   ),
   WeatherPreset(
     id: 'rain',
@@ -124,6 +139,7 @@ const List<WeatherPreset> weatherPresets = [
     turbidity: 16,
     softness: 0.3,
     effect: 'rain',
+    choppiness: 1.5,
   ),
   WeatherPreset(
     id: 'storm',
@@ -135,6 +151,7 @@ const List<WeatherPreset> weatherPresets = [
     softness: 0.22,
     effect: 'rain',
     lightning: true,
+    choppiness: 2.2,
   ),
   WeatherPreset(
     id: 'snow',
@@ -145,6 +162,7 @@ const List<WeatherPreset> weatherPresets = [
     turbidity: 8,
     softness: 0.34,
     effect: 'snow',
+    choppiness: 0.7,
   ),
 ];
 
@@ -157,16 +175,43 @@ WeatherPreset? weatherPresetById(String id) {
   return null;
 }
 
-/// Puts [scene]'s sky into [preset].
+/// Puts [scene]'s sky into [preset], and its water with it.
 ///
 /// Returns false when the scene's skybox is not a [WeatherSkySource], which
 /// is the one sky that has clouds to change: there is no weather to set on a
-/// gradient. Nothing else about the scene is touched, so an emitter already
-/// raining goes on raining -- swap it yourself when the weather says to.
+/// gradient. The water is raised or calmed either way -- a sea that stays
+/// glassy through a thunderstorm is the thing that gives a weather system
+/// away, and it is the same weather.
+///
+/// Emitters are left alone: an effect already raining goes on raining, since
+/// spawning and removing nodes is the caller's to decide.
 /// {@category Gameplay kit}
 bool setSceneWeather(Scene scene, WeatherPreset preset) {
+  setWaterChoppiness(scene.root, preset.choppiness);
   final source = scene.skybox?.source;
   if (source is! WeatherSkySource) return false;
   preset.applyTo(source);
   return true;
+}
+
+/// Sets [choppiness] on every water surface under [root].
+///
+/// Returns how many it found, so a caller can tell "the weather changed and
+/// there is no water" from "the weather changed and the water ignored it".
+/// {@category Gameplay kit}
+int setWaterChoppiness(Node root, double choppiness) {
+  var found = 0;
+  void visit(Node node) {
+    final water = node.getComponent<WaterComponent>();
+    if (water != null) {
+      water.choppiness = choppiness;
+      found++;
+    }
+    for (final child in node.children) {
+      visit(child);
+    }
+  }
+
+  visit(root);
+  return found;
 }
