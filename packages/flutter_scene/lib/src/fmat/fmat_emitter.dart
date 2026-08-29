@@ -84,8 +84,9 @@ List<FmatInstanceAttribute> forwardedInstanceAttributes(FmatMaterial material) {
   if (material.instanceAttributes.isEmpty) return const [];
   return [
     for (final a in material.instanceAttributes)
-      if (RegExp('\\b${RegExp.escape(a.accessorName)}\\b')
-          .hasMatch(material.fragmentSource))
+      if (RegExp(
+        '\\b${RegExp.escape(a.accessorName)}\\b',
+      ).hasMatch(material.fragmentSource))
         a,
   ];
 }
@@ -318,8 +319,8 @@ String emitFragmentGlsl(
     );
   } else if (lit) {
     if (additive) {
-      // Additive: zero the output alpha so the destination is never
-      // darkened, keeping the premultiplied color.
+      // Zero the output alpha so an additive draw never darkens the
+      // destination, keeping the premultiplied color.
       sb.writeln('  vec4 lit = EvaluateLighting(material);');
       sb.writeln('  frag_color = vec4(lit.rgb, 0.0);');
     } else {
@@ -406,8 +407,9 @@ String? _fragmentKeepAliveTerm(
   final terms = <String>[
     if (uniforms.isNotEmpty) _paramsKeepAliveScalar(uniforms.first),
     for (final p in samplers)
-      if (!RegExp('\\b${RegExp.escape(p.name)}\\b')
-          .hasMatch(material.fragmentSource))
+      if (!RegExp(
+        '\\b${RegExp.escape(p.name)}\\b',
+      ).hasMatch(material.fragmentSource))
         p.type == FmatType.samplerCube
             ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
             : 'texture(${p.name}, vec2(0.0)).x',

@@ -131,6 +131,30 @@ void main() {
     );
   });
 
+  test('a mismatched decal parameter type is skipped, not written', () {
+    // A material that spells decal_fade as a vec4 must not take a setFloat
+    // write; the writer gates on the declared type, not just the name.
+    final parameters = MaterialParameters.withLayout(
+      blockName: 'MaterialParams',
+      blockSizeBytes: 80,
+      parameters: {
+        'decal_inverse': (type: FmatType.mat4, offset: 0, sourceColor: false),
+        'decal_fade': (type: FmatType.vec4, offset: 64, sourceColor: false),
+      },
+    );
+
+    expect(
+      () => writeDecalParameters(
+        parameters,
+        inverse: Matrix4.identity(),
+        fade: 0.25,
+      ),
+      returnsNormally,
+    );
+    expect(parameters.isParameterAssigned('decal_fade'), isFalse);
+    expect(parameters.isParameterAssigned('decal_inverse'), isTrue);
+  });
+
   test('the built-in materials keep the occluding depth test', () {
     expect(UnlitMaterial().depthCompare, gpu.CompareFunction.lessEqual);
     expect(

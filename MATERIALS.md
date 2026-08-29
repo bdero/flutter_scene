@@ -162,8 +162,10 @@ vec4  GetPlanarReflection();          // mirrored capture at this fragment
 
 `GetSceneWorldPosition` unprojects the opaque surface behind the fragment (it
 needs `scene_depth`), for contact softening, curved-surface thickness, and
-projecting onto whatever is back there. It falls back to this fragment's own
-world position when depth is unavailable or the camera is not perspective.
+projecting onto whatever is back there. When depth is unavailable or the camera
+is not perspective it returns a point at the same huge depth `GetSceneDepth`
+reports, so a reader fades out or falls outside its own volume rather than
+landing on the fragment it was shading.
 
 `GetPlanarReflection()` returns the mirrored scene color in rgb with `a` 1
 when a capture is bound this draw and 0 otherwise (no reflector routed one,
@@ -417,7 +419,7 @@ skinned mesh switches its vertex layout to a described one, since reflection
 cannot know which slot the stream was bound to (`Geometry.setCustomAttribute`).
 The depth/shadow pass fetches only position, so an attribute reads zero there:
 a displacement driven by a custom attribute is not reflected in the shadow,
-while one driven by `world_position` / a parameter is (world position is
+while one driven by `world_position`/a parameter is (world position is
 available in every pass).
 
 ## Custom instance attributes (instance to vertex and fragment)
@@ -646,6 +648,9 @@ A `DecalNode` draws a box; each of its fragments unprojects the opaque surface
 behind it, transforms that world point into the box's local space, discards
 outside the box, and shades what is left. The mark conforms to whatever it lands
 on, so it follows terrain, steps, and props.
+
+Unprojection needs the opaque depth and a perspective camera, so a decal draws
+nothing under an `OrthographicCamera`.
 
 ```dart
 final decal = DecalNode(material: await loadFmatMaterial('assets/scorch_decal.fmat'))
@@ -1240,7 +1245,7 @@ sampler budget has room for the two inputs.
 # Render state
 
 A `.fmat` material declares render state in its `material` block: `culling`
-(`back` / `front` / `none`) and `blending` (`opaque` / `alpha` / `additive`). A
+(`back`/`front`/`none`) and `blending` (`opaque`/`alpha`/`additive`). A
 `ShaderMaterial` exposes `cullingMode`, `windingOrder`, and `isOpaqueOverride`
 constructor fields.
 

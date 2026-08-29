@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -59,6 +60,7 @@ class ScreenDistortionSettings {
 /// The engine-inserted [CustomRenderPass] that renders
 /// [ScreenDistortionSettings]. Not user-facing; `Scene` adds it when
 /// `scene.screenDistortion.enabled` and at least one pulse is live.
+@internal
 class ScreenDistortionPass extends CustomRenderPass {
   ScreenDistortionPass(this.settings);
 

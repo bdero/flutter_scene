@@ -1,10 +1,10 @@
-// Radial screen distortion: up to four expanding rings warp the
-// display-referred image, with a per-pulse chromatic split. Runs through the
+// Up to four expanding rings warp the display-referred image, with a
+// per-pulse chromatic split. Runs through the
 // custom-pass API, after tone mapping so FXAA cleans up the resampled edges
 // and the warp includes bloom.
 //
 // The ring profile is the derivative of a gaussian centered on the ring
-// radius: it pushes outward ahead of the front and pulls inward behind it,
+// radius, pushing outward ahead of the front and pulling inward behind it,
 // which reads as a shockwave rather than a static bulge.
 
 uniform sampler2D input_color;

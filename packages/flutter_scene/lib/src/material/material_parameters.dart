@@ -190,6 +190,13 @@ class MaterialParameters {
   /// Whether a sampler parameter named [name] is declared.
   bool hasSampler(String name) => _samplers.containsKey(name);
 
+  /// Whether [name] is declared with type [type]. Lets a caller writing to
+  /// many materials at once ([MaterialGroup]) skip a member that spells the
+  /// same name with a different type, instead of the setter throwing partway.
+  @internal
+  bool hasParameterOfType(String name, FmatType type) =>
+      _layout[name]?.type == type;
+
   /// Whether [name] was explicitly set on this instance, as opposed to left
   /// at the sidecar default. Throws [ArgumentError] if [name] is not a
   /// declared parameter.

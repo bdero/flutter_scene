@@ -344,6 +344,13 @@ double sceneSortDepth(
 final Map<(gpu.Shader, gpu.Shader, int), gpu.RenderPipeline> _pipelineCache =
     {};
 
+/// Pipeline keys the backend refused to build, so a rejected pairing is not
+/// retried every frame. Keyed exactly like [_pipelineCache] and evicted with
+/// it, so one bad shader variant does not disable the variants that build, and
+/// a hot-reloaded shader gets a fresh attempt instead of staying invisible
+/// until restart.
+final Set<(gpu.Shader, gpu.Shader, int)> _rejectedPipelines = {};
+
 /// Returns the cached render pipeline for ([vertexShader], [fragmentShader],
 /// [vertexLayout]), building and caching it on first use.
 ///
@@ -398,6 +405,45 @@ void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
   _pipelineCache.removeWhere(
     (key, _) => shaders.contains(key.$1) || shaders.contains(key.$2),
   );
+  _rejectedPipelines.removeWhere(
+    (key) => shaders.contains(key.$1) || shaders.contains(key.$2),
+  );
+}
+
+/// [resolvePipeline], returning null instead of throwing when the backend
+/// refuses to build the pipeline, and remembering the refusal so it is
+/// attempted once rather than every frame.
+///
+/// Used by the scene encoder, where a pairing the backend cannot build (most
+/// often a custom-attribute geometry drawn by a material whose vertex stage
+/// does not declare those attributes) reaches the renderer from user data.
+/// Throwing there escapes `paint` and blanks the frame, so the draw is skipped
+/// and the reason reported once instead. Shader resolution and layout
+/// validation stay outside this guard, so a missing shader or a malformed
+/// layout still surfaces.
+gpu.RenderPipeline? tryResolvePipeline(
+  gpu.Shader vertexShader,
+  gpu.Shader fragmentShader, {
+  VertexLayoutDescriptor? vertexLayout,
+  String Function()? debugContext,
+}) {
+  final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
+  if (_rejectedPipelines.contains(key)) return null;
+  try {
+    return resolvePipeline(
+      vertexShader,
+      fragmentShader,
+      vertexLayout: vertexLayout,
+      debugContext: debugContext,
+    );
+  } on Exception catch (error) {
+    _rejectedPipelines.add(key);
+    debugPrint(
+      'flutter_scene: skipping a draw whose pipeline failed to build'
+      '${debugContext != null ? ' (${debugContext()})' : ''}. $error',
+    );
+    return null;
+  }
 }
 
 /// Records draw calls for one frame's color pass into a single
@@ -477,7 +523,6 @@ base class SceneEncoder {
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
   static final List<_OpaqueRecord> _opaqueRecordPool = [];
-  static final Set<(Geometry, Material)> _rejectedPairs = {};
   static final List<_TranslucentRecord> _translucentRecordPool = [];
   static const int _recordPoolLimit = 8192;
 
@@ -543,41 +588,23 @@ base class SceneEncoder {
     Material material,
     double fade,
   ) {
-    // A geometry/material pair the pipeline rejected stays skipped; creation
-    // is retried once, not per frame.
-    if (_rejectedPairs.contains((geometry, material))) return;
     // A material with a `vertex { }` block supplies its own vertex shader for
     // this geometry's mesh type; otherwise the engine's standard one is used.
-    final gpu.RenderPipeline pipeline;
-    try {
-      pipeline = resolvePipeline(
-        material.materialVertexShader(geometry.materialVertexVariant) ??
-            geometry.vertexShader,
-        material.fragmentShaderForLighting(_lighting),
-        // A material declaring `instance_attributes` widens the instance-rate
-        // slot, so the pipeline depends on the material as well as the geometry.
-        vertexLayout: geometry.instancedVertexLayoutFor(
-          material.instanceAttributes,
-        ),
-        debugContext: () =>
-            '${fmatSourcePathOf(material) ?? material.runtimeType} on '
-            '${geometry.runtimeType}',
-      );
-    } on Exception catch (error) {
-      // A pairing the backend cannot build, most often a custom-attribute
-      // geometry drawn by a material with no vertex stage declaring those
-      // attributes. Throwing out of paint blanks the whole frame, so skip the
-      // draw and say why once.
-      _rejectedPairs.add((geometry, material));
-      debugPrint(
-        'flutter_scene: skipping a draw whose pipeline failed to build. '
-        'geometry ${geometry.runtimeType}'
-        '${geometry.hasCustomAttributes ? ' (custom vertex attributes)' : ''} '
-        'with material ${fmatSourcePathOf(material) ?? material.runtimeType}. '
-        '$error',
-      );
-      return;
-    }
+    final pipeline = tryResolvePipeline(
+      material.materialVertexShader(geometry.materialVertexVariant) ??
+          geometry.vertexShader,
+      material.fragmentShaderForLighting(_lighting),
+      // A material declaring `instance_attributes` widens the instance-rate
+      // slot, so the pipeline depends on the material as well as the geometry.
+      vertexLayout: geometry.instancedVertexLayoutFor(
+        material.instanceAttributes,
+      ),
+      debugContext: () =>
+          '${fmatSourcePathOf(material) ?? material.runtimeType} on '
+          '${geometry.runtimeType}'
+          '${geometry.hasCustomAttributes ? ' with custom vertex attributes' : ''}',
+    );
+    if (pipeline == null) return;
 
     if (material.isOpaque()) {
       _opaqueRecords.add(
