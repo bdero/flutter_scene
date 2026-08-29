@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:vector_math/vector_math.dart';
 
+import 'package:scene/src/component_migration.dart';
 import 'package:scene/src/id.dart';
 import 'package:scene/src/json/canonical.dart';
 import 'package:scene/src/json/jsonc.dart';
@@ -1034,7 +1035,10 @@ TransformSpec _decodeTransform(Map<String, dynamic> json) {
 }
 
 ComponentSpec _decodeComponent(Map<String, dynamic> json) => ComponentSpec(
-  json['type'] as String,
+  // Renamed types resolve to their current spelling here, so a document
+  // written before a rename loads as what it meant rather than as a node with
+  // its behaviour quietly missing.
+  migrateComponentType(json['type'] as String),
   properties: _decodeProperties(json['properties']),
 );
 

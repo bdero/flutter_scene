@@ -3,7 +3,7 @@
 // named clips directly would be a second state machine disagreeing with the
 // first.
 
-import 'package:flutter_scene/flow.dart';
+import 'package:flutter_scene/visual_script.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -32,7 +32,7 @@ AnimatorComponent _walkRun() => AnimatorComponent(
 
 void main() {
   test('the palette carries the animator nodes', () {
-    final registry = sceneFlowRegistry();
+    final registry = sceneVisualScriptRegistry();
     expect(registry['animator.setNumber'], isNotNull);
     expect(registry['animator.setFlag'], isNotNull);
     expect(registry['animator.trigger'], isNotNull);
@@ -43,7 +43,7 @@ void main() {
     final node = Node(name: 'hero');
     final animator = _walkRun();
     node.addComponent(animator);
-    final host = SceneFlowHost(node);
+    final host = SceneVisualScriptHost(node);
 
     expect(
       host.invoke('setAnimatorNumber', {'name': 'speed', 'value': 4.0}),
@@ -59,7 +59,7 @@ void main() {
     final node = Node(name: 'hero');
     final animator = _walkRun();
     node.addComponent(animator);
-    final host = SceneFlowHost(node);
+    final host = SceneVisualScriptHost(node);
 
     host.invoke('setAnimatorFlag', {'name': 'armed', 'value': true});
     expect(animator.animator.parameters.flag('armed'), isTrue);
@@ -73,7 +73,7 @@ void main() {
   test('reading the state names the state', () {
     final node = Node(name: 'hero');
     node.addComponent(_walkRun());
-    final host = SceneFlowHost(node);
+    final host = SceneVisualScriptHost(node);
     expect(host.invoke('animatorState', {'layer': ''}), 'Idle');
   });
 
@@ -81,7 +81,7 @@ void main() {
     // A graph is attached to a node, and there is nothing stopping it being a
     // node that is not a character.
     final log = <String>[];
-    final host = SceneFlowHost(Node(name: 'crate'), onLog: log.add);
+    final host = SceneVisualScriptHost(Node(name: 'crate'), onLog: log.add);
     expect(
       host.invoke('setAnimatorNumber', {'name': 'speed', 'value': 1.0}),
       isFalse,
@@ -94,7 +94,7 @@ void main() {
     final node = Node(name: 'hero');
     node.addComponent(_walkRun());
     final log = <String>[];
-    final host = SceneFlowHost(node, onLog: log.add);
+    final host = SceneVisualScriptHost(node, onLog: log.add);
     expect(host.invoke('animatorState', {'layer': 'nonsense'}), '');
     expect(log.single, contains('nonsense'));
   });

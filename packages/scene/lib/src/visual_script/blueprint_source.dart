@@ -21,7 +21,7 @@ library;
 
 import 'package:vector_math/vector_math.dart';
 
-import 'flow_graph.dart';
+import 'visual_script_graph.dart';
 
 /// The format version written at the top of every blueprint.
 const int blueprintSourceVersion = 1;
@@ -57,7 +57,7 @@ class BlueprintDiagnostic {
 class BlueprintParseResult {
   const BlueprintParseResult({required this.graph, required this.diagnostics});
 
-  final FlowGraph graph;
+  final VisualScriptGraph graph;
   final List<BlueprintDiagnostic> diagnostics;
 
   /// Whether it read cleanly.
@@ -70,7 +70,7 @@ class BlueprintParseResult {
 ///
 /// Derived from the type's last segment, so `scene.setPosition` is
 /// `setPosition`, and numbered only where a name would otherwise repeat.
-Map<int, String> _namesFor(FlowGraph graph) {
+Map<int, String> _namesFor(VisualScriptGraph graph) {
   final names = <int, String>{};
   final used = <String, int>{};
   for (final node in graph.nodes) {
@@ -108,7 +108,7 @@ String _printValue(Object? value) => switch (value) {
 /// [name] is written as the blueprint's own name; it is documentation rather
 /// than structure, and reading it back does not change the graph.
 /// {@category Flow}
-String printBlueprint(FlowGraph graph, {String name = ''}) {
+String printBlueprint(VisualScriptGraph graph, {String name = ''}) {
   final names = _namesFor(graph);
   final out = StringBuffer()..writeln('blueprint $blueprintSourceVersion');
   if (name.isNotEmpty) out.writeln('name $name');
@@ -255,7 +255,7 @@ List<String> _splitArguments(String source) {
 /// reported and skipped, so one bad line costs one node rather than the file.
 /// {@category Flow}
 BlueprintParseResult parseBlueprint(String source) {
-  final graph = FlowGraph();
+  final graph = VisualScriptGraph();
   final diagnostics = <BlueprintDiagnostic>[];
   final ids = <String, int>{};
   // Wires are resolved after every node is named, so a blueprint that wires
@@ -278,7 +278,9 @@ BlueprintParseResult parseBlueprint(String source) {
     final variable = _varPattern.firstMatch(text);
     if (variable != null) {
       final typeName = variable.group(2)!;
-      final type = FlowType.values.where((t) => t.name == typeName).firstOrNull;
+      final type = VisualScriptType.values
+          .where((t) => t.name == typeName)
+          .firstOrNull;
       if (type == null) {
         diagnostics.add(
           BlueprintDiagnostic(
@@ -291,7 +293,7 @@ BlueprintParseResult parseBlueprint(String source) {
       }
       final initial = variable.group(3);
       graph.variables.add(
-        FlowVariable(
+        VisualScriptVariable(
           name: variable.group(1)!,
           type: type,
           initial: initial == null ? null : _parseValue(initial),
@@ -377,7 +379,7 @@ BlueprintParseResult parseBlueprint(String source) {
     // a wire that shares an endpoint with one already read. Source says what
     // the graph is; it is not an editing gesture.
     graph.links.add(
-      FlowLink(
+      VisualScriptLink(
         fromNode: from,
         fromPin: match.group(2)!,
         toNode: to,
@@ -423,5 +425,5 @@ int _commentStart(String line) {
 /// the same way, over the same variables. Ids are an implementation detail,
 /// and reading source back assigns fresh ones.
 /// {@category Flow}
-bool blueprintEquivalent(FlowGraph a, FlowGraph b) =>
+bool blueprintEquivalent(VisualScriptGraph a, VisualScriptGraph b) =>
     printBlueprint(a) == printBlueprint(b);

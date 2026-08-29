@@ -4,22 +4,30 @@
 
 import 'dart:math';
 
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:test/test.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// A small graph with one of everything that has to survive.
-FlowGraph sample() {
-  final graph = FlowGraph(
+VisualScriptGraph sample() {
+  final graph = VisualScriptGraph(
     variables: [
-      FlowVariable(name: 'isOpen', type: FlowType.boolean, initial: false),
-      FlowVariable(name: 'count', type: FlowType.number, initial: 3.5),
-      FlowVariable(
+      VisualScriptVariable(
+        name: 'isOpen',
+        type: VisualScriptType.boolean,
+        initial: false,
+      ),
+      VisualScriptVariable(
+        name: 'count',
+        type: VisualScriptType.number,
+        initial: 3.5,
+      ),
+      VisualScriptVariable(
         name: 'label',
-        type: FlowType.string,
+        type: VisualScriptType.string,
         initial: 'a "quoted" bit',
       ),
-      FlowVariable(name: 'spare', type: FlowType.any),
+      VisualScriptVariable(name: 'spare', type: VisualScriptType.any),
     ],
   );
   final start = graph.add('event.start', position: Vector2(40, 40));
@@ -29,20 +37,25 @@ FlowGraph sample() {
   final say = graph.add('debug.print', position: Vector2(480, 40))
     ..literals['value'] = 'opened';
   graph.links.addAll([
-    FlowLink(
+    VisualScriptLink(
       fromNode: start.id,
       fromPin: 'then',
       toNode: move.id,
       toPin: 'exec',
     ),
-    FlowLink(fromNode: move.id, fromPin: 'then', toNode: say.id, toPin: 'exec'),
+    VisualScriptLink(
+      fromNode: move.id,
+      fromPin: 'then',
+      toNode: say.id,
+      toPin: 'exec',
+    ),
   ]);
   return graph;
 }
 
 /// A graph built from [seed], for the round trip to be tried against something
 /// nobody chose by hand.
-FlowGraph fuzzed(int seed) {
+VisualScriptGraph fuzzed(int seed) {
   final random = Random(seed);
   const types = [
     'event.start',
@@ -55,7 +68,7 @@ FlowGraph fuzzed(int seed) {
     'debug.print',
   ];
   const pins = ['exec', 'then', 'true', 'false', 'value', 'a', 'b', 'out'];
-  final graph = FlowGraph();
+  final graph = VisualScriptGraph();
   final count = 1 + random.nextInt(9);
   for (var i = 0; i < count; i++) {
     final node = graph.add(
@@ -81,7 +94,7 @@ FlowGraph fuzzed(int seed) {
   for (var i = 0; i < count; i++) {
     if (!random.nextBool()) continue;
     graph.links.add(
-      FlowLink(
+      VisualScriptLink(
         fromNode: graph.nodes[random.nextInt(count)].id,
         fromPin: pins[random.nextInt(pins.length)],
         toNode: graph.nodes[random.nextInt(count)].id,
@@ -91,9 +104,10 @@ FlowGraph fuzzed(int seed) {
   }
   for (var i = 0; i < random.nextInt(4); i++) {
     graph.variables.add(
-      FlowVariable(
+      VisualScriptVariable(
         name: 'var$i',
-        type: FlowType.values[random.nextInt(FlowType.values.length)],
+        type: VisualScriptType
+            .values[random.nextInt(VisualScriptType.values.length)],
         initial: random.nextBool() ? random.nextInt(50) : null,
       ),
     );
@@ -131,7 +145,7 @@ void main() {
     });
 
     test('an empty graph is still a blueprint', () {
-      final result = parseBlueprint(printBlueprint(FlowGraph()));
+      final result = parseBlueprint(printBlueprint(VisualScriptGraph()));
       expect(result.diagnostics, isEmpty);
       expect(result.graph.nodes, isEmpty);
     });
@@ -159,17 +173,27 @@ void main() {
     test('a variable with no initial value stays without one', () {
       final after = parseBlueprint(printBlueprint(sample())).graph;
       expect(after.variables[3].initial, isNull);
-      expect(after.variables[3].type, FlowType.any);
+      expect(after.variables[3].type, VisualScriptType.any);
     });
 
     test('two wires out of one pin, which the graph allows', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       final a = graph.add('event.start');
       final b = graph.add('debug.print');
       final c = graph.add('debug.print');
       graph.links.addAll([
-        FlowLink(fromNode: a.id, fromPin: 'then', toNode: b.id, toPin: 'exec'),
-        FlowLink(fromNode: a.id, fromPin: 'then', toNode: c.id, toPin: 'exec'),
+        VisualScriptLink(
+          fromNode: a.id,
+          fromPin: 'then',
+          toNode: b.id,
+          toPin: 'exec',
+        ),
+        VisualScriptLink(
+          fromNode: a.id,
+          fromPin: 'then',
+          toNode: c.id,
+          toPin: 'exec',
+        ),
       ]);
       final after = parseBlueprint(printBlueprint(graph)).graph;
       expect(after.links, hasLength(2));
@@ -178,7 +202,7 @@ void main() {
 
   group('reading', () {
     test('names repeat as little as possible, and never collide', () {
-      final graph = FlowGraph();
+      final graph = VisualScriptGraph();
       for (var i = 0; i < 3; i++) {
         graph.add('debug.print');
       }

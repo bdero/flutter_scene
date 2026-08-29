@@ -9,7 +9,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
-import 'package:scene/flow.dart';
+import 'package:scene/visual_script.dart';
 import 'package:scene/grid.dart';
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
@@ -21,7 +21,7 @@ import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
-import 'package:flutter_scene/src/flow/flow_component.dart';
+import 'package:flutter_scene/src/visual_script/visual_script_component.dart';
 import 'package:flutter_scene/src/kit/environment/buoyancy_component.dart';
 import 'package:flutter_scene/src/kit/environment/lightning_component.dart';
 import 'package:flutter_scene/src/kit/environment/water_component.dart';
@@ -41,7 +41,7 @@ void registerKitComponentCodecs(FsceneComponentRegistry registry) {
     ..register(BuoyancyCodec())
     ..register(WindCodec())
     ..register(LightningCodec())
-    ..register(FlowCodec());
+    ..register(VisualScriptCodec());
 }
 
 /// Codec for [PathFollowerComponent], which walks a node along a route from
@@ -1609,16 +1609,17 @@ class LightningCodec extends DeclarativeComponentCodec<LightningComponent> {
   );
 }
 
-/// Codec for [FlowComponent].
+/// Codec for [VisualScriptComponent].
 ///
 /// The graph travels as its own JSON text rather than as a nest of typed
 /// properties. A graph is source: people diff it, merge it, and occasionally
 /// fix one by hand, and a wire list flattened into the component schema would
 /// be unreadable in all three. The property is one string, and the format is
-/// documented by `writeFlowGraph`.
-class FlowCodec extends DeclarativeComponentCodec<FlowComponent> {
+/// documented by `writeVisualScript`.
+class VisualScriptCodec
+    extends DeclarativeComponentCodec<VisualScriptComponent> {
   @override
-  String get type => 'flow';
+  String get type => visualScriptComponentType;
 
   @override
   String? get category => 'Scripting';
@@ -1627,27 +1628,27 @@ class FlowCodec extends DeclarativeComponentCodec<FlowComponent> {
   ComponentSchema get schema => ComponentSchema(
     type,
     category: category,
-    icon: 'flow',
+    icon: 'visualScript',
     properties: propertySchema,
   );
 
   @override
-  List<ComponentField<FlowComponent>> get fields => [
+  List<ComponentField<VisualScriptComponent>> get fields => [
     ComponentField.string(
       'graph',
       defaultValue: '',
       doc:
-          'The script, as the JSON writeFlowGraph produces. Edited on the '
-          'Flow canvas rather than here.',
+          'The script, as the JSON writeVisualScript produces. Edited on the '
+          'Visual Scripter canvas rather than here.',
       get: (c) => c.graph.nodes.isEmpty && c.graph.variables.isEmpty
           ? ''
-          : writeFlowGraph(c.graph),
+          : writeVisualScript(c.graph),
       set: (c, v) {
         if (v.isEmpty) return;
         try {
-          c.graph = readFlowGraph(v);
+          c.graph = readVisualScript(v);
         } on FormatException catch (error) {
-          debugPrint('fscene: a flow graph failed to parse: $error');
+          debugPrint('fscene: a visual script failed to parse: $error');
         }
       },
     ),
@@ -1663,16 +1664,17 @@ class FlowCodec extends DeclarativeComponentCodec<FlowComponent> {
   ];
 
   @override
-  FlowComponent create(PropertyReader props) {
+  VisualScriptComponent create(PropertyReader props) {
     final source = props.string('graph');
-    FlowGraph? graph;
+    VisualScriptGraph? graph;
     if (source.isNotEmpty) {
       try {
-        graph = readFlowGraph(source);
+        graph = readVisualScript(source);
       } on FormatException catch (error) {
         debugPrint('fscene: a flow graph failed to parse: $error');
       }
     }
-    return FlowComponent(graph: graph)..running = props.boolean('running');
+    return VisualScriptComponent(graph: graph)
+      ..running = props.boolean('running');
   }
 }
