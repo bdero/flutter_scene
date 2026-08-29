@@ -1256,8 +1256,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   SmokeScene('instanced_lighting', () {
     final scene = Scene();
     final arena = GeometryBufferArena(blockSizeInBytes: 1024 * 1024);
-    final cubeData = CuboidGeometry(vm.Vector3(0.5, 0.5, 0.5))
-        .extractMeshData();
+    final cubeData = CuboidGeometry(
+      vm.Vector3(0.5, 0.5, 0.5),
+    ).extractMeshData();
     scene.add(
       _directionalLightNode(vm.Vector3(-0.4, -1.0, -0.35), DirectionalLight()),
     );

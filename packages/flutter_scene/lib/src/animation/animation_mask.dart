@@ -69,8 +69,7 @@ class AnimationMask {
 
   /// Whether this mask changes anything, so a clip carrying a mask that
   /// covers everything at full weight can skip the per-node work.
-  bool get isUniform =>
-      nodeNames.isEmpty || (weight == outsideWeight);
+  bool get isUniform => nodeNames.isEmpty || (weight == outsideWeight);
 
   /// The uniform weight, when [isUniform].
   double get uniformWeight => nodeNames.isEmpty ? outsideWeight : weight;
