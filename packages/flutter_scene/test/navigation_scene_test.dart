@@ -378,6 +378,99 @@ void main() {
       expect(surface.tiledQuery(), isNull);
     });
 
+    test('a rebake needs a tiling, the same as a bake', () {
+      final surface = NavMeshSurfaceComponent(config: config);
+      level().addComponent(surface);
+      expect(surface.rebakeChangedAsync(), throwsStateError);
+    });
+
+    test(
+      'the first rebake has nothing to compare, so it bakes it all',
+      () async {
+        final root = level();
+        final surface = NavMeshSurfaceComponent(
+          config: config,
+          tiling: const NavTileConfig(tileCells: 32),
+        );
+        root.addComponent(surface);
+
+        expect(surface.changedTiles(), isNull, reason: 'nothing baked yet');
+        final result = await surface.rebakeChangedAsync(concurrency: 2);
+        expect(result.tiles.tileCount, greaterThan(1));
+        expect(surface.bakeFingerprints, isNotNull);
+      },
+    );
+
+    test('an untouched scene rebakes nothing', () async {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+      final first = await surface.bakeTiledAsync(concurrency: 2);
+      final tiles = first.tiles.tileCount;
+      final polygons = first.tiles.polygonCount;
+
+      expect(surface.changedTiles(), isEmpty);
+      final again = await surface.rebakeChangedAsync(concurrency: 2);
+      expect(again.tiles.tileCount, tiles);
+      expect(again.tiles.polygonCount, polygons);
+    });
+
+    test('moving a node rebakes its tiles and not the world', () async {
+      final root = Node(name: 'level')..add(floorNode('ground_floor', 60));
+      final crate = floorNode('crate', 4, at: Vector3(-24, 0.4, -24));
+      root.add(crate);
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+      await surface.bakeTiledAsync(concurrency: 2);
+      final total = surface.bakeFingerprints!.tileCount;
+      expect(total, greaterThan(8));
+
+      crate.position = Vector3(24, 0.4, 24);
+      final changed = surface.changedTiles()!;
+      expect(changed, isNotEmpty);
+      expect(
+        changed.length,
+        lessThan(total),
+        reason: 'a local edit must not invalidate the world',
+      );
+
+      var rebaked = 0;
+      await surface.rebakeChangedAsync(
+        concurrency: 2,
+        onProgress: (done, planned) => rebaked = planned,
+      );
+      expect(rebaked, lessThan(total));
+      expect(surface.tiledQuery(), isNotNull);
+    });
+
+    test('a set installed from a document rebakes whole, once', () async {
+      final root = level();
+      final surface = NavMeshSurfaceComponent(
+        config: config,
+        tiling: const NavTileConfig(tileCells: 32),
+      );
+      root.addComponent(surface);
+      final baked = await surface.bakeTiledAsync(concurrency: 2);
+
+      // What loading a scene does: the tiles arrive without the world they
+      // were taken from, so there is nothing to diff against.
+      final loaded = NavMeshSurfaceComponent(config: config)
+        ..tileSet = baked.tiles;
+      root.addComponent(loaded);
+      expect(loaded.bakeFingerprints, isNull);
+      expect(loaded.changedTiles(), isNull);
+
+      await loaded.rebakeChangedAsync(concurrency: 2);
+      expect(loaded.bakeFingerprints, isNotNull);
+      expect(loaded.changedTiles(), isEmpty);
+    });
+
     test('a clone shares the baked mesh rather than copying it', () {
       final root = level();
       final surface = NavMeshSurfaceComponent(config: config);

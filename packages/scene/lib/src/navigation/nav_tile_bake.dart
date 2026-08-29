@@ -101,30 +101,27 @@ class NavTiledBakeResult {
   );
 }
 
-/// Splits [geometry] into one job per tile it covers.
+/// The triangles each tile has to see, keyed by tile: the ones inside it and
+/// the ones close enough outside to matter to its border.
 ///
-/// Triangles are bucketed by their own XZ bounds in a single pass and then
-/// clipped to each tile they reach, so a ground plane spanning the world does
-/// not put the whole world into every tile's job. Clipping rather than
-/// selecting is what bounds a tile's voxel field to the tile.
+/// One pass over the triangles, each landing in the tiles its own XZ bounds
+/// reach. Without this every tile would test every triangle, which for a big
+/// world is the tiling's whole cost. Shared by the planner and the
+/// fingerprinter so the two agree on what a tile depends on by construction
+/// rather than by two implementations staying in step.
 /// {@category Navigation}
-List<NavTileJob> planNavTileBake(
+Map<NavTileKey, List<int>> bucketNavTriangles(
   NavGeometry geometry,
   NavMeshConfig config, {
   NavTileConfig tiling = const NavTileConfig(),
-  List<NavVolume> volumes = const [],
   Vector3? origin,
 }) {
   final range = navTileRange(geometry, config, tiling, origin: origin);
-  if (range == null) return const [];
+  if (range == null) return const {};
   final start = origin ?? Vector3.zero();
   final size = tiling.tileSize(config);
-  final border = tiling.borderFor(config);
-  final margin = border * config.cellSize;
+  final margin = tiling.borderFor(config) * config.cellSize;
 
-  // Bucket first: one pass over the triangles, each landing in the tiles its
-  // own bounds reach. Without this every tile would test every triangle,
-  // which for a big world is the tiling's whole cost.
   final buckets = <NavTileKey, List<int>>{};
   final vertices = geometry.vertices;
   final indices = geometry.indices;
@@ -159,10 +156,42 @@ List<NavTileJob> planNavTileBake(
       }
     }
   }
+  return buckets;
+}
+
+/// Splits [geometry] into one job per tile it covers.
+///
+/// Triangles are bucketed by their own XZ bounds and then clipped to each
+/// tile they reach, so a ground plane spanning the world does not put the
+/// whole world into every tile's job. Clipping rather than selecting is what
+/// bounds a tile's voxel field to the tile.
+///
+/// [only], when given, restricts the plan to those tiles: an incremental
+/// rebake plans the handful that changed and leaves the rest alone.
+/// {@category Navigation}
+List<NavTileJob> planNavTileBake(
+  NavGeometry geometry,
+  NavMeshConfig config, {
+  NavTileConfig tiling = const NavTileConfig(),
+  List<NavVolume> volumes = const [],
+  Vector3? origin,
+  Set<NavTileKey>? only,
+}) {
+  final start = origin ?? Vector3.zero();
+  final size = tiling.tileSize(config);
+  final border = tiling.borderFor(config);
+  final margin = border * config.cellSize;
+  final buckets = bucketNavTriangles(
+    geometry,
+    config,
+    tiling: tiling,
+    origin: origin,
+  );
 
   final jobs = <NavTileJob>[];
   for (final entry in buckets.entries) {
     final key = entry.key;
+    if (only != null && !only.contains(key)) continue;
     final tileMinX = start.x + key.x * size;
     final tileMinZ = start.z + key.z * size;
     final clipped = _clipToBox(
@@ -252,6 +281,67 @@ NavTiledBakeResult bakeNavMeshTiled(
     final mesh = bakeNavTile(jobs[i]);
     if (mesh == null || mesh.polygonCount == 0) {
       empty++;
+    } else {
+      set.setTile(jobs[i].key, mesh);
+    }
+    onProgress?.call(i + 1, jobs.length);
+  }
+  watch.stop();
+  return NavTiledBakeResult(
+    tiles: set,
+    duration: watch.elapsed,
+    emptyTiles: empty,
+  );
+}
+
+/// Rebakes just [keys] into [set], in place.
+///
+/// A tile that now bakes to nothing is removed rather than left holding a
+/// stale mesh, and installing each result relinks it against its neighbours,
+/// so the set is consistent at every step.
+///
+/// [geometry] must be the whole world's, not the changed part's: a tile is
+/// baked from everything reaching it, and a rebake fed only the crate that
+/// moved would produce a tile holding a crate and no floor.
+/// {@category Navigation}
+NavTiledBakeResult rebakeNavTiles(
+  NavTileSet set,
+  NavGeometry geometry,
+  Set<NavTileKey> keys, {
+  List<NavVolume> volumes = const [],
+  void Function(int done, int total)? onProgress,
+}) {
+  final watch = Stopwatch()..start();
+  if (keys.isEmpty) {
+    watch.stop();
+    return NavTiledBakeResult(
+      tiles: set,
+      duration: watch.elapsed,
+      emptyTiles: 0,
+    );
+  }
+  final jobs = planNavTileBake(
+    geometry,
+    set.config,
+    tiling: set.tiling,
+    volumes: volumes,
+    origin: set.origin,
+    only: keys,
+  );
+
+  // Tiles asked for that the plan has no job for hold geometry no longer
+  // there at all, so they are cleared rather than skipped.
+  final planned = {for (final job in jobs) job.key};
+  for (final key in keys) {
+    if (!planned.contains(key)) set.removeTile(key);
+  }
+
+  var empty = 0;
+  for (var i = 0; i < jobs.length; i++) {
+    final mesh = bakeNavTile(jobs[i]);
+    if (mesh == null || mesh.polygonCount == 0) {
+      empty++;
+      set.removeTile(jobs[i].key);
     } else {
       set.setTile(jobs[i].key, mesh);
     }

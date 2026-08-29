@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/navigation.dart';
 import 'package:flutter_scene/scene.dart' show Node;
@@ -108,6 +109,7 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
   bool _baking = false;
   int _tilesDone = 0;
   int _tilesTotal = 0;
+  int? _rebakedTiles;
   String? _error;
 
   NavMeshConfig get _config => NavMeshConfig(
@@ -253,7 +255,35 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
     });
   }
 
-  Future<void> _bake() async {
+  /// The surface the last bake ran on, kept so a rebake can compare the
+  /// world against what that bake saw. A settings change retires it: tiles
+  /// baked for a different agent are not tiles this one can keep.
+  NavMeshSurfaceComponent? _surface;
+
+  bool _matchesSettings(NavMeshSurfaceComponent surface) =>
+      mapEquals(surface.config.toJson(), _config.toJson()) &&
+      surface.includePattern == _includePattern &&
+      surface.includeInstances == _includeInstances &&
+      surface.includeWaterVolumes == _includeWaterVolumes &&
+      surface.tiling?.tileCells == (_tiled ? _tiling.tileCells : null);
+
+  NavMeshSurfaceComponent _surfaceForBake({required bool reuse}) {
+    final existing = _surface;
+    if (reuse && existing != null && _matchesSettings(existing)) {
+      return existing;
+    }
+    // A fresh surface carries no fingerprints, so a rebake on one bakes the
+    // world once and has something to compare against next time.
+    return _surface = NavMeshSurfaceComponent(
+      config: _config,
+      includePattern: _includePattern,
+      includeInstances: _includeInstances,
+      includeWaterVolumes: _includeWaterVolumes,
+      tiling: _tiled ? _tiling : null,
+    );
+  }
+
+  Future<void> _bake({bool incremental = false}) async {
     final root = _root;
     if (root == null || _baking) return;
     setState(() {
@@ -264,31 +294,30 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
       _tiledResult = null;
       _tilesDone = 0;
       _tilesTotal = 0;
+      _rebakedTiles = null;
     });
     try {
-      final surface = NavMeshSurfaceComponent(
-        config: _config,
-        includePattern: _includePattern,
-        includeInstances: _includeInstances,
-        includeWaterVolumes: _includeWaterVolumes,
-        tiling: _tiled ? _tiling : null,
-      );
+      final surface = _surfaceForBake(reuse: incremental);
+      void progress(int done, int total) {
+        if (!mounted) return;
+        setState(() {
+          _tilesDone = done;
+          _tilesTotal = total;
+        });
+      }
+
       // Off the calling isolate either way: a large level is seconds of work
       // and the editor still has to draw while it runs. Tiled, it is also
       // several tiles at a time.
       if (_tiled) {
-        final result = await surface.bakeTiledAsync(
-          root: root,
-          onProgress: (done, total) {
-            if (!mounted) return;
-            setState(() {
-              _tilesDone = done;
-              _tilesTotal = total;
-            });
-          },
-        );
+        final result = incremental
+            ? await surface.rebakeChangedAsync(root: root, onProgress: progress)
+            : await surface.bakeTiledAsync(root: root, onProgress: progress);
         if (!mounted) return;
-        setState(() => _tiledResult = result);
+        setState(() {
+          _tiledResult = result;
+          if (incremental) _rebakedTiles = _tilesTotal;
+        });
       } else {
         final result = await surface.bakeAsync(root: root);
         if (!mounted) return;
@@ -313,6 +342,7 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
       _result = null;
       _tiledResult = null;
       _error = null;
+      _surface = null;
     });
     _ctrl.setSceneDecoration(_overlayKey, null);
     final nodeId = _surfaceNodeId;
@@ -531,9 +561,11 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
           tiledResult: _tiledResult,
           tilesDone: _tilesDone,
           tilesTotal: _tilesTotal,
+          rebakedTiles: _rebakedTiles,
           error: _error,
           canClear: _surfaceNodeId != null,
           onBake: _bake,
+          onRebake: _tiled ? () => _bake(incremental: true) : null,
           onClear: _clear,
         ),
       ],
@@ -736,9 +768,11 @@ class _BakeBar extends StatelessWidget {
     required this.tiledResult,
     required this.tilesDone,
     required this.tilesTotal,
+    required this.rebakedTiles,
     required this.error,
     required this.canClear,
     required this.onBake,
+    required this.onRebake,
     required this.onClear,
   });
 
@@ -749,11 +783,19 @@ class _BakeBar extends StatelessWidget {
   final NavTiledBakeResult? tiledResult;
   final int tilesDone;
   final int tilesTotal;
+
+  /// How many tiles the last rebake redid, or null when the last bake was a
+  /// whole one.
+  final int? rebakedTiles;
   final String? error;
 
   /// Whether the scene has a bake to throw away.
   final bool canClear;
   final VoidCallback onBake;
+
+  /// Rebakes only what changed, or null when the bake is a single piece and
+  /// there is no such thing.
+  final VoidCallback? onRebake;
   final VoidCallback onClear;
 
   @override
@@ -796,6 +838,13 @@ class _BakeBar extends StatelessWidget {
                 minHeight: 3,
               ),
             ),
+          if (!baking && rebakedTiles != null && tiled != null)
+            Text(
+              rebakedTiles == 0
+                  ? 'Nothing had changed.'
+                  : '$rebakedTiles of ${tiled.tiles.tileCount} tiles rebaked.',
+              style: editorMicroText,
+            ),
           if (result != null && !result!.isEmpty && result!.volumeCount > 0)
             Text(
               '${result!.volumeCount} volume'
@@ -820,6 +869,24 @@ class _BakeBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              // Only for a tiled bake. A single-piece bake has nothing to
+              // redo a part of, and a button that quietly did the whole thing
+              // would be a lie about what it costs.
+              if (onRebake != null) ...[
+                Expanded(
+                  child: Tooltip(
+                    message:
+                        'Rebakes only the tiles the scene no longer agrees '
+                        'with, in the square an object left as well as the '
+                        'one it arrived in.',
+                    child: OutlinedButton(
+                      onPressed: ready && !baking ? onRebake : null,
+                      child: const Text('Rebake'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: FilledButton(
                   onPressed: ready && !baking ? onBake : null,

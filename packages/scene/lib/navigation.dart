@@ -44,8 +44,12 @@ export 'src/navigation/nav_tile_bake.dart'
         NavTiledBakeResult,
         bakeNavMeshTiled,
         bakeNavTile,
+        bucketNavTriangles,
         navTileRange,
-        planNavTileBake;
+        planNavTileBake,
+        rebakeNavTiles;
+export 'src/navigation/nav_tile_fingerprint.dart'
+    show NavTileFingerprints, changedNavTiles, fingerprintNavTiles;
 export 'src/navigation/nav_tile_query.dart' show NavTileMeshQuery, NavTilePath;
 export 'src/navigation/nav_tiles.dart'
     show NavTileConfig, NavTileKey, NavTileLink, NavTilePolygon, NavTileSet;
