@@ -22,6 +22,14 @@
 /// `package:scene/scene.dart` does not carry it.
 library;
 
+export 'src/visual_script/blueprint_source.dart'
+    show
+        BlueprintDiagnostic,
+        BlueprintParseResult,
+        blueprintEquivalent,
+        blueprintSourceVersion,
+        parseBlueprint,
+        printBlueprint;
 export 'src/visual_script/visual_script_graph.dart'
     show
         VisualScriptGraph,

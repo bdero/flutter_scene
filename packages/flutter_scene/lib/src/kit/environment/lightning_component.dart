@@ -4,7 +4,9 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/scene.dart';
@@ -78,6 +80,12 @@ class LightningComponent extends Component {
   /// A light flashed with each strike, its intensity scaled by the envelope.
   /// Its rest intensity is captured on the first frame and restored between
   /// strikes.
+  ///
+  /// Left null, the component adopts a [DirectionalLightComponent] on its own
+  /// node, the same way [sky] finds the scene's. A document cannot point at a
+  /// a live light, so putting the light on the storm's node is how the two are
+  /// associated -- and it is what makes a strike visible under a clear sky,
+  /// where there are no clouds to flash.
   DirectionalLight? light;
 
   /// The shortest and longest gap between strikes, in seconds.
@@ -184,7 +192,17 @@ class LightningComponent extends Component {
   @override
   void onMount() {
     sky ??= _sceneSky();
+    light ??= _ownLight();
   }
+
+  /// A directional light on this node, which is what a strike flashes.
+  DirectionalLight? _ownLight() {
+    if (!isAttached) return null;
+    return node.getComponent<DirectionalLightComponent>()?.light;
+  }
+
+  /// Whether the storm has said, once, that it has nothing to flash.
+  bool _warnedAboutNothingToFlash = false;
 
   /// The scene's skybox, when it is a weather sky.
   WeatherSkySource? _sceneSky() {
@@ -198,9 +216,23 @@ class LightningComponent extends Component {
   @override
   void update(double deltaSeconds) {
     if (deltaSeconds <= 0) return;
-    // A sky assigned after mount (the editor swapping the stage's skybox
-    // under a live scene) is picked up on the next tick rather than never.
+    // A sky or a light assigned after mount (the editor swapping the stage's
+    // skybox under a live scene, or a light added to the node) is picked up on
+    // the next tick rather than never.
     sky ??= _sceneSky();
+    light ??= _ownLight();
+
+    // A storm with neither is a storm nobody can see: it goes on scheduling
+    // strikes and calling back for thunder, and nothing on screen moves. Said
+    // once, because it is a setup mistake rather than a per-frame one.
+    if (sky == null && light == null && !_warnedAboutNothingToFlash) {
+      _warnedAboutNothingToFlash = true;
+      debugPrint(
+        'flutter_scene: a lightning component has nothing to flash. Give the '
+        'scene a weather sky for the clouds to light up, or put a directional '
+        "light on the storm's own node for the flash.",
+      );
+    }
 
     final target = sky;
     if (target != null) {

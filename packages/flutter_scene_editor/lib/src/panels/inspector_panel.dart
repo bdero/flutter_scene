@@ -16,6 +16,7 @@ import '../inspector/material_section.dart';
 import '../inspector/nav_mesh_editor.dart';
 import '../inspector/particle_emitter_controls.dart';
 import '../inspector/vfx_editing.dart';
+import '../inspector/water_conversion.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
@@ -54,6 +55,46 @@ class InspectorPanel extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The offer to turn a plane or a terrain into water.
+///
+/// Shown on the mesh rather than in the Add menu, because the thing being
+/// made water is this surface: it keeps the node's name, its transform, and
+/// the footprint it already had.
+class _MakeWaterRow extends StatelessWidget {
+  const _MakeWaterRow({required this.controller, required this.nodeId});
+
+  final EditorController controller;
+  final LocalId nodeId;
+
+  @override
+  Widget build(BuildContext context) {
+    final footprint = surfaceFootprint(controller, nodeId);
+    if (footprint == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Make this surface water, '
+              '${footprint.width.toStringAsFixed(0)} by '
+              '${footprint.depth.toStringAsFixed(0)} units where it stands.',
+              style: editorDetailText,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: const Icon(Icons.water, size: 14),
+            label: const Text('Make water', style: TextStyle(fontSize: 11)),
+            onPressed: () => makeSurfaceWater(controller, nodeId),
+          ),
+        ],
       ),
     );
   }
@@ -175,6 +216,11 @@ class _NodeInspector extends StatelessWidget {
                 materialId:
                     (component.properties['material'] as ResourceRefValue).id,
               ),
+            // A flat surface can become an area of water where it stands,
+            // which is what a lake is: not an object you place, a piece of
+            // ground you say is wet.
+            if (component.type == 'mesh' && canBecomeWater(controller, node.id))
+              _MakeWaterRow(controller: controller, nodeId: node.id),
             // A volume's environment is a resource; edit its look inline.
             if (component.type == 'environmentVolume' &&
                 component.properties['environment'] is ResourceRefValue)
