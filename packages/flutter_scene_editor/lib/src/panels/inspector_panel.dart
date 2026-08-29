@@ -19,6 +19,7 @@ import '../inspector/reference_picker.dart';
 import '../inspector/resource_origin.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
+import '../shell/editor_dialog.dart';
 import '../shell/editor_theme.dart';
 
 /// Property inspector for the primary selected node.
@@ -1448,7 +1449,7 @@ Future<String?> showAddComponentPicker(
   }
 
   final search = TextEditingController();
-  return showFDialog<String>(
+  return showEditorFDialog<String>(
     context: context,
     builder: (context, style, animation) => StatefulBuilder(
       builder: (context, setLocal) {
