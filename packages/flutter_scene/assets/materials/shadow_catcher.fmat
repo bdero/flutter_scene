@@ -39,8 +39,8 @@ fragment {
           ? 0
           : int(frag_info.radiance_blend.z);
       int offset = int(frag_info.radiance_blend.w);
-      for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
-        if (i >= count) break;
+      // Dynamically bounded; every compiled dialect is GLSL ES 3.00+.
+      for (int i = 0; i < count; i++) {
         int light_row = int(FetchPunctualIndex(offset + i) + 0.5);
         vec4 l0 = FetchPunctualTexel(light_row, 0);
         // Spots only (type 2).

@@ -278,7 +278,7 @@ void main() {
     // at z=-10; the farthest must be the one dropped.
     final r = _froxelize([
       for (var i = 0; i < kMaxFroxelLights + 1; i++)
-        _pointLight(i, Vector3(i * 0.2, 0, -10), 12.0),
+        _pointLight(i, Vector3(i * 0.01, 0, -10), 12.0),
     ]);
     final probe = Vector3(0, 0, -10);
     final kept = _lightsAt(r.data, _froxelOf(probe, r.zScale, r.zBias));
