@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
 import 'package:flutter_scene/src/material/sprite_material.dart';
 import 'package:flutter_scene/src/particles/distribution.dart';
 import 'package:flutter_scene/src/particles/emitter_shape.dart';
+import 'package:flutter_scene/src/particles/particle_collision.dart';
 import 'package:flutter_scene/src/particles/particle_module.dart';
 import 'package:flutter_scene/src/particles/particle_system.dart';
 import 'package:flutter_scene/src/particles/spawner.dart';
@@ -420,6 +421,14 @@ ParticleSystem _impactSparksSystem() => ParticleSystem(
   gravity: Vector3(0, -9.8, 0),
   modules: [
     LinearDragModule(1.6),
+    // Sparks land. Skittering off the floor and dimming as they do is most
+    // of what tells a viewer where the impact was; without it they fall
+    // through it and the shot reads as happening in mid-air.
+    CollisionModule.ground(
+      restitution: 0.4,
+      friction: 0.35,
+      lifetimeLoss: 0.25,
+    ),
     ColorOverLifeModule(
       GradientColor(
         ColorGradient([
@@ -454,6 +463,14 @@ ParticleSystem _dustPuffSystem() => ParticleSystem(
   gravity: Vector3(0, -0.6, 0),
   modules: [
     LinearDragModule(2.8),
+    // A puff is placed on the surface it came off, so the emitter's own
+    // origin is the ground. Sliding rather than bouncing is what dust does:
+    // it rolls out along the floor instead of sinking through it.
+    CollisionModule.ground(
+      response: ParticleCollisionResponse.slide,
+      friction: 0.35,
+      radius: 0.15,
+    ),
     SizeOverLifeModule(CurveFloat(ParticleCurve.linear(from: 1, to: 2.4))),
     ColorOverLifeModule(
       GradientColor(
@@ -564,6 +581,10 @@ ParticleSystem _rainSystem() => ParticleSystem(
   startSize: const UniformFloat(0.012, 0.022),
   gravity: Vector3(0, -6, 0),
   prewarm: 1.2,
+  // No collider here on purpose. A rain volume hangs above the scene, so a
+  // ground plane at the emitter's own origin is the sky, not the floor, and
+  // the height of the actual ground is something only the author knows. Add
+  // a CollisionModule with the right plane and drops stop where they land.
   modules: [
     ColorOverLifeModule(
       GradientColor(ColorGradient.constant(_rgba(0.55, 0.62, 0.72, 0.5))),
