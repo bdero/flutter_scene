@@ -435,6 +435,12 @@ class _ComponentEditor extends StatelessWidget {
       value: component.properties[def.name] ?? def.defaultValue,
       controller: controller,
       onChanged: (v) => _set(def.name, v),
+      onPreview: (value) => controller.previewComponentProperty(
+        node.id,
+        component.type,
+        def.name,
+        value,
+      ),
     );
 
     // Ungrouped properties render flat; each declared group folds into an
@@ -487,6 +493,7 @@ class _SchemaPropertyRow extends StatelessWidget {
     required this.value,
     required this.controller,
     required this.onChanged,
+    this.onPreview,
   });
 
   final String componentType;
@@ -494,6 +501,10 @@ class _SchemaPropertyRow extends StatelessWidget {
   final PropertyValue? value;
   final EditorController controller;
   final void Function(Object?) onChanged;
+
+  /// Streams in-drag values onto the live component (no transaction), so the
+  /// scene follows the drag; null leaves the drag preview inert.
+  final void Function(PropertyValue value)? onPreview;
 
   double _double(double fallback) {
     final v = value;
@@ -566,7 +577,7 @@ class _SchemaPropertyRow extends StatelessWidget {
             scrubStep: math.max(1, range.step),
             snapStep: math.max(1, range.step),
             fractionDigits: 0,
-            onPreview: (_) {},
+            onPreview: (value) => onPreview?.call(IntValue(value.round())),
             onCommit: (value) => onChanged(value.round()),
           );
         }
@@ -585,7 +596,7 @@ class _SchemaPropertyRow extends StatelessWidget {
             scrubStep: _degrees ? 1.0 : range.step,
             snapStep: _degrees ? 1.0 : range.step,
             fractionDigits: _degrees ? 1 : range.digits,
-            onPreview: (_) {},
+            onPreview: (value) => onPreview?.call(DoubleValue(value / scale)),
             onCommit: (value) => onChanged(value / scale),
           );
         }
@@ -628,7 +639,8 @@ class _SchemaPropertyRow extends StatelessWidget {
             b: v?.z ?? 1,
             a: 1,
             showAlpha: false,
-            onPreview: (_, _, _, _) {},
+            onPreview: (r, g, b, _) =>
+                onPreview?.call(Vec3Value(Vector3(r, g, b))),
             onCommit: (r, g, b, _) => onChanged({'x': r, 'y': g, 'z': b}),
           );
         }

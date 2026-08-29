@@ -950,6 +950,31 @@ class EditorController extends ChangeNotifier {
     previewEpoch.value++;
   }
 
+  /// Live-previews one component property on node [id] without touching the
+  /// document or history, so a slider/color drag (a light's color or
+  /// intensity, say) updates the viewport continuously. The final value is
+  /// committed once with `setComponentPropertyRouted` on release.
+  void previewComponentProperty(
+    LocalId id,
+    String componentType,
+    String name,
+    PropertyValue value,
+  ) {
+    final live = _liveById[id];
+    final realizer = _resourceRealizer;
+    if (live == null || realizer == null) return;
+    final codec = _componentRegistry.codecFor(componentType);
+    if (codec == null) return;
+    final context = RealizeContext(document, resources: realizer)
+      ..resolveNode = (nodeId) => _liveById[nodeId];
+    for (final component in live.getComponents<Component>()) {
+      if (codec.writeLiveProperty(component, name, value, context)) {
+        previewEpoch.value++;
+        return;
+      }
+    }
+  }
+
   /// Live-previews a material factor on node [id]'s realized mesh without
   /// touching the document or history, so a slider/color drag updates the
   /// viewport continuously. Commit the final value once with
