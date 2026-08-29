@@ -38,6 +38,16 @@ export 'src/launcher/project_covers.dart'
     show ProjectCoverStore, coverKey, placeholderHue;
 export 'src/launcher/project_launcher.dart'
     show LauncherTab, ProjectCard, ProjectCover, ProjectLauncher;
+export 'src/launcher/scene_templates.dart'
+    show
+        SceneTemplate,
+        buildEmptyScene,
+        buildOutdoorScene,
+        buildPlaygroundScene,
+        buildStudioScene,
+        pickSceneTemplate,
+        sceneTemplateById,
+        sceneTemplates;
 export 'src/launcher/project_library.dart'
     show
         ProjectEntry,

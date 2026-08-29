@@ -39,6 +39,8 @@ import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
+
+import '../launcher/scene_templates.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
@@ -257,23 +259,10 @@ class EditorController extends ChangeNotifier {
   /// their own sky-source instances (as the `setSkybox` command does).
   static Future<EditorController> empty({
     FsceneComponentRegistry? componentRegistry,
+    SceneDocument? document,
   }) {
-    final document = SceneDocument();
-    // The global look lives in an environment resource the stage references, so
-    // it dedupes and shares the authoring path with volume environments.
-    final environment = document.addResource(
-      EnvironmentResource(
-        document.newId(),
-        name: 'Environment',
-        skybox: SkyboxSpec(PhysicalSkySpec()),
-        skyEnvironment: SkyEnvironmentSpec(
-          PhysicalSkySpec(),
-          sunLight: SunLightSpec(),
-        ),
-      ),
-    );
-    document.stage.environmentRef = environment.id;
-    return open(EditorSession(document), componentRegistry: componentRegistry);
+    final built = document ?? buildEmptyScene();
+    return open(EditorSession(built), componentRegistry: componentRegistry);
   }
 
   /// Opens a controller over a document loaded from `.fscene` [source].
