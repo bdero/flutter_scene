@@ -11,6 +11,7 @@
 * `SceneView` measures `onTick` deltas with a wall clock instead of the ticker's frame-begin timestamps, whose deltas alternate between tiny and double-length values under GPU load and stagger any motion integrated against them. The new `SceneView.clock` injects a clock for tests and time-controlling drivers; the ambient `package:clock` clock (faked under `flutter_test`) is the default.
 * `Scene.punctualLightOverflowCount` reports how many drawable items dropped punctual lights last frame because more lights reached them than the per-object budget shades.
 * A `-split<N>` suffix on a glTF node name splits its mesh into grid-cell child meshes at import (whole triangles binned by world-space centroid into `N`-unit cells, children named `Ground_x0_z3`), so a level-spanning mesh culls and receives punctual lights per cell; the split reapplies on every re-import.
+* Punctual lights shade through per-view froxel clustering (screen tiles crossed with exponential depth slices, each shading only the lights that reach it), removing the per-object light cap, so a large mesh reached by many lights shades them all and no draw carries light state. Perspective views cluster automatically; orthographic views and frames using light channel masks keep the per-object lists, and `Scene.punctualLightClustering` disables clustering for comparison.
 
 ## 0.23.1
 

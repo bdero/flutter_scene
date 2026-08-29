@@ -9,6 +9,8 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/render/punctual_lights.dart'
+    show FroxelLighting;
 
 /// Which faces of a shadow caster are rendered into the shadow map (the
 /// others are culled). Trades the two shadow-map failure modes (self-shadow
@@ -815,6 +817,7 @@ class Lighting {
     this.punctualParamsCount = 0,
     this.punctualIndexWidth = 0,
     this.punctualIndexHeight = 0,
+    this.froxels,
     this.spotShadowCount = 0,
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
@@ -897,7 +900,15 @@ class Lighting {
   /// The per-frame light-index texture: each item's
   /// `[lightListOffset, +lightListCount)` slice indexes into
   /// [punctualParamsTexture]. Null when no item is reached by any light.
+  /// In froxel mode ([froxels] non-null) callers set this to the froxel data
+  /// texture instead, which the shader reads through the same sampler.
   final gpu.Texture? punctualIndexTexture;
+
+  /// This view's froxel clustering, or null when the view shades through the
+  /// per-object light lists (non-perspective camera, non-uniform light
+  /// channels, or clustering disabled). When set, [punctualIndexTexture] and
+  /// its dimensions describe the froxel data texture.
+  final FroxelLighting? froxels;
 
   /// Number of light rows in [punctualParamsTexture]. Zero leaves punctual
   /// lighting off (only [directionalLight] and the ambient term contribute).

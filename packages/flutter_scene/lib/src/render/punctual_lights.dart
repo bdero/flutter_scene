@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/components/directional_light_component.dart';
 import 'package:flutter_scene/src/components/point_light_component.dart';
@@ -66,6 +67,7 @@ class PunctualLighting {
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
+    this.internalBuffer,
   });
 
   /// An empty result (no punctual lights this frame).
@@ -78,7 +80,14 @@ class PunctualLighting {
       spotShadowCount = 0,
       spotShadowDepthBias = 0.0,
       spotShadowNormalBias = 0.0,
-      spotShadowSoftness = 0.0;
+      spotShadowSoftness = 0.0,
+      internalBuffer = null;
+
+  /// The buffer that built this result, for per-view froxel builds
+  /// ([PunctualLightBuffer.buildFroxels]); null when froxel clustering is
+  /// unavailable this frame (no lights, non-uniform light channels, or the
+  /// scene disabled it).
+  final PunctualLightBuffer? internalBuffer;
 
   /// All scene lights, one per row (RGBA32F, `paramsCount` rows), or null when
   /// there are none.
@@ -111,8 +120,12 @@ class PunctualLighting {
 // never overwritten. Reallocates when the requested size changes (mirrors the
 // skinning joints texture); steady light counts reuse the ring.
 class _TextureRing {
-  static const int _size = 3;
-  final List<gpu.Texture?> _ring = List<gpu.Texture?>.filled(_size, null);
+  _TextureRing({int size = 3}) : _size = size {
+    _ring = List<gpu.Texture?>.filled(_size, null);
+  }
+
+  final int _size;
+  late final List<gpu.Texture?> _ring;
   int _cursor = 0;
   int _width = 0;
   int _height = 0;
@@ -131,6 +144,41 @@ class _TextureRing {
       format: gpu.PixelFormat.r32g32b32a32Float,
     );
   }
+}
+
+/// Per-view froxel clustering: the view frustum subdivided into a
+/// screen-tile x depth-slice grid, each cell (froxel) carrying the list of
+/// punctual lights that reach it. The fragment shader looks its froxel up by
+/// view position and shades only that list, so no draw carries any per-object
+/// light state and the per-loop light budget applies per froxel instead of
+/// per object (a level-spanning mesh is no longer special).
+///
+/// [texture] packs the whole structure into one RGBA32F data texture bound on
+/// the same sampler as the per-object index buffer: texels
+/// `[0, nx * ny * nz)` are the froxel table (records offset in `.r`, light
+/// count in `.g`, offsets absolute into the same texture), and the records
+/// (light row in `.r`) follow. Depth slices are exponential;
+/// `slice = floor(log2(viewDepth) * zScale + zBias)`, clamped.
+class FroxelLighting {
+  const FroxelLighting({
+    required this.texture,
+    required this.width,
+    required this.height,
+    required this.nx,
+    required this.ny,
+    required this.nz,
+    required this.zScale,
+    required this.zBias,
+  });
+
+  final gpu.Texture texture;
+  final int width;
+  final int height;
+  final int nx;
+  final int ny;
+  final int nz;
+  final double zScale;
+  final double zBias;
 }
 
 /// The packed light parameters plus the culling inputs derived from them.
@@ -154,10 +202,10 @@ class PunctualLightBuffer {
 
   bool _warnedOverflow = false;
 
-  /// How many items dropped lights in the most recent [build] (each was
-  /// reached by more than [kMaxPunctualLights] punctual lights). Zero when
-  /// every item fit its budget. Editors surface this; games can poll it to
-  /// catch lighting authoring problems.
+  /// How many items (per-object mode) or froxels (clustered mode) dropped
+  /// lights this frame because more than [kMaxPunctualLights] punctual lights
+  /// reached them. Zero when everything fit its budget. Editors surface this;
+  /// games can poll it to catch lighting authoring problems.
   int get overflowedItemCount => _overflowedItemCount;
   int _overflowedItemCount = 0;
 
@@ -176,6 +224,7 @@ class PunctualLightBuffer {
     required List<RenderItem> items,
     required Bvh bvh,
     SpotShadowFrame? spotShadows,
+    bool enableFroxels = true,
   }) {
     final packed = _packLights(
       directionals,
@@ -187,8 +236,20 @@ class PunctualLightBuffer {
     final count = packed.count;
     if (count == 0) {
       _overflowedItemCount = 0;
+      _cullables = const [];
       return const PunctualLighting.empty();
     }
+
+    // Froxel clustering assigns lights per screen cell, so it cannot honor
+    // per-item light channel masks; a frame using non-default channels falls
+    // back to the per-object lists. TODO(froxel-channels): pack the light's
+    // mask into its params row and test it in the shader once integer ops are
+    // dependable across the GLSL ES transpile.
+    _cullables = packed.cullables;
+    _froxelsEligible =
+        enableFroxels &&
+        packed.cullables.every((light) => light.channelMask == 0xFF) &&
+        items.every((item) => item.lightChannelMask == 0xFF);
 
     // Stamp each shadow-casting spot's slot (texel 3.y) and world -> spot-clip
     // matrix (texels 4-7) into its parameters row, so the shader can sample the
@@ -216,7 +277,10 @@ class PunctualLightBuffer {
       lights: packed.cullables,
       maxPerItem: kMaxPunctualLights,
     );
-    _overflowedItemCount = cull.overflowedItemCount;
+    // With froxels eligible the per-object lists only serve non-perspective
+    // views, so their overflow does not represent what the frame shades; the
+    // per-view froxel builds add their own overflow instead.
+    _overflowedItemCount = _froxelsEligible ? 0 : cull.overflowedItemCount;
 
     assert(() {
       if (cull.overflowed && !_warnedOverflow) {
@@ -247,6 +311,7 @@ class PunctualLightBuffer {
         spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
         spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
         spotShadowSoftness: spotShadows?.softness ?? 0.0,
+        internalBuffer: _froxelsEligible ? this : null,
       );
     }
 
@@ -270,6 +335,231 @@ class PunctualLightBuffer {
       spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
       spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
       spotShadowSoftness: spotShadows?.softness ?? 0.0,
+      internalBuffer: _froxelsEligible ? this : null,
+    );
+  }
+
+  // Froxel grid shape and depth window. 16 x 9 tiles x 16 exponential depth
+  // slices = 2304 froxels; the far bound caps how far punctual lights are
+  // clustered (fragments and lights beyond it clamp into the last slice, so
+  // distant geometry over-shades conservatively rather than losing lights).
+  static const int froxelCountX = 16;
+  static const int froxelCountY = 9;
+  static const int froxelCountZ = 16;
+  static const double _froxelNear = 0.25;
+  static const double _froxelFar = 100.0;
+  static const int _froxelTexWidth = 1024;
+
+  // Several views can build froxels in one frame (screen views, probe
+  // faces), so this ring is deeper than the params rings.
+  final _TextureRing _froxelRing = _TextureRing(size: 8);
+
+  List<CullableLight> _cullables = const [];
+  bool _froxelsEligible = false;
+
+  /// Builds this view's froxel clustering from the camera basis the lit
+  /// shaders already receive ([tanHalfFovX]/[tanHalfFovY] are the projection's
+  /// half-fov tangents). Returns null for a non-perspective view (the
+  /// per-object lists shade those). Call after [build] each frame.
+  FroxelLighting? buildFroxels({
+    required Vector3 cameraPosition,
+    required Vector3 forward,
+    required Vector3 right,
+    required Vector3 up,
+    required double tanHalfFovX,
+    required double tanHalfFovY,
+  }) {
+    if (!_froxelsEligible ||
+        _cullables.isEmpty ||
+        tanHalfFovX <= 0 ||
+        tanHalfFovY <= 0) {
+      return null;
+    }
+    final result = computeFroxelData(
+      lights: _cullables,
+      cameraPosition: cameraPosition,
+      forward: forward,
+      right: right,
+      up: up,
+      tanHalfFovX: tanHalfFovX,
+      tanHalfFovY: tanHalfFovY,
+      maxPerFroxel: kMaxPunctualLights,
+    );
+    _overflowedItemCount += result.overflowedFroxels;
+    final texture = _froxelRing.acquire(_froxelTexWidth, result.height);
+    texture.overwrite(result.data.buffer.asByteData());
+    return FroxelLighting(
+      texture: texture,
+      width: _froxelTexWidth,
+      height: result.height,
+      nx: froxelCountX,
+      ny: froxelCountY,
+      nz: froxelCountZ,
+      zScale: result.zScale,
+      zBias: result.zBias,
+    );
+  }
+
+  /// The GPU-independent froxelization: assigns [lights] to froxels for a
+  /// view at [cameraPosition] looking along [forward] (with [right]/[up]
+  /// completing the basis) and packs the froxel table plus deduplicated
+  /// records into an RGBA32F texel array [_froxelTexWidth] wide. Pure so the
+  /// slice math and conservative assignment can be unit tested.
+  ///
+  /// A light is assigned to every froxel its influence sphere can touch,
+  /// tested conservatively (view-space AABB of the sphere, widened at the
+  /// sphere's near face), so froxels may over-include but never miss a light.
+  /// An unranged light lands in every froxel. A froxel's list caps at
+  /// [maxPerFroxel], keeping the lights nearest the froxel (directionals
+  /// first); capped froxels are counted in `overflowedFroxels`.
+  @visibleForTesting
+  static ({
+    Float32List data,
+    int height,
+    double zScale,
+    double zBias,
+    int overflowedFroxels,
+  })
+  computeFroxelData({
+    required List<CullableLight> lights,
+    required Vector3 cameraPosition,
+    required Vector3 forward,
+    required Vector3 right,
+    required Vector3 up,
+    required double tanHalfFovX,
+    required double tanHalfFovY,
+    required int maxPerFroxel,
+  }) {
+    const nx = froxelCountX, ny = froxelCountY, nz = froxelCountZ;
+    const froxelCount = nx * ny * nz;
+    final zScale = nz / (math.log(_froxelFar / _froxelNear) / math.ln2);
+    final zBias = -(math.log(_froxelNear) / math.ln2) * zScale;
+    int sliceOf(double depth) {
+      final clamped = depth.clamp(_froxelNear, _froxelFar);
+      final slice = (math.log(clamped) / math.ln2) * zScale + zBias;
+      return slice.floor().clamp(0, nz - 1);
+    }
+
+    final lists = List<List<int>>.generate(froxelCount, (_) => <int>[]);
+    final lightsByRow = <int, CullableLight>{
+      for (final light in lights) light.index: light,
+    };
+    var overflowed = 0;
+
+    final rel = Vector3.zero();
+    for (final light in lights) {
+      final bounds = light.bounds;
+      final position = light.worldPosition;
+      if (bounds == null || position == null) {
+        // Unbounded influence (a directional light, or a light with no
+        // range) reaches every froxel.
+        for (var i = 0; i < froxelCount; i++) {
+          lists[i].add(light.index);
+        }
+        continue;
+      }
+      final radius = (bounds.max.x - bounds.min.x) * 0.5;
+      rel
+        ..setFrom(position)
+        ..sub(cameraPosition);
+      final vz = rel.dot(forward);
+      if (vz + radius <= 0) continue; // Fully behind the camera.
+      final z0 = sliceOf(vz - radius);
+      final z1 = sliceOf(vz + radius);
+
+      int x0 = 0, x1 = nx - 1, y0 = 0, y1 = ny - 1;
+      final nearFace = vz - radius;
+      if (nearFace > _froxelNear) {
+        // Project the sphere's extent at its near face, the widest it can
+        // appear; the tile rect over-covers but never misses.
+        final vx = rel.dot(right);
+        final vy = rel.dot(up);
+        final centerX = vx / (vz * tanHalfFovX);
+        final centerY = vy / (vz * tanHalfFovY);
+        final extentX = radius / (nearFace * tanHalfFovX);
+        final extentY = radius / (nearFace * tanHalfFovY);
+        int tileX(double ndc) =>
+            (((ndc * 0.5) + 0.5) * nx).floor().clamp(0, nx - 1);
+        // Tile rows count downward from the top of the view (matching the
+        // shader's 0.5 - ndcY * 0.5 mapping).
+        int tileY(double ndc) =>
+            ((0.5 - ndc * 0.5) * ny).floor().clamp(0, ny - 1);
+        x0 = tileX(centerX - extentX);
+        x1 = tileX(centerX + extentX);
+        y0 = tileY(centerY + extentY);
+        y1 = tileY(centerY - extentY);
+      }
+      for (var z = z0; z <= z1; z++) {
+        for (var y = y0; y <= y1; y++) {
+          final rowBase = (z * ny + y) * nx;
+          for (var x = x0; x <= x1; x++) {
+            lists[rowBase + x].add(light.index);
+          }
+        }
+      }
+    }
+
+    // Pack the table and records; identical lists share one record run. An
+    // overfull froxel keeps its nearest lights (measured to the froxel's
+    // center, directionals first since distance never attenuates them), so
+    // the dropped excess is always the least visible.
+    final records = <int>[];
+    final shared = <String, (int, int)>{};
+    final table = List<(int, int)>.filled(froxelCount, (0, 0));
+    final center = Vector3.zero();
+    for (var i = 0; i < froxelCount; i++) {
+      final list = lists[i];
+      if (list.isEmpty) continue;
+      if (list.length > maxPerFroxel) {
+        overflowed++;
+        final fz = i ~/ (ny * nx);
+        final fy = (i ~/ nx) % ny;
+        final fx = i % nx;
+        final depth = math.pow(
+          2.0,
+          (fz + 0.5 - zBias) / zScale,
+        ).toDouble();
+        final ndcX = ((fx + 0.5) / nx) * 2.0 - 1.0;
+        final ndcY = -(((fy + 0.5) / ny) * 2.0 - 1.0);
+        center
+          ..setFrom(forward)
+          ..scale(depth)
+          ..addScaled(right, ndcX * depth * tanHalfFovX)
+          ..addScaled(up, ndcY * depth * tanHalfFovY)
+          ..add(cameraPosition);
+        double distanceSq(int row) {
+          final position = lightsByRow[row]?.worldPosition;
+          if (position == null) return -1.0; // Directionals sort first.
+          return position.distanceToSquared(center);
+        }
+
+        list.sort((a, b) => distanceSq(a).compareTo(distanceSq(b)));
+      }
+      final count = math.min(list.length, maxPerFroxel);
+      final key = list.take(count).join(',');
+      table[i] = shared.putIfAbsent(key, () {
+        final offset = froxelCount + records.length;
+        records.addAll(list.take(count));
+        return (offset, count);
+      });
+    }
+
+    final total = froxelCount + records.length;
+    final height = (total + _froxelTexWidth - 1) ~/ _froxelTexWidth;
+    final data = Float32List(_froxelTexWidth * height * 4);
+    for (var i = 0; i < froxelCount; i++) {
+      data[i * 4] = table[i].$1.toDouble();
+      data[i * 4 + 1] = table[i].$2.toDouble();
+    }
+    for (var i = 0; i < records.length; i++) {
+      data[(froxelCount + i) * 4] = records[i].toDouble();
+    }
+    return (
+      data: data,
+      height: height,
+      zScale: zScale,
+      zBias: zBias,
+      overflowedFroxels: overflowed,
     );
   }
 

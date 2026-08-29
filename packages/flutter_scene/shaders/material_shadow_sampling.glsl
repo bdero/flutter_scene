@@ -299,16 +299,21 @@ vec4 FetchPunctualTexel(int light_index, int col) {
   return texture(punctual_lights, uv);
 }
 
-// Reads entry `j` of the per-object light-index buffer, returning the light row
-// it points at. The buffer is a 2D texture (index in .r); `j` is decomposed to
-// a texel with the width/height in punctual_dims.yz.
-float FetchPunctualIndex(int j) {
+// Reads the full texel of entry `j` in the light-index texture (`j` decomposed
+// to a texel with the width/height in punctual_dims.yz). A froxel-table entry
+// carries its records offset in .r and light count in .g; a record carries a
+// light row in .r.
+vec4 FetchPunctualEntry(int j) {
   float width = frag_info.punctual_dims.y;
   float fj = float(j);
   vec2 uv = vec2((mod(fj, width) + 0.5) / width,
                  (floor(fj / width) + 0.5) / frag_info.punctual_dims.z);
-  return texture(punctual_index, uv).r;
+  return texture(punctual_index, uv);
 }
+
+// Reads entry `j` of the per-object light-index buffer (or a froxel record),
+// returning the light row it points at.
+float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
 #endif  // punctual fetch helpers
 
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS

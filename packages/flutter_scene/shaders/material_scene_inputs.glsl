@@ -18,8 +18,10 @@ uniform FragInfo {
   vec4 emissive_factor;
   // Punctual light texture dimensions, for normalizing the shader's fetch
   // coordinates. x: parameters-texture row count (all scene lights). y/z:
-  // light-index texture width/height. (Reuses the first of the once-diffuse-SH
-  // slots, which are unused now that SH is sampled from sh_coefficients.)
+  // light-index texture width/height (the froxel data texture's dimensions in
+  // froxel mode). w: the froxel depth-slice bias (see froxel_grid). (Reuses
+  // the first of the once-diffuse-SH slots, which are unused now that SH is
+  // sampled from sh_coefficients.)
   vec4 punctual_dims;
   // Spot-shadow parameters (more of the unused SH region). x: shadow-casting
   // spot count (0 disables spot shadows; their atlas tiles follow the
@@ -173,6 +175,13 @@ uniform FragInfo {
   // out), .y its world-space bias, .z the distance normalization the stored
   // moments were divided by, and .w the boundary fade width in cells.
   vec4 gi_visibility;
+  // Froxel clustered lighting for this view. xyz: the froxel grid's tile and
+  // slice counts (z of 0 selects the per-object light lists instead); w: the
+  // depth-slice scale (slice = log2(viewDepth) * w + punctual_dims.w). The
+  // froxel table and its light records share the punctual_index texture:
+  // texels [0, x*y*z) hold each froxel's records offset (.r, absolute) and
+  // light count (.g); records (.r a light row) follow.
+  vec4 froxel_grid;
 }
 frag_info;
 

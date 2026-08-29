@@ -1241,15 +1241,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               padding: const EdgeInsets.only(top: 8),
                               child: Tooltip(
                                 message:
-                                    'These objects are reached by more '
-                                    'punctual lights than the per-object '
-                                    'budget shades; the excess is dropped. '
-                                    'Give lights a range, or split large '
-                                    'meshes.',
+                                    'More punctual lights reach these '
+                                    'objects (or screen regions, under '
+                                    'clustered lighting) than the budget '
+                                    'shades; the farthest are dropped. Give '
+                                    'lights a range, or thin dense light '
+                                    'clusters.',
                                 child: _InfoBadge(
                                   text: overflow == 1
-                                      ? '1 object drops lights'
-                                      : '$overflow objects drop lights',
+                                      ? '1 light-budget overflow'
+                                      : '$overflow light-budget overflows',
                                   color: const Color(0xCC8A6D1F),
                                 ),
                               ),

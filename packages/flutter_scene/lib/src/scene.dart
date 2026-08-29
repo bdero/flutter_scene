@@ -445,13 +445,25 @@ base class Scene implements SceneGraph {
   // extra directional lights. Rebuilt once per frame in [render].
   final PunctualLightBuffer _punctualLightBuffer = PunctualLightBuffer();
 
-  /// How many drawable items dropped punctual lights last frame because more
-  /// lights reached them than the per-object budget can shade. Zero when every
-  /// item fit. A persistent nonzero value means light ranges need authoring
-  /// (an unranged light reaches everything) or large meshes need splitting.
+  /// How many drawable items (or, under clustered lighting, screen froxels)
+  /// dropped punctual lights last frame because more lights reached them than
+  /// the per-slice budget can shade. Zero when everything fit. A persistent
+  /// nonzero value means light ranges need authoring (an unranged light
+  /// reaches everything) or large meshes need splitting.
   /// {@category Lighting and environment}
   int get punctualLightOverflowCount =>
       _punctualLightBuffer.overflowedItemCount;
+
+  /// Whether punctual lights shade through per-view froxel clustering (the
+  /// view frustum subdivided into screen tiles and depth slices, each shading
+  /// only the lights that reach it) instead of per-object light lists. On by
+  /// default; perspective views use it automatically, while orthographic
+  /// views and frames using light channel masks fall back to the per-object
+  /// path. Clustering removes the per-object light cap, so a large mesh
+  /// reached by many lights shades them all. Disable to compare, or to force
+  /// the per-object path.
+  /// {@category Lighting and environment}
+  bool punctualLightClustering = true;
 
   /// The scene's primary camera.
   ///
@@ -882,6 +894,7 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      enableFroxels: punctualLightClustering,
     );
     return _captureEnvironmentAt(
       position: position,
@@ -974,6 +987,7 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      enableFroxels: punctualLightClustering,
     );
     final chosen = renderScene.irradianceVolumeComponents.isNotEmpty
         ? renderScene.irradianceVolumeComponents.first
@@ -1613,6 +1627,7 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      enableFroxels: punctualLightClustering,
     );
 
     // Pending reflection-probe captures render before any view. The frame's
