@@ -11,6 +11,7 @@ library;
 import 'package:vector_math/vector_math.dart';
 
 import 'flow_graph.dart';
+import 'flow_trace.dart';
 
 /// What a node can do while it runs.
 ///
@@ -84,7 +85,7 @@ class NullFlowHost implements FlowHost {
 /// The state one run of a graph carries.
 /// {@category Flow}
 class FlowContext {
-  FlowContext({required this.graph, required this.host}) {
+  FlowContext({required this.graph, required this.host, this.trace}) {
     for (final variable in graph.variables) {
       variables[variable.name] = variable.initial;
     }
@@ -92,6 +93,12 @@ class FlowContext {
 
   final FlowGraph graph;
   final FlowHost host;
+
+  /// Where to record what the run did, or null to record nothing.
+  ///
+  /// Null by default, so a graph nobody is watching pays a null check per
+  /// node rather than the bookkeeping.
+  final FlowTrace? trace;
 
   /// The graph's variables, seeded from their initial values.
   final Map<String, Object?> variables = {};
@@ -108,9 +115,16 @@ class FlowContext {
   /// past a few thousand steps in one tick is a loop the author did not mean.
   static const int maxSteps = 10000;
 
+  String? _error;
+
   /// Set when the budget runs out, so the caller can surface it once rather
-  /// than every frame.
-  String? error;
+  /// than every frame. Mirrored into [trace], so a canvas showing the run
+  /// shows why it stopped without being handed the context as well.
+  String? get error => _error;
+  set error(String? value) {
+    _error = value;
+    trace?.error = value;
+  }
 
   /// Nodes whose data pull is currently in progress.
   ///
@@ -263,11 +277,21 @@ class FlowInterpreter {
         context.error = 'Unknown node type "${node.type}".';
         return;
       }
-      final result = type.evaluate(
-        context,
-        node,
-        _resolveInputs(context, node, type),
-      );
+      final inputs = _resolveInputs(context, node, type);
+      final result = type.evaluate(context, node, inputs);
+      final trace = context.trace;
+      if (trace != null) {
+        trace.recordStep(node.id, node.type);
+        for (final entry in inputs.entries) {
+          trace.recordValue(node.id, entry.key, entry.value);
+        }
+        for (final entry in result.outputs.entries) {
+          trace.recordValue(node.id, entry.key, entry.value);
+        }
+        for (final pin in result.next) {
+          trace.recordExec(node.id, pin);
+        }
+      }
       if (context.error != null) return;
 
       // Reverse, so the first branch named is the first popped and its whole
@@ -333,7 +357,21 @@ class FlowInterpreter {
         return null;
       }
       final inputs = _resolveInputs(context, node, type);
-      return type.evaluate(context, node, inputs).outputs[pinId];
+      final outputs = type.evaluate(context, node, inputs).outputs;
+      // A pulled node is recorded too. Its value is what a data wire is
+      // carrying, and a wire with no label is the thing a trace exists to
+      // fix; that a value node never appears in the exec order is the point.
+      final trace = context.trace;
+      if (trace != null) {
+        trace.recordStep(node.id, node.type);
+        for (final entry in inputs.entries) {
+          trace.recordValue(node.id, entry.key, entry.value);
+        }
+        for (final entry in outputs.entries) {
+          trace.recordValue(node.id, entry.key, entry.value);
+        }
+      }
+      return outputs[pinId];
     } finally {
       context.pulling.remove(nodeId);
     }

@@ -26,6 +26,41 @@ import 'package:vector_math/vector_math.dart';
   return (node: node, flow: flow, log: log);
 }
 
+/// A graph that does something on every tick, so a trace has content.
+FlowGraph tickingGraph() {
+  final graph = FlowGraph(
+    variables: [
+      FlowVariable(name: 'count', type: FlowType.number, initial: 0.0),
+    ],
+  );
+  final tick = graph.add('event.tick');
+  final read = graph.add('var.get')..literals['name'] = 'count';
+  final add = graph.add('math.add')..literals['b'] = 1.0;
+  final write = graph.add('var.set')..literals['name'] = 'count';
+
+  graph
+    ..connect(
+      FlowLink(
+        fromNode: tick.id,
+        fromPin: 'then',
+        toNode: write.id,
+        toPin: 'exec',
+      ),
+    )
+    ..connect(
+      FlowLink(fromNode: read.id, fromPin: 'value', toNode: add.id, toPin: 'a'),
+    )
+    ..connect(
+      FlowLink(
+        fromNode: add.id,
+        fromPin: 'value',
+        toNode: write.id,
+        toPin: 'value',
+      ),
+    );
+  return graph;
+}
+
 void main() {
   group('SceneFlowHost paths', () {
     test('a bare path is the owning node', () {
@@ -469,6 +504,57 @@ void main() {
       );
       expect(component, isA<FlowComponent>());
       expect((component! as FlowComponent).graph.nodes, isEmpty);
+    });
+  });
+
+  group('watching a live graph', () {
+    test('a component records nothing until it is asked to', () {
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph());
+      node.addComponent(component);
+      component.update(1 / 60);
+
+      expect(component.tracing, isFalse);
+      expect(component.trace, isNull);
+    });
+
+    test('turning it on records what the tick did', () {
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      node.addComponent(component);
+      component.update(1 / 60);
+
+      final trace = component.trace!;
+      expect(trace.stepCount, greaterThan(0));
+      expect(trace.visitedNodes, isNotEmpty);
+      expect(trace.describe(), contains('ran'));
+    });
+
+    test('each tick traces itself, not the whole session', () {
+      // A graph on a tick event runs every frame; keeping every frame's trace
+      // would grow without bound and bury the frame anyone is looking at.
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      node.addComponent(component);
+
+      component.update(1 / 60);
+      final first = component.trace!.stepCount;
+      for (var i = 0; i < 20; i++) {
+        component.update(1 / 60);
+      }
+      expect(component.trace!.stepCount, lessThanOrEqualTo(first + 1));
+    });
+
+    test('turning it off stops recording', () {
+      final node = Node(name: 'script');
+      final component = FlowComponent(graph: tickingGraph())..tracing = true;
+      node.addComponent(component);
+      component.update(1 / 60);
+      expect(component.trace, isNotNull);
+
+      component.tracing = false;
+      component.update(1 / 60);
+      expect(component.trace, isNull);
     });
   });
 }
