@@ -13,6 +13,7 @@ import '../inspector/euler.dart';
 import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
+import '../inspector/nav_mesh_editor.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
@@ -403,11 +404,16 @@ class _ComponentSection extends StatelessWidget {
                     ),
                   )
                 : null,
-            child: _ComponentEditor(
-              node: node,
-              component: component,
-              controller: controller,
-            ),
+            // A nav surface is bake settings plus a bake, not a property
+            // bag: the four agent numbers only mean anything drawn together,
+            // and nothing in a schema-driven list runs a bake.
+            child: component.type == 'navMeshSurface'
+                ? NavMeshEditor(controller: controller, nodeId: node.id)
+                : _ComponentEditor(
+                    node: node,
+                    component: component,
+                    controller: controller,
+                  ),
           ),
         ),
       ],

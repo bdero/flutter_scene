@@ -1,8 +1,14 @@
-/// The Navigation dock panel: bake settings and the button that runs them.
+/// The nav mesh a node carries: bake settings, and the button that runs them.
 ///
-/// A nav mesh is baked for one agent, so the panel leads with the agent and
-/// draws it: the radius, height, step, and slope are four numbers that only
-/// mean something together, and a diagram says in a glance what four labelled
+/// A nav mesh belongs to the ground it describes, so this is the inspector
+/// for the `navMeshSurface` component rather than a panel of its own. Adding
+/// the component to the floor is what says "path over this"; a level with two
+/// agent sizes is two nodes carrying one each, which a single global panel
+/// could not express at all.
+///
+/// A nav mesh is baked for one agent, so it leads with the agent and draws
+/// it: the radius, height, step, and slope are four numbers that only mean
+/// something together, and a diagram says in a glance what four labelled
 /// fields say slowly.
 library;
 
@@ -18,24 +24,34 @@ import 'package:scene/scene.dart' show LocalId, PropertyValue;
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
 
-/// The Navigation panel.
-class NavMeshPanel extends StatefulWidget {
-  const NavMeshPanel({super.key, required this.controller});
+/// The `navMeshSurface` component's editor.
+class NavMeshEditor extends StatefulWidget {
+  const NavMeshEditor({
+    super.key,
+    required this.controller,
+    required this.nodeId,
+  });
 
   final EditorController controller;
 
+  /// The node carrying the surface this edits.
+  final LocalId nodeId;
+
   @override
-  State<NavMeshPanel> createState() => _NavMeshPanelState();
+  State<NavMeshEditor> createState() => _NavMeshEditorState();
 }
 
-class _NavMeshPanelState extends State<NavMeshPanel> {
+class _NavMeshEditorState extends State<NavMeshEditor> {
   EditorController get _ctrl => widget.controller;
 
-  /// The document component type this panel authors.
+  /// The document component type this editor authors.
   static const String _componentType = 'navMeshSurface';
 
-  /// The key the baked mesh is drawn under in the scene.
-  static const String _overlayKey = 'navMesh';
+  /// The key this node's baked mesh is drawn under in the scene.
+  ///
+  /// Per node, so a level baked for two agent sizes draws both rather than
+  /// the two surfaces overwriting one another's overlay.
+  String get _overlayKey => 'navMesh:${widget.nodeId.toToken()}';
 
   @override
   void initState() {
@@ -55,9 +71,22 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
   @override
   void dispose() {
     _ctrl.removeListener(_onDocumentChanged);
-    _ctrl.setSceneDecoration(_overlayKey, null);
+    // The overlay outlives this editor. Selecting another node unmounts the
+    // inspector section, and a nav mesh that vanished whenever you looked at
+    // something else would be visible only while you did not need it. It is
+    // taken down when the component it draws is gone, which is the one case
+    // where nothing is left to draw.
+    if (!_hasSurfaceComponent) _ctrl.setSceneDecoration(_overlayKey, null);
     super.dispose();
   }
+
+  /// Whether the node still carries the component this editor authors.
+  bool get _hasSurfaceComponent =>
+      _ctrl.document
+          .node(widget.nodeId)
+          ?.components
+          .any((c) => c.type == _componentType) ??
+      false;
 
   // The realized scene is rebuilt on a recompose, which takes the live
   // component with it, and a different scene brings a different bake.
@@ -133,26 +162,13 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
 
   NavTileConfig get _tiling => NavTileConfig(tileCells: _tileCells.round());
 
-  /// The document node carrying the scene's nav surface, or null when the
-  /// scene has never been baked.
-  ///
-  /// A scene has one nav mesh per agent size and almost always exactly one,
-  /// so this takes the first rather than making the panel a list.
-  LocalId? get _surfaceNodeId {
-    for (final entry in _ctrl.document.nodes.entries) {
-      for (final component in entry.value.components) {
-        if (component.type == _componentType) return entry.key;
-      }
-    }
-    return null;
-  }
+  /// The node this editor is on. Named for what it is so the bake and commit
+  /// paths below read the same as they did against the global panel.
+  LocalId get _surfaceNodeId => widget.nodeId;
 
   /// The live component the last realize built from that node, or null.
-  NavMeshSurfaceComponent? get _liveSurface {
-    final id = _surfaceNodeId;
-    if (id == null) return null;
-    return _ctrl.liveNode(id)?.getComponent<NavMeshSurfaceComponent>();
-  }
+  NavMeshSurfaceComponent? get _liveSurface =>
+      _ctrl.liveNode(_surfaceNodeId)?.getComponent<NavMeshSurfaceComponent>();
 
   /// Puts the panel's fields back to whatever the scene was last baked with,
   /// so reopening a scene shows the settings that produced the mesh in it
@@ -215,19 +231,6 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
     if (captured == null) return;
 
     final nodeId = _surfaceNodeId;
-    if (nodeId == null) {
-      // Nothing baked yet. The surface goes on the scene root, since what it
-      // describes is the level rather than any one object in it.
-      final roots = _ctrl.document.roots;
-      if (roots.isEmpty) return;
-      await _ctrl.run('addComponent', {
-        'nodeId': roots.first.toToken(),
-        'componentType': _componentType,
-        'properties': captured,
-      });
-      return;
-    }
-
     // A capture is a delta against the schema defaults and the write is a
     // merge, so a setting the user put back to its default would simply not
     // appear and the previous bake's value would survive. Those are stated
@@ -337,6 +340,12 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
     }
   }
 
+  /// Throws the bake away and keeps the settings.
+  ///
+  /// The component itself stays: it is what the user put on this node to say
+  /// the ground is walkable, and removing it is the section's close button,
+  /// not this. Clearing writes a surface built from the current settings and
+  /// carrying no mesh, which is what "not baked yet" is.
   Future<void> _clear() async {
     setState(() {
       _result = null;
@@ -345,12 +354,15 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
       _surface = null;
     });
     _ctrl.setSceneDecoration(_overlayKey, null);
-    final nodeId = _surfaceNodeId;
-    if (nodeId == null) return;
-    await _ctrl.run('removeComponent', {
-      'nodeId': nodeId.toToken(),
-      'componentType': _componentType,
-    });
+    await _commit(
+      NavMeshSurfaceComponent(
+        config: _config,
+        includePattern: _includePattern,
+        includeInstances: _includeInstances,
+        includeWaterVolumes: _includeWaterVolumes,
+        tiling: _tiled ? _tiling : null,
+      ),
+    );
   }
 
   @override
@@ -563,7 +575,11 @@ class _NavMeshPanelState extends State<NavMeshPanel> {
           tilesTotal: _tilesTotal,
           rebakedTiles: _rebakedTiles,
           error: _error,
-          canClear: _surfaceNodeId != null,
+          canClear:
+              _liveSurface?.mesh != null ||
+              _liveSurface?.tileSet != null ||
+              _result != null ||
+              _tiledResult != null,
           onBake: _bake,
           onRebake: _tiled ? () => _bake(incremental: true) : null,
           onClear: _clear,
