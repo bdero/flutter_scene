@@ -84,9 +84,8 @@ List<FmatInstanceAttribute> forwardedInstanceAttributes(FmatMaterial material) {
   if (material.instanceAttributes.isEmpty) return const [];
   return [
     for (final a in material.instanceAttributes)
-      if (RegExp(
-        '\\b${RegExp.escape(a.accessorName)}\\b',
-      ).hasMatch(material.fragmentSource))
+      if (RegExp('\\b${RegExp.escape(a.accessorName)}\\b')
+          .hasMatch(material.fragmentSource))
         a,
   ];
 }
@@ -407,9 +406,8 @@ String? _fragmentKeepAliveTerm(
   final terms = <String>[
     if (uniforms.isNotEmpty) _paramsKeepAliveScalar(uniforms.first),
     for (final p in samplers)
-      if (!RegExp(
-        '\\b${RegExp.escape(p.name)}\\b',
-      ).hasMatch(material.fragmentSource))
+      if (!RegExp('\\b${RegExp.escape(p.name)}\\b')
+          .hasMatch(material.fragmentSource))
         p.type == FmatType.samplerCube
             ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
             : 'texture(${p.name}, vec2(0.0)).x',

@@ -104,9 +104,8 @@ abstract class Camera {
   /// whether to clamp or cull. [viewSize] is the view's logical size (the
   /// constraints `SceneView` renders into).
   ui.Offset? worldToScreen(Vector3 worldPoint, ui.Size viewSize) {
-    final clip = getViewTransform(
-      viewSize,
-    ).transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
+    final clip = getViewTransform(viewSize)
+        .transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
     if (clip.w <= 0) {
       return null;
     }
@@ -122,9 +121,8 @@ abstract class Camera {
   /// camera plane. Values outside `0..1` are a point off screen; callers
   /// decide whether to clamp or cull.
   Vector2? projectToScreenUv(Vector3 worldPoint, ui.Size viewport) {
-    final clip = getViewTransform(
-      viewport,
-    ).transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
+    final clip = getViewTransform(viewport)
+        .transform(Vector4(worldPoint.x, worldPoint.y, worldPoint.z, 1));
     if (clip.w <= 0) {
       return null;
     }

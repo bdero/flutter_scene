@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart'
     show Frustum, Matrix3, Matrix4, Plane, Ray, Vector2, Vector3, Vector4;
+
 import 'ambient_occlusion.dart';
 import 'global_illumination.dart';
 import 'audio/audio_engine.dart';

@@ -18,9 +18,8 @@ File _resolveFile(String relativePath) {
 void main() {
   final header = _resolveFile('shaders/scene_inputs.glsl').readAsStringSync();
   // The `.fmat` accessors the header has to agree with.
-  final emitter = _resolveFile(
-    'shaders/material_scene_inputs.glsl',
-  ).readAsStringSync();
+  final emitter = _resolveFile('shaders/material_scene_inputs.glsl')
+      .readAsStringSync();
 
   test('each sampler is behind the define that declares it', () {
     // A declared-but-unsampled sampler is eliminated while the reflection

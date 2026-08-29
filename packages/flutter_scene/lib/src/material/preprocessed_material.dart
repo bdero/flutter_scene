@@ -370,7 +370,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         // fog.glsl), so they carry the FogInfo block. Unlit `.fmat` shaders do
         // not; fog on those is a TODO(fog): give the unlit `.fmat` template
         // the fog block.
-        EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
+        EngineLightingUniforms.bindFog(
+          pass,
+          shader,
+          transientsBuffer,
+          lighting,
+        );
       }
     }
 
