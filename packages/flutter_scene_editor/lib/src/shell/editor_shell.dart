@@ -33,6 +33,7 @@ import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
 import '../panels/flow_panel.dart';
 import '../panels/nav_mesh_panel.dart';
+import '../launcher/scene_templates.dart';
 import '../panels/vfx_panel.dart';
 import '../panels/weather_panel.dart';
 import '../viewport/viewport_panel.dart';
@@ -1140,7 +1141,12 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 
   Future<void> _newScene() async {
-    final ctrl = await EditorController.empty();
+    // Asked rather than assumed: an empty scene is a sky and nothing else,
+    // and starting there means building the same floor and the same key
+    // light before any of the work that is actually this scene's.
+    final template = await pickSceneTemplate(context);
+    if (template == null || !mounted) return;
+    final ctrl = await EditorController.empty(document: template.build());
     widget.onControllerReplaced(ctrl);
     setState(() {
       _setPath(null);
