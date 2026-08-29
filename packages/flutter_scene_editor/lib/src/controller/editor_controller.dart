@@ -911,13 +911,27 @@ class EditorController extends ChangeNotifier {
     Iterable<LocalId> ids,
     String type,
     Map<String, Object?> raw,
+  ) => setComponentPropertiesPerNode({for (final id in ids) id: raw}, type);
+
+  /// Like [setComponentPropertiesOnNodes], with per-node property maps (a
+  /// multi-selection edit of one axis keeps each node's other axes).
+  Future<void> setComponentPropertiesPerNode(
+    Map<LocalId, Map<String, Object?>> byNode,
+    String type,
   ) async {
     final records = <ChangeRecord>[];
-    for (final id in ids) {
+    for (final entry in byNode.entries) {
+      final id = entry.key;
+      final raw = entry.value;
       if (!isEditableNode(id)) continue;
       if (memberOrigin(id) != null) {
-        for (final entry in raw.entries) {
-          await setComponentPropertyRouted(id, type, entry.key, entry.value!);
+        for (final property in raw.entries) {
+          await setComponentPropertyRouted(
+            id,
+            type,
+            property.key,
+            property.value!,
+          );
         }
         continue;
       }

@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+import 'package:collection/collection.dart' show DeepCollectionEquality;
 import 'dart:math' as math;
 
 import 'package:scene/scene.dart';
@@ -36,17 +38,23 @@ class InspectorPanel extends StatelessWidget {
       child: ListenableBuilder(
         listenable: controller,
         builder: (context, _) {
-          final primary = controller.selection.primary;
+          final selection = controller.selection;
+          final primary = selection.primary;
           final node = primary != null ? controller.displayNode(primary) : null;
+          final Widget body;
+          if (selection.ids.length > 1) {
+            body = _MultiNodeInspector(
+              controller: controller,
+              ids: List.of(selection.ids),
+            );
+          } else if (node == null) {
+            body = StageSection(controller: controller);
+          } else {
+            body = _NodeInspector(node: node, controller: controller);
+          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: node == null
-                    ? StageSection(controller: controller)
-                    : _NodeInspector(node: node, controller: controller),
-              ),
-            ],
+            children: [Expanded(child: body)],
           );
         },
       ),
@@ -2078,6 +2086,494 @@ class _DoubleRowState extends State<_DoubleRow> {
           ),
         ],
       ),
+    );
+  }
+}
+
+
+/// Inspector for a multi-node selection. Only the fields shared by every
+/// selected node render; a field whose values differ across the selection
+/// shows dashes, and committing any field applies the entered value to the
+/// whole selection.
+class _MultiNodeInspector extends StatelessWidget {
+  const _MultiNodeInspector({required this.controller, required this.ids});
+
+  final EditorController controller;
+  final List<LocalId> ids;
+
+  @override
+  Widget build(BuildContext context) {
+    final nodes = [
+      for (final id in ids)
+        if (controller.displayNode(id) case final node?) node,
+    ];
+    if (nodes.isEmpty) return const SizedBox.shrink();
+    var sharedTypes = {for (final c in nodes.first.components) c.type};
+    for (final node in nodes.skip(1)) {
+      sharedTypes = sharedTypes.intersection({
+        for (final c in node.components) c.type,
+      });
+    }
+    final orderedTypes = [
+      for (final c in nodes.first.components)
+        if (sharedTypes.contains(c.type)) c.type,
+    ];
+    return ListView(
+      padding: const EdgeInsets.all(8),
+      children: [
+        Text(
+          '${nodes.length} objects selected',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        _MultiVisibilityRow(controller: controller, nodes: nodes),
+        _MultiTransformSection(controller: controller, nodes: nodes),
+        for (final type in orderedTypes)
+          _MultiComponentSection(
+            controller: controller,
+            nodes: nodes,
+            type: type,
+          ),
+      ],
+    );
+  }
+}
+
+class _MultiVisibilityRow extends StatelessWidget {
+  const _MultiVisibilityRow({required this.controller, required this.nodes});
+
+  final EditorController controller;
+  final List<NodeSpec> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = nodes.first.visible;
+    final uniform = nodes.every((n) => n.visible == first);
+    return Row(
+      children: [
+        const Expanded(child: Text('Visible', style: TextStyle(fontSize: 11))),
+        Checkbox(
+          value: uniform ? first : null,
+          tristate: !uniform,
+          onChanged: (value) {
+            final next = value ?? true;
+            for (final node in nodes) {
+              controller.setNodeVisibleRouted(node.id, next);
+            }
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// Per-axis transform rows over the selection; an axis with differing values
+/// shows a dash and an edit writes just that axis on every node.
+class _MultiTransformSection extends StatelessWidget {
+  const _MultiTransformSection({required this.controller, required this.nodes});
+
+  final EditorController controller;
+  final List<NodeSpec> nodes;
+
+  TrsTransform _trsOf(NodeSpec node) {
+    final transform = node.transform;
+    if (transform is TrsTransform) return transform;
+    final t = Vector3.zero();
+    final r = Quaternion.identity();
+    final s = Vector3.zero();
+    transform.toMatrix4().decompose(t, r, s);
+    return TrsTransform(translation: t, rotation: r, scale: s);
+  }
+
+  void _commit(TrsTransform Function(TrsTransform current) next) {
+    final batch = <LocalId, TrsTransform>{
+      for (final node in nodes) node.id: next(_trsOf(node)),
+    };
+    unawaited(controller.setNodeTransformsBatch(batch));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final trs = [for (final node in nodes) _trsOf(node)];
+    final eulers = [
+      for (final t in trs) quaternionToEulerXyzDegrees(t.rotation),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _MultiVec3Row(
+          label: 'Position',
+          values: [for (final t in trs) t.translation],
+          onAxisCommit: (axis, value) => _commit(
+            (current) => TrsTransform(
+              translation: Vector3.copy(current.translation)..[axis] = value,
+              rotation: current.rotation,
+              scale: current.scale,
+            ),
+          ),
+        ),
+        _MultiVec3Row(
+          label: 'Rotation (degrees)',
+          values: eulers,
+          onAxisCommit: (axis, value) => _commit(
+            (current) => TrsTransform(
+              translation: current.translation,
+              rotation: eulerXyzDegreesToQuaternion(
+                quaternionToEulerXyzDegrees(current.rotation)..[axis] = value,
+              ),
+              scale: current.scale,
+            ),
+          ),
+        ),
+        _MultiVec3Row(
+          label: 'Scale',
+          values: [for (final t in trs) t.scale],
+          onAxisCommit: (axis, value) => _commit(
+            (current) => TrsTransform(
+              translation: current.translation,
+              rotation: current.rotation,
+              scale: Vector3.copy(current.scale)..[axis] = value,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MultiComponentSection extends StatelessWidget {
+  const _MultiComponentSection({
+    required this.controller,
+    required this.nodes,
+    required this.type,
+  });
+
+  final EditorController controller;
+  final List<NodeSpec> nodes;
+  final String type;
+
+  PropertyValue? _valueOn(NodeSpec node, ComponentPropertyDef def) {
+    final component = node.components.where((c) => c.type == type).firstOrNull;
+    return component?.properties[def.name] ?? def.defaultValue;
+  }
+
+  bool _uniform(List<PropertyValue?> values) {
+    Object? encode(PropertyValue? value) => value == null
+        ? null
+        : encodePropertyValue(value, (id) => id.toToken());
+    const equality = DeepCollectionEquality();
+    final first = encode(values.first);
+    return values.every((v) => equality.equals(encode(v), first));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final schema = controller.componentSchema(type);
+    final ids = [for (final node in nodes) node.id];
+    void setAll(String name, Object? raw) {
+      if (raw == null) return;
+      unawaited(
+        controller.setComponentPropertiesOnNodes(ids, type, {name: raw}),
+      );
+    }
+
+    void previewAll(String name, PropertyValue value) {
+      for (final id in ids) {
+        controller.previewComponentProperty(id, type, name, value);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 2),
+          child: Text(
+            type,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+        ),
+        for (final def in schema)
+          if (_uniform([for (final node in nodes) _valueOn(node, def)]))
+            _SchemaPropertyRow(
+              componentType: type,
+              def: def,
+              value: _valueOn(nodes.first, def),
+              controller: controller,
+              onChanged: (raw) => setAll(def.name, raw),
+              onPreview: (value) => previewAll(def.name, value),
+            )
+          else
+            _MixedPropertyRow(
+              def: def,
+              onCommit: (raw) => setAll(def.name, raw),
+            ),
+      ],
+    );
+  }
+}
+
+/// A property whose values differ across the selection. Numeric, string, and
+/// vector kinds render dash fields that commit one value to every node;
+/// reference and structured kinds are read-only until the values match.
+class _MixedPropertyRow extends StatelessWidget {
+  const _MixedPropertyRow({required this.def, required this.onCommit});
+
+  final ComponentPropertyDef def;
+  final void Function(Object? raw) onCommit;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (def.kind) {
+      case ComponentPropertyKind.boolean:
+        return Row(
+          children: [
+            Expanded(
+              child: Text(def.name, style: const TextStyle(fontSize: 11)),
+            ),
+            Checkbox(
+              value: null,
+              tristate: true,
+              onChanged: (value) => onCommit(value ?? true),
+            ),
+          ],
+        );
+      case ComponentPropertyKind.integer:
+        return _MixedNumberField(
+          label: def.name,
+          onCommit: (value) => onCommit(value.round()),
+        );
+      case ComponentPropertyKind.number:
+        return _MixedNumberField(label: def.name, onCommit: onCommit);
+      case ComponentPropertyKind.string:
+      case ComponentPropertyKind.assetRef:
+        return _MixedTextField(label: def.name, onCommit: onCommit);
+      case ComponentPropertyKind.vec2:
+        return _MixedVectorRow(label: def.name, axes: 2, onCommit: onCommit);
+      case ComponentPropertyKind.vec3:
+        return _MixedVectorRow(label: def.name, axes: 3, onCommit: onCommit);
+      case ComponentPropertyKind.vec4:
+      case ComponentPropertyKind.color:
+        return _MixedVectorRow(label: def.name, axes: 4, onCommit: onCommit);
+      default:
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(def.name, style: const TextStyle(fontSize: 11)),
+              ),
+              const Text(
+                'Mixed values',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+}
+
+/// A vector whose values differ; entering every axis commits the vector to
+/// the whole selection (a partial entry commits once all axes are filled).
+class _MixedVectorRow extends StatefulWidget {
+  const _MixedVectorRow({
+    required this.label,
+    required this.axes,
+    required this.onCommit,
+  });
+
+  final String label;
+  final int axes;
+  final void Function(Object raw) onCommit;
+
+  @override
+  State<_MixedVectorRow> createState() => _MixedVectorRowState();
+}
+
+class _MixedVectorRowState extends State<_MixedVectorRow> {
+  late final List<double?> _entered = List.filled(widget.axes, null);
+
+  static const _names = ['x', 'y', 'z', 'w'];
+
+  void _onAxis(int axis, double value) {
+    _entered[axis] = value;
+    if (_entered.every((v) => v != null)) {
+      widget.onCommit({
+        for (var i = 0; i < widget.axes; i++) _names[i]: _entered[i]!,
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
+        ),
+        for (var axis = 0; axis < widget.axes; axis++)
+          SizedBox(
+            width: 54,
+            child: _MixedNumberField(
+              label: null,
+              onCommit: (value) => _onAxis(axis, value.toDouble()),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Per-axis vector rows whose uniform axes show their value and mixed axes
+/// show a dash; a commit writes just that axis across the selection.
+class _MultiVec3Row extends StatelessWidget {
+  const _MultiVec3Row({
+    required this.label,
+    required this.values,
+    required this.onAxisCommit,
+  });
+
+  final String label;
+  final List<Vector3> values;
+  final void Function(int axis, double value) onAxisCommit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 11))),
+        for (var axis = 0; axis < 3; axis++)
+          SizedBox(
+            width: 54,
+            child: () {
+              final first = values.first[axis];
+              final uniform = values.every(
+                (v) => (v[axis] - first).abs() < 1e-9,
+              );
+              return _MixedNumberField(
+                label: null,
+                initial: uniform ? first : null,
+                onCommit: (value) => onAxisCommit(axis, value.toDouble()),
+              );
+            }(),
+          ),
+      ],
+    );
+  }
+}
+
+/// A number field that shows a dash until a value is entered (or the uniform
+/// value when the selection agrees), committing on Enter or focus loss.
+class _MixedNumberField extends StatefulWidget {
+  const _MixedNumberField({
+    required this.label,
+    required this.onCommit,
+    this.initial,
+  });
+
+  final String? label;
+  final double? initial;
+  final void Function(num value) onCommit;
+
+  @override
+  State<_MixedNumberField> createState() => _MixedNumberFieldState();
+}
+
+class _MixedNumberFieldState extends State<_MixedNumberField> {
+  late final TextEditingController _text = TextEditingController(
+    text: widget.initial == null ? '' : _format(widget.initial!),
+  );
+  final FocusNode _focus = FocusNode();
+
+  static String _format(double value) =>
+      value.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '');
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(_MixedNumberField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initial != oldWidget.initial && !_focus.hasFocus) {
+      _text.text = widget.initial == null ? '' : _format(widget.initial!);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _text.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final parsed = double.tryParse(_text.text.trim());
+    if (parsed == null) return;
+    if (widget.initial != null && (parsed - widget.initial!).abs() < 1e-12) {
+      return;
+    }
+    widget.onCommit(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final field = TextField(
+      controller: _text,
+      focusNode: _focus,
+      style: const TextStyle(fontSize: 11),
+      decoration: const InputDecoration(
+        hintText: '—',
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      ),
+      keyboardType: const TextInputType.numberWithOptions(
+        decimal: true,
+        signed: true,
+      ),
+      onSubmitted: (_) => _commit(),
+    );
+    final label = widget.label;
+    if (label == null) return field;
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 11))),
+        SizedBox(width: 64, child: field),
+      ],
+    );
+  }
+}
+
+/// A text field over mixed string values, dash placeholder until entered.
+class _MixedTextField extends StatelessWidget {
+  const _MixedTextField({required this.label, required this.onCommit});
+
+  final String label;
+  final void Function(String raw) onCommit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 11))),
+        SizedBox(
+          width: 120,
+          child: TextField(
+            style: const TextStyle(fontSize: 11),
+            decoration: const InputDecoration(
+              hintText: '—',
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            ),
+            onSubmitted: onCommit,
+          ),
+        ),
+      ],
     );
   }
 }
