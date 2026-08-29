@@ -359,65 +359,58 @@ class _FlowPanelState extends State<FlowPanel> {
   }
 
   Widget _buildToolbar(BuildContext context, FlowGraph? graph) {
-    return Container(
-      height: editorToolbarHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const Icon(Icons.account_tree_outlined, size: 14),
+    return EditorToolbar(
+      children: [
+        const Icon(Icons.account_tree_outlined, size: 14),
+        const SizedBox(width: 6),
+        Text('Flow', style: editorBodyText),
+        const SizedBox(width: 12),
+        if (graph != null) ...[
+          Text(
+            '${graph.nodes.length} nodes, ${graph.links.length} wires',
+            style: editorDetailText,
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 15),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+            tooltip: 'Delete the selected node',
+            onPressed: _selected == null ? null : () => _deleteSelected(graph),
+          ),
+          IconButton(
+            icon: Icon(
+              _tracing ? Icons.visibility : Icons.visibility_outlined,
+              size: 15,
+              color: _tracing ? editorAccentColor : null,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+            tooltip: _tracing
+                ? 'Stop watching the run'
+                : 'Watch the run: which wires fire, and what is on them '
+                      '(restarts the script)',
+            onPressed: _toggleTracing,
+          ),
+          IconButton(
+            icon: const Icon(Icons.center_focus_strong, size: 15),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+            tooltip: 'Reset the view',
+            onPressed: () => setState(() {
+              _pan = const Offset(40, 40);
+              _zoom = 1;
+            }),
+          ),
           const SizedBox(width: 6),
-          Text('Flow', style: editorBodyText),
-          const SizedBox(width: 12),
-          if (graph != null) ...[
-            Text(
-              '${graph.nodes.length} nodes, ${graph.links.length} wires',
-              style: editorDetailText,
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 15),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-              tooltip: 'Delete the selected node',
-              onPressed: _selected == null
-                  ? null
-                  : () => _deleteSelected(graph),
-            ),
-            IconButton(
-              icon: Icon(
-                _tracing ? Icons.visibility : Icons.visibility_outlined,
-                size: 15,
-                color: _tracing ? editorAccentColor : null,
-              ),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-              tooltip: _tracing
-                  ? 'Stop watching the run'
-                  : 'Watch the run: which wires fire, and what is on them '
-                        '(restarts the script)',
-              onPressed: _toggleTracing,
-            ),
-            IconButton(
-              icon: const Icon(Icons.center_focus_strong, size: 15),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-              tooltip: 'Reset the view',
-              onPressed: () => setState(() {
-                _pan = const Offset(40, 40);
-                _zoom = 1;
-              }),
-            ),
-            const SizedBox(width: 6),
-            FilledButton.icon(
-              onPressed: () => setState(() => _paletteOpen = !_paletteOpen),
-              icon: const Icon(Icons.add, size: 15),
-              label: const Text('Add node'),
-            ),
-          ] else
-            const Spacer(),
-        ],
-      ),
+          FilledButton.icon(
+            onPressed: () => setState(() => _paletteOpen = !_paletteOpen),
+            icon: const Icon(Icons.add, size: 15),
+            label: const Text('Add node'),
+          ),
+        ] else
+          const Spacer(),
+      ],
     );
   }
 

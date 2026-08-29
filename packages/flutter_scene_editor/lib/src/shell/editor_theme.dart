@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
@@ -239,7 +241,79 @@ const double editorIconSizeLarge = 16;
 
 /// The height of a panel's toolbar strip, so strips line up across panels
 /// sitting side by side.
-const double editorToolbarHeight = 30;
+///
+/// Tall enough for the tallest control a strip carries, which is forui's
+/// small text field at 32. At 30 the Assets filter overflowed its strip by
+/// the two pixels of difference, and drew the framework's overflow stripes
+/// across the panel header. `editor_theme_test.dart` pins the two together.
+const double editorToolbarHeight = 32;
+
+/// A panel's toolbar strip: a fixed-height row that scrolls sideways rather
+/// than overflowing.
+///
+/// A docked panel can be dragged down to a twentieth of the shell, and a
+/// toolbar's controls do not shrink with it. Left as a plain [Row] the
+/// Animation strip ran out of room first and painted the framework's overflow
+/// stripes over its own buttons; every other strip was one control away from
+/// the same. The row still lays out at the panel's width whenever it fits, so
+/// a [Spacer] in [children] pins what follows it to the right edge exactly as
+/// before, and only a strip too narrow for its contents starts scrolling.
+///
+/// A strip with nothing to scroll takes no drag gesture, which is what lets
+/// the menu bar go on being the window's drag handle while it fits.
+class EditorToolbar extends StatelessWidget {
+  const EditorToolbar({
+    super.key,
+    required this.children,
+    this.horizontalPadding = 8,
+    this.height,
+    this.color,
+  });
+
+  final List<Widget> children;
+
+  /// Inset at each end of the strip.
+  final double horizontalPadding;
+
+  /// Defaults to [editorToolbarHeight]. The menu bar is its own height.
+  final double? height;
+
+  /// Defaults to the panel-header fill.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height ?? editorToolbarHeight,
+      color: color ?? Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The row is given the strip's own width as a floor so it fills it
+          // and no wider, which is what keeps a Spacer meaningful. Above that
+          // floor it takes its natural width and the strip scrolls to it.
+          //
+          // IntrinsicWidth is what makes the row measurable at all: a
+          // horizontal scroll view offers unbounded width, and a Row with an
+          // Expanded or a Spacer in it cannot lay out against that. Asking
+          // for the row's own width first turns the constraint tight again,
+          // and a toolbar's dozen children are cheap to measure.
+          final floor = constraints.maxWidth.isFinite
+              ? math.max(0.0, constraints.maxWidth - horizontalPadding * 2)
+              : 0.0;
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            primary: false,
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: floor),
+              child: IntrinsicWidth(child: Row(children: children)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
 
 const double editorMenuItemHeight = 28;
 const EdgeInsets editorMenuItemPadding = EdgeInsets.symmetric(horizontal: 10);
