@@ -35,7 +35,6 @@ import '../panels/animation_panel.dart';
 import '../panels/flow_panel.dart';
 import '../launcher/scene_templates.dart';
 import '../panels/vfx_panel.dart';
-import '../panels/weather_panel.dart';
 import '../viewport/viewport_panel.dart';
 import 'command_palette.dart';
 import 'dock_layout.dart';
@@ -49,7 +48,6 @@ const Map<String, String> _panelTitles = {
   'viewport': 'Viewport',
   'animation': 'Animation',
   'effects': 'Effects',
-  'weather': 'Weather',
   'flow': 'Flow',
   'outliner': 'Outliner',
   'inspector': 'Inspector',
@@ -1039,11 +1037,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'effects',
                             title: 'Effects',
                             child: VfxPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'weather',
-                            title: 'Weather',
-                            child: WeatherPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'flow',

@@ -35,6 +35,8 @@ export 'src/flow/scene_flow_nodes.dart'
         setAnimatorNumber,
         setPosition,
         setScale,
+        setTimeOfDay,
         setVisible,
+        setWeather,
         stopAnimation,
         translateNode;

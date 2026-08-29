@@ -1,149 +1,54 @@
-/// The Weather dock panel: time of day, and one-click weather.
+/// Weather, inside the sky it belongs to.
 ///
-/// Deliberately not a second sky inspector. Every field of the sky is already
-/// editable in the stage inspector, and duplicating them here would be two
-/// places to look. What this panel has is the two gestures the inspector
-/// cannot express: dragging a clock and watching the sun move, and setting the
-/// weather as one thing, which is a sky *and* the particle effect that goes
-/// with it *and*, for a storm, the driver that fires the lightning.
+/// Weather is not a second sky inspector, and it is not a panel of its own
+/// either: it is part of setting the skybox up. What it adds to the fields
+/// beside it are the two gestures those cannot express -- dragging a clock
+/// and watching the sun move, and setting the weather as one thing, which is
+/// a sky *and* the effect that falls out of it *and*, for a storm, the driver
+/// that fires the lightning.
+///
+/// The states themselves live in the engine ([weatherPresets]), so the
+/// weather set from this panel, from a script, and from a flow graph is the
+/// same weather.
 library;
 
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/kit.dart' show sunDirectionForHour;
+import 'package:flutter_scene/kit.dart'
+    show WeatherPreset, sunDirectionForHour, weatherPresets;
 import 'package:flutter_scene/scene.dart' show vfxPresetById;
 import 'package:scene/scene.dart';
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
 
-/// One preset weather state: what the sky does, and what falls out of it.
-class WeatherPreset {
-  const WeatherPreset({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.icon,
-    required this.coverage,
-    required this.stormDarkening,
-    required this.turbidity,
-    this.softness = 0.12,
-    this.density = 0.95,
-    this.effect,
-    this.lightning = false,
-  });
+/// The glyph for the weather with this id.
+///
+/// The only part of a weather state that is the editor's: an engine preset
+/// carries no Material icon, and should not.
+IconData weatherPresetIcon(String id) => switch (id) {
+  'clear' => Icons.wb_sunny_outlined,
+  'fair' => Icons.filter_drama_outlined,
+  'overcast' => Icons.cloud_outlined,
+  'fog' => Icons.blur_on,
+  'rain' => Icons.water_drop_outlined,
+  'storm' => Icons.thunderstorm_outlined,
+  'snow' => Icons.ac_unit,
+  _ => Icons.cloud_queue,
+};
 
-  final String id;
-  final String name;
-  final String description;
-  final IconData icon;
-
-  /// The cloud and atmosphere settings the sky is put into.
-  final double coverage;
-  final double stormDarkening;
-  final double turbidity;
-  final double softness;
-  final double density;
-
-  /// The VFX preset added alongside the sky, or null when the weather is
-  /// nothing but sky.
-  final String? effect;
-
-  /// Whether a lightning driver is added with it.
-  final bool lightning;
-}
-
-/// The shipped weather states, driest first.
-const List<WeatherPreset> weatherPresets = [
-  WeatherPreset(
-    id: 'clear',
-    name: 'Clear',
-    description: 'Open sky, a few high wisps.',
-    icon: Icons.wb_sunny_outlined,
-    coverage: 0.12,
-    stormDarkening: 0,
-    turbidity: 6,
-    softness: 0.2,
-    density: 0.7,
-  ),
-  WeatherPreset(
-    id: 'fair',
-    name: 'Fair',
-    description: 'Scattered cloud with clear gaps.',
-    icon: Icons.filter_drama_outlined,
-    coverage: 0.45,
-    stormDarkening: 0,
-    turbidity: 10,
-  ),
-  WeatherPreset(
-    id: 'overcast',
-    name: 'Overcast',
-    description: 'A solid deck and flat, grey light.',
-    icon: Icons.cloud_outlined,
-    coverage: 0.92,
-    stormDarkening: 0.45,
-    turbidity: 14,
-    softness: 0.28,
-  ),
-  WeatherPreset(
-    id: 'fog',
-    name: 'Fog',
-    description: 'Low cloud, plus drifting ground fog.',
-    icon: Icons.blur_on,
-    coverage: 0.7,
-    stormDarkening: 0.3,
-    turbidity: 18,
-    softness: 0.35,
-    effect: 'groundFog',
-  ),
-  WeatherPreset(
-    id: 'rain',
-    name: 'Rain',
-    description: 'Heavy cloud and falling rain.',
-    icon: Icons.water_drop_outlined,
-    coverage: 0.95,
-    stormDarkening: 0.55,
-    turbidity: 16,
-    softness: 0.3,
-    effect: 'rain',
-  ),
-  WeatherPreset(
-    id: 'storm',
-    name: 'Thunderstorm',
-    description: 'Rain, gloom, and lightning with its thunder.',
-    icon: Icons.thunderstorm_outlined,
-    coverage: 1.0,
-    stormDarkening: 0.8,
-    turbidity: 18,
-    softness: 0.22,
-    effect: 'rain',
-    lightning: true,
-  ),
-  WeatherPreset(
-    id: 'snow',
-    name: 'Snow',
-    description: 'Flat white cloud and drifting flakes.',
-    icon: Icons.ac_unit,
-    coverage: 0.9,
-    stormDarkening: 0.35,
-    turbidity: 8,
-    softness: 0.34,
-    effect: 'snow',
-  ),
-];
-
-/// The Weather panel.
-class WeatherPanel extends StatefulWidget {
-  const WeatherPanel({super.key, required this.controller});
+/// The weather controls, shown inside the sky's own setup.
+class WeatherControls extends StatefulWidget {
+  const WeatherControls({super.key, required this.controller});
 
   final EditorController controller;
 
   @override
-  State<WeatherPanel> createState() => _WeatherPanelState();
+  State<WeatherControls> createState() => _WeatherControlsState();
 }
 
-class _WeatherPanelState extends State<WeatherPanel> {
+class _WeatherControlsState extends State<WeatherControls> {
   EditorController get _ctrl => widget.controller;
 
   double _hour = 12;
@@ -164,7 +69,7 @@ class _WeatherPanelState extends State<WeatherPanel> {
   }
 
   @override
-  void didUpdateWidget(WeatherPanel oldWidget) {
+  void didUpdateWidget(WeatherControls oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onChanged);
@@ -283,8 +188,8 @@ class _WeatherPanelState extends State<WeatherPanel> {
   @override
   Widget build(BuildContext context) {
     final sky = _sky;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const EditorSectionHeader(label: 'Time of day'),
         _TimeOfDay(
@@ -341,7 +246,6 @@ class _WeatherPanelState extends State<WeatherPanel> {
             onCommit: _applyWind,
           ),
         ],
-        if (sky != null) ...[const SizedBox(height: 12), _SkyReadout(sky: sky)],
       ],
     );
   }
@@ -605,7 +509,7 @@ class _WeatherTile extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                preset.icon,
+                weatherPresetIcon(preset.id),
                 size: 17,
                 color: selected ? editorAccentColor : editorMutedTextColor,
               ),
@@ -622,52 +526,6 @@ class _WeatherTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// What the sky is currently set to, so the panel's own state and the
-/// document's cannot drift apart unnoticed.
-class _SkyReadout extends StatelessWidget {
-  const _SkyReadout({required this.sky});
-
-  final WeatherSkySpec sky;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget row(String label, String value) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(
-        children: [
-          SizedBox(width: 96, child: Text(label, style: editorDetailText)),
-          Text(value, style: editorBodyText),
-        ],
-      ),
-    );
-
-    return Container(
-      padding: const EdgeInsets.all(9),
-      decoration: editorPanelBox(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Current sky', style: editorSubheadText),
-          const SizedBox(height: 5),
-          row('Coverage', '${(sky.coverage * 100).round()}%'),
-          row('Overcast', '${(sky.stormDarkening * 100).round()}%'),
-          row('Turbidity', sky.turbidity.toStringAsFixed(1)),
-          row(
-            'Wind',
-            '${sky.wind.x.toStringAsFixed(2)}, '
-                '${sky.wind.y.toStringAsFixed(2)}',
-          ),
-          const SizedBox(height: 5),
-          Text(
-            'Every field is editable under Stage in the inspector.',
-            style: editorMicroText,
-          ),
-        ],
       ),
     );
   }
