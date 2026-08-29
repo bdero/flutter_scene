@@ -1082,9 +1082,9 @@ base class Node implements SceneGraph {
   ///
   /// To enumerate animations parsed from a model, use [parsedAnimations] or
   /// [findAnimationByName].
-  AnimationClip createAnimationClip(Animation animation) {
+  AnimationClip createAnimationClip(Animation animation, {String? key}) {
     _animationPlayer ??= AnimationPlayer();
-    return _animationPlayer!.createAnimationClip(animation, this);
+    return _animationPlayer!.createAnimationClip(animation, this, key: key);
   }
 
   /// Unregisters [clip] from this node's animation player so it no longer

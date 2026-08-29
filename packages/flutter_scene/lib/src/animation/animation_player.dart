@@ -16,13 +16,28 @@ class AnimationPlayer {
   final Map<Node, AnimationTransforms> _targetTransforms = {};
   final Map<String, AnimationClip> _clips = {};
 
+  // Reused across frames: a rig is hundreds of nodes and this runs every
+  // frame, so the maps are cleared rather than rebuilt.
+  final Map<Node, double> _weightTotals = {};
+  final Map<Node, double> _weightMultipliers = {};
+
   /// Instantiates [animation] as an [AnimationClip] bound to [bindTarget]
   /// and registers it with this player.
   ///
   /// The clip starts paused at time `0`; call [AnimationClip.play] to
-  /// begin playback. Subsequent calls with the same [Animation.name]
-  /// replace the previously registered clip.
-  AnimationClip createAnimationClip(Animation animation, Node bindTarget) {
+  /// begin playback. Subsequent calls with the same [key] replace the
+  /// previously registered clip, and [key] defaults to the animation's name,
+  /// so registering the same animation twice replaces it.
+  ///
+  /// Pass a [key] to hold two instances of one animation at once. That is
+  /// what a layered animator needs: an upper-body layer and a base layer can
+  /// both play the same clip, masked differently and at different weights,
+  /// and they have to be two clips to do it.
+  AnimationClip createAnimationClip(
+    Animation animation,
+    Node bindTarget, {
+    String? key,
+  }) {
     final clip = AnimationClip(animation, bindTarget);
 
     // Record the default transforms this clip will mutate. Nodes already
@@ -37,7 +52,7 @@ class AnimationPlayer {
       _recordChannelKind(transforms, binding);
     }
 
-    _clips[animation.name] = clip;
+    _clips[key ?? animation.name] = clip;
     return clip;
   }
 
@@ -109,7 +124,8 @@ class AnimationPlayer {
   /// blended result to the bound nodes.
   ///
   /// Resets each animated node to its bind pose, advances every clip by
-  /// the delta, normalizes weights when their sum exceeds `1`, and then
+  /// the delta, normalizes per node where the clips touching it sum to
+  /// more than `1`, and then
   /// writes the resulting `(translation, rotation, scale)` decomposition
   /// back to [Node.localTransform].
   void update(double deltaSeconds) {
@@ -122,17 +138,23 @@ class AnimationPlayer {
       }
     }
 
-    // Compute a weight multiplier for normalizing the animation.
-    double totalWeight = 0.0;
+    // Normalization is per node, not per player. Once a clip can be masked
+    // to part of a skeleton, the total weight on the arms and the total on
+    // the legs are different numbers: an aim clip over a run would otherwise
+    // halve the run everywhere, including on the legs the aim never touched.
+    _weightTotals.clear();
     for (final clip in _clips.values) {
-      totalWeight += clip.weight;
+      clip.accumulateWeights(_weightTotals);
     }
-    double weightMultiplier = totalWeight > 1.0 ? 1.0 / totalWeight : 1.0;
+    _weightMultipliers.clear();
+    for (final entry in _weightTotals.entries) {
+      if (entry.value > 1.0) _weightMultipliers[entry.key] = 1.0 / entry.value;
+    }
 
     // Update and apply all clips to the animation pose state.
     for (final clip in _clips.values) {
       clip.advance(deltaSeconds);
-      clip.applyToBindings(_targetTransforms, weightMultiplier);
+      clip.applyToBindings(_targetTransforms, _weightMultipliers);
     }
 
     // Apply the animated pose to the bound joints, keeping the
