@@ -24,6 +24,7 @@ import '../io/scene_io.dart';
 import '../panels/asset_browser_panel.dart';
 import '../panels/console_panel.dart';
 import '../panels/history_panel.dart';
+import '../panels/game_view_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
 import '../panels/render_graph_panel.dart';
@@ -54,6 +55,7 @@ import 'editor_dialog.dart';
 /// three panels were retired in quick succession.
 const Map<String, String> editorPanelTitles = {
   'scene': 'Scene',
+  'game': 'Game',
   'hierarchy': 'Hierarchy',
   'inspector': 'Inspector',
   'project': 'Project',
@@ -1078,6 +1080,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             id: 'visual_scripter',
                             title: 'Visual Scripter',
                             child: VisualScripterPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
+                            id: 'game',
+                            title: 'Game',
+                            child: GameViewPanel(controller: _ctrl),
                           ),
                           DockPanel(
                             id: 'hierarchy',
