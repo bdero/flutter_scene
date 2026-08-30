@@ -185,6 +185,13 @@ double _double(Object? value) => value is num ? value.toDouble() : 0;
 Map<String, Object?> encodeBlueprint(Blueprint blueprint) => {
   'version': visualScriptVersion,
   if (blueprint.name.isNotEmpty) 'name': blueprint.name,
+  // Written as deltas from the defaults, like everything else: a plain class
+  // extending a node says neither, which is what every blueprint written
+  // before these existed looks like.
+  if (blueprint.kind != BlueprintKind.blueprintClass)
+    'kind': blueprint.kind.name,
+  if (blueprint.parentClass != defaultBlueprintParent)
+    'parent': blueprint.parentClass,
   if (blueprint.variables.isNotEmpty)
     'variables': [
       for (final variable in blueprint.variables)
@@ -208,6 +215,10 @@ Blueprint decodeBlueprint(Map<String, Object?> json) {
   if (raw is! List) return Blueprint.of(decodeVisualScript(json));
   final blueprint = Blueprint(
     name: json['name'] is String ? json['name']! as String : '',
+    kind: BlueprintKind.parse(json['kind'] as String?),
+    parentClass: json['parent'] is String
+        ? json['parent']! as String
+        : defaultBlueprintParent,
   );
   for (final entry in raw) {
     if (entry is! Map) continue;

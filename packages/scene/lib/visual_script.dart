@@ -25,7 +25,9 @@ library;
 export 'src/visual_script/blueprint.dart'
     show
         Blueprint,
+        BlueprintKind,
         BlueprintRunner,
+        defaultBlueprintParent,
         defaultConstructionScriptName,
         defaultEventGraphName;
 export 'src/visual_script/blueprint_source.dart'

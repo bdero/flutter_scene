@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:scene/scene.dart';
@@ -12,6 +13,7 @@ import '../controller/editor_controller.dart';
 import '../inspector/euler.dart';
 import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
+import '../blueprints/blueprint_editor_screen.dart';
 import '../inspector/material_section.dart';
 import '../inspector/nav_mesh_editor.dart';
 import '../inspector/particle_emitter_controls.dart';
@@ -216,6 +218,10 @@ class _NodeInspector extends StatelessWidget {
                 materialId:
                     (component.properties['material'] as ResourceRefValue).id,
               ),
+            // A graph is drawn on a screen, not in a docked tab, so the
+            // component that holds one says where to go and opens it.
+            if (component.type == 'visualScript')
+              _EditGraphRow(controller: controller, node: node),
             // A flat surface can become an area of water where it stands,
             // which is what a lake is: not an object you place, a piece of
             // ground you say is wet.
@@ -2664,4 +2670,31 @@ class _DoubleRowState extends State<_DoubleRow> {
       ),
     );
   }
+}
+
+/// The way into a node's graph, on the component that holds it.
+class _EditGraphRow extends StatelessWidget {
+  const _EditGraphRow({required this.controller, required this.node});
+
+  final EditorController controller;
+  final NodeSpec node;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 6),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        icon: const Icon(Icons.schema_outlined, size: 14),
+        label: const Text('Edit Graph', style: TextStyle(fontSize: 11)),
+        onPressed: () => unawaited(
+          openNodeScriptEditor(
+            context: context,
+            controller: controller,
+            nodeName: node.name.isEmpty ? 'Node' : node.name,
+          ),
+        ),
+      ),
+    ),
+  );
 }

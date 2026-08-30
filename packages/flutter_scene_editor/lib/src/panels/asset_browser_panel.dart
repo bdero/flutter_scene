@@ -18,6 +18,12 @@ import 'package:forui/forui.dart';
 
 import '../shell/editor_theme.dart';
 import '../assets/asset_index.dart';
+import 'package:scene/visual_script.dart';
+
+import '../blueprints/blueprint_editor_screen.dart';
+import '../blueprints/blueprint_file.dart';
+import '../blueprints/blueprint_parents.dart';
+import '../blueprints/pick_parent_class_dialog.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_thumbnail.dart';
 import '../inspector/resource_origin.dart';
@@ -157,26 +163,106 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     return DragTarget<LocalId>(
       onWillAcceptWithDetails: (details) => _scanRoot != null,
       onAcceptWithDetails: (details) => unawaited(_makePrefab(details.data)),
-      builder: (context, candidate, rejected) => Container(
-        foregroundDecoration: candidate.isEmpty
-            ? null
-            : BoxDecoration(
-                border: Border.all(color: editorAccentColor, width: 2),
-                color: editorAccentColor.withValues(alpha: 0.07),
-              ),
-        child: _buildBrowser(
-          context,
-          visibleFiles,
-          models,
-          scenes,
-          environmentImages,
-          images,
-          materials,
-          embedded,
-          q,
+      builder: (context, candidate, rejected) => GestureDetector(
+        // Right-clicking the panel's empty space is where people go to make a
+        // new asset, in every tool that has a project browser.
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapUp: (d) => unawaited(_showCreateMenu(d.globalPosition)),
+        child: Container(
+          foregroundDecoration: candidate.isEmpty
+              ? null
+              : BoxDecoration(
+                  border: Border.all(color: editorAccentColor, width: 2),
+                  color: editorAccentColor.withValues(alpha: 0.07),
+                ),
+          child: _buildBrowser(
+            context,
+            visibleFiles,
+            models,
+            scenes,
+            environmentImages,
+            images,
+            materials,
+            embedded,
+            q,
+          ),
         ),
       ),
     );
+  }
+
+  /// The right-click-on-nothing menu: what you can make here.
+  Future<void> _showCreateMenu(Offset position) async {
+    final root = _scanRoot;
+    if (root == null) {
+      _report('Open a project first: a blueprint is a file in one.');
+      return;
+    }
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    const itemStyle = TextStyle(fontSize: 12);
+    final kind = await showMenu<BlueprintKind>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem<BlueprintKind>(
+          enabled: false,
+          height: 26,
+          child: Text('Create', style: editorMicroText),
+        ),
+        for (final kind in BlueprintKind.values)
+          PopupMenuItem(
+            value: kind,
+            height: 34,
+            child: Text(kind.label, style: itemStyle),
+          ),
+      ],
+    );
+    if (kind == null || !mounted) return;
+    await _createBlueprint(kind, root);
+  }
+
+  /// Makes a blueprint of [kind] under [root] and opens it.
+  ///
+  /// A class is asked what it extends before it exists, because the answer
+  /// decides what its graphs may assume -- which events they receive, what
+  /// `self` is. Changing it later is reparenting, and reparenting can
+  /// invalidate every node in the graph. The kinds that produce no instances,
+  /// an interface and a macro library, are not asked: there is nothing for a
+  /// parent to mean.
+  Future<void> _createBlueprint(BlueprintKind kind, String root) async {
+    var parent = defaultBlueprintParent;
+    if (kind == BlueprintKind.blueprintClass ||
+        kind == BlueprintKind.widgetBlueprint) {
+      final picked = await pickParentClass(
+        context: context,
+        all: allBlueprintParents(
+          _ctrl.componentTypes(),
+          schemaFor: _ctrl.componentSchemaFor,
+        ),
+      );
+      // Dismissing the picker cancels the whole thing: a class with no parent
+      // is not something that can exist, so there is nothing to half-make.
+      if (picked == null) return;
+      parent = picked;
+    }
+
+    final path = freeBlueprintPath(root, defaultBlueprintName(kind));
+    final file = BlueprintFile(path);
+    try {
+      await file.write(
+        newBlueprint(name: file.name, kind: kind, parentClass: parent),
+      );
+    } on Object catch (error) {
+      _report('Could not write the blueprint: $error');
+      return;
+    }
+    await _rescan();
+    if (!mounted) return;
+    await openBlueprintEditor(context: context, controller: _ctrl, file: file);
   }
 
   Widget _buildBrowser(
@@ -599,6 +685,12 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
             ),
           );
         }
+      case FileAssetKind.blueprint:
+        await openBlueprintEditor(
+          context: context,
+          controller: _ctrl,
+          file: BlueprintFile(asset.path),
+        );
       case FileAssetKind.material:
         final selected = _ctrl.selection.primary;
         if (selected != null &&
@@ -798,6 +890,7 @@ IconData _fileIcon(FileAssetKind kind) => switch (kind) {
   FileAssetKind.environmentImage => Icons.light_mode_outlined,
   FileAssetKind.image => Icons.image_outlined,
   FileAssetKind.material => Icons.brush_outlined,
+  FileAssetKind.blueprint => Icons.schema_outlined,
 };
 
 /// A collapsible project directory row.
