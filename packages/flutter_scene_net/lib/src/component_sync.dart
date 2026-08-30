@@ -285,10 +285,10 @@ final class ComponentReplica extends Replica {
   /// longer matches the other end's.
   ComponentReplica({
     required this.typeKey,
-    required this.node,
     required List<SyncedProperty> properties,
     required FsceneComponentRegistry registry,
-  }) {
+    Node? node,
+  }) : _node = node {
     for (final spec in properties) {
       final codec = registry.codecFor(spec.componentType);
       if (codec == null) throw UnknownSyncedComponent(spec.componentType);
@@ -327,13 +327,45 @@ final class ComponentReplica extends Replica {
   @override
   final String typeKey;
 
-  /// The node whose components this replicates.
-  final Node node;
+  Node? _node;
+
+  /// The node whose components this replicates, or null before one exists.
+  ///
+  /// A client learns a replica exists before it has anywhere to put it: the
+  /// spawn message arrives, the replica is built from the registry, and only
+  /// then is the node created for it. The fields are declared from the
+  /// property list alone, so the replica is complete without a node — it just
+  /// has nothing to read from or write to until [bind].
+  Node? get node => _node;
+
+  /// Attaches this replica to [node].
+  void bind(Node node) => _node = node;
+
+  /// Detaches it, on despawn.
+  void unbind() => _node = null;
 
   final List<_Bound> _bound = [];
 
   /// The declared properties, in wire order.
   Iterable<SyncedProperty> get properties => _bound.map((b) => b.spec);
+
+  /// How many fields this replica carries.
+  int get fieldCount => _bound.length;
+
+  /// The current value of the field at [index], in its wire form.
+  ///
+  /// Numbers come back as doubles, vectors as records; the shapes
+  /// [PropertyWire] converts to. For inspecting what a replica currently
+  /// holds — a debug overlay, a test standing in for the wire — without
+  /// reaching into dashwire's internals.
+  Object? valueAt(int index) => _bound[index].rep.value;
+
+  /// Sets the field at [index], as a snapshot landing does.
+  ///
+  /// Whether the change is allowed to go anywhere is dashwire's business:
+  /// a field the server owns, written on a client, is not sent. This is the
+  /// same door a snapshot comes through.
+  void setValueAt(int index, Object? value) => _bound[index].rep.value = value;
 
   /// Reads the live components into the replicated fields.
   ///
@@ -341,6 +373,7 @@ final class ComponentReplica extends Replica {
   /// value actually changed go out: dashwire tracks that per field, so a
   /// property that sits still costs nothing after the first send.
   void pull() {
+    if (_node == null) return;
     final context = SerializeContext(_scratchDocument);
     for (final bound in _bound) {
       final component = _componentFor(bound);
@@ -360,6 +393,7 @@ final class ComponentReplica extends Replica {
   ///
   /// Called on the ends without authority, after a snapshot lands.
   void push() {
+    if (_node == null) return;
     final context = RealizeContext(_scratchDocument);
     for (final bound in _bound) {
       final component = _componentFor(bound);
@@ -374,6 +408,8 @@ final class ComponentReplica extends Replica {
   }
 
   Component? _componentFor(_Bound bound) {
+    final node = _node;
+    if (node == null) return null;
     for (final component in node.getComponents<Component>()) {
       if (bound.codec.claims(component)) return component;
     }

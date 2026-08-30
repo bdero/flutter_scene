@@ -7,7 +7,6 @@ import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:scene/schema.dart';
 
 class _Pawn extends Component {
   double health = 100;
@@ -171,7 +170,7 @@ void main() {
 
       final replica = identity.replicaFor(node, registry: registry)..pull();
       expect(replica.typeKey, 'pawn');
-      expect((replica.fields[0] as Rep).value, 30);
+      expect(replica.valueAt(0), 30);
     });
 
     test('a document naming a property that no longer exists is refused', () {
