@@ -1,7 +1,7 @@
 /// The starter source for a hand-written component script.
 ///
-/// The editor writes one of these when you ask for a new component, the way
-/// Unity writes a MonoBehaviour stub. It lives here rather than in the editor
+/// The editor writes one of these when you ask for a new component. It lives
+/// here rather than in the editor
 /// so it can be checked against the extractor that has to parse it: a
 /// template the extractor cannot read is worse than no template at all.
 library;

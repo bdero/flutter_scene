@@ -1,7 +1,8 @@
 /// What the terrain tools are set to, shared by the inspector that chooses
 /// them and the viewport that applies them.
 ///
-/// Unity's shape, because it is the one people arrive knowing: a Terrain's
+/// The shape is the conventional one, because a terrain editor people arrive
+/// already knowing beats a better one they have to learn: the object's
 /// inspector carries a row of tool buttons, choosing one arms it, and the
 /// armed tool owns the left mouse button in the scene view until you choose
 /// another. That last part is the whole reason this lives outside the
@@ -15,7 +16,10 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
 
-/// The terrain tools, in the order Unity's inspector shows them.
+/// The terrain tools, in the order the inspector shows them.
+///
+/// Ordered by how often each is reached, with the two that shape the
+/// ground before the two that dress it.
 enum TerrainTool {
   /// Add a terrain tile alongside this one.
   neighbors,
@@ -33,8 +37,11 @@ enum TerrainTool {
   settings,
 }
 
-/// What [TerrainTool.paint] does with a stroke: Unity's "Paint Terrain"
-/// dropdown.
+/// What [TerrainTool.paint] does with a stroke.
+///
+/// One tool with modes rather than six tools, because they share a brush: the
+/// radius and falloff mean the same thing to all of them, and splitting them
+/// would make switching what a stroke does re-dial where it reaches.
 enum TerrainPaintMode {
   /// Raise the ground, or lower it with Shift held.
   raiseLower,
@@ -81,8 +88,9 @@ class TerrainToolController extends ChangeNotifier {
   /// The armed tool, or null when the gizmo has the mouse.
   ///
   /// One tool at a time, and choosing one is the only way a brush takes the
-  /// left button — the same bargain Unity makes, and the reason a terrain can
-  /// still be moved and rotated like any other object.
+  /// left button. That bargain is what lets a terrain still be moved and
+  /// rotated like any other object: the gizmo keeps the mouse until something
+  /// explicitly takes it.
   TerrainTool? get tool => _tool;
   set tool(TerrainTool? value) {
     if (_tool == value) return;
@@ -168,7 +176,7 @@ class TerrainToolController extends ChangeNotifier {
     );
   }
 
-  /// The brush size Unity's `[` and `]` step through.
+  /// The brush size the `[` and `]` keys step through.
   ///
   /// Multiplicative rather than a fixed step: the useful range spans two
   /// orders of magnitude, and a step that suits a footpath is imperceptible
@@ -176,7 +184,7 @@ class TerrainToolController extends ChangeNotifier {
   void nudgeRadius(double factor) =>
       updateBrush(radius: (_brush.radius * factor).clamp(0.25, 200.0));
 
-  /// The opacity Unity's `-` and `=` step through.
+  /// The opacity the `-` and `=` keys step through.
   void nudgeStrength(double delta) =>
       updateBrush(strength: (_brush.strength + delta).clamp(0.05, 10.0));
 
@@ -184,7 +192,7 @@ class TerrainToolController extends ChangeNotifier {
   ///
   /// The paint modes are the same brush shape doing different things, so the
   /// kind is derived here rather than being a second thing to keep in step
-  /// with the mode. [lower] is Shift held, which Unity uses to dig.
+  /// with the mode. [lower] is Shift held, the usual modifier for digging.
   TerrainBrush strokeBrush({bool lower = false}) => switch (_paintMode) {
     TerrainPaintMode.smooth => TerrainBrush(
       kind: TerrainBrushKind.smooth,

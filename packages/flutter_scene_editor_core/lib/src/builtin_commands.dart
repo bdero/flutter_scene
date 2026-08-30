@@ -1092,10 +1092,9 @@ final createWedgeGeometry = CommandEntry(
 
 /// Creates a terrain: the geometry behind `Add > 3D Object > Terrain`.
 ///
-/// Flat by default, because that is what a terrain is before anyone shapes it
-/// -- Unity's is a large flat plane, and starting from a landscape somebody
-/// else generated means undoing it first. Pass an [amplitude] to get the noise
-/// terrain instead.
+/// Flat by default, because that is what a terrain is before anyone shapes it:
+/// starting from a landscape somebody else generated means undoing it first.
+/// Pass an [amplitude] to get the noise terrain instead.
 ///
 /// The grid defaults to 129 samples across a 100-unit patch, so a cell is a
 /// little under a metre: fine enough that a footpath is expressible, coarse

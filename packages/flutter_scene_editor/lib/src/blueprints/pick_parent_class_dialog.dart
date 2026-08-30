@@ -1,8 +1,8 @@
 /// The Pick Parent Class dialog, asked before a Blueprint Class is made.
 ///
-/// Two lists, as Unreal has them and for the reason Unreal has them: a short
-/// Common list that covers almost every blueprint anyone makes, and All
-/// Classes underneath for the rest, searchable because the rest is long.
+/// Two lists, for the reason the split exists at all: a short Common list
+/// that covers almost every blueprint anyone makes, and All Classes
+/// underneath for the rest, searchable because the rest is long.
 ///
 /// The question is asked up front rather than left to a property afterwards
 /// because the answer decides what the blueprint's graphs can assume — which

@@ -130,7 +130,8 @@ final class ButtonBinding extends InputBinding {
 }
 
 /// A `-1..1` axis composed from two digital controls, the keyboard spelling
-/// of an analog stick axis. Both down reads as 0, matching Unity and Godot.
+/// of an analog stick axis. Both down reads as 0, which is the convention
+/// and the only answer that does not favour one key over the other.
 /// {@category Picking and input}
 final class AxisBinding extends InputBinding {
   const AxisBinding({required this.negative, required this.positive});

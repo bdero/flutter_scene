@@ -419,9 +419,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   /// The brush this stroke applies, with Shift inverting it.
   ///
-  /// Shift lowers rather than raises, which is what Unity's terrain tools do
-  /// and therefore what people try first. Alt does the same, because that is
-  /// what this editor used before and muscle memory outlives a convention
+  /// Shift lowers rather than raises, which is what people try first because
+  /// it is what sculpting tools generally do. Alt does the same, because that
+  /// is what this editor used before and muscle memory outlives a convention
   /// change.
   TerrainBrush _strokeBrush() {
     final keyboard = HardwareKeyboard.instance;
@@ -1126,7 +1126,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
       return KeyEventResult.handled;
     }
-    // Brush size and opacity, on the keys Unity uses. Only while a tool is
+    // Brush size and opacity, on the conventional keys. Only while a tool is
     // armed: the brackets belong to whoever has the mouse, and with no tool
     // armed that is not the brush.
     if (_terrainTool.active) {

@@ -1,13 +1,12 @@
 /// What a blueprint can extend, and how the picker lists it.
 ///
-/// Unreal asks this before it makes a Blueprint Class, and the question is a
-/// real one: the parent decides what the blueprint *is* — what it can be
-/// placed as, what events its graphs receive, what a graph may assume exists.
+/// Asked before the class exists, because the question is a real one: the
+/// parent decides what the blueprint *is* — what it can be placed as, what
+/// events its graphs receive, what a graph may assume exists.
 ///
-/// The list is this engine's own rather than a copy of Unreal's. Actor and
-/// Pawn mean nothing here; a node placed in a scene and a component added to
-/// one mean everything. Below the common few, All Classes is the component
-/// registry — every type this build knows, a project's own included — because
+/// The list is this engine's own. The class names other tools offer mean
+/// nothing here; a node placed in a scene and a component added to one mean
+/// everything. Below the common few, All Classes is the component registry — every type this build knows, a project's own included — because
 /// that genuinely is the set of things a blueprint could extend, and it grows
 /// when the project does.
 library;

@@ -236,7 +236,7 @@ class SceneVisualScriptHost implements VisualScriptHost {
   /// synchronous and loading a document is not: a graph cannot wait for a file
   /// mid-tick. So a blueprint spawns a copy of something the scene already
   /// holds -- the usual arrangement being a hidden template parked off to one
-  /// side -- which is the same shape as handing Unity's Instantiate a loaded
+  /// side -- which is the same shape as handing any spawn call a loaded
   /// prefab rather than a path.
   ///
   /// Returns the spawned node's name, or an empty string when there was no

@@ -1,5 +1,4 @@
-/// Starting, joining and running a session: the piece Unity calls the
-/// NetworkManager.
+/// Starting, joining and running a session.
 ///
 /// Three ways in, and the difference between them is only who is authoritative
 /// and who is looking:

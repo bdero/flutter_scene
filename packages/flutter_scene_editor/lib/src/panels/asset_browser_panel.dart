@@ -719,8 +719,8 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   /// The second half is what makes it a prefab rather than a copy: the crate
   /// in the level and the crate on disk are the same crate afterwards, so
   /// editing the asset changes the one standing in the scene. It is also what
-  /// both Unity and Unreal do when you drag an object into the content
-  /// browser, and being surprised by that is worse than being asked.
+  /// every tool with a content browser does when you drag an object into it,
+  /// and being surprised by that is worse than being asked.
   Future<void> _makePrefab(LocalId nodeId) async {
     final root = _scanRoot;
     final node = _ctrl.document.node(nodeId);
