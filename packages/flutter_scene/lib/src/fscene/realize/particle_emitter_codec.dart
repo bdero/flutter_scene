@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
+import 'package:flutter_scene/src/fscene/realize/property_map.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/geometry/billboard_geometry.dart';
@@ -104,22 +105,22 @@ MapValue encodeEmitterShape(EmitterShape shape) {
 EmitterShape decodeEmitterShape(PropertyValue? value) {
   if (value is! MapValue) return _defaultShape();
   final m = value.values;
-  return switch (_str(m, 'kind', 'cone')) {
+  return switch (m.stringAt('kind', 'cone')) {
     'point' => PointEmitterShape(
-      direction: _vec3(m, 'direction', Vector3(0, 1, 0)),
+      direction: m.vec3At('direction', Vector3(0, 1, 0)),
     ),
     'sphere' => SphereEmitterShape(
-      radius: _nonNegative(_num(m, 'radius', 1.0)),
-      surfaceOnly: _bool(m, 'surfaceOnly', false),
-      hemisphere: _bool(m, 'hemisphere', false),
+      radius: _nonNegative(m.numberAt('radius', 1.0)),
+      surfaceOnly: m.boolAt('surfaceOnly', false),
+      hemisphere: m.boolAt('hemisphere', false),
     ),
     'box' => BoxEmitterShape(
-      halfExtents: _vec3(m, 'halfExtents', Vector3.all(0.5)),
-      direction: _vec3(m, 'direction', Vector3(0, 1, 0)),
+      halfExtents: m.vec3At('halfExtents', Vector3.all(0.5)),
+      direction: m.vec3At('direction', Vector3(0, 1, 0)),
     ),
     _ => ConeEmitterShape(
-      radius: _nonNegative(_num(m, 'radius', 0.0)),
-      angle: _nonNegative(_num(m, 'angle', 0.5)),
+      radius: _nonNegative(m.numberAt('radius', 0.0)),
+      angle: _nonNegative(m.numberAt('angle', 0.5)),
     ),
   };
 }
@@ -216,18 +217,18 @@ MapValue? encodeParticleCollider(ParticleCollider collider) =>
 ParticleCollider? decodeParticleCollider(PropertyValue? value) {
   if (value is! MapValue) return null;
   final m = value.values;
-  return switch (_str(m, 'kind', '')) {
+  return switch (m.stringAt('kind', '')) {
     'plane' => ParticlePlane(
-      normal: _vec3(m, 'normal', Vector3(0, 1, 0)),
-      distance: _num(m, 'distance', 0.0),
+      normal: m.vec3At('normal', Vector3(0, 1, 0)),
+      distance: m.numberAt('distance', 0.0),
     ),
     'sphere' => ParticleSphere(
-      centre: _vec3(m, 'centre', Vector3.zero()),
-      radius: _num(m, 'radius', 1.0),
+      centre: m.vec3At('centre', Vector3.zero()),
+      radius: m.numberAt('radius', 1.0),
     ),
     'box' => ParticleBox(
-      centre: _vec3(m, 'centre', Vector3.zero()),
-      halfExtents: _vec3(m, 'halfExtents', Vector3.all(0.5)),
+      centre: m.vec3At('centre', Vector3.zero()),
+      halfExtents: m.vec3At('halfExtents', Vector3.all(0.5)),
     ),
     _ => null,
   };
@@ -238,21 +239,23 @@ ParticleCollider? decodeParticleCollider(PropertyValue? value) {
 ParticleModule? decodeParticleModule(PropertyValue? value) {
   if (value is! MapValue) return null;
   final m = value.values;
-  return switch (_str(m, 'kind', '')) {
+  return switch (m.stringAt('kind', '')) {
     'acceleration' => AccelerationModule(
-      _vec3(m, 'acceleration', Vector3.zero()),
+      m.vec3At('acceleration', Vector3.zero()),
     ),
-    'linearDrag' => LinearDragModule(_nonNegative(_num(m, 'coefficient', 0.0))),
+    'linearDrag' => LinearDragModule(
+      _nonNegative(m.numberAt('coefficient', 0.0)),
+    ),
     'sizeOverLife' => SizeOverLifeModule(
       decodeFloatDistribution(m['scale'], fallback: 1.0),
     ),
     'colorOverLife' => ColorOverLifeModule(decodeColorDistribution(m['color'])),
     'flipbook' => _decodeFlipbook(m),
     'turbulence' => TurbulenceModule(
-      strength: _num(m, 'strength', 1.0),
-      frequency: _num(m, 'frequency', 1.0),
-      scroll: _vec3(m, 'scroll', Vector3.zero()),
-      seed: _int(m, 'seed', 1337),
+      strength: m.numberAt('strength', 1.0),
+      frequency: m.numberAt('frequency', 1.0),
+      scroll: m.vec3At('scroll', Vector3.zero()),
+      seed: m.intAt('seed', 1337),
     ),
     'rotation' => const RotationModule(),
     'collision' => _decodeCollision(m),
@@ -267,27 +270,27 @@ CollisionModule _decodeCollision(Map<String, PropertyValue> m) {
       for (final entry in raw.values)
         if (decodeParticleCollider(entry) case final collider?) collider,
   ];
-  final response = _str(m, 'response', 'bounce');
+  final response = m.stringAt('response', 'bounce');
   return CollisionModule(
     colliders: colliders,
     response: ParticleCollisionResponse.values.firstWhere(
       (value) => value.name == response,
       orElse: () => ParticleCollisionResponse.bounce,
     ),
-    restitution: _num(m, 'restitution', 0.35),
-    friction: _num(m, 'friction', 0.2),
-    radius: _num(m, 'radius', 0.0),
-    lifetimeLoss: _num(m, 'lifetimeLoss', 0.0),
+    restitution: m.numberAt('restitution', 0.35),
+    friction: m.numberAt('friction', 0.2),
+    radius: m.numberAt('radius', 0.0),
+    lifetimeLoss: m.numberAt('lifetimeLoss', 0.0),
   );
 }
 
 FlipbookModule _decodeFlipbook(Map<String, PropertyValue> m) {
-  final frameCount = _int(m, 'frameCount', 1);
-  final fps = _num(m, 'framesPerSecond', 0.0);
+  final frameCount = m.intAt('frameCount', 1);
+  final fps = m.numberAt('framesPerSecond', 0.0);
   return FlipbookModule(
     frameCount: frameCount < 1 ? 1 : frameCount,
     framesPerSecond: fps > 0 ? fps : null,
-    randomStartFrame: _bool(m, 'randomStartFrame', false),
+    randomStartFrame: m.boolAt('randomStartFrame', false),
   );
 }
 
@@ -308,9 +311,9 @@ ParticleBurst? decodeParticleBurst(PropertyValue? value) {
   final m = value.values;
   final cycles = m['cycles'];
   return ParticleBurst(
-    time: _nonNegative(_num(m, 'time', 0.0)),
-    count: _int(m, 'count', 0) < 0 ? 0 : _int(m, 'count', 0),
-    interval: _num(m, 'interval', 0.0),
+    time: _nonNegative(m.numberAt('time', 0.0)),
+    count: m.intAt('count', 0) < 0 ? 0 : m.intAt('count', 0),
+    interval: m.numberAt('interval', 0.0),
     cycles: cycles is IntValue ? (cycles.value < 1 ? 1 : cycles.value) : null,
   );
 }
@@ -328,19 +331,19 @@ ParticleBurst? decodeParticleBurst(PropertyValue? value) {
 ParticleSystem particleSystemFromProperties(
   Map<String, PropertyValue> properties,
 ) {
-  final fixedStep = switch (_num(properties, 'fixedStep', _kFixedStep)) {
+  final fixedStep = switch (properties.numberAt('fixedStep', _kFixedStep)) {
     final step when step > 0 => step,
     _ => _kFixedStep,
   };
-  var maxFrameTime = _num(properties, 'maxFrameTime', _kMaxFrameTime);
+  var maxFrameTime = properties.numberAt('maxFrameTime', _kMaxFrameTime);
   if (maxFrameTime < fixedStep) maxFrameTime = fixedStep;
-  final duration = _num(properties, 'duration', _kDuration);
-  final maxParticles = _int(properties, 'maxParticles', _kMaxParticles);
+  final duration = properties.numberAt('duration', _kDuration);
+  final maxParticles = properties.intAt('maxParticles', _kMaxParticles);
   return ParticleSystem(
     maxParticles: maxParticles < 1 ? 1 : maxParticles,
     shape: _shapeFromProperties(properties),
     spawner: Spawner(
-      rate: _nonNegative(_num(properties, 'emitRate', _kEmitRate)),
+      rate: _nonNegative(properties.numberAt('emitRate', _kEmitRate)),
       bursts: _burstsFromProperties(properties),
     ),
     modules: _modulesFromProperties(properties),
@@ -350,13 +353,13 @@ ParticleSystem particleSystemFromProperties(
     startRotation: _dist(properties, 'startRotation', 0),
     startAngularVelocity: _dist(properties, 'startAngularVelocity', 0),
     startColor: decodeColorDistribution(properties['startColor']),
-    gravity: _vec3(properties, 'gravity', Vector3.zero()),
-    looping: _bool(properties, 'looping', true),
+    gravity: properties.vec3At('gravity', Vector3.zero()),
+    looping: properties.boolAt('looping', true),
     duration: duration > 0 ? duration : _kDuration,
     fixedStep: fixedStep,
     maxFrameTime: maxFrameTime,
-    seed: _int(properties, 'seed', 0),
-    prewarm: _nonNegative(_num(properties, 'prewarm', 0)),
+    seed: properties.intAt('seed', 0),
+    prewarm: _nonNegative(properties.numberAt('prewarm', 0)),
   );
 }
 
@@ -414,9 +417,9 @@ EmitterShape _shapeFromProperties(Map<String, PropertyValue> p) {
   final shape = p['shape'];
   if (shape is MapValue) return decodeEmitterShape(shape);
   // Legacy flat keys, from before the shape union.
-  final radius = _nonNegative(_num(p, 'shapeRadius', _kDefaultShapeRadius));
-  final angle = _nonNegative(_num(p, 'shapeAngle', _kDefaultShapeAngle));
-  return switch (_str(p, 'shapeType', 'cone')) {
+  final radius = _nonNegative(p.numberAt('shapeRadius', _kDefaultShapeRadius));
+  final angle = _nonNegative(p.numberAt('shapeAngle', _kDefaultShapeAngle));
+  return switch (p.stringAt('shapeType', 'cone')) {
     'point' => PointEmitterShape(),
     'sphere' => SphereEmitterShape(radius: radius),
     'box' => BoxEmitterShape(halfExtents: Vector3.all(radius)),
@@ -437,7 +440,7 @@ List<ParticleModule> _modulesFromProperties(Map<String, PropertyValue> p) {
   // (decodeParticleCurve(null) is a constant-zero curve, which would shrink
   // every particle to nothing). Apply the semantic default (size x1, opaque
   // white) when the property is missing.
-  final drag = _num(p, 'drag', 0);
+  final drag = p.numberAt('drag', 0);
   final sizeOverLife = p['sizeOverLife'];
   final colorOverLife = p['colorOverLife'];
   return [
@@ -1204,39 +1207,6 @@ class MeshParticleEmitterCodec
 // --- Small tolerant readers over MapValue/property bags ---
 
 double _nonNegative(double value) => value < 0 ? 0 : value;
-
-double _num(Map<String, PropertyValue> p, String key, double fallback) {
-  final v = p[key];
-  return v is DoubleValue
-      ? v.value
-      : v is IntValue
-      ? v.value.toDouble()
-      : fallback;
-}
-
-int _int(Map<String, PropertyValue> p, String key, int fallback) {
-  final v = p[key];
-  return v is IntValue
-      ? v.value
-      : v is DoubleValue
-      ? v.value.round()
-      : fallback;
-}
-
-bool _bool(Map<String, PropertyValue> p, String key, bool fallback) {
-  final v = p[key];
-  return v is BoolValue ? v.value : fallback;
-}
-
-String _str(Map<String, PropertyValue> p, String key, String fallback) {
-  final v = p[key];
-  return v is StringValue ? v.value : fallback;
-}
-
-Vector3 _vec3(Map<String, PropertyValue> p, String key, Vector3 fallback) {
-  final v = p[key];
-  return v is Vec3Value ? v.value.clone() : fallback;
-}
 
 FloatDistribution _dist(
   Map<String, PropertyValue> p,

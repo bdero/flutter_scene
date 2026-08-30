@@ -402,7 +402,7 @@ class FixedAim extends CameraAim {
     : rotation = rotation ?? Quaternion.identity();
 
   /// The rotation held every frame.
-  final Quaternion rotation;
+  Quaternion rotation;
 
   @override
   Quaternion solve(CameraSolveContext context, Vector3 position) => rotation;
