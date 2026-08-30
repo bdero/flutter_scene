@@ -43,7 +43,7 @@ DockLayout defaultEditorDockLayout() {
               Axis.horizontal,
               [
                 DockTabs(['hierarchy']),
-                DockTabs(['scene']),
+                DockTabs(['scene', 'game']),
               ],
               [0.26, 0.74],
             ),
