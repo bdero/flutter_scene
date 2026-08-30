@@ -19,6 +19,7 @@ import 'package:flutter_scene/scene.dart' show Component, Node;
 
 import 'component_sync.dart';
 import 'network_events.dart';
+import 'network_ownership.dart';
 
 /// Marks a node as replicated, and says what about it replicates.
 ///
@@ -31,8 +32,11 @@ class NetworkIdentityComponent extends Component {
     this.typeKey = 'entity',
     List<SyncedProperty> synced = const [],
     List<NetworkEvent> events = const [],
+    Set<OwnershipPermission> ownership = const {},
+    this.keepOnOwnerLeave = false,
   }) : synced = List.of(synced),
-       events = List.of(events);
+       events = List.of(events),
+       ownership = Set.of(ownership);
 
   /// The replica type both ends look this object up by.
   ///
@@ -43,6 +47,21 @@ class NetworkIdentityComponent extends Component {
 
   /// Which component properties replicate, in wire order.
   final List<SyncedProperty> synced;
+
+  /// What may be done with this object's ownership.
+  ///
+  /// Empty means static: nobody takes it, nobody asks for it. That being the
+  /// locked-down case is deliberate — the safe default should be the one you
+  /// get by not thinking about it.
+  final Set<OwnershipPermission> ownership;
+
+  /// Whether the object outlives the client that owned it.
+  ///
+  /// Off by default, because most owned objects *are* that client: their
+  /// character, their cursor, their held item. On is for something they merely
+  /// happened to be holding — a crate mid-flight — which should stay in the
+  /// world and pass to the authority.
+  bool keepOnOwnerLeave;
 
   /// The events this object can send, in wire order.
   ///
@@ -93,6 +112,16 @@ const List<ComponentPropertyDef> syncedPropertyFields = [
         'never dies.',
   ),
   ComponentPropertyDef(
+    'readableBy',
+    ComponentPropertyKind.string,
+    defaultValue: StringValue('everyone'),
+    options: ['everyone', 'ownerOnly', 'skipOwner'],
+    doc:
+        'Who receives it. ownerOnly keeps a value private to the player it '
+        'belongs to, and privately for real: the bytes are never sent, so '
+        'there is nothing in another client to read.',
+  ),
+  ComponentPropertyDef(
     'mode',
     ComponentPropertyKind.string,
     defaultValue: StringValue('stream'),
@@ -119,6 +148,7 @@ MapValue encodeSyncedProperty(SyncedProperty property) => MapValue({
   'component': StringValue(property.componentType),
   'property': StringValue(property.property),
   'authority': StringValue(property.authority.name),
+  'readableBy': StringValue(property.readableBy.name),
   'mode': StringValue(property.mode.name),
   'resolution': DoubleValue(property.resolution ?? 0),
 });
@@ -147,6 +177,13 @@ SyncedProperty? decodeSyncedProperty(PropertyValue? value) {
     authority: string('authority') == 'owner'
         ? Authority.owner
         : Authority.server,
+    readableBy: switch (string('readableBy')) {
+      'ownerOnly' => ReadScope.ownerOnly,
+      'skipOwner' => ReadScope.skipOwner,
+      // Anything unrecognized reads as everyone, which is the default and the
+      // one that cannot accidentally hide state a client needs to draw.
+      _ => ReadScope.everyone,
+    },
     mode: switch (string('mode')) {
       'onChange' => SendMode.onChange,
       'spawnOnly' => SendMode.spawnOnly,
@@ -216,6 +253,34 @@ class NetworkIdentityCodec
       },
     ),
     ComponentField(
+      const ComponentPropertyDef(
+        'ownership',
+        ComponentPropertyKind.string,
+        defaultValue: StringValue(''),
+        doc:
+            'What may be done with this object\'s ownership, as a '
+            'comma-separated set of distributable, transferable, '
+            'requestRequired and sessionOwner. Empty is static: nobody takes '
+            'it and nobody asks.',
+      ),
+      read: (c, _) => StringValue(encodeOwnership(c.ownership)),
+      write: (c, value, _) {
+        if (value is! StringValue) return;
+        c.ownership
+          ..clear()
+          ..addAll(decodeOwnership(value.value));
+      },
+    ),
+    ComponentField.boolean(
+      'keepOnOwnerLeave',
+      defaultValue: false,
+      doc:
+          'Whether the object outlives the client that owned it, passing to '
+          'the authority instead of being removed with them.',
+      get: (c) => c.keepOnOwnerLeave,
+      set: (c, v) => c.keepOnOwnerLeave = v,
+    ),
+    ComponentField(
       ComponentPropertyDef(
         'events',
         ComponentPropertyKind.list,
@@ -247,3 +312,28 @@ class NetworkIdentityCodec
   NetworkIdentityComponent create(PropertyReader props) =>
       NetworkIdentityComponent(typeKey: props.string('typeKey'));
 }
+
+/// The document form of an ownership permission set.
+///
+/// A comma-separated list rather than four booleans, because it reads as one
+/// decision — what may be done with this — and because an empty string is a
+/// clearer "nothing" than four unchecked boxes.
+String encodeOwnership(Set<OwnershipPermission> permissions) => [
+  // Written in enum order, so the same set always produces the same string
+  // and a document does not churn on save.
+  for (final permission in OwnershipPermission.values)
+    if (permissions.contains(permission)) permission.name,
+].join(',');
+
+/// Reads a permission set written by [encodeOwnership].
+///
+/// Unknown names are skipped rather than refused: a document from a newer
+/// build should lose the permission it names, not the whole object.
+Set<OwnershipPermission> decodeOwnership(String encoded) => {
+  for (final name in encoded.split(','))
+    if (OwnershipPermission.values
+            .where((permission) => permission.name == name.trim())
+            .firstOrNull
+        case final permission?)
+      permission,
+};

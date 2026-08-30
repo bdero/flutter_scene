@@ -41,30 +41,41 @@ void main() {
     root = Node(name: 'scene');
   });
 
-  NetworkPrefabs table({List<String> types = const ['player']}) =>
-      NetworkPrefabs(
-        prefabs: [
-          for (final type in types)
-            NetworkPrefab(
-              typeKey: type,
-              synced: const [SyncedProperty('pawn', 'health')],
-              build: () {
-                final node = Node(name: type)..addComponent(_Pawn());
-                root.add(node);
-                return node;
-              },
-            ),
-        ],
-        registry: components,
-      );
+  NetworkPrefabs table({
+    List<String> types = const ['player'],
+    Set<OwnershipPermission> ownership = const {},
+    bool keepOnOwnerLeave = false,
+  }) => NetworkPrefabs(
+    prefabs: [
+      for (final type in types)
+        NetworkPrefab(
+          typeKey: type,
+          synced: const [SyncedProperty('pawn', 'health')],
+          ownership: ownership,
+          keepOnOwnerLeave: keepOnOwnerLeave,
+          build: () {
+            final node = Node(name: type)..addComponent(_Pawn());
+            root.add(node);
+            return node;
+          },
+        ),
+    ],
+    registry: components,
+  );
 
   NetworkSession session({
     NetworkRole role = NetworkRole.host,
     ConnectionApprover? approve,
     List<String> types = const ['player'],
+    Set<OwnershipPermission> ownership = const {},
+    bool keepOnOwnerLeave = false,
   }) => NetworkSession(
     role: role,
-    prefabs: table(types: types),
+    prefabs: table(
+      types: types,
+      ownership: ownership,
+      keepOnOwnerLeave: keepOnOwnerLeave,
+    ),
     playerPrefab: 'player',
     approve: approve,
   );
@@ -289,6 +300,116 @@ void main() {
       final s = session()..start();
       s.stop();
       expect(s.start, returnsNormally);
+    });
+  });
+
+  group('ownership', () {
+    test('a spawned object belongs to the peer it was spawned for', () {
+      final s = session()..start();
+      final client = s.admit(7, const ConnectionApproval.approve())!;
+      expect(client.ownership.owner, 7);
+      expect(client.replica!.owner, 7);
+    });
+
+    test('it carries the prefab\'s permissions', () {
+      final s = session(ownership: {OwnershipPermission.transferable})..start();
+      final client = s.admit(7, const ConnectionApproval.approve())!;
+      expect(client.ownership.permissions, {OwnershipPermission.transferable});
+    });
+
+    test('handing it over moves the replica\'s owner too', () {
+      // The replica's owner is what the wire enforces; the two drifting apart
+      // means the rules say one thing and the transport does another.
+      final s = session(ownership: {OwnershipPermission.transferable})..start();
+      final client = s.admit(7, const ConnectionApproval.approve())!;
+      expect(s.giveOwnership(7, 9).granted, isTrue);
+      expect(client.replica!.owner, 9);
+    });
+
+    test('a static object is not handed over', () {
+      final s = session()..start();
+      final client = s.admit(7, const ConnectionApproval.approve())!;
+      expect(s.giveOwnership(7, 9).refusal, OwnershipRefusal.notTransferable);
+      expect(client.replica!.owner, 7);
+    });
+
+    test('only the authority decides who owns what', () {
+      // Deciding on a client and announcing it is how two clients end up each
+      // believing they own the same crate.
+      final s = session(
+        role: NetworkRole.client,
+        ownership: {OwnershipPermission.transferable},
+      )..start();
+      s.admit(7, const ConnectionApproval.approve());
+      expect(s.giveOwnership(7, 9).refusal, OwnershipRefusal.notAuthority);
+    });
+
+    test('an approved request moves it', () {
+      final s = session(ownership: {OwnershipPermission.requestRequired})
+        ..start();
+      final client = s.admit(7, const ConnectionApproval.approve())!;
+      expect(s.requestOwnership(7, 9).granted, isTrue);
+      expect(client.replica!.owner, 7, reason: 'sent, not granted');
+      expect(s.answerOwnershipRequest(7, approve: true).granted, isTrue);
+      expect(client.replica!.owner, 9);
+    });
+
+    test('an object nobody has is refused rather than crashing', () {
+      final s = session()..start();
+      expect(s.giveOwnership(99, 1).granted, isFalse);
+      expect(s.requestOwnership(99, 1).granted, isFalse);
+      expect(s.answerOwnershipRequest(99, approve: true).granted, isFalse);
+    });
+  });
+
+  group('when an owner leaves', () {
+    test('their object goes with them by default', () {
+      // Most owned objects are that client: their character, their cursor.
+      final s = session()..start();
+      s.admit(7, const ConnectionApproval.approve());
+      s.drop(7);
+      expect(root.children, isEmpty);
+    });
+
+    test(
+      'an object marked to outlive them stays, and passes to the authority',
+      () {
+        // Something they merely happened to be holding -- a crate mid-flight --
+        // should stay in the world rather than blink out.
+        final s = session(keepOnOwnerLeave: true)..start();
+        final client = s.admit(7, const ConnectionApproval.approve())!;
+        s.drop(7);
+        expect(root.children, hasLength(1));
+        expect(client.ownership.owner, serverPeerId);
+        expect(client.replica!.owner, serverPeerId);
+        expect(client.replica!.node, isNotNull, reason: 'still driven');
+      },
+    );
+
+    test('and that is a different event from a despawn', () {
+      // A dropped weapon should probably keep falling, not vanish.
+      final s = session(keepOnOwnerLeave: true)..start();
+      NetworkClient? left;
+      NetworkClient? despawned;
+      s.onOwnerLeft = (client) {
+        left = client;
+      };
+      s.onPlayerDespawned = (client) {
+        despawned = client;
+      };
+      s.admit(7, const ConnectionApproval.approve());
+      s.drop(7);
+      expect(left?.peerId, 7);
+      expect(despawned, isNull);
+    });
+
+    test('a lock does not keep an object with a client who left', () {
+      // The authority overriding is not a transfer anybody asked for.
+      final s = session(keepOnOwnerLeave: true)..start();
+      final client = s.admit(7, const ConnectionApproval.approve())!;
+      client.ownership.setLocked(true);
+      s.drop(7);
+      expect(client.ownership.owner, serverPeerId);
     });
   });
 }

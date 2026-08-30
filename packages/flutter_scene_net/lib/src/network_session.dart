@@ -24,7 +24,11 @@ import 'dart:async';
 import 'package:flutter_scene/scene.dart' show Node;
 
 import 'component_sync.dart';
+import 'network_ownership.dart';
 import 'network_prefabs.dart';
+
+/// The peer id the server holds. Peer numbering starts at the authority.
+const int serverPeerId = 1;
 
 /// Which end of a session this process is.
 enum NetworkRole {
@@ -93,7 +97,13 @@ typedef ConnectionApprover =
 
 /// One connected peer, and what was spawned for it.
 class NetworkClient {
-  NetworkClient({required this.peerId, this.player, this.replica});
+  NetworkClient({
+    required this.peerId,
+    this.player,
+    this.replica,
+    Ownership? ownership,
+    this.keepOnOwnerLeave = false,
+  }) : ownership = ownership ?? Ownership(owner: peerId);
 
   /// The peer's id. The server itself is peer 1, as dashwire numbers them.
   final int peerId;
@@ -103,6 +113,12 @@ class NetworkClient {
 
   /// The replica driving that node.
   final ComponentReplica? replica;
+
+  /// Who owns the spawned object, and what may be done about it.
+  final Ownership ownership;
+
+  /// Whether the object outlives this client.
+  final bool keepOnOwnerLeave;
 }
 
 /// Two sessions started at once, or one started twice.
@@ -186,6 +202,16 @@ class NetworkSession {
   /// Whether this end decides what is true.
   bool get isAuthority => role.isAuthority;
 
+  /// The peer that owns the session itself. The authority, by default.
+  ///
+  /// Separate from "the server" because they need not be the same in every
+  /// topology: a session can be hosted by one machine and run by another.
+  int sessionOwner = serverPeerId;
+
+  /// Whether [peerId] owns the object spawned for [ownerOf].
+  bool ownsObjectOf(int peerId, int ownerOf) =>
+      _clients[ownerOf]?.ownership.owner == peerId;
+
   /// Called after a player is spawned, for whatever the game wants to do with
   /// it — parent it, position it, hand it an input source.
   void Function(NetworkClient client)? onPlayerSpawned;
@@ -255,10 +281,64 @@ class NetworkSession {
       peerId: peerId,
       player: player,
       replica: replica,
+      ownership: Ownership(owner: peerId, permissions: prefab.ownership),
+      keepOnOwnerLeave: prefab.keepOnOwnerLeave,
     );
     _clients[peerId] = client;
     onPlayerSpawned?.call(client);
     return client;
+  }
+
+  /// Hands the object spawned for [objectOf] to [peerId].
+  ///
+  /// Only the authority may: deciding on a client and announcing it is how two
+  /// clients end up each believing they own the same crate.
+  OwnershipOutcome giveOwnership(int objectOf, int peerId) {
+    final client = _clients[objectOf];
+    if (client == null) {
+      return const OwnershipOutcome.refused(
+        OwnershipRefusal.notTransferable,
+        serverPeerId,
+      );
+    }
+    if (!isAuthority) {
+      return OwnershipOutcome.refused(
+        OwnershipRefusal.notAuthority,
+        client.ownership.owner,
+      );
+    }
+    final outcome = client.ownership.give(peerId, sessionOwner: sessionOwner);
+    if (outcome.granted) client.replica?.owner = peerId;
+    return outcome;
+  }
+
+  /// Asks the owner of [objectOf]'s object to hand it to [peerId].
+  OwnershipOutcome requestOwnership(int objectOf, int peerId) {
+    final client = _clients[objectOf];
+    if (client == null) {
+      return const OwnershipOutcome.refused(
+        OwnershipRefusal.notTransferable,
+        serverPeerId,
+      );
+    }
+    return client.ownership.request(peerId, sessionOwner: sessionOwner);
+  }
+
+  /// The owner's answer to a pending request on [objectOf]'s object.
+  OwnershipOutcome answerOwnershipRequest(
+    int objectOf, {
+    required bool approve,
+  }) {
+    final client = _clients[objectOf];
+    if (client == null) {
+      return const OwnershipOutcome.refused(
+        OwnershipRefusal.notTransferable,
+        serverPeerId,
+      );
+    }
+    final outcome = client.ownership.answerRequest(approve: approve);
+    if (outcome.granted) client.replica?.owner = outcome.owner;
+    return outcome;
   }
 
   /// Removes [peerId] and whatever was spawned for them.
@@ -268,8 +348,27 @@ class NetworkSession {
   void drop(int peerId) {
     final client = _clients.remove(peerId);
     if (client == null) return;
+
+    // An object somebody merely happened to be holding stays in the world and
+    // passes to the authority; an object that *was* them goes with them. Most
+    // owned objects are the second kind -- their character, their cursor --
+    // which is why keeping it is the opt-in.
+    if (client.keepOnOwnerLeave && client.player != null) {
+      client.ownership.give(sessionOwner, force: true);
+      client.replica?.owner = sessionOwner;
+      onOwnerLeft?.call(client);
+      return;
+    }
+
     onPlayerDespawned?.call(client);
     client.replica?.unbind();
     client.player?.detach();
   }
+
+  /// Called when an object outlived the client that owned it.
+  ///
+  /// It is still in the scene and now belongs to the authority, which is a
+  /// different event from a despawn and wants a different reaction: a dropped
+  /// weapon should probably keep falling, not vanish.
+  void Function(NetworkClient client)? onOwnerLeft;
 }

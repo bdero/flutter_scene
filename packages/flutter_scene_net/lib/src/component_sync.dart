@@ -35,6 +35,7 @@ class SyncedProperty {
     this.componentType,
     this.property, {
     this.authority = Authority.server,
+    this.readableBy = ReadScope.everyone,
     this.mode = SendMode.stream,
     this.resolution,
   });
@@ -48,6 +49,16 @@ class SyncedProperty {
   /// Who is allowed to change it. Server by default: a client that could
   /// write its own health is a client that never dies.
   final Authority authority;
+
+  /// Who receives it at all.
+  ///
+  /// Everyone by default. [ReadScope.ownerOnly] is how a value stays private
+  /// to the player it belongs to — a hand of cards, a cooldown, a quest state
+  /// — and it is a real secret rather than a hidden one: the bytes are never
+  /// sent, so there is nothing in the client to read. [ReadScope.skipOwner]
+  /// is the opposite trade, for a value the owner is already computing
+  /// locally and would only be corrected by.
+  final ReadScope readableBy;
 
   /// How often it goes out. Position streams; a name or a team changes rarely
   /// and must not be missed, so [SendMode.onChange] suits it better.
@@ -321,6 +332,7 @@ final class ComponentReplica extends Replica {
             codec: wire.codec(spec.resolution),
             mode: spec.mode,
             write: spec.authority,
+            read: spec.readableBy,
           ),
         ),
       );
@@ -384,11 +396,58 @@ final class ComponentReplica extends Replica {
   /// has nothing to read from or write to until [bind].
   Node? get node => _node;
 
+  /// Whether this replica is attached to something in the scene.
+  ///
+  /// The question every piece of gameplay code has to ask before it touches a
+  /// replicated value: a replica exists from the moment the spawn message
+  /// arrives, and there is nothing to read or write until it has a node.
+  bool get isSpawned => _node != null;
+
+  /// Called when the replica is attached to a node.
+  ///
+  /// The place to start anything that only makes sense once the object is in
+  /// the world -- subscribing to input, starting a sound. It fires after the
+  /// spawn payload has been applied, so the node is already at the state the
+  /// authority sent rather than at its prefab defaults.
+  void Function(Node node)? onSpawn;
+
+  /// Called before the replica is detached.
+  ///
+  /// The matching place to stop what [onSpawn] started. It fires while the
+  /// node is still attached, so there is something to clean up against.
+  void Function(Node node)? onDespawn;
+
   /// Attaches this replica to [node].
-  void bind(Node node) => _node = node;
+  void bind(Node node) {
+    _node = node;
+    onSpawn?.call(node);
+  }
+
+  /// Attaches to [node] and applies what has already arrived for it.
+  ///
+  /// What a spawn is, in the right order: the node takes the authority's state
+  /// before [onSpawn] runs, so a handler that reads a replicated value on
+  /// spawn reads the real one rather than a prefab default it is about to be
+  /// corrected from.
+  void spawnInto(Node node) {
+    _node = node;
+    push();
+    onSpawn?.call(node);
+  }
 
   /// Detaches it, on despawn.
-  void unbind() => _node = null;
+  void unbind() {
+    final node = _node;
+    if (node != null) onDespawn?.call(node);
+    _node = null;
+  }
+
+  /// Whether [peerId] owns this replica.
+  ///
+  /// The check that gates an owner-writable property or an owner-only event.
+  /// Asking rather than assuming matters because ownership moves: the object
+  /// you spawned may not be yours by the time you next look.
+  bool isOwnedBy(int peerId) => owner == peerId;
 
   final List<_Bound> _bound = [];
 

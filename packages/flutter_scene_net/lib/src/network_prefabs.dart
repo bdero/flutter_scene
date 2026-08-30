@@ -21,6 +21,7 @@ import 'package:flutter_scene/scene.dart' show Node;
 
 import 'component_sync.dart';
 import 'network_events.dart';
+import 'network_ownership.dart';
 import 'network_identity.dart';
 
 /// Builds the scene node for a spawned replica of one type.
@@ -35,6 +36,8 @@ class NetworkPrefab {
     required this.synced,
     required this.build,
     this.events = const [],
+    this.ownership = const {},
+    this.keepOnOwnerLeave = false,
   });
 
   /// Declares a prefab from an authored [identity].
@@ -58,6 +61,12 @@ class NetworkPrefab {
 
   /// The events it can send, in wire order.
   final List<NetworkEvent> events;
+
+  /// What may be done with its ownership.
+  final Set<OwnershipPermission> ownership;
+
+  /// Whether it outlives the client that owned it.
+  final bool keepOnOwnerLeave;
 
   /// Builds the node a spawn of this type becomes.
   final NetworkNodeBuilder build;
@@ -158,11 +167,7 @@ class NetworkPrefabs {
     if (prefab == null) return null;
     final node = prefab.build();
     if (replica is ComponentReplica) {
-      replica.bind(node);
-      // The spawn payload has already landed by the time this runs, so the
-      // node starts at the state the server sent rather than at its prefab
-      // defaults and a frame of the wrong pose.
-      replica.push();
+      replica.spawnInto(node);
     }
     return node;
   }
