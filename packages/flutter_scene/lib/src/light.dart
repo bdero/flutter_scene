@@ -595,7 +595,12 @@ class PointLight {
   /// expensive shadow type per light.
   bool castsShadow;
 
-  /// Pixel resolution of each (square) cube face's depth tile.
+  /// Pixel resolution this light asks for on each (square) cube face.
+  ///
+  /// The shared shadow atlas gives every tile one size, so this is only
+  /// honored when no directional cascade and no shadow-casting spot is
+  /// already setting it, and only for the first point caster. Otherwise the
+  /// faces render at half whatever tile size the atlas chose.
   int shadowMapResolution;
 
   /// Near clip distance of each face's shadow frustum. Geometry closer to
@@ -820,7 +825,11 @@ class SpotLight {
   /// room (shadow-casting spots are limited; the rest shade unshadowed).
   bool castsShadow;
 
-  /// Pixel resolution of this spot's (square) shadow map tile.
+  /// Pixel resolution this spot asks for on its (square) shadow map tile.
+  ///
+  /// The shared shadow atlas gives every tile one size, so this is only
+  /// honored when no directional cascade is already setting it, and only for
+  /// the first spot caster.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light

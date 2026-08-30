@@ -1083,7 +1083,10 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
     ComponentField.integer(
       'shadowMapResolution',
       defaultValue: 512,
-      doc: 'Shadow map resolution per cube face, in texels.',
+      doc:
+          'Requested shadow map resolution per cube face, in texels. The '
+          'shared atlas uses one tile size, so a directional or spot caster '
+          'already setting it wins.',
       group: 'Shadows',
       constraints: const [IntRange(1, null), PowerOfTwo(min: 64, max: 4096)],
       get: (c) => c.light.shadowMapResolution,

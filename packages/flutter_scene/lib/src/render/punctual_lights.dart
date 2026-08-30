@@ -131,23 +131,37 @@ class PunctualLighting {
 // never overwritten. Reallocates when the requested size changes (mirrors the
 // skinning joints texture); steady light counts reuse the ring.
 class _TextureRing {
-  _TextureRing({int size = 3}) : _size = size {
-    _ring = List<gpu.Texture?>.filled(_size, null);
-  }
+  _TextureRing({int size = 3}) : _ring = List<gpu.Texture?>.filled(size, null);
 
-  final int _size;
-  late final List<gpu.Texture?> _ring;
+  /// How many frames a handed-out texture must survive before its slot may be
+  /// written again, matching the depth the per-frame rings already use.
+  static const int _framesInFlight = 3;
+
+  List<gpu.Texture?> _ring;
   int _cursor = 0;
   int _width = 0;
   int _height = 0;
+  int _acquiredThisFrame = 0;
+
+  /// Marks a frame boundary, growing the ring when the frame just finished
+  /// acquired more textures than it can cover.
+  void beginFrame() {
+    final needed = _acquiredThisFrame * _framesInFlight;
+    if (needed > _ring.length) {
+      _ring = List<gpu.Texture?>.filled(needed, null);
+      _cursor = 0;
+    }
+    _acquiredThisFrame = 0;
+  }
 
   gpu.Texture acquire(int width, int height) {
     if (width != _width || height != _height) {
-      _ring.fillRange(0, _size, null);
+      _ring.fillRange(0, _ring.length, null);
       _width = width;
       _height = height;
     }
-    _cursor = (_cursor + 1) % _size;
+    _acquiredThisFrame++;
+    _cursor = (_cursor + 1) % _ring.length;
     return _ring[_cursor] ??= gpu.gpuContext.createTexture(
       gpu.StorageMode.hostVisible,
       width,
@@ -236,8 +250,15 @@ class PunctualLightBuffer {
     required Bvh bvh,
     SpotShadowFrame? spotShadows,
     PointShadowFrame? pointShadows,
+    // The shared atlas gives every tile one size, so a point light's faces
+    // render at half that rather than at its own shadowMapResolution. The
+    // shader clamps its kernel with this, so it has to be the size the faces
+    // actually got.
+    int pointFaceResolution = 512,
     bool enableFroxels = true,
   }) {
+    // One build per frame, so this is where the rings roll over.
+    _froxelRing.beginFrame();
     final packed = _packLights(
       directionals,
       points,
@@ -310,7 +331,7 @@ class PunctualLightBuffer {
         packed.params[base + 18] = light.shadowNormalBias;
         packed.params[base + 19] = light.shadowSoftness;
         packed.params[base + 20] = light.shadowDepthBias;
-        packed.params[base + 21] = 1.0 / light.shadowMapResolution;
+        packed.params[base + 21] = 1.0 / pointFaceResolution;
       }
     }
 
@@ -404,8 +425,9 @@ class PunctualLightBuffer {
   static const double _froxelFar = 100.0;
   static const int _froxelTexWidth = 1024;
 
-  // Several views can build froxels in one frame (screen views, probe
-  // faces), so this ring is deeper than the params rings.
+  // Several views build froxels in one frame (screen views, probe faces), and
+  // how many is a property of the scene, so this ring sizes itself to the
+  // busiest frame instead of guessing a depth.
   final _TextureRing _froxelRing = _TextureRing(size: 8);
 
   List<CullableLight> _cullables = const [];
