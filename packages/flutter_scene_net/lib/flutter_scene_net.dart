@@ -42,6 +42,15 @@ export 'src/network_prefabs.dart'
         NetworkNodeBuilder,
         NetworkPrefab,
         NetworkPrefabs;
+export 'src/network_session.dart'
+    show
+        ConnectionApproval,
+        ConnectionApprover,
+        NetworkClient,
+        NetworkRole,
+        NetworkSession,
+        SessionAlreadyRunning,
+        UnknownPlayerPrefab;
 export 'src/network_transform.dart' show NetworkTransformComponent;
 // TODO(lagcomp): export PhysicsWorldHistory once something consumes it. The
 // server-side rewind needs the peer's last acked tick, which the host does

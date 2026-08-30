@@ -114,6 +114,15 @@ class NetworkPrefabs {
   /// The prefab for [typeKey], or null.
   NetworkPrefab? prefabFor(String typeKey) => _prefabs[typeKey];
 
+  /// A fresh unbound replica for [typeKey], or null when nothing registers it.
+  ///
+  /// The server side of a spawn: it builds the replica itself rather than
+  /// receiving one, and binds it to the node it spawned from.
+  ComponentReplica? replicaFor(String typeKey) {
+    final prefab = _prefabs[typeKey];
+    return prefab == null ? null : _replicaFor(prefab);
+  }
+
   ComponentReplica _replicaFor(NetworkPrefab prefab) => ComponentReplica(
     typeKey: prefab.typeKey,
     properties: prefab.synced,
