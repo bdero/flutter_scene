@@ -11,6 +11,7 @@
 * Pooled render targets are released when the platform reports memory pressure. The transient pools (shadow atlas, HDR scene color, depth, the post-process chain, probe and planar captures) never evicted, so they settled at the high-water mark of every attachment shape any frame needed and held it for the life of the process; a 512x512 shadow scene pins 114 MiB this way. Set `releaseRenderTargetsOnMemoryPressure = false` to opt out.
 * `releaseTransientRenderTargets()` drops those pools on demand and returns the bytes released, for an app that knows something the platform does not.
 * `takeMemoryReport()` gains a `render targets` category, so that memory is visible at all.
+* glTF sources that spread more than four skin influences per vertex across `JOINTS_1`/`WEIGHTS_1` and beyond are merged to the strongest four and renormalized, instead of importing set 0 alone. Those meshes previously blended a fraction of a unit of weight per vertex and collapsed toward the armature origin even in the rest pose. The merge feeds the skinned pose-union bounds too, so a bone bound only in a later set no longer swings its part of the mesh outside the cull bound.
 
 ## 0.23.0
 
