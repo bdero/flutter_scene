@@ -154,7 +154,9 @@ void main() {
     testWidgets('an editable field in the strip lays out at both widths', (
       tester,
     ) async {
-      // The Project strip gives its filter the leftover room.
+      // The Project strip's filter, at the width the panel gives it. It is a
+      // fixed width and not Expanded, because the strip scrolls: see the flex
+      // group below for what asking for the leftover room does here.
       for (final width in [600.0, 120.0]) {
         await tester.pumpWidget(
           strip(
@@ -302,5 +304,70 @@ void main() {
     await tester.pumpAndSettle();
     expect(panned, 0);
     expect(tester.takeException(), isNull);
+  });
+
+  group('a child that asks for the leftover room', () {
+    // The second regression, and the same shape as the first: something in the
+    // strip that cannot be laid out against unbounded width, throwing from
+    // inside layout and taking every sibling panel's layout down with it. The
+    // Project strip gave its filter an Expanded, and one panel's toolbar left
+    // the whole editor unlaid-out and asserting on every pointer move.
+    Object? errorFrom(WidgetTester tester) => tester.takeException();
+
+    testWidgets('Expanded in the scrolling run is refused at build', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        strip(600, leading: [const Expanded(child: Text('filter'))]),
+      );
+
+      final error = errorFrom(tester);
+      expect(error, isFlutterError);
+      // Refused where the child was supplied, in words that name the fix,
+      // rather than as a RenderFlex assertion pointing inside the framework.
+      expect(
+        error.toString(),
+        allOf(
+          contains('EditorToolbarScroller'),
+          contains('unbounded width'),
+          contains('SizedBox'),
+        ),
+      );
+    });
+
+    testWidgets('Flexible is refused too', (tester) async {
+      await tester.pumpWidget(
+        strip(600, leading: [const Flexible(child: Text('filter'))]),
+      );
+
+      expect(errorFrom(tester), isFlutterError);
+    });
+
+    testWidgets('the trailing group may still flex', (tester) async {
+      // Trailing is laid out in the outer bounded row, not in the scroller, so
+      // a flex child there is legitimate and must keep working.
+      await tester.pumpWidget(
+        strip(
+          600,
+          leading: buttons(2),
+          trailing: const [Expanded(child: SizedBox(height: 24))],
+        ),
+      );
+
+      expect(errorFrom(tester), isNull);
+    });
+
+    testWidgets('a bounded field in its place lays out clean', (tester) async {
+      // The fix the error message asks for.
+      await tester.pumpWidget(
+        strip(
+          600,
+          leading: const [SizedBox(width: 180, child: Text('filter'))],
+        ),
+      );
+
+      expect(errorFrom(tester), isNull);
+      expect(find.text('filter'), findsOneWidget);
+    });
   });
 }

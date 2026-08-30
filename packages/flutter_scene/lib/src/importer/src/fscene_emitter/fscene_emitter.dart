@@ -34,6 +34,7 @@ import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
 import '../gltf/coordinate_policy.dart';
+import '../gltf/joint_influences.dart';
 import '../../gltf_light_units.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
@@ -629,9 +630,7 @@ BoundsSpec? _primitiveBounds(
   required bool alsoUsedUnskinned,
   required Map<int, List<AabbBounds?>> poseUnions,
 }) {
-  final skinnedPrimitive =
-      primitive.attributes.containsKey('JOINTS_0') &&
-      primitive.attributes.containsKey('WEIGHTS_0');
+  final skinnedPrimitive = primitiveHasJointInfluences(primitive);
   if (!skinnedPrimitive || skinnedUsers == null || skinnedUsers.isEmpty) {
     return _restBounds(primitive, doc);
   }

@@ -7,6 +7,7 @@ import '../../constants.dart';
 import 'accessor.dart';
 import 'coordinate_policy.dart';
 import 'draco/gltf_draco.dart';
+import 'joint_influences.dart';
 import 'types.dart';
 
 /// Pure-data result of packing a glTF mesh primitive into
@@ -95,7 +96,10 @@ class PackedMorphTargets {
 ///   texture_coords(2 f32), texture_coords_1(2 f32), color(4 f32),
 ///   tangent(4 f32).
 /// - Skinned (104 bytes/vertex): unskinned + joints(4 f32) +
-///   weights(4 f32).
+///   weights(4 f32). A source that spread more than four influences per
+///   vertex across several `JOINTS_n`/`WEIGHTS_n` sets is merged down to
+///   the strongest four and renormalized, so every vertex still blends a
+///   full unit of weight (see [readJointInfluences]).
 ///
 /// When the primitive omits the NORMAL attribute, glTF requires the
 /// client to generate flat normals. A vertex shared by several
@@ -185,26 +189,18 @@ PackedPrimitive packGltfPrimitive({
     bufferData,
     vertexCount,
   );
-  final hasJoints =
-      includeSkinning &&
-      primitive.attributes.containsKey('JOINTS_0') &&
-      primitive.attributes.containsKey('WEIGHTS_0');
-  final joints = hasJoints
-      ? _readVec4(
-          primitive.attributes['JOINTS_0']!,
-          accessors,
-          bufferViews,
-          bufferData,
+  final hasJoints = includeSkinning && primitiveHasJointInfluences(primitive);
+  final influences = hasJoints
+      ? readJointInfluences(
+          primitive: primitive,
+          accessors: accessors,
+          bufferViews: bufferViews,
+          bufferData: bufferData,
+          vertexCount: vertexCount,
         )
       : null;
-  final weights = hasJoints
-      ? _readVec4(
-          primitive.attributes['WEIGHTS_0']!,
-          accessors,
-          bufferViews,
-          bufferData,
-        )
-      : null;
+  final joints = influences?.joints;
+  final weights = influences?.weights;
 
   // Determine the output vertex set. With authored normals the mesh is
   // kept as-is; without them it is de-indexed for flat normals (see the
