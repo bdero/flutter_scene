@@ -345,7 +345,12 @@ export 'src/texture/external_texture.dart'
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
 export 'src/memory_report.dart'
-    show MemoryCategory, MemoryReport, takeMemoryReport;
+    show
+        MemoryCategory,
+        MemoryReport,
+        releaseRenderTargetsOnMemoryPressure,
+        releaseTransientRenderTargets,
+        takeMemoryReport;
 export 'src/texture/texture_registry.dart'
     show clearTextureCache, loadTexture, releaseTexture;
 export 'src/texture/mipmap.dart' show TextureContent;

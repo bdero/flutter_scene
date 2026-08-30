@@ -34,6 +34,7 @@ import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
 import '../gltf/bounds_baker.dart';
 import '../gltf/coordinate_policy.dart';
+import '../gltf/joint_influences.dart';
 import '../../gltf_light_units.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
@@ -361,14 +362,24 @@ void _buildAnimation(
       _ => 3,
     };
     if (property == AnimationProperty.weights && componentCount == 0) continue;
-    final keyframes = coordinatePolicy.convertAnimationValues(
+    Float32List convert(Float32List stream) => coordinatePolicy
+        .convertAnimationValues(stream, targetPath: channel.targetPath);
+
+    final keyframes = convert(
       selectGltfKeyframeValues(
         values,
         componentCount: componentCount,
         cubicSpline: isCubic,
       ),
-      targetPath: channel.targetPath,
     );
+    // A tangent is a difference of two values, so the coordinate conversion
+    // (component sign flips) applies to it exactly as it does to a value.
+    // They go in payloads of their own rather than packed back into the
+    // keyframes chunk, so the keyframes chunk stays one value per key and a
+    // reader that ignores interpolation still sees a sound linear timeline.
+    final tangents = isCubic
+        ? selectGltfKeyframeTangents(values, componentCount: componentCount)
+        : null;
 
     channels.add(
       AnimationChannelSpec(
@@ -381,6 +392,21 @@ void _buildAnimation(
           PayloadEncoding.floats,
         ),
         keyframes: _floatPayload(document, keyframes, PayloadEncoding.floats),
+        interpolation: _interpolationOf(sampler.interpolation),
+        inTangents: tangents == null
+            ? null
+            : _floatPayload(
+                document,
+                convert(tangents.inTangents),
+                PayloadEncoding.floats,
+              ),
+        outTangents: tangents == null
+            ? null
+            : _floatPayload(
+                document,
+                convert(tangents.outTangents),
+                PayloadEncoding.floats,
+              ),
       ),
     );
   }
@@ -604,9 +630,7 @@ BoundsSpec? _primitiveBounds(
   required bool alsoUsedUnskinned,
   required Map<int, List<AabbBounds?>> poseUnions,
 }) {
-  final skinnedPrimitive =
-      primitive.attributes.containsKey('JOINTS_0') &&
-      primitive.attributes.containsKey('WEIGHTS_0');
+  final skinnedPrimitive = primitiveHasJointInfluences(primitive);
   if (!skinnedPrimitive || skinnedUsers == null || skinnedUsers.isEmpty) {
     return _restBounds(primitive, doc);
   }
@@ -1184,3 +1208,16 @@ void _emitMaterialsVariants(
     );
   }
 }
+
+/// Maps a glTF sampler's interpolation name onto the document's channel
+/// modes.
+///
+/// Linear returns null rather than the enum value, so a document whose
+/// channels are all linear encodes exactly as it did before interpolation
+/// was recorded at all.
+AnimationInterpolation? _interpolationOf(String gltfInterpolation) =>
+    switch (gltfInterpolation) {
+      'STEP' => AnimationInterpolation.step,
+      'CUBICSPLINE' => AnimationInterpolation.cubic,
+      _ => null,
+    };

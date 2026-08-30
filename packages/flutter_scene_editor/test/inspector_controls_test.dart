@@ -435,6 +435,99 @@ void main() {
       expect((result[0] as Uint8List).length, 4 * 2 * 4, reason: name);
     }
   });
+
+  group('a control that asks for a share of the row', () {
+    // LabeledControlRow measures its control inside a Wrap and a FittedBox,
+    // both of which offer unbounded width. A control that wants a share of
+    // the row has no width to take a share of, and RenderFlex throws from
+    // inside layout -- which abandons the rest of the frame's layout, so the
+    // inspector came up empty and the panels around it never laid out at all.
+    // The vec4 property row did exactly this, so selecting a node with a vec4
+    // property (a water component among them) blanked the shell.
+
+    testWidgets('a flex control is refused at build', (tester) async {
+      await tester.pumpWidget(
+        themed(
+          const LabeledControlRow(
+            label: 'Colour',
+            control: Expanded(child: SizedBox(height: 20)),
+          ),
+        ),
+      );
+
+      final error = tester.takeException();
+      expect(error, isFlutterError);
+      expect(
+        error.toString(),
+        allOf(contains('LabeledControlRow'), contains('Colour')),
+      );
+    });
+
+    testWidgets('a Row of flex fields is refused too', (tester) async {
+      // The shape that actually shipped: the control itself is not flex, its
+      // fields are. A check for the control alone would wave this through.
+      await tester.pumpWidget(
+        themed(
+          const LabeledControlRow(
+            label: 'Vector',
+            control: Row(
+              children: [
+                Expanded(child: SizedBox(height: 20)),
+                Expanded(child: SizedBox(height: 20)),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isFlutterError);
+    });
+
+    testWidgets('a control that sizes itself lays out clean', (tester) async {
+      await tester.pumpWidget(
+        themed(
+          const LabeledControlRow(
+            label: 'Colour',
+            control: SizedBox(width: 120, height: 20, child: Text('control')),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('control'), findsOneWidget);
+      expect(find.text('Colour'), findsOneWidget);
+    });
+  });
+
+  group('a row that divides its width between fields', () {
+    testWidgets('lays out at the widths the inspector column allows', (
+      tester,
+    ) async {
+      // The shape the vec4 property row was rebuilt on: a plain Row with a
+      // fixed-width label, no FittedBox, so its fields can flex.
+      for (final width in [420.0, 240.0]) {
+        await tester.pumpWidget(
+          themed(
+            Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: Vec3Field(
+                  label: 'Translation',
+                  x: 1,
+                  y: 2,
+                  z: 3,
+                  onSubmit: (_) {},
+                ),
+              ),
+            ),
+          ),
+        );
+
+        expect(tester.takeException(), isNull, reason: 'at $width');
+      }
+    });
+  });
 }
 
 class _AccordionRebuildHarness extends StatefulWidget {

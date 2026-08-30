@@ -1321,6 +1321,22 @@ enum AnimationProperty {
   weights,
 }
 
+/// How an animation channel produces values between its keyframes.
+/// {@category Documents}
+enum AnimationInterpolation {
+  /// Straight lerp between neighboring keyframes; slerp for rotation.
+  linear,
+
+  /// Holds the previous keyframe's value until the next one is reached.
+  step,
+
+  /// Cubic Hermite between neighboring keyframes, using the per-keyframe
+  /// tangents in [AnimationChannelSpec.inTangents] and
+  /// [AnimationChannelSpec.outTangents]. Tangents are in value units per
+  /// second, matching glTF's `CUBICSPLINE`.
+  cubic,
+}
+
 /// One animation channel: a keyframe timeline driving one [property] of one
 /// target node.
 ///
@@ -1335,6 +1351,9 @@ class AnimationChannelSpec {
     required this.property,
     required this.timeline,
     required this.keyframes,
+    this.interpolation,
+    this.inTangents,
+    this.outTangents,
   });
 
   /// The node this channel animates (primary, id-based binding).
@@ -1349,8 +1368,28 @@ class AnimationChannelSpec {
   /// The binary chunk of keyframe times (seconds).
   final LocalId timeline;
 
-  /// The binary chunk of keyframe values.
+  /// The binary chunk of keyframe values, one value per keyframe.
+  ///
+  /// The shape does not change with [interpolation]. A cubic channel keeps
+  /// its tangents in their own chunks, so a reader that does not know about
+  /// interpolation still sees a well-formed linear timeline rather than
+  /// misreading packed tangents as keyframes.
   final LocalId keyframes;
+
+  /// How this channel interpolates between keyframes.
+  ///
+  /// Null means [AnimationInterpolation.linear], which is what documents
+  /// written before interpolation existed load as, and keeps their encoded
+  /// form byte-identical.
+  final AnimationInterpolation? interpolation;
+
+  /// The binary chunk of per-keyframe in-tangents, same shape as
+  /// [keyframes]. Set only for [AnimationInterpolation.cubic].
+  final LocalId? inTangents;
+
+  /// The binary chunk of per-keyframe out-tangents, same shape as
+  /// [keyframes]. Set only for [AnimationInterpolation.cubic].
+  final LocalId? outTangents;
 }
 
 /// A named animation: a set of channels driving target nodes.
