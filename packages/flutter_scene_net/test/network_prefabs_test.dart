@@ -240,4 +240,72 @@ void main() {
     expect(replica.valueAt(0), 55);
     expect(replica.valueAt(1), 'blue');
   });
+
+  group('the spawn lifecycle', () {
+    test('a replica is not spawned until it has a node', () {
+      // It exists from the moment the spawn message arrives; there is nothing
+      // to read or write until it is attached.
+      final table = tableOf([pawnPrefab()]);
+      final replica =
+          table.toRegistry().instantiate(fnv1a32('pawn'))! as ComponentReplica;
+      expect(replica.isSpawned, isFalse);
+      table.spawn(replica);
+      expect(replica.isSpawned, isTrue);
+    });
+
+    test('the spawn callback sees the authority’s state, not the defaults', () {
+      // A handler that reads a replicated value on spawn should read the real
+      // one rather than a prefab default it is about to be corrected from.
+      final table = tableOf([pawnPrefab()]);
+      final replica =
+          table.toRegistry().instantiate(fnv1a32('pawn'))! as ComponentReplica;
+      replica.setValueAt(0, 33.0);
+
+      double? seen;
+      replica.onSpawn = (node) =>
+          seen = node.getComponents<_Pawn>().single.health;
+      table.spawn(replica);
+      expect(seen, 33);
+    });
+
+    test('the despawn callback runs while there is still a node', () {
+      // The matching place to stop what spawn started; it needs something to
+      // clean up against.
+      final table = tableOf([pawnPrefab()]);
+      final replica =
+          table.toRegistry().instantiate(fnv1a32('pawn'))! as ComponentReplica;
+      table.spawn(replica);
+
+      var attached = false;
+      replica.onDespawn = (node) => attached = replica.isSpawned;
+      replica.unbind();
+      expect(attached, isTrue);
+      expect(replica.isSpawned, isFalse);
+    });
+
+    test('unbinding twice does not fire despawn twice', () {
+      final table = tableOf([pawnPrefab()]);
+      final replica =
+          table.toRegistry().instantiate(fnv1a32('pawn'))! as ComponentReplica;
+      table.spawn(replica);
+      var calls = 0;
+      replica.onDespawn = (_) => calls++;
+      replica
+        ..unbind()
+        ..unbind();
+      expect(calls, 1);
+    });
+
+    test('ownership is asked, not assumed', () {
+      // The object you spawned may not be yours by the time you next look.
+      final table = tableOf([pawnPrefab()]);
+      final replica =
+          table.toRegistry().instantiate(fnv1a32('pawn'))! as ComponentReplica
+            ..owner = 4;
+      expect(replica.isOwnedBy(4), isTrue);
+      expect(replica.isOwnedBy(5), isFalse);
+      replica.owner = 5;
+      expect(replica.isOwnedBy(5), isTrue);
+    });
+  });
 }

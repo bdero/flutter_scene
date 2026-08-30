@@ -167,11 +167,7 @@ class NetworkPrefabs {
     if (prefab == null) return null;
     final node = prefab.build();
     if (replica is ComponentReplica) {
-      replica.bind(node);
-      // The spawn payload has already landed by the time this runs, so the
-      // node starts at the state the server sent rather than at its prefab
-      // defaults and a frame of the wrong pose.
-      replica.push();
+      replica.spawnInto(node);
     }
     return node;
   }

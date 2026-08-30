@@ -38,6 +38,7 @@ export 'src/network_identity.dart'
         syncedPropertyFields;
 export 'src/network_transform_codec.dart'
     show NetworkTransformCodec, registerNetComponentCodecs;
+export 'src/network_time.dart' show NetworkClock, NetworkTime;
 export 'src/network_ownership.dart'
     show
         Ownership,
