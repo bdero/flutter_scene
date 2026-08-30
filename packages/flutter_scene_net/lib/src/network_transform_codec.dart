@@ -1,13 +1,18 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/fscene.dart';
+
 import 'package:flutter_scene/scene.dart';
+
+import 'network_identity.dart';
 
 import 'network_transform.dart';
 
 /// Registers this package's component codecs into [registry] (the process
 /// default when omitted).
 void registerNetComponentCodecs([FsceneComponentRegistry? registry]) {
-  (registry ?? defaultComponentRegistry()).register(NetworkTransformCodec());
+  (registry ?? defaultComponentRegistry())
+    ..register(NetworkTransformCodec())
+    ..register(NetworkIdentityCodec());
 }
 
 /// Codec for [NetworkTransformComponent] (`networkTransform`).

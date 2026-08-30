@@ -7,7 +7,24 @@
 /// dart:io platforms so a game can host without a separate server.
 library;
 
+export 'src/component_sync.dart'
+    show
+        ComponentReplica,
+        PropertyWire,
+        SyncedProperty,
+        UnknownSyncedComponent,
+        UnknownSyncedProperty,
+        UnsyncableProperty,
+        canSync,
+        wireFor;
 export 'src/hosting/hosting.dart' show SceneHost;
+export 'src/network_identity.dart'
+    show
+        NetworkIdentityCodec,
+        NetworkIdentityComponent,
+        decodeSyncedProperty,
+        encodeSyncedProperty,
+        syncedPropertyFields;
 export 'src/network_transform_codec.dart'
     show NetworkTransformCodec, registerNetComponentCodecs;
 export 'src/network_transform.dart' show NetworkTransformComponent;

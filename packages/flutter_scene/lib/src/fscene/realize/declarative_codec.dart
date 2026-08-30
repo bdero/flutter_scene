@@ -543,6 +543,27 @@ abstract class DeclarativeComponentCodec<C extends Component>
   }
 
   @override
+  bool applyProperty(
+    Component component,
+    String name,
+    PropertyValue value,
+    RealizeContext context,
+  ) {
+    if (component is! C) return false;
+    for (final field in resolvedFields) {
+      if (field.def.name != name) continue;
+      final write = field.write;
+      // A property with no write binding is constructor-only: the controller
+      // pose fields, the machine a state graph was built from. Saying so is
+      // better than appearing to set it.
+      if (write == null) return false;
+      write(component, value, context);
+      return true;
+    }
+    return false;
+  }
+
+  @override
   ComponentSpec? serialize(Component component, SerializeContext context) {
     if (component is! C) return null;
     final properties = <String, PropertyValue>{};
