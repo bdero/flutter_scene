@@ -24,6 +24,7 @@ import '../io/scene_io.dart';
 import '../panels/asset_browser_panel.dart';
 import '../panels/console_panel.dart';
 import '../panels/history_panel.dart';
+import '../panels/game_view_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
 import '../panels/render_graph_panel.dart';
@@ -54,6 +55,7 @@ import 'editor_dialog.dart';
 /// three panels were retired in quick succession.
 const Map<String, String> editorPanelTitles = {
   'scene': 'Scene',
+  'game': 'Game',
   'hierarchy': 'Hierarchy',
   'inspector': 'Inspector',
   'project': 'Project',
@@ -1080,6 +1082,11 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             child: VisualScripterPanel(controller: _ctrl),
                           ),
                           DockPanel(
+                            id: 'game',
+                            title: 'Game',
+                            child: GameViewPanel(controller: _ctrl),
+                          ),
+                          DockPanel(
                             id: 'hierarchy',
                             title: 'Hierarchy',
                             child: OutlinerPanel(controller: _ctrl),
@@ -1694,7 +1701,7 @@ class _EditorMenuBar extends StatelessWidget {
       child: EditorToolbar(
         height: 28,
         horizontalPadding: 0,
-        children: [
+        leading: [
           SizedBox(width: leadingInset),
           Image.asset(
             'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
@@ -1922,10 +1929,8 @@ class _EditorMenuBar extends StatelessWidget {
             ],
           ),
           _MenuButton(label: 'Commands', onTap: onPaletteOpen),
-          const Spacer(),
-          ...trailing,
-          const SizedBox(width: 6),
         ],
+        trailing: [...trailing, const SizedBox(width: 6)],
       ),
     );
   }

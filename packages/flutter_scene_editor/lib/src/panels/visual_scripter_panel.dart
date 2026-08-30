@@ -521,7 +521,7 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
 
   Widget _buildToolbar(BuildContext context, VisualScriptGraph? graph) {
     return EditorToolbar(
-      children: [
+      leading: [
         const Icon(Icons.account_tree_outlined, size: 14),
         const SizedBox(width: 6),
         Text('Visual Scripter', style: editorBodyText),
@@ -539,7 +539,10 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
             '${graph.nodes.length} nodes, ${graph.links.length} wires',
             style: editorDetailText,
           ),
-          const Spacer(),
+        ],
+      ],
+      trailing: [
+        if (graph != null) ...[
           IconButton(
             icon: const Icon(Icons.delete_outline, size: 15),
             padding: EdgeInsets.zero,
@@ -577,8 +580,7 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
             icon: const Icon(Icons.add, size: 15),
             label: const Text('Add node'),
           ),
-        ] else
-          const Spacer(),
+        ],
       ],
     );
   }

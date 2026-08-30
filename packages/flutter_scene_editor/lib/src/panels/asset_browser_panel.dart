@@ -235,7 +235,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
 
   Widget _toolbar(BuildContext context) {
     return EditorToolbar(
-      children: [
+      leading: [
         const Icon(Icons.folder_open, size: 14),
         const SizedBox(width: 6),
         const Text('Project', style: TextStyle(fontSize: 12)),

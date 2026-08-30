@@ -103,7 +103,7 @@ class _ConsolePanelState extends State<ConsolePanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         EditorToolbar(
-          children: [
+          leading: [
             _Action(label: 'Clear', onPressed: runner.clearConsole),
             const SizedBox(width: 4),
             _Toggle(
@@ -119,7 +119,8 @@ class _ConsolePanelState extends State<ConsolePanel> {
               _Action(label: 'Stop build', onPressed: runner.stopBuild),
             if (widget.session case final session? when session.active)
               _Action(label: 'Stop', onPressed: session.stop),
-            const Spacer(),
+          ],
+          trailing: [
             SizedBox(
               width: 150,
               height: 22,

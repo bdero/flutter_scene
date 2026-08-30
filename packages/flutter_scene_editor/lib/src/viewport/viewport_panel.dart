@@ -22,6 +22,7 @@ import 'package:scene/scene.dart' show LocalId;
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
+import 'scene_overlay.dart';
 import 'scatter_tool.dart';
 import 'terrain_tool.dart';
 import 'transform_gizmo.dart';
@@ -1263,6 +1264,21 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             ),
                           ),
                         Positioned(
+                          right: 8,
+                          bottom: 8,
+                          child: SceneOverlay(
+                            label: 'Tool settings',
+                            child: OverlaySegments<TransformSpace>(
+                              options: const {
+                                TransformSpace.global: 'Global',
+                                TransformSpace.local: 'Local',
+                              },
+                              value: _transformSpace,
+                              onChanged: _setTransformSpace,
+                            ),
+                          ),
+                        ),
+                        Positioned(
                           top: 8,
                           left: 8,
                           child: _GizmoModeBar(
@@ -1434,8 +1450,6 @@ class _ViewportPanelState extends State<ViewportPanel> {
                     _ViewportSettingsButton(
                       showFps: _showFps,
                       onToggleFps: (value) => setState(() => _showFps = value),
-                      transformSpace: _transformSpace,
-                      onTransformSpaceChanged: _setTransformSpace,
                     ),
                     const SizedBox(height: 4),
                     _GizmoMenuButton(
@@ -1856,14 +1870,10 @@ class _ViewportSettingsButton extends StatelessWidget {
   const _ViewportSettingsButton({
     required this.showFps,
     required this.onToggleFps,
-    required this.transformSpace,
-    required this.onTransformSpaceChanged,
   });
 
   final bool showFps;
   final ValueChanged<bool> onToggleFps;
-  final TransformSpace transformSpace;
-  final ValueChanged<TransformSpace> onTransformSpaceChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1872,22 +1882,9 @@ class _ViewportSettingsButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       onSelected: (action) => action(),
       itemBuilder: (_) => [
-        PopupMenuItem<VoidCallback>(
-          enabled: false,
-          height: editorMenuItemHeight,
-          child: const Text('Transform space', style: TextStyle(fontSize: 11)),
-        ),
-        _checkedItem(
-          label: 'Global',
-          checked: transformSpace == TransformSpace.global,
-          action: () => onTransformSpaceChanged(TransformSpace.global),
-        ),
-        _checkedItem(
-          label: 'Local',
-          checked: transformSpace == TransformSpace.local,
-          action: () => onTransformSpaceChanged(TransformSpace.local),
-        ),
-        const PopupMenuDivider(height: 8),
+        // Transform space moved onto the scene as a Tool settings overlay:
+        // it changes what a drag does, so it belongs where you can see which
+        // one you are in without opening anything.
         _checkedItem(
           label: 'Show FPS',
           checked: showFps,

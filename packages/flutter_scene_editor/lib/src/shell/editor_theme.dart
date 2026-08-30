@@ -1,15 +1,28 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
-const _ink = Color(0xFF15191D);
-const _graphite = Color(0xFF1B2025);
-const _raised = Color(0xFF22282E);
-const _line = Color(0xFF343B43);
-const _text = Color(0xFFD4D9DE);
-const _mutedText = Color(0xFF9099A2);
-const _signal = Color(0xFF44B3E7);
+// A deep blue-violet rather than the neutral graphite this started as. The
+// hue is doing work: a 3D viewport is full of neutral grey -- untextured
+// geometry, the grid, gizmo shafts -- and chrome in the same neutral competes
+// with it. Pushing the chrome off-neutral lets the scene keep the greys.
+//
+// The four surfaces step by roughly equal lightness so depth reads without
+// borders doing all of it, and the line sits just above the raised surface so
+// a border separates without drawing itself.
+const _ink = Color(0xFF14152B);
+const _graphite = Color(0xFF1B1D38);
+const _raised = Color(0xFF262949);
+const _line = Color(0xFF343863);
+const _text = Color(0xFFE6E7F5);
+const _mutedText = Color(0xFF8B8FB5);
+const _signal = Color(0xFF4A9EFF);
+
+/// A number you can edit, as opposed to one being reported.
+///
+/// Amber against the blue accent, which is the one pairing in this palette
+/// that cannot be confused at a glance: an editable field and a selected
+/// thing should never read alike, and every transform row is full of both.
+const Color editorValueColor = Color(0xFFF0A742);
 
 // Prefab-linked content accents (outliner member rows, inspector banners),
 // readable on _ink/_graphite and distinct from the _signal selection blue.
@@ -44,11 +57,22 @@ const Color editorSuccessColor = Color(0xFF7BC67E);
 /// toolchain the build will limp along without.
 const Color editorWarningColor = Color(0xFFE0A84E);
 
+/// How round a card is.
+///
+/// Larger than the 5 this started at, which is the single change that most
+/// separates chrome that looks drawn from chrome that looks assembled. Small
+/// controls keep [editorControlRadius]: the same radius on a 20-pixel button
+/// reads as a lozenge rather than a button.
+const double editorCardRadius = 8;
+
+/// How round a control is: a button, a field, a segment.
+const double editorControlRadius = 4;
+
 /// The bordered-box chrome panel lists and detail panes share.
 BoxDecoration editorPanelBox({Color color = _graphite}) => BoxDecoration(
   color: color,
   border: Border.all(color: _line),
-  borderRadius: BorderRadius.circular(5),
+  borderRadius: BorderRadius.circular(editorCardRadius),
 );
 
 /// Dialog text metrics matching the inspector's rows.
@@ -248,29 +272,46 @@ const double editorIconSizeLarge = 16;
 /// across the panel header. `editor_theme_test.dart` pins the two together.
 const double editorToolbarHeight = 32;
 
-/// A panel's toolbar strip: a fixed-height row that scrolls sideways rather
-/// than overflowing.
+/// A panel's toolbar strip: a fixed-height row whose left half scrolls
+/// sideways rather than overflowing.
 ///
 /// A docked panel can be dragged down to a twentieth of the shell, and a
 /// toolbar's controls do not shrink with it. Left as a plain [Row] the
 /// Animation strip ran out of room first and painted the framework's overflow
-/// stripes over its own buttons; every other strip was one control away from
-/// the same. The row still lays out at the panel's width whenever it fits, so
-/// a [Spacer] in [children] pins what follows it to the right edge exactly as
-/// before, and only a strip too narrow for its contents starts scrolling.
+/// stripes over its own buttons.
 ///
-/// A strip with nothing to scroll takes no drag gesture, which is what lets
-/// the menu bar go on being the window's drag handle while it fits.
+/// [leading] scrolls; [trailing] is pinned to the right edge and does not.
+/// The split is explicit rather than a [Spacer] because the two halves are
+/// laid out by different rules, and because the scrolling half must contain
+/// no flex child: a horizontal scroll view offers unbounded width, and
+/// `Expanded` in unbounded width is an error.
+///
+/// This deliberately does **not** measure the row. It used to, with
+/// [IntrinsicWidth], which reads beautifully until a child contains a
+/// [LayoutBuilder] -- and then it throws "LayoutBuilder does not support
+/// returning intrinsic dimensions" from inside layout. Thrown there it takes
+/// the frame with it, and if the layout was running inside a mouse-tracker
+/// update it leaves that tracker's debug flag latched, so every later pointer
+/// move asserts too. One unmeasurable child, and the editor fills with
+/// exceptions that name neither the widget nor the cause.
 class EditorToolbar extends StatelessWidget {
   const EditorToolbar({
     super.key,
-    required this.children,
+    this.leading = const [],
+    this.trailing = const [],
     this.horizontalPadding = 8,
     this.height,
     this.color,
   });
 
-  final List<Widget> children;
+  /// The controls at the left, which scroll when there is no room for them.
+  ///
+  /// Must contain no [Expanded] or [Spacer]; put anything that was pinned
+  /// right into [trailing] instead.
+  final List<Widget> leading;
+
+  /// The controls pinned to the right edge.
+  final List<Widget> trailing;
 
   /// Inset at each end of the strip.
   final double horizontalPadding;
@@ -286,33 +327,43 @@ class EditorToolbar extends StatelessWidget {
     return Container(
       height: height ?? editorToolbarHeight,
       color: color ?? Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // The row is given the strip's own width as a floor so it fills it
-          // and no wider, which is what keeps a Spacer meaningful. Above that
-          // floor it takes its natural width and the strip scrolls to it.
-          //
-          // IntrinsicWidth is what makes the row measurable at all: a
-          // horizontal scroll view offers unbounded width, and a Row with an
-          // Expanded or a Spacer in it cannot lay out against that. Asking
-          // for the row's own width first turns the constraint tight again,
-          // and a toolbar's dozen children are cheap to measure.
-          final floor = constraints.maxWidth.isFinite
-              ? math.max(0.0, constraints.maxWidth - horizontalPadding * 2)
-              : 0.0;
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            primary: false,
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: floor),
-              child: IntrinsicWidth(child: Row(children: children)),
-            ),
-          );
-        },
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      child: Row(
+        children: [
+          Expanded(child: EditorToolbarScroller(children: leading)),
+          ...trailing,
+        ],
       ),
     );
   }
+}
+
+/// A run of controls that scrolls sideways rather than overflowing.
+///
+/// The child row is [MainAxisSize.min] and must hold no flex child, which is
+/// what makes it safe inside a scroll view's unbounded width. [alignEnd]
+/// starts it against the right edge, for a group that sits at one.
+class EditorToolbarScroller extends StatelessWidget {
+  const EditorToolbarScroller({
+    super.key,
+    required this.children,
+    this.alignEnd = false,
+  });
+
+  final List<Widget> children;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    primary: false,
+    // Reversed rather than aligned: a scroll view fills its viewport in the
+    // scroll direction, so alignment inside it does nothing, while reversing
+    // puts the content against the far edge and scrolls the right way when
+    // there is too much of it.
+    reverse: alignEnd,
+    child: Row(mainAxisSize: MainAxisSize.min, children: children),
+  );
 }
 
 const double editorMenuItemHeight = 28;
@@ -426,6 +477,55 @@ ThemeData editorDarkTheme() {
     scaffoldBackgroundColor: _ink,
     canvasColor: _graphite,
     dividerColor: _line,
+    // Thin track, round handle, accent fill. Material's default slider is
+    // built for a phone: at this density its handle covers the value it is
+    // setting, and every inspector row is a slider beside its number.
+    sliderTheme: SliderThemeData(
+      trackHeight: 3,
+      activeTrackColor: _signal,
+      inactiveTrackColor: _raised,
+      thumbColor: _signal,
+      overlayColor: _signal.withValues(alpha: 0.14),
+      thumbShape: const RoundSliderThumbShape(
+        enabledThumbRadius: 6,
+        pressedElevation: 0,
+        elevation: 0,
+      ),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+      trackShape: const RoundedRectSliderTrackShape(),
+      showValueIndicator: ShowValueIndicator.never,
+    ),
+    // A switch small enough to sit at the right of a property row without
+    // setting that row's height.
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? _text : _mutedText,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? _signal : _raised,
+      ),
+      trackOutlineColor: WidgetStatePropertyAll(_line),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      isDense: true,
+      filled: true,
+      fillColor: _ink,
+      hintStyle: const TextStyle(fontSize: 11, color: _mutedText),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(editorControlRadius),
+        borderSide: const BorderSide(color: _line),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(editorControlRadius),
+        borderSide: const BorderSide(color: _line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(editorControlRadius),
+        borderSide: const BorderSide(color: _signal),
+      ),
+    ),
     tooltipTheme: const TooltipThemeData(
       waitDuration: Duration(milliseconds: 500),
     ),
