@@ -343,6 +343,15 @@ class EditorToolbar extends StatelessWidget {
 /// The child row is [MainAxisSize.min] and must hold no flex child, which is
 /// what makes it safe inside a scroll view's unbounded width. [alignEnd]
 /// starts it against the right edge, for a group that sits at one.
+///
+/// The no-flex rule is asserted rather than left to the reader. A stray
+/// [Expanded] here throws from inside layout, and an exception thrown there
+/// takes the rest of the frame's layout with it: every sibling panel is left
+/// unlaid-out, and if the layout was running inside a mouse-tracker update it
+/// leaves that tracker's debug flag latched, so every later pointer move
+/// asserts too. The editor fills with thousands of exceptions naming neither
+/// this widget nor the panel that supplied the child. Caught here it is one
+/// error, at the call site, in plain words.
 class EditorToolbarScroller extends StatelessWidget {
   const EditorToolbarScroller({
     super.key,
@@ -354,16 +363,39 @@ class EditorToolbarScroller extends StatelessWidget {
   final bool alignEnd;
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    primary: false,
-    // Reversed rather than aligned: a scroll view fills its viewport in the
-    // scroll direction, so alignment inside it does nothing, while reversing
-    // puts the content against the far edge and scrolls the right way when
-    // there is too much of it.
-    reverse: alignEnd,
-    child: Row(mainAxisSize: MainAxisSize.min, children: children),
-  );
+  Widget build(BuildContext context) {
+    assert(() {
+      final flexed = children.whereType<Flexible>().toList();
+      if (flexed.isEmpty) return true;
+      throw FlutterError.fromParts([
+        ErrorSummary(
+          'EditorToolbarScroller was given ${flexed.length} flex '
+          '${flexed.length == 1 ? "child" : "children"}.',
+        ),
+        ErrorDescription(
+          'This strip scrolls sideways, so its row is laid out against '
+          'unbounded width. Expanded and Flexible ask to fill the space that '
+          'is left over, and there is no such thing in unbounded width.',
+        ),
+        ErrorHint(
+          'Give the child a width instead (a SizedBox), or, if it belongs '
+          'against the right edge rather than in the scrolling run, pass it '
+          "as the toolbar's trailing instead of its leading.",
+        ),
+      ]);
+    }());
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      primary: false,
+      // Reversed rather than aligned: a scroll view fills its viewport in the
+      // scroll direction, so alignment inside it does nothing, while reversing
+      // puts the content against the far edge and scrolls the right way when
+      // there is too much of it.
+      reverse: alignEnd,
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+    );
+  }
 }
 
 const double editorMenuItemHeight = 28;
