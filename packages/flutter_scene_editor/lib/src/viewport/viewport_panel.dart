@@ -191,6 +191,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
   ScatterStroke? _scatterStroke;
 
   TerrainStroke? _stroke;
+  TerrainPaintStroke? _paintStroke;
+
+  /// The terrain a paint stroke is running on, for the ground query the dab
+  /// needs. The stroke itself holds only the control map.
+  ({TerrainGeometry geometry, LocalId resourceId})? _paintTarget;
   final Stopwatch _strokeClock = Stopwatch();
 
   /// Where the brush would land, for the cursor ring. Null when the pointer
@@ -349,10 +354,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_groundUnder(position, viewSize, target.geometry.field) == null) {
       return false;
     }
-    _stroke = TerrainStroke(
-      geometry: target.geometry,
-      resourceId: target.resourceId,
-    );
+    if (_terrainTool.mode == TerrainToolMode.paint) {
+      _paintStroke = TerrainPaintStroke.on(
+        target.geometry,
+        resourceId: target.resourceId,
+      );
+      _paintTarget = target;
+    } else {
+      _stroke = TerrainStroke(
+        geometry: target.geometry,
+        resourceId: target.resourceId,
+      );
+    }
     _strokeClock
       ..reset()
       ..start();
@@ -363,14 +376,21 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _sculptAt(Offset position, Size viewSize, double deltaSeconds) {
-    final stroke = _stroke;
-    if (stroke == null) return;
-    final point = _groundUnder(position, viewSize, stroke.geometry.field);
+    final geometry = _stroke?.geometry ?? _paintTarget?.geometry;
+    if (geometry == null) return;
+    final point = _groundUnder(position, viewSize, geometry.field);
     // A pointer dragged off the terrain pauses the stroke rather than ending
     // it, so crossing a gap and coming back is still one stroke.
     if (point == null) return;
     _brushPoint = point;
-    stroke.dab(_brushFor(_terrainTool.brush), point, deltaSeconds);
+    _stroke?.dab(_brushFor(_terrainTool.brush), point, deltaSeconds);
+    _paintStroke?.dab(
+      _terrainTool.brush,
+      _terrainTool.paintLayer,
+      _terrainTool.targetStrength,
+      point,
+      deltaSeconds,
+    );
     setState(() {});
   }
 
@@ -402,15 +422,29 @@ class _ViewportPanelState extends State<ViewportPanel> {
   /// Ends the stroke, writing it to the document as one undoable step.
   void _endSculpt() {
     final stroke = _stroke;
+    final paint = _paintStroke;
     _stroke = null;
+    _paintStroke = null;
+    _paintTarget = null;
     _strokeClock.stop();
-    if (stroke == null || !stroke.touched) return;
-    unawaited(
-      _ctrl.run('setTerrainHeights', {
-        'resourceId': stroke.resourceId.toToken(),
-        'heights': stroke.encodedHeights(),
-      }),
-    );
+    if (stroke != null && stroke.touched) {
+      unawaited(
+        _ctrl.run('setTerrainHeights', {
+          'resourceId': stroke.resourceId.toToken(),
+          'heights': stroke.encodedHeights(),
+        }),
+      );
+    }
+    if (paint != null && paint.touched) {
+      unawaited(
+        _ctrl.run('setTerrainSplat', {
+          'resourceId': paint.resourceId.toToken(),
+          'splat': paint.encodedSplat(),
+          'columns': paint.map.columns,
+          'rows': paint.map.rows,
+        }),
+      );
+    }
   }
 
   void _onPointerDown(PointerDownEvent event, Size viewSize) {
@@ -482,7 +516,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    if (_stroke != null) {
+    if (_stroke != null || _paintStroke != null) {
       _sculptAt(event.localPosition, _viewSize, _dabSeconds());
       return;
     }
@@ -526,7 +560,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
-    if (_stroke != null) {
+    if (_stroke != null || _paintStroke != null) {
       _endSculpt();
       return;
     }
@@ -593,7 +627,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // A cancelled stroke still keeps what it drew: the ground has already
     // moved on screen, and silently reverting it would look like the edit
     // was lost rather than cancelled.
-    if (_stroke != null) _endSculpt();
+    if (_stroke != null || _paintStroke != null) _endSculpt();
     if (_scatterStroke != null) _endScatter();
     if (_freeLookActive) _endFreeLook();
     if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;

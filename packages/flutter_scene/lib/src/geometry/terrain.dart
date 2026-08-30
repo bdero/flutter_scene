@@ -379,7 +379,11 @@ class TerrainGeometry extends MeshGeometry {
   /// ground is the thing gameplay asks what the ground is made of, and
   /// [TerrainSplatMap.dominantLayerAtWorld] is a bilinear sample rather than
   /// a readback from the GPU.
-  final TerrainSplatMap? splat;
+  ///
+  /// Settable because a terrain painted for the first time has no map to
+  /// paint into and one has to be minted mid-stroke. Its contents are edited
+  /// in place after that, the same way sculpting edits [field]'s.
+  TerrainSplatMap? splat;
 
   // Kept so a partial rebuild can rewrite a band rather than allocating a
   // fresh set of arrays for every dab of a stroke.
