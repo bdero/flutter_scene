@@ -360,15 +360,24 @@ Future<void> saveFscene(EditorController controller, String path) async {
   final document = controller.document;
   final rewriteSidecar =
       controller.payloadsDirty && document.payloads.isNotEmpty;
-  if (rewriteSidecar && document.payloadSource == null) {
+  if (rewriteSidecar) {
+    // Name the sidecar after the file being written, not after whatever the
+    // opened document carried. A Save As that kept the source name would
+    // write this document's payload pool over the original's sidecar, and
+    // leave the original reading bytes it did not produce.
     final stem = File(path).uri.pathSegments.last.replaceAll('.fscene', '');
-    document.payloadSource = '$stem.payloads.fsceneb';
+    final expected = '$stem.payloads.fsceneb';
+    if (document.payloadSource != expected) {
+      document.payloadSource = expected;
+    }
   }
   await File(path).writeAsString(controller.session.toFscene());
   if (rewriteSidecar) {
     await _writePayloadSidecar(document, path);
-    controller.payloadsDirty = false;
   }
+  // Cleared whatever the pool held: a save that emptied it has nothing left
+  // to write, and leaving the flag set would rewrite on every later save.
+  controller.payloadsDirty = false;
 }
 
 /// Rewrites the payload sidecar beside the scene at [scenePath] from the
