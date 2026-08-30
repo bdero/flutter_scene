@@ -929,14 +929,17 @@ class EnvironmentEffectsSpec {
     this.globalIlluminationEmissiveBoost = 1.0,
     this.globalIlluminationUpdateWhenIdleOnly = false,
     this.globalIlluminationBakeOnly = false,
+    // These mirror TemporalAntiAliasingSettings' own defaults, so a document
+    // that says nothing about TAA realizes to the engine's tuning rather than
+    // silently retuning it.
     this.temporalAntiAliasingEnabled = false,
-    this.temporalAntiAliasingMinimumCurrentWeight = 0.1,
-    this.temporalAntiAliasingVarianceGamma = 1.0,
-    this.temporalAntiAliasingSharpness = 0.0,
-    this.temporalAntiAliasingJitterSequenceLength = 16,
-    this.temporalAntiAliasingJitterScale = 1.0,
-    this.temporalAntiAliasingObjectMotion = true,
-    this.temporalAntiAliasingSkinnedMotion = true,
+    this.temporalAntiAliasingMinimumCurrentWeight = 0.15,
+    this.temporalAntiAliasingVarianceGamma = 1.2,
+    this.temporalAntiAliasingSharpness = 0.15,
+    this.temporalAntiAliasingJitterSequenceLength = 11,
+    this.temporalAntiAliasingJitterScale = 0.46,
+    this.temporalAntiAliasingObjectMotion = false,
+    this.temporalAntiAliasingSkinnedMotion = false,
     this.fogEnabled = false,
     this.fogMode = 'exponential',
     Vector3? fogColor,
@@ -1220,7 +1223,12 @@ class EnvironmentEffectsSpec {
   bool globalIlluminationUpdateWhenIdleOnly;
   bool globalIlluminationBakeOnly;
 
-  /// Temporal anti-aliasing. See `TemporalAntiAliasingSettings`.
+  /// Temporal anti-aliasing. See `TemporalAntiAliasingSettings`, whose
+  /// defaults these match.
+  ///
+  /// TAA is switched on by [antiAliasingMode] being `taa`; this flag mirrors
+  /// that so a reader of the document gets one answer rather than two that
+  /// can disagree.
   bool temporalAntiAliasingEnabled;
   double temporalAntiAliasingMinimumCurrentWeight;
   double temporalAntiAliasingVarianceGamma;

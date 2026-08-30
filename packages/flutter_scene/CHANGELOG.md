@@ -8,6 +8,8 @@
 * Unlit `.fmat` materials may declare `engine_inputs`; the screen accessors gain `GetSceneWorldPosition`, materials that read scene depth get it at full resolution, and `scene_color_reach` bounds a reader so disjoint readers share one scene-color capture.
 * A draw whose render pipeline the backend rejects is skipped with a one-time console message naming the material and geometry, instead of failing the whole frame from inside paint.
 * A render pipeline build that stalls a frame (8ms or more, always on its first draw) is reported in debug builds with the material and geometry that triggered it, so the fix (drawing it once behind a load screen) has a target.
+* A `.fscene`'s temporal anti-aliasing tuning is applied. The fields round-tripped through the document and were then dropped at realize, so a scene could author them and still render on the engine's defaults. Their defaults now match `TemporalAntiAliasingSettings`, so a document that says nothing about TAA is unchanged.
+* Global illumination and temporal anti-aliasing are editable from the editor's Scene Settings, and the anti-aliasing mode offers SMAA and TAA. All three shipped in the engine and were reachable only from code or a hand-edited document.
 
 ## 0.23.0
 

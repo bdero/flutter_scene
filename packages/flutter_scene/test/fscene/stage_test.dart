@@ -91,6 +91,9 @@ void main() {
           godRaysEnabled: true,
           depthOfFieldEnabled: true,
           autoExposureEnabled: true,
+          temporalAntiAliasingSharpness: 0.4,
+          temporalAntiAliasingJitterSequenceLength: 8,
+          temporalAntiAliasingObjectMotion: true,
         );
     });
 
@@ -111,6 +114,13 @@ void main() {
     expect(scene.godRays.enabled, isTrue);
     expect(scene.depthOfField.enabled, isTrue);
     expect(scene.autoExposure.enabled, isTrue);
+    // TAA tuning is a Scene setting rather than an EnvironmentSettings one, so
+    // it is applied outside the effects cascade. It used to be dropped there
+    // entirely: a document could author it and the scene would keep running on
+    // the engine's defaults.
+    expect(scene.temporalAntiAliasing.sharpness, 0.4);
+    expect(scene.temporalAntiAliasing.jitterSequenceLength, 8);
+    expect(scene.temporalAntiAliasing.objectMotion, isTrue);
   });
 
   test(
@@ -433,6 +443,71 @@ void main() {
     expect(effects.globalIlluminationEmissiveBoost, 2.5);
     expect(effects.globalIlluminationUpdateWhenIdleOnly, isTrue);
     expect(effects.globalIlluminationBakeOnly, isTrue);
+  });
+
+  test('temporal anti-aliasing tuning survives the document round trip', () {
+    final document = _envDocument((environment) {
+      environment.effects = EnvironmentEffectsSpec(
+        temporalAntiAliasingEnabled: true,
+        temporalAntiAliasingMinimumCurrentWeight: 0.08,
+        temporalAntiAliasingVarianceGamma: 0.9,
+        temporalAntiAliasingSharpness: 0.35,
+        temporalAntiAliasingJitterSequenceLength: 16,
+        temporalAntiAliasingJitterScale: 0.8,
+        temporalAntiAliasingObjectMotion: true,
+        temporalAntiAliasingSkinnedMotion: true,
+      );
+    });
+
+    final decoded = decodeDocument(encodeDocument(document));
+    final effects =
+        (decoded.resources[decoded.stage.environmentRef!]!
+                as EnvironmentResource)
+            .effects;
+
+    expect(effects.temporalAntiAliasingEnabled, isTrue);
+    expect(effects.temporalAntiAliasingMinimumCurrentWeight, 0.08);
+    expect(effects.temporalAntiAliasingVarianceGamma, 0.9);
+    expect(effects.temporalAntiAliasingSharpness, 0.35);
+    expect(effects.temporalAntiAliasingJitterSequenceLength, 16);
+    expect(effects.temporalAntiAliasingJitterScale, 0.8);
+    expect(effects.temporalAntiAliasingObjectMotion, isTrue);
+    expect(effects.temporalAntiAliasingSkinnedMotion, isTrue);
+  });
+
+  test('the default TAA tuning is the engine\'s, and writes no section', () {
+    // These defaults used to be a set of round numbers unrelated to the
+    // engine's, which was harmless only because nothing read them. Applying
+    // them now means they have to agree, or every document that never
+    // mentioned TAA would quietly retune it.
+    final defaults = EnvironmentEffectsSpec();
+    final live = TemporalAntiAliasingSettings();
+
+    expect(
+      defaults.temporalAntiAliasingMinimumCurrentWeight,
+      live.minimumCurrentWeight,
+    );
+    expect(defaults.temporalAntiAliasingVarianceGamma, live.varianceGamma);
+    expect(defaults.temporalAntiAliasingSharpness, live.sharpness);
+    expect(
+      defaults.temporalAntiAliasingJitterSequenceLength,
+      live.jitterSequenceLength,
+    );
+    expect(defaults.temporalAntiAliasingJitterScale, live.jitterScale);
+    expect(defaults.temporalAntiAliasingObjectMotion, live.objectMotion);
+    expect(defaults.temporalAntiAliasingSkinnedMotion, live.skinnedMotion);
+
+    final document = _envDocument((environment) {
+      environment.effects = defaults;
+    });
+    final encoded = encodeDocument(document);
+    final resources = encoded['resources'] as Map<String, dynamic>;
+    final env = resources.values.single as Map<String, dynamic>;
+    expect(
+      (env['effects'] as Map?)?.containsKey('temporalAntiAliasing') ?? false,
+      isFalse,
+      reason: 'a document at the defaults should carry no TAA section',
+    );
   });
 
   test('a document with default global illumination writes no section', () {

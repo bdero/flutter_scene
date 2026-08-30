@@ -450,11 +450,16 @@ class StageRenderControls extends StatelessWidget {
           label: 'Anti-aliasing',
           control: DropdownButton<String>(
             value: stage.antiAliasingMode,
+            // The full set AntiAliasingMode carries. SMAA and TAA shipped in
+            // the engine and were reachable from code and from a hand-edited
+            // document, but not from here.
             items: const [
               DropdownMenuItem(value: 'auto', child: Text('Auto')),
               DropdownMenuItem(value: 'none', child: Text('None')),
               DropdownMenuItem(value: 'msaa', child: Text('MSAA')),
               DropdownMenuItem(value: 'fxaa', child: Text('FXAA')),
+              DropdownMenuItem(value: 'smaa', child: Text('SMAA')),
+              DropdownMenuItem(value: 'taa', child: Text('TAA')),
             ],
             onChanged: (v) => v == null ? null : _set('antiAliasingMode', v),
           ),
@@ -1165,6 +1170,180 @@ class EnvironmentEffectsControls extends StatelessWidget {
             children: [
               _toggle('Enabled', 'filmGrainEnabled', e.filmGrainEnabled),
               _slider('Intensity', 'filmGrainIntensity', e.filmGrainIntensity),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          title: _title(
+            context,
+            'Global illumination',
+            e.globalIlluminationEnabled,
+          ),
+          child: Column(
+            children: [
+              _toggle(
+                'Enabled',
+                'globalIlluminationEnabled',
+                e.globalIlluminationEnabled,
+                description:
+                    'A grid of irradiance probes carrying bounce light, so a '
+                    'surface the camera is not looking at still lights what '
+                    'is around it.',
+              ),
+              _select(
+                'Volume',
+                'globalIlluminationVolumeMode',
+                e.globalIlluminationVolumeMode,
+                const [
+                  ('followCamera', 'Follow camera'),
+                  ('fitScene', 'Fit scene'),
+                  ('manual', 'Manual'),
+                ],
+              ),
+              _vector(
+                'Resolution',
+                'globalIlluminationResolution',
+                e.globalIlluminationResolution,
+              ),
+              _vector(
+                'Extents',
+                'globalIlluminationExtents',
+                e.globalIlluminationExtents,
+              ),
+              _slider(
+                'Intensity',
+                'globalIlluminationIntensity',
+                e.globalIlluminationIntensity,
+                max: 4,
+              ),
+              _slider(
+                'Emissive boost',
+                'globalIlluminationEmissiveBoost',
+                e.globalIlluminationEmissiveBoost,
+                max: 8,
+              ),
+              _slider(
+                'Hysteresis',
+                'globalIlluminationHysteresis',
+                e.globalIlluminationHysteresis,
+              ),
+              _slider(
+                'Visibility',
+                'globalIlluminationVisibility',
+                e.globalIlluminationVisibility,
+              ),
+              _slider(
+                'Visibility bias',
+                'globalIlluminationVisibilityBias',
+                e.globalIlluminationVisibilityBias,
+                max: 0.5,
+              ),
+              _slider(
+                'Shadow bias',
+                'globalIlluminationShadowBias',
+                e.globalIlluminationShadowBias,
+                max: 2,
+              ),
+              _slider(
+                'Firefly clamp',
+                'globalIlluminationFireflyClamp',
+                e.globalIlluminationFireflyClamp,
+                max: 32,
+              ),
+              _select(
+                'Injection resolution',
+                'globalIlluminationInjectionResolution',
+                e.globalIlluminationInjectionResolution,
+                const [
+                  ('full', 'Full'),
+                  ('half', 'Half'),
+                  ('quarter', 'Quarter'),
+                  ('eighth', 'Eighth'),
+                ],
+              ),
+              _integer(
+                'Probe update budget',
+                'globalIlluminationProbeUpdateBudget',
+                e.globalIlluminationProbeUpdateBudget,
+                min: 0,
+                max: 1024,
+              ),
+              _toggle(
+                'Update when idle only',
+                'globalIlluminationUpdateWhenIdleOnly',
+                e.globalIlluminationUpdateWhenIdleOnly,
+                description:
+                    'Refresh the field only while the camera is still, so a '
+                    'moving shot pays nothing for it.',
+              ),
+              _toggle(
+                'Bake only',
+                'globalIlluminationBakeOnly',
+                e.globalIlluminationBakeOnly,
+                description:
+                    'Light from the baked field alone, with no refresh at '
+                    'runtime.',
+              ),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          // Switched on by the Rendering section's anti-aliasing mode rather
+          // than by a toggle here: two switches for one thing can disagree,
+          // and the mode is the one the engine reads.
+          title: _title(
+            context,
+            'Temporal anti-aliasing',
+            e.temporalAntiAliasingEnabled,
+          ),
+          child: Column(
+            children: [
+              _slider(
+                'Minimum current weight',
+                'temporalAntiAliasingMinimumCurrentWeight',
+                e.temporalAntiAliasingMinimumCurrentWeight,
+                max: 0.5,
+              ),
+              _slider(
+                'Variance gamma',
+                'temporalAntiAliasingVarianceGamma',
+                e.temporalAntiAliasingVarianceGamma,
+                min: 0.5,
+                max: 2,
+              ),
+              _slider(
+                'Sharpness',
+                'temporalAntiAliasingSharpness',
+                e.temporalAntiAliasingSharpness,
+              ),
+              _integer(
+                'Jitter sequence length',
+                'temporalAntiAliasingJitterSequenceLength',
+                e.temporalAntiAliasingJitterSequenceLength,
+                min: 2,
+                max: 32,
+              ),
+              _slider(
+                'Jitter scale',
+                'temporalAntiAliasingJitterScale',
+                e.temporalAntiAliasingJitterScale,
+              ),
+              _toggle(
+                'Object motion',
+                'temporalAntiAliasingObjectMotion',
+                e.temporalAntiAliasingObjectMotion,
+                description:
+                    'Reproject moving geometry as well as the camera. Off, '
+                    'moving objects leave trails.',
+              ),
+              _toggle(
+                'Skinned motion',
+                'temporalAntiAliasingSkinnedMotion',
+                e.temporalAntiAliasingSkinnedMotion,
+                description:
+                    'Include skinned deformation in that velocity, which '
+                    'keeps the previous frame\'s joint matrices alive.',
+              ),
             ],
           ),
         ),
