@@ -358,7 +358,7 @@ class _AnimationPanelState extends State<AnimationPanel>
     final clips = _clips.values.toList();
     return EditorToolbar(
       horizontalPadding: 6,
-      children: [
+      leading: [
         _ClipSelector(
           clips: clips,
           selected: model?.id,
@@ -431,7 +431,8 @@ class _AnimationPanelState extends State<AnimationPanel>
           onChanged: (value) =>
               setState(() => _sampleRate = value.round().clamp(1, 240)),
         ),
-        const Spacer(),
+      ],
+      trailing: [
         _TransportButton(
           icon: Icons.delete_outline,
           tooltip: 'Delete the selected key',

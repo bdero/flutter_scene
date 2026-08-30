@@ -52,15 +52,14 @@ class EditorToolbarRow extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: _Side(
-              alignment: Alignment.centerLeft,
+            child: EditorToolbarScroller(
               children: [const SizedBox(width: 8), ...leading],
             ),
           ),
           ...centre,
           Expanded(
-            child: _Side(
-              alignment: Alignment.centerRight,
+            child: EditorToolbarScroller(
+              alignEnd: true,
               children: [
                 _LayoutMenu(
                   namedLayouts: namedLayouts,
@@ -76,36 +75,6 @@ class EditorToolbarRow extends StatelessWidget {
       ),
     );
   }
-}
-
-/// One side of the toolbar, scrolling rather than shoving the middle over.
-class _Side extends StatelessWidget {
-  const _Side({required this.alignment, required this.children});
-
-  final Alignment alignment;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      primary: false,
-      reverse: alignment == Alignment.centerRight,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minWidth: constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
-        ),
-        child: IntrinsicWidth(
-          child: Row(
-            mainAxisAlignment: alignment == Alignment.centerRight
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            children: children,
-          ),
-        ),
-      ),
-    ),
-  );
 }
 
 /// The workspace picker: the saved arrangements, and the way to save one.
