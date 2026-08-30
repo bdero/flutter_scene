@@ -391,11 +391,15 @@ base class Scene implements SceneGraph {
   /// Prepares the rendering resources, such as textures and shaders,
   /// that are used to display models in this [Scene].
   ///
-  /// This method ensures all necessary resources are loaded and ready to be used in the rendering pipeline.
-  /// If the initialization fails, the resources are reset, and the scene
-  /// will not be marked as ready to render.
+  /// This method ensures all necessary resources are loaded and ready to be
+  /// used in the rendering pipeline.
   ///
-  /// Returns a [Future] that completes when the initialization is finished.
+  /// Returns a [Future] that completes when the initialization is finished,
+  /// and that completes with the load's error when it fails. A failure also
+  /// resets the resources and leaves the scene not ready to render, so a
+  /// caller that awaits this without catching gets the error rather than a
+  /// misleading one from the first draw. `SceneView` reports it and stays on
+  /// its loading builder.
   static Future<void> initializeStaticResources() {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;

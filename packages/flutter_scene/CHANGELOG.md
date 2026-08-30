@@ -22,11 +22,7 @@
 * A `-split<N>` suffix on a glTF node name splits its mesh into grid-cell child meshes at import (whole triangles binned by world-space centroid into `N`-unit cells, children named `Ground_x0_z3`), so a level-spanning mesh culls and receives punctual lights per cell; the split reapplies on every re-import.
 * Punctual lights shade through per-view froxel clustering (screen tiles crossed with exponential depth slices, each shading only the lights that reach it), removing the per-object light cap, so a large mesh reached by many lights shades them all and no draw carries light state. Perspective views cluster automatically; orthographic views and frames using light channel masks keep the per-object lists, and `Scene.punctualLightClustering` disables clustering for comparison.
 * The punctual light loop is dynamically bounded (every compiled shader dialect is GLSL ES 3.00 or newer), so drivers cannot unroll it, and a froxel holds up to 255 lights.
-
-## 0.23.1
-
 * Normals transform by the inverse-transpose of the model matrix, so a node under non-uniform scale or shear lights the same as the shape modelled at that size.
-* Image and HDR skybox backgrounds no longer star-burst at the poles; the sharp path fades to the radiance cube overhead on cube layouts.
 * BREAKING: `Scene.initializeStaticResources()` completes with its error instead of normally, so a failed shader-bundle or material load now reaches the caller rather than only `dart:developer` `log()` (which web never showed). Awaiting it without a `try`/`catch` throws where it previously continued; wrap the call, or use a `SceneView`, which reports the failure and stays on its `loadingBuilder`. `baseShaderLibrary` names that cause too, rather than telling you to await the call that already failed.
 * A rejected collider names the node it was on and the degenerate cases that cause the rejection.
 * Batching comparators cache their identity keys, `sceneSortDepth` allocates nothing, and instance batch objects are pooled, cutting per-frame work that multiplies across shadow, depth-prepass, and reflection views.

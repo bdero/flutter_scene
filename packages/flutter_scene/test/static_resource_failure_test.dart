@@ -34,43 +34,32 @@ void main() {
   });
 
   test('a failed load reports, and the getter names why', () async {
-    // Whether the bundle is present depends on how this checkout was built, so
-    // assert the contract for whichever outcome this run takes. Both halves are
-    // the point of issue #244: the load must not report success on failure, and
-    // the getter must name the cause rather than send the developer back to
-    // initializeStaticResources(), which they have already awaited.
-    Object? thrown;
-    try {
-      await loadBaseShaderLibrary();
-    } catch (error) {
-      thrown = error;
-    }
+    // Driven from a known state against a bundle with nothing in it, so the
+    // failure path runs on every machine rather than only where the checkout
+    // happens to lack a built bundle.
+    debugResetBaseShaderLibrary();
+    addTearDown(debugResetBaseShaderLibrary);
 
-    if (thrown == null) {
-      expect(
-        baseShaderLibraryLoadError,
-        isNull,
-        reason: 'a successful load leaves no retained failure behind',
-      );
-      expect(() => baseShaderLibrary, returnsNormally);
-      return;
-    }
-
-    expect(
-      baseShaderLibraryLoadError,
-      same(thrown),
-      reason: 'the getter can only name the cause if the load retained it',
+    await expectLater(
+      loadBaseShaderLibrary(bundle: _EmptyBundle()),
+      throwsA(isA<Object>()),
     );
+
+    // Both halves of issue #244: the load must not report success on failure,
+    // and the getter must name the cause rather than send the developer back
+    // to initializeStaticResources(), which they have already awaited.
+    expect(baseShaderLibraryLoadError, isNotNull);
     expect(
       () => baseShaderLibrary,
       throwsA(
-        isA<Exception>()
-            .having((e) => '$e', 'message', contains('failed to load'))
-            .having(
-              (e) => '$e',
-              'message',
-              isNot(contains('has not been loaded yet')),
-            ),
+        isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          allOf(
+            contains('failed to load'),
+            isNot(contains('has not been loaded yet')),
+          ),
+        ),
       ),
     );
   });

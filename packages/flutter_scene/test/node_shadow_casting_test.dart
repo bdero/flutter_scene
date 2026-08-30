@@ -94,7 +94,7 @@ void main() {
     expect(itemOf(shadowsOnly).castsShadows, isTrue);
   });
 
-  test('a primitive opting out collapses the node mode to off', () {
+  test('a primitive opting out subtracts casting without restoring color', () {
     final renderScene = RenderScene();
     final root = Node()..debugMountInto(renderScene);
     final mesh = Mesh(_StubGeometry(), _StubMaterial());
@@ -106,9 +106,25 @@ void main() {
     root.scenePrePass(0);
 
     final item = renderScene.items.single;
-    expect(item.shadowCastingMode, ShadowCastingMode.off);
-    // Collapsing to off restores the color draw the shadows-only mode had
-    // suppressed, so an excluded primitive never becomes invisible.
+    // The primitive's opt-out only ever subtracts casting. Folding it into the
+    // node's mode would read as `off` and pull the node back into the color
+    // image, which is the opposite of what a shadows-only node asked for.
+    expect(item.shadowCastingMode, ShadowCastingMode.shadowsOnly);
+    expect(item.castsShadows, isFalse);
+    expect(item.drawsColor, isFalse);
+  });
+
+  test('a primitive opting out under a drawing node still draws', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final mesh = Mesh(_StubGeometry(), _StubMaterial());
+    mesh.primitives.single.castsShadow = false;
+    root.add(Node(mesh: mesh));
+
+    root.scenePrePass(0);
+
+    final item = renderScene.items.single;
+    expect(item.castsShadows, isFalse);
     expect(item.drawsColor, isTrue);
   });
 
