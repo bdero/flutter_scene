@@ -479,10 +479,112 @@ void main() {
     }
   });
 
+  // Byte accounting and the shed-while-rendering guarantee need real GPU
+  // textures, so they live here rather than in the unit suite. Riding the
+  // existing lanes means Metal, Vulkan, GLES, WebGL2 and Windows all cover it
+  // without a lane of their own.
+  testWidgets('pooled render targets are measurable and releasable', (
+    tester,
+  ) async {
+    final smoke = kSmokeScenes.firstWhere((s) => s.id == 'directional_shadow');
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.initializeStaticResources();
+    await smoke.preload?.call();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: kSmokeClear,
+          body: Center(child: SmokeSceneView(smoke)),
+        ),
+      ),
+    );
+
+    final boundary =
+        smokeSceneKey.currentContext!.findRenderObject()
+            as RenderRepaintBoundary;
+    Future<void> renderFrames(int count) async {
+      for (var i = 0; i < count; i++) {
+        if (i > 0) boundary.markNeedsPaint();
+        await tester.pump(const Duration(milliseconds: 50));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+
+    await renderFrames(8);
+
+    int pooledBytes() => _renderTargetBytes(takeMemoryReport());
+
+    final grown = pooledBytes();
+    // ignore: avoid_print
+    print('SMOKE render_target_shed: pooled=$grown bytes');
+    expect(
+      grown,
+      greaterThan(0),
+      reason:
+          'a shadow-casting scene rendered several frames and the report says '
+          'it is pooling nothing; the render targets category is not wired to '
+          'the pools that actually allocate',
+    );
+
+    final released = releaseTransientRenderTargets();
+    expect(
+      released,
+      grown,
+      reason: 'the release must report the bytes the report was showing',
+    );
+    expect(pooledBytes(), 0, reason: 'the shed left attachments behind');
+
+    // The case the automatic path depends on: pressure can arrive at any
+    // point, so a shed between every frame must not break the next one. A
+    // pass that already holds a texture keeps drawing into it; the pool
+    // reallocates on the following acquire.
+    for (var i = 0; i < 6; i++) {
+      releaseTransientRenderTargets();
+      await renderFrames(2);
+    }
+
+    final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
+    final rgba = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    final stats = _frameStats(rgba, image.width, image.height);
+    // ignore: avoid_print
+    print(
+      'SMOKE render_target_shed: after shedding '
+      'centerCoverage=${stats.centerNonClearFraction.toStringAsFixed(3)} '
+      'fgLuma=${stats.foregroundMeanLuma.toStringAsFixed(1)}',
+    );
+    expect(
+      stats.centerNonClearFraction,
+      greaterThan(0.05),
+      reason: 'nothing drew after shedding the pool between frames',
+    );
+    expect(
+      stats.foregroundMeanLuma,
+      greaterThan(20),
+      reason: 'the frame drew but came back black after a shed',
+    );
+    expect(
+      pooledBytes(),
+      greaterThan(0),
+      reason: 'the pool did not refill; the next frame allocated nothing',
+    );
+  });
+
   tearDownAll(() {
     binding.reportData = <String, dynamic>{...captures};
   });
 }
+
+int _renderTargetBytes(MemoryReport report) =>
+    report.categories.firstWhere((c) => c.name == 'render targets').bytes ?? 0;
 
 ({
   bool cornersClear,

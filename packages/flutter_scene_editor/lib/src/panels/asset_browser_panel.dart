@@ -326,7 +326,11 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         const SizedBox(width: 6),
         const Text('Project', style: TextStyle(fontSize: 12)),
         const SizedBox(width: 12),
-        Expanded(
+        // A fixed width, not Expanded: this strip scrolls, so it is laid out
+        // against unbounded width and a flex child is an error there. See
+        // [EditorToolbarScroller].
+        SizedBox(
+          width: 180,
           child: FTextField(
             control: FTextFieldControl.managed(
               controller: _filter,
