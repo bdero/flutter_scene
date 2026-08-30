@@ -13,9 +13,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/importer/gltf.dart';
-import 'package:flutter_scene/src/importer/src/gltf/primitive_packer.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vector_math/vector_math.dart' show GltfCoordinatePolicy;
 
 void main() {
   test('packer merges multi-set influences to a full unit of weight', () {
