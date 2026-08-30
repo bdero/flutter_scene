@@ -6,9 +6,9 @@
 /// dragging over a terrain moved the object, which is what the move gizmo is
 /// for and exactly what it looked like was broken.
 ///
-/// The shape is Unity's, because it is the one people arrive knowing: a row of
-/// tool buttons, a dropdown of what a stroke does, and the brush settings
-/// under it. Choosing a tool arms it and takes the left mouse button; choosing
+/// The shape is the conventional one, because it is the one people arrive
+/// knowing: a row of tool buttons, a dropdown of what a stroke does, and the
+/// brush settings under it. Choosing a tool arms it and takes the left mouse button; choosing
 /// it again hands the button back to the gizmo.
 library;
 
@@ -53,7 +53,7 @@ TerrainGeometrySpec? terrainSpecOfDocument(
   return null;
 }
 
-/// The tools shown, in Unity's order, with what each is for.
+/// The tools shown, with what each is for.
 const List<({TerrainTool tool, IconData icon, String label, String tip})>
 terrainTools = [
   (

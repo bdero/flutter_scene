@@ -9,9 +9,9 @@
 ///
 /// **Four layers, one control texture.** The weights fit exactly one RGBA
 /// texture, which is one sampler in the terrain shader and one payload in the
-/// document. Unity spends a second control map to reach eight; the cost is a
-/// second sampler and a second blend in the inner loop of the most-drawn
-/// surface in the scene, and four covers the ground people actually paint.
+/// document. Reaching eight costs a second control map, and with it a second
+/// sampler and a second blend in the inner loop of the most-drawn surface in
+/// the scene; four covers the ground people actually paint.
 ///
 /// **Its own resolution.** The control map is not the height grid. Painting
 /// wants finer detail than sculpting — a footpath is narrower than any

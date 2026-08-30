@@ -1,7 +1,7 @@
 /// Spatial environment volumes: regions that override the scene look, blended
 /// by camera position so the environment and post-processing transition as the
-/// camera moves between areas (the Unity Volume / Unreal Post Process Volume
-/// model).
+/// camera moves between areas: a region says what the look is inside it, and
+/// the blend is what keeps a doorway from being a cut.
 library;
 
 import 'dart:math' as math;

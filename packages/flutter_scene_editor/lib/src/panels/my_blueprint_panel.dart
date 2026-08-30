@@ -4,7 +4,7 @@
 /// show one graph at a time. Without a list of what else is in there, a
 /// function you wrote last week is a thing you have to remember the name of.
 ///
-/// Grouped the way Unreal groups it -- graphs, functions, macros, variables --
+/// Grouped by what each thing is -- graphs, functions, macros, variables --
 /// because that is the order they are reached for, and because a construction
 /// script sitting in the middle of a list of functions reads as a function.
 library;

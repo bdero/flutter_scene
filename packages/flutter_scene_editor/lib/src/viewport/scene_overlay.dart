@@ -10,7 +10,7 @@
 ///
 /// This is the chrome those panels share: a rounded, bordered card that sits
 /// over the viewport, dark enough to read against a bright scene and quiet
-/// enough to ignore. Not Unity's dockable, draggable overlay system — these
+/// enough to ignore. Not a dockable, draggable overlay system — these
 /// are pinned to their corners — but the same idea and the same job.
 library;
 

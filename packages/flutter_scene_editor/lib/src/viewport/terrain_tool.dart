@@ -175,8 +175,8 @@ class TerrainPaintStroke {
 /// It sits over the viewport rather than only in the inspector because a brush
 /// is adjusted mid-stroke, between dabs, and reaching across the window for
 /// the radius breaks that rhythm. *Which* tool is armed is chosen in the
-/// inspector, the way it is in Unity; this is the size and strength of
-/// whichever one that is.
+/// inspector, where a terrain's own settings live; this is the size and
+/// strength of whichever one that is.
 class TerrainBrushPalette extends StatelessWidget {
   /// Shows and edits [tool]'s brush.
   const TerrainBrushPalette({required this.tool, super.key});

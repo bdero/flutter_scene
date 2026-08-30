@@ -8,9 +8,9 @@
 ///
 /// So this is the other half. A [NetworkEvent] is a named message an object
 /// can send, with a target saying who runs it — the server, the owning client,
-/// everyone else, or everybody. Unity calls these RPCs and splits them into
-/// ServerRpc and ClientRpc; the target here is the same idea with the two
-/// extra directions dashwire already supports spelled out rather than implied.
+/// everyone else, or everybody. A remote call, in other words, with the
+/// direction named on the declaration rather than implied by which of two
+/// kinds it is.
 ///
 /// **The direction is the security boundary.** An event targeted at the server
 /// is a client asking for something, and the server decides. That is the whole

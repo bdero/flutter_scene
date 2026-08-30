@@ -12,8 +12,9 @@
 /// So a [VirtualCamera] is a controller assembled from two parts. A
 /// [CameraBody] decides where the camera *is*; a [CameraAim] decides where it
 /// *points*. Both are small, both are reusable, and a shot is a choice of one
-/// of each plus a priority. That split is Unity's Cinemachine, and it is worth
-/// copying because it is the decomposition the problem actually has.
+/// of each plus a priority. That split is worth making because it is the
+/// decomposition the problem actually has: where to stand and what to watch
+/// are chosen independently, and a shot is one answer to each.
 ///
 /// **Damping is a time, not a factor.** Every damping value here is roughly
 /// the seconds the camera takes to close the distance, and every one is
@@ -64,8 +65,8 @@ double dampScalar(
 
 /// [dampScalar] per axis, written into [out].
 ///
-/// Per axis rather than on the vector's length, because Cinemachine's damping
-/// is per axis and the difference is visible: a camera that eases sideways
+/// Per axis rather than on the vector's length, because the difference is
+/// visible: a camera that eases sideways
 /// faster than it eases in depth is a camera that keeps its distance while it
 /// catches up laterally, which is what a follow shot wants.
 void dampVector(
@@ -141,8 +142,7 @@ enum CameraBinding {
 
 /// Sits at a fixed offset from the target.
 ///
-/// Cinemachine's Transposer. The simplest body there is, and the one most
-/// shots want.
+/// The simplest body there is, and the one most shots want.
 class TransposerBody extends CameraBody {
   TransposerBody({
     Vector3? offset,
@@ -207,8 +207,7 @@ Quaternion _headingOnly(Quaternion rotation) {
 /// Holds the target at a distance and lets it move inside a dead zone before
 /// following.
 ///
-/// Cinemachine's Framing Transposer, and the body that makes a follow camera
-/// feel deliberate rather than glued: without a dead zone every twitch of the
+/// The body that makes a follow camera feel deliberate rather than glued: without a dead zone every twitch of the
 /// target moves the camera, and the shot never sits still.
 class FramingTransposerBody extends CameraBody {
   FramingTransposerBody({
@@ -285,9 +284,9 @@ class FramingTransposerBody extends CameraBody {
 
 /// Orbits the target at a radius and a heading you drive.
 ///
-/// Cinemachine's Orbital Transposer, minus its input binding: the heading is
-/// a plain field, so a character controller, a script or a graph can turn it
-/// without this needing to know which.
+/// No input binding of its own: the heading is a plain field, so a character
+/// controller, a script or a graph can turn it without this needing to know
+/// which.
 class OrbitalBody extends CameraBody {
   OrbitalBody({
     this.radius = 6,
@@ -344,7 +343,7 @@ abstract class CameraAim {
 
 /// Keeps the camera pointed exactly at the target.
 ///
-/// Cinemachine's Hard Look At: no easing, no framing, the target dead centre.
+/// No easing, no framing, the target dead centre.
 class HardLookAtAim extends CameraAim {
   HardLookAtAim();
 
@@ -359,8 +358,7 @@ class HardLookAtAim extends CameraAim {
 
 /// Keeps the target in frame, letting it drift inside a dead zone.
 ///
-/// Cinemachine's Composer. The dead zone is what stops the camera answering
-/// every small movement; past it the camera turns, damped, until the target is
+/// The dead zone is what stops the camera answering every small movement; past it the camera turns, damped, until the target is
 /// back inside. Without it a look-at camera jitters with its target and the
 /// shot never settles.
 class ComposerAim extends CameraAim {
@@ -481,8 +479,8 @@ class VirtualCamera extends CameraController {
   /// What the director sorts by. Higher wins.
   ///
   /// Held here rather than only in the director's registration so a shot can
-  /// take over by raising its own priority, which is how Cinemachine's
-  /// cameras are usually driven.
+  /// take over by raising its own priority, which is the usual way a shot is
+  /// handed the frame.
   double priority;
 
   final CameraSolveContext _context = CameraSolveContext();

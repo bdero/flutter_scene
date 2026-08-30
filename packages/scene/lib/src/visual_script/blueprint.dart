@@ -1,8 +1,8 @@
 /// A blueprint: a class you can spawn, written as graphs.
 ///
-/// A single graph is a script attached to one object. A blueprint is the thing
-/// Unreal means by the word — a class, with variables that belong to it and
-/// several graphs that run at different times: a construction script that
+/// A single graph is a script attached to one object. A blueprint is a class:
+/// variables that belong to it, and several graphs that run at different
+/// times: a construction script that
 /// builds an instance, an event graph that runs it, and functions and macros
 /// the other two call.
 ///
@@ -32,8 +32,7 @@ const String defaultConstructionScriptName = 'Construction Script';
 
 /// What kind of thing a blueprint is.
 ///
-/// Unreal's distinction, and it is a real one: these are not four flavours of
-/// the same asset, they are four different answers to "what does this
+/// A real distinction, not four flavours of one asset: they are four different answers to "what does this
 /// produce". A class produces objects, an interface produces nothing and only
 /// says what a class must be able to do, and a macro library produces nothing
 /// either -- it is a shelf of graphs other blueprints paste in.

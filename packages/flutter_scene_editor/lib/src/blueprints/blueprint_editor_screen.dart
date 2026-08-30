@@ -1,8 +1,8 @@
 /// The Blueprint editor: a screen, not a tab.
 ///
 /// A blueprint is a class, and editing one is a mode you enter and leave —
-/// you are working on the Door, not on the level with a Door in it. Unreal
-/// opens a window for exactly that reason, and a docked tab gets this wrong
+/// you are working on the Door, not on the level with a Door in it. That is
+/// why it gets a window of its own, and why a docked tab gets it wrong
 /// twice: it competes for room with the panels you need while editing a
 /// graph, and it makes a class look like a view of the current selection when
 /// it is not.

@@ -160,7 +160,7 @@ class VisualScriptVariable {
 
 /// What a graph in a blueprint is for.
 ///
-/// The distinction is Unreal's, and it is about *when* a graph runs rather
+/// The distinction is about *when* a graph runs rather
 /// than what is in it. All four hold the same kind of nodes.
 /// {@category Visual scripting}
 enum VisualScriptGraphKind {
