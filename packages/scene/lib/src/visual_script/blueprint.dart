@@ -30,11 +30,72 @@ const String defaultEventGraphName = 'Event Graph';
 /// The name a construction script is given when nothing else names it.
 const String defaultConstructionScriptName = 'Construction Script';
 
+/// What kind of thing a blueprint is.
+///
+/// Unreal's distinction, and it is a real one: these are not four flavours of
+/// the same asset, they are four different answers to "what does this
+/// produce". A class produces objects, an interface produces nothing and only
+/// says what a class must be able to do, and a macro library produces nothing
+/// either -- it is a shelf of graphs other blueprints paste in.
+enum BlueprintKind {
+  /// A class you can place and spawn: graphs plus the variables they share.
+  blueprintClass('Blueprint Class'),
+
+  /// A piece of interface, whose graphs run against widgets rather than a
+  /// node in the world.
+  widgetBlueprint('Widget Blueprint'),
+
+  /// A set of function signatures a blueprint promises to implement, with no
+  /// bodies of its own.
+  ///
+  /// The point is to let one graph call another blueprint it knows nothing
+  /// about beyond the promise -- a door and a chest can both be Openable
+  /// without either knowing the other exists.
+  blueprintInterface('Blueprint Interface'),
+
+  /// A shelf of macros for other blueprints to use.
+  macroLibrary('Blueprint Macro Library');
+
+  const BlueprintKind(this.label);
+
+  /// What the editor calls this kind.
+  final String label;
+
+  /// The kind named [name], or [blueprintClass] when it is not one of these.
+  ///
+  /// A document naming a kind this build does not know is read as a plain
+  /// class rather than refused: its graphs are still graphs.
+  static BlueprintKind parse(String? name) =>
+      values.where((kind) => kind.name == name).firstOrNull ??
+      BlueprintKind.blueprintClass;
+
+  /// Which graph kinds this kind of blueprint may hold.
+  ///
+  /// An interface has signatures and no bodies, and a macro library has
+  /// macros and nothing to run them, so neither has an event graph. Saying so
+  /// here keeps the editor from offering to add one.
+  Set<VisualScriptGraphKind> get allowedGraphKinds => switch (this) {
+    BlueprintKind.blueprintInterface => const {VisualScriptGraphKind.function},
+    BlueprintKind.macroLibrary => const {VisualScriptGraphKind.macro},
+    _ => const {
+      VisualScriptGraphKind.eventGraph,
+      VisualScriptGraphKind.constructionScript,
+      VisualScriptGraphKind.function,
+      VisualScriptGraphKind.macro,
+    },
+  };
+}
+
+/// What a blueprint extends when nobody says: an object placed in a scene.
+const String defaultBlueprintParent = 'node';
+
 /// A class defined as graphs.
 /// {@category Visual scripting}
 class Blueprint {
   Blueprint({
     this.name = '',
+    this.kind = BlueprintKind.blueprintClass,
+    this.parentClass = defaultBlueprintParent,
     List<VisualScriptVariable>? variables,
     List<VisualScriptGraph>? graphs,
   }) : variables = variables ?? [],
@@ -59,6 +120,18 @@ class Blueprint {
 
   /// What the blueprint is called.
   String name;
+
+  /// What kind of thing it is.
+  BlueprintKind kind;
+
+  /// What it extends: the key of a node kind or a component type.
+  ///
+  /// A string rather than a type, because the set of things a blueprint can
+  /// extend is the set of components this build has registered -- which is
+  /// open, since a project's own components join it. A parent this build does
+  /// not know is kept rather than dropped, so opening a teammate's blueprint
+  /// without their components does not quietly reparent it.
+  String parentClass;
 
   /// The variables every graph in it shares.
   final List<VisualScriptVariable> variables;

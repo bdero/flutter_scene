@@ -20,6 +20,7 @@ import 'package:flutter_scene/visual_script.dart';
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart' show Vector2;
 
+import '../blueprints/blueprint_file.dart';
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
 import 'my_blueprint_panel.dart';
@@ -27,9 +28,18 @@ import 'visual_script_layout.dart';
 
 /// The Visual Scripter panel.
 class VisualScripterPanel extends StatefulWidget {
-  const VisualScripterPanel({super.key, required this.controller});
+  const VisualScripterPanel({super.key, required this.controller, this.file});
 
   final EditorController controller;
+
+  /// The blueprint asset being edited, or null to edit the selected node's
+  /// script.
+  ///
+  /// The same editor, two sources. A graph on a node belongs to that node; a
+  /// blueprint in the project is a class, edited on its own and instanced
+  /// many times. Which one is open changes where a commit goes and nothing
+  /// else, so there is one canvas rather than two that drift apart.
+  final BlueprintFile? file;
 
   @override
   State<VisualScripterPanel> createState() => _VisualScripterPanelState();
@@ -112,6 +122,12 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
 
   void _onSelectionChanged() {
     if (!mounted) return;
+    // A file-backed blueprint is not the selection's, so moving the selection
+    // must not throw away what is open.
+    if (widget.file != null) {
+      setState(() {});
+      return;
+    }
     final id = _ctrl.selection.primary;
     final cursor = _ctrl.history.cursor;
     final movedElsewhere =
@@ -170,6 +186,21 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
   Blueprint? _ensureBlueprint() {
     final existing = _blueprint;
     if (existing != null) return existing;
+    final file = widget.file;
+    if (file != null) {
+      final loaded = file.read();
+      // A file that failed to parse shows nothing rather than a blank canvas:
+      // a blank canvas is how you save over your own work.
+      if (loaded == null) return null;
+      if (loaded.graphs.isEmpty) {
+        loaded.addGraph(
+          VisualScriptGraph(),
+          kind: VisualScriptGraphKind.eventGraph,
+          name: defaultEventGraphName,
+        );
+      }
+      return _blueprint = loaded;
+    }
     final view = _componentView;
     if (view == null) return null;
     final source = view.spec.properties['graph'];
@@ -200,8 +231,17 @@ class _VisualScripterPanelState extends State<VisualScripterPanel> {
   /// Writes the graph back to the document as one undoable edit.
   Future<void> _commit() async {
     final blueprint = _blueprint;
+    if (blueprint == null) return;
+    final file = widget.file;
+    if (file != null) {
+      // Straight to disk. A blueprint asset is not part of the scene
+      // document, so the scene's undo stack is the wrong place for it -- an
+      // undo in the level should not silently rewrite a class.
+      await file.write(blueprint);
+      return;
+    }
     final view = _componentView;
-    if (blueprint == null || view == null) return;
+    if (view == null) return;
     _committing = true;
     try {
       await _ctrl.run('setComponentProperties', {

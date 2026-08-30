@@ -49,7 +49,13 @@ DockLayout defaultEditorDockLayout() {
             ),
             // The bottom shelf runs under the hierarchy and the scene both,
             // which is what makes it a shelf rather than a third column.
-            DockTabs(['project', 'console', 'animation', 'visual_scripter']),
+            //
+            // No visual scripter here. Editing a blueprint is a mode you enter
+            // and leave -- you are working on the Door, not on the level with
+            // a Door in it -- so it takes the screen instead. A tab would
+            // compete for room with the panels you need while drawing a graph,
+            // and would make a class look like a view of the selection.
+            DockTabs(['project', 'console', 'animation']),
           ],
           [0.68, 0.32],
         ),
