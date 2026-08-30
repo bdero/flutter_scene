@@ -27,6 +27,12 @@ export 'src/network_identity.dart'
         syncedPropertyFields;
 export 'src/network_transform_codec.dart'
     show NetworkTransformCodec, registerNetComponentCodecs;
+export 'src/network_prefabs.dart'
+    show
+        DuplicateNetworkPrefab,
+        NetworkNodeBuilder,
+        NetworkPrefab,
+        NetworkPrefabs;
 export 'src/network_transform.dart' show NetworkTransformComponent;
 // TODO(lagcomp): export PhysicsWorldHistory once something consumes it. The
 // server-side rewind needs the peer's last acked tick, which the host does

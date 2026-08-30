@@ -9,7 +9,6 @@ import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:scene/schema.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// A component with one property of each kind that matters here.
@@ -200,12 +199,11 @@ void main() {
         SyncedProperty('pawn', 'aim'),
       ])..pull();
 
-      final fields = replica.fields;
-      expect((fields[0] as Rep).value, 42);
-      expect((fields[1] as Rep).value, 3);
-      expect((fields[2] as Rep).value, false);
-      expect((fields[3] as Rep).value, 'red');
-      expect((fields[4] as Rep).value, (1.0, 0.0, 0.0));
+      expect(replica.valueAt(0), 42);
+      expect(replica.valueAt(1), 3);
+      expect(replica.valueAt(2), false);
+      expect(replica.valueAt(3), 'red');
+      expect(replica.valueAt(4), (1.0, 0.0, 0.0));
     });
 
     test('a value sitting at its default still reads as that default', () {
@@ -218,8 +216,8 @@ void main() {
         SyncedProperty('pawn', 'health'),
         SyncedProperty('pawn', 'alive'),
       ])..pull();
-      expect((replica.fields[0] as Rep).value, 100);
-      expect((replica.fields[1] as Rep).value, true);
+      expect(replica.valueAt(0), 100);
+      expect(replica.valueAt(1), true);
     });
 
     test('pull twice with no change leaves the value alone', () {
@@ -227,9 +225,9 @@ void main() {
       final replica = replicaFor(scene.node, const [
         SyncedProperty('pawn', 'health'),
       ])..pull();
-      final before = (replica.fields[0] as Rep).value;
+      final before = replica.valueAt(0);
       replica.pull();
-      expect((replica.fields[0] as Rep).value, before);
+      expect(replica.valueAt(0), before);
     });
 
     test('a node missing the component is left alone rather than throwing', () {
@@ -243,7 +241,7 @@ void main() {
       replica.pull();
       scene.node.removeComponent(scene.pawn);
       replica.pull();
-      expect((replica.fields[0] as Rep).value, 7);
+      expect(replica.valueAt(0), 7);
     });
   });
 
@@ -257,11 +255,11 @@ void main() {
         SyncedProperty('pawn', 'label'),
         SyncedProperty('pawn', 'aim'),
       ]);
-      (replica.fields[0] as Rep<Object?>).value = 12.0;
-      (replica.fields[1] as Rep<Object?>).value = 5;
-      (replica.fields[2] as Rep<Object?>).value = false;
-      (replica.fields[3] as Rep<Object?>).value = 'blue';
-      (replica.fields[4] as Rep<Object?>).value = (0.0, 1.0, 0.0);
+      replica.setValueAt(0, 12.0);
+      replica.setValueAt(1, 5);
+      replica.setValueAt(2, false);
+      replica.setValueAt(3, 'blue');
+      replica.setValueAt(4, (0.0, 1.0, 0.0));
       replica.push();
 
       expect(scene.pawn.health, 12);
@@ -289,9 +287,8 @@ void main() {
         SyncedProperty('pawn', 'label'),
         SyncedProperty('pawn', 'aim'),
       ]);
-      for (var i = 0; i < sender.fields.length; i++) {
-        (receiver.fields[i] as Rep<Object?>).value =
-            (sender.fields[i] as Rep<Object?>).value;
+      for (var i = 0; i < sender.fieldCount; i++) {
+        receiver.setValueAt(i, sender.valueAt(i));
       }
       receiver.push();
 
@@ -307,7 +304,7 @@ void main() {
       final replica = replicaFor(scene.node, const [
         SyncedProperty('pawn', 'spawnRadius'),
       ]);
-      (replica.fields[0] as Rep<Object?>).value = 99.0;
+      replica.setValueAt(0, 99.0);
       expect(replica.push, returnsNormally);
     });
   });
@@ -320,7 +317,7 @@ void main() {
       final replica = replicaFor(scene.node, const [
         SyncedProperty('pawn', 'aim', resolution: 0.1),
       ])..pull();
-      expect(replica.fields.single, isA<Rep<Object?>>());
+      expect(replica.fieldCount, 1);
     });
 
     test('write authority defaults to the server', () {

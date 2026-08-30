@@ -48,7 +48,7 @@ class NetworkIdentityComponent extends Component {
   /// property that has since been renamed should fail where someone can see it
   /// rather than quietly replicate one field fewer than the other end expects.
   ComponentReplica replicaFor(
-    Node node, {
+    Node? node, {
     required FsceneComponentRegistry registry,
   }) => ComponentReplica(
     typeKey: typeKey,
