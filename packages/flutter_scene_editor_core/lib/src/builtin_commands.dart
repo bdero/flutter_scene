@@ -1399,9 +1399,17 @@ final setTerrainSplat = CommandEntry(
 );
 
 /// The `.fmat` the painted layers blend through, as flutter_scene ships it.
-const terrainMaterialAsset =
-    'packages/flutter_scene/assets/materials/'
-    'terrain_splat.fmat';
+/// The path is relative to the root of the package that compiled the material,
+/// which is what the generated material index records as its `source` and what
+/// `loadFmatMaterial` looks one up by — not an asset-bundle key. A bundle-style
+/// `packages/flutter_scene/...` key resolves to nothing, silently, at load, and
+/// the ground draws as though it had no material at all.
+///
+/// flutter_scene is only a dev dependency here (this package is the headless
+/// command core and does not pull in the renderer), so the string is spelled
+/// again rather than imported; a test pins it to the engine's
+/// `terrainMaterialSource` so the two cannot drift.
+const terrainMaterialAsset = 'assets/materials/terrain_splat.fmat';
 
 /// Gives a painted terrain a material that shows the painting.
 ///

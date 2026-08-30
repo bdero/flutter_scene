@@ -184,3 +184,7 @@ export 'package:scene/scene.dart'
         TrsTransform;
 export 'src/fscene/stream/stream.dart'
     show loadSubtree, unloadSubtree, isLazySubtree, isSubtreeLoaded;
+
+/// The terrain material's `.fmat` source path, for a document that points at
+/// it. See `buildTerrainMaterial` in `build_hooks.dart`.
+export 'src/fmat/build_materials.dart' show terrainMaterialSource;

@@ -41,7 +41,11 @@ export 'src/importer/build_hooks.dart'
     show SceneAssetMode, buildScenes;
 export 'src/fmat/build_materials.dart'
     if (dart.library.js_interop) 'src/fmat/build_materials_unsupported.dart'
-    show MaterialAssetMode, buildMaterials, buildTerrainMaterial;
+    show
+        MaterialAssetMode,
+        buildMaterials,
+        buildTerrainMaterial,
+        terrainMaterialSource;
 export 'src/fmat/target_shader_bundle.dart'
     if (dart.library.js_interop) 'src/fmat/target_shader_bundle_unsupported.dart'
     show TargetShaderBundleAssetMode, buildTargetShaderBundleJson;

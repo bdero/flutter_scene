@@ -229,6 +229,14 @@ Future<void> buildBundledPhysicalMaterials({
   fileVariant: fileVariant,
 );
 
+/// The terrain material's `.fmat` source, relative to flutter_scene's root.
+///
+/// This exact string is what the generated material index records as the
+/// material's `source`, and so what `loadFmatMaterial` looks it up by. Anything
+/// pointing a document at this material has to use it — a bundle-style
+/// `packages/flutter_scene/...` key resolves to nothing, silently, at load.
+const String terrainMaterialSource = 'assets/materials/terrain_splat.fmat';
+
 /// Builds the terrain material flutter_scene ships, into the calling app's
 /// generated tree.
 ///
@@ -251,7 +259,7 @@ Future<void> buildTerrainMaterial({
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
-  materials: const ['assets/materials/terrain_splat.fmat'],
+  materials: const [terrainMaterialSource],
   bundleName: 'terrain',
   discoveryRoot: 'assets/',
   assetMode: assetMode,
