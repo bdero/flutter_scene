@@ -366,10 +366,58 @@ void main() {
     expect(previews.last, closeTo(0.2, 0.0001));
   });
 
-  test('editor palette uses the Flutter Scene logo blue', () {
-    expect(editorForuiDarkTheme.colors.primary, const Color(0xFF44B3E7));
-    expect(editorForuiDarkTheme.colors.background, const Color(0xFF15191D));
-    expect(editorDarkTheme().colorScheme.primary, const Color(0xFF44B3E7));
+  test('both themes are built from the one palette', () {
+    // The forui theme and the Material one are two descriptions of the same
+    // editor, and a palette change that reached only one of them would show
+    // up as a dialog that does not match the panel behind it.
+    expect(editorForuiDarkTheme.colors.primary, editorAccentColor);
+    expect(editorForuiDarkTheme.colors.background, editorSurfaceColor);
+    expect(editorDarkTheme().colorScheme.primary, editorAccentColor);
+    expect(editorDarkTheme().scaffoldBackgroundColor, editorSurfaceColor);
+    expect(editorDarkTheme().dividerColor, editorLineColor);
+  });
+
+  test('the palette keeps text readable on every surface it sits on', () {
+    // Contrast is the one thing a palette change can quietly ruin, and the
+    // panels are dark enough that a wrong step is unreadable rather than
+    // merely ugly.
+    double luminance(Color c) => c.computeLuminance();
+    for (final surface in [
+      editorSurfaceColor,
+      editorPanelColor,
+      editorRaisedColor,
+    ]) {
+      final ratio =
+          (luminance(editorTextColor) + 0.05) / (luminance(surface) + 0.05);
+      expect(ratio, greaterThan(7), reason: 'body text on $surface');
+      final muted =
+          (luminance(editorMutedTextColor) + 0.05) /
+          (luminance(surface) + 0.05);
+      expect(muted, greaterThan(3), reason: 'muted text on $surface');
+    }
+  });
+
+  test('the surfaces step apart, so depth reads without borders', () {
+    final steps = [
+      editorSurfaceColor,
+      editorPanelColor,
+      editorRaisedColor,
+    ].map((c) => c.computeLuminance()).toList();
+    for (var i = 1; i < steps.length; i++) {
+      expect(steps[i], greaterThan(steps[i - 1]), reason: 'step $i');
+    }
+    // And the line sits above the raised surface, or a border vanishes into
+    // the thing it is meant to separate.
+    expect(editorLineColor.computeLuminance(), greaterThan(steps.last));
+  });
+
+  test('the accent and the value colour cannot be confused', () {
+    // An editable number and a selected thing must never read alike; every
+    // transform row has both within a few pixels of each other.
+    final accent = HSLColor.fromColor(editorAccentColor);
+    final value = HSLColor.fromColor(editorValueColor);
+    final apart = (accent.hue - value.hue).abs();
+    expect(apart > 60 && apart < 300, isTrue, reason: 'hues too close');
   });
 
   test('HDR and EXR environment thumbnails decode to display pixels', () {
