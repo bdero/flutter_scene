@@ -16,6 +16,7 @@ import 'package:scene/schema.dart';
 
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
+import 'package:flutter_scene/src/fscene/realize/property_map.dart';
 import 'package:flutter_scene/src/animation.dart' show AnimationMask;
 import 'package:flutter_scene/src/animation/animator.dart';
 import 'package:flutter_scene/src/animation/animator_component.dart';
@@ -195,22 +196,16 @@ const _tileFields = [
   ),
 ];
 
-double _num(Object? value, double fallback) => switch (value) {
-  DoubleValue(value: final v) => v,
-  IntValue(value: final v) => v.toDouble(),
-  _ => fallback,
-};
-
 Grid _decodeGrid(PropertyValue? value) {
   final map = value is MapValue
       ? value.values
       : const <String, PropertyValue>{};
-  final cellSize = _num(map['cellSize'], 1.0);
+  final cellSize = map.numberAt('cellSize', 1.0);
   final origin = switch (map['origin']) {
     Vec2Value(value: final v) => (x: v.x, z: v.y),
     _ => (x: 0.0, z: 0.0),
   };
-  final elevation = _num(map['elevation'], 0.0);
+  final elevation = map.numberAt('elevation', 0.0);
   final hex = switch (map['shape']) {
     StringValue(value: 'hex') => true,
     _ => false,
@@ -351,8 +346,8 @@ class GridTileLayerCodec extends ComponentCodec {
         if (cell is! Vec2Value) continue;
         layer.set(
           GridCoord(cell.value.x.round(), cell.value.y.round()),
-          height: _num(entry.values['height'], 0.0),
-          yaw: _num(entry.values['yaw'], 0.0),
+          height: entry.values.numberAt('height', 0.0),
+          yaw: entry.values.numberAt('yaw', 0.0),
           scale: switch (entry.values['scale']) {
             Vec3Value(value: final v) => v.clone(),
             _ => null,
@@ -690,7 +685,7 @@ class AnimatorCodec extends ComponentCodec {
       states: states,
       transitions: transitions,
       initial: initial.isEmpty ? null : initial,
-      weight: _num(value.values['weight'], 1),
+      weight: value.values.numberAt('weight', 1),
       mask: _decodeMask(value.values['mask']),
     );
   }
@@ -710,8 +705,8 @@ class AnimatorCodec extends ComponentCodec {
         BoolValue(value: final v) => v,
         _ => true,
       },
-      weight: _num(value.values['weight'], 1),
-      outsideWeight: _num(value.values['outsideWeight'], 0),
+      weight: value.values.numberAt('weight', 1),
+      outsideWeight: value.values.numberAt('outsideWeight', 0),
     );
   }
 
@@ -752,7 +747,7 @@ class AnimatorCodec extends ComponentCodec {
       motion = BlendMotion(blendParameter, [
         for (final entry in entries)
           (
-            at: _num(entry.values['at'], 0),
+            at: entry.values.numberAt('at', 0),
             clip: _string(entry.values['clip']),
           ),
       ]);
@@ -771,7 +766,7 @@ class AnimatorCodec extends ComponentCodec {
         BoolValue(value: final v) => v,
         _ => true,
       },
-      speed: _num(value.values['speed'], 1),
+      speed: value.values.numberAt('speed', 1),
     );
   }
 
@@ -784,7 +779,7 @@ class AnimatorCodec extends ComponentCodec {
     return AnimatorTransition(
       to: to,
       from: from.isEmpty ? null : from,
-      duration: _num(value.values['duration'], 0.2),
+      duration: value.values.numberAt('duration', 0.2),
       conditions: [
         if (rawConditions is ListValue)
           for (final entry in rawConditions.values)
@@ -793,7 +788,7 @@ class AnimatorCodec extends ComponentCodec {
               AnimatorCondition(
                 _string(entry.values['parameter']),
                 _comparison(_string(entry.values['comparison'], 'isTrue')),
-                threshold: _num(entry.values['threshold'], 0),
+                threshold: entry.values.numberAt('threshold', 0),
               ),
       ],
     );
@@ -1117,8 +1112,8 @@ class ScatterLayerCodec extends ComponentCodec {
         layer.add(
           ScatterPlacement(
             position: position.value.clone(),
-            yaw: _num(entry.values['yaw'], 0),
-            scale: _num(entry.values['scale'], 1),
+            yaw: entry.values.numberAt('yaw', 0),
+            scale: entry.values.numberAt('scale', 1),
           ),
         );
       }

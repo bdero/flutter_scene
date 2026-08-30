@@ -121,13 +121,13 @@ class CameraPose {
   final CameraProjection? projection;
 
   /// The unit look direction (rotated local `+Z`).
-  Vector3 get forward => _rotate(rotation, Vector3(0.0, 0.0, 1.0));
+  Vector3 get forward => rotation.rotateVector(Vector3(0.0, 0.0, 1.0));
 
   /// The unit up direction (rotated local `+Y`).
-  Vector3 get up => _rotate(rotation, Vector3(0.0, 1.0, 0.0));
+  Vector3 get up => rotation.rotateVector(Vector3(0.0, 1.0, 0.0));
 
   /// The unit right direction (rotated local `+X`).
-  Vector3 get right => _rotate(rotation, Vector3(1.0, 0.0, 0.0));
+  Vector3 get right => rotation.rotateVector(Vector3(1.0, 0.0, 0.0));
 
   /// This pose as a world transform (unit scale).
   Matrix4 toMatrix() =>
@@ -188,7 +188,7 @@ class CameraPose {
   /// space (`+X` right, `+Y` up, `+Z` forward), for handheld sway, camera
   /// shake, and lens offsets.
   CameraPose translatedLocal(Vector3 offset) =>
-      copyWith(position: position + _rotate(rotation, offset));
+      copyWith(position: position + rotation.rotateVector(offset));
 
   /// This pose rotated by [delta] in the camera's own local space, applied
   /// after the existing orientation.
@@ -198,17 +198,4 @@ class CameraPose {
   @override
   String toString() =>
       'CameraPose(position: $position, forward: $forward, lens: $projection)';
-}
-
-/// Rotates [v] by [q] in the convention the scene graph uses, the one
-/// [Matrix4.compose] and [Quaternion.fromRotation] agree on.
-///
-/// Deliberately not `Quaternion.rotate`: vector_math applies the *inverse* of
-/// the rotation that `Matrix4.compose` builds from the same quaternion, so a
-/// pose using it would report a look direction pointing backwards while its
-/// matrix looked the right way.
-Vector3 _rotate(Quaternion q, Vector3 v) {
-  final axis = Vector3(q.x, q.y, q.z);
-  final cross = axis.cross(v);
-  return v + cross * (2.0 * q.w) + axis.cross(cross) * 2.0;
 }

@@ -48,6 +48,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/ref_read.dart';
+import 'package:flutter_scene/src/fscene/realize/virtual_camera_codec.dart';
 import 'package:flutter_scene/src/kit/camera/camera_shake.dart';
 import 'package:flutter_scene/src/node.dart';
 
@@ -61,7 +62,8 @@ void registerCameraControllerCodecs(FsceneComponentRegistry registry) {
     ..register(RtsCameraControllerCodec())
     ..register(DollyCameraControllerCodec())
     ..register(CameraDirectorCodec())
-    ..register(CameraSequenceCodec());
+    ..register(CameraSequenceCodec())
+    ..register(VirtualCameraCodec());
 }
 
 // --- Shared conventions ---

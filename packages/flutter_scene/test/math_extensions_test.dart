@@ -15,10 +15,9 @@ Quaternion _rotZ(double deg) =>
     Quaternion.axisAngle(Vector3(0, 0, 1), deg * _degrees);
 
 /// Magnitude in degrees of the +X axis rotation applied by [q], measured
-/// in the XY plane. Lets a Z-rotation be checked as a single scalar; the
-/// sign follows vector_math's rotation convention, so compare magnitudes.
+/// in the XY plane. Lets a Z-rotation be checked as a single scalar.
 double _probeAngle(Quaternion q) {
-  final v = q.rotated(Vector3(1, 0, 0));
+  final v = q.rotateVector(Vector3(1, 0, 0));
   return atan2(v.y, v.x).abs() / _degrees;
 }
 
@@ -72,6 +71,78 @@ void main() {
       final b = _rotZ(31);
       expect(_probeAngle(a.slerp(b, 0.5)), closeTo(20.5, 1e-3));
       expect(_sameRotation(a.slerp(b, 1.0), b), isTrue);
+    });
+  });
+
+  group('QuaternionRotate', () {
+    test('agrees with the matrix the same quaternion composes', () {
+      // The whole reason this helper exists. Node transforms, camera poses and
+      // animation output all go through Matrix4.compose, so a rotation helper
+      // that disagreed with it would be wrong everywhere it was used -- and
+      // wrong only for compound rotations, which is the worst way to be wrong.
+      final rotations = [
+        Quaternion.identity(),
+        Quaternion.axisAngle(Vector3(0, 1, 0), pi / 2),
+        Quaternion.axisAngle(Vector3(1, 0, 0), 0.7),
+        Quaternion.axisAngle(Vector3(0, 1, 0), 1.1) *
+            Quaternion.axisAngle(Vector3(1, 0, 0), -0.4),
+        Quaternion.axisAngle(Vector3(1, 2, 3).normalized(), 2.2),
+      ];
+      final vectors = [
+        Vector3(1, 0, 0),
+        Vector3(0, 0, 1),
+        Vector3(0, 0, -5),
+        Vector3(3, -2, 1.5),
+      ];
+      for (final q in rotations) {
+        final matrix = Matrix4.compose(
+          Vector3.zero(),
+          q,
+          Vector3(1, 1, 1),
+        ).getRotation();
+        for (final v in vectors) {
+          final expected = matrix * v.clone();
+          final actual = q.rotateVector(v);
+          expect(
+            (actual - expected).length,
+            lessThan(1e-5),
+            reason: 'rotating $v by $q',
+          );
+        }
+      }
+    });
+
+    test('vector_math rotated is the inverse, which is the trap', () {
+      // Pinned so the difference stays visible: a future reader who swaps the
+      // helper back for Quaternion.rotated should fail here rather than in a
+      // camera pointing quietly backwards.
+      final q = Quaternion.axisAngle(Vector3(0, 1, 0), pi / 4);
+      final v = Vector3(0, 0, 1);
+      expect(q.rotateVector(v).x, closeTo(0.7071, 1e-3));
+      expect(q.rotated(v.clone()).x, closeTo(-0.7071, 1e-3));
+    });
+
+    test('the into form writes the same answer and allocates nothing', () {
+      final q = Quaternion.axisAngle(Vector3(0, 1, 0), 1.3);
+      final v = Vector3(2, -1, 4);
+      final out = Vector3.zero();
+      q.rotateVectorInto(v, out);
+      expect((out - q.rotateVector(v)).length, lessThan(1e-9));
+    });
+
+    test('writing into the source vector works', () {
+      // Callers reuse one scratch vector for both sides; aliasing has to be
+      // safe or the second component reads a value the first already replaced.
+      final q = Quaternion.axisAngle(Vector3(0, 1, 0), 0.9);
+      final v = Vector3(1, 2, 3);
+      final expected = q.rotateVector(v);
+      q.rotateVectorInto(v, v);
+      expect((v - expected).length, lessThan(1e-9));
+    });
+
+    test('a unit rotation preserves length', () {
+      final q = Quaternion.axisAngle(Vector3(1, 1, 0).normalized(), 2.0);
+      expect(q.rotateVector(Vector3(0, 0, 7)).length, closeTo(7, 1e-6));
     });
   });
 }
