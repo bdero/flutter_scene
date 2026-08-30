@@ -188,4 +188,30 @@ void main() {
     expect(collider.mount, throwsUnsupportedError);
     expect(collider.handles, isEmpty);
   });
+
+  test('the rejection names the node it was on', () {
+    final root = _boot();
+
+    final node = Node(name: 'Terrain chunk 3');
+    node.addComponent(RigidBody(type: BodyType.fixed));
+    final collider = Collider(
+      shape: ConvexHullShape(points: Float32List.fromList([0, 0, 0, 1, 0, 0])),
+    );
+    node.addComponent(collider);
+    root.add(node);
+    node.getComponents<RigidBody>().first.mount();
+
+    // The name is the whole point of the diagnostic: without it the symptom
+    // shows up later as a body falling through the level.
+    expect(
+      collider.mount,
+      throwsA(
+        isA<UnsupportedError>().having(
+          (e) => e.message,
+          'message',
+          contains('Terrain chunk 3'),
+        ),
+      ),
+    );
+  });
 }

@@ -6,13 +6,6 @@ import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
-// A primitive's own shadow opt-out only ever subtracts, so it collapses the
-// node's mode to off rather than choosing between the casting modes.
-ShadowCastingMode _effectiveShadowMode(
-  MeshPrimitive primitive,
-  ShadowCastingMode nodeMode,
-) => primitive.castsShadow ? nodeMode : ShadowCastingMode.off;
-
 /// An engine [Component] that draws a [Mesh].
 ///
 /// While the owning node is part of a live scene, a `MeshComponent`
@@ -186,8 +179,8 @@ class MeshComponent extends Component {
           item.layers == node.layers &&
           item.lightChannelMask == node.lightChannelMask &&
           item.shadowStatic == node.shadowStatic &&
-          item.shadowCastingMode ==
-              _effectiveShadowMode(primitive, node.shadowCastingMode) &&
+          item.shadowCastingMode == node.shadowCastingMode &&
+          item.primitiveCastsShadow == primitive.castsShadow &&
           item.highlightColor == node.highlightColor &&
           _boundsVersions[index] == item.geometry.localBoundsVersion;
     }
@@ -214,12 +207,11 @@ class MeshComponent extends Component {
     for (var index = 0; index < _renderItems.length; index++) {
       final item = _renderItems[index];
       final primitive = _mesh.primitives[index];
-      final effectiveShadowMode = _effectiveShadowMode(
-        primitive,
-        node.shadowCastingMode,
-      );
+      // The node's mode and the primitive's opt-out stay separate: the mode
+      // decides the color gate, the opt-out only subtracts casting.
+      final effectiveShadowMode = node.shadowCastingMode;
       final effectiveCastsShadows =
-          effectiveShadowMode != ShadowCastingMode.off;
+          primitive.castsShadow && effectiveShadowMode != ShadowCastingMode.off;
       // A material can declare itself draw-less for the frame (the shadow
       // catcher at zero intensity); its item then joins no pass at all.
       final visible = !item.material.drawsNothing;
@@ -227,6 +219,7 @@ class MeshComponent extends Component {
           (item.visible != visible ||
               item.shadowStatic != node.shadowStatic ||
               item.shadowCastingMode != effectiveShadowMode ||
+              item.primitiveCastsShadow != primitive.castsShadow ||
               item.lightChannelMask != lightChannelMask ||
               transformChanged) &&
           (item.shadowStatic || node.shadowStatic) &&
@@ -247,6 +240,7 @@ class MeshComponent extends Component {
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
       item.shadowCastingMode = effectiveShadowMode;
+      item.primitiveCastsShadow = primitive.castsShadow;
       item.highlightColor = highlightColor;
       if (skin != null) {
         item.previousJointsTexture = skin.getPreviousJointsTexture();

@@ -14,6 +14,10 @@ bool _gpuAvailable() {
 }
 
 void main() {
+  // Scene.initializeStaticResources reaches rootBundle, which needs a binding.
+  // Without this the whole file fails before it reaches an assertion.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   if (!_gpuAvailable()) {
     test('restored-node reflection', () {}, skip: 'Requires a GPU device.');
     return;
@@ -90,6 +94,29 @@ void main() {
     expect(child, isNotNull);
     expect(child!.parent, same(parent));
     expect(child.getComponents<DirectionalLightComponent>(), isNotEmpty);
+  });
+
+  test('an undone delete restores the node shadow casting mode', () async {
+    await Scene.initializeStaticResources();
+    final document = buildDocument();
+    final parentId = byName(document, 'Parent');
+    document.node(parentId)!.shadowCastingMode = 'shadowsOnly';
+    final controller = await EditorController.open(EditorSession(document));
+    addTearDown(controller.dispose);
+    expect(
+      controller.liveNode(parentId)!.shadowCastingMode,
+      ShadowCastingMode.shadowsOnly,
+    );
+
+    await controller.run('deleteNode', {'nodeId': parentId.toToken()});
+    await controller.undo();
+
+    // The restore path rebuilds the node by hand, so a field it forgets comes
+    // back as the default and silently disagrees with the document.
+    expect(
+      controller.liveNode(parentId)!.shadowCastingMode,
+      ShadowCastingMode.shadowsOnly,
+    );
   });
 
   test(

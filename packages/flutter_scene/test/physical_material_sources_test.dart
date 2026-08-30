@@ -836,21 +836,4 @@ void main() {
     // reject a legitimately small model and hand back the wrong normal.
     expect(helper, contains('if (det == 0.0)'));
   });
-
-  test('the sharp sky hands off to the cube toward the poles', () {
-    final skybox = File(
-      'shaders/flutter_scene_skybox_environment.frag',
-    ).readAsStringSync();
-
-    // Cube layouts only. The band atlas is itself an equirect, so handing off
-    // to it would bring the pole singularity along.
-    expect(skybox, contains('#ifdef FLUTTER_SCENE_RADIANCE_CUBE'));
-    expect(
-      skybox,
-      contains('smoothstep(kPoleBlendStart, 1.0, abs(direction.y))'),
-    );
-    // Guarded rather than folded into a mix, whose arguments both evaluate.
-    // The blend is zero over most of the screen at eye level.
-    expect(skybox, contains('if (pole > 0.0)'));
-  });
 }

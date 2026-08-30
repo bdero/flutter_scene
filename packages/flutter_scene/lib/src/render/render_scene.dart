@@ -119,12 +119,18 @@ class RenderItem {
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
 
-  /// Mirrors the owning node's `shadowCastingMode`, anded with the owning
-  /// primitive's own opt-out, refreshed each frame.
+  /// Mirrors the owning node's `shadowCastingMode`, refreshed each frame.
   ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
 
+  /// Mirrors the owning `MeshPrimitive.castsShadow`, refreshed each frame.
+  /// Kept apart from [shadowCastingMode] rather than folded into it: a
+  /// primitive opting out must stop the casting without also pulling a
+  /// shadows-only node back into the color image.
+  bool primitiveCastsShadow = true;
+
   /// Whether this item renders into shadow maps at all.
-  bool get castsShadows => shadowCastingMode != ShadowCastingMode.off;
+  bool get castsShadows =>
+      primitiveCastsShadow && shadowCastingMode != ShadowCastingMode.off;
 
   /// Whether this item casts from every face, ignoring material culling.
   bool get shadowDoubleSided =>

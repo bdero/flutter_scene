@@ -1666,7 +1666,8 @@ class EditorController extends ChangeNotifier {
     final live = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..visible = spec.visible,
+        ..visible = spec.visible
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode),
       id,
     );
     applyTransformSpec(live, spec.transform);
@@ -1767,7 +1768,10 @@ class EditorController extends ChangeNotifier {
       final node = tagNodeId(
         Node(name: spec.name)
           ..layers = spec.layers
-          ..visible = spec.visible,
+          ..visible = spec.visible
+          ..shadowCastingMode = shadowCastingModeFromName(
+            spec.shadowCastingMode,
+          ),
         spec.id,
       );
       applyTransformSpec(node, spec.transform);
