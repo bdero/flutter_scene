@@ -15,6 +15,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/geometry/mesh_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
+import 'package:flutter_scene/src/geometry/terrain_splat.dart';
 import 'package:flutter_scene/src/noise/fast_noise_lite.dart';
 
 /// A grid of height samples covering a [width] by [depth] patch centred on
@@ -315,12 +316,16 @@ class TerrainGeometry extends MeshGeometry {
   /// Pass [sculptable] to make the vertex buffers updatable, so [rebuild] can
   /// push edited samples without rebuilding the geometry. The editor wants
   /// that; a shipped level does not, and fixed buffers are cheaper.
-  factory TerrainGeometry(HeightField field, {bool sculptable = false}) =>
-      TerrainGeometry._(
-        field,
-        buildTerrainArrays(field),
-        sculptable: sculptable,
-      );
+  factory TerrainGeometry(
+    HeightField field, {
+    bool sculptable = false,
+    TerrainSplatMap? splat,
+  }) => TerrainGeometry._(
+    field,
+    buildTerrainArrays(field),
+    sculptable: sculptable,
+    splat: splat,
+  );
 
   /// Builds a noise terrain, the form a document can describe in a few
   /// numbers.
@@ -350,6 +355,7 @@ class TerrainGeometry extends MeshGeometry {
     this.field,
     PrimitiveArrays arrays, {
     required bool sculptable,
+    this.splat,
   }) : _positions = arrays.positions,
        _normals = arrays.normals,
        super.fromArrays(
@@ -365,6 +371,15 @@ class TerrainGeometry extends MeshGeometry {
 
   /// The samples this mesh was built from.
   final HeightField field;
+
+  /// Which surface layer shows where, or null for a terrain that is one
+  /// material throughout.
+  ///
+  /// Kept here for the same reason [field] is: the thing that draws the
+  /// ground is the thing gameplay asks what the ground is made of, and
+  /// [TerrainSplatMap.dominantLayerAtWorld] is a bilinear sample rather than
+  /// a readback from the GPU.
+  final TerrainSplatMap? splat;
 
   // Kept so a partial rebuild can rewrite a band rather than allocating a
   // fresh set of arrays for every dab of a stroke.

@@ -721,6 +721,76 @@ void main() {
       expect(terrain.isSculpted, isFalse);
     });
 
+    test('a painted terrain keeps its control map and its resolution', () {
+      final doc = SceneDocument();
+      final splat = doc.addPayload(
+        PayloadSpec(
+          doc.newId(),
+          encoding: PayloadEncoding.image,
+          format: 'rgba8',
+          width: 512,
+          height: 256,
+        ),
+      );
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: TerrainGeometrySpec(
+            splat: splat.id,
+            splatColumns: 512,
+            splatRows: 256,
+          ),
+        ),
+      );
+
+      final back = readFscene(writeFscene(doc)).resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<TerrainGeometrySpec>()
+          .single;
+      expect(back.splat, splat.id);
+      expect(back.isPainted, isTrue);
+      // The control map has its own resolution, and reading it back at the
+      // heightmap's would stretch the painting across the ground.
+      expect(back.splatColumns, 512);
+      expect(back.splatRows, 256);
+    });
+
+    test('an unpainted terrain carries no control map', () {
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(doc.newId(), procedural: TerrainGeometrySpec()),
+      );
+      final terrain = readFscene(writeFscene(doc)).resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<TerrainGeometrySpec>()
+          .single;
+      expect(terrain.splat, isNull);
+      expect(terrain.isPainted, isFalse);
+    });
+
+    test('a document written before painting existed still loads', () {
+      // Older scenes have no splat keys at all; they are terrain that is one
+      // material throughout, which is what they always were.
+      final doc = SceneDocument();
+      doc.addResource(
+        GeometryResource(
+          doc.newId(),
+          procedural: TerrainGeometrySpec(columns: 9, rows: 9),
+        ),
+      );
+      final json = jsonDecode(writeFscene(doc)) as Map<String, dynamic>;
+      expect(json.toString(), isNot(contains('splatColumns')));
+      final terrain = readFscene(jsonEncode(json)).resources.values
+          .whereType<GeometryResource>()
+          .map((resource) => resource.procedural)
+          .whereType<TerrainGeometrySpec>()
+          .single;
+      expect(terrain.splatColumns, 256);
+      expect(terrain.isPainted, isFalse);
+    });
+
     test('a malformed wedge size falls back rather than throwing', () {
       final doc = SceneDocument();
       doc.addResource(

@@ -1278,23 +1278,123 @@ final setTerrainHeights = CommandEntry(
           newValue: ResourceChange(
             GeometryResource(
               resourceId,
-              procedural: TerrainGeometrySpec(
-                width: terrain.width,
-                depth: terrain.depth,
-                columns: terrain.columns,
-                rows: terrain.rows,
-                amplitude: terrain.amplitude,
-                frequency: terrain.frequency,
-                octaves: terrain.octaves,
-                seed: terrain.seed,
-                heights: payloadId,
-              ),
+              // copyWith, so a terrain that was painted before it was first
+              // sculpted keeps its painting.
+              procedural: terrain.copyWith(heights: payloadId),
             ),
           ),
         ),
       );
     }
     return Transaction(name: 'Sculpt terrain', records: records);
+  },
+);
+
+/// Replaces a terrain's painted surface layers.
+///
+/// The sibling of [setTerrainHeights], and the same bargain: one command per
+/// stroke rather than per pointer move, taking the finished control map rather
+/// than a brush to replay, with undo holding the previous map whole.
+///
+/// The control map is four bytes a texel — the same RGBA the shader samples —
+/// so it is stored as an image payload rather than as opaque bytes. That makes
+/// it something a tool other than this one can open.
+final setTerrainSplat = CommandEntry(
+  name: 'setTerrainSplat',
+  doc: "Replace a terrain geometry's painted surface layers.",
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'resourceId',
+      type: ParamType.resourceRef,
+      label: 'Terrain',
+    ),
+    ParamSpec(name: 'splat', type: ParamType.string, label: 'Control map'),
+    ParamSpec(
+      name: 'columns',
+      type: ParamType.integer,
+      label: 'Texels across X',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'rows',
+      type: ParamType.integer,
+      label: 'Texels across Z',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final terrain = resource.procedural;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a terrain');
+    }
+
+    // A terrain painted for the first time may be establishing its control-map
+    // resolution; afterwards the map has to match what the document says it
+    // is, or the painting would be stretched across the ground on reload.
+    final columns = optionalInt(params, 'columns') ?? terrain.splatColumns;
+    final rows = optionalInt(params, 'rows') ?? terrain.splatRows;
+    if (terrain.splat != null &&
+        (columns != terrain.splatColumns || rows != terrain.splatRows)) {
+      throw CommandException(
+        'This terrain is painted at ${terrain.splatColumns} by '
+        '${terrain.splatRows}; resizing a control map would resample the '
+        'painting, which this command does not do',
+      );
+    }
+
+    final bytes = base64Decode(requireString(params, 'splat'));
+    final expected = columns * rows * 4;
+    if (bytes.lengthInBytes != expected) {
+      throw CommandException(
+        'Expected $expected bytes for a $columns by $rows control map, got '
+        '${bytes.lengthInBytes}',
+      );
+    }
+
+    final payloadId = terrain.splat ?? ctx.document.newId();
+    final records = <ChangeRecord>[
+      ChangeRecord(
+        targetId: payloadId,
+        slot: ChangeSlot.poolPayload,
+        oldValue: PayloadChange(ctx.document.payload(payloadId)),
+        newValue: PayloadChange(
+          PayloadSpec(
+            payloadId,
+            encoding: PayloadEncoding.image,
+            format: 'rgba8',
+            width: columns,
+            height: rows,
+            bytes: bytes,
+          ),
+        ),
+      ),
+    ];
+    if (terrain.splat == null) {
+      records.add(
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              procedural: terrain.copyWith(
+                splat: payloadId,
+                splatColumns: columns,
+                splatRows: rows,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Transaction(name: 'Paint terrain', records: records);
   },
 );
 
@@ -3441,6 +3541,7 @@ final List<CommandEntry> builtinCommands = [
   createTerrainGeometry,
   setTerrainHeights,
   makeTerrainSculptable,
+  setTerrainSplat,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,
