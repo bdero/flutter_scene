@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
@@ -149,11 +150,23 @@ base class Node implements SceneGraph {
   /// camera-dependent displacement.
   bool shadowStatic = false;
 
-  /// Whether this node's meshes cast shadows. Defaults to `true`.
+  /// How this node's meshes take part in shadow casting. Defaults to
+  /// [ShadowCastingMode.on].
   ///
-  /// This does not affect whether the meshes receive shadows. The value is not
-  /// inherited by children.
-  bool castsShadows = true;
+  /// This does not affect whether the meshes *receive* shadows, and the value
+  /// is not inherited by children.
+  ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
+
+  /// A two-state view of [shadowCastingMode]: reading says whether it casts
+  /// at all, writing picks [ShadowCastingMode.on] or [ShadowCastingMode.off].
+  ///
+  /// Kept because it is what every caller before the mode existed says, and
+  /// because "does this cast" remains the common question. Set the mode
+  /// directly to reach the other two.
+  bool get castsShadows => shadowCastingMode.casts;
+
+  set castsShadows(bool value) =>
+      shadowCastingMode = value ? ShadowCastingMode.on : ShadowCastingMode.off;
 
   /// Whether scene raycasts (`Scene.raycast`) test this node's meshes.
   ///

@@ -33,6 +33,54 @@ enum ShadowCasterFaces {
   both,
 }
 
+/// How a node's meshes take part in shadow casting, set through
+/// [Node.shadowCastingMode].
+///
+/// Independent of whether the meshes are visible in the colour image, except
+/// for [shadowsOnly], which is defined as the combination of the two.
+/// {@category Lighting and environment}
+enum ShadowCastingMode {
+  /// Never rendered into any shadow map. The meshes still draw, so they are
+  /// lit but throw nothing. For geometry whose shadow is noise -- foliage
+  /// cards, decals, effects -- or already baked into the scene.
+  off,
+
+  /// Casts from the faces the light can see, respecting each material's own
+  /// culling. The default, and what shadows normally are.
+  on,
+
+  /// Casts from every face, ignoring material culling.
+  ///
+  /// Fixes light leaking through single-sided geometry, which is what a wall
+  /// or a ground plane modelled as one sheet is: the light sees the back of
+  /// it, finds nothing facing it, and lights the room through the wall. Costs
+  /// both faces in the map.
+  doubleSided,
+
+  /// Rendered into shadow maps and never into the colour image, so it throws
+  /// a shadow while staying invisible.
+  ///
+  /// For a stand-in occluder: a cheap proxy casting in place of an expensive
+  /// mesh, or geometry outside the frame that still has to darken what is
+  /// inside it.
+  shadowsOnly;
+
+  /// Whether this mode puts the meshes in a shadow map at all.
+  bool get casts => this != ShadowCastingMode.off;
+
+  /// Whether this mode draws the meshes in the colour image.
+  bool get drawsInColor => this != ShadowCastingMode.shadowsOnly;
+
+  /// The mode named [name], or [on] when it is not one of these.
+  ///
+  /// A document from a newer build naming a mode this one lacks casts
+  /// normally rather than vanishing: a missing object is a worse failure than
+  /// a differently-shadowed one.
+  static ShadowCastingMode parse(String? name) =>
+      values.where((mode) => mode.name == name).firstOrNull ??
+      ShadowCastingMode.on;
+}
+
 /// The sampling pattern used for directional shadow filtering.
 /// {@category Lighting and environment}
 enum DirectionalShadowFilter {

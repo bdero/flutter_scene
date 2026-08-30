@@ -314,6 +314,7 @@ export 'src/light.dart'
         RectAreaLight,
         ShadowCascade,
         ShadowCasterFaces,
+        ShadowCastingMode,
         SpotLight;
 export 'src/render/custom_render_pass.dart'
     show CustomRenderPass, RenderInput, RenderPassContext, RenderStage;

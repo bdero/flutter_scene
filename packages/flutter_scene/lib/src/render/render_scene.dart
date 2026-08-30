@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/components/reflection_probe_component.dart';
 import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
@@ -118,8 +119,30 @@ class RenderItem {
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
 
-  /// Mirrors the owning node's `castsShadows` setting, refreshed each frame.
+  /// Whether this item goes into a shadow map.
+  ///
+  /// The node's [ShadowCastingMode] anded with the primitive's own
+  /// `castsShadow`, refreshed each frame. Kept as a bool rather than derived
+  /// from [shadowCastingMode] because the primitive gets a say too, and a
+  /// primitive that opts out of casting does so whatever the node's mode is.
   bool castsShadows = true;
+
+  /// The owning node's mode, for the two things the bool cannot say.
+  ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
+
+  /// Whether the shadow pass should draw both faces of it.
+  ///
+  /// What stops light leaking through geometry modelled as one sheet: the
+  /// light looks for something facing it, finds nothing, and lights the room
+  /// through the wall.
+  bool get shadowDoubleSided =>
+      castsShadows && shadowCastingMode == ShadowCastingMode.doubleSided;
+
+  /// Whether this item draws in the colour image.
+  ///
+  /// False only for a shadows-only caster: a stand-in occluder that darkens
+  /// what you can see without being seen itself.
+  bool get drawsInColor => shadowCastingMode.drawsInColor;
 
   /// The owning node's joints texture and its edge length in texels, or
   /// null/0 for an unskinned node. Refreshed each frame from the node's
@@ -794,6 +817,7 @@ class RenderScene {
     void collect(RenderItem item) {
       if (!item.visible ||
           !item.primitiveVisible ||
+          !item.drawsInColor ||
           (item.layers & layerMask) == 0) {
         return;
       }

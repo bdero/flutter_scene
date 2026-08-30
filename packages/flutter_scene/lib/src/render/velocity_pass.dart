@@ -161,7 +161,9 @@ class VelocityPass extends RenderGraphPass {
     final frustum = Frustum.matrix(_currentViewProjection);
 
     void submitItem(RenderItem item) {
-      if (!item.visible || !item.primitiveVisible) return;
+      if (!item.visible || !item.primitiveVisible || !item.drawsInColor) {
+        return;
+      }
       if ((item.layers & _layerMask) == 0) return;
       if (!item.isMoving) return;
 
