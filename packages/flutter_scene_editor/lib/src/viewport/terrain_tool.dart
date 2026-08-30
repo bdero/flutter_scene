@@ -13,8 +13,17 @@ import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart' show LocalId;
 import 'package:vector_math/vector_math.dart' as vm;
 
-/// The sculpting tool's settings: whether it is armed, and what the brush
-/// does when it is.
+/// What the terrain tool is doing with a stroke.
+enum TerrainToolMode {
+  /// Moving the ground: raise, smooth, flatten.
+  sculpt,
+
+  /// Painting which surface layer shows.
+  paint,
+}
+
+/// The terrain tool's settings: whether it is armed, and what a stroke does
+/// when it is.
 ///
 /// Held apart from the viewport so the inspector can drive the same brush the
 /// viewport paints with, and so the settings survive a viewport being closed
@@ -22,6 +31,9 @@ import 'package:vector_math/vector_math.dart' as vm;
 class TerrainToolController extends ChangeNotifier {
   bool _active = false;
   TerrainBrush _brush = const TerrainBrush();
+  TerrainToolMode _mode = TerrainToolMode.sculpt;
+  int _paintLayer = 1;
+  double _targetStrength = 1.0;
 
   /// Whether the tool takes the primary button instead of the gizmo.
   bool get active => _active;
@@ -35,6 +47,38 @@ class TerrainToolController extends ChangeNotifier {
   TerrainBrush get brush => _brush;
   set brush(TerrainBrush value) {
     _brush = value;
+    notifyListeners();
+  }
+
+  /// Whether a stroke sculpts the ground or paints it.
+  TerrainToolMode get mode => _mode;
+  set mode(TerrainToolMode value) {
+    if (_mode == value) return;
+    _mode = value;
+    notifyListeners();
+  }
+
+  /// Which of the four surface layers a paint stroke lays down.
+  ///
+  /// Layer 0 is what a terrain is before anyone paints it, so the tool opens
+  /// on layer 1 — the first stroke of a paint session is almost always adding
+  /// something to that base rather than repainting the base itself.
+  int get paintLayer => _paintLayer;
+  set paintLayer(int value) {
+    final clamped = value.clamp(0, terrainSplatLayers - 1);
+    if (_paintLayer == clamped) return;
+    _paintLayer = clamped;
+    notifyListeners();
+  }
+
+  /// How far a paint stroke takes its layer: 1 covers what it touches, and
+  /// less leaves the layers underneath showing through however long you hold
+  /// the brush.
+  double get targetStrength => _targetStrength;
+  set targetStrength(double value) {
+    final clamped = value.clamp(0.0, 1.0);
+    if (_targetStrength == clamped) return;
+    _targetStrength = clamped;
     notifyListeners();
   }
 
@@ -97,6 +141,73 @@ class TerrainStroke {
 
   /// The finished samples, as the command takes them.
   String encodedHeights() => base64Encode(geometry.field.toBytes());
+}
+
+/// One painting stroke, from pointer down to pointer up.
+///
+/// The sibling of [TerrainStroke], and the same bargain: it edits the live
+/// geometry's control map so the viewport can show the result, and reports the
+/// finished map once at the end, because a stroke is one thing the user did.
+class TerrainPaintStroke {
+  /// Begins a stroke into [map], which belongs to [resourceId].
+  TerrainPaintStroke({required this.map, required this.resourceId});
+
+  /// Begins a stroke on [geometry].
+  ///
+  /// A terrain painted for the first time has no control map yet, so one is
+  /// minted here — entirely the base layer, which is exactly what the terrain
+  /// already looked like — and attached to the geometry so the next stroke
+  /// carries on painting the same map.
+  factory TerrainPaintStroke.on(
+    TerrainGeometry geometry, {
+    required LocalId resourceId,
+    int columns = 256,
+    int rows = 256,
+  }) => TerrainPaintStroke(
+    resourceId: resourceId,
+    map:
+        geometry.splat ??
+        (geometry.splat = TerrainSplatMap.base(
+          width: geometry.field.width,
+          depth: geometry.field.depth,
+          columns: columns,
+          rows: rows,
+        )),
+  );
+
+  /// The geometry resource this control map belongs to.
+  final LocalId resourceId;
+
+  /// The map being painted into.
+  final TerrainSplatMap map;
+
+  bool _touched = false;
+
+  /// Whether any dab actually changed the ground's surface.
+  bool get touched => _touched;
+
+  /// Applies one dab of [layer] at world [point].
+  void dab(
+    TerrainBrush brush,
+    int layer,
+    double targetStrength,
+    vm.Vector3 point,
+    double deltaSeconds,
+  ) {
+    final range = paintTerrainSplat(
+      map,
+      layer: layer,
+      brush: brush,
+      x: point.x,
+      z: point.z,
+      deltaSeconds: deltaSeconds,
+      targetStrength: targetStrength,
+    );
+    if (range != null) _touched = true;
+  }
+
+  /// The finished control map, as the command takes it.
+  String encodedSplat() => base64Encode(map.toBytes());
 }
 
 /// A plane on [node] that could be made sculptable, with its resource, or
@@ -179,28 +290,32 @@ class TerrainBrushPalette extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              for (final (kind, icon, tip) in _kinds)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Tooltip(
-                    message: tip,
+              for (final (mode, label) in const [
+                (TerrainToolMode.sculpt, 'Sculpt'),
+                (TerrainToolMode.paint, 'Paint'),
+              ])
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 4),
                     child: InkWell(
-                      onTap: () => tool.updateBrush(kind: kind),
+                      onTap: () => tool.mode = mode,
                       child: Container(
-                        width: 30,
-                        height: 26,
+                        height: 24,
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: brush.kind == kind
+                          color: tool.mode == mode
                               ? editorAccentColor
                               : editorRaisedColor,
                           borderRadius: BorderRadius.circular(3),
                         ),
-                        child: Icon(
-                          icon,
-                          size: editorIconSize,
-                          color: brush.kind == kind
-                              ? editorSurfaceColor
-                              : editorTextColor,
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: tool.mode == mode
+                                ? editorSurfaceColor
+                                : editorTextColor,
+                          ),
                         ),
                       ),
                     ),
@@ -208,6 +323,41 @@ class TerrainBrushPalette extends StatelessWidget {
                 ),
             ],
           ),
+          const SizedBox(height: 8),
+          if (tool.mode == TerrainToolMode.paint)
+            _LayerPicker(tool: tool)
+          else
+            Row(
+              children: [
+                for (final (kind, icon, tip) in _kinds)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Tooltip(
+                      message: tip,
+                      child: InkWell(
+                        onTap: () => tool.updateBrush(kind: kind),
+                        child: Container(
+                          width: 30,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: brush.kind == kind
+                                ? editorAccentColor
+                                : editorRaisedColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Icon(
+                            icon,
+                            size: editorIconSize,
+                            color: brush.kind == kind
+                                ? editorSurfaceColor
+                                : editorTextColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           const SizedBox(height: 10),
           SliderNumberField(
             label: 'Size',
@@ -236,7 +386,17 @@ class TerrainBrushPalette extends StatelessWidget {
             onPreview: (_) {},
             onCommit: (value) => tool.updateBrush(falloff: value),
           ),
-          if (brush.kind == TerrainBrushKind.flatten)
+          if (tool.mode == TerrainToolMode.paint)
+            SliderNumberField(
+              label: 'Target',
+              value: tool.targetStrength,
+              min: 0,
+              max: 1,
+              fractionDigits: 2,
+              onPreview: (_) {},
+              onCommit: (value) => tool.targetStrength = value,
+            )
+          else if (brush.kind == TerrainBrushKind.flatten)
             SliderNumberField(
               label: 'Height',
               value: brush.targetHeight,
@@ -250,6 +410,57 @@ class TerrainBrushPalette extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Which of the four surface layers a paint stroke lays down.
+///
+/// Four swatches rather than a dropdown: the layer is switched between
+/// strokes constantly, and a menu that has to be opened to see what is in it
+/// is the wrong control for something chosen that often.
+class _LayerPicker extends StatelessWidget {
+  const _LayerPicker({required this.tool});
+
+  final TerrainToolController tool;
+
+  /// A distinct tint per layer, so the picker reads as four different things
+  /// before any textures are assigned to them.
+  static const _tints = [
+    Color(0xFF6B8F4E),
+    Color(0xFF8A7B5C),
+    Color(0xFF7E8489),
+    Color(0xFFC9BC93),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      for (var layer = 0; layer < terrainSplatLayers; layer++)
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Tooltip(
+              message: layer == 0 ? 'Layer 1 (base)' : 'Layer ${layer + 1}',
+              child: InkWell(
+                onTap: () => tool.paintLayer = layer,
+                child: Container(
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: _tints[layer],
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(
+                      color: tool.paintLayer == layer
+                          ? editorAccentColor
+                          : editorLineColor,
+                      width: tool.paintLayer == layer ? 2 : 1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
 }
 
 /// Draws the brush's footprint on the ground.

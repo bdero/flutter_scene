@@ -1417,10 +1417,18 @@ Map<String, dynamic> _encodeProcedural(ProceduralGeometry p) => switch (p) {
     :final octaves,
     :final seed,
     :final heights,
+    :final splat,
+    :final splatColumns,
+    :final splatRows,
   ) =>
     {
       'shape': 'terrain',
       if (heights != null) 'heights': heights.toToken(),
+      if (splat != null) ...{
+        'splat': splat.toToken(),
+        'splatColumns': splatColumns,
+        'splatRows': splatRows,
+      },
       'width': width,
       'depth': depth,
       'columns': columns,
@@ -1508,6 +1516,11 @@ ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
         heights: json['heights'] is String
             ? LocalId.parse(json['heights'] as String)
             : null,
+        splat: json['splat'] is String
+            ? LocalId.parse(json['splat'] as String)
+            : null,
+        splatColumns: json['splatColumns'] as int? ?? 256,
+        splatRows: json['splatRows'] as int? ?? 256,
       );
     case 'icosphere':
       return IcosphereGeometrySpec(

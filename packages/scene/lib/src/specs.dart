@@ -334,6 +334,9 @@ class TerrainGeometrySpec extends ProceduralGeometry {
     this.octaves = 4,
     this.seed = 1337,
     this.heights,
+    this.splat,
+    this.splatColumns = 256,
+    this.splatRows = 256,
   });
 
   /// World size across X.
@@ -364,8 +367,60 @@ class TerrainGeometrySpec extends ProceduralGeometry {
   /// to generate them from the parameters above.
   final LocalId? heights;
 
+  /// An RGBA payload of `splatColumns * splatRows` texels holding how much
+  /// each of four surface layers shows, or null for a terrain that is one
+  /// material throughout.
+  final LocalId? splat;
+
+  /// Control-map texels across X.
+  ///
+  /// Deliberately not [columns]: painting wants finer detail than sculpting,
+  /// and tying the two would mean either a heightmap denser than anyone needs
+  /// or a paintable resolution nobody can work at.
+  final int splatColumns;
+
+  /// Control-map texels across Z.
+  final int splatRows;
+
   /// Whether this terrain carries its own samples rather than a recipe.
   bool get isSculpted => heights != null;
+
+  /// Whether this terrain carries painted surface layers.
+  bool get isPainted => splat != null;
+
+  /// A copy with the given fields replaced.
+  ///
+  /// Editing one part of a terrain means writing a new spec, and a terrain has
+  /// enough parts that rebuilding it field by field at each call site is a
+  /// standing invitation to drop one: sculpting a painted terrain would lose
+  /// its painting, and the loss would show up a save later.
+  TerrainGeometrySpec copyWith({
+    double? width,
+    double? depth,
+    int? columns,
+    int? rows,
+    double? amplitude,
+    double? frequency,
+    int? octaves,
+    int? seed,
+    LocalId? heights,
+    LocalId? splat,
+    int? splatColumns,
+    int? splatRows,
+  }) => TerrainGeometrySpec(
+    width: width ?? this.width,
+    depth: depth ?? this.depth,
+    columns: columns ?? this.columns,
+    rows: rows ?? this.rows,
+    amplitude: amplitude ?? this.amplitude,
+    frequency: frequency ?? this.frequency,
+    octaves: octaves ?? this.octaves,
+    seed: seed ?? this.seed,
+    heights: heights ?? this.heights,
+    splat: splat ?? this.splat,
+    splatColumns: splatColumns ?? this.splatColumns,
+    splatRows: splatRows ?? this.splatRows,
+  );
 }
 
 /// A cylinder or cone about the Y axis; a smaller [topRadius] tapers it, and

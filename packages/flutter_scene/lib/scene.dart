@@ -87,6 +87,8 @@ export 'src/kit/scatter/scatter_layer.dart'
     show ScatterBrush, ScatterLayer, ScatterPlacement, scatterInBrush;
 export 'src/geometry/terrain_brush.dart'
     show TerrainBrush, TerrainBrushKind, sculptTerrain;
+export 'src/geometry/terrain_splat.dart'
+    show TerrainSplatMap, paintTerrainSplat, terrainSplatLayers;
 export 'src/geometry/polyline_geometry.dart'
     show DashPattern, PolylineCap, PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'

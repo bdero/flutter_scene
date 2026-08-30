@@ -21,6 +21,7 @@ import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
 import 'package:flutter_scene/src/geometry/terrain.dart';
+import 'package:flutter_scene/src/geometry/terrain_splat.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -850,6 +851,9 @@ class ResourceRealizer {
       :final octaves,
       :final seed,
       :final heights,
+      :final splat,
+      :final splatColumns,
+      :final splatRows,
     ) =>
       // Sculptable so the editor can push edited samples without rebuilding
       // the geometry. Terrain keeps its samples on the CPU regardless, so
@@ -866,6 +870,13 @@ class ResourceRealizer {
           frequency: frequency,
           octaves: octaves,
           seed: seed,
+        ),
+        splat: _terrainSplat(
+          splat: splat,
+          width: width,
+          depth: depth,
+          columns: splatColumns,
+          rows: splatRows,
         ),
       ),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
@@ -924,6 +935,45 @@ class ResourceRealizer {
       return generated();
     }
     return field;
+  }
+
+  /// The painted surface layers for a terrain, or null when it is one
+  /// material throughout.
+  ///
+  /// A control map that does not match the declared grid is refused rather
+  /// than stretched over the ground, for the same reason a mismatched
+  /// heightmap is: reading a truncated one paints whatever it ran out on
+  /// across the rest of the terrain.
+  TerrainSplatMap? _terrainSplat({
+    required LocalId? splat,
+    required double width,
+    required double depth,
+    required int columns,
+    required int rows,
+  }) {
+    if (splat == null) return null;
+    final bytes = document.payloads[splat]?.bytes;
+    if (bytes == null) {
+      debugPrint(
+        'fscene: terrain splat map $splat has no bytes loaded; the terrain '
+        'draws as its base layer',
+      );
+      return null;
+    }
+    final map = TerrainSplatMap.fromBytes(
+      bytes,
+      columns: columns,
+      rows: rows,
+      width: width,
+      depth: depth,
+    );
+    if (map == null) {
+      debugPrint(
+        'fscene: terrain splat map $splat does not hold $columns x $rows '
+        'texels; the terrain draws as its base layer',
+      );
+    }
+    return map;
   }
 
   Material _buildMaterial(LocalId id) {

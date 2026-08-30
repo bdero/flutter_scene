@@ -229,6 +229,38 @@ Future<void> buildBundledPhysicalMaterials({
   fileVariant: fileVariant,
 );
 
+/// Builds the terrain material flutter_scene ships, into the calling app's
+/// generated tree.
+///
+/// Opt-in rather than part of [buildBundledPhysicalMaterials], because it is a
+/// nine-sampler shader that only a scene with painted terrain in it draws, and
+/// compiling it into every app's core bundle would charge every app for a
+/// feature most do not use. An app with terrain adds one line to its hook:
+///
+/// ```dart
+/// await buildTerrainMaterial(buildInput: input, buildOutput: output);
+/// ```
+Future<void> buildTerrainMaterial({
+  required BuildInput buildInput,
+  required BuildOutputBuilder buildOutput,
+  Uri? sourceRoot,
+  String? owner,
+  MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
+  bool pruneGeneratedTree = true,
+  String? fileVariant,
+}) => _buildMaterials(
+  buildInput: buildInput,
+  buildOutput: buildOutput,
+  materials: const ['assets/materials/terrain_splat.fmat'],
+  bundleName: 'terrain',
+  discoveryRoot: 'assets/',
+  assetMode: assetMode,
+  sourceRoot: sourceRoot,
+  owner: owner,
+  pruneGeneratedTree: pruneGeneratedTree,
+  fileVariant: fileVariant,
+);
+
 Future<void> _buildMaterials({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
