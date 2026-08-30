@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
@@ -248,29 +246,46 @@ const double editorIconSizeLarge = 16;
 /// across the panel header. `editor_theme_test.dart` pins the two together.
 const double editorToolbarHeight = 32;
 
-/// A panel's toolbar strip: a fixed-height row that scrolls sideways rather
-/// than overflowing.
+/// A panel's toolbar strip: a fixed-height row whose left half scrolls
+/// sideways rather than overflowing.
 ///
 /// A docked panel can be dragged down to a twentieth of the shell, and a
 /// toolbar's controls do not shrink with it. Left as a plain [Row] the
 /// Animation strip ran out of room first and painted the framework's overflow
-/// stripes over its own buttons; every other strip was one control away from
-/// the same. The row still lays out at the panel's width whenever it fits, so
-/// a [Spacer] in [children] pins what follows it to the right edge exactly as
-/// before, and only a strip too narrow for its contents starts scrolling.
+/// stripes over its own buttons.
 ///
-/// A strip with nothing to scroll takes no drag gesture, which is what lets
-/// the menu bar go on being the window's drag handle while it fits.
+/// [leading] scrolls; [trailing] is pinned to the right edge and does not.
+/// The split is explicit rather than a [Spacer] because the two halves are
+/// laid out by different rules, and because the scrolling half must contain
+/// no flex child: a horizontal scroll view offers unbounded width, and
+/// `Expanded` in unbounded width is an error.
+///
+/// This deliberately does **not** measure the row. It used to, with
+/// [IntrinsicWidth], which reads beautifully until a child contains a
+/// [LayoutBuilder] -- and then it throws "LayoutBuilder does not support
+/// returning intrinsic dimensions" from inside layout. Thrown there it takes
+/// the frame with it, and if the layout was running inside a mouse-tracker
+/// update it leaves that tracker's debug flag latched, so every later pointer
+/// move asserts too. One unmeasurable child, and the editor fills with
+/// exceptions that name neither the widget nor the cause.
 class EditorToolbar extends StatelessWidget {
   const EditorToolbar({
     super.key,
-    required this.children,
+    this.leading = const [],
+    this.trailing = const [],
     this.horizontalPadding = 8,
     this.height,
     this.color,
   });
 
-  final List<Widget> children;
+  /// The controls at the left, which scroll when there is no room for them.
+  ///
+  /// Must contain no [Expanded] or [Spacer]; put anything that was pinned
+  /// right into [trailing] instead.
+  final List<Widget> leading;
+
+  /// The controls pinned to the right edge.
+  final List<Widget> trailing;
 
   /// Inset at each end of the strip.
   final double horizontalPadding;
@@ -286,33 +301,43 @@ class EditorToolbar extends StatelessWidget {
     return Container(
       height: height ?? editorToolbarHeight,
       color: color ?? Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // The row is given the strip's own width as a floor so it fills it
-          // and no wider, which is what keeps a Spacer meaningful. Above that
-          // floor it takes its natural width and the strip scrolls to it.
-          //
-          // IntrinsicWidth is what makes the row measurable at all: a
-          // horizontal scroll view offers unbounded width, and a Row with an
-          // Expanded or a Spacer in it cannot lay out against that. Asking
-          // for the row's own width first turns the constraint tight again,
-          // and a toolbar's dozen children are cheap to measure.
-          final floor = constraints.maxWidth.isFinite
-              ? math.max(0.0, constraints.maxWidth - horizontalPadding * 2)
-              : 0.0;
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            primary: false,
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: floor),
-              child: IntrinsicWidth(child: Row(children: children)),
-            ),
-          );
-        },
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+      child: Row(
+        children: [
+          Expanded(child: EditorToolbarScroller(children: leading)),
+          ...trailing,
+        ],
       ),
     );
   }
+}
+
+/// A run of controls that scrolls sideways rather than overflowing.
+///
+/// The child row is [MainAxisSize.min] and must hold no flex child, which is
+/// what makes it safe inside a scroll view's unbounded width. [alignEnd]
+/// starts it against the right edge, for a group that sits at one.
+class EditorToolbarScroller extends StatelessWidget {
+  const EditorToolbarScroller({
+    super.key,
+    required this.children,
+    this.alignEnd = false,
+  });
+
+  final List<Widget> children;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    primary: false,
+    // Reversed rather than aligned: a scroll view fills its viewport in the
+    // scroll direction, so alignment inside it does nothing, while reversing
+    // puts the content against the far edge and scrolls the right way when
+    // there is too much of it.
+    reverse: alignEnd,
+    child: Row(mainAxisSize: MainAxisSize.min, children: children),
+  );
 }
 
 const double editorMenuItemHeight = 28;

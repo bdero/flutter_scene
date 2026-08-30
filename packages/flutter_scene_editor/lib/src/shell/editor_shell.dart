@@ -1694,7 +1694,7 @@ class _EditorMenuBar extends StatelessWidget {
       child: EditorToolbar(
         height: 28,
         horizontalPadding: 0,
-        children: [
+        leading: [
           SizedBox(width: leadingInset),
           Image.asset(
             'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
@@ -1922,10 +1922,8 @@ class _EditorMenuBar extends StatelessWidget {
             ],
           ),
           _MenuButton(label: 'Commands', onTap: onPaletteOpen),
-          const Spacer(),
-          ...trailing,
-          const SizedBox(width: 6),
         ],
+        trailing: [...trailing, const SizedBox(width: 6)],
       ),
     );
   }

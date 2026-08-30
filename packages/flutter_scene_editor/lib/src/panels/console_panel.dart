@@ -71,11 +71,12 @@ class _ConsolePanelState extends State<ConsolePanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         EditorToolbar(
-          children: [
+          leading: [
             const Icon(Icons.terminal, size: 14),
             const SizedBox(width: 6),
             const Text('Console', style: TextStyle(fontSize: 12)),
-            const Spacer(),
+          ],
+          trailing: [
             if (runner.building)
               TextButton(
                 style: TextButton.styleFrom(

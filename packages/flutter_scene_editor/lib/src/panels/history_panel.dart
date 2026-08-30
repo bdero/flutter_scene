@@ -73,7 +73,7 @@ class _HistoryPanelState extends State<HistoryPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         EditorToolbar(
-          children: [
+          leading: [
             Text(
               transactions.isEmpty
                   ? 'No edits'
@@ -86,7 +86,8 @@ class _HistoryPanelState extends State<HistoryPanel> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const Spacer(),
+          ],
+          trailing: [
             IconButton(
               icon: const Icon(Icons.undo, size: 16),
               visualDensity: VisualDensity.compact,
