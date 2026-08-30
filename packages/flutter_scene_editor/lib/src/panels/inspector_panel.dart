@@ -13,6 +13,7 @@ import '../inspector/euler.dart';
 import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/live_fields.dart';
 import '../inspector/material_section.dart';
+import '../inspector/terrain_section.dart';
 import '../inspector/nav_mesh_editor.dart';
 import '../inspector/particle_emitter_controls.dart';
 import '../inspector/vfx_editing.dart';
@@ -216,6 +217,18 @@ class _NodeInspector extends StatelessWidget {
                 materialId:
                     (component.properties['material'] as ResourceRefValue).id,
               ),
+            // The terrain tools, where a terrain is selected. This is where
+            // they are found: the scene view's corner button is a shortcut for
+            // people who already know they exist.
+            if (component.type == 'mesh')
+              if (terrainSpecOf(controller, node.id) case final terrain?) ...[
+                const SizedBox(height: 8),
+                TerrainSection(
+                  controller: controller,
+                  nodeId: node.id,
+                  spec: terrain,
+                ),
+              ],
             // A flat surface can become an area of water where it stands,
             // which is what a lake is: not an object you place, a piece of
             // ground you say is wet.
