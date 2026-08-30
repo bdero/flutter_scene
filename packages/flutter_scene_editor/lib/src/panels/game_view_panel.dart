@@ -136,7 +136,7 @@ class _GameViewPanelState extends State<GameViewPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         EditorToolbar(
-          children: [
+          leading: [
             const Icon(Icons.videogame_asset_outlined, size: 14),
             const SizedBox(width: 6),
             Text('Game', style: editorBodyText),
@@ -161,7 +161,8 @@ class _GameViewPanelState extends State<GameViewPanel> {
                 ),
               ),
             ),
-            const Spacer(),
+          ],
+          trailing: [
             _Toggle(
               label: 'Stats',
               value: _stats,
