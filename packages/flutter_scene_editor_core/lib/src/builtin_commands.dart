@@ -1398,6 +1398,95 @@ final setTerrainSplat = CommandEntry(
   },
 );
 
+/// The `.fmat` the painted layers blend through, as flutter_scene ships it.
+const terrainMaterialAsset =
+    'packages/flutter_scene/assets/materials/'
+    'terrain_splat.fmat';
+
+/// Gives a painted terrain a material that shows the painting.
+///
+/// Painting writes a control map; nothing draws it until the terrain is using
+/// the terrain material with that map bound. This is the step between, and it
+/// is one command because it is one thing the user did: a texture over the
+/// control-map payload, an fmat material pointing at it, and the mesh switched
+/// to that material, all undone together.
+///
+/// The control map is texture content `data`, not `color`. Its four channels
+/// are weights, so they must not be sRGB-decoded on the way in, and mip levels
+/// must average as numbers rather than as colour — a mip that gamma-averaged
+/// the weights would drift the blend at distance.
+final addTerrainLayers = CommandEntry(
+  name: 'addTerrainLayers',
+  doc: 'Give a painted terrain the material its layers blend through.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Terrain node'),
+  ],
+  execute: (ctx, params) {
+    final nodeId = requireNodeId(params, 'nodeId');
+    final node = ctx.document.node(nodeId);
+    if (node == null) throw CommandException('No node $nodeId');
+
+    final meshIndex = node.components.indexWhere((c) => c.type == 'mesh');
+    if (meshIndex < 0) {
+      throw CommandException('That node has no mesh to give a material to');
+    }
+    final mesh = node.components[meshIndex];
+
+    final geometryId = switch (mesh.properties['geometry']) {
+      ResourceRefValue(:final id) => id,
+      _ => null,
+    };
+    if (geometryId == null) {
+      throw CommandException('That mesh has no geometry');
+    }
+    final geometry = ctx.document.resource(geometryId);
+    final terrain = geometry is GeometryResource ? geometry.procedural : null;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('That node is not a terrain');
+    }
+    final splat = terrain.splat;
+    if (splat == null) {
+      throw CommandException(
+        'That terrain has nothing painted on it yet, so there is no control '
+        'map for a material to blend by. Paint a stroke first.',
+      );
+    }
+
+    final texture = TextureResource(
+      ctx.document.newId(),
+      payload: splat,
+      // Weights, not colour: no sRGB decode, and mips that average as numbers.
+      content: 'data',
+    );
+    final material = MaterialResource(
+      ctx.document.newId(),
+      type: 'fmat',
+      name: 'Terrain layers',
+      asset: const AssetRef(terrainMaterialAsset),
+      properties: {'control_map': ResourceRefValue(texture.id)},
+    );
+
+    final components = List.of(node.components);
+    components[meshIndex] = ComponentSpec(
+      mesh.type,
+      properties: {
+        ...mesh.properties,
+        'material': ResourceRefValue(material.id),
+      },
+    );
+
+    return Transaction(
+      name: 'Add terrain layers',
+      records: [
+        _addResourceRecord(texture),
+        _addResourceRecord(material),
+        _componentsRecord(node, components),
+      ],
+    );
+  },
+);
+
 final createMaterial = CommandEntry(
   name: 'createMaterial',
   doc: 'Create a material resource of the given type.',
@@ -3542,6 +3631,7 @@ final List<CommandEntry> builtinCommands = [
   setTerrainHeights,
   makeTerrainSculptable,
   setTerrainSplat,
+  addTerrainLayers,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,

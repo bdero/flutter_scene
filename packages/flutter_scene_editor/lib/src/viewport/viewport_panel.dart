@@ -196,6 +196,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   /// The terrain a paint stroke is running on, for the ground query the dab
   /// needs. The stroke itself holds only the control map.
   ({TerrainGeometry geometry, LocalId resourceId})? _paintTarget;
+
+  /// Whether the stroke in progress is the one that minted the control map,
+  /// and so the one that has to give the terrain a material to show it.
+  bool _paintCreatedMap = false;
   final Stopwatch _strokeClock = Stopwatch();
 
   /// Where the brush would land, for the cursor ring. Null when the pointer
@@ -355,6 +359,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       return false;
     }
     if (_terrainTool.mode == TerrainToolMode.paint) {
+      _paintCreatedMap = target.geometry.splat == null;
       _paintStroke = TerrainPaintStroke.on(
         target.geometry,
         resourceId: target.resourceId,
@@ -423,6 +428,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
   void _endSculpt() {
     final stroke = _stroke;
     final paint = _paintStroke;
+    final firstPaint = _paintCreatedMap;
+    _paintCreatedMap = false;
     _stroke = null;
     _paintStroke = null;
     _paintTarget = null;
@@ -436,13 +443,38 @@ class _ViewportPanelState extends State<ViewportPanel> {
       );
     }
     if (paint != null && paint.touched) {
+      final node = _ctrl.selection.primary;
+      final needsLayers = firstPaint && node != null;
       unawaited(
-        _ctrl.run('setTerrainSplat', {
-          'resourceId': paint.resourceId.toToken(),
-          'splat': paint.encodedSplat(),
-          'columns': paint.map.columns,
-          'rows': paint.map.rows,
-        }),
+        _ctrl
+            .run('setTerrainSplat', {
+              'resourceId': paint.resourceId.toToken(),
+              'splat': paint.encodedSplat(),
+              'columns': paint.map.columns,
+              'rows': paint.map.rows,
+            })
+            .then((_) async {
+              // The control map exists now but nothing draws it until the
+              // terrain is using the material that blends by it. Do that once,
+              // on the stroke that created the map, as its own undoable step:
+              // a first stroke that changed nothing on screen would read as a
+              // broken tool.
+              if (needsLayers) {
+                await _ctrl.run('addTerrainLayers', {'nodeId': node.toToken()});
+              }
+            })
+            .then((_) {
+              if (needsLayers && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Terrain layers added. Assign textures to the layers in '
+                      'the material.',
+                    ),
+                  ),
+                );
+              }
+            }),
       );
     }
   }
