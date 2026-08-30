@@ -96,6 +96,7 @@ class InstancedMeshComponent extends Component {
     item.refreshWinding(node.windingFlipped);
     item.shadowStatic = node.shadowStatic;
     item.castsShadows = node.castsShadows;
+    item.shadowCastingMode = node.shadowCastingMode;
     item.lightChannelMask = lightChannelMask;
     item.instanceTransforms = instancedMesh.instances;
     item.instanceColors = instancedMesh.colors;

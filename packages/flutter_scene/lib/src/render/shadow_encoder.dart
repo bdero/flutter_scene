@@ -186,7 +186,12 @@ class ShadowEncoder {
     // second-depth trick has no meaning for cutout sheets.
     final masked = item.material.depthAlphaMasked;
     final fragmentShader = masked ? _maskedDepthShader : _depthShader;
-    final cullMode = masked ? item.material.renderCullMode : _casterCullMode;
+    // A double-sided caster draws every face into the map. That is the
+    // point of the mode: a wall modelled as one sheet has no face turned
+    // toward the light, so culling leaves the light a hole to shine through.
+    final cullMode = item.shadowDoubleSided
+        ? gpu.CullMode.none
+        : (masked ? item.material.renderCullMode : _casterCullMode);
     if (cullMode != _currentCullMode) {
       _renderPass.setCullMode(cullMode);
       _currentCullMode = cullMode;

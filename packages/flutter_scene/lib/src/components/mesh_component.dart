@@ -233,6 +233,7 @@ class MeshComponent extends Component {
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
       item.castsShadows = effectiveCastsShadows;
+      item.shadowCastingMode = node.shadowCastingMode;
       item.highlightColor = highlightColor;
       if (skin != null) {
         item.previousJointsTexture = skin.getPreviousJointsTexture();

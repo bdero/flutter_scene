@@ -18,6 +18,7 @@ import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart' show Component, Node;
 
 import 'component_sync.dart';
+import 'network_events.dart';
 
 /// Marks a node as replicated, and says what about it replicates.
 ///
@@ -29,7 +30,9 @@ class NetworkIdentityComponent extends Component {
   NetworkIdentityComponent({
     this.typeKey = 'entity',
     List<SyncedProperty> synced = const [],
-  }) : synced = List.of(synced);
+    List<NetworkEvent> events = const [],
+  }) : synced = List.of(synced),
+       events = List.of(events);
 
   /// The replica type both ends look this object up by.
   ///
@@ -40,6 +43,13 @@ class NetworkIdentityComponent extends Component {
 
   /// Which component properties replicate, in wire order.
   final List<SyncedProperty> synced;
+
+  /// The events this object can send, in wire order.
+  ///
+  /// The other half of replication. Properties carry what is continuously
+  /// true; events carry what merely happened, which a property would have to
+  /// flicker to record and which you could then miss between two snapshots.
+  final List<NetworkEvent> events;
 
   /// Builds the replica for [node] from this declaration.
   ///
@@ -202,6 +212,32 @@ class NetworkIdentityCodec
           ..addAll([
             for (final entry in value.values)
               if (decodeSyncedProperty(entry) case final property?) property,
+          ]);
+      },
+    ),
+    ComponentField(
+      ComponentPropertyDef(
+        'events',
+        ComponentPropertyKind.list,
+        defaultValue: ListValue(const []),
+        itemDef: const ComponentPropertyDef(
+          'event',
+          ComponentPropertyKind.object,
+          objectFields: networkEventFields,
+        ),
+        doc:
+            'The events this object can send. Properties carry what is '
+            'continuously true; events carry what happened once.',
+      ),
+      read: (c, _) =>
+          ListValue([for (final e in c.events) encodeNetworkEvent(e)]),
+      write: (c, value, _) {
+        if (value is! ListValue) return;
+        c.events
+          ..clear()
+          ..addAll([
+            for (final entry in value.values)
+              if (decodeNetworkEvent(entry) case final event?) event,
           ]);
       },
     ),
