@@ -2391,6 +2391,110 @@ bool _applyEnvironmentEffects(
     e.autoExposureSpeedDown,
     (v) => e.autoExposureSpeedDown = v,
   );
+  boolean('globalIlluminationEnabled', (v) => e.globalIlluminationEnabled = v);
+  string(
+    'globalIlluminationVolumeMode',
+    e.globalIlluminationVolumeMode,
+    (v) => e.globalIlluminationVolumeMode = v,
+  );
+  vector(
+    'globalIlluminationResolution',
+    e.globalIlluminationResolution,
+    (v) => e.globalIlluminationResolution = v,
+  );
+  vector(
+    'globalIlluminationExtents',
+    e.globalIlluminationExtents,
+    (v) => e.globalIlluminationExtents = v,
+  );
+  number(
+    'globalIlluminationIntensity',
+    e.globalIlluminationIntensity,
+    (v) => e.globalIlluminationIntensity = v,
+  );
+  number(
+    'globalIlluminationHysteresis',
+    e.globalIlluminationHysteresis,
+    (v) => e.globalIlluminationHysteresis = v,
+  );
+  number(
+    'globalIlluminationShadowBias',
+    e.globalIlluminationShadowBias,
+    (v) => e.globalIlluminationShadowBias = v,
+  );
+  number(
+    'globalIlluminationVisibility',
+    e.globalIlluminationVisibility,
+    (v) => e.globalIlluminationVisibility = v,
+  );
+  number(
+    'globalIlluminationVisibilityBias',
+    e.globalIlluminationVisibilityBias,
+    (v) => e.globalIlluminationVisibilityBias = v,
+  );
+  integer(
+    'globalIlluminationProbeUpdateBudget',
+    e.globalIlluminationProbeUpdateBudget,
+    (v) => e.globalIlluminationProbeUpdateBudget = v,
+  );
+  string(
+    'globalIlluminationInjectionResolution',
+    e.globalIlluminationInjectionResolution,
+    (v) => e.globalIlluminationInjectionResolution = v,
+  );
+  number(
+    'globalIlluminationFireflyClamp',
+    e.globalIlluminationFireflyClamp,
+    (v) => e.globalIlluminationFireflyClamp = v,
+  );
+  number(
+    'globalIlluminationEmissiveBoost',
+    e.globalIlluminationEmissiveBoost,
+    (v) => e.globalIlluminationEmissiveBoost = v,
+  );
+  boolean(
+    'globalIlluminationUpdateWhenIdleOnly',
+    (v) => e.globalIlluminationUpdateWhenIdleOnly = v,
+  );
+  boolean(
+    'globalIlluminationBakeOnly',
+    (v) => e.globalIlluminationBakeOnly = v,
+  );
+  // TAA's on/off is the stage's antiAliasingMode, not a key here; these are
+  // the numbers it runs with once it is on.
+  number(
+    'temporalAntiAliasingMinimumCurrentWeight',
+    e.temporalAntiAliasingMinimumCurrentWeight,
+    (v) => e.temporalAntiAliasingMinimumCurrentWeight = v,
+  );
+  number(
+    'temporalAntiAliasingVarianceGamma',
+    e.temporalAntiAliasingVarianceGamma,
+    (v) => e.temporalAntiAliasingVarianceGamma = v,
+  );
+  number(
+    'temporalAntiAliasingSharpness',
+    e.temporalAntiAliasingSharpness,
+    (v) => e.temporalAntiAliasingSharpness = v,
+  );
+  integer(
+    'temporalAntiAliasingJitterSequenceLength',
+    e.temporalAntiAliasingJitterSequenceLength,
+    (v) => e.temporalAntiAliasingJitterSequenceLength = v,
+  );
+  number(
+    'temporalAntiAliasingJitterScale',
+    e.temporalAntiAliasingJitterScale,
+    (v) => e.temporalAntiAliasingJitterScale = v,
+  );
+  boolean(
+    'temporalAntiAliasingObjectMotion',
+    (v) => e.temporalAntiAliasingObjectMotion = v,
+  );
+  boolean(
+    'temporalAntiAliasingSkinnedMotion',
+    (v) => e.temporalAntiAliasingSkinnedMotion = v,
+  );
   return changed;
 }
 

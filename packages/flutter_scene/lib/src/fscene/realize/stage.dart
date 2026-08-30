@@ -29,6 +29,7 @@ import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
+import 'package:flutter_scene/src/render/temporal_anti_aliasing.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
@@ -129,6 +130,20 @@ Future<void> realizeStage(
   );
   if (look?.overridesEffects == true) {
     settings.applyTo(scene);
+    // TAA tuning rides the effects spec but not EnvironmentSettings: it is a
+    // property of the Scene's rendering rather than of its look, and there is
+    // nothing to blend it over per environment volume. So it is applied here
+    // instead of through the cascade above. The mode switches TAA on; these
+    // are the numbers it runs with, and until now nothing read them at all.
+    final effects = look!.effects;
+    scene.temporalAntiAliasing
+      ..minimumCurrentWeight = effects.temporalAntiAliasingMinimumCurrentWeight
+      ..varianceGamma = effects.temporalAntiAliasingVarianceGamma
+      ..sharpness = effects.temporalAntiAliasingSharpness
+      ..jitterSequenceLength = effects.temporalAntiAliasingJitterSequenceLength
+      ..jitterScale = effects.temporalAntiAliasingJitterScale
+      ..objectMotion = effects.temporalAntiAliasingObjectMotion
+      ..skinnedMotion = effects.temporalAntiAliasingSkinnedMotion;
   } else {
     settings.applyLookTo(scene);
   }
@@ -648,6 +663,10 @@ void serializeStage(Scene scene, SceneDocument document) {
   resource.environmentRotationY = math.atan2(transform[6], transform[0]);
   resource.effects = _effectSpecFromSettings(
     EnvironmentSettings.fromScene(scene),
+    scene.temporalAntiAliasing,
+    // Mirrors the mode rather than being a second switch, so the document
+    // cannot say TAA is on while the anti-aliasing mode says otherwise.
+    taaActive: scene.antiAliasingMode == AntiAliasingMode.taa,
   );
   resource.overridesEffects = true;
 
@@ -705,7 +724,17 @@ void serializeStage(Scene scene, SceneDocument document) {
 
 EnvironmentEffectsSpec _effectSpecFromSettings(
   EnvironmentSettings s,
-) => EnvironmentEffectsSpec(
+  TemporalAntiAliasingSettings taa, {
+  required bool taaActive,
+}) => EnvironmentEffectsSpec(
+  temporalAntiAliasingEnabled: taaActive,
+  temporalAntiAliasingMinimumCurrentWeight: taa.minimumCurrentWeight,
+  temporalAntiAliasingVarianceGamma: taa.varianceGamma,
+  temporalAntiAliasingSharpness: taa.sharpness,
+  temporalAntiAliasingJitterSequenceLength: taa.jitterSequenceLength,
+  temporalAntiAliasingJitterScale: taa.jitterScale,
+  temporalAntiAliasingObjectMotion: taa.objectMotion,
+  temporalAntiAliasingSkinnedMotion: taa.skinnedMotion,
   colorGradingEnabled: s.colorGradingEnabled,
   brightness: s.brightness,
   contrast: s.contrast,

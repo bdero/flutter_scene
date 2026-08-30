@@ -574,18 +574,18 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
   };
   final taa = <String, dynamic>{
     if (e.temporalAntiAliasingEnabled) 'enabled': true,
-    if (e.temporalAntiAliasingMinimumCurrentWeight != 0.1)
+    if (e.temporalAntiAliasingMinimumCurrentWeight != 0.15)
       'minimumCurrentWeight': e.temporalAntiAliasingMinimumCurrentWeight,
-    if (e.temporalAntiAliasingVarianceGamma != 1.0)
+    if (e.temporalAntiAliasingVarianceGamma != 1.2)
       'varianceGamma': e.temporalAntiAliasingVarianceGamma,
-    if (e.temporalAntiAliasingSharpness != 0.0)
+    if (e.temporalAntiAliasingSharpness != 0.15)
       'sharpness': e.temporalAntiAliasingSharpness,
-    if (e.temporalAntiAliasingJitterSequenceLength != 16)
+    if (e.temporalAntiAliasingJitterSequenceLength != 11)
       'jitterSequenceLength': e.temporalAntiAliasingJitterSequenceLength,
-    if (e.temporalAntiAliasingJitterScale != 1.0)
+    if (e.temporalAntiAliasingJitterScale != 0.46)
       'jitterScale': e.temporalAntiAliasingJitterScale,
-    if (!e.temporalAntiAliasingObjectMotion) 'objectMotion': false,
-    if (!e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': false,
+    if (e.temporalAntiAliasingObjectMotion) 'objectMotion': true,
+    if (e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': true,
   };
   return {
     if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
@@ -1199,15 +1199,15 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     globalIlluminationBakeOnly: gi['bakeOnly'] as bool? ?? false,
     temporalAntiAliasingEnabled: taa['enabled'] as bool? ?? false,
     temporalAntiAliasingMinimumCurrentWeight: _d(
-      taa['minimumCurrentWeight'] ?? 0.1,
+      taa['minimumCurrentWeight'] ?? 0.15,
     ),
-    temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.0),
-    temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.0),
+    temporalAntiAliasingVarianceGamma: _d(taa['varianceGamma'] ?? 1.2),
+    temporalAntiAliasingSharpness: _d(taa['sharpness'] ?? 0.15),
     temporalAntiAliasingJitterSequenceLength:
-        (taa['jitterSequenceLength'] as num?)?.toInt() ?? 16,
-    temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 1.0),
-    temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? true,
-    temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? true,
+        (taa['jitterSequenceLength'] as num?)?.toInt() ?? 11,
+    temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 0.46),
+    temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? false,
+    temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? false,
     screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
     screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
     screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),

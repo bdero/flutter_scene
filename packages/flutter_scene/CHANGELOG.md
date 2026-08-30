@@ -14,6 +14,8 @@
 * glTF sources that spread more than four skin influences per vertex across `JOINTS_1`/`WEIGHTS_1` and beyond are merged to the strongest four and renormalized, instead of importing set 0 alone. Those meshes previously blended a fraction of a unit of weight per vertex and collapsed toward the armature origin even in the rest pose. The merge feeds the skinned pose-union bounds too, so a bone bound only in a later set no longer swings its part of the mesh outside the cull bound.
 * glTF `STEP` and `CUBICSPLINE` animation samplers play back as authored. `STEP` held nothing before and eased between its keys like a linear sampler; `CUBICSPLINE` was flattened to its keyframe values with the tangents discarded, so a curve that arced past its own endpoints came back as a straight line. Both survive a bake to `.fscene` as well as a runtime import.
 * `.fscene` animation channels record an `interpolation` and, for cubic channels, in- and out-tangent chunks. The keyframes chunk keeps one value per key whatever the interpolation, so a reader that does not know the field still sees a sound linear timeline. Documents written before this encode unchanged.
+* A `.fscene`'s temporal anti-aliasing tuning is applied. The fields round-tripped through the document and were then dropped at realize, so a scene could author them and still render on the engine's defaults. Their defaults now match `TemporalAntiAliasingSettings`, so a document that says nothing about TAA is unchanged.
+* Global illumination and temporal anti-aliasing are editable from the editor's Scene Settings, and the anti-aliasing mode offers SMAA and TAA. All three shipped in the engine and were reachable only from code or a hand-edited document.
 
 ## 0.23.0
 
