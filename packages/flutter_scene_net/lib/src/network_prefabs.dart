@@ -20,6 +20,7 @@ import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart' show Node;
 
 import 'component_sync.dart';
+import 'network_events.dart';
 import 'network_identity.dart';
 
 /// Builds the scene node for a spawned replica of one type.
@@ -33,6 +34,7 @@ class NetworkPrefab {
     required this.typeKey,
     required this.synced,
     required this.build,
+    this.events = const [],
   });
 
   /// Declares a prefab from an authored [identity].
@@ -53,6 +55,9 @@ class NetworkPrefab {
 
   /// What replicates, in wire order.
   final List<SyncedProperty> synced;
+
+  /// The events it can send, in wire order.
+  final List<NetworkEvent> events;
 
   /// Builds the node a spawn of this type becomes.
   final NetworkNodeBuilder build;
@@ -109,9 +114,19 @@ class NetworkPrefabs {
   /// The prefab for [typeKey], or null.
   NetworkPrefab? prefabFor(String typeKey) => _prefabs[typeKey];
 
+  /// A fresh unbound replica for [typeKey], or null when nothing registers it.
+  ///
+  /// The server side of a spawn: it builds the replica itself rather than
+  /// receiving one, and binds it to the node it spawned from.
+  ComponentReplica? replicaFor(String typeKey) {
+    final prefab = _prefabs[typeKey];
+    return prefab == null ? null : _replicaFor(prefab);
+  }
+
   ComponentReplica _replicaFor(NetworkPrefab prefab) => ComponentReplica(
     typeKey: prefab.typeKey,
     properties: prefab.synced,
+    events: prefab.events,
     registry: _registry,
   );
 
