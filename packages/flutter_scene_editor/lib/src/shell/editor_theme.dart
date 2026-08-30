@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
-const _ink = Color(0xFF15191D);
-const _graphite = Color(0xFF1B2025);
-const _raised = Color(0xFF22282E);
-const _line = Color(0xFF343B43);
-const _text = Color(0xFFD4D9DE);
-const _mutedText = Color(0xFF9099A2);
-const _signal = Color(0xFF44B3E7);
+// A deep blue-violet rather than the neutral graphite this started as. The
+// hue is doing work: a 3D viewport is full of neutral grey -- untextured
+// geometry, the grid, gizmo shafts -- and chrome in the same neutral competes
+// with it. Pushing the chrome off-neutral lets the scene keep the greys.
+//
+// The four surfaces step by roughly equal lightness so depth reads without
+// borders doing all of it, and the line sits just above the raised surface so
+// a border separates without drawing itself.
+const _ink = Color(0xFF14152B);
+const _graphite = Color(0xFF1B1D38);
+const _raised = Color(0xFF262949);
+const _line = Color(0xFF343863);
+const _text = Color(0xFFE6E7F5);
+const _mutedText = Color(0xFF8B8FB5);
+const _signal = Color(0xFF4A9EFF);
+
+/// A number you can edit, as opposed to one being reported.
+///
+/// Amber against the blue accent, which is the one pairing in this palette
+/// that cannot be confused at a glance: an editable field and a selected
+/// thing should never read alike, and every transform row is full of both.
+const Color editorValueColor = Color(0xFFF0A742);
 
 // Prefab-linked content accents (outliner member rows, inspector banners),
 // readable on _ink/_graphite and distinct from the _signal selection blue.
@@ -42,11 +57,22 @@ const Color editorSuccessColor = Color(0xFF7BC67E);
 /// toolchain the build will limp along without.
 const Color editorWarningColor = Color(0xFFE0A84E);
 
+/// How round a card is.
+///
+/// Larger than the 5 this started at, which is the single change that most
+/// separates chrome that looks drawn from chrome that looks assembled. Small
+/// controls keep [editorControlRadius]: the same radius on a 20-pixel button
+/// reads as a lozenge rather than a button.
+const double editorCardRadius = 8;
+
+/// How round a control is: a button, a field, a segment.
+const double editorControlRadius = 4;
+
 /// The bordered-box chrome panel lists and detail panes share.
 BoxDecoration editorPanelBox({Color color = _graphite}) => BoxDecoration(
   color: color,
   border: Border.all(color: _line),
-  borderRadius: BorderRadius.circular(5),
+  borderRadius: BorderRadius.circular(editorCardRadius),
 );
 
 /// Dialog text metrics matching the inspector's rows.
@@ -451,6 +477,55 @@ ThemeData editorDarkTheme() {
     scaffoldBackgroundColor: _ink,
     canvasColor: _graphite,
     dividerColor: _line,
+    // Thin track, round handle, accent fill. Material's default slider is
+    // built for a phone: at this density its handle covers the value it is
+    // setting, and every inspector row is a slider beside its number.
+    sliderTheme: SliderThemeData(
+      trackHeight: 3,
+      activeTrackColor: _signal,
+      inactiveTrackColor: _raised,
+      thumbColor: _signal,
+      overlayColor: _signal.withValues(alpha: 0.14),
+      thumbShape: const RoundSliderThumbShape(
+        enabledThumbRadius: 6,
+        pressedElevation: 0,
+        elevation: 0,
+      ),
+      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+      trackShape: const RoundedRectSliderTrackShape(),
+      showValueIndicator: ShowValueIndicator.never,
+    ),
+    // A switch small enough to sit at the right of a property row without
+    // setting that row's height.
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? _text : _mutedText,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected) ? _signal : _raised,
+      ),
+      trackOutlineColor: WidgetStatePropertyAll(_line),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      isDense: true,
+      filled: true,
+      fillColor: _ink,
+      hintStyle: const TextStyle(fontSize: 11, color: _mutedText),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(editorControlRadius),
+        borderSide: const BorderSide(color: _line),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(editorControlRadius),
+        borderSide: const BorderSide(color: _line),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(editorControlRadius),
+        borderSide: const BorderSide(color: _signal),
+      ),
+    ),
     tooltipTheme: const TooltipThemeData(
       waitDuration: Duration(milliseconds: 500),
     ),

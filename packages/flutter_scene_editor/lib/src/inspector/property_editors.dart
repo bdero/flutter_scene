@@ -751,11 +751,12 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.right,
-                              style: TextStyle(
-                                color: context.theme.colors.foreground,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
+                              style: const TextStyle(
+                                // Amber, so a number you can drag never reads
+                                // like a number being reported to you. Every
+                                // transform row has both within a few pixels.
+                                color: editorValueColor,
+                                fontFeatures: [FontFeature.tabularFigures()],
                                 fontSize: 11,
                               ),
                             ),
