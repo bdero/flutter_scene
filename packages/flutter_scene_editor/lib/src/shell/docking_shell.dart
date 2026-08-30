@@ -81,7 +81,7 @@ class _DockingShellState extends State<DockingShell> {
 
   // One native window per floating panel, keyed by panel id and kept in sync
   // with the layout's floating list.
-  final Map<String, WindowController> _floatControllers = {};
+  final Map<String, RegularWindowController> _floatControllers = {};
 
   @override
   void initState() {
@@ -139,7 +139,7 @@ class _DockingShellState extends State<DockingShell> {
     for (final id in _layout.floating) {
       _floatControllers.putIfAbsent(
         id,
-        () => WindowController(
+        () => RegularWindowController(
           size: const Size(480, 640),
           title: _panelById(id)?.title ?? id,
           delegate: _FloatWindowDelegate(() => _redock(id)),
@@ -168,9 +168,9 @@ class _DockingShellState extends State<DockingShell> {
         views: [
           for (final id in _layout.floating)
             if (_floatControllers[id] != null)
-              Window(
+              RegularWindow(
                 controller: _floatControllers[id]!,
-                child: _FloatWindowScaffold(
+                child: FloatWindowScaffold(
                   theme: theme,
                   child: _panelContent(id),
                 ),
@@ -226,13 +226,13 @@ class _DockingShellState extends State<DockingShell> {
 
 /// Re-docks the panel instead of destroying the window outright when the user
 /// clicks the native close button; the shell then tears the window down.
-class _FloatWindowDelegate with WindowControllerDelegate {
+class _FloatWindowDelegate with RegularWindowControllerDelegate {
   _FloatWindowDelegate(this.onCloseRequested);
 
   final VoidCallback onCloseRequested;
 
   @override
-  void onWindowCloseRequested(WindowController controller) {
+  void onWindowCloseRequested(RegularWindowController controller) {
     onCloseRequested();
   }
 }
@@ -244,8 +244,19 @@ class _FloatWindowDelegate with WindowControllerDelegate {
 /// TODO(docking): the editor's keyboard shortcuts are only bound in the main
 /// window's shell; route them here too so panels stay fully usable while
 /// floating.
-class _FloatWindowScaffold extends StatelessWidget {
-  const _FloatWindowScaffold({required this.theme, required this.child});
+///
+/// The nested [MaterialApp] must not cut the panel off from the editor's
+/// theme scopes. Those live above the shell (`EditorThemeScope` sits in the
+/// app's `MaterialApp.builder`), and forui resolves `FTheme` plus an
+/// `InheritedModel` accessibility scope by context, so a floating panel that
+/// lost them would throw on mount the way dialog windows did in issue #344.
+@visibleForTesting
+class FloatWindowScaffold extends StatelessWidget {
+  const FloatWindowScaffold({
+    super.key,
+    required this.theme,
+    required this.child,
+  });
 
   final ThemeData theme;
   final Widget child;

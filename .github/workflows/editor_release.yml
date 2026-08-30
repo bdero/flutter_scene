@@ -40,8 +40,8 @@ jobs:
           - { runner: macos-latest, platform: macos }
           # Linux and Windows are held back from the first releases. They still
           # build profile (not release) for Flutter GPU pending
-          # flutter/flutter#190872, Windows is unsigned, and the name patch
-          # needs a Windows-safe git apply. Restore these once those are sorted.
+          # flutter/flutter#190872, and Windows is unsigned. Restore these once
+          # those are sorted.
           # - { runner: ubuntu-latest, platform: linux }
           # - { runner: windows-latest, platform: windows }
     defaults:
@@ -63,18 +63,12 @@ jobs:
           git -C "$RUNNER_TEMP/flutter" checkout "$REVISION"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
 
-      # Runs before any flutter invocation, so the tool snapshot the first one
-      # builds already carries the patch. Fails the job when the patch stops
-      # applying, which is the signal that the pin moved past it.
-      - name: Patch the pinned Flutter for windowing
-        run: |
-          git -C "$RUNNER_TEMP/flutter" apply --verbose \
-            "$GITHUB_WORKSPACE/apps/flutter_scene_editor_app/tool/patches/windowing_stable.patch"
-
+      # No windowing patch or `flutter config --enable-windowing` here: the app
+      # opts itself in by setting isWindowingEnabled in main(), which is what
+      # the dart-define the tool refuses to pass on stable would have done.
       - name: Configure Flutter
         run: |
           flutter config --no-analytics
-          flutter config --enable-windowing
           flutter config --enable-${{ matrix.platform }}-desktop
           flutter doctor -v
           flutter precache --${{ matrix.platform }}

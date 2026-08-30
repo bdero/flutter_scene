@@ -20,13 +20,12 @@ bool _gpuAvailable() {
   }
 }
 
-// Static initialization swallows a failed shader-bundle load (it logs and
-// resets so a later call retries), so a completed future does not mean the
-// library is there. Under `flutter test` the bundle asset is usually absent,
-// and anything touching `baseShaderLibrary` has to skip rather than throw.
+// Under `flutter test` the bundle asset can be absent, and static
+// initialization now reports that failure instead of completing normally, so
+// anything touching `baseShaderLibrary` has to skip rather than throw.
 Future<bool> _shaderLibraryReady() async {
-  await Scene.initializeStaticResources();
   try {
+    await Scene.initializeStaticResources();
     baseShaderLibrary;
     return true;
   } catch (_) {
@@ -85,7 +84,9 @@ void main() {
   });
 
   test('a measured clamp drops the uploaded chain to the base level', () async {
-    await Scene.initializeStaticResources();
+    // Only the mip clamp is under test, and it is forced below, so a run
+    // without the shader bundle asset still exercises it.
+    await _shaderLibraryReady();
 
     addTearDown(() => platformMipSamplingWorks = null);
     final pixels = Uint8List(16 * 16 * 4);

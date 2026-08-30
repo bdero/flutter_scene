@@ -154,9 +154,18 @@ class Collider extends Component implements PendingPhysicsRegistration {
       collisionMask: _collisionMask,
     );
     if (created.isEmpty) {
+      // The backend rejects degenerate input and reports it by handing back
+      // nothing. Without the node in the message the symptom surfaces much
+      // later, as bodies falling through geometry that looks like it has a
+      // collider on it, and the search starts from scratch.
+      final where = node.name.isEmpty
+          ? 'an unnamed node'
+          : 'node "${node.name}"';
       throw UnsupportedError(
-        '${world.backendName} could not build colliders for '
-        '${_shape.runtimeType}',
+        '${world.backendName} built no shape for the ${_shape.runtimeType} on '
+        '$where, so the collider would collide with nothing. Causes are a '
+        'triangle mesh with no triangles, a convex hull whose points are all '
+        'collinear or coplanar, and a compound shape with no children.',
       );
     }
     _handles.addAll(created);

@@ -277,7 +277,7 @@ void main() {
     test('channels do not override the existing caster rules', () {
       expect(
         shadowCasterAccepted(
-          caster()..castsShadows = false,
+          caster()..shadowCastingMode = ShadowCastingMode.off,
           ShadowCasterFilter.all,
           0xFF,
         ),

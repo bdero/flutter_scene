@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
@@ -30,13 +31,31 @@ import 'package:flutter_scene/src/render/render_layers.dart';
 /// [worldTransform] each frame; the render passes iterate the flat
 /// [RenderScene] and never walk the node tree.
 class RenderItem {
-  RenderItem({required this.geometry, required this.material});
+  RenderItem({required this.geometry, required Material material})
+    : _material = material,
+      geometryIdentity = identityHashCode(geometry),
+      materialIdentity = identityHashCode(material);
 
   /// Vertex and index data for this primitive.
   final Geometry geometry;
 
   /// Shader and per-material parameters.
-  Material material;
+  Material get material => _material;
+  set material(Material value) {
+    if (identical(_material, value)) return;
+    _material = value;
+    materialIdentity = identityHashCode(value);
+  }
+
+  Material _material;
+
+  /// Identity sort keys for [geometry] and [material], cached so the batching
+  /// sorts in the depth prepass and shadow encoder compare plain integers.
+  /// Those comparators run O(n log n) times per pass per frame, and
+  /// identityHashCode is a runtime call that installs a hash in the object
+  /// header on first use. [materialIdentity] is refreshed by the setter above.
+  final int geometryIdentity;
+  int materialIdentity;
 
   /// Level-of-detail state, set by an [LodComponent] when the item is
   /// registered. When non-null the encoder picks one of its levels per view
@@ -100,8 +119,30 @@ class RenderItem {
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
 
-  /// Mirrors the owning node's `castsShadows` setting, refreshed each frame.
-  bool castsShadows = true;
+  /// Mirrors the owning node's `shadowCastingMode`, refreshed each frame.
+  ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
+
+  /// Mirrors the owning `MeshPrimitive.castsShadow`, refreshed each frame.
+  /// Kept apart from [shadowCastingMode] rather than folded into it: a
+  /// primitive opting out must stop the casting without also pulling a
+  /// shadows-only node back into the color image.
+  bool primitiveCastsShadow = true;
+
+  /// Whether this item renders into shadow maps at all.
+  bool get castsShadows =>
+      primitiveCastsShadow && shadowCastingMode != ShadowCastingMode.off;
+
+  /// Whether this item casts from every face, ignoring material culling.
+  bool get shadowDoubleSided =>
+      shadowCastingMode == ShadowCastingMode.doubleSided;
+
+  /// Whether this item draws into the color image this frame: visible, its
+  /// primitive shown, and not a shadows-only caster. The shadow passes test
+  /// [castsShadows] instead, so the two are independent.
+  bool get drawsColor =>
+      visible &&
+      primitiveVisible &&
+      shadowCastingMode != ShadowCastingMode.shadowsOnly;
 
   /// The owning node's joints texture and its edge length in texels, or
   /// null/0 for an unskinned node. Refreshed each frame from the node's
@@ -766,9 +807,7 @@ class RenderScene {
   }) {
     final inputs = <RenderInput>{};
     void collect(RenderItem item) {
-      if (!item.visible ||
-          !item.primitiveVisible ||
-          (item.layers & layerMask) == 0) {
+      if (!item.drawsColor || (item.layers & layerMask) == 0) {
         return;
       }
       inputs.addAll(item.material.sceneInputs);

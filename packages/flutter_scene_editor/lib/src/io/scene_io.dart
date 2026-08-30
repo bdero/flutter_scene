@@ -349,13 +349,41 @@ Future<void> saveFscene(EditorController controller, String path) async {
   // As stays portable, and fold in absolute refs recorded while the scene
   // was unsaved (the session-only form).
   _rewriteFmatRefsForSave(controller, File(path).absolute.parent.path);
-  // Write the payload sidecar BEFORE serializing the text: the sidecar pass
-  // records `payloadSource` on the document (and silently skips itself when
-  // there is nothing to persist), and the text must carry that reference —
-  // a first save that serialized first shipped a sidecar the build hook
-  // could never discover ("payload has no bytes to embed").
-  _writePayloadSidecar(controller.document, path);
+
+  // Carry the current editor state (camera pose, selection) in the document.
+  final editorState = controller.editorStateProvider?.call();
+  if (editorState != null) controller.document.editor = editorState;
+
+  // Payload bytes live in the sidecar, not the lean text, so a scene that
+  // touched the payload pool (a mesh split, an embedded import) must rewrite
+  // it or those bytes are lost on reopen. Name the sidecar before writing the
+  // text so the manifest references it.
+  final document = controller.document;
+  final rewriteSidecar =
+      controller.payloadsDirty && document.payloads.isNotEmpty;
+  if (rewriteSidecar) {
+    // Name the sidecar after the file being written, not after whatever the
+    // opened document carried. A Save As that kept the source name would
+    // write this document's payload pool over the original's sidecar, and
+    // leave the original reading bytes it did not produce.
+    final stem = File(path).uri.pathSegments.last.replaceAll('.fscene', '');
+    final expected = '$stem.payloads.fsceneb';
+    if (document.payloadSource != expected) {
+      document.payloadSource = expected;
+    }
+  }
+
+  // Write the sidecar before serializing the text so the new payloadSource is
+  // present in the saved document and a first save doesn't produce an orphaned
+  // sidecar that no consumer can discover.
+  if (rewriteSidecar) {
+    _writePayloadSidecar(document, path);
+  }
+
   await File(path).writeAsString(controller.session.toFscene());
+  // Cleared whatever the pool held: a save that emptied it has nothing left
+  // to write, and leaving the flag set would rewrite on every later save.
+  controller.payloadsDirty = false;
 }
 
 /// Writes the document's payload bytes (animation keyframes, embedded

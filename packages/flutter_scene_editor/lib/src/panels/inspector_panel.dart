@@ -1,9 +1,13 @@
+import 'dart:async' show unawaited;
+import 'package:collection/collection.dart' show DeepCollectionEquality;
 import 'dart:math' as math;
 
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter/material.dart' hide Matrix4, Step;
+import 'package:flutter_scene/scene.dart'
+    show Component, PointLightComponent, SpotLightComponent;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
@@ -36,15 +40,23 @@ class InspectorPanel extends StatelessWidget {
       child: ListenableBuilder(
         listenable: controller,
         builder: (context, _) {
-          final primary = controller.selection.primary;
-          final node = primary != null ? controller.displayNode(primary) : null;
+          final selection = controller.selection;
+          final primary = selection.primary;
+          // Primary first, then the rest of the selection in order.
+          final nodes = [
+            if (primary != null)
+              if (controller.displayNode(primary) case final node?) node,
+            for (final id in selection.ids)
+              if (id != primary)
+                if (controller.displayNode(id) case final node?) node,
+          ];
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: node == null
+                child: nodes.isEmpty
                     ? StageSection(controller: controller)
-                    : _NodeInspector(node: node, controller: controller),
+                    : _NodeInspector(nodes: nodes, controller: controller),
               ),
             ],
           );
@@ -54,11 +66,24 @@ class InspectorPanel extends StatelessWidget {
   }
 }
 
-class _NodeInspector extends StatelessWidget {
-  const _NodeInspector({required this.node, required this.controller});
+/// Whether two property values encode identically (canonical JSON form).
+bool _sameValue(PropertyValue? a, PropertyValue? b) {
+  Object? encode(PropertyValue? value) =>
+      value == null ? null : encodePropertyValue(value, (id) => id.toToken());
+  return const DeepCollectionEquality().equals(encode(a), encode(b));
+}
 
-  final NodeSpec node;
+class _NodeInspector extends StatelessWidget {
+  const _NodeInspector({required this.nodes, required this.controller});
+
+  /// The selected nodes, primary first. Fields shared by every node render
+  /// through the same widgets a single selection uses; differing values show
+  /// dashes and an edit applies to the whole selection.
+  final List<NodeSpec> nodes;
   final EditorController controller;
+
+  NodeSpec get node => nodes.first;
+  bool get single => nodes.length == 1;
 
   @override
   Widget build(BuildContext context) {
@@ -76,73 +101,138 @@ class _NodeInspector extends StatelessWidget {
     // component added to this prefab member). Prefab-authored components
     // stay locked; suppressing those needs the removedComponentTypes
     // machinery (TODO(prefab-member-components)).
-    final sourceComponents = controller.document.nodes[node.id]?.components;
-    final memberAddedTypes = controller.memberAddedComponentTypes(node.id);
+
+    // A component type renders when every selected node carries it.
+    var sharedTypes = {for (final c in node.components) c.type};
+    for (final other in nodes.skip(1)) {
+      sharedTypes = sharedTypes.intersection({
+        for (final c in other.components) c.type,
+      });
+    }
+    final uniformName = nodes.every((n) => n.name == node.name);
+    final uniformVisible = nodes.every((n) => n.visible == node.visible);
+    final uniformShadowCasting = nodes.every(
+      (n) => n.shadowCastingMode == node.shadowCastingMode,
+    );
+    // Whether every node's material ref matches, so the shared material can
+    // be edited inline for the whole selection.
+    bool uniformRef(String type, String key) {
+      final refs = [
+        for (final n in nodes)
+          n.components
+              .where((c) => c.type == type)
+              .firstOrNull
+              ?.properties[key],
+      ];
+      final first = refs.first;
+      if (first is! ResourceRefValue) return false;
+      return refs.every((r) => r is ResourceRefValue && r.id == first.id);
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (instanceId != null)
+          if (single && instanceId != null)
             _PrefabBanner(
               isMember: isMember,
               source: _instanceSource(instanceId),
             ),
-          EditorSectionHeader(label: 'Node'),
+          EditorSectionHeader(
+            label: single ? 'Node' : 'Node (${nodes.length} selected)',
+          ),
           // Name field.
           _StringRow(
             label: 'Name',
             value: node.name,
-            onSubmit: (v) => controller.setNodeNameRouted(node.id, v),
+            mixed: !uniformName,
+            onSubmit: (v) {
+              for (final n in nodes) {
+                controller.setNodeNameRouted(n.id, v);
+              }
+            },
           ),
           // Visibility toggle.
           _BoolRow(
             label: 'Visible',
             value: node.visible,
-            onChanged: (v) => controller.setNodeVisibleRouted(node.id, v),
+            mixed: !uniformVisible,
+            onChanged: (v) {
+              for (final n in nodes) {
+                controller.setNodeVisibleRouted(n.id, v);
+              }
+            },
           ),
+          // How the node's meshes cast; only meaningful for mesh-bearing
+          // nodes, so it follows the mesh into the selection.
+          if (sharedTypes.contains('mesh'))
+            EnumRow(
+              label: 'Shadows',
+              value: uniformShadowCasting ? node.shadowCastingMode : null,
+              options: const ['on', 'off', 'doubleSided', 'shadowsOnly'],
+              labels: const {
+                'on': 'Cast',
+                'off': 'Do not cast',
+                'doubleSided': 'Cast double-sided',
+                'shadowsOnly': 'Shadows only',
+              },
+              onChanged: (v) {
+                for (final n in nodes) {
+                  controller.setNodeShadowCastingRouted(n.id, v);
+                }
+              },
+            ),
           const SizedBox(height: 8),
           EditorSectionHeader(label: 'Transform'),
-          _TransformEditor(node: node, controller: controller),
-          // Components.
-          for (final component in node.components) ...[
-            const SizedBox(height: 8),
-            _ComponentSection(
-              node: node,
-              component: component,
-              controller: controller,
-              canRemove: sourceComponents != null
-                  ? sourceComponents.any((c) => c.type == component.type)
-                  : memberAddedTypes.contains(component.type),
-            ),
-            // A mesh's material is a resource; edit it inline below the mesh.
-            if (component.type == 'mesh' &&
-                component.properties['material'] is ResourceRefValue)
-              MaterialSection(
+          _TransformEditor(nodes: nodes, controller: controller),
+          // Components (the ones the whole selection shares).
+          for (final component in node.components)
+            if (sharedTypes.contains(component.type)) ...[
+              const SizedBox(height: 8),
+              _ComponentSection(
+                nodes: nodes,
+                type: component.type,
                 controller: controller,
-                nodeId: node.id,
-                materialId:
-                    (component.properties['material'] as ResourceRefValue).id,
+                canRemove: nodes.every((n) {
+                  final source = controller.document.nodes[n.id]?.components;
+                  return source != null
+                      ? source.any((c) => c.type == component.type)
+                      : controller
+                            .memberAddedComponentTypes(n.id)
+                            .contains(component.type);
+                }),
               ),
-            // A volume's environment is a resource; edit its look inline.
-            if (component.type == 'environmentVolume' &&
-                component.properties['environment'] is ResourceRefValue)
-              _VolumeEnvironmentEditor(
-                controller: controller,
-                nodeId: node.id,
-                environmentId:
-                    (component.properties['environment'] as ResourceRefValue)
-                        .id,
-              ),
-          ],
+              // A mesh's material is a resource; edit it inline below the
+              // mesh when the whole selection shares the same material.
+              if (component.type == 'mesh' &&
+                  component.properties['material'] is ResourceRefValue &&
+                  (single || uniformRef('mesh', 'material')))
+                MaterialSection(
+                  controller: controller,
+                  nodeId: node.id,
+                  materialId:
+                      (component.properties['material'] as ResourceRefValue).id,
+                ),
+              // A volume's environment is a resource; edit its look inline.
+              if (single &&
+                  component.type == 'environmentVolume' &&
+                  component.properties['environment'] is ResourceRefValue)
+                _VolumeEnvironmentEditor(
+                  controller: controller,
+                  nodeId: node.id,
+                  environmentId:
+                      (component.properties['environment'] as ResourceRefValue)
+                          .id,
+                ),
+            ],
           // Components add onto any editable node: a source-document node
           // carries them directly (a prefab instance included), and a prefab
           // member records them on the enclosing instance's delta.
           const SizedBox(height: 8),
-          _AddComponentBar(node: node, controller: controller),
+          _AddComponentBar(nodes: nodes, controller: controller),
           // Prefab actions (apply/revert) for the enclosing instance.
-          if (instanceId != null) ...[
+          if (single && instanceId != null) ...[
             const SizedBox(height: 8),
             _PrefabActions(
               instanceNodeId: instanceId,
@@ -160,34 +250,82 @@ class _NodeInspector extends StatelessWidget {
 }
 
 class _TransformEditor extends StatelessWidget {
-  const _TransformEditor({required this.node, required this.controller});
+  const _TransformEditor({required this.nodes, required this.controller});
 
-  final NodeSpec node;
+  /// The nodes edited together, primary first. Per-axis values the selection
+  /// disagrees on render as dashes; a commit writes only the entered axes
+  /// (each node keeps its own values elsewhere).
+  final List<NodeSpec> nodes;
   final EditorController controller;
+
+  NodeSpec get node => nodes.first;
+  bool get single => nodes.length == 1;
+
+  static TrsTransform _trsOf(NodeSpec node) {
+    final transform = node.transform;
+    if (transform is TrsTransform) return transform;
+    final t = Vector3.zero();
+    final r = Quaternion.identity();
+    final s = Vector3.zero();
+    transform.toMatrix4().decompose(t, r, s);
+    return TrsTransform(translation: t, rotation: r, scale: s);
+  }
+
+  bool _axisUniform(List<Vector3> values, int axis) {
+    final first = values.first[axis];
+    return values.every((v) => (v[axis] - first).abs() < 1e-9);
+  }
+
+  // Applies the submitted axes over each node's own vector, then hands every
+  // node's full TRS to one batched undo step.
+  void _commitEach(
+    Map<String, Object> v,
+    TrsTransform Function(TrsTransform current, Vector3 merged) next,
+    List<Vector3> currents,
+  ) {
+    final batch = <LocalId, TrsTransform>{};
+    for (var i = 0; i < nodes.length; i++) {
+      final merged = Vector3.copy(currents[i]);
+      if (v['x'] case final num x) merged.x = x.toDouble();
+      if (v['y'] case final num y) merged.y = y.toDouble();
+      if (v['z'] case final num z) merged.z = z.toDouble();
+      batch[nodes[i].id] = next(_trsOf(nodes[i]), merged);
+    }
+    unawaited(controller.setNodeTransformsBatch(batch));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final trsList = [for (final n in nodes) _trsOf(n)];
     final trs = node.transform is TrsTransform
         ? node.transform as TrsTransform
         : null;
-    final t = trs?.translation;
-    final r = trs?.rotation;
-    final s = trs?.scale;
-    final translation = t ?? Vector3.zero();
-    final rotation = r ?? Quaternion.identity();
-    final scale = s ?? Vector3.all(1);
+    final t = trs?.translation ?? trsList.first.translation;
+    final s = trs?.scale ?? trsList.first.scale;
+    final translations = [for (final e in trsList) e.translation];
+    final scales = [for (final e in trsList) e.scale];
+    final eulers = [
+      for (final e in trsList) quaternionToEulerXyzDegrees(e.rotation),
+    ];
     final live = controller.liveNode(node.id);
-    final worldOrigin = live?.globalTransform.getTranslation();
-    final geometryCenter = live?.combinedWorldBounds?.center;
+    final worldOrigin = single ? live?.globalTransform.getTranslation() : null;
+    final geometryCenter = single ? live?.combinedWorldBounds?.center : null;
 
-    Vector3 vector(Map<String, Object> value) => Vector3(
-      (value['x']! as num).toDouble(),
-      (value['y']! as num).toDouble(),
-      (value['z']! as num).toDouble(),
-    );
-
-    void preview(Vector3 t, Quaternion r, Vector3 s) {
-      controller.previewLocalTransform(node.id, Matrix4.compose(t, r, s));
+    void previewEach(
+      Map<String, Object> v,
+      Matrix4 Function(TrsTransform current, Vector3 merged) compose,
+      List<Vector3> currents,
+    ) {
+      for (var i = 0; i < nodes.length; i++) {
+        final merged = Vector3.copy(currents[i]);
+        if (v['x'] case final num x) merged.x = x.toDouble();
+        if (v['y'] case final num y) merged.y = y.toDouble();
+        if (v['z'] case final num z) merged.z = z.toDouble();
+        controller.previewLocalTransform(
+          nodes[i].id,
+          compose(trsList[i], merged),
+        );
+      }
     }
 
     return Column(
@@ -195,50 +333,109 @@ class _TransformEditor extends StatelessWidget {
       children: [
         Vec3Field(
           label: 'Translation',
-          x: t?.x ?? 0,
-          y: t?.y ?? 0,
-          z: t?.z ?? 0,
+          x: t.x,
+          y: t.y,
+          z: t.z,
+          mixedX: !_axisUniform(translations, 0),
+          mixedY: !_axisUniform(translations, 1),
+          mixedZ: !_axisUniform(translations, 2),
           scrubStep: 0.01,
           snapStep: 1,
-          onPreview: (v) => preview(vector(v), rotation, scale),
-          onSubmit: (v) =>
-              controller.setNodeTransformRouted(node.id, translation: v),
+          onPreview: (v) => previewEach(
+            v,
+            (current, merged) =>
+                Matrix4.compose(merged, current.rotation, current.scale),
+            translations,
+          ),
+          onSubmit: (v) {
+            if (single) {
+              controller.setNodeTransformRouted(node.id, translation: v);
+              return;
+            }
+            _commitEach(
+              v,
+              (current, merged) => TrsTransform(
+                translation: merged,
+                rotation: current.rotation,
+                scale: current.scale,
+              ),
+              translations,
+            );
+          },
         ),
         Vec3Field(
           label: 'Scale',
-          x: s?.x ?? 1,
-          y: s?.y ?? 1,
-          z: s?.z ?? 1,
+          x: s.x,
+          y: s.y,
+          z: s.z,
+          mixedX: !_axisUniform(scales, 0),
+          mixedY: !_axisUniform(scales, 1),
+          mixedZ: !_axisUniform(scales, 2),
           scrubStep: 0.01,
           snapStep: 0.1,
-          onPreview: (v) => preview(translation, rotation, vector(v)),
-          onSubmit: (v) => controller.setNodeTransformRouted(node.id, scale: v),
+          onPreview: (v) => previewEach(
+            v,
+            (current, merged) =>
+                Matrix4.compose(current.translation, current.rotation, merged),
+            scales,
+          ),
+          onSubmit: (v) {
+            if (single) {
+              controller.setNodeTransformRouted(node.id, scale: v);
+              return;
+            }
+            _commitEach(
+              v,
+              (current, merged) => TrsTransform(
+                translation: current.translation,
+                rotation: current.rotation,
+                scale: merged,
+              ),
+              scales,
+            );
+          },
         ),
         // Rotation as XYZ Euler degrees.
-        Builder(
-          builder: (context) {
-            final euler = quaternionToEulerXyzDegrees(
-              r ?? Quaternion.identity(),
-            );
-            return Vec3Field(
-              label: 'Rotation',
-              x: euler.x,
-              y: euler.y,
-              z: euler.z,
-              scrubStep: 0.1,
-              snapStep: 1,
-              onPreview: (v) => preview(
-                translation,
-                eulerXyzDegreesToQuaternion(vector(v)),
-                scale,
+        Vec3Field(
+          label: 'Rotation',
+          x: eulers.first.x,
+          y: eulers.first.y,
+          z: eulers.first.z,
+          mixedX: !_axisUniform(eulers, 0),
+          mixedY: !_axisUniform(eulers, 1),
+          mixedZ: !_axisUniform(eulers, 2),
+          scrubStep: 0.1,
+          snapStep: 1,
+          onPreview: (v) => previewEach(
+            v,
+            (current, merged) => Matrix4.compose(
+              current.translation,
+              eulerXyzDegreesToQuaternion(merged),
+              current.scale,
+            ),
+            eulers,
+          ),
+          onSubmit: (v) {
+            if (single) {
+              final merged = Vector3.copy(eulers.first);
+              if (v['x'] case final num x) merged.x = x.toDouble();
+              if (v['y'] case final num y) merged.y = y.toDouble();
+              if (v['z'] case final num z) merged.z = z.toDouble();
+              final q = eulerXyzDegreesToQuaternion(merged);
+              controller.setNodeTransformRouted(
+                node.id,
+                rotation: {'x': q.x, 'y': q.y, 'z': q.z, 'w': q.w},
+              );
+              return;
+            }
+            _commitEach(
+              v,
+              (current, merged) => TrsTransform(
+                translation: current.translation,
+                rotation: eulerXyzDegreesToQuaternion(merged),
+                scale: current.scale,
               ),
-              onSubmit: (v) {
-                final q = eulerXyzDegreesToQuaternion(vector(v));
-                controller.setNodeTransformRouted(
-                  node.id,
-                  rotation: {'x': q.x, 'y': q.y, 'z': q.z, 'w': q.w},
-                );
-              },
+              eulers,
             );
           },
         ),
@@ -298,24 +495,63 @@ class _ReadOnlyVec3Row extends StatelessWidget {
 }
 
 /// A component's section header (type name + remove button) and its editor.
+/// Warns that a light's authored shadow is not being drawn because the shared
+/// shadow atlas ran out of slots for its light type. Shown on the light's own
+/// component, where the Casts shadow toggle that appears inert lives.
+class _ShadowBudgetNotice extends StatelessWidget {
+  const _ShadowBudgetNotice();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.warning_amber_rounded, size: 13, color: _warningColor),
+        const SizedBox(width: 5),
+        const Expanded(
+          child: Text(
+            'Casts shadow is on, but the shadow atlas has no slot left for '
+            'this light type, so no shadow is drawn. Turn it off on lights '
+            'that do not need one.',
+            style: TextStyle(fontSize: 11, color: _warningColor),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+const Color _warningColor = Color(0xFFE6B84D);
+
 class _ComponentSection extends StatelessWidget {
   const _ComponentSection({
-    required this.node,
-    required this.component,
+    required this.nodes,
+    required this.type,
     required this.controller,
     required this.canRemove,
   });
 
-  final NodeSpec node;
-  final ComponentSpec component;
+  /// The nodes edited together, primary first; each carries a [type]
+  /// component.
+  final List<NodeSpec> nodes;
+  final String type;
   final EditorController controller;
   final bool canRemove;
+
+  NodeSpec get node => nodes.first;
+
+  Future<void> _removeAll() async {
+    for (final n in nodes) {
+      await controller.removeComponentRouted(n.id, type);
+    }
+  }
 
   // The header's right-click menu: source-file actions (enabled when the
   // component came from project source extraction) and removal (mirroring
   // the header's close button).
   Future<void> _showContextMenu(BuildContext context, Offset position) async {
-    final sourcePath = controller.componentSourcePaths[component.type];
+    final sourcePath = controller.componentSourcePaths[type];
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     const itemStyle = TextStyle(fontSize: 12);
@@ -352,8 +588,30 @@ class _ComponentSection extends StatelessWidget {
       case 'open':
         await controller.sourceFileOpener?.call(sourcePath!);
       case 'remove':
-        await controller.removeComponentRouted(node.id, component.type);
+        await _removeAll();
     }
+  }
+
+  /// How many of the edited nodes are lights asking for a shadow the shared
+  /// atlas had no slot for. Drives the notice above the component's fields,
+  /// where the Casts shadow toggle that appears to do nothing lives.
+  int _droppedShadowCount() {
+    if (type != 'pointLight' && type != 'spotLight') return 0;
+    var dropped = 0;
+    for (final node in nodes) {
+      final live = controller.liveNode(node.id);
+      if (live == null) continue;
+      for (final component in live.getComponents<Component>()) {
+        final casts = switch (component) {
+          SpotLightComponent(:final light) => light.castsShadow,
+          PointLightComponent(:final light) => light.castsShadow,
+          _ => false,
+        };
+        if (!casts) continue;
+        if (!controller.scene.isShadowCasterGranted(component)) dropped++;
+      }
+    }
+    return dropped;
   }
 
   @override
@@ -366,24 +624,18 @@ class _ComponentSection extends StatelessWidget {
           onSecondaryTapUp: (details) =>
               _showContextMenu(context, details.globalPosition),
           child: EditorSectionHeader(
-            label: 'Component: ${component.type}',
+            label: 'Component: $type',
             trailing: canRemove
                 ? _IconAction(
                     icon: Icons.close,
                     tooltip: 'Remove component',
-                    onPressed: () => controller.removeComponentRouted(
-                      node.id,
-                      component.type,
-                    ),
+                    onPressed: _removeAll,
                   )
                 : null,
           ),
         ),
-        _ComponentEditor(
-          node: node,
-          component: component,
-          controller: controller,
-        ),
+        if (_droppedShadowCount() > 0) const _ShadowBudgetNotice(),
+        _ComponentEditor(nodes: nodes, type: type, controller: controller),
       ],
     );
   }
@@ -394,29 +646,54 @@ class _ComponentSection extends StatelessWidget {
 /// A field shows the bag's value when present, otherwise the schema default.
 class _ComponentEditor extends StatelessWidget {
   const _ComponentEditor({
-    required this.node,
-    required this.component,
+    required this.nodes,
+    required this.type,
     required this.controller,
   });
 
-  final NodeSpec node;
-  final ComponentSpec component;
+  /// The nodes edited together, primary first; each carries a [type]
+  /// component. A property whose values differ renders through the same
+  /// widget with a dash, and a commit applies to every node.
+  final List<NodeSpec> nodes;
+  final String type;
   final EditorController controller;
+
+  NodeSpec get node => nodes.first;
+  bool get single => nodes.length == 1;
+
+  ComponentSpec? _componentOn(NodeSpec node) =>
+      node.components.where((c) => c.type == type).firstOrNull;
 
   void _set(String name, Object? value) {
     if (value == null) return;
-    controller.setComponentPropertyRouted(node.id, component.type, name, value);
+    if (single) {
+      controller.setComponentPropertyRouted(node.id, type, name, value);
+      return;
+    }
+    unawaited(
+      controller.setComponentPropertiesOnNodes(
+        [for (final n in nodes) n.id],
+        type,
+        {name: value},
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final schema = controller.componentSchema(component.type);
+    final component = _componentOn(node)!;
+    final schema = controller.componentSchema(type);
     final schemaNames = {for (final d in schema) d.name};
     // Keys present on the component but not described by the schema, so nothing
-    // a node carries is ever hidden.
+    // a node carries is ever hidden. For a multi-selection only keys every
+    // node carries render.
     final extras = [
       for (final entry in component.properties.entries)
-        if (!schemaNames.contains(entry.key)) entry,
+        if (!schemaNames.contains(entry.key) &&
+            nodes.every(
+              (n) => _componentOn(n)!.properties.containsKey(entry.key),
+            ))
+          entry,
     ];
 
     if (schema.isEmpty && extras.isEmpty) {
@@ -429,12 +706,28 @@ class _ComponentEditor extends StatelessWidget {
       );
     }
 
+    PropertyValue? valueOn(NodeSpec n, String name, PropertyValue? fallback) =>
+        _componentOn(n)!.properties[name] ?? fallback;
+
+    bool mixedFor(String name, PropertyValue? fallback) {
+      final first = valueOn(node, name, fallback);
+      return nodes
+          .skip(1)
+          .any((n) => !_sameValue(valueOn(n, name, fallback), first));
+    }
+
     Widget row(ComponentPropertyDef def) => _SchemaPropertyRow(
-      componentType: component.type,
+      componentType: type,
       def: def,
       value: component.properties[def.name] ?? def.defaultValue,
+      mixed: mixedFor(def.name, def.defaultValue),
       controller: controller,
       onChanged: (v) => _set(def.name, v),
+      onPreview: (value) {
+        for (final n in nodes) {
+          controller.previewComponentProperty(n.id, type, def.name, value);
+        }
+      },
     );
 
     // Ungrouped properties render flat; each declared group folds into an
@@ -455,7 +748,7 @@ class _ComponentEditor extends StatelessWidget {
         for (final def in ungrouped) row(def),
         if (groups.isNotEmpty)
           InspectorAccordion(
-            identity: '${node.id.toToken()}/${component.type}',
+            identity: '${node.id.toToken()}/$type',
             children: [
               for (final entry in groups.entries)
                 InspectorAccordionItem(
@@ -468,11 +761,14 @@ class _ComponentEditor extends StatelessWidget {
             ],
           ),
         for (final entry in extras)
-          _PropertyValueRow(
-            label: entry.key,
-            value: entry.value,
-            onChanged: (v) => _set(entry.key, v),
-          ),
+          if (mixedFor(entry.key, null))
+            _ReadOnlyRow(label: entry.key, text: 'Mixed values')
+          else
+            _PropertyValueRow(
+              label: entry.key,
+              value: entry.value,
+              onChanged: (v) => _set(entry.key, v),
+            ),
       ],
     );
   }
@@ -487,6 +783,8 @@ class _SchemaPropertyRow extends StatelessWidget {
     required this.value,
     required this.controller,
     required this.onChanged,
+    this.onPreview,
+    this.mixed = false,
   });
 
   final String componentType;
@@ -494,6 +792,24 @@ class _SchemaPropertyRow extends StatelessWidget {
   final PropertyValue? value;
   final EditorController controller;
   final void Function(Object?) onChanged;
+
+  /// Streams in-drag values onto the live component (no transaction), so the
+  /// scene follows the drag; null leaves the drag preview inert.
+  final void Function(PropertyValue value)? onPreview;
+
+  /// A multi-selection whose values differ for this property. Simple kinds
+  /// render their normal editor with a dash; structured kinds read as
+  /// "Mixed values" until the selection agrees.
+  final bool mixed;
+
+  static const _mixedEditableKinds = {
+    ComponentPropertyKind.boolean,
+    ComponentPropertyKind.integer,
+    ComponentPropertyKind.number,
+    ComponentPropertyKind.string,
+    ComponentPropertyKind.assetRef,
+    ComponentPropertyKind.vec3,
+  };
 
   double _double(double fallback) {
     final v = value;
@@ -537,11 +853,15 @@ class _SchemaPropertyRow extends StatelessWidget {
 
   Widget _buildEditor(BuildContext context) {
     final label = def.name;
+    if (mixed && !_mixedEditableKinds.contains(def.kind)) {
+      return _ReadOnlyRow(label: label, text: 'Mixed values');
+    }
     switch (def.kind) {
       case ComponentPropertyKind.boolean:
         return _BoolRow(
           label: label,
           value: value is BoolValue ? (value as BoolValue).value : false,
+          mixed: mixed,
           onChanged: onChanged,
         );
       case ComponentPropertyKind.integer:
@@ -549,7 +869,7 @@ class _SchemaPropertyRow extends StatelessWidget {
         final current = value is IntValue ? (value as IntValue).value : 0;
         if (powerOfTwo != null) {
           final powers = _powersOfTwo(powerOfTwo);
-          return _EnumRow(
+          return EnumRow(
             label: label,
             value: '$current',
             options: [for (final power in powers) '$power'],
@@ -566,11 +886,17 @@ class _SchemaPropertyRow extends StatelessWidget {
             scrubStep: math.max(1, range.step),
             snapStep: math.max(1, range.step),
             fractionDigits: 0,
-            onPreview: (_) {},
+            mixed: mixed,
+            onPreview: (value) => onPreview?.call(IntValue(value.round())),
             onCommit: (value) => onChanged(value.round()),
           );
         }
-        return _IntRow(label: label, value: current, onSubmit: onChanged);
+        return _IntRow(
+          label: label,
+          value: current,
+          mixed: mixed,
+          onSubmit: onChanged,
+        );
       case ComponentPropertyKind.number:
         final scale = _degrees ? 180 / math.pi : 1.0;
         final current = _double(0) * scale;
@@ -585,21 +911,27 @@ class _SchemaPropertyRow extends StatelessWidget {
             scrubStep: _degrees ? 1.0 : range.step,
             snapStep: _degrees ? 1.0 : range.step,
             fractionDigits: _degrees ? 1 : range.digits,
-            onPreview: (_) {},
+            mixed: mixed,
+            onPreview: (value) => onPreview?.call(DoubleValue(value / scale)),
             onCommit: (value) => onChanged(value / scale),
           );
         }
         return _DoubleRow(
           label: '$label$suffix',
           value: current,
+          mixed: mixed,
           onSubmit: (raw) => onChanged(raw / scale),
         );
       case ComponentPropertyKind.string:
       case ComponentPropertyKind.assetRef:
         if (def.options != null) {
-          return _EnumRow(
+          return EnumRow(
             label: label,
-            value: value is StringValue ? (value as StringValue).value : null,
+            value: mixed
+                ? null
+                : value is StringValue
+                ? (value as StringValue).value
+                : null,
             options: def.options!,
             onChanged: onChanged,
           );
@@ -607,6 +939,7 @@ class _SchemaPropertyRow extends StatelessWidget {
         return _StringRow(
           label: label,
           value: value is StringValue ? (value as StringValue).value : '',
+          mixed: mixed,
           onSubmit: onChanged,
         );
       case ComponentPropertyKind.vec2:
@@ -628,7 +961,9 @@ class _SchemaPropertyRow extends StatelessWidget {
             b: v?.z ?? 1,
             a: 1,
             showAlpha: false,
-            onPreview: (_, _, _, _) {},
+            mixed: mixed,
+            onPreview: (r, g, b, _) =>
+                onPreview?.call(Vec3Value(Vector3(r, g, b))),
             onCommit: (r, g, b, _) => onChanged({'x': r, 'y': g, 'z': b}),
           );
         }
@@ -637,6 +972,9 @@ class _SchemaPropertyRow extends StatelessWidget {
           x: v?.x ?? 0,
           y: v?.y ?? 0,
           z: v?.z ?? 0,
+          mixedX: mixed,
+          mixedY: mixed,
+          mixedZ: mixed,
           onSubmit: onChanged,
         );
       case ComponentPropertyKind.vec4:
@@ -875,7 +1213,7 @@ class _UnionRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _EnumRow(
+          EnumRow(
             label: label,
             value: tag,
             options: variants.keys.toList(),
@@ -1042,14 +1380,19 @@ class _PropertyValueRow extends StatelessWidget {
 
 /// A row that lets the user add a component of any type not already on the node.
 class _AddComponentBar extends StatelessWidget {
-  const _AddComponentBar({required this.node, required this.controller});
+  const _AddComponentBar({required this.nodes, required this.controller});
 
-  final NodeSpec node;
+  /// The nodes a chosen component adds onto (every selected node).
+  final List<NodeSpec> nodes;
   final EditorController controller;
 
   @override
   Widget build(BuildContext context) {
-    final present = {for (final c in node.components) c.type};
+    // Offer only types absent from every selected node.
+    final present = {
+      for (final n in nodes)
+        for (final c in n.components) c.type,
+    };
     final available = [
       for (final type in controller.componentTypes())
         if (!present.contains(type)) type,
@@ -1059,7 +1402,11 @@ class _AddComponentBar extends StatelessWidget {
       child: PopupMenuButton<String>(
         enabled: available.isNotEmpty,
         tooltip: 'Add a component',
-        onSelected: (type) => controller.addComponentRouted(node.id, type),
+        onSelected: (type) {
+          for (final n in nodes) {
+            controller.addComponentRouted(n.id, type);
+          }
+        },
         itemBuilder: (_) => [
           for (final type in available)
             PopupMenuItem<String>(
@@ -1367,17 +1714,23 @@ class _ReadOnlyRow extends StatelessWidget {
 }
 
 /// A dropdown for a string property with a fixed set of [options].
-class _EnumRow extends StatelessWidget {
-  const _EnumRow({
+@visibleForTesting
+class EnumRow extends StatelessWidget {
+  const EnumRow({
     required this.label,
     required this.value,
     required this.options,
     required this.onChanged,
+    this.labels,
   });
   final String label;
   final String? value;
   final List<String> options;
   final void Function(String) onChanged;
+
+  /// Display text per option, for values whose identifier reads poorly in a
+  /// menu. Options missing here show their raw value.
+  final Map<String, String>? labels;
 
   @override
   Widget build(BuildContext context) {
@@ -1397,7 +1750,13 @@ class _EnumRow extends StatelessWidget {
           const SizedBox(width: 4),
           Expanded(
             child: FSelect<String>(
-              items: {for (final option in options) option: option},
+              // Keyed by display label, valued by the option itself (FSelect
+              // takes Map<String, T>); with no labels the two coincide, which
+              // is why the plain form reads as option: option.
+              items: {
+                for (final option in options)
+                  (labels?[option] ?? option): option,
+              },
               control: FSelectControl.lifted(
                 value: current,
                 onChange: (v) {
@@ -1800,10 +2159,15 @@ class _StringRow extends StatefulWidget {
     required this.label,
     required this.value,
     required this.onSubmit,
+    this.mixed = false,
   });
   final String label;
   final String value;
   final void Function(String) onSubmit;
+
+  /// Dash placeholder for a multi-selection whose values disagree; a commit
+  /// applies the entered text to every node.
+  final bool mixed;
 
   @override
   State<_StringRow> createState() => _StringRowState();
@@ -1816,7 +2180,7 @@ class _StringRowState extends State<_StringRow> {
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.value);
+    _ctrl = TextEditingController(text: widget.mixed ? '' : widget.value);
     _focus = FocusNode()..addListener(_onFocusChange);
   }
 
@@ -1825,7 +2189,11 @@ class _StringRowState extends State<_StringRow> {
   }
 
   void _commit() {
-    // Skip a no-op edit when the text is unchanged.
+    // Skip a no-op edit when the text is unchanged (or still the mixed dash).
+    if (widget.mixed) {
+      if (_ctrl.text.isNotEmpty) widget.onSubmit(_ctrl.text);
+      return;
+    }
     if (_ctrl.text != widget.value) widget.onSubmit(_ctrl.text);
   }
 
@@ -1864,6 +2232,7 @@ class _StringRowState extends State<_StringRow> {
               control: FTextFieldControl.managed(controller: _ctrl),
               focusNode: _focus,
               size: FTextFieldSizeVariant.sm,
+              hint: widget.mixed ? '\u2014' : null,
               onSubmit: (_) => _commit(),
             ),
           ),
@@ -1878,10 +2247,15 @@ class _BoolRow extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onChanged,
+    this.mixed = false,
   });
   final String label;
   final bool value;
   final void Function(bool) onChanged;
+
+  /// A multi-selection whose values disagree; a dash marks the state and the
+  /// next toggle applies one value to every node.
+  final bool mixed;
 
   @override
   Widget build(BuildContext context) {
@@ -1898,6 +2272,13 @@ class _BoolRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
+          if (mixed) ...[
+            const Text(
+              '\u2014',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+            const SizedBox(width: 4),
+          ],
           InspectorToggleSwitch(value: value, onChanged: onChanged),
         ],
       ),
@@ -1910,10 +2291,14 @@ class _IntRow extends StatefulWidget {
     required this.label,
     required this.value,
     required this.onSubmit,
+    this.mixed = false,
   });
   final String label;
   final int value;
   final void Function(int) onSubmit;
+
+  /// Dash placeholder for a multi-selection whose values disagree.
+  final bool mixed;
 
   @override
   State<_IntRow> createState() => _IntRowState();
@@ -1926,7 +2311,9 @@ class _IntRowState extends State<_IntRow> {
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.value.toString());
+    _ctrl = TextEditingController(
+      text: widget.mixed ? '' : widget.value.toString(),
+    );
     _focus = FocusNode()..addListener(_onFocusChange);
   }
 
@@ -1991,10 +2378,14 @@ class _DoubleRow extends StatefulWidget {
     required this.label,
     required this.value,
     required this.onSubmit,
+    this.mixed = false,
   });
   final String label;
   final double value;
   final void Function(double) onSubmit;
+
+  /// Dash placeholder for a multi-selection whose values disagree.
+  final bool mixed;
 
   @override
   State<_DoubleRow> createState() => _DoubleRowState();
@@ -2007,7 +2398,9 @@ class _DoubleRowState extends State<_DoubleRow> {
   @override
   void initState() {
     super.initState();
-    _ctrl = TextEditingController(text: widget.value.toStringAsFixed(3));
+    _ctrl = TextEditingController(
+      text: widget.mixed ? '' : widget.value.toStringAsFixed(3),
+    );
     _focus = FocusNode()..addListener(_onFocusChange);
   }
 

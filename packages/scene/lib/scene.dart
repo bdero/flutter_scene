@@ -34,6 +34,8 @@ export 'src/specs.dart'
         MatrixTransform,
         MorphTargetsSpec,
         NodeSpec,
+        EditorCameraSpec,
+        EditorStateSpec,
         PayloadEncoding,
         PayloadEnvironment,
         PayloadSpec,
@@ -79,6 +81,15 @@ export 'src/property_value.dart'
         Vec4Value;
 export 'src/diff.dart' show diffScene, NodeChange, SceneDiff;
 export 'src/log.dart' show sceneLog;
+export 'src/mesh_grid_split.dart'
+    show
+        MeshGridCell,
+        applyMeshSplitHints,
+        countResourceReferences,
+        documentWorldMatrix,
+        isPayloadReferenced,
+        splitTriangleMeshByGrid,
+        splittableVertexLayouts;
 export 'src/binary/fsceneb.dart'
     show FscenebFormatException, kFscenebVersion, readFsceneb, writeFsceneb;
 export 'src/json/fscene_json.dart'

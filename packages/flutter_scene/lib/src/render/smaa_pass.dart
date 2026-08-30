@@ -11,6 +11,35 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart' show Vector4;
 
+/// Quality settings for SMAA anti-aliasing. Active when
+/// `Scene.antiAliasingMode` is `AntiAliasingMode.smaa`. The defaults mirror
+/// the reference implementation's high preset.
+/// {@category Rendering}
+class SmaaSettings {
+  SmaaSettings({
+    this.threshold = 0.1,
+    this.maxSearchSteps = 16,
+    this.maxDiagonalSearchSteps = 8,
+    this.cornerRounding = 25.0,
+  });
+
+  /// Luma contrast an edge must exceed to be detected. Lower values catch
+  /// more edges (including texture detail) at more cost; the useful band is
+  /// roughly 0.05 (overkill) to 0.2 (fast).
+  double threshold;
+
+  /// How far, in doubled pixels, the horizontal/vertical line search walks
+  /// each direction. Caps the length of a line the pass can reconstruct.
+  int maxSearchSteps;
+
+  /// How far, in pixels, the diagonal line search walks each direction.
+  int maxDiagonalSearchSteps;
+
+  /// How much sharp geometric corners are kept (0 fully smoothed, 100 fully
+  /// kept), as a percentage.
+  double cornerRounding;
+}
+
 /// Anti-aliases the display-referred image with enhanced subpixel
 /// morphological antialiasing (SMAA 1x): a luma edge-detection pass, a
 /// blending-weight pass over the precomputed area/search textures, and a
@@ -24,12 +53,17 @@ import 'package:vector_math/vector_math.dart' show Vector4;
 /// (MIT-style license; the required copyright notice is carried in
 /// shaders/smaa.glsl). The port notes live in that file too.
 class SmaaPass extends RenderGraphPass {
-  SmaaPass({required gpu.Texture output, required ui.Size dimensions})
-    : _output = output,
-      _dimensions = dimensions;
+  SmaaPass({
+    required gpu.Texture output,
+    required ui.Size dimensions,
+    SmaaSettings? settings,
+  }) : _output = output,
+       _dimensions = dimensions,
+       _settings = settings ?? SmaaSettings();
 
   final gpu.Texture _output;
   final ui.Size _dimensions;
+  final SmaaSettings _settings;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -141,11 +175,15 @@ class SmaaPass extends RenderGraphPass {
     final width = _dimensions.width.toInt();
     final height = _dimensions.height.toInt();
 
-    final info = Float32List(4)
+    final info = Float32List(8)
       ..[0] = width == 0 ? 0.0 : 1.0 / width
       ..[1] = height == 0 ? 0.0 : 1.0 / height
       ..[2] = width.toDouble()
-      ..[3] = height.toDouble();
+      ..[3] = height.toDouble()
+      ..[4] = _settings.threshold
+      ..[5] = _settings.maxSearchSteps.clamp(1, 112).toDouble()
+      ..[6] = _settings.maxDiagonalSearchSteps.clamp(1, 20).toDouble()
+      ..[7] = _settings.cornerRounding.clamp(0.0, 100.0);
     final infoView = context.transientsBuffer.emplace(
       ByteData.sublistView(info),
     );

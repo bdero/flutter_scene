@@ -227,6 +227,7 @@ class NodeSpec {
     this.skin,
     this.instance,
     this.visible = true,
+    this.shadowCastingMode = 'on',
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
        components = components ?? [];
@@ -258,6 +259,11 @@ class NodeSpec {
   /// Whether this node (and so its subtree) renders. Hidden nodes still
   /// realize and tick; only drawing is skipped.
   bool visible;
+
+  /// How this node's meshes cast shadows: `off`, `on` (the default),
+  /// `doubleSided`, or `shadowsOnly`. Names match the renderer's
+  /// `ShadowCastingMode`; an unknown name realizes as `on`.
+  String shadowCastingMode;
 }
 
 /// An axis-aligned bounding box in a resource's local space.
@@ -725,13 +731,17 @@ class EnvironmentEffectsSpec {
     this.globalIlluminationUpdateWhenIdleOnly = false,
     this.globalIlluminationBakeOnly = false,
     this.temporalAntiAliasingEnabled = false,
-    this.temporalAntiAliasingMinimumCurrentWeight = 0.1,
-    this.temporalAntiAliasingVarianceGamma = 1.0,
-    this.temporalAntiAliasingSharpness = 0.0,
-    this.temporalAntiAliasingJitterSequenceLength = 16,
-    this.temporalAntiAliasingJitterScale = 1.0,
-    this.temporalAntiAliasingObjectMotion = true,
-    this.temporalAntiAliasingSkinnedMotion = true,
+    this.temporalAntiAliasingMinimumCurrentWeight = 0.15,
+    this.temporalAntiAliasingVarianceGamma = 1.2,
+    this.temporalAntiAliasingSharpness = 0.15,
+    this.temporalAntiAliasingJitterSequenceLength = 11,
+    this.temporalAntiAliasingJitterScale = 0.46,
+    this.temporalAntiAliasingObjectMotion = false,
+    this.temporalAntiAliasingSkinnedMotion = false,
+    this.smaaThreshold = 0.1,
+    this.smaaMaxSearchSteps = 16,
+    this.smaaMaxDiagonalSearchSteps = 8,
+    this.smaaCornerRounding = 25.0,
     this.fogEnabled = false,
     this.fogMode = 'exponential',
     Vector3? fogColor,
@@ -884,6 +894,10 @@ class EnvironmentEffectsSpec {
             other.temporalAntiAliasingObjectMotion,
         temporalAntiAliasingSkinnedMotion:
             other.temporalAntiAliasingSkinnedMotion,
+        smaaThreshold: other.smaaThreshold,
+        smaaMaxSearchSteps: other.smaaMaxSearchSteps,
+        smaaMaxDiagonalSearchSteps: other.smaaMaxDiagonalSearchSteps,
+        smaaCornerRounding: other.smaaCornerRounding,
         fogEnabled: other.fogEnabled,
         fogMode: other.fogMode,
         fogColor: other.fogColor.clone(),
@@ -1024,6 +1038,12 @@ class EnvironmentEffectsSpec {
   double temporalAntiAliasingJitterScale;
   bool temporalAntiAliasingObjectMotion;
   bool temporalAntiAliasingSkinnedMotion;
+
+  /// SMAA quality (active when the stage's anti-aliasing mode is `smaa`).
+  double smaaThreshold;
+  int smaaMaxSearchSteps;
+  int smaaMaxDiagonalSearchSteps;
+  double smaaCornerRounding;
 
   Vector3 fogColor;
   double fogSkyColorInfluence;
@@ -1548,6 +1568,50 @@ class SkyEnvironmentSpec {
   /// The sky-driven analytic sun, or null for image-based sky lighting only.
   /// Applies only when [source] is a sky with a sun.
   SunLightSpec? sunLight;
+}
+
+/// The editor viewport camera pose a document carries for the editor's
+/// benefit. The runtime ignores it.
+/// {@category Documents}
+class EditorCameraSpec {
+  /// Creates a pose record.
+  EditorCameraSpec({
+    required this.azimuth,
+    required this.elevation,
+    required this.radius,
+    required this.target,
+    this.orthographic = false,
+  });
+
+  /// Orbit azimuth in radians.
+  final double azimuth;
+
+  /// Orbit elevation in radians.
+  final double elevation;
+
+  /// Orbit distance from [target].
+  final double radius;
+
+  /// The orbit target in world space.
+  final Vector3 target;
+
+  /// Whether the viewport was orthographic.
+  final bool orthographic;
+}
+
+/// Editor-only document state (viewport camera, selection), written by the
+/// editor on save and restored on open. The runtime ignores it.
+/// {@category Documents}
+class EditorStateSpec {
+  /// Creates an editor-state record.
+  EditorStateSpec({this.camera, List<LocalId>? selection})
+    : selection = selection ?? [];
+
+  /// The primary viewport's camera pose, or null when none was attached.
+  EditorCameraSpec? camera;
+
+  /// The selected node ids, primary last (matching `Selection.set` order).
+  final List<LocalId> selection;
 }
 
 /// One serialized view of the scene: a camera node bound to a target and

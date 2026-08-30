@@ -14,10 +14,31 @@ class ViewportCameraHandle {
   OrbitCamera? _camera;
   VoidCallback? _onChanged;
 
-  /// Called by the hosting viewport when it comes up.
+  ({
+    double? azimuth,
+    double? elevation,
+    double? radius,
+    vm.Vector3? target,
+    bool? orthographic,
+  })?
+  _pendingPose;
+
+  /// Called by the hosting viewport when it comes up. A pose set before any
+  /// viewport attached (restoring a saved scene's camera) applies now.
   void attach(OrbitCamera camera, VoidCallback onChanged) {
     _camera = camera;
     _onChanged = onChanged;
+    final pending = _pendingPose;
+    if (pending != null) {
+      _pendingPose = null;
+      setPose(
+        azimuth: pending.azimuth,
+        elevation: pending.elevation,
+        radius: pending.radius,
+        target: pending.target,
+        orthographic: pending.orthographic,
+      );
+    }
   }
 
   /// Called by the hosting viewport on dispose. Ignored when another
@@ -58,7 +79,16 @@ class ViewportCameraHandle {
     bool? orthographic,
   }) {
     final camera = _camera;
-    if (camera == null) return;
+    if (camera == null) {
+      _pendingPose = (
+        azimuth: azimuth,
+        elevation: elevation,
+        radius: radius,
+        target: target,
+        orthographic: orthographic,
+      );
+      return;
+    }
     if (azimuth != null) camera.azimuth = azimuth;
     if (elevation != null) camera.elevation = elevation;
     if (radius != null) camera.radius = max(radius, 0.01);

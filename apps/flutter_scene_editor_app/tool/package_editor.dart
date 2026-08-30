@@ -26,23 +26,17 @@ void main(List<String> args) async {
   final version = _pubspecVersion('$appDir/pubspec.yaml');
 
   if (options.build) {
-    _assertWindowingEnabled();
     _clearStaleProduct(appDir, options.platform);
-    // The source tracks the master SDK's windowing names; the pinned stable
-    // uses the older ones. Rename for the build and reverse after, so a local
-    // build never leaves the tree on stable names.
-    final repoRoot = Directory('$appDir/../..').absolute.path;
-    final namePatch = '$appDir/tool/patches/window_names_stable.patch';
-    _run('git', ['apply', namePatch], cwd: repoRoot);
-    try {
-      _run('flutter', [
-        'build',
-        options.platform,
-        options.platform == 'macos' ? '--release' : '--profile',
-      ], cwd: appDir);
-    } finally {
-      _run('git', ['apply', '-R', namePatch], cwd: repoRoot);
-    }
+    // The source is written in the 3.47 stable windowing names, which is what
+    // flutter.version pins, so the build needs no patching. Working on the
+    // master channel is the case that patches (tool/patches/
+    // window_names_master.patch), and it must be reversed before packaging.
+    _requireStableWindowingNames(appDir);
+    _run('flutter', [
+      'build',
+      options.platform,
+      options.platform == 'macos' ? '--release' : '--profile',
+    ], cwd: appDir);
   }
 
   final bundle = _builtBundle(appDir, options.platform);
@@ -116,27 +110,6 @@ final class _Options {
   }
 }
 
-// The editor exits at startup without windowing, and `flutter config
-// --enable-windowing` is a silent no-op on a channel where the feature is
-// unavailable, so an unguarded build would package cleanly and be dead.
-void _assertWindowingEnabled() {
-  final result = _run('flutter', ['config', '--list']);
-  final line = const LineSplitter()
-      .convert(result.stdout as String)
-      .firstWhere(
-        (l) => l.trim().startsWith('enable-windowing:'),
-        orElse: () => '',
-      );
-  if (line.contains('true') && !line.contains('Unavailable')) {
-    return;
-  }
-  _fail(
-    'Windowing is not enabled for this Flutter SDK, so the editor would exit '
-    'at startup. Apply tool/patches/windowing_stable.patch to the SDK, then '
-    'run "flutter config --enable-windowing".',
-  );
-}
-
 // Once Gatekeeper assesses a signed bundle, macOS stamps restricted
 // com.apple.provenance xattrs on it that rsync cannot rewrite, so the next
 // build fails copying into the stale bundle. Xcode reassembles the product
@@ -154,6 +127,37 @@ void _clearStaleProduct(String appDir, String platform) {
     if (entity is Directory && entity.path.endsWith('.app')) {
       stdout.writeln('- ${entity.path}');
       entity.deleteSync(recursive: true);
+    }
+  }
+}
+
+/// Refuses to package a tree still carrying the master windowing rename.
+///
+/// `window_names_master.patch` swaps the stable `RegularWindow*` names for
+/// master's shorter ones so the editor builds on that channel. Packaging with
+/// it applied would ship a binary built against names the pinned
+/// `flutter.version` SDK does not have, which is a build failure at best and a
+/// wrong-SDK release at worst, so the reversal is checked rather than trusted
+/// to a comment.
+void _requireStableWindowingNames(String appDir) {
+  final repoRoot = Directory(appDir).parent.parent.path;
+  const patched = {
+    'apps/flutter_scene_editor_app/lib/main.dart': 'RegularWindowController(',
+    'packages/flutter_scene_editor/lib/src/shell/docking_shell.dart':
+        'RegularWindowController>',
+  };
+  for (final entry in patched.entries) {
+    final file = File('$repoRoot/${entry.key}');
+    if (!file.existsSync()) {
+      _fail('Cannot verify windowing names, missing ${entry.key}');
+    }
+    if (!file.readAsStringSync().contains(entry.value)) {
+      _fail(
+        'The windowing API is in the master names in ${entry.key}, but the '
+        'release builds against the stable revision pinned by '
+        'flutter.version. Reverse tool/patches/window_names_master.patch '
+        '(git apply -R) before packaging.',
+      );
     }
   }
 }

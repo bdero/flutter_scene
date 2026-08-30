@@ -766,6 +766,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onCopy: _ctrl.copySelection,
                   onPaste: _ctrl.paste,
                   onDelete: _deleteSelected,
+                  onAddEmptyNode: _addEmptyNode,
                   onAddCube: _addCube,
                   onAddSphere: _addSphere,
                   onAddPrefab: _addPrefabInstance,
@@ -817,8 +818,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             actions: IconButton(
                               icon: const Icon(Icons.add, size: 16),
                               tooltip: 'Create node',
-                              onPressed: () =>
-                                  _ctrl.run('createNode', {'name': 'Node'}),
+                              onPressed: _addEmptyNode,
                             ),
                           ),
                           DockPanel(
@@ -1047,6 +1047,17 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     await _ctrl.deleteSelection();
   }
 
+  // Adds a blank node, selected and revealed in the outliner.
+  Future<void> _addEmptyNode() async {
+    final beforeNodes = Set.of(_ctrl.document.nodes.keys);
+    await _ctrl.run('createNode', {'name': 'Node'});
+    final nodeId = _ctrl.document.nodes.keys.firstWhere(
+      (id) => !beforeNodes.contains(id),
+    );
+    _ctrl.selection.selectOnly(nodeId);
+    _ctrl.revealInOutliner(nodeId);
+  }
+
   // Adds a cube: creates geometry, material, node, and attaches a mesh
   // component in four commands, reading back new resource ids after each.
   Future<void> _addCube() async {
@@ -1080,7 +1091,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         'name': name,
       });
       _dialogHistory.rememberPrefab(path);
-      _ctrl.selection.selectOnly(tx.records.first.targetId);
+      final instanceId = tx.records.first.targetId;
+      _ctrl.selection.selectOnly(instanceId);
+      _ctrl.revealInOutliner(instanceId);
     } catch (e) {
       // Realizing the instance failed (for example the prefab could not be
       // loaded). Roll the instance back so the scene stays consistent.
@@ -1132,8 +1145,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       },
     });
 
-    // Select the new node.
+    // Select the new node and bring its outliner row into view.
     _ctrl.selection.selectOnly(nodeId);
+    _ctrl.revealInOutliner(nodeId);
   }
 }
 
@@ -1211,6 +1225,7 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onCopy,
     required this.onPaste,
     required this.onDelete,
+    required this.onAddEmptyNode,
     required this.onAddCube,
     required this.onAddSphere,
     required this.onAddPrefab,
@@ -1254,6 +1269,7 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onPaste;
   final VoidCallback onDelete;
+  final VoidCallback onAddEmptyNode;
   final VoidCallback onAddCube;
   final VoidCallback onAddSphere;
   final VoidCallback onAddPrefab;
@@ -1406,6 +1422,7 @@ class _EditorMenuBar extends StatelessWidget {
             _Menu(
               label: 'Add',
               items: [
+                _MenuItem(label: 'Empty Node', onTap: onAddEmptyNode),
                 _MenuItem(label: 'Cube', onTap: onAddCube),
                 _MenuItem(label: 'Sphere', onTap: onAddSphere),
                 _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),

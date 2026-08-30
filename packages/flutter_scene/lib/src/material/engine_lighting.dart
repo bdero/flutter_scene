@@ -25,13 +25,14 @@ import 'package:flutter_scene/src/render/irradiance_field.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (784 bytes / 196 floats:
+  /// The float count of the full `FragInfo` block (800 bytes / 200 floats:
   /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
   /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
   /// 160..163, `ssao_lighting` at 164..167, `model_scale` at 168..171,
-  /// `dielectric_f0` at 172..175, and the five irradiance-field vec4s at
-  /// 176..195). See the layout map in the implementation.
-  static const fragInfoFloatCount = 196;
+  /// `dielectric_f0` at 172..175, the five irradiance-field vec4s at
+  /// 176..195, and `froxel_grid` at 196..199). See the layout map in the
+  /// implementation.
+  static const fragInfoFloatCount = 200;
 
   /// Index of the `dielectric_f0` vec4 in `FragInfo`. [packInto] writes the
   /// standard 0.04 dielectric reflectance; a material with a non-default
@@ -241,15 +242,28 @@ class EngineLightingUniforms {
     // punctual_dims [8..10] (the first unused diffuse-SH vec4 slot): the
     // dimensions the shader needs to normalize its punctual-light fetches.
     // x: parameters-texture row count (all scene lights). y/z: the light-index
-    // texture width/height. These are frame-constant. The per-object slice
-    // (radiance_blend.z count, .w offset) is written per draw by the material.
+    // texture width/height (the froxel data texture's in froxel mode). These
+    // are frame-constant. The per-object slice (radiance_blend.z count, .w
+    // offset) is written per draw by the material and ignored in froxel mode.
     fragInfo[8] = lighting.punctualParamsCount.toDouble();
     fragInfo[9] = lighting.punctualIndexWidth.toDouble();
     fragInfo[10] = lighting.punctualIndexHeight.toDouble();
+    // punctual_dims.w [11] + froxel_grid [196..199]: this view's froxel
+    // clustering. froxel_grid.z (slice count) of 0 selects the per-object
+    // path; nonzero, the fragment derives its froxel from the camera basis
+    // and reads its light slice from the froxel data texture.
+    final froxels = lighting.froxels;
+    fragInfo[11] = froxels?.zBias ?? 0.0;
+    fragInfo[196] = froxels?.nx.toDouble() ?? 0.0;
+    fragInfo[197] = froxels?.ny.toDouble() ?? 0.0;
+    fragInfo[198] = froxels?.nz.toDouble() ?? 0.0;
+    fragInfo[199] = froxels?.zScale ?? 0.0;
     // spot_shadow_params [12..15] (more of the unused SH region): the shared
-    // spot-shadow parameters. count 0 disables spot shadow sampling; the shader
-    // also uses count to size the shared shadow atlas (cascades + spot tiles).
-    fragInfo[12] = lighting.spotShadowCount.toDouble();
+    // spot-shadow parameters. x is the total non-cascade tile count (spot
+    // tiles then point-shadow tiles); 0 disables both spot and point shadow
+    // sampling, and the shader uses it to size the shared shadow atlas.
+    fragInfo[12] = (lighting.spotShadowCount + lighting.pointShadowTileCount)
+        .toDouble();
     fragInfo[13] = lighting.spotShadowDepthBias;
     fragInfo[14] = lighting.spotShadowNormalBias;
     fragInfo[15] = lighting.spotShadowSoftness;

@@ -677,30 +677,27 @@ vec4 EvaluateLighting(MaterialInputs material) {
   }
 
   // Additional analytic lights (point, spot, and directional lights past the
-  // first); point lights do not cast shadows. The scene may hold any number of
-  // lights; per-object culling gives this object a contiguous slice of the
-  // light-index buffer, and the loop shades only that slice. The loop bound is
-  // the compile-time per-object budget MAX_PUNCTUAL_LIGHTS; the object's count
-  // ends it early. Every fetch is a computed-UV texture read, so no uniform
-  // array is dynamically indexed.
+  // first). The scene may hold any number of lights; per-object culling (or
+  // the froxel lookup below) gives this fragment a contiguous slice of the
+  // light-index buffer, and the loop shades only that slice. Every fetch is a
+  // computed-UV texture read, so no uniform array is dynamically indexed.
   //
-  // TODO(lighting): this stays a single uniform-gated loop. A per-draw
-  // (per-object) punctual on/off permutation is rejected: it varies the pipeline
-  // within a frame and defeats material-sorted batching, worst on tile GPUs. A
-  // coarse (per-frame-global / capability-tier) permutation that compiles the
-  // loop out for sun/IBL-only scenes is a possible low-end win, but only if the
-  // never-entered loop is measured to cost occupancy on real hardware. Froxel
-  // clustering is the high-end tier (no per-draw light state).
   // punctual_dims.x is the parameters-texture row count; 0 means the scene has
   // no punctual lights this frame, so ignore any stale per-object count (and
   // never divide by the zero texture height in the fetch helpers).
-  int punctual_count =
-      frag_info.punctual_dims.x < 0.5 ? 0 : int(frag_info.radiance_blend.z);
-  int punctual_offset = int(frag_info.radiance_blend.w);
-  for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
-    if (i >= punctual_count) {
-      break;
-    }
+  //
+  // Froxel mode (froxel_grid.z > 0): the fragment's light slice comes from
+  // its froxel instead of the per-draw uniforms (PunctualLightSlice in
+  // material_shadow_sampling.glsl), so no draw carries light state and the
+  // loop budget applies per froxel, not per object.
+  vec2 punctual_slice = PunctualLightSlice();
+  int punctual_offset = int(punctual_slice.x + 0.5);
+  int punctual_count = int(punctual_slice.y + 0.5);
+  // A dynamically bounded loop: every shader dialect this compiles to is
+  // GLSL ES 3.00 or newer, where runtime loop bounds are legal, so no driver
+  // can unroll it and the budget is a CPU-side data choice
+  // (kMaxPunctualLights per object, kMaxFroxelLights per froxel).
+  for (int i = 0; i < punctual_count; i++) {
     // Resolve this slot to a light row through the per-object index buffer.
     int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
     vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
@@ -795,6 +792,15 @@ vec4 EvaluateLighting(MaterialInputs material) {
         }
 #endif
       }
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+      else if (type > 0.5 && l3.y > -0.5 &&
+               frag_info.spot_shadow_params.x > 0.5) {
+        // Point shadow, when this light's cube faces ride the shared atlas
+        // (l3.y is its first tile after the cascades).
+        radiance *= SamplePointShadow(
+            light_row, l3.y, v_position, GetWorldNormal());
+      }
+#endif
     }
     direct += EvaluateAnalyticLight(
         material, punctual_light_vector, radiance, normal, camera_normal,

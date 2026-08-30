@@ -1,4 +1,4 @@
-import 'dart:async' show Completer, Timer;
+import 'dart:async' show Completer, FutureExtensions, Timer;
 import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -21,7 +21,9 @@ import 'components/camera_component.dart';
 import 'components/directional_light_component.dart';
 import 'components/irradiance_volume_component.dart';
 import 'components/planar_reflector_component.dart';
+import 'components/point_light_component.dart';
 import 'components/reflection_probe_component.dart';
+import 'components/spot_light_component.dart';
 import 'fog.dart';
 import 'god_rays.dart';
 import 'light.dart';
@@ -57,6 +59,7 @@ import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
 import 'render/punctual_lights.dart';
+import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
 import 'render/scene_pass.dart';
 import 'render/ssr_pass.dart';
@@ -165,7 +168,12 @@ base class Scene implements SceneGraph {
   bool _cachedHasStaticShadowCasters = false;
 
   Scene() {
-    initializeStaticResources();
+    // Kicked off, not awaited: rendering is gated on isReadyToRender, and a
+    // SceneView shows its loadingBuilder until then. initializeStaticResources
+    // completes with its error for callers that do await it, and has already
+    // logged the failure by the time this handler runs, so this only keeps an
+    // unawaited future from being reported a second time as an unhandled error.
+    initializeStaticResources().ignore();
     root.registerAsRoot(this);
   }
 
@@ -383,11 +391,15 @@ base class Scene implements SceneGraph {
   /// Prepares the rendering resources, such as textures and shaders,
   /// that are used to display models in this [Scene].
   ///
-  /// This method ensures all necessary resources are loaded and ready to be used in the rendering pipeline.
-  /// If the initialization fails, the resources are reset, and the scene
-  /// will not be marked as ready to render.
+  /// This method ensures all necessary resources are loaded and ready to be
+  /// used in the rendering pipeline.
   ///
-  /// Returns a [Future] that completes when the initialization is finished.
+  /// Returns a [Future] that completes when the initialization is finished,
+  /// and that completes with the load's error when it fails. A failure also
+  /// resets the resources and leaves the scene not ready to render, so a
+  /// caller that awaits this without catching gets the error rather than a
+  /// misleading one from the first draw. `SceneView` reports it and stays on
+  /// its loading builder.
   static Future<void> initializeStaticResources() {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
@@ -404,7 +416,7 @@ base class Scene implements SceneGraph {
             .then((_) {
               _readyToRender = true;
             })
-            .onError((e, stacktrace) {
+            .onError<Object>((e, stacktrace) {
               // Only a successful load marks the scene ready to render;
               // rendering with these resources missing throws mid-frame.
               // The memoized future is reset so a later call retries.
@@ -414,6 +426,12 @@ base class Scene implements SceneGraph {
                 stackTrace: stacktrace,
               );
               _initializeStaticResources = null;
+              // Rethrow so an awaiting caller sees the real cause. Completing
+              // normally here left the failure visible only through
+              // `dart:developer` log(), which web does not surface, and sent
+              // the developer to the baseShaderLibrary getter's "await
+              // initializeStaticResources()" instead, the call they just made.
+              Error.throwWithStackTrace(e, stacktrace);
             });
     return _initializeStaticResources!;
   }
@@ -433,6 +451,78 @@ base class Scene implements SceneGraph {
   // Builds the per-frame data texture carrying the scene's point, spot, and
   // extra directional lights. Rebuilt once per frame in [render].
   final PunctualLightBuffer _punctualLightBuffer = PunctualLightBuffer();
+
+  /// How many drawable items (or, under clustered lighting, screen froxels)
+  /// dropped punctual lights last frame because more lights reached them than
+  /// the per-slice budget can shade. Zero when everything fit. A persistent
+  /// nonzero value means light ranges need authoring (an unranged light
+  /// reaches everything) or large meshes need splitting.
+  /// {@category Lighting and environment}
+  int get punctualLightOverflowCount =>
+      _punctualLightBuffer.overflowedItemCount;
+
+  // The lights that held a shadow slot last frame, by identity, plus how many
+  // asked for one and missed. Refreshed once per frame alongside the caster
+  // selection; empty until the first frame renders.
+  final Set<Object> _grantedShadowCasters = Set.identity();
+  int _shadowCasterOverflowCount = 0;
+
+  /// How many lights asked to cast a shadow last frame but got no slot in the
+  /// shared shadow atlas, which caps shadow-casting spots and point lights
+  /// separately (see `kMaxSpotShadows` and `kMaxPointShadows`).
+  ///
+  /// Those lights still light the scene; they just throw no shadow, silently.
+  /// A nonzero value means the scene asks for more shadowed local lights than
+  /// the atlas holds, so some authored shadows are not being drawn.
+  /// {@category Lighting and environment}
+  int get shadowCasterOverflowCount => _shadowCasterOverflowCount;
+
+  /// Whether [lightComponent] (a `SpotLightComponent` or
+  /// `PointLightComponent`) held a shadow slot last frame.
+  ///
+  /// False for a light that does not cast at all, and also for one whose
+  /// `castsShadow` is set but which lost the slot to the budget. Editors pair
+  /// this with [shadowCasterOverflowCount] to point at the specific lights
+  /// whose authored shadow is not being drawn.
+  /// {@category Lighting and environment}
+  bool isShadowCasterGranted(Object lightComponent) =>
+      _grantedShadowCasters.contains(lightComponent);
+
+  // Records this frame's caster selection for the two queries above.
+  void _recordShadowCasterBudget({
+    required List<SpotLightComponent> spots,
+    required List<PointLightComponent> points,
+    required SpotShadowFrame? spotShadows,
+    required PointShadowFrame? pointShadows,
+  }) {
+    _grantedShadowCasters.clear();
+    final granted =
+        (spotShadows?.casters.length ?? 0) +
+        (pointShadows?.casters.length ?? 0);
+    if (spotShadows != null) _grantedShadowCasters.addAll(spotShadows.casters);
+    if (pointShadows != null) {
+      _grantedShadowCasters.addAll(pointShadows.casters);
+    }
+    var requested = 0;
+    for (final spot in spots) {
+      if (spot.light.castsShadow) requested++;
+    }
+    for (final point in points) {
+      if (point.light.castsShadow) requested++;
+    }
+    _shadowCasterOverflowCount = requested - granted;
+  }
+
+  /// Whether punctual lights shade through per-view froxel clustering (the
+  /// view frustum subdivided into screen tiles and depth slices, each shading
+  /// only the lights that reach it) instead of per-object light lists. On by
+  /// default; perspective views use it automatically, while orthographic
+  /// views and frames using light channel masks fall back to the per-object
+  /// path. Clustering removes the per-object light cap, so a large mesh
+  /// reached by many lights shades them all. Disable to compare, or to force
+  /// the per-object path.
+  /// {@category Lighting and environment}
+  bool punctualLightClustering = true;
 
   /// The scene's primary camera.
   ///
@@ -854,6 +944,7 @@ base class Scene implements SceneGraph {
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final pointShadowFrame = collectPointShadows(renderScene.pointLights);
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -863,6 +954,8 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
+      enableFroxels: punctualLightClustering,
     );
     return _captureEnvironmentAt(
       position: position,
@@ -874,6 +967,7 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
     );
   }
 
@@ -887,6 +981,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
   }) {
     final pool = _probeCapturePool ??= TransientTexturePool();
     // Faces render with the cube-seam overscan widening so the assembled
@@ -915,6 +1010,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
         captureLinearColor: true,
       );
       faces.add(face);
@@ -946,6 +1042,7 @@ base class Scene implements SceneGraph {
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
+    final pointShadowFrame = collectPointShadows(renderScene.pointLights);
     final punctualLighting = _punctualLightBuffer.build(
       directionals: renderScene.directionalLights,
       primaryDirectional: lightComponent,
@@ -955,6 +1052,8 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
+      enableFroxels: punctualLightClustering,
     );
     final chosen = renderScene.irradianceVolumeComponents.isNotEmpty
         ? renderScene.irradianceVolumeComponents.first
@@ -986,6 +1085,7 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
       renderView: _renderViewToTexture,
     );
   }
@@ -1177,6 +1277,24 @@ base class Scene implements SceneGraph {
 
   final IrradianceFieldState _irradianceField = IrradianceFieldState();
 
+  /// The probe lattice the global-illumination field is filling this frame,
+  /// or null when the field is off or has not run a frame yet.
+  ///
+  /// The placement depends on the volume mode, the camera, and the scene
+  /// bounds, and is resolved per frame inside the renderer, so this is the
+  /// only reliable source for drawing where the probes actually are.
+  /// {@category Lighting and environment}
+  IrradianceProbeGrid? get globalIlluminationProbeGrid {
+    final placement = _irradianceField.placement;
+    final layout = _irradianceField.layout;
+    if (placement == null || layout == null) return null;
+    return IrradianceProbeGrid(
+      origin: placement.origin,
+      spacing: placement.spacing,
+      counts: layout.resolution,
+    );
+  }
+
   /// Discards the accumulated irradiance field so it refills from scratch,
   /// for a hard camera cut or a wholesale lighting change that should not
   /// converge in over the hysteresis tail.
@@ -1186,6 +1304,10 @@ base class Scene implements SceneGraph {
   /// [AntiAliasingMode.taa].
   final TemporalAntiAliasingSettings temporalAntiAliasing =
       TemporalAntiAliasingSettings();
+
+  /// SMAA quality settings. Active when [antiAliasingMode] is
+  /// [AntiAliasingMode.smaa].
+  final SmaaSettings smaa = SmaaSettings();
 
   // TODO(taa-multiview): track TAA history and jitter per view rather than
   // per scene so multiview configurations do not share history.
@@ -1579,8 +1701,32 @@ base class Scene implements SceneGraph {
     // All other directional lights remain in the additional-light buffer.
     final lightComponent = renderScene.primaryDirectionalLight;
 
-    // Select this frame's shadow-casting spots (view-independent).
+    // Select this frame's shadow-casting spots and point lights
+    // (view-independent).
     final spotShadowFrame = collectSpotShadows(visibleSpots);
+    final pointShadowFrame = collectPointShadows(visiblePoints);
+    // Every tile in the shared atlas is one size, so resolve it once here
+    // rather than per view: the point rows stamp their face resolution from
+    // it, and ShadowPass renders the faces at the same size. The directional
+    // light wins because its cascades need the resolution most.
+    // TODO(shadow-atlas-per-light-tiles): a per-light tile size needs the
+    // atlas to stop being one uniform strip, at which point
+    // PointLight.shadowMapResolution and SpotLight.shadowMapResolution can
+    // mean what they say for every light rather than only the first caster.
+    final shadowTileResolution = lightComponent?.light.castsShadow == true
+        ? lightComponent!.light.shadowMapResolution
+        : spotShadowFrame?.tileResolution ??
+              (pointShadowFrame == null
+                  ? 1024
+                  : pointShadowFrame.casters.first.light.shadowMapResolution *
+                        2);
+
+    _recordShadowCasterBudget(
+      spots: visibleSpots,
+      points: visiblePoints,
+      spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
+    );
 
     // The additional analytic lights (point, spot, and directional lights past
     // the first) are view-independent, so build their shared data texture once
@@ -1594,6 +1740,9 @@ base class Scene implements SceneGraph {
       items: renderScene.items,
       bvh: renderScene.bvh,
       spotShadows: spotShadowFrame,
+      pointShadows: pointShadowFrame,
+      pointFaceResolution: shadowTileResolution ~/ 2,
+      enableFroxels: punctualLightClustering,
     );
 
     // Pending reflection-probe captures render before any view. The frame's
@@ -1614,6 +1763,7 @@ base class Scene implements SceneGraph {
           lightComponent: lightComponent,
           punctualLighting: punctualLighting,
           spotShadowFrame: spotShadowFrame,
+          pointShadowFrame: pointShadowFrame,
         ),
       );
     }
@@ -1659,6 +1809,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
         capturePlanarReflections: identical(view, planarCaptureView),
       );
       target.markUpdated(now);
@@ -1690,6 +1841,7 @@ base class Scene implements SceneGraph {
         lightComponent: lightComponent,
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
+        pointShadowFrame: pointShadowFrame,
         capturePlanarReflections: identical(view, planarCaptureView),
       );
     }
@@ -1891,6 +2043,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
     bool capturePlanarReflections = false,
   }) {
     // Allocate the offscreen render target at physical-pixel resolution so
@@ -1931,6 +2084,7 @@ base class Scene implements SceneGraph {
       lightComponent: lightComponent,
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
+      pointShadowFrame: pointShadowFrame,
       capturer: capturer,
       capturePlanarReflections: capturePlanarReflections,
     );
@@ -1964,6 +2118,7 @@ base class Scene implements SceneGraph {
     required DirectionalLightComponent? lightComponent,
     required PunctualLighting punctualLighting,
     required SpotShadowFrame? spotShadowFrame,
+    required PointShadowFrame? pointShadowFrame,
     RenderGraphCapturer? capturer,
     // A linear-HDR capture (environment probes): the graph stops after the
     // scene pass and blits the lit scene color into [outputColor], with no
@@ -2119,17 +2274,23 @@ base class Scene implements SceneGraph {
     }
 
     final graph = RenderGraph();
-    // Directional cascades and shadow-casting spots share one atlas (and so one
-    // sampler in the lit shader). All tiles use one resolution, the directional
-    // light's when it casts, otherwise the spots'.
-    if (cascades.isNotEmpty || spotShadowFrame != null) {
+    // Directional cascades, shadow-casting spots, and shadow-casting point
+    // lights share one atlas (and so one sampler in the lit shader). All tiles
+    // use one resolution, the directional light's when it casts, otherwise the
+    // spots', otherwise twice a point caster's face resolution (faces pack
+    // four to a tile at half the tile edge).
+    if (cascades.isNotEmpty ||
+        spotShadowFrame != null ||
+        pointShadowFrame != null) {
       graph.addPass(
         ShadowPass(
           renderScene: renderScene,
           cascades: effectiveCascades,
           tileResolution: cascades.isNotEmpty
               ? light!.shadowMapResolution
-              : spotShadowFrame!.tileResolution,
+              : spotShadowFrame?.tileResolution ??
+                    pointShadowFrame!.casters.first.light.shadowMapResolution *
+                        2,
           casterFaces: cascades.isNotEmpty
               ? light!.shadowCasterFaces
               : ShadowCasterFaces.front,
@@ -2138,6 +2299,7 @@ base class Scene implements SceneGraph {
               : 0xFF,
           cameraPosition: camera.position,
           spotShadows: spotShadowFrame,
+          pointShadows: pointShadowFrame,
           cachePlan: shadowCachePlan,
           // PostShadowInfo describes the directional cascades, so publish it
           // only when they exist (a spot-only atlas has no directional light).
@@ -2756,7 +2918,8 @@ base class Scene implements SceneGraph {
     }
     if (enableSmaa) {
       displaySteps.add(
-        (output) => SmaaPass(output: output, dimensions: pixelSize),
+        (output) =>
+            SmaaPass(output: output, dimensions: pixelSize, settings: smaa),
       );
     }
 

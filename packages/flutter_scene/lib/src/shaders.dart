@@ -13,6 +13,19 @@ const String _kBaseShaderBundleDataAssetPath =
 
 gpu.ShaderLibrary? _baseShaderLibrary;
 
+/// Why the last [loadBaseShaderLibrary] attempt failed, retained so the
+/// synchronous [baseShaderLibrary] getter can name the real cause.
+///
+/// Without it the getter only knows the library is absent, and says to await
+/// `Scene.initializeStaticResources()`, the very call that already failed.
+Object? _baseShaderLibraryLoadError;
+
+/// The failure that stopped the last [loadBaseShaderLibrary], or null if it has
+/// not run or did not fail. Reported through [baseShaderLibrary] so the cause
+/// reaches web, where `dart:developer` `log()` output is not visible.
+@visibleForTesting
+Object? get baseShaderLibraryLoadError => _baseShaderLibraryLoadError;
+
 /// The shader bundle shipped with `flutter_scene`.
 ///
 /// Contains the vertex and fragment shaders used by the built-in
@@ -28,10 +41,16 @@ gpu.ShaderLibrary? _baseShaderLibrary;
 gpu.ShaderLibrary get baseShaderLibrary {
   final cached = _baseShaderLibrary;
   if (cached == null) {
+    final cause = _baseShaderLibraryLoadError;
     throw Exception(
-      'The base shader bundle has not been loaded yet. Await '
-      'Scene.initializeStaticResources() before constructing geometry or '
-      'materials that touch the base shader library.',
+      cause == null
+          ? 'The base shader bundle has not been loaded yet. Await '
+                'Scene.initializeStaticResources() before constructing geometry '
+                'or materials that touch the base shader library.'
+          // Pointing at initializeStaticResources() would send the developer
+          // back to the call that already ran and failed, so lead with why.
+          : 'The base shader bundle failed to load, so anything that touches '
+                'the base shader library throws. The load reported: $cause',
     );
   }
   return cached;
@@ -64,13 +83,25 @@ Future<String?> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
 /// [baseShaderLibrary] getter has a cached library to return (shader assets
 /// can't be read synchronously on any backend).
 /// {@category Assets and loading}
-Future<void> loadBaseShaderLibrary() async {
+Future<void> loadBaseShaderLibrary({AssetBundle? bundle}) async {
   if (_baseShaderLibrary != null) {
     return;
   }
-  final key = await resolveBaseShaderBundleKey();
+  try {
+    await _loadBaseShaderLibrary(bundle);
+  } catch (error) {
+    // Retained for the getter, which is synchronous and otherwise cannot say
+    // more than "not loaded yet". Cleared on the next successful load.
+    _baseShaderLibraryLoadError = error;
+    rethrow;
+  }
+  _baseShaderLibraryLoadError = null;
+}
+
+Future<void> _loadBaseShaderLibrary(AssetBundle? bundle) async {
+  final key = await resolveBaseShaderBundleKey(bundle: bundle);
   if (key == null) {
-    final built = (await loadGeneratedAssetIndex()).targetsOf(
+    final built = (await loadGeneratedAssetIndex(bundle)).targetsOf(
       GeneratedAssetFamily.shaderBundle,
       'base',
       package: 'flutter_scene',
@@ -92,6 +123,14 @@ Future<void> loadBaseShaderLibrary() async {
     throw Exception(baseShaderBundleUnusableMessage(key));
   }
   _baseShaderLibrary = lib;
+}
+
+/// Drops the cached library and any retained load failure, so a test can drive
+/// the load path from a known state.
+@visibleForTesting
+void debugResetBaseShaderLibrary() {
+  _baseShaderLibrary = null;
+  _baseShaderLibraryLoadError = null;
 }
 
 /// A base-bundle entry every build contains, used to tell a bundle this engine
