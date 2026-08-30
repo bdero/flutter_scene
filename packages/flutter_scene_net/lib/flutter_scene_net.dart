@@ -18,6 +18,15 @@ export 'src/component_sync.dart'
         canSync,
         wireFor;
 export 'src/hosting/hosting.dart' show SceneHost;
+export 'src/network_events.dart'
+    show
+        DuplicateNetworkEvent,
+        NetworkEvent,
+        NetworkEventHandler,
+        UnknownNetworkEvent,
+        decodeNetworkEvent,
+        encodeNetworkEvent,
+        networkEventFields;
 export 'src/network_identity.dart'
     show
         NetworkIdentityCodec,

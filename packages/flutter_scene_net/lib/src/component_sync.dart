@@ -24,6 +24,8 @@ library;
 import 'package:dashwire_replication/dashwire_replication.dart';
 import 'package:flutter_scene/fscene.dart';
 import 'package:flutter_scene/scene.dart' show Component, Node;
+
+import 'network_events.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// A component property that replicates.
@@ -287,6 +289,7 @@ final class ComponentReplica extends Replica {
     required this.typeKey,
     required List<SyncedProperty> properties,
     required FsceneComponentRegistry registry,
+    List<NetworkEvent> events = const [],
     Node? node,
   }) : _node = node {
     for (final spec in properties) {
@@ -322,10 +325,53 @@ final class ComponentReplica extends Replica {
         ),
       );
     }
+
+    // Events after properties, because dashwire hashes the two in declaration
+    // order and both ends have to build the list the same way.
+    for (final event in events) {
+      if (_events.containsKey(event.name)) {
+        throw DuplicateNetworkEvent(event.name);
+      }
+      _events[event.name] = rpc<String>(
+        event.name,
+        codec: Codecs.string,
+        to: event.to,
+        delivery: event.delivery,
+        requireOwner: event.requireOwner,
+        onCall: (fromPeerId, payload) =>
+            onEvent?.call(event.name, fromPeerId, payload),
+      );
+    }
   }
 
   @override
   final String typeKey;
+
+  /// Called when a declared event arrives.
+  ///
+  /// One handler rather than one per event: what an event *means* is game
+  /// logic, and the replica's job is to get it here intact rather than to
+  /// know what to do about it.
+  void Function(String name, int fromPeerId, String payload)? onEvent;
+
+  final Map<String, RpcEndpoint<String>> _events = {};
+
+  /// The declared event names.
+  Iterable<String> get eventNames => _events.keys;
+
+  /// Sends the event called [name], carrying [payload].
+  ///
+  /// Which way it goes and who may send it were decided when it was declared:
+  /// an event aimed at the server is a client asking, and the server decides.
+  /// Sending one nobody declared throws rather than going nowhere, because a
+  /// message that silently vanishes is the hardest kind of bug to see.
+  void send(String name, [String payload = '']) {
+    final endpoint = _events[name];
+    if (endpoint == null) {
+      throw UnknownNetworkEvent(name, _events.keys.toList());
+    }
+    endpoint.call(payload);
+  }
 
   Node? _node;
 
