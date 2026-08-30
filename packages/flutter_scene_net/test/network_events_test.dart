@@ -104,21 +104,23 @@ void main() {
     });
   });
 
+  NetworkIdentityComponent realizeIdentity(
+    Map<String, PropertyValue> properties,
+  ) =>
+      registry
+              .codecFor('networkIdentity')!
+              .realize(
+                ComponentSpec('networkIdentity', properties: properties),
+                RealizeContext(document),
+              )!
+          as NetworkIdentityComponent;
+
+  Map<String, PropertyValue> serializeIdentity(Component component) => registry
+      .codecFor('networkIdentity')!
+      .serialize(component, SerializeContext(document))!
+      .properties;
+
   group('the document form', () {
-    NetworkIdentityComponent realize(Map<String, PropertyValue> properties) =>
-        registry
-                .codecFor('networkIdentity')!
-                .realize(
-                  ComponentSpec('networkIdentity', properties: properties),
-                  RealizeContext(document),
-                )!
-            as NetworkIdentityComponent;
-
-    Map<String, PropertyValue> serialize(Component component) => registry
-        .codecFor('networkIdentity')!
-        .serialize(component, SerializeContext(document))!
-        .properties;
-
     test('an event round trips with every setting', () {
       final before = NetworkIdentityComponent(
         typeKey: 'pawn',
@@ -132,7 +134,7 @@ void main() {
           ),
         ],
       );
-      final after = realize(serialize(before));
+      final after = realizeIdentity(serializeIdentity(before));
       expect(after.events.map((e) => e.name).toList(), ['fire', 'explode']);
       expect(after.events[0].to, RpcTarget.server);
       expect(after.events[1].to, RpcTarget.all);
@@ -141,12 +143,12 @@ void main() {
     });
 
     test('an identity with no events writes nothing', () {
-      expect(serialize(NetworkIdentityComponent()), isEmpty);
+      expect(serializeIdentity(NetworkIdentityComponent()), isEmpty);
     });
 
     test('a half-filled row is dropped rather than failing the load', () {
       // What a row looks like the moment it is added in the inspector.
-      final identity = realize({
+      final identity = realizeIdentity({
         'events': ListValue([
           MapValue({'to': const StringValue('all')}),
           encodeNetworkEvent(const NetworkEvent('fire')),
@@ -172,10 +174,12 @@ void main() {
         typeKey: 'pawn',
         events: const [NetworkEvent('b'), NetworkEvent('a')],
       );
-      expect(realize(serialize(before)).events.map((e) => e.name).toList(), [
-        'b',
-        'a',
-      ]);
+      expect(
+        realizeIdentity(
+          serializeIdentity(before),
+        ).events.map((e) => e.name).toList(),
+        ['b', 'a'],
+      );
     });
   });
 
@@ -231,6 +235,69 @@ void main() {
           prefabs.toRegistry().instantiate(fnv1a32('pawn'))!
               as ComponentReplica;
       expect(replica.eventNames, ['fire']);
+    });
+  });
+
+  group('who receives a property', () {
+    test('everyone, unless it is somebody\'s business alone', () {
+      const open = SyncedProperty('pawn', 'health');
+      expect(open.readableBy, ReadScope.everyone);
+    });
+
+    test('owner-only is a real secret, not a hidden one', () {
+      // The bytes are never sent, so there is nothing in another client to
+      // read -- which is the difference between private and merely not shown.
+      const secret = SyncedProperty(
+        'pawn',
+        'health',
+        readableBy: ReadScope.ownerOnly,
+      );
+      expect(secret.readableBy, ReadScope.ownerOnly);
+    });
+
+    test('it round trips through the document', () {
+      final before = NetworkIdentityComponent(
+        typeKey: 'pawn',
+        synced: const [
+          SyncedProperty('pawn', 'health', readableBy: ReadScope.ownerOnly),
+          SyncedProperty('pawn', 'health', readableBy: ReadScope.skipOwner),
+        ],
+      );
+      final after = realizeIdentity(serializeIdentity(before));
+      expect(after.synced[0].readableBy, ReadScope.ownerOnly);
+      expect(after.synced[1].readableBy, ReadScope.skipOwner);
+    });
+
+    test('an unrecognized scope is the one that hides nothing', () {
+      // Defaulting to secret would make a client silently miss state it needs
+      // to draw, which looks like a rendering bug rather than a config one.
+      final property = decodeSyncedProperty(
+        MapValue({
+          'component': const StringValue('pawn'),
+          'property': const StringValue('health'),
+          'readableBy': const StringValue('nobody'),
+        }),
+      )!;
+      expect(property.readableBy, ReadScope.everyone);
+    });
+
+    test('and it changes the schema hash, because it changes the wire', () {
+      // Two builds disagreeing about who receives a field would disagree
+      // about the shape of every snapshot carrying it.
+      NetworkPrefabs table(ReadScope scope) => NetworkPrefabs(
+        prefabs: [
+          NetworkPrefab(
+            typeKey: 'pawn',
+            synced: [SyncedProperty('pawn', 'health', readableBy: scope)],
+            build: () => Node(name: 'pawn')..addComponent(_Pawn()),
+          ),
+        ],
+        registry: registry,
+      );
+      expect(
+        table(ReadScope.everyone).toRegistry().schemaHash,
+        isNot(table(ReadScope.ownerOnly).toRegistry().schemaHash),
+      );
     });
   });
 }

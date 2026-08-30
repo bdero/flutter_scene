@@ -31,11 +31,20 @@ export 'src/network_identity.dart'
     show
         NetworkIdentityCodec,
         NetworkIdentityComponent,
+        decodeOwnership,
         decodeSyncedProperty,
+        encodeOwnership,
         encodeSyncedProperty,
         syncedPropertyFields;
 export 'src/network_transform_codec.dart'
     show NetworkTransformCodec, registerNetComponentCodecs;
+export 'src/network_ownership.dart'
+    show
+        Ownership,
+        OwnershipOutcome,
+        OwnershipPermission,
+        OwnershipRefusal,
+        ownershipRefusalMessage;
 export 'src/network_prefabs.dart'
     show
         DuplicateNetworkPrefab,
@@ -50,7 +59,8 @@ export 'src/network_session.dart'
         NetworkRole,
         NetworkSession,
         SessionAlreadyRunning,
-        UnknownPlayerPrefab;
+        UnknownPlayerPrefab,
+        serverPeerId;
 export 'src/network_transform.dart' show NetworkTransformComponent;
 // TODO(lagcomp): export PhysicsWorldHistory once something consumes it. The
 // server-side rewind needs the peer's last acked tick, which the host does

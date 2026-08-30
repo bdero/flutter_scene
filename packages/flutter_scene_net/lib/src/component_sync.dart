@@ -35,6 +35,7 @@ class SyncedProperty {
     this.componentType,
     this.property, {
     this.authority = Authority.server,
+    this.readableBy = ReadScope.everyone,
     this.mode = SendMode.stream,
     this.resolution,
   });
@@ -48,6 +49,16 @@ class SyncedProperty {
   /// Who is allowed to change it. Server by default: a client that could
   /// write its own health is a client that never dies.
   final Authority authority;
+
+  /// Who receives it at all.
+  ///
+  /// Everyone by default. [ReadScope.ownerOnly] is how a value stays private
+  /// to the player it belongs to — a hand of cards, a cooldown, a quest state
+  /// — and it is a real secret rather than a hidden one: the bytes are never
+  /// sent, so there is nothing in the client to read. [ReadScope.skipOwner]
+  /// is the opposite trade, for a value the owner is already computing
+  /// locally and would only be corrected by.
+  final ReadScope readableBy;
 
   /// How often it goes out. Position streams; a name or a team changes rarely
   /// and must not be missed, so [SendMode.onChange] suits it better.
@@ -321,6 +332,7 @@ final class ComponentReplica extends Replica {
             codec: wire.codec(spec.resolution),
             mode: spec.mode,
             write: spec.authority,
+            read: spec.readableBy,
           ),
         ),
       );
