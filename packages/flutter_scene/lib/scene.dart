@@ -188,6 +188,22 @@ export 'src/camera_controllers/camera_controller.dart'
 export 'src/camera_controllers/camera_director.dart'
     show CameraBlend, CameraDirector;
 export 'src/camera_controllers/camera_path.dart' show CameraPath;
+export 'src/camera_controllers/virtual_camera.dart'
+    show
+        CameraAim,
+        CameraBinding,
+        CameraBody,
+        CameraSolveContext,
+        ComposerAim,
+        FixedAim,
+        FramingTransposerBody,
+        HardLookAtAim,
+        OrbitalBody,
+        TransposerBody,
+        VirtualCamera,
+        dampScalar,
+        dampVector,
+        lookRotation;
 export 'src/camera_controllers/camera_sequence.dart'
     show CameraSequence, CameraShot;
 export 'src/camera_controllers/dolly_camera_controller.dart'
@@ -313,7 +329,8 @@ export 'src/render/selection_outline_pass.dart' show HighlightStyle;
 export 'src/render_texture.dart'
     show RenderTexture, RenderTextureSampling, RenderTextureUpdate;
 export 'src/render_view.dart' show RenderView;
-export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
+export 'src/math_extensions.dart'
+    show QuaternionRotate, QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/decal.dart' show DecalNode;
 export 'src/node.dart' show Node;

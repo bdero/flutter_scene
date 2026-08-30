@@ -140,7 +140,7 @@ void main() {
         ..add(boat);
 
       boat.getComponent<BuoyancyComponent>()!.update(1 / 60);
-      expect(boat.rotation.rotate(vm.Vector3(0, 1, 0)).y, lessThan(0.9999));
+      expect(boat.rotation.rotateVector(vm.Vector3(0, 1, 0)).y, lessThan(0.9999));
     });
 
     test('a hull rides its average; a point float rides its own point', () {
@@ -189,7 +189,7 @@ void main() {
       for (var i = 0; i < 30; i++) {
         flat.getComponent<BuoyancyComponent>()!.update(1 / 60);
       }
-      expect(flat.rotation.rotate(vm.Vector3(0, 1, 0)).y, closeTo(1.0, 1e-9));
+      expect(flat.rotation.rotateVector(vm.Vector3(0, 1, 0)).y, closeTo(1.0, 1e-9));
     });
 
     test('the tilt is damped, so a ripple does not snap it', () {
@@ -205,11 +205,11 @@ void main() {
 
       final buoyancy = slow.getComponent<BuoyancyComponent>()!;
       buoyancy.update(1 / 60);
-      final afterOne = slow.rotation.rotate(vm.Vector3(0, 1, 0)).y;
+      final afterOne = slow.rotation.rotateVector(vm.Vector3(0, 1, 0)).y;
       for (var i = 0; i < 120; i++) {
         buoyancy.update(1 / 60);
       }
-      final afterMany = slow.rotation.rotate(vm.Vector3(0, 1, 0)).y;
+      final afterMany = slow.rotation.rotateVector(vm.Vector3(0, 1, 0)).y;
       expect(
         afterOne,
         greaterThan(afterMany),
