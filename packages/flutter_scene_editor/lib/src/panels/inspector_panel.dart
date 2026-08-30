@@ -1355,29 +1355,41 @@ class _Vec4Row extends StatelessWidget {
       'z': key == 'z' ? v : z,
       'w': key == 'w' ? v : w,
     };
-    return LabeledControlRow(
-      label: label,
-      control: Row(
+    // Laid out like [Vec3Field] rather than through LabeledControlRow: that
+    // measures its control inside a FittedBox, which offers unbounded width,
+    // and these fields divide the width they are given.
+    const keys = ['x', 'y', 'z', 'w'];
+    final values = [x, y, z, w];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
         children: [
-          for (final (key, current) in [('x', x), ('y', y), ('z', z), ('w', w)])
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 11),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 4),
+          for (var i = 0; i < keys.length; i++) ...[
+            if (i > 0) const SizedBox(width: 2),
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: ScrubbableNumberField(
-                  label: key.toUpperCase(),
-                  color:
-                      editorAxisColors[key == 'x'
-                          ? 0
-                          : key == 'y'
-                          ? 1
-                          : 2],
-                  value: current,
-                  scrubStep: 0.01,
-                  snapStep: 1,
-                  onCommit: (v) => onSubmit(withComponent(key, v)),
-                ),
+              child: ScrubbableNumberField(
+                label: keys[i].toUpperCase(),
+                // X, Y and Z read the same here as on a gizmo; a fourth
+                // component has no axis to borrow a color from.
+                color: i < editorAxisColors.length
+                    ? editorAxisColors[i]
+                    : editorMutedTextColor,
+                value: values[i],
+                scrubStep: 0.01,
+                snapStep: 1,
+                onCommit: (v) => onSubmit(withComponent(keys[i], v)),
               ),
             ),
+          ],
         ],
       ),
     );
