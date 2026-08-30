@@ -41,6 +41,7 @@ import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 
 import '../launcher/scene_templates.dart';
+import '../tools/terrain_tool_controller.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
@@ -77,6 +78,15 @@ class EditorController extends ChangeNotifier {
 
   /// The live scene the viewport renders.
   final Scene scene;
+
+  /// The terrain tools' state: which one is armed, and how its brush is set.
+  ///
+  /// Here rather than inside the viewport because the two halves live apart —
+  /// a tool is chosen in the inspector and used in the scene view — and while
+  /// this was private to the viewport the inspector had no way to arm
+  /// anything, so the only route to a brush was an unlabelled button in the
+  /// corner of the scene.
+  final TerrainToolController terrainTool = TerrainToolController();
 
   /// The directory the open scene was loaded from (or last saved to), used to
   /// resolve prefab instance references and project assets relative to the scene

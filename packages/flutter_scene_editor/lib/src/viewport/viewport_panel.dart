@@ -122,6 +122,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // Repaint overlays while a drag in any viewport previews a transform.
     _ctrl.previewEpoch.addListener(_onControllerChanged);
     _gizmoPrefs.addListener(_onControllerChanged);
+    // The armed tool is chosen in the inspector, so a change to it has to
+    // reach the viewport that applies it -- and gates the mouse on it.
+    _ctrl.terrainTool.addListener(_onControllerChanged);
     widget.cameraHandle?.attach(_camera, _bumpView);
   }
 
@@ -131,8 +134,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       oldWidget.controller.previewEpoch.removeListener(_onControllerChanged);
+      oldWidget.controller.terrainTool.removeListener(_onControllerChanged);
       _ctrl.addListener(_onControllerChanged);
       _ctrl.previewEpoch.addListener(_onControllerChanged);
+      _ctrl.terrainTool.addListener(_onControllerChanged);
       _bumpView();
     }
     if (oldWidget.gizmoPreferences != widget.gizmoPreferences) {
@@ -153,6 +158,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     widget.cameraHandle?.detach(_camera);
     _ctrl.removeListener(_onControllerChanged);
     _ctrl.previewEpoch.removeListener(_onControllerChanged);
+    _ctrl.terrainTool.removeListener(_onControllerChanged);
     _gizmoPrefs.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
@@ -186,7 +192,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   // --- pointer handling ----------------------------------------------------
 
-  final TerrainToolController _terrainTool = TerrainToolController();
+  /// The terrain tools, owned by the controller so the inspector's tool
+  /// buttons and this viewport are looking at the same armed tool.
+  TerrainToolController get _terrainTool => _ctrl.terrainTool;
   final ScatterToolController _scatterTool = ScatterToolController();
   ScatterStroke? _scatterStroke;
 
@@ -200,6 +208,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
   /// Whether the stroke in progress is the one that minted the control map,
   /// and so the one that has to give the terrain a material to show it.
   bool _paintCreatedMap = false;
+
+  /// Whether this stroke has already pressed its stamp in.
+  bool _stamped = false;
   final Stopwatch _strokeClock = Stopwatch();
 
   /// Where the brush would land, for the cursor ring. Null when the pointer
@@ -358,7 +369,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_groundUnder(position, viewSize, target.geometry.field) == null) {
       return false;
     }
-    if (_terrainTool.mode == TerrainToolMode.paint) {
+    if (_terrainTool.painting) {
       _paintCreatedMap = target.geometry.splat == null;
       _paintStroke = TerrainPaintStroke.on(
         target.geometry,
@@ -371,6 +382,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         resourceId: target.resourceId,
       );
     }
+    _stamped = false;
     _strokeClock
       ..reset()
       ..start();
@@ -388,7 +400,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // it, so crossing a gap and coming back is still one stroke.
     if (point == null) return;
     _brushPoint = point;
-    _stroke?.dab(_brushFor(_terrainTool.brush), point, deltaSeconds);
+    // A stamp is one press of a shape, not a rate: pressing it again every
+    // frame the button is held would drive the ground up without limit, and
+    // the depth of a stamp would depend on how long you rested there.
+    final stamping = _terrainTool.paintMode == TerrainPaintMode.stamp;
+    if (stamping && _stamped) return;
+    if (stamping) _stamped = true;
+    _stroke?.dab(_strokeBrush(), point, stamping ? 1.0 : deltaSeconds);
     _paintStroke?.dab(
       _terrainTool.brush,
       _terrainTool.paintLayer,
@@ -399,17 +417,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
     setState(() {});
   }
 
-  /// Holding alt digs instead of raising, the way every sculpting tool does,
-  /// rather than making the user swap the sign of the strength by hand.
-  TerrainBrush _brushFor(TerrainBrush brush) {
-    if (brush.kind != TerrainBrushKind.raise) return brush;
-    if (!HardwareKeyboard.instance.isAltPressed) return brush;
-    return TerrainBrush(
-      kind: brush.kind,
-      radius: brush.radius,
-      strength: -brush.strength,
-      falloff: brush.falloff,
-      targetHeight: brush.targetHeight,
+  /// The brush this stroke applies, with Shift inverting it.
+  ///
+  /// Shift lowers rather than raises, which is what Unity's terrain tools do
+  /// and therefore what people try first. Alt does the same, because that is
+  /// what this editor used before and muscle memory outlives a convention
+  /// change.
+  TerrainBrush _strokeBrush() {
+    final keyboard = HardwareKeyboard.instance;
+    return _terrainTool.strokeBrush(
+      lower: keyboard.isShiftPressed || keyboard.isAltPressed,
     );
   }
 
@@ -1109,6 +1126,25 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
       return KeyEventResult.handled;
     }
+    // Brush size and opacity, on the keys Unity uses. Only while a tool is
+    // armed: the brackets belong to whoever has the mouse, and with no tool
+    // armed that is not the brush.
+    if (_terrainTool.active) {
+      switch (event.logicalKey) {
+        case LogicalKeyboardKey.bracketLeft:
+          _terrainTool.nudgeRadius(1 / 1.25);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.bracketRight:
+          _terrainTool.nudgeRadius(1.25);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.minus:
+          _terrainTool.nudgeStrength(-0.25);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.equal:
+          _terrainTool.nudgeStrength(0.25);
+          return KeyEventResult.handled;
+      }
+    }
     switch (event.logicalKey) {
       case LogicalKeyboardKey.keyF:
         return _frameSelection()
@@ -1355,7 +1391,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                 _terrainTarget() != null ||
                                 _sculptablePlane() != null,
                             onSculptingChanged: (value) => setState(() {
-                              _terrainTool.active = value;
+                              _terrainTool.tool = value
+                                  ? TerrainTool.paint
+                                  : null;
                               // The two brushes both want the primary button,
                               // so arming one disarms the other.
                               if (value) _scatterTool.active = false;
@@ -1364,7 +1402,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             canPaint: _scatterTarget() != null,
                             onPaintingChanged: (value) => setState(() {
                               _scatterTool.active = value;
-                              if (value) _terrainTool.active = false;
+                              if (value) _terrainTool.tool = null;
                             }),
                           ),
                         ),

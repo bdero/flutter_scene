@@ -1090,15 +1090,31 @@ final createWedgeGeometry = CommandEntry(
   },
 );
 
+/// Creates a terrain: the geometry behind `Add > 3D Object > Terrain`.
+///
+/// Flat by default, because that is what a terrain is before anyone shapes it
+/// -- Unity's is a large flat plane, and starting from a landscape somebody
+/// else generated means undoing it first. Pass an [amplitude] to get the noise
+/// terrain instead.
+///
+/// The grid defaults to 129 samples across a 100-unit patch, so a cell is a
+/// little under a metre: fine enough that a footpath is expressible, coarse
+/// enough that the whole field is a 66-kilobyte payload.
 final createTerrainGeometry = CommandEntry(
   name: 'createTerrainGeometry',
-  doc: 'Create a procedural noise terrain geometry resource.',
+  doc: 'Create a terrain geometry resource, flat unless given an amplitude.',
   category: 'Resource',
   paramSchema: const [
     ParamSpec(
       name: 'size',
       type: ParamType.number,
       label: 'Size',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'resolution',
+      type: ParamType.number,
+      label: 'Samples per side',
       required: false,
     ),
     ParamSpec(
@@ -1117,14 +1133,25 @@ final createTerrainGeometry = CommandEntry(
   execute: (ctx, params) {
     // One size drives both axes: a square patch is the common case, and an
     // oblong one is a scale on the node.
-    final size = params['size'] == null ? 64.0 : requireDouble(params, 'size');
+    final size = params['size'] == null ? 100.0 : requireDouble(params, 'size');
+    final resolution = params['resolution'] == null
+        ? 129
+        : requireDouble(params, 'resolution').round();
+    if (size <= 0) {
+      throw const CommandException('A terrain needs a positive size');
+    }
+    if (resolution < 2) {
+      throw const CommandException('A terrain needs at least a 2x2 grid');
+    }
     final resource = GeometryResource(
       ctx.document.newId(),
       procedural: TerrainGeometrySpec(
         width: size,
         depth: size,
+        columns: resolution,
+        rows: resolution,
         amplitude: params['amplitude'] == null
-            ? 8.0
+            ? 0.0
             : requireDouble(params, 'amplitude'),
         seed: params['seed'] == null
             ? 1337

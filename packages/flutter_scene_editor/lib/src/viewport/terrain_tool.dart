@@ -2,6 +2,8 @@
 /// stroke in progress.
 library;
 
+export '../tools/terrain_tool_controller.dart';
+
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -10,95 +12,10 @@ import 'package:flutter/material.dart';
 import '../inspector/property_editors.dart' show SliderNumberField;
 import '../shell/editor_theme.dart';
 import 'package:flutter_scene/scene.dart';
+
+import '../tools/terrain_tool_controller.dart';
 import 'package:scene/scene.dart' show LocalId;
 import 'package:vector_math/vector_math.dart' as vm;
-
-/// What the terrain tool is doing with a stroke.
-enum TerrainToolMode {
-  /// Moving the ground: raise, smooth, flatten.
-  sculpt,
-
-  /// Painting which surface layer shows.
-  paint,
-}
-
-/// The terrain tool's settings: whether it is armed, and what a stroke does
-/// when it is.
-///
-/// Held apart from the viewport so the inspector can drive the same brush the
-/// viewport paints with, and so the settings survive a viewport being closed
-/// and reopened.
-class TerrainToolController extends ChangeNotifier {
-  bool _active = false;
-  TerrainBrush _brush = const TerrainBrush();
-  TerrainToolMode _mode = TerrainToolMode.sculpt;
-  int _paintLayer = 1;
-  double _targetStrength = 1.0;
-
-  /// Whether the tool takes the primary button instead of the gizmo.
-  bool get active => _active;
-  set active(bool value) {
-    if (_active == value) return;
-    _active = value;
-    notifyListeners();
-  }
-
-  /// What a stroke does.
-  TerrainBrush get brush => _brush;
-  set brush(TerrainBrush value) {
-    _brush = value;
-    notifyListeners();
-  }
-
-  /// Whether a stroke sculpts the ground or paints it.
-  TerrainToolMode get mode => _mode;
-  set mode(TerrainToolMode value) {
-    if (_mode == value) return;
-    _mode = value;
-    notifyListeners();
-  }
-
-  /// Which of the four surface layers a paint stroke lays down.
-  ///
-  /// Layer 0 is what a terrain is before anyone paints it, so the tool opens
-  /// on layer 1 — the first stroke of a paint session is almost always adding
-  /// something to that base rather than repainting the base itself.
-  int get paintLayer => _paintLayer;
-  set paintLayer(int value) {
-    final clamped = value.clamp(0, terrainSplatLayers - 1);
-    if (_paintLayer == clamped) return;
-    _paintLayer = clamped;
-    notifyListeners();
-  }
-
-  /// How far a paint stroke takes its layer: 1 covers what it touches, and
-  /// less leaves the layers underneath showing through however long you hold
-  /// the brush.
-  double get targetStrength => _targetStrength;
-  set targetStrength(double value) {
-    final clamped = value.clamp(0.0, 1.0);
-    if (_targetStrength == clamped) return;
-    _targetStrength = clamped;
-    notifyListeners();
-  }
-
-  /// Replaces one part of the brush, leaving the rest.
-  void updateBrush({
-    TerrainBrushKind? kind,
-    double? radius,
-    double? strength,
-    double? falloff,
-    double? targetHeight,
-  }) {
-    brush = TerrainBrush(
-      kind: kind ?? _brush.kind,
-      radius: radius ?? _brush.radius,
-      strength: strength ?? _brush.strength,
-      falloff: falloff ?? _brush.falloff,
-      targetHeight: targetHeight ?? _brush.targetHeight,
-    );
-  }
-}
 
 /// One sculpting stroke, from pointer down to pointer up.
 ///
@@ -253,23 +170,19 @@ class TerrainPaintStroke {
   return null;
 }
 
-/// The floating brush palette shown while sculpting is armed.
+/// The floating brush readout shown while a terrain tool is armed.
 ///
-/// It sits over the viewport rather than in the inspector because a brush is
-/// adjusted mid-stroke, between dabs, and reaching across the window for the
-/// radius breaks that rhythm.
+/// It sits over the viewport rather than only in the inspector because a brush
+/// is adjusted mid-stroke, between dabs, and reaching across the window for
+/// the radius breaks that rhythm. *Which* tool is armed is chosen in the
+/// inspector, the way it is in Unity; this is the size and strength of
+/// whichever one that is.
 class TerrainBrushPalette extends StatelessWidget {
   /// Shows and edits [tool]'s brush.
   const TerrainBrushPalette({required this.tool, super.key});
 
   /// The tool whose brush this edits.
   final TerrainToolController tool;
-
-  static const _kinds = <(TerrainBrushKind, IconData, String)>[
-    (TerrainBrushKind.raise, Icons.landscape, 'Raise, or lower with Alt'),
-    (TerrainBrushKind.smooth, Icons.blur_on, 'Smooth'),
-    (TerrainBrushKind.flatten, Icons.layers_clear, 'Flatten'),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -286,81 +199,19 @@ class TerrainBrushPalette extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Terrain', style: editorSubheadText),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              for (final (mode, label) in const [
-                (TerrainToolMode.sculpt, 'Sculpt'),
-                (TerrainToolMode.paint, 'Paint'),
-              ])
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: InkWell(
-                      onTap: () => tool.mode = mode,
-                      child: Container(
-                        height: 24,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: tool.mode == mode
-                              ? editorAccentColor
-                              : editorRaisedColor,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: tool.mode == mode
-                                ? editorSurfaceColor
-                                : editorTextColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+          Text(
+            terrainPaintModeLabel(tool.paintMode),
+            style: editorSubheadText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-          if (tool.mode == TerrainToolMode.paint)
-            _LayerPicker(tool: tool)
-          else
-            Row(
-              children: [
-                for (final (kind, icon, tip) in _kinds)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Tooltip(
-                      message: tip,
-                      child: InkWell(
-                        onTap: () => tool.updateBrush(kind: kind),
-                        child: Container(
-                          width: 30,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: brush.kind == kind
-                                ? editorAccentColor
-                                : editorRaisedColor,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Icon(
-                            icon,
-                            size: editorIconSize,
-                            color: brush.kind == kind
-                                ? editorSurfaceColor
-                                : editorTextColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          const SizedBox(height: 10),
+          if (tool.painting) ...[
+            _LayerPicker(tool: tool),
+            const SizedBox(height: 10),
+          ],
           SliderNumberField(
-            label: 'Size',
+            label: 'Brush Size',
             value: brush.radius,
             min: 0.5,
             max: 40,
@@ -369,7 +220,7 @@ class TerrainBrushPalette extends StatelessWidget {
             onCommit: (value) => tool.updateBrush(radius: value),
           ),
           SliderNumberField(
-            label: 'Strength',
+            label: 'Opacity',
             value: brush.strength,
             min: 0.1,
             max: 10,
@@ -386,17 +237,17 @@ class TerrainBrushPalette extends StatelessWidget {
             onPreview: (_) {},
             onCommit: (value) => tool.updateBrush(falloff: value),
           ),
-          if (tool.mode == TerrainToolMode.paint)
+          if (tool.painting)
             SliderNumberField(
-              label: 'Target',
+              label: 'Target Strength',
               value: tool.targetStrength,
               min: 0,
               max: 1,
               fractionDigits: 2,
               onPreview: (_) {},
               onCommit: (value) => tool.targetStrength = value,
-            )
-          else if (brush.kind == TerrainBrushKind.flatten)
+            ),
+          if (tool.paintMode == TerrainPaintMode.setHeight)
             SliderNumberField(
               label: 'Height',
               value: brush.targetHeight,
@@ -405,6 +256,16 @@ class TerrainBrushPalette extends StatelessWidget {
               fractionDigits: 2,
               onPreview: (_) {},
               onCommit: (value) => tool.updateBrush(targetHeight: value),
+            ),
+          if (tool.paintMode == TerrainPaintMode.stamp)
+            SliderNumberField(
+              label: 'Stamp Height',
+              value: tool.stampHeight,
+              min: -20,
+              max: 20,
+              fractionDigits: 2,
+              onPreview: (_) {},
+              onCommit: (value) => tool.stampHeight = value,
             ),
         ],
       ),
