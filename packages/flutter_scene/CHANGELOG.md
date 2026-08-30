@@ -8,6 +8,9 @@
 * Unlit `.fmat` materials may declare `engine_inputs`; the screen accessors gain `GetSceneWorldPosition`, materials that read scene depth get it at full resolution, and `scene_color_reach` bounds a reader so disjoint readers share one scene-color capture.
 * A draw whose render pipeline the backend rejects is skipped with a one-time console message naming the material and geometry, instead of failing the whole frame from inside paint.
 * A render pipeline build that stalls a frame (8ms or more, always on its first draw) is reported in debug builds with the material and geometry that triggered it, so the fix (drawing it once behind a load screen) has a target.
+* Pooled render targets are released when the platform reports memory pressure. The transient pools (shadow atlas, HDR scene color, depth, the post-process chain, probe and planar captures) never evicted, so they settled at the high-water mark of every attachment shape any frame needed and held it for the life of the process; a 512x512 shadow scene pins 114 MiB this way. Set `releaseRenderTargetsOnMemoryPressure = false` to opt out.
+* `releaseTransientRenderTargets()` drops those pools on demand and returns the bytes released, for an app that knows something the platform does not.
+* `takeMemoryReport()` gains a `render targets` category, so that memory is visible at all.
 
 ## 0.23.0
 
