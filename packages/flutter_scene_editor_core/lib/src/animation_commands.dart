@@ -188,8 +188,21 @@ List<ChangeRecord> _rewriteChannel(
       false,
     ),
   );
+  // A cubic channel carries one tangent pair per key. An edit that adds or
+  // removes a key leaves those out of step, and there is no meaningful
+  // tangent to invent for a key that did not exist, so such an edit converts
+  // the channel to linear rather than leaving a malformed cubic one behind.
+  // Retimes and value edits keep it: a tangent is per-key data that survives
+  // both, which is how a curve editor behaves.
+  final wasCubic = channel.interpolation == AnimationInterpolation.cubic;
+  final dropsTangents =
+      wasCubic &&
+      _floats(ctx.document, channel.timeline).length != times.length;
+
   final records = [timeWrite.record, valueWrite.record];
-  if (timeWrite.id != channel.timeline || valueWrite.id != channel.keyframes) {
+  if (dropsTangents ||
+      timeWrite.id != channel.timeline ||
+      valueWrite.id != channel.keyframes) {
     records.add(
       _replaceChannel(
         animation,
@@ -200,6 +213,9 @@ List<ChangeRecord> _rewriteChannel(
           property: channel.property,
           timeline: timeWrite.id,
           keyframes: valueWrite.id,
+          interpolation: dropsTangents ? null : channel.interpolation,
+          inTangents: dropsTangents ? null : channel.inTangents,
+          outTangents: dropsTangents ? null : channel.outTangents,
         ),
       ),
     );

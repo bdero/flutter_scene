@@ -135,6 +135,7 @@ export 'package:scene/scene.dart'
     show
         Attachment,
         AnimationChannelSpec,
+        AnimationInterpolation,
         AnimationProperty,
         AnimationSpec,
         AssetEnvironment,
