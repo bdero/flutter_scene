@@ -146,6 +146,12 @@ ExtractedPrefab extractPrefab(SceneDocument document, LocalId rootId) {
       payloads
         ..add(channel.timeline)
         ..add(channel.keyframes);
+      // A cubic channel's tangents are payloads of their own; leaving them
+      // out would extract a channel whose tangent ids point at nothing.
+      final inTangents = channel.inTangents;
+      final outTangents = channel.outTangents;
+      if (inTangents != null) payloads.add(inTangents);
+      if (outTangents != null) payloads.add(outTangents);
     }
   }
 

@@ -879,6 +879,11 @@ Map<String, dynamic> _encodeAnimation(
         'property': ch.property.name,
         'timeline': idKey(ch.timeline),
         'keyframes': idKey(ch.keyframes),
+        // Omitted at the default, so a document written before
+        // interpolation existed still encodes byte-identically.
+        if (ch.interpolation != null) 'interpolation': ch.interpolation!.name,
+        if (ch.inTangents != null) 'inTangents': idKey(ch.inTangents!),
+        if (ch.outTangents != null) 'outTangents': idKey(ch.outTangents!),
       },
   ],
 };
@@ -1590,6 +1595,17 @@ AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
       property: AnimationProperty.values.byName(json['property'] as String),
       timeline: LocalId.parse(json['timeline'] as String),
       keyframes: LocalId.parse(json['keyframes'] as String),
+      interpolation: json['interpolation'] == null
+          ? null
+          : AnimationInterpolation.values.byName(
+              json['interpolation'] as String,
+            ),
+      inTangents: json['inTangents'] == null
+          ? null
+          : LocalId.parse(json['inTangents'] as String),
+      outTangents: json['outTangents'] == null
+          ? null
+          : LocalId.parse(json['outTangents'] as String),
     );
 
 PayloadSpec _decodePayload(LocalId id, Map<String, dynamic> json) =>

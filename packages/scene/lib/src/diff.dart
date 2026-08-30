@@ -344,18 +344,23 @@ bool _animationsChanged(
       final newChannel = newAnimation.channels[i];
       if (oldChannel.target != newChannel.target ||
           oldChannel.targetName != newChannel.targetName ||
-          oldChannel.property != newChannel.property) {
+          oldChannel.property != newChannel.property ||
+          oldChannel.interpolation != newChannel.interpolation) {
         return true;
       }
       if (retargeted.contains(newChannel.target)) return true;
-      if (!_payloadsEqual(
-            oldDocument.payload(oldChannel.timeline),
-            newDocument.payload(newChannel.timeline),
-          ) ||
-          !_payloadsEqual(
-            oldDocument.payload(oldChannel.keyframes),
-            newDocument.payload(newChannel.keyframes),
-          )) {
+      bool sameChunk(LocalId? a, LocalId? b) {
+        if (a == null || b == null) return a == null && b == null;
+        return _payloadsEqual(oldDocument.payload(a), newDocument.payload(b));
+      }
+
+      // Tangents are compared alongside the keyframes: a curve reshaped by
+      // dragging a tangent leaves the keyframe values untouched, and a
+      // reload that ignored them would keep drawing the old curve.
+      if (!sameChunk(oldChannel.timeline, newChannel.timeline) ||
+          !sameChunk(oldChannel.keyframes, newChannel.keyframes) ||
+          !sameChunk(oldChannel.inTangents, newChannel.inTangents) ||
+          !sameChunk(oldChannel.outTangents, newChannel.outTangents)) {
         return true;
       }
     }

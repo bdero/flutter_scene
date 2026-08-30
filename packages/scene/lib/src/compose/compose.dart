@@ -723,6 +723,9 @@ AnimationSpec _remapAnimation(
         property: ch.property,
         timeline: remap(ch.timeline),
         keyframes: remap(ch.keyframes),
+        interpolation: ch.interpolation,
+        inTangents: ch.inTangents == null ? null : remap(ch.inTangents!),
+        outTangents: ch.outTangents == null ? null : remap(ch.outTangents!),
       ),
   ],
 );
