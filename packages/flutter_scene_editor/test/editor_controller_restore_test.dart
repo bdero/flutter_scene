@@ -92,24 +92,27 @@ void main() {
     expect(child.getComponents<DirectionalLightComponent>(), isNotEmpty);
   });
 
-  test('a restored node driven by an animation takes the full rebuild', () async {
-    await Scene.initializeStaticResources();
-    final document = buildDocument(animateChild: true);
-    final parentId = byName(document, 'Parent');
-    final animatedChildId = byName(document, 'Child');
-    final retainedId = byName(document, 'Retained');
-    final controller = await EditorController.open(EditorSession(document));
-    addTearDown(controller.dispose);
-    final retainedBefore = controller.liveNode(retainedId);
+  test(
+    'a restored node driven by an animation takes the full rebuild',
+    () async {
+      await Scene.initializeStaticResources();
+      final document = buildDocument(animateChild: true);
+      final parentId = byName(document, 'Parent');
+      final animatedChildId = byName(document, 'Child');
+      final retainedId = byName(document, 'Retained');
+      final controller = await EditorController.open(EditorSession(document));
+      addTearDown(controller.dispose);
+      final retainedBefore = controller.liveNode(retainedId);
 
-    await controller.run('deleteNode', {'nodeId': parentId.toToken()});
-    await controller.undo();
-    // The full realize replaced every live node, including the unrelated one,
-    // so the animation could rebind its restored target.
-    expect(
-      identical(controller.liveNode(retainedId), retainedBefore),
-      isFalse,
-    );
-    expect(controller.liveNode(animatedChildId), isNotNull);
-  });
+      await controller.run('deleteNode', {'nodeId': parentId.toToken()});
+      await controller.undo();
+      // The full realize replaced every live node, including the unrelated one,
+      // so the animation could rebind its restored target.
+      expect(
+        identical(controller.liveNode(retainedId), retainedBefore),
+        isFalse,
+      );
+      expect(controller.liveNode(animatedChildId), isNotNull);
+    },
+  );
 }
