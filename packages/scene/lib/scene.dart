@@ -87,6 +87,15 @@ export 'src/property_value.dart'
         Vec4Value;
 export 'src/diff.dart' show diffScene, NodeChange, SceneDiff;
 export 'src/log.dart' show sceneLog;
+export 'src/ui/rect_layout.dart' show RectTransformValues, UiRect, solveRect;
+export 'src/ui/canvas_document_layout.dart'
+    show
+        SolvedRect,
+        canvasComponentType,
+        canvasRectOf,
+        isCanvasNode,
+        rectTransformComponentType,
+        solveCanvasLayout;
 export 'src/component_migration.dart'
     show migrateComponentType, renamedComponentTypes, visualScriptComponentType;
 export 'src/mesh_grid_split.dart'

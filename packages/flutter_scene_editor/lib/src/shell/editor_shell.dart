@@ -1452,6 +1452,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       label: 'Visual Script',
       type: visualScriptComponentType,
     ),
+    // A canvas is the root of a UI layout: everything under it positions
+    // itself against its rectangle. Adding a rect on its own is done from
+    // Add Component, since it only means something beneath a canvas.
+    (group: 'UI', label: 'Canvas', type: 'canvas'),
     (group: 'Volume', label: 'Environment Volume', type: 'environmentVolume'),
     (group: 'Volume', label: 'Irradiance Volume', type: 'irradianceVolume'),
     (group: 'Volume', label: 'Reflection Probe', type: 'reflectionProbe'),
@@ -1837,6 +1841,7 @@ class _EditorMenuBar extends StatelessWidget {
                     'Environment',
                     'Effects',
                     'Audio',
+                    'UI',
                     'Volume',
                     'Scripting',
                   ])

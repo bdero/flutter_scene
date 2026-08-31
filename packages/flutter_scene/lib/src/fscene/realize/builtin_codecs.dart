@@ -39,6 +39,7 @@ import 'package:flutter_scene/src/fscene/realize/declarative_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_emitter_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/render_extras_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_copy.dart';
+import 'package:flutter_scene/src/fscene/realize/canvas_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/ui_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart';
 import 'package:flutter_scene/src/light.dart';
@@ -71,6 +72,8 @@ void registerBuiltinComponentCodecs(FsceneComponentRegistry registry) {
     ..register(IrradianceVolumeCodec())
     ..register(WidgetCodec())
     ..register(SemanticsCodec())
+    ..register(CanvasCodec())
+    ..register(RectTransformCodec())
     ..register(AudioSourceCodec())
     ..register(AudioListenerCodec())
     ..register(AudioEngineCodec());
