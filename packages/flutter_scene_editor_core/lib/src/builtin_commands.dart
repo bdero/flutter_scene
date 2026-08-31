@@ -7,11 +7,14 @@
 /// [registerBuiltinCommands].
 library;
 
+import 'dart:convert';
+
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart' hide NodeChange;
 import 'package:vector_math/vector_math.dart';
 
+import 'animation_commands.dart';
 import 'change.dart';
 import 'clone.dart';
 import 'command.dart';
@@ -971,6 +974,675 @@ final createSphereGeometry = CommandEntry(
   },
 );
 
+final createPlaneGeometry = CommandEntry(
+  name: 'createPlaneGeometry',
+  doc: 'Create a procedural plane geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'width',
+      type: ParamType.number,
+      label: 'Width',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'depth',
+      type: ParamType.number,
+      label: 'Depth',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: PlaneGeometrySpec(
+        width: params['width'] == null ? 1.0 : requireDouble(params, 'width'),
+        depth: params['depth'] == null ? 1.0 : requireDouble(params, 'depth'),
+      ),
+    );
+    return Transaction(
+      name: 'Create plane',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createCylinderGeometry = CommandEntry(
+  name: 'createCylinderGeometry',
+  doc: 'Create a procedural cylinder geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'topRadius',
+      type: ParamType.number,
+      label: 'Top radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One radius drives both ends unless a top radius is given, so the common
+    // case is a cylinder and a cone is one field away.
+    final radius = params['radius'] == null
+        ? 0.5
+        : requireDouble(params, 'radius');
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: CylinderGeometrySpec(
+        bottomRadius: radius,
+        topRadius: params['topRadius'] == null
+            ? radius
+            : requireDouble(params, 'topRadius'),
+        height: params['height'] == null
+            ? 1.0
+            : requireDouble(params, 'height'),
+      ),
+    );
+    return Transaction(
+      name: 'Create cylinder',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createCapsuleGeometry = CommandEntry(
+  name: 'createCapsuleGeometry',
+  doc: 'Create a procedural capsule geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: CapsuleGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+        height: params['height'] == null
+            ? 1.0
+            : requireDouble(params, 'height'),
+      ),
+    );
+    return Transaction(
+      name: 'Create capsule',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createTorusGeometry = CommandEntry(
+  name: 'createTorusGeometry',
+  doc: 'Create a procedural torus geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'tubeRadius',
+      type: ParamType.number,
+      label: 'Tube radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TorusGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+        tubeRadius: params['tubeRadius'] == null
+            ? 0.15
+            : requireDouble(params, 'tubeRadius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create torus',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createDiscGeometry = CommandEntry(
+  name: 'createDiscGeometry',
+  doc: 'Create a procedural disc geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: DiscGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create disc',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createIcosphereGeometry = CommandEntry(
+  name: 'createIcosphereGeometry',
+  doc: 'Create a procedural icosphere geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'radius',
+      type: ParamType.number,
+      label: 'Radius',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: IcosphereGeometrySpec(
+        radius: params['radius'] == null
+            ? 0.5
+            : requireDouble(params, 'radius'),
+      ),
+    );
+    return Transaction(
+      name: 'Create icosphere',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+final createWedgeGeometry = CommandEntry(
+  name: 'createWedgeGeometry',
+  doc: 'Create a procedural wedge geometry resource.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.vec3,
+      label: 'Size',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: WedgeGeometrySpec(
+        size: optionalVec3(params, 'size') ?? Vector3(1, 1, 1),
+      ),
+    );
+    return Transaction(
+      name: 'Create wedge',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+/// Creates a terrain: the geometry behind `Add > 3D Object > Terrain`.
+///
+/// Flat by default, because that is what a terrain is before anyone shapes it:
+/// starting from a landscape somebody else generated means undoing it first.
+/// Pass an [amplitude] to get the noise terrain instead.
+///
+/// The grid defaults to 129 samples across a 100-unit patch, so a cell is a
+/// little under a metre: fine enough that a footpath is expressible, coarse
+/// enough that the whole field is a 66-kilobyte payload.
+final createTerrainGeometry = CommandEntry(
+  name: 'createTerrainGeometry',
+  doc: 'Create a terrain geometry resource, flat unless given an amplitude.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'size',
+      type: ParamType.number,
+      label: 'Size',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'resolution',
+      type: ParamType.number,
+      label: 'Samples per side',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'amplitude',
+      type: ParamType.number,
+      label: 'Height',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'seed',
+      type: ParamType.number,
+      label: 'Seed',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    // One size drives both axes: a square patch is the common case, and an
+    // oblong one is a scale on the node.
+    final size = params['size'] == null ? 100.0 : requireDouble(params, 'size');
+    final resolution = params['resolution'] == null
+        ? 129
+        : requireDouble(params, 'resolution').round();
+    if (size <= 0) {
+      throw const CommandException('A terrain needs a positive size');
+    }
+    if (resolution < 2) {
+      throw const CommandException('A terrain needs at least a 2x2 grid');
+    }
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      procedural: TerrainGeometrySpec(
+        width: size,
+        depth: size,
+        columns: resolution,
+        rows: resolution,
+        amplitude: params['amplitude'] == null
+            ? 0.0
+            : requireDouble(params, 'amplitude'),
+        seed: params['seed'] == null
+            ? 1337
+            : requireDouble(params, 'seed').round(),
+      ),
+    );
+    return Transaction(
+      name: 'Create terrain',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
+/// Turns a plane geometry into a flat terrain so it can be sculpted.
+///
+/// A plane is two triangles by default: there is nowhere to put a hill. This
+/// swaps its spec for a terrain of the same size at a grid fine enough to
+/// sculpt, with no noise, so the shape on screen does not change -- it just
+/// becomes something that can be pushed around.
+///
+/// A plane that was already subdivided keeps its own resolution rather than
+/// being coarsened or refined behind the user's back.
+final makeTerrainSculptable = CommandEntry(
+  name: 'makeTerrainSculptable',
+  doc: 'Convert a plane geometry into a flat, sculptable terrain.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'resourceId', type: ParamType.resourceRef, label: 'Plane'),
+    ParamSpec(
+      name: 'resolution',
+      type: ParamType.number,
+      label: 'Samples per side',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final plane = resource.procedural;
+    if (plane is TerrainGeometrySpec) {
+      throw const CommandException('That geometry is already sculptable');
+    }
+    if (plane is! PlaneGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a plane');
+    }
+
+    final requested = params['resolution'] == null
+        ? 0
+        : requireDouble(params, 'resolution').round();
+    // A subdivided plane already says how fine it wants to be; an
+    // unsubdivided one needs a grid that can hold a shape at all.
+    final columns = requested > 1
+        ? requested
+        : (plane.segmentsX > 1 ? plane.segmentsX + 1 : 65);
+    final rows = requested > 1
+        ? requested
+        : (plane.segmentsZ > 1 ? plane.segmentsZ + 1 : 65);
+
+    return Transaction(
+      name: 'Make sculptable',
+      records: [
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              procedural: TerrainGeometrySpec(
+                width: plane.width,
+                depth: plane.depth,
+                columns: columns,
+                rows: rows,
+                // Flat: converting must not change what is on screen.
+                amplitude: 0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  },
+);
+
+/// Replaces a terrain's height samples.
+///
+/// One command per stroke rather than per pointer move: a stroke is many
+/// brush dabs and only one thing the user did, so this takes the finished
+/// samples rather than a brush to replay. Undo is the previous heightmap,
+/// which is the whole map — heightmaps are the one thing in a scene big
+/// enough for that to be worth saying out loud.
+final setTerrainHeights = CommandEntry(
+  name: 'setTerrainHeights',
+  doc: "Replace a terrain geometry's height samples.",
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'resourceId',
+      type: ParamType.resourceRef,
+      label: 'Terrain',
+    ),
+    ParamSpec(name: 'heights', type: ParamType.string, label: 'Samples'),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final terrain = resource.procedural;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a terrain');
+    }
+
+    final bytes = base64Decode(requireString(params, 'heights'));
+    final expected = terrain.columns * terrain.rows * 4;
+    if (bytes.lengthInBytes != expected) {
+      throw CommandException(
+        'Expected $expected bytes for a ${terrain.columns} by '
+        '${terrain.rows} terrain, got ${bytes.lengthInBytes}',
+      );
+    }
+
+    // The first stroke on a generated terrain mints its heightmap; later
+    // ones replace the bytes in the payload it already has.
+    final payloadId = terrain.heights ?? ctx.document.newId();
+    final records = <ChangeRecord>[
+      ChangeRecord(
+        targetId: payloadId,
+        slot: ChangeSlot.poolPayload,
+        oldValue: PayloadChange(ctx.document.payload(payloadId)),
+        newValue: PayloadChange(
+          PayloadSpec(
+            payloadId,
+            encoding: PayloadEncoding.floats,
+            length: terrain.columns * terrain.rows,
+            bytes: bytes,
+          ),
+        ),
+      ),
+    ];
+    if (terrain.heights == null) {
+      records.add(
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              // copyWith, so a terrain that was painted before it was first
+              // sculpted keeps its painting.
+              procedural: terrain.copyWith(heights: payloadId),
+            ),
+          ),
+        ),
+      );
+    }
+    return Transaction(name: 'Sculpt terrain', records: records);
+  },
+);
+
+/// Replaces a terrain's painted surface layers.
+///
+/// The sibling of [setTerrainHeights], and the same bargain: one command per
+/// stroke rather than per pointer move, taking the finished control map rather
+/// than a brush to replay, with undo holding the previous map whole.
+///
+/// The control map is four bytes a texel — the same RGBA the shader samples —
+/// so it is stored as an image payload rather than as opaque bytes. That makes
+/// it something a tool other than this one can open.
+final setTerrainSplat = CommandEntry(
+  name: 'setTerrainSplat',
+  doc: "Replace a terrain geometry's painted surface layers.",
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'resourceId',
+      type: ParamType.resourceRef,
+      label: 'Terrain',
+    ),
+    ParamSpec(name: 'splat', type: ParamType.string, label: 'Control map'),
+    ParamSpec(
+      name: 'columns',
+      type: ParamType.integer,
+      label: 'Texels across X',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'rows',
+      type: ParamType.integer,
+      label: 'Texels across Z',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final resourceId = requireResourceId(params, 'resourceId');
+    final resource = ctx.document.resource(resourceId);
+    if (resource is! GeometryResource) {
+      throw CommandException('Resource $resourceId is not a geometry');
+    }
+    final terrain = resource.procedural;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('Resource $resourceId is not a terrain');
+    }
+
+    // A terrain painted for the first time may be establishing its control-map
+    // resolution; afterwards the map has to match what the document says it
+    // is, or the painting would be stretched across the ground on reload.
+    final columns = optionalInt(params, 'columns') ?? terrain.splatColumns;
+    final rows = optionalInt(params, 'rows') ?? terrain.splatRows;
+    if (terrain.splat != null &&
+        (columns != terrain.splatColumns || rows != terrain.splatRows)) {
+      throw CommandException(
+        'This terrain is painted at ${terrain.splatColumns} by '
+        '${terrain.splatRows}; resizing a control map would resample the '
+        'painting, which this command does not do',
+      );
+    }
+
+    final bytes = base64Decode(requireString(params, 'splat'));
+    final expected = columns * rows * 4;
+    if (bytes.lengthInBytes != expected) {
+      throw CommandException(
+        'Expected $expected bytes for a $columns by $rows control map, got '
+        '${bytes.lengthInBytes}',
+      );
+    }
+
+    final payloadId = terrain.splat ?? ctx.document.newId();
+    final records = <ChangeRecord>[
+      ChangeRecord(
+        targetId: payloadId,
+        slot: ChangeSlot.poolPayload,
+        oldValue: PayloadChange(ctx.document.payload(payloadId)),
+        newValue: PayloadChange(
+          PayloadSpec(
+            payloadId,
+            encoding: PayloadEncoding.image,
+            format: 'rgba8',
+            width: columns,
+            height: rows,
+            bytes: bytes,
+          ),
+        ),
+      ),
+    ];
+    if (terrain.splat == null) {
+      records.add(
+        ChangeRecord(
+          targetId: resourceId,
+          slot: ChangeSlot.poolResource,
+          oldValue: ResourceChange(resource),
+          newValue: ResourceChange(
+            GeometryResource(
+              resourceId,
+              procedural: terrain.copyWith(
+                splat: payloadId,
+                splatColumns: columns,
+                splatRows: rows,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Transaction(name: 'Paint terrain', records: records);
+  },
+);
+
+/// The `.fmat` the painted layers blend through, as flutter_scene ships it.
+/// The path is relative to the root of the package that compiled the material,
+/// which is what the generated material index records as its `source` and what
+/// `loadFmatMaterial` looks one up by — not an asset-bundle key. A bundle-style
+/// `packages/flutter_scene/...` key resolves to nothing, silently, at load, and
+/// the ground draws as though it had no material at all.
+///
+/// flutter_scene is only a dev dependency here (this package is the headless
+/// command core and does not pull in the renderer), so the string is spelled
+/// again rather than imported; a test pins it to the engine's
+/// `terrainMaterialSource` so the two cannot drift.
+const terrainMaterialAsset = 'assets/materials/terrain_splat.fmat';
+
+/// Gives a painted terrain a material that shows the painting.
+///
+/// Painting writes a control map; nothing draws it until the terrain is using
+/// the terrain material with that map bound. This is the step between, and it
+/// is one command because it is one thing the user did: a texture over the
+/// control-map payload, an fmat material pointing at it, and the mesh switched
+/// to that material, all undone together.
+///
+/// The control map is texture content `data`, not `color`. Its four channels
+/// are weights, so they must not be sRGB-decoded on the way in, and mip levels
+/// must average as numbers rather than as colour — a mip that gamma-averaged
+/// the weights would drift the blend at distance.
+final addTerrainLayers = CommandEntry(
+  name: 'addTerrainLayers',
+  doc: 'Give a painted terrain the material its layers blend through.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Terrain node'),
+  ],
+  execute: (ctx, params) {
+    final nodeId = requireNodeId(params, 'nodeId');
+    final node = ctx.document.node(nodeId);
+    if (node == null) throw CommandException('No node $nodeId');
+
+    final meshIndex = node.components.indexWhere((c) => c.type == 'mesh');
+    if (meshIndex < 0) {
+      throw CommandException('That node has no mesh to give a material to');
+    }
+    final mesh = node.components[meshIndex];
+
+    final geometryId = switch (mesh.properties['geometry']) {
+      ResourceRefValue(:final id) => id,
+      _ => null,
+    };
+    if (geometryId == null) {
+      throw CommandException('That mesh has no geometry');
+    }
+    final geometry = ctx.document.resource(geometryId);
+    final terrain = geometry is GeometryResource ? geometry.procedural : null;
+    if (terrain is! TerrainGeometrySpec) {
+      throw CommandException('That node is not a terrain');
+    }
+    final splat = terrain.splat;
+    if (splat == null) {
+      throw CommandException(
+        'That terrain has nothing painted on it yet, so there is no control '
+        'map for a material to blend by. Paint a stroke first.',
+      );
+    }
+
+    final texture = TextureResource(
+      ctx.document.newId(),
+      payload: splat,
+      // Weights, not colour: no sRGB decode, and mips that average as numbers.
+      content: 'data',
+    );
+    final material = MaterialResource(
+      ctx.document.newId(),
+      type: 'fmat',
+      name: 'Terrain layers',
+      asset: const AssetRef(terrainMaterialAsset),
+      properties: {'control_map': ResourceRefValue(texture.id)},
+    );
+
+    final components = List.of(node.components);
+    components[meshIndex] = ComponentSpec(
+      mesh.type,
+      properties: {
+        ...mesh.properties,
+        'material': ResourceRefValue(material.id),
+      },
+    );
+
+    return Transaction(
+      name: 'Add terrain layers',
+      records: [
+        _addResourceRecord(texture),
+        _addResourceRecord(material),
+        _componentsRecord(node, components),
+      ],
+    );
+  },
+);
+
 final createMaterial = CommandEntry(
   name: 'createMaterial',
   doc: 'Create a material resource of the given type.',
@@ -1910,6 +2582,77 @@ bool _applyEnvironmentEffects(
     e.autoExposureSpeedDown,
     (v) => e.autoExposureSpeedDown = v,
   );
+  boolean('globalIlluminationEnabled', (v) => e.globalIlluminationEnabled = v);
+  string(
+    'globalIlluminationVolumeMode',
+    e.globalIlluminationVolumeMode,
+    (v) => e.globalIlluminationVolumeMode = v,
+  );
+  vector(
+    'globalIlluminationResolution',
+    e.globalIlluminationResolution,
+    (v) => e.globalIlluminationResolution = v,
+  );
+  vector(
+    'globalIlluminationExtents',
+    e.globalIlluminationExtents,
+    (v) => e.globalIlluminationExtents = v,
+  );
+  number(
+    'globalIlluminationIntensity',
+    e.globalIlluminationIntensity,
+    (v) => e.globalIlluminationIntensity = v,
+  );
+  number(
+    'globalIlluminationHysteresis',
+    e.globalIlluminationHysteresis,
+    (v) => e.globalIlluminationHysteresis = v,
+  );
+  number(
+    'globalIlluminationShadowBias',
+    e.globalIlluminationShadowBias,
+    (v) => e.globalIlluminationShadowBias = v,
+  );
+  number(
+    'globalIlluminationVisibility',
+    e.globalIlluminationVisibility,
+    (v) => e.globalIlluminationVisibility = v,
+  );
+  number(
+    'globalIlluminationVisibilityBias',
+    e.globalIlluminationVisibilityBias,
+    (v) => e.globalIlluminationVisibilityBias = v,
+  );
+  integer(
+    'globalIlluminationProbeUpdateBudget',
+    e.globalIlluminationProbeUpdateBudget,
+    (v) => e.globalIlluminationProbeUpdateBudget = v,
+  );
+  string(
+    'globalIlluminationInjectionResolution',
+    e.globalIlluminationInjectionResolution,
+    (v) => e.globalIlluminationInjectionResolution = v,
+  );
+  number(
+    'globalIlluminationFireflyClamp',
+    e.globalIlluminationFireflyClamp,
+    (v) => e.globalIlluminationFireflyClamp = v,
+  );
+  number(
+    'globalIlluminationEmissiveBoost',
+    e.globalIlluminationEmissiveBoost,
+    (v) => e.globalIlluminationEmissiveBoost = v,
+  );
+  boolean(
+    'globalIlluminationUpdateWhenIdleOnly',
+    (v) => e.globalIlluminationUpdateWhenIdleOnly = v,
+  );
+  boolean(
+    'globalIlluminationBakeOnly',
+    (v) => e.globalIlluminationBakeOnly = v,
+  );
+  // TAA's on/off is the stage's antiAliasingMode, not a key here; these are
+  // the numbers it runs with once it is on.
   number(
     'temporalAntiAliasingMinimumCurrentWeight',
     e.temporalAntiAliasingMinimumCurrentWeight,
@@ -1978,6 +2721,7 @@ void _applyLookSkybox(
   final sameType =
       (sky == 'gradient' && current is GradientSkySpec) ||
       (sky == 'physical' && current is PhysicalSkySpec) ||
+      (sky == 'weather' && current is WeatherSkySpec) ||
       (sky == 'environment' && current is EnvironmentSkySpec) ||
       (sky == 'fmat' &&
           current is FmatSkySpec &&
@@ -2008,7 +2752,11 @@ void _applyLookSkybox(
       : SkyboxSpec(skySource, intensity: old.skybox?.intensity ?? 1.0);
   // Procedural and shader skies can drive image-based lighting (a shader sky
   // realizes as a ShaderSkySource).
-  final canLight = sky == 'gradient' || sky == 'physical' || sky == 'fmat';
+  final canLight =
+      sky == 'gradient' ||
+      sky == 'physical' ||
+      sky == 'weather' ||
+      sky == 'fmat';
   final priorEnv = old.skyEnvironment;
   next.skyEnvironment = (lightScene && canLight)
       ? SkyEnvironmentSpec(
@@ -2157,6 +2905,32 @@ SkySourceSpec _skySourceFrom(
       groundColor: vec('groundColor', p.groundColor),
       energy: dbl('energy', p.energy),
     ),
+    WeatherSkySpec w => WeatherSkySpec(
+      sunDirection: vec('sunDirection', w.sunDirection),
+      sunAngularRadius: dbl('sunAngularRadius', w.sunAngularRadius),
+      rayleighCoefficient: dbl('rayleighCoefficient', w.rayleighCoefficient),
+      rayleighColor: vec('rayleighColor', w.rayleighColor),
+      mieCoefficient: dbl('mieCoefficient', w.mieCoefficient),
+      mieEccentricity: dbl('mieEccentricity', w.mieEccentricity),
+      mieColor: vec('mieColor', w.mieColor),
+      turbidity: dbl('turbidity', w.turbidity),
+      groundColor: vec('groundColor', w.groundColor),
+      energy: dbl('energy', w.energy),
+      coverage: dbl('coverage', w.coverage),
+      density: dbl('density', w.density),
+      altitude: dbl('altitude', w.altitude),
+      detail: dbl('detail', w.detail),
+      softness: dbl('softness', w.softness),
+      seed: switch (overrides['seed']) {
+        IntValue(:final value) => value,
+        DoubleValue(:final value) => value.round(),
+        _ => w.seed,
+      },
+      wind: Vector2(dbl('windX', w.wind.x), dbl('windY', w.wind.y)),
+      cloudColor: vec('cloudColor', w.cloudColor),
+      cloudShading: dbl('cloudShading', w.cloudShading),
+      stormDarkening: dbl('stormDarkening', w.stormDarkening),
+    ),
     EnvironmentSkySpec e => EnvironmentSkySpec(
       blurriness: dbl('blurriness', e.blurriness),
     ),
@@ -2167,6 +2941,7 @@ SkySourceSpec _skySourceFrom(
 SkySourceSpec? _defaultSkySource(String type) => switch (type) {
   'gradient' => GradientSkySpec(),
   'physical' => PhysicalSkySpec(),
+  'weather' => WeatherSkySpec(),
   'environment' => EnvironmentSkySpec(),
   _ => null,
 };
@@ -2174,10 +2949,12 @@ SkySourceSpec? _defaultSkySource(String type) => switch (type) {
 Vector3? _specSunDirection(SkySourceSpec? source) => switch (source) {
   GradientSkySpec(:final sunDirection) => sunDirection,
   PhysicalSkySpec(:final sunDirection) => sunDirection,
+  WeatherSkySpec(:final sunDirection) => sunDirection,
   _ => null,
 };
 
-/// Sets the scene skybox (`none`/`environment`/`gradient`/`physical`) and,
+/// Sets the scene skybox
+/// (`none`/`environment`/`gradient`/`physical`/`weather`) and,
 /// when [lightScene] and a procedural sky are chosen, binds that sky as the
 /// scene's image-based lighting. Choosing the type the scene already has keeps
 /// its tuned parameters; switching type starts from that type's defaults (the
@@ -3450,6 +4227,18 @@ final List<CommandEntry> builtinCommands = [
   setComponentProperties,
   createCuboidGeometry,
   createSphereGeometry,
+  createPlaneGeometry,
+  createCylinderGeometry,
+  createCapsuleGeometry,
+  createTorusGeometry,
+  createDiscGeometry,
+  createIcosphereGeometry,
+  createWedgeGeometry,
+  createTerrainGeometry,
+  setTerrainHeights,
+  makeTerrainSculptable,
+  setTerrainSplat,
+  addTerrainLayers,
   createMaterial,
   createTextureResource,
   createTextureResourceFromAsset,
@@ -3477,4 +4266,5 @@ final List<CommandEntry> builtinCommands = [
   attachToPrefabMember,
   attachExistingToPrefabMember,
   detachFromPrefab,
+  ...animationCommands,
 ];
