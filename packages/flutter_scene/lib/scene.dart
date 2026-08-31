@@ -337,6 +337,14 @@ export 'src/math_extensions.dart'
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/decal.dart' show DecalNode;
 export 'src/node.dart' show Node;
+export 'src/components/canvas_component.dart'
+    show CanvasComponent, CanvasRenderMode;
+export 'src/components/rect_transform_component.dart'
+    show RectTransformComponent;
+export 'src/ui/canvas_layout.dart' show LaidOutRect, layOutCanvas;
+// The rectangle types the canvas API hands back and takes, re-exported so a
+// caller does not have to reach into the document package for them.
+export 'package:scene/scene.dart' show RectTransformValues, UiRect, solveRect;
 export 'src/sprite.dart' show Sprite;
 export 'src/texture_atlas.dart'
     show TextureAtlas, generateSolidColorAtlasPixels;

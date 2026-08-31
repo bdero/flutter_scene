@@ -13,6 +13,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import '../controller/editor_controller.dart';
 import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
+import 'canvas_overlay.dart';
 import 'component_gizmos.dart';
 import 'debug_visualize.dart';
 // ignore: implementation_imports
@@ -1317,6 +1318,19 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               preferences: _gizmoPrefs,
                               hits: _componentGizmoHits,
                               cache: _componentGizmoCache,
+                            ),
+                            size: size,
+                          ),
+                        ),
+                        // Above the component gizmos: a UI layout is what you
+                        // are working on while you build one, and a light
+                        // icon behind it is easier to lose than a rectangle.
+                        IgnorePointer(
+                          child: CustomPaint(
+                            painter: CanvasOverlayPainter(
+                              controller: _ctrl,
+                              camera: cam,
+                              preferences: _gizmoPrefs,
                             ),
                             size: size,
                           ),
