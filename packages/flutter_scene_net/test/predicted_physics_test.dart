@@ -6,7 +6,6 @@ import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_net/flutter_scene_net.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene_net/src/physics_world_history.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 

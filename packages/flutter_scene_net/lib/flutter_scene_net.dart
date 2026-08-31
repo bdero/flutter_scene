@@ -64,12 +64,15 @@ export 'src/network_session.dart'
         serverPeerId;
 export 'src/network_transform.dart' show NetworkTransformComponent;
 export 'src/replica_slots.dart' show ReplicaSlotResolver, ReplicaSlots;
-// TODO(lagcomp): export PhysicsWorldHistory once something consumes it. The
-// server-side rewind needs the peer's last acked tick, which the host does
-// not record yet, and rewind lands on whole ticks where hit registration
-// wants the two bracketing snapshots interpolated.
+export 'src/physics_world_history.dart' show PhysicsWorldHistory;
 export 'src/predicted_physics.dart'
-    show PredictedPhysicsComponent, PredictedPhysicsController;
+    show
+        PredictedBodyScope,
+        PredictedPhysicsComponent,
+        PredictedPhysicsController,
+        capturePredictedBodies,
+        floatsPerPredictedBody,
+        restorePredictedBodies;
 export 'src/predicted_transform.dart'
     show PredictedController, PredictedTransformComponent, PredictionController;
 export 'src/scene_replication.dart'
