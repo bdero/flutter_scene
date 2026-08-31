@@ -449,6 +449,9 @@ class PhysicsWorldCodec extends DeclarativeComponentCodec<PhysicsWorld> {
   @override
   String get type => 'physicsWorld';
 
+  @override
+  String? get category => 'Physics';
+
   // The document backend id, stamped at realize so serialize writes the
   // registry key rather than the backend's self-reported name (the two can
   // differ). Hand-built worlds fall back to backendName.
@@ -539,6 +542,9 @@ sim.BodyType _bodyTypeFromName(String name) => switch (name) {
 class RigidBodyCodec extends DeclarativeComponentCodec<RigidBody> {
   @override
   String get type => 'rigidBody';
+
+  @override
+  String? get category => 'Physics';
 
   @override
   List<ComponentField<RigidBody>> get fields => [
@@ -636,6 +642,9 @@ class ColliderCodec extends DeclarativeComponentCodec<Collider> {
   @override
   String get type => 'collider';
 
+  @override
+  String? get category => 'Physics';
+
   // Collision-shape green.
   static const _shapeColor = GizmoColor(0.45, 0.89, 0.45, 0.9);
 
@@ -644,6 +653,7 @@ class ColliderCodec extends DeclarativeComponentCodec<Collider> {
   @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'physics',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -858,6 +868,9 @@ class FixedJointCodec extends DeclarativeComponentCodec<FixedJoint> {
   String get type => 'fixedJoint';
 
   @override
+  String? get category => 'Physics';
+
+  @override
   List<ComponentField<FixedJoint>> get fields => [
     _otherNodeField(),
     _anchorField(
@@ -884,6 +897,9 @@ class SphericalJointCodec extends DeclarativeComponentCodec<SphericalJoint> {
   String get type => 'sphericalJoint';
 
   @override
+  String? get category => 'Physics';
+
+  @override
   List<ComponentField<SphericalJoint>> get fields => [
     _otherNodeField(),
     _anchorField(
@@ -908,6 +924,9 @@ class SphericalJointCodec extends DeclarativeComponentCodec<SphericalJoint> {
 class RevoluteJointCodec extends DeclarativeComponentCodec<RevoluteJoint> {
   @override
   String get type => 'revoluteJoint';
+
+  @override
+  String? get category => 'Physics';
 
   @override
   List<ComponentField<RevoluteJoint>> get fields => [
@@ -970,6 +989,9 @@ class RevoluteJointCodec extends DeclarativeComponentCodec<RevoluteJoint> {
 class PrismaticJointCodec extends DeclarativeComponentCodec<PrismaticJoint> {
   @override
   String get type => 'prismaticJoint';
+
+  @override
+  String? get category => 'Physics';
 
   @override
   List<ComponentField<PrismaticJoint>> get fields => [
@@ -1167,6 +1189,9 @@ class GenericJointCodec extends DeclarativeComponentCodec<GenericJoint> {
   @override
   String get type => 'genericJoint';
 
+  @override
+  String? get category => 'Physics';
+
   ComponentField<GenericJoint> _basisField(
     String name, {
     required Quaternion Function(GenericJoint component) get,
@@ -1250,6 +1275,9 @@ class KinematicCharacterControllerCodec
     extends DeclarativeComponentCodec<KinematicCharacterController> {
   @override
   String get type => 'characterController';
+
+  @override
+  String? get category => 'Physics';
 
   static const double _halfPi = 1.5707963267948966;
   static const double _quarterPi = 0.7853981633974483;

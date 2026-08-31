@@ -4,6 +4,11 @@ class _ChannelBinding {
   AnimationChannel channel;
   Node node;
 
+  /// What the clip's mask lets through on this node, resolved once when the
+  /// mask is set rather than per frame: a rig is hundreds of joints and the
+  /// answer only changes when the mask or the binding does.
+  double maskWeight = 1.0;
+
   _ChannelBinding(this.channel, this.node);
 }
 
@@ -39,6 +44,40 @@ class AnimationClip {
   double playbackTimeScale = 1;
 
   double _weight = 1;
+  AnimationMask? _mask;
+
+  /// Which nodes this clip is allowed to move, or null for all of them.
+  ///
+  /// This is what makes a layered animator work: an upper-body clip masked to
+  /// the spine leaves the legs to whatever is playing underneath. Setting it
+  /// re-resolves the per-node weights, so it is a frame's work rather than a
+  /// per-frame one.
+  AnimationMask? get mask => _mask;
+  set mask(AnimationMask? value) {
+    _mask = value;
+    _resolveMask();
+  }
+
+  void _resolveMask() {
+    final active = _mask;
+    final uniform = active == null || active.isUniform;
+    final flat = active?.uniformWeight ?? 1.0;
+    for (final binding in _bindings) {
+      binding.maskWeight = uniform ? flat : active.weightFor(binding.node);
+    }
+    // A node is usually bound by three channels (translation, rotation,
+    // scale) and its weight has to be counted once, not once per channel, or
+    // a plain clip would look three times over-driven and normalize itself
+    // down to a third.
+    _nodeWeights.clear();
+    for (final binding in _bindings) {
+      _nodeWeights[binding.node] = binding.maskWeight;
+    }
+  }
+
+  // Distinct bound nodes and what the mask gives each, for the player's
+  // per-node normalization.
+  final Map<Node, double> _nodeWeights = {};
 
   /// Blend weight in `[0, 1]`, used by [AnimationPlayer] to mix this
   /// clip with other concurrently playing clips on the same node.
@@ -170,6 +209,7 @@ class AnimationClip {
       if (channelTarget == null) continue;
       _bindings.add(_ChannelBinding(channel, channelTarget));
     }
+    _resolveMask();
     assert(_checkAnyChannelBound(target));
   }
 
@@ -198,25 +238,41 @@ class AnimationClip {
     );
   }
 
-  /// Evaluates each bound channel at [playbackTime] and accumulates the
-  /// result into [transformDecomps].
+  /// Adds this clip's per-node weight into [totals], which is how the player
+  /// finds out which nodes are being over-driven and by how much.
+  void accumulateWeights(Map<Node, double> totals) {
+    if (_weight <= 0) return;
+    for (final entry in _nodeWeights.entries) {
+      final weight = _weight * entry.value;
+      if (weight <= 0) continue;
+      totals[entry.key] = (totals[entry.key] ?? 0.0) + weight;
+    }
+  }
+
+  /// Accumulates this clip's contribution to every node it binds.
+  ///
+  /// Bindings the mask silences are skipped outright rather than applied at
+  /// zero, which is most of what makes a masked clip cheaper than an
+  /// unmasked one.
   ///
   /// Called once per frame by [AnimationPlayer.update]. [weightMultiplier]
-  /// is the player-wide normalization applied when concurrent clips'
-  /// weights sum to more than `1`.
+  /// is the per-node normalization applied where the clips touching that
+  /// node sum to more than `1`; a node nothing over-drives is absent from it.
   void applyToBindings(
     Map<Node, AnimationTransforms> transformDecomps,
-    double weightMultiplier,
+    Map<Node, double> weightMultiplier,
   ) {
     for (var binding in _bindings) {
       final transforms = transformDecomps[binding.node];
       if (transforms == null) {
         continue;
       }
+      final weight = _weight * binding.maskWeight;
+      if (weight <= 0) continue;
       binding.channel.resolver.apply(
         transforms,
         _playbackTime,
-        _weight * weightMultiplier,
+        weight * (weightMultiplier[binding.node] ?? 1.0),
       );
     }
   }

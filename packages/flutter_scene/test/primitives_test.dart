@@ -459,6 +459,80 @@ void main() {
       expectOutwardWinding(arrays);
     });
 
+    test('every triangle spans as much u as it spans longitude', () {
+      // The seam bug's signature: a triangle straddling the u = 1 wrap keeps
+      // the low-side vertices at u near 0, so it interpolates most of the
+      // texture backwards while covering a sliver of the sphere. Comparing
+      // the u span against the actual longitude span, read from the
+      // positions, catches that without restating how the split decides.
+      for (final subdivisions in [0, 1, 2, 3]) {
+        final arrays = buildIcosphereArrays(
+          radius: 1,
+          subdivisions: subdivisions,
+        );
+        final uvs = arrays.texCoords!;
+        for (var t = 0; t * 3 + 2 < arrays.indices.length; t++) {
+          final indices = [
+            for (var k = 0; k < 3; k++) arrays.indices[t * 3 + k],
+          ];
+          final u = [for (final i in indices) uvs[i * 2]];
+          final uSpan = u.reduce(math.max) - u.reduce(math.min);
+
+          // Longitude of each corner, as a turn fraction in [0, 1).
+          final turns = [
+            for (final i in indices)
+              () {
+                final value =
+                    0.5 +
+                    math.atan2(
+                          arrays.positions[i * 3 + 2],
+                          arrays.positions[i * 3],
+                        ) /
+                        (2 * math.pi);
+                return value % 1.0;
+              }(),
+          ];
+          // The width of the shortest arc containing all three.
+          var arcSpan = double.infinity;
+          for (var start = 0; start < 3; start++) {
+            var span = 0.0;
+            for (var other = 0; other < 3; other++) {
+              var d = turns[other] - turns[start];
+              if (d < 0) d += 1.0;
+              if (d > span) span = d;
+            }
+            if (span < arcSpan) arcSpan = span;
+          }
+
+          expect(
+            uSpan,
+            closeTo(arcSpan, 1e-6),
+            reason:
+                'subdivisions=$subdivisions triangle $t covers $arcSpan of a '
+                'turn but interpolates $uSpan of the texture',
+          );
+        }
+      }
+    });
+
+    test('the seam split adds a meridian of vertices, not a whole mesh', () {
+      final arrays = buildIcosphereArrays(radius: 3, subdivisions: 2);
+      final count = arrays.positions.length ~/ 3;
+      expect(arrays.texCoords, hasLength(count * 2));
+      expect(arrays.normals, hasLength(count * 3));
+      for (var v = 0; v < count; v++) {
+        final x = arrays.positions[v * 3];
+        final y = arrays.positions[v * 3 + 1];
+        final z = arrays.positions[v * 3 + 2];
+        expect(math.sqrt(x * x + y * y + z * z), closeTo(3, 1e-5));
+      }
+      // Welded, this level has 162 vertices. The split costs one duplicate per
+      // vertex on the wrap, nowhere near the 960 that unwelding every face
+      // would have cost.
+      expect(count, greaterThan(162));
+      expect(count, lessThan(200));
+    });
+
     test('rejects negative subdivisions', () {
       expect(
         () => buildIcosphereArrays(radius: 1, subdivisions: -1),
