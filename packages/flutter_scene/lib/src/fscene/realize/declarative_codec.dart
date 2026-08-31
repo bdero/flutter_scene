@@ -129,6 +129,49 @@ final class ComponentField<C extends Component> {
           },
   );
 
+  /// A floating-point property that can be absent.
+  ///
+  /// Unlike [number] there is no default: a null [get] result omits the key
+  /// entirely, and an absent key leaves the component's own null in place.
+  /// That distinction is the point for a value whose meaning is "unset" and
+  /// not "zero" -- a pinned bound that otherwise falls back to an automatic
+  /// scheme, say -- which a defaulted number cannot express.
+  static ComponentField<C> optionalNumber<C extends Component>(
+    String name, {
+    double? Function(C component)? get,
+    void Function(C component, double? value)? set,
+    String? doc,
+    String? group,
+    List<PropertyConstraint<num>> constraints = const [],
+    List<String> formerNames = const [],
+    bool transient = false,
+  }) => ComponentField(
+    ComponentPropertyDef(
+      name,
+      ComponentPropertyKind.number,
+      doc: doc,
+      group: group,
+      constraints: constraints,
+      formerNames: formerNames,
+      transient: transient,
+    ),
+    read: get == null
+        ? null
+        : (c, _) {
+            final value = get(c);
+            return value == null ? null : DoubleValue(value);
+          },
+    write: set == null
+        ? null
+        : (c, v, _) {
+            set(c, switch (v) {
+              DoubleValue(:final value) => value,
+              IntValue(:final value) => value.toDouble(),
+              _ => null,
+            });
+          },
+  );
+
   /// A free-form string property.
   static ComponentField<C> string<C extends Component>(
     String name, {
@@ -517,6 +560,27 @@ abstract class DeclarativeComponentCodec<C extends Component>
       write(component, value, context);
     }
     return component;
+  }
+
+  @override
+  bool applyProperty(
+    Component component,
+    String name,
+    PropertyValue value,
+    RealizeContext context,
+  ) {
+    if (component is! C) return false;
+    for (final field in resolvedFields) {
+      if (field.def.name != name) continue;
+      final write = field.write;
+      // A property with no write binding is constructor-only: the controller
+      // pose fields, the machine a state graph was built from. Saying so is
+      // better than appearing to set it.
+      if (write == null) return false;
+      write(component, value, context);
+      return true;
+    }
+    return false;
   }
 
   @override

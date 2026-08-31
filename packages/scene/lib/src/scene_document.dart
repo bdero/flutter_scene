@@ -101,6 +101,8 @@ class SceneDocument {
     TransformSpec? transform,
     List<ComponentSpec>? components,
     int layers = 1,
+    int lightChannelMask = 0xFF,
+    bool raycastable = true,
     bool root = false,
   }) {
     return addNode(
@@ -110,6 +112,8 @@ class SceneDocument {
         transform: transform,
         components: components,
         layers: layers,
+        lightChannelMask: lightChannelMask,
+        raycastable: raycastable,
       ),
       root: root,
     );

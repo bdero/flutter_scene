@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:vector_math/vector_math.dart';
 
+import 'package:scene/src/component_migration.dart';
 import 'package:scene/src/id.dart';
 import 'package:scene/src/json/canonical.dart';
 import 'package:scene/src/json/jsonc.dart';
@@ -668,6 +669,29 @@ Object encodeSkySource(SkySourceSpec source) => switch (source) {
     'groundColor': _vec3Json(s.groundColor),
     'energy': s.energy,
   },
+  WeatherSkySpec s => {
+    'type': 'weather',
+    'sunDirection': _vec3Json(s.sunDirection),
+    'sunAngularRadius': s.sunAngularRadius,
+    'rayleighCoefficient': s.rayleighCoefficient,
+    'rayleighColor': _vec3Json(s.rayleighColor),
+    'mieCoefficient': s.mieCoefficient,
+    'mieEccentricity': s.mieEccentricity,
+    'mieColor': _vec3Json(s.mieColor),
+    'turbidity': s.turbidity,
+    'groundColor': _vec3Json(s.groundColor),
+    'energy': s.energy,
+    'coverage': s.coverage,
+    'density': s.density,
+    'altitude': s.altitude,
+    'detail': s.detail,
+    'softness': s.softness,
+    'seed': s.seed,
+    'wind': [s.wind.x, s.wind.y],
+    'cloudColor': _vec3Json(s.cloudColor),
+    'cloudShading': s.cloudShading,
+    'stormDarkening': s.stormDarkening,
+  },
 };
 
 List<double> _vec3Json(Vector3 v) => [v.x, v.y, v.z];
@@ -787,9 +811,11 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.components.isNotEmpty)
       'components': [for (final c in n.components) _encodeComponent(c, idKey)],
     if (n.layers != 1) 'layers': n.layers,
+    if (n.lightChannelMask != 0xFF) 'lightChannelMask': n.lightChannelMask,
     if (n.skin != null) 'skin': idKey(n.skin!),
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
     if (!n.visible) 'visible': false,
+    if (!n.raycastable) 'raycastable': false,
     if (n.shadowCastingMode != 'on') 'shadowCasting': n.shadowCastingMode,
   };
 }
@@ -878,6 +904,11 @@ Map<String, dynamic> _encodeAnimation(
         'property': ch.property.name,
         'timeline': idKey(ch.timeline),
         'keyframes': idKey(ch.keyframes),
+        // Omitted at the default, so a document written before
+        // interpolation existed still encodes byte-identically.
+        if (ch.interpolation != null) 'interpolation': ch.interpolation!.name,
+        if (ch.inTangents != null) 'inTangents': idKey(ch.inTangents!),
+        if (ch.outTangents != null) 'outTangents': idKey(ch.outTangents!),
       },
   ],
 };
@@ -1029,11 +1060,13 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
       _decodeComponent(Map<String, dynamic>.from(c as Map)),
   ],
   layers: json['layers'] as int? ?? 1,
+  lightChannelMask: json['lightChannelMask'] as int? ?? 0xFF,
   skin: json['skin'] != null ? LocalId.parse(json['skin'] as String) : null,
   instance: json['instance'] != null
       ? _decodeInstance(Map<String, dynamic>.from(json['instance'] as Map))
       : null,
   visible: json['visible'] as bool? ?? true,
+  raycastable: json['raycastable'] as bool? ?? true,
   shadowCastingMode: json['shadowCasting'] as String? ?? 'on',
 );
 
@@ -1056,7 +1089,10 @@ TransformSpec _decodeTransform(Map<String, dynamic> json) {
 }
 
 ComponentSpec _decodeComponent(Map<String, dynamic> json) => ComponentSpec(
-  json['type'] as String,
+  // Renamed types resolve to their current spelling here, so a document
+  // written before a rename loads as what it meant rather than as a node with
+  // its behaviour quietly missing.
+  migrateComponentType(json['type'] as String),
   properties: _decodeProperties(json['properties']),
 );
 
@@ -1390,6 +1426,78 @@ Map<String, dynamic> _encodeProcedural(ProceduralGeometry p) => switch (p) {
       'radialSegments': radialSegments,
       'tubularSegments': tubularSegments,
     },
+  CylinderGeometrySpec(
+    :final bottomRadius,
+    :final topRadius,
+    :final height,
+    :final radialSegments,
+    :final heightSegments,
+    :final bottomCap,
+    :final topCap,
+  ) =>
+    {
+      'shape': 'cylinder',
+      'bottomRadius': bottomRadius,
+      'topRadius': topRadius,
+      'height': height,
+      'radialSegments': radialSegments,
+      'heightSegments': heightSegments,
+      'bottomCap': bottomCap,
+      'topCap': topCap,
+    },
+  CapsuleGeometrySpec(
+    :final radius,
+    :final height,
+    :final radialSegments,
+    :final capRings,
+  ) =>
+    {
+      'shape': 'capsule',
+      'radius': radius,
+      'height': height,
+      'radialSegments': radialSegments,
+      'capRings': capRings,
+    },
+  DiscGeometrySpec(:final radius, :final segments) => {
+    'shape': 'disc',
+    'radius': radius,
+    'segments': segments,
+  },
+  WedgeGeometrySpec(:final size) => {
+    'shape': 'wedge',
+    'size': [size.x, size.y, size.z],
+  },
+  TerrainGeometrySpec(
+    :final width,
+    :final depth,
+    :final columns,
+    :final rows,
+    :final amplitude,
+    :final frequency,
+    :final octaves,
+    :final seed,
+    :final heights,
+    :final splat,
+    :final splatColumns,
+    :final splatRows,
+  ) =>
+    {
+      'shape': 'terrain',
+      if (heights != null) 'heights': heights.toToken(),
+      if (splat != null) ...{
+        'splat': splat.toToken(),
+        'splatColumns': splatColumns,
+        'splatRows': splatRows,
+      },
+      'width': width,
+      'depth': depth,
+      'columns': columns,
+      'rows': rows,
+      'amplitude': amplitude,
+      'frequency': frequency,
+      'octaves': octaves,
+      'seed': seed,
+    },
   IcosphereGeometrySpec(:final radius, :final subdivisions) => {
     'shape': 'icosphere',
     'radius': radius,
@@ -1425,6 +1533,54 @@ ProceduralGeometry _decodeProcedural(Map<String, dynamic> json) {
         tubeRadius: _d(json['tubeRadius'] ?? 0.15),
         radialSegments: json['radialSegments'] as int? ?? 32,
         tubularSegments: json['tubularSegments'] as int? ?? 16,
+      );
+    case 'cylinder':
+      return CylinderGeometrySpec(
+        bottomRadius: _d(json['bottomRadius'] ?? 0.5),
+        topRadius: _d(json['topRadius'] ?? 0.5),
+        height: _d(json['height'] ?? 1.0),
+        radialSegments: json['radialSegments'] as int? ?? 32,
+        heightSegments: json['heightSegments'] as int? ?? 1,
+        bottomCap: json['bottomCap'] as bool? ?? true,
+        topCap: json['topCap'] as bool? ?? true,
+      );
+    case 'capsule':
+      return CapsuleGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        height: _d(json['height'] ?? 1.0),
+        radialSegments: json['radialSegments'] as int? ?? 32,
+        capRings: json['capRings'] as int? ?? 8,
+      );
+    case 'disc':
+      return DiscGeometrySpec(
+        radius: _d(json['radius'] ?? 0.5),
+        segments: json['segments'] as int? ?? 32,
+      );
+    case 'wedge':
+      final size = json['size'];
+      return WedgeGeometrySpec(
+        size: size is List && size.length == 3
+            ? Vector3(_d(size[0]), _d(size[1]), _d(size[2]))
+            : Vector3(1, 1, 1),
+      );
+    case 'terrain':
+      return TerrainGeometrySpec(
+        width: _d(json['width'] ?? 64.0),
+        depth: _d(json['depth'] ?? 64.0),
+        columns: json['columns'] as int? ?? 65,
+        rows: json['rows'] as int? ?? 65,
+        amplitude: _d(json['amplitude'] ?? 8.0),
+        frequency: _d(json['frequency'] ?? 0.02),
+        octaves: json['octaves'] as int? ?? 4,
+        seed: json['seed'] as int? ?? 1337,
+        heights: json['heights'] is String
+            ? LocalId.parse(json['heights'] as String)
+            : null,
+        splat: json['splat'] is String
+            ? LocalId.parse(json['splat'] as String)
+            : null,
+        splatColumns: json['splatColumns'] as int? ?? 256,
+        splatRows: json['splatRows'] as int? ?? 256,
       );
     case 'icosphere':
       return IcosphereGeometrySpec(
@@ -1494,6 +1650,17 @@ AnimationChannelSpec _decodeChannel(Map<String, dynamic> json) =>
       property: AnimationProperty.values.byName(json['property'] as String),
       timeline: LocalId.parse(json['timeline'] as String),
       keyframes: LocalId.parse(json['keyframes'] as String),
+      interpolation: json['interpolation'] == null
+          ? null
+          : AnimationInterpolation.values.byName(
+              json['interpolation'] as String,
+            ),
+      inTangents: json['inTangents'] == null
+          ? null
+          : LocalId.parse(json['inTangents'] as String),
+      outTangents: json['outTangents'] == null
+          ? null
+          : LocalId.parse(json['outTangents'] as String),
     );
 
 PayloadSpec _decodePayload(LocalId id, Map<String, dynamic> json) =>
@@ -1605,6 +1772,44 @@ SkySourceSpec? _decodeSkySource(Object? json) {
       if (m['turbidity'] != null) s.turbidity = _d(m['turbidity']);
       _setVec3(m['groundColor'], (v) => s.groundColor = v);
       if (m['energy'] != null) s.energy = _d(m['energy']);
+      return s;
+    case 'weather':
+      final s = WeatherSkySpec();
+      _setVec3(m['sunDirection'], (v) => s.sunDirection = v);
+      if (m['sunAngularRadius'] != null) {
+        s.sunAngularRadius = _d(m['sunAngularRadius']);
+      }
+      if (m['rayleighCoefficient'] != null) {
+        s.rayleighCoefficient = _d(m['rayleighCoefficient']);
+      }
+      _setVec3(m['rayleighColor'], (v) => s.rayleighColor = v);
+      if (m['mieCoefficient'] != null) {
+        s.mieCoefficient = _d(m['mieCoefficient']);
+      }
+      if (m['mieEccentricity'] != null) {
+        s.mieEccentricity = _d(m['mieEccentricity']);
+      }
+      _setVec3(m['mieColor'], (v) => s.mieColor = v);
+      if (m['turbidity'] != null) s.turbidity = _d(m['turbidity']);
+      _setVec3(m['groundColor'], (v) => s.groundColor = v);
+      if (m['energy'] != null) s.energy = _d(m['energy']);
+      if (m['coverage'] != null) s.coverage = _d(m['coverage']);
+      if (m['density'] != null) s.density = _d(m['density']);
+      if (m['altitude'] != null) s.altitude = _d(m['altitude']);
+      if (m['detail'] != null) s.detail = _d(m['detail']);
+      if (m['softness'] != null) s.softness = _d(m['softness']);
+      if (m['seed'] is num) s.seed = (m['seed'] as num).toInt();
+      final wind = m['wind'];
+      if (wind is List && wind.length >= 2) {
+        s.wind = Vector2(_d(wind[0]), _d(wind[1]));
+      }
+      _setVec3(m['cloudColor'], (v) => s.cloudColor = v);
+      if (m['cloudShading'] != null) {
+        s.cloudShading = _d(m['cloudShading']);
+      }
+      if (m['stormDarkening'] != null) {
+        s.stormDarkening = _d(m['stormDarkening']);
+      }
       return s;
     default:
       return null;

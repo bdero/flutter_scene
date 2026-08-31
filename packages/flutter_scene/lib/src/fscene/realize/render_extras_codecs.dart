@@ -35,6 +35,9 @@ class TrailCodec extends DeclarativeComponentCodec<TrailComponent> {
   String get type => 'trail';
 
   @override
+  String? get category => 'Effects';
+
+  @override
   List<ComponentField<TrailComponent>> get fields => [
     ComponentField.number(
       'width',
@@ -130,6 +133,9 @@ class TrailCodec extends DeclarativeComponentCodec<TrailComponent> {
 class LodCodec extends DeclarativeComponentCodec<LodComponent> {
   @override
   String get type => 'lod';
+
+  @override
+  String? get category => 'Mesh';
 
   static const ComponentPropertyDef _levelsDef = ComponentPropertyDef(
     'levels',
@@ -352,6 +358,9 @@ class _DeferredSplatComponent extends Component {
 class SplatCodec extends ComponentCodec {
   @override
   String get type => 'splat';
+
+  @override
+  String? get category => 'Mesh';
 
   @override
   Type get componentType => SplatComponent;
