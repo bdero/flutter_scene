@@ -35,6 +35,12 @@ class NetworkEvent {
   final String name;
 
   /// Who runs it when it is sent.
+  ///
+  /// [RpcTarget.notOwner] is the one worth knowing about: everyone except the
+  /// object's owner. The client that fired has already drawn its own muzzle
+  /// flash, and sending it back is wasted at best and a second flash a frame
+  /// later at worst. Distinct from [RpcTarget.others], which excludes the
+  /// *server* rather than the owner.
   final RpcTarget to;
 
   /// Whether it is guaranteed to arrive.
@@ -65,10 +71,12 @@ const List<ComponentPropertyDef> networkEventFields = [
     'to',
     ComponentPropertyKind.string,
     defaultValue: StringValue('server'),
-    options: ['server', 'owner', 'others', 'all'],
+    options: ['server', 'owner', 'others', 'all', 'notOwner'],
     doc:
         'Who runs it. Server is a client asking the server for something; the '
-        'rest are the server telling clients that something happened.',
+        'rest are the server telling clients that something happened. '
+        'notOwner is everyone but the object\'s owner, for an event its '
+        'owner has already acted on locally.',
   ),
   ComponentPropertyDef(
     'delivery',

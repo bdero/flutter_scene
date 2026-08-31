@@ -210,4 +210,59 @@ void main() {
       expect(blended.length, closeTo(1, 1e-5));
     });
   });
+
+  group('choosing what to rewind to', () {
+    ({int tick, double fraction})? at(int acked, int delayMs) =>
+        PhysicsWorldHistory.renderedAt(
+          ackedTick: acked,
+          renderDelay: Duration(milliseconds: delayMs),
+          tickRate: 30,
+        );
+
+    test('a client is showing older than what it has received', () {
+      // The mistake servers make: compensating to the acked tick alone
+      // rewinds too little and still favours the shooter.
+      final target = at(100, 100)!;
+      // 100ms at 30Hz is three ticks.
+      expect(target.tick, 97);
+      expect(target.fraction, closeTo(0, 1e-9));
+    });
+
+    test('a delay that is not a whole tick lands between two', () {
+      // Which is exactly what rewindBetween is for.
+      final target = at(100, 50)!;
+      expect(target.tick, 98);
+      expect(target.fraction, closeTo(0.5, 1e-6));
+    });
+
+    test('no delay is the acked tick itself', () {
+      final target = at(100, 0)!;
+      expect(target.tick, 100);
+      expect(target.fraction, 0);
+    });
+
+    test('early in a session it clamps to the beginning', () {
+      // There is nothing older than the start to rewind to.
+      final target = at(1, 500)!;
+      expect(target.tick, 0);
+      expect(target.fraction, 0);
+    });
+
+    test('a peer that has acknowledged nothing has no view to rebuild', () {
+      // A client connected but not yet sent a snapshot. A hit test should
+      // fall back rather than compensate to a guess.
+      expect(at(-1, 100), isNull);
+    });
+
+    test('a nonsensical tick rate is refused rather than dividing by it', () {
+      expect(
+        PhysicsWorldHistory.renderedAt(
+          ackedTick: 100,
+          renderDelay: const Duration(milliseconds: 100),
+          tickRate: 0,
+        ),
+        isNull,
+      );
+    });
+  });
 }
