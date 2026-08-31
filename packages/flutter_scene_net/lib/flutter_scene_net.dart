@@ -63,6 +63,7 @@ export 'src/network_session.dart'
         UnknownPlayerPrefab,
         serverPeerId;
 export 'src/network_transform.dart' show NetworkTransformComponent;
+export 'src/replica_slots.dart' show ReplicaSlotResolver, ReplicaSlots;
 // TODO(lagcomp): export PhysicsWorldHistory once something consumes it. The
 // server-side rewind needs the peer's last acked tick, which the host does
 // not record yet, and rewind lands on whole ticks where hit registration
