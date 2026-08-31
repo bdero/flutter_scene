@@ -29,15 +29,27 @@ final class NetworkTransformComponent extends Component {
   }) : _now = now,
        _delayMicros = delay.inMicroseconds {
     _push();
-    // TODO(replication-unsubscribe): tear these down on detach once a
-    // dashwire_replication with listener removal is published. Until then
-    // these subscriptions -- and through them this component, and whatever it
-    // closes over -- live as long as the replica, which for a spawned entity
-    // means until it despawns. The upstream change is bdero/dashwire#7, which
-    // makes onChanged return a cancellable handle; the work here is to keep
-    // the two handles and cancel them in onDetach.
-    replica.position.onChanged((_, _) => _push());
-    replica.rotation.onChanged((_, _) => _push());
+    _subscriptions = [
+      replica.position.onChanged((_, _) => _push()),
+      replica.rotation.onChanged((_, _) => _push()),
+    ];
+  }
+
+  /// The replica subscriptions, cancelled when this component detaches.
+  ///
+  /// Without cancelling, these -- and through them this component and
+  /// everything it closes over -- live as long as the replica, which for a
+  /// spawned entity means until it despawns. A component removed from a node
+  /// would keep being called and keep writing a pose onto a node nobody is
+  /// looking at.
+  late final List<RepSubscription> _subscriptions;
+
+  @override
+  void onDetach() {
+    for (final subscription in _subscriptions) {
+      subscription.cancel();
+    }
+    super.onDetach();
   }
 
   final TransformReplica replica;

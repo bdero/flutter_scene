@@ -157,6 +157,29 @@ void main() {
       expect(identity.events.map((e) => e.name).toList(), ['fire']);
     });
 
+    test('notOwner round trips', () {
+      // Everyone but the owner: the client that fired has already drawn its
+      // own muzzle flash. Distinct from `others`, which excludes the server.
+      final before = NetworkIdentityComponent(
+        typeKey: 'pawn',
+        events: const [NetworkEvent('hit', to: RpcTarget.notOwner)],
+      );
+      final after = realizeIdentity(serializeIdentity(before));
+      expect(after.events.single.to, RpcTarget.notOwner);
+    });
+
+    test('every target the transport has is offered', () {
+      // A target the transport supports but the picker does not list is one
+      // nobody can reach from a document.
+      final offered =
+          networkEventFields
+              .firstWhere((field) => field.name == 'to')
+              .options
+              ?.toSet() ??
+          {};
+      expect(offered, RpcTarget.values.map((t) => t.name).toSet());
+    });
+
     test('an unrecognized target is the safe one', () {
       // Server: a request the server decides on, rather than something a
       // client gets to broadcast.

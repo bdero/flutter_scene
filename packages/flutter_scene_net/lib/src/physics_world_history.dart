@@ -163,4 +163,37 @@ final class PhysicsWorldHistory {
     }
     return out;
   }
+
+  /// The tick a peer was looking at, from the newest snapshot it has
+  /// acknowledged and the delay its client renders behind that.
+  ///
+  /// The anchor lag compensation needs, and the thing servers most often get
+  /// wrong: the newest tick a client has *received* is not the tick it was
+  /// *showing*. A client interpolates a fixed delay behind what it holds, so
+  /// compensating to the acked tick alone rewinds too little and still favours
+  /// the shooter.
+  ///
+  /// [renderDelay] is that client's interpolation delay -- the same number its
+  /// [NetworkTransformComponent] is configured with. Returns a whole tick and
+  /// the fraction past it, for [rewindBetween].
+  ///
+  /// Answers null when the peer has acknowledged nothing, which is a client
+  /// that has connected but not yet been sent a snapshot: there is no view to
+  /// reconstruct, so a hit test should fall back rather than compensate to a
+  /// guess.
+  static ({int tick, double fraction})? renderedAt({
+    required int ackedTick,
+    required Duration renderDelay,
+    required int tickRate,
+  }) {
+    if (ackedTick < 0 || tickRate <= 0) return null;
+    final ticksBehind =
+        renderDelay.inMicroseconds * tickRate / Duration.microsecondsPerSecond;
+    final exact = ackedTick - ticksBehind;
+    // Before the session had run long enough to be that far behind, the
+    // oldest thing there is to rewind to is the beginning.
+    if (exact <= 0) return (tick: 0, fraction: 0);
+    final tick = exact.floor();
+    return (tick: tick, fraction: exact - tick);
+  }
 }
