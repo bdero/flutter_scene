@@ -575,7 +575,7 @@ class _ColorEditorState extends State<ColorEditor> {
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 18),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 16),
             ],
           ),
           onTap: () => setState(() => _expanded = !_expanded),

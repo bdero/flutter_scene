@@ -42,7 +42,7 @@ class _ManagedCheckoutProgress extends StatelessWidget {
               children: [
                 const Text(
                   'Creating managed Flutter checkout',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  style: editorDialogTitleText,
                 ),
                 const SizedBox(height: 10),
                 for (final phase in ManagedCheckoutPhase.values)
@@ -77,7 +77,7 @@ class _ManagedCheckoutProgress extends StatelessWidget {
                       job.error!,
                       style: const TextStyle(
                         fontSize: 11,
-                        color: Colors.redAccent,
+                        color: editorErrorColor,
                       ),
                     ),
                   ),
@@ -105,14 +105,14 @@ class _ManagedCheckoutProgress extends StatelessWidget {
   Widget _phaseIcon(BuildContext context, ManagedCheckoutPhase phase) {
     if (phase.index < job.phase.index ||
         (job.done && job.error == null && phase.index <= job.phase.index)) {
-      return const Icon(Icons.check, size: 13, color: Colors.lightGreen);
+      return const Icon(Icons.check, size: 14, color: editorSuccessColor);
     }
     if (phase == job.phase) {
       if (job.done) {
         return Icon(
           job.error == null ? Icons.check : Icons.close,
-          size: 13,
-          color: job.error == null ? Colors.lightGreen : Colors.redAccent,
+          size: 14,
+          color: job.error == null ? editorSuccessColor : editorErrorColor,
         );
       }
       return const SizedBox(

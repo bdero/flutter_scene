@@ -210,15 +210,11 @@ class OrbitCameraController extends StatefulWidget {
     required this.onChanged,
     required this.child,
     this.isLocked,
-    this.dragThreshold = 4,
   });
 
   final OrbitCamera camera;
   final VoidCallback onChanged;
   final Widget child;
-
-  /// Distance a primary-button gesture travels before orbiting begins.
-  final double dragThreshold;
 
   /// When this returns true (for example when a gizmo is active), the
   /// controller ignores drags so camera navigation does not fire on top of
@@ -231,7 +227,6 @@ class OrbitCameraController extends StatefulWidget {
 
 class _OrbitCameraControllerState extends State<OrbitCameraController> {
   Offset? _lastDrag;
-  Offset? _dragOrigin;
   bool _isPanning = false;
   bool _dragStarted = false;
   double _lastPinchScale = 1.0;
@@ -257,18 +252,19 @@ class _OrbitCameraControllerState extends State<OrbitCameraController> {
       onPointerDown: (e) {
         if (widget.isLocked?.call() ?? false) {
           _lastDrag = null;
-          _dragOrigin = null;
           _isPanning = false;
           _dragStarted = false;
           return;
         }
         _lastDrag = e.localPosition;
-        _dragOrigin = e.localPosition;
-        _isPanning =
-            e.buttons & kMiddleMouseButton != 0 ||
-            (e.buttons & kPrimaryMouseButton != 0 &&
-                HardwareKeyboard.instance.isShiftPressed);
-        _dragStarted = e.buttons & kMiddleMouseButton != 0;
+        // The middle button drives the camera: orbit alone, pan with shift.
+        // The primary button belongs to whatever tool is armed -- selection,
+        // the gizmo, a terrain brush -- so it never moves the camera, and a
+        // sculpting stroke cannot turn the view out from under itself.
+        final middle = e.buttons & kMiddleMouseButton != 0;
+        final shift = HardwareKeyboard.instance.isShiftPressed;
+        _isPanning = middle && shift;
+        _dragStarted = middle;
       },
       onPointerMove: (e) {
         if (widget.isLocked?.call() ?? false) return;
@@ -276,29 +272,20 @@ class _OrbitCameraControllerState extends State<OrbitCameraController> {
         if (last == null) return;
         final delta = e.localPosition - last;
         _lastDrag = e.localPosition;
-        if (!_dragStarted && e.buttons & kPrimaryMouseButton != 0) {
-          final origin = _dragOrigin;
-          if (origin == null ||
-              (e.localPosition - origin).distance < widget.dragThreshold) {
-            return;
-          }
-          _dragStarted = true;
-        }
+        if (!_dragStarted) return;
         if (_isPanning) {
           widget.camera.pan(delta.dx, delta.dy);
-        } else if (_dragStarted && e.buttons & kPrimaryMouseButton != 0) {
+        } else {
           widget.camera.orbit(delta.dx, delta.dy);
         }
         widget.onChanged();
       },
       onPointerUp: (e) {
         _lastDrag = null;
-        _dragOrigin = null;
         _dragStarted = false;
       },
       onPointerCancel: (e) {
         _lastDrag = null;
-        _dragOrigin = null;
         _dragStarted = false;
       },
       onPointerSignal: (e) {

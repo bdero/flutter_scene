@@ -9,18 +9,28 @@
 /// later phase; this is the read-and-drag-in first version.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
 import '../assets/asset_index.dart';
+import 'package:scene/visual_script.dart';
+
+import '../blueprints/blueprint_editor_screen.dart';
+import '../blueprints/blueprint_file.dart';
+import '../blueprints/blueprint_parents.dart';
+import '../blueprints/pick_parent_class_dialog.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_thumbnail.dart';
 import '../inspector/resource_origin.dart';
 import '../io/file_browser.dart';
 import '../io/scene_io.dart';
+import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
+import 'package:scene/scene.dart' show LocalId, writeFscene;
 
 /// The asset browser panel.
 class AssetBrowserPanel extends StatefulWidget {
@@ -150,6 +160,122 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       _ctrl.document,
     ).where((r) => q.isEmpty || r.label.toLowerCase().contains(q)).toList();
 
+    return DragTarget<LocalId>(
+      onWillAcceptWithDetails: (details) => _scanRoot != null,
+      onAcceptWithDetails: (details) => unawaited(_makePrefab(details.data)),
+      builder: (context, candidate, rejected) => GestureDetector(
+        // Right-clicking the panel's empty space is where people go to make a
+        // new asset, in every tool that has a project browser.
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapUp: (d) => unawaited(_showCreateMenu(d.globalPosition)),
+        child: Container(
+          foregroundDecoration: candidate.isEmpty
+              ? null
+              : BoxDecoration(
+                  border: Border.all(color: editorAccentColor, width: 2),
+                  color: editorAccentColor.withValues(alpha: 0.07),
+                ),
+          child: _buildBrowser(
+            context,
+            visibleFiles,
+            models,
+            scenes,
+            environmentImages,
+            images,
+            materials,
+            embedded,
+            q,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The right-click-on-nothing menu: what you can make here.
+  Future<void> _showCreateMenu(Offset position) async {
+    final root = _scanRoot;
+    if (root == null) {
+      _report('Open a project first: a blueprint is a file in one.');
+      return;
+    }
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    const itemStyle = TextStyle(fontSize: 12);
+    final kind = await showMenu<BlueprintKind>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        const PopupMenuItem<BlueprintKind>(
+          enabled: false,
+          height: 26,
+          child: Text('Create', style: editorMicroText),
+        ),
+        for (final kind in BlueprintKind.values)
+          PopupMenuItem(
+            value: kind,
+            height: 34,
+            child: Text(kind.label, style: itemStyle),
+          ),
+      ],
+    );
+    if (kind == null || !mounted) return;
+    await _createBlueprint(kind, root);
+  }
+
+  /// Makes a blueprint of [kind] under [root] and opens it.
+  ///
+  /// A class is asked what it extends before it exists, because the answer
+  /// decides what its graphs may assume -- which events they receive, what
+  /// `self` is. Changing it later is reparenting, and reparenting can
+  /// invalidate every node in the graph. The kinds that produce no instances,
+  /// an interface and a macro library, are not asked: there is nothing for a
+  /// parent to mean.
+  Future<void> _createBlueprint(BlueprintKind kind, String root) async {
+    var parent = defaultBlueprintParent;
+    if (kind == BlueprintKind.blueprintClass ||
+        kind == BlueprintKind.widgetBlueprint) {
+      final picked = await pickParentClass(
+        context: context,
+        all: allBlueprintParents(
+          _ctrl.componentTypes(),
+          schemaFor: _ctrl.componentSchemaFor,
+        ),
+      );
+      // Dismissing the picker cancels the whole thing: a class with no parent
+      // is not something that can exist, so there is nothing to half-make.
+      if (picked == null) return;
+      parent = picked;
+    }
+
+    final path = freeBlueprintPath(root, defaultBlueprintName(kind));
+    final file = BlueprintFile(path);
+    try {
+      await file.write(
+        newBlueprint(name: file.name, kind: kind, parentClass: parent),
+      );
+    } on Object catch (error) {
+      _report('Could not write the blueprint: $error');
+      return;
+    }
+    await _rescan();
+    if (!mounted) return;
+    await openBlueprintEditor(context: context, controller: _ctrl, file: file);
+  }
+
+  Widget _buildBrowser(
+    BuildContext context,
+    List<FileAsset> visibleFiles,
+    List<FileAsset> models,
+    List<FileAsset> scenes,
+    List<FileAsset> environmentImages,
+    List<FileAsset> images,
+    List<FileAsset> materials,
+    List<EmbeddedResource> embedded,
+    String q,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -161,7 +287,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
                 padding: EdgeInsets.all(16),
                 child: Text(
                   'Open a project (or save the scene) to browse assets.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: editorMutedTextColor),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -194,56 +320,56 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   }
 
   Widget _toolbar(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Row(
-        children: [
-          const Icon(Icons.folder_open, size: 14),
-          const SizedBox(width: 6),
-          const Text('Assets', style: TextStyle(fontSize: 12)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(
-                controller: _filter,
-                onChange: (value) => setState(() => _query = value.text),
-              ),
-              size: .sm,
-              hint: 'Filter',
-              prefixBuilder: (_, _, _) => const Padding(
-                padding: EdgeInsets.only(left: 8, right: 4),
-                child: Icon(Icons.search, size: 14),
-              ),
+    return EditorToolbar(
+      leading: [
+        const Icon(Icons.folder_open, size: 14),
+        const SizedBox(width: 6),
+        const Text('Project', style: TextStyle(fontSize: 12)),
+        const SizedBox(width: 12),
+        // A fixed width, not Expanded: this strip scrolls, so it is laid out
+        // against unbounded width and a flex child is an error there. See
+        // [EditorToolbarScroller].
+        SizedBox(
+          width: 180,
+          child: FTextField(
+            control: FTextFieldControl.managed(
+              controller: _filter,
+              onChange: (value) => setState(() => _query = value.text),
+            ),
+            size: .sm,
+            hint: 'Filter',
+            prefixBuilder: (_, _, _) => const Padding(
+              padding: EdgeInsets.only(left: 8, right: 4),
+              child: Icon(Icons.search, size: 14),
             ),
           ),
-          const SizedBox(width: 4),
-          _viewButton(
-            context,
-            mode: _AssetViewMode.list,
-            icon: Icons.view_list_outlined,
-            tooltip: 'List view',
-          ),
-          _viewButton(
-            context,
-            mode: _AssetViewMode.thumbnails,
-            icon: Icons.grid_view_outlined,
-            tooltip: 'Thumbnail view',
-          ),
-          IconButton(
-            tooltip: 'Rescan',
-            visualDensity: VisualDensity.compact,
-            icon: _scanning
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.refresh, size: 16),
-            onPressed: _scanning ? null : _rescan,
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 4),
+        _viewButton(
+          context,
+          mode: _AssetViewMode.list,
+          icon: Icons.view_list_outlined,
+          tooltip: 'List view',
+        ),
+        _viewButton(
+          context,
+          mode: _AssetViewMode.thumbnails,
+          icon: Icons.grid_view_outlined,
+          tooltip: 'Thumbnail view',
+        ),
+        IconButton(
+          tooltip: 'Rescan',
+          visualDensity: VisualDensity.compact,
+          icon: _scanning
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh, size: 16),
+          onPressed: _scanning ? null : _rescan,
+        ),
+      ],
     );
   }
 
@@ -274,7 +400,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           ),
           child: Icon(
             icon,
-            size: 15,
+            size: 16,
             color: selected ? scheme.primary : scheme.onSurfaceVariant,
           ),
         ),
@@ -486,7 +612,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
       visualDensity: VisualDensity.compact,
-      leading: Icon(_embeddedIcon(r.kind), size: 18),
+      leading: Icon(_embeddedIcon(r.kind), size: 16),
       title: Row(
         children: [
           Flexible(
@@ -505,7 +631,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         subtitle,
         style: TextStyle(
           fontSize: 11,
-          color: r.isUnused ? Colors.orange : Colors.grey,
+          color: r.isUnused ? editorWarningColor : editorMutedTextColor,
         ),
       ),
       trailing: r.isUnused
@@ -563,6 +689,12 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
             ),
           );
         }
+      case FileAssetKind.blueprint:
+        await openBlueprintEditor(
+          context: context,
+          controller: _ctrl,
+          file: BlueprintFile(asset.path),
+        );
       case FileAssetKind.material:
         final selected = _ctrl.selection.primary;
         if (selected != null &&
@@ -583,6 +715,77 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           );
         }
     }
+  }
+
+  /// Saves the subtree at [nodeId] as a reusable `.fscene`, and turns the
+  /// node it came from into an instance of it.
+  ///
+  /// The second half is what makes it a prefab rather than a copy: the crate
+  /// in the level and the crate on disk are the same crate afterwards, so
+  /// editing the asset changes the one standing in the scene. It is also what
+  /// every tool with a content browser does when you drag an object into it,
+  /// and being surprised by that is worse than being asked.
+  Future<void> _makePrefab(LocalId nodeId) async {
+    final root = _scanRoot;
+    final node = _ctrl.document.node(nodeId);
+    if (root == null || node == null) return;
+
+    final extracted = extractPrefab(_ctrl.document, nodeId);
+    final name = node.name.isEmpty ? 'Prefab' : node.name;
+    final file = freePrefabPath(root, name);
+
+    try {
+      await File(file).writeAsString(writeFscene(extracted.document));
+    } on Object catch (error) {
+      _report('Could not write the prefab: $error');
+      return;
+    }
+
+    final relative = file.startsWith('$root${Platform.pathSeparator}')
+        ? file.substring(root.length + 1)
+        : file;
+
+    // The swap is two commands, and so two undo steps, like every other
+    // multi-step gesture here. If the second half fails the first is rolled
+    // back, so a failure leaves the scene as it was rather than holding both
+    // the instance and the node it was made from.
+    final parent = _ctrl.query.parentOf(nodeId);
+    try {
+      final instance = await _ctrl.run('instantiatePrefab', {
+        'prefabAsset': relative,
+        'name': node.name,
+        if (parent != null) 'parentId': parent.toToken(),
+      });
+      try {
+        await _ctrl.run('deleteNode', {'nodeId': nodeId.toToken()});
+      } on Object {
+        if (_ctrl.history.canUndo) await _ctrl.undo();
+        rethrow;
+      }
+      _ctrl.selection.selectOnly(instance.records.first.targetId);
+    } on Object catch (error) {
+      _report('Made $relative, but could not swap the node for it: $error');
+      await _rescan();
+      return;
+    }
+
+    await _rescan();
+    if (!extracted.isComplete) {
+      _report(
+        'Made $relative. ${extracted.droppedNodeReferences.length} '
+        'reference(s) to nodes outside it were cleared: '
+        '${extracted.droppedNodeReferences.join(', ')}.',
+      );
+    } else {
+      _report('Made $relative.');
+    }
+  }
+
+  void _report(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _instantiatePrefab(String path) async {
@@ -691,6 +894,7 @@ IconData _fileIcon(FileAssetKind kind) => switch (kind) {
   FileAssetKind.environmentImage => Icons.light_mode_outlined,
   FileAssetKind.image => Icons.image_outlined,
   FileAssetKind.material => Icons.brush_outlined,
+  FileAssetKind.blueprint => Icons.schema_outlined,
 };
 
 /// A collapsible project directory row.
@@ -720,7 +924,7 @@ class _DirectoryRow extends StatelessWidget {
             children: [
               Icon(
                 expanded ? Icons.expand_more : Icons.chevron_right,
-                size: 15,
+                size: 16,
                 color: scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 2),
@@ -780,7 +984,7 @@ class _FileListRow extends StatelessWidget {
               padding: EdgeInsets.only(left: depth * 14.0 + 19, right: 4),
               child: Row(
                 children: [
-                  Icon(_fileIcon(asset.kind), size: 15, color: scheme.primary),
+                  Icon(_fileIcon(asset.kind), size: 16, color: scheme.primary),
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
@@ -800,7 +1004,7 @@ class _FileListRow extends StatelessWidget {
                         borderRadius: BorderRadius.circular(3),
                         child: const Padding(
                           padding: EdgeInsets.all(4),
-                          child: Icon(Icons.open_in_new, size: 13),
+                          child: Icon(Icons.open_in_new, size: 14),
                         ),
                       ),
                     ),
@@ -876,5 +1080,24 @@ class _FileThumbnailTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// A path under [root] for a prefab called [name] that no file has yet.
+///
+/// The name comes from a node, and a node's name is whatever somebody typed
+/// into it, so it reaches the filesystem having been nowhere near one: a node
+/// called "../../etc/passwd" is a node somebody named that. Everything but
+/// letters, digits, spaces, dashes and underscores goes, which leaves the
+/// result inside [root] by construction rather than by checking afterwards.
+String freePrefabPath(String root, String name) {
+  final safe = name.replaceAll(RegExp(r'[^A-Za-z0-9_\- ]'), '').trim();
+  final base = safe.isEmpty ? 'Prefab' : safe;
+  final separator = Platform.pathSeparator;
+  for (var i = 0; ; i++) {
+    final candidate = i == 0
+        ? '$root$separator$base.fscene'
+        : '$root$separator$base $i.fscene';
+    if (!File(candidate).existsSync()) return candidate;
   }
 }

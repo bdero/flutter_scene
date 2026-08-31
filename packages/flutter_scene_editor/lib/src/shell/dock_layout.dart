@@ -5,10 +5,32 @@ import 'package:flutter/widgets.dart';
 /// Where a dragged panel lands relative to a target tab group.
 enum DockZone { center, left, right, top, bottom }
 
+/// Panel ids that have been renamed, old spelling to current.
+///
+/// A layout naming a panel that no longer exists loses that panel silently:
+/// [DockLayout.tryParse] drops unknown ids and appends the missing ones
+/// wherever it can, so an unmigrated rename does not break the workspace so
+/// much as shuffle it, which is harder to notice and just as annoying.
+///
+/// Entries are never removed. Someone's layout is years old and still theirs.
+const Map<String, String> renamedPanelIds = {
+  // The editor took the documentation's names for these windows.
+  'viewport': 'scene',
+  'outliner': 'hierarchy',
+  'assets': 'project',
+  // The Flow canvas became the Visual Scripter; that rename shipped without a
+  // layout migration, which is what this table is for.
+  'flow': 'visual_scripter',
+};
+
+/// The current id for [id], which is [id] unless it was renamed.
+String migratePanelId(String id) => renamedPanelIds[id] ?? id;
+
 /// The initial editor arrangement used when no saved layout is available.
 ///
-/// The left column stacks Outliner above Assets and History, the Viewport owns
-/// the center, and Inspector occupies the right column.
+/// The arrangement the reference editors settled on and everybody already
+/// knows: the hierarchy down the left, the scene in the middle, the inspector
+/// down the right, and the project browser along the bottom under both.
 DockLayout defaultEditorDockLayout() {
   return DockLayout(
     DockSplit(
@@ -17,15 +39,29 @@ DockLayout defaultEditorDockLayout() {
         DockSplit(
           Axis.vertical,
           [
-            DockTabs(['outliner']),
-            DockTabs(['assets', 'history']),
+            DockSplit(
+              Axis.horizontal,
+              [
+                DockTabs(['hierarchy']),
+                DockTabs(['scene', 'game']),
+              ],
+              [0.26, 0.74],
+            ),
+            // The bottom shelf runs under the hierarchy and the scene both,
+            // which is what makes it a shelf rather than a third column.
+            //
+            // No visual scripter here. Editing a blueprint is a mode you enter
+            // and leave -- you are working on the Door, not on the level with
+            // a Door in it -- so it takes the screen instead. A tab would
+            // compete for room with the panels you need while drawing a graph,
+            // and would make a class look like a view of the selection.
+            DockTabs(['project', 'console', 'animation']),
           ],
-          [0.5363231641857922, 0.4636768358142078],
+          [0.68, 0.32],
         ),
-        DockTabs(['viewport']),
         DockTabs(['inspector']),
       ],
-      [0.20993533355494798, 0.5575395295519655, 0.23252513689308651],
+      [0.78, 0.22],
     ),
   );
 }
@@ -34,6 +70,9 @@ DockLayout defaultEditorDockLayout() {
 /// [DockTabs] groups holding one or more panel ids.
 sealed class DockNode {
   Map<String, Object?> toJson();
+
+  /// Rewrites renamed panel ids throughout this subtree.
+  void migrateIds();
 
   static DockNode fromJson(Map<String, Object?> json) {
     switch (json['type']) {
@@ -70,6 +109,13 @@ class DockSplit extends DockNode {
   final List<double> weights;
 
   @override
+  void migrateIds() {
+    for (final child in children) {
+      child.migrateIds();
+    }
+  }
+
+  @override
   Map<String, Object?> toJson() => {
     'type': 'split',
     'axis': axis == Axis.horizontal ? 'h' : 'v',
@@ -84,6 +130,13 @@ class DockTabs extends DockNode {
 
   final List<String> panels;
   int active;
+
+  @override
+  void migrateIds() {
+    for (var i = 0; i < panels.length; i++) {
+      panels[i] = migratePanelId(panels[i]);
+    }
+  }
 
   String? get activePanel =>
       panels.isEmpty ? null : panels[active.clamp(0, panels.length - 1)];
@@ -144,6 +197,7 @@ class DockLayout {
     } on TypeError {
       return null;
     }
+    layout._migrateIds();
     final known = {
       ...knownPanels,
       if (isDynamic != null)
@@ -177,6 +231,17 @@ class DockLayout {
   }
 
   DockNode root;
+
+  /// Rewrites every renamed panel id in place, docked, hidden and floating.
+  void _migrateIds() {
+    root.migrateIds();
+    for (var i = 0; i < hidden.length; i++) {
+      hidden[i] = migratePanelId(hidden[i]);
+    }
+    for (var i = 0; i < floating.length; i++) {
+      floating[i] = migratePanelId(floating[i]);
+    }
+  }
 
   /// Panels disabled from view. Not rendered anywhere until shown again.
   final List<String> hidden;

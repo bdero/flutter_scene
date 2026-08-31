@@ -170,7 +170,7 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
           children: [
             Text(
               'Build configurations (${_project.name})',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: editorDialogTitleText,
             ),
             const SizedBox(height: 10),
             Expanded(
