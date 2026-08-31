@@ -69,7 +69,13 @@ export 'src/replica_slots.dart' show ReplicaSlotResolver, ReplicaSlots;
 // not record yet, and rewind lands on whole ticks where hit registration
 // wants the two bracketing snapshots interpolated.
 export 'src/predicted_physics.dart'
-    show PredictedPhysicsComponent, PredictedPhysicsController;
+    show
+        PredictedBodyScope,
+        PredictedPhysicsComponent,
+        PredictedPhysicsController,
+        capturePredictedBodies,
+        floatsPerPredictedBody,
+        restorePredictedBodies;
 export 'src/predicted_transform.dart'
     show PredictedController, PredictedTransformComponent, PredictionController;
 export 'src/scene_replication.dart'
