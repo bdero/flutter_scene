@@ -284,6 +284,42 @@ final setNodeVisible = CommandEntry(
   },
 );
 
+const _shadowCastingModes = ['off', 'on', 'doubleSided', 'shadowsOnly'];
+
+final setNodeShadowCasting = CommandEntry(
+  name: 'setNodeShadowCasting',
+  doc:
+      'Set a node\'s shadow casting mode: off, on, doubleSided, or '
+      'shadowsOnly (casts while staying out of the color image).',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeId', type: ParamType.nodeRef, label: 'Node'),
+    ParamSpec(name: 'mode', type: ParamType.string, label: 'Shadow casting'),
+  ],
+  execute: (ctx, params) {
+    final id = requireNodeId(params, 'nodeId');
+    final node = _requireNode(ctx, id);
+    final mode = requireString(params, 'mode');
+    if (!_shadowCastingModes.contains(mode)) {
+      throw CommandException(
+        'Unknown shadow casting mode "$mode"; expected one of '
+        '${_shadowCastingModes.join(', ')}.',
+      );
+    }
+    return Transaction(
+      name: 'Set shadow casting',
+      records: [
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.shadowCastingMode,
+          oldValue: StringChange(node.shadowCastingMode),
+          newValue: StringChange(mode),
+        ),
+      ],
+    );
+  },
+);
+
 final setNodeLayers = CommandEntry(
   name: 'setNodeLayers',
   doc: 'Set a node\'s render-layer bitmask.',
@@ -510,6 +546,92 @@ final reparentNode = CommandEntry(
             ),
           ),
       ],
+    );
+  },
+);
+
+/// Moves several nodes into one container as a single undoable edit (a
+/// multi-selection drag in the outliner). Ids nested under another moved id
+/// and ids whose subtree contains the destination are skipped.
+final reparentNodes = CommandEntry(
+  name: 'reparentNodes',
+  doc:
+      'Move several nodes under a new parent (or the root list) at once, '
+      'optionally at a specific index.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
+    ParamSpec(
+      name: 'newParentId',
+      type: ParamType.nodeRef,
+      label: 'New parent',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'index',
+      type: ParamType.integer,
+      label: 'Index',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'keepWorldTransform',
+      type: ParamType.boolean,
+      label: 'Keep world transform',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final newParent = optionalNodeId(params, 'newParentId');
+    if (newParent != null) _requireNode(ctx, newParent);
+    final index = optionalInt(params, 'index');
+    final keepWorld = params['keepWorldTransform'] != false;
+    final moved = [
+      for (final id in _topLevel(doc, requireNodeIdList(params, 'nodeIds')))
+        if (newParent == null || !_subtree(doc, id).contains(newParent)) id,
+    ];
+    if (moved.isEmpty) {
+      return Transaction(name: 'Reparent nodes', records: _empty);
+    }
+    final oldParents = {for (final id in moved) id: _parentOf(doc, id)};
+    // Build every touched container's final list once, so one record per
+    // container carries all removals and the grouped insertion together.
+    final lists = <LocalId?, List<LocalId>>{};
+    List<LocalId> listFor(LocalId? parent) =>
+        lists.putIfAbsent(parent, () => List.of(_containerOf(doc, parent)));
+    for (final id in moved) {
+      listFor(oldParents[id]).remove(id);
+    }
+    final destination = listFor(newParent);
+    final at = index == null
+        ? destination.length
+        : index.clamp(0, destination.length);
+    destination.insertAll(at, moved);
+    final records = <ChangeRecord>[];
+    for (final entry in lists.entries) {
+      final old = List.of(_containerOf(doc, entry.key));
+      if (_sameOrder(old, entry.value)) continue;
+      records.add(_containerRecord(doc, entry.key, old, entry.value));
+    }
+    if (keepWorld) {
+      for (final id in moved) {
+        if (oldParents[id] == newParent) continue;
+        final node = doc.nodes[id]!;
+        records.add(
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.transform,
+            oldValue: TransformChange(node.transform),
+            newValue: TransformChange(
+              _worldPreservingLocal(doc, id, newParent),
+            ),
+          ),
+        );
+      }
+    }
+    return Transaction(
+      name: moved.length == 1 ? 'Reparent node' : 'Reparent nodes',
+      records: records,
     );
   },
 );
@@ -2259,6 +2381,75 @@ bool _applyEnvironmentEffects(
     e.screenSpaceReflectionsResolutionScale,
     (v) => e.screenSpaceReflectionsResolutionScale = v,
   );
+  boolean('globalIlluminationEnabled', (v) => e.globalIlluminationEnabled = v);
+  string(
+    'globalIlluminationVolumeMode',
+    e.globalIlluminationVolumeMode,
+    (v) => e.globalIlluminationVolumeMode = v,
+  );
+  vector(
+    'globalIlluminationResolution',
+    e.globalIlluminationResolution,
+    (v) => e.globalIlluminationResolution = v,
+  );
+  vector(
+    'globalIlluminationExtents',
+    e.globalIlluminationExtents,
+    (v) => e.globalIlluminationExtents = v,
+  );
+  number(
+    'globalIlluminationIntensity',
+    e.globalIlluminationIntensity,
+    (v) => e.globalIlluminationIntensity = v,
+  );
+  number(
+    'globalIlluminationHysteresis',
+    e.globalIlluminationHysteresis,
+    (v) => e.globalIlluminationHysteresis = v,
+  );
+  number(
+    'globalIlluminationShadowBias',
+    e.globalIlluminationShadowBias,
+    (v) => e.globalIlluminationShadowBias = v,
+  );
+  number(
+    'globalIlluminationVisibility',
+    e.globalIlluminationVisibility,
+    (v) => e.globalIlluminationVisibility = v,
+  );
+  number(
+    'globalIlluminationVisibilityBias',
+    e.globalIlluminationVisibilityBias,
+    (v) => e.globalIlluminationVisibilityBias = v,
+  );
+  integer(
+    'globalIlluminationProbeUpdateBudget',
+    e.globalIlluminationProbeUpdateBudget,
+    (v) => e.globalIlluminationProbeUpdateBudget = v,
+  );
+  string(
+    'globalIlluminationInjectionResolution',
+    e.globalIlluminationInjectionResolution,
+    (v) => e.globalIlluminationInjectionResolution = v,
+  );
+  number(
+    'globalIlluminationFireflyClamp',
+    e.globalIlluminationFireflyClamp,
+    (v) => e.globalIlluminationFireflyClamp = v,
+  );
+  number(
+    'globalIlluminationEmissiveBoost',
+    e.globalIlluminationEmissiveBoost,
+    (v) => e.globalIlluminationEmissiveBoost = v,
+  );
+  boolean(
+    'globalIlluminationUpdateWhenIdleOnly',
+    (v) => e.globalIlluminationUpdateWhenIdleOnly = v,
+  );
+  boolean(
+    'globalIlluminationBakeOnly',
+    (v) => e.globalIlluminationBakeOnly = v,
+  );
   boolean('fogEnabled', (v) => e.fogEnabled = v);
   string('fogMode', e.fogMode, (v) => e.fogMode = v);
   vector('fogColor', e.fogColor, (v) => e.fogColor = v);
@@ -2494,6 +2685,22 @@ bool _applyEnvironmentEffects(
   boolean(
     'temporalAntiAliasingSkinnedMotion',
     (v) => e.temporalAntiAliasingSkinnedMotion = v,
+  );
+  number('smaaThreshold', e.smaaThreshold, (v) => e.smaaThreshold = v);
+  integer(
+    'smaaMaxSearchSteps',
+    e.smaaMaxSearchSteps,
+    (v) => e.smaaMaxSearchSteps = v,
+  );
+  integer(
+    'smaaMaxDiagonalSearchSteps',
+    e.smaaMaxDiagonalSearchSteps,
+    (v) => e.smaaMaxDiagonalSearchSteps = v,
+  );
+  number(
+    'smaaCornerRounding',
+    e.smaaCornerRounding,
+    (v) => e.smaaCornerRounding = v,
   );
   return changed;
 }
@@ -3731,6 +3938,265 @@ final detachFromPrefab = CommandEntry(
 );
 
 // ---------------------------------------------------------------------------
+// Mesh splitting.
+// ---------------------------------------------------------------------------
+
+final splitMeshByGrid = CommandEntry(
+  name: 'splitMeshByGrid',
+  doc:
+      'Split each node\'s mesh into per-cell child meshes on a world-aligned '
+      'grid, so each piece culls and receives punctual lights independently. '
+      'Triangles bin whole by centroid (never clipped), attribute data is '
+      'copied verbatim, and children get deterministic names like '
+      '"Ground_x0_z3". The source node keeps its transform and children and '
+      'loses its mesh component.',
+  category: 'Node',
+  paramSchema: const [
+    ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
+    ParamSpec(
+      name: 'cellSize',
+      type: ParamType.number,
+      label: 'Cell size',
+      description: 'World-space grid cell size in meters.',
+    ),
+    ParamSpec(
+      name: 'axes',
+      type: ParamType.string,
+      label: 'Axes',
+      description:
+          'Grid axes, a subset of "xyz" (default "xz", the ground plane).',
+      required: false,
+      defaultValue: 'xz',
+    ),
+    ParamSpec(
+      name: 'origin',
+      type: ParamType.vec3,
+      label: 'Grid origin',
+      description:
+          'World-space grid anchor (default the world origin, which keeps '
+          'cell assignment stable across re-imports).',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final doc = ctx.document;
+    final ids = requireNodeIdList(params, 'nodeIds');
+    final cellSize = requireDouble(params, 'cellSize');
+    final axes = optionalString(params, 'axes', orElse: 'xz')!;
+    final origin = optionalVec3(params, 'origin');
+
+    final records = <ChangeRecord>[];
+    for (final id in ids) {
+      final node = _requireNode(ctx, id);
+      if (node.skin != null) {
+        throw CommandException(
+          'Node ${id.toToken()} is skinned; splitting skinned meshes is not '
+          'supported',
+        );
+      }
+      final meshIndex = node.components.indexWhere((c) => c.type == 'mesh');
+      if (meshIndex < 0) {
+        throw CommandException('Node ${id.toToken()} has no mesh component');
+      }
+      final mesh = node.components[meshIndex];
+      final geometryRef = mesh.properties['geometry'];
+      if (geometryRef is! ResourceRefValue) {
+        throw CommandException(
+          'Node ${id.toToken()}\'s mesh has no geometry reference',
+        );
+      }
+      final geometry = doc.resources[geometryRef.id];
+      if (geometry is! GeometryResource) {
+        throw CommandException(
+          'Geometry resource not found: ${geometryRef.id.toToken()}',
+        );
+      }
+      if (geometry.procedural != null) {
+        throw CommandException(
+          'Node ${id.toToken()} uses procedural geometry; only payload '
+          'geometry can be split',
+        );
+      }
+      if (geometry.morphTargets != null) {
+        throw CommandException(
+          'Node ${id.toToken()}\'s geometry has morph targets; splitting '
+          'morphed meshes is not supported',
+        );
+      }
+      if (geometry.topology != 'triangle') {
+        throw CommandException(
+          'Node ${id.toToken()}\'s geometry has topology '
+          '"${geometry.topology}"; only triangle meshes can be split',
+        );
+      }
+      final vertexPayload = doc.payloads[geometry.vertices];
+      final vertexBytes = vertexPayload?.bytes;
+      if (vertexPayload == null || vertexBytes == null) {
+        throw CommandException(
+          'Vertex payload bytes for node ${id.toToken()} are not loaded',
+        );
+      }
+      final layout = vertexPayload.layout;
+      if (layout == null || !splittableVertexLayouts.contains(layout)) {
+        throw CommandException(
+          'Vertex layout "$layout" of node ${id.toToken()} cannot be split',
+        );
+      }
+
+      List<int>? indices;
+      PayloadSpec? indexPayload;
+      if (geometry.indices != null) {
+        indexPayload = doc.payloads[geometry.indices];
+        final indexBytes = indexPayload?.bytes;
+        if (indexPayload == null || indexBytes == null) {
+          throw CommandException(
+            'Index payload bytes for node ${id.toToken()} are not loaded',
+          );
+        }
+        indices = indexPayload.format == 'uint32'
+            ? Uint32List.sublistView(indexBytes)
+            : Uint16List.sublistView(indexBytes);
+      }
+
+      // The shared splitter (package:scene) does the binning and byte work,
+      // so the importer's -split hint and this command produce identical
+      // output; this command wraps it in reversible change records.
+      final List<MeshGridCell> cells;
+      try {
+        cells = splitTriangleMeshByGrid(
+          vertexBytes: vertexBytes,
+          layout: layout,
+          indices: indices,
+          worldTransform: _worldMatrix(doc, id),
+          cellSize: cellSize,
+          axes: axes,
+          origin: origin,
+        );
+      } on ArgumentError catch (e) {
+        throw CommandException('${e.message}');
+      }
+      if (cells.length <= 1) continue;
+
+      final baseName = node.name.isEmpty ? 'Mesh' : node.name;
+      final childIds = <LocalId>[];
+      for (final cell in cells) {
+        final newVertexPayload = PayloadSpec(
+          doc.newId(),
+          encoding: PayloadEncoding.vertexBuffer,
+          layout: layout,
+          length: cell.vertexBytes.length,
+          bytes: cell.vertexBytes,
+        );
+        final newIndexPayload = PayloadSpec(
+          doc.newId(),
+          encoding: PayloadEncoding.indexBuffer,
+          format: cell.indexFormat,
+          length: cell.indexBytes.length,
+          bytes: cell.indexBytes,
+        );
+        final newGeometry = GeometryResource(
+          doc.newId(),
+          vertices: newVertexPayload.id,
+          indices: newIndexPayload.id,
+          bounds: BoundsSpec(min: cell.boundsMin, max: cell.boundsMax),
+          legacyWinding: geometry.legacyWinding,
+        );
+        final child = NodeSpec(
+          id: doc.newId(),
+          name: '${baseName}_${cell.suffix}',
+          components: [
+            ComponentSpec(
+              'mesh',
+              properties: {
+                ...mesh.properties,
+                'geometry': ResourceRefValue(newGeometry.id),
+              },
+            ),
+          ],
+        );
+        childIds.add(child.id);
+
+        records
+          ..add(
+            ChangeRecord(
+              targetId: newVertexPayload.id,
+              slot: ChangeSlot.poolPayload,
+              oldValue: const PayloadChange(null),
+              newValue: PayloadChange(newVertexPayload),
+            ),
+          )
+          ..add(
+            ChangeRecord(
+              targetId: newIndexPayload.id,
+              slot: ChangeSlot.poolPayload,
+              oldValue: const PayloadChange(null),
+              newValue: PayloadChange(newIndexPayload),
+            ),
+          )
+          ..add(_addResourceRecord(newGeometry))
+          ..add(
+            ChangeRecord(
+              targetId: child.id,
+              slot: ChangeSlot.poolNode,
+              oldValue: const NodeChange(null),
+              newValue: NodeChange(child),
+            ),
+          );
+      }
+
+      records
+        ..add(
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.components,
+            oldValue: ComponentListChange(List.of(node.components)),
+            newValue: ComponentListChange([
+              for (final c in node.components)
+                if (!identical(c, mesh)) c,
+            ]),
+          ),
+        )
+        ..add(
+          ChangeRecord(
+            targetId: id,
+            slot: ChangeSlot.children,
+            oldValue: IdListChange(List.of(node.children)),
+            newValue: IdListChange([...node.children, ...childIds]),
+          ),
+        );
+
+      // Drop the source geometry and its payloads when this mesh was their
+      // only user, so the split does not permanently double the stored bytes.
+      if (countResourceReferences(doc, geometry.id) == 1) {
+        records.add(
+          ChangeRecord(
+            targetId: geometry.id,
+            slot: ChangeSlot.poolResource,
+            oldValue: ResourceChange(geometry),
+            newValue: const ResourceChange(null),
+          ),
+        );
+        for (final payload in [vertexPayload, indexPayload]) {
+          if (payload == null) continue;
+          if (isPayloadReferenced(doc, payload.id, excluding: geometry.id)) {
+            continue;
+          }
+          records.add(
+            ChangeRecord(
+              targetId: payload.id,
+              slot: ChangeSlot.poolPayload,
+              oldValue: PayloadChange(payload),
+              newValue: const PayloadChange(null),
+            ),
+          );
+        }
+      }
+    }
+    return Transaction(name: 'Split mesh by grid', records: records);
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Registration.
 // ---------------------------------------------------------------------------
 
@@ -3745,14 +4211,17 @@ void registerBuiltinCommands(CommandRegistry registry) {
 final List<CommandEntry> builtinCommands = [
   setNodeName,
   setNodeVisible,
+  setNodeShadowCasting,
   setNodeLayers,
   setNodeTransform,
   createNode,
   deleteNode,
   deleteNodes,
   reparentNode,
+  reparentNodes,
   duplicateNodes,
   pasteNodes,
+  splitMeshByGrid,
   addComponent,
   removeComponent,
   setComponentProperties,

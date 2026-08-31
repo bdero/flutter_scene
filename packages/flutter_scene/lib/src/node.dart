@@ -8,9 +8,9 @@ import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/instanced_mesh_component.dart';
 import 'package:flutter_scene/src/components/mesh_component.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
-import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
@@ -122,6 +122,7 @@ base class Node implements SceneGraph {
   /// inherited by children.
   int layers = kRenderLayerDefault;
 
+  // TODO(fscene): serialize this mask (NodeSpec field + json + diff).
   /// The light channels this node's meshes occupy, an 8-bit bitmask. A light
   /// reaches them only when its own channel mask intersects this one
   /// (`light.channelMask & lightChannelMask != 0`), so a light can be aimed at
@@ -150,21 +151,26 @@ base class Node implements SceneGraph {
   /// camera-dependent displacement.
   bool shadowStatic = false;
 
-  /// How this node's meshes take part in shadow casting. Defaults to
-  /// [ShadowCastingMode.on].
+  /// How this node's meshes cast shadows. Defaults to [ShadowCastingMode.on].
   ///
-  /// This does not affect whether the meshes *receive* shadows, and the value
-  /// is not inherited by children.
+  /// [ShadowCastingMode.off] excludes them from every shadow map (they still
+  /// draw); [ShadowCastingMode.shadowsOnly] does the reverse, casting while
+  /// staying out of the color image. This does not affect whether the meshes
+  /// receive shadows. Ands with each `MeshPrimitive.castsShadow`, and is not
+  /// inherited by children; set it on each mesh-bearing node.
+  /// {@category Scene graph}
   ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
 
-  /// A two-state view of [shadowCastingMode]: reading says whether it casts
-  /// at all, writing picks [ShadowCastingMode.on] or [ShadowCastingMode.off].
+  /// Whether this node's meshes cast shadows.
   ///
-  /// Kept because it is what every caller before the mode existed says, and
-  /// because "does this cast" remains the common question. Set the mode
-  /// directly to reach the other two.
-  bool get castsShadows => shadowCastingMode.casts;
+  /// A two-state view of [shadowCastingMode]: reading reports whether the
+  /// mode casts at all, and writing selects [ShadowCastingMode.on] or
+  /// [ShadowCastingMode.off]. Prefer setting the mode directly, which also
+  /// reaches the double-sided and shadows-only cases.
+  @Deprecated('Use shadowCastingMode instead.')
+  bool get castsShadows => shadowCastingMode != ShadowCastingMode.off;
 
+  @Deprecated('Use shadowCastingMode instead.')
   set castsShadows(bool value) =>
       shadowCastingMode = value ? ShadowCastingMode.on : ShadowCastingMode.off;
 
@@ -173,6 +179,7 @@ base class Node implements SceneGraph {
   /// Disable for geometry that renders but should be transparent to rays
   /// (effects, decals); it then neither blocks nor receives picks. Distinct
   /// from [visible]: invisible nodes are already skipped by default.
+  // TODO(fscene): serialize this flag (NodeSpec field + json + diff).
   bool raycastable = true;
 
   Matrix4 _localTransform;

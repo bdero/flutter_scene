@@ -178,6 +178,11 @@ void main() {
           depthOfFieldQuality: 'high',
           autoExposureEnabled: true,
           autoExposureCompensation: 1.5,
+          temporalAntiAliasingSharpness: 0.4,
+          temporalAntiAliasingJitterSequenceLength: 8,
+          smaaThreshold: 0.05,
+          smaaMaxSearchSteps: 32,
+          smaaCornerRounding: 60.0,
         ),
       ),
     );
@@ -211,6 +216,11 @@ void main() {
     expect(effects.depthOfFieldQuality, 'high');
     expect(effects.autoExposureEnabled, isTrue);
     expect(effects.autoExposureCompensation, 1.5);
+    expect(effects.temporalAntiAliasingSharpness, 0.4);
+    expect(effects.temporalAntiAliasingJitterSequenceLength, 8);
+    expect(effects.smaaThreshold, 0.05);
+    expect(effects.smaaMaxSearchSteps, 32);
+    expect(effects.smaaCornerRounding, 60.0);
   });
 
   test('environment effect override presence round-trips', () {

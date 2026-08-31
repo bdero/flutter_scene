@@ -162,11 +162,10 @@ class Collider extends Component implements PendingPhysicsRegistration {
           ? 'an unnamed node'
           : 'node "${node.name}"';
       throw UnsupportedError(
-        '${world.backendName} rejected the ${_shape.runtimeType} on $where, so '
-        'the collider holds no shape and would collide with nothing. The '
-        'backend rejects degenerate geometry: a triangle mesh with no '
-        'triangles or fewer than three distinct vertices, or a convex hull '
-        'whose points are all collinear or coplanar.',
+        '${world.backendName} built no shape for the ${_shape.runtimeType} on '
+        '$where, so the collider would collide with nothing. Causes are a '
+        'triangle mesh with no triangles, a convex hull whose points are all '
+        'collinear or coplanar, and a compound shape with no children.',
       );
     }
     _handles.addAll(created);

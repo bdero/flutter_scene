@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/animation.dart' as engine;
 
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
@@ -33,6 +34,17 @@ void applyTransformSpec(Node node, TransformSpec spec) {
       node.localTransform = matrix.clone();
   }
 }
+
+/// The [ShadowCastingMode] a document's `shadowCastingMode` name realizes to.
+///
+/// An unknown or absent name resolves to [ShadowCastingMode.on], so a
+/// document written by a newer engine still loads.
+/// {@category Assets and loading}
+ShadowCastingMode shadowCastingModeFromName(String name) =>
+    ShadowCastingMode.values.firstWhere(
+      (mode) => mode.name == name,
+      orElse: () => ShadowCastingMode.on,
+    );
 
 FsceneComponentRegistry? _defaultRegistry;
 
@@ -125,7 +137,8 @@ Node _realizeWith(
         ..layers = spec.layers
         ..lightChannelMask = spec.lightChannelMask
         ..visible = spec.visible
-        ..raycastable = spec.raycastable,
+        ..raycastable = spec.raycastable
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode),
       spec.id,
     );
     applyTransformSpec(node, spec.transform);
@@ -276,6 +289,7 @@ NodeSpec _serializeNode(
     instance: lazyInstance,
     visible: node.visible,
     raycastable: node.raycastable,
+    shadowCastingMode: node.shadowCastingMode.name,
   );
   document.addNode(spec);
 

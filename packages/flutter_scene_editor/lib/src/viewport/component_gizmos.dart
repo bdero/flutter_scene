@@ -23,11 +23,68 @@ import 'package:vector_math/vector_math.dart' as vm;
 import '../controller/editor_controller.dart';
 import 'transform_gizmo.dart' show projectToScreen;
 
+/// The probes of [grid] within [maxDistance] of [eye], at most [limit] of
+/// them, nearest first.
+///
+/// Bounding by distance (not by probe count) is what keeps a large field
+/// legible; [limit] is only a backstop so a huge or badly configured field
+/// degrades to a partial picture instead of stalling the paint. Nearest-first
+/// ordering means a truncated draw keeps the probes the viewer is looking at.
+@visibleForTesting
+List<vm.Vector3> probesWithinDistance(
+  IrradianceProbeGrid grid,
+  vm.Vector3 eye,
+  double maxDistance, {
+  required int limit,
+}) {
+  final countX = grid.counts.x.round();
+  final countY = grid.counts.y.round();
+  final countZ = grid.counts.z.round();
+  if (countX <= 0 || countY <= 0 || countZ <= 0 || maxDistance <= 0) {
+    return const [];
+  }
+  final maxDistanceSq = maxDistance * maxDistance;
+  final found = <(double, vm.Vector3)>[];
+  for (var z = 0; z < countZ; z++) {
+    for (var y = 0; y < countY; y++) {
+      for (var x = 0; x < countX; x++) {
+        final position = grid.probePosition(x, y, z);
+        final distanceSq = position.distanceToSquared(eye);
+        if (distanceSq > maxDistanceSq) continue;
+        found.add((distanceSq, position));
+      }
+    }
+  }
+  if (found.length > limit) {
+    found.sort((a, b) => a.$1.compareTo(b.$1));
+    found.length = limit;
+  }
+  return [for (final entry in found) entry.$2];
+}
+
 /// The selection accent, matching the engine-side outline highlight color.
 const Color _accentColor = Color(0xFFFF8C1A);
 
 /// The muted default gizmo color.
 const Color _baseColor = Color(0xCCB9C4CE);
+
+/// Warning tint for unbounded reach (a light with no range defeats light
+/// culling, so its representative sphere/cone draws loud instead of hiding).
+const Color _unboundedWarningColor = Color(0xFFE6B84D);
+
+/// Marker for a light whose authored shadow has no atlas slot. A fixed hue
+/// with a dark surround, since it must read against any authored light colour.
+const Color _shadowDroppedColor = Color(0xFFFF6B4A);
+const double _shadowDroppedMarkerRadius = 2.5;
+
+/// Irradiance probe markers: a cool tint that reads as engine data rather
+/// than authored geometry, drawn small so a dense lattice stays legible.
+const Color _probeColor = Color(0xAA6FD3C7);
+const double _probeRadius = 2.0;
+const double _probeWidth = 1.0;
+
+/// Hard backstop on probes drawn per paint, independent of the draw distance.
+const int _maxProbeDraws = 4000;
 
 /// Screen size (pixels) one world unit of decorative gizmo geometry (arrows,
 /// literal line art) targets, before the primitive's own scalar applies.
@@ -67,6 +124,29 @@ class GizmoPreferences extends ChangeNotifier {
   /// Whether gizmos for [type] currently draw.
   bool isTypeVisible(String type) => _enabled && !_hiddenTypes.contains(type);
 
+  bool _showGiProbes = false;
+  double _giProbeDrawDistance = 30.0;
+
+  /// Whether the global-illumination probe lattice draws in the viewport.
+  /// Off by default: a field can hold thousands of probes, so this is a
+  /// deliberate authoring aid rather than ambient chrome.
+  bool get showGiProbes => _showGiProbes;
+  set showGiProbes(bool value) {
+    if (_showGiProbes == value) return;
+    _showGiProbes = value;
+    notifyListeners();
+  }
+
+  /// How far from the camera probes still draw, in world units. Bounding the
+  /// draw radius (rather than the probe count) is what keeps a large field
+  /// legible and cheap to paint.
+  double get giProbeDrawDistance => _giProbeDrawDistance;
+  set giProbeDrawDistance(double value) {
+    if (_giProbeDrawDistance == value) return;
+    _giProbeDrawDistance = value;
+    notifyListeners();
+  }
+
   void setTypeHidden(String type, bool hidden) {
     final changed = hidden ? _hiddenTypes.add(type) : _hiddenTypes.remove(type);
     if (changed) notifyListeners();
@@ -77,7 +157,9 @@ class GizmoPreferences extends ChangeNotifier {
     required bool enabled,
     required Iterable<String> hiddenTypes,
     double renderScale = 1.0,
+    bool showGiProbes = false,
   }) {
+    _showGiProbes = showGiProbes;
     _enabled = enabled;
     _viewportRenderScale = renderScale.clamp(0.25, 1.0);
     _hiddenTypes
@@ -256,7 +338,8 @@ class ComponentGizmoPainter extends CustomPainter {
   // filled arrow heads per color, icons deferred to draw above the wires.
   final Map<(int, double), Path> _strokes = {};
   final Map<int, Path> _fills = {};
-  final List<(GizmoIcon, ComponentCodec, Offset, Color, bool)> _icons = [];
+  final List<(GizmoIcon, ComponentCodec, Offset, Color, bool, bool)> _icons =
+      [];
 
   static const double _wireWidth = 1.5;
   static const double _arrowWidth = 2.0;
@@ -275,6 +358,7 @@ class ComponentGizmoPainter extends CustomPainter {
     // environment refs) into a throwaway document, discarded per paint.
     _scratch = SerializeContext(doc.SceneDocument());
     _visit(controller.scene.root);
+    if (preferences.showGiProbes) _paintIrradianceProbes();
     for (final entry in _strokes.entries) {
       canvas.drawPath(
         entry.value,
@@ -288,9 +372,53 @@ class ComponentGizmoPainter extends CustomPainter {
     for (final entry in _fills.entries) {
       canvas.drawPath(entry.value, Paint()..color = Color(entry.key));
     }
-    for (final (primitive, codec, center, color, selected) in _icons) {
-      _paintIcon(primitive, codec, center, color, selected);
+    for (final (primitive, codec, center, color, selected, dropped) in _icons) {
+      _paintIcon(primitive, codec, center, color, selected, dropped);
     }
+  }
+
+  /// Draws the live irradiance probe lattice as small screen-space rings.
+  ///
+  /// Reads the grid the renderer actually resolved this frame
+  /// (`Scene.globalIlluminationProbeGrid`) rather than re-deriving it from the
+  /// settings, since the placement depends on the volume mode, the camera, and
+  /// the scene bounds. Probes past the draw distance are skipped, and the
+  /// whole pass gives up past [_maxProbeDraws] so a huge field degrades to a
+  /// partial picture instead of stalling the paint.
+  void _paintIrradianceProbes() {
+    final grid = controller.scene.globalIlluminationProbeGrid;
+    if (grid == null) return;
+    final probes = probesWithinDistance(
+      grid,
+      camera.position,
+      preferences.giProbeDrawDistance,
+      limit: _maxProbeDraws,
+    );
+    for (final position in probes) {
+      final screen = projectToScreen(position, camera, _size);
+      if (screen == null) continue;
+      if (screen.dx < 0 ||
+          screen.dy < 0 ||
+          screen.dx > _size.width ||
+          screen.dy > _size.height) {
+        continue;
+      }
+      (_strokes[(_probeColor.toARGB32(), _probeWidth)] ??= Path()).addOval(
+        Rect.fromCircle(center: screen, radius: _probeRadius),
+      );
+    }
+  }
+
+  /// Whether [component] is a light whose authored shadow is not being drawn,
+  /// because the shared shadow atlas ran out of slots for its light type.
+  bool _shadowRequestedButDropped(Component component) {
+    final casts = switch (component) {
+      SpotLightComponent(:final light) => light.castsShadow,
+      PointLightComponent(:final light) => light.castsShadow,
+      _ => false,
+    };
+    if (!casts) return false;
+    return !controller.scene.isShadowCasterGranted(component);
   }
 
   void _addStroke(Offset a, Offset b, Color color, double width) {
@@ -337,6 +465,11 @@ class ComponentGizmoPainter extends CustomPainter {
       for (var axis = 0; axis < 3; axis++) _normalizedAxis(transform, axis),
     ];
 
+    // A light asking for a shadow the atlas had no slot for draws its icon in
+    // the warning tint, so the specific lights over budget are identifiable in
+    // place rather than only as a count.
+    final shadowDropped = _shadowRequestedButDropped(component);
+
     final segments = <(Offset, Offset)>[];
     for (final primitive in gizmo.primitives) {
       if (primitive.visibility == GizmoVisibility.selected && !selected) {
@@ -348,7 +481,14 @@ class ComponentGizmoPainter extends CustomPainter {
       switch (primitive) {
         case GizmoIcon():
           if (originScreen != null && sourceId != null) {
-            _icons.add((primitive, codec, originScreen, color, selected));
+            _icons.add((
+              primitive,
+              codec,
+              originScreen,
+              color,
+              selected,
+              shadowDropped,
+            ));
             hits.addDisc(sourceId, originScreen, primitive.size / 2, depth);
           }
         case GizmoArrow():
@@ -391,11 +531,20 @@ class ComponentGizmoPainter extends CustomPainter {
             _strokeWorldSegment(a, b, color, segments);
           }
         case GizmoWireSphere():
-          final radius = _inflated(
+          var radius = _inflated(
             snapshot.scalar(primitive.radius),
             snapshot.scalar(primitive.inflate),
           );
-          if (radius == null || radius <= 0) break;
+          if (radius == null) break;
+          // A bound radius of zero means unbounded reach (an unranged light);
+          // draw a representative sphere in the warning tint so infinite
+          // influence is loud instead of invisible.
+          var sphereColor = color;
+          if (radius <= 0) {
+            if (primitive.radius.bind == null) break;
+            radius = decorativeScale * 3;
+            sphereColor = _unboundedWarningColor;
+          }
           final center = _listVector(primitive.center);
           for (var axis = 0; axis < 3; axis++) {
             final (u, v) = _axisPlane(axis);
@@ -405,7 +554,7 @@ class ComponentGizmoPainter extends CustomPainter {
               u,
               v,
               radius,
-              color,
+              sphereColor,
               segments,
             );
           }
@@ -462,8 +611,13 @@ class ComponentGizmoPainter extends CustomPainter {
           final angle = snapshot.scalar(primitive.angle);
           var range = snapshot.scalar(primitive.range);
           if (angle == null || range == null) break;
-          // Unranged (infinite) cones draw a representative reach.
-          if (range <= 0) range = decorativeScale * 3;
+          // Unranged (infinite) cones draw a representative reach in the
+          // warning tint; no range means light culling cannot bound them.
+          var coneColor = color;
+          if (range <= 0) {
+            range = decorativeScale * 3;
+            coneColor = _unboundedWarningColor;
+          }
           var axis = _listVector(primitive.axis);
           if (primitive.axisBind != null) {
             axis = snapshot.vector(primitive.axisBind!) ?? axis;
@@ -473,12 +627,20 @@ class ComponentGizmoPainter extends CustomPainter {
           final (u, v) = _perpendicular(axis);
           final radius = math.tan(angle.clamp(0, math.pi / 2 - 0.01)) * range;
           final base = axis * range;
-          _strokeLocalCircle(transform, base, u, v, radius, color, segments);
+          _strokeLocalCircle(
+            transform,
+            base,
+            u,
+            v,
+            radius,
+            coneColor,
+            segments,
+          );
           for (final spoke in [u, -u, v, -v]) {
             _strokeWorldSegment(
               transform.transformed3(vm.Vector3.zero()),
               transform.transformed3(base + spoke * radius),
-              color,
+              coneColor,
               segments,
             );
           }
@@ -569,6 +731,7 @@ class ComponentGizmoPainter extends CustomPainter {
     Offset center,
     Color color,
     bool selected,
+    bool shadowDropped,
   ) {
     final size = primitive.size;
     _canvas.drawCircle(
@@ -614,6 +777,23 @@ class ComponentGizmoPainter extends CustomPainter {
       _canvas,
       center - Offset(painter.width / 2, painter.height / 2),
     );
+    // A light whose authored shadow got no atlas slot carries a small marker
+    // at the icon's upper right. Drawn as a separate dot rather than a tint,
+    // because an icon's colour is bound to the light's own colour and a warm
+    // light is indistinguishable from any warning tint.
+    if (shadowDropped) {
+      final corner = center + Offset(size * 0.34, -size * 0.34);
+      _canvas.drawCircle(
+        corner,
+        _shadowDroppedMarkerRadius + 1,
+        Paint()..color = Colors.black.withValues(alpha: 0.6),
+      );
+      _canvas.drawCircle(
+        corner,
+        _shadowDroppedMarkerRadius,
+        Paint()..color = _shadowDroppedColor,
+      );
+    }
   }
 
   void _drawArrow(

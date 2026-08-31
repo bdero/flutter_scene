@@ -177,7 +177,12 @@ class EditorController extends ChangeNotifier {
     _ensureStageEnvironment(session.document);
     final controller = EditorController._(
       session,
-      Scene(),
+      // The env var forces the per-object light path, for A/B diagnosing
+      // clustered-lighting artifacts without a rebuild.
+      Scene()
+        ..punctualLightClustering =
+            Platform.environment['FLUTTER_SCENE_EDITOR_NO_LIGHT_CLUSTERING'] !=
+            '1',
       baseDirectory,
       componentRegistry ?? defaultComponentRegistry(),
     );
@@ -194,12 +199,22 @@ class EditorController extends ChangeNotifier {
         controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
-    // Open on the scene's first node rather than on nothing. The inspector's
-    // empty state is the one screen in the editor that answers no question
-    // anybody asked, and a scene has something in it to look at from the
-    // moment it is created. Selected after the listener is attached, so the
-    // node opens carrying its highlight rather than waiting for the next
-    // selection change to notice it.
+    // Restore the document's carried editor state. The selection applies
+    // here; the shell reads [restoredEditorState] for the camera pose.
+    final editorState = session.document.editor;
+    if (editorState != null) {
+      controller.restoredEditorState = editorState;
+      final valid = editorState.selection
+          .where(session.document.nodes.containsKey)
+          .toList();
+      if (valid.isNotEmpty) session.selection.set(valid);
+    }
+    // Failing that, open on the scene's first node rather than on nothing. The
+    // inspector's empty state is the one screen in the editor that answers no
+    // question anybody asked, and a scene has something in it to look at from
+    // the moment it is created. After the listener is attached, so the node
+    // opens carrying its highlight rather than waiting for the next selection
+    // change to notice it.
     final roots = controller.displayDocument.roots;
     if (session.selection.isEmpty && roots.isNotEmpty) {
       session.selection.selectOnly(roots.first);
@@ -338,6 +353,26 @@ class EditorController extends ChangeNotifier {
 
   /// The current selection.
   Selection get selection => session.selection;
+
+  /// The outliner listens here; setting a node id asks it to expand the
+  /// node's ancestors and scroll the row into view.
+  final ValueNotifier<LocalId?> outlinerReveal = ValueNotifier(null);
+
+  /// Builds the editor-state block a save writes into the document (camera
+  /// pose plus selection). The app shell provides it; null saves whatever
+  /// the document already carries.
+  EditorStateSpec Function()? editorStateProvider;
+
+  /// The editor state the opened document carried, for the shell to restore
+  /// the viewport camera once it is up. Selection restores at open.
+  EditorStateSpec? restoredEditorState;
+
+  /// Asks the outliner to reveal [id] (expand ancestors, scroll to the row).
+  void revealInOutliner(LocalId id) {
+    // Re-notify even for a repeated id, a second create lands on a fresh row.
+    outlinerReveal.value = null;
+    outlinerReveal.value = id;
+  }
 
   /// Read-only scene-graph queries.
   SceneQuery get query => session.query;
@@ -610,6 +645,9 @@ class EditorController extends ChangeNotifier {
     session.commitExternal(
       Transaction(name: 'Import glTF', records: graft.records),
     );
+    if (graft.records.any((r) => r.slot == ChangeSlot.poolPayload)) {
+      payloadsDirty = true;
+    }
     await _realizeAll();
     if (graft.rootIds.isNotEmpty) {
       selection.selectOnly(graft.rootIds.first);
@@ -789,12 +827,24 @@ class EditorController extends ChangeNotifier {
     LocalId dragged,
     LocalId? parent,
     int index,
+  ) => reparentGroupToContainer([dragged], parent, index);
+
+  /// Reparents every node in [ids] into [parent] (the root list when null)
+  /// at [index], as one undoable edit. Used by a multi-selection drag; ids
+  /// nested under other moved ids and moves that would create a cycle are
+  /// skipped by the command.
+  Future<void> reparentGroupToContainer(
+    List<LocalId> ids,
+    LocalId? parent,
+    int? index,
   ) async {
-    await _detachIfAttached(dragged);
-    await run('reparentNode', {
-      'nodeId': dragged.toToken(),
+    for (final id in ids) {
+      await _detachIfAttached(id);
+    }
+    await run('reparentNodes', {
+      'nodeIds': [for (final id in ids) id.toToken()],
       if (parent != null) 'newParentId': parent.toToken(),
-      'index': index,
+      if (index != null) 'index': index,
     });
   }
 
@@ -865,6 +915,16 @@ class EditorController extends ChangeNotifier {
     return run('setNodeVisible', {'nodeId': id.toToken(), 'visible': visible});
   }
 
+  /// Sets how node [id]'s meshes cast shadows (an override when [id] is
+  /// prefab content).
+  Future<void> setNodeShadowCastingRouted(LocalId id, String mode) {
+    if (!isEditableNode(id)) return Future.value();
+    if (isPrefabMember(id)) {
+      return _override(memberOrigin(id)!, 'shadowCasting', mode);
+    }
+    return run('setNodeShadowCasting', {'nodeId': id.toToken(), 'mode': mode});
+  }
+
   /// Sets node [id]'s transform (overrides per supplied component when [id] is
   /// prefab content).
   Future<void> setNodeTransformRouted(
@@ -916,6 +976,102 @@ class EditorController extends ChangeNotifier {
     });
   }
 
+  /// Commits several nodes' local transforms as one undoable edit (a
+  /// multi-selection drag). Ids with no source node (prefab members) are
+  /// skipped; route those through [setNodeTransformRouted] individually.
+  Future<void> setNodeTransformsBatch(
+    Map<LocalId, TrsTransform> transforms, {
+    String name = 'Set transforms',
+  }) async {
+    final records = <ChangeRecord>[];
+    for (final entry in transforms.entries) {
+      final node = document.nodes[entry.key];
+      if (node == null) continue;
+      records.add(
+        ChangeRecord(
+          targetId: entry.key,
+          slot: ChangeSlot.transform,
+          oldValue: TransformChange(node.transform),
+          newValue: TransformChange(entry.value),
+        ),
+      );
+    }
+    if (records.isEmpty) return;
+    final transaction = Transaction(name: name, records: records);
+    session.applyTransient(transaction);
+    session.commitExternal(transaction);
+    await _reflect(transaction);
+    notifyListeners();
+  }
+
+  /// Merges [raw] into component [type] on every node in [ids], as one
+  /// undoable edit. Ids inside prefab content route through the override
+  /// path individually (their state lives on the instance, not the node).
+  Future<void> setComponentPropertiesOnNodes(
+    Iterable<LocalId> ids,
+    String type,
+    Map<String, Object?> raw,
+  ) => setComponentPropertiesPerNode({for (final id in ids) id: raw}, type);
+
+  /// Like [setComponentPropertiesOnNodes], with per-node property maps (a
+  /// multi-selection edit of one axis keeps each node's other axes).
+  Future<void> setComponentPropertiesPerNode(
+    Map<LocalId, Map<String, Object?>> byNode,
+    String type,
+  ) async {
+    final records = <ChangeRecord>[];
+    for (final entry in byNode.entries) {
+      final id = entry.key;
+      final raw = entry.value;
+      if (!isEditableNode(id)) continue;
+      if (memberOrigin(id) != null) {
+        for (final property in raw.entries) {
+          await setComponentPropertyRouted(
+            id,
+            type,
+            property.key,
+            property.value!,
+          );
+        }
+        continue;
+      }
+      final node = document.nodes[id];
+      final existing = node?.components
+          .where((c) => c.type == type)
+          .firstOrNull;
+      if (node == null || existing == null) continue;
+      final coerced = optionalPropertyMap(
+        {'properties': raw},
+        'properties',
+        schema: componentSchemaFor(type),
+      );
+      final merged = ComponentSpec(
+        type,
+        properties: {...existing.properties, ...coerced},
+      );
+      records.add(
+        ChangeRecord(
+          targetId: id,
+          slot: ChangeSlot.components,
+          oldValue: ComponentListChange(List.of(node.components)),
+          newValue: ComponentListChange([
+            for (final component in node.components)
+              if (component.type == type) merged else component,
+          ]),
+        ),
+      );
+    }
+    if (records.isEmpty) return;
+    final transaction = Transaction(
+      name: 'Set component properties ($type)',
+      records: records,
+    );
+    session.applyTransient(transaction);
+    session.commitExternal(transaction);
+    await _reflect(transaction);
+    notifyListeners();
+  }
+
   Future<void> _override(
     PrefabMemberOrigin origin,
     String path,
@@ -927,13 +1083,25 @@ class EditorController extends ChangeNotifier {
     'value': value,
   });
 
+  /// Authoring defaults seeded onto components the editor creates, where the
+  /// schema default is a trap. Lights default to `range = 0` (infinite reach),
+  /// which defeats light culling; an editor-created light starts bounded and
+  /// the author widens it deliberately.
+  static const Map<String, Map<String, Object?>> _creationDefaults = {
+    'pointLight': {'range': 10.0},
+    'spotLight': {'range': 10.0},
+    'rectAreaLight': {'range': 8.0},
+  };
+
   /// Adds component [type] to node [id], routed: a source-document node gets
   /// a plain component; a prefab member records it on the enclosing instance.
   Future<void> addComponentRouted(LocalId id, String type) {
+    final defaults = _creationDefaults[type];
     if (document.nodes.containsKey(id)) {
       return run('addComponent', {
         'nodeId': id.toToken(),
         'componentType': type,
+        if (defaults != null) 'properties': defaults,
       });
     }
     final origin = memberOrigin(id);
@@ -942,6 +1110,7 @@ class EditorController extends ChangeNotifier {
       'nodeId': origin.instanceId.toToken(),
       'memberId': origin.prefabLocalId.toToken(),
       'componentType': type,
+      if (defaults != null) 'properties': defaults,
     });
   }
 
@@ -1007,6 +1176,31 @@ class EditorController extends ChangeNotifier {
   void previewLocalTransform(LocalId id, Matrix4 localTransform) {
     _liveById[id]?.localTransform = localTransform;
     previewEpoch.value++;
+  }
+
+  /// Live-previews one component property on node [id] without touching the
+  /// document or history, so a slider/color drag (a light's color or
+  /// intensity, say) updates the viewport continuously. The final value is
+  /// committed once with `setComponentPropertyRouted` on release.
+  void previewComponentProperty(
+    LocalId id,
+    String componentType,
+    String name,
+    PropertyValue value,
+  ) {
+    final live = _liveById[id];
+    final realizer = _resourceRealizer;
+    if (live == null || realizer == null) return;
+    final codec = _componentRegistry.codecFor(componentType);
+    if (codec == null) return;
+    final context = RealizeContext(document, resources: realizer)
+      ..resolveNode = (nodeId) => _liveById[nodeId];
+    for (final component in live.getComponents<Component>()) {
+      if (codec.writeLiveProperty(component, name, value, context)) {
+        previewEpoch.value++;
+        return;
+      }
+    }
   }
 
   /// Live-previews a material factor on node [id]'s realized mesh without
@@ -1313,11 +1507,21 @@ class EditorController extends ChangeNotifier {
     ChangeSlot.transform,
     ChangeSlot.visible,
     ChangeSlot.layers,
+    ChangeSlot.shadowCastingMode,
     ChangeSlot.name,
   };
 
+  /// Whether any committed, undone, or redone transaction has touched the
+  /// payload pool since the last save. When set, a save must rewrite the
+  /// payload sidecar or the new bytes are lost on reopen (the lean `.fscene`
+  /// text carries only descriptors). Cleared by the save path.
+  bool payloadsDirty = false;
+
   Future<void> _reflect(Transaction transaction) async {
     if (transaction.isEmpty) return;
+    if (transaction.records.any((r) => r.slot == ChangeSlot.poolPayload)) {
+      payloadsDirty = true;
+    }
     // A stage-only edit just re-applies scene-wide settings; no re-realize.
     if (transaction.records.every((r) => r.slot == ChangeSlot.stage)) {
       await realizeStage(
@@ -1376,12 +1580,14 @@ class EditorController extends ChangeNotifier {
       return;
     }
     if (_reflectRemovedNodes(transaction)) return;
+    if (_reflectRestoredNodes(transaction)) return;
     if (_reflectAddedNode(transaction)) return;
     if (_reflectComponents(transaction)) return;
     if (transaction.records.every((r) => r.slot == ChangeSlot.instance) &&
         _reflectInstanceDelta(transaction)) {
       return;
     }
+    if (_reflectReparentedNodes(transaction)) return;
     final cheap = transaction.records.every(
       (r) => _cheapSlots.contains(r.slot),
     );
@@ -1530,7 +1736,8 @@ class EditorController extends ChangeNotifier {
     final live = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..visible = spec.visible,
+        ..visible = spec.visible
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode),
       id,
     );
     applyTransformSpec(live, spec.transform);
@@ -1573,6 +1780,189 @@ class EditorController extends ChangeNotifier {
     for (final entry in removed.entries) {
       _liveById.remove(entry.key);
       _sourceIdByLive.remove(entry.value);
+    }
+    return true;
+  }
+
+  // Rebuilds live nodes for a structural restoration (undoing a delete).
+  // Such a transaction touches no resources, so the retained realizer serves
+  // the subtree realize and nothing else rebuilds; without this, undoing a
+  // delete re-realized the whole scene (seconds in a large document).
+  bool _reflectRestoredNodes(Transaction transaction) {
+    final realizer = _resourceRealizer;
+    if (_composed != null || _realizedRoot == null || realizer == null) {
+      return false;
+    }
+    // Skins bind only during a full realize, so a skinned document takes the
+    // slow path.
+    if (document.skins.isNotEmpty) return false;
+    if (transaction.records.any(
+      (record) =>
+          record.slot != ChangeSlot.poolNode &&
+          record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots,
+    )) {
+      return false;
+    }
+    final restored = <LocalId, NodeSpec>{};
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.poolNode) continue;
+      final spec = document.nodes[record.targetId];
+      if (spec == null || _liveById.containsKey(record.targetId)) continue;
+      restored[record.targetId] = spec;
+    }
+    if (restored.isEmpty) return false;
+    for (final spec in restored.values) {
+      if (spec.skin != null || spec.instance != null) return false;
+    }
+    // Animation channels bind their target nodes at full realize, so a
+    // restored node that an animation drives would come back unbound; only
+    // such documents take the slow path.
+    if (document.animations.isNotEmpty) {
+      final restoredNames = restored.values.map((s) => s.name).toSet();
+      for (final animation in document.animations.values) {
+        for (final channel in animation.channels) {
+          if (restored.containsKey(channel.target) ||
+              restoredNames.contains(channel.targetName)) {
+            return false;
+          }
+        }
+      }
+    }
+    // Build the whole restored forest detached, so any bail below leaves the
+    // live graph untouched and the full realize can take over.
+    final nodes = <LocalId, Node>{};
+    final context = RealizeContext(document, resources: realizer)
+      ..resolveNode = (id) => nodes[id] ?? _liveById[id];
+    for (final spec in restored.values) {
+      final node = tagNodeId(
+        Node(name: spec.name)
+          ..layers = spec.layers
+          ..visible = spec.visible
+          ..shadowCastingMode = shadowCastingModeFromName(
+            spec.shadowCastingMode,
+          ),
+        spec.id,
+      );
+      applyTransformSpec(node, spec.transform);
+      nodes[spec.id] = node;
+    }
+    for (final spec in restored.values) {
+      final node = nodes[spec.id]!;
+      for (final childId in spec.children) {
+        final child = nodes[childId];
+        // A delete captures its entire subtree, so every child of a restored
+        // node is restored with it; anything else is a shape this path does
+        // not understand.
+        if (child == null) return false;
+        node.add(child);
+      }
+      for (final componentSpec in spec.components) {
+        final component = _componentRegistry.realize(componentSpec, context);
+        if (component == null) return false;
+        node.addComponent(component);
+      }
+    }
+    context.runAfterRealize();
+    // Attach each restored top-level subtree under its live parent (or the
+    // realized root for document roots). Live child order may differ from the
+    // document's; the outliner and serialization read the document, and draw
+    // order does not depend on sibling order.
+    final topLevel = restored.keys.where((id) {
+      for (final other in restored.values) {
+        if (other.children.contains(id)) return false;
+      }
+      return true;
+    });
+    final attachments = <(Node, Node)>[];
+    for (final id in topLevel) {
+      Node? parent;
+      if (document.roots.contains(id)) {
+        parent = _realizedRoot;
+      } else {
+        for (final entry in document.nodes.entries) {
+          if (entry.value.children.contains(id)) {
+            parent = _liveById[entry.key];
+            break;
+          }
+        }
+      }
+      if (parent == null) return false;
+      attachments.add((parent, nodes[id]!));
+    }
+    for (final (parent, node) in attachments) {
+      parent.add(node);
+    }
+    for (final entry in nodes.entries) {
+      _liveById[entry.key] = entry.value;
+      _sourceIdByLive[entry.value] = entry.key;
+    }
+    _syncHighlights();
+    return true;
+  }
+
+  // Moves live nodes for a reparent or reorder (children/roots list records,
+  // plus the world-preserving transform records that ride along), so an
+  // outliner drag does not re-realize the scene.
+  bool _reflectReparentedNodes(Transaction transaction) {
+    if (_composed != null || _realizedRoot == null) return false;
+    if (transaction.records.any(
+      (record) =>
+          record.slot != ChangeSlot.children &&
+          record.slot != ChangeSlot.roots &&
+          record.slot != ChangeSlot.transform,
+    )) {
+      return false;
+    }
+    final containers = [
+      for (final record in transaction.records)
+        if (record.slot != ChangeSlot.transform) record,
+    ];
+    if (containers.isEmpty) return false;
+    // A list change that adds or removes nodes is structural (delete,
+    // restore, graft), not a reparent; every mentioned id must be a live
+    // document node already.
+    for (final record in containers) {
+      for (final change in [record.oldValue, record.newValue]) {
+        if (change is! IdListChange) return false;
+        for (final id in change.value) {
+          if (!document.nodes.containsKey(id) || !_liveById.containsKey(id)) {
+            return false;
+          }
+        }
+      }
+      if (record.slot == ChangeSlot.children &&
+          (!document.nodes.containsKey(record.targetId) ||
+              !_liveById.containsKey(record.targetId))) {
+        return false;
+      }
+    }
+    // Reattach any node whose live parent no longer matches the document.
+    for (final record in containers) {
+      final Node parentLive;
+      final List<LocalId> current;
+      if (record.slot == ChangeSlot.roots) {
+        parentLive = _realizedRoot!;
+        current = document.roots;
+      } else {
+        parentLive = _liveById[record.targetId]!;
+        current = document.nodes[record.targetId]!.children;
+      }
+      for (final id in current) {
+        final live = _liveById[id]!;
+        if (!identical(live.parent, parentLive)) {
+          live.parent?.remove(live);
+          parentLive.add(live);
+        }
+      }
+    }
+    for (final record in transaction.records) {
+      if (record.slot != ChangeSlot.transform) continue;
+      final docNode = document.nodes[record.targetId];
+      final live = _liveById[record.targetId];
+      if (docNode != null && live != null) {
+        live.localTransform = docNode.transform.toMatrix4();
+      }
     }
     return true;
   }
@@ -1732,6 +2122,11 @@ class EditorController extends ChangeNotifier {
         return true;
       case PrefabOverrideAspect.raycastable:
         live.raycastable = spec.raycastable;
+        return true;
+      case PrefabOverrideAspect.shadowCasting:
+        live.shadowCastingMode = shadowCastingModeFromName(
+          spec.shadowCastingMode,
+        );
         return true;
       case PrefabOverrideAspect.transform:
         live.localTransform = spec.transform.toMatrix4();
@@ -1944,6 +2339,11 @@ class EditorController extends ChangeNotifier {
         case ChangeSlot.layers:
           live?.layers = docNode.layers;
           composedNode?.layers = docNode.layers;
+        case ChangeSlot.shadowCastingMode:
+          live?.shadowCastingMode = shadowCastingModeFromName(
+            docNode.shadowCastingMode,
+          );
+          composedNode?.shadowCastingMode = docNode.shadowCastingMode;
         case ChangeSlot.name:
           composedNode?.name = docNode.name;
         default:

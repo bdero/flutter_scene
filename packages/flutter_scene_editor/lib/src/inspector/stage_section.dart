@@ -79,7 +79,10 @@ class StageSection extends StatelessWidget {
             ),
             InspectorAccordionItem(
               title: const Text('Rendering'),
-              child: StageRenderControls(controller: controller),
+              child: StageRenderControls(
+                controller: controller,
+                environment: environment,
+              ),
             ),
           ],
         ),
@@ -433,9 +436,17 @@ class ColorManagementControls extends StatelessWidget {
 }
 
 class StageRenderControls extends StatelessWidget {
-  const StageRenderControls({super.key, required this.controller});
+  const StageRenderControls({
+    super.key,
+    required this.controller,
+    this.environment,
+  });
 
   final EditorController controller;
+
+  /// The environment resource carrying the anti-aliasing tuning shown under
+  /// the mode selector; null leaves the selected mode's settings out.
+  final EnvironmentResource? environment;
 
   void _set(String key, Object value) => controller.run('setStageProperties', {
     'properties': {key: value},
@@ -464,6 +475,13 @@ class StageRenderControls extends StatelessWidget {
             onChanged: (v) => v == null ? null : _set('antiAliasingMode', v),
           ),
         ),
+        // The selected technique's own settings, inline under the selector.
+        // Only TAA and SMAA have any; the rest leave this out entirely.
+        _AntiAliasingSettings(
+          controller: controller,
+          environment: environment,
+          mode: stage.antiAliasingMode,
+        ),
         SliderNumberField(
           label: 'Render scale',
           value: stage.renderScale,
@@ -485,6 +503,194 @@ class StageRenderControls extends StatelessWidget {
             onChanged: (v) => v == null ? null : _set('filterQuality', v),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// A muted explanatory line inside an inspector group, for stating why a
+/// control is absent or inert rather than leaving the reader guessing.
+class _InspectorHint extends StatelessWidget {
+  const _InspectorHint(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 11,
+        color: context.theme.colors.mutedForeground,
+      ),
+    ),
+  );
+}
+
+/// The selected anti-aliasing technique's own settings, shown inline under the
+/// mode selector in the Rendering box. They live on the environment resource
+/// (like the other authored effects) while the mode itself lives on the stage,
+/// so this reads the stage's mode and writes environment properties.
+class _AntiAliasingSettings extends StatelessWidget {
+  const _AntiAliasingSettings({
+    required this.controller,
+    required this.environment,
+    required this.mode,
+  });
+
+  final EditorController controller;
+  final EnvironmentResource? environment;
+  final String mode;
+
+  void _set(String key, Object value) {
+    final env = environment;
+    if (env == null) return;
+    controller.run('setEnvironmentProperties', {
+      'environmentId': env.id.toToken(),
+      'properties': {key: value},
+    });
+  }
+
+  void _preview(String key, Object value) {
+    final env = environment;
+    if (env == null) return;
+    controller.previewEnvironmentProperty(env.id, key, value);
+  }
+
+  Widget _slider(
+    String label,
+    String key,
+    double value, {
+    double min = 0,
+    double max = 1,
+  }) => SliderNumberField(
+    label: label,
+    value: value,
+    min: min,
+    max: max,
+    onPreview: (v) => _preview(key, v),
+    onCommit: (v) => _set(key, v),
+  );
+
+  Widget _integer(
+    String label,
+    String key,
+    int value, {
+    required int min,
+    required int max,
+  }) => SliderNumberField(
+    label: label,
+    value: value.toDouble(),
+    min: min.toDouble(),
+    max: max.toDouble(),
+    scrubStep: 1,
+    snapStep: 1,
+    fractionDigits: 0,
+    onPreview: (v) => _preview(key, v.round()),
+    onCommit: (v) => _set(key, v.round()),
+  );
+
+  Widget _toggle(String label, String key, bool value, {String? description}) =>
+      InspectorSwitch(
+        label: label,
+        description: description,
+        value: value,
+        onChanged: (v) => _set(key, v),
+        padding: const EdgeInsets.symmetric(vertical: 5),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final env = environment;
+    if (env == null || (mode != 'taa' && mode != 'smaa')) {
+      return const SizedBox.shrink();
+    }
+    final e = env.effects;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+          child: Text(
+            mode == 'taa' ? 'Temporal AA' : 'SMAA',
+            style: Theme.of(context).textTheme.labelMedium,
+          ),
+        ),
+        if (mode == 'taa') ...[
+          _slider(
+            'Current weight',
+            'temporalAntiAliasingMinimumCurrentWeight',
+            e.temporalAntiAliasingMinimumCurrentWeight,
+            min: 0.01,
+          ),
+          _slider(
+            'Variance gamma',
+            'temporalAntiAliasingVarianceGamma',
+            e.temporalAntiAliasingVarianceGamma,
+            min: 0.5,
+            max: 2,
+          ),
+          _slider(
+            'Sharpness',
+            'temporalAntiAliasingSharpness',
+            e.temporalAntiAliasingSharpness,
+          ),
+          _integer(
+            'Jitter sequence',
+            'temporalAntiAliasingJitterSequenceLength',
+            e.temporalAntiAliasingJitterSequenceLength,
+            min: 1,
+            max: 32,
+          ),
+          _slider(
+            'Jitter scale',
+            'temporalAntiAliasingJitterScale',
+            e.temporalAntiAliasingJitterScale,
+          ),
+          _toggle(
+            'Object motion',
+            'temporalAntiAliasingObjectMotion',
+            e.temporalAntiAliasingObjectMotion,
+            description:
+                'Moving objects render a velocity buffer so they reproject '
+                'without trails.',
+          ),
+          _toggle(
+            'Skinned motion',
+            'temporalAntiAliasingSkinnedMotion',
+            e.temporalAntiAliasingSkinnedMotion,
+            description: 'Skinned deformation contributes velocity.',
+          ),
+        ] else ...[
+          _slider(
+            'Edge threshold',
+            'smaaThreshold',
+            e.smaaThreshold,
+            min: 0.02,
+            max: 0.3,
+          ),
+          _integer(
+            'Search steps',
+            'smaaMaxSearchSteps',
+            e.smaaMaxSearchSteps,
+            min: 4,
+            max: 112,
+          ),
+          _integer(
+            'Diagonal steps',
+            'smaaMaxDiagonalSearchSteps',
+            e.smaaMaxDiagonalSearchSteps,
+            min: 1,
+            max: 20,
+          ),
+          _slider(
+            'Corner rounding',
+            'smaaCornerRounding',
+            e.smaaCornerRounding,
+            max: 100,
+          ),
+        ],
       ],
     );
   }
@@ -573,6 +779,21 @@ class EnvironmentEffectsControls extends StatelessWidget {
       ],
       onChanged: (v) => v == null ? null : _set(key, v),
     ),
+  );
+
+  Widget _vectorStepped(
+    String label,
+    String key,
+    Vector3 value, {
+    required double step,
+  }) => Vec3Field(
+    label: label,
+    x: value.x,
+    y: value.y,
+    z: value.z,
+    scrubStep: step,
+    snapStep: step,
+    onSubmit: (value) => _set(key, value),
   );
 
   Widget _vector(String label, String key, Vector3 value) => Vec3Field(
@@ -958,6 +1179,138 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 e.screenSpaceReflectionsResolutionScale,
                 min: 0.25,
                 max: 1,
+              ),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          title: _title(
+            context,
+            'Global illumination',
+            e.globalIlluminationEnabled,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _toggle(
+                'Enabled',
+                'globalIlluminationEnabled',
+                e.globalIlluminationEnabled,
+              ),
+              _select(
+                'Volume',
+                'globalIlluminationVolumeMode',
+                e.globalIlluminationVolumeMode,
+                const [
+                  ('fitScene', 'Fit scene'),
+                  ('followCamera', 'Follow camera'),
+                  ('component', 'Placed volumes'),
+                ],
+              ),
+              // Bounds and density are per-volume when volumes are placed
+              // (the component supplies them), and global otherwise.
+              if (e.globalIlluminationVolumeMode == 'component')
+                const _InspectorHint(
+                  'Bounds and probe counts come from the Irradiance Volume '
+                  'components placed in the scene.',
+                )
+              else ...[
+                _vectorStepped(
+                  'Probe counts',
+                  'globalIlluminationResolution',
+                  e.globalIlluminationResolution,
+                  step: 1,
+                ),
+                _vector(
+                  'Extents',
+                  'globalIlluminationExtents',
+                  e.globalIlluminationExtents,
+                ),
+              ],
+              _slider(
+                'Intensity',
+                'globalIlluminationIntensity',
+                e.globalIlluminationIntensity,
+                max: 4,
+              ),
+              _toggle(
+                'Bake only',
+                'globalIlluminationBakeOnly',
+                e.globalIlluminationBakeOnly,
+                description:
+                    'Freeze the field instead of updating it each frame.',
+              ),
+              // TODO(gi-bake-action): drive Scene.bakeIrradianceField from a
+              // Bake button here, stepping the returned stepper across frames
+              // with a progress indicator; the settings alone cannot start a
+              // bake.
+              InspectorAccordion(
+                identity: environment?.id,
+                children: [
+                  InspectorAccordionItem(
+                    title: const Text('Advanced'),
+                    child: Column(
+                      children: [
+                        _slider(
+                          'Hysteresis',
+                          'globalIlluminationHysteresis',
+                          e.globalIlluminationHysteresis,
+                        ),
+                        _slider(
+                          'Shadow bias',
+                          'globalIlluminationShadowBias',
+                          e.globalIlluminationShadowBias,
+                          max: 2,
+                        ),
+                        _slider(
+                          'Visibility',
+                          'globalIlluminationVisibility',
+                          e.globalIlluminationVisibility,
+                        ),
+                        _slider(
+                          'Visibility bias',
+                          'globalIlluminationVisibilityBias',
+                          e.globalIlluminationVisibilityBias,
+                          max: 1,
+                        ),
+                        _integer(
+                          'Probe update budget',
+                          'globalIlluminationProbeUpdateBudget',
+                          e.globalIlluminationProbeUpdateBudget,
+                          min: 0,
+                          max: 4096,
+                        ),
+                        _select(
+                          'Injection resolution',
+                          'globalIlluminationInjectionResolution',
+                          e.globalIlluminationInjectionResolution,
+                          const [
+                            ('half', 'Half'),
+                            ('quarter', 'Quarter'),
+                            ('eighth', 'Eighth'),
+                          ],
+                        ),
+                        _slider(
+                          'Firefly clamp',
+                          'globalIlluminationFireflyClamp',
+                          e.globalIlluminationFireflyClamp,
+                          max: 32,
+                        ),
+                        _slider(
+                          'Emissive boost',
+                          'globalIlluminationEmissiveBoost',
+                          e.globalIlluminationEmissiveBoost,
+                          max: 8,
+                        ),
+                        _toggle(
+                          'Update when idle only',
+                          'globalIlluminationUpdateWhenIdleOnly',
+                          e.globalIlluminationUpdateWhenIdleOnly,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

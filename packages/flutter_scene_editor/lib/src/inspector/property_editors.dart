@@ -297,6 +297,9 @@ class Vec3Field extends StatelessWidget {
     this.onPreview,
     this.scrubStep = 0.01,
     this.snapStep = 1,
+    this.mixedX = false,
+    this.mixedY = false,
+    this.mixedZ = false,
   });
 
   final String label;
@@ -304,13 +307,26 @@ class Vec3Field extends StatelessWidget {
   final double y;
   final double z;
 
-  /// Called with {x, y, z} map when any field is submitted.
+  /// Called with an axis map when any field is submitted. Every axis is
+  /// present unless it is marked mixed and was not the edited one, so a
+  /// multi-selection commit can keep each node's own value there.
   final void Function(Map<String, Object> v) onSubmit;
 
   /// Updates the realized value without recording history.
   final void Function(Map<String, Object> v)? onPreview;
   final double scrubStep;
   final double snapStep;
+
+  /// Per-axis mixed markers for a multi-selection (dash until edited).
+  final bool mixedX;
+  final bool mixedY;
+  final bool mixedZ;
+
+  Map<String, Object> _axisMap(int edited, double v) => {
+    if (edited == 0) 'x': v else if (!mixedX) 'x': x,
+    if (edited == 1) 'y': v else if (!mixedY) 'y': y,
+    if (edited == 2) 'z': v else if (!mixedZ) 'z': z,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -332,10 +348,11 @@ class Vec3Field extends StatelessWidget {
               label: 'X',
               color: editorAxisColors[0],
               value: x,
+              mixed: mixedX,
               scrubStep: scrubStep,
               snapStep: snapStep,
-              onPreview: (v) => onPreview?.call({'x': v, 'y': y, 'z': z}),
-              onSubmit: (v) => onSubmit({'x': v, 'y': y, 'z': z}),
+              onPreview: (v) => onPreview?.call(_axisMap(0, v)),
+              onSubmit: (v) => onSubmit(_axisMap(0, v)),
             ),
           ),
           const SizedBox(width: 2),
@@ -344,10 +361,11 @@ class Vec3Field extends StatelessWidget {
               label: 'Y',
               color: editorAxisColors[1],
               value: y,
+              mixed: mixedY,
               scrubStep: scrubStep,
               snapStep: snapStep,
-              onPreview: (v) => onPreview?.call({'x': x, 'y': v, 'z': z}),
-              onSubmit: (v) => onSubmit({'x': x, 'y': v, 'z': z}),
+              onPreview: (v) => onPreview?.call(_axisMap(1, v)),
+              onSubmit: (v) => onSubmit(_axisMap(1, v)),
             ),
           ),
           const SizedBox(width: 2),
@@ -356,10 +374,11 @@ class Vec3Field extends StatelessWidget {
               label: 'Z',
               color: editorAxisColors[2],
               value: z,
+              mixed: mixedZ,
               scrubStep: scrubStep,
               snapStep: snapStep,
-              onPreview: (v) => onPreview?.call({'x': x, 'y': y, 'z': v}),
-              onSubmit: (v) => onSubmit({'x': x, 'y': y, 'z': v}),
+              onPreview: (v) => onPreview?.call(_axisMap(2, v)),
+              onSubmit: (v) => onSubmit(_axisMap(2, v)),
             ),
           ),
         ],
@@ -377,6 +396,7 @@ class _AxisField extends StatefulWidget {
     required this.snapStep,
     required this.onPreview,
     required this.onSubmit,
+    this.mixed = false,
   });
   final String label;
   final Color color;
@@ -385,6 +405,7 @@ class _AxisField extends StatefulWidget {
   final double snapStep;
   final ValueChanged<double>? onPreview;
   final void Function(double) onSubmit;
+  final bool mixed;
 
   @override
   State<_AxisField> createState() => _AxisFieldState();
@@ -397,6 +418,7 @@ class _AxisFieldState extends State<_AxisField> {
       label: widget.label,
       color: widget.color,
       value: widget.value,
+      mixed: widget.mixed,
       scrubStep: widget.scrubStep,
       snapStep: widget.snapStep,
       onPreview: widget.onPreview,
@@ -418,6 +440,7 @@ class ScrubbableNumberField extends StatefulWidget {
     required this.onCommit,
     this.height = 34,
     this.fractionDigits = 3,
+    this.mixed = false,
     this.enableInfiniteDrag = true,
   });
 
@@ -430,6 +453,10 @@ class ScrubbableNumberField extends StatefulWidget {
   final ValueChanged<double> onCommit;
   final double height;
   final int fractionDigits;
+
+  /// Renders a dash instead of [value] until the field is edited, for a
+  /// multi-selection whose nodes disagree; [value] still seeds the edit.
+  final bool mixed;
 
   /// Disables native pointer wrapping in widget tests.
   @visibleForTesting
@@ -452,6 +479,7 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
 
   bool _hovered = false;
   bool _editing = false;
+  bool _touched = false;
   bool _pending = false;
   bool _dragging = false;
   int? _pointer;
@@ -483,13 +511,17 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
       _displayValue = widget.value;
       _text.text = _format(widget.value);
     }
+    if (oldWidget.mixed != widget.mixed) _touched = false;
   }
+
+  bool get _showDash => widget.mixed && !_touched && !_editing && !_dragging;
 
   void _onTextFocusChanged() {
     if (_editing && !_textFocus.hasFocus) _finishTextEditing(commit: true);
   }
 
   void _beginTextEditing() {
+    _touched = true;
     _editStartValue = _displayValue;
     _text.text = _format(_displayValue);
     setState(() => _editing = true);
@@ -527,6 +559,7 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
     }
     if (event.buttons & kPrimaryMouseButton == 0) return;
     _interactionFocus.requestFocus();
+    _touched = true;
     _pointer = event.pointer;
     _origin = event.position;
     _startValue = widget.value;
@@ -723,7 +756,7 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
                     label: widget.label.isEmpty
                         ? 'Numeric value'
                         : '${widget.label} value',
-                    value: _format(_displayValue),
+                    value: _showDash ? 'mixed' : _format(_displayValue),
                     button: true,
                     hint: 'Click to type or drag horizontally to adjust',
                     child: Padding(
@@ -746,7 +779,7 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
                           ],
                           Expanded(
                             child: Text(
-                              _format(_displayValue),
+                              _showDash ? '\u2014' : _format(_displayValue),
                               maxLines: 1,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
@@ -785,6 +818,7 @@ class SliderNumberField extends StatefulWidget {
     this.fractionDigits = 3,
     required this.onPreview,
     required this.onCommit,
+    this.mixed = false,
     this.enableInfiniteDrag = true,
   }) : assert(max > min);
 
@@ -797,6 +831,9 @@ class SliderNumberField extends StatefulWidget {
   final int fractionDigits;
   final ValueChanged<double> onPreview;
   final ValueChanged<double> onCommit;
+
+  /// Dash display for a multi-selection whose nodes disagree.
+  final bool mixed;
 
   @visibleForTesting
   final bool enableInfiniteDrag;
@@ -848,6 +885,7 @@ class _SliderNumberFieldState extends State<SliderNumberField> {
         label: '',
         color: context.theme.colors.primary,
         value: value,
+        mixed: widget.mixed && _preview == null,
         scrubStep: step,
         snapStep: widget.snapStep ?? step,
         fractionDigits: widget.fractionDigits,

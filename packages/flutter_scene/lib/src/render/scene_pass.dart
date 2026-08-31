@@ -283,6 +283,16 @@ class ScenePass extends RenderGraphPass {
         ? math.tan(projection.fovRadiansY / 2.0)
         : 0.0;
     final tanHalfFovX = height > 0 ? tanHalfFovY * width / height : 0.0;
+    // Froxel clustering for this view (perspective views with uniform light
+    // channels); its data texture rides the per-object index sampler slot.
+    final froxels = _punctualLighting.internalBuffer?.buildFroxels(
+      cameraPosition: camera.position,
+      forward: cameraForward,
+      right: cameraRight,
+      up: cameraUp,
+      tanHalfFovX: tanHalfFovX,
+      tanHalfFovY: tanHalfFovY,
+    );
     final lighting = Lighting(
       environmentMap: _environmentMap,
       environmentMapB: _environmentMapB,
@@ -294,14 +304,19 @@ class ScenePass extends RenderGraphPass {
       directionalLight: _directionalLight,
       directionalLightDirection: _directionalLightDirection,
       punctualParamsTexture: _punctualLighting.paramsTexture,
-      punctualIndexTexture: _punctualLighting.indexTexture,
+      punctualIndexTexture: froxels?.texture ?? _punctualLighting.indexTexture,
       punctualParamsCount: _punctualLighting.paramsCount,
-      punctualIndexWidth: _punctualLighting.indexWidth,
-      punctualIndexHeight: _punctualLighting.indexHeight,
-      // Spot shadows share the atlas, so only sample them when it was produced.
+      punctualIndexWidth: froxels?.width ?? _punctualLighting.indexWidth,
+      punctualIndexHeight: froxels?.height ?? _punctualLighting.indexHeight,
+      froxels: froxels,
+      // Spot and point shadows share the atlas, so only sample them when it
+      // was produced.
       spotShadowCount: shadowMap == null
           ? 0
           : _punctualLighting.spotShadowCount,
+      pointShadowTileCount: shadowMap == null
+          ? 0
+          : _punctualLighting.pointShadowTileCount,
       spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
       spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
       spotShadowSoftness: _punctualLighting.spotShadowSoftness,

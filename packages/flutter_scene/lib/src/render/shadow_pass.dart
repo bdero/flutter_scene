@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/light.dart';
+import 'package:flutter_scene/src/render/point_shadow.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_cache.dart';
@@ -27,14 +28,15 @@ const String kShadowUniformBlackboardKey = 'shadow_uniform';
 
 /// Renders the scene's depth into one shared shadow map atlas and publishes it
 /// on the render-graph blackboard: the directional light's cascades first, then
-/// each shadow-casting spot's cone.
+/// each shadow-casting spot's cone, then each shadow-casting point light's six
+/// cube faces (quarter-tile quadrants, two tiles per light).
 ///
 /// The atlas is one fp32 color texture holding the tiles as a horizontal strip,
 /// each [tileResolution] square (cascade tiles `0..cascades.length`, then spot
-/// tiles); window-space depth goes in the red channel (a transient depth
-/// attachment backs the depth test). It is cleared to 1.0 so texels no caster
-/// covers read as "lit". Sharing one atlas keeps every shadow type on a single
-/// sampler in the lit shader.
+/// tiles, then point tiles); window-space depth goes in the red channel (a
+/// transient depth attachment backs the depth test). It is cleared to 1.0 so
+/// texels no caster covers read as "lit". Sharing one atlas keeps every shadow
+/// type on a single sampler in the lit shader.
 ///
 /// With a [cachePlan] (some casters are `shadowStatic`), static casters render
 /// into the plan's persistent per-cascade tiles only when the plan asks, and
@@ -50,6 +52,7 @@ class ShadowPass extends RenderGraphPass {
     ShadowCasterFaces casterFaces = ShadowCasterFaces.front,
     int casterChannelMask = 0xFF,
     SpotShadowFrame? spotShadows,
+    PointShadowFrame? pointShadows,
     ByteData? shadowUniform,
     ShadowCachePlan? cachePlan,
   }) : _renderScene = renderScene,
@@ -59,6 +62,7 @@ class ShadowPass extends RenderGraphPass {
        _casterChannelMask = casterChannelMask,
        _cameraPosition = cameraPosition,
        _spotShadows = spotShadows,
+       _pointShadows = pointShadows,
        _shadowUniform = shadowUniform,
        _cachePlan = cachePlan;
 
@@ -68,9 +72,10 @@ class ShadowPass extends RenderGraphPass {
   final ShadowCasterFaces _casterFaces;
 
   // The directional light's shadow-caster channels. Applies to the cascade
-  // tiles only; spot tiles take every caster.
+  // tiles only; spot and point tiles use their own light's mask.
   final int _casterChannelMask;
   final SpotShadowFrame? _spotShadows;
+  final PointShadowFrame? _pointShadows;
   final ShadowCachePlan? _cachePlan;
 
   // The packed PostShadowInfo block, published for depth-aware custom passes.
@@ -113,7 +118,9 @@ class ShadowPass extends RenderGraphPass {
     }
 
     final spotCount = _spotShadows?.matrices.length ?? 0;
-    final totalTiles = _cascades.length + spotCount;
+    final pointCount = _pointShadows?.casters.length ?? 0;
+    final totalTiles =
+        _cascades.length + spotCount + pointCount * kPointShadowTilesPerLight;
     final atlasWidth = _tileResolution * totalTiles;
     // fp32 (not fp16): the far cascade's orthographic depth range spans
     // hundreds of world units, and fp16's ~11-bit mantissa quantizes
@@ -223,7 +230,45 @@ class ShadowPass extends RenderGraphPass {
     final spots = _spotShadows;
     if (spots != null) {
       for (var s = 0; s < spots.matrices.length; s++) {
-        renderTile(_cascades.length + s, spots.matrices[s], spots.casterFaces);
+        renderTile(
+          _cascades.length + s,
+          spots.matrices[s],
+          spots.casterFaces,
+          casterChannelMask: spots.casterChannelMasks[s],
+        );
+      }
+    }
+    final pointFrame = _pointShadows;
+    if (pointFrame != null) {
+      // Each caster's six 90-degree faces pack as 2x2 quadrants across two
+      // tiles at half the tile edge, so a point light costs two atlas tiles
+      // rather than six. The quadrant placement must stay in lockstep with the
+      // shader's face -> atlas mapping (SamplePointShadow).
+      final half = _tileResolution ~/ 2;
+      final firstPointTile = _cascades.length + spotCount;
+      for (var s = 0; s < pointFrame.casters.length; s++) {
+        for (var f = 0; f < kPointShadowFaces; f++) {
+          final tile = firstPointTile + s * kPointShadowTilesPerLight + f ~/ 4;
+          final q = f % 4;
+          renderPass.setViewport(
+            gpu.Viewport(
+              x: tile * _tileResolution + (q & 1) * half,
+              y: (q >> 1) * half,
+              width: half,
+              height: half,
+            ),
+          );
+          final encoder = ShadowEncoder(
+            renderPass,
+            context.transientsBuffer,
+            pointFrame.faceMatrix(s, f),
+            _cameraPosition,
+            pointFrame.casterFaces,
+            casterChannelMask: pointFrame.casterChannelMasks[s],
+          );
+          _renderScene.cull(encoder.frustum, encoder.submitCulled);
+          encoder.flush();
+        }
       }
     }
 

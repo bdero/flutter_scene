@@ -140,6 +140,9 @@ enum ChangeSlot {
   /// A node's render-layer bitmask.
   layers('layers'),
 
+  /// A node's shadow casting mode.
+  shadowCastingMode('shadowCastingMode'),
+
   /// A node's local transform.
   transform('transform'),
 
@@ -255,6 +258,9 @@ class Transaction {
         mutator.node(targetId)?.visible = (value as BoolChange).value;
       case ChangeSlot.layers:
         mutator.node(targetId)?.layers = (value as IntChange).value;
+      case ChangeSlot.shadowCastingMode:
+        mutator.node(targetId)?.shadowCastingMode =
+            (value as StringChange).value;
       case ChangeSlot.transform:
         mutator.node(targetId)?.transform = (value as TransformChange).value;
       case ChangeSlot.skin:

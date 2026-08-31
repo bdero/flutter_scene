@@ -248,7 +248,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
     final frustum = Frustum.matrix(viewTransform);
     final records = <RenderItem>[];
     _renderScene.cull(frustum, (item) {
-      if (!item.visible) return;
+      if (!item.drawsColor) return;
       if ((item.layers & _layerMask) == 0) return;
       if (!_qualifies(item)) return;
       if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
@@ -395,7 +395,7 @@ class _DepthPrepassEncoder {
   /// normally, which is the opaque scene plus opt-ins like the shadow
   /// catcher; translucent depth-writing items in the patch mode).
   void submit(RenderItem item) {
-    if (!item.visible) return;
+    if (!item.drawsColor) return;
     if ((item.layers & _layerMask) == 0) return;
     if (_translucentPatch
         ? (item.material.isOpaque() || !item.material.translucentDepthWrite)
@@ -649,6 +649,7 @@ class _DepthPrepassEncoder {
                     scratch: transientInstancePackingScratch,
                   ));
       _drawPacked(geometry, packed, depthVertex == null, instanceSlot);
+      transientInstancePackingScratch.releaseSingleBatch();
       return;
     }
 

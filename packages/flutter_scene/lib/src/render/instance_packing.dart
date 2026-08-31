@@ -82,6 +82,13 @@ class InstancePackingScratch {
     return _singleBatch;
   }
 
+  /// Drops the references the last single-batch call left behind.
+  ///
+  /// This scratch is a process-wide singleton, so without it the last group
+  /// packed stays reachable for as long as nothing else packs a single group.
+  /// Call it once the pack that consumed the batch has returned.
+  void releaseSingleBatch() => _singleBatch[0].clearPayload();
+
   static Float32List _growFloat(Float32List current, int length) =>
       current.length >= length ? current : Float32List(_capacity(length));
 
@@ -321,6 +328,21 @@ class InstanceDataBatch {
     colors = null;
     instanceWindingFlipped = null;
     attributeData = null;
+  }
+
+  /// Drops every reference this batch holds, so a recycled or idle batch keeps
+  /// no instance data alive. Leaves it in the same state as [pooled].
+  void clearPayload() {
+    nodeTransform = _identity;
+    nodeWindingFlipped = false;
+    instances = null;
+    colors = null;
+    packedWorldData = null;
+    packedWindingFlipped = null;
+    instanceWindingFlipped = null;
+    indices = null;
+    attributeData = null;
+    attributeFloats = 0;
   }
 
   /// Floats one source record occupies in [packedWorldData].

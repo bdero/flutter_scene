@@ -74,6 +74,11 @@ class SceneDocument {
   /// The binary chunk manifest, keyed by id.
   final Map<LocalId, PayloadSpec> payloads = {};
 
+  /// Editor-only state (viewport camera, selection), written by the editor
+  /// on save and restored on open; null for documents that never carried it.
+  /// The runtime ignores it.
+  EditorStateSpec? editor;
+
   /// Serialized render views, in order. Each binds a camera node to a
   /// target (a [RenderTextureResource] id, or null for the screen).
   final List<RenderViewSpec> views = [];

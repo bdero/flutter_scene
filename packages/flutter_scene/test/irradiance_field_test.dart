@@ -1,8 +1,50 @@
+import 'package:flutter_scene/scene.dart' show IrradianceProbeGrid;
 import 'package:flutter_scene/src/render/irradiance_field.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
 void main() {
+  group('IrradianceProbeGrid', () {
+    test('walks the lattice from its minimum corner', () {
+      final probe = IrradianceProbeGrid(
+        origin: Vector3(-4, 0, -4),
+        spacing: Vector3(2, 1, 2),
+        counts: Vector3(5, 3, 5),
+      );
+      expect(probe.probeCount, 75);
+      expect(probe.probePosition(0, 0, 0), Vector3(-4, 0, -4));
+      expect(probe.probePosition(1, 2, 3), Vector3(-2, 2, 2));
+      // The far corner lands one spacing short of origin + counts * spacing.
+      expect(probe.probePosition(4, 2, 4), Vector3(4, 2, 4));
+    });
+
+    test('agrees with the placement the renderer resolves', () {
+      final layout = IrradianceFieldLayout(Vector3(16, 8, 16));
+      final placement = planIrradianceGrid(
+        center: Vector3(3, 1, -2),
+        extents: Vector3(20, 10, 20),
+        layout: layout,
+      );
+      // The accessor is a plain view over placement + layout, so a probe read
+      // through it must match the placement's own lattice math.
+      final grid = IrradianceProbeGrid(
+        origin: placement.origin,
+        spacing: placement.spacing,
+        counts: layout.resolution,
+      );
+      expect(grid.origin, placement.origin);
+      // The accessor steps out from the origin while the placement multiplies
+      // a lattice index, so the two agree only to float32 rounding.
+      final mine = grid.probePosition(2, 1, 3);
+      final theirs = placement.probePosition(
+        placement.anchor + Vector3(2, 1, 3),
+      );
+      expect(mine.x, closeTo(theirs.x, 1e-5));
+      expect(mine.y, closeTo(theirs.y, 1e-5));
+      expect(mine.z, closeTo(theirs.z, 1e-5));
+    });
+  });
+
   group('IrradianceFieldLayout', () {
     test('the default grid packs into the documented atlas', () {
       final layout = IrradianceFieldLayout(Vector3(16, 8, 16));

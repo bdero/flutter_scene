@@ -937,6 +937,67 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Punctual shadows: a shadow-casting point light between two blockers and a
+  // shadow-casting spot raking the same plane, with no directional light so
+  // the shadow atlas holds only punctual tiles. Guards the spot's perspective
+  // tile and the point light's six quadrant-packed cube faces (dominant-axis
+  // face selection, analytic depth reconstruction) across backends.
+  SmokeScene('punctual_shadows', () {
+    final scene = Scene();
+    final material = PhysicallyBasedMaterial()
+      ..baseColorFactor = vm.Vector4(0.75, 0.74, 0.70, 1.0)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.9
+      ..vertexColorWeight = 0.0;
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 4.0, depth: 3.2), material)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.16, 1.4, 0.16)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(-0.7, 0.7, 0.2)),
+    );
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(0.9, 0.12, 0.7)), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.7, 0.45, -0.3)),
+    );
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(0.1, 1.2, 0.1))
+        ..addComponent(
+          PointLightComponent(
+            PointLight(
+              intensity: 4.0,
+              range: 9.0,
+              castsShadow: true,
+              shadowMapResolution: 256,
+            ),
+          ),
+        ),
+    );
+    scene.add(
+      Node()
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(1.6, 2.2, 1.4))
+        ..addComponent(
+          SpotLightComponent(
+            SpotLight(
+              intensity: 8.0,
+              range: 12.0,
+              direction: vm.Vector3(-0.55, -1.0, -0.6),
+              outerConeAngle: 0.7,
+              castsShadow: true,
+              shadowMapResolution: 512,
+            ),
+          ),
+        ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(3.3, 3.1, 3.8),
+        target: vm.Vector3(0, 0.2, 0),
+      ),
+    );
+  }),
   // SMAA 1x over thin rotated bars, the classic aliasing torture test. The
   // edges must resolve smooth (not stair-stepped like none, not smeared
   // like fxaa). Guards the three-pass chain and the area/search texture

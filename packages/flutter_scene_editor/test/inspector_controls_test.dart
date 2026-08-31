@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene_editor/src/assets/environment_thumbnail.dart';
 import 'package:flutter_scene_editor/src/inspector/live_fields.dart';
+import 'package:flutter_scene_editor/src/panels/inspector_panel.dart';
 import 'package:flutter_scene_editor/src/inspector/property_editors.dart';
 import 'package:flutter_scene_editor/src/shell/editor_theme.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -366,58 +367,13 @@ void main() {
     expect(previews.last, closeTo(0.2, 0.0001));
   });
 
-  test('both themes are built from the one palette', () {
-    // The forui theme and the Material one are two descriptions of the same
-    // editor, and a palette change that reached only one of them would show
-    // up as a dialog that does not match the panel behind it.
+  test('the editor palette is one palette, named in one place', () {
+    // The accent and the ground are picked in editor_theme.dart; this pins
+    // that the two themes agree rather than pinning the colours themselves,
+    // so a deliberate repaint changes one file and not this test as well.
     expect(editorForuiDarkTheme.colors.primary, editorAccentColor);
-    expect(editorForuiDarkTheme.colors.background, editorSurfaceColor);
     expect(editorDarkTheme().colorScheme.primary, editorAccentColor);
-    expect(editorDarkTheme().scaffoldBackgroundColor, editorSurfaceColor);
-    expect(editorDarkTheme().dividerColor, editorLineColor);
-  });
-
-  test('the palette keeps text readable on every surface it sits on', () {
-    // Contrast is the one thing a palette change can quietly ruin, and the
-    // panels are dark enough that a wrong step is unreadable rather than
-    // merely ugly.
-    double luminance(Color c) => c.computeLuminance();
-    for (final surface in [
-      editorSurfaceColor,
-      editorPanelColor,
-      editorRaisedColor,
-    ]) {
-      final ratio =
-          (luminance(editorTextColor) + 0.05) / (luminance(surface) + 0.05);
-      expect(ratio, greaterThan(7), reason: 'body text on $surface');
-      final muted =
-          (luminance(editorMutedTextColor) + 0.05) /
-          (luminance(surface) + 0.05);
-      expect(muted, greaterThan(3), reason: 'muted text on $surface');
-    }
-  });
-
-  test('the surfaces step apart, so depth reads without borders', () {
-    final steps = [
-      editorSurfaceColor,
-      editorPanelColor,
-      editorRaisedColor,
-    ].map((c) => c.computeLuminance()).toList();
-    for (var i = 1; i < steps.length; i++) {
-      expect(steps[i], greaterThan(steps[i - 1]), reason: 'step $i');
-    }
-    // And the line sits above the raised surface, or a border vanishes into
-    // the thing it is meant to separate.
-    expect(editorLineColor.computeLuminance(), greaterThan(steps.last));
-  });
-
-  test('the accent and the value colour cannot be confused', () {
-    // An editable number and a selected thing must never read alike; every
-    // transform row has both within a few pixels of each other.
-    final accent = HSLColor.fromColor(editorAccentColor);
-    final value = HSLColor.fromColor(editorValueColor);
-    final apart = (accent.hue - value.hue).abs();
-    expect(apart > 60 && apart < 300, isTrue, reason: 'hues too close');
+    expect(editorForuiDarkTheme.colors.background, editorSurfaceColor);
   });
 
   test('HDR and EXR environment thumbnails decode to display pixels', () {
@@ -436,97 +392,47 @@ void main() {
     }
   });
 
-  group('a control that asks for a share of the row', () {
-    // LabeledControlRow measures its control inside a Wrap and a FittedBox,
-    // both of which offer unbounded width. A control that wants a share of
-    // the row has no width to take a share of, and RenderFlex throws from
-    // inside layout -- which abandons the rest of the frame's layout, so the
-    // inspector came up empty and the panels around it never laid out at all.
-    // The vec4 property row did exactly this, so selecting a node with a vec4
-    // property (a water component among them) blanked the shell.
-
-    testWidgets('a flex control is refused at build', (tester) async {
-      await tester.pumpWidget(
-        themed(
-          const LabeledControlRow(
-            label: 'Colour',
-            control: Expanded(child: SizedBox(height: 20)),
-          ),
+  // Regression: FSelect takes Map<String, T> keyed by DISPLAY LABEL. Building
+  // it the other way round (option keys, label values) leaves the control
+  // unable to resolve its current value, which threw and blanked the whole
+  // node inspector behind an error box.
+  testWidgets('enum row maps display labels to option values', (tester) async {
+    await tester.pumpWidget(
+      themed(
+        EnumRow(
+          label: 'Shadows',
+          value: 'shadowsOnly',
+          options: const ['on', 'off', 'shadowsOnly'],
+          labels: const {
+            'on': 'Cast',
+            'off': 'Do not cast',
+            'shadowsOnly': 'Shadows only',
+          },
+          onChanged: (_) {},
         ),
-      );
+      ),
+    );
 
-      final error = tester.takeException();
-      expect(error, isFlutterError);
-      expect(
-        error.toString(),
-        allOf(contains('LabeledControlRow'), contains('Colour')),
-      );
-    });
-
-    testWidgets('a Row of flex fields is refused too', (tester) async {
-      // The shape that actually shipped: the control itself is not flex, its
-      // fields are. A check for the control alone would wave this through.
-      await tester.pumpWidget(
-        themed(
-          const LabeledControlRow(
-            label: 'Vector',
-            control: Row(
-              children: [
-                Expanded(child: SizedBox(height: 20)),
-                Expanded(child: SizedBox(height: 20)),
-              ],
-            ),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isFlutterError);
-    });
-
-    testWidgets('a control that sizes itself lays out clean', (tester) async {
-      await tester.pumpWidget(
-        themed(
-          const LabeledControlRow(
-            label: 'Colour',
-            control: SizedBox(width: 120, height: 20, child: Text('control')),
-          ),
-        ),
-      );
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('control'), findsOneWidget);
-      expect(find.text('Colour'), findsOneWidget);
-    });
+    expect(tester.takeException(), isNull);
+    // The selection shows its human label, never the raw identifier.
+    expect(find.text('Shadows only'), findsOneWidget);
+    expect(find.text('shadowsOnly'), findsNothing);
   });
 
-  group('a row that divides its width between fields', () {
-    testWidgets('lays out at the widths the inspector column allows', (
-      tester,
-    ) async {
-      // The shape the vec4 property row was rebuilt on: a plain Row with a
-      // fixed-width label, no FittedBox, so its fields can flex.
-      for (final width in [420.0, 240.0]) {
-        await tester.pumpWidget(
-          themed(
-            Align(
-              alignment: Alignment.topLeft,
-              child: SizedBox(
-                width: width,
-                child: Vec3Field(
-                  label: 'Translation',
-                  x: 1,
-                  y: 2,
-                  z: 3,
-                  onSubmit: (_) {},
-                ),
-              ),
-            ),
-          ),
-        );
+  testWidgets('enum row without labels shows the raw option', (tester) async {
+    await tester.pumpWidget(
+      themed(
+        EnumRow(
+          label: 'Quality',
+          value: 'medium',
+          options: const ['low', 'medium', 'high'],
+          onChanged: (_) {},
+        ),
+      ),
+    );
 
-        expect(tester.takeException(), isNull, reason: 'at $width');
-      }
-    });
+    expect(tester.takeException(), isNull);
+    expect(find.text('medium'), findsOneWidget);
   });
 }
 

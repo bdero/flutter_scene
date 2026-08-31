@@ -41,13 +41,18 @@ Aabb3? lightInfluenceBounds(Vector3 worldPosition, double range) {
 }
 
 /// The result of a cull: the flattened light-index buffer (each item's slice is
-/// `[offset, offset + count)`, written onto the items) and whether any item had
+/// `[offset, offset + count)`, written onto the items) and how many items had
 /// more lights than [maxPerItem] and dropped the excess.
 class LightCullResult {
-  const LightCullResult(this.indices, this.overflowed);
+  const LightCullResult(this.indices, this.overflowedItemCount);
 
   final List<int> indices;
-  final bool overflowed;
+
+  /// The number of items whose light list was capped this cull.
+  final int overflowedItemCount;
+
+  /// Whether any item dropped lights.
+  bool get overflowed => overflowedItemCount > 0;
 }
 
 /// Assigns each item in [items] the punctual [lights] that reach it, writing
@@ -121,7 +126,7 @@ LightCullResult assignLightsToItems({
   final lightsByIndex = <int, CullableLight>{
     for (final light in lights) light.index: light,
   };
-  var overflowed = false;
+  var overflowedItems = 0;
   for (final item in items) {
     final scratch = item.lightScratch;
     var count = scratch.length;
@@ -131,7 +136,7 @@ LightCullResult assignLightsToItems({
             _compareLightsForItem(item, lightsByIndex[a]!, lightsByIndex[b]!),
       );
       count = maxPerItem;
-      overflowed = true;
+      overflowedItems++;
     }
     item.lightListOffset = flat.length;
     item.lightListCount = count;
@@ -139,7 +144,7 @@ LightCullResult assignLightsToItems({
       flat.add(scratch[i]);
     }
   }
-  return LightCullResult(flat, overflowed);
+  return LightCullResult(flat, overflowedItems);
 }
 
 // Every light reaches every item, so the items differ only by channel mask.
@@ -151,30 +156,32 @@ LightCullResult _assignInfiniteLights(
   int maxPerItem,
 ) {
   final flat = <int>[];
-  final slices = <int, (int, int)>{};
-  var overflowed = false;
+  final slices = <int, (int, int, bool)>{};
+  var overflowedItems = 0;
   for (final item in items) {
     final mask = item.lightChannelMask;
     var slice = slices[mask];
     if (slice == null) {
       final offset = flat.length;
       var count = 0;
+      var capped = false;
       for (final light in lights) {
         if ((light.channelMask & mask) == 0) continue;
         if (count == maxPerItem) {
-          overflowed = true;
+          capped = true;
           break;
         }
         flat.add(light.index);
         count++;
       }
-      slice = (offset, count);
+      slice = (offset, count, capped);
       slices[mask] = slice;
     }
+    if (slice.$3) overflowedItems++;
     item.lightListOffset = slice.$1;
     item.lightListCount = slice.$2;
   }
-  return LightCullResult(flat, overflowed);
+  return LightCullResult(flat, overflowedItems);
 }
 
 int _compareLightsForItem(RenderItem item, CullableLight a, CullableLight b) {

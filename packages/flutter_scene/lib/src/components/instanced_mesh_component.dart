@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/instanced_mesh.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
@@ -69,7 +70,7 @@ class InstancedMeshComponent extends Component {
         item.frustumCulled == frustumCulled &&
         item.layers == node.layers &&
         item.shadowStatic == node.shadowStatic &&
-        item.castsShadows == node.castsShadows &&
+        item.shadowCastingMode == node.shadowCastingMode &&
         item.lightChannelMask == lightChannelMask) {
       return;
     }
@@ -84,18 +85,17 @@ class InstancedMeshComponent extends Component {
     final staticShadowChanged =
         (item.visible != visible ||
             item.shadowStatic != node.shadowStatic ||
-            item.castsShadows != node.castsShadows ||
+            item.shadowCastingMode != node.shadowCastingMode ||
             item.lightChannelMask != lightChannelMask ||
             boundsChangedByInput) &&
         (item.shadowStatic || node.shadowStatic) &&
-        (item.castsShadows || node.castsShadows);
+        (item.castsShadows || node.shadowCastingMode != ShadowCastingMode.off);
     item.visible = visible;
     if (worldTransformVersion != _worldTransformVersion) {
       item.worldTransform.setFrom(worldTransform);
     }
     item.refreshWinding(node.windingFlipped);
     item.shadowStatic = node.shadowStatic;
-    item.castsShadows = node.castsShadows;
     item.shadowCastingMode = node.shadowCastingMode;
     item.lightChannelMask = lightChannelMask;
     item.instanceTransforms = instancedMesh.instances;

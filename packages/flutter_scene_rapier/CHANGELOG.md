@@ -1,3 +1,8 @@
+## 0.5.2
+
+* Triangle mesh colliders are cooked with merged duplicate vertices and fixed internal edges, so a character crossing imported terrain stops catching on the seams between triangles.
+* Requires rebuilt binaries and wasm; the 0.5.0 prebuilts carry the old shape construction.
+
 ## 0.5.1
 
 * Widen the `scene` constraint to `^0.3.0`. No native changes; a release reuses the 0.5.0 binaries and wasm.

@@ -15,6 +15,7 @@ environment:
   flutter: '>=3.47.0'
 
 dependencies:
+  collection: ^1.18.0
   flutter:
     sdk: flutter
   file_selector: ^1.0.0

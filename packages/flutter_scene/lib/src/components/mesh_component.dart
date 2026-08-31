@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/components/component.dart';
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/mesh.dart';
 import 'package:flutter_scene/src/node.dart';
@@ -178,7 +179,8 @@ class MeshComponent extends Component {
           item.layers == node.layers &&
           item.lightChannelMask == node.lightChannelMask &&
           item.shadowStatic == node.shadowStatic &&
-          item.castsShadows == (primitive.castsShadow && node.castsShadows) &&
+          item.shadowCastingMode == node.shadowCastingMode &&
+          item.primitiveCastsShadow == primitive.castsShadow &&
           item.highlightColor == node.highlightColor &&
           _boundsVersions[index] == item.geometry.localBoundsVersion;
     }
@@ -205,14 +207,19 @@ class MeshComponent extends Component {
     for (var index = 0; index < _renderItems.length; index++) {
       final item = _renderItems[index];
       final primitive = _mesh.primitives[index];
-      final effectiveCastsShadows = primitive.castsShadow && node.castsShadows;
+      // The node's mode and the primitive's opt-out stay separate: the mode
+      // decides the color gate, the opt-out only subtracts casting.
+      final effectiveShadowMode = node.shadowCastingMode;
+      final effectiveCastsShadows =
+          primitive.castsShadow && effectiveShadowMode != ShadowCastingMode.off;
       // A material can declare itself draw-less for the frame (the shadow
       // catcher at zero intensity); its item then joins no pass at all.
       final visible = !item.material.drawsNothing;
       final staticShadowChanged =
           (item.visible != visible ||
               item.shadowStatic != node.shadowStatic ||
-              item.castsShadows != effectiveCastsShadows ||
+              item.shadowCastingMode != effectiveShadowMode ||
+              item.primitiveCastsShadow != primitive.castsShadow ||
               item.lightChannelMask != lightChannelMask ||
               transformChanged) &&
           (item.shadowStatic || node.shadowStatic) &&
@@ -232,8 +239,8 @@ class MeshComponent extends Component {
       }
       item.refreshWinding(windingFlipped);
       item.shadowStatic = node.shadowStatic;
-      item.castsShadows = effectiveCastsShadows;
-      item.shadowCastingMode = node.shadowCastingMode;
+      item.shadowCastingMode = effectiveShadowMode;
+      item.primitiveCastsShadow = primitive.castsShadow;
       item.highlightColor = highlightColor;
       if (skin != null) {
         item.previousJointsTexture = skin.getPreviousJointsTexture();

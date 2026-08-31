@@ -42,7 +42,6 @@ in vec3 v_ray;
 
 out vec4 frag_color;
 
-
 // Blurriness band over which the visible sky hands off from the full-res sharp
 // source to the convolved cube. Above it the cube's roughness LOD carries the
 // blur, so the mid-range reads as a growing blur instead of a sharp/blurred

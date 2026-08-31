@@ -17,7 +17,7 @@ gpu.ShaderLibrary? _baseShaderLibrary;
 /// synchronous [baseShaderLibrary] getter can name the real cause.
 ///
 /// Without it the getter only knows the library is absent, and says to await
-/// `Scene.initializeStaticResources()` — the very call that already failed.
+/// `Scene.initializeStaticResources()`, the very call that already failed.
 Object? _baseShaderLibraryLoadError;
 
 /// The failure that stopped the last [loadBaseShaderLibrary], or null if it has
@@ -83,12 +83,12 @@ Future<String?> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
 /// [baseShaderLibrary] getter has a cached library to return (shader assets
 /// can't be read synchronously on any backend).
 /// {@category Assets and loading}
-Future<void> loadBaseShaderLibrary() async {
+Future<void> loadBaseShaderLibrary({AssetBundle? bundle}) async {
   if (_baseShaderLibrary != null) {
     return;
   }
   try {
-    await _loadBaseShaderLibrary();
+    await _loadBaseShaderLibrary(bundle);
   } catch (error) {
     // Retained for the getter, which is synchronous and otherwise cannot say
     // more than "not loaded yet". Cleared on the next successful load.
@@ -98,10 +98,10 @@ Future<void> loadBaseShaderLibrary() async {
   _baseShaderLibraryLoadError = null;
 }
 
-Future<void> _loadBaseShaderLibrary() async {
-  final key = await resolveBaseShaderBundleKey();
+Future<void> _loadBaseShaderLibrary(AssetBundle? bundle) async {
+  final key = await resolveBaseShaderBundleKey(bundle: bundle);
   if (key == null) {
-    final built = (await loadGeneratedAssetIndex()).targetsOf(
+    final built = (await loadGeneratedAssetIndex(bundle)).targetsOf(
       GeneratedAssetFamily.shaderBundle,
       'base',
       package: 'flutter_scene',
@@ -123,6 +123,14 @@ Future<void> _loadBaseShaderLibrary() async {
     throw Exception(baseShaderBundleUnusableMessage(key));
   }
   _baseShaderLibrary = lib;
+}
+
+/// Drops the cached library and any retained load failure, so a test can drive
+/// the load path from a known state.
+@visibleForTesting
+void debugResetBaseShaderLibrary() {
+  _baseShaderLibrary = null;
+  _baseShaderLibraryLoadError = null;
 }
 
 /// A base-bundle entry every build contains, used to tell a bundle this engine

@@ -277,12 +277,6 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 #undef _TRY_CASCADE
 #endif
 
-// The number of additional analytic lights (point, spot, and directional
-// lights past the first) the loop below can shade in one draw. Must match
-// kMaxPunctualLights in lib/src/render/punctual_lights.dart. The loop is
-// unrolled to this constant bound because GLSL ES 1.00 requires a compile-time
-// loop bound; the active count (frag_info.radiance_blend.z) ends it early.
-#define MAX_PUNCTUAL_LIGHTS 16
 
 // A shadow catcher's no-shadow variant declares no punctual textures (its
 // only punctual consumer is the spot loop the guard above removed), so the
@@ -291,7 +285,7 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 // Reads column `col` (0..7) of light `light_index`'s row from the
 // punctual_lights parameters texture (8 texels wide, punctual_dims.x rows
 // tall). Fetched by computed UV rather than a dynamically-indexed uniform
-// array, which a GLSL ES 1.00 fragment shader may not do.
+// array, which stays portable across every compiled dialect.
 vec4 FetchPunctualTexel(int light_index, int col) {
   // 8 texels per light row: 0.0625 = 0.5 / 8 centers the first column.
   vec2 uv = vec2((float(col) + 0.5) * 0.125,
@@ -299,15 +293,53 @@ vec4 FetchPunctualTexel(int light_index, int col) {
   return texture(punctual_lights, uv);
 }
 
-// Reads entry `j` of the per-object light-index buffer, returning the light row
-// it points at. The buffer is a 2D texture (index in .r); `j` is decomposed to
-// a texel with the width/height in punctual_dims.yz.
-float FetchPunctualIndex(int j) {
+// Reads the full texel of entry `j` in the light-index texture (`j` decomposed
+// to a texel with the width/height in punctual_dims.yz). A froxel-table entry
+// carries its records offset in .r and light count in .g; a record carries a
+// light row in .r.
+vec4 FetchPunctualEntry(int j) {
   float width = frag_info.punctual_dims.y;
   float fj = float(j);
   vec2 uv = vec2((mod(fj, width) + 0.5) / width,
                  (floor(fj / width) + 0.5) / frag_info.punctual_dims.z);
-  return texture(punctual_index, uv).r;
+  return texture(punctual_index, uv);
+}
+
+// Reads entry `j` of the per-object light-index buffer (or a froxel record),
+// returning the light row it points at.
+float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
+
+// The punctual-light slice this fragment shades, as (records offset, light
+// count) into the punctual_index texture. In froxel mode (froxel_grid.z > 0)
+// the slice comes from the fragment's froxel, derived from the camera basis
+// (not gl_FragCoord, whose vertical origin differs across backends):
+// view-space position via the camera axes, then perspective tile mapping with
+// the half-fov tangents, then an exponential depth slice. Otherwise it is the
+// draw's per-object slice. Shared by the lighting framework and the shadow
+// catcher so both walk the same lights.
+vec2 PunctualLightSlice() {
+  if (frag_info.punctual_dims.x < 0.5) {
+    return vec2(0.0);
+  }
+  if (frag_info.froxel_grid.z > 0.5) {
+    vec3 to_frag = -v_viewvector;
+    float view_z = max(dot(to_frag, frag_info.camera_forward.xyz), 1e-4);
+    float ndc_x = dot(to_frag, frag_info.camera_right.xyz) /
+                  max(view_z * frag_info.scene_inputs.w, 1e-6);
+    float ndc_y = dot(to_frag, frag_info.camera_up.xyz) /
+                  max(view_z * frag_info.camera_forward.w, 1e-6);
+    float fnx = frag_info.froxel_grid.x;
+    float fny = frag_info.froxel_grid.y;
+    float fnz = frag_info.froxel_grid.z;
+    float fx = clamp(floor((ndc_x * 0.5 + 0.5) * fnx), 0.0, fnx - 1.0);
+    float fy = clamp(floor((0.5 - ndc_y * 0.5) * fny), 0.0, fny - 1.0);
+    float fz = clamp(floor(log2(view_z) * frag_info.froxel_grid.w +
+                           frag_info.punctual_dims.w),
+                     0.0, fnz - 1.0);
+    vec4 entry = FetchPunctualEntry(int((fz * fny + fy) * fnx + fx + 0.5));
+    return vec2(entry.r, entry.g);
+  }
+  return vec2(frag_info.radiance_blend.w, frag_info.radiance_blend.z);
 }
 #endif  // punctual fetch helpers
 
@@ -362,6 +394,82 @@ float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
     float a = base + float(i) * (6.28318530718 / float(SPOT_PCF_RING));
     vec2 offset = vec2(cos(a), sin(a)) * radius;
     lit += SpotShadowTap(uv + offset, tile, total, receiver);
+  }
+  return lit / float(SPOT_PCF_RING + 1);
+}
+
+// One shadow comparison tap for a point-light cube face: places the face-local
+// `uv` in quadrant (`qx`, `qy`) of atlas tile `tile` (faces render at half the
+// tile edge, four to a tile; the placement mirrors ShadowPass) and returns 1
+// lit / 0 shadowed. `uv` is clamped a half face-texel inside the quadrant so
+// the kernel never reads a neighbouring face.
+float PointShadowTap(vec2 uv, float tile, float qx, float qy, float total,
+                     float half_texel, float receiver) {
+  vec2 cuv = clamp(uv, vec2(half_texel), vec2(1.0 - half_texel));
+  vec2 tile_uv = vec2(qx, 1.0 - qy) * 0.5 + cuv * 0.5;
+  vec2 atlas_uv = vec2((tile + tile_uv.x) / total, 1.0 - tile_uv.y);
+  return receiver <= texture(shadow_map, atlas_uv).r ? 1.0 : 0.0;
+}
+
+// Point-shadow visibility (1 lit .. 0 shadowed) for the shadow-casting point
+// light in row `light_row`, whose first atlas tile (counted after the
+// directional cascades) is `base_tile`. The six 90-degree cube faces pack as
+// 2x2 quadrants across two tiles; the face is picked by the dominant axis of
+// the light-to-fragment vector and its projection is reconstructed
+// analytically, in lockstep with the per-face basis in
+// PointLight.pointShadowFaceViewProjection. Texel 4 of the light's row
+// carries the depth mapping (window depth = x - y / faceDepth), normal bias,
+// and softness; texel 5 the depth bias and inverse face resolution.
+float SamplePointShadow(int light_row, float base_tile, vec3 world_pos,
+                        vec3 normal) {
+  vec4 p4 = FetchPunctualTexel(light_row, 4);
+  vec4 p5 = FetchPunctualTexel(light_row, 5);
+  vec3 v = world_pos + normal * p4.z - FetchPunctualTexel(light_row, 0).xyz;
+  vec3 a = abs(v);
+  // Faces 0..5 = +X, -X, +Y, -Y, +Z, -Z. local.xy is the face plane
+  // (right/up), local.z the face depth.
+  float face;
+  vec3 local;
+  if (a.x >= a.y && a.x >= a.z) {
+    face = v.x >= 0.0 ? 0.0 : 1.0;
+    local = v.x >= 0.0 ? vec3(-v.z, v.y, v.x) : vec3(v.z, v.y, -v.x);
+  } else if (a.y >= a.z) {
+    face = v.y >= 0.0 ? 2.0 : 3.0;
+    local = v.y >= 0.0 ? vec3(-v.x, v.z, v.y) : vec3(v.x, v.z, -v.y);
+  } else {
+    face = v.z >= 0.0 ? 4.0 : 5.0;
+    local = v.z >= 0.0 ? vec3(v.x, v.y, v.z) : vec3(-v.x, v.y, -v.z);
+  }
+  if (local.z <= 0.0) {
+    return 1.0;
+  }
+  vec2 uv = (local.xy / local.z) * 0.5 + 0.5;
+  float receiver = p4.x - p4.y / local.z - p5.x;
+  // Outside the face's depth window (closer than near, past far) reads lit;
+  // the range window already attenuates the far side.
+  if (receiver < 0.0 || receiver > 1.0) {
+    return 1.0;
+  }
+  float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
+  float tile = frag_info.shadow_cascade_count + base_tile +
+               (face >= 4.0 ? 1.0 : 0.0);
+  float q = face >= 4.0 ? face - 4.0 : face;
+  float qx = mod(q, 2.0);
+  float qy = floor(q * 0.5);
+  float half_texel = p5.y * 0.5;
+  // Penumbra radius in face-UV (resolution-independent). softness 0 = hard.
+  float radius = p4.w * 0.004;
+
+  float lit = PointShadowTap(uv, tile, qx, qy, total, half_texel, receiver);
+  // A per-fragment rotation hides the ring pattern as a smooth edge.
+  float noise = fract(
+      52.9829189 *
+      fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float base = noise * 6.28318530718;
+  for (int i = 0; i < SPOT_PCF_RING; i++) {
+    float angle = base + float(i) * (6.28318530718 / float(SPOT_PCF_RING));
+    lit += PointShadowTap(uv + vec2(cos(angle), sin(angle)) * radius, tile, qx,
+                          qy, total, half_texel, receiver);
   }
   return lit / float(SPOT_PCF_RING + 1);
 }

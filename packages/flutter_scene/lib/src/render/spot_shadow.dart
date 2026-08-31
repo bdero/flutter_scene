@@ -22,6 +22,7 @@ class SpotShadowFrame {
     required this.normalBias,
     required this.softness,
     required this.casterFaces,
+    required this.casterChannelMasks,
   });
 
   /// The shadow-casting spot components, index = slot.
@@ -35,6 +36,10 @@ class SpotShadowFrame {
   final double normalBias;
   final double softness;
   final ShadowCasterFaces casterFaces;
+
+  /// Each caster's shadow-caster channel mask (parallel to [casters]); a node
+  /// renders into that spot's tile only when its light channels intersect.
+  final List<int> casterChannelMasks;
 
   /// The slot assigned to [component] (its atlas tile and matrix), or -1 when
   /// it is not a shadow caster this frame.
@@ -68,5 +73,8 @@ SpotShadowFrame? collectSpotShadows(List<SpotLightComponent> spots) {
     normalBias: first.shadowNormalBias,
     softness: first.shadowSoftness,
     casterFaces: first.shadowCasterFaces,
+    casterChannelMasks: [
+      for (final caster in casters) caster.light.shadowCasterChannelMask,
+    ],
   );
 }

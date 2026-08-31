@@ -31,6 +31,8 @@ environment:
   flutter: ">=3.47.0"
 
 dependencies:
+  # Injectable wall clock for SceneView tick deltas (faked under flutter_test).
+  clock: ^1.1.1
   code_assets: ^1.2.1
   # Compiles a project's own C/C++ component sources; see
   # buildNativeComponents in build_hooks.dart.

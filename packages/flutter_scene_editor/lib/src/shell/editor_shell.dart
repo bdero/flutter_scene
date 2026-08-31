@@ -1093,8 +1093,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                             actions: IconButton(
                               icon: const Icon(Icons.add, size: 16),
                               tooltip: 'Create node',
-                              onPressed: () =>
-                                  _ctrl.run('createNode', {'name': 'Node'}),
+                              onPressed: _addEmptyNode,
                             ),
                           ),
                           DockPanel(
@@ -1358,6 +1357,17 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     await _ctrl.deleteSelection();
   }
 
+  // Adds a blank node, selected and revealed in the outliner.
+  Future<void> _addEmptyNode() async {
+    final beforeNodes = Set.of(_ctrl.document.nodes.keys);
+    await _ctrl.run('createNode', {'name': 'Node'});
+    final nodeId = _ctrl.document.nodes.keys.firstWhere(
+      (id) => !beforeNodes.contains(id),
+    );
+    _ctrl.selection.selectOnly(nodeId);
+    _ctrl.revealInOutliner(nodeId);
+  }
+
   // Adds a cube: creates geometry, material, node, and attaches a mesh
   // component in four commands, reading back new resource ids after each.
   // The primitives the engine can build, in the order they appear in the
@@ -1401,7 +1411,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         'name': name,
       });
       _dialogHistory.rememberPrefab(path);
-      _ctrl.selection.selectOnly(tx.records.first.targetId);
+      final instanceId = tx.records.first.targetId;
+      _ctrl.selection.selectOnly(instanceId);
+      _ctrl.revealInOutliner(instanceId);
     } catch (e) {
       // Realizing the instance failed (for example the prefab could not be
       // loaded). Roll the instance back so the scene stays consistent.
@@ -1451,13 +1463,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   ) => componentObjects.where((entry) => entry.group == group);
 
   /// Creates an empty node, the parent everything else gets grouped under.
-  Future<void> _addEmptyNode() async {
-    final before = Set.of(_ctrl.document.nodes.keys);
-    await _ctrl.run('createNode', {'name': 'Node'});
-    _ctrl.selection.selectOnly(
-      _ctrl.document.nodes.keys.firstWhere((id) => !before.contains(id)),
-    );
-  }
 
   /// Creates a node carrying one component, named for what it is.
   Future<void> _addComponentObject(String componentType, String label) async {
@@ -1510,8 +1515,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       },
     });
 
-    // Select the new node.
+    // Select the new node and bring its outliner row into view.
     _ctrl.selection.selectOnly(nodeId);
+    _ctrl.revealInOutliner(nodeId);
   }
 }
 

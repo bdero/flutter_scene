@@ -110,6 +110,16 @@ abstract class ComponentCodec {
   /// Whether [component] is an instance this codec serializes.
   bool claims(Component component) => false;
 
+  /// Writes one declared property straight onto a live component, for editor
+  /// previews during a slider drag. Returns false when this codec does not
+  /// own [component] or the property has no live write binding.
+  bool writeLiveProperty(
+    Component component,
+    String name,
+    PropertyValue value,
+    RealizeContext context,
+  ) => false;
+
   /// Builds a live component from [spec], or returns null when it cannot be
   /// realized in the given context (for example a mesh with no resource
   /// realizer).

@@ -170,7 +170,7 @@ class _DockingShellState extends State<DockingShell> {
             if (_floatControllers[id] != null)
               RegularWindow(
                 controller: _floatControllers[id]!,
-                child: _FloatWindowScaffold(
+                child: FloatWindowScaffold(
                   theme: theme,
                   child: _panelContent(id),
                 ),
@@ -244,8 +244,19 @@ class _FloatWindowDelegate with RegularWindowControllerDelegate {
 /// TODO(docking): the editor's keyboard shortcuts are only bound in the main
 /// window's shell; route them here too so panels stay fully usable while
 /// floating.
-class _FloatWindowScaffold extends StatelessWidget {
-  const _FloatWindowScaffold({required this.theme, required this.child});
+///
+/// The nested [MaterialApp] must not cut the panel off from the editor's
+/// theme scopes. Those live above the shell (`EditorThemeScope` sits in the
+/// app's `MaterialApp.builder`), and forui resolves `FTheme` plus an
+/// `InheritedModel` accessibility scope by context, so a floating panel that
+/// lost them would throw on mount the way dialog windows did in issue #344.
+@visibleForTesting
+class FloatWindowScaffold extends StatelessWidget {
+  const FloatWindowScaffold({
+    super.key,
+    required this.theme,
+    required this.child,
+  });
 
   final ThemeData theme;
   final Widget child;

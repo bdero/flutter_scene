@@ -156,3 +156,38 @@ enum IrradianceInjectionResolution {
   /// How far each axis of the render target is divided down.
   final int divisor;
 }
+
+/// The resolved probe lattice the global-illumination field is filling, as
+/// read back from a live [Scene] for visualization.
+///
+/// The field's placement is derived per frame from the volume mode, the
+/// camera, and the scene bounds, so an editor cannot re-derive it reliably;
+/// read it with `Scene.globalIlluminationProbeGrid` instead.
+/// {@category Lighting and environment}
+class IrradianceProbeGrid {
+  const IrradianceProbeGrid({
+    required this.origin,
+    required this.spacing,
+    required this.counts,
+  });
+
+  /// World position of the minimum-corner probe.
+  final Vector3 origin;
+
+  /// World-space distance between neighbouring probes, per axis.
+  final Vector3 spacing;
+
+  /// Probe count along each axis.
+  final Vector3 counts;
+
+  /// Total probes in the lattice.
+  int get probeCount => counts.x.round() * counts.y.round() * counts.z.round();
+
+  /// World position of the probe at lattice offset ([x], [y], [z]) from
+  /// [origin].
+  Vector3 probePosition(int x, int y, int z) => Vector3(
+    origin.x + x * spacing.x,
+    origin.y + y * spacing.y,
+    origin.z + z * spacing.z,
+  );
+}

@@ -235,6 +235,22 @@ Map<String, dynamic> encodeDocument(SceneDocument doc) {
   if (doc.views.isNotEmpty) {
     json['views'] = [for (final view in doc.views) _encodeView(view, idKey)];
   }
+  final editor = doc.editor;
+  if (editor != null) {
+    final camera = editor.camera;
+    json['editor'] = {
+      if (camera != null)
+        'camera': {
+          'azimuth': camera.azimuth,
+          'elevation': camera.elevation,
+          'radius': camera.radius,
+          'target': _vec3Json(camera.target),
+          if (camera.orthographic) 'orthographic': true,
+        },
+      if (editor.selection.isNotEmpty)
+        'selection': [for (final id in editor.selection) idKey(id)],
+    };
+  }
   return json;
 }
 
@@ -587,6 +603,13 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (e.temporalAntiAliasingObjectMotion) 'objectMotion': true,
     if (e.temporalAntiAliasingSkinnedMotion) 'skinnedMotion': true,
   };
+  final smaa = <String, dynamic>{
+    if (e.smaaThreshold != 0.1) 'threshold': e.smaaThreshold,
+    if (e.smaaMaxSearchSteps != 16) 'maxSearchSteps': e.smaaMaxSearchSteps,
+    if (e.smaaMaxDiagonalSearchSteps != 8)
+      'maxDiagonalSearchSteps': e.smaaMaxDiagonalSearchSteps,
+    if (e.smaaCornerRounding != 25.0) 'cornerRounding': e.smaaCornerRounding,
+  };
   return {
     if (colorGrading.isNotEmpty) 'colorGrading': colorGrading,
     if (bloom.isNotEmpty) 'bloom': bloom,
@@ -599,6 +622,7 @@ Map<String, dynamic> _encodeEnvironmentEffects(EnvironmentEffectsSpec e) {
     if (ssr.isNotEmpty) 'screenSpaceReflections': ssr,
     if (gi.isNotEmpty) 'globalIllumination': gi,
     if (taa.isNotEmpty) 'temporalAntiAliasing': taa,
+    if (smaa.isNotEmpty) 'smaa': smaa,
     if (fog.isNotEmpty) 'fog': fog,
     if (godRays.isNotEmpty) 'godRays': godRays,
     if (dof.isNotEmpty) 'depthOfField': dof,
@@ -792,6 +816,7 @@ Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
     if (n.instance != null) 'instance': _encodeInstance(n.instance!, idKey),
     if (!n.visible) 'visible': false,
     if (!n.raycastable) 'raycastable': false,
+    if (n.shadowCastingMode != 'on') 'shadowCasting': n.shadowCastingMode,
   };
 }
 
@@ -971,6 +996,29 @@ SceneDocument decodeDocument(Map<String, dynamic> json) {
   doc.animations.addAll(animations);
   doc.payloads.addAll(payloads);
   doc.views.addAll(views);
+  if (json['editor'] case final Map editorJson) {
+    EditorCameraSpec? camera;
+    if (editorJson['camera'] case final Map cameraJson) {
+      final target = cameraJson['target'] as List? ?? const [0, 0, 0];
+      camera = EditorCameraSpec(
+        azimuth: (cameraJson['azimuth'] as num? ?? 0).toDouble(),
+        elevation: (cameraJson['elevation'] as num? ?? 0).toDouble(),
+        radius: (cameraJson['radius'] as num? ?? 1).toDouble(),
+        target: Vector3(
+          (target[0] as num).toDouble(),
+          (target[1] as num).toDouble(),
+          (target[2] as num).toDouble(),
+        ),
+        orthographic: editorJson['camera']['orthographic'] as bool? ?? false,
+      );
+    }
+    // Selection ids referencing nodes no longer in the document are dropped.
+    final selection = [
+      for (final id in (editorJson['selection'] as List? ?? const []))
+        LocalId.parse(id as String),
+    ].where(nodes.containsKey).toList();
+    doc.editor = EditorStateSpec(camera: camera, selection: selection);
+  }
   return doc;
 }
 
@@ -1019,6 +1067,7 @@ NodeSpec _decodeNode(LocalId id, Map<String, dynamic> json) => NodeSpec(
       : null,
   visible: json['visible'] as bool? ?? true,
   raycastable: json['raycastable'] as bool? ?? true,
+  shadowCastingMode: json['shadowCasting'] as String? ?? 'on',
 );
 
 TransformSpec _decodeTransform(Map<String, dynamic> json) {
@@ -1119,6 +1168,7 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
   final ssr = _map(effects['screenSpaceReflections']);
   final gi = _map(effects['globalIllumination']);
   final taa = _map(effects['temporalAntiAliasing']);
+  final smaa = _map(effects['smaa']);
   final fog = _map(effects['fog']);
   final rays = _map(effects['godRays']);
   final dof = _map(effects['depthOfField']);
@@ -1208,6 +1258,11 @@ EnvironmentEffectsSpec _decodeEnvironmentEffects(Object? value) {
     temporalAntiAliasingJitterScale: _d(taa['jitterScale'] ?? 0.46),
     temporalAntiAliasingObjectMotion: taa['objectMotion'] as bool? ?? false,
     temporalAntiAliasingSkinnedMotion: taa['skinnedMotion'] as bool? ?? false,
+    smaaThreshold: _d(smaa['threshold'] ?? 0.1),
+    smaaMaxSearchSteps: (smaa['maxSearchSteps'] as num?)?.toInt() ?? 16,
+    smaaMaxDiagonalSearchSteps:
+        (smaa['maxDiagonalSearchSteps'] as num?)?.toInt() ?? 8,
+    smaaCornerRounding: _d(smaa['cornerRounding'] ?? 25.0),
     screenSpaceReflectionsEnabled: ssr['enabled'] as bool? ?? false,
     screenSpaceReflectionsIntensity: _d(ssr['intensity'] ?? 1.0),
     screenSpaceReflectionsMaxDistance: _d(ssr['maxDistance'] ?? 24.4),

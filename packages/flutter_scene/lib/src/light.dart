@@ -9,6 +9,8 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/render/punctual_lights.dart'
+    show FroxelLighting;
 
 /// Which faces of a shadow caster are rendered into the shadow map (the
 /// others are culled). Trades the two shadow-map failure modes (self-shadow
@@ -33,52 +35,32 @@ enum ShadowCasterFaces {
   both,
 }
 
-/// How a node's meshes take part in shadow casting, set through
-/// [Node.shadowCastingMode].
+/// How a node's meshes participate in shadow casting, set through
+/// `Node.shadowCastingMode`.
 ///
-/// Independent of whether the meshes are visible in the colour image, except
+/// Independent of whether the meshes are visible in the color image, except
 /// for [shadowsOnly], which is defined as the combination of the two.
 /// {@category Lighting and environment}
 enum ShadowCastingMode {
-  /// Never rendered into any shadow map. The meshes still draw, so they are
-  /// lit but throw nothing. For geometry whose shadow is noise -- foliage
-  /// cards, decals, effects -- or already baked into the scene.
+  /// The meshes never render into any shadow map. They still draw normally,
+  /// so they are lit but throw no shadow. Use for geometry whose shadow is
+  /// noise (foliage cards, decals, effects) or already baked into the scene.
   off,
 
-  /// Casts from the faces the light can see, respecting each material's own
-  /// culling. The default, and what shadows normally are.
+  /// The meshes cast shadows from the faces the light sees, respecting each
+  /// material's own culling. The default.
   on,
 
-  /// Casts from every face, ignoring material culling.
-  ///
-  /// Fixes light leaking through single-sided geometry, which is what a wall
-  /// or a ground plane modelled as one sheet is: the light sees the back of
-  /// it, finds nothing facing it, and lights the room through the wall. Costs
-  /// both faces in the map.
+  /// The meshes cast from every face, ignoring material culling. Fixes light
+  /// leaking through single-sided geometry (a wall or ground plane modelled
+  /// as one-sided), at the cost of rendering both faces into the map.
   doubleSided,
 
-  /// Rendered into shadow maps and never into the colour image, so it throws
-  /// a shadow while staying invisible.
-  ///
-  /// For a stand-in occluder: a cheap proxy casting in place of an expensive
-  /// mesh, or geometry outside the frame that still has to darken what is
-  /// inside it.
-  shadowsOnly;
-
-  /// Whether this mode puts the meshes in a shadow map at all.
-  bool get casts => this != ShadowCastingMode.off;
-
-  /// Whether this mode draws the meshes in the colour image.
-  bool get drawsInColor => this != ShadowCastingMode.shadowsOnly;
-
-  /// The mode named [name], or [on] when it is not one of these.
-  ///
-  /// A document from a newer build naming a mode this one lacks casts
-  /// normally rather than vanishing: a missing object is a worse failure than
-  /// a differently-shadowed one.
-  static ShadowCastingMode parse(String? name) =>
-      values.where((mode) => mode.name == name).firstOrNull ??
-      ShadowCastingMode.on;
+  /// The meshes render into shadow maps but never into the color image, so
+  /// they throw a shadow while staying invisible. Use for an off-screen or
+  /// stand-in occluder: a cheap proxy casting in place of an expensive mesh,
+  /// or geometry outside the frame that must still darken what is in it.
+  shadowsOnly,
 }
 
 /// The sampling pattern used for directional shadow filtering.
@@ -215,6 +197,8 @@ class DirectionalLight {
   /// proportionally more resolution. Used by [computeCascades].
   double shadowCascadeSplitLambda;
 
+  // TODO(fscene): expose these two through DirectionalLightCodec; the pinned
+  // bound needs a nullable number field, which the codecs have no shape for.
   /// View distance, in world units, at which the first cascade ends. `null`
   /// (the default) lets [shadowCascadeSplitLambda] place it.
   ///
@@ -299,6 +283,8 @@ class DirectionalLight {
   /// self-shadow acne.
   ShadowCasterFaces shadowCasterFaces;
 
+  // TODO(fscene): expose the channel masks through the light codecs, so an
+  // authored scene can carry them.
   /// The light channels this light illuminates, an 8-bit mask (default
   /// `0xFF`, every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
@@ -555,7 +541,10 @@ class DirectionalLight {
 /// the node moves the light. The analytic contribution is layered on top of
 /// the image-based-lighting ambient term, the same as [DirectionalLight].
 ///
-/// Point lights do not cast shadows.
+/// When [castsShadow] is true and the scene's point-shadow budget has room,
+/// the renderer renders six perspective depth faces around the light into the
+/// shared shadow atlas and the light is occluded by geometry between it and
+/// the surface.
 /// {@category Lighting and environment}
 class PointLight {
   /// Creates a [PointLight].
@@ -571,7 +560,15 @@ class PointLight {
     this.intensity = 1.0,
     this.range = 0.0,
     this.falloffExponent = 2.0,
+    this.castsShadow = false,
+    this.shadowMapResolution = 512,
+    this.shadowNear = 0.1,
+    this.shadowDepthBias = 0.0,
+    this.shadowNormalBias = 0.1,
+    this.shadowSoftness = 1.0,
+    this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
+    this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0);
 
   /// Linear RGB color of the light.
@@ -591,13 +588,120 @@ class PointLight {
   /// touching distant scenery). Values at or below zero are clamped.
   double falloffExponent;
 
+  /// Whether this light casts a shadow. When true, the renderer renders six
+  /// perspective depth faces around the light if the scene's point-shadow
+  /// budget has room (shadow-casting point lights are limited; the rest
+  /// shade unshadowed). Six faces cost six depth passes, so this is the most
+  /// expensive shadow type per light.
+  bool castsShadow;
+
+  /// Pixel resolution this light asks for on each (square) cube face.
+  ///
+  /// The shared shadow atlas gives every tile one size, so this is only
+  /// honored when no directional cascade and no shadow-casting spot is
+  /// already setting it, and only for the first point caster. Otherwise the
+  /// faces render at half whatever tile size the atlas chose.
+  int shadowMapResolution;
+
+  /// Near clip distance of each face's shadow frustum. Geometry closer to
+  /// the light than this does not occlude.
+  double shadowNear;
+
+  /// Window-space depth bias subtracted from the receiver before the shadow
+  /// test. Defaults to `0` for the same reason as [SpotLight.shadowDepthBias]
+  /// (a constant bias misbehaves across a perspective depth range); the
+  /// normal-offset bias below does the work instead.
+  double shadowDepthBias;
+
+  /// World-space offset along the surface normal applied to the receiver
+  /// before the shadow lookup ("normal-offset shadows"). The main
+  /// acne/peter-panning control; world-space, so very small scenes may want
+  /// a smaller value.
+  double shadowNormalBias;
+
+  /// Radius of the soft-shadow PCF kernel, in shadow-map texels. `0` gives a
+  /// hard edge.
+  double shadowSoftness;
+
+  /// Which faces are rendered into the shadow map. [ShadowCasterFaces.back]
+  /// (second-depth) suits solid geometry; [ShadowCasterFaces.front] is the
+  /// general default.
+  ShadowCasterFaces shadowCasterFaces;
+
   /// The light channels this light illuminates, an 8-bit mask (default
   /// `0xFF`, every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
   /// either side never intersects. Channels do not affect image-based
   /// (environment) lighting, which every node receives.
+  ///
+  /// Gates the lighting only; [shadowCasterChannelMask] selects what renders
+  /// into this light's shadow faces.
   /// {@category Lighting and environment}
   int channelMask;
+
+  /// The light channels whose nodes render into this light's shadow faces, an
+  /// 8-bit mask (default `0xFF`, every channel). A node casts only when
+  /// `shadowCasterChannelMask & node.lightChannelMask` is nonzero.
+  ///
+  /// Deliberately independent of [channelMask], the same way a spot's is.
+  /// {@category Lighting and environment}
+  int shadowCasterChannelMask;
+
+  /// The far plane of the shadow faces: the light's [range], or a default
+  /// reach when the range is infinite (mirrors [SpotLight]).
+  double get shadowFar => range > 0.0 ? range : 100.0;
+
+  /// The world -> clip matrix that renders face [face] (0..5, the +X, -X,
+  /// +Y, -Y, +Z, -Z axes) of this light's shadow cube for a light at
+  /// [worldPosition]. A 90 degree square frustum from [shadowNear] to
+  /// [shadowFar]. The per-face basis must stay in lockstep with the
+  /// dominant-axis face selection in material_shadow_sampling.glsl
+  /// (SamplePointShadow), which reconstructs the same mapping analytically.
+  Matrix4 pointShadowFaceViewProjection(Vector3 worldPosition, int face) {
+    final right = _pointFaceRight[face];
+    final up = _pointFaceUp[face];
+    final forward = _pointFaceForward[face];
+    final view = Matrix4(
+      right.x,
+      up.x,
+      forward.x,
+      0.0, //
+      right.y,
+      up.y,
+      forward.y,
+      0.0, //
+      right.z,
+      up.z,
+      forward.z,
+      0.0, //
+      -right.dot(worldPosition),
+      -up.dot(worldPosition),
+      -forward.dot(worldPosition),
+      1.0, //
+    );
+    final projection = PerspectiveProjection(
+      fovRadiansY: math.pi / 2.0,
+      near: shadowNear,
+      far: shadowFar,
+    ).getProjectionMatrix(1.0);
+    return projection * view;
+  }
+
+  static final List<Vector3> _pointFaceForward = [
+    Vector3(1, 0, 0), Vector3(-1, 0, 0), //
+    Vector3(0, 1, 0), Vector3(0, -1, 0), //
+    Vector3(0, 0, 1), Vector3(0, 0, -1), //
+  ];
+  static final List<Vector3> _pointFaceRight = [
+    Vector3(0, 0, -1), Vector3(0, 0, 1), //
+    Vector3(-1, 0, 0), Vector3(1, 0, 0), //
+    Vector3(1, 0, 0), Vector3(-1, 0, 0), //
+  ];
+  static final List<Vector3> _pointFaceUp = [
+    Vector3(0, 1, 0), Vector3(0, 1, 0), //
+    Vector3(0, 0, 1), Vector3(0, 0, 1), //
+    Vector3(0, 1, 0), Vector3(0, 1, 0), //
+  ];
 }
 
 /// A rectangle that emits light from its face, shaded with linearly
@@ -687,6 +791,7 @@ class SpotLight {
     this.shadowSoftness = 1.0,
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
+    this.shadowCasterChannelMask = 0xFF,
   }) : color = color ?? Vector3(1.0, 1.0, 1.0),
        direction = direction ?? Vector3(0.0, -1.0, 0.0);
 
@@ -720,7 +825,11 @@ class SpotLight {
   /// room (shadow-casting spots are limited; the rest shade unshadowed).
   bool castsShadow;
 
-  /// Pixel resolution of this spot's (square) shadow map tile.
+  /// Pixel resolution this spot asks for on its (square) shadow map tile.
+  ///
+  /// The shared shadow atlas gives every tile one size, so this is only
+  /// honored when no directional cascade is already setting it, and only for
+  /// the first spot caster.
   int shadowMapResolution;
 
   /// Near clip distance of the shadow frustum. Geometry closer to the light
@@ -750,20 +859,26 @@ class SpotLight {
   /// the general default.
   ShadowCasterFaces shadowCasterFaces;
 
-  // TODO(light-channels-spot-casters): add a spot caster mask alongside
-  // DirectionalLight.shadowCasterChannelMask, so a spot's shadow map can drop
-  // casters the way a cascade can.
   /// The light channels this spot illuminates, an 8-bit mask (default `0xFF`,
   /// every channel). A node receives this light only when
   /// `channelMask & node.lightChannelMask` is nonzero, so a zero mask on
   /// either side never intersects. Channels do not affect image-based
   /// (environment) lighting, which every node receives.
   ///
-  /// Gates the lighting only. Every caster still renders into this spot's
-  /// shadow map; only [DirectionalLight.shadowCasterChannelMask] filters
-  /// casters.
+  /// Gates the lighting only; [shadowCasterChannelMask] selects what renders
+  /// into this spot's shadow map.
   /// {@category Lighting and environment}
   int channelMask;
+
+  /// The light channels whose nodes render into this spot's shadow map, an
+  /// 8-bit mask (default `0xFF`, every channel). A node casts only when
+  /// `shadowCasterChannelMask & node.lightChannelMask` is nonzero.
+  ///
+  /// Deliberately independent of [channelMask]: a node excluded from the
+  /// lighting still casts unless this mask drops it too, so hiding geometry
+  /// from a spot takes clearing it here as well.
+  /// {@category Lighting and environment}
+  int shadowCasterChannelMask;
 
   /// The world -> clip matrix that renders and samples this spot's perspective
   /// shadow map, for a light at [worldPosition] aimed along [worldDirection]
@@ -859,7 +974,9 @@ class Lighting {
     this.punctualParamsCount = 0,
     this.punctualIndexWidth = 0,
     this.punctualIndexHeight = 0,
+    this.froxels,
     this.spotShadowCount = 0,
+    this.pointShadowTileCount = 0,
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
@@ -941,7 +1058,15 @@ class Lighting {
   /// The per-frame light-index texture: each item's
   /// `[lightListOffset, +lightListCount)` slice indexes into
   /// [punctualParamsTexture]. Null when no item is reached by any light.
+  /// In froxel mode ([froxels] non-null) callers set this to the froxel data
+  /// texture instead, which the shader reads through the same sampler.
   final gpu.Texture? punctualIndexTexture;
+
+  /// This view's froxel clustering, or null when the view shades through the
+  /// per-object light lists (non-perspective camera, non-uniform light
+  /// channels, or clustering disabled). When set, [punctualIndexTexture] and
+  /// its dimensions describe the froxel data texture.
+  final FroxelLighting? froxels;
 
   /// Number of light rows in [punctualParamsTexture]. Zero leaves punctual
   /// lighting off (only [directionalLight] and the ambient term contribute).
@@ -956,6 +1081,11 @@ class Lighting {
   /// directional cascades in [shadowMap] and their matrices ride in
   /// [punctualParamsTexture]. Zero disables spot shadow sampling.
   final int spotShadowCount;
+
+  /// Number of atlas tiles claimed by shadow-casting point lights this frame
+  /// (two per caster, each packing four quarter-tile cube faces); they follow
+  /// the spot tiles in [shadowMap]. Zero disables point shadow sampling.
+  final int pointShadowTileCount;
 
   /// Shared spot-shadow sampling parameters.
   final double spotShadowDepthBias;

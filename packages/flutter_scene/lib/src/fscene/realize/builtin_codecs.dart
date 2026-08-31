@@ -1150,7 +1150,7 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
     properties: propertySchema,
     gizmo: const GizmoSpec([
       GizmoIcon(color: GizmoColor.bind('color')),
-      // Zero range means infinite and draws nothing.
+      // Reach sphere; zero range draws the unbounded warning.
       GizmoWireSphere(
         radius: GizmoScalar.bind('range'),
         visibility: GizmoVisibility.selected,
@@ -1202,6 +1202,71 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
       constraints: const [IntRange(0, 0xFF)],
       get: (c) => c.light.channelMask,
       set: (c, v) => c.light.channelMask = v,
+    ),
+    ComponentField.boolean(
+      'castsShadow',
+      defaultValue: false,
+      doc: 'Whether this light renders shadow cube faces.',
+      group: 'Shadows',
+      get: (c) => c.light.castsShadow,
+      set: (c, v) => c.light.castsShadow = v,
+    ),
+    ComponentField.integer(
+      'shadowMapResolution',
+      defaultValue: 512,
+      doc:
+          'Requested shadow map resolution per cube face, in texels. The '
+          'shared atlas uses one tile size, so a directional or spot caster '
+          'already setting it wins.',
+      group: 'Shadows',
+      constraints: const [IntRange(1, null), PowerOfTwo(min: 64, max: 4096)],
+      get: (c) => c.light.shadowMapResolution,
+      set: (c, v) => c.light.shadowMapResolution = v,
+    ),
+    ComponentField.number(
+      'shadowNear',
+      defaultValue: 0.1,
+      doc: 'Near clip distance of the shadow frustum.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative()],
+      get: (c) => c.light.shadowNear,
+      set: (c, v) => c.light.shadowNear = v,
+    ),
+    ComponentField.number(
+      'shadowDepthBias',
+      defaultValue: 0.0,
+      doc: 'Depth bias used by shadow sampling.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 0.1), Step(0.001)],
+      get: (c) => c.light.shadowDepthBias,
+      set: (c, v) => c.light.shadowDepthBias = v,
+    ),
+    ComponentField.number(
+      'shadowNormalBias',
+      defaultValue: 0.1,
+      doc: 'World-space normal offset used by shadow sampling.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 1), Step(0.01)],
+      get: (c) => c.light.shadowNormalBias,
+      set: (c, v) => c.light.shadowNormalBias = v,
+    ),
+    ComponentField.number(
+      'shadowSoftness',
+      defaultValue: 1.0,
+      doc: 'Shadow filter radius, in texels.',
+      group: 'Shadows',
+      constraints: const [Range.nonNegative(), SoftRange(0, 8)],
+      get: (c) => c.light.shadowSoftness,
+      set: (c, v) => c.light.shadowSoftness = v,
+    ),
+    ComponentField.enumString(
+      'shadowCasterFaces',
+      values: ShadowCasterFaces.values,
+      defaultValue: ShadowCasterFaces.front,
+      doc: 'Caster faces rendered into the shadow map.',
+      group: 'Shadows',
+      get: (c) => c.light.shadowCasterFaces,
+      set: (c, v) => c.light.shadowCasterFaces = v,
     ),
   ];
 
@@ -1890,6 +1955,11 @@ class RectAreaLightCodec
         height: GizmoScalar.bind('height'),
       ),
       GizmoArrow(length: GizmoScalar(0.6)),
+      // Reach sphere; zero range draws the unbounded warning.
+      GizmoWireSphere(
+        radius: GizmoScalar.bind('range'),
+        visibility: GizmoVisibility.selected,
+      ),
     ]),
   );
 

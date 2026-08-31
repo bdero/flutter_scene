@@ -18,6 +18,7 @@ import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
+import 'package:scene/scene.dart' show EditorCameraSpec, EditorStateSpec;
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
 
@@ -162,6 +163,7 @@ class _EditorHomeState extends State<_EditorHome> {
     _gizmoPreferences.load(
       enabled: _settings.gizmosEnabled,
       hiddenTypes: _settings.hiddenGizmoTypes,
+      showGiProbes: _settings.giProbesVisible,
     );
     _gizmoPreferences.addListener(_persistGizmoPreferences);
     unawaited(
@@ -187,6 +189,33 @@ class _EditorHomeState extends State<_EditorHome> {
 
   void _configureController(EditorController controller) {
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
+    // Saves carry the viewport camera and selection in the document; a
+    // restored pose applies now (buffered until a viewport attaches).
+    controller.editorStateProvider = () {
+      final pose = _cameraHandle.pose;
+      return EditorStateSpec(
+        camera: pose == null
+            ? null
+            : EditorCameraSpec(
+                azimuth: pose.azimuth,
+                elevation: pose.elevation,
+                radius: pose.radius,
+                target: pose.target,
+                orthographic: pose.orthographic,
+              ),
+        selection: controller.selection.ids.toList(),
+      );
+    };
+    final restoredCamera = controller.restoredEditorState?.camera;
+    if (restoredCamera != null) {
+      _cameraHandle.setPose(
+        azimuth: restoredCamera.azimuth,
+        elevation: restoredCamera.elevation,
+        radius: restoredCamera.radius,
+        target: restoredCamera.target,
+        orthographic: restoredCamera.orthographic,
+      );
+    }
     // Foreign component types already learned (cache, package manifests,
     // source extraction, or a live session) carry over to every controller
     // the editor swaps in, keeping their original provenance.
@@ -962,6 +991,7 @@ class _EditorHomeState extends State<_EditorHome> {
     _settings.hiddenGizmoTypes
       ..clear()
       ..addAll(_gizmoPreferences.hiddenTypes);
+    _settings.giProbesVisible = _gizmoPreferences.showGiProbes;
     _persistSettings();
   }
 
@@ -1193,8 +1223,16 @@ class _EditorHomeState extends State<_EditorHome> {
   // the stdio bridge:
   //   dart run flutter_scene_mcp:flutter_scene_mcp_connect 7007
   Future<void> _startMcpServer() async {
+    // A second editor instance (or a test rig) overrides the port so both can
+    // serve agents at once.
+    final port =
+        int.tryParse(
+          Platform.environment['FLUTTER_SCENE_EDITOR_MCP_PORT'] ?? '',
+        ) ??
+        7007;
     try {
       _mcpServer = await serveEditorMcpOverTcp(
+        port: port,
         // Mutations route through the controller so agent edits reach the
         // rendered scene (and the panels), not just the document.
         () => EditorToolSurface(
@@ -1404,7 +1442,7 @@ class _EditorHomeState extends State<_EditorHome> {
           setDebugMode: _renderGraphMcp.setMode,
         ),
       );
-      debugPrint('Editor MCP server listening on 127.0.0.1:7007');
+      debugPrint('Editor MCP server listening on 127.0.0.1:$port');
     } on SocketException catch (e) {
       debugPrint('Editor MCP server not started: $e');
     }

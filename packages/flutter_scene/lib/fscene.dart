@@ -126,7 +126,8 @@ export 'src/fscene/realize/realize.dart'
         defaultComponentRegistry,
         realizeScene,
         realizeSceneAsync,
-        serializeScene;
+        serializeScene,
+        shadowCastingModeFromName;
 export 'src/fscene/realize/resource_realizer.dart' show ResourceRealizer;
 export 'src/fscene/realize/stage.dart' show realizeStage, serializeStage;
 export 'src/fscene/realize/views.dart' show realizeViews, serializeViews;

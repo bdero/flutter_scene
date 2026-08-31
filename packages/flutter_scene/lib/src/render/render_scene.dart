@@ -15,8 +15,8 @@ import 'package:flutter_scene/src/components/reflection_probe_component.dart';
 import 'package:flutter_scene/src/components/semantics_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
-import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
@@ -119,30 +119,30 @@ class RenderItem {
   /// every frame (see the shadow cache).
   bool shadowStatic = false;
 
-  /// Whether this item goes into a shadow map.
-  ///
-  /// The node's [ShadowCastingMode] anded with the primitive's own
-  /// `castsShadow`, refreshed each frame. Kept as a bool rather than derived
-  /// from [shadowCastingMode] because the primitive gets a say too, and a
-  /// primitive that opts out of casting does so whatever the node's mode is.
-  bool castsShadows = true;
-
-  /// The owning node's mode, for the two things the bool cannot say.
+  /// Mirrors the owning node's `shadowCastingMode`, refreshed each frame.
   ShadowCastingMode shadowCastingMode = ShadowCastingMode.on;
 
-  /// Whether the shadow pass should draw both faces of it.
-  ///
-  /// What stops light leaking through geometry modelled as one sheet: the
-  /// light looks for something facing it, finds nothing, and lights the room
-  /// through the wall.
-  bool get shadowDoubleSided =>
-      castsShadows && shadowCastingMode == ShadowCastingMode.doubleSided;
+  /// Mirrors the owning `MeshPrimitive.castsShadow`, refreshed each frame.
+  /// Kept apart from [shadowCastingMode] rather than folded into it: a
+  /// primitive opting out must stop the casting without also pulling a
+  /// shadows-only node back into the color image.
+  bool primitiveCastsShadow = true;
 
-  /// Whether this item draws in the colour image.
-  ///
-  /// False only for a shadows-only caster: a stand-in occluder that darkens
-  /// what you can see without being seen itself.
-  bool get drawsInColor => shadowCastingMode.drawsInColor;
+  /// Whether this item renders into shadow maps at all.
+  bool get castsShadows =>
+      primitiveCastsShadow && shadowCastingMode != ShadowCastingMode.off;
+
+  /// Whether this item casts from every face, ignoring material culling.
+  bool get shadowDoubleSided =>
+      shadowCastingMode == ShadowCastingMode.doubleSided;
+
+  /// Whether this item draws into the color image this frame: visible, its
+  /// primitive shown, and not a shadows-only caster. The shadow passes test
+  /// [castsShadows] instead, so the two are independent.
+  bool get drawsColor =>
+      visible &&
+      primitiveVisible &&
+      shadowCastingMode != ShadowCastingMode.shadowsOnly;
 
   /// The owning node's joints texture and its edge length in texels, or
   /// null/0 for an unskinned node. Refreshed each frame from the node's
@@ -815,10 +815,7 @@ class RenderScene {
   }) {
     final inputs = <RenderInput>{};
     void collect(RenderItem item) {
-      if (!item.visible ||
-          !item.primitiveVisible ||
-          !item.drawsInColor ||
-          (item.layers & layerMask) == 0) {
+      if (!item.drawsColor || (item.layers & layerMask) == 0) {
         return;
       }
       inputs.addAll(item.material.sceneInputs);

@@ -164,6 +164,9 @@ class ShadowCatcherBakePass extends RenderGraphPass {
       spotShadowCount: shadowMap == null
           ? 0
           : _punctualLighting.spotShadowCount,
+      pointShadowTileCount: shadowMap == null
+          ? 0
+          : _punctualLighting.pointShadowTileCount,
       spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
       spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
       spotShadowSoftness: _punctualLighting.spotShadowSoftness,

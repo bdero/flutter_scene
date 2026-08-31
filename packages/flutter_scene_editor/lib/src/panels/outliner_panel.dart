@@ -30,10 +30,73 @@ class OutlinerPanel extends StatefulWidget {
   State<OutlinerPanel> createState() => _OutlinerPanelState();
 }
 
+/// Fixed row heights, so the list lays out only what is visible and scroll
+/// offsets are exact. Variable extents made a scroll jump through a large
+/// scene lay out thousands of rows in one frame (seconds in the Bistro).
+const double _kRowExtent = 24;
+const double _kInsertionExtent = 6;
+
 class _OutlinerPanelState extends State<OutlinerPanel> {
   final Set<LocalId> _collapsed = {};
+  final ScrollController _scroll = ScrollController();
 
   EditorController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller.outlinerReveal.addListener(_onRevealRequest);
+  }
+
+  @override
+  void dispose() {
+    controller.outlinerReveal.removeListener(_onRevealRequest);
+    _scroll.dispose();
+    _search.dispose();
+    super.dispose();
+  }
+
+  // Expands ancestors of the requested node and scrolls its row into view
+  // (centered), after the post-reveal frame has rebuilt the list.
+  void _onRevealRequest() {
+    final id = controller.outlinerReveal.value;
+    if (id == null) return;
+    var ancestor = controller.query.parentOf(id);
+    var expandedAny = false;
+    while (ancestor != null) {
+      expandedAny |= _collapsed.remove(ancestor);
+      ancestor = controller.query.parentOf(ancestor);
+    }
+    if (expandedAny) setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final entries = _visibleEntries(
+        controller,
+        roots: controller.displayRoots(),
+        collapsed: _collapsed,
+      );
+      var offset = 0.0;
+      var found = false;
+      for (final entry in entries) {
+        if (entry is _VisibleNode && entry.node.id == id) {
+          found = true;
+          break;
+        }
+        offset += entry is _VisibleInsertion ? _kInsertionExtent : _kRowExtent;
+      }
+      if (!found) return;
+      final viewport = _scroll.position.viewportDimension;
+      final target = (offset - (viewport - _kRowExtent) / 2).clamp(
+        0.0,
+        _scroll.position.maxScrollExtent,
+      );
+      _scroll.animateTo(
+        target,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
 
   @override
   void didUpdateWidget(OutlinerPanel oldWidget) {
@@ -43,12 +106,6 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
 
   final TextEditingController _search = TextEditingController();
   String _query = '';
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
 
   void _setExpanded(LocalId id, bool expanded) {
     setState(() {
@@ -116,7 +173,12 @@ class _OutlinerPanelState extends State<OutlinerPanel> {
                       ),
                     )
                   : ListView.builder(
+                      controller: _scroll,
                       itemCount: entries.length,
+                      itemExtentBuilder: (index, dimensions) =>
+                          entries[index] is _VisibleInsertion
+                          ? _kInsertionExtent
+                          : _kRowExtent,
                       scrollCacheExtent: const ScrollCacheExtent.pixels(400),
                       itemBuilder: (context, index) {
                         final entry = entries[index];
@@ -334,6 +396,21 @@ List<LocalId> _flatten(EditorController c) {
   return out;
 }
 
+/// The nodes a drag carries, the whole top-level selection when the dragged
+/// row is part of it, otherwise just the dragged row. Ordered as the
+/// outliner shows them.
+List<LocalId> _dragGroup(EditorController c, LocalId dragged) {
+  if (!c.selection.contains(dragged) || c.selection.ids.length < 2) {
+    return [dragged];
+  }
+  final tops = c.topLevelSelection().toSet();
+  final ordered = [
+    for (final id in _flatten(c))
+      if (tops.contains(id)) id,
+  ];
+  return ordered.isEmpty ? [dragged] : ordered;
+}
+
 /// Applies the platform selection gesture for a tap on [id].
 void _handleTap(EditorController c, LocalId id) {
   final keys = HardwareKeyboard.instance;
@@ -394,18 +471,20 @@ class _InsertionLineState extends State<_InsertionLine> {
 
   void _drop(LocalId dragged) {
     final c = widget.controller;
+    final group = _dragGroup(c, dragged);
+    final groupSet = group.toSet();
     final ids = widget.container == null
         ? c.displayRoots()
         : c.displayChildren(widget.container!);
     final without = [
       for (final id in ids)
-        if (id != dragged) id,
+        if (!groupSet.contains(id)) id,
     ];
     final before = widget.beforeId;
     final at = (before == null || !without.contains(before))
         ? without.length
         : without.indexOf(before);
-    c.reparentToContainer(dragged, widget.container, at);
+    c.reparentGroupToContainer(group, widget.container, at);
   }
 
   @override
@@ -422,7 +501,7 @@ class _InsertionLineState extends State<_InsertionLine> {
       },
       builder: (context, candidate, rejected) {
         return Container(
-          height: 6,
+          height: _kInsertionExtent,
           padding: EdgeInsets.only(left: 4.0 + widget.depth * 16.0, right: 4),
           alignment: Alignment.center,
           child: Container(
@@ -490,12 +569,8 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
 
     Widget rowContent = Container(
       color: rowColor,
-      padding: EdgeInsets.only(
-        left: 4.0 + widget.depth * 16.0,
-        right: 4,
-        top: 2,
-        bottom: 2,
-      ),
+      height: _kRowExtent,
+      padding: EdgeInsets.only(left: 4.0 + widget.depth * 16.0, right: 4),
       child: Row(
         children: [
           SizedBox(
@@ -600,7 +675,15 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
       },
       onAcceptWithDetails: (details) {
         setState(() => _dragTarget = false);
-        ctrl.dropOnNode(details.data, node.id);
+        final group = _dragGroup(ctrl, details.data);
+        if (group.length == 1 || ctrl.isPrefabMember(node.id)) {
+          // Prefab targets graft one node at a time through the attach path.
+          for (final id in group) {
+            ctrl.dropOnNode(id, node.id);
+          }
+        } else {
+          ctrl.reparentGroupToContainer(group, node.id, null);
+        }
       },
       onLeave: (_) => setState(() => _dragTarget = false),
       onMove: (_) => setState(() => _dragTarget = true),
@@ -608,15 +691,29 @@ class _OutlinerNodeState extends State<_OutlinerNode> {
         if (!widget.draggable || isMember) return rowContent;
         return Draggable<LocalId>(
           data: node.id,
-          feedback: Material(
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Text(
-                node.name.isEmpty ? node.id.toToken() : node.name,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
+          // Built when the drag starts, so a multi-selection drag labels
+          // itself with the group size without per-row cost per rebuild.
+          feedback: Builder(
+            builder: (context) {
+              final count = _dragGroup(ctrl, node.id).length;
+              return Material(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    count > 1
+                        ? '$count nodes'
+                        : node.name.isEmpty
+                        ? node.id.toToken()
+                        : node.name,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              );
+            },
           ),
           child: rowContent,
         );

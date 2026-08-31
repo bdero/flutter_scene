@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart'
     show PipelineOwner, RenderCustomPaint, SemanticsBuilderCallback;
+import 'package:clock/clock.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/semantics.dart' show SemanticsBinding;
 import 'package:flutter/widgets.dart';
@@ -36,6 +37,14 @@ typedef SceneViewsBuilder = List<RenderView> Function(Duration elapsed);
 /// since the previous tick. Drive per-frame app logic here, or advance the
 /// scene with a supplied timestep via [Scene.update] (after which [Scene.render]
 /// skips its implicit wall-clock tick for that frame).
+///
+/// [deltaSeconds] measures wall time between ticks (see [SceneView.clock]),
+/// not the ticker's frame-begin timestamps. Those timestamps alternate
+/// between tiny and double-length deltas when GPU load pushes frames past a
+/// vsync even though frames present at an even cadence, and motion
+/// integrated against them staggers. [elapsed] stays timestamp-based (its
+/// accumulation carries no such noise), so the deltas can drift from it by
+/// a bounded frame's worth of skew.
 /// {@category Widgets}
 typedef SceneTickCallback =
     void Function(Duration elapsed, double deltaSeconds);
@@ -98,6 +107,7 @@ class SceneView extends StatefulWidget {
     this.autoTick = true,
     this.pixelRatio,
     this.onTick,
+    this.clock,
     this.loading,
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
@@ -142,6 +152,7 @@ class SceneView extends StatefulWidget {
     this.autoTick = true,
     this.pixelRatio,
     this.onTick,
+    this.clock,
     this.loading,
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
@@ -219,6 +230,12 @@ class SceneView extends StatefulWidget {
   /// the scene is revealed), and its first call after reveal carries a
   /// single-frame delta rather than the whole loading time.
   final SceneTickCallback? onTick;
+
+  /// The wall clock behind [SceneTickCallback] deltas. Null reads the
+  /// ambient `package:clock` [Clock] (the system clock in an app, the faked
+  /// clock under `flutter_test`); pass one directly for a driver that
+  /// controls time itself.
+  final Clock? clock;
 
   /// Resources this view waits for before it reveals the scene.
   ///
@@ -298,7 +315,12 @@ class _SceneViewState extends State<SceneView>
     Duration.zero,
   );
   Ticker? _ticker;
-  Duration _lastTick = Duration.zero;
+
+  // The wall-clock instant of the previous tick, for [SceneTickCallback]
+  // deltas; null until the first revealed tick.
+  DateTime? _lastTickTime;
+
+  Clock get _clock => widget.clock ?? clock;
 
   // Zero-based clock: the ticker's raw elapsed at the moment the scene is
   // revealed, subtracted from later ticks so the visible scene starts its time
@@ -452,8 +474,8 @@ class _SceneViewState extends State<SceneView>
       await Scene.initializeStaticResources();
     } catch (error, stack) {
       // The static resources now report their failure instead of completing
-      // normally. Nothing here can recover -- without them no frame can be
-      // drawn -- so the view stays on its loading widget, but the cause is
+      // normally. Nothing here can recover (without them no frame can be
+      // drawn), so the view stays on its loading widget, but the cause is
       // reported rather than left as an unhandled error on this future.
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -499,16 +521,19 @@ class _SceneViewState extends State<SceneView>
       : [RenderView(camera: _cameraForFrame())];
 
   void _onTick(Duration elapsed) {
+    final now = _clock.now();
     if (!_revealed) {
       // Hold the origin at the latest tick so the first revealed frame's delta
       // is a single frame, not the whole time spent on the loading screen.
       _tickOrigin = elapsed;
-      _lastTick = Duration.zero;
+      _lastTickTime = now;
       return;
     }
     final revealElapsed = elapsed - _tickOrigin;
-    final deltaSeconds = (revealElapsed - _lastTick).inMicroseconds / 1e6;
-    _lastTick = revealElapsed;
+    final deltaSeconds = _lastTickTime == null
+        ? revealElapsed.inMicroseconds / 1e6
+        : now.difference(_lastTickTime!).inMicroseconds / 1e6;
+    _lastTickTime = now;
     _elapsed.value = revealElapsed;
     widget.onTick?.call(revealElapsed, deltaSeconds);
     _repaint.notify();

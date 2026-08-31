@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
@@ -349,7 +350,68 @@ Future<void> saveFscene(EditorController controller, String path) async {
   // As stays portable, and fold in absolute refs recorded while the scene
   // was unsaved (the session-only form).
   _rewriteFmatRefsForSave(controller, File(path).absolute.parent.path);
+  // Carry the current editor state (camera pose, selection) in the document.
+  final editorState = controller.editorStateProvider?.call();
+  if (editorState != null) controller.document.editor = editorState;
+  // Payload bytes live in the sidecar, not the lean text, so a session that
+  // touched the payload pool (a mesh split, an embedded import) must rewrite
+  // it or those bytes are lost on reopen. Name the sidecar before writing
+  // the text so the manifest references it.
+  final document = controller.document;
+  final rewriteSidecar =
+      controller.payloadsDirty && document.payloads.isNotEmpty;
+  if (rewriteSidecar) {
+    // Name the sidecar after the file being written, not after whatever the
+    // opened document carried. A Save As that kept the source name would
+    // write this document's payload pool over the original's sidecar, and
+    // leave the original reading bytes it did not produce.
+    final stem = File(path).uri.pathSegments.last.replaceAll('.fscene', '');
+    final expected = '$stem.payloads.fsceneb';
+    if (document.payloadSource != expected) {
+      document.payloadSource = expected;
+    }
+  }
   await File(path).writeAsString(controller.session.toFscene());
+  if (rewriteSidecar) {
+    await _writePayloadSidecar(document, path);
+  }
+  // Cleared whatever the pool held: a save that emptied it has nothing left
+  // to write, and leaving the flag set would rewrite on every later save.
+  controller.payloadsDirty = false;
+}
+
+/// Rewrites the payload sidecar beside the scene at [scenePath] from the
+/// document's in-memory payload pool (fully populated, since open inlines
+/// every sidecar byte). Writes to a temp file and renames so a crash cannot
+/// leave a truncated sidecar behind.
+///
+/// TODO(sidecar-incremental): this rewrites every payload on any payload
+/// change; a big scene pays the full serialize (gzip per non-image chunk).
+/// An append-or-patch scheme would make payload-touching saves cheap.
+Future<void> _writePayloadSidecar(
+  SceneDocument document,
+  String scenePath,
+) async {
+  final sidecarDoc = SceneDocument(documentId: document.documentId);
+  for (final entry in document.payloads.entries) {
+    final spec = entry.value;
+    if (spec.bytes == null) {
+      // A byte-less entry cannot be embedded; it was already degraded to a
+      // placeholder at load, so keep whatever the old sidecar had for it.
+      debugPrint(
+        'flutter_scene_editor: payload ${entry.key.toToken()} has no bytes; '
+        'not rewritten into the sidecar',
+      );
+      continue;
+    }
+    sidecarDoc.payloads[entry.key] = spec;
+  }
+  final sidecarPath =
+      '${File(scenePath).absolute.parent.path}${Platform.pathSeparator}'
+      '${document.payloadSource}';
+  final temp = File('$sidecarPath.tmp');
+  await temp.writeAsBytes(writeFsceneb(sidecarDoc));
+  await temp.rename(sidecarPath);
 }
 
 void _rewriteFmatRefsForSave(EditorController controller, String directory) {

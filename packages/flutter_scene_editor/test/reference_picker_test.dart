@@ -19,9 +19,7 @@ void main() {
           body: SizedBox(
             width: 300,
             child: ReferencePicker(
-              entries: () => entries,
-              isEmpty: entries.isEmpty,
-              valueLabel: entries[500].label,
+              entries: entries,
               value: entries[500].id,
               emptyLabel: 'Empty',
               onChanged: (_) {},

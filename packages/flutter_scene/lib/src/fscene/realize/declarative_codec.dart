@@ -529,6 +529,26 @@ abstract class DeclarativeComponentCodec<C extends Component>
   bool claims(Component component) => component is C;
 
   @override
+  bool writeLiveProperty(
+    Component component,
+    String name,
+    PropertyValue value,
+    RealizeContext context,
+  ) {
+    if (component is! C) return false;
+    for (final field in resolvedFields) {
+      if (field.def.name != name && !field.def.formerNames.contains(name)) {
+        continue;
+      }
+      final write = field.write;
+      if (write == null) return false;
+      write(component, value, context);
+      return true;
+    }
+    return false;
+  }
+
+  @override
   Component? realize(ComponentSpec spec, RealizeContext context) {
     final props = PropertyReader(spec, this, context);
     final component = create(props);

@@ -26,42 +26,49 @@ vertex {
 }
 
 fragment {
-  // Visibility contribution of every shadow-casting spot whose tile rides the
-  // shared atlas after the directional cascades, over this item's
-  // punctual-light slice. Each spot's shadow is weighted by its cone and
-  // range attenuation so a spot that cannot reach this point cannot darken
-  // it. Returns 1 fully lit .. 0 fully shadowed.
+  // Visibility contribution of every shadow-casting spot and point light
+  // whose tiles ride the shared atlas after the directional cascades, over
+  // this item's punctual-light slice. Each light's shadow is weighted by its
+  // range attenuation (and a spot's cone) so a light that cannot reach this
+  // point cannot darken it. Returns 1 fully lit .. 0 fully shadowed.
   float CatcherSpotShadowVisibility(vec3 world_pos, vec3 n) {
     float visibility = 1.0;
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
     if (frag_info.spot_shadow_params.x > 0.5) {
-      int count = frag_info.punctual_dims.x < 0.5
-          ? 0
-          : int(frag_info.radiance_blend.z);
-      int offset = int(frag_info.radiance_blend.w);
-      for (int i = 0; i < MAX_PUNCTUAL_LIGHTS; i++) {
-        if (i >= count) break;
+      // The same per-object or froxel slice the lit path walks.
+      vec2 slice = PunctualLightSlice();
+      int offset = int(slice.x + 0.5);
+      int count = int(slice.y + 0.5);
+      // Dynamically bounded; every compiled dialect is GLSL ES 3.00+.
+      for (int i = 0; i < count; i++) {
         int light_row = int(FetchPunctualIndex(offset + i) + 0.5);
         vec4 l0 = FetchPunctualTexel(light_row, 0);
-        // Spots only (type 2).
-        if (l0.w < 1.5 || l0.w > 2.5) continue;
+        // Point lights (type 1) and spots (type 2) only.
+        if (l0.w < 0.5 || l0.w > 2.5) continue;
         vec4 l3 = FetchPunctualTexel(light_row, 3);
-        // Skip spots with no tile in the atlas.
+        // Skip lights with no tiles in the atlas.
         if (l3.y < -0.5) continue;
         vec4 l1 = FetchPunctualTexel(light_row, 1);
-        vec4 l2 = FetchPunctualTexel(light_row, 2);
         vec3 to_light = l0.xyz - world_pos;
         float dist_sq = dot(to_light, to_light);
         vec3 light_dir = to_light * inversesqrt(max(dist_sq, 1e-8));
         float inv_range = l1.w;
         float range_factor = dist_sq * inv_range * inv_range;
         float window = clamp(1.0 - range_factor * range_factor, 0.0, 1.0);
-        float cd = dot(normalize(l2.xyz), -light_dir);
-        float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
-        float weight = window * window * cone * cone;
-        float spot_visibility =
-            SampleSpotShadow(light_row, int(l3.y + 0.5), world_pos, n);
-        visibility *= 1.0 - weight * (1.0 - spot_visibility);
+        if (l0.w > 1.5) {
+          vec4 l2 = FetchPunctualTexel(light_row, 2);
+          float cd = dot(normalize(l2.xyz), -light_dir);
+          float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
+          float weight = window * window * cone * cone;
+          float spot_visibility =
+              SampleSpotShadow(light_row, int(l3.y + 0.5), world_pos, n);
+          visibility *= 1.0 - weight * (1.0 - spot_visibility);
+        } else {
+          float weight = window * window;
+          float point_visibility =
+              SamplePointShadow(light_row, l3.y, world_pos, n);
+          visibility *= 1.0 - weight * (1.0 - point_visibility);
+        }
       }
     }
 #endif

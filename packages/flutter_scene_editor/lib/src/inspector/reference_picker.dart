@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
-import '../shell/editor_theme.dart';
 import '../shell/editor_dialog.dart';
 
 typedef ReferencePickerEntry = ({LocalId id, String label});
@@ -14,27 +13,20 @@ class ReferencePicker extends StatelessWidget {
     required this.entries,
     required this.value,
     required this.emptyLabel,
-    required this.isEmpty,
-    this.valueLabel,
     required this.onChanged,
   });
 
-  /// The choices, built when the picker is opened rather than on every
-  /// build. A scene's node list is long and the picker shows a label until
-  /// someone opens it, so building the whole list per frame was work nobody
-  /// was looking at.
-  final List<ReferencePickerEntry> Function() entries;
+  final List<ReferencePickerEntry> entries;
   final LocalId? value;
   final String emptyLabel;
-
-  /// Whether there is anything to pick, without building the list to find
-  /// out.
-  final bool isEmpty;
   final ValueChanged<LocalId> onChanged;
 
-  /// The label for the current value, supplied directly so the picker does
-  /// not have to build every choice to name one.
-  final String? valueLabel;
+  String get _valueLabel {
+    for (final entry in entries) {
+      if (entry.id == value) return entry.label;
+    }
+    return 'Pick…';
+  }
 
   Future<void> _open(BuildContext context) async {
     final selected = await showEditorDialog<LocalId>(
@@ -47,7 +39,7 @@ class ReferencePicker extends StatelessWidget {
             side: BorderSide(color: colors.border),
             borderRadius: BorderRadius.circular(5),
           ),
-          child: _ReferencePickerDialog(entries: entries(), selected: value),
+          child: _ReferencePickerDialog(entries: entries, selected: value),
         );
       },
     );
@@ -56,10 +48,10 @@ class ReferencePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isEmpty) {
+    if (entries.isEmpty) {
       return Text(
         emptyLabel,
-        style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
+        style: const TextStyle(fontSize: 11, color: Colors.grey),
       );
     }
     return FButton(
@@ -67,10 +59,10 @@ class ReferencePicker extends StatelessWidget {
       size: .xs,
       mainAxisAlignment: .spaceBetween,
       onPress: () => _open(context),
-      suffix: const Icon(Icons.unfold_more, size: 14),
+      suffix: const Icon(Icons.unfold_more, size: 13),
       child: Flexible(
         child: Text(
-          valueLabel ?? 'Pick…',
+          _valueLabel,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 11),
@@ -119,7 +111,10 @@ class _ReferencePickerDialogState extends State<_ReferencePickerDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Select reference', style: editorDialogTitleText),
+            const Text(
+              'Select reference',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
             FTextField(
               control: FTextFieldControl.managed(
@@ -219,7 +214,7 @@ class _ReferencePickerRowState extends State<_ReferencePickerRow> {
                     SizedBox(
                       width: 18,
                       child: widget.selected
-                          ? const Icon(Icons.check, size: 14)
+                          ? const Icon(Icons.check, size: 13)
                           : null,
                     ),
                     Expanded(

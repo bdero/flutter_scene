@@ -16,10 +16,10 @@ Delete it once the distribution pin moves to a stable that carries the rename
 (3.50), where master and stable agree.
 
 diff --git a/apps/flutter_scene_editor_app/lib/main.dart b/apps/flutter_scene_editor_app/lib/main.dart
-index 9adfbcf8..fbb2670f 100644
+index f6483957..31d47f0f 100644
 --- a/apps/flutter_scene_editor_app/lib/main.dart
 +++ b/apps/flutter_scene_editor_app/lib/main.dart
-@@ -30,7 +30,7 @@ void main() {
+@@ -31,7 +31,7 @@ void main() {
    // (flutter/flutter#30701) and the dart-define arrives on its own.
    isWindowingEnabled = true;
    WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +28,7 @@ index 9adfbcf8..fbb2670f 100644
      size: const Size(1280, 800),
      // The runner styles the window with a hidden title bar by this title
      // (see AppDelegate.swift); keep the two in sync.
-@@ -38,13 +38,13 @@ void main() {
+@@ -39,13 +39,13 @@ void main() {
      delegate: _MainWindowDelegate(),
    );
    runWidget(
@@ -45,20 +45,20 @@ index 9adfbcf8..fbb2670f 100644
    void onWindowDestroyed() {
      exit(0);
 diff --git a/packages/flutter_scene_editor/lib/src/panels/outliner_panel.dart b/packages/flutter_scene_editor/lib/src/panels/outliner_panel.dart
-index acba1082..07af6a9d 100644
+index 4525d0cd..33761eeb 100644
 --- a/packages/flutter_scene_editor/lib/src/panels/outliner_panel.dart
 +++ b/packages/flutter_scene_editor/lib/src/panels/outliner_panel.dart
-@@ -5,8 +5,6 @@ import 'package:scene/scene.dart';
+@@ -5,8 +5,6 @@ import 'dart:math' as math;
+ import 'package:scene/scene.dart';
  // ignore: implementation_imports
- import 'package:forui/forui.dart';
  import 'package:flutter/material.dart';
 -// Not re-exported through material.dart on 3.47 stable.
 -import 'package:flutter/rendering.dart' show ScrollCacheExtent;
  import 'package:flutter/services.dart';
  
- import '../shell/editor_theme.dart';
+ import '../controller/editor_controller.dart';
 diff --git a/packages/flutter_scene_editor/lib/src/shell/docking_shell.dart b/packages/flutter_scene_editor/lib/src/shell/docking_shell.dart
-index b24e6726..c3c18d4b 100644
+index c31d7bc0..6f00d18c 100644
 --- a/packages/flutter_scene_editor/lib/src/shell/docking_shell.dart
 +++ b/packages/flutter_scene_editor/lib/src/shell/docking_shell.dart
 @@ -81,7 +81,7 @@ class _DockingShellState extends State<DockingShell> {
@@ -86,7 +86,7 @@ index b24e6726..c3c18d4b 100644
 -              RegularWindow(
 +              Window(
                  controller: _floatControllers[id]!,
-                 child: _FloatWindowScaffold(
+                 child: FloatWindowScaffold(
                    theme: theme,
 @@ -226,13 +226,13 @@ class _DockingShellState extends State<DockingShell> {
  

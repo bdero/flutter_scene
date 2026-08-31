@@ -29,7 +29,6 @@ import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
-import 'package:flutter_scene/src/render/temporal_anti_aliasing.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/sky_environment.dart';
 import 'package:flutter_scene/src/sky_sources.dart';
@@ -428,7 +427,26 @@ void _applyEffectSpec(
     ..autoExposureMinEv = effects.autoExposureMinEv
     ..autoExposureMaxEv = effects.autoExposureMaxEv
     ..autoExposureSpeedUp = effects.autoExposureSpeedUp
-    ..autoExposureSpeedDown = effects.autoExposureSpeedDown;
+    ..autoExposureSpeedDown = effects.autoExposureSpeedDown
+    // Anti-aliasing tuning. Which technique runs rides the stage's
+    // antiAliasingMode, so the spec's temporalAntiAliasingEnabled flag is
+    // ignored here (serializeStage keeps it in step for outside readers).
+    ..temporalAntiAliasingMinimumCurrentWeight =
+        effects.temporalAntiAliasingMinimumCurrentWeight
+    ..temporalAntiAliasingVarianceGamma =
+        effects.temporalAntiAliasingVarianceGamma
+    ..temporalAntiAliasingSharpness = effects.temporalAntiAliasingSharpness
+    ..temporalAntiAliasingJitterSequenceLength =
+        effects.temporalAntiAliasingJitterSequenceLength
+    ..temporalAntiAliasingJitterScale = effects.temporalAntiAliasingJitterScale
+    ..temporalAntiAliasingObjectMotion =
+        effects.temporalAntiAliasingObjectMotion
+    ..temporalAntiAliasingSkinnedMotion =
+        effects.temporalAntiAliasingSkinnedMotion
+    ..smaaThreshold = effects.smaaThreshold
+    ..smaaMaxSearchSteps = effects.smaaMaxSearchSteps
+    ..smaaMaxDiagonalSearchSteps = effects.smaaMaxDiagonalSearchSteps
+    ..smaaCornerRounding = effects.smaaCornerRounding;
 }
 
 /// Re-applies a resource look onto live [target] settings in place, reusing the
@@ -663,11 +681,14 @@ void serializeStage(Scene scene, SceneDocument document) {
   resource.environmentRotationY = math.atan2(transform[6], transform[0]);
   resource.effects = _effectSpecFromSettings(
     EnvironmentSettings.fromScene(scene),
-    scene.temporalAntiAliasing,
     // Mirrors the mode rather than being a second switch, so the document
     // cannot say TAA is on while the anti-aliasing mode says otherwise.
     taaActive: scene.antiAliasingMode == AntiAliasingMode.taa,
   );
+  // Derived from the stage's antiAliasingMode (the authority on which
+  // technique runs); kept in step so outside readers see a coherent spec.
+  resource.effects.temporalAntiAliasingEnabled =
+      scene.antiAliasingMode == AntiAliasingMode.taa;
   resource.overridesEffects = true;
 
   final skyEnvironment = scene.skyEnvironment;
@@ -723,18 +744,10 @@ void serializeStage(Scene scene, SceneDocument document) {
 }
 
 EnvironmentEffectsSpec _effectSpecFromSettings(
-  EnvironmentSettings s,
-  TemporalAntiAliasingSettings taa, {
+  EnvironmentSettings s, {
   required bool taaActive,
 }) => EnvironmentEffectsSpec(
   temporalAntiAliasingEnabled: taaActive,
-  temporalAntiAliasingMinimumCurrentWeight: taa.minimumCurrentWeight,
-  temporalAntiAliasingVarianceGamma: taa.varianceGamma,
-  temporalAntiAliasingSharpness: taa.sharpness,
-  temporalAntiAliasingJitterSequenceLength: taa.jitterSequenceLength,
-  temporalAntiAliasingJitterScale: taa.jitterScale,
-  temporalAntiAliasingObjectMotion: taa.objectMotion,
-  temporalAntiAliasingSkinnedMotion: taa.skinnedMotion,
   colorGradingEnabled: s.colorGradingEnabled,
   brightness: s.brightness,
   contrast: s.contrast,
@@ -857,6 +870,19 @@ EnvironmentEffectsSpec _effectSpecFromSettings(
   autoExposureMaxEv: s.autoExposureMaxEv,
   autoExposureSpeedUp: s.autoExposureSpeedUp,
   autoExposureSpeedDown: s.autoExposureSpeedDown,
+  temporalAntiAliasingMinimumCurrentWeight:
+      s.temporalAntiAliasingMinimumCurrentWeight,
+  temporalAntiAliasingVarianceGamma: s.temporalAntiAliasingVarianceGamma,
+  temporalAntiAliasingSharpness: s.temporalAntiAliasingSharpness,
+  temporalAntiAliasingJitterSequenceLength:
+      s.temporalAntiAliasingJitterSequenceLength,
+  temporalAntiAliasingJitterScale: s.temporalAntiAliasingJitterScale,
+  temporalAntiAliasingObjectMotion: s.temporalAntiAliasingObjectMotion,
+  temporalAntiAliasingSkinnedMotion: s.temporalAntiAliasingSkinnedMotion,
+  smaaThreshold: s.smaaThreshold,
+  smaaMaxSearchSteps: s.smaaMaxSearchSteps,
+  smaaMaxDiagonalSearchSteps: s.smaaMaxDiagonalSearchSteps,
+  smaaCornerRounding: s.smaaCornerRounding,
 );
 
 /// The stage's global environment resource, creating and linking a studio

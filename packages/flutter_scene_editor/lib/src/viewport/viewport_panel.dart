@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 // The editor's own OrbitCameraController (a viewport widget) predates the
 // engine's; hide the engine one here to keep using the local widget.
 import 'package:flutter_scene/scene.dart' hide OrbitCameraController;
+import 'package:scene/scene.dart' show LocalId, TrsTransform;
 import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -18,7 +19,6 @@ import 'debug_visualize.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/resource_origin.dart'
     show resourceOrigin;
-import 'package:scene/scene.dart' show LocalId;
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
@@ -27,6 +27,18 @@ import 'scatter_tool.dart';
 import 'terrain_tool.dart';
 import 'transform_gizmo.dart';
 import 'viewport_camera_handle.dart';
+
+/// How a multi-selection transform chooses its pivot, mirroring Blender's
+/// pivot-point modes. With one node selected the modes are identical.
+enum PivotMode {
+  /// Each selected node rotates and scales about its own origin; positions
+  /// never change under rotate/scale.
+  individualOrigins,
+
+  /// The whole selection rotates and scales about the median of the selected
+  /// nodes' origins, where the gizmo also draws.
+  medianPoint,
+}
 
 /// Interactive viewport: renders the live scene, handles selection via
 /// raycast, and drives a translate gizmo that commits one command per drag.
@@ -78,6 +90,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   final _fallbackGizmoPrefs = GizmoPreferences();
   final _viewEpoch = ValueNotifier<int>(0);
   final _fps = ValueNotifier<double>(0);
+  // Items that dropped punctual lights last frame (over the per-object cap);
+  // nonzero shows the lighting warning badge.
+  final _lightOverflow = ValueNotifier<int>(0);
+  final _shadowOverflow = ValueNotifier<int>(0);
   // Holds keyboard focus while the viewport is the active surface, so the
   // app-level shortcuts (undo, delete) fire after the viewport is clicked.
   final _focusNode = FocusNode(debugLabel: 'editorViewport');
@@ -86,6 +102,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   bool _freeLookActive = false;
   bool _showFps = false;
   TransformSpace _transformSpace = TransformSpace.global;
+  PivotMode _pivotMode = PivotMode.medianPoint;
   _PendingSelection? _pendingSelection;
 
   // The pointer's last position over this viewport, kept for starting a
@@ -97,12 +114,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   // The selected node's local transform components at the start of a gizmo
   // drag, decomposed so each mode can rebuild the preview.
-  final vm.Vector3 _startT = vm.Vector3.zero();
-  final vm.Quaternion _startR = vm.Quaternion.identity();
-  final vm.Vector3 _startS = vm.Vector3(1, 1, 1);
-  final vm.Matrix4 _startLocal = vm.Matrix4.identity();
-  final vm.Matrix4 _startGlobal = vm.Matrix4.identity();
-  final vm.Matrix4 _parentGlobalInverse = vm.Matrix4.identity();
+  // Per-node start state for the active drag (primary first), and the shared
+  // pivot (the selection median under PivotMode.medianPoint, else the
+  // primary's start origin; individual-origin transforms ignore it).
+  List<_TransformTarget> _dragTargets = const [];
+  final vm.Vector3 _dragPivot = vm.Vector3.zero();
   List<vm.Vector3> _activeTransformAxes = transformSpaceAxes(
     TransformSpace.global,
     vm.Matrix4.identity(),
@@ -162,6 +178,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _gizmoPrefs.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
+    _lightOverflow.dispose();
+    _shadowOverflow.dispose();
     _focusNode.dispose();
     _freeLookPointer.dispose();
     super.dispose();
@@ -184,6 +202,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
       final prev = _fps.value;
       _fps.value = prev == 0 ? inst : prev * 0.9 + inst * 0.1;
     }
+    final overflow = _ctrl.scene.punctualLightOverflowCount;
+    if (overflow != _lightOverflow.value) _lightOverflow.value = overflow;
+    final shadows = _ctrl.scene.shadowCasterOverflowCount;
+    if (shadows != _shadowOverflow.value) _shadowOverflow.value = shadows;
     if (_freeLookActive && _freeLook.move(deltaSeconds)) {
       _syncOrbitToFreeLook();
       _bumpView();
@@ -529,14 +551,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
       if (live != null) {
         final grabbed = _gizmo.grab(
           event.localPosition,
-          live.globalTransform.getTranslation(),
+          _gizmoAnchor(live),
           _axesFor(live),
           _camera.camera,
           viewSize,
         );
         if (grabbed) {
           _draggingGizmo = true;
-          _captureTransformStart(live);
+          _captureTransformStarts(live);
           return;
         }
       }
@@ -593,18 +615,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _pendingSelection = null;
     }
     if (!_draggingGizmo) return;
-    final primary = _ctrl.selection.primary;
-    if (primary == null) return;
-    final live = _ctrl.liveNode(primary);
-    if (live == null) return;
-
+    if (_dragTargets.isEmpty) return;
     _gizmo.update(
       event.localPosition,
-      live.globalTransform.getTranslation(),
+      _pivotMode == PivotMode.medianPoint
+          ? _dragPivot + _gizmo.translation
+          : _dragTargets.first.live.globalTransform.getTranslation(),
       _camera.camera,
       _viewSize,
     );
-    _ctrl.previewLocalTransform(primary, _previewMatrix());
+    for (final target in _dragTargets) {
+      _ctrl.previewLocalTransform(target.id, _previewMatrixFor(target));
+    }
     _bumpView();
   }
 
@@ -629,41 +651,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
       return;
     }
-    final primary = _ctrl.selection.primary;
-    if (primary != null) {
-      final local = _previewMatrix();
-      final translation = vm.Vector3.zero();
-      final rotation = vm.Quaternion.identity();
-      final scale = vm.Vector3.zero();
-      local.decompose(translation, rotation, scale);
+    if (_dragTargets.isNotEmpty) {
       switch (_gizmo.mode) {
         case GizmoMode.translate:
           if (_gizmo.translation.length2 > 1e-10) {
-            _ctrl.setNodeTransformRouted(
-              primary,
-              translation: _vectorMap(translation),
-            );
+            _commitTransformDrag(_previewMatrixFor, translation: true);
           }
         case GizmoMode.rotate:
           if (_gizmo.angle.abs() > 1e-5) {
-            _ctrl.setNodeTransformRouted(
-              primary,
-              rotation: _quaternionMap(rotation),
-              scale: _transformSpace == TransformSpace.global
-                  ? _vectorMap(scale)
-                  : null,
+            _commitTransformDrag(
+              _previewMatrixFor,
+              rotation: true,
+              translation: _dragTargets.length > 1,
+              scale: _transformSpace == TransformSpace.global,
             );
           }
         case GizmoMode.scale:
-          if ((scale - _startS).length2 > 1e-10) {
-            _ctrl.setNodeTransformRouted(
-              primary,
-              scale: _vectorMap(scale),
+          if ((_gizmo.scale - vm.Vector3.all(1)).length2 > 1e-12) {
+            _commitTransformDrag(
+              _previewMatrixFor,
+              scale: true,
+              translation: _dragTargets.length > 1,
               rotation:
                   _transformSpace == TransformSpace.global &&
-                      _gizmo.activeAxis != axisUniform
-                  ? _quaternionMap(rotation)
-                  : null,
+                  _gizmo.activeAxis != axisUniform,
             );
           }
       }
@@ -681,9 +692,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (_freeLookActive) _endFreeLook();
     if (_pendingSelection?.pointer == event.pointer) _pendingSelection = null;
     if (_draggingGizmo) {
-      final primary = _ctrl.selection.primary;
-      if (primary != null) {
-        _ctrl.previewLocalTransform(primary, _startLocal.clone());
+      for (final target in _dragTargets) {
+        _ctrl.previewLocalTransform(target.id, target.startLocal.clone());
       }
       _gizmo.end();
       _draggingGizmo = false;
@@ -739,53 +749,117 @@ class _ViewportPanelState extends State<ViewportPanel> {
   List<vm.Vector3> _axesFor(Node live) =>
       transformSpaceAxes(_transformSpace, live.globalTransform);
 
-  void _captureTransformStart(Node live) {
-    _startLocal.setFrom(live.localTransform);
-    _startGlobal.setFrom(live.globalTransform);
-    live.localTransform.decompose(_startT, _startR, _startS);
-    final parent = live.parent;
-    if (parent == null) {
-      _parentGlobalInverse.setIdentity();
-    } else {
-      _parentGlobalInverse.copyInverse(parent.globalTransform);
+  /// The median of the selected top-level editable nodes' world origins, or
+  /// null when nothing editable is selected.
+  vm.Vector3? _selectionMedian() {
+    var count = 0;
+    final sum = vm.Vector3.zero();
+    for (final id in _ctrl.topLevelSelection()) {
+      if (!_ctrl.isEditableNode(id)) continue;
+      final live = _ctrl.liveNode(id);
+      if (live == null) continue;
+      sum.add(live.globalTransform.getTranslation());
+      count++;
     }
-    _activeTransformAxes = transformSpaceAxes(_transformSpace, _startGlobal);
+    if (count == 0) return null;
+    return sum..scale(1 / count);
   }
 
-  vm.Matrix4 _globalToLocal(vm.Matrix4 global) =>
-      globalToLocalTransform(global, _parentGlobalInverse);
-
-  vm.Matrix4 _translatedLocal(vm.Vector3 globalDelta) {
-    final global = _startGlobal.clone();
-    global.setTranslation(_startGlobal.getTranslation() + globalDelta);
-    return _globalToLocal(global);
+  /// Where the transform gizmo anchors for [primaryLive]: the selection
+  /// median under [PivotMode.medianPoint], the primary's origin otherwise.
+  vm.Vector3 _gizmoAnchor(Node primaryLive) {
+    if (_pivotMode == PivotMode.medianPoint) {
+      final median = _selectionMedian();
+      if (median != null) return median;
+    }
+    return primaryLive.globalTransform.getTranslation();
   }
 
-  vm.Matrix4 _rotatedLocal(vm.Vector3 globalAxis, double angle) {
-    final origin = _startGlobal.getTranslation();
+  /// The pivot [target]'s rotate/scale applies about for the current mode.
+  vm.Vector3 _pivotFor(_TransformTarget target) =>
+      _pivotMode == PivotMode.individualOrigins
+      ? target.startGlobal.getTranslation()
+      : _dragPivot;
+
+  // Captures start state for every selected top-level editable node, primary
+  // first (the pivot and gizmo axes derive from it). A single selection
+  // behaves exactly as before; extra nodes ride along about the same pivot.
+  void _captureTransformStarts(Node primaryLive) {
+    final primaryId = _ctrl.selection.primary;
+    final targets = <_TransformTarget>[];
+    for (final id in _ctrl.topLevelSelection()) {
+      if (!_ctrl.isEditableNode(id)) continue;
+      final live = _ctrl.liveNode(id);
+      if (live == null) continue;
+      final target = _TransformTarget(id, live);
+      if (id == primaryId) {
+        targets.insert(0, target);
+      } else {
+        targets.add(target);
+      }
+    }
+    if (targets.isEmpty && primaryId != null) {
+      targets.add(_TransformTarget(primaryId, primaryLive));
+    }
+    _dragTargets = targets;
+    if (_pivotMode == PivotMode.medianPoint && targets.isNotEmpty) {
+      _dragPivot.setZero();
+      for (final target in targets) {
+        _dragPivot.add(target.startGlobal.getTranslation());
+      }
+      _dragPivot.scale(1 / targets.length);
+    } else {
+      _dragPivot.setFrom(primaryLive.globalTransform.getTranslation());
+    }
+    _activeTransformAxes = transformSpaceAxes(
+      _transformSpace,
+      primaryLive.globalTransform,
+    );
+  }
+
+  vm.Matrix4 _translatedLocal(_TransformTarget target, vm.Vector3 globalDelta) {
+    final global = target.startGlobal.clone();
+    global.setTranslation(target.startGlobal.getTranslation() + globalDelta);
+    return globalToLocalTransform(global, target.parentGlobalInverse);
+  }
+
+  vm.Matrix4 _rotatedLocal(
+    _TransformTarget target,
+    vm.Vector3 globalAxis,
+    double angle,
+  ) {
     final rotation = vm.Matrix4.compose(
       vm.Vector3.zero(),
       vm.Quaternion.axisAngle(globalAxis, angle),
       vm.Vector3.all(1),
     );
+    final pivot = _pivotFor(target);
     final global =
-        vm.Matrix4.translation(origin) *
+        vm.Matrix4.translation(pivot) *
         rotation *
-        vm.Matrix4.translation(-origin) *
-        _startGlobal;
-    return _globalToLocal(global);
+        vm.Matrix4.translation(-pivot) *
+        target.startGlobal;
+    return globalToLocalTransform(global, target.parentGlobalInverse);
   }
 
-  vm.Matrix4 _rotatedInLocalSpace(int axis, double angle) {
-    final localAngle = localAxisRotationAngle(angle, _startGlobal);
+  vm.Matrix4 _rotatedInLocalSpace(
+    _TransformTarget target,
+    int axis,
+    double angle,
+  ) {
+    final localAngle = localAxisRotationAngle(angle, target.startGlobal);
     final rotation =
-        _startR *
+        target.startR *
         vm.Quaternion.axisAngle(vm.Vector3.zero()..[axis] = 1, localAngle);
     rotation.normalize();
-    return vm.Matrix4.compose(_startT, rotation, _startS);
+    return vm.Matrix4.compose(target.startT, rotation, target.startS);
   }
 
-  vm.Matrix4 _scaledGlobalLocal(vm.Vector3 globalAxis, double factor) {
+  vm.Matrix4 _scaledGlobalLocal(
+    _TransformTarget target,
+    vm.Vector3 globalAxis,
+    double factor,
+  ) {
     final scale = vm.Matrix4.identity();
     for (var row = 0; row < 3; row++) {
       for (var column = 0; column < 3; column++) {
@@ -797,37 +871,102 @@ class _ViewportPanelState extends State<ViewportPanel> {
         );
       }
     }
-    final origin = _startGlobal.getTranslation();
+    final pivot = _pivotFor(target);
     final global =
-        vm.Matrix4.translation(origin) *
+        vm.Matrix4.translation(pivot) *
         scale *
-        vm.Matrix4.translation(-origin) *
-        _startGlobal;
-    return _globalToLocal(global);
+        vm.Matrix4.translation(-pivot) *
+        target.startGlobal;
+    return globalToLocalTransform(global, target.parentGlobalInverse);
   }
 
-  vm.Matrix4 _scaledLocal(vm.Vector3 scale) => vm.Matrix4.compose(
-    _startT,
-    _startR,
-    vm.Vector3(_startS.x * scale.x, _startS.y * scale.y, _startS.z * scale.z),
-  );
+  // Scales [target] in its own local frame while pulling its position toward
+  // the shared pivot by [uniform], so a median-point uniform or local-space
+  // scale moves the selection together the way a rotation about the median
+  // does.
+  vm.Matrix4 _scaledLocalAboutPivot(
+    _TransformTarget target,
+    vm.Vector3 scale,
+    double uniform,
+  ) {
+    final local = _scaledLocal(target, scale);
+    final global = target.parentGlobalInverse.clone()
+      ..invert()
+      ..multiply(local);
+    final position = target.startGlobal.getTranslation();
+    global.setTranslation(_dragPivot + (position - _dragPivot) * uniform);
+    return globalToLocalTransform(global, target.parentGlobalInverse);
+  }
 
-  vm.Matrix4 _previewMatrix() {
+  vm.Matrix4 _scaledLocal(_TransformTarget target, vm.Vector3 scale) =>
+      vm.Matrix4.compose(
+        target.startT,
+        target.startR,
+        vm.Vector3(
+          target.startS.x * scale.x,
+          target.startS.y * scale.y,
+          target.startS.z * scale.z,
+        ),
+      );
+
+  vm.Matrix4 _previewMatrixFor(_TransformTarget target) {
+    final individual = _pivotMode == PivotMode.individualOrigins;
     switch (_gizmo.mode) {
       case GizmoMode.translate:
-        return _translatedLocal(_gizmo.translation);
+        return _translatedLocal(target, _gizmo.translation);
       case GizmoMode.rotate:
-        if (_transformSpace == TransformSpace.local) {
-          return _rotatedInLocalSpace(_gizmo.activeAxis!, _gizmo.angle);
+        if (_transformSpace == TransformSpace.local && individual) {
+          return _rotatedInLocalSpace(target, _gizmo.activeAxis!, _gizmo.angle);
         }
-        return _rotatedLocal(_gizmo.axisVec, _gizmo.angle);
+        return _rotatedLocal(target, _gizmo.axisVec, _gizmo.angle);
       case GizmoMode.scale:
         final axis = _gizmo.activeAxis;
         if (_transformSpace == TransformSpace.local || axis == axisUniform) {
-          return _scaledLocal(_gizmo.scale);
+          if (individual) return _scaledLocal(target, _gizmo.scale);
+          final uniform = axis == axisUniform
+              ? _gizmo.scale.x
+              : _gizmo.scale[axis!];
+          return _scaledLocalAboutPivot(target, _gizmo.scale, uniform);
         }
-        return _scaledGlobalLocal(_gizmo.axisVec, _gizmo.scale[axis!]);
+        return _scaledGlobalLocal(target, _gizmo.axisVec, _gizmo.scale[axis!]);
     }
+  }
+
+  // Decomposes each drag target's final matrix and commits everything as one
+  // undoable edit. Fields outside the drag's mode keep their current values.
+  // Prefab-member nodes route through the override path individually.
+  void _commitTransformDrag(
+    vm.Matrix4 Function(_TransformTarget) matrixFor, {
+    bool translation = false,
+    bool rotation = false,
+    bool scale = false,
+  }) {
+    final batch = <LocalId, TrsTransform>{};
+    for (final target in _dragTargets) {
+      final local = matrixFor(target);
+      final t = vm.Vector3.zero();
+      final r = vm.Quaternion.identity();
+      final sc = vm.Vector3.zero();
+      local.decompose(t, r, sc);
+      final source = _ctrl.document.nodes[target.id];
+      if (source == null) {
+        _ctrl.setNodeTransformRouted(
+          target.id,
+          translation: translation ? _vectorMap(t) : null,
+          rotation: rotation ? _quaternionMap(r) : null,
+          scale: scale ? _vectorMap(sc) : null,
+        );
+        continue;
+      }
+      final current = source.transform;
+      final trs = current is TrsTransform ? current : null;
+      batch[target.id] = TrsTransform(
+        translation: translation ? t : (trs?.translation ?? target.startT),
+        rotation: rotation ? r : (trs?.rotation ?? target.startR),
+        scale: scale ? sc : (trs?.scale ?? target.startS),
+      );
+    }
+    if (batch.isNotEmpty) unawaited(_ctrl.setNodeTransformsBatch(batch));
   }
 
   void _setMode(GizmoMode mode) {
@@ -842,6 +981,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _bumpView();
   }
 
+  void _setPivotMode(PivotMode mode) {
+    if (_pivotMode == mode) return;
+    setState(() => _pivotMode = mode);
+    _bumpView();
+  }
+
   // --- modal transforms (G/R/S) --------------------------------------------
 
   void _startModal(_ModalOp op) {
@@ -849,8 +994,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (primary == null) return;
     final live = _ctrl.liveNode(primary);
     if (live == null) return;
-    _captureTransformStart(live);
-    final origin = live.globalTransform.getTranslation();
+    _captureTransformStarts(live);
+    final origin = _pivotMode == PivotMode.medianPoint
+        ? _dragPivot.clone()
+        : live.globalTransform.getTranslation();
     _modal = _ModalTransform(
       op: op,
       origin: origin,
@@ -864,51 +1011,39 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   void _updateModal(Offset pointer) {
     final modal = _modal;
-    final primary = _ctrl.selection.primary;
-    if (modal == null || primary == null) return;
+    if (modal == null || _dragTargets.isEmpty) return;
     modal.pointer = pointer;
-    _ctrl.previewLocalTransform(primary, _modalMatrix(modal));
+    for (final target in _dragTargets) {
+      _ctrl.previewLocalTransform(target.id, _modalMatrixFor(target, modal));
+    }
     _bumpView();
   }
 
   void _commitModal() {
     final modal = _modal;
-    final primary = _ctrl.selection.primary;
-    if (modal == null || primary == null) {
+    if (modal == null || _dragTargets.isEmpty) {
       _modal = null;
       return;
     }
+    vm.Matrix4 matrixFor(_TransformTarget target) =>
+        _modalMatrixFor(target, modal);
     switch (modal.op) {
       case _ModalOp.translate:
-        final local = _modalMatrix(modal);
-        final t = local.getTranslation();
-        _ctrl.setNodeTransformRouted(primary, translation: _vectorMap(t));
+        _commitTransformDrag(matrixFor, translation: true);
       case _ModalOp.rotate:
-        final local = _modalMatrix(modal);
-        final t = vm.Vector3.zero();
-        final r = vm.Quaternion.identity();
-        final s = vm.Vector3.zero();
-        local.decompose(t, r, s);
-        _ctrl.setNodeTransformRouted(
-          primary,
-          rotation: _quaternionMap(r),
-          scale: _transformSpace == TransformSpace.global
-              ? _vectorMap(s)
-              : null,
+        _commitTransformDrag(
+          matrixFor,
+          rotation: true,
+          translation: _dragTargets.length > 1,
+          scale: _transformSpace == TransformSpace.global,
         );
       case _ModalOp.scale:
-        final local = _modalMatrix(modal);
-        final t = vm.Vector3.zero();
-        final r = vm.Quaternion.identity();
-        final s = vm.Vector3.zero();
-        local.decompose(t, r, s);
-        _ctrl.setNodeTransformRouted(
-          primary,
-          scale: _vectorMap(s),
+        _commitTransformDrag(
+          matrixFor,
+          scale: true,
+          translation: _dragTargets.length > 1,
           rotation:
-              _transformSpace == TransformSpace.global && modal.axis != null
-              ? _quaternionMap(r)
-              : null,
+              _transformSpace == TransformSpace.global && modal.axis != null,
         );
     }
     _modal = null;
@@ -916,24 +1051,32 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _cancelModal() {
-    final modal = _modal;
-    final primary = _ctrl.selection.primary;
-    if (modal != null && primary != null) {
-      _ctrl.previewLocalTransform(primary, _startLocal.clone());
+    if (_modal != null) {
+      for (final target in _dragTargets) {
+        _ctrl.previewLocalTransform(target.id, target.startLocal.clone());
+      }
     }
     _modal = null;
     _bumpView();
   }
 
-  vm.Matrix4 _modalMatrix(_ModalTransform modal) {
+  vm.Matrix4 _modalMatrixFor(_TransformTarget target, _ModalTransform modal) {
+    final individual = _pivotMode == PivotMode.individualOrigins;
     switch (modal.op) {
       case _ModalOp.translate:
-        return _translatedLocal(_modalTranslation(modal));
+        return _translatedLocal(target, _modalTranslation(modal));
       case _ModalOp.rotate:
-        if (_transformSpace == TransformSpace.local && modal.axis != null) {
-          return _rotatedInLocalSpace(modal.axis!, _modalRotationAngle(modal));
+        if (_transformSpace == TransformSpace.local &&
+            modal.axis != null &&
+            individual) {
+          return _rotatedInLocalSpace(
+            target,
+            modal.axis!,
+            _modalRotationAngle(modal),
+          );
         }
         return _rotatedLocal(
+          target,
           _modalRotationAxis(modal),
           _modalRotationAngle(modal),
         );
@@ -941,9 +1084,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
         final factors = _modalScaleFactors(modal);
         final axis = modal.axis;
         if (_transformSpace == TransformSpace.local || axis == null) {
-          return _scaledLocal(factors);
+          if (individual) return _scaledLocal(target, factors);
+          final uniform = axis == null ? factors.x : factors[axis];
+          return _scaledLocalAboutPivot(target, factors, uniform);
         }
-        return _scaledGlobalLocal(_activeTransformAxes[axis], factors[axis]);
+        return _scaledGlobalLocal(
+          target,
+          _activeTransformAxes[axis],
+          factors[axis],
+        );
     }
   }
 
@@ -1065,6 +1214,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
       }
     }
     if (selectionBounds == null) return false;
+    // A meshless node hulls to a point; frame it like a small object instead
+    // of slamming the camera to point-blank range on its origin.
+    if ((selectionBounds.max - selectionBounds.min).length < 1e-4) {
+      const halfExtent = 0.75;
+      final center = selectionBounds.center;
+      selectionBounds = vm.Aabb3.minMax(
+        center - vm.Vector3.all(halfExtent),
+        center + vm.Vector3.all(halfExtent),
+      );
+    }
     final aspect = _viewSize.height > 0
         ? _viewSize.width / _viewSize.height
         : 1.0;
@@ -1164,29 +1323,37 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _performRaycast(Offset position, Size viewSize) {
+    // Ctrl/Cmd-click toggles the hit node in and out of the selection
+    // instead of replacing it (and a toggle click on empty space keeps the
+    // selection).
+    final keys = HardwareKeyboard.instance;
+    final toggle = keys.isMetaPressed || keys.isControlPressed;
+    void apply(LocalId? id) {
+      if (id == null) {
+        if (!toggle) _ctrl.selection.clear();
+        return;
+      }
+      if (toggle) {
+        _ctrl.selection.toggle(id);
+      } else {
+        _ctrl.selection.selectOnly(id);
+      }
+    }
+
     // Component gizmos win over the scene raycast: a gizmo is often a
     // meshless node's only clickable presence, and screen-space slop is what
     // users expect when clicking thin lines.
     final gizmoHit = _componentGizmoHits.hitTest(position);
     if (gizmoHit != null) {
-      _ctrl.selection.selectOnly(gizmoHit);
+      apply(gizmoHit);
       _bumpView();
       return;
     }
     final ray = _camera.camera.screenPointToRay(position, viewSize);
     final hit = _ctrl.scene.raycast(ray);
-    if (hit == null) {
-      _ctrl.selection.clear();
-    } else {
-      // Resolve the hit to the source node the editor can act on (the node
-      // itself, or the enclosing prefab instance for prefab-internal geometry).
-      final id = _ctrl.sourceIdForLiveNode(hit.node);
-      if (id != null) {
-        _ctrl.selection.selectOnly(id);
-      } else {
-        _ctrl.selection.clear();
-      }
-    }
+    // Resolve the hit to the source node the editor can act on (the node
+    // itself, or the enclosing prefab instance for prefab-internal geometry).
+    apply(hit == null ? null : _ctrl.sourceIdForLiveNode(hit.node));
     _bumpView();
   }
 
@@ -1325,7 +1492,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
                           IgnorePointer(
                             child: CustomPaint(
                               painter: TransformGizmoPainter(
-                                origin: live.globalTransform.getTranslation(),
+                                origin: _draggingGizmo || _modal != null
+                                    ? (_pivotMode == PivotMode.medianPoint
+                                          ? _dragPivot + _gizmo.translation
+                                          : live.globalTransform
+                                                .getTranslation())
+                                    : _gizmoAnchor(live),
                                 mode: _gizmo.mode,
                                 axes: _draggingGizmo || _modal != null
                                     ? _activeTransformAxes
@@ -1383,27 +1555,37 @@ class _ViewportPanelState extends State<ViewportPanel> {
                         Positioned(
                           top: 8,
                           left: 8,
-                          child: _GizmoModeBar(
-                            mode: _gizmo.mode,
-                            onChanged: _setMode,
-                            sculpting: _terrainTool.active,
-                            canSculpt:
-                                _terrainTarget() != null ||
-                                _sculptablePlane() != null,
-                            onSculptingChanged: (value) => setState(() {
-                              _terrainTool.tool = value
-                                  ? TerrainTool.paint
-                                  : null;
-                              // The two brushes both want the primary button,
-                              // so arming one disarms the other.
-                              if (value) _scatterTool.active = false;
-                            }),
-                            painting: _scatterTool.active,
-                            canPaint: _scatterTarget() != null,
-                            onPaintingChanged: (value) => setState(() {
-                              _scatterTool.active = value;
-                              if (value) _terrainTool.tool = null;
-                            }),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _GizmoModeBar(
+                                mode: _gizmo.mode,
+                                onChanged: _setMode,
+                                sculpting: _terrainTool.active,
+                                canSculpt:
+                                    _terrainTarget() != null ||
+                                    _sculptablePlane() != null,
+                                onSculptingChanged: (value) => setState(() {
+                                  _terrainTool.tool = value
+                                      ? TerrainTool.paint
+                                      : null;
+                                  // The two brushes both want the primary
+                                  // button, so arming one disarms the other.
+                                  if (value) _scatterTool.active = false;
+                                }),
+                                painting: _scatterTool.active,
+                                canPaint: _scatterTarget() != null,
+                                onPaintingChanged: (value) => setState(() {
+                                  _scatterTool.active = value;
+                                  if (value) _terrainTool.tool = null;
+                                }),
+                              ),
+                              const SizedBox(width: 8),
+                              _PivotModeBar(
+                                mode: _pivotMode,
+                                onChanged: _setPivotMode,
+                              ),
+                            ],
                           ),
                         ),
                         if (_scatterTool.active)
@@ -1594,6 +1776,56 @@ class _ViewportPanelState extends State<ViewportPanel> {
                         ),
                       ),
                     ],
+                    ValueListenableBuilder<int>(
+                      valueListenable: _lightOverflow,
+                      builder: (context, overflow, _) => overflow == 0
+                          ? const SizedBox.shrink()
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Tooltip(
+                                message:
+                                    'More punctual lights reach these '
+                                    'objects (or screen regions, under '
+                                    'clustered lighting) than the budget '
+                                    'shades; the farthest are dropped. Give '
+                                    'lights a range, or thin dense light '
+                                    'clusters.',
+                                child: _InfoBadge(
+                                  text: overflow == 1
+                                      ? '1 light-budget overflow'
+                                      : '$overflow light-budget overflows',
+                                  color: const Color(0xCC8A6D1F),
+                                ),
+                              ),
+                            ),
+                    ),
+                    // Lights whose authored shadow is not being drawn. Silent
+                    // otherwise: the light still lights, so the missing shadow
+                    // reads as a lighting bug rather than a budget.
+                    ValueListenableBuilder<int>(
+                      valueListenable: _shadowOverflow,
+                      builder: (context, dropped, _) => dropped <= 0
+                          ? const SizedBox.shrink()
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Tooltip(
+                                message:
+                                    'More lights ask to cast a shadow than '
+                                    'the shared shadow atlas holds, so these '
+                                    'lights light the scene but throw no '
+                                    'shadow. Turn off Casts shadow on the '
+                                    'lights that do not need one; the ones '
+                                    'that keep their slot are highlighted in '
+                                    'the viewport.',
+                                child: _InfoBadge(
+                                  text: dropped == 1
+                                      ? '1 shadow over budget'
+                                      : '$dropped shadows over budget',
+                                  color: const Color(0xCC8A6D1F),
+                                ),
+                              ),
+                            ),
+                    ),
                   ],
                 ),
               ),
@@ -1601,6 +1833,57 @@ class _ViewportPanelState extends State<ViewportPanel> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Blender-style pivot-point selector for multi-selection transforms.
+class _PivotModeBar extends StatelessWidget {
+  const _PivotModeBar({required this.mode, required this.onChanged});
+  final PivotMode mode;
+  final void Function(PivotMode) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget button(PivotMode m, IconData icon, String tip) {
+      final active = mode == m;
+      return Tooltip(
+        message: tip,
+        child: InkWell(
+          onTap: () => onChanged(m),
+          child: Container(
+            width: 28,
+            height: 24,
+            color: active
+                ? Theme.of(context).colorScheme.primary
+                : Colors.black.withValues(alpha: 0.55),
+            child: Icon(
+              icon,
+              size: 15,
+              color: active ? Colors.black : Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          button(
+            PivotMode.medianPoint,
+            Icons.adjust,
+            'Pivot around the median point',
+          ),
+          button(
+            PivotMode.individualOrigins,
+            Icons.scatter_plot,
+            'Pivot around individual origins',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1725,14 +2008,17 @@ class _GizmoModeBar extends StatelessWidget {
 }
 
 class _InfoBadge extends StatelessWidget {
-  const _InfoBadge({required this.text});
+  const _InfoBadge({required this.text, this.color});
   final String text;
+
+  /// Background override (a warning tint); null is the neutral scrim.
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
+        color: color ?? Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Padding(
@@ -1856,6 +2142,15 @@ class _GizmoMenuButton extends StatelessWidget {
                 checked: preferences.viewportRenderScale == scale,
                 action: () => preferences.viewportRenderScale = scale,
               ),
+            // The probe lattice is engine data rather than a component gizmo,
+            // so it sits outside the per-type list and past the master toggle.
+            _checkedItem(
+              label: 'Show GI probes',
+              checked: preferences.showGiProbes,
+              enabled: preferences.enabled,
+              action: () =>
+                  preferences.showGiProbes = !preferences.showGiProbes,
+            ),
             if (schemas.isNotEmpty) const PopupMenuDivider(height: 8),
             for (final schema in schemas)
               _checkedItem(
@@ -2024,4 +2319,30 @@ class _ViewportSettingsButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Per-node start state captured when a transform drag begins.
+class _TransformTarget {
+  _TransformTarget(this.id, this.live)
+    : startLocal = live.localTransform.clone(),
+      startGlobal = live.globalTransform.clone(),
+      parentGlobalInverse = vm.Matrix4.identity(),
+      startT = vm.Vector3.zero(),
+      startR = vm.Quaternion.identity(),
+      startS = vm.Vector3(1, 1, 1) {
+    live.localTransform.decompose(startT, startR, startS);
+    final parent = live.parent;
+    if (parent != null) {
+      parentGlobalInverse.copyInverse(parent.globalTransform);
+    }
+  }
+
+  final LocalId id;
+  final Node live;
+  final vm.Matrix4 startLocal;
+  final vm.Matrix4 startGlobal;
+  final vm.Matrix4 parentGlobalInverse;
+  final vm.Vector3 startT;
+  final vm.Quaternion startR;
+  final vm.Vector3 startS;
 }

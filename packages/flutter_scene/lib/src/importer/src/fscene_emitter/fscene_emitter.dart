@@ -270,6 +270,10 @@ SceneDocument buildSceneDocument(
     );
   }
 
+  // `-split<N>` node-name hints split level-spanning meshes into grid-cell
+  // children; running here makes the split reapply on every re-import.
+  applyMeshSplitHints(document);
+
   return document;
 }
 
