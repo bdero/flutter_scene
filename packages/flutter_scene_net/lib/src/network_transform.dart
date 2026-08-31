@@ -21,6 +21,7 @@ import 'transform_replica.dart';
 final class NetworkTransformComponent extends Component {
   NetworkTransformComponent(
     this.replica, {
+    this.slot = '',
     this.delay = const Duration(milliseconds: 100),
     this.minDelay = const Duration(milliseconds: 25),
     this.adaptive = true,
@@ -28,15 +29,24 @@ final class NetworkTransformComponent extends Component {
   }) : _now = now,
        _delayMicros = delay.inMicroseconds {
     _push();
-    // TODO(replication-unsubscribe): dashwire_replication 0.2.0 has no
-    // listener removal, so these subscriptions (and through them this
-    // component) live as long as the replica; add removal upstream and tear
-    // down on detach.
+    // TODO(replication-unsubscribe): cancel these on detach once a
+    // dashwire_replication with listener removal is published. Until then
+    // they -- and through them this component, and whatever it closes over --
+    // live as long as the replica, which for a spawned entity means until it
+    // despawns. The upstream change is bdero/dashwire#7.
     replica.position.onChanged((_, _) => _push());
     replica.rotation.onChanged((_, _) => _push());
   }
 
   final TransformReplica replica;
+
+  /// The name this component was resolved from, kept so serializing it writes
+  /// the same slot back.
+  ///
+  /// Empty for a component built directly in code, which has no name to
+  /// write: the document would gain a slot nobody registered and the next
+  /// load would report it missing.
+  final String slot;
 
   /// The deepest (and initial) render delay; the fixed delay when
   /// [adaptive] is off.
