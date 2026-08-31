@@ -21,6 +21,7 @@ import 'transform_replica.dart';
 final class NetworkTransformComponent extends Component {
   NetworkTransformComponent(
     this.replica, {
+    this.slot = '',
     this.delay = const Duration(milliseconds: 100),
     this.minDelay = const Duration(milliseconds: 25),
     this.adaptive = true,
@@ -37,6 +38,14 @@ final class NetworkTransformComponent extends Component {
   }
 
   final TransformReplica replica;
+
+  /// The name this component was resolved from, kept so serializing it writes
+  /// the same slot back.
+  ///
+  /// Empty for a component built directly in code, which has no name to
+  /// write: the document would gain a slot nobody registered and the next
+  /// load would report it missing.
+  final String slot;
 
   /// The deepest (and initial) render delay; the fixed delay when
   /// [adaptive] is off.
