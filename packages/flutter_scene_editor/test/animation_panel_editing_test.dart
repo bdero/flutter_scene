@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
@@ -6,6 +5,7 @@ import 'package:flutter_scene_editor/src/panels/animation_panel.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scene/scene.dart';
+import 'package:vector_math/vector_math.dart';
 
 bool _gpuAvailable() {
   try {
@@ -56,7 +56,8 @@ List<String> painterRowTitles(WidgetTester tester) {
         find.byWidgetPredicate((widget) => widget is CustomPaint),
       )
       .firstWhere(
-        (custom) => custom.painter?.runtimeType.toString() == '_TimelinePainter',
+        (custom) =>
+            custom.painter?.runtimeType.toString() == '_TimelinePainter',
       );
   return [
     for (final row in (custom.painter as dynamic).rows as List)
@@ -88,8 +89,7 @@ void main() {
         c.document,
         c.document.animations[id]!.channels.singleWhere(
           (ch) =>
-              ch.target == node &&
-              ch.property == AnimationProperty.translation,
+              ch.target == node && ch.property == AnimationProperty.translation,
         ),
       );
 
@@ -118,10 +118,7 @@ void main() {
 
     final titles = painterRowTitles(tester);
     expect(titles.first, 'Bone');
-    expect(
-      titles.skip(1).take(3),
-      ['translation', 'rotation', 'scale'],
-    );
+    expect(titles.skip(1).take(3), ['translation', 'rotation', 'scale']);
   });
 
   testWidgets('pressing Key adds crystals at the timeline start and end', (
@@ -141,11 +138,7 @@ void main() {
 
     // Crystals anchored at both edges plus the playhead capture.
     final times = translationTimes(controller, animationId, nodeId);
-    expect(times.map((t) => (t * 100).roundToDouble() / 100), [
-      0.0,
-      0.5,
-      1.0,
-    ]);
+    expect(times.map((t) => (t * 100).roundToDouble() / 100), [0.0, 0.5, 1.0]);
     // All three properties got the playhead pose, so they exist too.
     expect(channelOf(controller, animationId, nodeId, 'rotation'), isNotNull);
     expect(channelOf(controller, animationId, nodeId, 'scale'), isNotNull);
@@ -164,14 +157,8 @@ void main() {
     await tester.tap(find.text('Key'));
     await tester.pumpAndSettle();
 
-    final channel = channelOf(
-      controller,
-      animationId,
-      nodeId,
-      'translation',
-    )!;
-    final bytes =
-        controller.document.payload(channel.keyframes)!.bytes!;
+    final channel = channelOf(controller, animationId, nodeId, 'translation')!;
+    final bytes = controller.document.payload(channel.keyframes)!.bytes!;
     final values = bytes.buffer.asFloat32List(
       bytes.offsetInBytes,
       bytes.lengthInBytes ~/ 4,
@@ -181,7 +168,9 @@ void main() {
     expect(values[values.length - 1], closeTo(0.0, 1e-4));
   });
 
-  testWidgets('the lane ✕ removes the channel from the timeline', (tester) async {
+  testWidgets('the lane ✕ removes the channel from the timeline', (
+    tester,
+  ) async {
     final (controller, animationId, nodeId) = await pumpEditablePanel(tester);
 
     await key(controller, animationId, nodeId, 'translation', 0.0);
@@ -213,7 +202,11 @@ void main() {
     await tester.tap(find.text('Step'));
     await tester.pumpAndSettle();
     expect(
-      controller.document.animations[animationId]!.channels.single
+      controller
+          .document
+          .animations[animationId]!
+          .channels
+          .single
           .interpolation,
       AnimationInterpolation.step,
     );
@@ -257,5 +250,87 @@ void main() {
     // animated pose (5) and not the stale pre-pose capture (0).
     expect(controller.liveNode(nodeId)!.position.y, closeTo(7.0, 1e-4));
     expect(controller.liveNode(nodeId)!.position.x, closeTo(2.0, 1e-4));
+  });
+
+  testWidgets(
+    'Key captures the visible live pose, never a stale document pose',
+    (tester) async {
+      final (controller, animationId, nodeId) = await pumpEditablePanel(tester);
+      controller.selectPreviewAnimation(animationId);
+
+      // Pose the node the way a gizmo drag does: only the live node moves,
+      // while the document's transform (the rest pose the Outliner and
+      // Inspector show — the model's origin) stays at the identity.
+      controller.liveNode(nodeId)!.position = Vector3(0, 7, 0);
+      await tester.pump();
+
+      await tester.tap(find.text('Key'));
+      await tester.pumpAndSettle();
+
+      final channel = channelOf(
+        controller,
+        animationId,
+        nodeId,
+        'translation',
+      )!;
+      final bytes = controller.document.payload(channel.keyframes)!.bytes!;
+      final values = bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+      // The key recorded y=7 — the node the user actually saw — not the
+      // document origin the command would have re-read without values.
+      expect(values[0], closeTo(0.0, 1e-4));
+      expect(values[1], closeTo(7.0, 1e-4));
+      expect(values[2], closeTo(0.0, 1e-4));
+      // And the authored rest pose never moved.
+      final trs = controller.document.nodes[nodeId]!.transform as TrsTransform;
+      expect(trs.translation.y, closeTo(0.0, 1e-4));
+    },
+  );
+
+  testWidgets("a missing edge crystal copies the curve's edge pose, "
+      'never a mid-clip capture', (tester) async {
+    final (controller, animationId, nodeId) = await pumpEditablePanel(tester);
+    controller.selectPreviewAnimation(animationId);
+
+    // A clip whose only key is a deliberate lift at t=1. A single key
+    // clamps everywhere, so the playthrough already starts at y=9; that
+    // start pose is the model's origin for this animation.
+    await controller.run('setAnimationKeyframe', {
+      'animationId': animationId.toToken(),
+      'nodeId': nodeId.toToken(),
+      'property': 'translation',
+      'time': 1.0,
+      'translation': {'x': 0.0, 'y': 9.0, 'z': 0.0},
+    });
+
+    // Scrub to the middle and press Key. The playhead capture holds the
+    // visible pose at 0.5 (still 9), and the new t=0 edge crystal must copy
+    // that same curve pose — never the document origin — or the model would
+    // start every playthrough somewhere it never started before.
+    controller.seekPreview(0.5);
+    await tester.pump();
+    await tester.tap(find.text('Key'));
+    await tester.pumpAndSettle();
+
+    final channel = channelOf(controller, animationId, nodeId, 'translation')!;
+    final times = channelTimes(controller.document, channel);
+    expect(times, hasLength(3));
+    expect(times, contains(closeTo(0.0, 1e-4)));
+    expect(times, contains(closeTo(0.5, 1e-4)));
+    expect(times, contains(closeTo(1.0, 1e-4)));
+
+    final bytes = controller.document.payload(channel.keyframes)!.bytes!;
+    final values = bytes.buffer.asFloat32List(
+      bytes.offsetInBytes,
+      bytes.lengthInBytes ~/ 4,
+    );
+    // The t=0 edge row holds y=9 (what the curve already played there),
+    // and the deliberate end key is untouched.
+    final startRow = times.indexWhere((t) => t.abs() <= 1e-4);
+    expect(values[startRow * 3 + 1], closeTo(9.0, 1e-4));
+    final endRow = times.indexWhere((t) => (t - 1.0).abs() <= 1e-4);
+    expect(values[endRow * 3 + 1], closeTo(9.0, 1e-4));
   });
 }

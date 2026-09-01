@@ -15,6 +15,8 @@ import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
     show AnimationChange, ChangeSlot;
 import 'package:scene/scene.dart';
 
+import '../controller/animation_sampling.dart';
+import '../controller/animation_target_resolution.dart';
 import '../controller/editor_controller.dart';
 import '../shell/editor_dialog.dart';
 
@@ -201,6 +203,13 @@ class _AnimationPanelState extends State<AnimationPanel> {
                 'nodeId': nodeId.toToken(),
                 'property': p.name,
                 'time': time,
+                // Capture the pose the user actually sees. A pose landed with
+                // the viewport gizmo or an inspector drag lives on the live
+                // node, not the document; keying without values would make the
+                // command re-read a stale document pose and snap the node back
+                // to it. Recording the visible pose here keeps the authored
+                // rest pose (the model's origin) untouched.
+                ...?_livePoseFor(nodeId, p),
               },
             ),
     ];
@@ -260,6 +269,14 @@ class _AnimationPanelState extends State<AnimationPanel> {
           if ((edge - playhead).abs() <= 1e-3) continue;
           final channel = channelFor(nodeId, property);
           if (channel != null && hasKeyAt(channel, edge)) continue;
+          // A new edge keys the pose the curve already plays at that time
+          // (sampled from the channel's own keyframes), falling back to the
+          // node's visible pose when the channel has nothing to sample — so a
+          // pose captured mid-clip can never bleed into the clip's start or
+          // end and jog the model's origin.
+          final pose = channel == null
+              ? _livePoseFor(nodeId, property)
+              : _edgePose(channel, edge);
           commands.add((
             'setAnimationKeyframe',
             {
@@ -267,6 +284,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
               'nodeId': nodeId.toToken(),
               'property': property.name,
               'time': edge,
+              ...?pose,
             },
           ));
         }
@@ -534,11 +552,120 @@ class _AnimationPanelState extends State<AnimationPanel> {
             _controller.previewAnimationId?.toToken() ??
             _animationId?.toToken(),
         'nodeId': channel.target.toToken(),
+        // Lane channels carry the binding fallback name (for a prefab member,
+        // the bone inside the imported instance the lane drives); repeating it
+        // makes the new key land on the exact channel that was double-tapped.
+        if (channel.targetName != null) 'targetName': channel.targetName,
         'property': channel.property.name,
         'time': time.clamp(0.0, _maxKeyTime).toDouble(),
+        // Capture the visible pose of the channel's live target (the node, or
+        // the named descendant inside a prefab instance), so the added key
+        // records what the user sees rather than a stale document pose.
+        ...?_livePoseFor(
+          channel.target,
+          channel.property,
+          targetName: channel.targetName,
+        ),
       });
     } on Exception catch (error) {
       _showError(error);
+    }
+  }
+
+  /// The payload of [id] as float32s (native-endian, matching the emitter).
+  /// The controller caches its own decode for playback; this is the panel's
+  /// decode for the edge sampling below. Empty when the payload is missing.
+  Float32List _payloadFloatValues(LocalId id) {
+    final bytes = _controller.document.payload(id)?.bytes;
+    if (bytes == null) return Float32List(0);
+    if (bytes.offsetInBytes % 4 == 0) {
+      return bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+    }
+    return Uint8List.fromList(
+      bytes,
+    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
+  }
+
+  /// The pose the channel's live target currently shows, as the value map
+  /// `setAnimationKeyframe` accepts (`translation` / `rotation` / `scale`).
+  ///
+  /// Reads the live node rather than the document so keying records exactly
+  /// what the user sees — a pose landed with the viewport gizmo or an
+  /// inspector drag lives on the live node until it is keyed, and reading the
+  /// document there would silently drop the edit and snap the node back to a
+  /// stale pose. [targetName] resolves a prefab-member target (a bone inside
+  /// an imported instance) exactly as the preview and runtime binders do.
+  /// Null when the target is missing from the live graph; callers fall back
+  /// to the command's own document capture.
+  Map<String, Object>? _livePoseFor(
+    LocalId nodeId,
+    AnimationProperty property, {
+    String? targetName,
+  }) {
+    final live = _controller.liveNode(nodeId);
+    if (live == null) return null;
+    final node = targetName == null
+        ? live
+        : resolveChannelTarget(live, targetName);
+    if (node == null) return null;
+    switch (property) {
+      case AnimationProperty.translation:
+        final t = node.position;
+        return {'x': t.x, 'y': t.y, 'z': t.z};
+      case AnimationProperty.rotation:
+        final r = node.rotation;
+        return {'x': r.x, 'y': r.y, 'z': r.z, 'w': r.w};
+      case AnimationProperty.scale:
+        final s = node.scale;
+        return {'x': s.x, 'y': s.y, 'z': s.z};
+      case AnimationProperty.weights:
+        return null;
+    }
+  }
+
+  /// The pose [channel]'s curve already plays at [time] — the interpolation of
+  /// its own keyframes — as the value map `setAnimationKeyframe` accepts.
+  ///
+  /// Used for edge crystals: a missing start/end key must duplicate the value
+  /// the playthrough already shows there, never the pose held at the playhead
+  /// when Key was pressed, or a mid-clip capture would rewrite the clip's
+  /// endpoints and move the model's start pose. Falls back to the live visible
+  /// pose when the channel carries no keyframes to sample.
+  Map<String, Object>? _edgePose(AnimationChannelSpec channel, double time) {
+    final times = _payloadFloatValues(channel.timeline);
+    final values = _payloadFloatValues(channel.keyframes);
+    final stride = channel.property == AnimationProperty.rotation ? 4 : 3;
+    final sampled = sampleAnimationChannel(
+      times,
+      values,
+      stride,
+      time,
+      interpolation: channel.interpolation,
+    );
+    if (sampled == null) {
+      return _livePoseFor(
+        channel.target,
+        channel.property,
+        targetName: channel.targetName,
+      );
+    }
+    switch (channel.property) {
+      case AnimationProperty.translation:
+        return {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]};
+      case AnimationProperty.rotation:
+        return {
+          'x': sampled[0],
+          'y': sampled[1],
+          'z': sampled[2],
+          'w': sampled[3],
+        };
+      case AnimationProperty.scale:
+        return {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]};
+      case AnimationProperty.weights:
+        return null;
     }
   }
 
