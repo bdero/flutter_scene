@@ -855,6 +855,12 @@ class _SceneViewState extends State<SceneView>
 }
 
 class _ScenePainter extends CustomPainter {
+  // Throwaway profile-mode probe accumulation: rolling per-second average of
+  // scene encode time on the UI thread.
+  static double _paintMsSum = 0;
+  static int _paintSamples = 0;
+  static int? _paintReportAt;
+
   _ScenePainter({
     required this.scene,
     required this.cameraForFrame,
@@ -877,6 +883,7 @@ class _ScenePainter extends CustomPainter {
     final views = viewsForFrame;
     if (views != null) {
       final list = views();
+      final watch = Stopwatch()..start();
       try {
         scene.renderViews(
           list,
@@ -885,6 +892,20 @@ class _ScenePainter extends CustomPainter {
           pixelRatio: pixelRatio,
         );
       } finally {
+        watch.stop();
+        _paintMsSum += watch.elapsedMicroseconds / 1000.0;
+        _paintSamples++;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        _paintReportAt ??= now + 1000;
+        if (now >= _paintReportAt!) {
+          _paintReportAt = now + 1000;
+          debugPrint(
+            'PERF scene.encode=${(_paintMsSum / _paintSamples).toStringAsFixed(2)}ms '
+            '(n=$_paintSamples)',
+          );
+          _paintMsSum = 0;
+          _paintSamples = 0;
+        }
         // Semantics follow the primary view: the first one rendering to the
         // screen. Views with an offscreen target contribute nothing.
         Camera? primary;
