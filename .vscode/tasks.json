@@ -24,18 +24,36 @@
 				"cwd": "${workspaceFolder}/apps/flutter_scene_editor_app"
 			}
 		},
-		{
-			"type": "shell",
-			"label": "open connector",
-			"command": "node ~/Projects/telegram_connector/main.js FSCENE",
-			"problemMatcher": [],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"options": {
-				"cwd": "${workspaceFolder}",
-			}
-		}
+        {
+            "label": "open fscene",
+            "type": "shell",
+            "command": "node main.js FSCENE",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "../../telegram_connector",
+            }
+        },
+        {
+            "label": "kill all agents",
+            "type": "shell",
+            "command": "pkill -f 'cline connect' 2>/dev/null; pkill -f 'node main.js' 2>/dev/null; echo 'All agents killed'",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}",
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        }
 	]
 }
