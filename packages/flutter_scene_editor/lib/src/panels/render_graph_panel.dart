@@ -16,6 +16,7 @@ import '../controller/editor_controller.dart';
 import '../render_graph/debug_shaders.dart';
 import '../render_graph/render_graph_inspector.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import '../shell/editor_dialog.dart';
 
 /// The dockable Render Graph inspector.
@@ -464,10 +465,8 @@ class _TextureViewerState extends State<TextureViewer> {
         runSpacing: 4,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          DropdownButton<RemapMode>(
+          EditorDropdown<RemapMode>(
             value: _settings.mode,
-            isDense: true,
-            style: const TextStyle(fontSize: 12),
             items: const [
               DropdownMenuItem(value: RemapMode.color, child: Text('Color')),
               DropdownMenuItem(
@@ -487,10 +486,8 @@ class _TextureViewerState extends State<TextureViewer> {
             },
           ),
           if (_settings.mode == RemapMode.singleChannel)
-            DropdownButton<int>(
+            EditorDropdown<int>(
               value: _settings.channel,
-              isDense: true,
-              style: const TextStyle(fontSize: 12),
               items: const [
                 DropdownMenuItem(value: 0, child: Text('R')),
                 DropdownMenuItem(value: 1, child: Text('G')),

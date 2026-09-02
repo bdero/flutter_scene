@@ -705,3 +705,81 @@ String humanizeIdentifier(String raw) {
       .replaceAll('-', ' ');
   return spaced[0].toUpperCase() + spaced.substring(1);
 }
+
+/// The one dropdown: a value in the shared field, and the platform's own menu
+/// under it.
+///
+/// Material's bare [DropdownButton] draws an underline and its own baseline
+/// spacing, which is why a panel that mixes it with the editor's fields reads
+/// as two programs. This keeps the menu -- it is the one people already know
+/// how to drive -- and puts the closed state in the same recess every other
+/// value sits in.
+class EditorDropdown<T> extends StatefulWidget {
+  const EditorDropdown({
+    super.key,
+    required this.value,
+    required this.items,
+    required this.onChanged,
+    this.width,
+  });
+
+  final T? value;
+  final List<DropdownMenuItem<T>> items;
+
+  /// Null disables the control, which Material draws as a dimmed value.
+  final ValueChanged<T?>? onChanged;
+
+  /// A dropdown that should not take the whole value column (a unit picker
+  /// beside a number, say). By default it fills the column, so a panel of
+  /// dropdowns has one right edge rather than one per longest option.
+  final double? width;
+
+  @override
+  State<EditorDropdown<T>> createState() => _EditorDropdownState<T>();
+}
+
+class _EditorDropdownState<T> extends State<EditorDropdown<T>> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final field = MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: EditorFieldSurface(
+        hovered: _hovered && widget.onChanged != null,
+        padding: const EdgeInsets.only(left: 6, right: 2),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<T>(
+            value: widget.value,
+            items: widget.items,
+            onChanged: widget.onChanged,
+            focusColor: Colors.transparent,
+            borderRadius: BorderRadius.circular(editorFieldRadius),
+            dropdownColor: editorRaisedColor,
+            icon: const Icon(Icons.arrow_drop_down, size: editorIconSizeLarge),
+            iconEnabledColor: editorMutedTextColor,
+            iconDisabledColor: editorMutedTextColor.withValues(alpha: 0.4),
+            style: const TextStyle(fontSize: 11, color: editorTextColor),
+            selectedItemBuilder: (context) => [
+              for (final item in widget.items)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: DefaultTextStyle.merge(
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: editorTextColor,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    child: item.child,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return SizedBox(width: widget.width ?? double.infinity, child: field);
+  }
+}

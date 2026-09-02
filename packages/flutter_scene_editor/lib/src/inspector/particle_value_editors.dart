@@ -458,11 +458,8 @@ class _ModeDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 24,
-      child: DropdownButton<String>(
+      child: EditorDropdown<String>(
         value: value,
-        isExpanded: true,
-        isDense: true,
-        style: _labelStyle.copyWith(color: Theme.of(context).hintColor),
         items: [
           for (final o in options)
             DropdownMenuItem(

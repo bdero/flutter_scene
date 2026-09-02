@@ -11,6 +11,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import 'animator_document.dart';
 import 'animator_graph_view.dart';
 
@@ -842,12 +843,8 @@ class _DropdownRow extends StatelessWidget {
     child: SizedBox(
       height: 24,
       child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
+        child: EditorDropdown<String>(
           value: options.containsKey(value) ? value : null,
-          isDense: true,
-          isExpanded: true,
-          style: editorBodyText.copyWith(color: editorTextColor),
-          dropdownColor: editorRaisedColor,
           items: [
             for (final entry in options.entries)
               DropdownMenuItem(

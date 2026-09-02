@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import 'project_covers.dart';
 import 'project_library.dart';
 
@@ -555,11 +556,8 @@ class _SortControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonHideUnderline(
-      child: DropdownButton<ProjectSort>(
+      child: EditorDropdown<ProjectSort>(
         value: sort,
-        isDense: true,
-        style: editorBodyText.copyWith(color: editorTextColor),
-        dropdownColor: editorRaisedColor,
         items: [
           for (final option in ProjectSort.values)
             DropdownMenuItem(value: option, child: Text(option.label)),

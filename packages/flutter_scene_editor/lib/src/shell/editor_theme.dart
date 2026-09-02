@@ -200,13 +200,14 @@ class _EditorCollapsibleSectionState extends State<EditorCollapsibleSection> {
         InkWell(
           onTap: () => setState(() => _expanded = !_expanded),
           child: Container(
-            margin: const EdgeInsets.only(bottom: 3, top: 2),
-            padding: const EdgeInsets.fromLTRB(4, 4, 2, 4),
+            // The same band, margins and rule as every other heading: a
+            // section that folds is still a section, and a panel that spells
+            // one heading three ways is a panel that reads as three panels.
+            height: 24,
+            margin: const EdgeInsets.only(top: 10, bottom: 5),
+            padding: const EdgeInsets.only(left: 4, right: 4),
             decoration: const BoxDecoration(
-              border: Border(
-                left: BorderSide(color: _signal, width: 2),
-                bottom: BorderSide(color: _line),
-              ),
+              border: Border(bottom: BorderSide(color: _line)),
             ),
             child: Row(
               children: [
@@ -233,13 +234,15 @@ class _EditorCollapsibleSectionState extends State<EditorCollapsibleSection> {
                 ],
                 Expanded(
                   child: Text(
-                    widget.label,
+                    widget.label.toUpperCase(),
                     style: const TextStyle(
-                      fontSize: 11,
+                      fontSize: 10.5,
+                      height: 1.1,
                       fontWeight: FontWeight.w600,
-                      letterSpacing: 0.15,
+                      letterSpacing: 0.9,
                       color: _text,
                     ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

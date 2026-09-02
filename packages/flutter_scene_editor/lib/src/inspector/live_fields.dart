@@ -214,9 +214,26 @@ class InspectorToggleSwitch extends StatelessWidget {
 
 /// One titled section in an [InspectorAccordion].
 class InspectorAccordionItem {
-  const InspectorAccordionItem({required this.title, required this.child});
+  const InspectorAccordionItem({
+    required this.title,
+    required this.child,
+    this.enabled,
+    this.trailing,
+  });
 
-  final Widget title;
+  /// The heading, spelled by the accordion rather than by the caller: a panel
+  /// where one section is Title Case and the next is CAPS reads as two
+  /// panels.
+
+  final String title;
+
+  /// Non-null draws the on/off state a section can be switched by: a dot
+  /// before the name and a word after it. Null is a section that is simply
+  /// open or closed.
+  final bool? enabled;
+
+  /// Anything else the header carries, at its right.
+  final Widget? trailing;
   final Widget child;
 }
 
@@ -263,6 +280,8 @@ class _InspectorAccordionState extends State<InspectorAccordion> {
       for (final (index, item) in widget.children.indexed)
         _InspectorAccordionSection(
           title: item.title,
+          enabled: item.enabled,
+          trailing: item.trailing,
           expanded: _expanded.contains(index),
           onToggle: () => _toggle(index),
           child: item.child,
@@ -277,9 +296,14 @@ class _InspectorAccordionSection extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.child,
+    this.enabled,
+    this.trailing,
   });
 
-  final Widget title;
+  final bool? enabled;
+  final Widget? trailing;
+
+  final String title;
   final bool expanded;
   final VoidCallback onToggle;
   final Widget child;
@@ -312,8 +336,22 @@ class _InspectorAccordionSection extends StatelessWidget {
                     color: editorMutedTextColor,
                   ),
                   const SizedBox(width: 2),
+                  if (enabled case final on?) ...[
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: on ? editorAccentColor : editorMutedTextColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                  ],
                   Expanded(
-                    child: DefaultTextStyle.merge(
+                    child: Text(
+                      title.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: editorTextColor,
                         fontSize: 10.5,
@@ -321,9 +359,19 @@ class _InspectorAccordionSection extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.9,
                       ),
-                      child: title,
                     ),
                   ),
+                  if (enabled case final on?)
+                    Text(
+                      on ? 'ON' : 'OFF',
+                      style: TextStyle(
+                        color: on ? editorAccentColor : editorMutedTextColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                      ),
+                    ),
+                  if (trailing case final trailing?) trailing,
                 ],
               ),
             );

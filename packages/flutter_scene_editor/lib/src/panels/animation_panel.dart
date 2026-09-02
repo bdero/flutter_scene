@@ -24,6 +24,7 @@ import 'package:scene/scene.dart';
 import '../animator/animator_editor.dart';
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import 'animation_timeline_model.dart';
 
 /// Height of one channel row, and of the group header above each node's
@@ -578,12 +579,8 @@ class _ClipSelector extends StatelessWidget {
           child: clips.isEmpty
               ? Text('No clips', style: editorDetailText)
               : DropdownButtonHideUnderline(
-                  child: DropdownButton<LocalId>(
+                  child: EditorDropdown<LocalId>(
                     value: selected,
-                    isDense: true,
-                    isExpanded: true,
-                    style: editorBodyText.copyWith(color: editorTextColor),
-                    dropdownColor: editorRaisedColor,
                     items: [
                       for (final clip in clips)
                         DropdownMenuItem(

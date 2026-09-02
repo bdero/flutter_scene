@@ -188,12 +188,8 @@ class _PaintTools extends StatelessWidget {
       SizedBox(
         height: 28,
         child: DropdownButtonHideUnderline(
-          child: DropdownButton<TerrainPaintMode>(
+          child: EditorDropdown<TerrainPaintMode>(
             value: tool.paintMode,
-            isExpanded: true,
-            isDense: true,
-            style: editorBodyText.copyWith(color: editorTextColor),
-            dropdownColor: editorRaisedColor,
             items: [
               for (final mode in TerrainPaintMode.values)
                 DropdownMenuItem(

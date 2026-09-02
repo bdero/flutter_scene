@@ -18,6 +18,7 @@ import 'package:flutter_scene/scene.dart';
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 
 /// A frame shape the view can be held to.
 ///
@@ -144,11 +145,8 @@ class _GameViewPanelState extends State<GameViewPanel> {
             SizedBox(
               height: 24,
               child: DropdownButtonHideUnderline(
-                child: DropdownButton<GameAspect>(
+                child: EditorDropdown<GameAspect>(
                   value: _aspect,
-                  isDense: true,
-                  style: editorBodyText.copyWith(color: editorTextColor),
-                  dropdownColor: editorRaisedColor,
                   items: [
                     for (final aspect in gameAspects)
                       DropdownMenuItem(

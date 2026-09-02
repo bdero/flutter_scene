@@ -804,7 +804,7 @@ class _ComponentEditor extends StatelessWidget {
             children: [
               for (final entry in groups.entries)
                 InspectorAccordionItem(
-                  title: Text(humanizeIdentifier(entry.key)),
+                  title: humanizeIdentifier(entry.key),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [for (final def in entry.value) row(def)],

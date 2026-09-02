@@ -158,20 +158,23 @@ void main() {
       themed(const SizedBox(width: 420, child: _AccordionRebuildHarness())),
     );
 
+    // The heading spells the name; the state beside it says on or off.
     expect(find.text('Enabled'), findsNothing);
-    await tester.tap(find.text('Effect OFF'));
+    expect(find.text('OFF'), findsOneWidget);
+    await tester.tap(find.text('EFFECT'));
     await tester.pumpAndSettle();
     expect(find.text('Enabled'), findsOneWidget);
     final switchFinder = find.byType(InspectorToggleSwitch);
     await tester.tap(switchFinder);
     await tester.pumpAndSettle();
-    expect(find.text('Effect ON'), findsOneWidget);
+    // Twice: the heading's state, and the switch that changed it.
+    expect(find.text('ON'), findsNWidgets(2));
     expect(find.text('Enabled'), findsOneWidget);
 
-    await tester.tap(find.text('Effect ON'));
+    await tester.tap(find.text('EFFECT'));
     await tester.pumpAndSettle();
     expect(find.text('Enabled'), findsNothing);
-    await tester.tap(find.text('Effect ON'));
+    await tester.tap(find.text('EFFECT'));
     await tester.pumpAndSettle();
     expect(find.text('Enabled'), findsOneWidget);
   });
@@ -451,7 +454,8 @@ class _AccordionRebuildHarnessState extends State<_AccordionRebuildHarness> {
   Widget build(BuildContext context) => InspectorAccordion(
     children: [
       InspectorAccordionItem(
-        title: Text(_enabled ? 'Effect ON' : 'Effect OFF'),
+        title: 'Effect',
+        enabled: _enabled,
         child: InspectorSwitch(
           label: 'Enabled',
           value: _enabled,

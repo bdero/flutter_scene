@@ -21,7 +21,9 @@ import 'package:flutter_scene/scene.dart' show vfxPresetById;
 import 'package:scene/scene.dart';
 
 import '../controller/editor_controller.dart';
+import 'live_fields.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 
 /// The glyph for the weather with this id.
 ///
@@ -231,15 +233,13 @@ class _WeatherControlsState extends State<WeatherControls> {
           onTiltChanged: (value) => setState(() => _tilt = value),
           onCommit: _environment == null ? null : _applySun,
         ),
-        const SizedBox(height: 14),
         const EditorSectionHeader(label: 'Weather'),
         if (sky == null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
+            child: InspectorDescriptionText(
               'Picking a weather state switches the scene to the weather sky, '
               'which is what carries the clouds.',
-              style: editorDetailText,
             ),
           ),
         for (final preset in weatherPresets)
@@ -248,24 +248,26 @@ class _WeatherControlsState extends State<WeatherControls> {
             selected: _applied == preset.id,
             onTap: () => _apply(preset),
           ),
-        const SizedBox(height: 14),
         const EditorSectionHeader(label: 'Wind'),
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
+          child: InspectorDescriptionText(
             _windNode == null
                 ? 'One wind, read by the clouds and by anything blowing '
                       'through them. Without it every effect drifts on its '
                       'own constant and a gust reaches none of them.'
                 : 'Driving the scene wind. Clouds, rain and snow all lean '
                       'with it.',
-            style: editorDetailText,
           ),
         ),
         if (_windNode == null)
-          OutlinedButton(
+          EditorActionButton(
+            label: 'Add wind',
+            icon: Icons.air,
+            tooltip: _ctrl.document.roots.isEmpty
+                ? 'Add something to the scene for the wind to blow through'
+                : null,
             onPressed: _ctrl.document.roots.isEmpty ? null : _addWind,
-            child: const Text('Add wind'),
           )
         else ...[
           _WindDial(
@@ -278,11 +280,10 @@ class _WeatherControlsState extends State<WeatherControls> {
             onCommit: _applyWind,
           ),
         ],
-        const SizedBox(height: 14),
         const EditorSectionHeader(label: 'Storm'),
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
+          child: InspectorDescriptionText(
             _stormNode == null
                 ? 'Lightning that lights the clouds from inside, and thunder '
                       'delayed by how far away the bolt was. It comes with a '
@@ -290,18 +291,22 @@ class _WeatherControlsState extends State<WeatherControls> {
                       'has no clouds to show it.'
                 : 'Running. Every field of it is on the Storm node; the '
                       'flash brightness is on the light beside the driver.',
-            style: editorDetailText,
           ),
         ),
         if (_stormNode == null)
-          OutlinedButton(
+          EditorActionButton(
+            label: 'Add storm',
+            icon: Icons.flash_on,
+            tooltip: _environment == null
+                ? 'A storm needs a scene environment to light'
+                : null,
             onPressed: _environment == null ? null : _addStorm,
-            child: const Text('Add storm'),
           )
         else
-          OutlinedButton(
+          EditorActionButton(
+            label: 'Remove storm',
+            icon: Icons.flash_off,
             onPressed: _removeLightning,
-            child: const Text('Remove storm'),
           ),
       ],
     );
@@ -561,39 +566,51 @@ class _WeatherTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(4),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(9, 7, 9, 8),
-          decoration: BoxDecoration(
-            color: editorPanelColor,
-            border: Border.all(
-              color: selected ? editorAccentColor : editorLineColor,
-            ),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Row(
-            children: [
-              Icon(
+    // A row rather than a card. Six cards stacked in a panel read as six
+    // separate things to decide about; six rows read as one list to pick
+    // from, which is what this is.
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: editorPanelInset,
+          vertical: 6,
+        ),
+        color: selected ? editorRaisedColor : null,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(
                 weatherPresetIcon(preset.id),
-                size: 17,
+                size: editorIconSizeLarge,
                 color: selected ? editorAccentColor : editorMutedTextColor,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(preset.name, style: editorSubheadText),
-                    Text(preset.description, style: editorDetailText),
-                  ],
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    preset.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: selected ? editorAccentColor : editorTextColor,
+                    ),
+                  ),
+                  InspectorDescriptionText(preset.description),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (selected)
+              const Icon(
+                Icons.check,
+                size: editorIconSize,
+                color: editorAccentColor,
+              ),
+          ],
         ),
       ),
     );
