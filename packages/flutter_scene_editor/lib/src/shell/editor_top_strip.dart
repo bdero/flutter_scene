@@ -118,32 +118,48 @@ class EditorTopStrip extends StatelessWidget {
               onPanStart: onDragStart == null ? null : (_) => onDragStart!(),
             ),
           ),
-          EditorMenu(
-            label: mode.label,
-            icon: mode.icon,
-            tooltip: 'What the viewport shows',
-            items: [
-              for (final option in ViewportMode.values)
-                EditorMenuItem(
-                  label: option.label,
-                  checked: option == mode,
-                  onTap: () => onModeChanged(option),
-                ),
-            ],
+          // The right cluster scrolls rather than overflowing. The strip has
+          // to hold a camera menu, two buttons and whatever transport the host
+          // gives it, at whatever width the window happens to be; a fixed row
+          // of those is a row that paints a yellow stripe on somebody's
+          // laptop.
+          Flexible(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  EditorMenu(
+                    label: mode.label,
+                    icon: mode.icon,
+                    tooltip: 'What the viewport shows',
+                    items: [
+                      for (final option in ViewportMode.values)
+                        EditorMenuItem(
+                          label: option.label,
+                          checked: option == mode,
+                          onTap: () => onModeChanged(option),
+                        ),
+                    ],
+                  ),
+                  EditorPanelIconButton(
+                    icon: Icons.tune,
+                    tooltip: 'Scene settings',
+                    onPressed: onSceneSettings,
+                  ),
+                  EditorPanelIconButton(
+                    icon: focused ? Icons.close_fullscreen : Icons.open_in_full,
+                    tooltip: focused ? 'Show the panels' : 'Viewport only',
+                    selected: focused,
+                    onPressed: onToggleFocus,
+                  ),
+                  if (trailing.isNotEmpty) const SizedBox(width: 10),
+                  ...trailing,
+                ],
+              ),
+            ),
           ),
-          EditorPanelIconButton(
-            icon: Icons.tune,
-            tooltip: 'Scene settings',
-            onPressed: onSceneSettings,
-          ),
-          EditorPanelIconButton(
-            icon: focused ? Icons.close_fullscreen : Icons.open_in_full,
-            tooltip: focused ? 'Show the panels' : 'Viewport only',
-            selected: focused,
-            onPressed: onToggleFocus,
-          ),
-          if (trailing.isNotEmpty) const SizedBox(width: 10),
-          ...trailing,
           const SizedBox(width: 6),
         ],
       ),
