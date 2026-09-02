@@ -59,6 +59,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
 
   EditorController get _controller => widget.controller;
 
+  /// How a multi-node key applies to the selection, per
+  /// [MultiNodeMovementMode].
+  MultiNodeMovementMode _movementMode = MultiNodeMovementMode.inherited;
+
   @override
   void initState() {
     super.initState();
@@ -181,12 +185,18 @@ class _AnimationPanelState extends State<AnimationPanel> {
   /// Pressing Key also adds crystals at the timeline's start and end where
   /// none exist, so every playthrough starts and ends on a captured key —
   /// without touching edge keys the author placed deliberately.
+  ///
+  /// When multiple nodes are selected, the [_movementMode] controls which
+  /// nodes receive keys ([_keyTargetNodes]); each keyed node records the pose
+  /// it visibly holds ([_livePoseFor]). No delta math happens here — the
+  /// panel only chooses the key-target set and records what is on screen.
   Future<void> _keySelection(AnimationProperty? property) async {
     final id = _animationId;
     if (id == null) return;
     final time = _controller.previewTime;
+
     final commands = <(String, Map<String, Object?>)>[
-      for (final nodeId in _controller.selection.ids)
+      for (final nodeId in _keyTargetNodes())
         if (_controller.document.nodes.containsKey(nodeId))
           for (final p
               in property == null
@@ -221,6 +231,24 @@ class _AnimationPanelState extends State<AnimationPanel> {
     if (property == null) await _ensureEdgeKeys(id, time);
   }
 
+  /// The nodes a multi-node key applies to, per [_movementMode].
+  ///
+  /// [MultiNodeMovementMode.inherited] keys only the selected nodes with no
+  /// selected ancestor (see `EditorController.topLevelSelection`): a selected
+  /// parent is keyed and its selected children ride along through the scene
+  /// graph, moving with it proportionally. Keying them too would double-drive
+  /// them at playback — the parent's channel moves the child while the
+  /// child's own channel pins it in place.
+  ///
+  /// [MultiNodeMovementMode.mirrored] keys every selected node individually,
+  /// including selected descendants of other selected nodes. Callers filter
+  /// out ids missing from the document (prefab members), so the raw
+  /// selection is returned as-is.
+  List<LocalId> _keyTargetNodes() =>
+      _movementMode == MultiNodeMovementMode.inherited
+      ? _controller.topLevelSelection()
+      : _controller.selection.ids.toList();
+
   /// Adds the missing edge crystals: a key at t = 0 and at the clip's end
   /// for every selected node's translation, rotation, and scale path that
   /// does not have one yet.
@@ -254,7 +282,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
     final end = _controller.previewDuration(id);
     final edges = {0.0, if (end > 1e-4) end};
     final commands = <(String, Map<String, Object?>)>[];
-    for (final nodeId in _controller.selection.ids) {
+    for (final nodeId in _keyTargetNodes()) {
       if (!_controller.document.nodes.containsKey(nodeId)) continue;
       for (final property in const [
         AnimationProperty.translation,
@@ -868,6 +896,28 @@ class _AnimationPanelState extends State<AnimationPanel> {
       padding: const EdgeInsets.only(left: 10, right: 10),
       child: Row(
         children: [
+          // The movement mode selector: controls which selected nodes a
+          // multi-node key applies to.
+          _PanelTip(
+            message:
+                'How a multi-node key applies to the selection.\n\n'
+                'Inherited keys only the top-level selected nodes: their '
+                'selected children are not keyed and ride along through the '
+                'scene graph, moving with the parent proportionally.\n\n'
+                'Mirrored keys every selected node individually, so selected '
+                'children carry their own channels instead of riding along.\n\n'
+                'The modes differ when the selection contains a node together '
+                'with one of its descendants; for a selection of unrelated '
+                'nodes both key every node.',
+            child: SizedBox(
+              height: 26,
+              child: _MovementModeToggle(
+                mode: _movementMode,
+                onChanged: (mode) => setState(() => _movementMode = mode),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
           _PanelTip(
             message:
                 'Key the pose: captures translation, rotation, and scale of '
@@ -993,4 +1043,51 @@ class _AnimationPanelState extends State<AnimationPanel> {
 
   String _nodeName(LocalId id) =>
       _controller.document.nodes[id]?.name ?? id.toToken();
+}
+
+/// How a multi-node key applies to the selection in the animation panel.
+enum MultiNodeMovementMode {
+  /// Only selected ancestors are keyed; their selected children ride along
+  /// through the scene graph hierarchy, moving with the parent
+  /// proportionally.
+  inherited,
+
+  /// Every selected node is keyed with its own pose, including selected
+  /// descendants of other selected nodes, so each carries its own channels
+  /// instead of riding along through its parent's.
+  mirrored,
+}
+
+/// A segmented toggle between [MultiNodeMovementMode] values, used in the
+/// animation panel's key bar to pick how a multi-node key applies.
+class _MovementModeToggle extends StatelessWidget {
+  const _MovementModeToggle({required this.mode, required this.onChanged});
+
+  final MultiNodeMovementMode mode;
+  final ValueChanged<MultiNodeMovementMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<MultiNodeMovementMode>(
+      segments: const [
+        ButtonSegment(
+          value: MultiNodeMovementMode.inherited,
+          label: Text('Inherit', style: TextStyle(fontSize: 11)),
+          icon: Icon(Icons.account_tree_outlined, size: 14),
+        ),
+        ButtonSegment(
+          value: MultiNodeMovementMode.mirrored,
+          label: Text('Mirror', style: TextStyle(fontSize: 11)),
+          icon: Icon(Icons.sync_alt, size: 14),
+        ),
+      ],
+      selected: {mode},
+      onSelectionChanged: (selected) => onChanged(selected.first),
+      style: ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      showSelectedIcon: false,
+    );
+  }
 }
