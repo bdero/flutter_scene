@@ -866,7 +866,9 @@ class _ActionButtons extends StatelessWidget {
                   onPressed: playReason != null ? null : onPlay,
                 )
               else ...[
-                _SessionStateChip(session: session),
+                // A text chip cannot fit a forty-pixel rail, and the icons
+                // beside it already say what the session is doing.
+                if (!rail) _SessionStateChip(session: session),
                 if (session.supportsHotReload)
                   _iconButton(
                     context,

@@ -67,6 +67,11 @@ const double editorRailPillHeight = 36;
 const double editorRailPillRadius = 10;
 
 /// Horizontal padding inside a panel body.
+///
+/// Everything a panel holds starts here and ends here: headings, rows,
+/// buttons, and the paragraphs that explain them. A block that adds its own
+/// inset on top ends up a few pixels in from the rest, which is the specific
+/// thing that makes a panel look assembled rather than laid out.
 const double editorPanelInset = 8;
 
 /// The gap between a row's label and its control.
@@ -543,8 +548,12 @@ class _EditorActionButtonState extends State<EditorActionButton> {
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onPressed != null;
+    // A control that does something reads brighter than the text explaining
+    // it. The old fill sat a shade off the panel and the label was the same
+    // grey as the paragraph above it, which is how a button ends up looking
+    // like a caption with a box round it.
     final foreground = enabled
-        ? (_hovered ? editorTextColor : editorMutedTextColor)
+        ? editorTextColor
         : editorMutedTextColor.withValues(alpha: 0.45);
     final button = MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
@@ -557,15 +566,20 @@ class _EditorActionButtonState extends State<EditorActionButton> {
           height: editorActionButtonHeight,
           margin: const EdgeInsets.symmetric(
             horizontal: editorPanelInset,
-            vertical: 5,
+            vertical: 6,
           ),
           decoration: BoxDecoration(
             color: enabled && _hovered
                 ? Color.alphaBlend(
-                    editorAccentColor.withValues(alpha: 0.12),
+                    editorAccentColor.withValues(alpha: 0.22),
                     editorRaisedColor,
                   )
                 : editorRaisedColor,
+            border: Border.all(
+              color: enabled
+                  ? (_hovered ? editorAccentColor : editorLineColor)
+                  : editorLineColor.withValues(alpha: 0.5),
+            ),
             borderRadius: BorderRadius.circular(editorFieldRadius),
           ),
           child: Row(
@@ -798,4 +812,37 @@ class _EditorDropdownState<T> extends State<EditorDropdown<T>> {
     }
     return bounded ? SizedBox(width: double.infinity, child: field) : field;
   }
+}
+
+/// An explanation inside a panel: what a block is for, or why a control is
+/// unavailable.
+///
+/// Wraps, unlike a label, and carries [editorPanelInset] like every other
+/// block, so it starts where the rows, headings and buttons around it start. A
+/// paragraph indented differently from the block it explains reads as a
+/// different block -- which is exactly how these panels looked.
+class EditorNote extends StatelessWidget {
+  const EditorNote(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(
+      left: editorPanelInset,
+      right: editorPanelInset,
+      bottom: 8,
+      top: 2,
+    ),
+    child: DefaultTextStyle(
+      style: const TextStyle(
+        fontSize: 11,
+        height: 1.35,
+        color: editorNoteColor,
+      ),
+      softWrap: true,
+      overflow: TextOverflow.visible,
+      child: Text(text),
+    ),
+  );
 }

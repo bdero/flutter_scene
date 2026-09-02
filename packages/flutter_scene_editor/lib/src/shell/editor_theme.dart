@@ -100,6 +100,12 @@ const TextStyle editorSubheadText = TextStyle(
 const TextStyle editorMicroText = TextStyle(fontSize: 9, color: _mutedText);
 const TextStyle editorDetailText = TextStyle(fontSize: 11, color: _mutedText);
 
+/// Explanatory prose, a step brighter than a label.
+///
+/// A label is read beside its value and can afford to recede; a paragraph is
+/// read on its own, and the muted grey that suits one is thin for the other.
+const Color editorNoteColor = Color(0xFFAAAECB);
+
 /// The heading above a group of rows, shared so dialogs read as the same
 /// chrome as the panels.
 ///

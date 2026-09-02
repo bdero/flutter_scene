@@ -236,12 +236,9 @@ class _WeatherControlsState extends State<WeatherControls> {
         ),
         const EditorSectionHeader(label: 'Weather'),
         if (sky == null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: InspectorDescriptionText(
-              'Picking a weather state switches the scene to the weather sky, '
-              'which is what carries the clouds.',
-            ),
+          EditorNote(
+            'Picking a weather state switches the scene to the weather sky, '
+            'which is what carries the clouds.',
           ),
         for (final preset in weatherPresets)
           _WeatherTile(
@@ -250,16 +247,13 @@ class _WeatherControlsState extends State<WeatherControls> {
             onTap: () => _apply(preset),
           ),
         const EditorSectionHeader(label: 'Wind'),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: InspectorDescriptionText(
-            _windNode == null
-                ? 'One wind, read by the clouds and by anything blowing '
-                      'through them. Without it every effect drifts on its '
-                      'own constant and a gust reaches none of them.'
-                : 'Driving the scene wind. Clouds, rain and snow all lean '
-                      'with it.',
-          ),
+        EditorNote(
+          _windNode == null
+              ? 'One wind, read by the clouds and by anything blowing '
+                    'through them. Without it every effect drifts on its '
+                    'own constant and a gust reaches none of them.'
+              : 'Driving the scene wind. Clouds, rain and snow all lean '
+                    'with it.',
         ),
         if (_windNode == null)
           EditorActionButton(
@@ -282,17 +276,14 @@ class _WeatherControlsState extends State<WeatherControls> {
           ),
         ],
         const EditorSectionHeader(label: 'Storm'),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: InspectorDescriptionText(
-            _stormNode == null
-                ? 'Lightning that lights the clouds from inside, and thunder '
-                      'delayed by how far away the bolt was. It comes with a '
-                      'light for the flash, since a strike under a clear sky '
-                      'has no clouds to show it.'
-                : 'Running. Every field of it is on the Storm node; the '
-                      'flash brightness is on the light beside the driver.',
-          ),
+        EditorNote(
+          _stormNode == null
+              ? 'Lightning that lights the clouds from inside, and thunder '
+                    'delayed by how far away the bolt was. It comes with a '
+                    'light for the flash, since a strike under a clear sky '
+                    'has no clouds to show it.'
+              : 'Running. Every field of it is on the Storm node; the '
+                    'flash brightness is on the light beside the driver.',
         ),
         if (_stormNode == null)
           EditorActionButton(
@@ -572,7 +563,7 @@ class _TimeOfDay extends StatelessWidget {
   }
 }
 
-class _WeatherTile extends StatelessWidget {
+class _WeatherTile extends StatefulWidget {
   const _WeatherTile({
     required this.preset,
     required this.selected,
@@ -584,51 +575,82 @@ class _WeatherTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_WeatherTile> createState() => _WeatherTileState();
+}
+
+class _WeatherTileState extends State<_WeatherTile> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    // A row rather than a card. Six cards stacked in a panel read as six
-    // separate things to decide about; six rows read as one list to pick
-    // from, which is what this is.
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        // No inset of its own: the list lines up with the paragraph above it
-        // rather than stepping in from it.
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
-        color: selected ? editorRaisedColor : null,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: Icon(
-                weatherPresetIcon(preset.id),
-                size: editorIconSizeLarge,
-                color: selected ? editorAccentColor : editorMutedTextColor,
+    final selected = widget.selected;
+    // A row rather than a card, and a row that answers the pointer: a list
+    // you pick from has to look pickable before you click it, not after.
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: editorPanelInset,
+            vertical: 9,
+          ),
+          decoration: BoxDecoration(
+            color: selected
+                ? Color.alphaBlend(
+                    editorAccentColor.withValues(alpha: 0.16),
+                    editorRaisedColor,
+                  )
+                : _hovered
+                ? editorRaisedColor
+                : null,
+            borderRadius: BorderRadius.circular(editorFieldRadius),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  weatherPresetIcon(widget.preset.id),
+                  size: editorIconSizeLarge,
+                  color: selected ? editorAccentColor : editorMutedTextColor,
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    preset.name,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: selected ? editorAccentColor : editorTextColor,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.preset.name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: selected ? editorAccentColor : editorTextColor,
+                      ),
                     ),
-                  ),
-                  InspectorDescriptionText(preset.description),
-                ],
+                    Text(
+                      widget.preset.description,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        height: 1.35,
+                        color: editorNoteColor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            if (selected)
-              const Icon(
-                Icons.check,
-                size: editorIconSize,
-                color: editorAccentColor,
-              ),
-          ],
+              if (selected)
+                const Icon(
+                  Icons.check,
+                  size: editorIconSize,
+                  color: editorAccentColor,
+                ),
+            ],
+          ),
         ),
       ),
     );
