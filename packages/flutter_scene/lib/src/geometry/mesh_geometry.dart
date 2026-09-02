@@ -331,6 +331,10 @@ class MeshGeometry extends UnskinnedGeometry {
   Float32List _cpuTangents = Float32List(0);
 
   /// The number of vertices currently drawn.
+  ///
+  /// Overrides the base count with the live one: a mesh whose vertex range is
+  /// updated in place draws fewer vertices than it uploaded.
+  @override
   int get vertexCount => _liveVertexCount;
 
   /// Whether this geometry can be updated in place.

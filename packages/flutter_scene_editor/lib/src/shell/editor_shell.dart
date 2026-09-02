@@ -27,6 +27,7 @@ import '../panels/history_panel.dart';
 import '../panels/game_view_panel.dart';
 import '../panels/inspector_panel.dart';
 import '../panels/outliner_panel.dart';
+import '../panels/profiler_panel.dart';
 import '../panels/render_graph_panel.dart';
 import '../inspector/scene_settings_dialog.dart';
 import '../inspector/vfx_editing.dart';
@@ -59,6 +60,7 @@ import 'editor_dialog.dart';
 enum EditorScreen {
   visualScripter('Visual Scripter'),
   renderGraph('Render Graph'),
+  profiler('Profiler'),
   history('History');
 
   const EditorScreen(this.title);
@@ -946,6 +948,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                       controller: _ctrl,
                       inspector: _renderGraphInspector,
                     ),
+                    EditorScreen.profiler => ProfilerPanel(controller: _ctrl),
                     EditorScreen.history => HistoryPanel(controller: _ctrl),
                   },
                 ),

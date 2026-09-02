@@ -540,6 +540,19 @@ abstract class Geometry {
     indexCount: _indexCount,
   );
 
+  /// How many vertices this geometry draws with.
+  ///
+  /// Zero before the first upload. Public so a tool can weigh a scene without
+  /// copying it out through [extractMeshData], which allocates the whole mesh
+  /// again and is not something to do once a frame.
+  /// {@category Geometry}
+  int get vertexCount => _vertexCount;
+
+  /// How many indices this geometry draws with, or zero when it draws its
+  /// vertices in order.
+  /// {@category Geometry}
+  int get indexCount => _indexCount;
+
   /// Whether this geometry retains CPU-side vertex data, making
   /// [extractMeshData] available.
   ///
