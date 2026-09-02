@@ -30,18 +30,6 @@ import 'transform_gizmo.dart';
 import 'viewport_tools.dart';
 import 'viewport_camera_handle.dart';
 
-/// How a multi-selection transform chooses its pivot, mirroring Blender's
-/// pivot-point modes. With one node selected the modes are identical.
-enum PivotMode {
-  /// Each selected node rotates and scales about its own origin; positions
-  /// never change under rotate/scale.
-  individualOrigins,
-
-  /// The whole selection rotates and scales about the median of the selected
-  /// nodes' origins, where the gizmo also draws.
-  medianPoint,
-}
-
 /// Interactive viewport: renders the live scene, handles selection via
 /// raycast, and drives a translate gizmo that commits one command per drag.
 ///
@@ -118,7 +106,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
   ViewportToolState? get _tools => widget.tools;
 
   TransformSpace get _transformSpace => _tools?.space ?? _ownSpace;
-  PivotMode _pivotMode = PivotMode.medianPoint;
+
+  /// The pivot used when no rail is attached.
+  PivotMode _ownPivot = PivotMode.medianPoint;
+
+  PivotMode get _pivotMode => _tools?.pivot ?? _ownPivot;
   _PendingSelection? _pendingSelection;
 
   // The pointer's last position over this viewport, kept for starting a
@@ -161,16 +153,54 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (tools != null) {
       tools.addListener(_onToolsChanged);
       _gizmo.mode = tools.mode;
+      _lastFrameSignal = tools.frameSignal;
+      _applySnap(tools);
     }
     widget.cameraHandle?.attach(_camera, _bumpView);
   }
 
-  /// The rail picked a different handle, or flipped the frame.
+  /// The rail changed something the viewport draws or drags with.
   void _onToolsChanged() {
     final tools = _tools;
     if (tools == null || !mounted) return;
-    setState(() => _gizmo.mode = tools.mode);
+    setState(() {
+      _gizmo.mode = tools.mode;
+      _applySnap(tools);
+      // The brushes are armed from the rail now; the primary button belongs
+      // to whichever one is holding it.
+      _terrainTool.tool = tools.brush == ViewportBrush.terrain
+          ? TerrainTool.paint
+          : null;
+      _scatterTool.active = tools.brush == ViewportBrush.scatter;
+    });
+    if (tools.frameSignal != _lastFrameSignal) {
+      _lastFrameSignal = tools.frameSignal;
+      _frameSelection();
+    }
     _bumpView();
+  }
+
+  /// The last framing request this view answered.
+  int _lastFrameSignal = 0;
+
+  /// Snapping is off unless the rail says otherwise, and the steps are the
+  /// rail's, so two scene views cannot disagree about where a drag lands.
+  void _applySnap(ViewportToolState tools) {
+    _gizmo
+      ..translateSnap = tools.snap ? tools.translateStep : 0
+      ..rotateSnap = tools.snap ? tools.rotateStepDegrees * (pi / 180) : 0
+      ..scaleSnap = tools.snap ? tools.scaleStep : 0;
+  }
+
+  /// Tells the rail what the brushes could reach, so it can disable one with a
+  /// reason rather than arming a brush with nothing under it.
+  void _publishBrushTargets() {
+    final tools = _tools;
+    if (tools == null) return;
+    tools.publishBrushTargets(
+      sculpt: _terrainTarget() != null || _sculptablePlane() != null,
+      scatter: _scatterTarget() != null,
+    );
   }
 
   @override
@@ -229,6 +259,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // gizmo snapshot cache survives orbit drags.
     _componentGizmoCache.invalidate();
     _groundFieldCached = false;
+    // What the brushes can reach depends on the selection, which is what
+    // just changed.
+    _publishBrushTargets();
     _bumpView();
   }
 
@@ -1033,7 +1066,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   void _setPivotMode(PivotMode mode) {
     if (_pivotMode == mode) return;
-    setState(() => _pivotMode = mode);
+    final tools = _tools;
+    if (tools != null) {
+      tools.pivot = mode;
+      return;
+    }
+    setState(() => _ownPivot = mode);
     _bumpView();
   }
 
@@ -1616,43 +1654,47 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               ),
                             ),
                           ),
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _GizmoModeBar(
-                                showModes: _tools == null,
-                                mode: _gizmo.mode,
-                                onChanged: _setMode,
-                                sculpting: _terrainTool.active,
-                                canSculpt:
-                                    _terrainTarget() != null ||
-                                    _sculptablePlane() != null,
-                                onSculptingChanged: (value) => setState(() {
-                                  _terrainTool.tool = value
-                                      ? TerrainTool.paint
-                                      : null;
-                                  // The two brushes both want the primary
-                                  // button, so arming one disarms the other.
-                                  if (value) _scatterTool.active = false;
-                                }),
-                                painting: _scatterTool.active,
-                                canPaint: _scatterTarget() != null,
-                                onPaintingChanged: (value) => setState(() {
-                                  _scatterTool.active = value;
-                                  if (value) _terrainTool.tool = null;
-                                }),
-                              ),
-                              const SizedBox(width: 8),
-                              _PivotModeBar(
-                                mode: _pivotMode,
-                                onChanged: _setPivotMode,
-                              ),
-                            ],
+                        // The rail owns the tools when one is attached; a
+                        // second copy floating over the scene is a second
+                        // place for them to disagree.
+                        if (_tools == null)
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _GizmoModeBar(
+                                  showModes: _tools == null,
+                                  mode: _gizmo.mode,
+                                  onChanged: _setMode,
+                                  sculpting: _terrainTool.active,
+                                  canSculpt:
+                                      _terrainTarget() != null ||
+                                      _sculptablePlane() != null,
+                                  onSculptingChanged: (value) => setState(() {
+                                    _terrainTool.tool = value
+                                        ? TerrainTool.paint
+                                        : null;
+                                    // The two brushes both want the primary
+                                    // button, so arming one disarms the other.
+                                    if (value) _scatterTool.active = false;
+                                  }),
+                                  painting: _scatterTool.active,
+                                  canPaint: _scatterTarget() != null,
+                                  onPaintingChanged: (value) => setState(() {
+                                    _scatterTool.active = value;
+                                    if (value) _terrainTool.tool = null;
+                                  }),
+                                ),
+                                const SizedBox(width: 8),
+                                _PivotModeBar(
+                                  mode: _pivotMode,
+                                  onChanged: _setPivotMode,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
                         if (_scatterTool.active)
                           if (_brushPoint case final point?)
                             if (_groundField() case final field?)

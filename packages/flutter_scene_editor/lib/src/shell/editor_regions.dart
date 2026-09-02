@@ -17,6 +17,17 @@ import 'package:flutter/material.dart';
 import 'editor_theme.dart';
 import 'panel_chrome.dart';
 
+/// What the viewport is showing: the editor's camera, or the game's.
+enum ViewportMode {
+  scene('Scene', Icons.videocam_outlined),
+  game('Game', Icons.sports_esports_outlined);
+
+  const ViewportMode(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+}
+
 /// Which surface the bottom shelf is showing.
 ///
 /// One at a time and never a tab strip: the shelf is a place, and what is in
@@ -67,8 +78,16 @@ class EditorWorkspace extends ChangeNotifier {
           value is num ? value.toDouble() : fallback;
       bool open(Object? value) => value is bool ? value : true;
       return EditorWorkspace(
-        hierarchyWidth: size(json['hierarchyWidth'], 220),
-        inspectorWidth: size(json['inspectorWidth'], 300),
+        // Clamped on the way in: a width stored on a wide display should not
+        // arrive on a laptop as a panel with no scene beside it.
+        hierarchyWidth: size(
+          json['hierarchyWidth'],
+          220,
+        ).clamp(minHierarchyWidth, maxHierarchyWidth),
+        inspectorWidth: size(
+          json['inspectorWidth'],
+          300,
+        ).clamp(minInspectorWidth, maxInspectorWidth),
         shelfHeight: size(json['shelfHeight'], 260),
         hierarchyOpen: open(json['hierarchyOpen']),
         inspectorOpen: open(json['inspectorOpen']),
@@ -79,6 +98,13 @@ class EditorWorkspace extends ChangeNotifier {
       return null;
     }
   }
+
+  /// The narrowest the scene is allowed to get.
+  ///
+  /// The side panels give way before the viewport does: they are readable at
+  /// their minimum, and a scene three hundred pixels wide is not a scene you
+  /// can work in.
+  static const double minViewportWidth = 360;
 
   static const double minHierarchyWidth = 180;
   static const double maxHierarchyWidth = 420;
@@ -168,13 +194,15 @@ class EditorRegion {
 /// the top because they are all [editorHeaderHeight] and they all start at the
 /// same y. One horizontal line across the window, and the scene starts under
 /// it.
+/// How wide a draggable divider is, grab area included.
+const double _dividerThickness = 7;
+
 class EditorRegions extends StatelessWidget {
   const EditorRegions({
     super.key,
     required this.workspace,
     required this.rail,
     required this.hierarchy,
-    required this.topStrip,
     required this.viewport,
     required this.shelf,
     required this.inspector,
@@ -187,8 +215,6 @@ class EditorRegions extends StatelessWidget {
   final Widget rail;
   final EditorRegion hierarchy;
 
-  /// The viewport's header: the strip that replaced the menu bar.
-  final Widget topStrip;
   final Widget viewport;
   final EditorRegion shelf;
   final EditorRegion inspector;
@@ -205,6 +231,59 @@ class EditorRegions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => _build(context, constraints.maxWidth),
+    );
+  }
+
+  /// Side widths for a window this wide.
+  ///
+  /// The stored widths are what the user asked for; these are what fits. When
+  /// the two panels would leave the scene less than [minViewportWidth] they
+  /// give up the difference between them, in proportion, and never go below
+  /// their own minimums.
+  ({double hierarchy, double inspector}) _fittedWidths(double windowWidth) {
+    final hierarchy = workspace.hierarchyOpen
+        ? workspace.hierarchyWidth
+        : editorHeaderHeight;
+    final inspector = workspace.inspectorOpen
+        ? workspace.inspectorWidth
+        : editorHeaderHeight;
+    // The dividers are part of the width too: forgetting them is how a
+    // "minimum" ends up fourteen pixels under itself.
+    final dividers =
+        (workspace.hierarchyOpen ? _dividerThickness : 0) +
+        (workspace.inspectorOpen ? _dividerThickness : 0);
+    final spare =
+        windowWidth -
+        editorRailWidth -
+        dividers -
+        hierarchy -
+        inspector -
+        EditorWorkspace.minViewportWidth;
+    if (spare >= 0) return (hierarchy: hierarchy, inspector: inspector);
+
+    final shrinkable =
+        (workspace.hierarchyOpen
+            ? hierarchy - EditorWorkspace.minHierarchyWidth
+            : 0) +
+        (workspace.inspectorOpen
+            ? inspector - EditorWorkspace.minInspectorWidth
+            : 0);
+    if (shrinkable <= 0) return (hierarchy: hierarchy, inspector: inspector);
+    final take = (-spare).clamp(0.0, shrinkable) / shrinkable;
+    return (
+      hierarchy: workspace.hierarchyOpen
+          ? hierarchy - (hierarchy - EditorWorkspace.minHierarchyWidth) * take
+          : hierarchy,
+      inspector: workspace.inspectorOpen
+          ? inspector - (inspector - EditorWorkspace.minInspectorWidth) * take
+          : inspector,
+    );
+  }
+
+  Widget _build(BuildContext context, double windowWidth) {
+    final widths = _fittedWidths(windowWidth);
     return Column(
       children: [
         Expanded(
@@ -213,7 +292,7 @@ class EditorRegions extends StatelessWidget {
               rail,
               if (workspace.hierarchyOpen) ...[
                 SizedBox(
-                  width: workspace.hierarchyWidth,
+                  width: widths.hierarchy,
                   child: _RegionColumn(region: hierarchy),
                 ),
                 EditorRegionDivider(
@@ -238,7 +317,7 @@ class EditorRegions extends StatelessWidget {
                   onDragEnd: onWorkspaceChanged,
                 ),
                 SizedBox(
-                  width: workspace.inspectorWidth,
+                  width: widths.inspector,
                   child: _RegionColumn(region: inspector),
                 ),
               ] else
@@ -277,7 +356,6 @@ class _CentreColumn extends StatelessWidget {
         final available = constraints.maxHeight;
         return Column(
           children: [
-            regions.topStrip,
             Expanded(child: regions.viewport),
             if (workspace.shelfOpen) ...[
               EditorRegionDivider(

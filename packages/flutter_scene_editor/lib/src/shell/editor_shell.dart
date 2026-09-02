@@ -45,9 +45,9 @@ import '../viewport/viewport_tools.dart';
 import 'command_palette.dart';
 import 'editor_menu.dart';
 import 'editor_regions.dart';
+import 'editor_shortcuts.dart';
 import 'editor_status_bar.dart';
 import 'editor_theme.dart';
-import 'editor_top_strip.dart';
 import 'panel_chrome.dart';
 import 'tool_rail.dart';
 import 'editor_dialog.dart';
@@ -174,8 +174,7 @@ class EditorShell extends StatefulWidget {
     this.recentProjectPaths = const [],
     this.onOpenRecentProject,
     this.onEditBuildConfigs,
-    this.stripLeading = const [],
-    this.stripTrailing = const [],
+    this.railBuildControls = const [],
     this.projectRunner,
     this.appSession,
     this.onDocumentSaved,
@@ -206,13 +205,10 @@ class EditorShell extends StatefulWidget {
   /// project is open.
   final VoidCallback? onEditBuildConfigs;
 
-  /// The top strip's left cluster, after the project menu: what is being
-  /// built, and for what.
-  final List<Widget> stripLeading;
-
-  /// The top strip's right cluster, after the viewport's own controls: the
-  /// transport, and what a running session turns it into.
-  final List<Widget> stripTrailing;
+  /// The host's build and run controls, drawn into the rail under the
+  /// viewport's own buttons: the toolchain, the configuration, the device,
+  /// and the transport.
+  final List<Widget> railBuildControls;
 
   /// The host's task subprocess owner; non-null adds the Console panel.
   final ProjectRunner? projectRunner;
@@ -802,7 +798,89 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       windowControlsInset: inset,
       rail: EditorToolRail(
         leading: inset > 0 ? const SizedBox.shrink() : _logo(),
-        tools: EditorToolRail.transformTools(_tools),
+        onDragStart: widget.onWindowDragStart,
+        groups: [
+          // What is open, and what is on screen.
+          EditorRailMenu(
+            icon: Icons.folder_outlined,
+            tooltip: _stripTitle(),
+            itemsBuilder: _projectMenuItems,
+          ),
+          EditorRailMenu(
+            icon: Icons.dashboard_outlined,
+            tooltip: 'Panels',
+            itemsBuilder: _panelsMenuItems,
+          ),
+          const EditorRailDivider(),
+
+          // What you are holding.
+          for (final item in EditorToolRail.transformTools(_tools))
+            EditorRailButton(item: item),
+          const EditorRailDivider(),
+          for (final item in EditorToolRail.handleOptions(_tools))
+            EditorRailButton(item: item),
+          const EditorRailDivider(),
+          for (final item in EditorToolRail.brushes(_tools))
+            EditorRailButton(item: item),
+          const EditorRailDivider(),
+
+          // What you are looking at.
+          EditorRailButton(
+            item: EditorRailItem(
+              icon: Icons.filter_center_focus,
+              tooltip: _ctrl.selection.isEmpty
+                  ? 'Select something to frame it'
+                  : 'Frame the selection',
+              shortcut: 'F',
+              onPressed: _ctrl.selection.isEmpty ? null : _tools.requestFrame,
+            ),
+          ),
+          EditorRailMenu(
+            icon: _mode.icon,
+            tooltip: 'What the viewport shows — ${_mode.label}',
+            itemsBuilder: () => [
+              for (final option in ViewportMode.values)
+                EditorMenuItem(
+                  label: option.label,
+                  checked: option == _mode,
+                  onTap: () => setState(() => _mode = option),
+                ),
+            ],
+          ),
+          EditorRailButton(
+            item: EditorRailItem(
+              icon: Icons.visibility_outlined,
+              tooltip: _gizmoPrefs.enabled
+                  ? 'Component gizmos are showing'
+                  : 'Component gizmos are hidden',
+              active: _gizmoPrefs.enabled,
+              onPressed: () => _gizmoPrefs.enabled = !_gizmoPrefs.enabled,
+            ),
+          ),
+          EditorRailButton(
+            item: EditorRailItem(
+              icon: Icons.tune,
+              tooltip: 'Scene settings',
+              onPressed: _showSceneSettings,
+            ),
+          ),
+          EditorRailButton(
+            item: EditorRailItem(
+              icon: _viewportFocused
+                  ? Icons.close_fullscreen
+                  : Icons.open_in_full,
+              tooltip: _viewportFocused ? 'Show the panels' : 'Viewport only',
+              active: _viewportFocused,
+              onPressed: _toggleViewportFocus,
+            ),
+          ),
+
+          // What you are building, and the button that runs it.
+          if (widget.railBuildControls.isNotEmpty) ...[
+            const EditorRailDivider(),
+            ...widget.railBuildControls,
+          ],
+        ],
         utility: _utilityRailItems(),
       ),
       hierarchy: EditorRegion(
@@ -837,19 +915,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
           collapseTooltip: 'Hide the hierarchy',
         ),
         body: OutlinerPanel(controller: _ctrl),
-      ),
-      topStrip: EditorTopStrip(
-        title: _stripTitle(),
-        projectMenuItems: _projectMenuItems,
-        panelsMenuItems: _panelsMenuItems,
-        mode: _mode,
-        onModeChanged: (mode) => setState(() => _mode = mode),
-        onSceneSettings: _showSceneSettings,
-        onToggleFocus: _toggleViewportFocus,
-        focused: _viewportFocused,
-        leading: widget.stripLeading,
-        trailing: widget.stripTrailing,
-        onDragStart: widget.onWindowDragStart,
       ),
       viewport: switch (_mode) {
         ViewportMode.scene => ViewportPanel(
@@ -925,7 +990,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       children: [
         EditorToolRail(
           leading: _logo(),
-          tools: const [],
+          groups: const [],
           utility: _utilityRailItems(),
         ),
         Expanded(
@@ -969,26 +1034,43 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     cacheWidth: 36,
   );
 
-  List<EditorRailItem> _utilityRailItems() => [
-    EditorRailItem(
-      icon: Icons.search,
-      tooltip: 'Commands',
-      shortcut: 'Cmd+P',
-      onPressed: () => setState(() => _paletteOpen = true),
+  List<Widget> _utilityRailItems() => [
+    EditorRailButton(
+      item: EditorRailItem(
+        icon: Icons.keyboard_outlined,
+        tooltip: 'Keyboard shortcuts',
+        onPressed: () => unawaited(showEditorShortcuts(context)),
+      ),
     ),
-    EditorRailItem(
-      icon: Icons.memory_outlined,
-      tooltip: 'Shader toolchain',
-      onPressed: _showToolchain,
+    EditorRailButton(
+      item: EditorRailItem(
+        icon: Icons.search,
+        tooltip: 'Commands',
+        shortcut: 'Cmd+P',
+        onPressed: () => setState(() => _paletteOpen = true),
+      ),
     ),
-    EditorRailItem(
-      icon: Icons.settings_outlined,
-      tooltip: widget.onShowSettings == null
-          ? 'Settings live in the host application'
-          : 'Settings',
-      onPressed: widget.onShowSettings,
+    EditorRailButton(
+      item: EditorRailItem(
+        icon: Icons.memory_outlined,
+        tooltip: 'Shader toolchain',
+        onPressed: _showToolchain,
+      ),
+    ),
+    EditorRailButton(
+      item: EditorRailItem(
+        icon: Icons.settings_outlined,
+        tooltip: widget.onShowSettings == null
+            ? 'Settings live in the host application'
+            : 'Settings',
+        onPressed: widget.onShowSettings,
+      ),
     ),
   ];
+
+  GizmoPreferences get _gizmoPrefs =>
+      widget.gizmoPreferences ?? _fallbackGizmoPrefs;
+  final GizmoPreferences _fallbackGizmoPrefs = GizmoPreferences();
 
   String _stripTitle() {
     final scene = _currentPath?.split(Platform.pathSeparator).last;

@@ -13,7 +13,6 @@ const Key _hierarchyBody = Key('hierarchy-body');
 const Key _viewport = Key('viewport');
 const Key _shelfBody = Key('shelf-body');
 const Key _inspectorBody = Key('inspector-body');
-const Key _strip = Key('strip');
 const Key _status = Key('status');
 
 Future<void> _pumpRegions(
@@ -34,7 +33,6 @@ Future<void> _pumpRegions(
             header: const EditorPanelHeader(label: 'Hierarchy'),
             body: const SizedBox.expand(key: _hierarchyBody),
           ),
-          topStrip: Container(key: _strip, height: editorHeaderHeight),
           viewport: const SizedBox.expand(key: _viewport),
           shelf: EditorRegion(
             header: const EditorPanelHeader(label: 'Project'),
@@ -81,7 +79,9 @@ void main() {
     );
   });
 
-  testWidgets('the region headers line up across the top', (tester) async {
+  testWidgets('the region headers line up with the top of the scene', (
+    tester,
+  ) async {
     await _pumpRegions(tester, EditorWorkspace());
 
     final hierarchyHeader = tester.getTopLeft(
@@ -90,10 +90,12 @@ void main() {
     final inspectorHeader = tester.getTopLeft(
       find.widgetWithText(EditorPanelHeader, 'INSPECTOR'),
     );
-    final strip = tester.getTopLeft(find.byKey(_strip));
+    // With no top bar the viewport starts at the window's edge, and the two
+    // side headers start with it: one horizontal line across the top.
+    final viewport = tester.getTopLeft(find.byKey(_viewport));
 
-    expect(hierarchyHeader.dy, strip.dy);
-    expect(inspectorHeader.dy, strip.dy);
+    expect(hierarchyHeader.dy, viewport.dy);
+    expect(inspectorHeader.dy, viewport.dy);
   });
 
   testWidgets('the shelf runs under the viewport, not under the hierarchy', (
@@ -170,6 +172,35 @@ void main() {
 
     expect(workspace.shelfOpen, isTrue);
     expect(workspace.shelfMode, ShelfMode.console);
+  });
+
+  testWidgets('the side panels give way before the scene does', (tester) async {
+    // Widths a wide display allowed, on a laptop that cannot hold them.
+    final workspace = EditorWorkspace(
+      hierarchyWidth: EditorWorkspace.maxHierarchyWidth,
+      inspectorWidth: EditorWorkspace.maxInspectorWidth,
+    );
+    await _pumpRegions(tester, workspace, surface: const Size(900, 700));
+
+    final viewport = tester.getSize(find.byKey(_viewport));
+    expect(
+      viewport.width,
+      greaterThanOrEqualTo(EditorWorkspace.minViewportWidth - 1),
+    );
+    // And they stop at their own minimums rather than disappearing.
+    expect(
+      tester.getSize(find.byKey(_hierarchyBody)).width,
+      greaterThanOrEqualTo(EditorWorkspace.minHierarchyWidth),
+    );
+  });
+
+  test('a width stored on a wider display is clamped when it is read', () {
+    final restored = EditorWorkspace.tryParse(
+      '{"type":"regions","hierarchyWidth":900,"inspectorWidth":1200}',
+    )!;
+
+    expect(restored.hierarchyWidth, EditorWorkspace.maxHierarchyWidth);
+    expect(restored.inspectorWidth, EditorWorkspace.maxInspectorWidth);
   });
 
   test('the workspace round trips, and a saved dock layout does not', () {

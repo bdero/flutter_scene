@@ -1,16 +1,23 @@
-/// The tool rail: the strip down the left edge that holds what you are doing.
+/// The tool rail: the strip down the left edge that holds what you are doing,
+/// what you are building, and what you press to run it.
 ///
-/// Forty pixels, never hidden, never resized, and the only place in the window
-/// where a tool lives. Tools at the top, the things that are not tools at the
-/// bottom, and a gap between them that does the separating so no divider has
-/// to. Exactly one tool is active at any moment -- a rail with nothing lit is
-/// a rail that is lying about the state of the pointer.
+/// Forty pixels, never hidden, never resized, and the only horizontal chrome
+/// in the window -- there is no top bar, because everything that would have
+/// been in one is here. Tools at the top, the project and its build below
+/// them, and the things that are not about the scene pinned to the bottom.
+///
+/// Groups are separated by air and a hairline rather than by labels: at this
+/// width a label is noise, and the gap is enough to say "these five belong
+/// together". The middle scrolls when a short window cannot hold everything,
+/// so the rail never overflows and never pushes the utility group off the
+/// bottom.
 library;
 
 import 'package:flutter/material.dart';
 
 import '../viewport/transform_gizmo.dart';
 import '../viewport/viewport_tools.dart';
+import 'editor_menu.dart';
 import 'editor_theme.dart';
 import 'panel_chrome.dart';
 
@@ -41,20 +48,26 @@ class EditorRailItem {
 class EditorToolRail extends StatelessWidget {
   const EditorToolRail({
     super.key,
-    required this.tools,
+    required this.groups,
     required this.utility,
     this.leading,
+    this.onDragStart,
   });
 
-  /// The tool group at the top. Exactly one is expected to be active.
-  final List<EditorRailItem> tools;
+  /// The rail's contents, already interleaved with [EditorRailDivider]s by
+  /// the caller that knows what belongs together.
+  final List<Widget> groups;
 
-  /// The group pinned to the bottom: help, shortcuts, settings.
-  final List<EditorRailItem> utility;
+  /// Pinned to the bottom: the things that are not about the scene.
+  final List<Widget> utility;
 
-  /// Drawn above the tools, at the very top of the rail. The window's mark
-  /// sits here, in the corner the reference editor puts it.
+  /// Drawn at the very top. The window's mark sits here, in the corner the
+  /// window controls take when the host draws its own.
   final Widget? leading;
+
+  /// Starts a window drag from the rail's empty middle. With no top bar there
+  /// is nowhere else to grab a window whose title bar is hidden.
+  final VoidCallback? onDragStart;
 
   @override
   Widget build(BuildContext context) {
@@ -71,10 +84,17 @@ class EditorToolRail extends StatelessWidget {
               height: editorHeaderHeight,
               child: Center(child: leading),
             ),
-          const SizedBox(height: 4),
-          for (final item in tools) _RailButton(item: item),
-          const Spacer(),
-          for (final item in utility) _RailButton(item: item),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onPanStart: onDragStart == null ? null : (_) => onDragStart!(),
+              child: SingleChildScrollView(
+                child: Column(children: [const SizedBox(height: 4), ...groups]),
+              ),
+            ),
+          ),
+          const EditorRailDivider(),
+          ...utility,
           const SizedBox(height: 4),
         ],
       ),
@@ -85,29 +105,47 @@ class EditorToolRail extends StatelessWidget {
   ///
   /// Kept here rather than in the shell so the rail's contents and the rail's
   /// shape stay in one file, and so a second host (the viewer, a future
-  /// standalone tool) gets the same five buttons for free.
+  /// standalone tool) gets the same buttons for free.
   static List<EditorRailItem> transformTools(ViewportToolState state) => [
     EditorRailItem(
       icon: Icons.open_with,
       tooltip: 'Move',
       shortcut: 'W',
-      active: state.mode == GizmoMode.translate,
-      onPressed: () => state.mode = GizmoMode.translate,
+      active:
+          state.brush == ViewportBrush.none &&
+          state.mode == GizmoMode.translate,
+      onPressed: () {
+        state.brush = ViewportBrush.none;
+        state.mode = GizmoMode.translate;
+      },
     ),
     EditorRailItem(
       icon: Icons.threesixty,
       tooltip: 'Rotate',
       shortcut: 'E',
-      active: state.mode == GizmoMode.rotate,
-      onPressed: () => state.mode = GizmoMode.rotate,
+      active:
+          state.brush == ViewportBrush.none && state.mode == GizmoMode.rotate,
+      onPressed: () {
+        state.brush = ViewportBrush.none;
+        state.mode = GizmoMode.rotate;
+      },
     ),
     EditorRailItem(
       icon: Icons.aspect_ratio,
       tooltip: 'Scale',
       shortcut: 'R',
-      active: state.mode == GizmoMode.scale,
-      onPressed: () => state.mode = GizmoMode.scale,
+      active:
+          state.brush == ViewportBrush.none && state.mode == GizmoMode.scale,
+      onPressed: () {
+        state.brush = ViewportBrush.none;
+        state.mode = GizmoMode.scale;
+      },
     ),
+  ];
+
+  /// How the handles behave: what frame they work in, whether a drag lands on
+  /// a step, and what several selected nodes turn about.
+  static List<EditorRailItem> handleOptions(ViewportToolState state) => [
     EditorRailItem(
       icon: state.space == TransformSpace.global
           ? Icons.public
@@ -118,11 +156,72 @@ class EditorToolRail extends StatelessWidget {
       shortcut: 'X',
       onPressed: state.toggleSpace,
     ),
+    EditorRailItem(
+      icon: Icons.grid_4x4,
+      tooltip: state.snap
+          ? 'Snapping on — ${state.translateStep} units, '
+                '${state.rotateStepDegrees.round()}°'
+          : 'Snap drags to a step',
+      active: state.snap,
+      onPressed: () => state.snap = !state.snap,
+    ),
+    EditorRailItem(
+      icon: state.pivot == PivotMode.medianPoint
+          ? Icons.center_focus_strong
+          : Icons.scatter_plot_outlined,
+      tooltip: state.pivot == PivotMode.medianPoint
+          ? 'Turning about the selection’s middle'
+          : 'Turning about each object’s own origin',
+      onPressed: state.togglePivot,
+    ),
+  ];
+
+  /// The brushes, which are gated on what the selection is. Disabled with the
+  /// reason rather than hidden: a tool that appears and disappears as you
+  /// click around is a tool nobody learns is there.
+  static List<EditorRailItem> brushes(ViewportToolState state) => [
+    EditorRailItem(
+      icon: Icons.terrain,
+      tooltip: state.canSculpt
+          ? 'Sculpt terrain'
+          : 'Select a terrain (or a plane) to sculpt it',
+      active: state.brush == ViewportBrush.terrain,
+      onPressed: state.canSculpt
+          ? () => state.brush = state.brush == ViewportBrush.terrain
+                ? ViewportBrush.none
+                : ViewportBrush.terrain
+          : null,
+    ),
+    EditorRailItem(
+      icon: Icons.grass,
+      tooltip: state.canScatter
+          ? 'Scatter'
+          : 'Select something with a scatter layer to paint into it',
+      active: state.brush == ViewportBrush.scatter,
+      onPressed: state.canScatter
+          ? () => state.brush = state.brush == ViewportBrush.scatter
+                ? ViewportBrush.none
+                : ViewportBrush.scatter
+          : null,
+    ),
   ];
 }
 
-class _RailButton extends StatelessWidget {
-  const _RailButton({required this.item});
+/// The hairline between two groups of rail buttons.
+class EditorRailDivider extends StatelessWidget {
+  const EditorRailDivider({super.key});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 1,
+    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    color: editorLineColor,
+  );
+}
+
+/// A rail button.
+class EditorRailButton extends StatelessWidget {
+  const EditorRailButton({super.key, required this.item});
 
   final EditorRailItem item;
 
@@ -161,4 +260,35 @@ class _RailButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A rail button that opens a menu: the retired File and View menus, the
+/// camera, the toolchain.
+class EditorRailMenu extends StatelessWidget {
+  const EditorRailMenu({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.itemsBuilder,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final List<EditorMenuItem> Function() itemsBuilder;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: editorRailWidth,
+    height: 30,
+    child: EditorMenu(
+      icon: icon,
+      tooltip: tooltip,
+      trailingChevron: false,
+      itemsBuilder: itemsBuilder,
+      railStyle: true,
+      active: active,
+    ),
+  );
 }

@@ -12,6 +12,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'editor_theme.dart';
+import 'panel_chrome.dart';
 
 /// One entry in an [EditorMenu].
 class EditorMenuItem {
@@ -62,6 +63,8 @@ class EditorMenu extends StatefulWidget {
     this.itemsBuilder,
     this.trailingChevron = true,
     this.emphasis = false,
+    this.railStyle = false,
+    this.active = false,
   }) : assert((items == null) != (itemsBuilder == null));
 
   /// The trigger's text. Null draws [icon] alone.
@@ -80,6 +83,11 @@ class EditorMenu extends StatefulWidget {
   /// as a title rather than as one control among several.
   final bool emphasis;
 
+  /// Draws as a rail button: full width, centred, with the accent bar a rail
+  /// button uses to say it is the active one.
+  final bool railStyle;
+  final bool active;
+
   @override
   State<EditorMenu> createState() => _EditorMenuState();
 }
@@ -87,37 +95,60 @@ class EditorMenu extends StatefulWidget {
 class _EditorMenuState extends State<EditorMenu> {
   @override
   Widget build(BuildContext context) {
-    final trigger = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.icon != null)
-            Icon(
-              widget.icon,
-              size: editorIconSize,
-              color: editorMutedTextColor,
-            ),
-          if (widget.icon != null && widget.label != null)
-            const SizedBox(width: 5),
-          if (widget.label != null)
-            Text(
-              widget.label!,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: widget.emphasis ? FontWeight.w600 : FontWeight.w400,
-                color: widget.emphasis ? editorTextColor : editorMutedTextColor,
+    final trigger = widget.railStyle
+        ? Container(
+            width: editorRailWidth,
+            height: 30,
+            decoration: BoxDecoration(
+              color: widget.active ? editorRaisedColor : null,
+              border: Border(
+                left: BorderSide(
+                  color: widget.active ? editorAccentColor : Colors.transparent,
+                  width: 2,
+                ),
               ),
             ),
-          if (widget.trailingChevron)
-            const Icon(
-              Icons.arrow_drop_down,
-              size: editorIconSize,
-              color: editorMutedTextColor,
+            child: Icon(
+              widget.icon,
+              size: editorIconSizeLarge,
+              color: widget.active ? editorTextColor : editorMutedTextColor,
             ),
-        ],
-      ),
-    );
+          )
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.icon != null)
+                  Icon(
+                    widget.icon,
+                    size: editorIconSize,
+                    color: editorMutedTextColor,
+                  ),
+                if (widget.icon != null && widget.label != null)
+                  const SizedBox(width: 5),
+                if (widget.label != null)
+                  Text(
+                    widget.label!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: widget.emphasis
+                          ? FontWeight.w600
+                          : FontWeight.w400,
+                      color: widget.emphasis
+                          ? editorTextColor
+                          : editorMutedTextColor,
+                    ),
+                  ),
+                if (widget.trailingChevron)
+                  const Icon(
+                    Icons.arrow_drop_down,
+                    size: editorIconSize,
+                    color: editorMutedTextColor,
+                  ),
+              ],
+            ),
+          );
     return MenuAnchor(
       menuChildren: buildEditorMenuItems(
         widget.items ?? widget.itemsBuilder!(),
