@@ -78,25 +78,25 @@ class ExampleAccessibilityState extends State<ExampleAccessibility> {
     _Part(
       nodeName: 'DoorFront.L',
       label: 'Front left door',
-      axis: vm.Vector3(0, -1, 0),
+      axis: vm.Vector3(0, 1, 0),
       sortOrder: 0,
     ),
     _Part(
       nodeName: 'DoorFront.R',
       label: 'Front right door',
-      axis: vm.Vector3(0, -1, 0),
+      axis: vm.Vector3(0, 1, 0),
       sortOrder: 1,
     ),
     _Part(
       nodeName: 'DoorBack.L',
       label: 'Rear left door',
-      axis: vm.Vector3(0, -1, 0),
+      axis: vm.Vector3(0, 1, 0),
       sortOrder: 2,
     ),
     _Part(
       nodeName: 'DoorBack.R',
       label: 'Rear right door',
-      axis: vm.Vector3(0, -1, 0),
+      axis: vm.Vector3(0, 1, 0),
       sortOrder: 3,
     ),
     _Part(
