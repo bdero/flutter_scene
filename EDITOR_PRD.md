@@ -264,7 +264,7 @@ otherwise be its three biggest open questions:
 
 #### 5.1.1 The region map
 
-There is no global menu bar and no global toolbar. Every region carries its own 24 px header,
+There is no global menu bar and no global toolbar. Every region carries its own 28 px header,
 and those headers line up across the top of the window — which is most of why the reference
 reads as clean at a glance: one horizontal line, not three stacked strips of chrome.
 
@@ -285,23 +285,23 @@ reads as clean at a glance: one horizontal line, not three stacked strips of chr
 │ ◇  │              │ ▾ /      │ ▦  ▦  ▦  ▦  ▦  ▦    │              │
 │ ⚙  │              │   ▸ car  │ ▦  ▦  ▦  ▦  ▦  ▦    │              │
 ├────┴──────────────┴──────────┴─────────────────────┴──────────────┤
-│ material.diffuse                                          0 tasks │  ← 20 px status bar
+│ material.diffuse                                          0 tasks │  ← 22 px status bar
 └───────────────────────────────────────────────────────────────────┘
 ```
 
 | Region | Size | Behaviour |
 | --- | --- | --- |
 | **Tool rail** | 40 px fixed, full height | Never hidden, never resized. Tools top-aligned, utility bottom-aligned |
-| **Hierarchy** | 220 px default, 180–420 drag range | Collapses to its 24 px header, which stays clickable |
+| **Hierarchy** | 220 px default, 180–420 drag range | Collapses to its 28 px header, which stays clickable |
 | **Viewport** | Fills; 480 × 320 minimum | Its header *is* the window's top strip (§5.1.7) |
 | **Assets shelf** | 260 px default, bottom of the **centre column only** | Under the viewport, not under the hierarchy. Collapsible |
 | **Inspector** | 300 px default, 260–520 drag range | Collapsible; the ◂ in its header is the collapse control |
-| **Status bar** | 20 px, full width | The focused property's path on the left, counters on the right |
+| **Status bar** | 22 px, full width | The focused property's path on the left, counters on the right |
 
 - **R5.1.1** The four regions are fixed. Panels cannot be dragged, tabbed, floated or hidden individually; they resize and collapse, and that is all.
 - **R5.1.2** The assets shelf sits under the viewport only. *(This reverses the arrangement adopted in #31, where the bottom shelf spanned the hierarchy as well. The hierarchy running full height is what keeps a deep tree usable while the shelf is open.)*
 - **R5.1.3** Region sizes and collapse states persist per user, keyed by project — not in the project file.
-- **R5.1.4** Every region header is 24 px and they align. Nothing sits above them but the window's own title bar.
+- **R5.1.4** Every region header is 28 px and they align. Nothing sits above them but the window's own title bar. *(28 rather than the 24 a text-only header wants: the viewport's header carries dropdowns and the transport, and one band height across every region is worth more than four pixels.)*
 
 #### 5.1.2 The tool rail
 
@@ -317,7 +317,7 @@ of the visual work lands in, and it is mechanical.
 
 | Element | Spec |
 | --- | --- |
-| **Panel header** | 24 px. A 6 px marker dot at the left, then the panel name — uppercase, 10.5 px, 0.09 em tracking, muted. Actions inline at the right as 20 px icon buttons. Collapse chevron last |
+| **Panel header** | 28 px. A 6 px marker dot at the left, then the panel name — uppercase, 10.5 px, 0.09 em tracking, muted. Actions inline at the right as 20 px icon buttons. Collapse chevron last |
 | **Section header** (inside a panel) | Uppercase 10.5 px with a ▸/▾ chevron at the **left**, flush to the panel edge, hairline rule beneath. No accent bar, no card |
 | **Property row** | 22 px. Label column 96 px fixed, muted 11 px, left-aligned, **no colon**. Control column fills. 8 px side padding, 6 px gutter |
 | **Icon button** | 20 px, no background until hover |

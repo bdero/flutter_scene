@@ -13,8 +13,7 @@ import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
         nativeComponentBinding,
         nativeComponentHookCall,
         nativeComponentSource;
-import 'package:flutter_scene/scene.dart'
-    show Scene, VfxCategory, VfxPreset, vfxPresetsIn;
+import 'package:flutter_scene/scene.dart' show Scene, VfxCategory, vfxPresetsIn;
 import 'package:forui/forui.dart';
 import 'package:scene/scene.dart' show visualScriptComponentType;
 
@@ -38,42 +37,50 @@ import '../viewport/viewport_camera_handle.dart';
 import '../panels/animation_panel.dart';
 import '../panels/visual_scripter_panel.dart';
 import '../launcher/scene_templates.dart';
+import '../viewport/transform_gizmo.dart';
 import '../viewport/viewport_panel.dart';
+import '../viewport/viewport_tools.dart';
 import 'command_palette.dart';
-import 'dock_layout.dart';
-import 'docking_shell.dart';
+import 'editor_menu.dart';
+import 'editor_regions.dart';
 import 'editor_status_bar.dart';
 import 'editor_theme.dart';
-import 'editor_toolbar_row.dart';
+import 'editor_top_strip.dart';
+import 'panel_chrome.dart';
+import 'tool_rail.dart';
 import 'editor_dialog.dart';
 
-/// The panels [EditorShell] registers with its [DockingShell], id to the
-/// title shown on tabs and in the View menu.
+/// A tool that takes the window rather than a corner of it.
 ///
-/// Public so a test can check the default layout against it: a layout naming
-/// a panel that no longer exists opens onto a tab with nothing behind it, and
-/// three panels were retired in quick succession.
-const Map<String, String> editorPanelTitles = {
-  'scene': 'Scene',
-  'game': 'Game',
-  'hierarchy': 'Hierarchy',
-  'inspector': 'Inspector',
-  'project': 'Project',
-  'console': 'Console',
-  'animation': 'Animation',
-  'visual_scripter': 'Visual Scripter',
-  'history': 'History',
-  'render_graph': 'Render Graph',
-};
+/// Editing a blueprint, or reading a captured frame, is a mode you enter and
+/// leave; a panel competing for room with a scene it is not about is worse at
+/// both jobs.
+enum EditorScreen {
+  visualScripter('Visual Scripter'),
+  renderGraph('Render Graph'),
+  history('History');
 
-List<String> get _panelIds => editorPanelTitles.keys.toList();
+  const EditorScreen(this.title);
 
-/// Extra scene views are created at runtime with ids like `scene2` and are
-/// admitted through layout persistence as dynamic panels.
-///
-/// `viewport\d+` is still matched, so a layout saved when they were called
-/// that keeps the extra views it had rather than dropping them.
-final RegExp _extraViewportPattern = RegExp(r'^(scene|viewport)\d+$');
+  final String title;
+}
+
+/// Picks the gizmo's handle (W/E/R).
+class ToolIntent extends Intent {
+  const ToolIntent(this.mode);
+
+  final GizmoMode mode;
+}
+
+/// Flips the gizmo between world and object space (X).
+class ToggleSpaceIntent extends Intent {
+  const ToggleSpaceIntent();
+}
+
+/// Leaves a full-screen editor (Esc).
+class CloseScreenIntent extends Intent {
+  const CloseScreenIntent();
+}
 
 /// Intent for undo (Cmd+Z).
 class UndoIntent extends Intent {
@@ -147,18 +154,15 @@ class EditorShell extends StatefulWidget {
     required this.onControllerReplaced,
     this.viewportRepaintBoundaryKey,
     this.viewportCameraHandle,
-    this.dockLayoutJson,
-    this.onDockLayoutChanged,
-    this.menuBarLeadingInset = 8,
-    this.onMenuBarDragStart,
+    this.workspaceJson,
+    this.onWorkspaceChanged,
+    this.windowControlsInset = 8,
+    this.onWindowDragStart,
     this.currentPath,
     this.onDocumentPathChanged,
     this.recentScenePaths = const [],
     this.onRemoveRecentScene,
     this.onClearRecentScenes,
-    this.namedLayouts = const {},
-    this.onSaveNamedLayout,
-    this.onDeleteNamedLayout,
     this.onShowSettings,
     this.projectName,
     this.projectRootDirectory,
@@ -168,9 +172,8 @@ class EditorShell extends StatefulWidget {
     this.recentProjectPaths = const [],
     this.onOpenRecentProject,
     this.onEditBuildConfigs,
-    this.menuBarTrailing = const [],
-    this.toolbarLeading = const [],
-    this.toolbarCentre = const [],
+    this.stripLeading = const [],
+    this.stripTrailing = const [],
     this.projectRunner,
     this.appSession,
     this.onDocumentSaved,
@@ -201,18 +204,13 @@ class EditorShell extends StatefulWidget {
   /// project is open.
   final VoidCallback? onEditBuildConfigs;
 
-  /// Host widgets appended to the menu bar's right side (toolchain and build
-  /// controls).
-  /// Extra controls at the right of the menu bar.
-  final List<Widget> menuBarTrailing;
+  /// The top strip's left cluster, after the project menu: what is being
+  /// built, and for what.
+  final List<Widget> stripLeading;
 
-  /// The toolbar's left group: what is being built, and for what.
-  final List<Widget> toolbarLeading;
-
-  /// The toolbar's centre: the transport. Drawn dead centre of the window
-  /// rather than at the end of the left group, which is where every editor
-  /// this one is measured against puts it.
-  final List<Widget> toolbarCentre;
+  /// The top strip's right cluster, after the viewport's own controls: the
+  /// transport, and what a running session turns it into.
+  final List<Widget> stripTrailing;
 
   /// The host's task subprocess owner; non-null adds the Console panel.
   final ProjectRunner? projectRunner;
@@ -242,28 +240,29 @@ class EditorShell extends StatefulWidget {
   /// each viewport an unpersisted default.
   final GizmoPreferences? gizmoPreferences;
 
-  /// A dock layout previously emitted through [onDockLayoutChanged]. Invalid
-  /// or missing layouts fall back to the default arrangement.
-  final String? dockLayoutJson;
+  /// Region sizes and collapse state previously emitted through
+  /// [onWorkspaceChanged]. Anything unreadable -- including a dock layout
+  /// saved before the regions landed -- starts from the defaults.
+  final String? workspaceJson;
 
-  /// Reports the serialized dock layout whenever panels are rearranged, so
-  /// the host can persist it.
-  final ValueChanged<String>? onDockLayoutChanged;
+  /// Reports the workspace whenever a region settles at a new size or is
+  /// collapsed, so the host can persist it. Not called per drag frame.
+  final ValueChanged<String>? onWorkspaceChanged;
 
-  /// Space before the menu bar's first item. Hosts that hide the native
+  /// Space before the top strip's first item. Hosts that hide the native
   /// title bar set this to clear the window controls drawn over the content.
-  final double menuBarLeadingInset;
+  final double windowControlsInset;
 
-  /// Called when a drag starts on the menu bar's empty area. Hosts that hide
-  /// the native title bar use it to move the window.
-  final VoidCallback? onMenuBarDragStart;
+  /// Called when a drag starts on the top strip's empty middle. Hosts that
+  /// hide the native title bar use it to move the window.
+  final VoidCallback? onWindowDragStart;
 
-  /// The document's file path (shown in the menu bar, reused by Save), kept
+  /// The document's file path (shown in the top strip, reused by Save), kept
   /// by the host. Null for an unsaved scene.
   final String? currentPath;
 
-  /// Reports the document path changing from inside the shell (File menu
-  /// New/Open/Save As), so the host's record stays true.
+  /// Reports the document path changing from inside the shell (the project
+  /// menu's New/Open/Save As), so the host's record stays true.
   final ValueChanged<String?>? onDocumentPathChanged;
 
   /// Most recently opened or saved scenes, newest first.
@@ -271,12 +270,6 @@ class EditorShell extends StatefulWidget {
 
   final ValueChanged<String>? onRemoveRecentScene;
   final VoidCallback? onClearRecentScenes;
-
-  /// User-named dock layout snapshots.
-  final Map<String, String> namedLayouts;
-
-  final void Function(String name, String layout)? onSaveNamedLayout;
-  final ValueChanged<String>? onDeleteNamedLayout;
 
   @override
   State<EditorShell> createState() => _EditorShellState();
@@ -293,35 +286,26 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   // refocus does not stack duplicate banners.
   bool _changeBannerShown = false;
 
-  late DockLayout _dockLayout =
-      DockLayout.tryParse(
-        widget.dockLayoutJson,
-        knownPanels: _panelIds,
-        isDynamic: _extraViewportPattern.hasMatch,
-      ) ??
-      defaultEditorDockLayout();
+  /// Region sizes and collapse state. Per user, never in the project file.
+  late final EditorWorkspace _workspace =
+      EditorWorkspace.tryParse(widget.workspaceJson) ?? EditorWorkspace();
+
+  /// Which handle the gizmo shows, and in what frame. Held here rather than in
+  /// the viewport so the rail and every scene view agree on it.
+  final ViewportToolState _tools = ViewportToolState();
+
+  ViewportMode _mode = ViewportMode.scene;
+  EditorScreen? _screen;
+
+  /// Whether the viewport is alone, and what to put back when it is not.
+  bool _viewportFocused = false;
+  (bool, bool, bool) _restoreRegions = (true, true, true);
 
   EditorController get _ctrl => widget.controller;
 
   String? get _sceneDialogDirectory => _currentPath == null
       ? _ctrl.baseDirectory
       : File(_currentPath!).parent.path;
-
-  /// The trailing number on an extra scene view's id.
-  ///
-  /// Handles both spellings, since a layout saved when they were viewports
-  /// keeps its ids rather than being renumbered out from under whoever
-  /// arranged it.
-  static String _extraViewportNumber(String id) =>
-      RegExp(r'\d+$').firstMatch(id)?.group(0) ?? '';
-
-  /// Runtime-created scene views present anywhere in the layout, in stable
-  /// (numeric) order.
-  List<String> get _extraViewportIds => {
-    ..._dockLayout.panelIds(),
-    ..._dockLayout.floating,
-    ..._dockLayout.hidden,
-  }.where(_extraViewportPattern.hasMatch).toList()..sort();
 
   // Shows what the .fmat compiler resolved to (which impellerc, where the
   // framework shaders came from, the packaged Flutter revision), or why it
@@ -350,56 +334,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         ],
       ),
     );
-  }
-
-  void _newViewport() {
-    final existing = _extraViewportIds.toSet();
-    var n = 2;
-    // Against both spellings, so a new view never takes the number of one a
-    // saved layout is still holding under its old id.
-    while (existing.contains('scene$n') || existing.contains('viewport$n')) {
-      n++;
-    }
-    final id = 'scene$n';
-    setState(() {
-      // Split the group holding a docked viewport; when every viewport is
-      // floating or hidden, fall back to the last group.
-      DockTabs? anchor;
-      for (final candidate in ['scene', ...existing]) {
-        anchor = _dockLayout.groupOf(candidate);
-        if (anchor != null) break;
-      }
-      if (anchor != null) {
-        _dockLayout.dock(id, anchor, DockZone.right);
-      } else {
-        _dockLayout.showPanel(id);
-      }
-    });
-    widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
-  }
-
-  void _togglePanel(String id) {
-    setState(() {
-      if (_dockLayout.isVisible(id)) {
-        _dockLayout.hidePanel(id);
-      } else {
-        _dockLayout.showPanel(id);
-      }
-    });
-    widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
-  }
-
-  void _applyDockLayout(String? source) {
-    final replacement = source == null
-        ? defaultEditorDockLayout()
-        : DockLayout.tryParse(
-                source,
-                knownPanels: _panelIds,
-                isDynamic: _extraViewportPattern.hasMatch,
-              ) ??
-              defaultEditorDockLayout();
-    setState(() => _dockLayout = replacement);
-    widget.onDockLayoutChanged?.call(replacement.toJsonString());
   }
 
   /// Writes a new annotated component into the project and opens it.
@@ -598,190 +532,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _saveCurrentLayoutAs() async {
-    final controller = TextEditingController();
-    final name = await showEditorFDialog<String>(
-      context: context,
-      builder: (context, style, animation) => FDialog(
-        animation: animation,
-        builder: (context, style) => Padding(
-          padding: const EdgeInsets.all(18),
-          child: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Save Layout', style: editorDialogTitleText),
-                const SizedBox(height: 14),
-                FTextField(
-                  control: FTextFieldControl.managed(controller: controller),
-                  autofocus: true,
-                  hint: 'Layout name',
-                  onSubmit: (_) {
-                    final value = controller.text.trim();
-                    if (value.isNotEmpty) Navigator.pop(context, value);
-                  },
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    FButton(
-                      variant: .outline,
-                      size: .xs,
-                      mainAxisSize: .min,
-                      onPress: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: 8),
-                    FButton(
-                      size: .xs,
-                      mainAxisSize: .min,
-                      onPress: () {
-                        final value = controller.text.trim();
-                        if (value.isNotEmpty) Navigator.pop(context, value);
-                      },
-                      child: const Text('Save'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    controller.dispose();
-    if (name == null || !mounted) return;
-    final existing = widget.namedLayouts.keys.cast<String?>().firstWhere(
-      (candidate) => candidate!.toLowerCase() == name.toLowerCase(),
-      orElse: () => null,
-    );
-    if (existing != null) {
-      final overwrite = await _confirmLayoutOverwrite(existing);
-      if (!overwrite || !mounted) return;
-    }
-    widget.onSaveNamedLayout?.call(name, _dockLayout.toJsonString());
-  }
-
-  Future<bool> _confirmLayoutOverwrite(String name) async {
-    return await showEditorFDialog<bool>(
-          context: context,
-          builder: (context, style, animation) => FDialog(
-            animation: animation,
-            builder: (context, style) => Padding(
-              padding: const EdgeInsets.all(18),
-              child: SizedBox(
-                width: 420,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Overwrite Layout?',
-                      style: editorDialogTitleText,
-                    ),
-                    const SizedBox(height: 10),
-                    Text('Replace the saved layout “$name”?'),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        FButton(
-                          variant: .outline,
-                          size: .xs,
-                          mainAxisSize: .min,
-                          onPress: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        const SizedBox(width: 8),
-                        FButton(
-                          size: .xs,
-                          mainAxisSize: .min,
-                          onPress: () => Navigator.pop(context, true),
-                          child: const Text('Overwrite'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ) ??
-        false;
-  }
-
-  Future<void> _manageLayouts() async {
-    await showEditorFDialog<void>(
-      context: context,
-      builder: (context, style, animation) => FDialog(
-        animation: animation,
-        constraints: const BoxConstraints(minWidth: 520, maxWidth: 560),
-        builder: (context, style) => Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Manage Layouts', style: editorDialogTitleText),
-              const SizedBox(height: 12),
-              if (widget.namedLayouts.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text('No named layouts have been saved.'),
-                )
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 360),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final entry in widget.namedLayouts.entries)
-                        _LayoutManagerRow(
-                          name: entry.key,
-                          onApply: () {
-                            Navigator.pop(context);
-                            _applyDockLayout(entry.value);
-                          },
-                          onOverwrite: () async {
-                            final overwrite = await _confirmLayoutOverwrite(
-                              entry.key,
-                            );
-                            if (overwrite) {
-                              widget.onSaveNamedLayout?.call(
-                                entry.key,
-                                _dockLayout.toJsonString(),
-                              );
-                            }
-                          },
-                          onDelete: () {
-                            widget.onDeleteNamedLayout?.call(entry.key);
-                            Navigator.pop(context);
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FButton(
-                  variant: .outline,
-                  size: .xs,
-                  mainAxisSize: .min,
-                  onPress: () => Navigator.pop(context),
-                  child: const Text('Done'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   void initState() {
     super.initState();
@@ -790,6 +540,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     // capture hooks; opting in editor-wide keeps shipping apps unaffected.
     Scene.debugAllowRenderGraphCapture = true;
     WidgetsBinding.instance.addObserver(this);
+    // The rail draws the tool state and the regions draw the workspace, so
+    // both have to reach the shell's build.
+    _tools.addListener(_onSharedStateChanged);
+    _workspace.addListener(_onSharedStateChanged);
+  }
+
+  void _onSharedStateChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -817,6 +575,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ctrl.lastError.removeListener(_showError);
+    _tools
+      ..removeListener(_onSharedStateChanged)
+      ..dispose();
+    _workspace.removeListener(_onSharedStateChanged);
     super.dispose();
   }
 
@@ -942,6 +704,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         SingleActivator(LogicalKeyboardKey.keyC, meta: true): CopyIntent(),
         SingleActivator(LogicalKeyboardKey.keyV, meta: true): PasteIntent(),
         SingleActivator(LogicalKeyboardKey.keyD, meta: true): DuplicateIntent(),
+        // The tools the rail's tooltips promise.
+        SingleActivator(LogicalKeyboardKey.keyW): ToolIntent(
+          GizmoMode.translate,
+        ),
+        SingleActivator(LogicalKeyboardKey.keyE): ToolIntent(GizmoMode.rotate),
+        SingleActivator(LogicalKeyboardKey.keyR): ToolIntent(GizmoMode.scale),
+        SingleActivator(LogicalKeyboardKey.keyX): ToggleSpaceIntent(),
+        SingleActivator(LogicalKeyboardKey.escape): CloseScreenIntent(),
       },
       child: Actions(
         actions: {
@@ -974,6 +744,18 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
             () => !_isEditingText(),
             (_) => _ctrl.duplicateSelection(),
           ),
+          ToolIntent: _GuardedAction<ToolIntent>(
+            () => !_isEditingText(),
+            (intent) => _tools.mode = intent.mode,
+          ),
+          ToggleSpaceIntent: _GuardedAction<ToggleSpaceIntent>(
+            () => !_isEditingText(),
+            (_) => _tools.toggleSpace(),
+          ),
+          CloseScreenIntent: _GuardedAction<CloseScreenIntent>(
+            () => !_isEditingText() && _screen != null,
+            (_) => _closeScreen(),
+          ),
           SaveIntent: CallbackAction<SaveIntent>(onInvoke: (_) => _save()),
           CommandPaletteIntent: CallbackAction<CommandPaletteIntent>(
             onInvoke: (_) => setState(() => _paletteOpen = true),
@@ -982,181 +764,18 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         child: Focus(
           autofocus: true,
           child: Scaffold(
-            body: Column(
+            body: Stack(
+              fit: StackFit.expand,
               children: [
-                _EditorMenuBar(
-                  controller: _ctrl,
-                  currentPath: _currentPath,
-                  onNew: _newScene,
-                  onOpen: _open,
-                  recentScenePaths: widget.recentScenePaths,
-                  onOpenRecentScene: _openPath,
-                  onRemoveRecentScene: widget.onRemoveRecentScene,
-                  onClearRecentScenes: widget.onClearRecentScenes,
-                  onImportGlb: _importGlb,
-                  onReimportGlb: _reimportGlb,
-                  onSave: _save,
-                  onSaveAs: _saveAs,
-                  onUndo: _ctrl.undo,
-                  onRedo: _ctrl.redo,
-                  onDuplicate: _ctrl.duplicateSelection,
-                  onCopy: _ctrl.copySelection,
-                  onPaste: _ctrl.paste,
-                  onDelete: _deleteSelected,
-                  onAddPrimitive: _addPrimitiveByCommand,
-                  onAddEmpty: () => unawaited(_addEmptyNode()),
-                  onAddObject: (type) {
-                    final entry = componentObjects.firstWhere(
-                      (candidate) => candidate.type == type,
-                    );
-                    unawaited(_addComponentObject(entry.type, entry.label));
-                  },
-                  onAddPrefab: _addPrefabInstance,
-                  onNewComponentScript: widget.projectRootDirectory == null
-                      ? null
-                      : _newComponentScript,
-                  onNewNativeComponentScript:
-                      widget.projectRootDirectory == null
-                      ? null
-                      : () => unawaited(_newNativeComponentScript()),
-                  onPaletteOpen: () => setState(() => _paletteOpen = true),
-                  onBrowseVfx: _browseVfx,
-                  onAddVfx: (preset) => unawaited(addVfxPreset(_ctrl, preset)),
-                  isPanelVisible: _dockLayout.isVisible,
-                  onTogglePanel: _togglePanel,
-                  onNewViewport: _newViewport,
-                  onShowToolchain: _showToolchain,
-                  onShowSettings: widget.onShowSettings,
-                  onShowSceneSettings: _showSceneSettings,
-                  projectName: widget.projectName,
-                  onOpenProject: widget.onOpenProject,
-                  onNewProject: widget.onNewProject,
-                  onCloseProject: widget.onCloseProject,
-                  recentProjectPaths: widget.recentProjectPaths,
-                  onOpenRecentProject: widget.onOpenRecentProject,
-                  onEditBuildConfigs: widget.onEditBuildConfigs,
-                  trailing: widget.menuBarTrailing,
-                  namedLayouts: widget.namedLayouts,
-                  onApplyLayout: _applyDockLayout,
-                  onSaveCurrentLayout: _saveCurrentLayoutAs,
-                  onManageLayouts: _manageLayouts,
-                  leadingInset: widget.menuBarLeadingInset,
-                  onDragStart: widget.onMenuBarDragStart,
-                ),
-                EditorToolbarRow(
-                  leading: widget.toolbarLeading,
-                  centre: widget.toolbarCentre,
-                  namedLayouts: widget.namedLayouts,
-                  onApplyLayout: _applyDockLayout,
-                  onSaveCurrentLayout: _saveCurrentLayoutAs,
-                  onManageLayouts: _manageLayouts,
-                ),
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      DockingShell(
-                        layout: _dockLayout,
-                        onLayoutChanged: (layout) => widget.onDockLayoutChanged
-                            ?.call(layout.toJsonString()),
-                        panels: [
-                          DockPanel(
-                            id: 'scene',
-                            title: 'Scene',
-                            child: ViewportPanel(
-                              controller: _ctrl,
-                              repaintBoundaryKey:
-                                  widget.viewportRepaintBoundaryKey,
-                              cameraHandle: widget.viewportCameraHandle,
-                              gizmoPreferences: widget.gizmoPreferences,
-                            ),
-                          ),
-                          DockPanel(
-                            id: 'animation',
-                            title: 'Animation',
-                            child: AnimationPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'visual_scripter',
-                            title: 'Visual Scripter',
-                            child: VisualScripterPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'game',
-                            title: 'Game',
-                            child: GameViewPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'hierarchy',
-                            title: 'Hierarchy',
-                            child: OutlinerPanel(controller: _ctrl),
-                            actions: IconButton(
-                              icon: const Icon(Icons.add, size: 16),
-                              tooltip: 'Create node',
-                              onPressed: _addEmptyNode,
-                            ),
-                          ),
-                          DockPanel(
-                            id: 'inspector',
-                            title: 'Inspector',
-                            child: InspectorPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'project',
-                            title: 'Project',
-                            child: AssetBrowserPanel(
-                              controller: _ctrl,
-                              onImportModel: _importModelFromBrowser,
-                              projectRoot: widget.projectRootDirectory,
-                              onOpenScene: _openPath,
-                            ),
-                          ),
-                          DockPanel(
-                            id: 'history',
-                            title: 'History',
-                            child: HistoryPanel(controller: _ctrl),
-                          ),
-                          DockPanel(
-                            id: 'render_graph',
-                            title: 'Render Graph',
-                            child: RenderGraphPanel(
-                              controller: _ctrl,
-                              inspector: _renderGraphInspector,
-                            ),
-                          ),
-                          if (widget.projectRunner != null)
-                            DockPanel(
-                              id: 'console',
-                              title: 'Console',
-                              child: ConsolePanel(
-                                runner: widget.projectRunner!,
-                                session: widget.appSession,
-                              ),
-                            ),
-                          for (final id in _extraViewportIds)
-                            DockPanel(
-                              id: id,
-                              title: 'Scene ${_extraViewportNumber(id)}',
-                              closable: true,
-                              child: ViewportPanel(
-                                controller: _ctrl,
-                                gizmoPreferences: widget.gizmoPreferences,
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (_paletteOpen)
-                        CommandPaletteOverlay(
-                          controller: _ctrl,
-                          onDismiss: () => setState(() => _paletteOpen = false),
-                        ),
-                    ],
+                if (_screen != null)
+                  _buildScreen(_screen!)
+                else
+                  _buildRegions(),
+                if (_paletteOpen)
+                  CommandPaletteOverlay(
+                    controller: _ctrl,
+                    onDismiss: () => setState(() => _paletteOpen = false),
                   ),
-                ),
-                EditorStatusBar(
-                  runner: widget.projectRunner,
-                  onOpenConsole: _openConsole,
-                ),
               ],
             ),
           ),
@@ -1165,21 +784,459 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     );
   }
 
-  /// Brings the Console up, which is what the status bar is a shortcut to.
+  // -------------------------------------------------------------------------
+  // The window.
+  // -------------------------------------------------------------------------
+
+  /// The four regions, the rail, and the line along the bottom.
+  Widget _buildRegions() {
+    // The window's top-left corner is the rail and the hierarchy's header
+    // now. Where the host draws its own window controls over the content,
+    // they land there, so that space is given up rather than drawn under.
+    final inset = widget.windowControlsInset;
+    return EditorRegions(
+      workspace: _workspace,
+      onWorkspaceChanged: _persistWorkspace,
+      windowControlsInset: inset,
+      rail: EditorToolRail(
+        leading: inset > 0 ? const SizedBox.shrink() : _logo(),
+        tools: EditorToolRail.transformTools(_tools),
+        utility: _utilityRailItems(),
+      ),
+      hierarchy: EditorRegion(
+        header: EditorPanelHeader(
+          label: 'Hierarchy',
+          leadingInset: (inset - editorRailWidth).clamp(0, double.infinity),
+          actions: [
+            EditorMenu(
+              icon: Icons.add,
+              tooltip: 'Add to the scene',
+              trailingChevron: false,
+              itemsBuilder: _addMenuItems,
+            ),
+            EditorPanelIconButton(
+              icon: Icons.copy_all_outlined,
+              tooltip: _ctrl.selection.isEmpty
+                  ? 'Select something to duplicate it'
+                  : 'Duplicate',
+              onPressed: _ctrl.selection.isEmpty
+                  ? null
+                  : _ctrl.duplicateSelection,
+            ),
+            EditorPanelIconButton(
+              icon: Icons.delete_outline,
+              tooltip: _ctrl.selection.isEmpty
+                  ? 'Select something to delete it'
+                  : 'Delete',
+              onPressed: _ctrl.selection.isEmpty ? null : _deleteSelected,
+            ),
+          ],
+          onCollapse: () => _toggleRegion(_workspace.toggleHierarchy),
+          collapseTooltip: 'Hide the hierarchy',
+        ),
+        body: OutlinerPanel(controller: _ctrl),
+      ),
+      topStrip: EditorTopStrip(
+        title: _stripTitle(),
+        projectMenuItems: _projectMenuItems,
+        panelsMenuItems: _panelsMenuItems,
+        mode: _mode,
+        onModeChanged: (mode) => setState(() => _mode = mode),
+        onSceneSettings: _showSceneSettings,
+        onToggleFocus: _toggleViewportFocus,
+        focused: _viewportFocused,
+        leading: widget.stripLeading,
+        trailing: widget.stripTrailing,
+        onDragStart: widget.onWindowDragStart,
+      ),
+      viewport: switch (_mode) {
+        ViewportMode.scene => ViewportPanel(
+          controller: _ctrl,
+          tools: _tools,
+          repaintBoundaryKey: widget.viewportRepaintBoundaryKey,
+          cameraHandle: widget.viewportCameraHandle,
+          gizmoPreferences: widget.gizmoPreferences,
+        ),
+        ViewportMode.game => GameViewPanel(controller: _ctrl),
+      },
+      shelf: EditorRegion(
+        header: EditorPanelHeader(
+          label: _workspace.shelfMode.label,
+          leading: _ShelfModes(
+            mode: _workspace.shelfMode,
+            onChanged: (mode) {
+              setState(() => _workspace.showShelf(mode));
+              _persistWorkspace();
+            },
+          ),
+          onCollapse: () => _toggleRegion(_workspace.toggleShelf),
+          collapsed: !_workspace.shelfOpen,
+          collapseTooltip: _workspace.shelfOpen
+              ? 'Hide the shelf'
+              : 'Show the shelf',
+        ),
+        body: switch (_workspace.shelfMode) {
+          ShelfMode.project => AssetBrowserPanel(
+            controller: _ctrl,
+            onImportModel: _importModelFromBrowser,
+            projectRoot: widget.projectRootDirectory,
+            onOpenScene: _openPath,
+          ),
+          ShelfMode.console =>
+            widget.projectRunner == null
+                ? const _ShelfEmpty(
+                    'The console shows a build or a run. Open a project to get one.',
+                  )
+                : ConsolePanel(
+                    runner: widget.projectRunner!,
+                    session: widget.appSession,
+                  ),
+          ShelfMode.animation => AnimationPanel(controller: _ctrl),
+        },
+      ),
+      inspector: EditorRegion(
+        header: EditorPanelHeader(
+          label: 'Inspector',
+          onCollapse: () => _toggleRegion(_workspace.toggleInspector),
+          collapseTooltip: 'Hide the inspector',
+        ),
+        body: InspectorPanel(controller: _ctrl),
+      ),
+      statusBar: EditorStatusBar(
+        runner: widget.projectRunner,
+        onOpenConsole: _openConsole,
+      ),
+    );
+  }
+
+  /// A screen: the rail and the thing you entered, and no scene behind it.
   ///
-  /// Shows it when it is hidden, and raises its tab when it is behind
-  /// another: a status line you cannot click through to is a status line that
-  /// tells you something happened and nothing about what.
-  void _openConsole() {
+  /// Editing a blueprint or reading a frame's render graph is a mode you enter
+  /// and leave -- you are working on the Door, not on the level with a Door in
+  /// it -- so it takes the window rather than competing for a corner of it.
+  Widget _buildScreen(EditorScreen screen) {
+    return Row(
+      children: [
+        EditorToolRail(
+          leading: _logo(),
+          tools: const [],
+          utility: _utilityRailItems(),
+        ),
+        Expanded(
+          child: Column(
+            children: [
+              EditorPanelHeader(
+                label: screen.title,
+                actions: [
+                  EditorPanelIconButton(
+                    icon: Icons.close,
+                    tooltip: 'Back to the scene  (Esc)',
+                    onPressed: _closeScreen,
+                  ),
+                ],
+              ),
+              Expanded(
+                child: EditorPanelBody(
+                  child: switch (screen) {
+                    EditorScreen.visualScripter => VisualScripterPanel(
+                      controller: _ctrl,
+                    ),
+                    EditorScreen.renderGraph => RenderGraphPanel(
+                      controller: _ctrl,
+                      inspector: _renderGraphInspector,
+                    ),
+                    EditorScreen.history => HistoryPanel(controller: _ctrl),
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _logo() => Image.asset(
+    'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
+    width: 18,
+    height: 18,
+    cacheWidth: 36,
+  );
+
+  List<EditorRailItem> _utilityRailItems() => [
+    EditorRailItem(
+      icon: Icons.search,
+      tooltip: 'Commands',
+      shortcut: 'Cmd+P',
+      onPressed: () => setState(() => _paletteOpen = true),
+    ),
+    EditorRailItem(
+      icon: Icons.memory_outlined,
+      tooltip: 'Shader toolchain',
+      onPressed: _showToolchain,
+    ),
+    EditorRailItem(
+      icon: Icons.settings_outlined,
+      tooltip: widget.onShowSettings == null
+          ? 'Settings live in the host application'
+          : 'Settings',
+      onPressed: widget.onShowSettings,
+    ),
+  ];
+
+  String _stripTitle() {
+    final scene = _currentPath?.split(Platform.pathSeparator).last;
+    final project = widget.projectName;
+    if (project != null && scene != null) return '$project · $scene';
+    return project ?? scene ?? 'Scene Editor';
+  }
+
+  void _toggleRegion(VoidCallback toggle) {
+    setState(toggle);
+    _persistWorkspace();
+  }
+
+  /// Collapses everything but the viewport, and puts it all back.
+  ///
+  /// What was open before is restored rather than everything being opened,
+  /// because a toggle that gives you back a different window than it took is a
+  /// toggle people press once.
+  void _toggleViewportFocus() {
     setState(() {
-      if (!_dockLayout.isVisible('console')) _dockLayout.showPanel('console');
-      final group = _dockLayout.groupOf('console');
-      if (group != null) {
-        final index = group.panels.indexOf('console');
-        if (index >= 0) group.active = index;
+      if (_viewportFocused) {
+        _workspace
+          ..hierarchyOpen = _restoreRegions.$1
+          ..inspectorOpen = _restoreRegions.$2
+          ..shelfOpen = _restoreRegions.$3;
+        _viewportFocused = false;
+      } else {
+        _restoreRegions = (
+          _workspace.hierarchyOpen,
+          _workspace.inspectorOpen,
+          _workspace.shelfOpen,
+        );
+        _workspace
+          ..hierarchyOpen = false
+          ..inspectorOpen = false
+          ..shelfOpen = false;
+        _viewportFocused = true;
       }
     });
-    widget.onDockLayoutChanged?.call(_dockLayout.toJsonString());
+    _persistWorkspace();
+  }
+
+  void _openScreen(EditorScreen screen) => setState(() => _screen = screen);
+
+  void _closeScreen() => setState(() => _screen = null);
+
+  void _persistWorkspace() =>
+      widget.onWorkspaceChanged?.call(_workspace.toJsonString());
+
+  /// Brings the Console up, which is what the status bar is a shortcut to.
+  ///
+  /// The shelf may be collapsed, or showing something else; either way this is
+  /// one gesture. A status line you cannot click through to is a status line
+  /// that tells you something happened and nothing about what.
+  void _openConsole() {
+    setState(() => _workspace.showShelf(ShelfMode.console));
+    _persistWorkspace();
+  }
+
+  // -------------------------------------------------------------------------
+  // The menus, at the places they act on.
+  // -------------------------------------------------------------------------
+
+  /// The project menu at the left of the top strip: what File used to be.
+  List<EditorMenuItem> _projectMenuItems() {
+    final selected = _ctrl.selection.ids;
+    final canReimport =
+        selected.length == 1 &&
+        _ctrl.document.nodes[selected.first]?.instance != null;
+    return [
+      if (widget.onOpenProject != null) ...[
+        EditorMenuItem(label: 'Open Project…', onTap: widget.onOpenProject),
+        EditorMenuItem(label: 'New Project…', onTap: widget.onNewProject),
+        EditorMenuItem(
+          label: 'Open Recent Project',
+          children: widget.recentProjectPaths.isEmpty
+              ? const [EditorMenuItem(label: 'No Recent Projects')]
+              : [
+                  for (final path in widget.recentProjectPaths)
+                    EditorMenuItem(
+                      label: path.split(Platform.pathSeparator).last,
+                      detail: File(path).parent.path,
+                      onTap: () => widget.onOpenRecentProject?.call(path),
+                    ),
+                ],
+        ),
+        if (widget.projectName != null) ...[
+          EditorMenuItem(
+            label: 'Build Configurations…',
+            onTap: widget.onEditBuildConfigs,
+          ),
+          EditorMenuItem(label: 'Close Project', onTap: widget.onCloseProject),
+        ],
+        const EditorMenuItem.divider(),
+      ],
+      EditorMenuItem(label: 'New Scene', onTap: _newScene),
+      EditorMenuItem(label: 'Open Scene…', onTap: _open),
+      EditorMenuItem(
+        label: 'Open Recent Scene',
+        children: widget.recentScenePaths.isEmpty
+            ? const [EditorMenuItem(label: 'No Recent Scenes')]
+            : [
+                for (final path in widget.recentScenePaths)
+                  EditorMenuItem(
+                    label: path.split(Platform.pathSeparator).last,
+                    detail: File(path).existsSync()
+                        ? File(path).parent.path
+                        : 'Missing  ${File(path).parent.path}',
+                    onTap: () => _openPath(path),
+                    removeTooltip: 'Remove from recent scenes',
+                    onRemove: widget.onRemoveRecentScene == null
+                        ? null
+                        : () => widget.onRemoveRecentScene!(path),
+                  ),
+                const EditorMenuItem.divider(),
+                EditorMenuItem(
+                  label: 'Clear Recent Scenes',
+                  onTap: widget.onClearRecentScenes,
+                ),
+              ],
+      ),
+      EditorMenuItem(label: 'Import glTF…', onTap: _importGlb),
+      EditorMenuItem(
+        label: 'Re-import glTF…',
+        onTap: canReimport ? _reimportGlb : null,
+      ),
+      EditorMenuItem(label: 'Save', onTap: _save),
+      EditorMenuItem(label: 'Save As…', onTap: _saveAs),
+      const EditorMenuItem.divider(),
+      EditorMenuItem(label: 'Scene Settings…', onTap: _showSceneSettings),
+      if (widget.onShowSettings != null)
+        EditorMenuItem(label: 'Settings…', onTap: widget.onShowSettings),
+    ];
+  }
+
+  /// The panels menu: the regions, the shelf's modes, and the screens.
+  List<EditorMenuItem> _panelsMenuItems() => [
+    EditorMenuItem(
+      label: 'Hierarchy',
+      checked: _workspace.hierarchyOpen,
+      onTap: () => _toggleRegion(_workspace.toggleHierarchy),
+    ),
+    EditorMenuItem(
+      label: 'Inspector',
+      checked: _workspace.inspectorOpen,
+      onTap: () => _toggleRegion(_workspace.toggleInspector),
+    ),
+    EditorMenuItem(
+      label: 'Shelf',
+      checked: _workspace.shelfOpen,
+      onTap: () => _toggleRegion(_workspace.toggleShelf),
+    ),
+    const EditorMenuItem.divider(),
+    for (final mode in ShelfMode.values)
+      EditorMenuItem(
+        label: mode.label,
+        checked: _workspace.shelfOpen && _workspace.shelfMode == mode,
+        onTap: () {
+          setState(() => _workspace.showShelf(mode));
+          _persistWorkspace();
+        },
+      ),
+    const EditorMenuItem.divider(),
+    for (final screen in EditorScreen.values)
+      EditorMenuItem(label: screen.title, onTap: () => _openScreen(screen)),
+    const EditorMenuItem.divider(),
+    EditorMenuItem(label: 'Shader Toolchain…', onTap: _showToolchain),
+  ];
+
+  /// The add menu, on the hierarchy's header: what Add used to be.
+  List<EditorMenuItem> _addMenuItems() => [
+    EditorMenuItem(
+      label: 'Empty Node',
+      onTap: () => unawaited(_addEmptyNode()),
+    ),
+    EditorMenuItem(
+      label: '3D Object',
+      children: [
+        for (final primitive in _EditorShellState.primitiveCommands)
+          EditorMenuItem(
+            label: primitive.label,
+            onTap: () => _addPrimitiveByCommand(primitive.command),
+          ),
+        for (final group in const [
+          'Camera',
+          'Light',
+          'Environment',
+          'Effects',
+          'Audio',
+          'UI',
+          'Volume',
+          'Scripting',
+        ])
+          if (_EditorShellState.objectsIn(group).length == 1)
+            EditorMenuItem(
+              label: _EditorShellState.objectsIn(group).single.label,
+              onTap: () =>
+                  _addObject(_EditorShellState.objectsIn(group).single.type),
+            )
+          else
+            EditorMenuItem(
+              label: group,
+              children: [
+                for (final entry in _EditorShellState.objectsIn(group))
+                  EditorMenuItem(
+                    label: entry.label,
+                    onTap: () => _addObject(entry.type),
+                  ),
+              ],
+            ),
+      ],
+    ),
+    EditorMenuItem(
+      label: 'VFX',
+      children: [
+        EditorMenuItem(label: 'Browse Effects…', onTap: _browseVfx),
+        const EditorMenuItem.divider(),
+        for (final category in VfxCategory.values)
+          EditorMenuItem(
+            label: category.label,
+            children: [
+              for (final preset in vfxPresetsIn(category))
+                EditorMenuItem(
+                  label: preset.name,
+                  detail: preset.description,
+                  onTap: () => unawaited(addVfxPreset(_ctrl, preset)),
+                ),
+            ],
+          ),
+        const EditorMenuItem.divider(),
+        EditorMenuItem(
+          label: 'Empty Emitter',
+          onTap: () => _addObject('particleEmitter'),
+        ),
+      ],
+    ),
+    EditorMenuItem(label: 'Prefab Instance…', onTap: _addPrefabInstance),
+    EditorMenuItem(
+      label: 'Component Script…',
+      onTap: widget.projectRootDirectory == null ? null : _newComponentScript,
+    ),
+    EditorMenuItem(
+      label: 'Native Component…',
+      onTap: widget.projectRootDirectory == null
+          ? null
+          : () => unawaited(_newNativeComponentScript()),
+    ),
+  ];
+
+  void _addObject(String type) {
+    final entry = componentObjects.firstWhere(
+      (candidate) => candidate.type == type,
+    );
+    unawaited(_addComponentObject(entry.type, entry.label));
   }
 
   // -------------------------------------------------------------------------
@@ -1525,580 +1582,47 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Menu bar.
-// ---------------------------------------------------------------------------
+/// The shelf's mode picker: three modes, one visible at a time.
+///
+/// Not a tab strip. A tab strip says these are three panels docked in one
+/// place and could be docked elsewhere; this says the shelf is one place with
+/// three things it can be showing.
+class _ShelfModes extends StatelessWidget {
+  const _ShelfModes({required this.mode, required this.onChanged});
 
-class _LayoutManagerRow extends StatelessWidget {
-  const _LayoutManagerRow({
-    required this.name,
-    required this.onApply,
-    required this.onOverwrite,
-    required this.onDelete,
-  });
-
-  final String name;
-  final VoidCallback onApply;
-  final VoidCallback onOverwrite;
-  final VoidCallback onDelete;
+  final ShelfMode mode;
+  final ValueChanged<ShelfMode> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Theme.of(context).dividerColor),
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      for (final option in ShelfMode.values)
+        EditorPanelIconButton(
+          icon: option.icon,
+          tooltip: option.label,
+          selected: option == mode,
+          onPressed: () => onChanged(option),
         ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextButton(
-              onPressed: onApply,
-              style: TextButton.styleFrom(alignment: Alignment.centerLeft),
-              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ),
-          FButton(
-            variant: .ghost,
-            size: .xs,
-            mainAxisSize: .min,
-            onPress: onOverwrite,
-            child: const Text('Overwrite'),
-          ),
-          FButton.icon(
-            variant: .ghost,
-            size: .xs,
-            onPress: onDelete,
-            child: const Icon(Icons.close, size: 14),
-          ),
-        ],
-      ),
-    );
-  }
+    ],
+  );
 }
 
-class _EditorMenuBar extends StatelessWidget {
-  const _EditorMenuBar({
-    required this.controller,
-    required this.currentPath,
-    required this.onNew,
-    required this.onOpen,
-    required this.recentScenePaths,
-    required this.onOpenRecentScene,
-    required this.onRemoveRecentScene,
-    required this.onClearRecentScenes,
-    required this.onImportGlb,
-    required this.onReimportGlb,
-    required this.onSave,
-    required this.onSaveAs,
-    required this.onUndo,
-    required this.onRedo,
-    required this.onDuplicate,
-    required this.onCopy,
-    required this.onPaste,
-    required this.onDelete,
-    required this.onAddPrimitive,
-    required this.onAddEmpty,
-    required this.onAddObject,
-    required this.onAddPrefab,
-    required this.onNewComponentScript,
-    required this.onNewNativeComponentScript,
-    required this.onPaletteOpen,
-    required this.onBrowseVfx,
-    required this.onAddVfx,
-    required this.isPanelVisible,
-    required this.onTogglePanel,
-    required this.onNewViewport,
-    required this.onShowToolchain,
-    this.onShowSettings,
-    required this.onShowSceneSettings,
-    this.projectName,
-    this.onOpenProject,
-    this.onNewProject,
-    this.onCloseProject,
-    this.recentProjectPaths = const [],
-    this.onOpenRecentProject,
-    this.onEditBuildConfigs,
-    this.trailing = const [],
-    required this.namedLayouts,
-    required this.onApplyLayout,
-    required this.onSaveCurrentLayout,
-    required this.onManageLayouts,
-    required this.leadingInset,
-    this.onDragStart,
-  });
+/// What a shelf mode shows when there is nothing behind it yet.
+class _ShelfEmpty extends StatelessWidget {
+  const _ShelfEmpty(this.message);
 
-  final EditorController controller;
-  final String? currentPath;
-  final VoidCallback onNew;
-  final VoidCallback onOpen;
-  final List<String> recentScenePaths;
-  final ValueChanged<String> onOpenRecentScene;
-  final ValueChanged<String>? onRemoveRecentScene;
-  final VoidCallback? onClearRecentScenes;
-  final VoidCallback onImportGlb;
-  final VoidCallback onReimportGlb;
-  final VoidCallback onSave;
-  final VoidCallback onSaveAs;
-  final VoidCallback onUndo;
-  final VoidCallback onRedo;
-  final VoidCallback onDuplicate;
-  final VoidCallback onCopy;
-  final VoidCallback onPaste;
-  final VoidCallback onDelete;
-
-  /// Runs the named `create…Geometry` command and builds a node around it.
-  final ValueChanged<String> onAddPrimitive;
-
-  /// Creates an empty node, the parent other objects get grouped under.
-  final VoidCallback onAddEmpty;
-
-  /// Creates a node carrying the named component type.
-  final ValueChanged<String> onAddObject;
-  final VoidCallback onAddPrefab;
-
-  /// Writes a new component script into the open project. Null with no
-  /// project open, which disables the menu item rather than hiding it.
-  final VoidCallback? onNewComponentScript;
-
-  /// Scaffolds a C++ component and the Dart component that owns it. Null
-  /// with no project open, for the same reason.
-  final VoidCallback? onNewNativeComponentScript;
-  final VoidCallback onPaletteOpen;
-
-  /// Opens the effect browser.
-  final VoidCallback onBrowseVfx;
-
-  /// Adds one shipped effect to the scene.
-  final void Function(VfxPreset preset) onAddVfx;
-  final bool Function(String panelId) isPanelVisible;
-  final ValueChanged<String> onTogglePanel;
-  final VoidCallback onNewViewport;
-  final VoidCallback onShowToolchain;
-  final VoidCallback? onShowSettings;
-
-  /// Opens the scene's own settings (its lighting, background and rendering).
-  final VoidCallback onShowSceneSettings;
-  final String? projectName;
-  final VoidCallback? onOpenProject;
-  final VoidCallback? onNewProject;
-  final VoidCallback? onCloseProject;
-  final List<String> recentProjectPaths;
-  final ValueChanged<String>? onOpenRecentProject;
-  final VoidCallback? onEditBuildConfigs;
-  final List<Widget> trailing;
-  final Map<String, String> namedLayouts;
-  final ValueChanged<String?> onApplyLayout;
-  final VoidCallback onSaveCurrentLayout;
-  final VoidCallback onManageLayouts;
-  final double leadingInset;
-  final VoidCallback? onDragStart;
+  final String message;
 
   @override
-  Widget build(BuildContext context) {
-    // Re-import is offered when a single prefab instance is selected (a linked
-    // glTF import). The handler confirms it is actually linked.
-    final selected = controller.selection.ids;
-    final canReimport =
-        selected.length == 1 &&
-        controller.document.nodes[selected.first]?.instance != null;
-    // The pan handler makes the bar's empty space a window-drag region when
-    // the host hides the native title bar; the buttons keep their own taps.
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onPanStart: onDragStart == null ? null : (_) => onDragStart!(),
-      child: EditorToolbar(
-        height: 28,
-        horizontalPadding: 0,
-        leading: [
-          SizedBox(width: leadingInset),
-          Image.asset(
-            'packages/flutter_scene_editor/assets/flutter_scene_logo.png',
-            width: 18,
-            height: 18,
-            cacheWidth: 36,
-          ),
-          const SizedBox(width: 6),
-          Text(_title(), style: Theme.of(context).textTheme.labelSmall),
-          const SizedBox(width: 16),
-          _Menu(
-            label: 'File',
-            items: [
-              // Project-first: the project group leads, scenes open inside
-              // its context.
-              if (onOpenProject != null) ...[
-                _MenuItem(label: 'Open Project…', onTap: onOpenProject),
-                _MenuItem(label: 'New Project…', onTap: onNewProject),
-                _MenuItem(
-                  label: 'Open Recent Project',
-                  children: recentProjectPaths.isEmpty
-                      ? const [_MenuItem(label: 'No Recent Projects')]
-                      : [
-                          for (final path in recentProjectPaths)
-                            _MenuItem(
-                              label: path.split(Platform.pathSeparator).last,
-                              detail: File(path).parent.path,
-                              onTap: () => onOpenRecentProject?.call(path),
-                            ),
-                        ],
-                ),
-                if (projectName != null) ...[
-                  _MenuItem(
-                    label: 'Edit Build Configurations…',
-                    onTap: onEditBuildConfigs,
-                  ),
-                  _MenuItem(label: 'Close Project', onTap: onCloseProject),
-                ],
-                const _MenuItem.divider(),
-              ],
-              _MenuItem(label: 'New Scene', onTap: onNew),
-              _MenuItem(label: 'Open Scene…', onTap: onOpen),
-              _MenuItem(
-                label: 'Open Recent Scene',
-                children: recentScenePaths.isEmpty
-                    ? const [_MenuItem(label: 'No Recent Scenes')]
-                    : [
-                        for (final path in recentScenePaths)
-                          _MenuItem(
-                            label: path.split(Platform.pathSeparator).last,
-                            detail: File(path).existsSync()
-                                ? File(path).parent.path
-                                : 'Missing  ${File(path).parent.path}',
-                            onTap: () => onOpenRecentScene(path),
-                            onRemove: onRemoveRecentScene == null
-                                ? null
-                                : () => onRemoveRecentScene!(path),
-                          ),
-                        const _MenuItem.divider(),
-                        _MenuItem(
-                          label: 'Clear Recent Scenes',
-                          onTap: onClearRecentScenes,
-                        ),
-                      ],
-              ),
-              _MenuItem(label: 'Import glTF…', onTap: onImportGlb),
-              _MenuItem(
-                label: 'Re-import glTF…',
-                onTap: canReimport ? onReimportGlb : null,
-              ),
-              _MenuItem(label: 'Save', onTap: onSave),
-              _MenuItem(label: 'Save As…', onTap: onSaveAs),
-              const _MenuItem.divider(),
-              // The scene's own settings, distinct from the editor's below.
-              _MenuItem(label: 'Scene Settings…', onTap: onShowSceneSettings),
-              if (onShowSettings != null) ...[
-                const _MenuItem.divider(),
-                _MenuItem(label: 'Settings…', onTap: onShowSettings),
-              ],
-            ],
-          ),
-          _Menu(
-            label: 'Edit',
-            items: [
-              _MenuItem(
-                label: 'Undo',
-                onTap: controller.history.canUndo ? onUndo : null,
-              ),
-              _MenuItem(
-                label: 'Redo',
-                onTap: controller.history.canRedo ? onRedo : null,
-              ),
-              _MenuItem(
-                label: 'Duplicate',
-                onTap: controller.selection.isNotEmpty ? onDuplicate : null,
-              ),
-              _MenuItem(
-                label: 'Copy',
-                onTap: controller.selection.isNotEmpty ? onCopy : null,
-              ),
-              _MenuItem(
-                label: 'Paste',
-                onTap: controller.canPaste ? onPaste : null,
-              ),
-              _MenuItem(
-                label: 'Delete',
-                onTap: controller.selection.isNotEmpty ? onDelete : null,
-              ),
-            ],
-          ),
-          _Menu(
-            label: 'Add',
-            items: [
-              _MenuItem(label: 'Empty Node', onTap: onAddEmpty),
-              _MenuItem(
-                label: '3D Object',
-                children: [
-                  for (final primitive in _EditorShellState.primitiveCommands)
-                    _MenuItem(
-                      label: primitive.label,
-                      onTap: () => onAddPrimitive(primitive.command),
-                    ),
-                  for (final group in const [
-                    'Camera',
-                    'Light',
-                    'Environment',
-                    'Effects',
-                    'Audio',
-                    'UI',
-                    'Volume',
-                    'Scripting',
-                  ])
-                    if (_EditorShellState.objectsIn(group).length == 1)
-                      _MenuItem(
-                        label: _EditorShellState.objectsIn(group).single.label,
-                        onTap: () => onAddObject(
-                          _EditorShellState.objectsIn(group).single.type,
-                        ),
-                      )
-                    else
-                      _MenuItem(
-                        label: group,
-                        children: [
-                          for (final entry in _EditorShellState.objectsIn(
-                            group,
-                          ))
-                            _MenuItem(
-                              label: entry.label,
-                              onTap: () => onAddObject(entry.type),
-                            ),
-                        ],
-                      ),
-                ],
-              ),
-              // The catalogue, where adding an effect belongs: the fast
-              // path is knowing the name, and Browse is where you find out
-              // that what goes under a footstep is called Dust Puff.
-              _MenuItem(
-                label: 'VFX',
-                children: [
-                  _MenuItem(label: 'Browse Effects…', onTap: onBrowseVfx),
-                  const _MenuItem.divider(),
-                  for (final category in VfxCategory.values)
-                    _MenuItem(
-                      label: category.label,
-                      children: [
-                        for (final preset in vfxPresetsIn(category))
-                          _MenuItem(
-                            label: preset.name,
-                            detail: preset.description,
-                            onTap: () => onAddVfx(preset),
-                          ),
-                      ],
-                    ),
-                  const _MenuItem.divider(),
-                  _MenuItem(
-                    label: 'Empty Emitter',
-                    onTap: () => onAddObject('particleEmitter'),
-                  ),
-                ],
-              ),
-              _MenuItem(label: 'Prefab Instance…', onTap: onAddPrefab),
-              _MenuItem(
-                label: 'Component Script…',
-                onTap: onNewComponentScript,
-              ),
-              _MenuItem(
-                label: 'Native Component…',
-                onTap: onNewNativeComponentScript,
-              ),
-            ],
-          ),
-          // Built when the menu opens so the checkmarks reflect hides made
-          // from tab context menus (which don't rebuild this bar).
-          _Menu(
-            label: 'View',
-            itemsBuilder: () => [
-              _MenuItem(label: 'New Viewport', onTap: onNewViewport),
-              _MenuItem(
-                label: 'Layouts',
-                children: [
-                  _MenuItem(
-                    label: 'Reset to Default Layout',
-                    onTap: () => onApplyLayout(null),
-                  ),
-                  for (final entry in namedLayouts.entries)
-                    _MenuItem(
-                      label: entry.key,
-                      onTap: () => onApplyLayout(entry.value),
-                    ),
-                  const _MenuItem.divider(),
-                  _MenuItem(
-                    label: 'Save Current Layout As…',
-                    onTap: onSaveCurrentLayout,
-                  ),
-                  _MenuItem(label: 'Manage Layouts…', onTap: onManageLayouts),
-                ],
-              ),
-              for (final entry in editorPanelTitles.entries)
-                _MenuItem(
-                  label: entry.value,
-                  checked: isPanelVisible(entry.key),
-                  onTap: () => onTogglePanel(entry.key),
-                ),
-              _MenuItem(label: 'Shader Toolchain…', onTap: onShowToolchain),
-            ],
-          ),
-          _MenuButton(label: 'Commands', onTap: onPaletteOpen),
-        ],
-        trailing: [...trailing, const SizedBox(width: 6)],
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: editorDetailText,
       ),
-    );
-  }
-
-  String _title() {
-    final scene = currentPath?.split(Platform.pathSeparator).last;
-    final project = projectName;
-    if (project != null && scene != null) return '$project · $scene';
-    if (project != null) return 'Scene Editor  ($project)';
-    if (scene != null) return 'Scene Editor  ($scene)';
-    return 'Scene Editor';
-  }
-}
-
-class _MenuItem {
-  const _MenuItem({
-    required this.label,
-    this.detail,
-    this.onTap,
-    this.onRemove,
-    this.checked,
-    this.children,
-  }) : divider = false;
-
-  const _MenuItem.divider()
-    : label = '',
-      detail = null,
-      onTap = null,
-      onRemove = null,
-      checked = null,
-      children = null,
-      divider = true;
-
-  final String label;
-  final String? detail;
-  final VoidCallback? onTap;
-  final VoidCallback? onRemove;
-
-  /// Non-null renders a leading checkmark slot (checked or empty).
-  final bool? checked;
-  final List<_MenuItem>? children;
-  final bool divider;
-}
-
-class _Menu extends StatefulWidget {
-  const _Menu({required this.label, this.items, this.itemsBuilder})
-    : assert((items == null) != (itemsBuilder == null));
-
-  final String label;
-  final List<_MenuItem>? items;
-
-  /// Deferred alternative to [items], invoked when the menu opens, for
-  /// entries whose state can change without this bar rebuilding.
-  final List<_MenuItem> Function()? itemsBuilder;
-
-  @override
-  State<_Menu> createState() => _MenuState();
-}
-
-class _MenuState extends State<_Menu> {
-  @override
-  Widget build(BuildContext context) {
-    return MenuAnchor(
-      menuChildren: _buildMenuItems(widget.items ?? widget.itemsBuilder!()),
-      builder: (context, controller, child) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (controller.isOpen) {
-            controller.close();
-            return;
-          }
-          // Refresh deferred menu state before the overlay is built.
-          setState(() {});
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) controller.open();
-          });
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(widget.label, style: const TextStyle(fontSize: 11)),
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildMenuItems(List<_MenuItem> source) => [
-    for (final item in source)
-      if (item.divider)
-        const Divider(height: 8)
-      else if (item.children != null)
-        SubmenuButton(
-          menuChildren: _buildMenuItems(item.children!),
-          child: Text(item.label),
-        )
-      else
-        MenuItemButton(
-          onPressed: item.onTap,
-          leadingIcon: item.checked == null
-              ? null
-              : editorMenuCheckmark(item.checked!),
-          child: item.detail == null && item.onRemove == null
-              ? Text(item.label)
-              : SizedBox(
-                  width: 360,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (item.detail != null)
-                              Text(
-                                item.detail!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: editorMenuItemDetailText,
-                              ),
-                          ],
-                        ),
-                      ),
-                      if (item.onRemove != null)
-                        IconButton(
-                          tooltip: 'Remove from recent scenes',
-                          onPressed: item.onRemove,
-                          icon: const Icon(Icons.close, size: 14),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                    ],
-                  ),
-                ),
-        ),
-  ];
-}
-
-class _MenuButton extends StatelessWidget {
-  const _MenuButton({required this.label, required this.onTap});
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: const Size(0, 28),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: const TextStyle(fontSize: 11),
-      ),
-      child: Text(label),
-    );
-  }
+    ),
+  );
 }

@@ -4,18 +4,16 @@ import 'package:flutter_scene_editor/flutter_scene_editor.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const layoutA = '{"type":"tabs","panels":["viewport"]}';
-  const layoutB = '{"type":"tabs","panels":["inspector"]}';
+  const workspaceA = '{"type":"regions","hierarchyWidth":260}';
+  const workspaceB = '{"type":"regions","inspectorWidth":340}';
 
-  test('settings round trip layouts and recent scenes', () {
-    final settings = EditorSettings(dockLayout: layoutA);
-    settings.saveNamedLayout('Modeling', layoutB);
+  test('settings round trip the workspace and recent scenes', () {
+    final settings = EditorSettings(workspace: workspaceA);
     settings.rememberScene('/tmp/a.fscene');
 
     final decoded = EditorSettings.fromJsonString(settings.toJsonString());
 
-    expect(decoded.dockLayout, layoutA);
-    expect(decoded.namedLayouts, {'Modeling': layoutB});
+    expect(decoded.workspace, workspaceA);
     expect(decoded.recentScenes, ['/tmp/a.fscene']);
   });
 
@@ -32,43 +30,16 @@ void main() {
     expect(settings.recentScenes, isNot(contains('/tmp/0.fscene')));
   });
 
-  test('named layout matching ignores case when overwriting', () {
-    final settings = EditorSettings();
-    settings.saveNamedLayout('Animation', layoutA);
-    settings.saveNamedLayout('animation', layoutB);
-
-    expect(settings.namedLayouts, {'animation': layoutB});
-    settings.deleteNamedLayout('animation');
-    expect(settings.namedLayouts, isEmpty);
-  });
-
-  test('store migrates the legacy dock layout', () {
-    final directory = Directory.systemTemp.createTempSync('editor_settings_');
-    addTearDown(() => directory.deleteSync(recursive: true));
-    final legacy = File('${directory.path}/dock_layout.json')
-      ..writeAsStringSync(layoutA);
-    final store = EditorSettingsStore(
-      file: File('${directory.path}/settings.json'),
-      legacyDockLayoutFile: legacy,
-    );
-
-    final settings = store.load();
-
-    expect(settings.dockLayout, layoutA);
-    store.save(settings);
-    expect(store.load().dockLayout, layoutA);
-  });
-
   test('store atomically replaces existing settings', () {
     final directory = Directory.systemTemp.createTempSync('editor_settings_');
     addTearDown(() => directory.deleteSync(recursive: true));
     final store = EditorSettingsStore(
       file: File('${directory.path}/settings.json'),
     );
-    store.save(EditorSettings(dockLayout: layoutA));
-    store.save(EditorSettings(dockLayout: layoutB));
+    store.save(EditorSettings(workspace: workspaceA));
+    store.save(EditorSettings(workspace: workspaceB));
 
-    expect(store.load().dockLayout, layoutB);
+    expect(store.load().workspace, workspaceB);
     expect(File('${directory.path}/settings.json.tmp').existsSync(), isFalse);
   });
 

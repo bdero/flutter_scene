@@ -157,7 +157,6 @@ class _EditorHomeState extends State<_EditorHome> {
     final directory = _settingsDirectory();
     _settingsStore = EditorSettingsStore(
       file: File('${directory.path}/settings.json'),
-      legacyDockLayoutFile: File('${directory.path}/dock_layout.json'),
     );
     _settings = _settingsStore.load();
     _gizmoPreferences.load(
@@ -981,8 +980,8 @@ class _EditorHomeState extends State<_EditorHome> {
     old?.dispose();
   }
 
-  void _saveDockLayout(String json) {
-    _settings.dockLayout = json;
+  void _saveWorkspace(String json) {
+    _settings.workspace = json;
     _persistSettings();
   }
 
@@ -1049,16 +1048,6 @@ class _EditorHomeState extends State<_EditorHome> {
         ),
       ),
     );
-  }
-
-  void _saveNamedLayout(String name, String layout) {
-    setState(() => _settings.saveNamedLayout(name, layout));
-    _persistSettings();
-  }
-
-  void _deleteNamedLayout(String name) {
-    setState(() => _settings.deleteNamedLayout(name));
-    _persistSettings();
   }
 
   void _setScenePath(String? path) {
@@ -1477,13 +1466,10 @@ class _EditorHomeState extends State<_EditorHome> {
         recentScenePaths: _settings.recentScenes,
         onRemoveRecentScene: _forgetRecentScene,
         onClearRecentScenes: _clearRecentScenes,
-        namedLayouts: _settings.namedLayouts,
-        onSaveNamedLayout: _saveNamedLayout,
-        onDeleteNamedLayout: _deleteNamedLayout,
-        dockLayoutJson: _settings.dockLayout,
-        onDockLayoutChanged: _saveDockLayout,
-        menuBarLeadingInset: _windowControlsInset,
-        onMenuBarDragStart: _startWindowDrag,
+        workspaceJson: _settings.workspace,
+        onWorkspaceChanged: _saveWorkspace,
+        windowControlsInset: _windowControlsInset,
+        onWindowDragStart: _startWindowDrag,
         onControllerReplaced: (newCtrl) {
           _configureController(newCtrl);
           final old = _controller;
@@ -1504,7 +1490,7 @@ class _EditorHomeState extends State<_EditorHome> {
         onDocumentSaved: _onSceneSaved,
         // One configuration, drawn twice: what is being built sits at the
         // toolbar's left, and the transport in the middle of the window.
-        toolbarLeading: [
+        stripLeading: [
           BuildToolbar(
             part: BuildToolbarPart.selectors,
 
@@ -1554,7 +1540,7 @@ class _EditorHomeState extends State<_EditorHome> {
                 : _toggleRestartOnSceneSave,
           ),
         ],
-        toolbarCentre: [
+        stripTrailing: [
           BuildToolbar(
             part: BuildToolbarPart.transport,
 

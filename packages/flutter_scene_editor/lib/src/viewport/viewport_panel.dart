@@ -27,6 +27,7 @@ import 'scene_overlay.dart';
 import 'scatter_tool.dart';
 import 'terrain_tool.dart';
 import 'transform_gizmo.dart';
+import 'viewport_tools.dart';
 import 'viewport_camera_handle.dart';
 
 /// How a multi-selection transform chooses its pivot, mirroring Blender's
@@ -56,6 +57,7 @@ class ViewportPanel extends StatefulWidget {
     this.repaintBoundaryKey,
     this.cameraHandle,
     this.gizmoPreferences,
+    this.tools,
   });
 
   final EditorController controller;
@@ -71,6 +73,13 @@ class ViewportPanel extends StatefulWidget {
   /// Shared component-gizmo visibility preferences; null uses a private
   /// per-viewport default (everything visible).
   final GizmoPreferences? gizmoPreferences;
+
+  /// The tool state the rail drives. Attached, the rail owns which handle is
+  /// showing and what frame it works in, and this viewport stops drawing its
+  /// own controls for them: one tool, one place it is chosen. Null leaves the
+  /// viewport self-contained, which is what a host embedding one on its own
+  /// gets.
+  final ViewportToolState? tools;
 
   @override
   State<ViewportPanel> createState() => _ViewportPanelState();
@@ -102,7 +111,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
   bool _draggingGizmo = false;
   bool _freeLookActive = false;
   bool _showFps = false;
-  TransformSpace _transformSpace = TransformSpace.global;
+
+  /// The frame used when no rail is attached.
+  TransformSpace _ownSpace = TransformSpace.global;
+
+  ViewportToolState? get _tools => widget.tools;
+
+  TransformSpace get _transformSpace => _tools?.space ?? _ownSpace;
   PivotMode _pivotMode = PivotMode.medianPoint;
   _PendingSelection? _pendingSelection;
 
@@ -142,7 +157,20 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // The armed tool is chosen in the inspector, so a change to it has to
     // reach the viewport that applies it -- and gates the mouse on it.
     _ctrl.terrainTool.addListener(_onControllerChanged);
+    final tools = _tools;
+    if (tools != null) {
+      tools.addListener(_onToolsChanged);
+      _gizmo.mode = tools.mode;
+    }
     widget.cameraHandle?.attach(_camera, _bumpView);
+  }
+
+  /// The rail picked a different handle, or flipped the frame.
+  void _onToolsChanged() {
+    final tools = _tools;
+    if (tools == null || !mounted) return;
+    setState(() => _gizmo.mode = tools.mode);
+    _bumpView();
   }
 
   @override
@@ -156,6 +184,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _ctrl.previewEpoch.addListener(_onControllerChanged);
       _ctrl.terrainTool.addListener(_onControllerChanged);
       _bumpView();
+    }
+    if (oldWidget.tools != widget.tools) {
+      oldWidget.tools?.removeListener(_onToolsChanged);
+      final tools = _tools;
+      if (tools != null) {
+        tools.addListener(_onToolsChanged);
+        _gizmo.mode = tools.mode;
+      }
     }
     if (oldWidget.gizmoPreferences != widget.gizmoPreferences) {
       (oldWidget.gizmoPreferences ?? _fallbackGizmoPrefs).removeListener(
@@ -177,6 +213,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _ctrl.previewEpoch.removeListener(_onControllerChanged);
     _ctrl.terrainTool.removeListener(_onControllerChanged);
     _gizmoPrefs.removeListener(_onControllerChanged);
+    _tools?.removeListener(_onToolsChanged);
     _viewEpoch.dispose();
     _fps.dispose();
     _lightOverflow.dispose();
@@ -972,13 +1009,25 @@ class _ViewportPanelState extends State<ViewportPanel> {
 
   void _setMode(GizmoMode mode) {
     if (_gizmo.mode == mode) return;
+    final tools = _tools;
+    if (tools != null) {
+      // Through the shared state, so the rail and every other scene view move
+      // with it rather than disagreeing about which tool is held.
+      tools.mode = mode;
+      return;
+    }
     _gizmo.mode = mode;
     _bumpView();
   }
 
   void _setTransformSpace(TransformSpace space) {
     if (_transformSpace == space) return;
-    setState(() => _transformSpace = space);
+    final tools = _tools;
+    if (tools != null) {
+      tools.space = space;
+      return;
+    }
+    setState(() => _ownSpace = space);
     _bumpView();
   }
 
@@ -1551,21 +1600,22 @@ class _ViewportPanelState extends State<ViewportPanel> {
                               ),
                             ),
                           ),
-                        Positioned(
-                          right: 8,
-                          bottom: 8,
-                          child: SceneOverlay(
-                            label: 'Tool settings',
-                            child: OverlaySegments<TransformSpace>(
-                              options: const {
-                                TransformSpace.global: 'Global',
-                                TransformSpace.local: 'Local',
-                              },
-                              value: _transformSpace,
-                              onChanged: _setTransformSpace,
+                        if (_tools == null)
+                          Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: SceneOverlay(
+                              label: 'Tool settings',
+                              child: OverlaySegments<TransformSpace>(
+                                options: const {
+                                  TransformSpace.global: 'Global',
+                                  TransformSpace.local: 'Local',
+                                },
+                                value: _transformSpace,
+                                onChanged: _setTransformSpace,
+                              ),
                             ),
                           ),
-                        ),
                         Positioned(
                           top: 8,
                           left: 8,
@@ -1573,6 +1623,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _GizmoModeBar(
+                                showModes: _tools == null,
                                 mode: _gizmo.mode,
                                 onChanged: _setMode,
                                 sculpting: _terrainTool.active,
@@ -1909,6 +1960,7 @@ class _PivotModeBar extends StatelessWidget {
 /// showing it anywhere else would hide that they are exclusive.
 class _GizmoModeBar extends StatelessWidget {
   const _GizmoModeBar({
+    this.showModes = true,
     required this.mode,
     required this.onChanged,
     required this.sculpting,
@@ -1918,6 +1970,14 @@ class _GizmoModeBar extends StatelessWidget {
     required this.onPaintingChanged,
     required this.canPaint,
   });
+
+  /// Whether the transform handles are chosen here.
+  ///
+  /// False once a rail is attached: it holds those three, and the bar keeps
+  /// the two brushes, which are gated on what the selection is and so belong
+  /// next to the scene rather than in a rail that cannot see it.
+  final bool showModes;
+
   final GizmoMode mode;
   final void Function(GizmoMode) onChanged;
 
@@ -1964,9 +2024,11 @@ class _GizmoModeBar extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          button(GizmoMode.translate, Icons.open_with, 'Move gizmo'),
-          button(GizmoMode.rotate, Icons.threesixty, 'Rotate gizmo'),
-          button(GizmoMode.scale, Icons.aspect_ratio, 'Scale gizmo'),
+          if (showModes) ...[
+            button(GizmoMode.translate, Icons.open_with, 'Move gizmo'),
+            button(GizmoMode.rotate, Icons.threesixty, 'Rotate gizmo'),
+            button(GizmoMode.scale, Icons.aspect_ratio, 'Scale gizmo'),
+          ],
           Tooltip(
             message: canSculpt
                 ? 'Sculpt terrain'
