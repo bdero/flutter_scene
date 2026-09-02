@@ -29,6 +29,7 @@ import '../inspector/vfx_editing.dart';
 import '../inspector/water_conversion.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
+import '../shell/editor_dialog.dart';
 import '../shell/editor_theme.dart';
 import '../shell/panel_chrome.dart';
 
@@ -1453,43 +1454,25 @@ class _AddComponentBar extends StatelessWidget {
       for (final type in controller.componentTypes())
         if (!present.contains(type)) type,
     ];
-    return MenuAnchor(
-      menuChildren: [
-        for (final type in available)
-          MenuItemButton(
-            onPressed: () {
+    return EditorActionButton(
+      label: 'Add Component',
+      icon: Icons.add,
+      tooltip: available.isEmpty
+          ? 'This node already carries every component type'
+          : 'Add a component to the selection',
+      onPressed: available.isEmpty
+          ? null
+          : () async {
+              final type = await showAddComponentPicker(
+                context: context,
+                controller: controller,
+                available: available,
+              );
+              if (type == null) return;
               for (final n in nodes) {
                 controller.addComponentRouted(n.id, type);
               }
             },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(type),
-                // Foreign types (known by schema, realized as data in the
-                // editor) show where the schema came from.
-                if (controller.foreignTypeProvenance[type]
-                    case final provenance?) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    provenance == 'live' ? 'project' : provenance,
-                    style: editorMicroText,
-                  ),
-                ],
-              ],
-            ),
-          ),
-      ],
-      builder: (context, menu, _) => EditorActionButton(
-        label: 'Add Component',
-        icon: Icons.add,
-        tooltip: available.isEmpty
-            ? 'This node already carries every component type'
-            : 'Add a component to the selection',
-        onPressed: available.isEmpty
-            ? null
-            : () => menu.isOpen ? menu.close() : menu.open(),
-      ),
     );
   }
 }
@@ -2623,3 +2606,222 @@ bool matchesComponentQuery(String type, ComponentTypeInfo info, String query) {
 
 /// The component picker: a search field over every type this node does not
 /// already carry, grouped by category.
+///
+/// A flat list of every component in the build is unreadable by about the
+/// twentieth entry, and this list grows with the project: every script and
+/// every package adds to it. So it is the shape the command palette already
+/// uses, which people here know: type to narrow, Enter takes the first match.
+Future<String?> showAddComponentPicker({
+  required BuildContext context,
+  required EditorController controller,
+  required List<String> available,
+}) {
+  final types = <String, ComponentTypeInfo>{
+    for (final type in available)
+      type: (
+        category: controller.componentSchemaFor(type)?.category,
+        icon: controller.componentSchemaFor(type)?.icon,
+        provenance: controller.foreignTypeProvenance[type],
+      ),
+  };
+  return showEditorDialog<String>(
+    context,
+    builder: (context) => Dialog(
+      backgroundColor: editorPanelColor,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
+        child: AddComponentPicker(
+          types: types,
+          docFor: (type) => controller.componentSchemaFor(type)?.doc,
+        ),
+      ),
+    ),
+  );
+}
+
+/// The picker's body, public so a test can pump it: it takes plain data and
+/// returns a type, and needs neither a controller nor a GPU.
+class AddComponentPicker extends StatefulWidget {
+  const AddComponentPicker({
+    super.key,
+    required this.types,
+    required this.docFor,
+  });
+
+  final Map<String, ComponentTypeInfo> types;
+  final String? Function(String type) docFor;
+
+  @override
+  State<AddComponentPicker> createState() => _AddComponentPickerState();
+}
+
+class _AddComponentPickerState extends State<AddComponentPicker> {
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Map<String, ComponentTypeInfo> get _matching => {
+    for (final entry in widget.types.entries)
+      if (matchesComponentQuery(entry.key, entry.value, _query))
+        entry.key: entry.value,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = groupComponentTypes(_matching);
+    final first = groups.isEmpty ? null : groups.first.value.first;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const EditorPanelHeader(label: 'Add component'),
+        Padding(
+          padding: const EdgeInsets.all(editorPanelInset),
+          child: FTextField(
+            control: FTextFieldControl.managed(
+              controller: _search,
+              onChange: (value) => setState(() => _query = value.text),
+            ),
+            size: .sm,
+            hint: 'Search components',
+            autofocus: true,
+            prefixBuilder: (_, _, _) => const Padding(
+              padding: EdgeInsets.only(left: 8, right: 4),
+              child: Icon(Icons.search, size: editorIconSize),
+            ),
+            // Enter takes the first match, so a name you know is three keys
+            // and a return rather than a scroll.
+            onSubmit: (_) {
+              if (first != null) Navigator.of(context).pop(first);
+            },
+          ),
+        ),
+        Flexible(
+          child: groups.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'No component matches that.',
+                    textAlign: TextAlign.center,
+                    style: editorDetailText,
+                  ),
+                )
+              : ListView(
+                  // Sized to its content and capped by what is left: inside a
+                  // min-height column a list that measures itself as infinite
+                  // overflows by exactly that much.
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    for (final group in groups) ...[
+                      EditorSectionHeader(label: group.key),
+                      for (final type in group.value)
+                        _ComponentRow(
+                          type: type,
+                          info: widget.types[type]!,
+                          doc: widget.docFor(type),
+                          highlighted: type == first && _query.isNotEmpty,
+                          onTap: () => Navigator.of(context).pop(type),
+                        ),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One component in the picker: what it is called, what it is for, and the
+/// glyph its category or its own schema gives it.
+class _ComponentRow extends StatefulWidget {
+  const _ComponentRow({
+    required this.type,
+    required this.info,
+    required this.doc,
+    required this.highlighted,
+    required this.onTap,
+  });
+
+  final String type;
+  final ComponentTypeInfo info;
+  final String? doc;
+
+  /// The one Enter would take.
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  @override
+  State<_ComponentRow> createState() => _ComponentRowState();
+}
+
+class _ComponentRowState extends State<_ComponentRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final doc = widget.doc;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: editorPanelInset,
+            vertical: 7,
+          ),
+          color: _hovered || widget.highlighted ? editorRaisedColor : null,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  componentPickerGlyph(widget.info),
+                  size: editorIconSizeLarge,
+                  color: widget.highlighted
+                      ? editorAccentColor
+                      : editorMutedTextColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      humanizeIdentifier(widget.type),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: editorTextColor,
+                      ),
+                    ),
+                    if (doc != null && doc.isNotEmpty)
+                      Text(
+                        doc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: editorNoteColor,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
