@@ -2,7 +2,7 @@
 ///
 /// The Scene view is where you stand; this is where the player stands. They
 /// are different questions, and a composition that reads from the editor
-/// camera routinely does not read from the one the game uses — the horizon is
+/// camera routinely does not read from the one the game uses -- the horizon is
 /// somewhere else, the framing is loose, the thing you centred is behind a
 /// wall.
 ///

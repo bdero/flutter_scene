@@ -2,7 +2,7 @@
 ///
 /// This is where terrain editing is *reached*. Before it existed the only way
 /// to arm a brush was a small unlabelled button in the corner of the scene
-/// view, disabled unless you already had the right object selected — so
+/// view, disabled unless you already had the right object selected -- so
 /// dragging over a terrain moved the object, which is what the move gizmo is
 /// for and exactly what it looked like was broken.
 ///
@@ -342,8 +342,8 @@ class _LayerRow extends StatelessWidget {
 /// Terrain Settings: what the terrain is, as opposed to what is on it.
 ///
 /// Read-only for now. Every one of these resizes or resamples the height
-/// field, which is a real operation with real choices in it — a terrain made
-/// finer has to decide what the new samples are — and showing the numbers is
+/// field, which is a real operation with real choices in it -- a terrain made
+/// finer has to decide what the new samples are -- and showing the numbers is
 /// worth more than a control that silently discards a sculpt.
 class _Settings extends StatelessWidget {
   const _Settings({required this.spec});

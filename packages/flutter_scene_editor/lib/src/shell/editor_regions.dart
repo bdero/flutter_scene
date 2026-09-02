@@ -17,15 +17,26 @@ import 'package:flutter/material.dart';
 import 'editor_theme.dart';
 import 'panel_chrome.dart';
 
-/// What the viewport is showing: the editor's camera, or the game's.
+/// What the viewport is showing: where you stand, where the player stands, or
+/// both at once.
+///
+/// The scene alone is the default. The other two are there for when the
+/// question is what the game's camera sees; most of the time the question is
+/// what you are building, and that wants the whole width.
 enum ViewportMode {
   scene('Scene', Icons.videocam_outlined),
-  game('Game', Icons.sports_esports_outlined);
+  game('Game', Icons.sports_esports_outlined),
+  both('Scene and game', Icons.vertical_split_outlined);
 
   const ViewportMode(this.label, this.icon);
 
   final String label;
   final IconData icon;
+
+  static ViewportMode byName(String? name) => values.firstWhere(
+    (mode) => mode.name == name,
+    orElse: () => ViewportMode.scene,
+  );
 }
 
 /// Which surface the bottom shelf is showing.
@@ -62,6 +73,7 @@ class EditorWorkspace extends ChangeNotifier {
     this.inspectorOpen = true,
     this.shelfOpen = true,
     this.shelfMode = ShelfMode.project,
+    this.viewportMode = ViewportMode.scene,
   });
 
   /// Reads a workspace previously written by [toJsonString].
@@ -93,6 +105,7 @@ class EditorWorkspace extends ChangeNotifier {
         inspectorOpen: open(json['inspectorOpen']),
         shelfOpen: open(json['shelfOpen']),
         shelfMode: ShelfMode.byName(json['shelfMode'] as String?),
+        viewportMode: ViewportMode.byName(json['viewportMode'] as String?),
       );
     } on FormatException {
       return null;
@@ -119,6 +132,7 @@ class EditorWorkspace extends ChangeNotifier {
   bool inspectorOpen;
   bool shelfOpen;
   ShelfMode shelfMode;
+  ViewportMode viewportMode;
 
   void resizeHierarchy(double delta) {
     hierarchyWidth = (hierarchyWidth + delta).clamp(
@@ -154,6 +168,12 @@ class EditorWorkspace extends ChangeNotifier {
     notifyListeners();
   }
 
+  void showViewport(ViewportMode mode) {
+    if (viewportMode == mode) return;
+    viewportMode = mode;
+    notifyListeners();
+  }
+
   void toggleShelf() {
     shelfOpen = !shelfOpen;
     notifyListeners();
@@ -177,6 +197,7 @@ class EditorWorkspace extends ChangeNotifier {
     'inspectorOpen': inspectorOpen,
     'shelfOpen': shelfOpen,
     'shelfMode': shelfMode.name,
+    'viewportMode': viewportMode.name,
   });
 }
 

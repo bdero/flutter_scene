@@ -2585,8 +2585,8 @@ String addComponentCategory(ComponentTypeInfo info) {
 /// Groups [types] by [addComponentCategory], each group sorted by name.
 ///
 /// The built-in groups come first and alphabetically, so they keep their
-/// positions as a project grows. After them come the project's own Scripts —
-/// the ones you most often want and the only ones you can edit — then
+/// positions as a project grows. After them come the project's own Scripts --
+/// the ones you most often want and the only ones you can edit -- then
 /// Packages, then Other as the genuine catch-all.
 List<MapEntry<String, List<String>>> groupComponentTypes(
   Map<String, ComponentTypeInfo> types,
@@ -2612,7 +2612,7 @@ List<MapEntry<String, List<String>>> groupComponentTypes(
 }
 
 /// Whether [type] matches [query], case-insensitively, on its name or its
-/// category — so "phys" finds every physics component, not only the one
+/// category -- so "phys" finds every physics component, not only the one
 /// spelled that way.
 bool matchesComponentQuery(String type, ComponentTypeInfo info, String query) {
   if (query.isEmpty) return true;

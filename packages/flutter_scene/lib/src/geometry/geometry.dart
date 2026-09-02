@@ -93,7 +93,7 @@ class _GeometryBufferBlock {
 /// Vertex (and optional index) data along with the vertex shader used to
 /// transform it.
 ///
-/// `Geometry` is the geometry half of a [MeshPrimitive] — the shading half
+/// `Geometry` is the geometry half of a [MeshPrimitive] -- the shading half
 /// is supplied by a [Material]. Built-in subclasses cover the two
 /// supported vertex layouts:
 ///

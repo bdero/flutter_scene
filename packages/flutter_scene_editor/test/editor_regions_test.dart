@@ -166,6 +166,16 @@ void main() {
     expect(workspace.shelfHeight, 800 * 0.7);
   });
 
+  test('the viewport is the scene until told otherwise, and remembers', () {
+    // Most of the time the question is what you are building, and that wants
+    // the whole width.
+    expect(EditorWorkspace().viewportMode, ViewportMode.scene);
+
+    final workspace = EditorWorkspace()..showViewport(ViewportMode.both);
+    final restored = EditorWorkspace.tryParse(workspace.toJsonString())!;
+    expect(restored.viewportMode, ViewportMode.both);
+  });
+
   test('showing a shelf mode opens the shelf', () {
     final workspace = EditorWorkspace(shelfOpen: false);
     workspace.showShelf(ShelfMode.console);

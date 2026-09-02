@@ -212,11 +212,15 @@ class _RailPickerButton extends StatefulWidget {
     required this.icon,
     required this.onTap,
     this.badge,
+    this.active = false,
+    this.enabled = true,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final Widget? badge;
+  final bool active;
+  final bool enabled;
 
   @override
   State<_RailPickerButton> createState() => _RailPickerButtonState();
@@ -227,23 +231,30 @@ class _RailPickerButtonState extends State<_RailPickerButton> {
 
   @override
   Widget build(BuildContext context) => MouseRegion(
-    cursor: SystemMouseCursors.click,
+    cursor: widget.enabled
+        ? SystemMouseCursors.click
+        : SystemMouseCursors.basic,
     onEnter: (_) => setState(() => _hovered = true),
     onExit: (_) => setState(() => _hovered = false),
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: widget.onTap,
+      onTap: widget.enabled ? widget.onTap : null,
       child: SizedBox(
         width: editorRailWidth,
         height: editorRailButtonHeight,
         child: Center(
           child: EditorRailPill(
-            hovered: _hovered,
+            active: widget.active,
+            hovered: _hovered && widget.enabled,
             child: widget.badge == null
                 ? Icon(
                     widget.icon,
                     size: editorRailIconSize,
-                    color: editorTextColor.withValues(alpha: 0.75),
+                    color: widget.active
+                        ? editorAccentColor
+                        : editorTextColor.withValues(
+                            alpha: widget.enabled ? 0.75 : 0.35,
+                          ),
                   )
                 : Stack(
                     alignment: Alignment.center,
@@ -314,7 +325,7 @@ class _InstallationDropdown extends StatelessWidget {
       builder: (context, controller, _) => rail
           ? _railTrigger(
               icon: Icons.flutter_dash,
-              tooltip: 'Flutter installation — $label',
+              tooltip: 'Flutter installation: $label',
               controller: controller,
               onOpen: controller.open,
               badge: selected == null
@@ -532,7 +543,7 @@ class _ConfigurationDropdown extends StatelessWidget {
           ? _railTrigger(
               icon: Icons.tune,
               tooltip:
-                  'Build configuration — ${selected?.name ?? 'none selected'}',
+                  'Build configuration: ${selected?.name ?? 'none selected'}',
               controller: controller,
               onOpen: controller.open,
               badge: badge,
@@ -703,7 +714,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
           ? _railTrigger(
               icon: Icons.devices_outlined,
               tooltip:
-                  'Target device — ${widget.selected?.name ?? 'none selected'}',
+                  'Target device: ${widget.selected?.name ?? 'none selected'}',
               controller: controller,
               onOpen: () {
                 if (_devices == null) _fetch();
@@ -928,6 +939,20 @@ class _ActionButtons extends StatelessWidget {
     bool active = false,
   }) {
     final scheme = Theme.of(context).colorScheme;
+    if (rail) {
+      // One size and one target for everything in the rail. A transport that
+      // draws its own smaller button is the run of icons that does not line
+      // up with the rest of the strip.
+      return EditorRailTooltip(
+        label: tooltip,
+        child: _RailPickerButton(
+          icon: icon,
+          active: active,
+          enabled: onPressed != null,
+          onTap: onPressed ?? () {},
+        ),
+      );
+    }
     return Tooltip(
       message: tooltip,
       waitDuration: const Duration(milliseconds: 400),

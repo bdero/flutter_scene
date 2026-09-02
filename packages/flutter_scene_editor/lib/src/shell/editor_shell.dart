@@ -292,7 +292,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   /// the viewport so the rail and every scene view agree on it.
   final ViewportToolState _tools = ViewportToolState();
 
-  ViewportMode _mode = ViewportMode.scene;
   EditorScreen? _screen;
 
   /// Whether the viewport is alone, and what to put back when it is not.
@@ -787,6 +786,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   // -------------------------------------------------------------------------
 
   /// The four regions, the rail, and the line along the bottom.
+  ViewportMode get _mode => _workspace.viewportMode;
+
   Widget _buildRegions() {
     // The window's top-left corner is the rail and the hierarchy's header
     // now. Where the host draws its own window controls over the content,
@@ -837,13 +838,16 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
           ),
           EditorRailMenu(
             icon: _mode.icon,
-            tooltip: 'What the viewport shows — ${_mode.label}',
+            tooltip: 'What the viewport shows: ${_mode.label}',
             itemsBuilder: () => [
               for (final option in ViewportMode.values)
                 EditorMenuItem(
                   label: option.label,
                   checked: option == _mode,
-                  onTap: () => setState(() => _mode = option),
+                  onTap: () {
+                    _workspace.showViewport(option);
+                    _persistWorkspace();
+                  },
                 ),
             ],
           ),
@@ -917,14 +921,17 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
         body: OutlinerPanel(controller: _ctrl),
       ),
       viewport: switch (_mode) {
-        ViewportMode.scene => ViewportPanel(
-          controller: _ctrl,
-          tools: _tools,
-          repaintBoundaryKey: widget.viewportRepaintBoundaryKey,
-          cameraHandle: widget.viewportCameraHandle,
-          gizmoPreferences: widget.gizmoPreferences,
-        ),
+        ViewportMode.scene => _sceneViewport(),
         ViewportMode.game => GameViewPanel(controller: _ctrl),
+        // Side by side for when the two answers need comparing: where you
+        // stand and where the player stands are different questions.
+        ViewportMode.both => Row(
+          children: [
+            Expanded(child: _sceneViewport()),
+            const EditorRegionDivider(axis: Axis.vertical),
+            Expanded(child: GameViewPanel(controller: _ctrl)),
+          ],
+        ),
       },
       shelf: EditorRegion(
         header: EditorPanelHeader(
@@ -1026,6 +1033,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       ],
     );
   }
+
+  Widget _sceneViewport() => ViewportPanel(
+    controller: _ctrl,
+    tools: _tools,
+    repaintBoundaryKey: widget.viewportRepaintBoundaryKey,
+    cameraHandle: widget.viewportCameraHandle,
+    gizmoPreferences: widget.gizmoPreferences,
+  );
 
   Widget _logo() => Image.asset(
     'packages/flutter_scene_editor/assets/flutter_scene_logo.png',

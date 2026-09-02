@@ -47,7 +47,7 @@ class EditorRailItem {
 }
 
 /// The rail down the left edge.
-class EditorToolRail extends StatelessWidget {
+class EditorToolRail extends StatefulWidget {
   const EditorToolRail({
     super.key,
     required this.groups,
@@ -72,7 +72,39 @@ class EditorToolRail extends StatelessWidget {
   final VoidCallback? onDragStart;
 
   @override
+  State<EditorToolRail> createState() => _EditorToolRailState();
+
+  /// The transform tools, bound to the shared [state].
+  ///
+  /// Kept here rather than in the shell so the rail's contents and the rail's
+  /// shape stay in one file, and so a second host (the viewer, a future
+  /// standalone tool) gets the same buttons for free.
+  static List<EditorRailItem> transformTools(ViewportToolState state) =>
+      _transformTools(state);
+
+  /// How the handles behave: what frame they work in, whether a drag lands on
+  /// a step, and what several selected nodes turn about.
+  static List<EditorRailItem> handleOptions(ViewportToolState state) =>
+      _handleOptions(state);
+
+  /// The brushes, which are gated on what the selection is.
+  static List<EditorRailItem> brushes(ViewportToolState state) =>
+      _brushes(state);
+}
+
+class _EditorToolRailState extends State<EditorToolRail> {
+  /// Whether the middle has more than it can show, and whether it is at the
+  /// end of it. A rail that quietly hides its last four buttons is a rail
+  /// whose last four buttons do not exist.
+  bool _overflows = false;
+  bool _atEnd = false;
+
+  @override
   Widget build(BuildContext context) {
+    final leading = widget.leading;
+    final utility = widget.utility;
+    final groups = widget.groups;
+    final onDragStart = widget.onDragStart;
     return Container(
       width: editorRailWidth,
       decoration: const BoxDecoration(
@@ -89,9 +121,50 @@ class EditorToolRail extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onPanStart: onDragStart == null ? null : (_) => onDragStart!(),
-              child: SingleChildScrollView(
-                child: Column(children: [const SizedBox(height: 4), ...groups]),
+              onPanStart: onDragStart == null ? null : (_) => onDragStart(),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  final metrics = notification.metrics;
+                  final overflows = metrics.maxScrollExtent > 0;
+                  final atEnd = metrics.pixels >= metrics.maxScrollExtent - 1;
+                  if (overflows != _overflows || atEnd != _atEnd) {
+                    setState(() {
+                      _overflows = overflows;
+                      _atEnd = atEnd;
+                    });
+                  }
+                  return false;
+                },
+                child: Stack(
+                  children: [
+                    SingleChildScrollView(
+                      child: Column(
+                        children: [const SizedBox(height: 4), ...groups],
+                      ),
+                    ),
+                    if (_overflows && !_atEnd)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: 20,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  editorPanelColor.withValues(alpha: 0),
+                                  editorPanelColor,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -102,112 +175,99 @@ class EditorToolRail extends StatelessWidget {
       ),
     );
   }
-
-  /// The transform tools, bound to the shared [state].
-  ///
-  /// Kept here rather than in the shell so the rail's contents and the rail's
-  /// shape stay in one file, and so a second host (the viewer, a future
-  /// standalone tool) gets the same buttons for free.
-  static List<EditorRailItem> transformTools(ViewportToolState state) => [
-    EditorRailItem(
-      icon: Icons.open_with,
-      tooltip: 'Move',
-      shortcut: 'W',
-      active:
-          state.brush == ViewportBrush.none &&
-          state.mode == GizmoMode.translate,
-      onPressed: () {
-        state.brush = ViewportBrush.none;
-        state.mode = GizmoMode.translate;
-      },
-    ),
-    EditorRailItem(
-      icon: Icons.threesixty,
-      tooltip: 'Rotate',
-      shortcut: 'E',
-      active:
-          state.brush == ViewportBrush.none && state.mode == GizmoMode.rotate,
-      onPressed: () {
-        state.brush = ViewportBrush.none;
-        state.mode = GizmoMode.rotate;
-      },
-    ),
-    EditorRailItem(
-      icon: Icons.aspect_ratio,
-      tooltip: 'Scale',
-      shortcut: 'R',
-      active:
-          state.brush == ViewportBrush.none && state.mode == GizmoMode.scale,
-      onPressed: () {
-        state.brush = ViewportBrush.none;
-        state.mode = GizmoMode.scale;
-      },
-    ),
-  ];
-
-  /// How the handles behave: what frame they work in, whether a drag lands on
-  /// a step, and what several selected nodes turn about.
-  static List<EditorRailItem> handleOptions(ViewportToolState state) => [
-    EditorRailItem(
-      icon: state.space == TransformSpace.global
-          ? Icons.public
-          : Icons.crop_free,
-      tooltip: state.space == TransformSpace.global
-          ? 'Global space — handles follow the world'
-          : 'Local space — handles follow the object',
-      shortcut: 'X',
-      onPressed: state.toggleSpace,
-    ),
-    EditorRailItem(
-      icon: Icons.grid_4x4,
-      tooltip: state.snap
-          ? 'Snapping on — ${state.translateStep} units, '
-                '${state.rotateStepDegrees.round()}°'
-          : 'Snap drags to a step',
-      active: state.snap,
-      onPressed: () => state.snap = !state.snap,
-    ),
-    EditorRailItem(
-      icon: state.pivot == PivotMode.medianPoint
-          ? Icons.center_focus_strong
-          : Icons.scatter_plot_outlined,
-      tooltip: state.pivot == PivotMode.medianPoint
-          ? 'Turning about the selection’s middle'
-          : 'Turning about each object’s own origin',
-      onPressed: state.togglePivot,
-    ),
-  ];
-
-  /// The brushes, which are gated on what the selection is. Disabled with the
-  /// reason rather than hidden: a tool that appears and disappears as you
-  /// click around is a tool nobody learns is there.
-  static List<EditorRailItem> brushes(ViewportToolState state) => [
-    EditorRailItem(
-      icon: Icons.terrain,
-      tooltip: state.canSculpt
-          ? 'Sculpt terrain'
-          : 'Select a terrain (or a plane) to sculpt it',
-      active: state.brush == ViewportBrush.terrain,
-      onPressed: state.canSculpt
-          ? () => state.brush = state.brush == ViewportBrush.terrain
-                ? ViewportBrush.none
-                : ViewportBrush.terrain
-          : null,
-    ),
-    EditorRailItem(
-      icon: Icons.grass,
-      tooltip: state.canScatter
-          ? 'Scatter'
-          : 'Select something with a scatter layer to paint into it',
-      active: state.brush == ViewportBrush.scatter,
-      onPressed: state.canScatter
-          ? () => state.brush = state.brush == ViewportBrush.scatter
-                ? ViewportBrush.none
-                : ViewportBrush.scatter
-          : null,
-    ),
-  ];
 }
+
+List<EditorRailItem> _transformTools(ViewportToolState state) => [
+  EditorRailItem(
+    icon: Icons.open_with,
+    tooltip: 'Move',
+    shortcut: 'W',
+    active:
+        state.brush == ViewportBrush.none && state.mode == GizmoMode.translate,
+    onPressed: () {
+      state.brush = ViewportBrush.none;
+      state.mode = GizmoMode.translate;
+    },
+  ),
+  EditorRailItem(
+    icon: Icons.threesixty,
+    tooltip: 'Rotate',
+    shortcut: 'E',
+    active: state.brush == ViewportBrush.none && state.mode == GizmoMode.rotate,
+    onPressed: () {
+      state.brush = ViewportBrush.none;
+      state.mode = GizmoMode.rotate;
+    },
+  ),
+  EditorRailItem(
+    icon: Icons.aspect_ratio,
+    tooltip: 'Scale',
+    shortcut: 'R',
+    active: state.brush == ViewportBrush.none && state.mode == GizmoMode.scale,
+    onPressed: () {
+      state.brush = ViewportBrush.none;
+      state.mode = GizmoMode.scale;
+    },
+  ),
+];
+
+List<EditorRailItem> _handleOptions(ViewportToolState state) => [
+  EditorRailItem(
+    icon: state.space == TransformSpace.global ? Icons.public : Icons.crop_free,
+    tooltip: state.space == TransformSpace.global
+        ? 'Global space, handles follow the world'
+        : 'Local space, handles follow the object',
+    shortcut: 'X',
+    onPressed: state.toggleSpace,
+  ),
+  EditorRailItem(
+    icon: Icons.grid_4x4,
+    tooltip: state.snap
+        ? 'Snapping on: ${state.translateStep} units, '
+              '${state.rotateStepDegrees.round()}°'
+        : 'Snap drags to a step',
+    active: state.snap,
+    onPressed: () => state.snap = !state.snap,
+  ),
+  EditorRailItem(
+    icon: state.pivot == PivotMode.medianPoint
+        ? Icons.center_focus_strong
+        : Icons.scatter_plot_outlined,
+    tooltip: state.pivot == PivotMode.medianPoint
+        ? 'Turning about the selection’s middle'
+        : 'Turning about each object’s own origin',
+    onPressed: state.togglePivot,
+  ),
+];
+
+/// Disabled with the reason rather than hidden: a tool that appears and
+/// disappears as you click around is a tool nobody learns is there.
+List<EditorRailItem> _brushes(ViewportToolState state) => [
+  EditorRailItem(
+    icon: Icons.terrain,
+    tooltip: state.canSculpt
+        ? 'Sculpt terrain'
+        : 'Select a terrain (or a plane) to sculpt it',
+    active: state.brush == ViewportBrush.terrain,
+    onPressed: state.canSculpt
+        ? () => state.brush = state.brush == ViewportBrush.terrain
+              ? ViewportBrush.none
+              : ViewportBrush.terrain
+        : null,
+  ),
+  EditorRailItem(
+    icon: Icons.grass,
+    tooltip: state.canScatter
+        ? 'Scatter'
+        : 'Select something with a scatter layer to paint into it',
+    active: state.brush == ViewportBrush.scatter,
+    onPressed: state.canScatter
+        ? () => state.brush = state.brush == ViewportBrush.scatter
+              ? ViewportBrush.none
+              : ViewportBrush.scatter
+        : null,
+  ),
+];
 
 /// The hairline between two groups of rail buttons.
 class EditorRailDivider extends StatelessWidget {
