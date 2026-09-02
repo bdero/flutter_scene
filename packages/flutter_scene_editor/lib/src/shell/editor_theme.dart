@@ -1,21 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
-// A deep blue-violet rather than the neutral graphite this started as. The
-// hue is doing work: a 3D viewport is full of neutral grey -- untextured
-// geometry, the grid, gizmo shafts -- and chrome in the same neutral competes
-// with it. Pushing the chrome off-neutral lets the scene keep the greys.
+// The engine's own blue, taken from its mark: the bird is #5CC4F0 over
+// #44B3E7 with #00589C behind it, and the chrome is that family at low
+// saturation and low light.
+//
+// The hue is doing work rather than decorating: a 3D viewport is full of
+// neutral grey -- untextured geometry, the grid, gizmo shafts -- and chrome in
+// the same neutral competes with it. Pushing the chrome off-neutral lets the
+// scene keep the greys. Cyan-blue does that as well as the violet it replaces,
+// and it says whose editor this is.
 //
 // The four surfaces step by roughly equal lightness so depth reads without
 // borders doing all of it, and the line sits just above the raised surface so
 // a border separates without drawing itself.
-const _ink = Color(0xFF14152B);
-const _graphite = Color(0xFF1B1D38);
-const _raised = Color(0xFF262949);
-const _line = Color(0xFF343863);
-const _text = Color(0xFFE6E7F5);
-const _mutedText = Color(0xFF8B8FB5);
-const _signal = Color(0xFF4A9EFF);
+const _ink = Color(0xFF0D1922);
+const _graphite = Color(0xFF13232F);
+const _raised = Color(0xFF203747);
+const _line = Color(0xFF2C4A5F);
+const _text = Color(0xFFE4F1F8);
+const _mutedText = Color(0xFF8CA8BC);
+const _signal = Color(0xFF44B3E7);
 
 /// A number you can edit, as opposed to one being reported.
 ///
@@ -26,8 +31,13 @@ const Color editorValueColor = Color(0xFFF0A742);
 
 // Prefab-linked content accents (outliner member rows, inspector banners),
 // readable on _ink/_graphite and distinct from the _signal selection blue.
-const _prefabTint = Color(0xFF64C2B2);
-const _prefabShade = Color(0xFF1D3B35);
+//
+// Green rather than the teal it was: with the chrome now in the engine's own
+// cyan-blue, a teal tint sat close enough to the selection colour to be read
+// as one, and "this came from a prefab" and "this is selected" are two things
+// nobody should have to tell apart by shade.
+const _prefabTint = Color(0xFF5FC08D);
+const _prefabShade = Color(0xFF17352A);
 
 /// Axis colors shared by transform controls and gizmos.
 const editorAxisColors = [
@@ -104,7 +114,7 @@ const TextStyle editorDetailText = TextStyle(fontSize: 11, color: _mutedText);
 ///
 /// A label is read beside its value and can afford to recede; a paragraph is
 /// read on its own, and the muted grey that suits one is thin for the other.
-const Color editorNoteColor = Color(0xFFAAAECB);
+const Color editorNoteColor = Color(0xFFAEC7D8);
 
 /// The heading above a group of rows, shared so dialogs read as the same
 /// chrome as the panels.
