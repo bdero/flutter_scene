@@ -12,11 +12,15 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:forui/forui.dart';
 
+import '../project/fproject.dart' show pathIsWithin;
+import '../shell/editor_menu.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import '../assets/asset_index.dart';
 import 'package:scene/visual_script.dart';
 
@@ -64,7 +68,27 @@ class AssetBrowserPanel extends StatefulWidget {
 class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   List<FileAsset> _files = const [];
   final Set<String> _expandedDirectories = {};
-  _AssetViewMode _viewMode = _AssetViewMode.list;
+
+  /// The folder whose contents the right pane is showing, relative to the
+  /// scan root; empty is the root itself.
+  ///
+  /// This is what a new asset, a dropped file and an extracted prefab land
+  /// in. Without it every one of those had to guess, and they all guessed
+  /// "the project root".
+  String _folder = '';
+
+  /// Whether the right pane is showing the open scene's own pooled resources
+  /// rather than a folder. They are assets of the document, not of the disk,
+  /// so they get a place in the tree rather than a section stapled under it.
+  bool _sceneResources = false;
+
+  /// The kind the contents pane is limited to, or null for everything.
+  FileAssetKind? _kind;
+
+  /// Whether files from outside the application are hovering over the panel.
+  bool _osDragOver = false;
+
+  _AssetViewMode _viewMode = _AssetViewMode.thumbnails;
   bool _scanning = false;
   final TextEditingController _filter = TextEditingController();
   String _query = '';
@@ -106,6 +130,47 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   // project); otherwise the open scene's directory.
   String? get _scanRoot => widget.projectRoot ?? _ctrl.baseDirectory;
 
+  /// The selected folder as an absolute directory, or null with no scan root.
+  String? get _currentDirectory {
+    final root = _scanRoot;
+    if (root == null) return null;
+    if (_folder.isEmpty) return root;
+    return '$root${Platform.pathSeparator}'
+        '${_folder.replaceAll('/', Platform.pathSeparator)}';
+  }
+
+  /// The files directly inside [_folder] (not its subfolders), after the kind
+  /// filter. Searching widens this to the whole project, because a search that
+  /// only looks in the folder you happen to be standing in is a search that
+  /// finds nothing.
+  List<FileAsset> _contents(String query) {
+    final kind = _kind;
+    final matches = <FileAsset>[];
+    for (final asset in _files) {
+      if (kind != null && asset.kind != kind) continue;
+      final keep = query.isEmpty
+          ? _folderOf(asset) == _folder
+          : asset.relativePath.toLowerCase().contains(query);
+      if (keep) matches.add(asset);
+    }
+    matches.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return matches;
+  }
+
+  static String _folderOf(FileAsset asset) {
+    final parts = asset.relativePath.split(RegExp(r'[/\\]'));
+    if (parts.length < 2) return '';
+    return parts.take(parts.length - 1).join('/');
+  }
+
+  void _selectFolder(String path) => setState(() {
+    _folder = path;
+    _sceneResources = false;
+    _expandedDirectories.add(path);
+  });
+
   void _onDocChanged() {
     if (_scanRoot != _scannedDir) {
       _rescan();
@@ -140,55 +205,104 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         q.isEmpty || asset.relativePath.toLowerCase().contains(q);
 
     final visibleFiles = _files.where(matches).toList();
-
-    final models = visibleFiles
-        .where((f) => f.kind == FileAssetKind.model)
-        .toList();
-    final scenes = visibleFiles
-        .where((f) => f.kind == FileAssetKind.scene)
-        .toList();
-    final environmentImages = visibleFiles
-        .where((f) => f.kind == FileAssetKind.environmentImage)
-        .toList();
-    final images = visibleFiles
-        .where((f) => f.kind == FileAssetKind.image)
-        .toList();
-    final materials = visibleFiles
-        .where((f) => f.kind == FileAssetKind.material)
-        .toList();
     final embedded = embeddedResources(
       _ctrl.document,
     ).where((r) => q.isEmpty || r.label.toLowerCase().contains(q)).toList();
 
-    return DragTarget<LocalId>(
-      onWillAcceptWithDetails: (details) => _scanRoot != null,
-      onAcceptWithDetails: (details) => unawaited(_makePrefab(details.data)),
-      builder: (context, candidate, rejected) => GestureDetector(
-        // Right-clicking the panel's empty space is where people go to make a
-        // new asset, in every tool that has a project browser.
-        behavior: HitTestBehavior.translucent,
-        onSecondaryTapUp: (d) => unawaited(_showCreateMenu(d.globalPosition)),
-        child: Container(
-          foregroundDecoration: candidate.isEmpty
-              ? null
-              : BoxDecoration(
-                  border: Border.all(color: editorAccentColor, width: 2),
-                  color: editorAccentColor.withValues(alpha: 0.07),
-                ),
-          child: _buildBrowser(
-            context,
-            visibleFiles,
-            models,
-            scenes,
-            environmentImages,
-            images,
-            materials,
-            embedded,
-            q,
+    return DropTarget(
+      // Files dragged in from the desktop. They land in the folder the left
+      // pane has selected, which is the whole reason that selection exists.
+      onDragEntered: (_) => setState(() => _osDragOver = true),
+      onDragExited: (_) => setState(() => _osDragOver = false),
+      onDragDone: (detail) {
+        setState(() => _osDragOver = false);
+        unawaited(_importDropped([for (final file in detail.files) file.path]));
+      },
+      child: DragTarget<LocalId>(
+        onWillAcceptWithDetails: (details) => _scanRoot != null,
+        onAcceptWithDetails: (details) => unawaited(_makePrefab(details.data)),
+        builder: (context, candidate, rejected) => GestureDetector(
+          // Right-clicking the panel's empty space is where people go to make a
+          // new asset, in every tool that has a project browser.
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapUp: (d) => unawaited(_showCreateMenu(d.globalPosition)),
+          child: Container(
+            foregroundDecoration: candidate.isEmpty && !_osDragOver
+                ? null
+                : BoxDecoration(
+                    border: Border.all(color: editorAccentColor, width: 2),
+                    color: editorAccentColor.withValues(alpha: 0.07),
+                  ),
+            child: _buildBrowser(context, visibleFiles, embedded, q),
           ),
         ),
       ),
     );
+  }
+
+  /// Copies files dropped from outside the application into the selected
+  /// folder.
+  ///
+  /// A copy, not a link: an asset that lives outside the project is an asset
+  /// that is missing on the next machine. A file already inside the project is
+  /// left where it is and simply revealed, because dragging something onto
+  /// itself should not produce a second copy of it.
+  Future<void> _importDropped(List<String> paths) async {
+    final root = _scanRoot;
+    final target = _currentDirectory;
+    if (root == null || target == null) {
+      _report('Open a project (or save the scene) before importing assets.');
+      return;
+    }
+    var copied = 0;
+    var skipped = 0;
+    final rejected = <String>[];
+    for (final path in paths) {
+      final source = File(path);
+      if (!source.existsSync()) continue;
+      if (assetKindOf(path) == null) {
+        rejected.add(path.split(Platform.pathSeparator).last);
+        continue;
+      }
+      if (pathIsWithin(root, path)) {
+        skipped++;
+        continue;
+      }
+      try {
+        await source.copy(
+          _freeCopyPath(target, path.split(Platform.pathSeparator).last),
+        );
+        copied++;
+      } on Object catch (error) {
+        _report('Could not import ${source.path}: $error');
+        return;
+      }
+    }
+    await _rescan();
+    if (!mounted) return;
+    final where = _folder.isEmpty ? 'the project root' : _folder;
+    final parts = [
+      if (copied > 0)
+        'Imported $copied file${copied == 1 ? '' : 's'} into $where',
+      if (skipped > 0) '$skipped already in the project',
+      if (rejected.isNotEmpty)
+        'not an asset the editor reads: ${rejected.join(', ')}',
+    ];
+    if (parts.isNotEmpty) _report(parts.join('. '));
+  }
+
+  /// [name] inside [directory], numbered if something is already there.
+  static String _freeCopyPath(String directory, String name) {
+    final dot = name.lastIndexOf('.');
+    final stem = dot <= 0 ? name : name.substring(0, dot);
+    final extension = dot <= 0 ? '' : name.substring(dot);
+    var candidate = '$directory${Platform.pathSeparator}$name';
+    var counter = 2;
+    while (File(candidate).existsSync()) {
+      candidate =
+          '$directory${Platform.pathSeparator}$stem-${counter++}$extension';
+    }
+    return candidate;
   }
 
   /// The right-click-on-nothing menu: what you can make here.
@@ -250,7 +364,10 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       parent = picked;
     }
 
-    final path = freeBlueprintPath(root, defaultBlueprintName(kind));
+    final path = freeBlueprintPath(
+      _currentDirectory ?? root,
+      defaultBlueprintName(kind),
+    );
     final file = BlueprintFile(path);
     try {
       await file.write(
@@ -268,11 +385,6 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   Widget _buildBrowser(
     BuildContext context,
     List<FileAsset> visibleFiles,
-    List<FileAsset> models,
-    List<FileAsset> scenes,
-    List<FileAsset> environmentImages,
-    List<FileAsset> images,
-    List<FileAsset> materials,
     List<EmbeddedResource> embedded,
     String q,
   ) {
@@ -295,23 +407,15 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           )
         else
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_viewMode == _AssetViewMode.list)
-                  _fileTree(context, visibleFiles, searching: q.isNotEmpty)
-                else ...[
-                  _fileSection(context, 'Models', models),
-                  _fileSection(context, 'Scenes', scenes),
-                  _fileSection(
-                    context,
-                    'Environment images',
-                    environmentImages,
-                  ),
-                  _fileSection(context, 'Images', images),
-                  _fileSection(context, 'Materials (.fmat)', materials),
-                ],
-                _embeddedSection(context, embedded),
+                SizedBox(
+                  width: 180,
+                  child: _folderPane(context, embedded.length),
+                ),
+                const EditorRegionDivider(axis: Axis.vertical),
+                Expanded(child: _contentsPane(context, embedded, q)),
               ],
             ),
           ),
@@ -319,25 +423,197 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     );
   }
 
+  /// The left pane: where things are.
+  ///
+  /// Folders only. Files live on the right, because a tree that holds both is
+  /// a tree you scroll past folders to read.
+  Widget _folderPane(BuildContext context, int embeddedCount) {
+    final root = _buildAssetTree(_files);
+    final rootName = _scanRoot == null
+        ? '/'
+        : _scanRoot!.split(Platform.pathSeparator).last;
+    return Container(
+      color: editorSurfaceColor,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: [
+          _DirectoryRow(
+            name: rootName,
+            depth: 0,
+            expanded: true,
+            selected: _folder.isEmpty && !_sceneResources,
+            hasChildren: root.sortedDirectories.isNotEmpty,
+            onSelect: () => _selectFolder(''),
+            onToggle: () {},
+          ),
+          for (final directory in root.sortedDirectories)
+            ..._folderBranch(context, directory, depth: 1),
+          if (embeddedCount > 0) ...[
+            const Divider(height: 9, color: editorLineColor),
+            _DirectoryRow(
+              name: 'Scene resources  ($embeddedCount)',
+              depth: 0,
+              expanded: false,
+              selected: _sceneResources,
+              hasChildren: false,
+              icon: Icons.inventory_2_outlined,
+              onSelect: () => setState(() => _sceneResources = true),
+              onToggle: () {},
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _folderBranch(
+    BuildContext context,
+    _AssetDirectory directory, {
+    required int depth,
+  }) {
+    final expanded = _expandedDirectories.contains(directory.path);
+    return [
+      _DirectoryRow(
+        name: directory.name,
+        depth: depth,
+        expanded: expanded,
+        selected: !_sceneResources && _folder == directory.path,
+        hasChildren: directory.sortedDirectories.isNotEmpty,
+        onSelect: () => _selectFolder(directory.path),
+        onToggle: () => setState(() {
+          if (!_expandedDirectories.remove(directory.path)) {
+            _expandedDirectories.add(directory.path);
+          }
+        }),
+      ),
+      if (expanded)
+        for (final child in directory.sortedDirectories)
+          ..._folderBranch(context, child, depth: depth + 1),
+    ];
+  }
+
+  /// The right pane: what is here.
+  Widget _contentsPane(
+    BuildContext context,
+    List<EmbeddedResource> embedded,
+    String q,
+  ) {
+    if (_sceneResources) {
+      return Container(
+        color: editorSurfaceColor,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          children: [_embeddedSection(context, embedded)],
+        ),
+      );
+    }
+    final items = _contents(q);
+    if (items.isEmpty) {
+      return Container(
+        color: editorSurfaceColor,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              q.isEmpty
+                  ? 'Nothing in this folder yet. Right-click to make something, '
+                        'or drag a node here to save it as a prefab.'
+                  : 'No asset matches "$q".',
+              style: const TextStyle(fontSize: 12, color: editorMutedTextColor),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      color: editorSurfaceColor,
+      child: _viewMode == _AssetViewMode.thumbnails
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.all(8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final asset in items)
+                    _FileThumbnailTile(
+                      asset: asset,
+                      onAct: _actOn,
+                      onContextMenu: _showFileMenu,
+                    ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              itemCount: items.length,
+              itemBuilder: (context, index) => _FileListRow(
+                asset: items[index],
+                depth: 0,
+                onAct: _actOn,
+                onOpenScene: _openSceneAction(items[index]),
+                onContextMenu: _showFileMenu,
+              ),
+            ),
+    );
+  }
+
   Widget _toolbar(BuildContext context) {
     return EditorToolbar(
       leading: [
-        const Icon(Icons.folder_open, size: 14),
+        const SizedBox(width: 2),
+        // Where you are, so an action that writes "here" says where here is.
+        Icon(
+          _sceneResources ? Icons.inventory_2_outlined : Icons.folder_outlined,
+          size: 14,
+          color: editorMutedTextColor,
+        ),
         const SizedBox(width: 6),
-        const Text('Project', style: TextStyle(fontSize: 12)),
-        const SizedBox(width: 12),
+        SizedBox(
+          width: 150,
+          child: Text(
+            _sceneResources
+                ? 'Scene resources'
+                : _folder.isEmpty
+                ? 'Project root'
+                : _folder,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        const SizedBox(width: 8),
+        EditorMenu(
+          label: _kind == null ? 'All' : _kindLabel(_kind!),
+          tooltip: 'Show one kind of asset',
+          items: [
+            EditorMenuItem(
+              label: 'All',
+              checked: _kind == null,
+              onTap: () => setState(() => _kind = null),
+            ),
+            for (final kind in FileAssetKind.values)
+              EditorMenuItem(
+                label: _kindLabel(kind),
+                checked: _kind == kind,
+                onTap: () => setState(() => _kind = kind),
+              ),
+          ],
+        ),
+        const SizedBox(width: 4),
         // A fixed width, not Expanded: this strip scrolls, so it is laid out
         // against unbounded width and a flex child is an error there. See
         // [EditorToolbarScroller].
         SizedBox(
-          width: 180,
+          width: 170,
           child: FTextField(
             control: FTextFieldControl.managed(
               controller: _filter,
               onChange: (value) => setState(() => _query = value.text),
             ),
             size: .sm,
-            hint: 'Filter',
+            hint: 'Search assets',
             prefixBuilder: (_, _, _) => const Padding(
               padding: EdgeInsets.only(left: 8, right: 4),
               child: Icon(Icons.search, size: 14),
@@ -347,15 +623,15 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         const SizedBox(width: 4),
         _viewButton(
           context,
-          mode: _AssetViewMode.list,
-          icon: Icons.view_list_outlined,
-          tooltip: 'List view',
+          mode: _AssetViewMode.thumbnails,
+          icon: Icons.grid_view_outlined,
+          tooltip: 'Thumbnails',
         ),
         _viewButton(
           context,
-          mode: _AssetViewMode.thumbnails,
-          icon: Icons.grid_view_outlined,
-          tooltip: 'Thumbnail view',
+          mode: _AssetViewMode.list,
+          icon: Icons.view_list_outlined,
+          tooltip: 'List',
         ),
         IconButton(
           tooltip: 'Rescan',
@@ -372,6 +648,15 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       ],
     );
   }
+
+  static String _kindLabel(FileAssetKind kind) => switch (kind) {
+    FileAssetKind.model => 'Models',
+    FileAssetKind.scene => 'Scenes',
+    FileAssetKind.environmentImage => 'Environments',
+    FileAssetKind.image => 'Images',
+    FileAssetKind.material => 'Materials',
+    FileAssetKind.blueprint => 'Blueprints',
+  };
 
   Widget _viewButton(
     BuildContext context, {
@@ -405,32 +690,6 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _fileTree(
-    BuildContext context,
-    List<FileAsset> files, {
-    required bool searching,
-  }) {
-    if (files.isEmpty) return const SizedBox.shrink();
-    final root = _buildAssetTree(files);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _header(context, 'Project files  (${files.length})'),
-        for (final directory in root.sortedDirectories)
-          _directoryBranch(context, directory, depth: 0, searching: searching),
-        for (final file in root.sortedFiles)
-          _FileListRow(
-            asset: file,
-            depth: 0,
-            onAct: _actOn,
-            onOpenScene: _openSceneAction(file),
-            onContextMenu: _showFileMenu,
-          ),
-        const SizedBox(height: 8),
-      ],
     );
   }
 
@@ -494,76 +753,6 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       case 'open':
         await _ctrl.sourceFileOpener?.call(asset.path);
     }
-  }
-
-  Widget _directoryBranch(
-    BuildContext context,
-    _AssetDirectory directory, {
-    required int depth,
-    required bool searching,
-  }) {
-    final expanded = searching || _expandedDirectories.contains(directory.path);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _DirectoryRow(
-          name: directory.name,
-          depth: depth,
-          expanded: expanded,
-          onPressed: () => setState(() {
-            if (expanded && !searching) {
-              _expandedDirectories.remove(directory.path);
-            } else {
-              _expandedDirectories.add(directory.path);
-            }
-          }),
-        ),
-        if (expanded) ...[
-          for (final child in directory.sortedDirectories)
-            _directoryBranch(
-              context,
-              child,
-              depth: depth + 1,
-              searching: searching,
-            ),
-          for (final file in directory.sortedFiles)
-            _FileListRow(
-              asset: file,
-              depth: depth + 1,
-              onAct: _actOn,
-              onOpenScene: _openSceneAction(file),
-              onContextMenu: _showFileMenu,
-            ),
-        ],
-      ],
-    );
-  }
-
-  Widget _fileSection(
-    BuildContext context,
-    String title,
-    List<FileAsset> items,
-  ) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _header(context, '$title  (${items.length})'),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final f in items)
-              _FileThumbnailTile(
-                asset: f,
-                onAct: _actOn,
-                onContextMenu: _showFileMenu,
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-      ],
-    );
   }
 
   Widget _embeddedSection(BuildContext context, List<EmbeddedResource> items) {
@@ -732,7 +921,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
 
     final extracted = extractPrefab(_ctrl.document, nodeId);
     final name = node.name.isEmpty ? 'Prefab' : node.name;
-    final file = freePrefabPath(root, name);
+    final file = freePrefabPath(_currentDirectory ?? root, name);
 
     try {
       await File(file).writeAsString(writeFscene(extracted.document));
@@ -897,54 +1086,80 @@ IconData _fileIcon(FileAssetKind kind) => switch (kind) {
   FileAssetKind.blueprint => Icons.schema_outlined,
 };
 
-/// A collapsible project directory row.
+/// A folder in the left pane: a caret that opens it, and a body that selects
+/// it.
+///
+/// The two are separate targets on purpose. Clicking a folder to see what is
+/// in it and clicking it to reveal its subfolders are different intentions,
+/// and a row that does both on one click does the wrong one half the time.
 class _DirectoryRow extends StatelessWidget {
   const _DirectoryRow({
     required this.name,
     required this.depth,
     required this.expanded,
-    required this.onPressed,
+    required this.selected,
+    required this.hasChildren,
+    required this.onSelect,
+    required this.onToggle,
+    this.icon,
   });
 
   final String name;
   final int depth;
   final bool expanded;
-  final VoidCallback onPressed;
+  final bool selected;
+  final bool hasChildren;
+  final VoidCallback onSelect;
+  final VoidCallback onToggle;
+
+  /// Overrides the folder glyph, for a row that is not a folder on disk.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: onPressed,
-      child: SizedBox(
-        height: 26,
-        child: Padding(
-          padding: EdgeInsets.only(left: depth * 14.0 + 2, right: 4),
-          child: Row(
-            children: [
-              Icon(
-                expanded ? Icons.expand_more : Icons.chevron_right,
-                size: 16,
-                color: scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 2),
-              Icon(
-                expanded ? Icons.folder_open_outlined : Icons.folder_outlined,
-                size: 16,
-                color: scheme.primary,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  name,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
+      onTap: onSelect,
+      child: Container(
+        height: 22,
+        color: selected ? editorRaisedColor : null,
+        padding: EdgeInsets.only(left: depth * 12.0 + 2, right: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              child: hasChildren
+                  ? InkWell(
+                      onTap: onToggle,
+                      child: Icon(
+                        expanded ? Icons.arrow_drop_down : Icons.arrow_right,
+                        size: 16,
+                        color: editorMutedTextColor,
+                      ),
+                    )
+                  : null,
+            ),
+            Icon(
+              icon ??
+                  (expanded
+                      ? Icons.folder_open_outlined
+                      : Icons.folder_outlined),
+              size: 14,
+              color: selected ? editorAccentColor : editorMutedTextColor,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                name,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: selected ? editorTextColor : editorMutedTextColor,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

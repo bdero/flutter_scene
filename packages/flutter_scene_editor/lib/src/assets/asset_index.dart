@@ -88,9 +88,16 @@ const _sceneExt = {'.fscene'};
 const _materialExt = {'.fmat'};
 const _blueprintExt = {'.blueprint'};
 
-FileAssetKind? _classify(String name) {
+/// The kind of asset [name] is by its extension, or null when the editor has
+/// no use for that file.
+///
+/// Public because the browser answers the same question about a file dragged
+/// in from the desktop, and two extension tables would drift.
+FileAssetKind? assetKindOf(String name) {
   final dot = name.lastIndexOf('.');
-  if (dot < 0) return null;
+  // Not `< 0`: a file named `.hdr` is a hidden file with no stem, not an
+  // environment map.
+  if (dot <= 0) return null;
   final ext = name.substring(dot).toLowerCase();
   if (_modelExt.contains(ext)) return FileAssetKind.model;
   if (_imageExt.contains(ext)) return FileAssetKind.image;
@@ -137,7 +144,7 @@ Future<List<FileAsset>> scanProjectAssets(
         if (base == 'build' || base == 'node_modules') continue;
         await walk(entry, depth + 1);
       } else if (entry is File) {
-        final kind = _classify(base);
+        final kind = assetKindOf(base);
         if (kind == null) continue;
         results.add(
           FileAsset(
