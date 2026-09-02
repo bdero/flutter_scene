@@ -348,6 +348,54 @@ void main() {
     );
   });
 
+  testWidgets('a dropdown survives being measured against unbounded width', (
+    tester,
+  ) async {
+    // The trap this editor has fallen into twice: a control laid out inside a
+    // horizontally scrolling strip is offered infinite width, and anything
+    // that asks to fill it throws from inside layout -- which abandons the
+    // rest of the frame, not just this widget.
+    await tester.pumpWidget(
+      _host(
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              EditorDropdown<String>(
+                value: 'one',
+                items: const [
+                  DropdownMenuItem(value: 'one', child: Text('One')),
+                  DropdownMenuItem(value: 'two', child: Text('Two')),
+                ],
+                onChanged: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('One'), findsOneWidget);
+
+    // And in a row that does have a width, it fills it.
+    await tester.pumpWidget(
+      _host(
+        SizedBox(
+          width: 240,
+          child: EditorDropdown<String>(
+            value: 'one',
+            items: const [DropdownMenuItem(value: 'one', child: Text('One'))],
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.byType(EditorFieldSurface)).width, 240);
+  });
+
   testWidgets('chrome text stays on the four-step ramp', (tester) async {
     await tester.pumpWidget(
       _host(

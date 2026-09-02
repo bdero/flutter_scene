@@ -74,18 +74,18 @@ const double editorRowGutter = 6;
 
 /// The air above and below a row, inside its pitch.
 ///
-/// Dense is not the same as cramped. Three pixels either side of a 22-pixel
-/// row is a 28-pixel pitch: close enough that a panel of thirty properties
+/// Dense is not the same as cramped. Four pixels either side of a 22-pixel
+/// row is a 30-pixel pitch: close enough that a panel of thirty properties
 /// still fits on a screen, far enough apart that two rows are two rows.
-const double editorRowGap = 3;
+const double editorRowGap = 4;
 
 /// The air above a heading, and below it before the first row it covers.
 ///
 /// A heading with nothing under it reads as a label on the row beneath rather
 /// than as the name of the block, which is the specific thing that made the
 /// hairline and the colour swatch look like one control.
-const double editorHeadingGapAbove = 10;
-const double editorHeadingGapBelow = 5;
+const double editorHeadingGapAbove = 14;
+const double editorHeadingGapBelow = 7;
 
 /// The height of an input: a text field, a number field, a dropdown.
 ///
@@ -743,6 +743,17 @@ class _EditorDropdownState<T> extends State<EditorDropdown<T>> {
 
   @override
   Widget build(BuildContext context) {
+    // Measured rather than assumed. A dropdown in a property row has a column
+    // to fill; one in a scrolling toolbar strip is laid out against unbounded
+    // width, where asking for infinity -- or for an expanded child -- throws
+    // from inside layout and takes the rest of the frame with it.
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _field(bounded: constraints.hasBoundedWidth),
+    );
+  }
+
+  Widget _field({required bool bounded}) {
     final field = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -754,6 +765,8 @@ class _EditorDropdownState<T> extends State<EditorDropdown<T>> {
             value: widget.value,
             items: widget.items,
             onChanged: widget.onChanged,
+            isDense: true,
+            isExpanded: bounded,
             focusColor: Colors.transparent,
             borderRadius: BorderRadius.circular(editorFieldRadius),
             dropdownColor: editorRaisedColor,
@@ -780,6 +793,9 @@ class _EditorDropdownState<T> extends State<EditorDropdown<T>> {
         ),
       ),
     );
-    return SizedBox(width: widget.width ?? double.infinity, child: field);
+    if (widget.width case final width?) {
+      return SizedBox(width: width, child: field);
+    }
+    return bounded ? SizedBox(width: double.infinity, child: field) : field;
   }
 }

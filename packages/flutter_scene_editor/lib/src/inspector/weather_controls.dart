@@ -22,6 +22,7 @@ import 'package:scene/scene.dart';
 
 import '../controller/editor_controller.dart';
 import 'live_fields.dart';
+import 'property_editors.dart';
 import '../shell/editor_theme.dart';
 import '../shell/panel_chrome.dart';
 
@@ -510,37 +511,55 @@ class _TimeOfDay extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Text(_clock(hour), style: editorDialogTitleText),
-            const SizedBox(width: 8),
-            Text(_describe(hour), style: editorDetailText),
-            const Spacer(),
-            Text(
-              '${elevation.toStringAsFixed(0)}° above the horizon',
-              style: editorMicroText,
-            ),
-          ],
-        ),
-        Slider(
-          value: hour,
-          max: 24,
-          divisions: 24 * 4,
-          onChanged: onCommit == null ? null : onHourChanged,
-          onChangeEnd: (_) => onCommit?.call(),
-        ),
-        Row(
-          children: [
-            Text('Arc tilt', style: editorDetailText),
-            Expanded(
-              child: Slider(
-                value: tilt,
-                max: 1.2,
-                onChanged: onCommit == null ? null : onTiltChanged,
-                onChangeEnd: (_) => onCommit?.call(),
+        // On the shared column like every other property: the hour used to
+        // run the panel's whole width under a heading of its own, which is
+        // why this section read as a different program from the one above it.
+        LabeledControlRow(
+          label: 'Hour',
+          control: Row(
+            children: [
+              SizedBox(
+                width: 52,
+                child: Text(
+                  _clock(hour),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: editorValueColor,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
               ),
-            ),
-          ],
+              Expanded(
+                child: InspectorSlider(
+                  value: hour,
+                  max: 24,
+                  onChanged: onCommit == null ? (_) {} : onHourChanged,
+                  onChangeEnd: (_) => onCommit?.call(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        LabeledControlRow(
+          label: 'Arc tilt',
+          control: InspectorSlider(
+            value: tilt,
+            max: 1.2,
+            onChanged: onCommit == null ? (_) {} : onTiltChanged,
+            onChangeEnd: (_) => onCommit?.call(),
+          ),
+        ),
+        // What the numbers mean, under them and in their column.
+        Padding(
+          padding: const EdgeInsets.only(
+            left: editorPropertyLabelWidth + editorRowGutter + editorPanelInset,
+            bottom: 2,
+          ),
+          child: Text(
+            '${_describe(hour)}  ·  '
+            '${elevation.toStringAsFixed(0)}° above the horizon',
+            style: editorMicroText,
+          ),
         ),
         if (onCommit == null)
           Text(
@@ -572,10 +591,9 @@ class _WeatherTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: editorPanelInset,
-          vertical: 6,
-        ),
+        // No inset of its own: the list lines up with the paragraph above it
+        // rather than stepping in from it.
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
         color: selected ? editorRaisedColor : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

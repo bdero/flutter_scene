@@ -311,12 +311,19 @@ class EditorRailPill extends StatelessWidget {
   );
 }
 
-/// The name of a rail button, shown beside it while the pointer rests there.
+/// The name of a rail button, shown beside it while the pointer rests there,
+/// with an arrow pointing back at the button.
 ///
 /// Beside rather than above, because the rail runs down the window's edge and
-/// a label above a button in a vertical strip covers the button before it. The
-/// rail's tooltips carry the names the strip used to spell out, so they are
-/// worth the overlay.
+/// a label above a button in a vertical strip covers the button before it.
+/// The rail's tooltips carry the names the top bar used to spell out -- the
+/// toolchain, the configuration, the device -- so they are worth an overlay
+/// rather than a delayed guess.
+///
+/// It appears immediately. A delay is worth paying where a tooltip is a
+/// fallback for a label; here it *is* the label, and half a second of
+/// hesitation on every button is the difference between a rail you read and
+/// a rail you hover at.
 class EditorRailTooltip extends StatefulWidget {
   const EditorRailTooltip({
     super.key,
@@ -333,34 +340,36 @@ class EditorRailTooltip extends StatefulWidget {
   State<EditorRailTooltip> createState() => _EditorRailTooltipState();
 }
 
-class _EditorRailTooltipState extends State<EditorRailTooltip> {
+class _EditorRailTooltipState extends State<EditorRailTooltip>
+    with SingleTickerProviderStateMixin {
   final OverlayPortalController _portal = OverlayPortalController();
   final LayerLink _link = LayerLink();
-  Timer? _delay;
+  late final AnimationController _fade = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 110),
+  );
 
   @override
   void dispose() {
-    _delay?.cancel();
+    _fade.dispose();
     super.dispose();
   }
 
   void _show() {
-    _delay?.cancel();
-    _delay = Timer(const Duration(milliseconds: 350), () {
-      if (mounted) _portal.show();
-    });
+    if (!_portal.isShowing) _portal.show();
+    _fade.forward(from: 0);
   }
 
-  void _hide() {
-    _delay?.cancel();
-    if (_portal.isShowing) _portal.hide();
+  Future<void> _hide() async {
+    await _fade.reverse();
+    if (mounted && _fade.value == 0 && _portal.isShowing) _portal.hide();
   }
 
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (_) => _show(),
-      onExit: (_) => _hide(),
+      onExit: (_) => unawaited(_hide()),
       child: CompositedTransformTarget(
         link: _link,
         child: OverlayPortal(
@@ -370,43 +379,18 @@ class _EditorRailTooltipState extends State<EditorRailTooltip> {
             top: 0,
             child: CompositedTransformFollower(
               link: _link,
+              showWhenUnlinked: false,
               targetAnchor: Alignment.centerRight,
               followerAnchor: Alignment.centerLeft,
-              offset: const Offset(6, 0),
               child: IgnorePointer(
-                child: Material(
-                  color: Colors.transparent,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: editorSurfaceColor,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: editorLineColor),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          widget.label,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: editorTextColor,
-                          ),
-                        ),
-                        if (widget.shortcut case final shortcut?) ...[
-                          const SizedBox(width: 8),
-                          Text(
-                            shortcut,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: editorValueColor,
-                            ),
-                          ),
-                        ],
-                      ],
+                child: FadeTransition(
+                  opacity: _fade,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1).animate(_fade),
+                    alignment: Alignment.centerLeft,
+                    child: _RailTooltipBubble(
+                      label: widget.label,
+                      shortcut: widget.shortcut,
                     ),
                   ),
                 ),
@@ -418,6 +402,85 @@ class _EditorRailTooltipState extends State<EditorRailTooltip> {
       ),
     );
   }
+}
+
+/// The bubble: an arrow pointing back at the button, then the name.
+class _RailTooltipBubble extends StatelessWidget {
+  const _RailTooltipBubble({required this.label, this.shortcut});
+
+  final String label;
+  final String? shortcut;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      CustomPaint(
+        size: const Size(5, 10),
+        painter: const _RailTooltipArrow(color: editorRaisedColor),
+      ),
+      Material(
+        color: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: editorRaisedColor,
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: editorTextColor,
+                    ),
+                  ),
+                ),
+                if (shortcut case final shortcut?) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    shortcut,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: editorValueColor,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+/// The triangle that points back at the button the bubble belongs to.
+class _RailTooltipArrow extends CustomPainter {
+  const _RailTooltipArrow({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawPath(
+      Path()
+        ..moveTo(size.width, 0)
+        ..lineTo(0, size.height / 2)
+        ..lineTo(size.width, size.height)
+        ..close(),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_RailTooltipArrow oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// A rail button that opens a menu: the retired File and View menus, the

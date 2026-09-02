@@ -121,7 +121,7 @@ class EditorSectionHeader extends StatelessWidget {
       // Air above it, and air under the rule before the first row it covers.
       // Without the second, the rule and the row beneath it read as one
       // control with a line through it.
-      margin: const EdgeInsets.only(top: 10, bottom: 5),
+      margin: const EdgeInsets.only(top: 14, bottom: 7),
       padding: const EdgeInsets.only(left: 8, right: 4),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _line)),
@@ -204,7 +204,7 @@ class _EditorCollapsibleSectionState extends State<EditorCollapsibleSection> {
             // section that folds is still a section, and a panel that spells
             // one heading three ways is a panel that reads as three panels.
             height: 24,
-            margin: const EdgeInsets.only(top: 10, bottom: 5),
+            margin: const EdgeInsets.only(top: 14, bottom: 7),
             padding: const EdgeInsets.only(left: 4, right: 4),
             decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: _line)),
