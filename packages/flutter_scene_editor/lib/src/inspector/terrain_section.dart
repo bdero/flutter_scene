@@ -18,6 +18,7 @@ import 'package:scene/scene.dart';
 
 import '../controller/editor_controller.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import '../tools/terrain_tool_controller.dart';
 import 'property_editors.dart' show SliderNumberField;
 
@@ -377,7 +378,7 @@ class _Settings extends StatelessWidget {
   );
 
   Widget _row(String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
+    padding: const EdgeInsets.symmetric(vertical: editorRowGap),
     child: Row(
       children: [
         Expanded(child: Text(label, style: editorDetailText)),

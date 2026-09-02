@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_scene_editor/src/inspector/property_editors.dart';
 import 'package:flutter_scene_editor/src/shell/panel_chrome.dart';
 import 'package:flutter_scene_editor/src/shell/editor_theme.dart';
 
@@ -289,6 +290,62 @@ void main() {
     expect(humanizeIdentifier('nav_mesh_surface'), 'Nav mesh surface');
     expect(humanizeIdentifier('uv0'), 'Uv0');
     expect(humanizeIdentifier(''), '');
+  });
+
+  testWidgets('rows keep one pitch, and a heading keeps its air', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        const Column(
+          children: [
+            EditorSectionHeader(label: 'Shadows'),
+            LabeledControlRow(label: 'Casts Shadow', control: SizedBox()),
+            LabeledControlRow(label: 'Shadow Softness', control: SizedBox()),
+          ],
+        ),
+      ),
+    );
+
+    final rows = find.byType(LabeledControlRow);
+    const pitch = editorPropertyRowHeight + editorRowGap * 2;
+    expect(tester.getSize(rows.at(0)).height, pitch);
+    expect(
+      tester.getTopLeft(rows.at(1)).dy - tester.getTopLeft(rows.at(0)).dy,
+      pitch,
+    );
+
+    // The rule under a heading must not sit on the first row it covers.
+    // Measured from the painted box rather than the widget, whose bounds
+    // include the very margin under test.
+    final rule = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(EditorSectionHeader),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    expect(
+      tester.getTopLeft(rows.at(0)).dy - rule.bottom,
+      greaterThanOrEqualTo(editorHeadingGapBelow),
+    );
+  });
+
+  testWidgets('a long property name is readable on hover', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        const LabeledControlRow(
+          label: 'Shadow Cascade Distribution Exponent',
+          control: SizedBox(),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      'Shadow Cascade Distribution Exponent',
+    );
   });
 
   testWidgets('chrome text stays on the four-step ramp', (tester) async {

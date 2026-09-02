@@ -118,7 +118,10 @@ class EditorSectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 24,
-      margin: const EdgeInsets.only(top: 6),
+      // Air above it, and air under the rule before the first row it covers.
+      // Without the second, the rule and the row beneath it read as one
+      // control with a line through it.
+      margin: const EdgeInsets.only(top: 10, bottom: 5),
       padding: const EdgeInsets.only(left: 8, right: 4),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _line)),

@@ -74,7 +74,7 @@ class PropertyField extends StatelessWidget {
         onSubmit: onChanged,
       ),
       _ => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(vertical: editorRowGap),
         child: Row(
           children: [
             SizedBox(
@@ -163,7 +163,7 @@ class _BoolField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -243,7 +243,7 @@ class _NumberFieldState extends State<_NumberField> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -903,7 +903,7 @@ class LabeledControlRow extends StatelessWidget {
     super.key,
     required this.label,
     required this.control,
-    this.padding = const EdgeInsets.symmetric(vertical: 2),
+    this.padding = const EdgeInsets.symmetric(vertical: editorRowGap),
     this.tooltip,
   });
 
@@ -922,7 +922,14 @@ class LabeledControlRow extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );
-    if (tooltip != null) name = Tooltip(message: tooltip!, child: name);
+    // Always hoverable, because the column is a fixed width and a long
+    // property name ellipsizes in it. A name you cannot read is a property
+    // you cannot use.
+    name = Tooltip(
+      message: tooltip ?? label,
+      waitDuration: const Duration(milliseconds: 500),
+      child: name,
+    );
     return Padding(
       padding: padding,
       child: ConstrainedBox(

@@ -5,6 +5,7 @@
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 // ignore: implementation_imports
@@ -41,7 +42,7 @@ class DistributionField extends StatelessWidget {
       UniformCurveFloat() => 'uniformCurve',
     };
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -333,7 +334,7 @@ class GradientEditor extends StatelessWidget {
     final gradient = decodeColorGradient(value);
     final stops = gradient.stops.toList();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

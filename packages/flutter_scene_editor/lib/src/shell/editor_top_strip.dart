@@ -99,7 +99,11 @@ class EditorTopStrip extends StatelessWidget {
             tooltip: 'Project and scene',
             itemsBuilder: projectMenuItems,
           ),
+          // The project, what is being built, and the panels are three
+          // groups, not seven controls.
+          if (leading.isNotEmpty) const SizedBox(width: 10),
           ...leading,
+          const SizedBox(width: 10),
           EditorMenu(
             icon: Icons.dashboard_outlined,
             tooltip: 'Panels',
@@ -138,7 +142,7 @@ class EditorTopStrip extends StatelessWidget {
             selected: focused,
             onPressed: onToggleFocus,
           ),
-          const SizedBox(width: 4),
+          if (trailing.isNotEmpty) const SizedBox(width: 10),
           ...trailing,
           const SizedBox(width: 6),
         ],

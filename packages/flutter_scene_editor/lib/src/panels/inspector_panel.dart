@@ -138,7 +138,9 @@ class _NodeInspector extends StatelessWidget {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(8),
+      // Room under the last control, so the end of a component's properties
+      // is not the bottom edge of the window.
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -490,7 +492,7 @@ class _ReadOnlyVec3Row extends StatelessWidget {
   Widget build(BuildContext context) {
     String number(double value) => value.toStringAsFixed(3);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -748,7 +750,7 @@ class _ComponentEditor extends StatelessWidget {
 
     if (schema.isEmpty && extras.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 2),
+        padding: EdgeInsets.symmetric(vertical: editorRowGap),
         child: Text(
           '(no editable properties)',
           style: TextStyle(fontSize: 11, color: Colors.grey),
@@ -1206,7 +1208,7 @@ class _ObjectRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(vertical: editorRowGap),
             child: Text(label, style: const TextStyle(fontSize: 11)),
           ),
           for (final field in fields)
@@ -1562,7 +1564,7 @@ class _PrefabActions extends StatelessWidget {
       children: [
         EditorSectionHeader(label: 'Prefab'),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.symmetric(vertical: editorRowGap),
           child: Row(
             children: [
               OriginBadge(
@@ -1720,7 +1722,7 @@ class _ReadOnlyRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -1813,7 +1815,7 @@ class _ColorRow extends StatelessWidget {
     void emit({double? nr, double? ng, double? nb, double? na}) =>
         onChanged({'r': nr ?? r, 'g': ng ?? g, 'b': nb ?? b, 'a': na ?? a});
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -1938,7 +1940,7 @@ class _ResourceRefRow extends StatelessWidget {
         : controller.document.resource(value!);
     final origin = selected == null ? null : resourceOriginOf(selected);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -2062,7 +2064,7 @@ class _NodeRefRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final nodes = controller.document.nodes.values.toList();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -2159,14 +2161,11 @@ class _MiniNumberState extends State<_MiniNumber> {
           ),
           const SizedBox(width: 2),
           Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
+            child: EditorTextField(
+              controller: _ctrl,
               focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
+              // The row's own focus listener commits.
+              commitOnFocusLoss: false,
               onSubmit: (_) => _commit(),
             ),
           ),
@@ -2268,7 +2267,7 @@ class _BoolRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -2355,7 +2354,7 @@ class _IntRowState extends State<_IntRow> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -2369,11 +2368,11 @@ class _IntRowState extends State<_IntRow> {
           ),
           const SizedBox(width: editorRowGutter),
           Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
+            child: EditorTextField(
+              controller: _ctrl,
               focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              keyboardType: const TextInputType.numberWithOptions(signed: true),
+              // The row's own focus listener commits.
+              commitOnFocusLoss: false,
               onSubmit: (_) => _commit(),
             ),
           ),
@@ -2443,7 +2442,7 @@ class _DoubleRowState extends State<_DoubleRow> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -2457,14 +2456,11 @@ class _DoubleRowState extends State<_DoubleRow> {
           ),
           const SizedBox(width: editorRowGutter),
           Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
+            child: EditorTextField(
+              controller: _ctrl,
               focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
+              // The row's own focus listener commits.
+              commitOnFocusLoss: false,
               onSubmit: (_) => _commit(),
             ),
           ),

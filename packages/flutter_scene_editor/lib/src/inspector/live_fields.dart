@@ -70,7 +70,13 @@ class InspectorSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unit = ((value - min) / (max - min)).clamp(0.0, 1.0);
+    // Sized down rather than boxed in. Left at its defaults the slider lays
+    // out nearly twice as tall as every other control, which turns a run of
+    // numeric properties into a run of rows that pitch differently from the
+    // rest of the panel; forcing it into a short box instead only clips it,
+    // so the thumb and the track are what shrink.
     return FSlider(
+      style: const FSliderStyleDelta.delta(thumbSize: 13, crossAxisExtent: 4),
       control: FSliderControl.liftedContinuous(
         value: FSliderValue(max: unit),
         onChange: (value) => onChanged(_fromUnit(value.max)),
@@ -295,6 +301,7 @@ class _InspectorAccordionSection extends StatelessWidget {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 100),
               height: 24,
+              margin: const EdgeInsets.only(top: 6),
               color: highlighted ? editorRaisedColor : Colors.transparent,
               padding: const EdgeInsets.only(left: 4, right: 8),
               child: Row(
@@ -327,8 +334,14 @@ class _InspectorAccordionSection extends StatelessWidget {
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
           child: expanded
+              // No inset of its own: a group's rows line up with the rows
+              // above it rather than stepping in, so the label column stays
+              // one column down the whole panel.
               ? Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                  padding: const EdgeInsets.only(
+                    top: editorHeadingGapBelow,
+                    bottom: 8,
+                  ),
                   child: child,
                 )
               : const SizedBox.shrink(),

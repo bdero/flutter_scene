@@ -37,7 +37,12 @@ const double editorHeaderHeight = 28;
 const double editorPropertyRowHeight = 22;
 
 /// The width of the label column every property row shares.
-const double editorPropertyLabelWidth = 96;
+///
+/// Wide enough for two words at eleven pixels. Property names longer than
+/// that ellipsize and carry a tooltip: widening the column far enough for
+/// "Shadow Cascade Distribution Exponent" would take the panel's width away
+/// from every value in it to spell out one of them.
+const double editorPropertyLabelWidth = 104;
 
 /// The side of a bare icon button in panel chrome.
 const double editorPanelIconButtonSize = 20;
@@ -50,6 +55,21 @@ const double editorPanelInset = 8;
 
 /// The gap between a row's label and its control.
 const double editorRowGutter = 6;
+
+/// The air above and below a row, inside its pitch.
+///
+/// Dense is not the same as cramped. Three pixels either side of a 22-pixel
+/// row is a 28-pixel pitch: close enough that a panel of thirty properties
+/// still fits on a screen, far enough apart that two rows are two rows.
+const double editorRowGap = 3;
+
+/// The air above a heading, and below it before the first row it covers.
+///
+/// A heading with nothing under it reads as a label on the row beneath rather
+/// than as the name of the block, which is the specific thing that made the
+/// hairline and the colour swatch look like one control.
+const double editorHeadingGapAbove = 10;
+const double editorHeadingGapBelow = 5;
 
 /// The height of an input: a text field, a number field, a dropdown.
 ///
@@ -280,7 +300,10 @@ class _EditorPanelSectionState extends State<EditorPanelSection> {
         ),
         if (_expanded)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.only(
+              top: editorHeadingGapBelow,
+              bottom: 6,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: widget.children,
