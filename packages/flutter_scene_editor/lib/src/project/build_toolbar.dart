@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../settings/editor_settings.dart';
 import '../shell/editor_theme.dart';
 import '../shell/panel_chrome.dart';
+import '../shell/tool_rail.dart';
 import '../toolchains/device_catalog.dart';
 import '../toolchains/editor_build_info.dart';
 import '../toolchains/flutter_installation.dart';
@@ -196,31 +197,71 @@ Widget _railTrigger({
   required MenuController controller,
   required VoidCallback onOpen,
   Widget? badge,
-}) => Tooltip(
-  message: tooltip,
-  waitDuration: const Duration(milliseconds: 400),
-  child: InkWell(
+}) => EditorRailTooltip(
+  label: tooltip,
+  child: _RailPickerButton(
+    icon: icon,
+    badge: badge,
     onTap: () => controller.isOpen ? controller.close() : onOpen(),
-    hoverColor: editorRaisedColor,
-    child: SizedBox(
-      width: editorRailWidth,
-      height: 30,
-      child: badge == null
-          ? Icon(icon, size: editorIconSizeLarge, color: editorMutedTextColor)
-          : Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: editorIconSizeLarge,
-                  color: editorMutedTextColor,
-                ),
-                Positioned(right: 6, top: 5, child: badge),
-              ],
-            ),
-    ),
   ),
 );
+
+/// A rail-sized picker trigger, with the same pill the rail's own buttons use.
+class _RailPickerButton extends StatefulWidget {
+  const _RailPickerButton({
+    required this.icon,
+    required this.onTap,
+    this.badge,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final Widget? badge;
+
+  @override
+  State<_RailPickerButton> createState() => _RailPickerButtonState();
+}
+
+class _RailPickerButtonState extends State<_RailPickerButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.click,
+    onEnter: (_) => setState(() => _hovered = true),
+    onExit: (_) => setState(() => _hovered = false),
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      child: SizedBox(
+        width: editorRailWidth,
+        height: editorRailButtonHeight,
+        child: Center(
+          child: EditorRailPill(
+            hovered: _hovered,
+            child: widget.badge == null
+                ? Icon(
+                    widget.icon,
+                    size: editorRailIconSize,
+                    color: editorTextColor.withValues(alpha: 0.75),
+                  )
+                : Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Icon(
+                        widget.icon,
+                        size: editorRailIconSize,
+                        color: editorTextColor.withValues(alpha: 0.75),
+                      ),
+                      Positioned(right: 2, top: 4, child: widget.badge!),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 class _InstallationDropdown extends StatelessWidget {
   const _InstallationDropdown({
@@ -413,10 +454,10 @@ class _ConfigurationDropdown extends StatelessWidget {
           message: 'Open a project to select a build configuration',
           child: SizedBox(
             width: editorRailWidth,
-            height: 30,
+            height: editorRailButtonHeight,
             child: Icon(
               Icons.tune,
-              size: editorIconSizeLarge,
+              size: editorRailIconSize,
               color: editorMutedTextColor.withValues(alpha: 0.4),
             ),
           ),
@@ -590,10 +631,10 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
           message: message,
           child: SizedBox(
             width: editorRailWidth,
-            height: 30,
+            height: editorRailButtonHeight,
             child: Icon(
               Icons.devices_outlined,
-              size: editorIconSizeLarge,
+              size: editorRailIconSize,
               color: editorMutedTextColor.withValues(alpha: 0.4),
             ),
           ),

@@ -48,7 +48,23 @@ const double editorPropertyLabelWidth = 104;
 const double editorPanelIconButtonSize = 20;
 
 /// The width of the tool rail down the left edge.
-const double editorRailWidth = 40;
+///
+/// Wider than the panels' own controls, and deliberately: the rail is the
+/// window's only chrome now, its buttons are the ones you hit dozens of times
+/// an hour without looking, and a 20-pixel icon in a 44-pixel target is what
+/// makes that possible.
+const double editorRailWidth = 56;
+
+/// The height of one rail button.
+const double editorRailButtonHeight = 44;
+
+/// The icon inside a rail button.
+const double editorRailIconSize = 20;
+
+/// The hover and active pill drawn behind a rail icon.
+const double editorRailPillWidth = 40;
+const double editorRailPillHeight = 36;
+const double editorRailPillRadius = 10;
 
 /// Horizontal padding inside a panel body.
 const double editorPanelInset = 8;

@@ -13,6 +13,8 @@
 /// bottom.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../viewport/transform_gizmo.dart';
@@ -219,43 +221,199 @@ class EditorRailDivider extends StatelessWidget {
   );
 }
 
-/// A rail button.
-class EditorRailButton extends StatelessWidget {
+/// A rail button: an icon in a pill, and the name beside it on hover.
+///
+/// The pill is the hover target rather than the whole strip. A full-width
+/// highlight down a 56-pixel rail reads as a selected row in a list; a pill
+/// reads as a button, which is what it is.
+class EditorRailButton extends StatefulWidget {
   const EditorRailButton({super.key, required this.item});
 
   final EditorRailItem item;
 
   @override
+  State<EditorRailButton> createState() => _EditorRailButtonState();
+}
+
+class _EditorRailButtonState extends State<EditorRailButton> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     final enabled = item.onPressed != null;
-    final shortcut = item.shortcut;
-    return Tooltip(
-      message: shortcut == null ? item.tooltip : '${item.tooltip}  ($shortcut)',
-      waitDuration: const Duration(milliseconds: 400),
-      child: InkWell(
-        onTap: item.onPressed,
-        hoverColor: editorRaisedColor,
-        child: Container(
-          width: editorRailWidth,
-          height: 30,
-          decoration: BoxDecoration(
-            color: item.active ? editorRaisedColor : null,
-            border: Border(
-              left: BorderSide(
-                color: item.active ? editorAccentColor : Colors.transparent,
-                width: 2,
+    return EditorRailTooltip(
+      label: item.tooltip,
+      shortcut: item.shortcut,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: item.onPressed,
+          child: SizedBox(
+            width: editorRailWidth,
+            height: editorRailButtonHeight,
+            child: Center(
+              child: EditorRailPill(
+                active: item.active,
+                hovered: _hovered && enabled,
+                child: Icon(
+                  item.icon,
+                  size: editorRailIconSize,
+                  color: !enabled
+                      ? editorMutedTextColor.withValues(alpha: 0.35)
+                      : item.active
+                      ? editorAccentColor
+                      : editorTextColor.withValues(alpha: 0.75),
+                ),
               ),
             ),
           ),
-          child: Icon(
-            item.icon,
-            size: editorIconSizeLarge,
-            color: !enabled
-                ? editorMutedTextColor.withValues(alpha: 0.4)
-                : item.active
-                ? editorTextColor
-                : editorMutedTextColor,
+        ),
+      ),
+    );
+  }
+}
+
+/// The rounded square behind a rail icon.
+class EditorRailPill extends StatelessWidget {
+  const EditorRailPill({
+    super.key,
+    required this.child,
+    this.active = false,
+    this.hovered = false,
+  });
+
+  final Widget child;
+  final bool active;
+  final bool hovered;
+
+  @override
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: const Duration(milliseconds: 110),
+    width: editorRailPillWidth,
+    height: editorRailPillHeight,
+    decoration: BoxDecoration(
+      color: active
+          ? Color.alphaBlend(
+              editorAccentColor.withValues(alpha: 0.18),
+              editorRaisedColor,
+            )
+          : hovered
+          ? editorRaisedColor
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(editorRailPillRadius),
+    ),
+    alignment: Alignment.center,
+    child: child,
+  );
+}
+
+/// The name of a rail button, shown beside it while the pointer rests there.
+///
+/// Beside rather than above, because the rail runs down the window's edge and
+/// a label above a button in a vertical strip covers the button before it. The
+/// rail's tooltips carry the names the strip used to spell out, so they are
+/// worth the overlay.
+class EditorRailTooltip extends StatefulWidget {
+  const EditorRailTooltip({
+    super.key,
+    required this.label,
+    required this.child,
+    this.shortcut,
+  });
+
+  final String label;
+  final String? shortcut;
+  final Widget child;
+
+  @override
+  State<EditorRailTooltip> createState() => _EditorRailTooltipState();
+}
+
+class _EditorRailTooltipState extends State<EditorRailTooltip> {
+  final OverlayPortalController _portal = OverlayPortalController();
+  final LayerLink _link = LayerLink();
+  Timer? _delay;
+
+  @override
+  void dispose() {
+    _delay?.cancel();
+    super.dispose();
+  }
+
+  void _show() {
+    _delay?.cancel();
+    _delay = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) _portal.show();
+    });
+  }
+
+  void _hide() {
+    _delay?.cancel();
+    if (_portal.isShowing) _portal.hide();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => _show(),
+      onExit: (_) => _hide(),
+      child: CompositedTransformTarget(
+        link: _link,
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: (context) => Positioned(
+            left: 0,
+            top: 0,
+            child: CompositedTransformFollower(
+              link: _link,
+              targetAnchor: Alignment.centerRight,
+              followerAnchor: Alignment.centerLeft,
+              offset: const Offset(6, 0),
+              child: IgnorePointer(
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: editorSurfaceColor,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: editorLineColor),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.label,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: editorTextColor,
+                          ),
+                        ),
+                        if (widget.shortcut case final shortcut?) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            shortcut,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: editorValueColor,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
+          child: widget.child,
         ),
       ),
     );
@@ -281,7 +439,7 @@ class EditorRailMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: editorRailWidth,
-    height: 30,
+    height: editorRailButtonHeight,
     child: EditorMenu(
       icon: icon,
       tooltip: tooltip,
