@@ -12,6 +12,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_scene_editor/src/shell/panel_chrome.dart';
 import 'package:flutter_scene_editor/src/shell/editor_theme.dart';
 
+/// The accent an active input borders itself with.
+const editorAccentButtonColorForTest = editorAccentColor;
+
 Widget _host(Widget child) => MaterialApp(
   theme: editorDarkTheme(),
   home: Scaffold(body: child),
@@ -171,6 +174,121 @@ void main() {
       );
     }
     expect(find.byType(Card), findsNothing);
+  });
+
+  testWidgets('an input is one shape, and shows its border when used', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        const Column(
+          children: [
+            EditorFieldSurface(child: SizedBox()),
+            EditorFieldSurface(active: true, child: SizedBox()),
+          ],
+        ),
+      ),
+    );
+
+    final fields = find.byType(EditorFieldSurface);
+    expect(tester.getSize(fields.at(0)).height, editorFieldHeight);
+    expect(tester.getSize(fields.at(1)).height, editorFieldHeight);
+
+    BoxDecoration decorationAt(int index) =>
+        tester
+                .widgetList<AnimatedContainer>(
+                  find.descendant(
+                    of: fields.at(index),
+                    matching: find.byType(AnimatedContainer),
+                  ),
+                )
+                .first
+                .decoration!
+            as BoxDecoration;
+
+    // Resting: a fill and nothing else. Active: the accent says where you are.
+    expect(decorationAt(0).border!.top.color, Colors.transparent);
+    expect(decorationAt(1).border!.top.color, editorAccentButtonColorForTest);
+  });
+
+  testWidgets('a text field commits on submit and on losing focus', (
+    tester,
+  ) async {
+    final controller = TextEditingController(text: 'Cube');
+    addTearDown(controller.dispose);
+    final commits = <String>[];
+    await tester.pumpWidget(
+      _host(
+        Column(
+          children: [
+            EditorTextField(controller: controller, onSubmit: commits.add),
+            const TextField(),
+          ],
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(EditorTextField), 'Crate');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    expect(commits, ['Crate']);
+
+    // Submitting drops focus behind it, and that must not commit a second
+    // time for one edit.
+    await tester.pump();
+    expect(commits, ['Crate']);
+
+    // Clicking away is a commit too: a half-typed name that vanishes because
+    // you looked at something else is the oldest bug in property panels.
+    await tester.tap(find.byType(EditorTextField));
+    await tester.enterText(find.byType(EditorTextField), 'Barrel');
+    await tester.tap(find.byType(TextField).last);
+    await tester.pump();
+    expect(commits, ['Crate', 'Barrel']);
+  });
+
+  testWidgets('a full-width action states why it is unavailable', (
+    tester,
+  ) async {
+    var pressed = 0;
+    await tester.pumpWidget(
+      _host(
+        Column(
+          children: [
+            EditorActionButton(
+              label: 'Add Component',
+              icon: Icons.add,
+              onPressed: () => pressed++,
+            ),
+            const EditorActionButton(
+              label: 'Download',
+              onPressed: null,
+              tooltip: 'Nothing is selected',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text('ADD COMPONENT'), findsOneWidget);
+    await tester.tap(find.text('ADD COMPONENT'));
+    expect(pressed, 1);
+
+    await tester.tap(find.text('DOWNLOAD'));
+    expect(pressed, 1);
+    expect(
+      tester.widget<Tooltip>(find.byType(Tooltip)).message,
+      'Nothing is selected',
+    );
+  });
+
+  test('identifiers are shown as words', () {
+    expect(humanizeIdentifier('castsShadows'), 'Casts Shadows');
+    expect(humanizeIdentifier('directionalLight'), 'Directional Light');
+    expect(humanizeIdentifier('localDirection'), 'Local Direction');
+    expect(humanizeIdentifier('color'), 'Color');
+    expect(humanizeIdentifier('nav_mesh_surface'), 'Nav mesh surface');
+    expect(humanizeIdentifier('uv0'), 'Uv0');
+    expect(humanizeIdentifier(''), '');
   });
 
   testWidgets('chrome text stays on the four-step ramp', (tester) async {

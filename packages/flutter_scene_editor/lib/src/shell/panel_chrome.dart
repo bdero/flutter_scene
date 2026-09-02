@@ -51,6 +51,19 @@ const double editorPanelInset = 8;
 /// The gap between a row's label and its control.
 const double editorRowGutter = 6;
 
+/// The height of an input: a text field, a number field, a dropdown.
+///
+/// One height for every input in the editor. A panel of thirty rows reads as
+/// a list when they all measure the same, and as a pile when three of them
+/// are a pixel or two taller because of what is inside them.
+const double editorFieldHeight = 20;
+
+/// How round an input is. Small enough to read as a recess rather than a pill.
+const double editorFieldRadius = 3;
+
+/// The height of a full-width action button (Add Component, Download).
+const double editorActionButtonHeight = 24;
+
 /// The uppercase label style shared by region headers and section headers.
 const TextStyle editorHeaderText = TextStyle(
   fontSize: 10.5,
@@ -401,4 +414,255 @@ class EditorPanelBody extends StatelessWidget {
         : EdgeInsets.zero,
     child: child,
   );
+}
+
+/// The one input shape: a filled recess in the panel, and a border that only
+/// shows when the field is being used.
+///
+/// Every text field, number field, dropdown and swatch sits in one of these.
+/// A resting field is a fill and nothing else -- thirty outlined boxes down a
+/// panel is thirty rectangles competing with the values inside them -- and the
+/// border arrives on hover and focus, where it is telling you something.
+class EditorFieldSurface extends StatelessWidget {
+  const EditorFieldSurface({
+    super.key,
+    required this.child,
+    this.height = editorFieldHeight,
+    this.hovered = false,
+    this.active = false,
+    this.accent,
+    this.padding = const EdgeInsets.symmetric(horizontal: 6),
+  });
+
+  final Widget child;
+  final double height;
+  final bool hovered;
+
+  /// Focused, being dragged, or otherwise the thing you are working in.
+  final bool active;
+
+  /// The border colour when active. Defaults to the selection accent; an axis
+  /// field passes its own axis colour.
+  final Color? accent;
+
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = accent ?? editorAccentColor;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 90),
+      height: height,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: active
+            ? editorRaisedColor
+            : hovered
+            ? Color.alphaBlend(tint.withValues(alpha: 0.06), editorRaisedColor)
+            : editorRaisedColor,
+        border: Border.all(
+          color: active
+              ? tint
+              : hovered
+              ? tint.withValues(alpha: 0.45)
+              : Colors.transparent,
+        ),
+        borderRadius: BorderRadius.circular(editorFieldRadius),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// A full-width action at the end of a block: Add Component, Download, Bake.
+///
+/// Full width because it acts on the block above it rather than on a row, and
+/// a button that spans the panel says so without a label explaining it.
+class EditorActionButton extends StatefulWidget {
+  const EditorActionButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.tooltip,
+  });
+
+  final String label;
+
+  /// Null disables the button; [tooltip] is expected to say why.
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final String? tooltip;
+
+  @override
+  State<EditorActionButton> createState() => _EditorActionButtonState();
+}
+
+class _EditorActionButtonState extends State<EditorActionButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onPressed != null;
+    final foreground = enabled
+        ? (_hovered ? editorTextColor : editorMutedTextColor)
+        : editorMutedTextColor.withValues(alpha: 0.45);
+    final button = MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPressed,
+        child: Container(
+          height: editorActionButtonHeight,
+          margin: const EdgeInsets.symmetric(
+            horizontal: editorPanelInset,
+            vertical: 5,
+          ),
+          decoration: BoxDecoration(
+            color: enabled && _hovered
+                ? Color.alphaBlend(
+                    editorAccentColor.withValues(alpha: 0.12),
+                    editorRaisedColor,
+                  )
+                : editorRaisedColor,
+            borderRadius: BorderRadius.circular(editorFieldRadius),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (widget.icon != null) ...[
+                Icon(widget.icon, size: editorIconSize, color: foreground),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                widget.label.toUpperCase(),
+                style: editorHeaderText.copyWith(color: foreground),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return widget.tooltip == null
+        ? button
+        : Tooltip(message: widget.tooltip!, child: button);
+  }
+}
+
+/// The one text input: a bare field inside [EditorFieldSurface].
+///
+/// Its own borders and paddings are gone, so a row holding text measures the
+/// same as a row holding a number or a dropdown. It commits on submit and on
+/// losing focus, which is what an inspector field has to do -- clicking away
+/// from a half-typed name and losing it is the oldest bug in property panels.
+class EditorTextField extends StatefulWidget {
+  const EditorTextField({
+    super.key,
+    required this.controller,
+    required this.onSubmit,
+    this.focusNode,
+    this.hint,
+    this.commitOnFocusLoss = true,
+    this.textStyle,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onSubmit;
+  final FocusNode? focusNode;
+  final String? hint;
+  final bool commitOnFocusLoss;
+  final TextStyle? textStyle;
+
+  @override
+  State<EditorTextField> createState() => _EditorTextFieldState();
+}
+
+class _EditorTextFieldState extends State<EditorTextField> {
+  late final FocusNode _focus = widget.focusNode ?? FocusNode();
+  bool _ownsFocus = false;
+  bool _hovered = false;
+  bool _focused = false;
+
+  /// What was last handed to [EditorTextField.onSubmit].
+  ///
+  /// Submitting also drops focus, so without this every typed value would
+  /// commit twice -- once for the return key and once for the field going
+  /// quiet behind it -- and land two entries in the history for one edit.
+  late String _committed;
+
+  @override
+  void initState() {
+    super.initState();
+    _ownsFocus = widget.focusNode == null;
+    _committed = widget.controller.text;
+    _focus.addListener(_onFocusChanged);
+  }
+
+  void _commit(String text) {
+    if (text == _committed) return;
+    _committed = text;
+    widget.onSubmit(text);
+  }
+
+  void _onFocusChanged() {
+    if (!mounted) return;
+    setState(() => _focused = _focus.hasFocus);
+    if (!_focus.hasFocus && widget.commitOnFocusLoss) {
+      _commit(widget.controller.text);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChanged);
+    if (_ownsFocus) _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: EditorFieldSurface(
+        hovered: _hovered,
+        active: _focused,
+        child: Center(
+          child: TextField(
+            controller: widget.controller,
+            focusNode: _focus,
+            decoration: InputDecoration.collapsed(
+              hintText: widget.hint,
+              hintStyle: editorRowLabelText,
+            ),
+            style:
+                widget.textStyle ??
+                const TextStyle(fontSize: 11, color: editorTextColor),
+            cursorColor: editorAccentColor,
+            cursorWidth: 1,
+            autocorrect: false,
+            enableSuggestions: false,
+            onSubmitted: _commit,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Splits an identifier into words for display: `castsShadows` reads as
+/// "Casts Shadows", `directionalLight` as "Directional Light".
+///
+/// Component types and schema property names are written for code, and an
+/// inspector is read by a person. Nothing is renamed -- only the way it is
+/// spelled on screen.
+String humanizeIdentifier(String raw) {
+  if (raw.isEmpty) return raw;
+  final spaced = raw
+      .replaceAllMapped(RegExp(r'([a-z0-9])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ');
+  return spaced[0].toUpperCase() + spaced.substring(1);
 }

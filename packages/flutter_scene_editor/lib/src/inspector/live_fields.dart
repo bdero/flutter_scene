@@ -6,6 +6,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
+
 /// Keeps inspector labels and values on one line unless a child opts out.
 class InspectorTextScope extends StatelessWidget {
   const InspectorTextScope({super.key, required this.child});
@@ -291,29 +294,27 @@ class _InspectorAccordionSection extends StatelessWidget {
                 variants.contains(FTappableVariant.pressed);
             return AnimatedContainer(
               duration: const Duration(milliseconds: 100),
-              color: highlighted
-                  ? colors.secondary.withValues(alpha: 0.7)
-                  : Colors.transparent,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+              height: 24,
+              color: highlighted ? editorRaisedColor : Colors.transparent,
+              padding: const EdgeInsets.only(left: 4, right: 8),
               child: Row(
                 children: [
+                  Icon(
+                    expanded ? Icons.arrow_drop_down : Icons.arrow_right,
+                    size: 16,
+                    color: editorMutedTextColor,
+                  ),
+                  const SizedBox(width: 2),
                   Expanded(
                     child: DefaultTextStyle.merge(
-                      style: TextStyle(
-                        color: colors.foreground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                      style: const TextStyle(
+                        color: editorTextColor,
+                        fontSize: 10.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.9,
                       ),
                       child: title,
-                    ),
-                  ),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 140),
-                    child: Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 16,
-                      color: colors.mutedForeground,
                     ),
                   ),
                 ],
@@ -559,26 +560,42 @@ class _ColorEditorState extends State<ColorEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text(widget.label, style: const TextStyle(fontSize: 13)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 28,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: _swatch,
-                  border: Border.all(color: Theme.of(context).dividerColor),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 16),
-            ],
-          ),
+        // The label in the shared column and the swatch at the head of the
+        // value column, like every other row: a colour is a property, not a
+        // section, and it should not read as one.
+        InkWell(
           onTap: () => setState(() => _expanded = !_expanded),
+          child: SizedBox(
+            height: editorPropertyRowHeight,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: editorPropertyLabelWidth,
+                  child: Text(
+                    widget.label,
+                    style: editorRowLabelText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: editorRowGutter),
+                Container(
+                  width: 34,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: _swatch,
+                    border: Border.all(color: editorLineColor),
+                    borderRadius: BorderRadius.circular(editorFieldRadius),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                  size: editorIconSizeLarge,
+                  color: editorMutedTextColor,
+                ),
+              ],
+            ),
+          ),
         ),
         if (_expanded)
           Padding(

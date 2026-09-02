@@ -11,6 +11,7 @@ import 'package:native_mouse_cursor/native_mouse_cursor.dart';
 
 import 'live_fields.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 
 /// A single editable field driven by a [UiFieldDescriptor].
 ///
@@ -138,27 +139,12 @@ class _StringFieldState extends State<_StringField> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              widget.label,
-              style: const TextStyle(fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
-              size: FTextFieldSizeVariant.sm,
-              onSubmit: widget.onSubmit,
-            ),
-          ),
-        ],
+    return LabeledControlRow(
+      label: widget.label,
+      control: EditorTextField(
+        controller: _ctrl,
+        onSubmit: widget.onSubmit,
+        commitOnFocusLoss: false,
       ),
     );
   }
@@ -181,14 +167,15 @@ class _BoolField extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           InspectorToggleSwitch(value: initial, onChanged: onChanged),
         ],
       ),
@@ -260,14 +247,15 @@ class _NumberFieldState extends State<_NumberField> {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               widget.label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: FTextField(
               control: FTextFieldControl.managed(controller: _ctrl),
@@ -330,19 +318,10 @@ class Vec3Field extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
+    return LabeledControlRow(
+      label: label,
+      control: Row(
         children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 4),
           Expanded(
             child: _AxisField(
               label: 'X',
@@ -438,7 +417,7 @@ class ScrubbableNumberField extends StatefulWidget {
     required this.snapStep,
     this.onPreview,
     required this.onCommit,
-    this.height = 34,
+    this.height = editorFieldHeight,
     this.fractionDigits = 3,
     this.mixed = false,
     this.enableInfiniteDrag = true,
@@ -693,8 +672,7 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
   @override
   Widget build(BuildContext context) {
     final active = _dragging || _editing;
-    final borderAlpha = active ? 0.9 : (_hovered ? 0.55 : 0.24);
-    final fillAlpha = _dragging ? 0.11 : (_hovered ? 0.055 : 0.025);
+    final unit = widget.label;
     return Focus(
       focusNode: _interactionFocus,
       onKeyEvent: _onKey,
@@ -710,94 +688,79 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
           onPointerMove: _onPointerMove,
           onPointerUp: _onPointerUp,
           onPointerCancel: (_) => _cancelDrag(),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 90),
+          child: EditorFieldSurface(
             height: widget.height,
-            decoration: BoxDecoration(
-              color: widget.color.withValues(alpha: fillAlpha),
-              border: Border.all(
-                color: widget.color.withValues(alpha: borderAlpha),
-              ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: _editing
-                ? FTextField(
-                    control: FTextFieldControl.managed(controller: _text),
-                    focusNode: _textFocus,
-                    size: FTextFieldSizeVariant.sm,
-                    textAlign: TextAlign.right,
-                    selectAllOnFocus: true,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
-                    mouseCursor: SystemMouseCursors.text,
-                    prefixBuilder: widget.label.isEmpty
-                        ? null
-                        : (_, _, _) => Padding(
-                            padding: const EdgeInsets.only(left: 6, right: 3),
-                            child: Text(
-                              widget.label,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: widget.color,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
+            hovered: _hovered,
+            active: active,
+            accent: widget.color,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _editing
+                      // A bare field inside the shared surface rather than a
+                      // styled one of its own, so entering a value does not
+                      // change the shape of the row it is in.
+                      ? TextField(
+                          controller: _text,
+                          focusNode: _textFocus,
+                          decoration: const InputDecoration.collapsed(
+                            hintText: '',
+                          ),
+                          style: const TextStyle(
+                            color: editorValueColor,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                            fontSize: 11,
+                          ),
+                          cursorColor: editorValueColor,
+                          cursorWidth: 1,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                            signed: true,
+                          ),
+                          mouseCursor: SystemMouseCursors.text,
+                          onSubmitted: (_) => _finishTextEditing(commit: true),
+                        )
+                      : Semantics(
+                          label: unit.isEmpty ? 'Numeric value' : '$unit value',
+                          value: _showDash ? 'mixed' : _format(_displayValue),
+                          button: true,
+                          hint: 'Click to type or drag horizontally to adjust',
+                          child: Text(
+                            _showDash ? '\u2014' : _format(_displayValue),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              // Amber, so a number you can drag never reads
+                              // like a number being reported to you. Every
+                              // transform row has both within a few pixels.
+                              color: editorValueColor,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                              fontSize: 11,
                             ),
                           ),
-                    onSubmit: (_) => _finishTextEditing(commit: true),
-                  )
-                : Semantics(
-                    label: widget.label.isEmpty
-                        ? 'Numeric value'
-                        : '${widget.label} value',
-                    value: _showDash ? 'mixed' : _format(_displayValue),
-                    button: true,
-                    hint: 'Click to type or drag horizontally to adjust',
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      child: Row(
-                        children: [
-                          if (widget.label.isNotEmpty) ...[
-                            Text(
-                              widget.label,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: widget.color,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          Expanded(
-                            child: Text(
-                              _showDash ? '\u2014' : _format(_displayValue),
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                // Amber, so a number you can drag never reads
-                                // like a number being reported to you. Every
-                                // transform row has both within a few pixels.
-                                color: editorValueColor,
-                                fontFeatures: [FontFeature.tabularFigures()],
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                ),
+                // The axis or unit, at the trailing edge: it names the field
+                // rather than labelling it, so it sits out of the way of the
+                // value and keeps the axis colour the gizmo uses.
+                if (unit.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    unit,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      color: widget.color,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -865,60 +828,40 @@ class _SliderNumberFieldState extends State<SliderNumberField> {
   Widget build(BuildContext context) {
     final value = _preview ?? widget.value;
     final step = widget.scrubStep ?? (widget.max - widget.min) / 300;
-    final label = Text(
-      widget.label,
-      maxLines: 1,
-      softWrap: false,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 11),
-    );
-    final slider = InspectorSlider(
-      value: value.clamp(widget.min, widget.max),
-      min: widget.min,
-      max: widget.max,
-      onChanged: _update,
-      onChangeEnd: _commit,
-    );
+    // The number leads and the slider follows it, which is the order the
+    // value is read in: a slider says roughly where you are in a range, and
+    // the number says what you are actually going to ship.
     final field = SizedBox(
-      width: 76,
+      width: 64,
       child: ScrubbableNumberField(
         label: '',
-        color: context.theme.colors.primary,
+        color: editorAccentColor,
         value: value,
         mixed: widget.mixed && _preview == null,
         scrubStep: step,
         snapStep: widget.snapStep ?? step,
         fractionDigits: widget.fractionDigits,
-        height: 34,
         enableInfiniteDrag: widget.enableInfiniteDrag,
         onPreview: _update,
         onCommit: _commit,
       ),
     );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: LayoutBuilder(
-        builder: (context, constraints) => constraints.maxWidth >= 260
-            ? Row(
-                children: [
-                  SizedBox(width: 102, child: label),
-                  Expanded(child: slider),
-                  const SizedBox(width: 6),
-                  field,
-                ],
-              )
-            : Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: label),
-                      const SizedBox(width: 6),
-                      field,
-                    ],
-                  ),
-                  slider,
-                ],
-              ),
+    return LabeledControlRow(
+      label: widget.label,
+      control: Row(
+        children: [
+          field,
+          const SizedBox(width: 6),
+          Expanded(
+            child: InspectorSlider(
+              value: value.clamp(widget.min, widget.max),
+              min: widget.min,
+              max: widget.max,
+              onChanged: _update,
+              onChangeEnd: _commit,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -944,70 +887,56 @@ Widget sliderColorChannel({
   onCommit: onCommit,
 );
 
-/// A labeled control row that stays valid at any panel width. Dockable
-/// panels can get arbitrarily narrow, where a [ListTile] with a wide
-/// trailing control fails its layout assertion; here the control wraps to
-/// its own line instead, scaling down as a last resort.
+/// One labelled property: the label in the shared column, the control in the
+/// rest of the width.
+///
+/// This is the row the whole inspector is made of, so its measurements are
+/// the panel's: [editorPropertyLabelWidth] of label, [editorRowGutter] of gap,
+/// and whatever is left for the control. Labels take no colon -- two columns
+/// already say which is the name and which is the value.
+///
+/// A control that sizes itself sits at the left of the value column; one that
+/// wants the width (a field, a dropdown) takes it. Both are fine here, which
+/// they were not when this measured the control against unbounded width.
 class LabeledControlRow extends StatelessWidget {
   const LabeledControlRow({
     super.key,
     required this.label,
     required this.control,
     this.padding = const EdgeInsets.symmetric(vertical: 2),
+    this.tooltip,
   });
 
   final String label;
-
-  /// The control, measured at its natural size.
-  ///
-  /// It must size itself: it is laid out inside a [Wrap] and a [FittedBox],
-  /// both of which offer unbounded width so they can measure it, and a
-  /// control that wants a share of the row's width instead has no width to
-  /// take a share of. [Vec3Field] is the shape for a control that divides
-  /// the row: a plain [Row] with a fixed-width label, no wrapping and no
-  /// scale-down.
   final Widget control;
-
   final EdgeInsetsGeometry padding;
+
+  /// What the label means, where the name alone does not carry it.
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
-    assert(() {
-      final widget = control;
-      // Both shapes this has been given: the control itself asking to flex,
-      // and a Row of fields each asking to. The second is the one that broke
-      // the vec4 property row, and a check for the first alone would have
-      // waved it through.
-      final flexes =
-          widget is Flexible ||
-          (widget is Flex && widget.children.any((c) => c is Flexible));
-      if (!flexes) return true;
-      throw FlutterError.fromParts([
-        ErrorSummary(
-          'LabeledControlRow was given a flex control for "$label".',
-        ),
-        ErrorDescription(
-          'The control is measured inside a FittedBox, which offers '
-          'unbounded width. Expanded and Flexible ask for a share of the '
-          'width that is left over, and unbounded width leaves none.',
-        ),
-        ErrorHint(
-          'Give the control its own size, or lay the row out like Vec3Field '
-          'does when the control should divide the row between its fields.',
-        ),
-      ]);
-    }());
-
+    Widget name = Text(
+      label,
+      style: editorRowLabelText,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    if (tooltip != null) name = Tooltip(message: tooltip!, child: name);
     return Padding(
       padding: padding,
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 8,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 13)),
-          FittedBox(fit: BoxFit.scaleDown, child: control),
-        ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: editorPropertyRowHeight),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(width: editorPropertyLabelWidth, child: name),
+            const SizedBox(width: editorRowGutter),
+            Expanded(
+              child: Align(alignment: Alignment.centerLeft, child: control),
+            ),
+          ],
+        ),
       ),
     );
   }

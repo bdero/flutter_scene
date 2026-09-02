@@ -100,8 +100,14 @@ const TextStyle editorSubheadText = TextStyle(
 const TextStyle editorMicroText = TextStyle(fontSize: 9, color: _mutedText);
 const TextStyle editorDetailText = TextStyle(fontSize: 11, color: _mutedText);
 
-/// The accent-barred section header the inspector's sections use, shared so
-/// dialog sections read as the same chrome.
+/// The heading above a group of rows, shared so dialogs read as the same
+/// chrome as the panels.
+///
+/// Flush, uppercase, and separated by a hairline rather than by a bar and a
+/// box. An inspector is thirty of these stacked: give each one a border, a
+/// radius and an accent stripe and the eye counts blocks instead of reading
+/// values. The accent is spent on selection and on numbers you can drag, and
+/// a heading is neither.
 class EditorSectionHeader extends StatelessWidget {
   const EditorSectionHeader({super.key, required this.label, this.trailing});
 
@@ -111,23 +117,24 @@ class EditorSectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 5, top: 2),
-      padding: const EdgeInsets.fromLTRB(7, 4, 2, 4),
+      height: 24,
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(left: 8, right: 4),
       decoration: const BoxDecoration(
-        border: Border(
-          left: BorderSide(color: _signal, width: 2),
-          bottom: BorderSide(color: _line),
-        ),
+        border: Border(bottom: BorderSide(color: _line)),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              label,
+              label.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                fontSize: 11,
+                fontSize: 10.5,
+                height: 1.1,
                 fontWeight: FontWeight.w600,
-                letterSpacing: 0.15,
+                letterSpacing: 0.9,
                 color: _text,
               ),
             ),
@@ -139,18 +146,6 @@ class EditorSectionHeader extends StatelessWidget {
   }
 }
 
-/// Shared menu metrics so every dropdown and context menu spaces identically.
-/// Icon sizes. Two steps: the default that sits beside body text, and the
-/// larger one for a standalone affordance. Anything between them is variation
-/// nobody chose, and a row of icons at 13, 14 and 15 reads as misaligned even
-/// when it is not.
-/// A section that folds away, with an optional enable toggle and icon in its
-/// header.
-///
-/// An inspector is a stack of sections and only one or two matter at a time,
-/// so being able to fold the rest is what keeps a node with eight components
-/// readable. The whole header is the hit target, since a disclosure triangle
-/// alone is a small thing to aim at repeatedly.
 class EditorCollapsibleSection extends StatefulWidget {
   /// Creates a section titled [label] wrapping [child].
   const EditorCollapsibleSection({

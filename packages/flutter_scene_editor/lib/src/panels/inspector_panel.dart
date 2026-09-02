@@ -30,6 +30,7 @@ import '../inspector/water_conversion.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 
 /// Property inspector for the primary selected node.
 ///
@@ -655,7 +656,7 @@ class _ComponentSection extends StatelessWidget {
           onSecondaryTapUp: (details) =>
               _showContextMenu(context, details.globalPosition),
           child: EditorSectionHeader(
-            label: 'Component: $type',
+            label: humanizeIdentifier(type),
             trailing: canRemove
                 ? _IconAction(
                     icon: Icons.close,
@@ -801,7 +802,7 @@ class _ComponentEditor extends StatelessWidget {
             children: [
               for (final entry in groups.entries)
                 InspectorAccordionItem(
-                  title: Text(entry.key),
+                  title: Text(humanizeIdentifier(entry.key)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [for (final def in entry.value) row(def)],
@@ -811,10 +812,13 @@ class _ComponentEditor extends StatelessWidget {
           ),
         for (final entry in extras)
           if (mixedFor(entry.key, null))
-            _ReadOnlyRow(label: entry.key, text: 'Mixed values')
+            _ReadOnlyRow(
+              label: humanizeIdentifier(entry.key),
+              text: 'Mixed values',
+            )
           else
             _PropertyValueRow(
-              label: entry.key,
+              label: humanizeIdentifier(entry.key),
               value: entry.value,
               onChanged: (v) => _set(entry.key, v),
             ),
@@ -901,7 +905,8 @@ class _SchemaPropertyRow extends StatelessWidget {
   }
 
   Widget _buildEditor(BuildContext context) {
-    final label = def.name;
+    // The schema's name is an identifier; the row shows it as words.
+    final label = humanizeIdentifier(def.name);
     if (mixed && !_mixedEditableKinds.contains(def.kind)) {
       return _ReadOnlyRow(label: label, text: 'Mixed values');
     }
@@ -1446,64 +1451,42 @@ class _AddComponentBar extends StatelessWidget {
       for (final type in controller.componentTypes())
         if (!present.contains(type)) type,
     ];
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: PopupMenuButton<String>(
-        enabled: available.isNotEmpty,
-        tooltip: 'Add a component',
-        onSelected: (type) {
-          for (final n in nodes) {
-            controller.addComponentRouted(n.id, type);
-          }
-        },
-        itemBuilder: (_) => [
-          for (final type in available)
-            PopupMenuItem<String>(
-              value: type,
-              height: editorMenuItemHeight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(type),
-                  // Foreign types (known by schema, realized as data in the
-                  // editor) show where the schema came from.
-                  if (controller.foreignTypeProvenance[type]
-                      case final provenance?) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      provenance == 'live' ? 'project' : provenance,
-                      style: const TextStyle(fontSize: 9, color: Colors.grey),
-                    ),
-                  ],
+    return MenuAnchor(
+      menuChildren: [
+        for (final type in available)
+          MenuItemButton(
+            onPressed: () {
+              for (final n in nodes) {
+                controller.addComponentRouted(n.id, type);
+              }
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(type),
+                // Foreign types (known by schema, realized as data in the
+                // editor) show where the schema came from.
+                if (controller.foreignTypeProvenance[type]
+                    case final provenance?) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    provenance == 'live' ? 'project' : provenance,
+                    style: editorMicroText,
+                  ),
                 ],
-              ),
+              ],
             ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.add,
-                size: 14,
-                color: available.isEmpty
-                    ? Colors.grey
-                    : Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Add Component',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: available.isEmpty
-                      ? Colors.grey
-                      : Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
           ),
-        ),
+      ],
+      builder: (context, menu, _) => EditorActionButton(
+        label: 'Add Component',
+        icon: Icons.add,
+        tooltip: available.isEmpty
+            ? 'This node already carries every component type'
+            : 'Add a component to the selection',
+        onPressed: available.isEmpty
+            ? null
+            : () => menu.isOpen ? menu.close() : menu.open(),
       ),
     );
   }
@@ -1784,40 +1767,27 @@ class EnumRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = options.contains(value) ? value : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
+    return LabeledControlRow(
+      label: label,
+      control: SizedBox(
+        width: double.infinity,
+        child: FSelect<String>(
+          // Keyed by display label, valued by the option itself (FSelect
+          // takes Map<String, T>); with no labels the two coincide, which
+          // is why the plain form reads as option: option.
+          items: {
+            for (final option in options) (labels?[option] ?? option): option,
+          },
+          control: FSelectControl.lifted(
+            value: current,
+            onChange: (v) {
+              if (v != null) onChanged(v);
+            },
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: FSelect<String>(
-              // Keyed by display label, valued by the option itself (FSelect
-              // takes Map<String, T>); with no labels the two coincide, which
-              // is why the plain form reads as option: option.
-              items: {
-                for (final option in options)
-                  (labels?[option] ?? option): option,
-              },
-              control: FSelectControl.lifted(
-                value: current,
-                onChange: (v) {
-                  if (v != null) onChanged(v);
-                },
-              ),
-              size: FTextFieldSizeVariant.sm,
-              // expands would trip the framework's expands-with-maxLines
-              // text-field assertion (the select's field keeps maxLines 1).
-            ),
-          ),
-        ],
+          size: FTextFieldSizeVariant.sm,
+          // expands would trip the framework's expands-with-maxLines
+          // text-field assertion (the select's field keeps maxLines 1).
+        ),
       ),
     );
   }
@@ -1847,14 +1817,15 @@ class _ColorRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: _MiniNumber(
               label: 'R',
@@ -1971,14 +1942,15 @@ class _ResourceRefRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: ids.isEmpty
                 ? Text(
@@ -2094,14 +2066,15 @@ class _NodeRefRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: ReferencePicker(
               entries: [
@@ -2263,29 +2236,15 @@ class _StringRowState extends State<_StringRow> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              widget.label,
-              style: const TextStyle(fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
-              focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              hint: widget.mixed ? '\u2014' : null,
-              onSubmit: (_) => _commit(),
-            ),
-          ),
-        ],
+    return LabeledControlRow(
+      label: widget.label,
+      control: EditorTextField(
+        controller: _ctrl,
+        focusNode: _focus,
+        hint: widget.mixed ? '\u2014' : null,
+        // The focus listener this row already owns does the committing.
+        commitOnFocusLoss: false,
+        onSubmit: (_) => _commit(),
       ),
     );
   }
@@ -2313,14 +2272,15 @@ class _BoolRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           if (mixed) ...[
             const Text(
               '\u2014',
@@ -2399,14 +2359,15 @@ class _IntRowState extends State<_IntRow> {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               widget.label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: FTextField(
               control: FTextFieldControl.managed(controller: _ctrl),
@@ -2486,14 +2447,15 @@ class _DoubleRowState extends State<_DoubleRow> {
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               widget.label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: FTextField(
               control: FTextFieldControl.managed(controller: _ctrl),
