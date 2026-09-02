@@ -13,7 +13,8 @@ import 'package:flutter_scene_codegen/flutter_scene_codegen.dart'
         nativeComponentBinding,
         nativeComponentHookCall,
         nativeComponentSource;
-import 'package:flutter_scene/scene.dart' show Scene, VfxCategory, vfxPresetsIn;
+import 'package:flutter_scene/scene.dart'
+    show Node, Scene, VfxCategory, vfxPresetsIn, writeGlb;
 import 'package:forui/forui.dart';
 import 'package:scene/scene.dart' show visualScriptComponentType;
 
@@ -1111,6 +1112,14 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
       ),
       EditorMenuItem(label: 'Save', onTap: _save),
       EditorMenuItem(label: 'Save As…', onTap: _saveAs),
+      EditorMenuItem(
+        label: 'Export glTF…',
+        onTap: _ctrl.realizedRoot == null ? null : _exportGlb,
+      ),
+      EditorMenuItem(
+        label: 'Export Selection as glTF…',
+        onTap: _ctrl.selection.ids.length == 1 ? _exportSelectionGlb : null,
+      ),
       const EditorMenuItem.divider(),
       EditorMenuItem(label: 'Scene Settings…', onTap: _showSceneSettings),
       if (widget.onShowSettings != null)
@@ -1246,6 +1255,59 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void _setPath(String? path) {
     _currentPath = path;
     widget.onDocumentPathChanged?.call(path);
+  }
+
+  /// Surfaces an export problem on the one channel the editor already has.
+  void _reportExport(String message) => _ctrl.lastError.value = message;
+
+  /// Writes the open scene out as a binary glTF.
+  ///
+  /// The document's own nodes, not the scene's: the editor's grid and gizmo
+  /// helpers live in the same scene graph and are nobody's model.
+  Future<void> _exportGlb() async {
+    final root = _ctrl.realizedRoot;
+    if (root == null) return;
+    await _exportNode(
+      root,
+      suggested: _currentPath == null
+          ? 'scene'
+          : _currentPath!.split(Platform.pathSeparator).last.split('.').first,
+    );
+  }
+
+  /// Writes the single selected node and its descendants.
+  Future<void> _exportSelectionGlb() async {
+    final id = _ctrl.selection.ids.single;
+    final node = _ctrl.liveNode(id);
+    if (node == null) {
+      _reportExport(
+        'That node is not realized yet, so it cannot be '
+        'exported. Let the scene finish loading and try again.',
+      );
+      return;
+    }
+    await _exportNode(node, suggested: node.name.isEmpty ? 'node' : node.name);
+  }
+
+  Future<void> _exportNode(Node node, {required String suggested}) async {
+    final path = await pickGlbSavePath(
+      suggestedName: suggested,
+      initialDirectory: _sceneDialogDirectory,
+    );
+    if (path == null) return;
+    final warnings = <String>[];
+    try {
+      final bytes = writeGlb(node, onWarning: warnings.add);
+      await File(path).writeAsBytes(bytes);
+    } on Object catch (error) {
+      _reportExport('Could not write $path: $error');
+      return;
+    }
+    // Whatever could not be written is said out loud rather than discovered
+    // when the file is opened somewhere else.
+    for (final warning in warnings) {
+      _reportExport(warning);
+    }
   }
 
   void _showSceneSettings() =>

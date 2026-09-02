@@ -379,6 +379,7 @@ export 'src/post_process/post_process.dart'
         LensFlareSettings,
         PostProcessSettings,
         VignetteSettings;
+export 'src/exporter/gltf_writer.dart' show writeGlb;
 export 'src/importer/gltf.dart'
     show
         GltfImportWarning,
