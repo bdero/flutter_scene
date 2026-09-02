@@ -60,7 +60,6 @@ import 'editor_dialog.dart';
 enum EditorScreen {
   visualScripter('Visual Scripter'),
   renderGraph('Render Graph'),
-  profiler('Profiler'),
   history('History');
 
   const EditorScreen(this.title);
@@ -895,6 +894,10 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                     session: widget.appSession,
                   ),
           ShelfMode.animation => AnimationPanel(controller: _ctrl),
+          // In the shelf rather than as a screen: a profiler with no viewport
+          // above it measures an editor that has stopped drawing, and reports
+          // a perfectly idle zero.
+          ShelfMode.profiler => ProfilerPanel(controller: _ctrl),
         },
       ),
       inspector: EditorRegion(
@@ -948,7 +951,6 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                       controller: _ctrl,
                       inspector: _renderGraphInspector,
                     ),
-                    EditorScreen.profiler => ProfilerPanel(controller: _ctrl),
                     EditorScreen.history => HistoryPanel(controller: _ctrl),
                   },
                 ),

@@ -24,7 +24,8 @@ import 'panel_chrome.dart';
 enum ShelfMode {
   project('Project', Icons.folder_outlined),
   console('Console', Icons.terminal),
-  animation('Animation', Icons.animation);
+  animation('Animation', Icons.animation),
+  profiler('Profiler', Icons.speed);
 
   const ShelfMode(this.label, this.icon);
 

@@ -88,6 +88,10 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
   /// Whether files from outside the application are hovering over the panel.
   bool _osDragOver = false;
 
+  /// Watches the project for assets that change outside the editor.
+  StreamSubscription<FileSystemEvent>? _watch;
+  Timer? _watchDebounce;
+
   _AssetViewMode _viewMode = _AssetViewMode.thumbnails;
   bool _scanning = false;
   final TextEditingController _filter = TextEditingController();
@@ -118,8 +122,47 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
     }
   }
 
+  /// Rescans when something changes on disk.
+  ///
+  /// An asset is usually edited in the tool that made it, and a browser that
+  /// only notices on an explicit refresh is a browser showing yesterday's
+  /// project. Debounced, because a save from another application arrives as a
+  /// burst of events, and filtered, because a build directory changing is not
+  /// news.
+  void _watchProject(String? directory) {
+    _watch?.cancel();
+    _watch = null;
+    if (directory == null) return;
+    final root = Directory(directory);
+    if (!root.existsSync()) return;
+    try {
+      _watch = root.watch(recursive: true).listen((event) {
+        if (_isNoise(event.path)) return;
+        _watchDebounce?.cancel();
+        _watchDebounce = Timer(
+          const Duration(milliseconds: 400),
+          () => unawaited(_rescan()),
+        );
+      }, onError: (_) {});
+    } on FileSystemException {
+      // Watching is a convenience; a filesystem that will not report changes
+      // still browses and still rescans on demand.
+    }
+  }
+
+  static bool _isNoise(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    for (final segment in normalized.split('/')) {
+      if (segment.startsWith('.')) return true;
+      if (segment == 'build' || segment == 'node_modules') return true;
+    }
+    return false;
+  }
+
   @override
   void dispose() {
+    _watch?.cancel();
+    _watchDebounce?.cancel();
     _ctrl.removeListener(_onDocChanged);
     _ctrl.history.removeListener(_onHistoryChanged);
     _filter.dispose();
@@ -189,6 +232,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
       return;
     }
     setState(() => _scanning = true);
+    _watchProject(dir);
     final files = await scanProjectAssets(dir);
     if (!mounted) return;
     setState(() {
