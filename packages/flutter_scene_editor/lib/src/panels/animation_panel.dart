@@ -15,7 +15,6 @@ import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
     show AnimationChange, ChangeSlot;
 import 'package:scene/scene.dart';
 
-import '../controller/animation_sampling.dart';
 import '../controller/animation_target_resolution.dart';
 import '../controller/editor_controller.dart';
 import '../shell/editor_dialog.dart';
@@ -194,9 +193,21 @@ class _AnimationPanelState extends State<AnimationPanel> {
     final id = _animationId;
     if (id == null) return;
     final time = _controller.previewTime;
+    final targets = _keyTargetNodes();
+
+    // Nodes not yet on the timeline get seeded with start/end crystals after
+    // the capture below; nodes already included keep their authored edges
+    // untouched — Key captures only the playhead for them. Computed BEFORE
+    // the capture, which is what puts the fresh nodes on the timeline.
+    final freshNodes = <LocalId>{
+      for (final nodeId in targets)
+        if (_controller.document.nodes.containsKey(nodeId) &&
+            !_nodeHasChannels(nodeId))
+          nodeId,
+    };
 
     final commands = <(String, Map<String, Object?>)>[
-      for (final nodeId in _keyTargetNodes())
+      for (final nodeId in targets)
         if (_controller.document.nodes.containsKey(nodeId))
           for (final p
               in property == null
@@ -229,7 +240,15 @@ class _AnimationPanelState extends State<AnimationPanel> {
       _showError(error);
       return;
     }
-    if (property == null) await _ensureEdgeKeys(id, time);
+    if (property == null) await _ensureEdgeKeys(id, time, freshNodes);
+  }
+
+  /// Whether [nodeId] drives any channel of the current animation — i.e. its
+  /// header already appears on the timeline.
+  bool _nodeHasChannels(LocalId nodeId) {
+    final spec = _animation;
+    if (spec == null) return false;
+    return spec.channels.any((c) => c.target == nodeId);
   }
 
   /// The nodes a multi-node key applies to, per [_movementMode].
@@ -250,37 +269,22 @@ class _AnimationPanelState extends State<AnimationPanel> {
       ? _controller.topLevelSelection()
       : _controller.selection.ids.toList();
 
-  /// Adds the missing edge crystals: a key at t = 0 and at the clip's end
-  /// for every selected node's translation, rotation, and scale path that
-  /// does not have one yet. A clip with no keyframes yet (a fresh Key at
-  /// the default playhead) defaults its end crystal to t = 1s, matching the
-  /// panel's default 1s timeline.
+  /// Seeds the start and end crystals for nodes that just joined the timeline:
+  /// a key at t = 0 and at the clip's end (defaulting to 1s when the clip is
+  /// still empty) for each fresh node's translation, rotation, and scale path.
   ///
-  /// Additive on purpose — an edge key the author placed deliberately keeps
-  /// its pose. Keying mid-clip must never rewrite the timeline's endpoints,
-  /// or posing at t = 0.5 would clobber a carefully keyed start pose.
-  Future<void> _ensureEdgeKeys(LocalId id, double playhead) async {
+  /// Only [freshNodes] — the nodes that had no channel before the Key press —
+  /// receive edge crystals, so every new node's playthrough spans the whole
+  /// clip. A node already on the timeline keeps its authored edges untouched:
+  /// Key captures only the playhead for it, and posing mid-clip can never
+  /// rewrite the timeline's endpoints.
+  Future<void> _ensureEdgeKeys(
+    LocalId id,
+    double playhead,
+    Set<LocalId> freshNodes,
+  ) async {
     final spec = _controller.document.animations[id];
     if (spec == null) return;
-    bool hasKeyAt(AnimationChannelSpec channel, double time) => channelTimes(
-      _controller.document,
-      channel,
-    ).any((t) => (t - time).abs() <= 1e-3);
-
-    // Plain node authoring matches a path's first channel regardless of its
-    // stored binding name (the same rule setAnimationKeyframe applies), so
-    // panel-built channels are found here after undos and renames too.
-    AnimationChannelSpec? channelFor(
-      LocalId nodeId,
-      AnimationProperty property,
-    ) {
-      for (final channel in spec.channels) {
-        if (channel.target == nodeId && channel.property == property) {
-          return channel;
-        }
-      }
-      return null;
-    }
 
     // The clip's duration is its last keyframe's time — which, right after
     // the playhead capture above, is the playhead itself. A fresh clip keyed
@@ -292,29 +296,18 @@ class _AnimationPanelState extends State<AnimationPanel> {
     if (end <= 1e-4) end = 1.0;
     final edges = {0.0, end};
     final commands = <(String, Map<String, Object?>)>[];
-    for (final nodeId in _keyTargetNodes()) {
-      if (!_controller.document.nodes.containsKey(nodeId)) continue;
+    for (final nodeId in freshNodes) {
       for (final property in const [
         AnimationProperty.translation,
         AnimationProperty.rotation,
         AnimationProperty.scale,
       ]) {
         for (final edge in edges) {
-          // An edge under the playhead is already keyed by the capture
-          // above; an edge already carrying a crystal stays untouched. The
-          // two edges of one path are distinct times, so deciding both from
-          // the pre-batch document is safe: adding one never keys the other.
+          // An edge under the playhead was already captured above. Every
+          // other edge of a fresh node records the pose it currently shows:
+          // with no curve of its own, that visible pose is what plays
+          // everywhere, so seeding it at the clip's ends is exact.
           if ((edge - playhead).abs() <= 1e-3) continue;
-          final channel = channelFor(nodeId, property);
-          if (channel != null && hasKeyAt(channel, edge)) continue;
-          // A new edge keys the pose the curve already plays at that time
-          // (sampled from the channel's own keyframes), falling back to the
-          // node's visible pose when the channel has nothing to sample — so a
-          // pose captured mid-clip can never bleed into the clip's start or
-          // end and jog the model's origin.
-          final pose = channel == null
-              ? _livePoseFor(nodeId, property)
-              : _edgePose(channel, edge);
           commands.add((
             'setAnimationKeyframe',
             {
@@ -322,7 +315,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
               'nodeId': nodeId.toToken(),
               'property': property.name,
               'time': edge,
-              ...?pose,
+              ...?_livePoseFor(nodeId, property),
             },
           ));
         }
@@ -610,23 +603,6 @@ class _AnimationPanelState extends State<AnimationPanel> {
     }
   }
 
-  /// The payload of [id] as float32s (native-endian, matching the emitter).
-  /// The controller caches its own decode for playback; this is the panel's
-  /// decode for the edge sampling below. Empty when the payload is missing.
-  Float32List _payloadFloatValues(LocalId id) {
-    final bytes = _controller.document.payload(id)?.bytes;
-    if (bytes == null) return Float32List(0);
-    if (bytes.offsetInBytes % 4 == 0) {
-      return bytes.buffer.asFloat32List(
-        bytes.offsetInBytes,
-        bytes.lengthInBytes ~/ 4,
-      );
-    }
-    return Uint8List.fromList(
-      bytes,
-    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
-  }
-
   /// The pose the channel's live target currently shows, as the value map
   /// `setAnimationKeyframe` accepts.
   ///
@@ -668,56 +644,6 @@ class _AnimationPanelState extends State<AnimationPanel> {
         final s = node.scale;
         return {
           'scale': {'x': s.x, 'y': s.y, 'z': s.z},
-        };
-      case AnimationProperty.weights:
-        return null;
-    }
-  }
-
-  /// The pose [channel]'s curve already plays at [time] — the interpolation of
-  /// its own keyframes — in the nested shape `setAnimationKeyframe` accepts
-  /// (`translation` / `rotation` / `scale` objects).
-  ///
-  /// Used for edge crystals: a missing start/end key must duplicate the value
-  /// the playthrough already shows there, never the pose held at the playhead
-  /// when Key was pressed, or a mid-clip capture would rewrite the clip's
-  /// endpoints and move the model's start pose. Falls back to the live visible
-  /// pose when the channel carries no keyframes to sample.
-  Map<String, Object>? _edgePose(AnimationChannelSpec channel, double time) {
-    final times = _payloadFloatValues(channel.timeline);
-    final values = _payloadFloatValues(channel.keyframes);
-    final stride = channel.property == AnimationProperty.rotation ? 4 : 3;
-    final sampled = sampleAnimationChannel(
-      times,
-      values,
-      stride,
-      time,
-      interpolation: channel.interpolation,
-    );
-    if (sampled == null) {
-      return _livePoseFor(
-        channel.target,
-        channel.property,
-        targetName: channel.targetName,
-      );
-    }
-    switch (channel.property) {
-      case AnimationProperty.translation:
-        return {
-          'translation': {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]},
-        };
-      case AnimationProperty.rotation:
-        return {
-          'rotation': {
-            'x': sampled[0],
-            'y': sampled[1],
-            'z': sampled[2],
-            'w': sampled[3],
-          },
-        };
-      case AnimationProperty.scale:
-        return {
-          'scale': {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]},
         };
       case AnimationProperty.weights:
         return null;

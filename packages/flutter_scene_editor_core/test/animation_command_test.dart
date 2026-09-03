@@ -69,6 +69,16 @@ LocalId _addCube(
   );
 }
 
+/// The node ids of [animation]'s channels in first-appearance order — the
+/// order the timeline presents its per-node blocks in.
+List<LocalId> _nodeOrder(AnimationSpec animation) {
+  final order = <LocalId>[];
+  for (final channel in animation.channels) {
+    if (!order.contains(channel.target)) order.add(channel.target);
+  }
+  return order;
+}
+
 void main() {
   group('animation commands', () {
     test('create, rename, delete round trip with undo', () {
@@ -144,6 +154,98 @@ void main() {
         AnimationProperty.rotation,
       );
       expect(rotations.single.length, 4);
+    });
+
+    test("re-keying a channel keeps its node's first-added position", () {
+      final h = _harness();
+      _run(h, 'createAnimation', {});
+      final animationId = h.doc.animations.keys.single;
+      final alpha = _addCube(h, 'Alpha');
+      final bravo = _addCube(h, 'Bravo');
+
+      void key(LocalId node, String property, double time) =>
+          _run(h, 'setAnimationKeyframe', {
+            'animationId': animationId.toToken(),
+            'nodeId': node.toToken(),
+            'property': property,
+            'time': time,
+          });
+
+      // Alpha joins the timeline first, then Bravo — that order is stable.
+      key(alpha, 'translation', 0.0);
+      key(bravo, 'translation', 0.0);
+      expect(
+        _nodeOrder(h.doc.animations[animationId]!),
+        [alpha, bravo],
+      );
+
+      // Rewriting Alpha's existing channel must not demote it below Bravo
+      // (the timeline groups each node under its first-appearance header).
+      key(alpha, 'translation', 1.0);
+      expect(
+        _nodeOrder(h.doc.animations[animationId]!),
+        [alpha, bravo],
+      );
+
+      // A genuinely new channel for Alpha (rotation) appends to the channel
+      // list, but the node order still reads Alpha then Bravo — the timeline
+      // renders per-node blocks from first-appearance order, not list order.
+      key(alpha, 'rotation', 1.0);
+      final spec = h.doc.animations[animationId]!;
+      expect(_nodeOrder(spec), [alpha, bravo]);
+      expect(
+        [
+          for (final c in spec.channels)
+            if (c.target == alpha) c.property,
+        ],
+        [
+          AnimationProperty.translation,
+          AnimationProperty.rotation,
+        ],
+      );
+    });
+
+    test('a node removed from the timeline rejoins at the bottom', () {
+      final h = _harness();
+      _run(h, 'createAnimation', {});
+      final animationId = h.doc.animations.keys.single;
+      final alpha = _addCube(h, 'Alpha');
+      final bravo = _addCube(h, 'Bravo');
+
+      void key(LocalId node, double time) => _run(
+            h,
+            'setAnimationKeyframe',
+            {
+              'animationId': animationId.toToken(),
+              'nodeId': node.toToken(),
+              'property': 'translation',
+              'time': time,
+            },
+          );
+
+      key(alpha, 0.0);
+      key(bravo, 0.0);
+      expect(
+        _nodeOrder(h.doc.animations[animationId]!),
+        [alpha, bravo],
+      );
+
+      // Dropping Alpha's only channel removes it from the timeline...
+      _run(h, 'removeAnimationKeyframe', {
+        'animationId': animationId.toToken(),
+        'nodeId': alpha.toToken(),
+        'property': 'translation',
+        'time': 0.0,
+      });
+      expect(_nodeOrder(h.doc.animations[animationId]!), [bravo]);
+
+      // ...and re-keying re-adds it at the bottom: removed-and-re-added is
+      // the one sanctioned reordering.
+      key(alpha, 0.0);
+      expect(
+        _nodeOrder(h.doc.animations[animationId]!),
+        [bravo, alpha],
+      );
     });
 
     test('re-keying the same time replaces the value', () {

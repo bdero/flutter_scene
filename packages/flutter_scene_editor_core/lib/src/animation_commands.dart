@@ -269,22 +269,39 @@ bool _payloadDiffers(PayloadSpec? payload, Uint8List bytes) {
     }
   }
 
-  final channels = [
-    for (final c in animation.channels)
-      if (c.target != target ||
-          c.property != property ||
-          (memberTargeting && (c.targetName ?? '') != (targetName ?? '')))
-        c,
-    AnimationChannelSpec(
-      target: target,
-      targetName: targetName,
-      property: property,
-      timeline: timelineId,
-      keyframes: keyframesId,
-      // Rewriting a channel must never silently reset its interpolation.
-      interpolation: existing?.interpolation,
-    ),
-  ];
+  AnimationChannelSpec rewrittenChannel() => AnimationChannelSpec(
+    target: target,
+    targetName: targetName,
+    property: property,
+    timeline: timelineId,
+    keyframes: keyframesId,
+    // Rewriting a channel must never silently reset its interpolation.
+    interpolation: existing?.interpolation,
+  );
+
+  // The rewritten channel keeps its current position in the channel list —
+  // the timeline groups each node under its first-appearance header, so
+  // appending a re-keyed channel to the end would silently demote its whole
+  // node block. Only genuinely new channels append, which is what seats a
+  // new node at the bottom of the timeline.
+  final channels = <AnimationChannelSpec>[];
+  var placed = false;
+  for (final c in animation.channels) {
+    final matches = c.target == target &&
+        c.property == property &&
+        (!memberTargeting || (c.targetName ?? '') == (targetName ?? ''));
+    if (matches) {
+      // Duplicate matches (surviving odd member renames) collapse into the
+      // single rewritten channel, sitting where the first one was found.
+      if (!placed) {
+        channels.add(rewrittenChannel());
+        placed = true;
+      }
+    } else {
+      channels.add(c);
+    }
+  }
+  if (!placed) channels.add(rewrittenChannel());
   final updated = AnimationSpec(animation.id, name: animation.name)
     ..channels.addAll(channels);
   records.add(

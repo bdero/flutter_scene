@@ -121,30 +121,32 @@ void main() {
     expect(titles.skip(1).take(3), ['translation', 'rotation', 'scale']);
   });
 
-  testWidgets('pressing Key adds crystals at the timeline start and end', (
+  testWidgets('Keying an already-timelined node does not seed edge crystals', (
     tester,
   ) async {
     final (controller, animationId, nodeId) = await pumpEditablePanel(tester);
 
-    // A clip ending at t=1 with nothing at t=0.
+    // A clip ending at t=1 with nothing at t=0: the node is already on the
+    // timeline, so Key captures only the playhead — it must NOT seed a t=0
+    // crystal or touch the authored end.
     await key(controller, animationId, nodeId, 'translation', 1.0);
     expect(translationTimes(controller, animationId, nodeId), [1.0]);
 
-    // Key mid-clip at the playhead.
     controller.seekPreview(0.5);
     await tester.pump();
     await tester.tap(find.text('Key'));
     await tester.pumpAndSettle();
 
-    // Crystals anchored at both edges plus the playhead capture.
+    // Only the playhead capture landed; both edges stay as authored.
     final times = translationTimes(controller, animationId, nodeId);
-    expect(times.map((t) => (t * 100).roundToDouble() / 100), [0.0, 0.5, 1.0]);
-    // All three properties got the playhead pose, so they exist too.
-    expect(channelOf(controller, animationId, nodeId, 'rotation'), isNotNull);
-    expect(channelOf(controller, animationId, nodeId, 'scale'), isNotNull);
+    expect(times.map((t) => (t * 100).roundToDouble() / 100), [0.5, 1.0]);
+    // rotation/scale were created for the playhead key alone — no edges.
+    for (final property in ['rotation', 'scale']) {
+      final channel = channelOf(controller, animationId, nodeId, property)!;
+      expect(channelTimes(controller.document, channel), [0.5]);
+    }
 
-    // Edge keys keep their pose: a deliberate lift at t=1 survives Keying
-    // elsewhere on the timeline.
+    // And a deliberate lift at t=1 keeps its pose through further Keying.
     await controller.run('setAnimationKeyframe', {
       'animationId': animationId.toToken(),
       'nodeId': nodeId.toToken(),
@@ -152,20 +154,26 @@ void main() {
       'time': 1.0,
       'translation': {'x': 0.0, 'y': 9.0, 'z': 0.0},
     });
-    controller.seekPreview(0.5);
+    controller.seekPreview(0.25);
     await tester.pump();
     await tester.tap(find.text('Key'));
     await tester.pumpAndSettle();
 
     final channel = channelOf(controller, animationId, nodeId, 'translation')!;
+    final times2 = channelTimes(controller.document, channel);
+    expect(
+      times2.map((t) => (t * 100).roundToDouble() / 100),
+      [0.25, 0.5, 1.0],
+    );
     final bytes = controller.document.payload(channel.keyframes)!.bytes!;
     final values = bytes.buffer.asFloat32List(
       bytes.offsetInBytes,
       bytes.lengthInBytes ~/ 4,
     );
-    expect(values[values.length - 3], closeTo(9.0, 1e-4));
-    expect(values[values.length - 2], closeTo(0.0, 1e-4));
-    expect(values[values.length - 1], closeTo(0.0, 1e-4));
+    final endRow = times2.indexWhere((t) => (t - 1.0).abs() <= 1e-4);
+    expect(values[endRow * 3 + 1], closeTo(9.0, 1e-4));
+    expect(values[endRow * 3 + 0], closeTo(0.0, 1e-4));
+    expect(values[endRow * 3 + 2], closeTo(0.0, 1e-4));
   });
 
   testWidgets('a fresh Key at the playhead starts a default 1s clip', (
@@ -320,48 +328,133 @@ void main() {
     },
   );
 
-  testWidgets("a missing edge crystal copies the curve's edge pose, "
-      'never a mid-clip capture', (tester) async {
-    final (controller, animationId, nodeId) = await pumpEditablePanel(tester);
-    controller.selectPreviewAnimation(animationId);
+  testWidgets(
+  "a node joining the timeline is seeded at the clip's edges with its "
+  'visible pose',
+  (tester) async {
+    // Two-node document: Alpha already animates; Bravo joins later.
+    final document = SceneDocument();
+    final nodeA = document.newId();
+    final nodeB = document.newId();
+    document.addNode(NodeSpec(id: nodeA, name: 'Alpha'), root: true);
+    document.addNode(NodeSpec(id: nodeB, name: 'Bravo'), root: true);
+    final session = EditorSession(document);
+    final controller = await EditorController.open(session);
+    addTearDown(controller.dispose);
+    await controller.run('createAnimation', {});
+    final animationId = document.animations.keys.single;
 
-    // A clip whose only key is a deliberate lift at t=1. A single key
-    // clamps everywhere, so the playthrough already starts at y=9; that
-    // start pose is the model's origin for this animation.
-    await controller.run('setAnimationKeyframe', {
-      'animationId': animationId.toToken(),
-      'nodeId': nodeId.toToken(),
-      'property': 'translation',
-      'time': 1.0,
-      'translation': {'x': 0.0, 'y': 9.0, 'z': 0.0},
-    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 320,
+            child: AnimationPanel(controller: controller),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
 
-    // Scrub to the middle and press Key. The playhead capture holds the
-    // visible pose at 0.5 (still 9), and the new t=0 edge crystal must copy
-    // that same curve pose — never the document origin — or the model would
-    // start every playthrough somewhere it never started before.
-    controller.seekPreview(0.5);
+    // Alpha already carries a clip ending at 2s.
+    await key(controller, animationId, nodeA, 'translation', 2.0);
+
+    // Select the fresh node, pose it the way a gizmo drag does (live node
+    // only), scrub mid-clip and press Key.
+    controller.selection.selectOnly(nodeB);
+    controller.seekPreview(1.0);
+    controller.liveNode(nodeB)!.position = Vector3(0, 7, 0);
     await tester.pump();
     await tester.tap(find.text('Key'));
     await tester.pumpAndSettle();
 
-    final channel = channelOf(controller, animationId, nodeId, 'translation')!;
+    // Bravo was not on the timeline, so it is seeded at the clip's edges:
+    // crystals at t=0 and the clip's end (2s), plus the playhead capture —
+    // all rows carrying the visible pose (y=7), never the document origin.
+    final channel = channelOf(
+      controller,
+      animationId,
+      nodeB,
+      'translation',
+    )!;
     final times = channelTimes(controller.document, channel);
-    expect(times, hasLength(3));
-    expect(times, contains(closeTo(0.0, 1e-4)));
-    expect(times, contains(closeTo(0.5, 1e-4)));
-    expect(times, contains(closeTo(1.0, 1e-4)));
-
+    expect(
+      times.map((t) => (t * 100).roundToDouble() / 100),
+      [0.0, 1.0, 2.0],
+    );
     final bytes = controller.document.payload(channel.keyframes)!.bytes!;
     final values = bytes.buffer.asFloat32List(
       bytes.offsetInBytes,
       bytes.lengthInBytes ~/ 4,
     );
-    // The t=0 edge row holds y=9 (what the curve already played there),
-    // and the deliberate end key is untouched.
-    final startRow = times.indexWhere((t) => t.abs() <= 1e-4);
-    expect(values[startRow * 3 + 1], closeTo(9.0, 1e-4));
-    final endRow = times.indexWhere((t) => (t - 1.0).abs() <= 1e-4);
-    expect(values[endRow * 3 + 1], closeTo(9.0, 1e-4));
-  });
+    for (var i = 0; i < times.length; i++) {
+      expect(values[i * 3 + 1], closeTo(7.0, 1e-4));
+    }
+
+    // And Alpha's existing clip is untouched.
+    final alphaChannel = channelOf(
+      controller,
+      animationId,
+      nodeA,
+      'translation',
+    )!;
+    expect(channelTimes(controller.document, alphaChannel), [2.0]);
+  },
+);
+
+testWidgets(
+  'nodes hold their first-added position while channels are edited',
+  (tester) async {
+    // Two-node document; Alpha is keyed first, then Bravo.
+    final document = SceneDocument();
+    final nodeA = document.newId();
+    final nodeB = document.newId();
+    document.addNode(NodeSpec(id: nodeA, name: 'Alpha'), root: true);
+    document.addNode(NodeSpec(id: nodeB, name: 'Bravo'), root: true);
+    final session = EditorSession(document);
+    final controller = await EditorController.open(session);
+    addTearDown(controller.dispose);
+    await controller.run('createAnimation', {});
+    final animationId = document.animations.keys.single;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 320,
+            child: AnimationPanel(controller: controller),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Alpha joins the timeline first, then Bravo — that order stays.
+    await key(controller, animationId, nodeA, 'translation', 0.0);
+    await key(controller, animationId, nodeB, 'translation', 0.0);
+    await tester.pump();
+    expect(
+      painterRowTitles(tester),
+      ['Alpha', 'translation', 'Bravo', 'translation'],
+    );
+
+    // Re-keying Alpha rewrites its existing channel without demoting it.
+    await key(controller, animationId, nodeA, 'translation', 1.0);
+    await tester.pump();
+    expect(
+      painterRowTitles(tester),
+      ['Alpha', 'translation', 'Bravo', 'translation'],
+    );
+
+    // A brand-new channel for Alpha (rotation) lands under Alpha's block.
+    await key(controller, animationId, nodeA, 'rotation', 1.0);
+    await tester.pump();
+   expect(
+      painterRowTitles(tester),
+      ['Alpha', 'translation', 'rotation', 'Bravo', 'translation'],
+   );
+  },
+);
 }
