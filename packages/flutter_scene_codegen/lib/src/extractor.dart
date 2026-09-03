@@ -590,10 +590,10 @@ class _Args {
   _Args(ArgumentList? list) {
     if (list == null) return;
     for (final argument in list.arguments) {
-      if (argument is NamedExpression) {
-        named[argument.name.label.name] = argument.expression;
+      if (argument is NamedArgument) {
+        named[argument.name.lexeme] = argument.argumentExpression;
       } else {
-        positional.add(argument);
+        positional.add(argument.argumentExpression);
       }
     }
   }
@@ -694,7 +694,7 @@ List<double>? _numArgs(ArgumentList args, int count) {
   if (args.arguments.length != count) return null;
   final out = <double>[];
   for (final argument in args.arguments) {
-    final value = _numLit(argument);
+    final value = _numLit(argument.argumentExpression);
     if (value == null) return null;
     out.add(value.toDouble());
   }
@@ -707,12 +707,12 @@ PropertyConstraint<Object?>? _constraintFromExpression(Expression expression) {
   final (typeName, constructorName, args) = split;
   final positional = [
     for (final argument in args.arguments)
-      if (argument is! NamedExpression) argument,
+      if (argument is! NamedArgument) argument.argumentExpression,
   ];
   final named = <String, Expression>{
     for (final argument in args.arguments)
-      if (argument is NamedExpression)
-        argument.name.label.name: argument.expression,
+      if (argument is NamedArgument)
+        argument.name.lexeme: argument.argumentExpression,
   };
   double? positionalNum(int index) =>
       index < positional.length ? _numLit(positional[index])?.toDouble() : null;
