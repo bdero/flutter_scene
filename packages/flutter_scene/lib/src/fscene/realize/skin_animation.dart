@@ -80,35 +80,53 @@ engine.Animation? buildAnimation(
 
     final engine.AnimationProperty property;
     final engine.PropertyResolver resolver;
+    final interpolation = switch (channel.interpolation) {
+      AnimationInterpolation.step => engine.TimelineInterpolation.step,
+      AnimationInterpolation.cubic => engine.TimelineInterpolation.cubic,
+      _ => engine.TimelineInterpolation.linear,
+    };
     switch (channel.property) {
       case AnimationProperty.translation:
         property = engine.AnimationProperty.translation;
         resolver = engine.PropertyResolver.makeTranslationTimeline(
           times,
           _vec3List(values),
+          interpolation: interpolation,
         );
       case AnimationProperty.rotation:
         property = engine.AnimationProperty.rotation;
         resolver = engine.PropertyResolver.makeRotationTimeline(
           times,
           _quaternionList(values),
+          interpolation: interpolation,
         );
       case AnimationProperty.scale:
         property = engine.AnimationProperty.scale;
         resolver = engine.PropertyResolver.makeScaleTimeline(
           times,
           _vec3List(values),
+          interpolation: interpolation,
         );
       case AnimationProperty.weights:
         // The keyframes payload is the flattened glTF shape, one weight per
-        // target per keyframe. Trailing floats past a whole keyframe are
-        // dropped rather than trusted.
-        final targetCount = times.isEmpty ? 0 : values.length ~/ times.length;
+        // target per keyframe (three per target for cubic). Trailing floats
+        // past a whole keyframe are dropped rather than trusted.
+        final perKey =
+            times.length *
+            (channel.interpolation == AnimationInterpolation.cubic ? 3 : 1);
+        final targetCount = perKey == 0 ? 0 : values.length ~/ perKey;
         property = engine.AnimationProperty.weights;
         resolver = engine.PropertyResolver.makeMorphWeightsTimeline(
           times,
-          Float32List.sublistView(values, 0, times.length * targetCount),
+          Float32List.sublistView(
+            values,
+            0,
+            times.length *
+                targetCount *
+                (channel.interpolation == AnimationInterpolation.cubic ? 3 : 1),
+          ),
           targetCount: targetCount,
+          interpolation: interpolation,
         );
     }
     channels.add(

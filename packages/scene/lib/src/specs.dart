@@ -1128,6 +1128,22 @@ enum AnimationProperty {
   weights,
 }
 
+/// How an animation channel produces values between its keyframes.
+enum AnimationInterpolation {
+  /// Straight lerp (rotation: slerp) between neighboring keyframes.
+  linear,
+
+  /// Hold the previous keyframe's value until the next one is reached.
+  step,
+
+  /// Cubic Hermite between neighboring keyframes, using per-keyframe
+  /// tangents. The keyframes payload then stores, per keyframe, three
+  /// vectors in glTF CUBICSPLINE order — `[inTangent, value, outTangent]`
+  /// (three times the usual per-key size). Tangents are in units of
+  /// value per second.
+  cubic,
+}
+
 /// One animation channel: a keyframe timeline driving one [property] of one
 /// target node.
 ///
@@ -1142,6 +1158,7 @@ class AnimationChannelSpec {
     required this.property,
     required this.timeline,
     required this.keyframes,
+    this.interpolation,
   });
 
   /// The node this channel animates (primary, id-based binding).
@@ -1158,6 +1175,11 @@ class AnimationChannelSpec {
 
   /// The binary chunk of keyframe values.
   final LocalId keyframes;
+
+  /// How this channel interpolates between keyframes. Null means linear
+  /// (the historical default, and what documents without this field load
+  /// as), which also keeps old files' encoded form byte-identical.
+  final AnimationInterpolation? interpolation;
 }
 
 /// A named animation: a set of channels driving target nodes.

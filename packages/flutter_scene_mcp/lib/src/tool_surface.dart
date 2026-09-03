@@ -12,6 +12,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart' hide NodeChange;
@@ -224,8 +225,50 @@ typedef DeviceLister = Future<Map<String, Object?>> Function({bool refresh});
 /// Selects the target device by id for the open project.
 typedef DeviceSelector = Future<void> Function(String id);
 
+/// Drives the host's animation preview transport (the Animation panel's
+/// playhead): loads an animation onto the playhead, seeks it, plays or
+/// pauses, and sets loop mode and speed. Returns the resulting transport
+/// state ({animation, playing, loop, speed, time, duration}). Null in a
+/// headless session.
+typedef AnimationPreviewControl =
+    Map<String, Object?> Function({
+      LocalId? animationId,
+      bool? playing,
+      bool? loop,
+      double? speed,
+      double? seek,
+      bool? stop,
+    });
+/// Reads the prefab-expanded (composed) view of the open scene, or null when
+/// the host has none (a headless session, or a scene with no prefab
+/// instances). Imported rigs' bones exist only in the composed view, so
+/// `get_armature` and `get_skin` read through it when it still contains the
+/// resolved node and fall back to the editing document otherwise.
+typedef ComposedDocumentReader = SceneDocument? Function();
+
+/// Highlights [bones] (prefab member names) of the prefab instance [instance]
+/// in the running editor's viewport, so the human sees exactly which bones
+/// the agent is targeting. An empty [bones] list clears the highlight for the
+/// instance. Returns the highlighted names after applying. Null in a
+/// headless session.
+typedef BoneHighlighter = List<String> Function(
+  LocalId instance,
+  List<String> bones,
+);
+
+/// Drives the host's animation preview transport (the Animation panel's
+
 /// Builds the tiered tool surface for [session] and dispatches tool calls.
 class EditorToolSurface {
+  /// The default cap on keyframes returned per channel by `get_animation`
+  /// and `get_keyframes`. The tool descriptions quote this as "200"; the
+  /// tests pin the behavior so the two cannot drift apart silently.
+  static const int _defaultMaxKeys = 200;
+
+  /// Tolerance for time-range bounds against float32-stored keyframe times
+  /// (mirrors the authoring commands' keyframe-time epsilon).
+  static const double _rangeEpsilon = 1e-4;
+
   /// Creates a surface over [session].
   ///
   /// When [screenshot] is supplied (by a running editor), a
@@ -275,6 +318,9 @@ class EditorToolSurface {
     this.renderGraphScan,
     this.listDebugModes,
     this.setDebugMode,
+    this.animationPreview,
+    this.composedDocument,
+    this.highlightBones,
   }) : _sessionProvider = sessionProvider;
 
   /// Convenience over a fixed [session] (headless use, tests).
@@ -388,6 +434,18 @@ class EditorToolSurface {
   /// Selects a viewport debug output.
   final DebugModeSet? setDebugMode;
 
+  /// Drives the animation preview playhead; null in a headless session
+  /// (there is no Animation panel to drive).
+  final AnimationPreviewControl? animationPreview;
+
+  /// Reads the composed (prefab-expanded) scene; null in a headless session.
+  /// See [ComposedDocumentReader] for why armature tools prefer it.
+  final ComposedDocumentReader? composedDocument;
+
+  /// Draws/clears the viewport's bone-highlight overlay; null in a headless
+  /// session (there is no viewport to draw on).
+  final BoneHighlighter? highlightBones;
+
   SceneQuery get _query => session.query;
 
   /// The curated tools an agent is offered up front. The full command set is
@@ -416,6 +474,84 @@ class EditorToolSurface {
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     if (readCamera != null) ..._cameraTools,
+    if (animationPreview != null)
+      const ToolDefinition(
+        name: 'control_animation_preview',
+        description:
+            'Drive the editor\'s animation preview playhead (the Animation '
+            'panel): load an animation onto it, seek to a time to inspect '
+            'the posed frame, play or pause, and set looping and speed. Any '
+            'subset of the fields may be given; omitted fields keep their '
+            'current values. Returns the transport state. Pair with '
+            'screenshot_viewport to see the posed frame.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'ref': {
+              'type': 'string',
+              'description':
+                  'Load this animation (id token or exact name) onto the '
+                  'playhead, resetting its time.',
+            },
+            'seek': {
+              'type': 'number',
+              'description': 'Move the playhead to this time in seconds.',
+            },
+            'stop': {
+              'type': 'boolean',
+              'description':
+                  'Stop playback: pause, reset the playhead to 0, and '
+                  'restore every previewed node to its document transform.',
+            },
+            'playing': {
+              'type': 'boolean',
+              'description': 'Start playback (true) or pause it (false).',
+            },
+            'loop': {
+              'type': 'boolean',
+              'description':
+                  'Whether playback wraps at the clip\'s end (default on).',
+            },
+            'speed': {
+              'type': 'number',
+              'description': 'Playback speed multiplier.',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+    if (highlightBones != null)
+      const ToolDefinition(
+        name: 'highlight_bones',
+        description:
+            'Highlight bones of a rig (a linked model instance) in the '
+            'editor viewport so the human can see exactly which bones you '
+            'are about to animate. Bones are addressed by member name, the '
+            'same names targetName takes on the animation key commands. '
+            'Call again with a different list to change the highlight, or '
+            'with an empty bones list to clear it. Unknown bone names are '
+            'rejected with the rig\'s bone list so you can self-correct. '
+            'Returns the highlighted names.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'ref': {
+              'type': 'string',
+              'description':
+                  'The rig: a linked model instance (slash path or id token).',
+            },
+            'bones': {
+              'type': 'array',
+              'items': {'type': 'string'},
+              'description':
+                  'Bone member names to highlight (e.g. ["Bone_012"]). '
+                  'Empty or omitted clears the highlight.',
+            },
+          },
+          'required': ['ref'],
+          'additionalProperties': false,
+        },
+      ),
     if (newDocument != null)
       const ToolDefinition(
         name: 'new_document',
@@ -870,7 +1006,8 @@ class EditorToolSurface {
       name: 'describe_scene',
       description:
           'Return the scene-graph tree (node ids, slash paths, names, '
-          'component types) for an overview of the whole scene.',
+          'component types) plus an animation summary for an overview of '
+          'the whole scene.',
       inputSchema: {'type': 'object', 'properties': {}},
     ),
     ToolDefinition(
@@ -887,6 +1024,139 @@ class EditorToolSurface {
           },
         },
         'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'get_armature',
+      description:
+          'Return the armature view for one node: every skin bound in its '
+          'subtree, and the full bone hierarchy (each bone\'s member name — '
+          'the string targetName takes on the animation key commands — id '
+          'token, slash path, parent, children, and whether animation '
+          'channels already target it). For a linked model instance this '
+          'reads the prefab-expanded view, so imported rigs are fully '
+          'visible. Start here before authoring skeletal animation.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description':
+                'A rig instance, a skinned mesh, or any node in their '
+                'subtree (slash path or id token).',
+          },
+        },
+        'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'get_skin',
+      description:
+          "Return full detail for one skin: its joints in skinning order "
+          '(the order the inverse-bind matrices are indexed by), each '
+          "joint's transform, parent, and slash path, the skeleton root, "
+          'and every mesh bound to the skin. Complements get_armature, '
+          'which shows the whole hierarchy compactly.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description':
+                'A node bound to the skin, or a rig instance (slash path '
+                'or id token).',
+          },
+          'skin': {
+            'type': 'string',
+            'description':
+                'A skin id token; only needed when the subtree binds more '
+                'than one skin.',
+          },
+        },
+        'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'list_animations',
+      description:
+          'List every animation in the document with its id token, name, '
+          'duration, and the target nodes and properties its channels drive.',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    ToolDefinition(
+      name: 'get_animation',
+      description:
+          "Return full detail for one animation: each channel's target node, "
+          'property, and decoded keyframes (a time plus a value per entry; '
+          'rotation values are quaternions with an eulerDeg '
+          '{yaw, pitch, roll} degrees readout alongside, weights are flat '
+          'lists). At most '
+          'maxKeys keyframes per channel are returned (default 200); use '
+          'totalKeys and keysTruncated to spot larger channels and page '
+          'through them with get_keyframes. Author and edit animations '
+          'through the createAnimation / setAnimationKeyframe / '
+          'moveAnimationKeyframe / removeAnimationKeyframe commands via '
+          'run_command.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description': 'An animation id token or exact name.',
+          },
+          'maxKeys': {
+            'type': 'integer',
+            'description':
+                'Cap on keyframes returned per channel (default 200). '
+                'Larger channels report keysTruncated.',
+          },
+        },
+        'required': ['ref'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'get_keyframes',
+      description:
+          "Page through one animation channel's decoded keyframes by time "
+          'range — the safe way to read large imported clips without '
+          'flooding context. Returns entries with fromTime <= time <= '
+          'toTime, capped at maxKeys, plus totalKeys in range and '
+          'keysTruncated so you know to page further.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'ref': {
+            'type': 'string',
+            'description': 'An animation id token or exact name.',
+          },
+          'node': {
+            'type': 'string',
+            'description':
+                "The channel's target node (slash path or id "
+                'token).',
+          },
+          'property': {
+            'type': 'string',
+            'description': 'translation, rotation, scale, or weights.',
+          },
+          'fromTime': {
+            'type': 'number',
+            'description': 'Inclusive lower time bound in seconds.',
+          },
+          'toTime': {
+            'type': 'number',
+            'description': 'Inclusive upper time bound in seconds.',
+          },
+          'maxKeys': {
+            'type': 'integer',
+            'description': 'Cap on keyframes returned (default 200).',
+          },
+        },
+        'required': ['ref', 'node', 'property'],
         'additionalProperties': false,
       },
     ),
@@ -976,9 +1246,40 @@ class EditorToolSurface {
       case 'describe_scene':
         return {
           'roots': [for (final n in _query.roots) _nodeTree(n)],
+          'animations': [
+            for (final a in session.document.animations.values)
+              _animationSummary(a),
+          ],
         };
       case 'get_node':
         return _nodeDetail(_resolve(_requireRef(args)));
+      case 'get_armature':
+        return _armatureResult(_resolve(_requireRef(args)));
+      case 'get_skin':
+        return _skinResult(_resolve(_requireRef(args)), args);
+      case 'highlight_bones':
+        return _highlightBonesResult(args);
+      case 'list_animations':
+        return {
+          'animations': [
+            for (final a in session.document.animations.values)
+              _animationSummary(a),
+          ],
+        };
+      case 'get_animation':
+        return _animationDetail(
+          _resolveAnimation(_requireAnimationRef(args)),
+          maxKeys: switch (args['maxKeys']) {
+            null => null,
+            final int keys when keys >= 1 => keys,
+            final int _ => throw const ToolError(
+              '"maxKeys" must be at least 1',
+            ),
+            _ => throw const ToolError('"maxKeys" must be an integer'),
+          },
+        );
+      case 'get_keyframes':
+        return _keyframeWindow(args);
       case 'get_selection':
         return _selectionResult();
       case 'select_node':
@@ -987,6 +1288,39 @@ class EditorToolSurface {
       case 'clear_selection':
         session.selection.clear();
         return _selectionResult();
+      case 'control_animation_preview':
+        final control = animationPreview;
+        if (control == null) {
+          throw const ToolError('No animation preview control in this session');
+        }
+        bool? boolOf(Object? value, String name) => switch (value) {
+          null => null,
+          final bool flag => flag,
+          _ => throw ToolError('"$name" must be a boolean'),
+        };
+        double? timeOf(Object? value, String name) => switch (value) {
+          null => null,
+          final num seconds => seconds.toDouble(),
+          _ => throw ToolError('"$name" must be a number'),
+        };
+        final ref = args['ref'];
+        if (ref != null) {
+          if (ref is! String || ref.isEmpty) {
+            throw const ToolError(
+              '"ref" must be a non-empty animation id token or exact name',
+            );
+          }
+        }
+        return control(
+          animationId: ref == null
+              ? null
+              : _resolveAnimation(_requireAnimationRef(args)).id,
+          playing: boolOf(args['playing'], 'playing'),
+          loop: boolOf(args['loop'], 'loop'),
+          speed: timeOf(args['speed'], 'speed'),
+          seek: timeOf(args['seek'], 'seek'),
+          stop: boolOf(args['stop'], 'stop'),
+        );
       case 'new_document':
         final creator = newDocument;
         if (creator == null) {
@@ -1538,6 +1872,269 @@ class EditorToolSurface {
     'selected': [for (final id in session.selection.ids) id.toToken()],
   };
 
+  // --- armature perception --------------------------------------------------
+
+  /// The document, query, and resolved node armature tools read. Prefers the
+  /// host's composed (prefab-expanded) view when it still contains [node]'s
+  /// id — imported rigs' bones exist only there — and falls back to the
+  /// editing document (which carries natively-authored skins).
+  (SceneDocument, SceneQuery, NodeSpec) _armatureView(NodeSpec node) {
+    final composed = composedDocument?.call();
+    if (composed != null && composed.nodes.containsKey(node.id)) {
+      return (composed, SceneQuery(composed), composed.nodes[node.id]!);
+    }
+    return (session.document, _query, node);
+  }
+
+  /// Whether an animation channel drives this bone. Two channel shapes
+  /// count: a plain channel targets the bone node itself (native skins), and
+  /// a member channel targets the rig root with the bone's member name in
+  /// [targetName] (imported rigs, in both the host and composed views).
+  bool _boneIsAnimated(
+    SceneDocument doc, {
+    required LocalId rigId,
+    required LocalId boneId,
+    required String? memberName,
+  }) {
+    for (final animation in doc.animations.values) {
+      for (final channel in animation.channels) {
+        // A plain channel targets the bone node itself (targetName is only
+        // a fallback binding the commands keep in sync).
+        if (channel.target == boneId) return true;
+        // A member channel targets the rig root and names the bone.
+        if (channel.target == rigId && channel.targetName == memberName) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// One bone row shared by `get_armature` and `get_skin`.
+  Map<String, Object?> _boneEntry(
+    SceneDocument doc,
+    SceneQuery query, {
+    required NodeSpec bone,
+    required NodeSpec? parent,
+    required LocalId rigId,
+    bool withTransform = false,
+  }) => {
+    'name': bone.name,
+    'id': bone.id.toToken(),
+    'path': query.namePathOf(bone.id),
+    if (parent != null) 'parent': parent.name,
+    'animated': _boneIsAnimated(
+      doc,
+      rigId: rigId,
+      boneId: bone.id,
+      memberName: bone.name,
+    ),
+    if (withTransform) 'transform': _transformJson(bone.transform),
+  };
+
+  /// The compact per-skin shape carried by `get_armature`.
+  Map<String, Object?> _skinSummary(
+    SceneDocument doc,
+    LocalId skinId,
+  ) {
+    final skin = doc.skin(skinId);
+    final skeleton = skin?.skeleton;
+    return {
+      'id': skinId.toToken(),
+      'jointCount': skin?.joints.length ?? 0,
+      if (skeleton != null)
+        'skeleton': {
+          'id': skeleton.toToken(),
+          'name': doc.node(skeleton)?.name,
+        },
+    };
+  }
+
+  /// The armature result: skins bound in the node's subtree plus the union
+  /// joint hierarchy, as a compact parent/child map an agent can walk.
+  Map<String, Object?> _armatureResult(NodeSpec hostNode) {
+    final (doc, query, node) = _armatureView(hostNode);
+
+    final skinIds = <LocalId>[];
+    for (final id in query.subtreeOf(node.id)) {
+      final spec = doc.node(id);
+      final skin = spec?.skin;
+      if (skin != null && !skinIds.contains(skin)) skinIds.add(skin);
+    }
+
+    final rigId = node.id;
+    // Union of every skin's joint nodes, in first-seen skin order.
+    final jointIds = <LocalId>[];
+    for (final skinId in skinIds) {
+      for (final joint in doc.skin(skinId)?.joints ?? const <LocalId>[]) {
+        if (!jointIds.contains(joint)) jointIds.add(joint);
+      }
+    }
+
+    final bones = <Map<String, Object?>>[];
+    for (final jointId in jointIds) {
+      final bone = doc.node(jointId);
+      if (bone == null) continue; // a skin referencing a missing joint
+      final parentId = query.parentOf(jointId);
+      bones.add(
+        _boneEntry(
+          doc,
+          query,
+          bone: bone,
+          parent: parentId == null ? null : doc.node(parentId),
+          rigId: rigId,
+        ),
+      );
+    }
+
+    return {
+      'node': {
+        'id': hostNode.id.toToken(),
+        'name': hostNode.name,
+        'path': _query.namePathOf(hostNode.id),
+      },
+      // Which view the bones came from: composed means prefab-expanded
+      // (imported rig); document means natively-authored skin.
+      'view': identical(doc, session.document) ? 'document' : 'composed',
+      'skins': [for (final skinId in skinIds) _skinSummary(doc, skinId)],
+      'bones': bones,
+    };
+  }
+
+  /// Parses an id token, or null when [token] is not one (a name or path).
+  LocalId? _tryParseId(String token) {
+    try {
+      return LocalId.parse(token);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// The `get_skin` result: skinning-order joints with transforms, the
+  /// skeleton root, and every mesh bound to the skin.
+  Map<String, Object?> _skinResult(
+    NodeSpec hostNode,
+    Map<String, Object?> args,
+  ) {
+    final (doc, query, node) = _armatureView(hostNode);
+
+    final skinIdsInSubtree = <LocalId>[];
+    for (final id in query.subtreeOf(node.id)) {
+      final spec = doc.node(id);
+      final skin = spec?.skin;
+      if (skin != null && !skinIdsInSubtree.contains(skin)) {
+        skinIdsInSubtree.add(skin);
+      }
+    }
+    if (skinIdsInSubtree.isEmpty) {
+      final label = hostNode.name.isEmpty
+          ? hostNode.id.toToken()
+          : hostNode.name;
+      throw ToolError('No skin is bound in the subtree of $label');
+    }
+
+    final requested = args['skin'];
+    final LocalId skinId;
+    if (requested is String && requested.isNotEmpty) {
+      final parsed = _tryParseId(requested);
+      if (parsed == null || !skinIdsInSubtree.contains(parsed)) {
+        throw ToolError(
+          'No skin "$requested" is bound in this subtree; bound skins: '
+          '[${skinIdsInSubtree.map((s) => s.toToken()).join(', ')}]',
+        );
+      }
+      skinId = parsed;
+    } else if (skinIdsInSubtree.length > 1) {
+      throw ToolError(
+        'This subtree binds ${skinIdsInSubtree.length} skins; pass a "skin" '
+        'id token: [${skinIdsInSubtree.map((s) => s.toToken()).join(', ')}]',
+      );
+    } else {
+      skinId = skinIdsInSubtree.first;
+    }
+
+    final skin = doc.skin(skinId);
+    final rigId = node.id;
+    final joints = [...(skin?.joints ?? const <LocalId>[])];
+
+    return {
+      'id': skinId.toToken(),
+      // Joint order is the order the skin's inverse-bind matrices are
+      // indexed by — the skinning contract, not just a list.
+      'jointOrder': [for (final j in joints) j.toToken()],
+      'jointCount': joints.length,
+      if (skin?.skeleton case final skeleton?)
+        'skeleton': {
+          'id': skeleton.toToken(),
+          'name': doc.node(skeleton)?.name,
+          'path': query.namePathOf(skeleton),
+        },
+      'joints': [
+        for (final (index, jointId) in joints.indexed)
+          if (doc.node(jointId) case final bone?)
+            () {
+              final parentId = query.parentOf(bone.id);
+              return {
+                ..._boneEntry(
+                  doc,
+                  query,
+                  bone: bone,
+                  parent: parentId == null ? null : doc.node(parentId),
+                  rigId: rigId,
+                  withTransform: true,
+                ),
+                'jointIndex': index,
+              };
+            }(),
+      ],
+      // Every node bound to this skin (the meshes it deforms).
+      'boundMeshes': [
+        for (final entry in doc.nodes.entries)
+          if (entry.value.skin == skinId)
+            {
+              'id': entry.key.toToken(),
+              'name': entry.value.name,
+              'path': query.namePathOf(entry.key),
+            },
+      ],
+    };
+  }
+
+  /// The `highlight_bones` result: validates the request against the rig,
+  /// applies the highlight through the host, and echoes the names.
+  Map<String, Object?> _highlightBonesResult(Map<String, Object?> args) {
+    final highlight = highlightBones;
+    if (highlight == null) {
+      throw const ToolError('No bone highlight control in this session');
+    }
+    final node = _resolve(_requireRef(args));
+    final names = [
+      for (final bone in args['bones'] as List? ?? const [])
+        if (bone is String && bone.isNotEmpty) bone,
+    ];
+    // Validate against the rig before touching the host, so a typo comes
+    // back as a self-correctable ToolError naming the rig's bones.
+    if (names.isNotEmpty) {
+      final (_, query, _) = _armatureView(node);
+      final boneNames = {
+        for (final id in query.subtreeOf(node.id))
+          if (query.node(id)?.name case final name?) name,
+      };
+      final unknown = [
+        for (final name in names)
+          if (!boneNames.contains(name)) name,
+      ];
+      if (unknown.isNotEmpty) {
+        final label = node.name.isEmpty ? node.id.toToken() : node.name;
+        final sorted = boneNames.toList()..sort();
+        throw ToolError(
+          'No bone(s) $unknown on $label. Bones: $sorted',
+        );
+      }
+    }
+    return {'node': node.id.toToken(), 'highlighted': highlight(node.id, names)};
+  }
+
   Map<String, Object?> _nodeTree(NodeSpec node) => {
     'id': node.id.toToken(),
     'path': _query.namePathOf(node.id),
@@ -1609,6 +2206,16 @@ class EditorToolSurface {
     return ref;
   }
 
+  String _requireAnimationRef(Map<String, Object?> args) {
+    final ref = args['ref'];
+    if (ref is! String || ref.isEmpty) {
+      throw const ToolError(
+        'An animation "ref" (exact name or id token) is required',
+      );
+    }
+    return ref;
+  }
+
   /// Resolves a node reference, preferring a slash name path, then an id token.
   NodeSpec _resolve(String ref) {
     final byPath = _query.nodeByNamePath(ref.split('/'));
@@ -1620,6 +2227,265 @@ class EditorToolSurface {
       // Not an id token; fall through to the not-found error.
     }
     throw ToolError('No node matches: $ref');
+  }
+
+  /// Resolves an animation reference, preferring an id token, then an exact
+  /// name (an ambiguous name is rejected so agents fall back to the token).
+  AnimationSpec _resolveAnimation(String ref) {
+    try {
+      final animation = session.document.animation(LocalId.parse(ref));
+      if (animation != null) return animation;
+    } on FormatException {
+      // Not an id token; fall through to a name lookup.
+    }
+    final matches = [
+      for (final animation in session.document.animations.values)
+        if (animation.name == ref) animation,
+    ];
+    if (matches.length == 1) return matches.single;
+    throw ToolError(
+      matches.isEmpty
+          ? 'No animation matches: $ref'
+          : 'Animation name is ambiguous; use its id token: $ref',
+    );
+  }
+
+  /// The last keyframe time across every channel of [animation].
+  double _animationDuration(AnimationSpec animation) {
+    var duration = 0.0;
+    for (final channel in animation.channels) {
+      for (final time in _channelTimes(channel)) {
+        if (time > duration) duration = time;
+      }
+    }
+    return duration;
+  }
+
+  /// The compact per-animation shape carried by `list_animations` and
+  /// `describe_scene`: enough to pick an animation and see what it drives,
+  /// without decoding every keyframe.
+  Map<String, Object?> _animationSummary(AnimationSpec animation) => {
+    'id': animation.id.toToken(),
+    'name': animation.name,
+    'duration': _animationDuration(animation),
+    'channels': [
+      for (final channel in animation.channels)
+        {'target': _channelTarget(channel), 'property': channel.property.name},
+    ],
+  };
+
+  /// Full detail for one animation, with each channel's keyframes decoded
+  /// out of its float32 timeline/keyframes payloads.
+  /// Full detail for one animation, with each channel's keyframes decoded,
+  /// capped at [maxKeys] entries per channel.
+  Map<String, Object?> _animationDetail(
+    AnimationSpec animation, {
+    int? maxKeys,
+  }) => {
+    'id': animation.id.toToken(),
+    'name': animation.name,
+    'duration': _animationDuration(animation),
+    'channels': [
+      for (final channel in animation.channels)
+        _channelWindow(channel, null, null, maxKeys ?? _defaultMaxKeys),
+    ],
+  };
+
+  /// A channel's target node, addressed the same way nodes are everywhere
+  /// else on this surface (slash path first, id token as the stable form).
+  Map<String, Object?> _channelTarget(AnimationChannelSpec channel) => {
+    'id': channel.target.toToken(),
+    if (_query.namePathOf(channel.target) case final path?) 'path': path,
+    // Prefab-member channels carry the member's name (e.g. a bone).
+    if (channel.targetName != null) 'member': channel.targetName,
+  };
+
+  /// One channel's decoded keyframes within an optional inclusive time
+  /// range, capped at [maxKeys] entries. `totalKeys` counts every keyframe
+  /// in range and `keysTruncated` says when the cap bit, so callers know to
+  /// page with get_keyframes instead of flooding context. Rotation carries
+  /// a quaternion per keyframe, translation and scale a vec3, and weights
+  /// the flattened glTF shape (one weight per morph target per keyframe).
+  Map<String, Object?> _channelWindow(
+    AnimationChannelSpec channel,
+    double? fromTime,
+    double? toTime,
+    int maxKeys,
+  ) {
+    final times = _channelTimes(channel);
+    final valueBytes = session.document.payload(channel.keyframes)?.bytes;
+    final floats = valueBytes == null ? Float32List(0) : _floatsOf(valueBytes);
+    final cubic = channel.interpolation == AnimationInterpolation.cubic;
+    // Row width per keyframe: transform channels carry one vector (three
+    // for cubic, [inTangent, value, outTangent]); weights channels carry
+    // one weight vector per morph target.
+    final isRotation = channel.property == AnimationProperty.rotation;
+    final isWeights = channel.property == AnimationProperty.weights;
+    final componentStride = isRotation ? 4 : 3;
+    final rowWidth = isWeights
+        ? (times.isEmpty ? 0 : floats.length ~/ times.length)
+        : componentStride * (cubic ? 3 : 1);
+    final valuesPerKey = isWeights && cubic ? rowWidth ~/ 3 : rowWidth;
+    // The float offset of keyframe [index]'s value slot: cubic rows carry
+    // [inTangent, value, outTangent], so the value sits one component
+    // stride into the row.
+    int baseOf(int index) =>
+        cubic ? index * rowWidth + componentStride : index * rowWidth;
+    Object? valueAt(int index) {
+      final base = baseOf(index);
+      return switch (channel.property) {
+        AnimationProperty.rotation =>
+          floats.length >= base + 4
+              ? {
+                  'x': floats[base],
+                  'y': floats[base + 1],
+                  'z': floats[base + 2],
+                  'w': floats[base + 3],
+                }
+              : null,
+        AnimationProperty.weights => [
+          for (var j = 0; j < valuesPerKey && base + j < floats.length; j++)
+            floats[base + j],
+        ],
+        _ =>
+          floats.length >= base + 3
+              ? {
+                  'x': floats[base],
+                  'y': floats[base + 1],
+                  'z': floats[base + 2],
+                }
+              : null,
+      };
+    }
+
+    final inRange = <int>[
+      // Times live in float32 payloads while callers pass decimal doubles,
+      // so the bounds get a small tolerance (matching the authoring
+      // commands' keyframe-time epsilon) instead of exact comparison.
+      for (var i = 0; i < times.length; i++)
+        if ((fromTime == null || times[i] >= fromTime - _rangeEpsilon) &&
+            (toTime == null || times[i] <= toTime + _rangeEpsilon))
+          i,
+    ];
+    final shown = inRange.length > maxKeys
+        ? inRange.sublist(0, maxKeys)
+        : inRange;
+    return {
+      'target': _channelTarget(channel),
+      'property': channel.property.name,
+      'interpolation': channel.interpolation?.name ?? 'linear',
+      'totalKeys': inRange.length,
+      'keysTruncated': shown.length < inRange.length,
+      'keyframes': [
+        for (final i in shown)
+          {
+            'time': times[i],
+            'value': valueAt(i),
+            if (cubic && !isWeights && floats.length >= baseOf(i)) ...{
+              'inTangent': [
+                for (var j = 0; j < componentStride; j++)
+                  floats[i * rowWidth + j],
+              ],
+              'outTangent': [
+                for (var j = 0; j < componentStride; j++)
+                  floats[i * rowWidth + componentStride * 2 + j],
+              ],
+            },
+            if (channel.property == AnimationProperty.rotation &&
+                floats.length >= baseOf(i) + 4)
+              'eulerDeg': _eulerDeg(
+                Quaternion(
+                  floats[baseOf(i)],
+                  floats[baseOf(i) + 1],
+                  floats[baseOf(i) + 2],
+                  floats[baseOf(i) + 3],
+                ),
+              ),
+          },
+      ],
+    };
+  }
+
+  /// A rotation quaternion as `{yaw, pitch, roll}` in degrees — the exact
+  /// inverse of the `rotationEuler` input the authoring commands accept
+  /// (extracted from the same rotation-matrix layout the engine composes,
+  /// `Matrix4.setFromTranslationRotation`).
+  Map<String, Object?> _eulerDeg(Quaternion q) {
+    final x2 = q.x * 2;
+    final y2 = q.y * 2;
+    final z2 = q.z * 2;
+    final m02 = q.x * z2 + q.w * y2;
+    final m12 = q.y * z2 - q.w * x2;
+    final m10 = q.x * y2 + q.w * z2;
+    final m11 = 1.0 - (q.x * x2 + q.z * z2);
+    final m22 = 1.0 - (q.x * x2 + q.y * y2);
+    const degrees = 180.0 / math.pi;
+    return {
+      'yaw': math.atan2(m02, m22) * degrees,
+      'pitch': -math.asin(m12.clamp(-1.0, 1.0)) * degrees,
+      'roll': math.atan2(m10, m11) * degrees,
+    };
+  }
+
+  /// The `get_keyframes` tool: one channel's keyframes over a time range.
+  Map<String, Object?> _keyframeWindow(Map<String, Object?> args) {
+    final animation = _resolveAnimation(_requireAnimationRef(args));
+    final nodeArg = args['node'];
+    if (nodeArg is! String || nodeArg.isEmpty) {
+      throw const ToolError('"node" must be a non-empty node ref');
+    }
+    final target = _resolve(_requireRef({'ref': nodeArg})).id;
+    final propertyArg = args['property'];
+    AnimationProperty? property;
+    for (final p in AnimationProperty.values) {
+      if (p.name == propertyArg) property = p;
+    }
+    if (property == null) {
+      throw ToolError(
+        '"property" must be one of translation, rotation, scale, weights; '
+        'got $propertyArg',
+      );
+    }
+    AnimationChannelSpec? channel;
+    for (final c in animation.channels) {
+      if (c.target == target && c.property == property) {
+        channel = c;
+      }
+    }
+    if (channel == null) {
+      throw ToolError('No $propertyArg channel on ${args['node']}');
+    }
+    double? bound(String key) => switch (args[key]) {
+      null => null,
+      final num seconds => seconds.toDouble(),
+      _ => throw ToolError('"$key" must be a number'),
+    };
+    final maxKeys = switch (args['maxKeys']) {
+      null => _defaultMaxKeys,
+      final int keys when keys >= 1 => keys,
+      final int _ => throw const ToolError('"maxKeys" must be at least 1'),
+      _ => throw const ToolError('"maxKeys" must be an integer'),
+    };
+    return _channelWindow(channel, bound('fromTime'), bound('toTime'), maxKeys);
+  }
+
+  /// A payload chunk's bytes as float32s (chunks can be unaligned views).
+  Float32List _floatsOf(Uint8List bytes) {
+    if (bytes.offsetInBytes % 4 == 0) {
+      return bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+    }
+    return Uint8List.fromList(
+      bytes,
+    ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
+  }
+
+  List<double> _channelTimes(AnimationChannelSpec channel) {
+    final bytes = session.document.payload(channel.timeline)?.bytes;
+    if (bytes == null) return const [];
+    return [for (final t in _floatsOf(bytes)) t];
   }
 
   Object? _transformJson(TransformSpec transform) => switch (transform) {

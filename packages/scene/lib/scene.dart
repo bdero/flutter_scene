@@ -11,6 +11,7 @@ export 'src/id.dart'
 export 'src/specs.dart'
     show
         AnimationChannelSpec,
+        AnimationInterpolation,
         AnimationProperty,
         AnimationSpec,
         AssetEnvironment,

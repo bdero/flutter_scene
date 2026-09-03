@@ -11,6 +11,9 @@ library;
 export 'src/mcp_server.dart' show EditorMcpServer, serveOverChannel;
 export 'src/tool_surface.dart'
     show
+        AnimationPreviewControl,
+        BoneHighlighter,
+        ComposedDocumentReader,
         EditorToolSurface,
         ScreenshotResult,
         ToolDefinition,

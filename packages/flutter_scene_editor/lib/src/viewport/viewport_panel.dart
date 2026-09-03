@@ -15,6 +15,7 @@ import '../controller/editor_controller.dart';
 import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
+import 'bone_highlight.dart';
 import 'debug_visualize.dart';
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
@@ -131,6 +132,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _ctrl.addListener(_onControllerChanged);
     // Repaint overlays while a drag in any viewport previews a transform.
     _ctrl.previewEpoch.addListener(_onControllerChanged);
+    _ctrl.highlightedBones.addListener(_onControllerChanged);
     _gizmoPrefs.addListener(_onControllerChanged);
     widget.cameraHandle?.attach(_camera, _bumpView);
   }
@@ -141,8 +143,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       oldWidget.controller.previewEpoch.removeListener(_onControllerChanged);
+      oldWidget.controller.highlightedBones.removeListener(
+        _onControllerChanged,
+      );
       _ctrl.addListener(_onControllerChanged);
       _ctrl.previewEpoch.addListener(_onControllerChanged);
+      _ctrl.highlightedBones.addListener(_onControllerChanged);
       _bumpView();
     }
     if (oldWidget.gizmoPreferences != widget.gizmoPreferences) {
@@ -163,6 +169,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     widget.cameraHandle?.detach(_camera);
     _ctrl.removeListener(_onControllerChanged);
     _ctrl.previewEpoch.removeListener(_onControllerChanged);
+    _ctrl.highlightedBones.removeListener(_onControllerChanged);
     _gizmoPrefs.removeListener(_onControllerChanged);
     _viewEpoch.dispose();
     _fps.dispose();
@@ -572,12 +579,23 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // Decomposes each drag target's final matrix and commits everything as one
   // undoable edit. Fields outside the drag's mode keep their current values.
   // Prefab-member nodes route through the override path individually.
+  //
+  // When an animation is being authored/previewed (an animation is loaded on
+  // the playhead), a viewport pose is ephemeral: it exists only on the live
+  // node so that Key can capture it, and it must never rewrite the authored
+  // rest pose in the document. Committing each posed node on release would
+  // permanently shift the model's origin whenever nodes are posed to author
+  // keys, corrupting the original pose outside the animation. While a preview
+  // animation is active the document commit is therefore skipped; the live
+  // pose already holds the drag result, and the preview's stop/restore
+  // returns the node to its untouched rest pose.
   void _commitTransformDrag(
     vm.Matrix4 Function(_TransformTarget) matrixFor, {
     bool translation = false,
     bool rotation = false,
     bool scale = false,
   }) {
+    final ephemeral = _ctrl.previewAnimationId != null;
     final batch = <LocalId, TrsTransform>{};
     for (final target in _dragTargets) {
       final local = matrixFor(target);
@@ -587,12 +605,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
       local.decompose(t, r, sc);
       final source = _ctrl.document.nodes[target.id];
       if (source == null) {
-        _ctrl.setNodeTransformRouted(
-          target.id,
-          translation: translation ? _vectorMap(t) : null,
-          rotation: rotation ? _quaternionMap(r) : null,
-          scale: scale ? _vectorMap(sc) : null,
-        );
+        if (!ephemeral) {
+          _ctrl.setNodeTransformRouted(
+            target.id,
+            translation: translation ? _vectorMap(t) : null,
+            rotation: rotation ? _quaternionMap(r) : null,
+            scale: scale ? _vectorMap(sc) : null,
+          );
+        }
         continue;
       }
       final current = source.transform;
@@ -602,8 +622,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
         rotation: rotation ? r : (trs?.rotation ?? target.startR),
         scale: scale ? sc : (trs?.scale ?? target.startS),
       );
+      // In ephemeral (animation-authoring) mode there is no document commit;
+      // instead leave the live node at the final posed matrix so Key captures
+      // it and the preview's stop/restore returns to the untouched rest pose.
+      if (ephemeral) {
+        _ctrl.previewLocalTransform(target.id, matrixFor(target));
+      }
     }
-    if (batch.isNotEmpty) unawaited(_ctrl.setNodeTransformsBatch(batch));
+    if (!ephemeral && batch.isNotEmpty) {
+      unawaited(_ctrl.setNodeTransformsBatch(batch));
+    }
   }
 
   void _setMode(GizmoMode mode) {
@@ -1096,6 +1124,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
                             size: size,
                           ),
                         ),
+                        IgnorePointer(
+                          child: CustomPaint(
+                            painter: BoneHighlightPainter(
+                              controller: _ctrl,
+                              camera: cam,
+                            ),
+                            size: size,
+                          ),
+                        ),
                         if (live != null)
                           IgnorePointer(
                             child: CustomPaint(
@@ -1241,6 +1278,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    _RestorePoseButton(controller: _ctrl),
+                    const SizedBox(height: 4),
                     _ViewportSettingsButton(
                       showFps: _showFps,
                       onToggleFps: (value) => setState(() => _showFps = value),
@@ -1538,6 +1577,38 @@ class _AxisGuidePainter extends CustomPainter {
       pivot != oldDelegate.pivot ||
       direction != oldDelegate.direction ||
       color != oldDelegate.color;
+}
+
+/// Original-pose restore: snaps animated (or selected) nodes back to their
+/// authored pose without unloading the animation or touching the playhead.
+class _RestorePoseButton extends StatelessWidget {
+  const _RestorePoseButton({required this.controller});
+
+  final EditorController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message:
+          'Original pose\n\n'
+          'Puts every node of the loaded animation back to its authored pose '
+          '(what the Outliner shows) — bones included — while keeping the '
+          'animation loaded on the playhead.\n\n'
+          'With no animation loaded it resets the selected nodes instead.',
+      child: InkWell(
+        onTap: controller.restoreOriginalPose,
+        child: Container(
+          width: 28,
+          height: 24,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: const Icon(Icons.restore, size: 15, color: Colors.white),
+        ),
+      ),
+    );
+  }
 }
 
 /// Component-gizmo visibility menu: the master toggle plus one checkbox per

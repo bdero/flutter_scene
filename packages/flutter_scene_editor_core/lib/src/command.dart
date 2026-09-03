@@ -35,6 +35,9 @@ enum ParamType {
   /// A rotation quaternion `{x, y, z, w}`.
   quaternion,
 
+  /// An Euler rotation `{yaw, pitch, roll}` in degrees.
+  euler,
+
   /// A linear RGBA color `{r, g, b, a}`.
   color,
 
@@ -55,6 +58,10 @@ enum ParamType {
 
   /// A list of prefab overrides (`{target, path, value}` objects).
   overrideList,
+
+  /// A list of free-form JSON objects (the entry shape is described in the
+  /// parameter's description).
+  objectList,
 }
 
 /// One declared parameter of a command.
@@ -227,6 +234,14 @@ Map<String, Object> _paramJsonSchema(ParamSpec param) {
         ),
         'description': param.description,
       };
+    case ParamType.euler:
+      return {
+        ...object(
+          {'yaw': number, 'pitch': number, 'roll': number},
+          ['yaw', 'pitch', 'roll'],
+        ),
+        'description': param.description,
+      };
     case ParamType.color:
       return {
         ...object(
@@ -274,6 +289,12 @@ Map<String, Object> _paramJsonSchema(ParamSpec param) {
           },
           ['target', 'path', 'value'],
         ),
+      };
+    case ParamType.objectList:
+      return {
+        'type': 'array',
+        'description': param.description,
+        'items': {'type': 'object', 'additionalProperties': true},
       };
   }
 }

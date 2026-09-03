@@ -1,0 +1,59 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "open app editor macos",
+			"command": "open apps/flutter_scene_editor_app/build/macos/Build/Products/Release/Flutter\\ Scene\\ Editor.app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "build app editor macos",
+			"command": "flutter build macos && open build/macos/Build/Products/Release/Flutter\\ Scene\\ Editor.app",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}/apps/flutter_scene_editor_app"
+			}
+		},
+        {
+            "label": "open fscene",
+            "type": "shell",
+            "command": "node main.js FSCENE",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "../../telegram_connector",
+            }
+        },
+        {
+            "label": "kill all agents",
+            "type": "shell",
+            "command": "pkill -f 'cline connect' 2>/dev/null; pkill -f 'node main.js' 2>/dev/null; echo 'All agents killed'",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}",
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "showReuseMessage": false
+            }
+        }
+	]
+}

@@ -24,6 +24,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart' show CachingAssetBundle;
 import 'package:flutter_scene/scene.dart';
 import 'package:scene/scene.dart' hide NodeChange;
@@ -43,9 +44,13 @@ import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
 import '../materials/fmat_library.dart';
+import 'animation_preview_intent.dart';
+import 'animation_sampling.dart';
+import 'animation_target_resolution.dart';
 
 /// Reflects an [EditorSession] into a live [Scene] and back.
-class EditorController extends ChangeNotifier {
+class EditorController extends ChangeNotifier
+    implements AnimationPreviewTarget {
   EditorController._(
     this.session,
     this.scene,
@@ -145,6 +150,27 @@ class EditorController extends ChangeNotifier {
   /// The child node ids of [id] in the display tree.
   List<LocalId> displayChildren(LocalId id) =>
       displayDocument.nodes[id]?.children ?? const [];
+
+  /// Applies the MCP `highlight_bones` request for [instance]: resolves
+  /// [bones] (prefab member names) against the composed rig and stores the
+  /// resulting bone ids on [highlightedBones]. Echoes [bones] back unchanged,
+  /// because the MCP surface validates them against this rig before calling —
+  /// the requested list is the single source of truth. An empty [bones] list
+  /// clears the highlight; an unknown name here is a no-op.
+  List<String> setBoneHighlight(LocalId instance, List<String> bones) {
+    final composed = _composed;
+    final resolved = <LocalId>{};
+    if (composed != null && bones.isNotEmpty) {
+      for (final id in SceneQuery(composed).subtreeOf(instance)) {
+        final name = composed.nodes[id]?.name;
+        if (name != null && bones.contains(name)) {
+          resolved.add(id);
+        }
+      }
+    }
+    highlightedBones.value = resolved;
+    return bones;
+  }
 
   /// The message of the most recent command failure, for the UI to surface.
   /// Set when [run] throws so a fire-and-forget edit (an inspector field, a
@@ -553,6 +579,42 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Runs [commands] in order as one user gesture.
+  ///
+  /// Each command still executes and commits through the session exactly as
+  /// in [run] — the document advances between commands, so a batch can be
+  /// built from reads of the pre-batch document, and undo granularity is
+  /// unchanged — but the live-scene reflection and the full-editor
+  /// `notifyListeners()` happen once for the whole batch instead of once per
+  /// command. Keying a whole rig or re-interpolating every channel of an
+  /// animation lands with one rebuild instead of dozens.
+  ///
+  /// A command whose name is unknown or params are invalid does not stop the
+  /// batch: the failure is recorded on [lastError] and the remaining commands
+  /// still run (matching the per-command `try`/`catch` this replaces), then
+  /// the first error is rethrown for the caller to surface.
+  Future<List<Transaction>> runAll(
+    List<(String name, Map<String, Object?> params)> commands,
+  ) async {
+    final committed = <Transaction>[];
+    Object? firstError;
+    for (final (name, params) in commands) {
+      try {
+        final transaction = session.run(name, params);
+        if (!transaction.isEmpty) {
+          await _reflect(transaction);
+          committed.add(transaction);
+        }
+      } catch (error) {
+        firstError ??= error;
+        lastError.value = '$name, $error';
+      }
+    }
+    if (committed.isNotEmpty) notifyListeners();
+    if (firstError != null) throw firstError;
+    return committed;
+  }
+
   /// Grafts an already-imported [source] document (from a `.glb` or `.gltf`)
   /// into the current scene as a new subtree under [parentId] (or the scene
   /// roots when null or missing), as one undoable edit. The imported root
@@ -596,6 +658,352 @@ class EditorController extends ChangeNotifier {
     await _realizeAll();
     notifyListeners();
   }
+
+  // --- animation preview ----------------------------------------------------
+  //
+  // The animation panel drives one document animation through a playhead.
+  // Poses are evaluated straight from the document's keyframe payloads and
+  // written onto the matching live nodes by stable id, so scrubbing and
+  // playback preview exactly what the saved document will drive at runtime
+  // without paying for a re-realization per edit. Stopping restores every
+  // touched node to its document transform.
+
+  /// The document animation the playhead drives.
+  LocalId? _previewAnimation;
+  double _previewTime = 0;
+  bool _previewPlaying = false;
+  bool _previewLoop = true;
+  double _previewSpeed = 1;
+  Ticker? _ticker;
+  Duration? _lastTick;
+
+  /// The transforms captured before the first pose application per node,
+  /// restored on [stopPreview] (and re-captured after).
+  final Map<LocalId, TransformSpec> _prePreviewTransforms = {};
+
+  /// Playhead movement, notified per tick so the timeline repaints without
+  /// rebuilding every listening panel (the controller's notifyListeners
+  /// rebuilds the whole editor).
+  final ValueNotifier<double> previewPlayhead = ValueNotifier(0);
+
+  /// The bones currently highlighted through the MCP `highlight_bones` tool,
+  /// as composed node ids ([liveNode] resolves these), so the viewport draws
+  /// the sticks the agent asked for.
+  final ValueNotifier<Set<LocalId>> highlightedBones = ValueNotifier(const {});
+
+  /// The animation currently loaded on the playhead.
+  @override
+  LocalId? get previewAnimationId => _previewAnimation;
+
+  /// Whether playback is running.
+  bool get previewPlaying => _previewPlaying;
+
+  /// Whether playback wraps at the clip's end.
+  bool get previewLoop => _previewLoop;
+
+  /// The playback speed multiplier.
+  double get previewSpeed => _previewSpeed;
+
+  /// The playhead position in seconds.
+  double get previewTime => _previewTime;
+
+  /// The clip duration of animation [id]: its last keyframe time.
+  ///
+  /// Runs on every playback tick (the seek clamp and the non-loop end check),
+  /// so the scan is cached on the animation spec's object identity. Animation
+  /// commands replace whole pool entries — a fresh [AnimationSpec] per edit,
+  /// never an in-place channel write — so an unchanged spec object cannot
+  /// carry stale keyframe times (the same guarantee the timeline's payload
+  /// decode cache relies on). An [Expando] keyed by spec keeps the cache
+  /// bounded and lets entries die with their animations.
+  final Expando<double> _durationCache = Expando<double>();
+
+  double previewDuration(LocalId id) {
+    final spec = document.animations[id];
+    if (spec == null) return 0;
+    final cached = _durationCache[spec];
+    if (cached != null) return cached;
+    var end = 0.0;
+    for (final channel in spec.channels) {
+      final times = _payloadFloats(channel.timeline);
+      if (times.isNotEmpty && times.last > end) end = times.last;
+    }
+    _durationCache[spec] = end;
+    return end;
+  }
+
+  /// Loads [id] onto the playhead (or unloads when null), resetting the
+  /// playhead and restoring any previewed pose.
+  @override
+  void selectPreviewAnimation(LocalId? id) {
+    _stopTicker();
+    _restorePreviewedNodes();
+    _previewAnimation = id;
+    _previewTime = 0;
+    previewPlayhead.value = 0;
+    notifyListeners();
+  }
+
+  /// Starts (or resumes) playback of the loaded animation.
+  @override
+  void playPreview() {
+    final id = _previewAnimation;
+    if (id == null || document.animations[id] == null) return;
+    // A paused-at-the-end clip restarts from the top.
+    final duration = previewDuration(id);
+    if (!_previewLoop && duration > 0 && _previewTime >= duration) {
+      _previewTime = 0;
+      previewPlayhead.value = 0;
+    }
+    _previewPlaying = true;
+    (_ticker ??= Ticker(_onTick)).start();
+    notifyListeners();
+  }
+
+  /// Pauses playback at the current playhead.
+  @override
+  void pausePreview() {
+    if (!_previewPlaying) return;
+    _stopTicker();
+    notifyListeners();
+  }
+
+  /// Toggles between playing and paused.
+  void togglePreviewPlay() => _previewPlaying ? pausePreview() : playPreview();
+
+  /// Pauses and restores every previewed node to its document transform.
+  @override
+  void stopPreview() {
+    _stopTicker();
+    _restorePreviewedNodes();
+    _previewTime = 0;
+    previewPlayhead.value = 0;
+    notifyListeners();
+  }
+
+  /// Restores the authored pose over the animated one in place: when a
+  /// preview is loaded, its targets (and any previewed prefab members, such
+  /// as bones) snap back to what the Outliner and Inspector show; with no
+  /// preview loaded, the selected nodes do. The animation stays loaded and
+  /// capture state survives, so playback and scrubbing keep working.
+  void restoreOriginalPose() {
+    final id = _previewAnimation;
+    if (id != null && document.animations[id] != null) {
+      _restorePreviewedNodes(keepCaptures: true);
+      notifyListeners();
+      return;
+    }
+    var touched = false;
+    for (final nodeId in selection.ids) {
+      final spec = document.nodes[nodeId]?.transform;
+      final live = _liveById[nodeId];
+      if (spec == null || live == null) continue;
+      applyTransformSpec(live, spec);
+      touched = true;
+    }
+    if (touched) notifyListeners();
+  }
+
+  /// Moves the playhead to [time] (wrapping or clamping per the loop mode)
+  /// and applies the pose there.
+  @override
+  void seekPreview(double time) {
+    final id = _previewAnimation;
+    if (id == null) return;
+    final spec = document.animations[id];
+    if (spec == null) return;
+    final duration = previewDuration(id);
+    var t = time;
+    if (duration > 0) {
+      if (_previewLoop) {
+        t %= duration;
+        if (t < 0) t += duration;
+      } else {
+        t = t.clamp(0.0, duration);
+      }
+    } else {
+      t = 0;
+    }
+    _previewTime = t;
+    previewPlayhead.value = t;
+    _applyPose(spec, t);
+  }
+
+  /// Sets whether playback wraps at the clip's end.
+  @override
+  void setPreviewLoop(bool loop) {
+    if (_previewLoop == loop) return;
+    _previewLoop = loop;
+    notifyListeners();
+  }
+
+  /// Sets the playback speed multiplier (clamped to a sane range).
+  @override
+  void setPreviewSpeed(double speed) {
+    final next = speed.clamp(0.05, 8.0);
+    if (_previewSpeed == next) return;
+    _previewSpeed = next;
+    notifyListeners();
+  }
+
+  void _stopTicker() {
+    _previewPlaying = false;
+    _ticker?.stop();
+    _lastTick = null;
+  }
+
+  void _onTick(Duration elapsed) {
+    final last = _lastTick;
+    _lastTick = elapsed;
+    if (last == null || !_previewPlaying) return;
+    final delta = (elapsed - last).inMicroseconds / 1e6;
+    seekPreview(_previewTime + delta * _previewSpeed);
+    // A non-looping clip pauses when it reaches its end.
+    if (!_previewPlaying) return;
+    if (!_previewLoop) {
+      final duration = _previewAnimation == null
+          ? 0.0
+          : previewDuration(_previewAnimation!);
+      if (duration > 0 && _previewTime >= duration) pausePreview();
+    }
+  }
+
+  void _restorePreviewedNodes({bool keepCaptures = false}) {
+    for (final entry in _prePreviewTransforms.entries) {
+      final live = _liveById[entry.key];
+      if (live == null) continue;
+      // Restore from the document, not from the moment-of-capture snapshot:
+      // the authored pose legitimately changes while a preview session runs
+      // (posing a node between keys), and the captured object would go
+      // stale. Stop must land on exactly what the Outliner shows — never a
+      // stale or last-animated pose.
+      applyTransformSpec(
+        live,
+        document.nodes[entry.key]?.transform ?? entry.value,
+      );
+    }
+    // Prefab members (bones inside imported instances) are restored from
+    // their captured live transforms; they have no document node to look up.
+    for (final entry in _prePreviewMemberTransforms.entries) {
+      applyTransformSpec(entry.key, entry.value);
+    }
+    if (!keepCaptures) {
+      _prePreviewTransforms.clear();
+      _prePreviewMemberTransforms.clear();
+    }
+  }
+
+  /// Live transforms of prefab-member nodes (bones), keyed by the live node
+  /// itself — they have no document spec to restore from.
+  final Map<Node, TransformSpec> _prePreviewMemberTransforms = {};
+
+  void _captureIfNeeded(LocalId nodeId) {
+    if (_prePreviewTransforms.containsKey(nodeId)) return;
+    final spec = document.nodes[nodeId]?.transform;
+    if (spec != null) _prePreviewTransforms[nodeId] = spec;
+  }
+
+  /// Evaluates [spec] at [t] and writes the result onto the live nodes each
+  /// channel targets. Nodes missing from the live graph (deleted, or inside
+  /// an unrealized prefab) are skipped; morph-weight channels are not
+  /// authored in the editor and are ignored here.
+  void _applyPose(AnimationSpec spec, double t) {
+    for (final channel in spec.channels) {
+      var live = _liveById[channel.target];
+      if (live == null || channel.property == AnimationProperty.weights) {
+        continue;
+      }
+      _captureIfNeeded(channel.target);
+      // Name-targeted channels drive a node inside the channel's target
+      // subtree (see [resolveChannelTarget], which mirrors the runtime bind
+      // resolver AnimationClip._bindToTarget). Being null means the target
+      // matched neither the live node itself nor a descendant, so the channel
+      // is skipped.
+      if (channel.targetName != null) {
+        final member = resolveChannelTarget(live, channel.targetName);
+        if (member == null) continue;
+        // Descendant members have no document node of their own to restore
+        // from; the self case was already captured above, keyed by node id.
+        if (!identical(member, live)) {
+          _prePreviewMemberTransforms.putIfAbsent(
+            member,
+            () => TrsTransform(
+              translation: member.position.clone(),
+              rotation: member.rotation.clone(),
+              scale: member.scale.clone(),
+            ),
+          );
+        }
+        live = member;
+      }
+      final times = _payloadFloats(channel.timeline);
+      final values = _payloadFloats(channel.keyframes);
+      final stride = channel.property == AnimationProperty.rotation ? 4 : 3;
+      final sampled = sampleAnimationChannel(
+        times,
+        values,
+        stride,
+        t,
+        interpolation: channel.interpolation,
+      );
+      if (sampled == null) continue;
+      switch (channel.property) {
+        case AnimationProperty.translation:
+          live.position = Vector3(sampled[0], sampled[1], sampled[2]);
+          break;
+        case AnimationProperty.rotation:
+          live.rotation = Quaternion(
+            sampled[0],
+            sampled[1],
+            sampled[2],
+            sampled[3],
+          ).normalized();
+          break;
+        case AnimationProperty.scale:
+          live.scale = Vector3(sampled[0], sampled[1], sampled[2]);
+          break;
+        case AnimationProperty.weights:
+          break;
+      }
+    }
+  }
+
+  /// A payload's bytes as float32s (native-endian, matching the emitter).
+  ///
+  /// The decode is cached on the payload's [ByteData] object itself. Payloads
+  /// are immutable snapshots, and edits install fresh `ByteData` objects
+  /// (core's animation commands rebuild payloads on every change and only ever
+  /// read old bytes), so a stale entry can never be served; unused entries are
+  /// garbage-collected with the payloads they belong to. Called per channel
+  /// twice on every playback tick ([_onTick] → `seekPreview` → [_applyPose],
+  /// plus the non-loop end check's `previewDuration`), so decoding it every
+  /// call would dominate the frame budget on wide rigs.
+  Float32List _payloadFloats(LocalId id) {
+    final bytes = document.payload(id)?.bytes;
+    if (bytes == null) return Float32List(0);
+    final cached = _payloadFloatCache[bytes];
+    if (cached != null) return cached;
+    final Float32List floats;
+    if (bytes.offsetInBytes % 4 == 0) {
+      floats = bytes.buffer.asFloat32List(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes ~/ 4,
+      );
+    } else {
+      floats = Uint8List.fromList(
+        bytes,
+      ).buffer.asFloat32List(0, bytes.lengthInBytes ~/ 4);
+    }
+    _payloadFloatCache[bytes] = floats;
+    return floats;
+  }
+
+  /// Decode cache for [_payloadFloats], keyed on the payload `ByteData`
+  /// identity. An [Expando] (rather than a `Map`) keeps entries alive only as
+  /// long as their payload, so there is nothing to invalidate or leak. The
+  /// returned views/copies are shared between callers — treat them as
+  /// read-only.
+  final Expando<Float32List> _payloadFloatCache = Expando<Float32List>();
 
   /// Imports a glTF binary ([glbBytes]) into the current scene as a new
   /// subtree. See [importSceneIntoScene].
@@ -1462,6 +1870,28 @@ class EditorController extends ChangeNotifier {
       );
       return;
     }
+    // Animation authoring edits (and their keyframe payloads) ride entirely
+    // on [_applyPose], which reads the document directly, so they need no
+    // re-realization; just refresh a mid-scrub pose so edits show at once.
+    // (Imported animations land through importSceneIntoScene's own full
+    // realize, not here.)
+    if (transaction.records.every(
+      (r) =>
+          r.slot == ChangeSlot.poolAnimation ||
+          r.slot == ChangeSlot.poolPayload,
+    )) {
+      final id = _previewAnimation;
+      if (id != null) {
+        final spec = document.animations[id];
+        if (spec != null) {
+          _restorePreviewedNodes();
+          _applyPose(spec, _previewTime);
+        } else {
+          selectPreviewAnimation(null);
+        }
+      }
+      return;
+    }
     // Creating an unreferenced resource has no live-scene effect. Primitive
     // creation builds its geometry and material before attaching either to a
     // node, so realizing the entire existing scene here is pure waste. An fmat
@@ -2326,6 +2756,11 @@ class EditorController extends ChangeNotifier {
     _recordBuiltRadianceSizes();
     _liveById.clear();
     _sourceIdByLive.clear();
+    // Bone-highlight ids refer to the previous live scene; drop them on any
+    // full re-realize (new document, prefab/glTF import, material fallback,
+    // recompose) so a structural rebuild never leaves stray sticks pointing
+    // at nodes that no longer exist.
+    highlightedBones.value = const {};
     _index(root, null);
     // Re-apply selection highlights to the freshly realized live nodes.
     _syncHighlights();
@@ -2560,10 +2995,13 @@ class EditorController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _ticker?.stop();
     session.selection.removeListener(_onSelectionChanged);
     fmatLibrary.dispose();
     lastError.dispose();
     previewEpoch.dispose();
+    previewPlayhead.dispose();
+    highlightedBones.dispose();
     scene.removeAll();
     super.dispose();
   }
