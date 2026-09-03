@@ -168,6 +168,37 @@ void main() {
     expect(values[values.length - 1], closeTo(0.0, 1e-4));
   });
 
+  testWidgets('a fresh Key at the playhead starts a default 1s clip', (
+    tester,
+  ) async {
+    final (controller, animationId, nodeId) = await pumpEditablePanel(tester);
+    controller.selectPreviewAnimation(animationId);
+
+    // The default playhead sits at t=0 and the clip has nothing yet. Keying
+    // must capture the pose AND lay the default timeline: crystals at t=0
+    // and t=1s on every property — never a lone t=0 crystal and a zero-length
+    // clip.
+    await tester.tap(find.text('Key'));
+    await tester.pumpAndSettle();
+
+    final translation = channelOf(
+      controller,
+      animationId,
+      nodeId,
+      'translation',
+    )!;
+    expect(
+      channelTimes(controller.document, translation),
+      [0.0, 1.0],
+    );
+
+    // The same 1s span opens on rotation and scale.
+    for (final property in ['rotation', 'scale']) {
+      final channel = channelOf(controller, animationId, nodeId, property)!;
+      expect(channelTimes(controller.document, channel), [0.0, 1.0]);
+    }
+  });
+
   testWidgets('the lane ✕ removes the channel from the timeline', (
     tester,
   ) async {

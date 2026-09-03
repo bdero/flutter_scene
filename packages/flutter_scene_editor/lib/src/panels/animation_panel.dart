@@ -252,7 +252,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
 
   /// Adds the missing edge crystals: a key at t = 0 and at the clip's end
   /// for every selected node's translation, rotation, and scale path that
-  /// does not have one yet.
+  /// does not have one yet. A clip with no keyframes yet (a fresh Key at
+  /// the default playhead) defaults its end crystal to t = 1s, matching the
+  /// panel's default 1s timeline.
   ///
   /// Additive on purpose — an edge key the author placed deliberately keeps
   /// its pose. Keying mid-clip must never rewrite the timeline's endpoints,
@@ -280,8 +282,15 @@ class _AnimationPanelState extends State<AnimationPanel> {
       return null;
     }
 
-    final end = _controller.previewDuration(id);
-    final edges = {0.0, if (end > 1e-4) end};
+    // The clip's duration is its last keyframe's time — which, right after
+    // the playhead capture above, is the playhead itself. A fresh clip keyed
+    // at t=0 would therefore end at 0 and never receive an end crystal; the
+    // timeline panel already defaults a keyless clip to 1s, so a new key
+    // falls back to that 1s end to start AND end on a captured key. Clips
+    // that already carry an authored end keep it untouched.
+    var end = _controller.previewDuration(id);
+    if (end <= 1e-4) end = 1.0;
+    final edges = {0.0, end};
     final commands = <(String, Map<String, Object?>)>[];
     for (final nodeId in _keyTargetNodes()) {
       if (!_controller.document.nodes.containsKey(nodeId)) continue;

@@ -79,6 +79,10 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   /// key drag.
   bool _scrollPan = false;
 
+  /// Previous duration, used to adjust scroll position when the duration changes
+  /// (e.g., after deleting the last keyframe) so the timeline doesn't jump.
+  double? _previousDuration;
+
   EditorController get controller => widget.controller;
   AnimationSpec get animation => widget.animation;
 
@@ -177,6 +181,23 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
     );
     final pxPerSecond = viewport.pxPerSecond;
     final maxScroll = viewport.maxScroll;
+
+    // When the duration changes (e.g., after deleting the last keyframe),
+    // adjust the scroll position so the visible content stays anchored
+    // rather than jumping as the timeline rescales.
+    final currentDuration = widget.duration;
+    if (_previousDuration != null && _previousDuration != currentDuration) {
+      // Keep the center of the visible window anchored to the same time
+      // point, so existing keyframes stay under the cursor.
+      final visibleSeconds = laneWidth / pxPerSecond;
+      final centerTime = _scroll / pxPerSecond + visibleSeconds / 2;
+      final newScroll = (centerTime - visibleSeconds / 2)
+          .clamp(0.0, maxScroll)
+          .toDouble();
+      _scroll = newScroll;
+    }
+    _previousDuration = currentDuration;
+
     _scroll = viewport.scroll;
     final contentHeight =
         _rulerHeight + math.max(rows.length, 1) * _rowHeight + 4;
