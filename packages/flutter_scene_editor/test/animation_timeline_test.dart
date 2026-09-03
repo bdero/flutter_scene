@@ -60,15 +60,14 @@ Future<(EditorController, LocalId)> pumpTimeline(WidgetTester tester) async {
             controller: controller,
             animation: controller.document.animations[animationId]!,
             duration: controller.previewDuration(animationId),
-            selectedKey: null,
-            draggingKey: false,
-            dragFromTime: null,
+            selectedKeys: const {},
             onTapLane: (_) {},
             onScrub: (_) {},
             onSelectKey: (_) {},
-            onDragKeyStart: (_) {},
-            onDragKeyUpdate: (_) {},
-            onDragKeyEnd: () {},
+            onToggleKey: (_) {},
+            onClearSelection: () {},
+            onDragKeyStart: (_) => const {},
+            onDragKeyEnd: (_) {},
             onDoubleTapLane: (_, __) {},
           ),
         ),
@@ -334,5 +333,96 @@ void main() {
 
     final widened = _painterField(tester, 'pxPerSecond');
     expect(widened / zoomed, closeTo(772 / 472, 0.01));
+  });
+
+  /// Ctrl+clicks the diamond at [x] (timeline-local) to toggle it into the
+  /// multi-selection, as the timeline's ctrl/cmd+click gesture reads it.
+  Future<void> ctrlClickAt(WidgetTester tester, double x) async {
+    final timelineRect = tester.getRect(find.byType(AnimationTimeline));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.tapAt(timelineRect.topLeft + Offset(x, _laneRowCenterY()));
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+  }
+
+  testWidgets('ctrl+click selects multiple diamonds and a drag moves them all', (
+    tester,
+  ) async {
+    final (controller, animationId) = await pumpPanel(tester);
+    List<double> times() => channelTimes(
+      controller.document,
+      controller.document.animations[animationId]!.channels.single,
+    );
+    expect(times(), [0.0, 1.0]);
+
+    // Same fit-mode geometry as the single-key drag test above: the t = 0
+    // diamond sits at x = 120, the t = 1s one at x = 592.
+    await ctrlClickAt(tester, 120);
+    await ctrlClickAt(tester, 592);
+
+    // Drag the t = 0 diamond right by 236px ⇒ +0.5s; every selected key
+    // moves by the same offset, so 0 → 0.5 and 1 → 1.5.
+    final timelineRect = tester.getRect(find.byType(AnimationTimeline));
+    final start = timelineRect.topLeft + Offset(120, _laneRowCenterY());
+    final gesture = await tester.startGesture(
+      start,
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var i = 0; i < 59; i++) {
+      await gesture.moveBy(const Offset(4, 0));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final moved = times();
+    expect(moved.length, 2);
+    expect(moved, contains(closeTo(0.5, 0.04)));
+    expect(moved, contains(closeTo(1.5, 0.04)));
+  });
+
+  testWidgets('delete removes every selected key', (tester) async {
+    final (controller, animationId) = await pumpPanel(tester);
+    List<double> times() => channelTimes(
+      controller.document,
+      controller.document.animations[animationId]!.channels.single,
+    );
+    expect(times(), [0.0, 1.0]);
+
+    await ctrlClickAt(tester, 120);
+    await ctrlClickAt(tester, 592);
+
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+
+    // Both keys are gone; removing a channel's last keyframe removes the
+    // channel itself.
+    expect(controller.document.animations[animationId]!.channels, isEmpty);
+  });
+
+  testWidgets('a plain click replaces the multi-selection with one key', (
+    tester,
+  ) async {
+    final (controller, animationId) = await pumpPanel(tester);
+
+    await ctrlClickAt(tester, 120);
+    await ctrlClickAt(tester, 592);
+
+    // A plain click on the t = 0 diamond, then delete: only that key is in
+    // the selection now, so the t = 1 key survives.
+    final timelineRect = tester.getRect(find.byType(AnimationTimeline));
+    await tester.tapAt(timelineRect.topLeft + Offset(120, _laneRowCenterY()));
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pumpAndSettle();
+
+    // Only the t = 0 key was deleted; the t = 1 key and its channel survive.
+    final channels = controller.document.animations[animationId]!.channels;
+    expect(channels, hasLength(1));
+    expect(
+      channelTimes(controller.document, channels.single),
+      [closeTo(1.0, 1e-4)],
+    );
   });
 }

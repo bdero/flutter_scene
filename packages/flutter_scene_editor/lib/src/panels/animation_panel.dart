@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/gestures.dart'
     show
         PointerPanZoomEndEvent,
@@ -48,13 +49,13 @@ class AnimationPanel extends StatefulWidget {
 }
 
 class _AnimationPanelState extends State<AnimationPanel> {
-  // The keyframe the lane gestures target: its channel plus original time.
-  ({LocalId target, AnimationProperty property, double time})? _selectedKey;
+  // The keyframes the lane gestures target: each channel plus original time.
+  // A set so more than one crystal can be dragged or deleted together.
+  Set<TimelineKey> _selectedKeys = {};
 
-  // While a keyframe drag is in progress, the visual time offset from its
-  // original position; committed as one moveAnimationKeyframe on release.
-  double _dragOffset = 0;
-  bool _dragging = false;
+  // The most recently selected key — the anchor for channel controls (the
+  // interpolation pill) and the reference point a multi-key drag offsets from.
+  TimelineKey? _primaryKey;
 
   EditorController get _controller => widget.controller;
 
@@ -86,11 +87,16 @@ class _AnimationPanelState extends State<AnimationPanel> {
   void _onControllerChanged() {
     if (!mounted) return;
     // A selected keyframe whose channel or time vanished (an undo, a delete)
-    // drops back to no selection.
-    final selected = _selectedKey;
-    if (selected != null && !_keyExists(selected)) {
-      _selectedKey = null;
+    // drops out of the set.
+    if (_selectedKeys.isNotEmpty) {
+      final surviving = _selectedKeys.where(_keyExists).toSet();
+      _selectedKeys = surviving;
+      if (_primaryKey != null && !surviving.contains(_primaryKey)) {
+        _primaryKey = surviving.isEmpty ? null : surviving.last;
+      }
     }
+    // Refresh unconditionally: document edits with an empty selection (an
+    // added key, a renamed animation) must still reach the panel.
     setState(() {});
   }
 
@@ -376,48 +382,88 @@ class _AnimationPanelState extends State<AnimationPanel> {
 
   Future<void> _deleteSelectedKey() async {
     final id = _animationId;
-    final key = _selectedKey;
-    if (id == null || key == null) return;
+    final keys = Set<TimelineKey>.from(_selectedKeys);
+    if (id == null || keys.isEmpty) return;
+    setState(() {
+      _selectedKeys.clear();
+      _primaryKey = null;
+    });
     try {
-      await _controller.run('removeAnimationKeyframe', {
-        'animationId': id.toToken(),
-        'nodeId': key.target.toToken(),
-        'property': key.property.name,
-        'time': key.time,
-      });
-      setState(() => _selectedKey = null);
+      for (final key in keys) {
+        await _controller.run('removeAnimationKeyframe', {
+          'animationId': id.toToken(),
+          'nodeId': key.target.toToken(),
+          'property': key.property.name,
+          'time': key.time,
+        });
+      }
     } on Exception catch (error) {
       _showError(error);
     }
   }
 
-  Future<void> _moveSelectedKey(double toTime) async {
+  Future<void> _moveSelectedKeys(double offset) async {
     final id = _animationId;
-    final key = _selectedKey;
-    if (id == null || key == null) return;
+    final keys = Set<TimelineKey>.from(_selectedKeys);
+    if (id == null || keys.isEmpty) return;
+    if (offset.abs() <= 1e-4) return;
     // The clip's duration is its last keyframe time, so a key placed (or
     // dragged) past it is what extends the clip — only guard against absurd
     // values, not against the current end.
-    final clamped = toTime.clamp(0.0, _maxKeyTime).toDouble();
-    if ((clamped - key.time).abs() <= 1e-4) return;
     try {
-      await _controller.run('moveAnimationKeyframe', {
-        'animationId': id.toToken(),
-        'nodeId': key.target.toToken(),
-        'property': key.property.name,
-        'fromTime': key.time,
-        'toTime': clamped,
-      });
+      for (final key in keys) {
+        final clamped = (key.time + offset).clamp(0.0, _maxKeyTime).toDouble();
+        if ((clamped - key.time).abs() <= 1e-4) continue;
+        await _controller.run('moveAnimationKeyframe', {
+          'animationId': id.toToken(),
+          'nodeId': key.target.toToken(),
+          'property': key.property.name,
+          'fromTime': key.time,
+          'toTime': clamped,
+        });
+      }
+      // Selection cleared — the keys have moved to new times.
       setState(() {
-        _selectedKey = (
-          target: key.target,
-          property: key.property,
-          time: clamped,
-        );
+        _selectedKeys.clear();
+        _primaryKey = null;
       });
     } on Exception catch (error) {
       _showError(error);
     }
+  }
+
+  // -- selection -------------------------------------------------------------
+
+  /// A plain click on a key: select only this key, clearing the rest.
+  void _selectKey(TimelineKey key) {
+    setState(() {
+      _selectedKeys = {key};
+      _primaryKey = key;
+    });
+  }
+
+  /// A ctrl/cmd+click on a key: toggle it in/out of the selection.
+  void _toggleKey(TimelineKey key) {
+    setState(() {
+      if (_selectedKeys.contains(key)) {
+        _selectedKeys = Set<TimelineKey>.from(_selectedKeys)..remove(key);
+        // The toggled-off key was the primary — promote the last survivor.
+        if (_primaryKey == key) {
+          _primaryKey = _selectedKeys.isEmpty ? null : _selectedKeys.last;
+        }
+      } else {
+        _selectedKeys = Set<TimelineKey>.from(_selectedKeys)..add(key);
+        _primaryKey = key;
+      }
+    });
+  }
+
+  /// A click on empty lane space: clear the selection.
+  void _clearSelection() {
+    setState(() {
+      _selectedKeys.clear();
+      _primaryKey = null;
+    });
   }
 
   void _showError(Object error) {
@@ -450,9 +496,9 @@ class _AnimationPanelState extends State<AnimationPanel> {
             ),
             child: Text(
               'Drag to scrub · double-click a lane to add a key · drag a '
-              'diamond to retime · wheel scrolls (vertically when lanes '
-              'overflow) · ctrl/cmd+wheel or pinch zooms (zoom out to reach '
-              'past the clip\'s end)',
+              'diamond to retime · ctrl/cmd+click to multi-select · wheel '
+              'scrolls (vertically when lanes overflow) · ctrl/cmd+wheel or '
+              'pinch zooms (zoom out to reach past the clip\'s end)',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontSize: 10,
                 color: scheme.outline,
@@ -466,40 +512,38 @@ class _AnimationPanelState extends State<AnimationPanel> {
                   controller: _controller,
                   animation: animation,
                   duration: _duration,
-                  draggingKey: _dragging,
-                  dragFromTime: _dragging ? _selectedKey?.time : null,
-                  selectedKey: (_dragging && _selectedKey != null)
-                      ? (
-                          target: _selectedKey!.target,
-                          property: _selectedKey!.property,
-                          time: _selectedKey!.time + _dragOffset,
-                        )
-                      : _selectedKey,
+                  selectedKeys: _selectedKeys,
                   onTapLane: (time) {
-                    setState(() => _selectedKey = null);
+                    setState(() {
+                      _selectedKeys.clear();
+                      _primaryKey = null;
+                    });
                     _controller.seekPreview(time);
                   },
                   onScrub: _controller.seekPreview,
-                  onSelectKey: (key) => setState(() => _selectedKey = key),
-                  onDragKeyStart: (key) => setState(() {
-                    _selectedKey = key;
-                    _dragging = true;
-                    _dragOffset = 0;
-                  }),
-                  // onPanUpdate reports per-event deltas, so the offset is a
-                  // running sum of how far the pointer has travelled since the
-                  // pan began (not a positional snapshot).
-                  onDragKeyUpdate: (delta) =>
-                      setState(() => _dragOffset += delta),
-                  onDragKeyEnd: () {
-                    final key = _selectedKey;
-                    final offset = _dragOffset;
-                    setState(() {
-                      _dragging = false;
-                      _dragOffset = 0;
-                    });
-                    if (key != null && offset != 0) {
-                      unawaited(_moveSelectedKey(key.time + offset));
+                  onSelectKey: _selectKey,
+                  onToggleKey: _toggleKey,
+                  onClearSelection: _clearSelection,
+                  // The drag gesture lives inside the timeline (per-frame
+                  // updates rebuild only the timeline, not this panel); the
+                  // panel picks the drag set here and commits on release.
+                  onDragKeyStart: (key) {
+                    // Dragging a key outside the selection re-targets the
+                    // selection to just that key; dragging a selected key
+                    // keeps the whole set moving together.
+                    if (!_selectedKeys.contains(key)) {
+                      setState(() {
+                        _selectedKeys = {key};
+                        _primaryKey = key;
+                      });
+                      return {key};
+                    }
+                    _primaryKey = key;
+                    return Set<TimelineKey>.from(_selectedKeys);
+                  },
+                  onDragKeyEnd: (offset) {
+                    if (offset != 0) {
+                      unawaited(_moveSelectedKeys(offset));
                     }
                   },
                   onDoubleTapLane: (channel, time) => _addKeyAt(channel, time),
@@ -894,12 +938,14 @@ class _AnimationPanelState extends State<AnimationPanel> {
             ),
           ),
           const SizedBox(width: 8),
-          if (_selectedKey != null) ...[
+          if (_primaryKey != null) ...[
             Flexible(
               child: Text(
-                '${_nodeName(_selectedKey!.target)} · '
-                '${_selectedKey!.property.name} @ '
-                '${_selectedKey!.time.toStringAsFixed(2)}s',
+                _selectedKeys.length > 1
+                    ? '${_selectedKeys.length} keys selected'
+                    : '${_nodeName(_primaryKey!.target)} · '
+                      '${_primaryKey!.property.name} @ '
+                      '${_primaryKey!.time.toStringAsFixed(2)}s',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall,
@@ -936,7 +982,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
             ],
             _PanelTip(
               message:
-                  'Delete this keyframe.\n\n'
+                  'Delete the selected keyframe${_selectedKeys.length > 1 ? 's' : ''}.\n\n'
                   'The channel interpolates across the gap; removing the last '
                   'key of a channel removes the channel.',
               child: IconButton(
@@ -969,10 +1015,10 @@ class _AnimationPanelState extends State<AnimationPanel> {
     );
   }
 
-  /// The channel of the currently selected key, or null when nothing is
+  /// The channel of the primary (most recently selected) key, or null when nothing is
   /// selected or its channel no longer exists.
   AnimationChannelSpec? get _channelOfSelectedKey {
-    final key = _selectedKey;
+    final key = _primaryKey;
     final id = _animationId;
     if (key == null || id == null) return null;
     for (final channel in _controller.document.animations[id]!.channels) {
@@ -984,7 +1030,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
   }
 
   Future<void> _setChannelInterpolation(String mode) async {
-    final key = _selectedKey;
+    final key = _primaryKey;
     if (key == null) return;
     await _controller.run('setChannelInterpolation', {
       'animationId': _animationId?.toToken(),

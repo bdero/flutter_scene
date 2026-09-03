@@ -8,8 +8,8 @@ class _TimelinePainter extends CustomPainter {
     required this.rows,
     required this.duration,
     required this.playhead,
-    required this.selectedKey,
-    required this.dragFromTime,
+    required this.selectedKeys,
+    required this.dragFromKeys,
     required this.labelWidth,
     required this.scrollPx,
     required this.pxPerSecond,
@@ -19,11 +19,11 @@ class _TimelinePainter extends CustomPainter {
   final List<_LaneRow> rows;
   final double duration;
   final double playhead;
-  final TimelineKey? selectedKey;
+  final Set<TimelineKey> selectedKeys;
 
-  /// Original time of a keyframe being dragged, so the painter hides its old
-  /// diamond and renders the dragging copy at the in-flight position.
-  final double? dragFromTime;
+  /// Original keys being dragged, so the painter hides their old diamonds and
+  /// renders dragging copies at the in-flight positions.
+  final Set<TimelineKey>? dragFromKeys;
   final double labelWidth;
 
   /// Left edge of the visible window, in pixels (0 = the lane's left edge,
@@ -35,6 +35,54 @@ class _TimelinePainter extends CustomPainter {
   final double pxPerSecond;
 
   static const double _laneLeftPad = 4;
+
+  /// Laid-out label cache. Painting relayouts every ruler tick and row title
+  /// on each playhead frame otherwise, which dominates the paint pass during
+  /// playback; label texts only change with zoom/scroll and color with the
+  /// clip boundary, so key on (text, color, size, weight, layout width) and
+  /// reuse the laid-out painter. Cleared wholesale when it grows stale.
+  static final Map<
+    (String, int, double, FontWeight, double?),
+    TextPainter
+  > _labelCache = {};
+
+  static TextPainter _cachedLabel(
+    String text, {
+    required Color color,
+    double fontSize = 11,
+    FontWeight? fontWeight,
+    double? maxWidth,
+  }) {
+    final key = (
+      text,
+      color.toARGB32(),
+      fontSize,
+      fontWeight ?? FontWeight.w400,
+      maxWidth,
+    );
+    final cached = _labelCache[key];
+    if (cached != null) return cached;
+    if (_labelCache.length > 256) _labelCache.clear();
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+          color: color,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: maxWidth == null ? null : '…',
+    );
+    if (maxWidth != null) {
+      painter.layout(maxWidth: maxWidth);
+    } else {
+      painter.layout();
+    }
+    return _labelCache[key] = painter;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -68,18 +116,11 @@ class _TimelinePainter extends CustomPainter {
         ..strokeWidth = 1;
       final x = labelWidth + t * pxPerSecond - scrollPx;
       canvas.drawLine(Offset(x, 0), Offset(x, _rulerHeight - 3), tickStyle);
-      TextPainter(
-          text: TextSpan(
-            text: t.toStringAsFixed(step < 0.25 ? 2 : 1),
-            style: TextStyle(
-              fontSize: 9,
-              color: scheme.outline.withValues(alpha: inClip ? 1.0 : 0.45),
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )
-        ..layout()
-        ..paint(canvas, Offset(x + 2, 1));
+      _cachedLabel(
+        t.toStringAsFixed(step < 0.25 ? 2 : 1),
+        color: scheme.outline.withValues(alpha: inClip ? 1.0 : 0.45),
+        fontSize: 9,
+      ).paint(canvas, Offset(x + 2, 1));
     }
 
     // Clip-end boundary between the clip and the empty region past it.
@@ -114,36 +155,21 @@ class _TimelinePainter extends CustomPainter {
           Paint()
             ..color = scheme.surfaceContainerHighest.withValues(alpha: 0.55),
         );
-        TextPainter(
-            text: TextSpan(
-              text: entry.title,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: scheme.primary,
-              ),
-            ),
-            textDirection: TextDirection.ltr,
-            maxLines: 1,
-            ellipsis: '…',
-          )
-          ..layout(maxWidth: labelWidth - 10)
-          ..paint(canvas, Offset(2, top + (_rowHeight - 11) / 2));
+        _cachedLabel(
+          entry.title,
+          color: scheme.primary,
+          fontWeight: FontWeight.w600,
+          maxWidth: labelWidth - 10,
+        ).paint(canvas, Offset(2, top + (_rowHeight - 11) / 2));
         sawChannelInGroup = false;
       } else {
-        TextPainter(
-            text: TextSpan(
-              text: entry.title,
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-            ),
-            textDirection: TextDirection.ltr,
-            maxLines: 1,
-            ellipsis: '…',
-          )
-          // End before the lane's ✕ button (left: labelWidth - 20), which
-          // shares the label column with this title.
-          ..layout(maxWidth: labelWidth - 36)
-          ..paint(canvas, Offset(12, top + (_rowHeight - 11) / 2));
+        // End before the lane's ✕ button (left: labelWidth - 20), which
+        // shares the label column with this title.
+        _cachedLabel(
+          entry.title,
+          color: scheme.onSurfaceVariant,
+          maxWidth: labelWidth - 36,
+        ).paint(canvas, Offset(12, top + (_rowHeight - 11) / 2));
         sawChannelInGroup = true;
       }
     }
@@ -176,39 +202,47 @@ class _TimelinePainter extends CustomPainter {
 
       // Keyframe diamonds (only those inside the visible window).
       for (final time in entry.times!) {
-        // A lifted keyframe (mid-drag) hides its old diamond on its own
-        // channel only — other channels legitimately hold keys at the same
-        // time, and theirs must stay visible. The dragging copy is drawn at
-        // the cursor's in-flight time right after, on the dragged channel.
-        if (dragFromTime != null &&
-            selectedKey != null &&
-            channel.target == selectedKey!.target &&
-            channel.property == selectedKey!.property &&
-            (time - dragFromTime!).abs() <= 1e-3) {
-          continue;
-        }
+        // Dragged keyframes hide their original diamonds on their own
+        // channels only — other channels legitimately hold keys at the same
+        // time, and theirs must stay visible. The dragging copies are drawn
+        // at the cursor's in-flight times right after, on the dragged
+        // channels.
+        final draggingFrom =
+            dragFromKeys?.any(
+              (k) =>
+                  k.target == channel.target &&
+                  k.property == channel.property &&
+                  (k.time - time).abs() <= 1e-3,
+            ) ??
+            false;
+        if (draggingFrom) continue;
         final x = labelWidth + time * pxPerSecond - scrollPx;
         if (x < labelWidth - 6 || x > size.width - 2) continue;
         _drawDiamond(
           canvas,
           x,
           top + _rowHeight / 2,
-          selectedKey != null &&
-              selectedKey!.target == channel.target &&
-              selectedKey!.property == channel.property &&
-              (selectedKey!.time - time).abs() <= 1e-3,
+          selectedKeys.any(
+            (k) =>
+                k.target == channel.target &&
+                k.property == channel.property &&
+                (k.time - time).abs() <= 1e-3,
+          ),
         );
       }
 
-      // The keyframe being dragged renders at its in-flight position so the
-      // diamond follows the cursor until the move is committed on release.
-      if (dragFromTime != null &&
-          selectedKey != null &&
-          selectedKey!.target == channel.target &&
-          selectedKey!.property == channel.property) {
-        final x = labelWidth + selectedKey!.time * pxPerSecond - scrollPx;
-        if (x >= labelWidth - 6 && x <= size.width - 2) {
-          _drawDiamond(canvas, x, top + _rowHeight / 2, true);
+      // Keyframes being dragged render at their in-flight positions so the
+      // diamonds follow the cursor until the moves are committed on release.
+      if (dragFromKeys != null) {
+        for (final key in dragFromKeys!) {
+          if (key.target != channel.target ||
+              key.property != channel.property) {
+            continue;
+          }
+          final x = labelWidth + key.time * pxPerSecond - scrollPx;
+          if (x >= labelWidth - 6 && x <= size.width - 2) {
+            _drawDiamond(canvas, x, top + _rowHeight / 2, true);
+          }
         }
       }
     }
@@ -272,8 +306,8 @@ class _TimelinePainter extends CustomPainter {
   @override
   bool shouldRepaint(_TimelinePainter oldDelegate) =>
       oldDelegate.playhead != playhead ||
-      oldDelegate.selectedKey != selectedKey ||
-      oldDelegate.dragFromTime != dragFromTime ||
+      !setEquals(oldDelegate.selectedKeys, selectedKeys) ||
+      !setEquals(oldDelegate.dragFromKeys, dragFromKeys) ||
       oldDelegate.duration != duration ||
       oldDelegate.scrollPx != scrollPx ||
       oldDelegate.pxPerSecond != pxPerSecond ||

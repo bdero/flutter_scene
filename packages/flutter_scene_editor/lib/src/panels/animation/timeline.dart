@@ -11,14 +11,13 @@ class AnimationTimeline extends StatefulWidget {
     required this.controller,
     required this.animation,
     required this.duration,
-    required this.selectedKey,
-    required this.draggingKey,
-    this.dragFromTime,
+    required this.selectedKeys,
     required this.onTapLane,
     required this.onScrub,
     required this.onSelectKey,
+    required this.onToggleKey,
+    required this.onClearSelection,
     required this.onDragKeyStart,
-    required this.onDragKeyUpdate,
     required this.onDragKeyEnd,
     required this.onDoubleTapLane,
     this.onRemoveChannel,
@@ -28,24 +27,24 @@ class AnimationTimeline extends StatefulWidget {
   final AnimationSpec animation;
   final double duration;
 
-  /// The highlighted keyframe (its time already includes any in-flight drag).
-  final TimelineKey? selectedKey;
-
-  /// Whether a key drag is in flight (pan moves the diamond, not the
-  /// playhead).
-  final bool draggingKey;
-
-  /// The dragged keyframe's original time, so its old diamond is hidden while
-  /// it is re-rendered at the cursor's in-flight position. Null when no drag
-  /// is in progress.
-  final double? dragFromTime;
+  /// The highlighted keyframes (their times already include any in-flight drag).
+  final Set<TimelineKey> selectedKeys;
 
   final ValueChanged<double> onTapLane;
   final ValueChanged<double> onScrub;
   final ValueChanged<TimelineKey> onSelectKey;
-  final ValueChanged<TimelineKey> onDragKeyStart;
-  final ValueChanged<double> onDragKeyUpdate;
-  final VoidCallback onDragKeyEnd;
+  final ValueChanged<TimelineKey> onToggleKey;
+  final VoidCallback onClearSelection;
+
+  /// Starts a key drag on [key] and returns the effective drag set — the key
+  /// alone when it wasn't in the selection (a drag re-targets the selection to
+  /// it), otherwise the whole selection. Called synchronously at pan start;
+  /// the timeline snapshots the result as the drag origins.
+  final Set<TimelineKey> Function(TimelineKey key) onDragKeyStart;
+
+  /// Commits the in-flight drag; [offset] is the seconds travelled since the
+  /// pan began (0 when the press never moved).
+  final ValueChanged<double> onDragKeyEnd;
   final void Function(AnimationChannelSpec channel, double time)
   onDoubleTapLane;
 
@@ -78,6 +77,15 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
   /// label column while the lanes overflow the pane) rather than a scrub or
   /// key drag.
   bool _scrollPan = false;
+
+  /// The keys an in-flight drag moves, snapped when the drag starts; null when
+  /// no drag is in progress. The panel owns the selection and the commit; this
+  /// state only tracks the gesture so per-frame drag updates rebuild this
+  /// timeline — not the whole panel around it.
+  Set<TimelineKey>? _dragOrigins;
+
+  /// Seconds travelled by the in-flight drag since it began.
+  double _dragOffset = 0;
 
   /// Previous duration, used to adjust scroll position when the duration changes
   /// (e.g., after deleting the last keyframe) so the timeline doesn't jump.
@@ -350,11 +358,21 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
           final position = contentPos(details.localPosition);
           final key = hitKey(position);
           if (key != null) {
-            widget.onSelectKey(key);
+            // Ctrl/cmd+click toggles a key in or out of the multi-selection;
+            // a plain click selects only it.
+            if (HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed) {
+              widget.onToggleKey(key);
+            } else {
+              widget.onSelectKey(key);
+            }
             return;
           }
           final row = rowOf(position.dy);
-          if (row < 0 || row >= rows.length) return;
+          if (row < 0 || row >= rows.length) {
+            widget.onClearSelection();
+            return;
+          }
           // Tapping a node header neither seeks nor deselects; only lanes do.
           if (rows[row].isHeader) return;
           widget.onTapLane(timeAt(position));
@@ -370,7 +388,8 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
         onPanStart: (details) {
           final key = hitKey(contentPos(details.localPosition));
           if (key != null) {
-            widget.onDragKeyStart(key);
+            _dragOrigins = widget.onDragKeyStart(key);
+            _dragOffset = 0;
             return;
           }
           // Dragging the label column pans the lanes vertically when they
@@ -387,16 +406,25 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
             });
             return;
           }
-          // An in-flight key drag moves the diamond; anything else scrubs.
-          if (widget.draggingKey) {
-            widget.onDragKeyUpdate(details.delta.dx / pxPerSecond);
+          // An in-flight key drag moves the diamonds; anything else scrubs.
+          if (_dragOrigins != null) {
+            setState(() => _dragOffset += details.delta.dx / pxPerSecond);
             return;
           }
           widget.onScrub(timeAt(details.localPosition));
         },
         onPanEnd: (_) {
           _scrollPan = false;
-          widget.onDragKeyEnd();
+          final origins = _dragOrigins;
+          final offset = _dragOffset;
+          if (origins != null) {
+            // Un-hide the origin diamonds even for a zero-offset drag.
+            setState(() {
+              _dragOrigins = null;
+              _dragOffset = 0;
+            });
+            widget.onDragKeyEnd(offset);
+          }
         },
         child: SizedBox(
           width: width,
@@ -415,23 +443,36 @@ class _AnimationTimelineState extends State<AnimationTimeline> {
                   height: contentHeight,
                   child: Stack(
                     children: [
-                      // Repaint (and only repaint) on every playhead tick: the
-                      // listener scopes to the canvas paint, so the overlays around it
-                      // don't rebuild during playback.
+                      // Repaint (and only repaint) on every playhead tick and
+                      // drag frame: the RepaintBoundary confines the canvas
+                      // repaint to its own layer, so the overlays around it
+                      // neither rebuild nor repaint during playback or key
+                      // drags.
                       ListenableBuilder(
                         listenable: controller.previewPlayhead,
-                        builder: (context, _) => CustomPaint(
-                          size: Size(width, contentHeight),
-                          painter: _TimelinePainter(
-                            scheme: scheme,
-                            rows: rows,
-                            duration: widget.duration,
-                            playhead: controller.previewPlayhead.value,
-                            selectedKey: widget.selectedKey,
-                            dragFromTime: widget.dragFromTime,
-                            labelWidth: labelWidth,
-                            scrollPx: _scroll,
-                            pxPerSecond: pxPerSecond,
+                        builder: (context, _) => RepaintBoundary(
+                          child: CustomPaint(
+                            size: Size(width, contentHeight),
+                            painter: _TimelinePainter(
+                              scheme: scheme,
+                              rows: rows,
+                              duration: widget.duration,
+                              playhead: controller.previewPlayhead.value,
+                              selectedKeys: _dragOrigins == null
+                                  ? widget.selectedKeys
+                                  : {
+                                      for (final key in _dragOrigins!)
+                                        (
+                                          target: key.target,
+                                          property: key.property,
+                                          time: key.time + _dragOffset,
+                                        ),
+                                    },
+                              dragFromKeys: _dragOrigins,
+                              labelWidth: labelWidth,
+                              scrollPx: _scroll,
+                              pxPerSecond: pxPerSecond,
+                            ),
                           ),
                         ),
                       ),
