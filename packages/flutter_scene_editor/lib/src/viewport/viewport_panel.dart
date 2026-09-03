@@ -579,12 +579,23 @@ class _ViewportPanelState extends State<ViewportPanel> {
   // Decomposes each drag target's final matrix and commits everything as one
   // undoable edit. Fields outside the drag's mode keep their current values.
   // Prefab-member nodes route through the override path individually.
+  //
+  // When an animation is being authored/previewed (an animation is loaded on
+  // the playhead), a viewport pose is ephemeral: it exists only on the live
+  // node so that Key can capture it, and it must never rewrite the authored
+  // rest pose in the document. Committing each posed node on release would
+  // permanently shift the model's origin whenever nodes are posed to author
+  // keys, corrupting the original pose outside the animation. While a preview
+  // animation is active the document commit is therefore skipped; the live
+  // pose already holds the drag result, and the preview's stop/restore
+  // returns the node to its untouched rest pose.
   void _commitTransformDrag(
     vm.Matrix4 Function(_TransformTarget) matrixFor, {
     bool translation = false,
     bool rotation = false,
     bool scale = false,
   }) {
+    final ephemeral = _ctrl.previewAnimationId != null;
     final batch = <LocalId, TrsTransform>{};
     for (final target in _dragTargets) {
       final local = matrixFor(target);
@@ -594,12 +605,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
       local.decompose(t, r, sc);
       final source = _ctrl.document.nodes[target.id];
       if (source == null) {
-        _ctrl.setNodeTransformRouted(
-          target.id,
-          translation: translation ? _vectorMap(t) : null,
-          rotation: rotation ? _quaternionMap(r) : null,
-          scale: scale ? _vectorMap(sc) : null,
-        );
+        if (!ephemeral) {
+          _ctrl.setNodeTransformRouted(
+            target.id,
+            translation: translation ? _vectorMap(t) : null,
+            rotation: rotation ? _quaternionMap(r) : null,
+            scale: scale ? _vectorMap(sc) : null,
+          );
+        }
         continue;
       }
       final current = source.transform;
@@ -609,8 +622,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
         rotation: rotation ? r : (trs?.rotation ?? target.startR),
         scale: scale ? sc : (trs?.scale ?? target.startS),
       );
+      // In ephemeral (animation-authoring) mode there is no document commit;
+      // instead leave the live node at the final posed matrix so Key captures
+      // it and the preview's stop/restore returns to the untouched rest pose.
+      if (ephemeral) {
+        _ctrl.previewLocalTransform(target.id, matrixFor(target));
+      }
     }
-    if (batch.isNotEmpty) unawaited(_ctrl.setNodeTransformsBatch(batch));
+    if (!ephemeral && batch.isNotEmpty) {
+      unawaited(_ctrl.setNodeTransformsBatch(batch));
+    }
   }
 
   void _setMode(GizmoMode mode) {
@@ -1568,7 +1589,8 @@ class _RestorePoseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Original pose\n\n'
+      message:
+          'Original pose\n\n'
           'Puts every node of the loaded animation back to its authored pose '
           '(what the Outliner shows) — bones included — while keeping the '
           'animation loaded on the playhead.\n\n'
@@ -1582,11 +1604,7 @@ class _RestorePoseButton extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.55),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: const Icon(
-            Icons.restore,
-            size: 15,
-            color: Colors.white,
-          ),
+          child: const Icon(Icons.restore, size: 15, color: Colors.white),
         ),
       ),
     );
