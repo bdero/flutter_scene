@@ -34,8 +34,8 @@
 
 ## At a glance
 
-- **Rendering.** Physically based materials, image-based lighting, cascaded and point shadows, and a full post-processing stack (bloom, depth of field, fog, god rays, screen-space reflections, anti-aliasing). Gaussian splatting, instancing, LODs, particles, and sky materials.
-- **Games.** Physics (Rapier and box3d backends), positional audio (SoLoud and FMOD), skeletal animation with blending, camera controllers, raycast picking, and interactive Flutter widgets on 3D surfaces.
+- **Rendering.** Physically based materials, image-based lighting, directional, point, spot, and area lights with shadows, probe-based global illumination, and a full post-processing stack (bloom, depth of field, fog, god rays, screen-space reflections, color grading, SMAA and TAA). Decals, Gaussian splatting, instancing, LODs, particles, and sky materials.
+- **Games.** Physics (Rapier and box3d backends), positional audio (SoLoud and FMOD), multiplayer over dashwire, skeletal and morph animation with blending, camera controllers, a gameplay kit, raycast picking, and interactive Flutter widgets on 3D surfaces.
 - **Tooling.** A desktop scene editor with an MCP server for agent-driven editing, agent skills for coding assistants, a build-time asset pipeline, and hot reload for models, shaders, textures, and environments.
 - **Formats.** glTF import, the `.fscene` scene document, `.fmat` custom materials in GLSL, KTX2 compressed textures, and HDR/EXR environments.
 - **Platforms.** iOS, Android, macOS, Windows, Linux, and the web, where a built-in WebGL2 backend stands in for Impeller.
@@ -44,7 +44,7 @@
 
 - [Dashsurfers](https://github.com/bdero/dashsurfers), an endless runner with skinned characters, physics, and particles.
 - [Dashmap](https://github.com/bdero/dashmap), a live 3D world map with streaming terrain, OSM buildings, and a physical sky.
-- The [examples app](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app), 40 runnable feature examples.
+- The [examples app](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app), 43 runnable feature examples.
 
 ## Why Scene exists
 
@@ -288,41 +288,45 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 
 ### Rendering
 
-* Physically based materials with image-based lighting, plus a built-in procedural studio environment so an imported model looks good with zero lighting setup.
-* Directional, point, and spot lights. Directional and spot lights cast shadows, with cached shadow tiles for static geometry and alpha-masked shadow casters.
-* A full post-processing stack, with HDR tone mapping, physical camera exposure, automatic eye adaptation, bloom, fog, god rays, screen-space reflections, depth of field with bokeh, and anti-aliasing with resolution scaling.
-* Sky materials with live IBL rebaking, HDR/EXR environment import, and smooth environment cross-fades.
-* 3D Gaussian splatting, loading `.ply` and `.splat` captures as scene nodes.
-* Instanced rendering, automatic geometry LODs, and an allocation-light frame loop.
+* Physically based materials with clearcoat, sheen, anisotropy, and transmission, lit by image-based lighting (prefiltered radiance plus spherical-harmonic diffuse), with a built-in procedural studio environment so an imported model looks good with zero lighting setup.
+* Sky materials with live IBL rebaking, HDR/EXR environment import, smooth environment cross-fades, and parallax-corrected reflection probes.
+* Directional, point, spot, and rect area lights, shaded through per-view froxel clustering so a scene scales to many lights, with light channels to control what each light touches.
+* Shadows from directional, spot, and point lights. Cascaded directional shadows with percentage-closer soft shadows and screen-space contact shadows, cube-face point shadows, cached shadow tiles for static geometry, and alpha-masked casters.
+* Global illumination from a world-space irradiance probe field with probe visibility and offline or progressive baking, plus screen-space indirect light and ground-truth ambient occlusion.
+* A full post-processing stack, with HDR tone mapping, physical camera exposure, automatic eye adaptation, bloom with lens flares, fog, god rays, screen-space reflections, depth of field with bokeh, film-look color grading from `.cube` LUTs, chromatic aberration, and radial screen distortion.
+* Anti-aliasing with FXAA, SMAA, and temporal anti-aliasing, geometric specular anti-aliasing, and resolution scaling.
+* Projected box decals, 3D Gaussian splatting from `.ply` and `.splat` captures, instanced rendering, automatic geometry LODs, mesh chunking at import, and an allocation-light frame loop.
 * A particle system driven by configurable emitter and behavior modules.
 
 ### Materials and shaders
 
-* A custom-material workflow (`.fmat`) covering both fragment and vertex stages, with shader hot reload.
-* Per-frame scene inputs for custom shaders, including scene depth and shadow data, plus a depth-aware and shadow-aware custom post-pass API.
-* A noise library with matched CPU and GPU implementations.
+* A custom-material workflow (`.fmat`) covering fragment, vertex, and sky stages, with per-instance attributes, engine inputs, and shader hot reload.
+* Per-frame scene inputs for custom shaders, including scene depth, world position, and shadow data, plus a depth-aware and shadow-aware custom post-pass API.
+* Barycentric wireframe helpers and a noise library with matched CPU and GPU implementations.
 
 ### Assets and animation
 
-* glTF (`.glb`) import at runtime, or pre-converted at build time into the engine's `.fsceneb` format through build hooks, loaded by source path.
-* The `.fscene`/`.fsceneb` scene description format, human-readable as text and fast to load as binary, with prefab support.
+* glTF (`.glb` and multi-buffer `.gltf`) import at runtime, or pre-converted at build time into the engine's `.fsceneb` format through build hooks, loaded by source path. Sparse accessors, `KHR_materials_variants` with instant switching, and `KHR_texture_basisu`.
+* The `.fscene`/`.fsceneb` scene description format, human-readable as text and fast to load as binary, with prefabs and declarative components.
 * KTX2 compressed textures with full mip chains, `.fstex` texture builds, and HDR/EXR environment decoding.
-* Skinned meshes and a blended animation system, with declarative per-clip playback control.
-* `KHR_materials_variants` support in both import paths, with instant variant switching.
-* Hot reload for models, shaders, textures, and environments.
+* Skinned meshes, morph targets, and a blended animation system with declarative per-clip playback control.
+* Hot reload for models, shaders, textures, environments, and scene documents.
 
 ### App integration
 
 * A `SceneView` widget with both an imperative scene-graph API and a fully declarative widget API (`SceneNode`, `SceneMesh`, and `SceneModel` with async loading placeholders).
-* Interactive Flutter widgets embedded on 3D surfaces, with pointer raycasting into the scene.
+* Orbit, fly, and follow camera controllers, raycast picking, and interactive Flutter widgets embedded on 3D surfaces.
+* A gameplay kit (`package:flutter_scene/kit.dart`) with a camera boom, character controller, day/night cycle, water surface, audio, pooling, and debug components.
 * Screen-reader accessibility, exposing scene content through Flutter semantics.
-* Render-target control, split-screen and multi-view layouts, and synchronous frame capture as `ui.Image`.
-* Geometry readback and procedural geometry builders with derivation operations.
+* Render-target control, split-screen and multi-view layouts, synchronous frame capture as `ui.Image`, and platform textures (video, camera preview) as material inputs.
+* Geometry readback, procedural geometry builders with derivation operations, and a GPU memory report with explicit release.
+* Agent skills that teach coding assistants idiomatic Scene, installed by `dart run flutter_scene:init`.
 
 ### Ecosystem
 
 * Physics through [`flutter_scene_rapier`](https://pub.dev/packages/flutter_scene_rapier) or [`flutter_scene_box3d`](https://pub.dev/packages/flutter_scene_box3d), both implementing the engine's shared physics contract.
-* Audio components with SoLoud and FMOD backends, developed in this repository.
+* Positional audio through [`flutter_scene_soloud`](https://pub.dev/packages/flutter_scene_soloud) or [`flutter_scene_fmod`](https://pub.dev/packages/flutter_scene_fmod).
+* Multiplayer through [`flutter_scene_net`](https://pub.dev/packages/flutter_scene_net), binding replicated state to scene nodes over [`dashwire`](https://pub.dev/packages/dashwire).
 * The Flutter Scene Editor, a desktop scene-editing app with an MCP server for agent-driven editing, in development in this repository.
 
 ## Gallery
@@ -400,11 +404,14 @@ This repository is a [pub workspace](https://dart.dev/tools/pub/workspaces) cont
 | [`packages/flutter_scene`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene) | The 3D engine, including the glTF importer, the `.fscene` format, and the web (WebGL2) backend. Published to pub.dev as [`flutter_scene`](https://pub.dev/packages/flutter_scene). |
 | [`packages/flutter_scene_rapier`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_rapier) | Rapier physics backend, shipping prebuilt native binaries and a wasm module. Published to pub.dev as [`flutter_scene_rapier`](https://pub.dev/packages/flutter_scene_rapier). |
 | [`packages/flutter_scene_box3d`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_box3d) | box3d physics backend. Published to pub.dev as [`flutter_scene_box3d`](https://pub.dev/packages/flutter_scene_box3d). |
-| [`packages/flutter_scene_soloud`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_soloud) | SoLoud audio backend. Not yet published. |
-| [`packages/flutter_scene_fmod`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_fmod) | FMOD Studio audio backend. Not yet published. |
+| [`packages/flutter_scene_soloud`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_soloud) | SoLoud audio backend. Published to pub.dev as [`flutter_scene_soloud`](https://pub.dev/packages/flutter_scene_soloud). |
+| [`packages/flutter_scene_fmod`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_fmod) | FMOD Studio audio backend. Published to pub.dev as [`flutter_scene_fmod`](https://pub.dev/packages/flutter_scene_fmod). |
+| [`packages/flutter_scene_net`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_net) | Multiplayer on [`dashwire`](https://pub.dev/packages/dashwire), binding replicated state to scene nodes with interpolated transforms and in-app hosting. Published to pub.dev as [`flutter_scene_net`](https://pub.dev/packages/flutter_scene_net). |
+| [`packages/scene`](https://github.com/bdero/flutter_scene/tree/master/packages/scene) | The engine-agnostic `.fscene` document core and the physics contract the backends implement. Published to pub.dev as [`scene`](https://pub.dev/packages/scene). |
+| [`packages/flutter_scene_codegen`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_codegen) | Static extraction and code generation for annotated components. A development-time tool, not published. |
 | [`packages/flutter_scene_editor_core`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_editor_core), [`packages/flutter_scene_editor`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_editor), [`packages/flutter_scene_mcp`](https://github.com/bdero/flutter_scene/tree/master/packages/flutter_scene_mcp) | The Flutter Scene Editor stack (headless command core, Flutter UI, and MCP tool surface). Shipped as the desktop app under `apps/`, not as pub.dev libraries. In active development. |
 | [`apps/flutter_scene_editor_app`](https://github.com/bdero/flutter_scene/tree/master/apps/flutter_scene_editor_app) | The standalone Flutter Scene Editor desktop app. |
-| [`examples/flutter_app`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app) | Runnable example app with 40 feature examples. |
+| [`examples/flutter_app`](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app) | Runnable example app with 43 feature examples. |
 
 The remaining `examples/` folders are dev-only test harnesses (the web-backend smoke test, deterministic smoke renders, and a CPU stress bench).
 
