@@ -950,6 +950,7 @@ class EditorController extends ChangeNotifier
       switch (channel.property) {
         case AnimationProperty.translation:
           live.position = Vector3(sampled[0], sampled[1], sampled[2]);
+          break;
         case AnimationProperty.rotation:
           live.rotation = Quaternion(
             sampled[0],
@@ -957,8 +958,10 @@ class EditorController extends ChangeNotifier
             sampled[2],
             sampled[3],
           ).normalized();
+          break;
         case AnimationProperty.scale:
           live.scale = Vector3(sampled[0], sampled[1], sampled[2]);
+          break;
         case AnimationProperty.weights:
           break;
       }

@@ -227,6 +227,7 @@ class _AnimationPanelState extends State<AnimationPanel> {
       await _controller.runAll(commands);
     } on Exception catch (error) {
       _showError(error);
+      return;
     }
     if (property == null) await _ensureEdgeKeys(id, time);
   }
@@ -618,16 +619,20 @@ class _AnimationPanelState extends State<AnimationPanel> {
   }
 
   /// The pose the channel's live target currently shows, as the value map
-  /// `setAnimationKeyframe` accepts (`translation` / `rotation` / `scale`).
+  /// `setAnimationKeyframe` accepts.
   ///
-  /// Reads the live node rather than the document so keying records exactly
-  /// what the user sees — a pose landed with the viewport gizmo or an
-  /// inspector drag lives on the live node until it is keyed, and reading the
-  /// document there would silently drop the edit and snap the node back to a
-  /// stale pose. [targetName] resolves a prefab-member target (a bone inside
-  /// an imported instance) exactly as the preview and runtime binders do.
-  /// Null when the target is missing from the live graph; callers fall back
-  /// to the command's own document capture.
+  /// Returns the nested shape the command's param schema expects — a
+  /// `"translation"` / `"rotation"` / `"scale"` object with `x`/`y`/`z` (and
+  /// `w` for rotation). Passing a flat `{x, y, z}` map instead makes the
+  /// command's optional-value reader miss the component and silently fall
+  /// back to the DOCUMENT transform — keying the rest pose and snapping the
+  /// node back to it when the preview re-applies. The live node rather than
+  /// the document is read so keying records exactly what the user sees — a
+  /// pose landed with the viewport gizmo or an inspector drag lives on the
+  /// live node until it is keyed. [targetName] resolves a prefab-member
+  /// target (a bone inside an imported instance) exactly as the preview and
+  /// runtime binders do. Null when the target is missing from the live graph;
+  /// callers fall back to the command's own document capture.
   Map<String, Object>? _livePoseFor(
     LocalId nodeId,
     AnimationProperty property, {
@@ -642,20 +647,27 @@ class _AnimationPanelState extends State<AnimationPanel> {
     switch (property) {
       case AnimationProperty.translation:
         final t = node.position;
-        return {'x': t.x, 'y': t.y, 'z': t.z};
+        return {
+          'translation': {'x': t.x, 'y': t.y, 'z': t.z},
+        };
       case AnimationProperty.rotation:
         final r = node.rotation;
-        return {'x': r.x, 'y': r.y, 'z': r.z, 'w': r.w};
+        return {
+          'rotation': {'x': r.x, 'y': r.y, 'z': r.z, 'w': r.w},
+        };
       case AnimationProperty.scale:
         final s = node.scale;
-        return {'x': s.x, 'y': s.y, 'z': s.z};
+        return {
+          'scale': {'x': s.x, 'y': s.y, 'z': s.z},
+        };
       case AnimationProperty.weights:
         return null;
     }
   }
 
   /// The pose [channel]'s curve already plays at [time] — the interpolation of
-  /// its own keyframes — as the value map `setAnimationKeyframe` accepts.
+  /// its own keyframes — in the nested shape `setAnimationKeyframe` accepts
+  /// (`translation` / `rotation` / `scale` objects).
   ///
   /// Used for edge crystals: a missing start/end key must duplicate the value
   /// the playthrough already shows there, never the pose held at the playhead
@@ -682,16 +694,22 @@ class _AnimationPanelState extends State<AnimationPanel> {
     }
     switch (channel.property) {
       case AnimationProperty.translation:
-        return {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]};
+        return {
+          'translation': {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]},
+        };
       case AnimationProperty.rotation:
         return {
-          'x': sampled[0],
-          'y': sampled[1],
-          'z': sampled[2],
-          'w': sampled[3],
+          'rotation': {
+            'x': sampled[0],
+            'y': sampled[1],
+            'z': sampled[2],
+            'w': sampled[3],
+          },
         };
       case AnimationProperty.scale:
-        return {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]};
+        return {
+          'scale': {'x': sampled[0], 'y': sampled[1], 'z': sampled[2]},
+        };
       case AnimationProperty.weights:
         return null;
     }
