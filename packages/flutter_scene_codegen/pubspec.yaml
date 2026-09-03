@@ -7,10 +7,11 @@ environment:
   sdk: ^3.10.0
 
 dependencies:
-  # The extractor targets the 12.x AST surface (ClassDeclaration.namePart
-  # and body landed in 12, ArgumentList.arguments changed shape in 13).
-  analyzer: ">=12.0.0 <13.0.0"
-  dart_style: ">=3.0.0 <3.1.9"
+  # The extractor reads the 13.x argument AST (ArgumentList.arguments is a
+  # NodeList<Argument> and named arguments are NamedArgument), and 13 is
+  # also the floor the SDK-pinned test package needs on current Flutter.
+  analyzer: ">=13.0.0 <15.0.0"
+  dart_style: ^3.1.9
   scene: ^0.3.0
   vector_math: ^2.1.4
 
