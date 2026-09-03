@@ -4,11 +4,11 @@
   </a>
 </p>
 
-<h1 align="center">Scene</h1>
+<h1 align="center">Flutter Scene</h1>
 
-<p align="center"><b>A realtime 3D engine for Flutter</b></p>
+<p align="center"><b>A complete 3D game engine for Flutter, built on Flutter GPU</b></p>
 
-<p align="center">Scene extends Flutter into a complete toolkit for building incredible 3D multiplatform apps. Rendering, physics, audio, tooling, and a full asset pipeline.</p>
+<p align="center">Rendering, physics, audio, animation, a scene editor with an MCP server, and a full asset pipeline, on every platform Flutter runs on, web included. Built and maintained by the author of Flutter GPU.</p>
 
 <p align="center">
   <a title="Pub" href="https://pub.dev/packages/flutter_scene"><img src="https://img.shields.io/pub/v/flutter_scene.svg?style=popout"/></a>
@@ -18,61 +18,43 @@
   <a title="Discord" href="https://discord.gg/BfGKrcheRj"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white"/></a>
 </p>
 
-<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://fscene.dev/getting-started">Docs </a>· <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
+<p align="center"><a href="https://fscene.dev">Website</a> · <a href="https://fscene.dev/getting-started">Docs</a> · <a href="https://github.com/bdero/flutter_scene/tree/master/examples">Examples App</a> · <a href="#built-with-scene">Games</a> · <a href="https://github.com/bdero/flutter_scene?tab=readme-ov-file#faq">FAQ</a></p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/HelmetPhase2.webp">
+  <img alt="Physically based rendering of the glTF DamagedHelmet sample with image-based lighting in Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/HelmetPhase2.webp">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashgameported2.webp">
+  <img alt="Dashsurfers, an endless runner game built with Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashsurfers_run.webp">
 </p>
 
 <p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashsurfers_run.webp">
+  <img alt="The Flutter Scene Editor, driven by a coding agent over MCP" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/editor_mcp.webp">
 </p>
 
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DamagedHelmet2.webp">
-</p>
+## At a glance
 
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dash_physics.webp">
-</p>
+- **Rendering.** Physically based materials, image-based lighting, cascaded and point shadows, and a full post-processing stack (bloom, depth of field, fog, god rays, screen-space reflections, anti-aliasing). Gaussian splatting, instancing, LODs, particles, and sky materials.
+- **Games.** Physics (Rapier and box3d backends), positional audio (SoLoud and FMOD), skeletal animation with blending, camera controllers, raycast picking, and interactive Flutter widgets on 3D surfaces.
+- **Tooling.** A desktop scene editor with an MCP server for agent-driven editing, agent skills for coding assistants, a build-time asset pipeline, and hot reload for models, shaders, textures, and environments.
+- **Formats.** glTF import, the `.fscene` scene document, `.fmat` custom materials in GLSL, KTX2 compressed textures, and HDR/EXR environments.
+- **Platforms.** iOS, Android, macOS, Windows, Linux, and the web, where a built-in WebGL2 backend stands in for Impeller.
 
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/editor_mcp.webp">
-</p>
+## Built with Scene
 
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/hexagons3.webp">
-</p>
-
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/menger_sky.webp">
-</p>
-
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/cloning.webp">
-</p>
-
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/gaussian_splats_strawberry.webp">
-</p>
-
-<p align="center">
-  <img alt="Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashmap.webp">
-</p>
+- [Dashsurfers](https://github.com/bdero/dashsurfers), an endless runner with skinned characters, physics, and particles.
+- [Dashmap](https://github.com/bdero/dashmap), a live 3D world map with streaming terrain, OSM buildings, and a physical sky.
+- The [examples app](https://github.com/bdero/flutter_scene/tree/master/examples/flutter_app), 40 runnable feature examples.
 
 ## Why Scene exists
 
 Scene began its life inside the Flutter Engine, as a C++ module for Impeller with a declarative widget interface exposed through a 3D API in the Flutter SDK. Flutter GPU was built initially to set this project free, providing the low-level GPU access needed to develop Scene outside the engine, as an ordinary ecosystem of Dart packages.
 
-That origin shapes the project's philosophy. Scene is a full 3D engine and toolkit that makes Flutter GPU practical to build on, spanning rendering, physics, audio, editor tooling, and asset support across every target Flutter runs on. And the relationship flows both ways by design. The work of building Scene continually exercises and improves Flutter's internal graphics stack, so Impeller and Flutter GPU get better because Scene exists.
+That origin shapes the project's philosophy. Scene is a full 3D game engine and toolkit that makes Flutter GPU practical to build on, spanning rendering, physics, audio, editor tooling, and asset support across every target Flutter runs on. And the relationship flows both ways by design. Scene's cross-backend render tests are where Flutter GPU regressions get caught, so Impeller and Flutter GPU get better because Scene exists.
 
 The goal has always been to pave the way for advanced graphics in Flutter. In line with the goals set out in Flutter GPU's original design doc, Scene aims to de-fracture, unite, and elevate Flutter's graphics ecosystem, so that building incredible 3D experiences with Flutter and Dart no longer requires engine forks, complicated external renderer integrations, or giving up platforms to get advanced features.
 
-Scene is built by a former core Flutter engine team member who spent four years on Flutter, most of it building Impeller and Flutter GPU.
+Scene is built by the author of Flutter GPU, a former core Flutter engine team member who spent four years on Flutter, most of it building Impeller.
 
 ## Getting started
 
@@ -342,6 +324,40 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 * Physics through [`flutter_scene_rapier`](https://pub.dev/packages/flutter_scene_rapier) or [`flutter_scene_box3d`](https://pub.dev/packages/flutter_scene_box3d), both implementing the engine's shared physics contract.
 * Audio components with SoLoud and FMOD backends, developed in this repository.
 * The Flutter Scene Editor, a desktop scene-editing app with an MCP server for agent-driven editing, in development in this repository.
+
+## Gallery
+
+<p align="center">
+  <img alt="A 3D platformer game running on Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashgameported2.webp">
+</p>
+
+<p align="center">
+  <img alt="Depth of field and bloom post-processing on a glTF model" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/DamagedHelmet2.webp">
+</p>
+
+<p align="center">
+  <img alt="Rigid-body physics through flutter_scene_rapier" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dash_physics.webp">
+</p>
+
+<p align="center">
+  <img alt="Instanced rendering of thousands of animated meshes" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/hexagons3.webp">
+</p>
+
+<p align="center">
+  <img alt="A custom sky material written in GLSL through the .fmat format" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/menger_sky.webp">
+</p>
+
+<p align="center">
+  <img alt="Skinned, animated glTF characters cloned across a scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/cloning.webp">
+</p>
+
+<p align="center">
+  <img alt="3D Gaussian splatting rendered as a scene node" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/gaussian_splats_strawberry.webp">
+</p>
+
+<p align="center">
+  <img alt="Dashmap, a streaming 3D world map built on Flutter Scene" width="600px" src="https://raw.githubusercontent.com/bdero/flutter_scene_media/main/dashmap.webp">
+</p>
 
 ## FAQ
 
