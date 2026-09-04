@@ -83,6 +83,14 @@ abstract class ComponentCodec {
   /// `directionalLight`).
   String get type;
 
+  /// The group an editor files this type under in its component picker
+  /// ("Rendering", "Physics"). Null files it under the catch-all, which is
+  /// where a project's own components land until they say otherwise.
+  ///
+  /// Declared here rather than only inside [schema] so a codec can be filed
+  /// without having to restate its whole schema.
+  String? get category => null;
+
   /// The component's full portable schema. The default wraps [type] and
   /// [propertySchema]; override to add docs, an icon, or former type names.
   ComponentSchema get schema =>
@@ -127,6 +135,21 @@ abstract class ComponentCodec {
 
   /// The declared default for property [name], or null when the property has no
   /// default (throws when [name] is undeclared).
+  /// Writes one declared property onto a live [component], returning whether
+  /// it landed.
+  ///
+  /// Realizing a component builds it from a whole spec; this changes one
+  /// property on one that already exists, which is what a live edit is — an
+  /// inspector drag, a value arriving over the network, a graph assigning to
+  /// a field. Codecs that build their component wholesale have nothing to
+  /// offer here and answer false.
+  bool applyProperty(
+    Component component,
+    String name,
+    PropertyValue value,
+    RealizeContext context,
+  ) => false;
+
   PropertyValue? defaultOf(String name) =>
       propertySchema.firstWhere((d) => d.name == name).defaultValue;
 
