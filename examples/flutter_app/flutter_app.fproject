@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "flutterProjectRoot": ".",
+  "buildConfigurations": [
+    {
+      "id": "debug",
+      "name": "Debug",
+      "mode": "debug",
+      "buildCommand": "${FLUTTER_CLI} build ${BUILD_TARGET} --${MODE}",
+      "run": {
+        "args": [
+          "--enable-flutter-gpu",
+          "--enable-impeller"
+        ]
+      }
+    },
+    {
+      "id": "profile",
+      "name": "Profile",
+      "mode": "profile",
+      "buildCommand": "${FLUTTER_CLI} build ${BUILD_TARGET} --${MODE}",
+      "run": {
+        "args": [
+          "--enable-flutter-gpu",
+          "--enable-impeller"
+        ]
+      }
+    },
+    {
+      "id": "release",
+      "name": "Release",
+      "mode": "release",
+      "buildCommand": "${FLUTTER_CLI} build ${BUILD_TARGET} --${MODE}",
+      "run": {
+        "args": [
+          "--enable-flutter-gpu",
+          "--enable-impeller"
+        ]
+      }
+    }
+  ]
+}

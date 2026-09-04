@@ -1,0 +1,100 @@
+// Terrain surface layers, blended by a control map.
+//
+// The four layers are the four channels of one RGBA control texture, painted
+// per texel by the terrain tool. Each channel says how much of its layer shows
+// at that point, and the channels sum to one, so the ground is always entirely
+// made of something.
+//
+// Two UV rates. The control map is sampled at the terrain's own UV, which runs
+// zero to one across the whole patch: the painting is a single image stretched
+// over the ground, and it has to line up with where the brush went. The layer
+// textures are sampled at that UV multiplied by their own tiling, because a
+// grass texture stretched once across a hundred metres of hillside is not a
+// grass texture. Those are genuinely different questions, which is why the
+// tiling is per layer and the control map has none.
+//
+// Albedo and a roughness scalar per layer, not a full material each. A second
+// texture per layer would be four more samplers on the most-drawn surface in
+// the scene, and terrain roughness varies far less within a layer than its
+// colour does -- wet rock is uniformly wet.
+
+material {
+  name: "TerrainSplat",
+  shading_model: lit,
+  blending: opaque,
+  culling: back,
+  parameters: [
+    // Which layer shows where: R is layer 1, G layer 2, B layer 3, A layer 4.
+    // White defaults the whole terrain to layer 1, which is what an unpainted
+    // terrain is.
+    { type: sampler2d, name: control_map, hint: default_white },
+
+    { type: sampler2d, name: layer0_texture, hint: default_white },
+    { type: sampler2d, name: layer1_texture, hint: default_white },
+    { type: sampler2d, name: layer2_texture, hint: default_white },
+    { type: sampler2d, name: layer3_texture, hint: default_white },
+
+    // How many times each layer repeats across the patch.
+    { type: float, name: layer0_tiling, hint: range(0.1, 200.0, 0.1), default: 20.0 },
+    { type: float, name: layer1_tiling, hint: range(0.1, 200.0, 0.1), default: 20.0 },
+    { type: float, name: layer2_tiling, hint: range(0.1, 200.0, 0.1), default: 20.0 },
+    { type: float, name: layer3_tiling, hint: range(0.1, 200.0, 0.1), default: 20.0 },
+
+    // A tint per layer, so a layer is usable before it has a texture: four
+    // flat colours is a readable terrain, and it is what the tool's four
+    // swatches are showing.
+    { type: vec4, name: layer0_color, hint: source_color, default: [0.42, 0.56, 0.31, 1.0] },
+    { type: vec4, name: layer1_color, hint: source_color, default: [0.54, 0.48, 0.36, 1.0] },
+    { type: vec4, name: layer2_color, hint: source_color, default: [0.49, 0.52, 0.54, 1.0] },
+    { type: vec4, name: layer3_color, hint: source_color, default: [0.79, 0.74, 0.58, 1.0] },
+
+    { type: float, name: layer0_roughness, hint: range(0.05, 1.0, 0.01), default: 0.9 },
+    { type: float, name: layer1_roughness, hint: range(0.05, 1.0, 0.01), default: 0.9 },
+    { type: float, name: layer2_roughness, hint: range(0.05, 1.0, 0.01), default: 0.7 },
+    { type: float, name: layer3_roughness, hint: range(0.05, 1.0, 0.01), default: 0.95 },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec2 uv = GetUV0();
+
+    // Bilinear filtering of a control map preserves the sum of the channels,
+    // but a hand-edited map or one written by another tool need not, and a
+    // texel summing to 1.4 would show as a patch of brighter ground. Rather
+    // than trusting it, renormalize: the cost is three adds and a divide, and
+    // it makes any control map safe to point at this material.
+    vec4 control = texture(control_map, uv);
+    float total = control.r + control.g + control.b + control.a;
+    control = total > 1e-4
+        ? control / total
+        // Nothing at all: the base layer, which is what a terrain is before
+        // anyone paints it.
+        : vec4(1.0, 0.0, 0.0, 0.0);
+
+    vec3 albedo =
+        SRGBToLinear(texture(layer0_texture, uv * material_params.layer0_tiling).rgb)
+            * material_params.layer0_color.rgb * control.r +
+        SRGBToLinear(texture(layer1_texture, uv * material_params.layer1_tiling).rgb)
+            * material_params.layer1_color.rgb * control.g +
+        SRGBToLinear(texture(layer2_texture, uv * material_params.layer2_tiling).rgb)
+            * material_params.layer2_color.rgb * control.b +
+        SRGBToLinear(texture(layer3_texture, uv * material_params.layer3_tiling).rgb)
+            * material_params.layer3_color.rgb * control.a;
+
+    // Roughness blends by the same weights. Blending the roughness rather than
+    // taking the dominant layer's is what stops a visible seam in the specular
+    // response along every boundary the albedo blends smoothly across.
+    float roughness =
+        material_params.layer0_roughness * control.r +
+        material_params.layer1_roughness * control.g +
+        material_params.layer2_roughness * control.b +
+        material_params.layer3_roughness * control.a;
+
+    material.base_color = vec4(albedo, 1.0);
+    material.normal = GetWorldNormal();
+    material.metallic = 0.0;
+    material.roughness = clamp(roughness, 0.05, 1.0);
+    PrepareMaterial(material);
+  }
+}

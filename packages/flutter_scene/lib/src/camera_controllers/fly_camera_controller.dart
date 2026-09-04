@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera_controllers/camera_controller.dart';
+import 'package:flutter_scene/src/camera_pose.dart';
 
 /// A free-look flying camera: drag to look, WASD to move on the look plane
 /// (strafing ignores pitch so looking down does not drift into the floor),
@@ -78,9 +79,25 @@ class FlyCameraController extends CameraController {
   final Set<LogicalKeyboardKey> _heldKeys = {};
   final Vector3 _velocity = Vector3.zero();
 
+  // Movement intent from [setMoveInput], held until the caller changes it,
+  // the same shape as ThirdPersonControllerComponent.setMoveInput. It sums
+  // with the held keys rather than replacing them, so a project can drive
+  // this controller from an InputManager, from raw key events, or from both
+  // at once without either source cancelling the other.
+  final Vector2 _moveInput = Vector2.zero();
+  double _elevateInput = 0.0;
+  bool _boostInput = false;
+
   /// World-space eye position.
   Vector3 get position => _position.clone();
   set position(Vector3 value) => _position = value.clone();
+
+  /// Rotation around world up, in radians (its eased, current value).
+  double get yaw => _yaw;
+
+  /// Look elevation, in radians (its eased, current value), within
+  /// +/-[pitchLimit]. Positive looks up.
+  double get pitch => _pitch;
 
   /// The unit look direction. At yaw 0, pitch 0 this is `(0, 0, -1)`.
   Vector3 get forward {
@@ -93,6 +110,24 @@ class FlyCameraController extends CameraController {
   }
 
   Vector3 get _right => Vector3(math.cos(_yaw), 0.0, -math.sin(_yaw));
+
+  /// Feeds device-agnostic movement intent, held until the next call.
+  ///
+  /// [move] is planar, `-1..1` on each axis with **+Y forward**, matching
+  /// `ThirdPersonControllerComponent.setMoveInput` and the engine's `move`
+  /// input action rather than Flutter's screen space. [elevate] is `-1..1`
+  /// with +1 up, and is ignored when [moveVertical] is false. [boost] applies
+  /// [boostMultiplier].
+  ///
+  /// This is the hook an `InputManager` drives (see `applyInput` in
+  /// `package:flutter_scene/input.dart`); it is independent of
+  /// [handleKeyEvent], and the two sum, so a rebindable action set and the
+  /// built-in WASD handling can coexist.
+  void setMoveInput(Vector2 move, {double elevate = 0.0, bool boost = false}) {
+    _moveInput.setFrom(move);
+    _elevateInput = elevate;
+    _boostInput = boost;
+  }
 
   /// Rotates the view by a drag delta (logical pixels). Horizontal drags turn,
   /// vertical drags pitch (clamped short of vertical).
@@ -122,49 +157,66 @@ class FlyCameraController extends CameraController {
   @override
   void releaseInput() {
     _heldKeys.clear();
+    _moveInput.setZero();
+    _elevateInput = 0.0;
+    _boostInput = false;
     _velocity.setZero();
   }
 
   @override
-  void update(double deltaSeconds) {
-    final dt = clampDeltaSeconds(deltaSeconds);
-    final lookR = smoothingResponse(dt);
+  void advance(double deltaSeconds) {
+    final lookR = smoothingResponse(deltaSeconds);
     _yaw += (_yawGoal - _yaw) * lookR;
     _pitch += (_pitchGoal - _pitch) * lookR;
 
     final moveForward = moveVertical
         ? forward
         : (Vector3(forward.x, 0.0, forward.z)..normalize());
-    final targetVelocity = Vector3.zero();
-    if (_heldKeys.contains(LogicalKeyboardKey.keyW)) {
-      targetVelocity.add(moveForward);
-    }
-    if (_heldKeys.contains(LogicalKeyboardKey.keyS)) {
-      targetVelocity.sub(moveForward);
-    }
-    // D moves toward the camera's right side of the screen; A moves left.
-    if (_heldKeys.contains(LogicalKeyboardKey.keyD)) targetVelocity.sub(_right);
-    if (_heldKeys.contains(LogicalKeyboardKey.keyA)) targetVelocity.add(_right);
+
+    // Forward and strafe amounts, summed from the held keys and the intent
+    // set through [setMoveInput]. D moves toward the camera's right side of
+    // the screen; A moves left.
+    var alongForward = _moveInput.y;
+    var alongRight = _moveInput.x;
+    var alongUp = moveVertical ? _elevateInput : 0.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyW)) alongForward += 1.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyS)) alongForward -= 1.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyD)) alongRight += 1.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyA)) alongRight -= 1.0;
     if (moveVertical) {
-      if (_heldKeys.contains(LogicalKeyboardKey.keyE)) {
-        targetVelocity.add(Vector3(0.0, 1.0, 0.0));
-      }
-      if (_heldKeys.contains(LogicalKeyboardKey.keyQ)) {
-        targetVelocity.sub(Vector3(0.0, 1.0, 0.0));
-      }
+      if (_heldKeys.contains(LogicalKeyboardKey.keyE)) alongUp += 1.0;
+      if (_heldKeys.contains(LogicalKeyboardKey.keyQ)) alongUp -= 1.0;
     }
+
+    final targetVelocity = Vector3.zero();
+    if (alongForward != 0.0) {
+      targetVelocity.addScaled(moveForward, alongForward);
+    }
+    // _right points to the camera's left in world space, hence the negation.
+    if (alongRight != 0.0) {
+      targetVelocity.addScaled(_right, -alongRight);
+    }
+    if (alongUp != 0.0) {
+      targetVelocity.y += alongUp;
+    }
+
     final boosted =
+        _boostInput ||
         _heldKeys.contains(LogicalKeyboardKey.shiftLeft) ||
         _heldKeys.contains(LogicalKeyboardKey.shiftRight);
-    if (targetVelocity.length2 > 1e-12) {
-      targetVelocity
-        ..normalize()
-        ..scale(speed * (boosted ? boostMultiplier : 1.0));
+    final length = targetVelocity.length;
+    if (length > 1e-6) {
+      // Clamped rather than normalized, so analog input (a stick pushed
+      // halfway) keeps its magnitude while any combination of held keys still
+      // reaches full speed, exactly as before.
+      targetVelocity.scale(
+        speed * (boosted ? boostMultiplier : 1.0) / math.max(length, 1.0),
+      );
     }
-    final moveR = settleResponse(movementSmoothing, dt);
+    final moveR = settleResponse(movementSmoothing, deltaSeconds);
     _velocity.addScaled(targetVelocity - _velocity, moveR);
-    if (_velocity.length2 > 1e-12) _position.addScaled(_velocity, dt);
+    if (_velocity.length2 > 1e-12) _position.addScaled(_velocity, deltaSeconds);
 
-    node.lookAtFrom(_position, _position + forward);
+    setPose(CameraPose.lookAt(_position, _position + forward));
   }
 }

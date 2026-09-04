@@ -93,7 +93,7 @@ class _GeometryBufferBlock {
 /// Vertex (and optional index) data along with the vertex shader used to
 /// transform it.
 ///
-/// `Geometry` is the geometry half of a [MeshPrimitive] — the shading half
+/// `Geometry` is the geometry half of a [MeshPrimitive] -- the shading half
 /// is supplied by a [Material]. Built-in subclasses cover the two
 /// supported vertex layouts:
 ///
@@ -163,6 +163,20 @@ abstract class Geometry {
   vm.Aabb3? _localBounds;
   vm.Sphere? _localBoundingSphere;
   int _localBoundsVersion = 0;
+
+  int _cpuDataVersion = 0;
+
+  /// A counter that increments each time the retained CPU vertex/index data
+  /// is replaced, so structures derived from it can tell they are stale.
+  @internal
+  int get cpuDataVersion => _cpuDataVersion;
+
+  /// Internal: cache slot for the scene raycaster's per-geometry
+  /// acceleration structure (see `raycast.dart`), which is expensive enough
+  /// to build that it is worth keeping across queries. Owned entirely by the
+  /// raycaster, which re-derives it whenever [cpuDataVersion] moves.
+  @internal
+  Object? raycastAccelerator;
 
   /// A counter that increments each time [setLocalBounds] changes the
   /// bounds.
@@ -385,6 +399,7 @@ abstract class Geometry {
 
     _cpuVertices = vertices;
     _cpuIndices = indices;
+    _cpuDataVersion++;
 
     _uploadStreams(
       _vertexStreamBytes(vertices, vertexCount),
@@ -498,6 +513,7 @@ abstract class Geometry {
     _cpuTangents = tangents;
     _cpuIndices = indices;
     _cpuVertices = null;
+    _cpuDataVersion++;
   }
 
   /// Internal: the retained CPU vertex/index data for scene raycasts. Either
@@ -523,6 +539,19 @@ abstract class Geometry {
     vertexCount: _vertexCount,
     indexCount: _indexCount,
   );
+
+  /// How many vertices this geometry draws with.
+  ///
+  /// Zero before the first upload. Public so a tool can weigh a scene without
+  /// copying it out through [extractMeshData], which allocates the whole mesh
+  /// again and is not something to do once a frame.
+  /// {@category Geometry}
+  int get vertexCount => _vertexCount;
+
+  /// How many indices this geometry draws with, or zero when it draws its
+  /// vertices in order.
+  /// {@category Geometry}
+  int get indexCount => _indexCount;
 
   /// Whether this geometry retains CPU-side vertex data, making
   /// [extractMeshData] available.

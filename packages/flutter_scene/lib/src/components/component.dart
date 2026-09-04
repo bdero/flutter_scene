@@ -60,6 +60,26 @@ abstract class Component {
   /// child lists during traversal is unsupported.
   void update(double deltaSeconds) {}
 
+  /// Whether this component wants [lateUpdate]. Declared rather than
+  /// detected, so a node only pays for a late pass when something asks for
+  /// one.
+  bool get wantsLateUpdate => false;
+
+  /// Runs after this node's whole subtree has updated: every descendant's
+  /// components have ticked and every animation player below has posed its
+  /// bones.
+  ///
+  /// This is where anything that *corrects* an animated pose belongs — a
+  /// limb solved onto a target, a head turned to look at something, a bone
+  /// clamped to a limit. Doing that work in [update] reads the previous
+  /// frame's pose and is overwritten moments later by the animation player,
+  /// which is the sort of bug that looks like a one-frame lag rather than
+  /// like wrong ordering.
+  ///
+  /// Costs nothing when unused: a node with no late components never calls
+  /// this.
+  void lateUpdate(double deltaSeconds) {}
+
   /// Called once per fixed physics step while the component is mounted,
   /// [enabled], and loaded. [fixedDt] is the fixed timestep of the
   /// surrounding [PhysicsWorld], not the frame interval.
@@ -127,6 +147,14 @@ abstract class Component {
   void tick(double deltaSeconds) {
     if (enabled && _mounted && _loaded) {
       update(deltaSeconds);
+    }
+  }
+
+  /// Runs [lateUpdate] when this component is live, mirroring [tick].
+  @internal
+  void lateTick(double deltaSeconds) {
+    if (enabled && _mounted && _loaded) {
+      lateUpdate(deltaSeconds);
     }
   }
 

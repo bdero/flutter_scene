@@ -23,7 +23,28 @@
 /// project (see the package README).
 library;
 
-export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
+export 'src/animation.dart'
+    show Animation, AnimationClip, AnimationMask, AnimationPlayer;
+export 'src/animation/animator.dart'
+    show
+        Animator,
+        AnimatorComparison,
+        AnimatorCondition,
+        AnimatorLayer,
+        AnimatorLayerWeights,
+        AnimatorMotion,
+        AnimatorParameters,
+        AnimatorState,
+        AnimatorTransition,
+        BlendMotion,
+        BlendMotion2D,
+        BlendStop,
+        BlendStop2D,
+        ClipMotion;
+export 'src/animation/animator_component.dart' show AnimatorComponent;
+export 'src/animation/ik_constraint_component.dart' show IkConstraintComponent;
+export 'src/animation/two_bone_ik.dart'
+    show TwoBoneSolution, solveTwoBoneIk, twoBoneMidAfter, twoBoneTipAfter;
 
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;
@@ -60,6 +81,14 @@ export 'src/geometry/primitives.dart'
         SphereGeometry,
         TorusGeometry,
         WedgeGeometry;
+export 'src/geometry/terrain.dart'
+    show HeightField, TerrainGeometry, buildTerrainArrays;
+export 'src/kit/scatter/scatter_layer.dart'
+    show ScatterBrush, ScatterLayer, ScatterPlacement, scatterInBrush;
+export 'src/geometry/terrain_brush.dart'
+    show TerrainBrush, TerrainBrushKind, sculptTerrain;
+export 'src/geometry/terrain_splat.dart'
+    show TerrainSplatMap, paintTerrainSplat, terrainSplatLayers;
 export 'src/geometry/polyline_geometry.dart'
     show DashPattern, PolylineCap, PolylineGeometry, PolylineWidthMode;
 export 'src/geometry/swept_geometry.dart'
@@ -151,14 +180,49 @@ export 'src/asset_helpers.dart'
         imageFromAsset,
         imageFromBytes;
 export 'src/camera.dart'
-    show Camera, CameraProjection, PerspectiveCamera, PerspectiveProjection;
-export 'src/camera_controllers/camera_controller.dart' show CameraController;
+    show
+        Camera,
+        CameraProjection,
+        OrthographicCamera,
+        OrthographicProjection,
+        PerspectiveCamera,
+        PerspectiveProjection;
+export 'src/camera_controllers/camera_controller.dart'
+    show CameraController, CameraDirectorBinding;
+export 'src/camera_controllers/camera_director.dart'
+    show CameraBlend, CameraDirector;
+export 'src/camera_controllers/camera_path.dart' show CameraPath;
+export 'src/camera_controllers/virtual_camera.dart'
+    show
+        CameraAim,
+        CameraBinding,
+        CameraBody,
+        CameraSolveContext,
+        ComposerAim,
+        FixedAim,
+        FramingTransposerBody,
+        HardLookAtAim,
+        OrbitalBody,
+        TransposerBody,
+        VirtualCamera,
+        dampScalar,
+        dampVector,
+        lookRotation;
+export 'src/camera_controllers/camera_sequence.dart'
+    show CameraSequence, CameraShot;
+export 'src/camera_controllers/dolly_camera_controller.dart'
+    show DollyCameraController;
+export 'src/camera_controllers/first_person_camera_controller.dart'
+    show FirstPersonCameraController, HeadBob;
 export 'src/camera_controllers/fly_camera_controller.dart'
     show FlyCameraController;
 export 'src/camera_controllers/follow_camera_controller.dart'
     show FollowCameraController;
 export 'src/camera_controllers/orbit_camera_controller.dart'
     show OrbitCameraController;
+export 'src/camera_controllers/rts_camera_controller.dart'
+    show EdgeScroll, RtsCameraController;
+export 'src/camera_pose.dart' show CameraPose;
 export 'src/components/camera_component.dart' show CameraComponent, NodeCamera;
 export 'src/components/component.dart' show Component;
 export 'src/components/directional_light_component.dart'
@@ -193,7 +257,17 @@ export 'src/components/mesh_particle_emitter_component.dart'
     show MeshParticleEmitterComponent, MeshParticleFacing;
 export 'src/components/trail_component.dart' show TrailComponent;
 export 'src/particles/particle_system.dart' show ParticleSystem;
+export 'src/particles/vfx_presets.dart'
+    show VfxCategory, VfxPreset, vfxPresetById, vfxPresets, vfxPresetsIn;
 export 'src/particles/particle_storage.dart' show ParticleStorage;
+export 'src/particles/particle_collision.dart'
+    show
+        CollisionModule,
+        ParticleBox,
+        ParticleCollider,
+        ParticleCollisionResponse,
+        ParticlePlane,
+        ParticleSphere;
 export 'src/particles/particle_module.dart'
     show
         AccelerationModule,
@@ -203,7 +277,8 @@ export 'src/particles/particle_module.dart'
         ParticleModule,
         RotationModule,
         SizeOverLifeModule,
-        TurbulenceModule;
+        TurbulenceModule,
+        WindModule;
 export 'src/particles/emitter_shape.dart'
     show
         BoxEmitterShape,
@@ -259,10 +334,19 @@ export 'src/render/selection_outline_pass.dart' show HighlightStyle;
 export 'src/render_texture.dart'
     show RenderTexture, RenderTextureSampling, RenderTextureUpdate;
 export 'src/render_view.dart' show RenderView;
-export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
+export 'src/math_extensions.dart'
+    show QuaternionRotate, QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
 export 'src/decal.dart' show DecalNode;
 export 'src/node.dart' show Node;
+export 'src/components/canvas_component.dart'
+    show CanvasComponent, CanvasRenderMode;
+export 'src/components/rect_transform_component.dart'
+    show RectTransformComponent;
+export 'src/ui/canvas_layout.dart' show LaidOutRect, layOutCanvas;
+// The rectangle types the canvas API hands back and takes, re-exported so a
+// caller does not have to reach into the document package for them.
+export 'package:scene/scene.dart' show RectTransformValues, UiRect, solveRect;
 export 'src/sprite.dart' show Sprite;
 export 'src/texture_atlas.dart'
     show TextureAtlas, generateSolidColorAtlasPixels;
@@ -271,7 +355,12 @@ export 'src/texture/external_texture.dart'
 export 'src/texture/texture2d.dart'
     show Texture2D, TextureSource, TextureSampling, GpuTextureSource;
 export 'src/memory_report.dart'
-    show MemoryCategory, MemoryReport, takeMemoryReport;
+    show
+        MemoryCategory,
+        MemoryReport,
+        releaseRenderTargetsOnMemoryPressure,
+        releaseTransientRenderTargets,
+        takeMemoryReport;
 export 'src/texture/texture_registry.dart'
     show clearTextureCache, loadTexture, releaseTexture;
 export 'src/texture/mipmap.dart' show TextureContent;
@@ -290,6 +379,7 @@ export 'src/post_process/post_process.dart'
         LensFlareSettings,
         PostProcessSettings,
         VignetteSettings;
+export 'src/exporter/gltf_writer.dart' show writeGlb;
 export 'src/importer/gltf.dart'
     show
         GltfImportWarning,
@@ -313,7 +403,8 @@ export 'src/widget_texture.dart'
 export 'src/shaders.dart' show baseShaderLibrary, loadBaseShaderLibrary;
 export 'src/skin.dart' show Skin;
 export 'src/sky_environment.dart' show SkyEnvironment, SkyEnvironmentRefresh;
-export 'src/sky_sources.dart' show GradientSkySource, PhysicalSkySource;
+export 'src/sky_sources.dart'
+    show GradientSkySource, PhysicalSkySource, WeatherSkySource;
 export 'src/skybox.dart'
     show EnvironmentSkySource, ShaderSkySource, SkySource, Skybox, SunSky;
 export 'src/sun_light.dart' show SunLight;

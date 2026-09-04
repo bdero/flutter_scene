@@ -77,6 +77,27 @@ engine.Animation? buildAnimation(
     final times = _floats(document.payload(channel.timeline)).toList();
     final values = _floats(document.payload(channel.keyframes));
     final name = nodes[channel.target]?.name ?? channel.targetName ?? '';
+    // Cubic tangents live in payloads of their own, one per keyframe like
+    // the values. A channel that claims cubic but has lost a tangent chunk
+    // (a hand-edited or partially merged document) falls back to linear
+    // rather than failing to realize: the keyframes alone are still a sound
+    // timeline, which is why they are stored apart from the tangents.
+    var interpolation = _interpolationOf(channel.interpolation);
+    var inTangents = channel.inTangents == null
+        ? null
+        : _floats(document.payload(channel.inTangents!));
+    var outTangents = channel.outTangents == null
+        ? null
+        : _floats(document.payload(channel.outTangents!));
+    if (interpolation == engine.TimelineInterpolation.cubic &&
+        (inTangents == null ||
+            outTangents == null ||
+            inTangents.length != values.length ||
+            outTangents.length != values.length)) {
+      interpolation = engine.TimelineInterpolation.linear;
+      inTangents = null;
+      outTangents = null;
+    }
 
     final engine.AnimationProperty property;
     final engine.PropertyResolver resolver;
@@ -86,29 +107,48 @@ engine.Animation? buildAnimation(
         resolver = engine.PropertyResolver.makeTranslationTimeline(
           times,
           _vec3List(values),
+          interpolation: interpolation,
+          inTangents: inTangents == null ? null : _vec3List(inTangents),
+          outTangents: outTangents == null ? null : _vec3List(outTangents),
         );
       case AnimationProperty.rotation:
         property = engine.AnimationProperty.rotation;
         resolver = engine.PropertyResolver.makeRotationTimeline(
           times,
           _quaternionList(values),
+          interpolation: interpolation,
+          inTangents: inTangents == null ? null : _quaternionList(inTangents),
+          outTangents: outTangents == null
+              ? null
+              : _quaternionList(outTangents),
         );
       case AnimationProperty.scale:
         property = engine.AnimationProperty.scale;
         resolver = engine.PropertyResolver.makeScaleTimeline(
           times,
           _vec3List(values),
+          interpolation: interpolation,
+          inTangents: inTangents == null ? null : _vec3List(inTangents),
+          outTangents: outTangents == null ? null : _vec3List(outTangents),
         );
       case AnimationProperty.weights:
         // The keyframes payload is the flattened glTF shape, one weight per
         // target per keyframe. Trailing floats past a whole keyframe are
         // dropped rather than trusted.
         final targetCount = times.isEmpty ? 0 : values.length ~/ times.length;
+        final used = times.length * targetCount;
         property = engine.AnimationProperty.weights;
         resolver = engine.PropertyResolver.makeMorphWeightsTimeline(
           times,
-          Float32List.sublistView(values, 0, times.length * targetCount),
+          Float32List.sublistView(values, 0, used),
           targetCount: targetCount,
+          interpolation: interpolation,
+          inTangents: inTangents == null
+              ? null
+              : Float32List.sublistView(inTangents, 0, used),
+          outTangents: outTangents == null
+              ? null
+              : Float32List.sublistView(outTangents, 0, used),
         );
     }
     channels.add(
@@ -156,3 +196,14 @@ List<Quaternion> _quaternionList(Float32List v) => [
   for (var i = 0; i + 4 <= v.length; i += 4)
     Quaternion(v[i], v[i + 1], v[i + 2], v[i + 3]),
 ];
+
+/// Maps a document channel's interpolation onto the engine's timeline modes.
+/// A channel written before interpolation was recorded has none, and loads
+/// linear.
+engine.TimelineInterpolation _interpolationOf(
+  AnimationInterpolation? interpolation,
+) => switch (interpolation) {
+  AnimationInterpolation.step => engine.TimelineInterpolation.step,
+  AnimationInterpolation.cubic => engine.TimelineInterpolation.cubic,
+  AnimationInterpolation.linear || null => engine.TimelineInterpolation.linear,
+};

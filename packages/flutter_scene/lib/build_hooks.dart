@@ -28,6 +28,8 @@
 /// ```
 library;
 
+export 'src/native/build_native_components.dart' show buildNativeComponents;
+
 // Native uses the real dart:io implementations; web/wasm resolves to stubs so
 // dart:io (and package:hooks) stay off the wasm dependency graph, keeping the
 // package WASM-compatible. Build hooks only ever run on the native host.
@@ -39,7 +41,11 @@ export 'src/importer/build_hooks.dart'
     show SceneAssetMode, buildScenes;
 export 'src/fmat/build_materials.dart'
     if (dart.library.js_interop) 'src/fmat/build_materials_unsupported.dart'
-    show MaterialAssetMode, buildMaterials;
+    show
+        MaterialAssetMode,
+        buildMaterials,
+        buildTerrainMaterial,
+        terrainMaterialSource;
 export 'src/fmat/target_shader_bundle.dart'
     if (dart.library.js_interop) 'src/fmat/target_shader_bundle_unsupported.dart'
     show TargetShaderBundleAssetMode, buildTargetShaderBundleJson;

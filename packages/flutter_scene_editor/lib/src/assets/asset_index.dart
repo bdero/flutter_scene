@@ -17,7 +17,16 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 
 /// The kind of an on-disk project asset, picked by file extension.
-enum FileAssetKind { model, image, environmentImage, scene, material }
+enum FileAssetKind {
+  model,
+  image,
+  environmentImage,
+  scene,
+  material,
+
+  /// A blueprint: a class written as graphs.
+  blueprint,
+}
 
 /// A file under the project directory the browser can act on.
 @immutable
@@ -77,10 +86,18 @@ const _imageExt = {'.png', '.jpg', '.jpeg', '.webp'};
 const _environmentImageExt = {'.hdr', '.exr'};
 const _sceneExt = {'.fscene'};
 const _materialExt = {'.fmat'};
+const _blueprintExt = {'.blueprint'};
 
-FileAssetKind? _classify(String name) {
+/// The kind of asset [name] is by its extension, or null when the editor has
+/// no use for that file.
+///
+/// Public because the browser answers the same question about a file dragged
+/// in from the desktop, and two extension tables would drift.
+FileAssetKind? assetKindOf(String name) {
   final dot = name.lastIndexOf('.');
-  if (dot < 0) return null;
+  // Not `< 0`: a file named `.hdr` is a hidden file with no stem, not an
+  // environment map.
+  if (dot <= 0) return null;
   final ext = name.substring(dot).toLowerCase();
   if (_modelExt.contains(ext)) return FileAssetKind.model;
   if (_imageExt.contains(ext)) return FileAssetKind.image;
@@ -89,6 +106,7 @@ FileAssetKind? _classify(String name) {
   }
   if (_sceneExt.contains(ext)) return FileAssetKind.scene;
   if (_materialExt.contains(ext)) return FileAssetKind.material;
+  if (_blueprintExt.contains(ext)) return FileAssetKind.blueprint;
   return null;
 }
 
@@ -126,7 +144,7 @@ Future<List<FileAsset>> scanProjectAssets(
         if (base == 'build' || base == 'node_modules') continue;
         await walk(entry, depth + 1);
       } else if (entry is File) {
-        final kind = _classify(base);
+        final kind = assetKindOf(base);
         if (kind == null) continue;
         results.add(
           FileAsset(

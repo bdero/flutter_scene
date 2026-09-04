@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,8 +6,7 @@ import '../toolchains/flutter_installation.dart';
 /// Persisted editor preferences shared across documents.
 class EditorSettings {
   EditorSettings({
-    this.dockLayout,
-    Map<String, String>? namedLayouts,
+    this.workspace,
     List<String>? recentScenes,
     List<FlutterInstallation>? flutterInstallations,
     this.selectedInstallationId,
@@ -23,7 +21,6 @@ class EditorSettings {
     Set<String>? hiddenGizmoTypes,
   }) : hiddenGizmoTypes = Set.of(hiddenGizmoTypes ?? const {}),
        editorCommand = editorCommand ?? defaultEditorCommand,
-       namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
        recentScenes = List.of(recentScenes ?? const []),
        flutterInstallations = List.of(flutterInstallations ?? const []),
        recentProjects = List.of(recentProjects ?? const []),
@@ -51,18 +48,8 @@ class EditorSettings {
     if (version is! num || version.toInt() > currentVersion) {
       throw const FormatException('Unsupported editor settings version');
     }
-    final layouts = <String, String>{};
-    final encodedLayouts = json['namedLayouts'];
-    if (encodedLayouts is Map) {
-      for (final entry in encodedLayouts.entries) {
-        if (entry.key is String && entry.value is Map) {
-          layouts[entry.key as String] = jsonEncode(entry.value);
-        }
-      }
-    }
     return EditorSettings(
-      dockLayout: _decodeLayout(json['dockLayout']),
-      namedLayouts: layouts,
+      workspace: _decodeWorkspace(json['workspace']),
       recentScenes: [
         if (json['recentScenes'] is List)
           for (final path in json['recentScenes'] as List)
@@ -131,8 +118,10 @@ class EditorSettings {
     );
   }
 
-  String? dockLayout;
-  final LinkedHashMap<String, String> namedLayouts;
+  /// The editor window's region sizes and collapse state, as the shell wrote
+  /// it. Opaque here: settings persist it, the shell reads it.
+  String? workspace;
+
   final List<String> recentScenes;
 
   /// Registered Flutter installations (the global toolchain registry).
@@ -178,17 +167,13 @@ class EditorSettings {
   /// default.
   final Set<String> hiddenGizmoTypes;
 
-  static String? _decodeLayout(Object? value) {
+  static String? _decodeWorkspace(Object? value) {
     return value is Map ? jsonEncode(value) : null;
   }
 
   String toJsonString() => const JsonEncoder.withIndent('  ').convert({
     'version': currentVersion,
-    if (_encodeLayout(dockLayout) case final layout?) 'dockLayout': layout,
-    'namedLayouts': {
-      for (final entry in namedLayouts.entries)
-        if (_encodeLayout(entry.value) case final layout?) entry.key: layout,
-    },
+    if (_encodeLayout(workspace) case final saved?) 'workspace': saved,
     'recentScenes': recentScenes,
     if (flutterInstallations.isNotEmpty)
       'flutterInstallations': [
@@ -291,22 +276,6 @@ class EditorSettings {
   FlutterInstallation? get selectedInstallation =>
       installationById(selectedInstallationId);
 
-  /// Saves a named snapshot, replacing an exact or case-insensitive match.
-  void saveNamedLayout(String name, String layout) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) throw const FormatException('Layout name is empty');
-    final existing = namedLayouts.keys.cast<String?>().firstWhere(
-      (candidate) => candidate!.toLowerCase() == trimmed.toLowerCase(),
-      orElse: () => null,
-    );
-    if (existing != null && existing != trimmed) namedLayouts.remove(existing);
-    namedLayouts[trimmed] = layout;
-  }
-
-  void deleteNamedLayout(String name) {
-    namedLayouts.remove(name);
-  }
-
   static bool _samePath(String a, String b) {
     if (Platform.isWindows || Platform.isMacOS) {
       return a.toLowerCase() == b.toLowerCase();
@@ -317,10 +286,9 @@ class EditorSettings {
 
 /// Loads and atomically saves [EditorSettings].
 class EditorSettingsStore {
-  EditorSettingsStore({required this.file, this.legacyDockLayoutFile});
+  EditorSettingsStore({required this.file});
 
   final File file;
-  final File? legacyDockLayoutFile;
 
   EditorSettings load() {
     try {
@@ -328,21 +296,9 @@ class EditorSettingsStore {
         return EditorSettings.fromJsonString(file.readAsStringSync());
       }
     } on FileSystemException {
-      return _migrateLegacyLayout();
+      return EditorSettings();
     } on FormatException {
-      return _migrateLegacyLayout();
-    }
-    return _migrateLegacyLayout();
-  }
-
-  EditorSettings _migrateLegacyLayout() {
-    try {
-      final legacy = legacyDockLayoutFile;
-      if (legacy != null && legacy.existsSync()) {
-        return EditorSettings(dockLayout: legacy.readAsStringSync());
-      }
-    } on FileSystemException {
-      // The default settings remain usable.
+      return EditorSettings();
     }
     return EditorSettings();
   }

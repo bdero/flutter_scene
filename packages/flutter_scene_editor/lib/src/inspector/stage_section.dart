@@ -14,6 +14,9 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 import 'package:vector_math/vector_math.dart' show Vector3;
 
+import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
+import 'weather_controls.dart';
 import '../controller/editor_controller.dart';
 import '../assets/environment_image_picker.dart';
 import '../assets/environment_thumbnail.dart';
@@ -43,23 +46,17 @@ class StageSection extends StatelessWidget {
     final ref = controller.document.stage.environmentRef;
     final resource = ref == null ? null : controller.document.resource(ref);
     final environment = resource is EnvironmentResource ? resource : null;
+    // No heading of its own: this is the whole content of the Scene Settings
+    // dialog, which is already titled.
     return ListView(
       padding: const EdgeInsets.all(8),
       children: [
-        Text('Scene settings', style: Theme.of(context).textTheme.labelMedium),
-        const Padding(
-          padding: EdgeInsets.fromLTRB(0, 0, 0, 8),
-          child: Text(
-            'Select a node to edit it.',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-        ),
         InspectorAccordion(
           identity: environment?.id,
           initiallyExpanded: const {0, 1},
           children: [
             InspectorAccordionItem(
-              title: const Text('Environment lighting'),
+              title: 'Environment lighting',
               child: EnvironmentControls(
                 controller: controller,
                 environment: environment,
@@ -67,7 +64,7 @@ class StageSection extends StatelessWidget {
               ),
             ),
             InspectorAccordionItem(
-              title: const Text('Background'),
+              title: 'Background',
               child: SkySection(
                 controller: controller,
                 environment: environment,
@@ -75,14 +72,14 @@ class StageSection extends StatelessWidget {
               ),
             ),
             InspectorAccordionItem(
-              title: const Text('Color management'),
+              title: 'Color management',
               child: ColorManagementControls(
                 controller: controller,
                 environment: environment,
               ),
             ),
             InspectorAccordionItem(
-              title: const Text('Rendering'),
+              title: 'Rendering',
               child: StageRenderControls(
                 controller: controller,
                 environment: environment,
@@ -200,7 +197,7 @@ class EnvironmentControls extends StatelessWidget {
       children: [
         LabeledControlRow(
           label: 'Source',
-          control: DropdownButton<String>(
+          control: EditorDropdown<String>(
             value: envType,
             items: const [
               DropdownMenuItem(value: 'studio', child: Text('Built-in studio')),
@@ -296,17 +293,11 @@ class EnvironmentControls extends StatelessWidget {
         if (envType != 'asset' &&
             envType != 'embedded' &&
             allowEnvironmentImport)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FButton(
-              variant: .outline,
-              size: .xs,
-              mainAxisSize: .min,
-              onPress: () =>
-                  _pickEnvironmentImage(context, showAsBackground: true),
-              prefix: const Icon(Icons.panorama_outlined, size: 14),
-              child: const Text('Import environment image…'),
-            ),
+          EditorActionButton(
+            label: 'Import environment image…',
+            icon: Icons.panorama_outlined,
+            onPressed: () =>
+                _pickEnvironmentImage(context, showAsBackground: true),
           ),
         SliderNumberField(
           label: 'Intensity',
@@ -324,8 +315,8 @@ class EnvironmentControls extends StatelessWidget {
           onCommit: (v) => _set({'environmentRotationY': v * math.pi / 180}),
         ),
         LabeledControlRow(
-          label: 'Reflection resolution',
-          control: DropdownButton<int>(
+          label: 'Reflections',
+          control: EditorDropdown<int>(
             value: _reflectionSizes.contains(env.radianceCubeSize)
                 ? (env.radianceCubeSize ?? 0)
                 : 0,
@@ -405,7 +396,7 @@ class ColorManagementControls extends StatelessWidget {
         ),
         LabeledControlRow(
           label: 'Tone mapping',
-          control: DropdownButton<String>(
+          control: EditorDropdown<String>(
             value: _toneMappingModes.contains(env.toneMapping)
                 ? env.toneMapping
                 : 'pbrNeutral',
@@ -463,8 +454,11 @@ class StageRenderControls extends StatelessWidget {
       children: [
         LabeledControlRow(
           label: 'Anti-aliasing',
-          control: DropdownButton<String>(
+          control: EditorDropdown<String>(
             value: stage.antiAliasingMode,
+            // The full set AntiAliasingMode carries. SMAA and TAA shipped in
+            // the engine and were reachable from code and from a hand-edited
+            // document, but not from here.
             items: const [
               DropdownMenuItem(value: 'auto', child: Text('Auto')),
               DropdownMenuItem(value: 'none', child: Text('None')),
@@ -493,7 +487,7 @@ class StageRenderControls extends StatelessWidget {
         ),
         LabeledControlRow(
           label: 'Texture filtering',
-          control: DropdownButton<String>(
+          control: EditorDropdown<String>(
             value: stage.filterQuality,
             items: const [
               DropdownMenuItem(value: 'none', child: Text('Nearest')),
@@ -772,7 +766,7 @@ class EnvironmentEffectsControls extends StatelessWidget {
     List<(String, String)> options,
   ) => LabeledControlRow(
     label: label,
-    control: DropdownButton<String>(
+    control: EditorDropdown<String>(
       value: options.any((o) => o.$1 == value) ? value : options.first.$1,
       items: [
         for (final option in options)
@@ -825,33 +819,6 @@ class EnvironmentEffectsControls extends StatelessWidget {
     onCommit: (r, g, b, _) => _set(key, {'x': r, 'y': g, 'z': b}),
   );
 
-  Widget _title(BuildContext context, String label, bool enabled) {
-    final colors = context.theme.colors;
-    return Row(
-      children: [
-        Container(
-          width: 5,
-          height: 5,
-          decoration: BoxDecoration(
-            color: enabled ? colors.primary : colors.mutedForeground,
-            borderRadius: BorderRadius.circular(1),
-          ),
-        ),
-        const SizedBox(width: 7),
-        Expanded(child: Text(label)),
-        Text(
-          enabled ? 'ON' : 'OFF',
-          style: TextStyle(
-            color: enabled ? colors.primary : colors.mutedForeground,
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.7,
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final env = environment;
@@ -861,7 +828,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
       identity: env.id,
       children: [
         InspectorAccordionItem(
-          title: _title(context, 'Auto exposure', e.autoExposureEnabled),
+          title: 'Auto exposure',
+          enabled: e.autoExposureEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'autoExposureEnabled', e.autoExposureEnabled),
@@ -907,7 +875,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Color grading', e.colorGradingEnabled),
+          title: 'Color grading',
+          enabled: e.colorGradingEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'colorGradingEnabled', e.colorGradingEnabled),
@@ -929,7 +898,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Bloom', e.bloomEnabled),
+          title: 'Bloom',
+          enabled: e.bloomEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'bloomEnabled', e.bloomEnabled),
@@ -940,7 +910,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Lens flare', e.lensFlareEnabled),
+          title: 'Lens flare',
+          enabled: e.lensFlareEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'lensFlareEnabled', e.lensFlareEnabled),
@@ -982,11 +953,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(
-            context,
-            'Ambient occlusion',
-            e.ambientOcclusionEnabled,
-          ),
+          title: 'Ambient occlusion',
+          enabled: e.ambientOcclusionEnabled,
           child: Column(
             children: [
               _toggle(
@@ -1120,11 +1088,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(
-            context,
-            'Screen-space reflections',
-            e.screenSpaceReflectionsEnabled,
-          ),
+          title: 'Screen-space reflections',
+          enabled: e.screenSpaceReflectionsEnabled,
           child: Column(
             children: [
               _toggle(
@@ -1185,11 +1150,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(
-            context,
-            'Global illumination',
-            e.globalIlluminationEnabled,
-          ),
+          title: 'Global illumination',
+          enabled: e.globalIlluminationEnabled,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1249,7 +1211,7 @@ class EnvironmentEffectsControls extends StatelessWidget {
                 identity: environment?.id,
                 children: [
                   InspectorAccordionItem(
-                    title: const Text('Advanced'),
+                    title: 'Advanced',
                     child: Column(
                       children: [
                         _slider(
@@ -1317,7 +1279,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Fog', e.fogEnabled),
+          title: 'Fog',
+          enabled: e.fogEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'fogEnabled', e.fogEnabled),
@@ -1373,7 +1336,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'God rays', e.godRaysEnabled),
+          title: 'God rays',
+          enabled: e.godRaysEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'godRaysEnabled', e.godRaysEnabled),
@@ -1410,7 +1374,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Depth of field', e.depthOfFieldEnabled),
+          title: 'Depth of field',
+          enabled: e.depthOfFieldEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'depthOfFieldEnabled', e.depthOfFieldEnabled),
@@ -1487,7 +1452,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Vignette', e.vignetteEnabled),
+          title: 'Vignette',
+          enabled: e.vignetteEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'vignetteEnabled', e.vignetteEnabled),
@@ -1498,11 +1464,8 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(
-            context,
-            'Chromatic aberration',
-            e.chromaticAberrationEnabled,
-          ),
+          title: 'Chromatic aberration',
+          enabled: e.chromaticAberrationEnabled,
           child: Column(
             children: [
               _toggle(
@@ -1519,11 +1482,180 @@ class EnvironmentEffectsControls extends StatelessWidget {
           ),
         ),
         InspectorAccordionItem(
-          title: _title(context, 'Film grain', e.filmGrainEnabled),
+          title: 'Film grain',
+          enabled: e.filmGrainEnabled,
           child: Column(
             children: [
               _toggle('Enabled', 'filmGrainEnabled', e.filmGrainEnabled),
               _slider('Intensity', 'filmGrainIntensity', e.filmGrainIntensity),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          title: 'Global illumination',
+          enabled: e.globalIlluminationEnabled,
+          child: Column(
+            children: [
+              _toggle(
+                'Enabled',
+                'globalIlluminationEnabled',
+                e.globalIlluminationEnabled,
+                description:
+                    'A grid of irradiance probes carrying bounce light, so a '
+                    'surface the camera is not looking at still lights what '
+                    'is around it.',
+              ),
+              _select(
+                'Volume',
+                'globalIlluminationVolumeMode',
+                e.globalIlluminationVolumeMode,
+                const [
+                  ('followCamera', 'Follow camera'),
+                  ('fitScene', 'Fit scene'),
+                  ('manual', 'Manual'),
+                ],
+              ),
+              _vector(
+                'Resolution',
+                'globalIlluminationResolution',
+                e.globalIlluminationResolution,
+              ),
+              _vector(
+                'Extents',
+                'globalIlluminationExtents',
+                e.globalIlluminationExtents,
+              ),
+              _slider(
+                'Intensity',
+                'globalIlluminationIntensity',
+                e.globalIlluminationIntensity,
+                max: 4,
+              ),
+              _slider(
+                'Emissive boost',
+                'globalIlluminationEmissiveBoost',
+                e.globalIlluminationEmissiveBoost,
+                max: 8,
+              ),
+              _slider(
+                'Hysteresis',
+                'globalIlluminationHysteresis',
+                e.globalIlluminationHysteresis,
+              ),
+              _slider(
+                'Visibility',
+                'globalIlluminationVisibility',
+                e.globalIlluminationVisibility,
+              ),
+              _slider(
+                'Visibility bias',
+                'globalIlluminationVisibilityBias',
+                e.globalIlluminationVisibilityBias,
+                max: 0.5,
+              ),
+              _slider(
+                'Shadow bias',
+                'globalIlluminationShadowBias',
+                e.globalIlluminationShadowBias,
+                max: 2,
+              ),
+              _slider(
+                'Firefly clamp',
+                'globalIlluminationFireflyClamp',
+                e.globalIlluminationFireflyClamp,
+                max: 32,
+              ),
+              _select(
+                'Injection resolution',
+                'globalIlluminationInjectionResolution',
+                e.globalIlluminationInjectionResolution,
+                const [
+                  ('full', 'Full'),
+                  ('half', 'Half'),
+                  ('quarter', 'Quarter'),
+                  ('eighth', 'Eighth'),
+                ],
+              ),
+              _integer(
+                'Probe update budget',
+                'globalIlluminationProbeUpdateBudget',
+                e.globalIlluminationProbeUpdateBudget,
+                min: 0,
+                max: 1024,
+              ),
+              _toggle(
+                'Update when idle only',
+                'globalIlluminationUpdateWhenIdleOnly',
+                e.globalIlluminationUpdateWhenIdleOnly,
+                description:
+                    'Refresh the field only while the camera is still, so a '
+                    'moving shot pays nothing for it.',
+              ),
+              _toggle(
+                'Bake only',
+                'globalIlluminationBakeOnly',
+                e.globalIlluminationBakeOnly,
+                description:
+                    'Light from the baked field alone, with no refresh at '
+                    'runtime.',
+              ),
+            ],
+          ),
+        ),
+        InspectorAccordionItem(
+          // Switched on by the Rendering section's anti-aliasing mode rather
+          // than by a toggle here: two switches for one thing can disagree,
+          // and the mode is the one the engine reads.
+          title: 'Temporal anti-aliasing',
+          enabled: e.temporalAntiAliasingEnabled,
+          child: Column(
+            children: [
+              _slider(
+                'Minimum current weight',
+                'temporalAntiAliasingMinimumCurrentWeight',
+                e.temporalAntiAliasingMinimumCurrentWeight,
+                max: 0.5,
+              ),
+              _slider(
+                'Variance gamma',
+                'temporalAntiAliasingVarianceGamma',
+                e.temporalAntiAliasingVarianceGamma,
+                min: 0.5,
+                max: 2,
+              ),
+              _slider(
+                'Sharpness',
+                'temporalAntiAliasingSharpness',
+                e.temporalAntiAliasingSharpness,
+              ),
+              _integer(
+                'Jitter sequence length',
+                'temporalAntiAliasingJitterSequenceLength',
+                e.temporalAntiAliasingJitterSequenceLength,
+                min: 2,
+                max: 32,
+              ),
+              _slider(
+                'Jitter scale',
+                'temporalAntiAliasingJitterScale',
+                e.temporalAntiAliasingJitterScale,
+              ),
+              _toggle(
+                'Object motion',
+                'temporalAntiAliasingObjectMotion',
+                e.temporalAntiAliasingObjectMotion,
+                description:
+                    'Reproject moving geometry as well as the camera. Off, '
+                    'moving objects leave trails.',
+              ),
+              _toggle(
+                'Skinned motion',
+                'temporalAntiAliasingSkinnedMotion',
+                e.temporalAntiAliasingSkinnedMotion,
+                description:
+                    'Include skinned deformation in that velocity, which '
+                    'keeps the previous frame\'s joint matrices alive.',
+              ),
             ],
           ),
         ),
@@ -1557,6 +1689,14 @@ class SkySection extends StatelessWidget {
   final LocalId? volumeNodeId;
   final bool showHeading;
 
+  /// Whether the weather controls lead the section.
+  ///
+  /// The stage's sky only. A volume's sky is a local override of the look in
+  /// one region; weather is scene-wide -- it adds rain to the whole level and
+  /// a lightning driver to it -- so offering it per volume would promise
+  /// something a volume cannot do.
+  bool get _showWeather => volumeNodeId == null;
+
   @override
   Widget build(BuildContext context) {
     final env = environment;
@@ -1567,6 +1707,7 @@ class SkySection extends StatelessWidget {
     final type = switch (source) {
       GradientSkySpec() => 'gradient',
       PhysicalSkySpec() => 'physical',
+      WeatherSkySpec() => 'weather',
       EnvironmentSkySpec() => 'environment',
       FmatSkySpec() => 'fmat',
       _ => 'none',
@@ -1574,12 +1715,14 @@ class SkySection extends StatelessWidget {
     final sun = switch (source) {
       GradientSkySpec(:final sunDirection) => sunDirection,
       PhysicalSkySpec(:final sunDirection) => sunDirection,
+      WeatherSkySpec(:final sunDirection) => sunDirection,
       _ => Vector3(0.4, 0.5, 0.6),
     };
     final lightScene = skyEnvironmentSpec != null;
     final sunLight = skyEnvironmentSpec?.sunLight;
     final castShadows = sunLight?.castsShadow ?? false;
-    final proceduralSky = type == 'gradient' || type == 'physical';
+    final proceduralSky =
+        type == 'gradient' || type == 'physical' || type == 'weather';
 
     // The look is an environment resource (the stage's global one or a
     // volume's); edits target it by id.
@@ -1592,7 +1735,10 @@ class SkySection extends StatelessWidget {
     // patch the current sky. Picking a procedural sky lights the scene and
     // casts sun shadows by default (the user can then turn them off).
     Future<void> setType(String newType) async {
-      final procedural = newType == 'gradient' || newType == 'physical';
+      final procedural =
+          newType == 'gradient' ||
+          newType == 'physical' ||
+          newType == 'weather';
       // A shader sky needs its .fmat source; picking cancel keeps the current
       // sky. Selecting it lights the scene by default like a procedural sky
       // (the compiled sky drives the image-based lighting), but without sun
@@ -1703,9 +1849,16 @@ class SkySection extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 4),
             child: Text('Background', style: TextStyle(fontSize: 13)),
           ),
+        // Weather leads: picking one is the fastest way to a sky that looks
+        // like somewhere, and it sets the mode below on its way past.
+        if (_showWeather) ...[
+          WeatherControls(controller: controller),
+          const SizedBox(height: 14),
+          const EditorSectionHeader(label: 'Sky'),
+        ],
         LabeledControlRow(
           label: 'Mode',
-          control: DropdownButton<String>(
+          control: EditorDropdown<String>(
             value: type,
             items: const [
               DropdownMenuItem(value: 'none', child: Text('None')),
@@ -1715,6 +1868,10 @@ class SkySection extends StatelessWidget {
               ),
               DropdownMenuItem(value: 'gradient', child: Text('Gradient sky')),
               DropdownMenuItem(value: 'physical', child: Text('Physical sky')),
+              DropdownMenuItem(
+                value: 'weather',
+                child: Text('Weather sky (clouds)'),
+              ),
               DropdownMenuItem(value: 'fmat', child: Text('Shader (.fmat)')),
             ],
             onChanged: (v) => v == null ? null : setType(v),
@@ -1725,7 +1882,7 @@ class SkySection extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               source.asset.key,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1735,7 +1892,7 @@ class SkySection extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 skyError,
-                style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+                style: const TextStyle(fontSize: 11, color: editorErrorColor),
               ),
             ),
           scalar(
@@ -1760,7 +1917,7 @@ class SkySection extends StatelessWidget {
             padding: EdgeInsets.only(top: 4),
             child: Text(
               'Sun direction',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: editorMutedTextColor),
             ),
           ),
           axis('X', sun.x, (v) => Vector3(v, sun.y, sun.z)),
@@ -1785,7 +1942,7 @@ class SkySection extends StatelessWidget {
               identity: env.id,
               children: [
                 InspectorAccordionItem(
-                  title: const Text('Sun shadows'),
+                  title: 'Sun shadows',
                   child: Column(
                     children: [
                       SliderNumberField(
@@ -1896,7 +2053,7 @@ class SkySection extends StatelessWidget {
                       ),
                       LabeledControlRow(
                         label: 'Filter',
-                        control: DropdownButton<String>(
+                        control: EditorDropdown<String>(
                           value:
                               const [
                                 'rotatedPoisson',
@@ -1920,7 +2077,7 @@ class SkySection extends StatelessWidget {
                       ),
                       LabeledControlRow(
                         label: 'Caster faces',
-                        control: DropdownButton<String>(
+                        control: EditorDropdown<String>(
                           value:
                               const [
                                 'front',
@@ -1978,6 +2135,99 @@ class SkySection extends StatelessWidget {
             max: 2000,
           ),
         ],
+        if (source is WeatherSkySpec) ...[
+          const Divider(height: 12),
+          scalar('Energy', 'energy', source.energy, max: 4),
+          scalar('Turbidity', 'turbidity', source.turbidity, min: 1, max: 20),
+          scalar(
+            'Sun size',
+            'sunAngularRadius',
+            source.sunAngularRadius,
+            min: 0.001,
+            max: 0.1,
+          ),
+          InspectorAccordion(
+            identity: env.id,
+            children: [
+              InspectorAccordionItem(
+                title: 'Clouds',
+                child: Column(
+                  children: [
+                    // Coverage is a threshold the noise has to clear, so
+                    // raising it grows the clouds outward rather than fading a
+                    // uniform haze up from nothing.
+                    scalar('Coverage', 'coverage', source.coverage),
+                    scalar('Density', 'density', source.density),
+                    scalar(
+                      'Altitude',
+                      'altitude',
+                      source.altitude,
+                      min: 0.2,
+                      max: 6,
+                    ),
+                    scalar('Detail', 'detail', source.detail),
+                    scalar(
+                      'Edge softness',
+                      'softness',
+                      source.softness,
+                      min: 0.005,
+                      max: 0.5,
+                    ),
+                    scalar('Shading', 'cloudShading', source.cloudShading),
+                    colorField('Cloud color', 'cloudColor', source.cloudColor),
+                    scalar('Wind X', 'windX', source.wind.x, min: -3, max: 3),
+                    scalar('Wind Z', 'windY', source.wind.y, min: -3, max: 3),
+                  ],
+                ),
+              ),
+              InspectorAccordionItem(
+                title: 'Storm',
+                child: Column(
+                  children: [
+                    // Drains the sky toward its own extinction colour rather
+                    // than toward grey, so an overcast sunset stays warm.
+                    scalar('Overcast', 'stormDarkening', source.stormDarkening),
+                  ],
+                ),
+              ),
+              InspectorAccordionItem(
+                title: 'Atmosphere',
+                child: Column(
+                  children: [
+                    scalar(
+                      'Rayleigh',
+                      'rayleighCoefficient',
+                      source.rayleighCoefficient,
+                      max: 6,
+                    ),
+                    colorField(
+                      'Rayleigh color',
+                      'rayleighColor',
+                      source.rayleighColor,
+                    ),
+                    scalar(
+                      'Mie',
+                      'mieCoefficient',
+                      source.mieCoefficient,
+                      max: 0.05,
+                    ),
+                    colorField('Mie color', 'mieColor', source.mieColor),
+                    scalar(
+                      'Mie eccentricity',
+                      'mieEccentricity',
+                      source.mieEccentricity,
+                    ),
+                    colorField(
+                      'Ground color',
+                      'groundColor',
+                      source.groundColor,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
         if (source is PhysicalSkySpec) ...[
           const Divider(height: 12),
           scalar('Energy', 'energy', source.energy, max: 4),
@@ -1993,7 +2243,7 @@ class SkySection extends StatelessWidget {
             identity: env.id,
             children: [
               InspectorAccordionItem(
-                title: const Text('Atmosphere'),
+                title: 'Atmosphere',
                 child: Column(
                   children: [
                     scalar(

@@ -85,10 +85,26 @@ export 'src/builtin_commands.dart'
         environmentResourceWithSunProperties,
         registerBuiltinCommands;
 
+// Animation authoring: clips, channels, and keyframes.
+export 'src/animation_commands.dart'
+    show
+        animationCommands,
+        createAnimation,
+        deleteAnimation,
+        renameAnimation,
+        addAnimationChannel,
+        removeAnimationChannel,
+        setAnimationKeyTime,
+        setAnimationKeyValue,
+        insertAnimationKey,
+        deleteAnimationKey,
+        encodeAnimationValues;
+
 // Subtree cloning (duplicate, copy, paste).
 export 'src/clone.dart' show NodeSubtree, captureSubtree, instantiateSubtree;
 
 // Cross-document graft (import one document's content into another).
+export 'src/extract.dart' show ExtractedPrefab, extractPrefab;
 export 'src/graft.dart' show graftDocumentRecords, wrapRootsUnderGroup;
 
 // Selection, queries, and the session that ties it all together.

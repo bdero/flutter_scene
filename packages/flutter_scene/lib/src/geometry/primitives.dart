@@ -1138,21 +1138,81 @@ PrimitiveArrays buildIcosphereArrays({
     faces = next;
   }
 
-  final positions = Float32List(verts.length * 3);
-  final normals = Float32List(verts.length * 3);
-  final texCoords = Float32List(verts.length * 2);
-  for (var i = 0; i < verts.length; i++) {
-    final n = verts[i].normalized();
+  // Equirectangular UVs: longitude across u, latitude down v.
+  final unitNormals = [for (final v in verts) v.normalized()];
+  // atan2 returns pi at the back of the sphere, which would place that
+  // meridian at u = 1 rather than u = 0; fold it down so every base u sits in
+  // [0, 1) and the unwrap below only ever has to lift a corner upward.
+  final u = <double>[
+    for (final n in unitNormals)
+      (0.5 + math.atan2(n.z, n.x) / (2 * math.pi)) % 1.0,
+  ];
+  final v = <double>[
+    for (final n in unitNormals) 0.5 - math.asin(n.y) / math.pi,
+  ];
+
+  // Longitude wraps from u = 1 back to u = 0, and a welded vertex carries a
+  // single u, so a triangle straddling that wrap would interpolate backwards
+  // across the whole texture: one visibly mirrored strip down the sphere.
+  //
+  // Unwrap each triangle around the largest gap in its three longitudes. The
+  // corner that makes the arc containing all three shortest becomes the
+  // triangle's origin, and the corners behind it are lifted past u = 1, so
+  // the triangle covers exactly the stretch of texture it covers of the
+  // sphere. Picking the origin per triangle rather than against a fixed
+  // pivot matters for the coarse levels, where a base face can span a half
+  // turn and a fixed pivot groups its corners on the wrong side.
+  //
+  // A lifted corner is a duplicate vertex, so the cost is one extra vertex
+  // per vertex on the wrap: a single column, against the threefold cost of
+  // unwelding every face (and with it the normals, the buffer, and the vertex
+  // shading) that per-face UVs would have meant.
+  //
+  // The poles need no special case: this icosahedron's vertices sit at
+  // +-t/sqrt(1 + t*t) on Y, about +-0.851, so none lands on the axis where
+  // longitude is undefined.
+  final seamCopies = <int, int>{};
+  int seamCopy(int index) => seamCopies.putIfAbsent(index, () {
+    unitNormals.add(unitNormals[index]);
+    u.add(u[index] + 1.0);
+    v.add(v[index]);
+    return unitNormals.length - 1;
+  });
+  for (final f in faces) {
+    var origin = u[f[0]];
+    var bestSpan = double.infinity;
+    for (var s = 0; s < 3; s++) {
+      final candidate = u[f[s]];
+      var span = 0.0;
+      for (var k = 0; k < 3; k++) {
+        var delta = u[f[k]] - candidate;
+        if (delta < 0) delta += 1.0;
+        if (delta > span) span = delta;
+      }
+      if (span < bestSpan) {
+        bestSpan = span;
+        origin = candidate;
+      }
+    }
+    for (var k = 0; k < 3; k++) {
+      if (u[f[k]] < origin) f[k] = seamCopy(f[k]);
+    }
+  }
+
+  final count = unitNormals.length;
+  final positions = Float32List(count * 3);
+  final normals = Float32List(count * 3);
+  final texCoords = Float32List(count * 2);
+  for (var i = 0; i < count; i++) {
+    final n = unitNormals[i];
     positions[i * 3] = radius * n.x;
     positions[i * 3 + 1] = radius * n.y;
     positions[i * 3 + 2] = radius * n.z;
     normals[i * 3] = n.x;
     normals[i * 3 + 1] = n.y;
     normals[i * 3 + 2] = n.z;
-    // TODO(icosphere-uv): spherical mapping leaves a seam where longitude
-    // wraps and distorts near the poles; emit per-face UVs to remove it.
-    texCoords[i * 2] = 0.5 + math.atan2(n.z, n.x) / (2 * math.pi);
-    texCoords[i * 2 + 1] = 0.5 - math.asin(n.y) / math.pi;
+    texCoords[i * 2] = u[i];
+    texCoords[i * 2 + 1] = v[i];
   }
   final indices = <int>[];
   for (final f in faces) {

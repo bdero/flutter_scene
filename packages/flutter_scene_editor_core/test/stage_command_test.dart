@@ -229,6 +229,64 @@ void main() {
     expect(restored.effects.fogColor, Vector3(0.6, 0.7, 0.8));
   });
 
+  test('setEnvironmentProperties edits global illumination and TAA', () {
+    // Both were realized (GI) or authorable (TAA) but reachable from no
+    // command, so the engine could light a scene by bounce and the editor had
+    // no way to turn it on.
+    final session = EditorSession.empty();
+    session.run('createEnvironmentResource', {});
+    final id = session.document.resources.values
+        .whereType<EnvironmentResource>()
+        .single
+        .id;
+
+    session.run('setEnvironmentProperties', {
+      'environmentId': id.toToken(),
+      'properties': {
+        'globalIlluminationEnabled': true,
+        'globalIlluminationVolumeMode': 'fitScene',
+        'globalIlluminationExtents': {'x': 30.0, 'y': 12.0, 'z': 30.0},
+        'globalIlluminationIntensity': 1.5,
+        'globalIlluminationProbeUpdateBudget': 256,
+        'globalIlluminationInjectionResolution': 'quarter',
+        'globalIlluminationBakeOnly': true,
+        'temporalAntiAliasingSharpness': 0.4,
+        'temporalAntiAliasingJitterSequenceLength': 16,
+        'temporalAntiAliasingObjectMotion': true,
+      },
+    });
+
+    final e = (session.document.resource(id)! as EnvironmentResource).effects;
+    expect(e.globalIlluminationEnabled, isTrue);
+    expect(e.globalIlluminationVolumeMode, 'fitScene');
+    expect(e.globalIlluminationExtents, Vector3(30, 12, 30));
+    expect(e.globalIlluminationIntensity, 1.5);
+    expect(e.globalIlluminationProbeUpdateBudget, 256);
+    expect(e.globalIlluminationInjectionResolution, 'quarter');
+    expect(e.globalIlluminationBakeOnly, isTrue);
+    expect(e.temporalAntiAliasingSharpness, 0.4);
+    expect(e.temporalAntiAliasingJitterSequenceLength, 16);
+    expect(e.temporalAntiAliasingObjectMotion, isTrue);
+
+    session.undo();
+    final back =
+        (session.document.resource(id)! as EnvironmentResource).effects;
+    expect(back.globalIlluminationEnabled, isFalse);
+    expect(back.temporalAntiAliasingSharpness, 0.15);
+  });
+
+  test('the anti-aliasing mode accepts every mode the engine has', () {
+    // The editor's dropdown offered four of the six; smaa and taa were only
+    // reachable from code or a hand-edited document.
+    final session = EditorSession.empty();
+    for (final mode in ['none', 'msaa', 'fxaa', 'smaa', 'taa', 'auto']) {
+      session.run('setStageProperties', {
+        'properties': {'antiAliasingMode': mode},
+      });
+      expect(session.document.stage.antiAliasingMode, mode);
+    }
+  });
+
   test('setEnvironmentImage assigns and removes the image atomically', () {
     final session = EditorSession.empty();
     session.run('createEnvironmentResource', {'name': 'courtyard'});
