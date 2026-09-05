@@ -74,7 +74,9 @@ Future<SceneDiff> reloadScene(
     final node = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..visible = spec.visible,
+        ..lightChannelMask = spec.lightChannelMask
+        ..visible = spec.visible
+        ..raycastable = spec.raycastable,
       id,
     );
     applyTransformSpec(node, spec.transform);
@@ -103,7 +105,11 @@ Future<SceneDiff> reloadScene(
     }
     if (change.name) node.name = spec.name;
     if (change.layers) node.layers = spec.layers;
+    if (change.lightChannelMask) {
+      node.lightChannelMask = spec.lightChannelMask;
+    }
     if (change.visible) node.visible = spec.visible;
+    if (change.raycastable) node.raycastable = spec.raycastable;
     if (change.reparented) {
       node.detach();
       parentFor(change.id).add(node);

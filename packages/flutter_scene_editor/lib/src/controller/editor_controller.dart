@@ -39,6 +39,9 @@ import 'package:flutter_scene/src/fscene/realize/resource_realizer.dart';
 import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
+
+import '../launcher/scene_templates.dart';
+import '../tools/terrain_tool_controller.dart';
 import 'package:vector_math/vector_math.dart';
 
 import '../io/glb_import_options.dart';
@@ -75,6 +78,15 @@ class EditorController extends ChangeNotifier {
 
   /// The live scene the viewport renders.
   final Scene scene;
+
+  /// The terrain tools' state: which one is armed, and how its brush is set.
+  ///
+  /// Here rather than inside the viewport because the two halves live apart —
+  /// a tool is chosen in the inspector and used in the scene view — and while
+  /// this was private to the viewport the inspector had no way to arm
+  /// anything, so the only route to a brush was an unlabelled button in the
+  /// corner of the scene.
+  final TerrainToolController terrainTool = TerrainToolController();
 
   /// The directory the open scene was loaded from (or last saved to), used to
   /// resolve prefab instance references and project assets relative to the scene
@@ -197,6 +209,16 @@ class EditorController extends ChangeNotifier {
           .toList();
       if (valid.isNotEmpty) session.selection.set(valid);
     }
+    // Failing that, open on the scene's first node rather than on nothing. The
+    // inspector's empty state is the one screen in the editor that answers no
+    // question anybody asked, and a scene has something in it to look at from
+    // the moment it is created. After the listener is attached, so the node
+    // opens carrying its highlight rather than waiting for the next selection
+    // change to notice it.
+    final roots = controller.displayDocument.roots;
+    if (session.selection.isEmpty && roots.isNotEmpty) {
+      session.selection.selectOnly(roots.first);
+    }
     return controller;
   }
 
@@ -272,23 +294,10 @@ class EditorController extends ChangeNotifier {
   /// their own sky-source instances (as the `setSkybox` command does).
   static Future<EditorController> empty({
     FsceneComponentRegistry? componentRegistry,
+    SceneDocument? document,
   }) {
-    final document = SceneDocument();
-    // The global look lives in an environment resource the stage references, so
-    // it dedupes and shares the authoring path with volume environments.
-    final environment = document.addResource(
-      EnvironmentResource(
-        document.newId(),
-        name: 'Environment',
-        skybox: SkyboxSpec(PhysicalSkySpec()),
-        skyEnvironment: SkyEnvironmentSpec(
-          PhysicalSkySpec(),
-          sunLight: SunLightSpec(),
-        ),
-      ),
-    );
-    document.stage.environmentRef = environment.id;
-    return open(EditorSession(document), componentRegistry: componentRegistry);
+    final built = document ?? buildEmptyScene();
+    return open(EditorSession(built), componentRegistry: componentRegistry);
   }
 
   /// Opens a controller over a document loaded from `.fscene` [source].
@@ -383,6 +392,19 @@ class EditorController extends ChangeNotifier {
   /// The component type names that can be added to a node.
   List<String> componentTypes() => _componentRegistry.types.toList();
 
+  /// Serializes a live [component] into the property map its codec would
+  /// write, or null when nothing claims it.
+  ///
+  /// The way to seed an authored component from one built in code: a preset
+  /// effect, a rig assembled by a helper. The properties come back in the same
+  /// shape `setComponentProperties` takes, so the result is an ordinary
+  /// undoable edit rather than a second way into the document.
+  Map<String, PropertyValue>? capturePropertiesOf(Component component) {
+    return _componentRegistry
+        .serialize(component, SerializeContext(document))
+        ?.properties;
+  }
+
   /// The declared editable properties of component [type] (empty when the type
   /// declares none, or is unknown).
   List<ComponentPropertyDef> componentSchema(String type) =>
@@ -434,6 +456,14 @@ class EditorController extends ChangeNotifier {
   /// Opens a source file in the user's editor. Wired by the host, which owns
   /// the editor-command setting.
   Future<void> Function(String path)? sourceFileOpener;
+
+  /// Moves the camera to frame a node, reporting whether it had bounds to
+  /// frame. Wired by the host, which owns the viewport camera.
+  ///
+  /// Lets a panel that is nowhere near the viewport — the outliner — ask for
+  /// the same framing the F key does, rather than reaching for a camera it
+  /// has no business holding.
+  bool Function(LocalId id)? nodeFramer;
 
   /// Registers placeholder codecs for [schemas] whose types have no codec in
   /// this controller's registry, so documents carrying them realize as inert
@@ -492,6 +522,46 @@ class EditorController extends ChangeNotifier {
 
   /// The live node realized from document node [id], or null.
   Node? liveNode(LocalId id) => _liveById[id];
+
+  // Editor-only nodes drawn in the scene but absent from the document: a nav
+  // mesh overlay, a debug draw. Held by key so a re-realize can put them back
+  // -- realizing rebuilds the scene from the document, and anything added
+  // beside the realized root would otherwise vanish on the next recompose.
+  final Map<String, Node> _decorations = {};
+
+  /// Draws [node] in the scene under [key] without putting it in the
+  /// document, replacing whatever that key held. Passing null removes it.
+  ///
+  /// A decoration survives a re-realize. It is not selectable, not saved, and
+  /// not part of the scene anyone ships; it is how the editor shows something
+  /// about the scene that is not in it.
+  void setSceneDecoration(String key, Node? node) {
+    final previous = _decorations.remove(key);
+    if (previous != null) scene.remove(previous);
+    if (node != null) {
+      _decorations[key] = node;
+      scene.add(node);
+    }
+    notifyListeners();
+  }
+
+  /// The decoration under [key], or null.
+  Node? sceneDecoration(String key) => _decorations[key];
+
+  /// The root the document was realized under, or null before the first
+  /// realize.
+  ///
+  /// The scene's parsed animations hang off this node, so it is where a clip
+  /// is instantiated and bound. Panels driving playback read it; nothing
+  /// should mutate the graph through it, since the controller owns realizing
+  /// and re-realizing it.
+  Node? get realizedRoot => _realizedRoot;
+
+  /// A counter bumped whenever the document is re-realized, so a panel
+  /// holding something derived from the live graph (an animation clip bound
+  /// to [realizedRoot], say) can tell its binding is stale.
+  int get realizeEpoch => _realizeEpoch;
+  int _realizeEpoch = 0;
 
   /// The live material on [id]'s first mesh primitive (the material a preview
   /// should show), or null when the node has no realized mesh.
@@ -2047,6 +2117,12 @@ class EditorController extends ChangeNotifier {
       case PrefabOverrideAspect.layers:
         live.layers = spec.layers;
         return true;
+      case PrefabOverrideAspect.lightChannelMask:
+        live.lightChannelMask = spec.lightChannelMask;
+        return true;
+      case PrefabOverrideAspect.raycastable:
+        live.raycastable = spec.raycastable;
+        return true;
       case PrefabOverrideAspect.shadowCasting:
         live.shadowCastingMode = shadowCastingModeFromName(
           spec.shadowCastingMode,
@@ -2313,8 +2389,12 @@ class EditorController extends ChangeNotifier {
     );
     scene.removeAll();
     scene.add(root);
+    for (final decoration in _decorations.values) {
+      scene.add(decoration);
+    }
     _resourceRealizer = realizer;
     _realizedRoot = root;
+    _realizeEpoch++;
     // Apply the document's scene-wide settings (environment/lighting, exposure,
     // tone mapping, anti-aliasing) to the live scene.
     await realizeStage(

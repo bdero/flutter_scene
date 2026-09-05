@@ -19,9 +19,26 @@ import 'fproject.dart';
 import 'project_runner.dart';
 import 'project_version_check.dart';
 
+/// Which half of the build toolbar to draw.
+///
+/// The selectors belong at the left of the toolbar row and the transport in
+/// the middle of it, so the two are placed by the shell rather than
+/// travelling together as one clump pushed to one side.
+enum BuildToolbarPart {
+  /// Toolchain, configuration and device.
+  selectors,
+
+  /// Play, and what a running session turns that into.
+  transport,
+
+  /// Both, in one row. What a host that lays the bar out itself asks for.
+  both,
+}
+
 class BuildToolbar extends StatelessWidget {
   const BuildToolbar({
     super.key,
+    this.part = BuildToolbarPart.both,
     required this.settings,
     required this.buildInfo,
     required this.inspector,
@@ -41,6 +58,9 @@ class BuildToolbar extends StatelessWidget {
     this.restartOnSave = false,
     this.onToggleRestartOnSave,
   });
+
+  /// Which half to draw.
+  final BuildToolbarPart part;
 
   final EditorSettings settings;
   final EditorBuildInfo buildInfo;
@@ -72,47 +92,55 @@ class BuildToolbar extends StatelessWidget {
     final versionCheck = project == null
         ? FlutterSceneVersionCheck.ok
         : checkFlutterSceneVersion(project!, buildInfo);
+    final selectors = <Widget>[
+      _InstallationDropdown(
+        settings: settings,
+        buildInfo: buildInfo,
+        inspector: inspector,
+        onSelect: onSelectInstallation,
+        onManage: onManageInstallations,
+      ),
+      const SizedBox(width: 4),
+      _ConfigurationDropdown(
+        project: project,
+        selected: selectedConfiguration,
+        versionCheck: versionCheck,
+        onSelect: onSelectConfiguration,
+        onEdit: onEditConfigs,
+        onRunTask: onRunTask,
+      ),
+      const SizedBox(width: 4),
+      _DeviceDropdown(
+        installation: settings.selectedInstallation,
+        catalog: deviceCatalog,
+        selected: selectedDevice,
+        onSelect: onSelectDevice,
+      ),
+    ];
+    final transport = _ActionButtons(
+      settings: settings,
+      buildInfo: buildInfo,
+      inspector: inspector,
+      runner: runner,
+      session: session,
+      project: project,
+      configuration: selectedConfiguration,
+      device: selectedDevice,
+      onPlay: onPlay,
+      restartOnSave: restartOnSave,
+      onToggleRestartOnSave: onToggleRestartOnSave,
+    );
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        _InstallationDropdown(
-          settings: settings,
-          buildInfo: buildInfo,
-          inspector: inspector,
-          onSelect: onSelectInstallation,
-          onManage: onManageInstallations,
-        ),
-        const SizedBox(width: 4),
-        _ConfigurationDropdown(
-          project: project,
-          selected: selectedConfiguration,
-          versionCheck: versionCheck,
-          onSelect: onSelectConfiguration,
-          onEdit: onEditConfigs,
-          onRunTask: onRunTask,
-        ),
-        const SizedBox(width: 4),
-        _DeviceDropdown(
-          installation: settings.selectedInstallation,
-          catalog: deviceCatalog,
-          selected: selectedDevice,
-          onSelect: onSelectDevice,
-        ),
-        const SizedBox(width: 2),
-        _ActionButtons(
-          settings: settings,
-          buildInfo: buildInfo,
-          inspector: inspector,
-          runner: runner,
-          session: session,
-          project: project,
-          configuration: selectedConfiguration,
-          device: selectedDevice,
-          onPlay: onPlay,
-          restartOnSave: restartOnSave,
-          onToggleRestartOnSave: onToggleRestartOnSave,
-        ),
-      ],
+      children: switch (part) {
+        BuildToolbarPart.selectors => selectors,
+        BuildToolbarPart.transport => [transport],
+        BuildToolbarPart.both => [
+          ...selectors,
+          const SizedBox(width: 2),
+          transport,
+        ],
+      },
     );
   }
 }
@@ -184,7 +212,7 @@ class _InstallationDropdown extends StatelessWidget {
                       buildInfo: buildInfo,
                     ),
                   ),
-                const Icon(Icons.flutter_dash, size: 13),
+                const Icon(Icons.flutter_dash, size: 14),
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 150),
@@ -253,7 +281,7 @@ class _InstallationBadge extends StatelessWidget {
           child: Icon(
             error ? Icons.error_outline : Icons.warning_amber_outlined,
             size: 12,
-            color: error ? Colors.redAccent : Colors.orangeAccent,
+            color: error ? editorErrorColor : editorWarningColor,
           ),
         );
       },
@@ -289,7 +317,7 @@ class _ConfigurationDropdown extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.tune, size: 13, color: scheme.onSurfaceVariant),
+              Icon(Icons.tune, size: 14, color: scheme.onSurfaceVariant),
               const SizedBox(width: 4),
               Text(
                 'No project',
@@ -310,7 +338,7 @@ class _ConfigurationDropdown extends StatelessWidget {
                   : Icons.info_outline,
               size: 12,
               color: versionCheck.severity == VersionCheckSeverity.warning
-                  ? Colors.orangeAccent
+                  ? editorWarningColor
                   : scheme.onSurfaceVariant,
             ),
           );
@@ -360,7 +388,7 @@ class _ConfigurationDropdown extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (badge != null) ...[badge, const SizedBox(width: 4)],
-                const Icon(Icons.tune, size: 13),
+                const Icon(Icons.tune, size: 14),
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 130),
@@ -439,7 +467,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
             children: [
               Icon(
                 Icons.devices_outlined,
-                size: 13,
+                size: 14,
                 color: scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 4),
@@ -461,7 +489,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
           MenuItemButton(
             child: Text(
               'Failed to list devices, $_error',
-              style: const TextStyle(color: Colors.redAccent),
+              style: const TextStyle(color: editorErrorColor),
             ),
           )
         else if (_devices == null || _devices!.isEmpty)
@@ -507,7 +535,7 @@ class _DeviceDropdownState extends State<_DeviceDropdown> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.devices_outlined, size: 13),
+                const Icon(Icons.devices_outlined, size: 14),
                 const SizedBox(width: 4),
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 120),
@@ -613,8 +641,9 @@ class _ActionButtons extends StatelessWidget {
                   context,
                   icon: Icons.autorenew,
                   tooltip: restartOnSave
-                      ? 'Restart on scene save is on'
-                      : 'Restart the running app on scene save',
+                      ? 'Refresh on save is on (scenes and native sources)'
+                      : 'Refresh the running app when a scene or a native '
+                            'source is saved',
                   active: restartOnSave,
                   onPressed: onToggleRestartOnSave,
                 ),
@@ -658,6 +687,20 @@ class _ActionButtons extends StatelessWidget {
                           ? () => session.restart()
                           : null,
                     ),
+                  if (session.supportsPause)
+                    _iconButton(
+                      context,
+                      icon: session.paused
+                          ? Icons.play_arrow
+                          : Icons.pause_outlined,
+                      tooltip: session.paused
+                          ? 'Release the app'
+                          : 'Hold the app',
+                      active: session.paused,
+                      onPressed: session.state == AppSessionState.running
+                          ? () => session.setPaused(!session.paused)
+                          : null,
+                    ),
                   _iconButton(
                     context,
                     icon: Icons.stop,
@@ -699,7 +742,7 @@ class _ActionButtons extends StatelessWidget {
               : null,
           child: Icon(
             icon,
-            size: 15,
+            size: 16,
             color: active
                 ? scheme.primary
                 : onPressed == null

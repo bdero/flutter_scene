@@ -1,6 +1,8 @@
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
+import 'package:flutter_scene/src/texture/texture_registry.dart'
+    show gpuTextureBytes;
 
 /// A typed scratch store passed between [RenderPass]es within a single
 /// frame.
@@ -86,7 +88,7 @@ class _RecordingBlackboard extends Blackboard {
 /// {@category Rendering}
 class ObservedTexturePool extends TransientTexturePool {
   ObservedTexturePool(this._inner, this._observer)
-    : super(framesInFlight: _inner.framesInFlight);
+    : super._delegating(framesInFlight: _inner.framesInFlight);
 
   final TransientTexturePool _inner;
   final RenderGraphObserver _observer;
@@ -103,6 +105,9 @@ class ObservedTexturePool extends TransientTexturePool {
 
   @override
   void clear() => _inner.clear();
+
+  @override
+  int get residentBytes => _inner.residentBytes;
 }
 
 /// Description of a transient GPU texture requested from a
@@ -202,7 +207,31 @@ class TransientTextureDescriptor {
 /// lifetime aliasing; a pass that needs two simultaneously-live textures
 /// of the same shape must give them distinct [TransientTextureDescriptor.debugName]s.
 class TransientTexturePool {
-  TransientTexturePool({this.framesInFlight = 2});
+  TransientTexturePool({this.framesInFlight = 2}) {
+    // Swept on construction as well as on every walk, so a program that
+    // churns through scenes does not grow the list between sheds.
+    if (_live.length >= _sweepThreshold) {
+      _live.removeWhere((ref) => ref.target == null);
+    }
+    _live.add(WeakReference<TransientTexturePool>(this));
+  }
+
+  /// For a pool that owns no rings and forwards everything to another pool.
+  ///
+  /// It stays out of [_live]: the pool it wraps is registered already, and
+  /// counting or clearing through both would report the same textures twice.
+  TransientTexturePool._delegating({required this.framesInFlight});
+
+  static const int _sweepThreshold = 16;
+
+  /// Every pool that owns rings, weakly.
+  ///
+  /// Pools outlive nothing in particular: a [Surface] view owns one, a
+  /// [Scene] owns one for probe capture and one per planar reflection group,
+  /// and none of those have a disposal hook. Strong references here would
+  /// pin a discarded scene's attachments for the life of the process, which
+  /// is the leak this exists to fix.
+  static final List<WeakReference<TransientTexturePool>> _live = [];
 
   final int framesInFlight;
   final Map<TransientTextureDescriptor, List<gpu.Texture?>> _rings = {};
@@ -239,8 +268,64 @@ class TransientTexturePool {
 
   /// Drops all cached textures. The next [acquire] for any descriptor
   /// reallocates. Call when the output size changes so stale-sized
-  /// textures aren't kept alive.
+  /// textures aren't kept alive, or to hand the memory back under pressure.
+  ///
+  /// Safe at any point in a frame. A pass that has already acquired a
+  /// texture holds its own reference to it, so this drops only the pool's
+  /// claim; the pass finishes drawing into the texture it was given and the
+  /// next frame allocates a fresh one.
   void clear() => _rings.clear();
+
+  /// Resident bytes of every texture this pool holds, summed across mip
+  /// chains.
+  int get residentBytes {
+    var bytes = 0;
+    for (final ring in _rings.values) {
+      for (final texture in ring) {
+        if (texture != null) bytes += gpuTextureBytes(texture);
+      }
+    }
+    return bytes;
+  }
+
+  /// Resident bytes held by every live pool.
+  static int get liveResidentBytes {
+    var bytes = 0;
+    _forEachLive((pool) => bytes += pool.residentBytes);
+    return bytes;
+  }
+
+  /// How many pools a shed would reach.
+  static int get liveCount {
+    var count = 0;
+    _forEachLive((_) => count++);
+    return count;
+  }
+
+  /// Clears every live pool and returns the bytes released.
+  static int shedLive() {
+    var bytes = 0;
+    _forEachLive((pool) {
+      bytes += pool.residentBytes;
+      pool.clear();
+    });
+    return bytes;
+  }
+
+  /// Visits every pool still alive, dropping references to collected ones on
+  /// the way through.
+  ///
+  /// [visit] must not construct a pool: the list is being mutated as it is
+  /// walked, and registering one mid-walk would throw. Nothing that calls
+  /// this allocates.
+  static void _forEachLive(void Function(TransientTexturePool pool) visit) {
+    _live.removeWhere((ref) {
+      final pool = ref.target;
+      if (pool == null) return true;
+      visit(pool);
+      return false;
+    });
+  }
 }
 
 /// Per-frame state handed to every [RenderGraphPass] when the graph
