@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-kit
-version: 3
+version: 4
 description: Build interactive 3D gameplay, character controllers, camera rigs, dynamic day/night cycles, water surfaces, audio, pooling, and debug overlays in flutter_scene. Use when creating game mechanics, camera controls, NPC behaviors, atmospheric environments, or diagnostic HUDs.
 ---
 
@@ -77,6 +77,8 @@ final controller = ThirdPersonControllerComponent(
 );
 playerNode.addComponent(controller);
 
+// Pass rotatesToMovement: false to move the node without turning it; read
+// controller.yaw to drive a child mesh or animation from the heading instead.
 // When using VirtualJoystick (where up is -Y in screen space), invert Y:
 // controller.setMoveInput(vm.Vector2(joystickDir.x, -joystickDir.y), isRunning: isSprinting);
 if (jumpPressed) controller.jump();
