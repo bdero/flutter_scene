@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/raycast.dart';
@@ -23,6 +24,11 @@ class ThirdPersonControllerComponent extends Component {
   /// Speed at which the character turns to face the movement direction (rad/s).
   double turnSpeed;
 
+  /// Whether the node is turned to face the movement direction. When false
+  /// the node keeps whatever rotation it has and only its position moves,
+  /// while [yaw] still tracks the heading for driving a child mesh or animation.
+  bool rotatesToMovement;
+
   /// Upward velocity impulse applied on jump.
   double jumpVelocity;
 
@@ -35,7 +41,7 @@ class ThirdPersonControllerComponent extends Component {
   /// Time window (in seconds) after leaving a ledge during which a jump is still allowed.
   double coyoteTimeWindow;
 
-  /// Time window (in seconds)  /// Time buffer window for jump inputs before landing (in seconds).
+  /// Time window (in seconds) during which a jump pressed before landing still fires.
   double jumpBufferWindow;
 
   /// Delay after landing before another jump can be initiated (in seconds).
@@ -74,11 +80,17 @@ class ThirdPersonControllerComponent extends Component {
   double _landingTimer = 0.0;
   double _airborneTime = 0.0;
   double _currentYaw = 0.0;
+  bool _yawSeeded = false;
+
+  /// The smoothed heading, in radians about +Y, the character is turning
+  /// toward. Seeded from the node's rotation on the first step.
+  double get yaw => _currentYaw;
 
   ThirdPersonControllerComponent({
     this.walkSpeed = 4.5,
     this.runMultiplier = 1.8,
     this.turnSpeed = 12.0,
+    this.rotatesToMovement = true,
     this.jumpVelocity = 6.5,
     this.gravity = 18.0,
     this.maxSlopeAngleDegrees = 45.0,
@@ -135,6 +147,14 @@ class ThirdPersonControllerComponent extends Component {
   @override
   void fixedUpdate(double fixedDt) {
     if (fixedDt <= 0.0 || !isAttached) return;
+
+    if (!_yawSeeded) {
+      _yawSeeded = true;
+      final forward = node.globalTransform.getColumn(2).xyz;
+      if (forward.length2 > 1e-12) {
+        _currentYaw = math.atan2(forward.x, forward.z);
+      }
+    }
 
     // Update timers
     if (_coyoteTimer > 0.0) _coyoteTimer -= fixedDt;
@@ -325,19 +345,24 @@ class ThirdPersonControllerComponent extends Component {
       newWorldPos.y = groundY + footOffset;
     }
 
+    final parent = node.parent;
+    final invParent = parent == null
+        ? null
+        : (parent.globalTransform.clone()..invert());
+
+    if (!rotatesToMovement) {
+      node.position = invParent == null
+          ? newWorldPos
+          : invParent.transform3(newWorldPos);
+      return;
+    }
+
     final newWorldRot = vm.Quaternion.axisAngle(
       vm.Vector3(0, 1, 0),
       _currentYaw,
     );
     final worldMat = vm.Matrix4.compose(newWorldPos, newWorldRot, node.scale);
-
-    final parent = node.parent;
-    if (parent != null) {
-      final invParent = parent.globalTransform.clone()..invert();
-      node.localTransform = invParent * worldMat;
-    } else {
-      node.localTransform = worldMat;
-    }
+    node.localTransform = invParent == null ? worldMat : invParent * worldMat;
   }
 
   @override
@@ -346,6 +371,7 @@ class ThirdPersonControllerComponent extends Component {
       walkSpeed: walkSpeed,
       runMultiplier: runMultiplier,
       turnSpeed: turnSpeed,
+      rotatesToMovement: rotatesToMovement,
       jumpVelocity: jumpVelocity,
       gravity: gravity,
       maxSlopeAngleDegrees: maxSlopeAngleDegrees,

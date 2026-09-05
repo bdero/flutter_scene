@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter_scene/kit.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -317,6 +319,59 @@ void main() {
 
       expect(controller.velocity.x, greaterThan(0.5));
       expect(controller.velocity.z, closeTo(0.0, 0.1));
+    });
+
+    vm.Vector3 forwardOf(Node node) => node.localTransform.getColumn(2).xyz;
+
+    test('turns the node to face the movement direction by default', () {
+      final player = Node();
+      final controller = ThirdPersonControllerComponent(
+        walkSpeed: 5.0,
+        groundPlaneHeight: 0.0,
+      );
+      player.addComponent(controller);
+
+      controller.setMoveInput(vm.Vector2(1, 0));
+      for (var i = 0; i < 30; i++) {
+        controller.fixedUpdate(0.1);
+      }
+
+      expect(controller.yaw, closeTo(math.pi / 2, 0.01));
+      expect(forwardOf(player).x, closeTo(1.0, 0.01));
+    });
+
+    test('rotatesToMovement false keeps the authored rotation', () {
+      final player = Node()
+        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), 1.0);
+      final controller = ThirdPersonControllerComponent(
+        walkSpeed: 5.0,
+        groundPlaneHeight: 0.0,
+        rotatesToMovement: false,
+      );
+      player.addComponent(controller);
+
+      controller.setMoveInput(vm.Vector2(1, 0));
+      for (var i = 0; i < 30; i++) {
+        controller.fixedUpdate(0.1);
+      }
+
+      expect(player.position.x, greaterThan(1.0));
+      expect(forwardOf(player).x, closeTo(math.sin(1.0), 1e-6));
+      expect(forwardOf(player).z, closeTo(math.cos(1.0), 1e-6));
+      // The heading still tracks movement for callers driving their own facing.
+      expect(controller.yaw, closeTo(math.pi / 2, 0.01));
+    });
+
+    test('seeds yaw from the node rotation instead of snapping to zero', () {
+      final player = Node()
+        ..rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), 1.0);
+      final controller = ThirdPersonControllerComponent(groundPlaneHeight: 0.0);
+      player.addComponent(controller);
+
+      controller.fixedUpdate(0.1);
+
+      expect(controller.yaw, closeTo(1.0, 1e-6));
+      expect(forwardOf(player).x, closeTo(math.sin(1.0), 1e-6));
     });
 
     test('maintains footOffset height above ground plane', () {
