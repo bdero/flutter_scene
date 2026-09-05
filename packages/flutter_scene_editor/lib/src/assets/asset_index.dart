@@ -17,7 +17,16 @@ import 'package:scene/scene.dart';
 // ignore: implementation_imports
 
 /// The kind of an on-disk project asset, picked by file extension.
-enum FileAssetKind { model, image, environmentImage, scene, material }
+enum FileAssetKind {
+  model,
+  image,
+  environmentImage,
+  scene,
+  material,
+
+  /// A blueprint: a class written as graphs.
+  blueprint,
+}
 
 /// A file under the project directory the browser can act on.
 @immutable
@@ -77,6 +86,7 @@ const _imageExt = {'.png', '.jpg', '.jpeg', '.webp'};
 const _environmentImageExt = {'.hdr', '.exr'};
 const _sceneExt = {'.fscene'};
 const _materialExt = {'.fmat'};
+const _blueprintExt = {'.blueprint'};
 
 FileAssetKind? _classify(String name) {
   final dot = name.lastIndexOf('.');
@@ -89,6 +99,7 @@ FileAssetKind? _classify(String name) {
   }
   if (_sceneExt.contains(ext)) return FileAssetKind.scene;
   if (_materialExt.contains(ext)) return FileAssetKind.material;
+  if (_blueprintExt.contains(ext)) return FileAssetKind.blueprint;
   return null;
 }
 

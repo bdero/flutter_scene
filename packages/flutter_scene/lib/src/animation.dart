@@ -21,6 +21,7 @@ import 'package:flutter_scene/src/math_extensions.dart';
 import 'package:vector_math/vector_math.dart';
 
 part 'animation/animation.dart';
+part 'animation/animation_mask.dart';
 part 'animation/animation_clip.dart';
 part 'animation/animation_player.dart';
 part 'animation/animation_transform.dart';

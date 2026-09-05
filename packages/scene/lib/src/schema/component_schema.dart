@@ -258,6 +258,7 @@ class ComponentSchema {
     this.type, {
     this.doc,
     this.icon,
+    this.category,
     this.version = 1,
     this.formerTypes = const [],
     this.properties = const [],
@@ -272,6 +273,11 @@ class ComponentSchema {
 
   /// An optional editor icon hint (an emoji or a named glyph).
   final String? icon;
+
+  /// The group this type is filed under in an editor's component picker
+  /// ("Rendering", "Physics", "Cameras"). Null files it under a catch-all,
+  /// which is where a project's own components land until they say otherwise.
+  final String? category;
 
   /// The schema revision, for future migrations.
   final int version;
@@ -297,6 +303,7 @@ class ComponentSchema {
     'type': type,
     if (doc != null) 'doc': doc,
     if (icon != null) 'icon': icon,
+    if (category != null) 'category': category,
     if (version != 1) 'version': version,
     if (formerTypes.isNotEmpty) 'formerTypes': formerTypes,
     'properties': [for (final def in properties) def.toJson()],
@@ -311,6 +318,7 @@ class ComponentSchema {
       json['type'] as String,
       doc: json['doc'] as String?,
       icon: json['icon'] as String?,
+      category: json['category'] as String?,
       version: (json['version'] as num?)?.toInt() ?? 1,
       formerTypes: json['formerTypes'] is List
           ? [for (final type in json['formerTypes'] as List) type as String]

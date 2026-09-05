@@ -164,6 +164,20 @@ abstract class Geometry {
   vm.Sphere? _localBoundingSphere;
   int _localBoundsVersion = 0;
 
+  int _cpuDataVersion = 0;
+
+  /// A counter that increments each time the retained CPU vertex/index data
+  /// is replaced, so structures derived from it can tell they are stale.
+  @internal
+  int get cpuDataVersion => _cpuDataVersion;
+
+  /// Internal: cache slot for the scene raycaster's per-geometry
+  /// acceleration structure (see `raycast.dart`), which is expensive enough
+  /// to build that it is worth keeping across queries. Owned entirely by the
+  /// raycaster, which re-derives it whenever [cpuDataVersion] moves.
+  @internal
+  Object? raycastAccelerator;
+
   /// A counter that increments each time [setLocalBounds] changes the
   /// bounds.
   ///
@@ -385,6 +399,7 @@ abstract class Geometry {
 
     _cpuVertices = vertices;
     _cpuIndices = indices;
+    _cpuDataVersion++;
 
     _uploadStreams(
       _vertexStreamBytes(vertices, vertexCount),
@@ -498,6 +513,7 @@ abstract class Geometry {
     _cpuTangents = tangents;
     _cpuIndices = indices;
     _cpuVertices = null;
+    _cpuDataVersion++;
   }
 
   /// Internal: the retained CPU vertex/index data for scene raycasts. Either

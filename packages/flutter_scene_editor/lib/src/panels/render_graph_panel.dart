@@ -296,10 +296,7 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
     return ListView(
       padding: const EdgeInsets.all(8),
       children: [
-        Text(
-          '${pass.name} (pass $index)',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
+        Text('${pass.name} (pass $index)', style: editorSubheadText),
         const SizedBox(height: 4),
         Text('CPU encode: ${pass.cpuMicros} us', style: editorDetailText),
         const SizedBox(height: 8),

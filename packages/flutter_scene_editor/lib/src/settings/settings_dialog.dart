@@ -377,7 +377,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     visualDensity: VisualDensity.compact,
     icon: Icon(
       active ? Icons.radio_button_checked : Icons.radio_button_off,
-      size: 15,
+      size: 16,
     ),
     onPressed: onSelect,
   );
@@ -506,8 +506,8 @@ class _ValidationBadge extends StatelessWidget {
           message: validation.summary,
           child: Icon(
             error ? Icons.error_outline : Icons.warning_amber_outlined,
-            size: 13,
-            color: error ? Colors.redAccent : Colors.orangeAccent,
+            size: 14,
+            color: error ? editorErrorColor : editorWarningColor,
           ),
         );
       },
@@ -669,7 +669,7 @@ class _InstallationDetailState extends State<_InstallationDetail> {
             IconButton(
               tooltip: 'Browse',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.folder_open, size: 15),
+              icon: const Icon(Icons.folder_open, size: 16),
               onPressed: onBrowse,
             ),
         ],

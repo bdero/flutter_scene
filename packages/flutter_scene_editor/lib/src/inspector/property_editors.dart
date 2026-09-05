@@ -80,14 +80,17 @@ class PropertyField extends StatelessWidget {
               width: 90,
               child: Text(
                 descriptor.label,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: editorMutedTextColor,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 4),
             Text(
               '(${descriptor.type.name})',
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: const TextStyle(fontSize: 11, color: editorMutedTextColor),
             ),
           ],
         ),
@@ -781,11 +784,12 @@ class _ScrubbableNumberFieldState extends State<ScrubbableNumberField> {
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.right,
-                              style: TextStyle(
-                                color: context.theme.colors.foreground,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
+                              style: const TextStyle(
+                                // Amber, so a number you can drag never reads
+                                // like a number being reported to you. Every
+                                // transform row has both within a few pixels.
+                                color: editorValueColor,
+                                fontFeatures: [FontFeature.tabularFigures()],
                                 fontSize: 11,
                               ),
                             ),
@@ -953,11 +957,47 @@ class LabeledControlRow extends StatelessWidget {
   });
 
   final String label;
+
+  /// The control, measured at its natural size.
+  ///
+  /// It must size itself: it is laid out inside a [Wrap] and a [FittedBox],
+  /// both of which offer unbounded width so they can measure it, and a
+  /// control that wants a share of the row's width instead has no width to
+  /// take a share of. [Vec3Field] is the shape for a control that divides
+  /// the row: a plain [Row] with a fixed-width label, no wrapping and no
+  /// scale-down.
   final Widget control;
+
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
+    assert(() {
+      final widget = control;
+      // Both shapes this has been given: the control itself asking to flex,
+      // and a Row of fields each asking to. The second is the one that broke
+      // the vec4 property row, and a check for the first alone would have
+      // waved it through.
+      final flexes =
+          widget is Flexible ||
+          (widget is Flex && widget.children.any((c) => c is Flexible));
+      if (!flexes) return true;
+      throw FlutterError.fromParts([
+        ErrorSummary(
+          'LabeledControlRow was given a flex control for "$label".',
+        ),
+        ErrorDescription(
+          'The control is measured inside a FittedBox, which offers '
+          'unbounded width. Expanded and Flexible ask for a share of the '
+          'width that is left over, and unbounded width leaves none.',
+        ),
+        ErrorHint(
+          'Give the control its own size, or lay the row out like Vec3Field '
+          'does when the control should divide the row between its fields.',
+        ),
+      ]);
+    }());
+
     return Padding(
       padding: padding,
       child: Wrap(

@@ -188,6 +188,11 @@ class ParticleSystem {
       storage.posZ[i] += storage.velZ[i] * dt;
     }
 
+    // Anything that reacts to where particles ended up, collision above all.
+    for (final module in modules) {
+      module.postIntegrate(storage, dt);
+    }
+
     // Age and reap expired particles (reverse so swap-with-last is safe).
     for (var i = storage.aliveCount - 1; i >= 0; i--) {
       storage.age[i] += dt;

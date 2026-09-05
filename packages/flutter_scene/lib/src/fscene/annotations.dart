@@ -17,6 +17,7 @@ class SceneComponent {
     this.type, {
     this.doc,
     this.icon,
+    this.category,
     this.formerTypes = const [],
   });
 
@@ -28,6 +29,11 @@ class SceneComponent {
 
   /// An optional editor icon hint (an emoji or a named glyph).
   final String? icon;
+
+  /// The group this component is filed under in the editor's component
+  /// picker. Null files it under "Scripts", with the rest of the project's
+  /// own components.
+  final String? category;
 
   /// Prior type tags, accepted when loading older documents.
   final List<String> formerTypes;

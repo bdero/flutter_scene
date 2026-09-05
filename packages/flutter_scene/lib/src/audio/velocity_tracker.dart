@@ -4,10 +4,24 @@ import 'package:scene/physics.dart' show BodyType;
 import 'package:vector_math/vector_math.dart';
 
 /// Finite-differences a world position across frames into a velocity.
-// TODO(audio): suppress the one-frame velocity spike when the tracked
-// position teleports (detect an implausible displacement and emit zero
-// for that frame).
 class PositionVelocityTracker {
+  /// Creates a tracker that treats a frame implying more than
+  /// [teleportSpeed] as a teleport rather than as motion.
+  PositionVelocityTracker({this.teleportSpeed = defaultTeleportSpeed});
+
+  /// The speed of sound in air at 20 degrees C, in metres per second, and so
+  /// in the engine's world units under the glTF metre convention.
+  ///
+  /// The default cutoff, because doppler is the only consumer of this
+  /// velocity and it stops describing anything real at that speed: the shift
+  /// goes to a singularity and then inverts.
+  static const double defaultTeleportSpeed = 343.0;
+
+  /// Above this implied speed a frame's displacement is read as a
+  /// discontinuity and reported as zero velocity. Set it to
+  /// [double.infinity] to report every finite difference as-is.
+  final double teleportSpeed;
+
   Vector3? _lastPosition;
   final Vector3 _velocity = Vector3.zero();
 
@@ -22,6 +36,16 @@ class PositionVelocityTracker {
         ..setFrom(position)
         ..sub(last)
         ..scale(1.0 / deltaSeconds);
+      // A respawn, a camera cut, or a level load moves the tracked node
+      // discontinuously. The finite difference across that jump is not a
+      // velocity, and feeding it to doppler pitch-bends every source for a
+      // frame, which is far more audible than the frame of motion lost by
+      // suppressing it. The new position is still recorded, so the next
+      // frame derives normally from where the node landed.
+      if (teleportSpeed.isFinite &&
+          _velocity.length2 > teleportSpeed * teleportSpeed) {
+        _velocity.setZero();
+      }
     }
     _lastPosition = (last ?? Vector3.zero())..setFrom(position);
     return _velocity;
@@ -40,6 +64,10 @@ class PositionVelocityTracker {
 /// when one is present (exact and stable), otherwise falls back to
 /// finite-differencing the world position.
 class VelocityTracker extends PositionVelocityTracker {
+  /// Creates a tracker with the given teleport cutoff. See
+  /// [PositionVelocityTracker.teleportSpeed].
+  VelocityTracker({super.teleportSpeed});
+
   /// Returns the velocity for this frame given the node's current world
   /// [position]. The returned vector may be reused across calls; copy
   /// it to retain it.

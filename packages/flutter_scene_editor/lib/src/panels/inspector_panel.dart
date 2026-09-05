@@ -13,13 +13,20 @@ import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
+import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/euler.dart';
 import '../inspector/live_fields.dart';
+import '../blueprints/blueprint_editor_screen.dart';
 import '../inspector/material_section.dart';
+import '../inspector/nav_mesh_editor.dart';
+import '../inspector/particle_emitter_controls.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
 import '../inspector/resource_origin.dart';
+import '../inspector/terrain_section.dart';
+import '../inspector/vfx_editing.dart';
+import '../inspector/water_conversion.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
 import '../shell/editor_theme.dart';
@@ -214,6 +221,30 @@ class _NodeInspector extends StatelessWidget {
                   materialId:
                       (component.properties['material'] as ResourceRefValue).id,
                 ),
+              // The terrain tools, where a terrain is selected. This is where
+              // they are found: the scene view's corner button is a shortcut
+              // for people who already know they exist. One terrain at a time,
+              // since the tools act on a specific height field.
+              if (single && component.type == 'mesh')
+                if (terrainSpecOf(controller, node.id) case final terrain?) ...[
+                  const SizedBox(height: 8),
+                  TerrainSection(
+                    controller: controller,
+                    nodeId: node.id,
+                    spec: terrain,
+                  ),
+                ],
+              // A graph is drawn on a screen, not in a docked tab, so the
+              // component that holds one says where to go and opens it.
+              if (single && component.type == 'visualScript')
+                _EditGraphRow(controller: controller, node: node),
+              // A flat surface can become an area of water where it stands,
+              // which is what a lake is: not an object you place, a piece of
+              // ground you say is wet.
+              if (single &&
+                  component.type == 'mesh' &&
+                  canBecomeWater(controller, node.id))
+                _MakeWaterRow(controller: controller, nodeId: node.id),
               // A volume's environment is a resource; edit its look inline.
               if (single &&
                   component.type == 'environmentVolume' &&
@@ -635,6 +666,24 @@ class _ComponentSection extends StatelessWidget {
           ),
         ),
         if (_droppedShadowCount() > 0) const _ShadowBudgetNotice(),
+        // Two component types are not a property bag and need their own
+        // controls above the schema-driven ones. Single selection only: a
+        // bake and a playback clock act on one thing.
+        if (nodes.length == 1) ...[
+          // A nav surface is bake settings plus a bake: the four agent
+          // numbers only mean anything drawn together, and nothing in a
+          // schema-driven list runs a bake.
+          if (type == 'navMeshSurface')
+            NavMeshEditor(controller: controller, nodeId: nodes.first.id),
+          // An emitter's authored fields are a property bag, but its clock is
+          // not: play, pause and restart reach the running simulation, and
+          // restart is how a one-shot is fired at all.
+          if (type == vfxComponentType)
+            ParticleEmitterControls(
+              controller: controller,
+              nodeId: nodes.first.id,
+            ),
+        ],
         _ComponentEditor(nodes: nodes, type: type, controller: controller),
       ],
     );
@@ -2462,3 +2511,157 @@ class _DoubleRowState extends State<_DoubleRow> {
     );
   }
 }
+
+/// Shown on the mesh rather than in the Add menu, because the thing being
+/// made water is this surface: it keeps the node's name, its transform, and
+/// the footprint it already had.
+class _MakeWaterRow extends StatelessWidget {
+  const _MakeWaterRow({required this.controller, required this.nodeId});
+
+  final EditorController controller;
+  final LocalId nodeId;
+
+  @override
+  Widget build(BuildContext context) {
+    final footprint = surfaceFootprint(controller, nodeId);
+    if (footprint == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Make this surface water, '
+              '${footprint.width.toStringAsFixed(0)} by '
+              '${footprint.depth.toStringAsFixed(0)} units where it stands.',
+              style: editorDetailText,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: const Icon(Icons.water, size: 14),
+            label: const Text('Make water', style: TextStyle(fontSize: 11)),
+            onPressed: () => makeSurfaceWater(controller, nodeId),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The way into a node's graph, on the component that holds it.
+class _EditGraphRow extends StatelessWidget {
+  const _EditGraphRow({required this.controller, required this.node});
+
+  final EditorController controller;
+  final NodeSpec node;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 6),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        icon: const Icon(Icons.schema_outlined, size: 14),
+        label: const Text('Edit Graph', style: TextStyle(fontSize: 11)),
+        onPressed: () => unawaited(
+          openNodeScriptEditor(
+            context: context,
+            controller: controller,
+            nodeName: node.name.isEmpty ? 'Node' : node.name,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// What the picker knows about one component type: the category and icon its
+/// schema declares (if any) and where the editor learned about it.
+typedef ComponentTypeInfo = ({
+  String? category,
+  String? icon,
+  String? provenance,
+});
+
+/// The glyph shown beside [type] in the picker.
+///
+/// A schema's own icon wins; otherwise the row falls back to its category's
+/// glyph, so every row carries something. A component that declares nothing
+/// and sits in no category still reads as a component rather than as a gap.
+IconData componentPickerGlyph(ComponentTypeInfo info) =>
+    componentGlyph(info.icon) ??
+    switch (addComponentCategory(info)) {
+      'Mesh' => Icons.view_in_ar_outlined,
+      'Effects' => Icons.auto_awesome_outlined,
+      'Rendering' => Icons.lightbulb_outline,
+      'Cameras' => Icons.videocam_outlined,
+      'Physics' => Icons.animation_outlined,
+      'Audio' => Icons.volume_up_outlined,
+      'Animation' => Icons.movie_filter_outlined,
+      'Navigation' => Icons.route_outlined,
+      'UI' => Icons.widgets_outlined,
+      'Scripts' => Icons.code,
+      'Packages' => Icons.inventory_2_outlined,
+      _ => Icons.settings_input_component_outlined,
+    };
+
+/// Where a type sits in the picker: its declared category, "Scripts" for a
+/// project's own components, "Packages" for a dependency's, and "Other" for
+/// anything that declares nothing.
+///
+/// Project components are grouped by where they came from rather than by what
+/// they do, because that is what you are looking for when you have just
+/// written one.
+String addComponentCategory(ComponentTypeInfo info) {
+  final declared = info.category;
+  if (declared != null && declared.isNotEmpty) return declared;
+  return switch (info.provenance) {
+    'live' || 'cache' => 'Scripts',
+    null => 'Other',
+    _ => 'Packages',
+  };
+}
+
+/// Groups [types] by [addComponentCategory], each group sorted by name.
+///
+/// The built-in groups come first and alphabetically, so they keep their
+/// positions as a project grows. After them come the project's own Scripts —
+/// the ones you most often want and the only ones you can edit — then
+/// Packages, then Other as the genuine catch-all.
+List<MapEntry<String, List<String>>> groupComponentTypes(
+  Map<String, ComponentTypeInfo> types,
+) {
+  final groups = <String, List<String>>{};
+  for (final entry in types.entries) {
+    groups
+        .putIfAbsent(addComponentCategory(entry.value), () => [])
+        .add(entry.key);
+  }
+  const last = ['Scripts', 'Packages', 'Other'];
+  int rank(String name) {
+    final index = last.indexOf(name);
+    return index < 0 ? 0 : index + 1;
+  }
+
+  final names = groups.keys.toList()
+    ..sort((a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+  return [for (final name in names) MapEntry(name, groups[name]!..sort())];
+}
+
+/// Whether [type] matches [query], case-insensitively, on its name or its
+/// category — so "phys" finds every physics component, not only the one
+/// spelled that way.
+bool matchesComponentQuery(String type, ComponentTypeInfo info, String query) {
+  if (query.isEmpty) return true;
+  final needle = query.toLowerCase();
+  return type.toLowerCase().contains(needle) ||
+      addComponentCategory(info).toLowerCase().contains(needle);
+}
+
+/// The component picker: a search field over every type this node does not
+/// already carry, grouped by category.

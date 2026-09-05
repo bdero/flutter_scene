@@ -18,7 +18,7 @@ library;
 import 'dart:math' show sqrt;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
@@ -145,6 +145,19 @@ mixin _MorphBlending on Geometry {
   // the reused MorphInfo uniform floats.
   Float32List? _gpuWeights;
   gpu.Texture? _morphTexture;
+
+  // Per-target, per-axis extreme position deltas (three lows then three highs
+  // per target), scanned once from the target data. The displacement range
+  // for any weight set follows from these in O(targets), with no second pass
+  // over the vertices, which is what makes a per-weight-change bounds check
+  // affordable. Both are zero-seeded, so a target's low is never above zero
+  // and its high never below.
+  Float32List? _targetDeltaLo;
+  Float32List? _targetDeltaHi;
+
+  // The unmorphed bounds, so a weight change re-derives the envelope from the
+  // base rather than compounding onto an already-expanded box.
+  vm.Aabb3? _baseBounds;
   final Float32List _morphInfoScratch = Float32List(
     4 + kMaxGpuMorphTargets * 4,
   );
@@ -201,6 +214,7 @@ mixin _MorphBlending on Geometry {
   @override
   void setMorphWeights(Float32List? weights) {
     if (weights == null) return;
+    _growBoundsForWeights(weights);
     if (usesGpuMorphing) {
       // Retained by reference: the render item hands the node's live list
       // right before each draw's bind, which reads it synchronously.
@@ -365,38 +379,151 @@ mixin _MorphBlending on Geometry {
     }
   }
 
-  // Expands the base AABB by each axis's summed worst-case delta, assuming
-  // weights stay in [0, 1] (the common authored range).
-  // TODO(morph-bounds): account for weights outside [0, 1] and fold morph
-  // extents into the skinned pose-union bake.
+  void _computeTargetDeltaExtremes() {
+    final extremes = computeMorphDeltaExtremes(_morphData);
+    _targetDeltaLo = extremes.lo;
+    _targetDeltaHi = extremes.hi;
+  }
+
+  void _weightedDeltaRange(Float32List? weights, Float32List out) {
+    final lo = _targetDeltaLo;
+    final hi = _targetDeltaHi;
+    if (lo == null || hi == null) {
+      out.fillRange(0, 6, 0.0);
+      return;
+    }
+    morphWeightedDeltaRange(lo, hi, _morphData.targetCount, weights, out);
+  }
+
+  final Float32List _deltaRangeScratch = Float32List(6);
+
+  // Seeds the bounds with every target fully applied, the common authored
+  // range of weights in [0, 1]. Weights outside that range are handled as
+  // they arrive, by [_growBoundsForWeights].
   void _expandBoundsForMorphRange() {
     final bounds = localBounds;
     if (bounds == null) return;
-    final data = _morphData;
-    final lo = [0.0, 0.0, 0.0];
-    final hi = [0.0, 0.0, 0.0];
-    for (var t = 0; t < data.targetCount; t++) {
-      final offset = t * data.vertexCount * 3;
-      for (var axis = 0; axis < 3; axis++) {
-        var minDelta = 0.0;
-        var maxDelta = 0.0;
-        for (var v = 0; v < data.vertexCount; v++) {
-          final delta = data.positionDeltas[offset + v * 3 + axis];
-          if (delta < minDelta) minDelta = delta;
-          if (delta > maxDelta) maxDelta = delta;
-        }
-        lo[axis] += minDelta;
-        hi[axis] += maxDelta;
+    _baseBounds = vm.Aabb3.copy(bounds);
+    _computeTargetDeltaExtremes();
+    _weightedDeltaRange(null, _deltaRangeScratch);
+    _applyMorphBounds(_deltaRangeScratch);
+  }
+
+  /// Widens the bounds if [weights] displace the mesh outside the envelope
+  /// already covered.
+  ///
+  /// Called on every weight change, including once per draw on the GPU path,
+  /// so it does the O(targets) range sum and then usually nothing: authored
+  /// weights stay inside the seed envelope, and [setLocalBounds] (which bumps
+  /// the bounds version, and with it a render item refresh and a scene BVH
+  /// refit) only runs when the box genuinely has to grow. Weights driven past
+  /// 1, or negative, grow it once and then stay inside it too.
+  void _growBoundsForWeights(Float32List weights) {
+    final base = _baseBounds;
+    final current = localBounds;
+    if (base == null || current == null) return;
+    final range = _deltaRangeScratch;
+    _weightedDeltaRange(weights, range);
+    var grew = false;
+    for (var axis = 0; axis < 3; axis++) {
+      if (base.min[axis] + range[axis] < current.min[axis] ||
+          base.max[axis] + range[3 + axis] > current.max[axis]) {
+        grew = true;
+        break;
       }
     }
+    if (!grew) return;
+    for (var axis = 0; axis < 3; axis++) {
+      final low = current.min[axis] - base.min[axis];
+      if (low < range[axis]) range[axis] = low;
+      final high = current.max[axis] - base.max[axis];
+      if (high > range[3 + axis]) range[3 + axis] = high;
+    }
+    _applyMorphBounds(range);
+  }
+
+  void _applyMorphBounds(Float32List range) {
+    final base = _baseBounds;
+    if (base == null) return;
     final expanded = vm.Aabb3.minMax(
-      bounds.min + vm.Vector3(lo[0], lo[1], lo[2]),
-      bounds.max + vm.Vector3(hi[0], hi[1], hi[2]),
+      base.min + vm.Vector3(range[0], range[1], range[2]),
+      base.max + vm.Vector3(range[3], range[4], range[5]),
     );
     final center = (expanded.min + expanded.max) * 0.5;
     setLocalBounds(
       expanded,
       vm.Sphere.centerRadius(center, (expanded.max - center).length),
     );
+  }
+}
+
+/// Scans each morph target's extreme position delta per axis.
+///
+/// Runs once per geometry, and is the only pass over the delta data the
+/// bounds ever need: the displacement range for any weight set follows from
+/// these in O(targets). Both arrays are zero-seeded, so a target's low is
+/// never above zero and its high never below, which is what lets a weight of
+/// zero contribute nothing.
+///
+/// Returns three lows then three highs per target.
+@visibleForTesting
+({Float32List lo, Float32List hi}) computeMorphDeltaExtremes(
+  MorphTargetData data,
+) {
+  final lo = Float32List(data.targetCount * 3);
+  final hi = Float32List(data.targetCount * 3);
+  for (var t = 0; t < data.targetCount; t++) {
+    final offset = t * data.vertexCount * 3;
+    for (var axis = 0; axis < 3; axis++) {
+      var minDelta = 0.0;
+      var maxDelta = 0.0;
+      for (var v = 0; v < data.vertexCount; v++) {
+        final delta = data.positionDeltas[offset + v * 3 + axis];
+        if (delta < minDelta) minDelta = delta;
+        if (delta > maxDelta) maxDelta = delta;
+      }
+      lo[t * 3 + axis] = minDelta;
+      hi[t * 3 + axis] = maxDelta;
+    }
+  }
+  return (lo: lo, hi: hi);
+}
+
+/// The morph displacement range for [weights], summed over targets, from the
+/// per-target extremes [lo] and [hi].
+///
+/// A negative weight flips a target's contribution, so that target's low
+/// comes from its high and vice versa. glTF places no bound on a weight, and
+/// an animation channel or a game can drive one past 1 or below 0, so the
+/// range is derived from the weights rather than assumed over `[0, 1]`.
+///
+/// Summing per-target extremes is conservative rather than exact: the true
+/// extreme is the largest summed delta at a single vertex, which cannot
+/// exceed the sum of the per-target largest. That is the right side to be on
+/// for a bounding box.
+///
+/// A null [weights] means every target fully applied, the seed envelope.
+/// Writes six floats into [out]: three lows then three highs.
+@visibleForTesting
+void morphWeightedDeltaRange(
+  Float32List lo,
+  Float32List hi,
+  int targetCount,
+  Float32List? weights,
+  Float32List out,
+) {
+  out.fillRange(0, 6, 0.0);
+  final count = weights == null
+      ? targetCount
+      : (weights.length < targetCount ? weights.length : targetCount);
+  for (var t = 0; t < count; t++) {
+    final w = weights == null ? 1.0 : weights[t];
+    if (w == 0.0) continue;
+    for (var axis = 0; axis < 3; axis++) {
+      final low = lo[t * 3 + axis] * w;
+      final high = hi[t * 3 + axis] * w;
+      out[axis] += low < high ? low : high;
+      out[3 + axis] += low < high ? high : low;
+    }
   }
 }
