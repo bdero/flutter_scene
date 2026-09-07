@@ -13,16 +13,25 @@ import 'package:forui/forui.dart';
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
 import '../controller/editor_controller.dart';
+import '../viewport/component_gizmos.dart' show componentGlyph;
 import '../inspector/euler.dart';
 import '../inspector/live_fields.dart';
+import '../blueprints/blueprint_editor_screen.dart';
 import '../inspector/material_section.dart';
+import '../inspector/nav_mesh_editor.dart';
+import '../inspector/particle_emitter_controls.dart';
 import '../inspector/particle_value_editors.dart';
 import '../inspector/property_editors.dart';
 import '../inspector/reference_picker.dart';
 import '../inspector/resource_origin.dart';
+import '../inspector/terrain_section.dart';
+import '../inspector/vfx_editing.dart';
+import '../inspector/water_conversion.dart';
 import '../inspector/stage_section.dart';
 import '../io/scene_io.dart';
+import '../shell/editor_dialog.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 
 /// Property inspector for the primary selected node.
 ///
@@ -130,7 +139,9 @@ class _NodeInspector extends StatelessWidget {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(8),
+      // Room under the last control, so the end of a component's properties
+      // is not the bottom edge of the window.
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -214,6 +225,30 @@ class _NodeInspector extends StatelessWidget {
                   materialId:
                       (component.properties['material'] as ResourceRefValue).id,
                 ),
+              // The terrain tools, where a terrain is selected. This is where
+              // they are found: the scene view's corner button is a shortcut
+              // for people who already know they exist. One terrain at a time,
+              // since the tools act on a specific height field.
+              if (single && component.type == 'mesh')
+                if (terrainSpecOf(controller, node.id) case final terrain?) ...[
+                  const SizedBox(height: 8),
+                  TerrainSection(
+                    controller: controller,
+                    nodeId: node.id,
+                    spec: terrain,
+                  ),
+                ],
+              // A graph is drawn on a screen, not in a docked tab, so the
+              // component that holds one says where to go and opens it.
+              if (single && component.type == 'visualScript')
+                _EditGraphRow(controller: controller, node: node),
+              // A flat surface can become an area of water where it stands,
+              // which is what a lake is: not an object you place, a piece of
+              // ground you say is wet.
+              if (single &&
+                  component.type == 'mesh' &&
+                  canBecomeWater(controller, node.id))
+                _MakeWaterRow(controller: controller, nodeId: node.id),
               // A volume's environment is a resource; edit its look inline.
               if (single &&
                   component.type == 'environmentVolume' &&
@@ -458,7 +493,7 @@ class _ReadOnlyVec3Row extends StatelessWidget {
   Widget build(BuildContext context) {
     String number(double value) => value.toStringAsFixed(3);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -624,7 +659,7 @@ class _ComponentSection extends StatelessWidget {
           onSecondaryTapUp: (details) =>
               _showContextMenu(context, details.globalPosition),
           child: EditorSectionHeader(
-            label: 'Component: $type',
+            label: humanizeIdentifier(type),
             trailing: canRemove
                 ? _IconAction(
                     icon: Icons.close,
@@ -635,6 +670,24 @@ class _ComponentSection extends StatelessWidget {
           ),
         ),
         if (_droppedShadowCount() > 0) const _ShadowBudgetNotice(),
+        // Two component types are not a property bag and need their own
+        // controls above the schema-driven ones. Single selection only: a
+        // bake and a playback clock act on one thing.
+        if (nodes.length == 1) ...[
+          // A nav surface is bake settings plus a bake: the four agent
+          // numbers only mean anything drawn together, and nothing in a
+          // schema-driven list runs a bake.
+          if (type == 'navMeshSurface')
+            NavMeshEditor(controller: controller, nodeId: nodes.first.id),
+          // An emitter's authored fields are a property bag, but its clock is
+          // not: play, pause and restart reach the running simulation, and
+          // restart is how a one-shot is fired at all.
+          if (type == vfxComponentType)
+            ParticleEmitterControls(
+              controller: controller,
+              nodeId: nodes.first.id,
+            ),
+        ],
         _ComponentEditor(nodes: nodes, type: type, controller: controller),
       ],
     );
@@ -698,7 +751,7 @@ class _ComponentEditor extends StatelessWidget {
 
     if (schema.isEmpty && extras.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 2),
+        padding: EdgeInsets.symmetric(vertical: editorRowGap),
         child: Text(
           '(no editable properties)',
           style: TextStyle(fontSize: 11, color: Colors.grey),
@@ -752,7 +805,7 @@ class _ComponentEditor extends StatelessWidget {
             children: [
               for (final entry in groups.entries)
                 InspectorAccordionItem(
-                  title: Text(entry.key),
+                  title: humanizeIdentifier(entry.key),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [for (final def in entry.value) row(def)],
@@ -762,10 +815,13 @@ class _ComponentEditor extends StatelessWidget {
           ),
         for (final entry in extras)
           if (mixedFor(entry.key, null))
-            _ReadOnlyRow(label: entry.key, text: 'Mixed values')
+            _ReadOnlyRow(
+              label: humanizeIdentifier(entry.key),
+              text: 'Mixed values',
+            )
           else
             _PropertyValueRow(
-              label: entry.key,
+              label: humanizeIdentifier(entry.key),
               value: entry.value,
               onChanged: (v) => _set(entry.key, v),
             ),
@@ -852,7 +908,8 @@ class _SchemaPropertyRow extends StatelessWidget {
   }
 
   Widget _buildEditor(BuildContext context) {
-    final label = def.name;
+    // The schema's name is an identifier; the row shows it as words.
+    final label = humanizeIdentifier(def.name);
     if (mixed && !_mixedEditableKinds.contains(def.kind)) {
       return _ReadOnlyRow(label: label, text: 'Mixed values');
     }
@@ -1152,7 +1209,7 @@ class _ObjectRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(vertical: editorRowGap),
             child: Text(label, style: const TextStyle(fontSize: 11)),
           ),
           for (final field in fields)
@@ -1397,65 +1454,25 @@ class _AddComponentBar extends StatelessWidget {
       for (final type in controller.componentTypes())
         if (!present.contains(type)) type,
     ];
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: PopupMenuButton<String>(
-        enabled: available.isNotEmpty,
-        tooltip: 'Add a component',
-        onSelected: (type) {
-          for (final n in nodes) {
-            controller.addComponentRouted(n.id, type);
-          }
-        },
-        itemBuilder: (_) => [
-          for (final type in available)
-            PopupMenuItem<String>(
-              value: type,
-              height: editorMenuItemHeight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(type),
-                  // Foreign types (known by schema, realized as data in the
-                  // editor) show where the schema came from.
-                  if (controller.foreignTypeProvenance[type]
-                      case final provenance?) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      provenance == 'live' ? 'project' : provenance,
-                      style: const TextStyle(fontSize: 9, color: Colors.grey),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.add,
-                size: 14,
-                color: available.isEmpty
-                    ? Colors.grey
-                    : Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Add Component',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: available.isEmpty
-                      ? Colors.grey
-                      : Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return EditorActionButton(
+      label: 'Add Component',
+      icon: Icons.add,
+      tooltip: available.isEmpty
+          ? 'This node already carries every component type'
+          : 'Add a component to the selection',
+      onPressed: available.isEmpty
+          ? null
+          : () async {
+              final type = await showAddComponentPicker(
+                context: context,
+                controller: controller,
+                available: available,
+              );
+              if (type == null) return;
+              for (final n in nodes) {
+                controller.addComponentRouted(n.id, type);
+              }
+            },
     );
   }
 }
@@ -1530,7 +1547,7 @@ class _PrefabActions extends StatelessWidget {
       children: [
         EditorSectionHeader(label: 'Prefab'),
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.symmetric(vertical: editorRowGap),
           child: Row(
             children: [
               OriginBadge(
@@ -1688,7 +1705,7 @@ class _ReadOnlyRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
@@ -1735,40 +1752,27 @@ class EnumRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = options.contains(value) ? value : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
+    return LabeledControlRow(
+      label: label,
+      control: SizedBox(
+        width: double.infinity,
+        child: FSelect<String>(
+          // Keyed by display label, valued by the option itself (FSelect
+          // takes Map<String, T>); with no labels the two coincide, which
+          // is why the plain form reads as option: option.
+          items: {
+            for (final option in options) (labels?[option] ?? option): option,
+          },
+          control: FSelectControl.lifted(
+            value: current,
+            onChange: (v) {
+              if (v != null) onChanged(v);
+            },
           ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: FSelect<String>(
-              // Keyed by display label, valued by the option itself (FSelect
-              // takes Map<String, T>); with no labels the two coincide, which
-              // is why the plain form reads as option: option.
-              items: {
-                for (final option in options)
-                  (labels?[option] ?? option): option,
-              },
-              control: FSelectControl.lifted(
-                value: current,
-                onChange: (v) {
-                  if (v != null) onChanged(v);
-                },
-              ),
-              size: FTextFieldSizeVariant.sm,
-              // expands would trip the framework's expands-with-maxLines
-              // text-field assertion (the select's field keeps maxLines 1).
-            ),
-          ),
-        ],
+          size: FTextFieldSizeVariant.sm,
+          // expands would trip the framework's expands-with-maxLines
+          // text-field assertion (the select's field keeps maxLines 1).
+        ),
       ),
     );
   }
@@ -1794,18 +1798,19 @@ class _ColorRow extends StatelessWidget {
     void emit({double? nr, double? ng, double? nb, double? na}) =>
         onChanged({'r': nr ?? r, 'g': ng ?? g, 'b': nb ?? b, 'a': na ?? a});
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: _MiniNumber(
               label: 'R',
@@ -1918,18 +1923,19 @@ class _ResourceRefRow extends StatelessWidget {
         : controller.document.resource(value!);
     final origin = selected == null ? null : resourceOriginOf(selected);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: ids.isEmpty
                 ? Text(
@@ -2041,18 +2047,19 @@ class _NodeRefRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final nodes = controller.document.nodes.values.toList();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
             child: ReferencePicker(
               entries: [
@@ -2137,14 +2144,11 @@ class _MiniNumberState extends State<_MiniNumber> {
           ),
           const SizedBox(width: 2),
           Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
+            child: EditorTextField(
+              controller: _ctrl,
               focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
+              // The row's own focus listener commits.
+              commitOnFocusLoss: false,
               onSubmit: (_) => _commit(),
             ),
           ),
@@ -2214,29 +2218,15 @@ class _StringRowState extends State<_StringRow> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 90,
-            child: Text(
-              widget.label,
-              style: const TextStyle(fontSize: 11),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
-              focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              hint: widget.mixed ? '\u2014' : null,
-              onSubmit: (_) => _commit(),
-            ),
-          ),
-        ],
+    return LabeledControlRow(
+      label: widget.label,
+      control: EditorTextField(
+        controller: _ctrl,
+        focusNode: _focus,
+        hint: widget.mixed ? '\u2014' : null,
+        // The focus listener this row already owns does the committing.
+        commitOnFocusLoss: false,
+        onSubmit: (_) => _commit(),
       ),
     );
   }
@@ -2260,18 +2250,19 @@ class _BoolRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           if (mixed) ...[
             const Text(
               '\u2014',
@@ -2346,24 +2337,25 @@ class _IntRowState extends State<_IntRow> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               widget.label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
+            child: EditorTextField(
+              controller: _ctrl,
               focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              keyboardType: const TextInputType.numberWithOptions(signed: true),
+              // The row's own focus listener commits.
+              commitOnFocusLoss: false,
               onSubmit: (_) => _commit(),
             ),
           ),
@@ -2433,31 +2425,402 @@ class _DoubleRowState extends State<_DoubleRow> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: editorRowGap),
       child: Row(
         children: [
           SizedBox(
-            width: 90,
+            width: editorPropertyLabelWidth,
             child: Text(
               widget.label,
-              style: const TextStyle(fontSize: 11),
+              style: editorRowLabelText,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: editorRowGutter),
           Expanded(
-            child: FTextField(
-              control: FTextFieldControl.managed(controller: _ctrl),
+            child: EditorTextField(
+              controller: _ctrl,
               focusNode: _focus,
-              size: FTextFieldSizeVariant.sm,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-                signed: true,
-              ),
+              // The row's own focus listener commits.
+              commitOnFocusLoss: false,
               onSubmit: (_) => _commit(),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shown on the mesh rather than in the Add menu, because the thing being
+/// made water is this surface: it keeps the node's name, its transform, and
+/// the footprint it already had.
+class _MakeWaterRow extends StatelessWidget {
+  const _MakeWaterRow({required this.controller, required this.nodeId});
+
+  final EditorController controller;
+  final LocalId nodeId;
+
+  @override
+  Widget build(BuildContext context) {
+    final footprint = surfaceFootprint(controller, nodeId);
+    if (footprint == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Make this surface water, '
+              '${footprint.width.toStringAsFixed(0)} by '
+              '${footprint.depth.toStringAsFixed(0)} units where it stands.',
+              style: editorDetailText,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton.icon(
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            icon: const Icon(Icons.water, size: 14),
+            label: const Text('Make water', style: TextStyle(fontSize: 11)),
+            onPressed: () => makeSurfaceWater(controller, nodeId),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The way into a node's graph, on the component that holds it.
+class _EditGraphRow extends StatelessWidget {
+  const _EditGraphRow({required this.controller, required this.node});
+
+  final EditorController controller;
+  final NodeSpec node;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 6),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        icon: const Icon(Icons.schema_outlined, size: 14),
+        label: const Text('Edit Graph', style: TextStyle(fontSize: 11)),
+        onPressed: () => unawaited(
+          openNodeScriptEditor(
+            context: context,
+            controller: controller,
+            nodeName: node.name.isEmpty ? 'Node' : node.name,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// What the picker knows about one component type: the category and icon its
+/// schema declares (if any) and where the editor learned about it.
+typedef ComponentTypeInfo = ({
+  String? category,
+  String? icon,
+  String? provenance,
+});
+
+/// The glyph shown beside [type] in the picker.
+///
+/// A schema's own icon wins; otherwise the row falls back to its category's
+/// glyph, so every row carries something. A component that declares nothing
+/// and sits in no category still reads as a component rather than as a gap.
+IconData componentPickerGlyph(ComponentTypeInfo info) =>
+    componentGlyph(info.icon) ??
+    switch (addComponentCategory(info)) {
+      'Mesh' => Icons.view_in_ar_outlined,
+      'Effects' => Icons.auto_awesome_outlined,
+      'Rendering' => Icons.lightbulb_outline,
+      'Cameras' => Icons.videocam_outlined,
+      'Physics' => Icons.animation_outlined,
+      'Audio' => Icons.volume_up_outlined,
+      'Animation' => Icons.movie_filter_outlined,
+      'Navigation' => Icons.route_outlined,
+      'UI' => Icons.widgets_outlined,
+      'Scripts' => Icons.code,
+      'Packages' => Icons.inventory_2_outlined,
+      _ => Icons.settings_input_component_outlined,
+    };
+
+/// Where a type sits in the picker: its declared category, "Scripts" for a
+/// project's own components, "Packages" for a dependency's, and "Other" for
+/// anything that declares nothing.
+///
+/// Project components are grouped by where they came from rather than by what
+/// they do, because that is what you are looking for when you have just
+/// written one.
+String addComponentCategory(ComponentTypeInfo info) {
+  final declared = info.category;
+  if (declared != null && declared.isNotEmpty) return declared;
+  return switch (info.provenance) {
+    'live' || 'cache' => 'Scripts',
+    null => 'Other',
+    _ => 'Packages',
+  };
+}
+
+/// Groups [types] by [addComponentCategory], each group sorted by name.
+///
+/// The built-in groups come first and alphabetically, so they keep their
+/// positions as a project grows. After them come the project's own Scripts --
+/// the ones you most often want and the only ones you can edit -- then
+/// Packages, then Other as the genuine catch-all.
+List<MapEntry<String, List<String>>> groupComponentTypes(
+  Map<String, ComponentTypeInfo> types,
+) {
+  final groups = <String, List<String>>{};
+  for (final entry in types.entries) {
+    groups
+        .putIfAbsent(addComponentCategory(entry.value), () => [])
+        .add(entry.key);
+  }
+  const last = ['Scripts', 'Packages', 'Other'];
+  int rank(String name) {
+    final index = last.indexOf(name);
+    return index < 0 ? 0 : index + 1;
+  }
+
+  final names = groups.keys.toList()
+    ..sort((a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    });
+  return [for (final name in names) MapEntry(name, groups[name]!..sort())];
+}
+
+/// Whether [type] matches [query], case-insensitively, on its name or its
+/// category -- so "phys" finds every physics component, not only the one
+/// spelled that way.
+bool matchesComponentQuery(String type, ComponentTypeInfo info, String query) {
+  if (query.isEmpty) return true;
+  final needle = query.toLowerCase();
+  return type.toLowerCase().contains(needle) ||
+      addComponentCategory(info).toLowerCase().contains(needle);
+}
+
+/// The component picker: a search field over every type this node does not
+/// already carry, grouped by category.
+///
+/// A flat list of every component in the build is unreadable by about the
+/// twentieth entry, and this list grows with the project: every script and
+/// every package adds to it. So it is the shape the command palette already
+/// uses, which people here know: type to narrow, Enter takes the first match.
+Future<String?> showAddComponentPicker({
+  required BuildContext context,
+  required EditorController controller,
+  required List<String> available,
+}) {
+  final types = <String, ComponentTypeInfo>{
+    for (final type in available)
+      type: (
+        category: controller.componentSchemaFor(type)?.category,
+        icon: controller.componentSchemaFor(type)?.icon,
+        provenance: controller.foreignTypeProvenance[type],
+      ),
+  };
+  return showEditorDialog<String>(
+    context,
+    builder: (context) => Dialog(
+      backgroundColor: editorPanelColor,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
+        child: AddComponentPicker(
+          types: types,
+          docFor: (type) => controller.componentSchemaFor(type)?.doc,
+        ),
+      ),
+    ),
+  );
+}
+
+/// The picker's body, public so a test can pump it: it takes plain data and
+/// returns a type, and needs neither a controller nor a GPU.
+class AddComponentPicker extends StatefulWidget {
+  const AddComponentPicker({
+    super.key,
+    required this.types,
+    required this.docFor,
+  });
+
+  final Map<String, ComponentTypeInfo> types;
+  final String? Function(String type) docFor;
+
+  @override
+  State<AddComponentPicker> createState() => _AddComponentPickerState();
+}
+
+class _AddComponentPickerState extends State<AddComponentPicker> {
+  final TextEditingController _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Map<String, ComponentTypeInfo> get _matching => {
+    for (final entry in widget.types.entries)
+      if (matchesComponentQuery(entry.key, entry.value, _query))
+        entry.key: entry.value,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = groupComponentTypes(_matching);
+    final first = groups.isEmpty ? null : groups.first.value.first;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const EditorPanelHeader(label: 'Add component'),
+        Padding(
+          padding: const EdgeInsets.all(editorPanelInset),
+          child: FTextField(
+            control: FTextFieldControl.managed(
+              controller: _search,
+              onChange: (value) => setState(() => _query = value.text),
+            ),
+            size: .sm,
+            hint: 'Search components',
+            autofocus: true,
+            prefixBuilder: (_, _, _) => const Padding(
+              padding: EdgeInsets.only(left: 8, right: 4),
+              child: Icon(Icons.search, size: editorIconSize),
+            ),
+            // Enter takes the first match, so a name you know is three keys
+            // and a return rather than a scroll.
+            onSubmit: (_) {
+              if (first != null) Navigator.of(context).pop(first);
+            },
+          ),
+        ),
+        Flexible(
+          child: groups.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'No component matches that.',
+                    textAlign: TextAlign.center,
+                    style: editorDetailText,
+                  ),
+                )
+              : ListView(
+                  // Sized to its content and capped by what is left: inside a
+                  // min-height column a list that measures itself as infinite
+                  // overflows by exactly that much.
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    for (final group in groups) ...[
+                      EditorSectionHeader(label: group.key),
+                      for (final type in group.value)
+                        _ComponentRow(
+                          type: type,
+                          info: widget.types[type]!,
+                          doc: widget.docFor(type),
+                          highlighted: type == first && _query.isNotEmpty,
+                          onTap: () => Navigator.of(context).pop(type),
+                        ),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One component in the picker: what it is called, what it is for, and the
+/// glyph its category or its own schema gives it.
+class _ComponentRow extends StatefulWidget {
+  const _ComponentRow({
+    required this.type,
+    required this.info,
+    required this.doc,
+    required this.highlighted,
+    required this.onTap,
+  });
+
+  final String type;
+  final ComponentTypeInfo info;
+  final String? doc;
+
+  /// The one Enter would take.
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  @override
+  State<_ComponentRow> createState() => _ComponentRowState();
+}
+
+class _ComponentRowState extends State<_ComponentRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final doc = widget.doc;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: editorPanelInset,
+            vertical: 7,
+          ),
+          color: _hovered || widget.highlighted ? editorRaisedColor : null,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  componentPickerGlyph(widget.info),
+                  size: editorIconSizeLarge,
+                  color: widget.highlighted
+                      ? editorAccentColor
+                      : editorMutedTextColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      humanizeIdentifier(widget.type),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: editorTextColor,
+                      ),
+                    ),
+                    if (doc != null && doc.isNotEmpty)
+                      Text(
+                        doc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          color: editorNoteColor,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

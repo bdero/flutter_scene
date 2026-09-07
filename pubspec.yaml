@@ -29,3 +29,26 @@ workspace:
 #   user_defines:
 #     smoke_render:
 #       data_assets: true
+
+# Temporary: three changes flutter_scene_net needs are open upstream and not
+# yet published. Pointing at the branch carrying all three lets the code that
+# uses them be written and tested now instead of waiting.
+#
+#   bdero/dashwire#6  RpcTarget.notOwner
+#   bdero/dashwire#7  Rep listener removal
+#   bdero/dashwire#8  the newest snapshot tick a peer has acknowledged
+#
+# Remove this block once a dashwire_replication carrying them is on pub, and
+# raise the version constraint in packages/flutter_scene_net/pubspec.yaml to
+# match. Nothing else in the workspace depends on these.
+dependency_overrides:
+  dashwire:
+    git:
+      url: https://github.com/ChxisB/dashwire.git
+      ref: all-three-pending
+      path: packages/dashwire
+  dashwire_replication:
+    git:
+      url: https://github.com/ChxisB/dashwire.git
+      ref: all-three-pending
+      path: packages/dashwire_replication

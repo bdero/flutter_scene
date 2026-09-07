@@ -44,6 +44,7 @@ export 'src/schema/property_constraints.dart'
         PowerOfTwo,
         PropertyConstraint,
         Range,
+        ReadOnly,
         RgbColor,
         SoftRange,
         SortedDescending,

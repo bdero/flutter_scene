@@ -84,9 +84,30 @@ class AppSession extends ChangeNotifier {
   /// Hot restart needs a VM (debug or profile).
   bool get supportsHotRestart => _mode == 'debug' || _mode == 'profile';
 
+  /// Whether the editor has asked the running app to hold.
+  ///
+  /// This reflects the last hold or release this session issued, not a live
+  /// query of the VM: an app stopped at a breakpoint by another client reads
+  /// as running here. It clears whenever the app leaves the running state or
+  /// is restarted, since both replace the isolates it applied to.
+  bool get paused => _paused;
+  bool _paused = false;
+
+  /// Whether the running app can be held. Needs a VM service, which a release
+  /// build does not carry.
+  bool get supportsPause => _vmServiceUri != null;
+
+  bool _disposed = false;
+
   void _setState(AppSessionState state) {
-    if (_state == state) return;
+    // The process outlives dispose by however long it takes to die, and its
+    // exit still runs through here. Notifying then trips ChangeNotifier's
+    // use-after-dispose assertion, so stop at the door.
+    if (_disposed || _state == state) return;
     _state = state;
+    // Holding applies to isolates that no longer exist once the app leaves
+    // the running state, so the flag cannot outlive it.
+    if (state != AppSessionState.running) _paused = false;
     notifyListeners();
   }
 
@@ -421,6 +442,45 @@ class AppSession extends ChangeNotifier {
     return decodeComponentSchemas(result['schemas']);
   }
 
+  /// Holds ([hold] true) or releases every isolate in the running app.
+  ///
+  /// Every isolate rather than only the main one: holding the app means the
+  /// whole thing stops advancing, and a background isolate that kept running
+  /// would carry on mutating state behind a frozen frame.
+  ///
+  /// Returns whether the VM accepted it. Asking for the state it is already
+  /// in succeeds without a call.
+  Future<bool> setPaused(bool hold) async {
+    if (_paused == hold) return true;
+    final wsUri = _vmServiceUri;
+    if (_state != AppSessionState.running || wsUri == null) return false;
+    final link = await _connectedVmLink(wsUri);
+    if (link == null) return false;
+
+    final vm = await link.request('getVM');
+    final isolates = ((vm['result'] as Map?)?['isolates'] as List?) ?? const [];
+    final method = hold ? 'pause' : 'resume';
+    var applied = 0;
+    for (final ref in isolates) {
+      if (ref is! Map) continue;
+      final isolateId = ref['id'];
+      if (isolateId is! String) continue;
+      final response = await link.request(method, {'isolateId': isolateId});
+      if (response['error'] == null) applied++;
+    }
+    if (applied == 0) {
+      log(
+        hold ? 'Could not hold the app' : 'Could not release the app',
+        ConsoleLineKind.error,
+      );
+      return false;
+    }
+    _paused = hold;
+    log(hold ? 'App held' : 'App released', ConsoleLineKind.status);
+    notifyListeners();
+    return true;
+  }
+
   /// Stops the app (a daemon `app.stop`, escalating to killing the tool
   /// process when the daemon does not comply).
   Future<void> stop() async {
@@ -450,6 +510,7 @@ class AppSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _disposeVmLink();
     _process?.kill();
     super.dispose();

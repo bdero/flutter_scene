@@ -14,6 +14,8 @@ import 'package:forui/forui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
 
+import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import '../controller/editor_controller.dart';
 import '../io/scene_io.dart';
 import 'live_fields.dart';
@@ -147,7 +149,7 @@ class MaterialSection extends StatelessWidget {
             Text(
               'Owned by the instanced prefab; assign a scene material to '
               'replace it.',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              style: TextStyle(fontSize: 11, color: editorMutedTextColor),
             ),
           ],
         ),
@@ -218,7 +220,7 @@ class MaterialSection extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
             child: Text(
               compileError,
-              style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+              style: const TextStyle(fontSize: 11, color: editorErrorColor),
             ),
           ),
         if (isFmat && compileError == null && metadata == null)
@@ -240,8 +242,7 @@ class MaterialSection extends StatelessWidget {
 
   Widget _typeDropdown(BuildContext context, String type) {
     const known = ['physicallyBased', 'unlit', 'fmat'];
-    return DropdownButton<String>(
-      isDense: true,
+    return EditorDropdown<String>(
       value: known.contains(type) ? type : 'physicallyBased',
       items: const [
         DropdownMenuItem(
@@ -529,7 +530,7 @@ class MaterialSection extends StatelessWidget {
           title: Text('$name ($type)', style: const TextStyle(fontSize: 13)),
           subtitle: const Text(
             'Not editable here yet.',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
+            style: TextStyle(fontSize: 11, color: editorMutedTextColor),
           ),
         );
     }
@@ -588,7 +589,7 @@ class MaterialSection extends StatelessWidget {
         return LabeledControlRow(
           label: field.label,
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          control: DropdownButton<String>(
+          control: EditorDropdown<String>(
             value: field.options!.contains(current)
                 ? current
                 : field.options!.first,

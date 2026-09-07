@@ -28,6 +28,7 @@ KeyDownEvent _down(LogicalKeyboardKey key) => KeyDownEvent(
 );
 
 void main() {
+  _occlusionTests();
   group('OrbitCameraController', () {
     test('places the eye on the orbit and aims +Z at the target', () {
       final node = Node();
@@ -74,6 +75,107 @@ void main() {
       c.dollyBy(-100.0); // zoom way out, clamps to max
       c.update(1 / 60);
       expect(c.distance, closeTo(20.0, 1e-6));
+    });
+
+    group('frame', () {
+      Aabb3 unitBounds() => Aabb3.minMax(Vector3(-1, -1, -1), Vector3(1, 1, 1));
+
+      // The bounding sphere of a 2-unit cube.
+      final radius = Vector3(2, 2, 2).length * 0.5;
+
+      test('solves the distance from the lens, not the diameter', () {
+        final node = Node()..addComponent(CameraComponent());
+        final c = OrbitCameraController(smoothing: 0.0)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0);
+        c.update(1 / 60);
+
+        // 45 degrees vertical, landscape, so the vertical field is the narrow
+        // one: the sphere subtends exactly the view height at r / sin(fov/2).
+        final expected = radius / math.sin(45 * math.pi / 180 / 2);
+        expect(c.distance, closeTo(expected, 1e-6));
+      });
+
+      test('a narrow lens pulls the camera back', () {
+        final node = Node()
+          ..addComponent(
+            CameraComponent(
+              projection: PerspectiveProjection(
+                fovRadiansY: 20 * math.pi / 180,
+              ),
+            ),
+          );
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0);
+        c.warmUp();
+        expect(
+          c.distance,
+          closeTo(radius / math.sin(10 * math.pi / 180), 1e-6),
+        );
+      });
+
+      test('a portrait viewport fits the horizontal field instead', () {
+        final node = Node()..addComponent(CameraComponent());
+        final tall = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(400, 800);
+        node.addComponent(tall);
+        tall.frame(unitBounds(), margin: 1.0);
+        tall.warmUp();
+
+        final halfY = 45 * math.pi / 180 / 2;
+        final halfX = math.atan(math.tan(halfY) * 400 / 800);
+        expect(tall.distance, closeTo(radius / math.sin(halfX), 1e-6));
+        // Narrower than the vertical field, so it must sit further back than
+        // the landscape framing would.
+        expect(tall.distance, greaterThan(radius / math.sin(halfY)));
+      });
+
+      test('an explicit field of view overrides the lens', () {
+        final node = Node()..addComponent(CameraComponent());
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0, fovRadiansY: 90 * math.pi / 180);
+        c.warmUp();
+        expect(
+          c.distance,
+          closeTo(radius / math.sin(45 * math.pi / 180), 1e-6),
+        );
+      });
+
+      test('an orthographic lens keeps the diameter fit', () {
+        final node = Node()
+          ..addComponent(CameraComponent(projection: OrthographicProjection()));
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        node.addComponent(c);
+        c.frame(unitBounds(), margin: 1.0);
+        c.warmUp();
+        expect(c.distance, closeTo(radius * 2, 1e-6));
+      });
+
+      test('an unattached controller falls back to the engine default', () {
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 1000)
+          ..viewportSize = const Size(800, 600);
+        c.frame(unitBounds(), margin: 1.0);
+        c.warmUp();
+        expect(
+          c.distance,
+          closeTo(radius / math.sin(45 * math.pi / 180 / 2), 1e-6),
+        );
+      });
+
+      test('the distance stays inside the dolly limits', () {
+        final node = Node()..addComponent(CameraComponent());
+        final c = OrbitCameraController(smoothing: 0.0, maxDistance: 3.0);
+        node.addComponent(c);
+        c.frame(Aabb3.minMax(Vector3(-50, -50, -50), Vector3(50, 50, 50)));
+        c.warmUp();
+        expect(c.distance, closeTo(3.0, 1e-9));
+      });
     });
 
     test('settling is frame-rate independent for a fixed goal', () {
@@ -184,6 +286,100 @@ void main() {
       c.update(1 / 60);
       expect(_pos(camNode).x, greaterThan(0.0));
       expect(_pos(camNode).x, lessThan(100.0));
+    });
+  });
+}
+
+// Occlusion retraction on the third-person camera. The probe is injected
+// rather than raycast, so the retraction logic is exercised without a GPU
+// context; `occludeAgainst` supplies the real geometry probe in a build.
+void _occlusionTests() {
+  group('FollowCameraController occlusion', () {
+    FollowCameraController camera({double? blockAt}) {
+      final controller = FollowCameraController(
+        distance: 10.0,
+        pitch: 0.0,
+        lookHeight: 0.0,
+        smoothing: 0.0,
+      );
+      if (blockAt != null) {
+        controller.occlusionProbe = (lookAt, desiredEye) => blockAt;
+      }
+      return controller;
+    }
+
+    double eyeDistance(FollowCameraController controller) =>
+        controller.pose.position.length;
+
+    test('stays at full distance with nothing in the way', () {
+      final controller = camera();
+      controller.step(0.1);
+      expect(eyeDistance(controller), closeTo(10.0, 1e-4));
+    });
+
+    test('stays at full distance when the probe reports clear', () {
+      final controller = FollowCameraController(
+        distance: 10.0,
+        pitch: 0.0,
+        lookHeight: 0.0,
+        smoothing: 0.0,
+      )..occlusionProbe = (lookAt, desiredEye) => null;
+      controller.step(0.1);
+      expect(eyeDistance(controller), closeTo(10.0, 1e-4));
+    });
+
+    test('pulls in front of a wall, minus the padding', () {
+      final controller = camera(blockAt: 4.0);
+      controller.step(0.1);
+      expect(
+        eyeDistance(controller),
+        closeTo(4.0 - controller.occlusionPadding, 1e-4),
+      );
+    });
+
+    test('retracts immediately rather than easing into the wall', () {
+      final controller = camera(blockAt: 3.0);
+      // One frame is enough: easing here would leave the camera inside the
+      // wall for the duration of the ease, which is the failure this exists
+      // to prevent.
+      controller.step(1 / 60);
+      expect(eyeDistance(controller), lessThan(3.1));
+    });
+
+    test('never retracts past its minimum', () {
+      final controller = camera(blockAt: 0.05);
+      controller.step(0.1);
+      expect(
+        eyeDistance(controller),
+        closeTo(controller.minOcclusionDistance, 1e-4),
+      );
+    });
+
+    test('eases back out once the way is clear', () {
+      final controller = camera(blockAt: 3.0);
+      controller.step(0.1);
+      final retracted = eyeDistance(controller);
+
+      controller.occlusionProbe = (lookAt, desiredEye) => null;
+      controller.step(0.1);
+      final recovering = eyeDistance(controller);
+      expect(recovering, greaterThan(retracted));
+      expect(recovering, lessThan(10.0), reason: 'it eases rather than snaps');
+
+      for (var i = 0; i < 120; i++) {
+        controller.step(1 / 60);
+      }
+      expect(eyeDistance(controller), closeTo(10.0, 1e-3));
+    });
+
+    test('clearOcclusion goes back to the full distance', () {
+      final controller = camera(blockAt: 2.0);
+      controller.step(0.1);
+      expect(eyeDistance(controller), lessThan(3.0));
+
+      controller.clearOcclusion();
+      controller.step(0.1);
+      expect(eyeDistance(controller), closeTo(10.0, 1e-4));
     });
   });
 }

@@ -6,6 +6,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
+
 /// Keeps inspector labels and values on one line unless a child opts out.
 class InspectorTextScope extends StatelessWidget {
   const InspectorTextScope({super.key, required this.child});
@@ -67,7 +70,13 @@ class InspectorSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final unit = ((value - min) / (max - min)).clamp(0.0, 1.0);
+    // Sized down rather than boxed in. Left at its defaults the slider lays
+    // out nearly twice as tall as every other control, which turns a run of
+    // numeric properties into a run of rows that pitch differently from the
+    // rest of the panel; forcing it into a short box instead only clips it,
+    // so the thumb and the track are what shrink.
     return FSlider(
+      style: const FSliderStyleDelta.delta(thumbSize: 13, crossAxisExtent: 4),
       control: FSliderControl.liftedContinuous(
         value: FSliderValue(max: unit),
         onChange: (value) => onChanged(_fromUnit(value.max)),
@@ -205,9 +214,26 @@ class InspectorToggleSwitch extends StatelessWidget {
 
 /// One titled section in an [InspectorAccordion].
 class InspectorAccordionItem {
-  const InspectorAccordionItem({required this.title, required this.child});
+  const InspectorAccordionItem({
+    required this.title,
+    required this.child,
+    this.enabled,
+    this.trailing,
+  });
 
-  final Widget title;
+  /// The heading, spelled by the accordion rather than by the caller: a panel
+  /// where one section is Title Case and the next is CAPS reads as two
+  /// panels.
+
+  final String title;
+
+  /// Non-null draws the on/off state a section can be switched by: a dot
+  /// before the name and a word after it. Null is a section that is simply
+  /// open or closed.
+  final bool? enabled;
+
+  /// Anything else the header carries, at its right.
+  final Widget? trailing;
   final Widget child;
 }
 
@@ -254,6 +280,8 @@ class _InspectorAccordionState extends State<InspectorAccordion> {
       for (final (index, item) in widget.children.indexed)
         _InspectorAccordionSection(
           title: item.title,
+          enabled: item.enabled,
+          trailing: item.trailing,
           expanded: _expanded.contains(index),
           onToggle: () => _toggle(index),
           child: item.child,
@@ -268,9 +296,14 @@ class _InspectorAccordionSection extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.child,
+    this.enabled,
+    this.trailing,
   });
 
-  final Widget title;
+  final bool? enabled;
+  final Widget? trailing;
+
+  final String title;
   final bool expanded;
   final VoidCallback onToggle;
   final Widget child;
@@ -291,31 +324,54 @@ class _InspectorAccordionSection extends StatelessWidget {
                 variants.contains(FTappableVariant.pressed);
             return AnimatedContainer(
               duration: const Duration(milliseconds: 100),
-              color: highlighted
-                  ? colors.secondary.withValues(alpha: 0.7)
-                  : Colors.transparent,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+              height: 24,
+              margin: const EdgeInsets.only(top: 6),
+              color: highlighted ? editorRaisedColor : Colors.transparent,
+              padding: const EdgeInsets.only(left: 4, right: 8),
               child: Row(
                 children: [
-                  Expanded(
-                    child: DefaultTextStyle.merge(
-                      style: TextStyle(
-                        color: colors.foreground,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                  Icon(
+                    expanded ? Icons.arrow_drop_down : Icons.arrow_right,
+                    size: 16,
+                    color: editorMutedTextColor,
+                  ),
+                  const SizedBox(width: 2),
+                  if (enabled case final on?) ...[
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: on ? editorAccentColor : editorMutedTextColor,
+                        shape: BoxShape.circle,
                       ),
-                      child: title,
+                    ),
+                    const SizedBox(width: 7),
+                  ],
+                  Expanded(
+                    child: Text(
+                      title.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: editorTextColor,
+                        fontSize: 10.5,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.9,
+                      ),
                     ),
                   ),
-                  AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 140),
-                    child: Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 16,
-                      color: colors.mutedForeground,
+                  if (enabled case final on?)
+                    Text(
+                      on ? 'ON' : 'OFF',
+                      style: TextStyle(
+                        color: on ? editorAccentColor : editorMutedTextColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                      ),
                     ),
-                  ),
+                  if (trailing case final trailing?) trailing,
                 ],
               ),
             );
@@ -326,8 +382,14 @@ class _InspectorAccordionSection extends StatelessWidget {
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
           child: expanded
+              // No inset of its own: a group's rows line up with the rows
+              // above it rather than stepping in, so the label column stays
+              // one column down the whole panel.
               ? Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+                  padding: const EdgeInsets.only(
+                    top: editorHeadingGapBelow,
+                    bottom: 8,
+                  ),
                   child: child,
                 )
               : const SizedBox.shrink(),
@@ -559,26 +621,42 @@ class _ColorEditorState extends State<ColorEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text(widget.label, style: const TextStyle(fontSize: 13)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 28,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: _swatch,
-                  border: Border.all(color: Theme.of(context).dividerColor),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more, size: 18),
-            ],
-          ),
+        // The label in the shared column and the swatch at the head of the
+        // value column, like every other row: a colour is a property, not a
+        // section, and it should not read as one.
+        InkWell(
           onTap: () => setState(() => _expanded = !_expanded),
+          child: SizedBox(
+            height: editorPropertyRowHeight,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: editorPropertyLabelWidth,
+                  child: Text(
+                    widget.label,
+                    style: editorRowLabelText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: editorRowGutter),
+                Container(
+                  width: 34,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: _swatch,
+                    border: Border.all(color: editorLineColor),
+                    borderRadius: BorderRadius.circular(editorFieldRadius),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                  size: editorIconSizeLarge,
+                  color: editorMutedTextColor,
+                ),
+              ],
+            ),
+          ),
         ),
         if (_expanded)
           Padding(

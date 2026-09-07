@@ -18,6 +18,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'accessor.dart';
 import 'draco/gltf_draco.dart';
+import 'joint_influences.dart';
 import 'types.dart';
 
 /// A mutable axis-aligned bounding box accumulator.
@@ -272,8 +273,7 @@ Map<int, List<AabbBounds?>> bakeSkinnedPoseUnionAabbs(
     final unions = <AabbBounds?>[];
     for (final glPrim in doc.meshes[glNode.mesh!].primitives) {
       if (glPrim.mode != 4) continue;
-      if (!glPrim.attributes.containsKey('JOINTS_0') ||
-          !glPrim.attributes.containsKey('WEIGHTS_0')) {
+      if (!primitiveHasJointInfluences(glPrim)) {
         unions.add(null);
         continue;
       }
@@ -659,9 +659,21 @@ List<AabbBounds> _computeJointInfluenceAabbs(
   }
 
   final positions = read(prim.attributes['POSITION']!);
-  final joints = read(prim.attributes['JOINTS_0']!);
-  final weights = read(prim.attributes['WEIGHTS_0']!);
   final vertexCount = positions.length ~/ 3;
+  // Merged the same way the vertex packer merges them, so the bound covers
+  // the joints the mesh is actually bound to. Reading set 0 alone would miss
+  // every influence a multi-set rig put in a later set, and the missing
+  // joints' AABBs would stay empty — a bone could swing its part of the mesh
+  // through the camera while the cull bound says the mesh is elsewhere.
+  final influences = readJointInfluences(
+    primitive: prim,
+    accessors: accessors,
+    bufferViews: bufferViews,
+    bufferData: data,
+    vertexCount: vertexCount,
+  );
+  final joints = influences.joints;
+  final weights = influences.weights;
   for (int v = 0; v < vertexCount; v++) {
     final px = positions[v * 3 + 0];
     final py = positions[v * 3 + 1];

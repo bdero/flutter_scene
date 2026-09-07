@@ -9,6 +9,7 @@ import 'package:forui/forui.dart' hide FTheme;
 
 import 'fproject.dart';
 import '../shell/editor_theme.dart';
+import '../shell/panel_chrome.dart';
 import '../shell/editor_dialog.dart';
 
 const _modes = ['debug', 'profile', 'release'];
@@ -170,7 +171,7 @@ class _BuildConfigEditorState extends State<_BuildConfigEditor> {
           children: [
             Text(
               'Build configurations (${_project.name})',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: editorDialogTitleText,
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -497,9 +498,8 @@ class _ConfigFormState extends State<_ConfigForm> {
             children: [
               Text('Mode', style: const TextStyle(fontSize: 11)),
               const SizedBox(width: 8),
-              DropdownButton<String>(
+              EditorDropdown<String>(
                 value: _modes.contains(_mode) ? _mode : 'debug',
-                isDense: true,
                 items: [
                   for (final mode in _modes)
                     DropdownMenuItem(

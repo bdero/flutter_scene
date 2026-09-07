@@ -501,6 +501,31 @@ Future<String?> pickOpenPath({String? initialDirectory}) async {
   return file?.path;
 }
 
+/// Shows the native save dialog for a binary glTF export, returning the chosen
+/// path (with the extension enforced) or null when the user cancels.
+Future<String?> pickGlbSavePath({
+  String? suggestedName,
+  String? initialDirectory,
+}) async {
+  const glbTypeGroup = XTypeGroup(
+    label: 'Binary glTF',
+    extensions: ['glb'],
+    uniformTypeIdentifiers: ['public.data'],
+  );
+  final name = suggestedName ?? 'scene';
+  final stem = name.toLowerCase().endsWith('.glb')
+      ? name.substring(0, name.length - '.glb'.length)
+      : name;
+  final location = await getSaveLocation(
+    acceptedTypeGroups: const [glbTypeGroup],
+    suggestedName: stem,
+    initialDirectory: initialDirectory,
+  );
+  final path = location?.path;
+  if (path == null || path.toLowerCase().endsWith('.glb')) return path;
+  return '$path.glb';
+}
+
 /// Shows the native save dialog, and returns the chosen path, or null when the
 /// user cancels. The dialog starts in [initialDirectory].
 Future<String?> pickSavePath({

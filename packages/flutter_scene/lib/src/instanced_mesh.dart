@@ -76,6 +76,13 @@ class InstancedMesh {
   static final Vector4 _white = Vector4(1, 1, 1, 1);
 
   /// Replaces the transform of the instance at [index].
+  /// The transform of the instance at [index], as a copy.
+  ///
+  /// The batch owns its matrices and mutates them in place, so this hands
+  /// back a clone rather than a live reference; use [updateInstanceTransforms] to
+  /// change them.
+  Matrix4 getInstanceTransform(int index) => _instances[index].clone();
+
   void setInstanceTransform(int index, Matrix4 transform) {
     _instances[index].setFrom(transform);
     _windingFlipped[index] = transform.determinant() < 0;

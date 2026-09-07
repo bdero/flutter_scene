@@ -200,6 +200,11 @@ List<PropertyOverride> optionalOverrides(
 /// then color (`{r, g, b, a}`) and vector (`{x, y, z}` or `{x, y, z, w}`)
 /// shapes, otherwise a nested [MapValue]; lists become a [ListValue].
 PropertyValue coercePropertyValue(Object? value, {ComponentPropertyDef? def}) {
+  // An already-typed value needs no coercion, and is the shape a caller
+  // seeding a component from one built in code has: a preset effect
+  // serialized through its own codec comes back as PropertyValues, not as
+  // the JSON a tool or an agent would have sent.
+  if (value is PropertyValue) return value;
   if (def != null) return _coerceAgainst(value, def);
   return _coerceByShape(value);
 }

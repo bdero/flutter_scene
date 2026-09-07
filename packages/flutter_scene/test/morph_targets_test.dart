@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/animation.dart' as engine;
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
+import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/runtime_importer/animation_builder.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -639,6 +640,67 @@ void main() {
       player.update(0.0);
       // rest 0.2 + (1.0 - 0.2) * 0.5
       expect(node.morphWeights![0], closeTo(0.6, 1e-6));
+    });
+  });
+
+  group('morph bounds range', () {
+    // Two targets over one vertex: the first pushes +X, the second -Y.
+    final data = MorphTargetData(
+      vertexCount: 1,
+      targetCount: 2,
+      positionDeltas: Float32List.fromList([2, 0, 0, 0, -3, 0]),
+      targetNames: const ['a', 'b'],
+    );
+    final extremes = computeMorphDeltaExtremes(data);
+    final out = Float32List(6);
+
+    void range(List<double>? weights) => morphWeightedDeltaRange(
+      extremes.lo,
+      extremes.hi,
+      data.targetCount,
+      weights == null ? null : Float32List.fromList(weights),
+      out,
+    );
+
+    test('per-target extremes never cross zero on the wrong side', () {
+      // Zero-seeded, so a target that only pushes one way has zero on the
+      // other. That is what lets a weight of zero contribute nothing.
+      expect(extremes.lo.toList(), [0, 0, 0, 0, -3, 0]);
+      expect(extremes.hi.toList(), [2, 0, 0, 0, 0, 0]);
+    });
+
+    test('zero weights displace nothing', () {
+      range([0.0, 0.0]);
+      expect(out.toList(), [0, 0, 0, 0, 0, 0]);
+    });
+
+    test('weights inside [0, 1] scale the envelope', () {
+      range([1.0, 1.0]);
+      expect(out.toList(), [0, -3, 0, 2, 0, 0]);
+      range([0.5, 0.5]);
+      expect(out.toList(), [0, -1.5, 0, 1, 0, 0]);
+    });
+
+    test('a weight past 1 widens past the authored envelope', () {
+      range([3.0, 0.0]);
+      expect(out[3], 6.0, reason: 'three times the target: the whole point');
+      range(null);
+      expect(out[3], 2.0, reason: 'the seed envelope is every target at 1');
+    });
+
+    test('a negative weight flips the target contribution', () {
+      range([-1.0, 0.0]);
+      // The +X target pulled backwards becomes the low, not the high.
+      expect(out[0], -2.0);
+      expect(out[3], 0.0);
+      range([0.0, -2.0]);
+      expect(out[4], 6.0, reason: 'the -Y target pushed +Y');
+      expect(out[1], 0.0);
+    });
+
+    test('a short weight list only applies the targets it covers', () {
+      range([1.0]);
+      expect(out.toList(), [0, 0, 0, 2, 0, 0]);
     });
   });
 }

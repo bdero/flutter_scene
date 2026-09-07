@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
 import '../io/scene_io.dart';
 import 'asset_index.dart';
 import 'environment_thumbnail.dart';
@@ -86,7 +87,7 @@ class _EnvironmentImagePickerDialogState
           children: [
             const Text(
               'Choose environment image',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              style: editorDialogTitleText,
             ),
             const SizedBox(height: 10),
             FTextField(
@@ -104,7 +105,10 @@ class _EnvironmentImagePickerDialogState
                   ? const Center(
                       child: Text(
                         'No HDR or EXR images found in this project.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: editorMutedTextColor,
+                        ),
                       ),
                     )
                   : GridView.builder(

@@ -9,12 +9,40 @@ Float32List selectGltfKeyframeValues(
   required bool cubicSpline,
 }) {
   if (!cubicSpline) return Float32List.fromList(values);
+  return _selectCubicSlot(values, componentCount, 1);
+}
+
+/// The in- and out-tangents a `CUBICSPLINE` sampler stores on either side of
+/// each keyframe value, each one value per keyframe.
+///
+/// A cubic sampler's output runs `[inTangent, value, outTangent]` per
+/// keyframe. [selectGltfKeyframeValues] takes the middle of each triplet;
+/// this takes the other two, so a timeline can keep its Hermite shape
+/// instead of being flattened to the keyframe values alone.
+///
+/// Tangents are in value units per second, which is what the Hermite basis
+/// expects; the segment duration scales them at evaluation time.
+({Float32List inTangents, Float32List outTangents}) selectGltfKeyframeTangents(
+  Float32List values, {
+  required int componentCount,
+}) => (
+  inTangents: _selectCubicSlot(values, componentCount, 0),
+  outTangents: _selectCubicSlot(values, componentCount, 2),
+);
+
+/// Takes slot [slot] of every `[inTangent, value, outTangent]` triplet.
+Float32List _selectCubicSlot(Float32List values, int componentCount, int slot) {
   final stride = componentCount * 3;
-  final result = <double>[];
+  if (stride == 0) return Float32List(0);
+  final offset = componentCount * slot;
+  final result = Float32List(values.length ~/ stride * componentCount);
+  var out = 0;
   for (var i = 0; i + stride <= values.length; i += stride) {
-    result.addAll(values.sublist(i + componentCount, i + componentCount * 2));
+    for (var c = 0; c < componentCount; c++) {
+      result[out++] = values[i + offset + c];
+    }
   }
-  return Float32List.fromList(result);
+  return result;
 }
 
 /// Selects where glTF coordinates become native scene coordinates.

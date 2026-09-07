@@ -52,6 +52,8 @@ sealed class PropertyConstraint<T> {
         return const LayerMask32();
       case 'multiline':
         return const Multiline();
+      case 'readOnly':
+        return const ReadOnly();
       case 'pattern':
         return TextPattern(value is String ? value : '');
       case 'assetExtensions':
@@ -171,6 +173,20 @@ final class LayerMask32 extends PropertyConstraint<int> {
 
   @override
   Map<String, Object?> toJson() => const {'layerMask32': true};
+}
+
+/// Written by a tool, not by hand: the inspector shows the value and offers
+/// no editor for it.
+///
+/// For a property that is real document state -- so not transient -- but
+/// whose value is derived: a payload token naming a baked blob, a cached
+/// count, a checksum. Hand-editing one of those cannot produce anything
+/// meaningful, and can silently break the thing it points at.
+final class ReadOnly extends PropertyConstraint<Object?> {
+  const ReadOnly();
+
+  @override
+  Map<String, Object?> toJson() => const {'readOnly': true};
 }
 
 /// A multi-line text field.

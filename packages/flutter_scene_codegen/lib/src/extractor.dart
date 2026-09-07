@@ -237,6 +237,7 @@ class _Extraction {
       type,
       doc: _stringLit(args.named['doc']) ?? _docText(declaration),
       icon: _stringLit(args.named['icon']),
+      category: _stringLit(args.named['category']),
       formerTypes: _stringListLit(args.named['formerTypes']) ?? const [],
       properties: [for (final property in properties) property.def],
       gizmo: gizmoAnnotation == null ? null : _lowerGizmo(gizmoAnnotation),

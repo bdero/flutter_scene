@@ -223,6 +223,9 @@ AnimationSpec _copyAnimation(AnimationSpec a, _Remap remap) => AnimationSpec(
         property: c.property,
         timeline: remap(c.timeline),
         keyframes: remap(c.keyframes),
+        interpolation: c.interpolation,
+        inTangents: c.inTangents == null ? null : remap(c.inTangents!),
+        outTangents: c.outTangents == null ? null : remap(c.outTangents!),
       ),
   ],
 );

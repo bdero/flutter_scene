@@ -5,6 +5,15 @@ import 'package:flutter_scene/src/fscene/realize/component_schema.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Properties that exist only on one variant of their component, keyed by
+/// component type. The delta probe below changes one property at a time
+/// against an otherwise-default component, which cannot reach these: a camera
+/// realized from `{height: ...}` alone is a perspective camera, and a
+/// perspective lens has no height.
+const _variantProperties = <String, Set<String>>{
+  'camera': {'height'},
+};
+
 void main() {
   final registry = defaultComponentRegistry();
 
@@ -25,11 +34,22 @@ void main() {
   // and serializing must produce an EMPTY property bag, and a component with
   // one changed value must serialize exactly that key. This locks schema
   // defaults, realize fallbacks, and serialize together so none can drift.
+  // dollyCameraController is absent on purpose: its path is required and has
+  // no default, so an all-defaults instance is not a thing that exists (the
+  // mesh codec's geometry is required the same way).
   for (final type in [
     'directionalLight',
     'pointLight',
     'spotLight',
     'camera',
+    'orbitCameraController',
+    'flyCameraController',
+    'followCameraController',
+    'firstPersonCameraController',
+    'rtsCameraController',
+    'cameraDirector',
+    'cameraSequence',
+    'pathFollower',
   ]) {
     test('$type round-trips as a delta against schema defaults', () {
       final codec = registry.codecFor(type)!;
@@ -47,6 +67,10 @@ void main() {
 
       // Round-trip one non-default value per declared writable property kind.
       for (final def in codec.propertySchema) {
+        // A property that only exists on one variant of its component is out
+        // of reach here: probing it alone realizes the default variant, which
+        // does not have it. Those get a variant-aware test of their own.
+        if (_variantProperties[type]?.contains(def.name) ?? false) continue;
         final defaultValue = def.defaultValue;
         if (defaultValue == null) continue;
         // Stay inside any hard clamp, or the (correct) write-side clamping
@@ -181,14 +205,24 @@ void main() {
       'geometry',
       'material',
       'primitives',
+      'visible',
+      'castsShadow',
       'morphWeights',
     ]);
     expect(mesh.propertySchema[0].kind, ComponentPropertyKind.resourceRef);
     expect(mesh.propertySchema[0].defaultValue, isNull); // required
     expect(mesh.propertySchema[2].kind, ComponentPropertyKind.list);
     expect(mesh.propertySchema[2].itemDef, isNotNull);
-    expect(mesh.propertySchema[3].kind, ComponentPropertyKind.list);
-    expect(mesh.propertySchema[3].itemDef!.kind, ComponentPropertyKind.number);
+    expect(mesh.propertySchema[5].kind, ComponentPropertyKind.list);
+    expect(mesh.propertySchema[5].itemDef!.kind, ComponentPropertyKind.number);
+    // Both per-primitive flags are described on the list entry too, so a
+    // multi-primitive mesh can carry them per entry.
+    expect(mesh.propertySchema[2].itemDef!.objectFields!.map((d) => d.name), [
+      'geometry',
+      'material',
+      'visible',
+      'castsShadow',
+    ]);
   });
 
   test('directional light is rotation-aimed and preserves shadow controls', () {
@@ -208,6 +242,90 @@ void main() {
     );
   });
 
+  test('every light carries its channel mask', () {
+    for (final type in [
+      'directionalLight',
+      'pointLight',
+      'spotLight',
+      'rectAreaLight',
+    ]) {
+      final codec = registry.codecFor(type)!;
+      final def = codec.propertySchema.firstWhere(
+        (d) => d.name == 'channelMask',
+        orElse: () => fail('$type has no channelMask'),
+      );
+      expect(def.kind, ComponentPropertyKind.integer);
+      expect((def.defaultValue! as IntValue).value, 0xFF);
+    }
+    // The caster mask is directional-only: no other light renders cascades.
+    for (final type in ['pointLight', 'spotLight', 'rectAreaLight']) {
+      expect(
+        registry.codecFor(type)!.propertySchema.map((d) => d.name),
+        isNot(contains('shadowCasterChannelMask')),
+      );
+    }
+  });
+
+  test('channel masks round-trip as a delta from the default', () {
+    final codec = registry.codecFor('directionalLight')!;
+    final doc = SceneDocument();
+    final component = codec.realize(
+      ComponentSpec(
+        'directionalLight',
+        properties: {
+          'channelMask': const IntValue(0x03),
+          'shadowCasterChannelMask': const IntValue(0x01),
+        },
+      ),
+      RealizeContext(doc),
+    )!;
+    final spec = codec.serialize(component, SerializeContext(doc))!;
+    expect((spec.properties['channelMask']! as IntValue).value, 0x03);
+    expect(
+      (spec.properties['shadowCasterChannelMask']! as IntValue).value,
+      0x01,
+    );
+
+    // A light left on every channel writes nothing.
+    final plain = codec.realize(
+      ComponentSpec('directionalLight'),
+      RealizeContext(doc),
+    )!;
+    final plainSpec = codec.serialize(plain, SerializeContext(doc))!;
+    expect(plainSpec.properties, isNot(contains('channelMask')));
+    expect(plainSpec.properties, isNot(contains('shadowCasterChannelMask')));
+  });
+
+  test('the pinned first cascade bound distinguishes unset from zero', () {
+    final codec = registry.codecFor('directionalLight')!;
+    final doc = SceneDocument();
+
+    // Unset: the key is absent, not a zero that would collapse cascade 0.
+    final auto = codec.realize(
+      ComponentSpec('directionalLight'),
+      RealizeContext(doc),
+    )!;
+    final autoSpec = codec.serialize(auto, SerializeContext(doc))!;
+    expect(autoSpec.properties, isNot(contains('firstCascadeFarBound')));
+
+    final pinned = codec.realize(
+      ComponentSpec(
+        'directionalLight',
+        properties: {
+          'firstCascadeFarBound': const DoubleValue(12.5),
+          'cascadeOverlap': const DoubleValue(0.25),
+        },
+      ),
+      RealizeContext(doc),
+    )!;
+    final spec = codec.serialize(pinned, SerializeContext(doc))!;
+    expect(
+      (spec.properties['firstCascadeFarBound']! as DoubleValue).value,
+      12.5,
+    );
+    expect((spec.properties['cascadeOverlap']! as DoubleValue).value, 0.25);
+  });
+
   test('spot lights declare caster faces and angle constraints', () {
     final spot = registry.codecFor('spotLight')!;
     final names = spot.propertySchema.map((d) => d.name).toSet();
@@ -224,12 +342,45 @@ void main() {
     final projection = camera.propertySchema.firstWhere(
       (d) => d.name == 'projection',
     );
-    expect(projection.options, ['perspective']);
+    expect(projection.options, ['perspective', 'orthographic']);
     final fov = camera.propertySchema.firstWhere(
       (d) => d.name == 'fovRadiansY',
     );
     expect(fov.hardMin, greaterThan(0));
     expect(fov.hardMax, lessThan(3.15));
+  });
+
+  // Covers what _variantProperties excludes from the generic delta probe.
+  test('an orthographic camera round-trips as a delta', () {
+    final codec = registry.codecFor('camera')!;
+    final doc = SceneDocument();
+
+    ComponentSpec roundTrip(Map<String, PropertyValue> properties) =>
+        codec.serialize(
+          codec.realize(
+            ComponentSpec('camera', properties: properties),
+            RealizeContext(doc),
+          )!,
+          SerializeContext(doc),
+        )!;
+
+    // The lens tag is the only non-default, so it is the whole delta: an
+    // orthographic camera at its default size writes no size key.
+    expect(
+      roundTrip({
+        'projection': const StringValue('orthographic'),
+      }).properties.keys,
+      ['projection'],
+    );
+
+    final sized = roundTrip({
+      'projection': const StringValue('orthographic'),
+      'height': const DoubleValue(20),
+    });
+    expect(sized.properties.keys, unorderedEquals(['projection', 'height']));
+    expect((sized.properties['height']! as DoubleValue).value, 20);
+    // The perspective-only key must not ride along on an orthographic lens.
+    expect(sized.properties, isNot(contains('fovRadiansY')));
   });
 
   test('builtin visual components declare gizmos that survive JSON', () {

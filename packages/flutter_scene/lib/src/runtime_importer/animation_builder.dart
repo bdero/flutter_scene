@@ -7,10 +7,9 @@ import '../node.dart';
 
 /// Builds an engine [Animation] from a glTF animation. Each glTF channel
 /// becomes an engine [AnimationChannel] keyed by the target node's name and
-/// property (translation/rotation/scale/weights). The engine currently
-/// supports linear timeline interpolation; STEP samplers degrade to "always
-/// pick the next keyframe" via the same resolver, and CUBICSPLINE samplers
-/// keep only the keyframe values (tangents discarded).
+/// property (translation/rotation/scale/weights). All three glTF sampler
+/// interpolations are carried through: LINEAR, STEP, and CUBICSPLINE with
+/// its per-keyframe tangents.
 Animation buildAnimation({
   required GltfAnimation gltfAnimation,
   required List<GltfAccessor> accessors,
@@ -55,14 +54,27 @@ Animation buildAnimation({
             : sourceValues.length ~/ (times.length * (isCubic ? 3 : 1)),
       _ => 3,
     };
-    final values = coordinatePolicy.convertAnimationValues(
+    Float32List convert(Float32List stream) => coordinatePolicy
+        .convertAnimationValues(stream, targetPath: channel.targetPath);
+
+    final values = convert(
       selectGltfKeyframeValues(
         sourceValues,
         componentCount: componentCount,
         cubicSpline: isCubic,
       ),
-      targetPath: channel.targetPath,
     );
+    // A tangent is a difference of two values, so the coordinate conversion
+    // (component sign flips) applies to it exactly as it does to a value.
+    final tangents = isCubic
+        ? selectGltfKeyframeTangents(
+            sourceValues,
+            componentCount: componentCount,
+          )
+        : null;
+    final inTangents = tangents == null ? null : convert(tangents.inTangents);
+    final outTangents = tangents == null ? null : convert(tangents.outTangents);
+    final interpolation = _interpolationOf(sampler.interpolation);
 
     switch (channel.targetPath) {
       case 'translation':
@@ -70,18 +82,27 @@ Animation buildAnimation({
         resolver = PropertyResolver.makeTranslationTimeline(
           times.toList(),
           _readVec3List(values),
+          interpolation: interpolation,
+          inTangents: inTangents == null ? null : _readVec3List(inTangents),
+          outTangents: outTangents == null ? null : _readVec3List(outTangents),
         );
       case 'rotation':
         property = AnimationProperty.rotation;
         resolver = PropertyResolver.makeRotationTimeline(
           times.toList(),
           _readQuatList(values),
+          interpolation: interpolation,
+          inTangents: inTangents == null ? null : _readQuatList(inTangents),
+          outTangents: outTangents == null ? null : _readQuatList(outTangents),
         );
       case 'scale':
         property = AnimationProperty.scale;
         resolver = PropertyResolver.makeScaleTimeline(
           times.toList(),
           _readVec3List(values),
+          interpolation: interpolation,
+          inTangents: inTangents == null ? null : _readVec3List(inTangents),
+          outTangents: outTangents == null ? null : _readVec3List(outTangents),
         );
       case 'weights':
         if (componentCount == 0) continue;
@@ -90,6 +111,9 @@ Animation buildAnimation({
           times.toList(),
           values,
           targetCount: componentCount,
+          interpolation: interpolation,
+          inTangents: inTangents,
+          outTangents: outTangents,
         );
       default:
         debugPrint(
@@ -122,3 +146,14 @@ List<Quaternion> _readQuatList(Float32List values) {
   }
   return out;
 }
+
+/// Maps a glTF sampler's interpolation name onto the engine's timeline modes.
+///
+/// An unrecognized name falls back to linear, which is the spec default and
+/// the only reading that produces motion at all.
+TimelineInterpolation _interpolationOf(String gltfInterpolation) =>
+    switch (gltfInterpolation) {
+      'STEP' => TimelineInterpolation.step,
+      'CUBICSPLINE' => TimelineInterpolation.cubic,
+      _ => TimelineInterpolation.linear,
+    };

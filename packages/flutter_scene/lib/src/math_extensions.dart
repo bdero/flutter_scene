@@ -65,3 +65,43 @@ extension QuaternionSlerp on Quaternion {
     }
   }
 }
+
+/// Rotating a vector by a quaternion, in the convention the scene graph uses.
+///
+/// **Not `Quaternion.rotate`.** vector_math's `rotate` and `rotated` compute
+/// `conjugate(q) * v * q`, which is the *inverse* of the rotation
+/// [Matrix4.compose] and [Quaternion.fromRotation] build from the same
+/// quaternion. Everything in this engine — node transforms, camera poses,
+/// animation output — is on the matrix side of that disagreement, so code that
+/// reaches for `rotated` gets a vector pointing backwards. It gets it silently,
+/// too: the two agree for the identity and for anything on a single axis, and
+/// only diverge once the rotation is compound enough to notice.
+/// {@category Scene graph}
+extension QuaternionRotate on Quaternion {
+  /// Returns [v] rotated by this quaternion.
+  Vector3 rotateVector(Vector3 v) {
+    final out = Vector3.zero();
+    rotateVectorInto(v, out);
+    return out;
+  }
+
+  /// Writes [v] rotated by this quaternion into [out], allocating nothing.
+  ///
+  /// For the per-frame paths — camera solving, constraint solving — where a
+  /// fresh vector sixty times a second per caller is worth not allocating.
+  /// [out] may be [v].
+  void rotateVectorInto(Vector3 v, Vector3 out) {
+    // v + 2w(a x v) + 2(a x (a x v)), for the axis part `a` of this quaternion.
+    final vx = v.x, vy = v.y, vz = v.z;
+    final cx = y * vz - z * vy;
+    final cy = z * vx - x * vz;
+    final cz = x * vy - y * vx;
+    final dx = y * cz - z * cy;
+    final dy = z * cx - x * cz;
+    final dz = x * cy - y * cx;
+    out
+      ..x = vx + 2.0 * (w * cx + dx)
+      ..y = vy + 2.0 * (w * cy + dy)
+      ..z = vz + 2.0 * (w * cz + dz);
+  }
+}
