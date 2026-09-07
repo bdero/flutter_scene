@@ -422,6 +422,12 @@ enum PrefabOverrideAspect {
   /// `layers`.
   layers,
 
+  /// `lightChannelMask`.
+  lightChannelMask,
+
+  /// `raycastable`.
+  raycastable,
+
   /// `shadowCasting`.
   shadowCasting,
 
@@ -445,6 +451,10 @@ PrefabOverrideAspect prefabOverrideAspect(String path) {
       return PrefabOverrideAspect.visible;
     case 'layers':
       return PrefabOverrideAspect.layers;
+    case 'lightChannelMask':
+      return PrefabOverrideAspect.lightChannelMask;
+    case 'raycastable':
+      return PrefabOverrideAspect.raycastable;
     case 'shadowCasting':
       return PrefabOverrideAspect.shadowCasting;
   }
@@ -467,6 +477,14 @@ void _setProperty(NodeSpec node, String path, PropertyValue value) {
     }
     if (parts[0] == 'layers' && value is IntValue) {
       node.layers = value.value;
+      return;
+    }
+    if (parts[0] == 'lightChannelMask' && value is IntValue) {
+      node.lightChannelMask = value.value;
+      return;
+    }
+    if (parts[0] == 'raycastable' && value is BoolValue) {
+      node.raycastable = value.value;
       return;
     }
     if (parts[0] == 'visible' && value is BoolValue) {
@@ -589,9 +607,11 @@ NodeSpec _remapNode(
   children: [for (final c in node.children) remap(c)],
   components: [for (final c in node.components) _remapComponent(c, remap)],
   layers: node.layers,
+  lightChannelMask: node.lightChannelMask,
   skin: node.skin == null ? null : remap(node.skin!),
   instance: keepInstance ? node.instance : null,
   visible: node.visible,
+  raycastable: node.raycastable,
 );
 
 ComponentSpec _remapComponent(
@@ -712,6 +732,9 @@ AnimationSpec _remapAnimation(
         property: ch.property,
         timeline: remap(ch.timeline),
         keyframes: remap(ch.keyframes),
+        interpolation: ch.interpolation,
+        inTangents: ch.inTangents == null ? null : remap(ch.inTangents!),
+        outTangents: ch.outTangents == null ? null : remap(ch.outTangents!),
       ),
   ],
 );
@@ -781,5 +804,27 @@ SkySourceSpec _copySkySource(SkySourceSpec source) => switch (source) {
     turbidity: s.turbidity,
     groundColor: s.groundColor.clone(),
     energy: s.energy,
+  ),
+  WeatherSkySpec s => WeatherSkySpec(
+    sunDirection: s.sunDirection.clone(),
+    sunAngularRadius: s.sunAngularRadius,
+    rayleighCoefficient: s.rayleighCoefficient,
+    rayleighColor: s.rayleighColor.clone(),
+    mieCoefficient: s.mieCoefficient,
+    mieEccentricity: s.mieEccentricity,
+    mieColor: s.mieColor.clone(),
+    turbidity: s.turbidity,
+    groundColor: s.groundColor.clone(),
+    energy: s.energy,
+    coverage: s.coverage,
+    density: s.density,
+    altitude: s.altitude,
+    detail: s.detail,
+    softness: s.softness,
+    seed: s.seed,
+    wind: s.wind.clone(),
+    cloudColor: s.cloudColor.clone(),
+    cloudShading: s.cloudShading,
+    stormDarkening: s.stormDarkening,
   ),
 };

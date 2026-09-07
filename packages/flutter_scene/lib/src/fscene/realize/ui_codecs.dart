@@ -99,6 +99,9 @@ class WidgetCodec extends DeclarativeComponentCodec<WidgetComponent> {
   String get type => 'widget';
 
   @override
+  String? get category => 'UI';
+
+  @override
   List<ComponentField<WidgetComponent>> get fields => [
     // No default; every widget spec names its slot.
     ComponentField(
@@ -247,6 +250,9 @@ ComponentField<SemanticsComponent> _optionalStringField(
 class SemanticsCodec extends DeclarativeComponentCodec<SemanticsComponent> {
   @override
   String get type => 'semantics';
+
+  @override
+  String? get category => 'UI';
 
   @override
   List<ComponentField<SemanticsComponent>> get fields => [

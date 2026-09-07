@@ -20,6 +20,8 @@ import 'package:flutter_scene/src/geometry/interleaved_layout.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/geometry/morphed_geometry.dart';
 import 'package:flutter_scene/src/geometry/primitives.dart';
+import 'package:flutter_scene/src/geometry/terrain.dart';
+import 'package:flutter_scene/src/geometry/terrain_splat.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
@@ -804,9 +806,175 @@ class ResourceRealizer {
         radialSegments: radialSegments,
         tubularSegments: tubularSegments,
       ),
+    CylinderGeometrySpec(
+      :final bottomRadius,
+      :final topRadius,
+      :final height,
+      :final radialSegments,
+      :final heightSegments,
+      :final bottomCap,
+      :final topCap,
+    ) =>
+      CylinderGeometry(
+        bottomRadius: bottomRadius,
+        topRadius: topRadius,
+        height: height,
+        radialSegments: radialSegments,
+        heightSegments: heightSegments,
+        bottomCap: bottomCap,
+        topCap: topCap,
+      ),
+    CapsuleGeometrySpec(
+      :final radius,
+      :final height,
+      :final radialSegments,
+      :final capRings,
+    ) =>
+      CapsuleGeometry(
+        radius: radius,
+        height: height,
+        radialSegments: radialSegments,
+        capRings: capRings,
+      ),
+    DiscGeometrySpec(:final radius, :final segments) => DiscGeometry(
+      radius: radius,
+      segments: segments,
+    ),
+    WedgeGeometrySpec(:final size) => WedgeGeometry(size),
+    TerrainGeometrySpec(
+      :final width,
+      :final depth,
+      :final columns,
+      :final rows,
+      :final amplitude,
+      :final frequency,
+      :final octaves,
+      :final seed,
+      :final heights,
+      :final splat,
+      :final splatColumns,
+      :final splatRows,
+    ) =>
+      // Sculptable so the editor can push edited samples without rebuilding
+      // the geometry. Terrain keeps its samples on the CPU regardless, so
+      // this costs a buffer strategy rather than a copy of the map.
+      TerrainGeometry(
+        sculptable: true,
+        _terrainField(
+          heights: heights,
+          width: width,
+          depth: depth,
+          columns: columns,
+          rows: rows,
+          amplitude: amplitude,
+          frequency: frequency,
+          octaves: octaves,
+          seed: seed,
+        ),
+        splat: _terrainSplat(
+          splat: splat,
+          width: width,
+          depth: depth,
+          columns: splatColumns,
+          rows: splatRows,
+        ),
+      ),
     IcosphereGeometrySpec(:final radius, :final subdivisions) =>
       IcosphereGeometry(radius: radius, subdivisions: subdivisions),
   };
+
+  /// The samples for a terrain: the stored heightmap when it has one, the
+  /// generator otherwise.
+  ///
+  /// A heightmap that does not match the declared grid is refused rather than
+  /// stretched over it, since reading a truncated one produces a cliff at
+  /// whatever row it ran out on. Falling back to the generator gives ground
+  /// that at least looks deliberate, and says so.
+  HeightField _terrainField({
+    required LocalId? heights,
+    required double width,
+    required double depth,
+    required int columns,
+    required int rows,
+    required double amplitude,
+    required double frequency,
+    required int octaves,
+    required int seed,
+  }) {
+    HeightField generated() => HeightField.noise(
+      width: width,
+      depth: depth,
+      columns: columns,
+      rows: rows,
+      amplitude: amplitude,
+      frequency: frequency,
+      octaves: octaves,
+      seed: seed,
+    );
+    if (heights == null) return generated();
+    final bytes = document.payloads[heights]?.bytes;
+    if (bytes == null) {
+      debugPrint(
+        'fscene: terrain heightmap $heights has no bytes loaded; '
+        'generating from its parameters instead',
+      );
+      return generated();
+    }
+    final field = HeightField.fromBytes(
+      bytes,
+      columns: columns,
+      rows: rows,
+      width: width,
+      depth: depth,
+    );
+    if (field == null) {
+      debugPrint(
+        'fscene: terrain heightmap $heights does not hold $columns x $rows '
+        'samples; generating from its parameters instead',
+      );
+      return generated();
+    }
+    return field;
+  }
+
+  /// The painted surface layers for a terrain, or null when it is one
+  /// material throughout.
+  ///
+  /// A control map that does not match the declared grid is refused rather
+  /// than stretched over the ground, for the same reason a mismatched
+  /// heightmap is: reading a truncated one paints whatever it ran out on
+  /// across the rest of the terrain.
+  TerrainSplatMap? _terrainSplat({
+    required LocalId? splat,
+    required double width,
+    required double depth,
+    required int columns,
+    required int rows,
+  }) {
+    if (splat == null) return null;
+    final bytes = document.payloads[splat]?.bytes;
+    if (bytes == null) {
+      debugPrint(
+        'fscene: terrain splat map $splat has no bytes loaded; the terrain '
+        'draws as its base layer',
+      );
+      return null;
+    }
+    final map = TerrainSplatMap.fromBytes(
+      bytes,
+      columns: columns,
+      rows: rows,
+      width: width,
+      depth: depth,
+    );
+    if (map == null) {
+      debugPrint(
+        'fscene: terrain splat map $splat does not hold $columns x $rows '
+        'texels; the terrain draws as its base layer',
+      );
+    }
+    return map;
+  }
 
   Material _buildMaterial(LocalId id) {
     final res = document.resource(id);

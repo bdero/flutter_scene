@@ -224,9 +224,11 @@ class NodeSpec {
     List<LocalId>? children,
     List<ComponentSpec>? components,
     this.layers = 1,
+    this.lightChannelMask = 0xFF,
     this.skin,
     this.instance,
     this.visible = true,
+    this.raycastable = true,
     this.shadowCastingMode = 'on',
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
@@ -250,6 +252,11 @@ class NodeSpec {
   /// The render-layer bitmask (defaults to layer 0).
   int layers;
 
+  /// The light-channel bitmask, 8 bits (defaults to every channel). A light
+  /// reaches this node's meshes only where its own channel mask intersects
+  /// this one.
+  int lightChannelMask;
+
   /// The skin bound to this node, or null.
   LocalId? skin;
 
@@ -259,6 +266,10 @@ class NodeSpec {
   /// Whether this node (and so its subtree) renders. Hidden nodes still
   /// realize and tick; only drawing is skipped.
   bool visible;
+
+  /// Whether scene raycasts test this node's meshes (defaults to true).
+  /// Distinct from [visible]: a hidden node is already skipped by default.
+  bool raycastable;
 
   /// How this node's meshes cast shadows: `off`, `on` (the default),
   /// `doubleSided`, or `shadowsOnly`. Names match the renderer's
@@ -306,6 +317,200 @@ class CuboidGeometrySpec extends ProceduralGeometry {
 
   /// Whether each corner carries a distinct debug color.
   final bool debugColors;
+}
+
+/// A height-field terrain, either generated from fractal noise or read from a
+/// stored heightmap.
+///
+/// Without [heights] it is described by its parameters: the same seed always
+/// produces the same ground, so a document carries a few numbers rather than
+/// a megabyte of samples. Sculpting it bakes those samples into a
+/// [PayloadEncoding.floats] payload and points [heights] at it, which is the
+/// moment terrain stops being a formula and starts being data.
+/// {@category Documents}
+class TerrainGeometrySpec extends ProceduralGeometry {
+  /// Creates a terrain spec.
+  TerrainGeometrySpec({
+    this.width = 64.0,
+    this.depth = 64.0,
+    this.columns = 65,
+    this.rows = 65,
+    this.amplitude = 8.0,
+    this.frequency = 0.02,
+    this.octaves = 4,
+    this.seed = 1337,
+    this.heights,
+    this.splat,
+    this.splatColumns = 256,
+    this.splatRows = 256,
+  });
+
+  /// World size across X.
+  final double width;
+
+  /// World size across Z.
+  final double depth;
+
+  /// Height samples across X; one more than the quads.
+  final int columns;
+
+  /// Height samples across Z.
+  final int rows;
+
+  /// Peak height above and below zero.
+  final double amplitude;
+
+  /// Noise scale, in world units.
+  final double frequency;
+
+  /// How many layers of detail are summed.
+  final int octaves;
+
+  /// The seed; the same one always gives the same ground.
+  final int seed;
+
+  /// A packed-float payload of `columns * rows` samples, row-major, or null
+  /// to generate them from the parameters above.
+  final LocalId? heights;
+
+  /// An RGBA payload of `splatColumns * splatRows` texels holding how much
+  /// each of four surface layers shows, or null for a terrain that is one
+  /// material throughout.
+  final LocalId? splat;
+
+  /// Control-map texels across X.
+  ///
+  /// Deliberately not [columns]: painting wants finer detail than sculpting,
+  /// and tying the two would mean either a heightmap denser than anyone needs
+  /// or a paintable resolution nobody can work at.
+  final int splatColumns;
+
+  /// Control-map texels across Z.
+  final int splatRows;
+
+  /// Whether this terrain carries its own samples rather than a recipe.
+  bool get isSculpted => heights != null;
+
+  /// Whether this terrain carries painted surface layers.
+  bool get isPainted => splat != null;
+
+  /// A copy with the given fields replaced.
+  ///
+  /// Editing one part of a terrain means writing a new spec, and a terrain has
+  /// enough parts that rebuilding it field by field at each call site is a
+  /// standing invitation to drop one: sculpting a painted terrain would lose
+  /// its painting, and the loss would show up a save later.
+  TerrainGeometrySpec copyWith({
+    double? width,
+    double? depth,
+    int? columns,
+    int? rows,
+    double? amplitude,
+    double? frequency,
+    int? octaves,
+    int? seed,
+    LocalId? heights,
+    LocalId? splat,
+    int? splatColumns,
+    int? splatRows,
+  }) => TerrainGeometrySpec(
+    width: width ?? this.width,
+    depth: depth ?? this.depth,
+    columns: columns ?? this.columns,
+    rows: rows ?? this.rows,
+    amplitude: amplitude ?? this.amplitude,
+    frequency: frequency ?? this.frequency,
+    octaves: octaves ?? this.octaves,
+    seed: seed ?? this.seed,
+    heights: heights ?? this.heights,
+    splat: splat ?? this.splat,
+    splatColumns: splatColumns ?? this.splatColumns,
+    splatRows: splatRows ?? this.splatRows,
+  );
+}
+
+/// A cylinder or cone about the Y axis; a smaller [topRadius] tapers it, and
+/// zero makes a cone.
+/// {@category Documents}
+class CylinderGeometrySpec extends ProceduralGeometry {
+  /// Creates a cylinder spec.
+  CylinderGeometrySpec({
+    this.bottomRadius = 0.5,
+    this.topRadius = 0.5,
+    this.height = 1.0,
+    this.radialSegments = 32,
+    this.heightSegments = 1,
+    this.bottomCap = true,
+    this.topCap = true,
+  });
+
+  /// Radius at the base.
+  final double bottomRadius;
+
+  /// Radius at the top; zero makes a cone.
+  final double topRadius;
+
+  /// Height along Y.
+  final double height;
+
+  /// Segments around the axis.
+  final int radialSegments;
+
+  /// Segments along the axis.
+  final int heightSegments;
+
+  /// Whether the base is closed.
+  final bool bottomCap;
+
+  /// Whether the top is closed.
+  final bool topCap;
+}
+
+/// A capsule about the Y axis: a cylinder with a hemisphere on each end.
+/// {@category Documents}
+class CapsuleGeometrySpec extends ProceduralGeometry {
+  /// Creates a capsule spec.
+  CapsuleGeometrySpec({
+    this.radius = 0.5,
+    this.height = 1.0,
+    this.radialSegments = 32,
+    this.capRings = 8,
+  });
+
+  /// Radius of the shaft and of both caps.
+  final double radius;
+
+  /// Height of the cylindrical section, excluding the caps.
+  final double height;
+
+  /// Segments around the axis.
+  final int radialSegments;
+
+  /// Rings making up each hemisphere.
+  final int capRings;
+}
+
+/// A filled circle in the XZ plane.
+/// {@category Documents}
+class DiscGeometrySpec extends ProceduralGeometry {
+  /// Creates a disc spec.
+  DiscGeometrySpec({this.radius = 0.5, this.segments = 32});
+
+  /// Radius of the disc.
+  final double radius;
+
+  /// Segments around the rim.
+  final int segments;
+}
+
+/// A right-triangular prism, the ramp shape.
+/// {@category Documents}
+class WedgeGeometrySpec extends ProceduralGeometry {
+  /// Creates a wedge spec sized to [size] = `(width, height, run)`.
+  WedgeGeometrySpec({required this.size});
+
+  /// Width, height and run of the ramp.
+  final Vector3 size;
 }
 
 /// A flat plane in the XZ plane.
@@ -730,6 +935,9 @@ class EnvironmentEffectsSpec {
     this.globalIlluminationEmissiveBoost = 1.0,
     this.globalIlluminationUpdateWhenIdleOnly = false,
     this.globalIlluminationBakeOnly = false,
+    // These mirror TemporalAntiAliasingSettings' own defaults, so a document
+    // that says nothing about TAA realizes to the engine's tuning rather than
+    // silently retuning it.
     this.temporalAntiAliasingEnabled = false,
     this.temporalAntiAliasingMinimumCurrentWeight = 0.15,
     this.temporalAntiAliasingVarianceGamma = 1.2,
@@ -1029,7 +1237,12 @@ class EnvironmentEffectsSpec {
   bool globalIlluminationUpdateWhenIdleOnly;
   bool globalIlluminationBakeOnly;
 
-  /// Temporal anti-aliasing. See `TemporalAntiAliasingSettings`.
+  /// Temporal anti-aliasing. See `TemporalAntiAliasingSettings`, whose
+  /// defaults these match.
+  ///
+  /// TAA is switched on by [antiAliasingMode] being `taa`; this flag mirrors
+  /// that so a reader of the document gets one answer rather than two that
+  /// can disagree.
   bool temporalAntiAliasingEnabled;
   double temporalAntiAliasingMinimumCurrentWeight;
   double temporalAntiAliasingVarianceGamma;
@@ -1128,6 +1341,22 @@ enum AnimationProperty {
   weights,
 }
 
+/// How an animation channel produces values between its keyframes.
+/// {@category Documents}
+enum AnimationInterpolation {
+  /// Straight lerp between neighboring keyframes; slerp for rotation.
+  linear,
+
+  /// Holds the previous keyframe's value until the next one is reached.
+  step,
+
+  /// Cubic Hermite between neighboring keyframes, using the per-keyframe
+  /// tangents in [AnimationChannelSpec.inTangents] and
+  /// [AnimationChannelSpec.outTangents]. Tangents are in value units per
+  /// second, matching glTF's `CUBICSPLINE`.
+  cubic,
+}
+
 /// One animation channel: a keyframe timeline driving one [property] of one
 /// target node.
 ///
@@ -1142,6 +1371,9 @@ class AnimationChannelSpec {
     required this.property,
     required this.timeline,
     required this.keyframes,
+    this.interpolation,
+    this.inTangents,
+    this.outTangents,
   });
 
   /// The node this channel animates (primary, id-based binding).
@@ -1156,8 +1388,28 @@ class AnimationChannelSpec {
   /// The binary chunk of keyframe times (seconds).
   final LocalId timeline;
 
-  /// The binary chunk of keyframe values.
+  /// The binary chunk of keyframe values, one value per keyframe.
+  ///
+  /// The shape does not change with [interpolation]. A cubic channel keeps
+  /// its tangents in their own chunks, so a reader that does not know about
+  /// interpolation still sees a well-formed linear timeline rather than
+  /// misreading packed tangents as keyframes.
   final LocalId keyframes;
+
+  /// How this channel interpolates between keyframes.
+  ///
+  /// Null means [AnimationInterpolation.linear], which is what documents
+  /// written before interpolation existed load as, and keeps their encoded
+  /// form byte-identical.
+  final AnimationInterpolation? interpolation;
+
+  /// The binary chunk of per-keyframe in-tangents, same shape as
+  /// [keyframes]. Set only for [AnimationInterpolation.cubic].
+  final LocalId? inTangents;
+
+  /// The binary chunk of per-keyframe out-tangents, same shape as
+  /// [keyframes]. Set only for [AnimationInterpolation.cubic].
+  final LocalId? outTangents;
 }
 
 /// A named animation: a set of channels driving target nodes.
@@ -1421,6 +1673,100 @@ class PhysicalSkySpec extends SkySourceSpec {
 
   /// Overall output multiplier.
   double energy;
+}
+
+/// The built-in daylight sky with a procedural cloud layer and storm
+/// controls.
+/// {@category Documents}
+class WeatherSkySpec extends SkySourceSpec {
+  /// Creates the spec with the runtime defaults.
+  WeatherSkySpec({
+    Vector3? sunDirection,
+    this.sunAngularRadius = 0.0175,
+    this.rayleighCoefficient = 2.0,
+    Vector3? rayleighColor,
+    this.mieCoefficient = 0.005,
+    this.mieEccentricity = 0.8,
+    Vector3? mieColor,
+    this.turbidity = 10.0,
+    Vector3? groundColor,
+    this.energy = 1.0,
+    this.coverage = 0.45,
+    this.density = 0.95,
+    this.altitude = 1.6,
+    this.detail = 0.5,
+    this.softness = 0.12,
+    this.seed = 1337,
+    Vector2? wind,
+    Vector3? cloudColor,
+    this.cloudShading = 0.85,
+    this.stormDarkening = 0.0,
+  }) : sunDirection = sunDirection ?? Vector3(0.4, 0.5, 0.6),
+       rayleighColor = rayleighColor ?? Vector3(0.26, 0.41, 0.58),
+       mieColor = mieColor ?? Vector3(0.69, 0.73, 0.81),
+       groundColor = groundColor ?? Vector3(0.12, 0.12, 0.13),
+       wind = wind ?? Vector2(0.35, 0.1),
+       cloudColor = cloudColor ?? Vector3(1.0, 1.0, 1.02);
+
+  /// Direction toward the sun.
+  Vector3 sunDirection;
+
+  /// Angular radius of the sun disk, in radians.
+  double sunAngularRadius;
+
+  /// Strength of molecular (Rayleigh) scattering.
+  double rayleighCoefficient;
+
+  /// Wavelength tint of the Rayleigh term.
+  Vector3 rayleighColor;
+
+  /// Strength of aerosol (Mie) scattering.
+  double mieCoefficient;
+
+  /// Forward-scattering eccentricity of the Mie term.
+  double mieEccentricity;
+
+  /// Wavelength tint of the Mie term.
+  Vector3 mieColor;
+
+  /// Aerosol density.
+  double turbidity;
+
+  /// The color below the horizon.
+  Vector3 groundColor;
+
+  /// Overall output multiplier.
+  double energy;
+
+  /// How much of the sky the clouds take, `0` clear to `1` overcast.
+  double coverage;
+
+  /// How opaque the clouds are where they are thickest.
+  double density;
+
+  /// How high the cloud layer sits in the dome projection.
+  double altitude;
+
+  /// Extra noise octaves, `0` to `1`.
+  double detail;
+
+  /// How wide the transition from clear sky to cloud is.
+  double softness;
+
+  /// The cloud noise seed.
+  int seed;
+
+  /// Layer-space cloud drift per second.
+  Vector2 wind;
+
+  /// The colour lit cloud tops take.
+  Vector3 cloudColor;
+
+  /// How far a cloud's shadowed underside darkens.
+  double cloudShading;
+
+  /// How overcast the sky is, `0` none to `1` full gloom.
+  double stormDarkening;
 }
 
 /// The stage skybox: the visible background drawn behind all geometry.

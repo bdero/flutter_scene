@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:forui/forui.dart';
 
+import '../shell/editor_theme.dart';
 import '../controller/editor_controller.dart';
 
 /// Searchable command-palette overlay.
@@ -287,7 +288,7 @@ class _CommandFormState extends State<_CommandForm> {
           ),
           Text(
             widget.entry.doc,
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            style: const TextStyle(fontSize: 12, color: editorMutedTextColor),
           ),
           const SizedBox(height: 12),
           Expanded(

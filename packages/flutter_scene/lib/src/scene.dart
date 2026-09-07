@@ -29,6 +29,7 @@ import 'god_rays.dart';
 import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
+import 'memory_report.dart' show listenForMemoryPressure;
 import 'mesh.dart';
 import 'node.dart';
 import 'raycast.dart';
@@ -174,6 +175,7 @@ base class Scene implements SceneGraph {
     // logged the failure by the time this handler runs, so this only keeps an
     // unawaited future from being reported a second time as an unhandled error.
     initializeStaticResources().ignore();
+    renderScene.owner = this;
     root.registerAsRoot(this);
   }
 
@@ -404,6 +406,10 @@ base class Scene implements SceneGraph {
     if (_initializeStaticResources != null) {
       return _initializeStaticResources!;
     }
+    // Attached before the loads rather than after them: loading is when an
+    // app is most likely to be pushed over a memory limit, and by then it
+    // should already be listening. Asset loading below means a binding exists.
+    listenForMemoryPressure();
     _initializeStaticResources =
         Future.wait([
               loadBaseShaderLibrary(),

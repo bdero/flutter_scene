@@ -251,11 +251,82 @@ class GizmoController {
   GizmoMode mode = GizmoMode.translate;
   int? activeAxis;
 
-  // Accumulated drag result since [grab], consumed by the viewport.
-  vm.Vector3 translation = vm.Vector3.zero();
-  double angle = 0;
+  // Raw accumulated drag since [grab]. The viewport reads the snapped
+  // getters below; snapping the running total rather than each delta is what
+  // keeps a dragged node on the grid instead of drifting off it by a
+  // fraction of a step per frame.
+  vm.Vector3 _translation = vm.Vector3.zero();
+  double _angle = 0;
+  vm.Vector3 _scale = vm.Vector3(1, 1, 1);
+
   vm.Vector3 axisVec = vm.Vector3.zero();
-  vm.Vector3 scale = vm.Vector3(1, 1, 1);
+
+  /// Translation step in world units; zero moves freely.
+  double translateSnap = 0;
+
+  /// Rotation step in radians; zero turns freely.
+  double rotateSnap = 0;
+
+  /// Scale step; zero scales freely.
+  double scaleSnap = 0;
+
+  /// Suppresses snapping for the current drag, for a hold-to-override key.
+  bool snapSuppressed = false;
+
+  /// The drag so far, on the grid when [translateSnap] is set.
+  vm.Vector3 get translation => _snapVector(_translation, translateSnap);
+
+  /// The turn so far, on the step when [rotateSnap] is set.
+  double get angle => _snapValue(_angle, rotateSnap);
+
+  /// The scale so far, on the step when [scaleSnap] is set.
+  ///
+  /// Snapped toward the step but never to zero: a node scaled to nothing is
+  /// invisible and hard to recover, so the smallest it lands on is one step.
+  vm.Vector3 get scale {
+    if (_step(scaleSnap) <= 0) return _scale;
+    final snapped = _snapVector(_scale, scaleSnap);
+    final step = scaleSnap;
+    return vm.Vector3(
+      snapped.x.abs() < step ? step : snapped.x,
+      snapped.y.abs() < step ? step : snapped.y,
+      snapped.z.abs() < step ? step : snapped.z,
+    );
+  }
+
+  /// Sets the accumulated drag directly. For tests, which have no viewport to
+  /// drag in.
+  @visibleForTesting
+  void debugSetAccumulated({
+    vm.Vector3? translation,
+    double? angle,
+    vm.Vector3? scale,
+  }) {
+    if (translation != null) _translation = translation.clone();
+    if (angle != null) _angle = angle;
+    if (scale != null) _scale = scale.clone();
+  }
+
+  /// Adds to the accumulated translation, as a sequence of drags would.
+  @visibleForTesting
+  void debugAddTranslation(vm.Vector3 delta) => _translation += delta;
+
+  double _step(double snap) => snapSuppressed || snap <= 0 ? 0 : snap;
+
+  double _snapValue(double value, double snap) {
+    final step = _step(snap);
+    return step <= 0 ? value : (value / step).roundToDouble() * step;
+  }
+
+  vm.Vector3 _snapVector(vm.Vector3 value, double snap) {
+    final step = _step(snap);
+    if (step <= 0) return value;
+    return vm.Vector3(
+      (value.x / step).roundToDouble() * step,
+      (value.y / step).roundToDouble() * step,
+      (value.z / step).roundToDouble() * step,
+    );
+  }
 
   Offset _origin = Offset.zero;
   Offset _tip = Offset.zero;
@@ -320,9 +391,9 @@ class GizmoController {
     if (hit == null) return false;
 
     activeAxis = hit;
-    translation = vm.Vector3.zero();
-    angle = 0;
-    scale = vm.Vector3(1, 1, 1);
+    _translation = vm.Vector3.zero();
+    _angle = 0;
+    _scale = vm.Vector3(1, 1, 1);
     axisVec = hit == axisUniform ? vm.Vector3.zero() : axes[hit].clone();
     _origin = originScreen;
     _lastPos = pos;
@@ -365,7 +436,7 @@ class GizmoController {
     final dot = (drag.dx * axisSc.dx + drag.dy * axisSc.dy) / sqrt(len2);
     final globalLen = _armGlobalUnits * _gizmoScale(origin, camera, size);
     final pixelToGlobal = sqrt(len2) > 1e-3 ? globalLen / sqrt(len2) : 0.0;
-    translation += axisVec * (dot * pixelToGlobal);
+    _translation += axisVec * (dot * pixelToGlobal);
   }
 
   void _updateRotate(Offset pos, vm.Vector3 origin, Camera camera) {
@@ -379,13 +450,13 @@ class GizmoController {
     // rotation tracks the pointer.
     final viewDir = (origin - camera.position)..normalize();
     final facing = axisVec.dot(viewDir) >= 0 ? 1.0 : -1.0;
-    angle += -delta * facing;
+    _angle += -delta * facing;
   }
 
   void _updateScale(Offset pos, int axis) {
     if (axis == axisUniform) {
       final factor = max(0.01, (pos - _origin).distance / _scaleStartDist);
-      scale = vm.Vector3(factor, factor, factor);
+      _scale = vm.Vector3(factor, factor, factor);
       return;
     }
     // Factor is the ratio of the pointer's projection on the screen axis now
@@ -399,13 +470,13 @@ class GizmoController {
     if (start.abs() < 1e-3) return;
     final mult = vm.Vector3(1, 1, 1);
     mult[axis] = max(0.01, proj(pos) / start);
-    scale = mult;
+    _scale = mult;
   }
 
   void end() {
     activeAxis = null;
-    translation = vm.Vector3.zero();
-    angle = 0;
-    scale = vm.Vector3(1, 1, 1);
+    _translation = vm.Vector3.zero();
+    _angle = 0;
+    _scale = vm.Vector3(1, 1, 1);
   }
 }

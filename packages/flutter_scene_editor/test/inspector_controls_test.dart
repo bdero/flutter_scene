@@ -367,10 +367,13 @@ void main() {
     expect(previews.last, closeTo(0.2, 0.0001));
   });
 
-  test('editor palette uses the Flutter Scene logo blue', () {
-    expect(editorForuiDarkTheme.colors.primary, const Color(0xFF44B3E7));
-    expect(editorForuiDarkTheme.colors.background, const Color(0xFF15191D));
-    expect(editorDarkTheme().colorScheme.primary, const Color(0xFF44B3E7));
+  test('the editor palette is one palette, named in one place', () {
+    // The accent and the ground are picked in editor_theme.dart; this pins
+    // that the two themes agree rather than pinning the colours themselves,
+    // so a deliberate repaint changes one file and not this test as well.
+    expect(editorForuiDarkTheme.colors.primary, editorAccentColor);
+    expect(editorDarkTheme().colorScheme.primary, editorAccentColor);
+    expect(editorForuiDarkTheme.colors.background, editorSurfaceColor);
   });
 
   test('HDR and EXR environment thumbnails decode to display pixels', () {

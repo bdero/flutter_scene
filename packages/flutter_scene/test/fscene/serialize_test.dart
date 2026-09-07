@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
+import 'package:flutter_scene/src/fscene/reload/reload.dart';
 import 'package:flutter_scene/src/fscene/stream/stream.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -168,6 +169,68 @@ void main() {
     // The JSON form carries it.
     final decoded = readFscene(writeFscene(restored));
     expect(decoded.node(const LocalId(4, 1))!.visible, isFalse);
+  });
+
+  test('the light-channel mask and raycast flag round-trip', () {
+    final doc = SceneDocument();
+    doc.addNode(
+      NodeSpec(
+        id: const LocalId(4, 2),
+        name: 'keyLitOnly',
+        lightChannelMask: 0x03,
+        raycastable: false,
+      ),
+      root: true,
+    );
+    final realized = realizeScene(doc);
+    final node = realized.children.single;
+    expect(node.lightChannelMask, 0x03);
+    expect(node.raycastable, isFalse);
+
+    final restored = serializeScene(realized);
+    expect(restored.node(const LocalId(4, 2))!.lightChannelMask, 0x03);
+    expect(restored.node(const LocalId(4, 2))!.raycastable, isFalse);
+
+    final decoded = readFscene(writeFscene(restored));
+    expect(decoded.node(const LocalId(4, 2))!.lightChannelMask, 0x03);
+    expect(decoded.node(const LocalId(4, 2))!.raycastable, isFalse);
+  });
+
+  test('the defaults stay out of the JSON', () {
+    final doc = SceneDocument();
+    doc.addNode(NodeSpec(id: const LocalId(4, 3)), root: true);
+    final json = writeFscene(doc);
+    expect(json, isNot(contains('lightChannelMask')));
+    expect(json, isNot(contains('raycastable')));
+    final decoded = readFscene(json);
+    expect(decoded.node(const LocalId(4, 3))!.lightChannelMask, 0xFF);
+    expect(decoded.node(const LocalId(4, 3))!.raycastable, isTrue);
+  });
+
+  test('a reload patches the light-channel mask and raycast flag', () async {
+    final before = SceneDocument()
+      ..addNode(NodeSpec(id: const LocalId(4, 4)), root: true);
+    final realized = realizeScene(before);
+    final node = realized.children.single;
+    expect(node.lightChannelMask, 0xFF);
+    expect(node.raycastable, isTrue);
+
+    final after = SceneDocument()
+      ..addNode(
+        NodeSpec(
+          id: const LocalId(4, 4),
+          lightChannelMask: 0x10,
+          raycastable: false,
+        ),
+        root: true,
+      );
+    final change = diffScene(before, after).changed.single;
+    expect(change.lightChannelMask, isTrue);
+    expect(change.raycastable, isTrue);
+
+    await reloadScene(realized, before, after);
+    expect(node.lightChannelMask, 0x10);
+    expect(node.raycastable, isFalse);
   });
 
   test('geometry topology round-trips through JSON', () {

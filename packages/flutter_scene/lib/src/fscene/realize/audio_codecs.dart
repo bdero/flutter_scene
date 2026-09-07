@@ -93,8 +93,12 @@ class AudioSourceCodec extends DeclarativeComponentCodec<ClipAudioSource> {
   String get type => 'audioSource';
 
   @override
+  String? get category => 'Audio';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'audio',
     properties: propertySchema,
     gizmo: const GizmoSpec([
@@ -221,8 +225,12 @@ class AudioListenerCodec extends DeclarativeComponentCodec<AudioListener> {
   String get type => 'audioListener';
 
   @override
+  String? get category => 'Audio';
+
+  @override
   ComponentSchema get schema => ComponentSchema(
     type,
+    category: category,
     icon: 'audio-listener',
     properties: propertySchema,
     gizmo: const GizmoSpec([GizmoIcon()]),
@@ -268,6 +276,9 @@ AudioEngineBackendFactory? audioEngineBackendFactory(String id) =>
 class AudioEngineCodec extends DeclarativeComponentCodec<AudioEngine> {
   @override
   String get type => 'audioEngine';
+
+  @override
+  String? get category => 'Audio';
 
   // The document backend id and construction config, stamped at realize so
   // serialize writes the registry key (not the engine's self-reported name)

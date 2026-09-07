@@ -4,6 +4,7 @@
 // structured property value).
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
+import '../shell/editor_theme.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 // ignore: implementation_imports
@@ -533,10 +534,7 @@ class _InlineNumberState extends State<_InlineNumber> {
       padding: const EdgeInsets.only(left: 12, top: 1, bottom: 1),
       child: Row(
         children: [
-          Text(
-            widget.label,
-            style: const TextStyle(fontSize: 9, color: Colors.grey),
-          ),
+          Text(widget.label, style: editorMicroText),
           const SizedBox(width: 2),
           Expanded(
             child: SizedBox(
@@ -603,7 +601,7 @@ class _RemoveButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: const Icon(Icons.close, size: 13),
+      icon: const Icon(Icons.close, size: 14),
       tooltip: 'Remove',
       visualDensity: VisualDensity.compact,
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
@@ -670,7 +668,7 @@ class _GradientPainter extends CustomPainter {
         final dark = (((x / cell).floor() + (y / cell).floor()) % 2) == 0;
         canvas.drawRect(
           Rect.fromLTWH(x, y, cell, cell),
-          Paint()..color = dark ? Colors.grey.shade700 : Colors.grey.shade500,
+          Paint()..color = dark ? editorLineColor : editorMutedTextColor,
         );
       }
     }

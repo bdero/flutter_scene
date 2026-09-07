@@ -12,18 +12,20 @@
 // warp fractals). The remaining omissions are the ValueCubic noise type and
 // the 3D rotation types (ImproveXYPlanes/ImproveXZPlanes).
 //
-// All hashing math is forced to 32-bit signed wraparound (via `.toSigned(32)`)
-// after every multiply/add. FastNoiseLite relies on C# `int` overflow in its
-// hash/prime mixing. On native (64-bit ints) this is exact and
-// `test/noise_test.dart` pins the outputs.
+// All hashing math is forced to 32-bit signed wraparound. FastNoiseLite relies
+// on C# `int` overflow in its hash/prime mixing, so every multiply goes through
+// [_mul32] and every add/xor through [_i32].
 //
-// TODO(noise-web): this is NOT web-safe. On the web Dart `int` is a JS double
-// (exact only to 53 bits), so a 32-bit-by-32-bit multiply like
-// `hash * 0x27d4eb2d` overflows and loses its low bits before `.toSigned(32)`
-// can wrap, and the 3D lattice math overflows outright. The fix is a
-// Math.imul-style 32-bit multiply (split into 16-bit halves) at every
-// hash/prime multiply site. Until then the GLSL side (noise.glsl, which runs
-// with real 32-bit ints on every GPU backend) is the web-correct path.
+// This is web-safe. Where Dart `int` is a JS double (dart2js/DDC, exact only to
+// 53 bits) a full 32x32 multiply such as `hash * 0x27d4eb2d` reaches ~2^61 and
+// silently loses its low bits before any wrap can run, so [_mul32] splits the
+// left operand into 16-bit halves (the Math.imul identity) and keeps every
+// partial product under 2^33. The split is selected by a compile-time constant,
+// so native and dart2wasm builds -- where `int` is a real 64-bit integer --
+// constant-fold straight back to a single multiply and a mask.
+//
+// `test/noise_test.dart` pins the outputs, and cross-checks the wrapping
+// helpers against BigInt ground truth so the web path is verified on the VM.
 //
 // Gradient lookup tables (`_gradients2D`, `_randVecs2D`, `_gradients3D`,
 // `_randVecs3D`) and the prime/hash constants are transcribed verbatim from the
@@ -436,8 +438,8 @@ class FastNoiseLite {
     final double x0 = xi - t;
     final double y0 = yi - t;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
 
     double n0, n1, n2;
 
@@ -505,9 +507,9 @@ class FastNoiseLite {
     double ay0 = yNSign * -y0;
     double az0 = zNSign * -z0;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
-    k = _i32(k * _primeZ);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
+    k = _mul32(k, _primeZ);
 
     double value = 0;
     double a = (0.6 - x0 * x0) - (y0 * y0 + z0 * z0);
@@ -607,8 +609,8 @@ class FastNoiseLite {
     final double xi = x - i;
     final double yi = y - j;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
     final int i1 = _i32(i + _primeX);
     final int j1 = _i32(j + _primeY);
 
@@ -742,9 +744,9 @@ class FastNoiseLite {
     final double yi = y - j;
     final double zi = z - k;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
-    k = _i32(k * _primeZ);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
+    k = _mul32(k, _primeZ);
     final int seed2 = _i32(seed + 1293373);
 
     final int xNMask = (-0.5 - xi).toInt();
@@ -1047,8 +1049,8 @@ class FastNoiseLite {
 
     final double cellularJitter = 0.43701595 * cellularJitterModifier;
 
-    int xPrimed = _i32((xr - 1) * _primeX);
-    final int yPrimedBase = _i32((yr - 1) * _primeY);
+    int xPrimed = _mul32(xr - 1, _primeX);
+    final int yPrimedBase = _mul32(yr - 1, _primeY);
 
     switch (cellularDistanceFunction) {
       case CellularDistanceFunction.euclidean:
@@ -1165,9 +1167,9 @@ class FastNoiseLite {
 
     final double cellularJitter = 0.39614353 * cellularJitterModifier;
 
-    int xPrimed = _i32((xr - 1) * _primeX);
-    final int yPrimedBase = _i32((yr - 1) * _primeY);
-    final int zPrimedBase = _i32((zr - 1) * _primeZ);
+    int xPrimed = _mul32(xr - 1, _primeX);
+    final int yPrimedBase = _mul32(yr - 1, _primeY);
+    final int zPrimedBase = _mul32(zr - 1, _primeZ);
 
     switch (cellularDistanceFunction) {
       case CellularDistanceFunction.euclidean:
@@ -1310,8 +1312,8 @@ class FastNoiseLite {
     final double xs = _interpQuintic(xd0);
     final double ys = _interpQuintic(yd0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
 
@@ -1345,9 +1347,9 @@ class FastNoiseLite {
     final double ys = _interpQuintic(yd0);
     final double zs = _interpQuintic(zd0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
-    z0 = _i32(z0 * _primeZ);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
+    z0 = _mul32(z0, _primeZ);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
     final int z1 = _i32(z0 + _primeZ);
@@ -1388,8 +1390,8 @@ class FastNoiseLite {
     final double xs = _interpHermite(x - x0);
     final double ys = _interpHermite(y - y0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
 
@@ -1416,9 +1418,9 @@ class FastNoiseLite {
     final double ys = _interpHermite(y - y0);
     final double zs = _interpHermite(z - z0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
-    z0 = _i32(z0 * _primeZ);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
+    z0 = _mul32(z0, _primeZ);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
     final int z1 = _i32(z0 + _primeZ);
@@ -1752,8 +1754,8 @@ class FastNoiseLite {
     final double xs = _interpHermite(xf - x0);
     final double ys = _interpHermite(yf - y0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
 
@@ -1805,9 +1807,9 @@ class FastNoiseLite {
     final double ys = _interpHermite(yf - y0);
     final double zs = _interpHermite(zf - z0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
-    z0 = _i32(z0 * _primeZ);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
+    z0 = _mul32(z0, _primeZ);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
     final int z1 = _i32(z0 + _primeZ);
@@ -1878,8 +1880,8 @@ class FastNoiseLite {
     final double x0 = xi - t;
     final double y0 = yi - t;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
 
     double vx = 0;
     double vy = 0;
@@ -1973,9 +1975,9 @@ class FastNoiseLite {
     double ay0 = yNSign * -y0;
     double az0 = zNSign * -z0;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
-    k = _i32(k * _primeZ);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
+    k = _mul32(k, _primeZ);
 
     double vx = 0;
     double vy = 0;
@@ -2058,12 +2060,68 @@ class FastNoiseLite {
 
 // --- Web-safe 32-bit integer helpers ---------------------------------------
 
+/// True where Dart `int` is a JS double (dart2js and DDC), so 32-bit hashing
+/// has to route around the 53-bit exact range. False on the VM, AOT, and
+/// dart2wasm, where `int` is a real 64-bit integer.
+///
+/// This is the `kIsWeb` idiom, restated locally to keep this file free of
+/// Flutter imports. It is a compile-time constant, so each branch below folds
+/// away and the unused path is tree-shaken.
+const bool _jsInts = identical(0, 0.0);
+
 /// Wraps an integer to 32-bit signed width, matching C# `int` overflow.
 ///
-/// FastNoiseLite's hashing depends on 32-bit two's-complement overflow. Dart
-/// ints are 64-bit on native and 53-bit doubles on the web, so every multiply
-/// and add in the hashing path is funneled through this so native and web agree.
-int _i32(int v) => v.toSigned(32);
+/// FastNoiseLite's hashing depends on 32-bit two's-complement overflow. Exact
+/// for any `|v| < 2^53`, which covers every add, xor, and shift in the hashing
+/// path once its operands are themselves 32-bit. Multiplies do *not* satisfy
+/// that bound; they go through [_mul32] instead.
+@pragma('vm:prefer-inline')
+@pragma('dart2js:prefer-inline')
+int _i32(int v) {
+  if (!_jsInts) return v.toSigned(32);
+  // `toSigned` and the bitwise operators are themselves 32-bit on dart2js, so
+  // a 33-bit intermediate (any sum of two 32-bit values) has to come down by
+  // arithmetic. Dart's `%` is Euclidean, so the result is already in [0, 2^32).
+  final int u = v % 0x100000000;
+  return u >= 0x80000000 ? u - 0x100000000 : u;
+}
+
+/// The low 32 bits of `a * b`, as a signed 32-bit value: C# `int` multiply.
+///
+/// [b] must already be within signed 32-bit range (every call site passes a
+/// prime constant or an [_i32]-wrapped hash); [a] may be any lattice
+/// coordinate up to the 53-bit exact range.
+@pragma('vm:prefer-inline')
+@pragma('dart2js:prefer-inline')
+int _mul32(int a, int b) =>
+    _jsInts ? noiseMul32Split(a, b) : (a * b).toSigned(32);
+
+/// [_mul32]'s platform-independent form: the low 32 bits of `a * b`, as a
+/// signed 32-bit value, without ever holding the full product.
+///
+/// Math.imul, by hand. Only the low 32 bits of a product survive a C# `int`
+/// multiply, and those depend only on the low 32 bits of each operand, so the
+/// wrapped left operand is split into 16-bit halves: the `aHi * bHi` term
+/// lands entirely above bit 32 and drops out, and no surviving partial product
+/// exceeds 2^33 -- well inside the 53 bits a JS double represents exactly.
+///
+/// [b] must already be within signed 32-bit range (every call site passes a
+/// prime constant or an [_i32]-wrapped hash); [a] may be any lattice
+/// coordinate up to the 53-bit exact range.
+///
+/// Not exported from `noise.dart`. It is visible at all because on the VM
+/// [_mul32] takes the native branch, so this is the only way to pin the path
+/// the web actually runs.
+int noiseMul32Split(int a, int b) {
+  final int aw = _i32(a);
+  final int aLo = aw & 0xFFFF;
+  final int aHi = (aw >> 16) & 0xFFFF;
+  final int bLo = b & 0xFFFF;
+  final int bHi = (b >> 16) & 0xFFFF;
+  final int cross = (aLo * bHi + aHi * bLo) % 0x10000;
+  final int u = (aLo * bLo + cross * 0x10000) % 0x100000000;
+  return u >= 0x80000000 ? u - 0x100000000 : u;
+}
 
 // --- Math helpers ----------------------------------------------------------
 
@@ -2094,20 +2152,20 @@ const int _primeZ = 1720413743;
 
 int _hash2(int seed, int xPrimed, int yPrimed) {
   int hash = _i32(seed ^ xPrimed ^ yPrimed);
-  hash = _i32(hash * 0x27d4eb2d);
+  hash = _mul32(hash, 0x27d4eb2d);
   return hash;
 }
 
 int _hash3(int seed, int xPrimed, int yPrimed, int zPrimed) {
   int hash = _i32(seed ^ xPrimed ^ yPrimed ^ zPrimed);
-  hash = _i32(hash * 0x27d4eb2d);
+  hash = _mul32(hash, 0x27d4eb2d);
   return hash;
 }
 
 double _valCoord2(int seed, int xPrimed, int yPrimed) {
   int hash = _hash2(seed, xPrimed, yPrimed);
 
-  hash = _i32(hash * hash);
+  hash = _mul32(hash, hash);
   hash = _i32(hash ^ _i32(hash << 19));
   return hash * (1 / 2147483648.0);
 }
@@ -2115,7 +2173,7 @@ double _valCoord2(int seed, int xPrimed, int yPrimed) {
 double _valCoord3(int seed, int xPrimed, int yPrimed, int zPrimed) {
   int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
 
-  hash = _i32(hash * hash);
+  hash = _mul32(hash, hash);
   hash = _i32(hash ^ _i32(hash << 19));
   return hash * (1 / 2147483648.0);
 }
@@ -2128,7 +2186,7 @@ double _valCoord3(int seed, int xPrimed, int yPrimed, int zPrimed) {
 /// disagree between the CPU and a shader.
 /// {@category Noise}
 int noiseHash2(int seed, int x, int y) =>
-    _hash2(_i32(seed), _i32(_i32(x) * _primeX), _i32(_i32(y) * _primeY));
+    _hash2(_i32(seed), _mul32(x, _primeX), _mul32(y, _primeY));
 
 /// Bit-exact hashed value for the integer lattice cell ([x], [y], [z]).
 ///
@@ -2137,9 +2195,9 @@ int noiseHash2(int seed, int x, int y) =>
 /// {@category Noise}
 int noiseHash3(int seed, int x, int y, int z) => _hash3(
   _i32(seed),
-  _i32(_i32(x) * _primeX),
-  _i32(_i32(y) * _primeY),
-  _i32(_i32(z) * _primeZ),
+  _mul32(x, _primeX),
+  _mul32(y, _primeY),
+  _mul32(z, _primeZ),
 );
 
 double _gradCoord2(int seed, int xPrimed, int yPrimed, double xd, double yd) {

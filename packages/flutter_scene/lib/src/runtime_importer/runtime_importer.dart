@@ -157,9 +157,7 @@ List<List<_PackedPrimitiveVariants?>> _packPrimitivesIsolate(
       coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       includeSkinning: includeSkinning,
     );
-    final carriesSkinning =
-        primitive.attributes.containsKey('JOINTS_0') &&
-        primitive.attributes.containsKey('WEIGHTS_0');
+    final carriesSkinning = primitiveHasJointInfluences(primitive);
     if (carriesSkinning && skinnedMeshes.contains(meshIndex)) {
       final skinned = run(true);
       if (!unskinnedMeshes.contains(meshIndex)) {

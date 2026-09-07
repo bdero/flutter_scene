@@ -1,3 +1,4 @@
+import '../shell/editor_theme.dart';
 import 'package:flutter/material.dart';
 
 import '../controller/editor_controller.dart';
@@ -71,45 +72,41 @@ class _HistoryPanelState extends State<HistoryPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          height: 36,
-          padding: const EdgeInsets.only(left: 10, right: 4),
-          color: scheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              Text(
-                transactions.isEmpty
-                    ? 'No edits'
-                    : '$cursor of ${transactions.length} applied',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: scheme.onSurfaceVariant,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
+        EditorToolbar(
+          leading: [
+            Text(
+              transactions.isEmpty
+                  ? 'No edits'
+                  : '$cursor of ${transactions.length} applied',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.undo, size: 17),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                tooltip: history.canUndo
-                    ? 'Undo: ${history.undoLabel}'
-                    : 'Nothing to undo',
-                onPressed: history.canUndo ? controller.undo : null,
-              ),
-              IconButton(
-                icon: const Icon(Icons.redo, size: 17),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                tooltip: history.canRedo
-                    ? 'Redo: ${history.redoLabel}'
-                    : 'Nothing to redo',
-                onPressed: history.canRedo ? controller.redo : null,
-              ),
-            ],
-          ),
+            ),
+          ],
+          trailing: [
+            IconButton(
+              icon: const Icon(Icons.undo, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              tooltip: history.canUndo
+                  ? 'Undo: ${history.undoLabel}'
+                  : 'Nothing to undo',
+              onPressed: history.canUndo ? controller.undo : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.redo, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              tooltip: history.canRedo
+                  ? 'Redo: ${history.redoLabel}'
+                  : 'Nothing to redo',
+              onPressed: history.canRedo ? controller.redo : null,
+            ),
+          ],
         ),
         Divider(height: 1, color: scheme.outlineVariant),
         Expanded(

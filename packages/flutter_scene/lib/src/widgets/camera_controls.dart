@@ -46,9 +46,40 @@ class CameraControls extends StatefulWidget {
 class _CameraControlsState extends State<CameraControls> {
   double _lastScale = 1.0;
 
+  // The secondary-button drag is tracked from raw pointer events rather than
+  // through a recognizer. A second recognizer in the same arena would have to
+  // win against the scale recognizer to deliver anything, and the two would
+  // spend the first few pixels of every drag competing; the [Listener] above
+  // never enters the arena, so it sees the whole drag from the first move.
+  // The scale recognizer is filtered to the primary button instead, so it
+  // never claims the same pointer and pans twice.
+  int? _panPointer;
+  Offset _panPosition = Offset.zero;
+
   CameraController get _controller => widget.controller;
 
   void _onScaleStart(ScaleStartDetails details) => _lastScale = 1.0;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (!widget.enabled || _panPointer != null) return;
+    if (event.buttons & kSecondaryButton == 0) return;
+    _panPointer = event.pointer;
+    _panPosition = event.position;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _panPointer) return;
+    if (!widget.enabled) {
+      _panPointer = null;
+      return;
+    }
+    _controller.handleSecondaryDragUpdate(event.position - _panPosition);
+    _panPosition = event.position;
+  }
+
+  void _endPan(PointerEvent event) {
+    if (event.pointer == _panPointer) _panPointer = null;
+  }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
     if (!widget.enabled) return;
@@ -74,7 +105,9 @@ class _CameraControlsState extends State<CameraControls> {
   }
 
   void _onFocusChange(bool hasFocus) {
-    if (!hasFocus) _controller.releaseInput();
+    if (hasFocus) return;
+    _panPointer = null;
+    _controller.releaseInput();
   }
 
   @override
@@ -86,6 +119,10 @@ class _CameraControlsState extends State<CameraControls> {
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerSignal: _onPointerSignal,
+        onPointerDown: _onPointerDown,
+        onPointerMove: _onPointerMove,
+        onPointerUp: _endPan,
+        onPointerCancel: _endPan,
         child: LayoutBuilder(
           builder: (context, constraints) {
             if (constraints.biggest.isFinite) {
@@ -98,15 +135,17 @@ class _CameraControlsState extends State<CameraControls> {
                     GestureRecognizerFactoryWithHandlers<
                       ScaleGestureRecognizer
                     >(
-                      () => ScaleGestureRecognizer(),
+                      () => ScaleGestureRecognizer(
+                        // Leave the secondary button to the pointer-level pan
+                        // above; claiming it here would apply the drag twice.
+                        allowedButtonsFilter: (buttons) =>
+                            buttons & kPrimaryButton != 0,
+                      ),
                       (recognizer) => recognizer
                         ..onStart = _onScaleStart
                         ..onUpdate = _onScaleUpdate,
                     ),
               },
-              // TODO(camera): right-button drag pan (handleSecondaryDragUpdate)
-              // once it can coexist with the scale recognizer without an arena
-              // conflict.
               child: widget.child,
             );
           },
