@@ -2036,6 +2036,56 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   }, preload: loadSmokeMaterials),
 ];
 
+/// A near red square in front of a far green wall, for the anti-aliasing
+/// switch probe. Not part of [kSmokeScenes]; its test samples the center
+/// pixel numerically after switching the scene from MSAA to none. Both
+/// surfaces live in one mesh with the wall's triangles indexed after the
+/// square's, so the draw order is fixed regardless of sorting; a frame that
+/// lost its depth test paints the wall over the square and the center reads
+/// green instead of red.
+({Scene scene, PerspectiveCamera camera}) buildDepthPairingScene() {
+  final scene = Scene()
+    ..toneMapping = ToneMappingMode.linear
+    ..environment = EnvironmentMap.empty();
+  final positions = <double>[];
+  final colors = <double>[];
+  final indices = <int>[];
+  // Emits a camera-facing square with both windings, so the probe does not
+  // depend on the cull mode.
+  void square(double half, double z, List<double> color) {
+    final base = positions.length ~/ 3;
+    for (final (x, y) in [
+      (-half, -half),
+      (half, -half),
+      (half, half),
+      (-half, half),
+    ]) {
+      positions.addAll([x, y, z]);
+      colors.addAll(color);
+    }
+    indices.addAll([base, base + 1, base + 2, base, base + 2, base + 3]);
+    indices.addAll([base, base + 2, base + 1, base, base + 3, base + 2]);
+  }
+
+  square(0.5, -2.0, [1.0, 0.0, 0.0, 1.0]);
+  square(3.0, -6.0, [0.0, 1.0, 0.0, 1.0]);
+  final geometry = MeshGeometry.fromArrays(
+    positions: Float32List.fromList(positions),
+    colors: Float32List.fromList(colors),
+    indices: indices,
+  );
+  scene.add(
+    Node(mesh: Mesh(geometry, UnlitMaterial()..vertexColorWeight = 1.0)),
+  );
+  return (
+    scene: scene,
+    camera: PerspectiveCamera(
+      position: vm.Vector3(0, 0, 3.0),
+      target: vm.Vector3(0, 0, -6.0),
+    ),
+  );
+}
+
 /// Renders one [SmokeScene] into a fixed-size [RepaintBoundary] over the
 /// magenta clear.
 /// The CPU/GPU noise parity probe (see `assets/noise_parity.fmat`). Not part

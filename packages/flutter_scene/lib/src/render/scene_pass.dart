@@ -180,12 +180,22 @@ class ScenePass extends RenderGraphPass {
     final height = _dimensions.height.toInt();
 
     final capture = _captureOpaqueColor;
+    // With MSAA the color targets are resolve destinations with no depth
+    // attachment; without it they carry the scene depth, whose ring differs
+    // between the captured and transient cases. Each setup keeps its own
+    // pooled texture (see TransientTextureDescriptor.attachmentKey).
+    final attachmentKey = _enableMsaa
+        ? 'resolve'
+        : capture
+        ? 'depth_stored'
+        : 'depth_transient';
     final hdrColor = context.texturePool.acquire(
       TransientTextureDescriptor.color(
         width: width,
         height: height,
         format: _hdrFormat,
         debugName: 'hdr_scene_color',
+        attachmentKey: attachmentKey,
       ),
     );
     // Depth must survive from the opaque pass into the translucent pass, so it
@@ -209,6 +219,7 @@ class ScenePass extends RenderGraphPass {
               height: height,
               format: _hdrFormat,
               debugName: 'alternate_scene_color',
+              attachmentKey: attachmentKey,
             ),
           )
         : null;

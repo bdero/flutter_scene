@@ -489,6 +489,81 @@ void main() {
     }
   });
 
+  testWidgets('depth test survives switching MSAA off', (tester) async {
+    // Regression probe for a color target reused as an MSAA resolve
+    // destination and then as a direct target with a depth attachment. The
+    // GLES backend caches one framebuffer per color texture, so without a
+    // separate pooled texture per attachment setup the second frame draws
+    // with no depth buffer at all.
+    final msaaSupported = Scene.isAntiAliasingModeSupported(
+      AntiAliasingMode.msaa,
+    );
+    debugPrint('SMOKE depth_pairing: msaaSupported=$msaaSupported');
+    if (!msaaSupported) return;
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.initializeStaticResources();
+
+    final setup = buildDepthPairingScene();
+    final scene = setup.scene..antiAliasingMode = AntiAliasingMode.msaa;
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: kSmokeClear,
+          body: Center(
+            child: RepaintBoundary(
+              key: boundaryKey,
+              child: SizedBox(
+                width: kSmokeSize.toDouble(),
+                height: kSmokeSize.toDouble(),
+                child: SceneView(scene, camera: setup.camera),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Future<void> pumpFrames() async {
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+
+    Future<(int, int, int)> centerPixel() async {
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
+      final rgba = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final o = ((image.height ~/ 2) * image.width + image.width ~/ 2) * 4;
+      return (rgba.getUint8(o), rgba.getUint8(o + 1), rgba.getUint8(o + 2));
+    }
+
+    await pumpFrames();
+    final msaa = await centerPixel();
+    expect(msaa.$1, greaterThan(200), reason: 'msaa frame center $msaa');
+    expect(msaa.$2, lessThan(60), reason: 'msaa frame center $msaa');
+
+    scene.antiAliasingMode = AntiAliasingMode.none;
+    await pumpFrames();
+    final none = await centerPixel();
+    debugPrint('SMOKE depth_pairing: msaa=$msaa none=$none');
+    expect(none.$1, greaterThan(200), reason: 'no-AA frame center $none');
+    expect(none.$2, lessThan(60), reason: 'no-AA frame center $none');
+  });
+
   tearDownAll(() {
     binding.reportData = <String, dynamic>{...captures};
   });
