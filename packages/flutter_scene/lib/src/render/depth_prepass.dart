@@ -113,6 +113,9 @@ class DepthPrepass extends RenderGraphPass {
         height: height,
         format: gpu.PixelFormat.r32g32b32a32Float,
         debugName: 'linear_depth',
+        // The kept and transient depth attachments below are different
+        // textures, so the color target gets a ring per setup.
+        attachmentKey: _keepDepthStencil ? 'depth_stored' : 'depth_transient',
       ),
     );
     // A kept depth-stencil cannot live in transient tile memory (storing a

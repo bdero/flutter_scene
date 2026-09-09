@@ -16,6 +16,7 @@
 * `Scene.smaa` (`SmaaSettings`) tunes SMAA's edge threshold, search steps, and corner rounding at runtime, previously compile-time constants.
 * `.fscene` stage effects now apply and serialize temporal anti-aliasing tuning and SMAA quality (the fields previously round-tripped through documents without reaching the scene).
 * Update `flutter_scene-idioms` skill (v5) with point light shadows and the runtime SMAA/TAA tuning surface.
+* Switching `Scene.antiAliasingMode` from `msaa` to another mode on the OpenGL ES backend no longer renders without a depth test (far surfaces drew over near ones); pooled color targets now keep a separate texture per depth attachment setup.
 * `ThirdPersonControllerComponent.rotatesToMovement` keeps the node's authored rotation while still moving it, and `yaw` exposes the smoothed heading, now seeded from the node's rotation instead of snapping to zero on the first step. The `flutter_scene-kit` skill (v4) covers it.
 
 * `SceneView` measures `onTick` deltas with a wall clock instead of the ticker's frame-begin timestamps, whose deltas alternate between tiny and double-length values under GPU load and stagger any motion integrated against them. The new `SceneView.clock` injects a clock for tests and time-controlling drivers; the ambient `package:clock` clock (faked under `flutter_test`) is the default.

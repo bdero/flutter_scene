@@ -107,19 +107,19 @@ class VelocityPass extends RenderGraphPass {
     final height = _dimensions.height.toInt();
     if (width <= 0 || height <= 0) return;
 
+    final depthTexture = context.blackboard.get<gpu.Texture>(
+      kPrepassDepthStencilBlackboardKey,
+    );
     final velocityTexture = context.texturePool.acquire(
       TransientTextureDescriptor(
         width: width,
         height: height,
         format: gpu.PixelFormat.r16g16b16a16Float,
         debugName: 'velocity_pass_output',
+        attachmentKey: depthTexture != null ? 'prepass_depth' : 'no_depth',
       ),
     );
     context.blackboard.set(kVelocityBlackboardKey, velocityTexture);
-
-    final depthTexture = context.blackboard.get<gpu.Texture>(
-      kPrepassDepthStencilBlackboardKey,
-    );
 
     final target = gpu.RenderTarget.singleColor(
       gpu.ColorAttachment(texture: velocityTexture, clearValue: Vector4.zero()),

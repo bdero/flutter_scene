@@ -110,7 +110,9 @@ class ObservedTexturePool extends TransientTexturePool {
 ///
 /// Two descriptors that compare equal share a pool slot, so a pass that
 /// needs two live textures with otherwise-identical parameters in the
-/// same frame must distinguish them with [debugName].
+/// same frame must distinguish them with [debugName], and a color target
+/// that can be rendered with more than one depth setup must distinguish
+/// them with [attachmentKey].
 class TransientTextureDescriptor {
   const TransientTextureDescriptor({
     required this.width,
@@ -120,6 +122,7 @@ class TransientTextureDescriptor {
     this.storageMode = gpu.StorageMode.devicePrivate,
     this.enableShaderReadUsage = true,
     this.debugName,
+    this.attachmentKey,
   });
 
   /// A color render target at the given size/format with no MSAA.
@@ -128,6 +131,7 @@ class TransientTextureDescriptor {
     required int height,
     required gpu.PixelFormat format,
     String? debugName,
+    String? attachmentKey,
   }) : this(
          width: width,
          height: height,
@@ -135,6 +139,7 @@ class TransientTextureDescriptor {
          storageMode: gpu.StorageMode.devicePrivate,
          enableShaderReadUsage: true,
          debugName: debugName,
+         attachmentKey: attachmentKey,
        );
 
   /// A depth/stencil attachment at the given size. Lives in transient
@@ -169,6 +174,23 @@ class TransientTextureDescriptor {
   /// separate pool slots. Does not affect the allocated texture.
   final String? debugName;
 
+  /// Names the depth/stencil setup a color target is rendered with, so a
+  /// target that can be drawn with different depth attachments (or as an
+  /// MSAA resolve target with none) gets a separate pool slot per setup.
+  ///
+  /// The GLES backend caches one framebuffer per color texture and attaches
+  /// depth only when that framebuffer is first created, so reusing a texture
+  /// with a different depth attachment silently renders with the old one
+  /// (or with no depth test at all). Keeping each setup on its own texture
+  /// sidesteps that on every backend at the cost of one extra ring per
+  /// setup a view actually switches through. Must be stable across frames
+  /// for a given configuration; a per-frame value defeats pooling.
+  /// Does not affect the allocated texture.
+  // TODO(gles-fbo-cache): drop once the pubspec Flutter floor carries the
+  // engine fix that re-attaches depth/stencil when the cached FBO's
+  // attachments differ from the requested ones.
+  final String? attachmentKey;
+
   @override
   bool operator ==(Object other) =>
       other is TransientTextureDescriptor &&
@@ -178,7 +200,8 @@ class TransientTextureDescriptor {
       other.sampleCount == sampleCount &&
       other.storageMode == storageMode &&
       other.enableShaderReadUsage == enableShaderReadUsage &&
-      other.debugName == debugName;
+      other.debugName == debugName &&
+      other.attachmentKey == attachmentKey;
 
   @override
   int get hashCode => Object.hash(
@@ -189,6 +212,7 @@ class TransientTextureDescriptor {
     storageMode,
     enableShaderReadUsage,
     debugName,
+    attachmentKey,
   );
 }
 
