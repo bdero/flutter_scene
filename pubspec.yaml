@@ -29,3 +29,8 @@ workspace:
 #   user_defines:
 #     smoke_render:
 #       data_assets: true
+
+# flutter_soloud 5 needs code_assets 2 and the published fmod 0.1.0 still pins 1.x.
+# TODO(deps): drop once fmod ships a widened constraint and flutter_scene_fmod requires it.
+dependency_overrides:
+  code_assets: ^2.0.0

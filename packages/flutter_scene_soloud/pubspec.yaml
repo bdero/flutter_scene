@@ -7,14 +7,14 @@ version: 0.1.2
 resolution: workspace
 
 environment:
-  sdk: ^3.10.0
+  sdk: ^3.11.0
   flutter: ">=3.29.0-1.0.pre.242"
 
 dependencies:
   flutter:
     sdk: flutter
   flutter_scene: ^0.23.0
-  flutter_soloud: ^4.0.0
+  flutter_soloud: ^5.0.0
   vector_math: ^2.1.4
 
 dev_dependencies:

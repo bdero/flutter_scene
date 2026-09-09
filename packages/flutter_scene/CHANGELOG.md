@@ -27,6 +27,7 @@
 * BREAKING: `Scene.initializeStaticResources()` completes with its error instead of normally, so a failed shader-bundle or material load now reaches the caller rather than only `dart:developer` `log()` (which web never showed). Awaiting it without a `try`/`catch` throws where it previously continued; wrap the call, or use a `SceneView`, which reports the failure and stays on its `loadingBuilder`. `baseShaderLibrary` names that cause too, rather than telling you to await the call that already failed.
 * A rejected collider names the node it was on and the degenerate cases that cause the rejection.
 * Batching comparators cache their identity keys, `sceneSortDepth` allocates nothing, and instance batch objects are pooled, cutting per-frame work that multiplies across shadow, depth-prepass, and reflection views.
+* Allow `code_assets` 2.x.
 
 ## 0.23.0
 

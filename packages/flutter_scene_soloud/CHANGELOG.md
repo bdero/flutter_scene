@@ -1,3 +1,9 @@
+## 0.2.0
+
+* Move to `flutter_soloud` 5, which compiles the engine from source through a build hook. Apps drop the bundled Xiph codec libraries by setting `hooks.user_defines.flutter_soloud.no_xiph_libs: true` in their pubspec.
+* Web apps load `assets/packages/flutter_soloud/web/init_soloud.js` from `index.html` (renamed upstream).
+* Requires Dart 3.11.
+
 ## 0.1.2
 
 * Widen the `flutter_scene` constraint to `^0.23.0`. No API changes.

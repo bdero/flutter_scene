@@ -23,3 +23,11 @@ scene.add(ambience);
 ```
 
 With no `AudioListener` mounted, the ears follow the scene's primary camera. Serialized `.fscene`/`.fsceneb` scenes containing `audioSource` components play through whichever engine the app mounts.
+
+## Web
+
+Add the SoLoud loader to `web/index.html`.
+
+```html
+<script src="assets/packages/flutter_soloud/web/init_soloud.js" defer></script>
+```
