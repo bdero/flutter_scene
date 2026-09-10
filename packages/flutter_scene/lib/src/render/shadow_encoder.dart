@@ -2,6 +2,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
+import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:vector_math/vector_math.dart';
@@ -226,6 +227,18 @@ class ShadowEncoder {
       _boundPipeline = pipeline;
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
+    activeDrawRecorder?.setContext(
+      DrawContext(
+        phase: DrawPhase.shadow,
+        item: item,
+        geometry: geometry,
+        material: item.material,
+        vertexShader: activeVertex,
+        fragmentShader: fragmentShader,
+        pipeline: pipeline,
+        batchedItems: batches?.length ?? 1,
+      ),
+    );
 
     // Binds the vertex/index buffers and the per-frame uniform for one draw.
     // The light-space matrix takes the place of the camera transform (the depth
