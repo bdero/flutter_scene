@@ -19,7 +19,7 @@ import 'package:flutter_scene/src/shaders.dart';
 /// The process-wide opt-in for render graph debugging (capture and the
 /// custom-pass blackboard peek). Off by default so shipping apps tree-shake
 /// the debug branches; `Scene.debugAllowRenderGraphCapture` proxies this.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 abstract final class RenderGraphDebug {
   static bool enabled = false;
 }
@@ -28,7 +28,7 @@ abstract final class RenderGraphDebug {
 /// recorded; images are opt-in and can be restricted to thumbnails or to a
 /// set of resource keys, since a full-resolution capture of every target
 /// can exceed 150 MB at display sizes.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderGraphCaptureRequest {
   const RenderGraphCaptureRequest({
     this.captureImages = true,
@@ -56,7 +56,7 @@ class RenderGraphCaptureRequest {
 /// One resource observed during the capture frame: a texture written by a
 /// pass (under a blackboard key or a transient debug name), or a non-texture
 /// blackboard entry (packed uniform data).
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class CapturedResource {
   CapturedResource({
     required this.key,
@@ -119,7 +119,7 @@ class CapturedResource {
 
 /// One executed pass: identity, CPU time, and the blackboard keys it read
 /// and wrote, in observation order.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class CapturedPass {
   CapturedPass({required this.name, required this.indexInGraph});
 
@@ -131,7 +131,7 @@ class CapturedPass {
 }
 
 /// The product of one captured frame.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderGraphCaptureResult {
   RenderGraphCaptureResult({
     required this.passes,
@@ -165,7 +165,7 @@ class RenderGraphCaptureResult {
 
 /// The observer that performs a capture: records the graph and copies
 /// written textures at pass boundaries.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderGraphCapturer implements RenderGraphObserver {
   RenderGraphCapturer({required this.request});
 

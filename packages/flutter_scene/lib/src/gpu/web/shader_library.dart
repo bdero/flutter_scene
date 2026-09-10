@@ -196,14 +196,24 @@ base class ShaderLibrary {
 /// Asynchronously load and compile a `.shaderbundle` asset. The canonical
 /// loading entry point on web (where synchronous asset reads aren't
 /// possible).
-Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) {
-  return ShaderLibrary._loadFromAsset(assetName);
+Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) async {
+  final library = await ShaderLibrary._loadFromAsset(assetName);
+  if (library != null) {
+    registerShaderLibrarySource(
+      library,
+      ShaderLibrarySource(assetKey: assetName),
+    );
+  }
+  return library;
 }
 
 /// Loads a shader bundle directly from [bytes].
 // TODO(shader-byte-reload): register byte-backed shaders with a reload source.
-Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async =>
-    ShaderLibrary._loadFromBytes(bytes);
+Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async {
+  final library = ShaderLibrary._loadFromBytes(bytes);
+  registerShaderLibrarySource(library, ShaderLibrarySource(bytes: bytes));
+  return library;
+}
 
 /// Re-fetches a `.shaderbundle` asset and recompiles every live shader that
 /// was loaded from it, in place (shader identities are preserved, so
@@ -243,6 +253,7 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
       recompiled++;
     }
   }
+  bumpShaderLibraryGeneration(assetKey);
   debugPrint(
     'flutter_scene (web): recompiled $recompiled shader(s) from "$assetKey"',
   );
@@ -257,6 +268,7 @@ Future<String?> reinitializeShaderLibraryFromBytesAsync(
   ByteData bytes,
 ) async {
   try {
+    registerShaderLibrarySource(library, ShaderLibrarySource(bytes: bytes));
     final bundle = fb.ShaderBundle(
       bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
     );

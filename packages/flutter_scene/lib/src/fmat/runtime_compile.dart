@@ -24,6 +24,7 @@ import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
         materialSamplesEnvironment,
         radianceCubeEntryName;
 import 'package:flutter_scene/src/importer/build_cache.dart';
+import 'package:flutter_scene/src/shader_reflection/shader_diagnostics.dart';
 
 /// A failed `.fmat` runtime compile. A parse error surfaces as the underlying
 /// [FmatException]; this carries impellerc's GLSL errors.
@@ -31,6 +32,11 @@ final class FmatCompileException implements Exception {
   FmatCompileException(this.message);
 
   final String message;
+
+  /// The compiler's messages parsed out of [message], with lines where it
+  /// reported them. Empty when the log matched no known format.
+  List<ShaderCompileDiagnostic> get diagnostics =>
+      parseShaderCompileErrors(message);
 
   @override
   String toString() => message;

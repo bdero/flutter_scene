@@ -12,7 +12,7 @@
 library;
 
 /// Integer counters accumulated over a frame, a view, or a pass.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderCounters {
   RenderCounters();
 
@@ -115,7 +115,7 @@ class RenderCounters {
 final RenderCounters activeRenderCounters = RenderCounters();
 
 /// One executed render-graph pass.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderPassStats {
   RenderPassStats({required this.name, required this.indexInGraph});
 
@@ -140,7 +140,7 @@ class RenderPassStats {
 }
 
 /// One rendered view: a screen view (by index) or a render texture.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderViewStats {
   RenderViewStats({
     required this.viewIndex,
@@ -175,7 +175,7 @@ class RenderViewStats {
 }
 
 /// One rendered frame: every view with its passes, plus frame totals.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderFrameStats {
   RenderFrameStats({required this.frameIndex, required this.timestampMicros});
 
@@ -210,7 +210,7 @@ class RenderFrameStats {
 ///
 /// Read [latest] after a frame renders. Each frame is a fresh record, so a
 /// retained one never changes under the caller.
-/// {@category Rendering}
+/// {@category Debugging and profiling}
 class RenderStats {
   RenderStats({this.historyLength = 120});
 
