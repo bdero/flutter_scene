@@ -308,6 +308,7 @@ export 'src/raycast.dart' show SceneRaycastHit, raycastNode, raycastNodeAll;
 export 'src/resource_group.dart' show ResourceGroup;
 export 'src/scene_pointer.dart' show ScenePointer;
 export 'src/scene.dart' show AntiAliasingMode, Scene, SceneGraph;
+export 'src/scene_encoder.dart' show maxSceneColorCaptureBatches;
 export 'src/widget_texture.dart'
     show WidgetTexture, WidgetTextureController, WidgetUpdatePolicy;
 export 'src/shaders.dart' show baseShaderLibrary, loadBaseShaderLibrary;

@@ -199,7 +199,9 @@ base class _TranslucentRecord {
 const int _transmissionCoverageColumns = 32;
 const int _transmissionCoverageRows = 32;
 
-/// Maximum accumulated scene-color batches emitted in one frame.
+/// Maximum accumulated scene-color batches emitted in one frame, and the
+/// default and upper bound of `Scene.sceneColorCaptureBatches`.
+/// {@category Rendering}
 const int maxSceneColorCaptureBatches = 8;
 
 base class _ScreenCoverage {
