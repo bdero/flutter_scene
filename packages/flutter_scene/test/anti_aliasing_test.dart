@@ -54,7 +54,7 @@ void main() {
   });
 
   test('auto resolves to msaa exactly when msaa is supported', () {
-    final scene = Scene();
+    final scene = Scene()..renderQuality.tier = RenderQualityTier.high;
     scene.antiAliasingMode = AntiAliasingMode.auto;
     final expected = Scene.isAntiAliasingModeSupported(AntiAliasingMode.msaa)
         ? AntiAliasingMode.msaa
@@ -92,5 +92,24 @@ void main() {
     expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.smaa), isTrue);
     expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.taa), isTrue);
     expect(Scene.isAntiAliasingModeSupported(AntiAliasingMode.auto), isTrue);
+  });
+
+  test('auto follows the quality tier', () {
+    final scene = Scene()..antiAliasingMode = AntiAliasingMode.auto;
+    scene.renderQuality.tier = RenderQualityTier.low;
+    expect(scene.effectiveAntiAliasingMode, AntiAliasingMode.none);
+    expect(scene.effectiveSceneColorCaptureBatches, 1);
+    scene.renderQuality.tier = RenderQualityTier.medium;
+    expect(scene.effectiveAntiAliasingMode, AntiAliasingMode.fxaa);
+    expect(scene.effectiveSceneColorCaptureBatches, 2);
+    scene.renderQuality.tier = RenderQualityTier.high;
+    expect(
+      scene.effectiveSceneColorCaptureBatches,
+      maxSceneColorCaptureBatches,
+    );
+    // An explicit budget wins over the tier.
+    scene.sceneColorCaptureBatches = 3;
+    scene.renderQuality.tier = RenderQualityTier.low;
+    expect(scene.effectiveSceneColorCaptureBatches, 3);
   });
 }

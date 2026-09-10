@@ -69,6 +69,15 @@ class ExampleSettings {
   /// Anti-aliasing mode shared across the examples.
   AntiAliasingMode antiAliasingMode = AntiAliasingMode.auto;
 
+  /// Quality tier shared across the examples; null follows the platform.
+  RenderQualityTier? renderQualityTier;
+
+  /// Whether the renderer lowers render scale and tier from frame times.
+  bool adaptiveQuality = false;
+
+  /// Frame rate the adaptive controller holds.
+  double adaptiveTargetFrameRate = 60.0;
+
   /// Render scale shared across the examples (resolution relative to the
   /// display's native, applied to screen views).
   double renderScale = 1.0;
@@ -189,6 +198,9 @@ class ExampleSettings {
   environmentIntensity: $environmentIntensity
   autoExposure: enabled ${autoExposure.enabled}, strength ${autoExposure.strength}, compensation ${autoExposure.compensation}, minEv ${autoExposure.minEv}, maxEv ${autoExposure.maxEv}, speedUp ${autoExposure.speedUp}, speedDown ${autoExposure.speedDown}
   antiAliasingMode: $antiAliasingMode
+  renderQualityTier: $renderQualityTier
+  adaptiveQuality: $adaptiveQuality
+  adaptiveTargetFrameRate: $adaptiveTargetFrameRate
   renderScale: $renderScale
   filterQuality: $filterQuality''';
 
@@ -198,6 +210,10 @@ class ExampleSettings {
       scene.antiAliasingMode = antiAliasingMode;
     }
     scene.renderScale = renderScale;
+    scene.renderQuality
+      ..tier = renderQualityTier
+      ..adaptive = adaptiveQuality
+      ..targetFrameRate = adaptiveTargetFrameRate;
     scene.filterQuality = filterQuality;
 
     final grading = scene.postProcess.colorGrading;

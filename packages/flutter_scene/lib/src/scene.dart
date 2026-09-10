@@ -62,6 +62,7 @@ import 'render/punctual_lights.dart';
 import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
 import 'render/scene_pass.dart';
+import 'render/render_quality.dart';
 import 'scene_encoder.dart' show maxSceneColorCaptureBatches;
 import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
@@ -255,10 +256,12 @@ base class Scene implements SceneGraph {
   /// The anti-aliasing technique that actually runs when this [Scene]
   /// renders.
   ///
-  /// Resolves the requested [antiAliasingMode] against backend support:
-  /// [AntiAliasingMode.auto] becomes [AntiAliasingMode.msaa] where
-  /// offscreen MSAA is supported and [AntiAliasingMode.fxaa] otherwise,
-  /// and an unsupported [AntiAliasingMode.msaa] request also resolves to
+  /// Resolves the requested [antiAliasingMode] against the quality tier and
+  /// backend support: [AntiAliasingMode.auto] follows
+  /// [effectiveRenderQualityTier] ([RenderQualityTier.high] picks
+  /// [AntiAliasingMode.msaa] where offscreen MSAA is supported and
+  /// [AntiAliasingMode.fxaa] otherwise, medium picks fxaa, low picks none),
+  /// and an unsupported [AntiAliasingMode.msaa] request resolves to
   /// [AntiAliasingMode.fxaa]. Never returns [AntiAliasingMode.auto].
   AntiAliasingMode get effectiveAntiAliasingMode =>
       _resolveAntiAliasingMode(_antiAliasingMode);
@@ -274,10 +277,20 @@ base class Scene implements SceneGraph {
       case AntiAliasingMode.taa:
         return AntiAliasingMode.taa;
       case AntiAliasingMode.msaa:
-      case AntiAliasingMode.auto:
         return _offscreenMsaaSupported
             ? AntiAliasingMode.msaa
             : AntiAliasingMode.fxaa;
+      case AntiAliasingMode.auto:
+        switch (effectiveRenderQualityTier) {
+          case RenderQualityTier.low:
+            return AntiAliasingMode.none;
+          case RenderQualityTier.medium:
+            return AntiAliasingMode.fxaa;
+          case RenderQualityTier.high:
+            return _offscreenMsaaSupported
+                ? AntiAliasingMode.msaa
+                : AntiAliasingMode.fxaa;
+        }
     }
   }
 
@@ -531,10 +544,28 @@ base class Scene implements SceneGraph {
   /// each get a fresh capture of everything drawn before them, and each
   /// capture is a full-resolution copy plus a new render pass. Once the cap
   /// is reached the remaining readers share the last snapshot, so they stop
-  /// seeing each other through glass. Lower it on tiled and low-end GPUs
-  /// (1 makes every reader share one capture, the cost of a single reader).
+  /// seeing each other through glass. Null (the default) follows
+  /// [effectiveRenderQualityTier]: the full budget on high, two on medium,
+  /// one on low (every reader shares one capture, the cost of a single
+  /// reader). See [effectiveSceneColorCaptureBatches].
   /// {@category Rendering}
-  int sceneColorCaptureBatches = maxSceneColorCaptureBatches;
+  int? sceneColorCaptureBatches;
+
+  /// The capture budget in effect, [sceneColorCaptureBatches] clamped, or the
+  /// tier's default when it is null.
+  /// {@category Rendering}
+  int get effectiveSceneColorCaptureBatches {
+    final explicit = sceneColorCaptureBatches;
+    if (explicit != null) return explicit.clamp(1, maxSceneColorCaptureBatches);
+    switch (effectiveRenderQualityTier) {
+      case RenderQualityTier.low:
+        return 1;
+      case RenderQualityTier.medium:
+        return 2;
+      case RenderQualityTier.high:
+        return maxSceneColorCaptureBatches;
+    }
+  }
 
   /// The scene's primary camera.
   ///
@@ -1312,6 +1343,50 @@ base class Scene implements SceneGraph {
   /// converge in over the hysteresis tail.
   void invalidateGlobalIllumination() => _irradianceField.invalidate();
 
+  /// Where this scene's automatic settings sit on the quality ladder, and
+  /// whether the renderer may lower them itself when frames overrun a
+  /// target. See [RenderQualitySettings]; [effectiveRenderQualityTier] and
+  /// [adaptiveRenderScale] report what is in effect.
+  /// {@category Rendering}
+  final RenderQualitySettings renderQuality = RenderQualitySettings();
+
+  late final AdaptiveQualityController _adaptiveQuality =
+      AdaptiveQualityController(renderQuality);
+  final Stopwatch _frameClock = Stopwatch();
+
+  /// The quality tier in effect: [RenderQualitySettings.tier] (or the
+  /// platform default), lowered by any steps the adaptive controller took.
+  /// {@category Rendering}
+  RenderQualityTier get effectiveRenderQualityTier =>
+      _adaptiveQuality.effectiveTier(
+        renderQuality.tier ?? RenderQualitySettings.platformDefaultTier,
+      );
+
+  /// The multiplier the adaptive controller currently applies on top of
+  /// [renderScale]; 1.0 unless [RenderQualitySettings.adaptive] has stepped
+  /// it down.
+  /// {@category Rendering}
+  double get adaptiveRenderScale =>
+      renderQuality.adaptive ? _adaptiveQuality.scale : 1.0;
+
+  // Feeds the adaptive controller one frame period, measured between
+  // consecutive frames on this thread (a GPU-bound frame stalls it too).
+  void _tickAdaptiveQuality() {
+    if (!renderQuality.adaptive) {
+      _adaptiveQuality.reset();
+      _frameClock.reset();
+      return;
+    }
+    if (!_frameClock.isRunning) {
+      _frameClock.start();
+      return;
+    }
+    final seconds = _frameClock.elapsedMicroseconds / 1e6;
+    _frameClock.reset();
+    _frameClock.start();
+    _adaptiveQuality.update(seconds);
+  }
+
   /// Temporal anti-aliasing settings. Active when [antiAliasingMode] is
   /// [AntiAliasingMode.taa].
   final TemporalAntiAliasingSettings temporalAntiAliasing =
@@ -1686,6 +1761,7 @@ base class Scene implements SceneGraph {
       _tick((nowMillis - lastMillis) / 1000.0);
     }
     _tickedThisFrame = false;
+    _tickAdaptiveQuality();
 
     // Rebuild the spatial culling structure once if the pre-pass changed the
     // scene, before the views' render passes query it.
@@ -2065,7 +2141,8 @@ base class Scene implements SceneGraph {
     // high-DPI devices). See: https://github.com/bdero/flutter_scene/issues/60
     // The render scale multiplies on top, trading resolution for fragment
     // work (or supersampling above 1.0).
-    final scale = dpr * (view.renderScale ?? _renderScale);
+    final scale =
+        dpr * (view.renderScale ?? _renderScale) * adaptiveRenderScale;
     final pixelSize = ui.Size(
       (drawArea.width * scale).ceilToDouble(),
       (drawArea.height * scale).ceilToDouble(),
@@ -2642,10 +2719,7 @@ base class Scene implements SceneGraph {
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,
-        maxCaptureBatches: sceneColorCaptureBatches.clamp(
-          1,
-          maxSceneColorCaptureBatches,
-        ),
+        maxCaptureBatches: effectiveSceneColorCaptureBatches,
         // Depth binding needs the prepass, which needs a perspective camera.
         bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
