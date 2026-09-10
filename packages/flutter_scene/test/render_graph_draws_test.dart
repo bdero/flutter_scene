@@ -98,6 +98,82 @@ void main() {
     expect(jsonEncode(json), isNotEmpty);
   });
 
+  test('a capture round-trips through JSON', () async {
+    final graph = RenderGraph()
+      ..addPass(
+        _FakePass('scene', () {
+          final recorder = activeDrawRecorder!;
+          recorder.onUniformEmplaced(
+            ByteData(8)..setFloat32(0, 2.5, Endian.little),
+          );
+          recorder.setContext(
+            const DrawContext(
+              phase: DrawPhase.opaque,
+              batchedItems: 2,
+              batchBreak: BatchBreakReason.differentMaterial,
+            ),
+          );
+          recorder.onDraw(12, 4, indexed: true);
+        }),
+      );
+    final capturer = RenderGraphCapturer(
+      request: const RenderGraphCaptureRequest(captureImages: false),
+    );
+    graph.execute(
+      transientsBuffer: _ThrowingWriter(),
+      texturePool: TransientTexturePool(),
+      observer: capturer,
+    );
+    final result = capturer.finish(pixelWidth: 32, pixelHeight: 16);
+    result.passes.single.reads.add('depth');
+    result.passes.single.skips.add(
+      const CapturedSkip(reason: DrawSkipReason.lodCulled, nodePath: 'a/b'),
+    );
+    result.resources.add(
+      CapturedResource(
+        key: 'scene_color',
+        passIndex: 0,
+        width: 32,
+        height: 16,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+        storageMode: gpu.StorageMode.devicePrivate,
+        thumbnailPng: Uint8List.fromList([1, 2, 3]),
+      ),
+    );
+
+    final text = await result.toJsonString(includeUniformBytes: true);
+    final loaded = RenderGraphCaptureResult.fromJsonString(text);
+    expect(loaded.pixelWidth, 32);
+    expect(loaded.pixelHeight, 16);
+    final pass = loaded.passes.single;
+    expect(pass.name, 'scene');
+    expect(pass.reads, ['depth']);
+    expect(pass.skips.single.reason, DrawSkipReason.lodCulled);
+    expect(pass.skips.single.nodePath, 'a/b');
+    final draw = pass.draws.single;
+    expect(draw.phase, DrawPhase.opaque);
+    expect(draw.vertexCount, 12);
+    expect(draw.instanceCount, 4);
+    expect(draw.indexed, isTrue);
+    expect(draw.batchedItems, 2);
+    expect(draw.batchBreak, BatchBreakReason.differentMaterial);
+    expect(draw.uniformBlocks.single.byteLength, 8);
+    expect(draw.uniformBlocks.single.bytes.getFloat32(0, Endian.little), 2.5);
+    final resource = loaded.resources.single;
+    expect(resource.key, 'scene_color');
+    expect(resource.format, gpu.PixelFormat.r16g16b16a16Float);
+    expect(resource.storageMode, gpu.StorageMode.devicePrivate);
+    expect(resource.thumbnailPng, [1, 2, 3]);
+    expect(resource.thumbnail, isNull);
+
+    // Without uniform bytes the block keeps its size only.
+    final lean = RenderGraphCaptureResult.fromJsonString(
+      await result.toJsonString(includeImages: false),
+    );
+    expect(lean.passes.single.draws.single.uniformBlocks.single.byteLength, 0);
+    expect(lean.resources.single.thumbnailPng, isNull);
+  });
+
   test('a steady-state execute attaches no recorder', () {
     final graph = RenderGraph()
       ..addPass(_FakePass('p', () => expect(activeDrawRecorder, isNull)));
@@ -119,7 +195,7 @@ void main() {
       ),
     );
     final future = scene.captureRenderGraph(
-      request: const RenderGraphCaptureRequest(captureImages: false),
+      request: const RenderGraphCaptureRequest(thumbnailMaxDim: 16),
     );
     final recorder = ui.PictureRecorder();
     scene.render(
@@ -164,5 +240,22 @@ void main() {
     final frame = scene.renderStats.latest!;
     expect(frame.counters.draws, greaterThanOrEqualTo(result.draws.length));
     expect(frame.views.single.passes.map((p) => p.name), contains('ScenePass'));
+
+    // Serializing with images reads thumbnails back as PNG, and the loaded
+    // capture keeps the resolved names.
+    final json = await result.toJson();
+    final loaded = RenderGraphCaptureResult.fromJson(json);
+    expect(loaded.resources.any((r) => r.thumbnailPng != null), isTrue);
+    final loadedDraw = loaded.passes
+        .singleWhere((p) => p.name == 'ScenePass')
+        .draws
+        .firstWhere((d) => d.nodePath?.endsWith('box') ?? false);
+    expect(loadedDraw.fragmentShaderName, 'UnlitFragment');
+    expect(loadedDraw.vertexShader, isNull);
+    final loadedBlock = loadedDraw.uniformBlocks.firstWhere(
+      (b) => b.resolvedName == 'FrameInfo',
+    );
+    expect(loadedBlock.nameFor(loadedDraw), 'FrameInfo');
+    expect(loadedBlock.resolvedValues!.map((v) => v.name), contains('mvp'));
   });
 }

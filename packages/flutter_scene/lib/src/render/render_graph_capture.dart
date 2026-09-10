@@ -7,7 +7,9 @@
 /// frames never construct any of this.
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/fmat/material_registry.dart'
     show fmatSourcePathOf;
@@ -78,7 +80,28 @@ class CapturedResource {
     this.snapshot,
     this.thumbnail,
     this.snapshotFailed = false,
+    this.thumbnailPng,
   });
+
+  /// Rebuilds a resource from [toJson] output. Textures are not restored;
+  /// a serialized thumbnail comes back as [thumbnailPng].
+  factory CapturedResource.fromJson(Map<String, Object?> json) {
+    final png = json['thumbnailPng'];
+    return CapturedResource(
+      key: json['key'] as String,
+      passIndex: json['pass'] as int,
+      debugName: json['debugName'] as String?,
+      width: json['width'] as int? ?? 0,
+      height: json['height'] as int? ?? 0,
+      format: _enumByName(gpu.PixelFormat.values, json['format']),
+      sampleCount: json['sampleCount'] as int? ?? 1,
+      storageMode: _enumByName(gpu.StorageMode.values, json['storageMode']),
+      isTexture: json['isTexture'] as bool? ?? true,
+      byteLength: json['byteLength'] as int?,
+      snapshotFailed: json['snapshotFailed'] as bool? ?? false,
+      thumbnailPng: png is String ? base64Decode(png) : null,
+    );
+  }
 
   /// The blackboard key or `internal:<debugName>` for unpublished targets.
   final String key;
@@ -115,6 +138,50 @@ class CapturedResource {
   /// format); metadata is still valid.
   bool snapshotFailed;
 
+  /// The thumbnail as PNG bytes, set when a capture was serialized with
+  /// images or loaded from one.
+  Uint8List? thumbnailPng;
+
+  /// Metadata, plus the thumbnail as base64 PNG when [includePng] and one is
+  /// held (see [encodeThumbnailPng]).
+  Map<String, Object?> toJson({bool includePng = true}) => {
+    'key': key,
+    'pass': passIndex,
+    if (debugName != null) 'debugName': debugName,
+    'width': width,
+    'height': height,
+    if (format != null) 'format': format!.name,
+    'sampleCount': sampleCount,
+    if (storageMode != null) 'storageMode': storageMode!.name,
+    'isTexture': isTexture,
+    if (byteLength != null) 'byteLength': byteLength,
+    'snapshotFailed': snapshotFailed,
+    if (includePng && thumbnailPng != null)
+      'thumbnailPng': base64Encode(thumbnailPng!),
+  };
+
+  /// Reads [thumbnail] back as PNG into [thumbnailPng]. False when there is
+  /// no thumbnail or the readback failed (a format the display path cannot
+  /// present).
+  Future<bool> encodeThumbnailPng() async {
+    if (thumbnailPng != null) return true;
+    final texture = thumbnail;
+    if (texture == null) return false;
+    try {
+      final image = texture.asImage();
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      image.dispose();
+      if (data == null) return false;
+      thumbnailPng = data.buffer.asUint8List(
+        data.offsetInBytes,
+        data.lengthInBytes,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Whether this resource cannot carry image content (transient tile
   /// memory or non-shader-readable).
   bool get shaderReadable =>
@@ -127,10 +194,39 @@ class CapturedResource {
 /// declared block of the draw's shaders by size when that is unambiguous.
 /// {@category Debugging and profiling}
 class CapturedUniformBlock {
-  CapturedUniformBlock(this.bytes);
+  CapturedUniformBlock(this.bytes, {this.resolvedName, this.resolvedValues});
+
+  /// Rebuilds a block from [toJson] output, keeping the name and values it
+  /// was serialized with (a loaded capture has no shaders to resolve
+  /// against).
+  factory CapturedUniformBlock.fromJson(Map<String, Object?> json) {
+    final raw = json['data'];
+    final bytes = raw is String ? base64Decode(raw) : Uint8List(0);
+    final values = json['values'];
+    return CapturedUniformBlock(
+      ByteData.sublistView(bytes),
+      resolvedName: json['name'] as String?,
+      resolvedValues: values is List
+          ? [
+              for (final value in values.cast<Map>())
+                (
+                  name: value['name'] as String,
+                  type: value['type'] as String,
+                  values: (value['values'] as List).cast<num>(),
+                ),
+            ]
+          : null,
+    );
+  }
 
   /// A copy of the packed bytes.
   final ByteData bytes;
+
+  /// The name a serialized capture resolved this block to, when loaded.
+  final String? resolvedName;
+
+  /// The values a serialized capture decoded, when loaded.
+  final List<({String name, String type, List<num> values})>? resolvedValues;
 
   int get byteLength => bytes.lengthInBytes;
 
@@ -151,8 +247,10 @@ class CapturedUniformBlock {
     return matches;
   }
 
-  /// The block's name when exactly one declared block matches, else null.
+  /// The block's name when exactly one declared block matches (or the name
+  /// it was serialized with), else null.
   String? nameFor(CapturedDraw draw) {
+    if (resolvedName != null) return resolvedName;
     final candidates = candidatesFor(draw);
     return candidates.length == 1 ? candidates.single.name : null;
   }
@@ -166,14 +264,26 @@ class CapturedUniformBlock {
     return decodeUniformBlock(candidates.single, bytes);
   }
 
-  Map<String, Object?> toJson(CapturedDraw draw) {
-    final decoded = decode(draw);
+  /// Metadata plus the decoded members when resolvable; [includeBytes] adds
+  /// the packed bytes as base64 so a loaded capture can still show them.
+  Map<String, Object?> toJson(CapturedDraw draw, {bool includeBytes = false}) {
+    final name = nameFor(draw);
+    final decoded = resolvedValues != null
+        ? [
+            for (final value in resolvedValues!)
+              {'name': value.name, 'type': value.type, 'values': value.values},
+          ]
+        : decode(draw)?.map((v) => v.toJson()).toList();
     return {
       'bytes': byteLength,
-      if (decoded != null) 'name': candidatesFor(draw).single.name,
-      if (decoded != null) 'values': [for (final v in decoded) v.toJson()],
-      if (decoded == null)
+      if (name != null) 'name': name,
+      if (decoded != null) 'values': decoded,
+      if (name == null)
         'candidates': [for (final c in candidatesFor(draw)) c.name],
+      if (includeBytes)
+        'data': base64Encode(
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+        ),
     };
   }
 }
@@ -199,7 +309,36 @@ class CapturedDraw {
     this.fragmentShader,
     this.pipelineId,
     this.geometryType,
-  });
+    String? vertexShaderName,
+    String? fragmentShaderName,
+  }) : _vertexShaderName = vertexShaderName,
+       _fragmentShaderName = fragmentShaderName;
+
+  /// Rebuilds a draw from [toJson] output. Shader objects are not restored;
+  /// their names are.
+  factory CapturedDraw.fromJson(Map<String, Object?> json) => CapturedDraw(
+    passIndex: json['pass'] as int,
+    order: json['order'] as int,
+    phase: _enumByName(DrawPhase.values, json['phase']) ?? DrawPhase.other,
+    vertexCount: json['vertexCount'] as int,
+    instanceCount: json['instanceCount'] as int,
+    indexed: json['indexed'] as bool? ?? false,
+    batchedItems: json['batchedItems'] as int? ?? 1,
+    batchBreak:
+        _enumByName(BatchBreakReason.values, json['batchBreak']) ??
+        BatchBreakReason.none,
+    uniformBlocks: [
+      for (final block in (json['uniformBlocks'] as List? ?? const []))
+        CapturedUniformBlock.fromJson((block as Map).cast<String, Object?>()),
+    ],
+    nodePath: json['node'] as String?,
+    materialType: json['material'] as String?,
+    materialSource: json['materialSource'] as String?,
+    geometryType: json['geometry'] as String?,
+    pipelineId: json['pipeline'] as int?,
+    vertexShaderName: json['vertexShader'] as String?,
+    fragmentShaderName: json['fragmentShader'] as String?,
+  );
 
   final int passIndex;
 
@@ -237,18 +376,27 @@ class CapturedDraw {
   /// one.
   final int? pipelineId;
 
+  final String? _vertexShaderName;
+  final String? _fragmentShaderName;
+
   /// The vertex shader's bundle entry name, once its bundle reflection has
-  /// loaded.
+  /// loaded (or as serialized).
   String? get vertexShaderName =>
-      vertexShader == null ? null : ShaderReflection.nameOf(vertexShader!);
+      _vertexShaderName ??
+      (vertexShader == null ? null : ShaderReflection.nameOf(vertexShader!));
 
   String? get fragmentShaderName =>
-      fragmentShader == null ? null : ShaderReflection.nameOf(fragmentShader!);
+      _fragmentShaderName ??
+      (fragmentShader == null
+          ? null
+          : ShaderReflection.nameOf(fragmentShader!));
 
   /// Triangles this draw rasterizes, assuming a triangle list.
   int get triangles => vertexCount ~/ 3 * instanceCount;
 
-  Map<String, Object?> toJson() => {
+  /// [includeUniformBytes] adds each block's packed bytes, so a loaded
+  /// capture keeps them.
+  Map<String, Object?> toJson({bool includeUniformBytes = false}) => {
     'pass': passIndex,
     'order': order,
     'phase': phase.name,
@@ -264,7 +412,10 @@ class CapturedDraw {
     'indexed': indexed,
     'batchedItems': batchedItems,
     'batchBreak': batchBreak.name,
-    'uniformBlocks': [for (final block in uniformBlocks) block.toJson(this)],
+    'uniformBlocks': [
+      for (final block in uniformBlocks)
+        block.toJson(this, includeBytes: includeUniformBytes),
+    ],
   };
 }
 
@@ -272,6 +423,13 @@ class CapturedDraw {
 /// {@category Debugging and profiling}
 class CapturedSkip {
   const CapturedSkip({required this.reason, this.nodePath});
+
+  factory CapturedSkip.fromJson(Map<String, Object?> json) => CapturedSkip(
+    reason:
+        _enumByName(DrawSkipReason.values, json['reason']) ??
+        DrawSkipReason.frustumCulled,
+    nodePath: json['node'] as String?,
+  );
 
   final DrawSkipReason reason;
   final String? nodePath;
@@ -295,6 +453,43 @@ class CapturedPass {
   final List<String> writes = [];
   final List<CapturedDraw> draws = [];
   final List<CapturedSkip> skips = [];
+
+  factory CapturedPass.fromJson(Map<String, Object?> json) {
+    final pass = CapturedPass(
+      name: json['name'] as String,
+      indexInGraph: json['index'] as int,
+    )..cpuMicros = json['cpuMicros'] as int? ?? 0;
+    pass.reads.addAll((json['reads'] as List? ?? const []).cast<String>());
+    pass.writes.addAll((json['writes'] as List? ?? const []).cast<String>());
+    for (final draw in json['draws'] as List? ?? const []) {
+      pass.draws.add(CapturedDraw.fromJson((draw as Map).cast()));
+    }
+    for (final skip in json['skips'] as List? ?? const []) {
+      pass.skips.add(CapturedSkip.fromJson((skip as Map).cast()));
+    }
+    return pass;
+  }
+
+  Map<String, Object?> toJson({bool includeUniformBytes = false}) => {
+    'name': name,
+    'index': indexInGraph,
+    'cpuMicros': cpuMicros,
+    'reads': reads,
+    'writes': writes,
+    'draws': [
+      for (final draw in draws)
+        draw.toJson(includeUniformBytes: includeUniformBytes),
+    ],
+    'skips': [for (final skip in skips) skip.toJson()],
+  };
+}
+
+T? _enumByName<T extends Enum>(List<T> values, Object? name) {
+  if (name is! String) return null;
+  for (final value in values) {
+    if (value.name == name) return value;
+  }
+  return null;
 }
 
 /// The product of one captured frame.
@@ -324,6 +519,70 @@ class RenderGraphCaptureResult {
       yield* pass.draws;
     }
   }
+
+  /// Rebuilds a capture from [toJson] output. GPU textures are not restored;
+  /// thumbnails serialized with images come back as
+  /// [CapturedResource.thumbnailPng], and shader names and decoded uniforms
+  /// keep what they were serialized with.
+  factory RenderGraphCaptureResult.fromJson(Map<String, Object?> json) =>
+      RenderGraphCaptureResult(
+        passes: [
+          for (final pass in json['passes'] as List? ?? const [])
+            CapturedPass.fromJson((pass as Map).cast()),
+        ],
+        resources: [
+          for (final resource in json['resources'] as List? ?? const [])
+            CapturedResource.fromJson((resource as Map).cast()),
+        ],
+        pixelWidth: json['pixelWidth'] as int? ?? 0,
+        pixelHeight: json['pixelHeight'] as int? ?? 0,
+      );
+
+  /// Parses [toJsonString] output.
+  factory RenderGraphCaptureResult.fromJsonString(String source) =>
+      RenderGraphCaptureResult.fromJson(
+        (jsonDecode(source) as Map).cast<String, Object?>(),
+      );
+
+  /// Serializes the capture. With [includeImages], every thumbnail is read
+  /// back as PNG first (asynchronous), and with [includeUniformBytes] each
+  /// draw keeps its packed uniform bytes. The result round-trips through
+  /// [RenderGraphCaptureResult.fromJson], so a capture can be attached to a
+  /// bug report and opened elsewhere.
+  Future<Map<String, Object?>> toJson({
+    bool includeImages = true,
+    bool includeUniformBytes = false,
+  }) async {
+    if (includeImages) {
+      for (final resource in resources) {
+        await resource.encodeThumbnailPng();
+      }
+    }
+    return {
+      'version': 1,
+      'pixelWidth': pixelWidth,
+      'pixelHeight': pixelHeight,
+      'passes': [
+        for (final pass in passes)
+          pass.toJson(includeUniformBytes: includeUniformBytes),
+      ],
+      'resources': [
+        for (final resource in resources)
+          resource.toJson(includePng: includeImages),
+      ],
+    };
+  }
+
+  /// [toJson] as a JSON string.
+  Future<String> toJsonString({
+    bool includeImages = true,
+    bool includeUniformBytes = false,
+  }) async => jsonEncode(
+    await toJson(
+      includeImages: includeImages,
+      includeUniformBytes: includeUniformBytes,
+    ),
+  );
 
   /// The latest write of [key] at or before [passIndex], or null.
   CapturedResource? resourceAt(String key, int passIndex) {
