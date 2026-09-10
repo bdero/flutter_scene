@@ -56,6 +56,25 @@ void main() {
     expect(material_internal.materialSceneInputsRevision, revision + 2);
   });
 
+  test('smooth transmission declares only the sharp scene color', () {
+    final material = PhysicallyBasedMaterial()
+      ..transmission = 1
+      ..roughnessFactor = 0.0;
+    expect(material.sceneInputs, {RenderInput.opaqueSceneColor});
+
+    // An index of refraction of 1 bends nothing, so roughness filters nothing.
+    material
+      ..roughnessFactor = 0.5
+      ..ior = 1.0;
+    expect(material.sceneInputs, {RenderInput.opaqueSceneColor});
+
+    material.ior = 1.5;
+    expect(material.sceneInputs, {
+      RenderInput.opaqueSceneColor,
+      RenderInput.filteredSceneColor,
+    });
+  });
+
   test('transmission reports a conservative scene-color sample footprint', () {
     final material = PhysicallyBasedMaterial()
       ..transmission = 1

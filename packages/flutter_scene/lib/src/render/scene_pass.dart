@@ -88,6 +88,7 @@ class ScenePass extends RenderGraphPass {
     int layerMask = kRenderLayerAll,
     Fog? fog,
     bool captureOpaqueColor = false,
+    int maxCaptureBatches = maxSceneColorCaptureBatches,
     bool bindSceneDepth = false,
     double time = 0.0,
     List<Plane> cullingPlanes = const [],
@@ -95,6 +96,7 @@ class ScenePass extends RenderGraphPass {
     bool suppressPlanarReflections = false,
     Matrix4? cameraTransform,
   }) : _captureOpaqueColor = captureOpaqueColor,
+       _maxCaptureBatches = maxCaptureBatches,
        _suppressPlanarReflections = suppressPlanarReflections,
        _bindSceneDepth = bindSceneDepth,
        _time = time,
@@ -154,6 +156,10 @@ class ScenePass extends RenderGraphPass {
   // accumulated scene color, whether to hand materials the prepass linear
   // depth, and the engine time for material animation.
   final bool _captureOpaqueColor;
+
+  // Overlap-safe capture batches this frame may open before the remaining
+  // readers share the final snapshot. See Scene.sceneColorCaptureBatches.
+  final int _maxCaptureBatches;
   final bool _bindSceneDepth;
   final bool _suppressPlanarReflections;
   final double _time;
@@ -437,9 +443,12 @@ class ScenePass extends RenderGraphPass {
     while (encoder.hasPendingTranslucent) {
       assert(encoder.nextTranslucentBatchReadsSceneColor);
       final shareFinalSnapshot =
-          captureBatch == maxSceneColorCaptureBatches - 1 &&
+          captureBatch == _maxCaptureBatches - 1 &&
           encoder.pendingSceneColorReaderCount > 1;
-      if (shareFinalSnapshot && !_reportedSceneColorPassCap) {
+      // A cap the scene chose is not worth a warning; the built-in maximum is.
+      if (shareFinalSnapshot &&
+          _maxCaptureBatches == maxSceneColorCaptureBatches &&
+          !_reportedSceneColorPassCap) {
         _reportedSceneColorPassCap = true;
         debugPrint(
           'Scene color readers exceeded $maxSceneColorCaptureBatches '
