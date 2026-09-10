@@ -62,6 +62,7 @@ import 'render/punctual_lights.dart';
 import 'render/point_shadow.dart';
 import 'render/spot_shadow.dart';
 import 'render/scene_pass.dart';
+import 'scene_encoder.dart' show maxSceneColorCaptureBatches;
 import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
 import 'render/selection_outline_pass.dart';
@@ -523,6 +524,17 @@ base class Scene implements SceneGraph {
   /// the per-object path.
   /// {@category Lighting and environment}
   bool punctualLightClustering = true;
+
+  /// How many overlap-safe scene color captures a frame may open for
+  /// materials that read the opaque scene behind them (transmission), from 1
+  /// to [maxSceneColorCaptureBatches]. Readers whose screen bounds overlap
+  /// each get a fresh capture of everything drawn before them, and each
+  /// capture is a full-resolution copy plus a new render pass. Once the cap
+  /// is reached the remaining readers share the last snapshot, so they stop
+  /// seeing each other through glass. Lower it on tiled and low-end GPUs
+  /// (1 makes every reader share one capture, the cost of a single reader).
+  /// {@category Rendering}
+  int sceneColorCaptureBatches = maxSceneColorCaptureBatches;
 
   /// The scene's primary camera.
   ///
@@ -2630,6 +2642,10 @@ base class Scene implements SceneGraph {
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,
+        maxCaptureBatches: sceneColorCaptureBatches.clamp(
+          1,
+          maxSceneColorCaptureBatches,
+        ),
         // Depth binding needs the prepass, which needs a perspective camera.
         bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
