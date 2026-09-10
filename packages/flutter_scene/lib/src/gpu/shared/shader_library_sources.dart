@@ -17,11 +17,19 @@ final class ShaderLibrarySource {
 final Expando<ShaderLibrarySource> _sources = Expando<ShaderLibrarySource>(
   'shaderLibrarySource',
 );
+final List<WeakReference<Object>> _known = [];
 
 /// Records that [library] was loaded from [source]. Keyed by identity, so a
 /// cached library reloaded under the same key keeps its entry.
 void registerShaderLibrarySource(Object library, ShaderLibrarySource source) {
+  if (_sources[library] == null) _known.add(WeakReference(library));
   _sources[library] = source;
+}
+
+/// Every registered library still alive, in registration order.
+List<Object> knownShaderLibraries() {
+  _known.removeWhere((ref) => ref.target == null);
+  return [for (final ref in _known) ref.target!];
 }
 
 /// The source [library] was loaded from, or null for a library the shim did

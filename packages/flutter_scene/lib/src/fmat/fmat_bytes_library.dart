@@ -26,6 +26,10 @@ final class FmatBytesLibrary {
   final gpu.ShaderLibrary _library;
   Map<String, Object?> _metadata;
 
+  /// The bundle-backed library, for tooling that reflects over it.
+  @internal
+  gpu.ShaderLibrary get library => _library;
+
   // Live instances, tracked weakly so a discarded material never pins GPU
   // resources through this registry (same policy as the hot-reload
   // coordinator).
