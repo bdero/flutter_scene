@@ -5,6 +5,7 @@ dartdoc:
     - "Materials"
     - "Lighting and environment"
     - "Rendering"
+    - "Debugging and profiling"
     - "Particles"
     - "Animation"
     - "Physics"

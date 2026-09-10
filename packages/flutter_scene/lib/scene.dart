@@ -271,6 +271,24 @@ export 'src/render/render_stats.dart'
         RenderPassStats,
         RenderStats,
         RenderViewStats;
+export 'src/shader_reflection/shader_diagnostics.dart'
+    show ShaderCompileDiagnostic, parseShaderCompileErrors, shaderSourceWindow;
+export 'src/shader_reflection/shader_reflection.dart'
+    show
+        ShaderBackend,
+        ShaderBackendInfo,
+        ShaderBundleInfo,
+        ShaderInfo,
+        ShaderInputInfo,
+        ShaderReflection,
+        ShaderScalarType,
+        ShaderSource,
+        ShaderStageKind,
+        ShaderTextureInfo,
+        ShaderUniformBlockInfo,
+        ShaderUniformFieldInfo,
+        ShaderUniformValue,
+        decodeUniformBlock;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;

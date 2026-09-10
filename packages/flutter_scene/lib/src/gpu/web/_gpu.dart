@@ -13,6 +13,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'package:web/web.dart' as web;
 
 import '../shared/glsl_transpile.dart';
+import '../shared/shader_library_sources.dart';
 import 'shader_bundle_generated.dart' as fb;
 
 part 'buffer.dart';

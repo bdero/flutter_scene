@@ -1278,7 +1278,7 @@ base class Scene implements SceneGraph {
   /// Steady-state rendering statistics: the last frame's draw, culling,
   /// batching, and pipeline counters broken down by view and by pass, with
   /// CPU times, plus a bounded history. Always collected.
-  /// {@category Rendering}
+  /// {@category Debugging and profiling}
   final RenderStats renderStats = RenderStats();
 
   /// Opt-in for [captureRenderGraph] and the render-graph debug hooks.
