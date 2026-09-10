@@ -428,6 +428,129 @@ void documentTests() {
       expect(image['mimeType'], 'image/png');
     });
 
+    test('introspection tools are hidden without their providers', () {
+      final names = _surface().bootstrapTools().map((t) => t.name).toSet();
+      expect(
+        names.intersection({
+          'get_render_stats',
+          'list_draws',
+          'get_draw',
+          'list_shaders',
+          'get_shader_info',
+          'save_render_graph_capture',
+        }),
+        isEmpty,
+      );
+    });
+
+    test('introspection tools dispatch to their providers', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      Map<String, Object?>? drawOptions;
+      final surface = EditorToolSurface(
+        () => session,
+        readRenderStats: (frames) => {'frames': frames, 'frameCount': 7},
+        listDraws: (options) async {
+          drawOptions = options;
+          return {'total': 0, 'draws': const [], 'skips': const {}};
+        },
+        readDraw: (pass, order) async => {'pass': pass, 'order': order},
+        listShaders: () async => {'bundles': const []},
+        readShaderInfo: (name, {backend, includeSource = false}) async => {
+          'name': name,
+          'backend': backend,
+          'includeSource': includeSource,
+        },
+        saveRenderCapture: (path, {required includeImages}) async => {
+          'path': path,
+          'includeImages': includeImages,
+        },
+      );
+      expect(
+        surface.bootstrapTools().map((t) => t.name).toSet(),
+        containsAll({
+          'get_render_stats',
+          'list_draws',
+          'get_draw',
+          'list_shaders',
+          'get_shader_info',
+          'save_render_graph_capture',
+        }),
+      );
+
+      final stats = await surface.dispatch('get_render_stats', {'frames': 30});
+      expect(stats['frames'], 30);
+      expect(await surface.dispatch('get_render_stats', {}), {
+        'frames': 0,
+        'frameCount': 7,
+      });
+
+      await surface.dispatch('list_draws', {
+        'pass': 'opaque',
+        'node': '/Root',
+        'limit': 10,
+      });
+      expect(drawOptions!['pass'], 'opaque');
+      expect(drawOptions!['limit'], 10);
+
+      final draw = await surface.dispatch('get_draw', {'pass': 2, 'order': 5});
+      expect(draw['pass'], 2);
+      expect(draw['order'], 5);
+
+      final shader = await surface.dispatch('get_shader_info', {
+        'name': 'TextureFragment',
+        'backend': 'vulkan',
+        'includeSource': true,
+      });
+      expect(shader['backend'], 'vulkan');
+      expect(shader['includeSource'], isTrue);
+      expect(
+        (await surface.dispatch('get_shader_info', {'name': 'x'}))['backend'],
+        isNull,
+      );
+
+      final saved = await surface.dispatch('save_render_graph_capture', {
+        'path': '/tmp/capture.json',
+      });
+      expect(saved['path'], '/tmp/capture.json');
+      expect(saved['includeImages'], isTrue);
+      expect(await surface.dispatch('list_shaders', {}), {'bundles': const []});
+    });
+
+    test('introspection tools reject bad arguments', () async {
+      final session = EditorSession(
+        SceneDocument(allocator: IdAllocator(session: 1)),
+      );
+      final surface = EditorToolSurface(
+        () => session,
+        listDraws: (options) async => const {},
+        readDraw: (pass, order) async => const {},
+        saveRenderCapture: (path, {required includeImages}) async => const {},
+      );
+      expect(
+        () => surface.dispatch('list_draws', {'pass': true}),
+        throwsA(isA<ToolError>()),
+      );
+      expect(
+        () => surface.dispatch('list_draws', {'node': 3}),
+        throwsA(isA<ToolError>()),
+      );
+      expect(
+        () => surface.dispatch('get_draw', {'pass': 'opaque'}),
+        throwsA(isA<ToolError>()),
+      );
+      expect(
+        () => surface.dispatch('save_render_graph_capture', {}),
+        throwsA(isA<ToolError>()),
+      );
+      // A tool whose provider is null stays unavailable rather than crashing.
+      expect(
+        () => surface.dispatch('get_render_stats', {}),
+        throwsA(isA<ToolError>()),
+      );
+    });
+
     test('image dispatch rejects non-image tools and vice versa', () {
       final surface = _surface();
       expect(

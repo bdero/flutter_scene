@@ -1,9 +1,11 @@
 /// The MCP-facing render graph tools: captures armed against the live
 /// scene, JSON encoding of the graph, remapped PNGs of any resource, exact
-/// pixel reads, the non-finite scan, and the viewport debug-mode registry.
-/// The app wires these into its [EditorToolSurface].
+/// pixel reads, draw and shader introspection, the non-finite scan, and the
+/// viewport debug-mode registry. The app wires these into its
+/// [EditorToolSurface].
 library;
 
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
@@ -26,6 +28,10 @@ class RenderGraphMcp {
   // Serializes captures: the engine holds one pending arm, so a concurrent
   // second call would fail the first with "superseded".
   Future<void> _queue = Future<void>.value();
+
+  // The draw and shader tools read whatever the last capture recorded, so
+  // an agent can list draws without re-rendering.
+  RenderGraphCaptureResult? _lastCapture;
 
   Scene get _scene {
     final scene = _sceneProvider();
@@ -277,10 +283,220 @@ class RenderGraphMcp {
     WidgetsBinding.instance.scheduleFrame();
   }
 
+  /// The live scene's last frame plus [frames] of history.
+  Map<String, Object?> renderStats(int frames) {
+    final stats = _scene.renderStats;
+    final latest = stats.latest;
+    if (latest == null) {
+      throw const ToolError('No frame has rendered yet');
+    }
+    final history = stats.history;
+    final start = frames <= 0 || frames >= history.length
+        ? (frames <= 0 ? history.length : 0)
+        : history.length - frames;
+    return {
+      'frameCount': stats.frameCount,
+      'latest': latest.toJson(),
+      'history': [for (final frame in history.skip(start)) frame.toJson()],
+    };
+  }
+
+  /// The last capture's draws, filtered and paged, with a per-pass tally of
+  /// why items were skipped.
+  Future<Map<String, Object?>> listDraws(Map<String, Object?> options) async {
+    final capture = await _ensureCapture();
+    // Draw shader names resolve through bundle reflection, so load it before
+    // encoding or every draw reports null shaders.
+    await ShaderReflection.loadAll();
+    final phase = (options['phase'] as String?)?.toLowerCase();
+    final node = (options['node'] as String?)?.toLowerCase();
+    final material = (options['material'] as String?)?.toLowerCase();
+    final includeUniforms = options['includeUniforms'] == true;
+    final offset = (options['offset'] as num?)?.toInt() ?? 0;
+    final limit = (options['limit'] as num?)?.toInt() ?? 200;
+
+    final matched = <CapturedDraw>[];
+    final skips = <String, Map<String, int>>{};
+    for (final pass in capture.passes) {
+      if (!_passMatches(pass, options['pass'])) continue;
+      for (final draw in pass.draws) {
+        if (phase != null && draw.phase.name.toLowerCase() != phase) continue;
+        if (node != null &&
+            !(draw.nodePath ?? '').toLowerCase().contains(node)) {
+          continue;
+        }
+        if (material != null &&
+            !'${draw.materialType ?? ''} ${draw.materialSource ?? ''}'
+                .toLowerCase()
+                .contains(material)) {
+          continue;
+        }
+        matched.add(draw);
+      }
+      for (final skip in pass.skips) {
+        final byReason = skips.putIfAbsent(pass.name, () => <String, int>{});
+        byReason[skip.reason.name] = (byReason[skip.reason.name] ?? 0) + 1;
+      }
+    }
+    final page = matched
+        .skip(offset < 0 ? 0 : offset)
+        .take(limit < 0 ? 0 : limit);
+    return {
+      'total': matched.length,
+      'draws': [for (final draw in page) _drawJson(draw, includeUniforms)],
+      'skips': skips,
+    };
+  }
+
+  /// One draw of the last capture with its decoded uniform values.
+  Future<Map<String, Object?>> readDraw(Object pass, int order) async {
+    final capture = await _ensureCapture();
+    await ShaderReflection.loadAll();
+    for (final captured in capture.passes) {
+      if (!_passMatches(captured, pass)) continue;
+      for (final draw in captured.draws) {
+        if (draw.order != order) continue;
+        return {'pass': captured.name, ..._drawJson(draw, true)};
+      }
+    }
+    throw ToolError(
+      'No draw $order in pass "$pass"; call list_draws for what was drawn',
+    );
+  }
+
+  /// Every loaded shader bundle with its entries.
+  Future<Map<String, Object?>> listShaders() async {
+    final bundles = await ShaderReflection.loadAll();
+    return {
+      'bundles': [
+        for (var index = 0; index < bundles.length; index++)
+          {
+            'index': index,
+            'shaders': [
+              for (final shader in bundles[index].shaders)
+                {
+                  'name': shader.name,
+                  if (shader.stage != null) 'stage': shader.stage!.name,
+                  'backends': [
+                    for (final backend in shader.backends.keys) backend.name,
+                  ],
+                  'uniformBlocks': [
+                    for (final block
+                        in shader.current?.uniformBlocks ??
+                            const <ShaderUniformBlockInfo>[])
+                      block.name,
+                  ],
+                  'textures': [
+                    for (final texture
+                        in shader.current?.textures ??
+                            const <ShaderTextureInfo>[])
+                      texture.name,
+                  ],
+                },
+            ],
+          },
+      ],
+    };
+  }
+
+  /// Reflection for the first entry named [name], for one backend.
+  Future<Map<String, Object?>> shaderInfo(
+    String name, {
+    String? backend,
+    bool includeSource = false,
+  }) async {
+    final bundles = await ShaderReflection.loadAll();
+    ShaderInfo? found;
+    for (final bundle in bundles) {
+      found = bundle[name];
+      if (found != null) break;
+    }
+    if (found == null) {
+      throw ToolError('No shader named "$name"; call list_shaders');
+    }
+    ShaderBackendInfo? selected;
+    if (backend == null) {
+      selected = found.current;
+    } else {
+      for (final value in ShaderBackend.values) {
+        if (value.name == backend) selected = found.backends[value];
+      }
+      if (selected == null) {
+        throw ToolError(
+          'Shader "$name" has no "$backend" output; it carries '
+          '${found.backends.keys.map((b) => b.name).join(', ')}',
+        );
+      }
+    }
+    if (selected == null) {
+      throw ToolError('Shader "$name" carries no compiled output');
+    }
+    return ShaderInfo(
+      name: found.name,
+      backends: {selected.backend: selected},
+    ).toJson(includeSource: includeSource);
+  }
+
+  /// Writes the last capture to [path] as JSON.
+  Future<Map<String, Object?>> saveCapture(
+    String path, {
+    bool includeImages = true,
+  }) async {
+    final capture = await _ensureCapture(images: includeImages);
+    final json = await capture.toJsonString(
+      includeImages: includeImages,
+      includeUniformBytes: true,
+    );
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(json);
+    return {
+      'path': file.absolute.path,
+      'bytes': await file.length(),
+      'passes': capture.passes.length,
+      'draws': capture.draws.length,
+    };
+  }
+
+  static bool _passMatches(CapturedPass pass, Object? filter) {
+    if (filter == null) return true;
+    if (filter is num) return pass.indexInGraph == filter.toInt();
+    return pass.name.toLowerCase() == filter.toString().toLowerCase();
+  }
+
+  // Decoded uniform values are large; they ride along only when asked for.
+  static Map<String, Object?> _drawJson(CapturedDraw draw, bool uniforms) {
+    final json = draw.toJson();
+    if (uniforms) return json;
+    for (final block in json['uniformBlocks'] as List) {
+      (block as Map).remove('values');
+    }
+    return json;
+  }
+
   Future<RenderGraphCaptureResult> _arm(RenderGraphCaptureRequest request) {
-    final run = _queue.then((_) => armRenderGraphCapture(_scene, request));
+    final run = _queue.then((_) async {
+      final result = await armRenderGraphCapture(_scene, request);
+      _lastCapture = result;
+      return result;
+    });
     _queue = run.then((_) {}, onError: (_) {});
     return run;
+  }
+
+  Future<RenderGraphCaptureResult> _ensureCapture({bool images = false}) async {
+    final existing = _lastCapture;
+    // A metadata-only capture cannot serve a request for images.
+    if (existing != null &&
+        (!images || existing.resources.any((r) => r.thumbnail != null))) {
+      return existing;
+    }
+    return _arm(
+      RenderGraphCaptureRequest(
+        captureImages: images,
+        thumbnailMaxDim: images ? 256 : null,
+      ),
+    );
   }
 
   CapturedResource _findCaptured(RenderGraphCaptureResult result, String key) {
@@ -305,6 +521,8 @@ class RenderGraphMcp {
           'cpuMicros': pass.cpuMicros,
           'reads': pass.reads,
           'writes': pass.writes,
+          'drawCount': pass.draws.length,
+          'skipCount': pass.skips.length,
         },
     ],
     'resources': [
