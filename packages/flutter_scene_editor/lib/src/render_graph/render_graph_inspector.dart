@@ -164,6 +164,9 @@ class RenderGraphInspector extends ChangeNotifier {
       final capture = await _arm(
         const RenderGraphCaptureRequest(thumbnailMaxDim: 256),
       );
+      // Draw shader names resolve through bundle reflection, so load it
+      // before the panel reads them.
+      await ShaderReflection.loadAll();
       final resources = <InspectedResource>[
         for (final resource in capture.resources)
           InspectedResource(resource, _thumbnailImage(resource)),

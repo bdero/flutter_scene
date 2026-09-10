@@ -1,12 +1,22 @@
-/// The Render Graph dock panel: capture-on-demand of the viewport's frame
-/// (pass lane with thumbnails, CPU timings, data flow), the non-finite
-/// scan, and the texture viewer with pixel inspection.
+/// The Render Graph dock panel: the live frame stats strip,
+/// capture-on-demand of the viewport's frame (pass lane with thumbnails,
+/// CPU timings, data flow, draws), the non-finite scan, and the texture
+/// viewer with pixel inspection.
 library;
 
+import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_scene/scene.dart'
+    show
+        BatchBreakReason,
+        RenderFrameStats,
+        RenderViewStats,
+        ShaderUniformValue;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
@@ -35,6 +45,9 @@ class RenderGraphPanel extends StatefulWidget {
 
 class _RenderGraphPanelState extends State<RenderGraphPanel> {
   int? _selectedPass;
+  int? _expandedDraw;
+  Timer? _statsTimer;
+  int? _statsFrame;
 
   RenderGraphInspector get _inspector => widget.inspector;
 
@@ -42,6 +55,18 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
   void initState() {
     super.initState();
     _inspector.addListener(_onChanged);
+    _statsTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _pollStats(),
+    );
+  }
+
+  // Repaints only when a new frame has landed, so an idle viewport costs
+  // nothing but the tick.
+  void _pollStats() {
+    final frame = widget.controller.scene.renderStats.latest?.frameIndex;
+    if (frame == _statsFrame || !mounted) return;
+    setState(() => _statsFrame = frame);
   }
 
   @override
@@ -55,6 +80,7 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
 
   @override
   void dispose() {
+    _statsTimer?.cancel();
     _inspector.removeListener(_onChanged);
     super.dispose();
   }
@@ -72,6 +98,7 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
       children: [
         _toolbar(),
         const Divider(height: 1),
+        _statsStrip(),
         Expanded(
           child: result == null
               ? const Center(
@@ -104,6 +131,11 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
                 ? null
                 : () => _inspector.scanForNonFinite(),
             child: const Text('Scan NaN/Inf', style: TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(width: 6),
+          OutlinedButton(
+            onPressed: busy || _inspector.result == null ? null : _saveCapture,
+            child: const Text('Save capture', style: TextStyle(fontSize: 12)),
           ),
           const SizedBox(width: 10),
           if (busy)
@@ -184,7 +216,10 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
         if (resource.captured.passIndex == pass.indexInGraph) resource,
     ];
     return GestureDetector(
-      onTap: () => setState(() => _selectedPass = pass.indexInGraph),
+      onTap: () => setState(() {
+        _selectedPass = pass.indexInGraph;
+        _expandedDraw = null;
+      }),
       child: Container(
         width: 168,
         margin: const EdgeInsets.only(right: 8),
@@ -325,8 +360,261 @@ class _RenderGraphPanelState extends State<RenderGraphPanel> {
               '${resource.captured.storageMode == gpu.StorageMode.deviceTransient ? '  (transient)' : ''}',
               style: const TextStyle(fontSize: 11),
             ),
+        const SizedBox(height: 8),
+        _drawsSection(pass),
       ],
     );
+  }
+
+  Widget _drawsSection(CapturedPass pass) {
+    final skips = <String, int>{};
+    for (final skip in pass.skips) {
+      skips[skip.reason.name] = (skips[skip.reason.name] ?? 0) + 1;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Draws (${pass.draws.length})', style: editorDetailText),
+        if (pass.draws.isEmpty)
+          const Text('  (none)', style: TextStyle(fontSize: 11))
+        else
+          SizedBox(
+            height: 180,
+            child: ListView.builder(
+              itemCount: pass.draws.length,
+              itemBuilder: (context, index) => _drawRow(pass.draws[index]),
+            ),
+          ),
+        const SizedBox(height: 4),
+        Text(
+          skips.isEmpty
+              ? 'Nothing skipped'
+              : 'Skipped ${pass.skips.length} '
+                    '(${skips.entries.map((e) => '${e.key} ${e.value}').join(', ')})',
+          style: editorDetailText,
+        ),
+      ],
+    );
+  }
+
+  Widget _drawRow(CapturedDraw draw) {
+    final expanded = _expandedDraw == draw.order;
+    final vertex = draw.vertexShaderName ?? '?';
+    final fragment = draw.fragmentShaderName ?? '?';
+    return InkWell(
+      onTap: () => setState(() => _expandedDraw = expanded ? null : draw.order),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        decoration: BoxDecoration(
+          color: expanded ? editorRaisedColor : null,
+          border: const Border(
+            bottom: BorderSide(color: editorLineColor, width: 0.5),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 28,
+                  child: Text('${draw.order}', style: editorDetailText),
+                ),
+                Expanded(
+                  child: Text(
+                    draw.nodePath ?? '(unnamed)',
+                    style: const TextStyle(fontSize: 11),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  '${_count(draw.vertexCount)} v'
+                  '${draw.instanceCount > 1 ? '  x${draw.instanceCount}' : ''}'
+                  '${draw.batchedItems > 1 ? '  ${draw.batchedItems} batched' : ''}',
+                  style: editorDetailText,
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 28),
+              child: Text(
+                '${draw.materialType ?? draw.materialSource ?? 'unknown material'}'
+                '  $vertex/$fragment'
+                '${draw.batchBreak == BatchBreakReason.none ? '' : '  break ${draw.batchBreak.name}'}',
+                style: editorDetailText,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (expanded) ...[
+              const SizedBox(height: 3),
+              if (draw.uniformBlocks.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(left: 28),
+                  child: Text(
+                    'no uniform blocks',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              for (final block in draw.uniformBlocks)
+                _uniformBlock(draw, block),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _uniformBlock(CapturedDraw draw, CapturedUniformBlock block) {
+    final name = block.nameFor(draw);
+    final values = block.decode(draw);
+    final candidates = name == null
+        ? block.candidatesFor(draw).map((info) => info.name).toList()
+        : const <String>[];
+    return Padding(
+      padding: const EdgeInsets.only(left: 28, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${name ?? 'unresolved block'}  ${block.byteLength} bytes',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+          if (name == null)
+            Text(
+              candidates.isEmpty
+                  ? 'no declared block of this size'
+                  : 'candidates ${candidates.join(', ')}',
+              style: editorDetailText,
+            ),
+          if (values != null)
+            for (final value in values)
+              Text(
+                '${value.name} = ${_uniformValueText(value)}',
+                style: const TextStyle(fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveCapture() async {
+    final result = _inspector.result;
+    if (result == null) return;
+    final location = await getSaveLocation(
+      suggestedName: 'render_capture',
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'JSON', extensions: ['json']),
+      ],
+    );
+    final chosen = location?.path;
+    if (chosen == null) return;
+    final path = chosen.toLowerCase().endsWith('.json')
+        ? chosen
+        : '$chosen.json';
+    String message;
+    try {
+      final json = await result.toJsonString(
+        includeImages: true,
+        includeUniformBytes: true,
+      );
+      await File(path).writeAsString(json);
+      message = 'Capture saved to $path';
+    } catch (error) {
+      message = 'Could not save the capture. $error';
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Widget _statsStrip() {
+    final stats = widget.controller.scene.renderStats.latest;
+    if (stats == null) return const SizedBox.shrink();
+    final view = stats.views.isEmpty ? null : _primaryView(stats);
+    final counters = view?.counters ?? stats.counters;
+    return Container(
+      color: editorPanelColor,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 2,
+            children: [
+              _stat('frame', _ms(stats.cpuMicros)),
+              _stat('draws', _count(counters.draws)),
+              _stat('instances', _count(counters.instances)),
+              _stat('vertices', _count(counters.vertices)),
+              _stat('culled', _count(counters.culled)),
+              _stat(
+                'batches',
+                '${_count(counters.batches)} '
+                    '(${_count(counters.batchedItems)} items)',
+              ),
+              _stat('binds', _count(counters.pipelineBinds)),
+              _stat('builds', _count(counters.pipelineBuilds)),
+            ],
+          ),
+          if (view != null && view.passes.isNotEmpty)
+            SizedBox(
+              height: 15,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final pass in view.passes)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 10),
+                      child: Text(
+                        '${pass.name} ${_ms(pass.cpuMicros)}',
+                        style: editorDetailText,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _stat(String label, String value) => Text.rich(
+    TextSpan(
+      children: [
+        TextSpan(text: '$label ', style: editorDetailText),
+        TextSpan(text: value, style: const TextStyle(fontSize: 11)),
+      ],
+    ),
+  );
+
+  // The onscreen view the viewport draws, else whatever rendered.
+  static RenderViewStats _primaryView(RenderFrameStats stats) {
+    for (final view in stats.views) {
+      if (!view.offscreen) return view;
+    }
+    return stats.views.first;
+  }
+
+  static String _ms(int micros) => '${(micros / 1000).toStringAsFixed(2)} ms';
+
+  static String _count(int value) {
+    if (value < 10000) return '$value';
+    if (value < 10000000) return '${(value / 1000).toStringAsFixed(1)}k';
+    return '${(value / 1000000).toStringAsFixed(1)}M';
+  }
+
+  static String _uniformValueText(ShaderUniformValue value) {
+    const shown = 16;
+    final head = value.values
+        .take(shown)
+        .map(
+          (scalar) => scalar is double ? scalar.toStringAsFixed(3) : '$scalar',
+        )
+        .join(', ');
+    final rest = value.values.length - shown;
+    return rest > 0 ? '$head, +$rest more' : head;
   }
 
   Future<void> _openViewer(InspectedResource resource) async {

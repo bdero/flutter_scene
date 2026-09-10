@@ -105,6 +105,39 @@ typedef RenderGraphPixel =
 /// Captures a frame and scans every float target for NaN/Inf.
 typedef RenderGraphScan = Future<Map<String, Object?>> Function();
 
+/// The live scene's rendering statistics, the last frame plus [frames] of
+/// history.
+typedef RenderStatsReader = Map<String, Object?> Function(int frames);
+
+/// Lists the draw calls of the host's most recent capture. [options] carries
+/// `pass`, `phase`, `node`, `material`, `includeUniforms`, `offset`, and
+/// `limit` when given.
+typedef RenderDrawList =
+    Future<Map<String, Object?>> Function(Map<String, Object?> options);
+
+/// One draw of the most recent capture, addressed by pass (name or index)
+/// and draw order, with decoded uniform values.
+typedef RenderDrawReader =
+    Future<Map<String, Object?>> Function(Object pass, int order);
+
+/// Lists every loaded shader bundle with its entries.
+typedef ShaderLister = Future<Map<String, Object?>> Function();
+
+/// Reflection for one shader entry by name.
+typedef ShaderInfoReader =
+    Future<Map<String, Object?>> Function(
+      String name, {
+      String? backend,
+      bool includeSource,
+    });
+
+/// Writes the most recent capture to [path] as JSON, returning a summary.
+typedef RenderCaptureSaver =
+    Future<Map<String, Object?>> Function(
+      String path, {
+      required bool includeImages,
+    });
+
 /// Lists the viewport debug outputs (`[{id, label, active}]`).
 typedef DebugModesList = List<Map<String, Object?>> Function();
 
@@ -273,6 +306,12 @@ class EditorToolSurface {
     this.renderGraphImage,
     this.renderGraphPixel,
     this.renderGraphScan,
+    this.readRenderStats,
+    this.listDraws,
+    this.readDraw,
+    this.listShaders,
+    this.readShaderInfo,
+    this.saveRenderCapture,
     this.listDebugModes,
     this.setDebugMode,
   }) : _sessionProvider = sessionProvider;
@@ -381,6 +420,24 @@ class EditorToolSurface {
 
   /// The whole-frame non-finite scan.
   final RenderGraphScan? renderGraphScan;
+
+  /// Steady-state per-frame rendering statistics.
+  final RenderStatsReader? readRenderStats;
+
+  /// Draw calls of the most recent capture.
+  final RenderDrawList? listDraws;
+
+  /// One draw of the most recent capture.
+  final RenderDrawReader? readDraw;
+
+  /// The loaded shader bundles.
+  final ShaderLister? listShaders;
+
+  /// Reflection for one shader entry.
+  final ShaderInfoReader? readShaderInfo;
+
+  /// Writes the most recent capture to disk.
+  final RenderCaptureSaver? saveRenderCapture;
 
   /// The viewport debug-output registry.
   final DebugModesList? listDebugModes;
@@ -773,6 +830,137 @@ class EditorToolSurface {
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     ],
+    if (readRenderStats != null)
+      const ToolDefinition(
+        name: 'get_render_stats',
+        description:
+            'Return the last rendered frame\'s counters (draws, instances, '
+            'vertices, culling, batching, pipeline traffic) broken down by '
+            'view and pass, with CPU times. Always on, no capture needed.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'frames': {
+              'type': 'integer',
+              'description':
+                  'Also return this many recent frames of history '
+                  '(default 0).',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+    if (listDraws != null)
+      const ToolDefinition(
+        name: 'list_draws',
+        description:
+            'List the draw calls of the most recent capture (capturing one '
+            'first when there is none), with node paths, materials, shader '
+            'names, and batching, plus a per-pass tally of why items were '
+            'skipped.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'pass': {
+              'type': ['string', 'integer'],
+              'description': 'Only draws in this pass name or index.',
+            },
+            'phase': {
+              'type': 'string',
+              'description': 'Only draws in this draw phase.',
+            },
+            'node': {
+              'type': 'string',
+              'description': 'Substring match on the node path.',
+            },
+            'material': {
+              'type': 'string',
+              'description': 'Substring match on the material type or source.',
+            },
+            'includeUniforms': {
+              'type': 'boolean',
+              'description': 'Include decoded uniform values (default false).',
+            },
+            'offset': {'type': 'integer'},
+            'limit': {
+              'type': 'integer',
+              'description': 'Draws to return (default 200).',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
+    if (readDraw != null)
+      const ToolDefinition(
+        name: 'get_draw',
+        description:
+            'Return one draw of the most recent capture with its decoded '
+            'uniform blocks and shader names. Address it by the pass name or '
+            'index and the draw order from list_draws.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'pass': {
+              'type': ['string', 'integer'],
+            },
+            'order': {'type': 'integer'},
+          },
+          'required': ['pass', 'order'],
+          'additionalProperties': false,
+        },
+      ),
+    if (listShaders != null)
+      const ToolDefinition(
+        name: 'list_shaders',
+        description:
+            'List every loaded shader bundle and its entries, with each '
+            'entry\'s stage, compiled backends, uniform block names, and '
+            'texture names.',
+        inputSchema: {'type': 'object', 'properties': {}},
+      ),
+    if (readShaderInfo != null)
+      const ToolDefinition(
+        name: 'get_shader_info',
+        description:
+            'Return one shader entry\'s reflection by name (inputs, uniform '
+            'blocks with field offsets, textures), optionally with the '
+            'compiled source. SPIR-V comes back base64.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'name': {'type': 'string'},
+            'backend': {
+              'type': 'string',
+              'description':
+                  'metalIos, metalDesktop, openglEs, openglDesktop, or '
+                  'vulkan (default the running platform\'s).',
+            },
+            'includeSource': {'type': 'boolean'},
+          },
+          'required': ['name'],
+          'additionalProperties': false,
+        },
+      ),
+    if (saveRenderCapture != null)
+      const ToolDefinition(
+        name: 'save_render_graph_capture',
+        description:
+            'Write the most recent capture (capturing one first when there '
+            'is none) to a JSON file, including every draw, uniform block, '
+            'and resource image, for offline inspection.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'path': {'type': 'string'},
+            'includeImages': {
+              'type': 'boolean',
+              'description': 'Embed resource PNGs (default true).',
+            },
+          },
+          'required': ['path'],
+          'additionalProperties': false,
+        },
+      ),
     if (listDebugModes != null) ...[
       const ToolDefinition(
         name: 'list_viewport_debug_modes',
@@ -1285,6 +1473,82 @@ class EditorToolSurface {
           throw const ToolError('No render graph capture in this session');
         }
         return scanner();
+      case 'get_render_stats':
+        final reader = readRenderStats;
+        if (reader == null) {
+          throw const ToolError('No render statistics in this session');
+        }
+        return reader(_optionalInt(args, 'frames') ?? 0);
+      case 'list_draws':
+        final lister = listDraws;
+        if (lister == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        _requirePassRef(args, required: false);
+        for (final name in ['phase', 'node', 'material']) {
+          if (args[name] is! String?) {
+            throw ToolError('$name must be a string');
+          }
+        }
+        if (args['includeUniforms'] is! bool?) {
+          throw const ToolError('includeUniforms must be a boolean');
+        }
+        _optionalInt(args, 'offset');
+        _optionalInt(args, 'limit');
+        return lister(args);
+      case 'get_draw':
+        final reader = readDraw;
+        if (reader == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        final pass = _requirePassRef(args, required: true)!;
+        final order = args['order'];
+        if (order is! num) {
+          throw const ToolError('get_draw needs an order');
+        }
+        return reader(pass, order.toInt());
+      case 'list_shaders':
+        final lister = listShaders;
+        if (lister == null) {
+          throw const ToolError('No shader reflection in this session');
+        }
+        return lister();
+      case 'get_shader_info':
+        final reader = readShaderInfo;
+        if (reader == null) {
+          throw const ToolError('No shader reflection in this session');
+        }
+        final name = args['name'];
+        if (name is! String) {
+          throw const ToolError('get_shader_info needs a shader name');
+        }
+        final backend = args['backend'];
+        if (backend is! String?) {
+          throw const ToolError('backend must be a string');
+        }
+        final includeSource = args['includeSource'];
+        if (includeSource is! bool?) {
+          throw const ToolError('includeSource must be a boolean');
+        }
+        return reader(
+          name,
+          backend: backend,
+          includeSource: includeSource ?? false,
+        );
+      case 'save_render_graph_capture':
+        final saver = saveRenderCapture;
+        if (saver == null) {
+          throw const ToolError('No render graph capture in this session');
+        }
+        final path = args['path'];
+        if (path is! String || path.isEmpty) {
+          throw const ToolError('save_render_graph_capture needs a path');
+        }
+        final includeImages = args['includeImages'];
+        if (includeImages is! bool?) {
+          throw const ToolError('includeImages must be a boolean');
+        }
+        return saver(path, includeImages: includeImages ?? true);
       case 'list_viewport_debug_modes':
         final lister = listDebugModes;
         if (lister == null) {
@@ -1355,6 +1619,21 @@ class EditorToolSurface {
       default:
         throw ToolError('$tool does not return image content');
     }
+  }
+
+  // A pass is addressed by name or index, so both types pass through.
+  static Object? _requirePassRef(
+    Map<String, Object?> args, {
+    required bool required,
+  }) {
+    final pass = args['pass'];
+    if (pass == null) {
+      if (!required) return null;
+      throw const ToolError('A pass name or index is required');
+    }
+    if (pass is String) return pass;
+    if (pass is num) return pass.toInt();
+    throw const ToolError('pass must be a pass name or index');
   }
 
   static int? _optionalInt(Map<String, Object?> args, String name) {
