@@ -242,6 +242,9 @@ lib/foo.frag:7:3: error: use of undeclared identifier 'bar'
     final material = UnlitMaterial();
     expect(ShaderReflection.nameOf(material.fragmentShader), 'UnlitFragment');
 
+    final all = await ShaderReflection.loadAll();
+    expect(all, contains(same(info)));
+
     ShaderReflection.invalidate(library);
     expect(ShaderReflection.bundleInfoFor(library), isNull);
     expect(ShaderReflection.infoFor(vertex), isNull);

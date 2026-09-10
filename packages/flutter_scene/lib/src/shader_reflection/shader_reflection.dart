@@ -650,6 +650,24 @@ abstract final class ShaderReflection {
     return info;
   }
 
+  /// Loads bundle info for every library the engine has loaded so far, so
+  /// every shader object maps to its name. Libraries whose bundle cannot be
+  /// read are skipped.
+  static Future<List<ShaderBundleInfo>> loadAll({AssetBundle? bundle}) async {
+    final result = <ShaderBundleInfo>[];
+    for (final library in knownShaderLibraries()) {
+      if (library is! gpu.ShaderLibrary) continue;
+      try {
+        final info = await loadBundleInfo(library, bundle: bundle);
+        if (info != null) result.add(info);
+      } catch (_) {
+        // A library whose asset is gone (a hot reload that failed) is not a
+        // reason to fail the rest.
+      }
+    }
+    return result;
+  }
+
   /// Forgets the parse for [library], so the next [loadBundleInfo] re-reads
   /// it (after a hot reload rewrote the bundle).
   static void invalidate(gpu.ShaderLibrary library) {
