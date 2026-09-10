@@ -1,3 +1,7 @@
+## 0.2.2
+
+* Require `box3d` 0.1.2, which allows `code_assets` 2.x.
+
 ## 0.2.1
 
 * Widen the `scene` constraint to `^0.3.0`. No API changes.

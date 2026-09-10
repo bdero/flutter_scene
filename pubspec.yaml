@@ -29,8 +29,3 @@ workspace:
 #   user_defines:
 #     smoke_render:
 #       data_assets: true
-
-# flutter_soloud 5 needs code_assets 2 and the published box3d 0.1.1 still pins 1.x.
-# TODO(deps): drop once box3d ships a widened constraint and flutter_scene_box3d requires it.
-dependency_overrides:
-  code_assets: ^2.0.0
