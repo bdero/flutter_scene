@@ -433,7 +433,23 @@ Widgets:
 
 `CustomRenderPass`, `RenderInput`, `RenderPassContext`, `RenderStage`, `TransientWriter`,
 `NodeFilter`, `HighlightStyle`, render-graph capture types (`CapturedPass`, `CapturedResource`,
-`RenderGraphCaptureRequest`, `RenderGraphCaptureResult`) are all exported.
+`CapturedDraw`, `CapturedSkip`, `RenderGraphCaptureRequest`, `RenderGraphCaptureResult`) are all
+exported.
+
+Debugging and profiling (all exported, all on every backend):
+- `scene.renderStats.latest` (`RenderFrameStats`): per-frame counters (draws, instances, vertices,
+  culled, batches, pipeline binds and builds) per view and per pass with CPU micros, plus
+  `history`. Always on; GPU times are null until the engine exposes timestamp queries. Each pass
+  also emits a `dart:developer` timeline event, so DevTools shows the frame.
+- `Scene.debugAllowRenderGraphCapture = true` then `scene.captureRenderGraph()` captures one frame:
+  passes with data flow and thumbnails, and every draw (`pass.draws`) with node path, material,
+  shader names, pipeline id, counts, batch size, `batchBreak` reason, and the uniform blocks bound
+  for it (`block.decode(draw)` names the members once `ShaderReflection.loadAll()` has run).
+  `result.toJson()` / `RenderGraphCaptureResult.fromJson` round-trip a capture as JSON.
+- `ShaderReflection.loadAll()` parses every loaded shader bundle; `ShaderReflection.infoFor(shader)`
+  gives inputs, uniform block layouts, texture bindings, and `sourceOf(shader)` the compiled MSL,
+  GLSL, or SPIR-V for any backend the bundle holds. `FmatCompileException.diagnostics` parses
+  compiler errors with line numbers; `shaderSourceWindow` renders the marked source around one.
 
 ---
 
