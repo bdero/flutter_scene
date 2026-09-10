@@ -480,8 +480,9 @@ final class ShaderBundleInfo {
 /// An exact size match wins. The engine also binds a block's leading members
 /// only (a `FrameInfo` written to 80 of its 128 bytes), so a shorter buffer
 /// matches a block when its length lands on a member boundary, among the
-/// blocks no exact match already claimed. More than one candidate means the
-/// buffer cannot be named.
+/// blocks no other buffer already claimed; a buffer with one candidate claims
+/// it, which narrows the rest until nothing changes. More than one candidate
+/// left means the buffer cannot be named.
 /// {@category Debugging and profiling}
 List<List<ShaderUniformBlockInfo>> matchUniformBlocks(
   List<ShaderUniformBlockInfo> declared,
@@ -507,6 +508,19 @@ List<List<ShaderUniformBlockInfo>> matchUniformBlocks(
             _endsOnMemberBoundary(block, length))
           block,
     ];
+  }
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (final candidates in result) {
+      if (candidates.length == 1) {
+        if (claimed.add(candidates.single)) changed = true;
+        continue;
+      }
+      final before = candidates.length;
+      candidates.removeWhere(claimed.contains);
+      if (candidates.length != before) changed = true;
+    }
   }
   return result;
 }
