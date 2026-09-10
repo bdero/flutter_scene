@@ -17,7 +17,8 @@
 * `.fscene` stage effects now apply and serialize temporal anti-aliasing tuning and SMAA quality (the fields previously round-tripped through documents without reaching the scene).
 * Update `flutter_scene-idioms` skill (v5) with point light shadows and the runtime SMAA/TAA tuning surface.
 * Switching `Scene.antiAliasingMode` from `msaa` to another mode on the OpenGL ES backend no longer renders without a depth test (far surfaces drew over near ones); pooled color targets now keep a separate texture per depth attachment setup.
-* `Scene.sceneColorCaptureBatches` caps how many scene color captures a frame opens for overlapping transmissive readers (1 makes them all share one snapshot), the biggest lever on tiled and low-end GPUs.
+* `Scene.renderQuality` (`RenderQualitySettings`) puts the automatic settings on a quality ladder: `AntiAliasingMode.auto` and the scene color capture budget follow the tier (web and Linux desktop start at medium, everything else at high), and `adaptive` lowers the render scale and then the tier from measured frame periods when frames overrun `targetFrameRate`, recovering when they keep it. `Scene.effectiveRenderQualityTier` and `Scene.adaptiveRenderScale` report what is in effect.
+* `Scene.sceneColorCaptureBatches` caps how many scene color captures a frame opens for overlapping transmissive readers (1 makes them all share one snapshot), the biggest lever on tiled and low-end GPUs; null follows the quality tier.
 * Smooth transmission (zero roughness, or an index of refraction of 1) no longer builds the rough-transmission filter pyramid every capture, which the shader never sampled.
 * `ThirdPersonControllerComponent.rotatesToMovement` keeps the node's authored rotation while still moving it, and `yaw` exposes the smoothed heading, now seeded from the node's rotation instead of snapping to zero on the first step. The `flutter_scene-kit` skill (v4) covers it.
 

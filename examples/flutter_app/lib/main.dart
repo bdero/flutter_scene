@@ -11,6 +11,7 @@ import 'package:flutter_scene/scene.dart'
         IrradianceVolumeMode,
         SsrDebugView,
         ToneMappingMode,
+        RenderQualityTier,
         Scene,
         PostInsertion,
         ShadowCasterFaces,
@@ -621,6 +622,44 @@ class _SettingsSidebarState extends State<_SettingsSidebar> {
               'MSAA is unavailable on this backend; msaa and auto render '
               'with FXAA.',
             ),
+          ),
+        Row(
+          children: [
+            const Text('Quality'),
+            const Spacer(),
+            DropdownButton<RenderQualityTier?>(
+              value: exampleSettings.renderQualityTier,
+              onChanged: (value) {
+                setState(() => exampleSettings.renderQualityTier = value);
+              },
+              items: [
+                const DropdownMenuItem<RenderQualityTier?>(
+                  value: null,
+                  child: Text('auto'),
+                ),
+                for (final tier in RenderQualityTier.values)
+                  DropdownMenuItem<RenderQualityTier?>(
+                    value: tier,
+                    child: Text(tier.name),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Adaptive quality'),
+          value: exampleSettings.adaptiveQuality,
+          onChanged: (value) =>
+              setState(() => exampleSettings.adaptiveQuality = value),
+        ),
+        if (exampleSettings.adaptiveQuality)
+          _slider(
+            'Target fps',
+            exampleSettings.adaptiveTargetFrameRate,
+            24,
+            120,
+            (v) => exampleSettings.adaptiveTargetFrameRate = v.roundToDouble(),
           ),
         Row(
           children: [
