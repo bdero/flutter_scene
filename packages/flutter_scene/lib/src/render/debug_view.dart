@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart';
 
 /// Which family a [SurfaceDebugChannel] belongs to, for grouping a menu and
@@ -504,4 +506,21 @@ class DebugViewFrame {
 
   /// The block that turns the view off for a draw.
   static final Float32List inactive = Float32List(floatCount);
+
+  /// Binds the off block to [shader]'s `DebugViewInfo` slot on [pass].
+  ///
+  /// Every participating fragment shader declares the block and reads it, so
+  /// a pass that draws such a material outside the scene encoder (the shadow
+  /// catcher bake) must bind it too; an unbound block reads undefined data on
+  /// GLES, which turned the catcher's bake into a debug view there.
+  static void bindInactive(
+    gpu.RenderPass pass,
+    TransientWriter transients,
+    gpu.Shader shader,
+  ) {
+    pass.bindUniform(
+      shader.getUniformSlot('DebugViewInfo'),
+      transients.emplace(ByteData.sublistView(inactive)),
+    );
+  }
 }
