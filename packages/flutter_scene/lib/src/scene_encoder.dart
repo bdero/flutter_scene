@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
+import 'package:flutter_scene/src/render/render_stats.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/shaders.dart';
@@ -382,6 +383,9 @@ final Map<(gpu.Shader, gpu.Shader, int), gpu.RenderPipeline> _pipelineCache =
 /// until restart.
 final Set<(gpu.Shader, gpu.Shader, int)> _rejectedPipelines = {};
 
+/// Pipelines currently held in the process-wide cache.
+int get pipelineCacheSize => _pipelineCache.length;
+
 /// Returns the cached render pipeline for ([vertexShader], [fragmentShader],
 /// [vertexLayout]), building and caching it on first use.
 ///
@@ -397,6 +401,7 @@ gpu.RenderPipeline resolvePipeline(
   final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
   final cached = _pipelineCache[key];
   if (cached != null) return cached;
+  activeRenderCounters.pipelineBuilds++;
   final stopwatch = kDebugMode || profileRendering
       ? (Stopwatch()..start())
       : null;
@@ -611,9 +616,16 @@ base class SceneEncoder {
   /// instance so each can be depth-sorted independently.
   void submit(RenderItem item) {
     if (!item.drawsColor) return;
-    if ((item.layers & _layerMask) == 0) return;
+    activeRenderCounters.submitted++;
+    if ((item.layers & _layerMask) == 0) {
+      activeRenderCounters.layerMasked++;
+      return;
+    }
     if (_cullInstances) {
-      if (!item.cullVisibleInstances(frustum, _cullingPlanes)) return;
+      if (!item.cullVisibleInstances(frustum, _cullingPlanes)) {
+        activeRenderCounters.culled++;
+        return;
+      }
     } else {
       item.visibleInstanceIndices = null;
     }
@@ -664,7 +676,10 @@ base class SceneEncoder {
           '${geometry.runtimeType}'
           '${geometry.hasCustomAttributes ? ' with custom vertex attributes' : ''}',
     );
-    if (pipeline == null) return;
+    if (pipeline == null) {
+      activeRenderCounters.pipelineRejected++;
+      return;
+    }
 
     if (material.isOpaque()) {
       _opaqueRecords.add(
@@ -855,6 +870,7 @@ base class SceneEncoder {
   // pipeline only need to bind it once.
   void _bindPipeline(gpu.RenderPipeline pipeline) {
     if (identical(_boundPipeline, pipeline)) return;
+    activeRenderCounters.pipelineBinds++;
     _renderPass.bindPipeline(pipeline);
     _boundPipeline = pipeline;
   }
@@ -1316,6 +1332,8 @@ base class SceneEncoder {
 
       final end = opaqueBatchEnd(_opaqueRecords, index);
       if (end > index + 1) {
+        activeRenderCounters.batches++;
+        activeRenderCounters.batchedItems += end - index;
         _batchPool.reset();
         for (var batchIndex = index; batchIndex < end; batchIndex++) {
           final item = _opaqueRecords[batchIndex].item;

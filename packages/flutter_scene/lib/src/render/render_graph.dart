@@ -1,8 +1,11 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
 import 'package:flutter_scene/src/texture/texture_registry.dart'
     show gpuTextureBytes;
+import 'package:flutter_scene/src/render/render_stats.dart';
 
 /// A typed scratch store passed between [RenderPass]es within a single
 /// frame.
@@ -351,13 +354,16 @@ class RenderGraph {
   /// creates and submits its own command buffer. Clears the blackboard
   /// first so state never leaks between frames.
   ///
-  /// With an [observer] attached (a capture frame), passes run against a
-  /// recording blackboard, each pass is stopwatched, and boundaries are
-  /// reported; without one the steady-state path is unchanged.
+  /// Every pass is stopwatched and its counter delta recorded into [stats]
+  /// (when given), and emitted as a `dart:developer` timeline event when
+  /// [RenderStats.timelineEvents] is on. With an [observer] attached (a
+  /// capture frame), passes also run against a recording blackboard and
+  /// boundaries are reported to it.
   void execute({
     required TransientWriter transientsBuffer,
     required TransientTexturePool texturePool,
     RenderGraphObserver? observer,
+    RenderViewStats? stats,
   }) {
     _blackboard._clear();
     final context = RenderGraphContext(
@@ -367,26 +373,34 @@ class RenderGraph {
           ? _blackboard
           : _RecordingBlackboard(_blackboard, observer),
     );
-    if (observer != null) {
-      for (var i = 0; i < _passes.length; i++) {
-        final pass = _passes[i];
-        observer.onPassBegin(pass, i);
-        final stopwatch = Stopwatch()..start();
-        pass.execute(context);
-        stopwatch.stop();
-        observer.onPassEnd(pass, stopwatch.elapsedMicroseconds);
+    final timeline = RenderStats.timelineEvents;
+    final stopwatch = Stopwatch();
+    for (var i = 0; i < _passes.length; i++) {
+      final pass = _passes[i];
+      final passStats = stats == null
+          ? null
+          : RenderPassStats(name: pass.name, indexInGraph: i);
+      if (passStats != null) {
+        stats!.passes.add(passStats);
+        _passStart.copyFrom(activeRenderCounters);
       }
-      return;
-    }
-    for (final pass in _passes) {
-      if (!profileRendering) {
-        pass.execute(context);
-        continue;
-      }
-      final stopwatch = Stopwatch()..start();
+      observer?.onPassBegin(pass, i);
+      if (timeline) developer.Timeline.startSync(pass.name);
+      stopwatch
+        ..reset()
+        ..start();
       pass.execute(context);
       stopwatch.stop();
-      _profile.add(pass.name, stopwatch.elapsedMicroseconds, trackMax: true);
+      if (timeline) developer.Timeline.finishSync();
+      final elapsed = stopwatch.elapsedMicroseconds;
+      observer?.onPassEnd(pass, elapsed);
+      if (passStats != null) {
+        passStats.cpuMicros = elapsed;
+        passStats.counters.setDelta(_passStart, activeRenderCounters);
+      }
+      if (profileRendering) {
+        _profile.add(pass.name, elapsed, trackMax: true);
+      }
     }
     if (profileRendering) {
       final snapshot = _profile.endSample();
@@ -404,4 +418,6 @@ class RenderGraph {
       print('FLUTTER_SCENE_PROFILE $summary');
     }
   }
+
+  static final RenderCounters _passStart = RenderCounters();
 }
