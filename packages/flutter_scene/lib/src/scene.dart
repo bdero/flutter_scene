@@ -57,6 +57,8 @@ import 'render/irradiance_field.dart';
 import 'render/irradiance_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
+import 'render/render_stats.dart';
+import 'scene_encoder.dart' show pipelineCacheSize;
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
@@ -1273,6 +1275,12 @@ base class Scene implements SceneGraph {
   /// {@category Rendering}
   bool removeRenderPass(CustomRenderPass pass) => _renderPasses.remove(pass);
 
+  /// Steady-state rendering statistics: the last frame's draw, culling,
+  /// batching, and pipeline counters broken down by view and by pass, with
+  /// CPU times, plus a bounded history. Always collected.
+  /// {@category Rendering}
+  final RenderStats renderStats = RenderStats();
+
   /// Opt-in for [captureRenderGraph] and the render-graph debug hooks.
   /// False (the shipping default) keeps the capture branch tree-shakeable;
   /// an editor or debugging host sets it at startup.
@@ -1731,6 +1739,8 @@ base class Scene implements SceneGraph {
       return;
     }
 
+    renderStats.beginFrame();
+
     // Blend the environment volumes over the base by the primary view's camera
     // position, before the environment, sky bake, and sun light are read.
     _applyEnvironmentVolumes(views.first.camera);
@@ -1977,6 +1987,8 @@ base class Scene implements SceneGraph {
       );
     }
 
+    renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+
     // A frame has now been submitted; the next one runs on a warm context (see
     // the rebuild near the environment resolution above).
     _hasPresentedFrame = true;
@@ -2218,6 +2230,7 @@ base class Scene implements SceneGraph {
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
       capturer: capturer,
+      viewIndex: viewIndex,
       capturePlanarReflections: capturePlanarReflections,
     );
     if (capturer != null) {
@@ -2252,6 +2265,9 @@ base class Scene implements SceneGraph {
     required SpotShadowFrame? spotShadowFrame,
     required PointShadowFrame? pointShadowFrame,
     RenderGraphCapturer? capturer,
+    // The screen view index for stats attribution, or -1 for an offscreen
+    // render (a render texture, a probe, a warm-up frame).
+    int viewIndex = -1,
     // A linear-HDR capture (environment probes): the graph stops after the
     // scene pass and blits the lit scene color into [outputColor], with no
     // reflections, indirect-light history, post-processing, anti-aliasing,
@@ -2268,6 +2284,13 @@ base class Scene implements SceneGraph {
     if (capturer != null) {
       pool = ObservedTexturePool(pool, capturer);
     }
+    final viewStats = renderStats.beginView(
+      viewIndex: viewIndex,
+      width: pixelSize.width.toInt(),
+      height: pixelSize.height.toInt(),
+      offscreen: viewIndex < 0,
+    );
+    final viewWatch = viewStats == null ? null : (Stopwatch()..start());
     final camera = view.camera;
     final effectiveAa = captureLinearColor
         ? AntiAliasingMode.none
@@ -2800,7 +2823,9 @@ base class Scene implements SceneGraph {
         transientsBuffer: transientsBuffer,
         texturePool: pool,
         observer: capturer,
+        stats: viewStats,
       );
+      _finishViewStats(viewStats, viewWatch);
       return;
     }
     // Screen-space reflections refine the lit HDR color in place, before
@@ -3144,7 +3169,32 @@ base class Scene implements SceneGraph {
       transientsBuffer: transientsBuffer,
       texturePool: pool,
       observer: capturer,
+      stats: viewStats,
     );
+    _finishViewStats(viewStats, viewWatch);
+  }
+
+  // Closes a view's stats scope: its CPU time and its counter totals summed
+  // over the passes it ran.
+  static void _finishViewStats(RenderViewStats? stats, Stopwatch? watch) {
+    if (stats == null || watch == null) return;
+    watch.stop();
+    stats.cpuMicros = watch.elapsedMicroseconds;
+    final total = stats.counters;
+    for (final pass in stats.passes) {
+      final c = pass.counters;
+      total.draws += c.draws;
+      total.instances += c.instances;
+      total.vertices += c.vertices;
+      total.submitted += c.submitted;
+      total.culled += c.culled;
+      total.layerMasked += c.layerMasked;
+      total.pipelineRejected += c.pipelineRejected;
+      total.pipelineBinds += c.pipelineBinds;
+      total.pipelineBuilds += c.pipelineBuilds;
+      total.batches += c.batches;
+      total.batchedItems += c.batchedItems;
+    }
   }
 
   // Places the irradiance volume for this frame, adds the scatter, blend, and

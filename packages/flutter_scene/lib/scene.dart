@@ -264,6 +264,13 @@ export 'src/render/debug_view.dart'
         SceneDebugSettings,
         SurfaceDebugChannel,
         SurfaceDebugGroup;
+export 'src/render/render_stats.dart'
+    show
+        RenderCounters,
+        RenderFrameStats,
+        RenderPassStats,
+        RenderStats,
+        RenderViewStats;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;
