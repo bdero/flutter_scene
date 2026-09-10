@@ -1,5 +1,7 @@
 #include <impeller/constants.glsl>
 
+// fp16 keeps this much; the GGX lobe of a mirror-smooth surface exceeds it.
+const float kMediumpFloatMax = 65504.0;
 const float kPi = 3.14159265358979323846;
 
 //------------------------------------------------------------------------------
@@ -54,7 +56,7 @@ float DistributionGGX(vec3 normal, vec3 half_vector, float roughness) {
   vec3 n_cross_h = cross(normal, half_vector);
   float a = n_dot_h * alpha;
   float k = alpha / (dot(n_cross_h, n_cross_h) + a * a);
-  return k * k * (1.0 / kPi);
+  return min(k * k * (1.0 / kPi), kMediumpFloatMax);
 }
 
 // Height-correlated Smith-GGX visibility term: V = G / (4 * NoL * NoV).
@@ -100,17 +102,17 @@ float DistributionCharlie(float roughness, float n_dot_h) {
          (2.0 * kPi);
 }
 
-float _SheenLambdaHelper(float x, float alpha) {
-  float one_minus_alpha_sq = (1.0 - alpha) * (1.0 - alpha);
-  float a = mix(21.5473, 25.3245, one_minus_alpha_sq);
-  float b = mix(3.82987, 3.32435, one_minus_alpha_sq);
-  float c = mix(0.19823, 0.16801, one_minus_alpha_sq);
-  float d = mix(-1.97760, -1.27393, one_minus_alpha_sq);
-  float e = mix(-4.32054, -4.85967, one_minus_alpha_sq);
+highp float _SheenLambdaHelper(float x, float alpha) {
+  highp float one_minus_alpha_sq = (1.0 - alpha) * (1.0 - alpha);
+  highp float a = mix(21.5473, 25.3245, one_minus_alpha_sq);
+  highp float b = mix(3.82987, 3.32435, one_minus_alpha_sq);
+  highp float c = mix(0.19823, 0.16801, one_minus_alpha_sq);
+  highp float d = mix(-1.97760, -1.27393, one_minus_alpha_sq);
+  highp float e = mix(-4.32054, -4.85967, one_minus_alpha_sq);
   return a / (1.0 + b * pow(max(x, 1e-5), c)) + d * x + e;
 }
 
-float _SheenLambda(float cosine, float alpha) {
+highp float _SheenLambda(float cosine, float alpha) {
   if (abs(cosine) < 0.5) {
     return exp(_SheenLambdaHelper(abs(cosine), alpha));
   }
@@ -121,7 +123,7 @@ float _SheenLambda(float cosine, float alpha) {
 float VisibilitySheen(float n_dot_l, float n_dot_v, float roughness) {
   float alpha = max(roughness * roughness,
                     kMinRoughness * kMinRoughness);
-  float denominator =
+  highp float denominator =
       (1.0 + _SheenLambda(n_dot_v, alpha) +
        _SheenLambda(n_dot_l, alpha)) *
       (4.0 * n_dot_v * n_dot_l);
@@ -137,9 +139,9 @@ float DistributionGGXAnisotropic(vec3 n, vec3 h, vec3 tangent,
   float alpha_product = alpha_t * alpha_b;
   vec3 f = vec3(alpha_b * t_dot_h, alpha_t * b_dot_h,
                 alpha_product * n_dot_h);
-  float denominator = max(dot(f, f), 1e-10);
-  float w2 = alpha_product / denominator;
-  return alpha_product * w2 * w2 * (1.0 / kPi);
+  highp float denominator = max(dot(f, f), 1e-10);
+  highp float w2 = alpha_product / denominator;
+  return min(alpha_product * w2 * w2 * (1.0 / kPi), kMediumpFloatMax);
 }
 
 float VisibilityGGXAnisotropic(float n_dot_l, float n_dot_v,
@@ -158,11 +160,11 @@ float VisibilityGGXAnisotropic(float n_dot_l, float n_dot_v,
 // integration and display-response conversion.
 vec3 ThinFilmFresnel(vec3 base_f0, float film_ior, float thickness,
                      float n_dot_v) {
-  float optical_path = 2.0 * max(film_ior, 1.0) * thickness *
+  highp float optical_path = 2.0 * max(film_ior, 1.0) * thickness *
                        sqrt(max(1.0 - (1.0 - n_dot_v * n_dot_v) /
                                           (film_ior * film_ior),
                                 0.0));
-  vec3 phase = 6.28318530718 * optical_path /
+  highp vec3 phase = 6.28318530718 * optical_path /
                vec3(650.0, 510.0, 475.0);
   vec3 interference = 0.5 + 0.5 * cos(phase);
   vec3 film_f0 = vec3(pow((film_ior - 1.0) / (film_ior + 1.0), 2.0));

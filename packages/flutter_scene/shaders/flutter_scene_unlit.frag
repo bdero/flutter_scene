@@ -1,3 +1,8 @@
+// Fragment math defaults to mediump; positions, coordinates, depth, and the
+// HDR accumulators opt back into highp (see PRECISION.md in this directory).
+precision mediump float;
+precision highp int;
+
 uniform FragInfo {
   vec4 color;
   float vertex_color_weight;
@@ -11,8 +16,8 @@ frag_info;
 uniform sampler2D base_color_texture;
 
 uniform TextureTransform {
-  vec4 uv_transform;
-  vec4 uv_rotation;
+  highp vec4 uv_transform;
+  highp vec4 uv_rotation;
 }
 texture_transform;
 
@@ -33,7 +38,7 @@ vec3 SRGBToLinear(vec3 color) {
 void main() {
   ApplyLodFade(frag_info.fade);
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
-  vec2 uv = MaterialTextureUv(texture_transform.uv_transform,
+  highp vec2 uv = MaterialTextureUv(texture_transform.uv_transform,
                               texture_transform.uv_rotation);
   vec4 base = texture(base_color_texture, uv);
   // Linearize the sRGB-encoded base color so what we write to the

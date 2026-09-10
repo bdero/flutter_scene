@@ -197,6 +197,11 @@ String emitFragmentGlsl(
     final define = _engineInputDefines[input];
     if (define != null) sb.writeln('#define $define');
   }
+  // Fragment math defaults to mediump; the engine includes opt positions,
+  // coordinates, and depth back into highp (see shaders/PRECISION.md). The
+  // material body below inherits the default like any engine source.
+  sb.writeln('precision mediump float;');
+  sb.writeln('precision highp int;');
   sb.writeln('#include <material_varyings.glsl>');
   sb.writeln('#include <pbr.glsl>');
   if (material.shadingModel != FmatShadingModel.shadowCatcher) {

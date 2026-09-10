@@ -22,46 +22,47 @@ uniform SceneInputInfo {
   // Which inputs exist this frame. x scene color, y depth, z filtered color.
   // An input can go missing for a frame (a non-perspective camera produces no
   // depth), which is what the accessors gate on. w is reserved.
-  vec4 available;
+  highp vec4 available;
 
   // xy: the color-pass render-target size in pixels. zw: its reciprocal.
-  vec4 screen;
+  highp vec4 screen;
 
   // xyz: the camera's world-space forward axis. w: tan(fovY / 2), zero for a
   // non-perspective camera.
-  vec4 camera_forward;
+  highp vec4 camera_forward;
 
   // xyz: the camera's world-space right axis. w: tan(fovX / 2).
-  vec4 camera_right;
+  highp vec4 camera_right;
 
   // xyz: the camera's world-space up axis. w is reserved.
-  vec4 camera_up;
+  highp vec4 camera_up;
 }
 scene_input_info;
 
 // This fragment's screen UV, for sampling the screen-space inputs below.
-vec2 GetScreenUv() { return gl_FragCoord.xy * scene_input_info.screen.zw; }
+highp vec2 GetScreenUv() { return gl_FragCoord.xy * scene_input_info.screen.zw; }
 
 // This fragment's planar view-space depth in world units, directly comparable
 // against GetSceneDepth. Pass the world-space vector from the fragment to the
 // camera. The engine vertex shaders emit it as `v_viewvector`; a material with
 // its own vertex stage passes whatever it computed.
-float GetFragmentViewDepth(vec3 view_vector) {
+highp float GetFragmentViewDepth(highp vec3 view_vector) {
   return dot(-view_vector, scene_input_info.camera_forward.xyz);
 }
 
 // Projects a world-space offset from this fragment back into screen UV, for
 // refraction that exits the volume somewhere other than where it entered.
 // Leaves the sample at this fragment when the camera is not perspective.
-vec2 ProjectWorldOffsetToScreenUv(vec3 world_offset, vec3 view_vector) {
-  vec2 result = GetScreenUv();
+highp vec2 ProjectWorldOffsetToScreenUv(highp vec3 world_offset,
+                                        highp vec3 view_vector) {
+  highp vec2 result = GetScreenUv();
   if (scene_input_info.camera_right.w > 0.0 &&
       scene_input_info.camera_forward.w > 0.0) {
-    vec3 from_camera = -view_vector + world_offset;
-    float view_z = dot(from_camera, scene_input_info.camera_forward.xyz);
+    highp vec3 from_camera = -view_vector + world_offset;
+    highp float view_z = dot(from_camera, scene_input_info.camera_forward.xyz);
     if (view_z > 1e-5) {
-      float view_x = dot(from_camera, scene_input_info.camera_right.xyz);
-      float view_y = dot(from_camera, scene_input_info.camera_up.xyz);
+      highp float view_x = dot(from_camera, scene_input_info.camera_right.xyz);
+      highp float view_y = dot(from_camera, scene_input_info.camera_up.xyz);
       result = vec2(
           0.5 + 0.5 * view_x / (view_z * scene_input_info.camera_right.w),
           0.5 - 0.5 * view_y / (view_z * scene_input_info.camera_forward.w));
@@ -77,10 +78,10 @@ uniform sampler2D scene_opaque_color;
 // The scene behind this fragment, offset in screen UV (pass vec2(0.0) for no
 // distortion). Black when the snapshot is unavailable, so an effect fades out
 // instead of sampling a placeholder.
-vec3 GetSceneColor(vec2 uv_offset) {
+vec3 GetSceneColor(highp vec2 uv_offset) {
   vec3 result = vec3(0.0);
   if (scene_input_info.available.x >= 0.5) {
-    vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
+    highp vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
     result = texture(scene_opaque_color, uv).rgb;
   }
   return result;
@@ -95,10 +96,10 @@ uniform highp sampler2D scene_depth;
 // The opaque depth behind this fragment, offset in screen UV. Returns a huge
 // depth when unavailable, so a depth difference reads as "nothing behind" and
 // the effect fades out instead of popping.
-float GetSceneDepth(vec2 uv_offset) {
-  float result = 1.0e8;
+highp float GetSceneDepth(highp vec2 uv_offset) {
+  highp float result = 1.0e8;
   if (scene_input_info.available.y >= 0.5) {
-    vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
+    highp vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
     result = texture(scene_depth, uv).r;
   }
   return result;

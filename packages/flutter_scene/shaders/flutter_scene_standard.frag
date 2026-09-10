@@ -1,3 +1,8 @@
+// Fragment math defaults to mediump; positions, coordinates, depth, and the
+// HDR accumulators opt back into highp (see PRECISION.md in this directory).
+precision mediump float;
+precision highp int;
+
 #include <material_varyings.glsl>
 #include <normals.glsl>
 #include <pbr.glsl>
@@ -15,16 +20,16 @@ uniform sampler2D normal_texture;
 uniform sampler2D occlusion_texture;
 
 uniform TextureTransforms {
-  vec4 base_color_transform;
-  vec4 base_color_rotation;
-  vec4 metallic_roughness_transform;
-  vec4 metallic_roughness_rotation;
-  vec4 normal_transform;
-  vec4 normal_rotation;
-  vec4 emissive_transform;
-  vec4 emissive_rotation;
-  vec4 occlusion_transform;
-  vec4 occlusion_rotation;
+  highp vec4 base_color_transform;
+  highp vec4 base_color_rotation;
+  highp vec4 metallic_roughness_transform;
+  highp vec4 metallic_roughness_rotation;
+  highp vec4 normal_transform;
+  highp vec4 normal_rotation;
+  highp vec4 emissive_transform;
+  highp vec4 emissive_rotation;
+  highp vec4 occlusion_transform;
+  highp vec4 occlusion_rotation;
 }
 texture_transforms;
 
@@ -39,7 +44,7 @@ void Surface(inout MaterialInputs material) {
   // transform reproduces the raw UV bit-exactly, so the uniform branch only
   // skips work.
   bool transformed_uvs = texture_transforms.base_color_rotation.w > 0.5;
-  vec2 base_color_uv = transformed_uvs
+  highp vec2 base_color_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.base_color_transform,
             texture_transforms.base_color_rotation)
@@ -64,7 +69,7 @@ void Surface(inout MaterialInputs material) {
   //       (camera_position - vertex_position).
   vec3 normal = GetWorldNormal();
   if (frag_info.has_normal_map > 0.5) {
-    vec2 normal_uv = transformed_uvs
+    highp vec2 normal_uv = transformed_uvs
         ? MaterialTextureUv(
               texture_transforms.normal_transform,
               texture_transforms.normal_rotation)
@@ -74,7 +79,7 @@ void Surface(inout MaterialInputs material) {
   }
   material.normal = normal;
 
-  vec2 metallic_roughness_uv = transformed_uvs
+  highp vec2 metallic_roughness_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.metallic_roughness_transform,
             texture_transforms.metallic_roughness_rotation)
@@ -87,7 +92,7 @@ void Surface(inout MaterialInputs material) {
       clamp(metallic_roughness.g * frag_info.roughness_factor, kMinRoughness,
             1.0);
 
-  vec2 occlusion_uv = transformed_uvs
+  highp vec2 occlusion_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.occlusion_transform,
             texture_transforms.occlusion_rotation)
@@ -95,7 +100,7 @@ void Surface(inout MaterialInputs material) {
   float occlusion = texture(occlusion_texture, occlusion_uv).r;
   material.occlusion = 1.0 - (1.0 - occlusion) * frag_info.occlusion_strength;
 
-  vec2 emissive_uv = transformed_uvs
+  highp vec2 emissive_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.emissive_transform,
             texture_transforms.emissive_rotation)

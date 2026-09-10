@@ -55,9 +55,12 @@ void main() {
     // names the far sentinel, so the value is locked through the constant and
     // through the unprojection that reuses it.
     expect(header, contains('vec3 result = vec3(0.0);'));
-    expect(header, contains('float result = 1.0e8;'));
+    expect(header, contains('highp float result = 1.0e8;'));
     expect(emitter, contains('return vec3(0.0);'));
-    expect(emitter, contains('const float kSceneDepthUnavailable = 1.0e8;'));
+    expect(
+      emitter,
+      contains('const highp float kSceneDepthUnavailable = 1.0e8;'),
+    );
     expect(emitter, contains('return kSceneDepthUnavailable;'));
     // An unavailable depth unprojects to that same distance, so a projection
     // volume's inside test lands outside instead of on its own boundary.

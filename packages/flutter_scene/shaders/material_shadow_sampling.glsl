@@ -11,54 +11,55 @@
 // One rotated Poisson-disk PCF tap into a cascade's atlas tile.
 // Samples the caster depth for the soft-shadow blocker search, with the
 // same tile mapping as ShadowTap and no comparison.
-float ShadowTapDepth(vec2 p, float ca, float sa, float radius, vec2 uv,
-                     int cascade, float inv_count) {
-  vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
-  vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+highp float ShadowTapDepth(vec2 p, float ca, float sa, highp float radius,
+                           highp vec2 uv,
+                           int cascade, highp float inv_count) {
+  highp vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
+  highp vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
                    vec2(1.0 - frag_info.shadow_texel_size));
-  vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
+  highp vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
   atlas_uv.y = 1.0 - atlas_uv.y;
   return texture(shadow_map, atlas_uv).r;
 }
 
-float ShadowTap(vec2 p, float ca, float sa, float radius, vec2 uv, int cascade,
-                float inv_count, float receiver_depth) {
-  vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
+float ShadowTap(vec2 p, float ca, float sa, highp float radius, highp vec2 uv,
+                int cascade, highp float inv_count, highp float receiver_depth) {
+  highp vec2 offset = vec2(p.x * ca - p.y * sa, p.x * sa + p.y * ca) * radius;
   // Keep samples a texel inside this cascade's tile. This also protects the
   // boundary if a custom backend applies filtering to the atlas.
-  vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+  highp vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
                    vec2(1.0 - frag_info.shadow_texel_size));
-  vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
+  highp vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
   // The shadow atlas is a render-to-texture target stored top-down. NDC->UV
   // (proj.xy * 0.5 + 0.5) maps NDC-top to v=1, but a top-down texture's top row
   // is v=0, so flip V to sample the matching row. This is intrinsic to the
   // top-down storage (not a backend Y-flip workaround), so it is unconditional.
   atlas_uv.y = 1.0 - atlas_uv.y;
-  float caster_depth = texture(shadow_map, atlas_uv).r;
+  highp float caster_depth = texture(shadow_map, atlas_uv).r;
   return receiver_depth <= caster_depth ? 1.0 : 0.0;
 }
 
 // 2x2 bilinear percentage-closer filtering for one tap. Evaluates four adjacent
 // shadow texels and continuously interpolates the depth tests across fractional
 // texels, producing smooth analog penumbras without noise rotation or stepping.
-float ShadowTapBilinear(vec2 p, float radius, vec2 uv, int cascade,
-                        float inv_count, float receiver_depth) {
-  vec2 offset = p * radius;
-  vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
+float ShadowTapBilinear(vec2 p, highp float radius, highp vec2 uv, int cascade,
+                        highp float inv_count, highp float receiver_depth) {
+  highp vec2 offset = p * radius;
+  highp vec2 cuv = clamp(uv + offset, vec2(frag_info.shadow_texel_size),
                    vec2(1.0 - frag_info.shadow_texel_size));
-  vec2 tile_tex =
+  highp vec2 tile_tex =
       vec2(cuv.x, 1.0 - cuv.y) / frag_info.shadow_texel_size - vec2(0.5);
-  vec2 base = floor(tile_tex);
-  vec2 f = tile_tex - base;
-  vec2 cuv00 = (base + vec2(0.5)) * frag_info.shadow_texel_size;
-  vec2 atlas_uv00 = vec2((float(cascade) + cuv00.x) * inv_count, cuv00.y);
-  vec2 step_uv = vec2(frag_info.shadow_texel_size * inv_count,
+  highp vec2 base = floor(tile_tex);
+  highp vec2 f = tile_tex - base;
+  highp vec2 cuv00 = (base + vec2(0.5)) * frag_info.shadow_texel_size;
+  highp vec2 atlas_uv00 = vec2((float(cascade) + cuv00.x) * inv_count, cuv00.y);
+  highp vec2 step_uv = vec2(frag_info.shadow_texel_size * inv_count,
                       frag_info.shadow_texel_size);
 
-  float d00 = texture(shadow_map, atlas_uv00).r;
-  float d10 = texture(shadow_map, atlas_uv00 + vec2(step_uv.x, 0.0)).r;
-  float d01 = texture(shadow_map, atlas_uv00 + vec2(0.0, step_uv.y)).r;
-  float d11 = texture(shadow_map, atlas_uv00 + step_uv).r;
+  highp float d00 = texture(shadow_map, atlas_uv00).r;
+  highp float d10 = texture(shadow_map, atlas_uv00 + vec2(step_uv.x, 0.0)).r;
+  highp float d01 = texture(shadow_map, atlas_uv00 + vec2(0.0, step_uv.y)).r;
+  highp float d11 = texture(shadow_map, atlas_uv00 + step_uv).r;
 
   float s00 = receiver_depth <= d00 ? 1.0 : 0.0;
   float s10 = receiver_depth <= d10 ? 1.0 : 0.0;
@@ -72,11 +73,11 @@ float ShadowTapBilinear(vec2 p, float radius, vec2 uv, int cascade,
 // kernel on a surface tilted relative to the light straddles a depth gradient,
 // so lift the receiver far enough that the whole kernel clears the surface.
 // The offset depends only on world-space geometry, so every cascade agrees.
-vec3 BiasDirectionalShadowPosition(vec3 world_pos, vec3 n) {
+highp vec3 BiasDirectionalShadowPosition(highp vec3 world_pos, vec3 n) {
   vec3 light_toward = -normalize(frag_info.directional_light_direction.xyz);
   float ndotl = max(dot(n, light_toward), 0.15);
   float slope = min(sqrt(max(1.0 - ndotl * ndotl, 0.0)) / (ndotl * ndotl), 8.0);
-  float normal_offset =
+  highp float normal_offset =
       frag_info.shadow_normal_bias + frag_info.shadow_softness * slope;
   return world_pos + n * normal_offset;
 }
@@ -111,28 +112,28 @@ vec2 FixedShadowTap(int i) {
 
 // Samples one cascade's tile of the shadow atlas strip. `biased_world_pos` is
 // the world-space receiver after normal bias.
-float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
-                    vec3 biased_world_pos) {
-  vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);
-  vec3 proj = light_clip.xyz / light_clip.w;
-  vec2 uv = proj.xy * 0.5 + 0.5;
+float SampleCascade(int cascade, int count, highp mat4 cascade_matrix,
+                    highp float box, highp vec3 biased_world_pos) {
+  highp vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);
+  highp vec3 proj = light_clip.xyz / light_clip.w;
+  highp vec2 uv = proj.xy * 0.5 + 0.5;
   // The depth bias is world-space; convert it to this cascade's clip-z (its
   // orthographic depth range is 7 * box: the toward-sun reach + forward margin
   // in light.dart, _casterReachRadii + _forwardMarginRadii, over the half-width
   // that makes box) so a caster crosses the shadow threshold at the same world
   // height in every cascade, with no discontinuity where cascades meet.
-  float receiver_depth = proj.z - frag_info.shadow_bias / (7.0 * box);
+  highp float receiver_depth = proj.z - frag_info.shadow_bias / (7.0 * box);
 
   // The atlas also holds spot-shadow tiles after the cascades, so normalize the
   // atlas-x by the total tile count. Spot count 0 leaves this at 1 / cascades.
-  float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
+  highp float inv_count = 1.0 / (float(count) + frag_info.spot_shadow_params.x);
 
   // Select the tap positions without duplicating the texture samples in both
   // branches. Duplicating both kernels here expands to 33 samples per cascade
   // in the generated GLES source even though the choice is uniform.
   float filter_index = frag_info.directional_light_direction.w;
   float fixed_filter = step(0.5, filter_index) * (1.0 - step(1.5, filter_index));
-  float noise = fract(
+  highp float noise = fract(
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float angle = noise * 6.28318530718 * (1.0 - fixed_filter);
@@ -140,30 +141,30 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   float sa = sin(angle);
 
   // World-space penumbra -> this cascade's UV space, floored at a texel.
-  float max_radius =
+  highp float max_radius =
       max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);
-  float radius = max_radius;
+  highp float radius = max_radius;
   if (filter_index > 1.5 && filter_index < 2.5) {
     // Percentage-closer soft shadows: find the mean blocker depth inside the
     // light's angular cone, then widen the filter with the blocker distance
     // so shadows sharpen at contact. The cascade's clip depth spans 7 * box
     // world units, so the cone's projected UV radius is
     // tan(angular radius) * 7 * depth and the box cancels out of both terms.
-    float cone = tan(frag_info.camera_right.w);
-    float search_radius =
+    highp float cone = tan(frag_info.camera_right.w);
+    highp float search_radius =
         max(cone * 7.0 * receiver_depth, frag_info.shadow_texel_size);
-    float blocker_sum = 0.0;
+    highp float blocker_sum = 0.0;
     float blocker_count = 0.0;
     for (int i = 0; i < 9; i++) {
-      float caster = ShadowTapDepth(PoissonShadowTap(i), ca, sa, search_radius,
+      highp float caster = ShadowTapDepth(PoissonShadowTap(i), ca, sa, search_radius,
                                     uv, cascade, inv_count);
       float hit = step(caster, receiver_depth);
       blocker_sum += caster * hit;
       blocker_count += hit;
     }
-    float mean_blocker =
+    highp float mean_blocker =
         blocker_count > 0.0 ? blocker_sum / blocker_count : receiver_depth;
-    float penumbra = cone * 7.0 * max(receiver_depth - mean_blocker, 0.0);
+    highp float penumbra = cone * 7.0 * max(receiver_depth - mean_blocker, 0.0);
     radius = clamp(penumbra, frag_info.shadow_texel_size, max_radius);
   }
 
@@ -201,7 +202,7 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
   // Only the last cascade has a real outer edge (inner cascades hand
   // off to the next), so fade just it back to lit at the boundary.
   if (cascade == count - 1 && frag_info.shadow_fade > 0.0) {
-    float fade = frag_info.shadow_fade / box;
+    highp float fade = frag_info.shadow_fade / box;
     vec2 edge = smoothstep(vec2(0.0), vec2(fade), uv) *
                 smoothstep(vec2(0.0), vec2(fade), vec2(1.0) - uv);
     shadow = mix(1.0, shadow, edge.x * edge.y);
@@ -215,9 +216,9 @@ float SampleCascade(int cascade, int count, mat4 cascade_matrix, float box,
 // cascade takes the whole weight. Written as a select rather than an early
 // return so no loop is emitted here (see SampleShadow); the ramp's width is
 // floored to keep smoothstep well defined when it is unused.
-float CascadeBlendWeight(vec2 uv, float margin, float band) {
-  vec2 low = vec2(margin);
-  vec2 high = vec2(margin + max(band, 1e-4));
+float CascadeBlendWeight(highp vec2 uv, highp float margin, highp float band) {
+  highp vec2 low = vec2(margin);
+  highp vec2 high = vec2(margin + max(band, 1e-4));
   vec2 ramp = smoothstep(low, high, uv) * smoothstep(low, high, vec2(1.0) - uv);
   return band > 0.0 ? ramp.x * ramp.y : 1.0;
 }
@@ -233,12 +234,12 @@ float CascadeBlendWeight(vec2 uv, float margin, float band) {
 // GLES drivers).
 #define _TRY_CASCADE(IDX)                                                    \
   if (weight < 1.0 && count > IDX) {                                         \
-    mat4 cascade_matrix = frag_info.light_space_matrix[IDX];                 \
-    float box = frag_info.cascade_box_sizes[IDX];                            \
-    vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);          \
-    vec3 proj = light_clip.xyz / light_clip.w;                              \
-    vec2 uv = proj.xy * 0.5 + 0.5;                                           \
-    float margin =                                                          \
+    highp mat4 cascade_matrix = frag_info.light_space_matrix[IDX];                 \
+    highp float box = frag_info.cascade_box_sizes[IDX];                            \
+    highp vec4 light_clip = cascade_matrix * vec4(biased_world_pos, 1.0);          \
+    highp vec3 proj = light_clip.xyz / light_clip.w;                              \
+    highp vec2 uv = proj.xy * 0.5 + 0.5;                                           \
+    highp float margin =                                                          \
         max(frag_info.shadow_softness / box, frag_info.shadow_texel_size);   \
     if (!(uv.x < margin || uv.x > 1.0 - margin || uv.y < margin ||          \
           uv.y > 1.0 - margin || proj.z < 0.0 || proj.z > 1.0)) {           \
@@ -252,12 +253,12 @@ float CascadeBlendWeight(vec2 uv, float margin, float band) {
     }                                                                        \
   }
 
-float SampleShadow(vec3 world_pos, vec3 n) {
+float SampleShadow(highp vec3 world_pos, vec3 n) {
   int count = int(frag_info.shadow_cascade_count);
   // Select and sample with the same displaced position. Selecting with the
   // original point could choose a tile that normal bias moves outside, making
   // every PCF tap clamp to one edge texel and producing a visible band.
-  vec3 biased_world_pos = BiasDirectionalShadowPosition(world_pos, n);
+  highp vec3 biased_world_pos = BiasDirectionalShadowPosition(world_pos, n);
   // Cross-fade half-width in a cascade's UV space, from the light's
   // cascadeOverlap. At 0 every _TRY_CASCADE takes the full weight, so the
   // first containing cascade wins outright and the later ones are skipped.
@@ -286,9 +287,9 @@ float SampleShadow(vec3 world_pos, vec3 n) {
 // punctual_lights parameters texture (8 texels wide, punctual_dims.x rows
 // tall). Fetched by computed UV rather than a dynamically-indexed uniform
 // array, which stays portable across every compiled dialect.
-vec4 FetchPunctualTexel(int light_index, int col) {
+highp vec4 FetchPunctualTexel(int light_index, int col) {
   // 8 texels per light row: 0.0625 = 0.5 / 8 centers the first column.
-  vec2 uv = vec2((float(col) + 0.5) * 0.125,
+  highp vec2 uv = vec2((float(col) + 0.5) * 0.125,
                  (float(light_index) + 0.5) / frag_info.punctual_dims.x);
   return texture(punctual_lights, uv);
 }
@@ -297,17 +298,17 @@ vec4 FetchPunctualTexel(int light_index, int col) {
 // to a texel with the width/height in punctual_dims.yz). A froxel-table entry
 // carries its records offset in .r and light count in .g; a record carries a
 // light row in .r.
-vec4 FetchPunctualEntry(int j) {
-  float width = frag_info.punctual_dims.y;
-  float fj = float(j);
-  vec2 uv = vec2((mod(fj, width) + 0.5) / width,
+highp vec4 FetchPunctualEntry(int j) {
+  highp float width = frag_info.punctual_dims.y;
+  highp float fj = float(j);
+  highp vec2 uv = vec2((mod(fj, width) + 0.5) / width,
                  (floor(fj / width) + 0.5) / frag_info.punctual_dims.z);
   return texture(punctual_index, uv);
 }
 
 // Reads entry `j` of the per-object light-index buffer (or a froxel record),
 // returning the light row it points at.
-float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
+highp float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
 
 // The punctual-light slice this fragment shades, as (records offset, light
 // count) into the punctual_index texture. In froxel mode (froxel_grid.z > 0)
@@ -317,26 +318,26 @@ float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
 // the half-fov tangents, then an exponential depth slice. Otherwise it is the
 // draw's per-object slice. Shared by the lighting framework and the shadow
 // catcher so both walk the same lights.
-vec2 PunctualLightSlice() {
+highp vec2 PunctualLightSlice() {
   if (frag_info.punctual_dims.x < 0.5) {
     return vec2(0.0);
   }
   if (frag_info.froxel_grid.z > 0.5) {
-    vec3 to_frag = -v_viewvector;
-    float view_z = max(dot(to_frag, frag_info.camera_forward.xyz), 1e-4);
-    float ndc_x = dot(to_frag, frag_info.camera_right.xyz) /
+    highp vec3 to_frag = -v_viewvector;
+    highp float view_z = max(dot(to_frag, frag_info.camera_forward.xyz), 1e-4);
+    highp float ndc_x = dot(to_frag, frag_info.camera_right.xyz) /
                   max(view_z * frag_info.scene_inputs.w, 1e-6);
-    float ndc_y = dot(to_frag, frag_info.camera_up.xyz) /
+    highp float ndc_y = dot(to_frag, frag_info.camera_up.xyz) /
                   max(view_z * frag_info.camera_forward.w, 1e-6);
-    float fnx = frag_info.froxel_grid.x;
-    float fny = frag_info.froxel_grid.y;
-    float fnz = frag_info.froxel_grid.z;
-    float fx = clamp(floor((ndc_x * 0.5 + 0.5) * fnx), 0.0, fnx - 1.0);
-    float fy = clamp(floor((0.5 - ndc_y * 0.5) * fny), 0.0, fny - 1.0);
-    float fz = clamp(floor(log2(view_z) * frag_info.froxel_grid.w +
+    highp float fnx = frag_info.froxel_grid.x;
+    highp float fny = frag_info.froxel_grid.y;
+    highp float fnz = frag_info.froxel_grid.z;
+    highp float fx = clamp(floor((ndc_x * 0.5 + 0.5) * fnx), 0.0, fnx - 1.0);
+    highp float fy = clamp(floor((0.5 - ndc_y * 0.5) * fny), 0.0, fny - 1.0);
+    highp float fz = clamp(floor(log2(view_z) * frag_info.froxel_grid.w +
                            frag_info.punctual_dims.w),
                      0.0, fnz - 1.0);
-    vec4 entry = FetchPunctualEntry(int((fz * fny + fy) * fnx + fx + 0.5));
+    highp vec4 entry = FetchPunctualEntry(int((fz * fny + fy) * fnx + fx + 0.5));
     return vec2(entry.r, entry.g);
   }
   return vec2(frag_info.radiance_blend.w, frag_info.radiance_blend.z);
@@ -349,8 +350,9 @@ vec2 PunctualLightSlice() {
 // lit / 0 shadowed. `uv` is clamped into the tile so the kernel never reads a
 // neighbouring tile (the atlas is nearest-sampled, so there is no bilinear
 // bleed once it stays in-tile).
-float SpotShadowTap(vec2 uv, float tile, float total, float receiver) {
-  vec2 atlas_uv = vec2((tile + clamp(uv.x, 0.0, 1.0)) / total,
+float SpotShadowTap(highp vec2 uv, highp float tile, highp float total,
+                    highp float receiver) {
+  highp vec2 atlas_uv = vec2((tile + clamp(uv.x, 0.0, 1.0)) / total,
                        1.0 - clamp(uv.y, 0.0, 1.0));
   return receiver <= texture(shadow_map, atlas_uv).r ? 1.0 : 0.0;
 }
@@ -365,34 +367,35 @@ float SpotShadowTap(vec2 uv, float tile, float total, float receiver) {
 // (radius from spot_shadow_params.w, the softness) gives a soft penumbra; a
 // softness of 0 collapses the kernel to a hard edge. Fragments outside the spot
 // frustum read as lit (the cone attenuation already zeroed them).
-float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
-  mat4 m = mat4(FetchPunctualTexel(light_row, 4), FetchPunctualTexel(light_row, 5),
+float SampleSpotShadow(int light_row, int slot, highp vec3 world_pos,
+                       vec3 normal) {
+  highp mat4 m = mat4(FetchPunctualTexel(light_row, 4), FetchPunctualTexel(light_row, 5),
                 FetchPunctualTexel(light_row, 6), FetchPunctualTexel(light_row, 7));
-  vec4 clip = m * vec4(world_pos + normal * frag_info.spot_shadow_params.z, 1.0);
+  highp vec4 clip = m * vec4(world_pos + normal * frag_info.spot_shadow_params.z, 1.0);
   if (clip.w <= 0.0) {
     return 1.0;
   }
-  vec3 proj = clip.xyz / clip.w;
-  vec2 uv = proj.xy * 0.5 + 0.5;
+  highp vec3 proj = clip.xyz / clip.w;
+  highp vec2 uv = proj.xy * 0.5 + 0.5;
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z < 0.0 ||
       proj.z > 1.0) {
     return 1.0;
   }
-  float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
-  float tile = frag_info.shadow_cascade_count + float(slot);
-  float receiver = proj.z - frag_info.spot_shadow_params.y;
+  highp float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
+  highp float tile = frag_info.shadow_cascade_count + float(slot);
+  highp float receiver = proj.z - frag_info.spot_shadow_params.y;
   // Penumbra radius in tile-UV (resolution-independent). softness 0 = hard.
-  float radius = frag_info.spot_shadow_params.w * 0.004;
+  highp float radius = frag_info.spot_shadow_params.w * 0.004;
 
   float lit = SpotShadowTap(uv, tile, total, receiver);
   // A per-fragment rotation hides the ring pattern as a smooth edge.
-  float noise = fract(
+  highp float noise = fract(
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float base = noise * 6.28318530718;
   for (int i = 0; i < SPOT_PCF_RING; i++) {
     float a = base + float(i) * (6.28318530718 / float(SPOT_PCF_RING));
-    vec2 offset = vec2(cos(a), sin(a)) * radius;
+    highp vec2 offset = vec2(cos(a), sin(a)) * radius;
     lit += SpotShadowTap(uv + offset, tile, total, receiver);
   }
   return lit / float(SPOT_PCF_RING + 1);
@@ -403,11 +406,12 @@ float SampleSpotShadow(int light_row, int slot, vec3 world_pos, vec3 normal) {
 // tile edge, four to a tile; the placement mirrors ShadowPass) and returns 1
 // lit / 0 shadowed. `uv` is clamped a half face-texel inside the quadrant so
 // the kernel never reads a neighbouring face.
-float PointShadowTap(vec2 uv, float tile, float qx, float qy, float total,
-                     float half_texel, float receiver) {
-  vec2 cuv = clamp(uv, vec2(half_texel), vec2(1.0 - half_texel));
-  vec2 tile_uv = vec2(qx, 1.0 - qy) * 0.5 + cuv * 0.5;
-  vec2 atlas_uv = vec2((tile + tile_uv.x) / total, 1.0 - tile_uv.y);
+float PointShadowTap(highp vec2 uv, highp float tile, highp float qx,
+                     highp float qy, highp float total, highp float half_texel,
+                     highp float receiver) {
+  highp vec2 cuv = clamp(uv, vec2(half_texel), vec2(1.0 - half_texel));
+  highp vec2 tile_uv = vec2(qx, 1.0 - qy) * 0.5 + cuv * 0.5;
+  highp vec2 atlas_uv = vec2((tile + tile_uv.x) / total, 1.0 - tile_uv.y);
   return receiver <= texture(shadow_map, atlas_uv).r ? 1.0 : 0.0;
 }
 
@@ -420,16 +424,16 @@ float PointShadowTap(vec2 uv, float tile, float qx, float qy, float total,
 // PointLight.pointShadowFaceViewProjection. Texel 4 of the light's row
 // carries the depth mapping (window depth = x - y / faceDepth), normal bias,
 // and softness; texel 5 the depth bias and inverse face resolution.
-float SamplePointShadow(int light_row, float base_tile, vec3 world_pos,
-                        vec3 normal) {
-  vec4 p4 = FetchPunctualTexel(light_row, 4);
-  vec4 p5 = FetchPunctualTexel(light_row, 5);
-  vec3 v = world_pos + normal * p4.z - FetchPunctualTexel(light_row, 0).xyz;
-  vec3 a = abs(v);
+float SamplePointShadow(int light_row, highp float base_tile,
+                        highp vec3 world_pos, vec3 normal) {
+  highp vec4 p4 = FetchPunctualTexel(light_row, 4);
+  highp vec4 p5 = FetchPunctualTexel(light_row, 5);
+  highp vec3 v = world_pos + normal * p4.z - FetchPunctualTexel(light_row, 0).xyz;
+  highp vec3 a = abs(v);
   // Faces 0..5 = +X, -X, +Y, -Y, +Z, -Z. local.xy is the face plane
   // (right/up), local.z the face depth.
   float face;
-  vec3 local;
+  highp vec3 local;
   if (a.x >= a.y && a.x >= a.z) {
     face = v.x >= 0.0 ? 0.0 : 1.0;
     local = v.x >= 0.0 ? vec3(-v.z, v.y, v.x) : vec3(v.z, v.y, -v.x);
@@ -443,26 +447,26 @@ float SamplePointShadow(int light_row, float base_tile, vec3 world_pos,
   if (local.z <= 0.0) {
     return 1.0;
   }
-  vec2 uv = (local.xy / local.z) * 0.5 + 0.5;
-  float receiver = p4.x - p4.y / local.z - p5.x;
+  highp vec2 uv = (local.xy / local.z) * 0.5 + 0.5;
+  highp float receiver = p4.x - p4.y / local.z - p5.x;
   // Outside the face's depth window (closer than near, past far) reads lit;
   // the range window already attenuates the far side.
   if (receiver < 0.0 || receiver > 1.0) {
     return 1.0;
   }
-  float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
-  float tile = frag_info.shadow_cascade_count + base_tile +
+  highp float total = frag_info.shadow_cascade_count + frag_info.spot_shadow_params.x;
+  highp float tile = frag_info.shadow_cascade_count + base_tile +
                (face >= 4.0 ? 1.0 : 0.0);
-  float q = face >= 4.0 ? face - 4.0 : face;
-  float qx = mod(q, 2.0);
-  float qy = floor(q * 0.5);
-  float half_texel = p5.y * 0.5;
+  highp float q = face >= 4.0 ? face - 4.0 : face;
+  highp float qx = mod(q, 2.0);
+  highp float qy = floor(q * 0.5);
+  highp float half_texel = p5.y * 0.5;
   // Penumbra radius in face-UV (resolution-independent). softness 0 = hard.
-  float radius = p4.w * 0.004;
+  highp float radius = p4.w * 0.004;
 
   float lit = PointShadowTap(uv, tile, qx, qy, total, half_texel, receiver);
   // A per-fragment rotation hides the ring pattern as a smooth edge.
-  float noise = fract(
+  highp float noise = fract(
       52.9829189 *
       fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float base = noise * 6.28318530718;

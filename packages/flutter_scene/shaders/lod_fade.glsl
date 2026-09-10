@@ -14,7 +14,7 @@ void ApplyLodFade(float coverage) {
   if (coverage >= 1.0) {
     return;
   }
-  float dither = fract(
+  highp float dither = fract(
       52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   if (coverage < 0.0) {
     dither = 1.0 - dither;
