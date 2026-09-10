@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -765,6 +766,46 @@ base class Scene implements SceneGraph {
   /// Built-in post-processing settings, such as color grading. Every
   /// effect is off by default.
   final PostProcessSettings postProcess = PostProcessSettings();
+
+  /// Surface debug views: show a resolved material channel, a geometry
+  /// attribute, an identity color, or a validation flag in place of the lit
+  /// result, optionally split against it, plus overlays such as wireframe.
+  ///
+  /// Works in every build. While anything here is active the frame skips
+  /// its post effects, temporal and post anti-aliasing, so the pixels on
+  /// screen are the values the materials produced. A `Node.debugView`
+  /// overrides [SceneDebugSettings.view] for its subtree.
+  /// {@category Rendering}
+  final SceneDebugSettings debug = SceneDebugSettings();
+
+  /// The id of the active surface debug view in [DebugViewRegistry], or
+  /// `none`. Setting an unknown id throws an [ArgumentError].
+  /// {@category Rendering}
+  String get debugViewId => debug.viewId;
+  set debugViewId(String id) {
+    final entry = DebugViewRegistry.byId(id);
+    if (entry == null) {
+      throw ArgumentError.value(id, 'id', 'Not a registered debug view');
+    }
+    debug.view = entry.view;
+  }
+
+  // The per-frame debug view state, or null when nothing debug-related is
+  // active (the common case, which costs nothing).
+  DebugViewFrame? _debugViewFrame(ui.Size pixelSize) {
+    final hasOverrides = Node.debugViewOverrideCount > 0;
+    if (!debug.isActive && !hasOverrides) return null;
+    final split = debug.split;
+    return DebugViewFrame(
+      sceneView: debug.view,
+      splitPixels: split == null
+          ? -1.0
+          : split.clamp(0.0, 1.0) * pixelSize.width,
+      hasNodeOverrides: hasOverrides,
+      overlays: Set.of(debug.overlays),
+      wireframeColor: debug.wireframeColor,
+    );
+  }
 
   /// The scene's blendable look (image-based lighting, exposure, tone mapping,
   /// and post-processing) as a copyable value.
@@ -2229,10 +2270,19 @@ base class Scene implements SceneGraph {
     final effectiveAa = captureLinearColor
         ? AntiAliasingMode.none
         : _resolveAntiAliasingMode(view.antiAliasingMode ?? _antiAliasingMode);
+    // A surface debug view or overlay turns the frame into a measurement:
+    // every post effect and every anti-aliasing pass that resamples the
+    // image is skipped so the pixels are the values the materials wrote
+    // (multisampling stays, it never moves a value between pixels).
+    final debugFrame = _debugViewFrame(pixelSize);
+    final debugActive = debugFrame != null;
+    final wantDof = depthOfField.enabled && !debugActive;
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
-    final enableFxaa = effectiveAa == AntiAliasingMode.fxaa;
+    final enableFxaa = effectiveAa == AntiAliasingMode.fxaa && !debugActive;
     final enableSmaa =
-        effectiveAa == AntiAliasingMode.smaa && SmaaPass.isInitialized;
+        effectiveAa == AntiAliasingMode.smaa &&
+        SmaaPass.isInitialized &&
+        !debugActive;
 
     final light = lightComponent?.light;
     final lightDirection = lightComponent?.worldDirection;
@@ -2254,12 +2304,15 @@ base class Scene implements SceneGraph {
     final wantGodRays =
         godRays.enabled &&
         camera.projection is PerspectiveProjection &&
-        cascades.isNotEmpty;
+        cascades.isNotEmpty &&
+        !debugActive;
 
     // A pure display-referred image warp; no depth, shadow, or camera
     // projection needed.
     final wantScreenDistortion =
-        screenDistortion.enabled && screenDistortion.pulses.isNotEmpty;
+        screenDistortion.enabled &&
+        screenDistortion.pulses.isNotEmpty &&
+        !debugActive;
 
     // The geometry buffers the enabled custom passes (and god rays) request, so
     // the engine produces depth/normals even without AO/SSR and publishes the
@@ -2337,7 +2390,7 @@ base class Scene implements SceneGraph {
     final bindSceneDepth = materialInputs.contains(RenderInput.depth);
     if (bindSceneDepth) customInputs.add(RenderInput.depth);
     // Depth of field reconstructs blur from camera depth.
-    if (depthOfField.enabled) customInputs.add(RenderInput.depth);
+    if (wantDof) customInputs.add(RenderInput.depth);
 
     // When any visible caster is static, route the cascades through the
     // shadow cache: static casters render into persistent tiles only when
@@ -2459,7 +2512,8 @@ base class Scene implements SceneGraph {
     final enableTaa =
         effectiveAa == AntiAliasingMode.taa &&
         perspectiveCamera != null &&
-        !captureLinearColor;
+        !captureLinearColor &&
+        !debugActive;
 
     Vector2 currentJitterNdc = Vector2.zero();
     Vector2 currentJitterUv = Vector2.zero();
@@ -2496,6 +2550,7 @@ base class Scene implements SceneGraph {
     // so capture whether they apply here and add the pass below.
     final wantSsr =
         !captureLinearColor &&
+        !debugActive &&
         perspectiveCamera != null &&
         screenSpaceReflections.enabled;
     // A custom pass may request depth/normals; normals imply depth.
@@ -2581,8 +2636,7 @@ base class Scene implements SceneGraph {
             // Storing it (a non-transient attachment plus store bandwidth)
             // is paid whenever depth of field is on, patch or no patch.
             keepDepthStencil:
-                depthOfField.enabled ||
-                (enableTaa && temporalAntiAliasing.objectMotion),
+                wantDof || (enableTaa && temporalAntiAliasing.objectMotion),
             cameraRight: cameraRight,
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
@@ -2726,6 +2780,7 @@ base class Scene implements SceneGraph {
         cullingPlanes: view.cullingPlanes,
         includeOffscreen: _warmUpIncludeOffscreen,
         cameraTransform: currentJitteredViewProjection,
+        debugView: debugFrame,
       ),
     );
     if (wantSceneColorHistory) {
@@ -2764,7 +2819,7 @@ base class Scene implements SceneGraph {
     final beforeTonemap = <PostEffect>[];
     final afterTonemap = <PostEffect>[];
     for (final effect in postProcess.customEffects) {
-      if (!effect.enabled) {
+      if (!effect.enabled || debugActive) {
         continue;
       }
       if (effect.insertion == PostInsertion.beforeTonemap) {
@@ -2821,7 +2876,7 @@ base class Scene implements SceneGraph {
     // effects and bloom so both act on the defocused image (bokeh highlights
     // still bloom). Needs the perspective camera's FOV for the thin-lens
     // math and camera depth.
-    if (depthOfField.enabled && perspectiveCamera != null) {
+    if (wantDof && perspectiveCamera != null) {
       // Translucent depth-writing surfaces (glass) join the linear depth
       // here, after the opaque-only consumers above, so depth of field
       // focuses on the visible surface instead of the backdrop behind it.
@@ -2910,7 +2965,7 @@ base class Scene implements SceneGraph {
     // depth of field and the custom effects republish the scene color and
     // before bloom (bloom feeds off the exposure-independent HDR color and
     // its own contribution should not drive the metering).
-    if (autoExposure.enabled) {
+    if (autoExposure.enabled && !debugActive) {
       graph.addPass(
         AutoExposurePass(
           settings: autoExposure,
@@ -2922,7 +2977,7 @@ base class Scene implements SceneGraph {
     }
 
     // Bloom runs in HDR before the resolve, which composites it back in.
-    if (postProcess.bloom.enabled) {
+    if (postProcess.bloom.enabled && !debugActive) {
       graph.addPass(
         BloomPass(dimensions: pixelSize, settings: postProcess.bloom),
       );
@@ -2957,6 +3012,9 @@ base class Scene implements SceneGraph {
         agxWhite: agxWhite,
         agxContrast: agxContrast,
         postProcess: postProcess,
+        debugViewActive: debugFrame?.anyViewActive ?? false,
+        debugViewSplit: debugActive ? (debug.split ?? -1.0) : -1.0,
+        debugSkipsPost: debugActive,
       ),
     );
 

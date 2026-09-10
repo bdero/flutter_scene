@@ -107,6 +107,7 @@ Low-end and GLES-class GPUs (Raspberry Pi, web, integrated Linux) get a budget, 
 - **Custom `ShaderMaterial` output is linear HDR premultiplied by alpha.** No tone mapping or gamma in your shader; the `ResolvePass` applies exposure, tone mapping, and the display transform. Linearize sRGB texture samples yourself. See `MATERIALS.md`.
 - **Never hand-roll a per-triangle winding flip to fix glTF orientation.** The importers handle the coordinate conversion; a manual flip leaves normals and IBL wrong.
 - **Do not emit a vertex buffer at the wrong stride.** Unskinned is 72 bytes/vertex, skinned is 104; the attribute order is fixed. Use `GeometryBuilder`, do not guess the layout.
+- **When pixels look wrong, look at the surface before guessing.** `scene.debug.view = const DebugView(channel: SurfaceDebugChannel.roughness)` (or `uv0`, `worldNormal`, `baseColor`, `validation`, any `SurfaceDebugChannel`) replaces the lit result with that value on every material, `scene.debug.split = 0.5` compares it against the lit half, `scene.debug.overlays.add(DebugOverlay.wireframe)` traces the mesh, and `node.debugView = DebugView.none` excludes a subtree. Works at runtime in any build. A `.fmat` shows any intermediate through `material.debug` and the `custom` channel.
 
 ## More depth
 

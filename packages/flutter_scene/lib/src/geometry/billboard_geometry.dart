@@ -42,6 +42,9 @@ enum BillboardFacing {
 /// particle sprite renderer.
 /// {@category Geometry}
 class BillboardGeometry extends Geometry {
+  @override
+  bool get emitsStandardVaryings => false;
+
   /// Creates a billboard batch sized for up to [capacity] instances.
   BillboardGeometry({this.capacity = 256})
     : assert(capacity > 0),

@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/runtime_importer/runtime_importer.dart';
 import 'package:flutter_scene/src/scene.dart';
 import 'package:flutter_scene/src/animation.dart';
 import 'package:flutter_scene/src/mesh.dart';
+import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/skin.dart';
@@ -136,6 +137,39 @@ base class Node implements SceneGraph {
   /// and the other way around.
   /// {@category Scene graph}
   int lightChannelMask = 0xFF;
+
+  /// A surface debug view for this subtree, overriding the scene's
+  /// `Scene.debug.view`. Null (the default) inherits from the nearest
+  /// ancestor that sets one, then the scene. [DebugView.none] excludes the
+  /// subtree from an active scene view, so it shades normally.
+  /// {@category Scene graph}
+  DebugView? get debugView => _debugView;
+  set debugView(DebugView? value) {
+    if (identical(_debugView, value)) return;
+    if ((_debugView == null) != (value == null)) {
+      _debugViewOverrideCount += value == null ? -1 : 1;
+    }
+    _debugView = value;
+  }
+
+  DebugView? _debugView;
+
+  /// How many nodes currently set [debugView], across every scene. Zero
+  /// means the per-item resolution can be skipped this frame.
+  @internal
+  static int get debugViewOverrideCount => _debugViewOverrideCount;
+  static int _debugViewOverrideCount = 0;
+
+  /// The nearest [debugView] up this node's ancestry, or null when no
+  /// ancestor sets one.
+  @internal
+  DebugView? get effectiveDebugView {
+    for (Node? node = this; node != null; node = node._parent) {
+      final view = node._debugView;
+      if (view != null) return view;
+    }
+    return null;
+  }
 
   /// Marks this node's meshes as static shadow casters: their geometry,
   /// material coverage, and world transform are promised not to change while

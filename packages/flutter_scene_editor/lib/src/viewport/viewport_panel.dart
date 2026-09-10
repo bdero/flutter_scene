@@ -1643,31 +1643,76 @@ class _DebugOutputButton extends StatefulWidget {
 class _DebugOutputButtonState extends State<_DebugOutputButton> {
   @override
   Widget build(BuildContext context) {
-    final pass = debugVisualizePassFor(widget.controller.scene);
-    final active = pass.mode.resolve != null;
-    return PopupMenuButton<ViewportDebugMode>(
+    final scene = widget.controller.scene;
+    final pass = debugVisualizePassFor(scene);
+    final bufferActive = pass.mode.resolve != null;
+    final surfaceActive = scene.debug.view.isActive;
+    final active = bufferActive || surfaceActive;
+    return PopupMenuButton<VoidCallback>(
       tooltip: 'Debug output',
       padding: EdgeInsets.zero,
-      onSelected: (mode) async {
-        // The remap shader loads lazily on the first non-passthrough use.
-        if (mode.resolve != null) await loadEditorDebugShaders();
-        pass.mode = mode;
+      onSelected: (action) async {
+        await Future<void>.sync(action);
         if (mounted) setState(() {});
         widget.onChanged();
       },
       itemBuilder: (_) => [
+        PopupMenuItem<VoidCallback>(
+          enabled: false,
+          height: editorMenuItemHeight,
+          child: const Text('Buffers', style: TextStyle(fontSize: 11)),
+        ),
         for (final mode in viewportDebugModes)
-          PopupMenuItem<ViewportDebugMode>(
-            value: mode,
-            height: editorMenuItemHeight,
-            child: Row(
-              children: [
-                editorMenuCheckmark(pass.mode.id == mode.id),
-                const SizedBox(width: 4),
-                Text(mode.label),
-              ],
-            ),
+          _checkedItem(
+            label: mode.label,
+            checked: !surfaceActive && pass.mode.id == mode.id,
+            action: () async {
+              // The remap shader loads lazily on the first non-passthrough
+              // use. A buffer view and a surface view are exclusive.
+              if (mode.resolve != null) await loadEditorDebugShaders();
+              scene.debug.view = DebugView.none;
+              pass.mode = mode;
+            },
           ),
+        const PopupMenuDivider(),
+        PopupMenuItem<VoidCallback>(
+          enabled: false,
+          height: editorMenuItemHeight,
+          child: const Text('Surface', style: TextStyle(fontSize: 11)),
+        ),
+        for (final group in SurfaceDebugGroup.values)
+          if (group != SurfaceDebugGroup.none)
+            PopupMenuItem<VoidCallback>(
+              value: () {},
+              height: editorMenuItemHeight,
+              child: _SurfaceViewGroupMenu(
+                group: group,
+                scene: scene,
+                onSelected: (entry) {
+                  pass.mode = viewportDebugModes.first;
+                  scene.debug.view = entry.view;
+                  if (mounted) setState(() {});
+                  widget.onChanged();
+                },
+              ),
+            ),
+        const PopupMenuDivider(),
+        _checkedItem(
+          label: 'Split against lit',
+          checked: scene.debug.split != null,
+          action: () =>
+              scene.debug.split = scene.debug.split == null ? 0.5 : null,
+        ),
+        _checkedItem(
+          label: 'Wireframe overlay',
+          checked: scene.debug.overlays.contains(DebugOverlay.wireframe),
+          action: () {
+            final overlays = scene.debug.overlays;
+            if (!overlays.remove(DebugOverlay.wireframe)) {
+              overlays.add(DebugOverlay.wireframe);
+            }
+          },
+        ),
       ],
       child: Container(
         width: 28,
@@ -1686,6 +1731,85 @@ class _DebugOutputButtonState extends State<_DebugOutputButton> {
       ),
     );
   }
+
+  PopupMenuItem<VoidCallback> _checkedItem({
+    required String label,
+    required bool checked,
+    required VoidCallback action,
+  }) {
+    return PopupMenuItem<VoidCallback>(
+      value: action,
+      height: editorMenuItemHeight,
+      child: Row(
+        children: [
+          editorMenuCheckmark(checked),
+          const SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+    );
+  }
+}
+
+/// One surface-view group as a submenu row: the group name, opening the
+/// registry's entries for that group.
+class _SurfaceViewGroupMenu extends StatelessWidget {
+  const _SurfaceViewGroupMenu({
+    required this.group,
+    required this.scene,
+    required this.onSelected,
+  });
+
+  final SurfaceDebugGroup group;
+  final Scene scene;
+  final ValueChanged<DebugViewEntry> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = DebugViewRegistry.entries
+        .where((entry) => entry.group == group)
+        .toList();
+    final activeId = scene.debug.viewId;
+    final groupActive = entries.any((entry) => entry.id == activeId);
+    return PopupMenuButton<DebugViewEntry>(
+      tooltip: '',
+      padding: EdgeInsets.zero,
+      onSelected: onSelected,
+      itemBuilder: (_) => [
+        for (final entry in entries)
+          PopupMenuItem<DebugViewEntry>(
+            value: entry,
+            height: editorMenuItemHeight,
+            child: Row(
+              children: [
+                editorMenuCheckmark(entry.id == activeId),
+                const SizedBox(width: 4),
+                Text(entry.label),
+              ],
+            ),
+          ),
+      ],
+      child: Row(
+        children: [
+          editorMenuCheckmark(groupActive),
+          const SizedBox(width: 4),
+          Text(_groupLabel(group)),
+          const Spacer(),
+          const Icon(Icons.chevron_right, size: 14),
+        ],
+      ),
+    );
+  }
+
+  static String _groupLabel(SurfaceDebugGroup group) => switch (group) {
+    SurfaceDebugGroup.none => 'Off',
+    SurfaceDebugGroup.geometry => 'Geometry',
+    SurfaceDebugGroup.surface => 'Surface',
+    SurfaceDebugGroup.physical => 'Physical',
+    SurfaceDebugGroup.identity => 'Identity',
+    SurfaceDebugGroup.validation => 'Validation',
+    SurfaceDebugGroup.custom => 'Custom',
+  };
 }
 
 /// Per-viewport settings, popped from the gear button in the corner.

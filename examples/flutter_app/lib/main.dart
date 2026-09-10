@@ -63,6 +63,7 @@ import 'example_widget_inset.dart';
 import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
+import 'example_debug_views.dart';
 import 'example_raw_shader.dart';
 import 'example_toon.dart';
 import 'example_toon_fmat.dart';
@@ -259,6 +260,7 @@ class _MyAppState extends State<MyApp> {
       'Navigation Route': (context) => const ExampleNavRoute(),
       'Toon': (context) => const ExampleToon(),
       'Raw shader': (context) => const ExampleRawShader(),
+      'Debug views': (context) => const ExampleDebugViews(),
       'Toon (.fmat)': (context) => const ExampleToonFmat(),
       'Custom vertices (.fmat)': (context) => const ExampleVertexCurve(),
       'Materialize (.fmat)': (context) => const ExampleMaterialize(),

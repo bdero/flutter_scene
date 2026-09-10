@@ -17,7 +17,9 @@ import 'package:flutter_scene/src/render/irradiance_field.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
+import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
+import 'package:flutter_scene/src/render/wireframe_overlay.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/render/sh_composite.dart';
 import 'package:flutter_scene/src/render/skybox_encoder.dart';
@@ -95,7 +97,9 @@ class ScenePass extends RenderGraphPass {
     bool includeOffscreen = false,
     bool suppressPlanarReflections = false,
     Matrix4? cameraTransform,
-  }) : _captureOpaqueColor = captureOpaqueColor,
+    DebugViewFrame? debugView,
+  }) : _debugView = debugView,
+       _captureOpaqueColor = captureOpaqueColor,
        _maxCaptureBatches = maxCaptureBatches,
        _suppressPlanarReflections = suppressPlanarReflections,
        _bindSceneDepth = bindSceneDepth,
@@ -130,6 +134,8 @@ class ScenePass extends RenderGraphPass {
   final Camera _camera;
   final Matrix4? _cameraTransform;
   final RenderScene _renderScene;
+  // The frame's surface debug view state, or null when none is active.
+  final DebugViewFrame? _debugView;
   final ui.Size _dimensions;
   final EnvironmentMap _environmentMap;
   final EnvironmentMap? _environmentMapB;
@@ -393,6 +399,7 @@ class ScenePass extends RenderGraphPass {
       _cullingPlanes,
       !_includeOffscreen,
       cameraTransform: _cameraTransform,
+      debugView: _debugView,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {
@@ -411,6 +418,7 @@ class ScenePass extends RenderGraphPass {
     if (!capture || !encoder.hasPendingSceneColorReaders) {
       final flushWatch = profileRendering ? (Stopwatch()..start()) : null;
       encoder.flush();
+      _encodeDebugOverlays(renderPass, context.transientsBuffer, encoder);
       flushWatch?.stop();
       if (profileRendering) {
         _recordProfile(
@@ -432,6 +440,9 @@ class ScenePass extends RenderGraphPass {
     if (encoder.hasPendingTranslucent &&
         !encoder.nextTranslucentBatchReadsSceneColor) {
       encoder.flushNextTranslucentBatch();
+    }
+    if (!encoder.hasPendingTranslucent) {
+      _encodeDebugOverlays(renderPass, context.transientsBuffer, encoder);
     }
     rendererSubmissions.submit(commandBuffer);
 
@@ -522,6 +533,13 @@ class ScenePass extends RenderGraphPass {
       } else {
         encoder.flushNextSceneColorBatch(translucentPass: translucentPass);
       }
+      if (!encoder.hasPendingTranslucent) {
+        _encodeDebugOverlays(
+          translucentPass,
+          context.transientsBuffer,
+          encoder,
+        );
+      }
       rendererSubmissions.submit(translucentCommands);
 
       final completedColor = nextColor;
@@ -538,6 +556,29 @@ class ScenePass extends RenderGraphPass {
         flushWatch?.elapsedMicroseconds ?? 0,
       );
     }
+  }
+
+  // Draws the debug overlays (wireframe) into the pass the scene finished
+  // in, so they depth-test against the scene's own depth attachment.
+  void _encodeDebugOverlays(
+    gpu.RenderPass pass,
+    TransientWriter transients,
+    SceneEncoder encoder,
+  ) {
+    final frame = _debugView;
+    if (frame == null || frame.overlays.isEmpty) return;
+    encodeWireframeOverlay(
+      pass: pass,
+      transients: transients,
+      renderScene: _renderScene,
+      frustum: encoder.frustum,
+      cameraTransform: encoder.cameraTransform,
+      cameraPosition: _camera.position,
+      layerMask: _layerMask,
+      cullingPlanes: _cullingPlanes,
+      includeOffscreen: _includeOffscreen,
+      frame: frame,
+    );
   }
 
   static void _recordProfile(int cullMicros, int flushMicros) {

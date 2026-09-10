@@ -254,6 +254,16 @@ export 'src/render/render_graph_capture.dart'
         CapturedResource,
         RenderGraphCaptureRequest,
         RenderGraphCaptureResult;
+export 'src/render/debug_view.dart'
+    show
+        DebugOverlay,
+        DebugRangePolicy,
+        DebugView,
+        DebugViewEntry,
+        DebugViewRegistry,
+        SceneDebugSettings,
+        SurfaceDebugChannel,
+        SurfaceDebugGroup;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;

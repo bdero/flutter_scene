@@ -146,6 +146,7 @@ class ShaderMaterial extends Material {
     this.isOpaqueOverride = true,
     Set<RenderInput> sceneInputs = const {},
     List<ShaderInstanceAttribute> instanceAttributes = const [],
+    this.debugViews = false,
   }) : _sceneInputs = _normalizeSceneInputs(sceneInputs),
        _instanceAttributes = _buildInstanceAttributes(instanceAttributes) {
     // A material constructed with inputs is not in the frame's cached summary
@@ -177,6 +178,16 @@ class ShaderMaterial extends Material {
   /// project model-space Counter-Clockwise (CCW) front faces on the Y-down
   /// rasterizer.
   gpu.WindingOrder windingOrder;
+
+  /// Whether the fragment shader includes `material_debug.glsl` and selects
+  /// its output through `DebugViewMode()` and `DebugSurfaceOutput()`, so the
+  /// scene's surface debug views can show its resolved surface. Defaults to
+  /// `false`, in which case an active view draws this material through the
+  /// engine's fallback debug shader (geometry and identity channels only).
+  final bool debugViews;
+
+  @override
+  bool get participatesInDebugViews => debugViews;
 
   /// Whether this material participates in the opaque pass.
   ///

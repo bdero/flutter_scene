@@ -32,6 +32,9 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 /// comes from the material's metadata.
 /// {@category Materials}
 class PreprocessedMaterial extends Material implements HotReloadableFmat {
+  @override
+  bool get participatesInDebugViews => true;
+
   PreprocessedMaterial({
     required gpu.Shader fragmentShader,
     required Map<String, Object?> metadata,

@@ -49,8 +49,12 @@ uniform ResolveInfo {
 
   float bloom_enabled;
   float bloom_intensity;
-  float _pad6;
-  float _pad7;
+  // Surface debug view. x: 1 when a view is active, so its display-referred
+  // pixels copy through untouched (no exposure, tone mapping, or display
+  // encoding). y: the split as a fraction of the width, negative for the
+  // whole viewport; pixels at or right of it are the view.
+  float debug_view_active;
+  float debug_view_split;
 
   vec4 agx_params;
 
@@ -142,6 +146,20 @@ float GrainNoise(vec3 p) {
 
 void main() {
   vec2 uv = resolve_info.flip_y > 0.5 ? vec2(v_uv.x, 1.0 - v_uv.y) : v_uv;
+
+  // A surface debug view wrote display-referred pixels; hand them through so
+  // the value on screen is the value the material saw. Left of a split the
+  // lit half still resolves normally.
+  bool debug_pixel = resolve_info.debug_view_active > 0.5 &&
+                     (resolve_info.debug_view_split < 0.0 ||
+                      v_uv.x >= resolve_info.debug_view_split);
+  if (debug_pixel) {
+    // Debug surfaces wrote opaque display-referred color; where nothing drew
+    // the target is still clear, and that transparency must survive so the
+    // widget behind the scene shows through as it does for the lit image.
+    frag_color = texture(scene_color, uv);
+    return;
+  }
 
   // Sample the scene color. Chromatic aberration pulls the red and blue
   // channels from offset positions that grow toward the edges.

@@ -519,6 +519,18 @@ abstract class Material {
     return true;
   }
 
+  /// Whether this material's fragment shader declares the `DebugViewInfo`
+  /// block and switches on it (see `material_debug.glsl`), so the scene's
+  /// surface debug views can show its resolved surface.
+  ///
+  /// Every engine material and every `.fmat` participates. A raw
+  /// [ShaderMaterial] opts in through its constructor after including the
+  /// hook; one that does not is drawn through the engine's fallback debug
+  /// shader while a view is active, which serves the geometry and identity
+  /// channels and stripes everything else.
+  @internal
+  bool get participatesInDebugViews => false;
+
   /// Per-frame engine inputs this material samples, produced only when a
   /// visible material asks for them: [RenderInput.depth] binds the linear
   /// scene depth of the opaque geometry (forcing the depth prepass), and

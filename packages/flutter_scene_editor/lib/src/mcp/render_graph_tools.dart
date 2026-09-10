@@ -199,28 +199,81 @@ class RenderGraphMcp {
     };
   }
 
-  /// The debug-output registry with the active flag.
+  /// The debug-output registry with the active flag: the editor's buffer
+  /// views, then the engine's surface views (grouped by `group`), then the
+  /// split and wireframe toggles.
   List<Map<String, Object?>> listModes() {
     final scene = _sceneProvider();
-    final active = scene == null
+    final surfaceActive = scene?.debug.view.isActive ?? false;
+    final bufferActive = scene == null
         ? 'final'
         : debugVisualizePassFor(scene).mode.id;
+    final surfaceId = scene?.debug.viewId ?? 'none';
     return [
       for (final mode in viewportDebugModes)
-        {'id': mode.id, 'label': mode.label, 'active': mode.id == active},
+        {
+          'id': mode.id,
+          'label': mode.label,
+          'group': 'buffer',
+          'active': !surfaceActive && mode.id == bufferActive,
+        },
+      for (final entry in DebugViewRegistry.entries)
+        if (entry.group != SurfaceDebugGroup.none)
+          {
+            'id': entry.id,
+            'label': entry.label,
+            'group': entry.group.name,
+            'active': surfaceActive && entry.id == surfaceId,
+          },
+      {
+        'id': 'split',
+        'label': 'Split against lit (toggle)',
+        'group': 'toggle',
+        'active': scene?.debug.split != null,
+      },
+      {
+        'id': 'wireframe',
+        'label': 'Wireframe overlay (toggle)',
+        'group': 'toggle',
+        'active':
+            scene?.debug.overlays.contains(DebugOverlay.wireframe) ?? false,
+      },
     ];
   }
 
-  /// Selects the viewport debug output.
+  /// Selects the viewport debug output. A buffer view and a surface view are
+  /// exclusive; `split` and `wireframe` toggle without changing the view.
   Future<void> setMode(String id) async {
+    final scene = _scene;
+    if (id == 'split') {
+      scene.debug.split = scene.debug.split == null ? 0.5 : null;
+      WidgetsBinding.instance.scheduleFrame();
+      return;
+    }
+    if (id == 'wireframe') {
+      final overlays = scene.debug.overlays;
+      if (!overlays.remove(DebugOverlay.wireframe)) {
+        overlays.add(DebugOverlay.wireframe);
+      }
+      WidgetsBinding.instance.scheduleFrame();
+      return;
+    }
     final mode = viewportDebugModeById(id);
-    if (mode == null) {
+    if (mode != null) {
+      if (mode.resolve != null) await loadEditorDebugShaders();
+      scene.debug.view = DebugView.none;
+      debugVisualizePassFor(scene).mode = mode;
+      WidgetsBinding.instance.scheduleFrame();
+      return;
+    }
+    final entry = DebugViewRegistry.byId(id);
+    if (entry == null) {
       throw ToolError(
         'Unknown debug mode "$id"; call list_viewport_debug_modes',
       );
     }
-    if (mode.resolve != null) await loadEditorDebugShaders();
-    debugVisualizePassFor(_scene).mode = mode;
+    debugVisualizePassFor(scene).mode = viewportDebugModes.first;
+    scene.debug.view = entry.view;
     WidgetsBinding.instance.scheduleFrame();
   }
 

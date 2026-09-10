@@ -1398,6 +1398,43 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
   }),
+  // The surface debug views. The left half is the lit shadow scene, the
+  // right half its world normals (split at the middle), and the wireframe
+  // overlay traces every edge on both. Covers the material hook, the split
+  // select, the resolve bypass, and the edge overlay in one frame; a
+  // backend whose hook does not compile draws the whole scene wrong.
+  SmokeScene('debug_view', () {
+    final scene = Scene();
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.4, -1.0, -0.35),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.0, depth: 3.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.78, 0.80, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    final caster = _cuboid(vm.Vector4(0.85, 0.45, 0.25, 1.0), 0.0, 0.6)
+      ..localTransform =
+          vm.Matrix4.translation(vm.Vector3(0, 1.0, 0)) *
+          vm.Matrix4.rotationY(0.6);
+    scene.add(caster);
+    scene.debug.view = const DebugView(
+      channel: SurfaceDebugChannel.worldNormal,
+    );
+    scene.debug.split = 0.5;
+    scene.debug.overlays.add(DebugOverlay.wireframe);
+    return (scene: scene, camera: _shadowCamera());
+  }),
   // Both shadow-catcher modes in one frame, two catcher planes side by side
   // under one shadow-casting sun, each with the same chiral caster above it.
   // One plane bakes its footprint cache, the other samples the atlas live,

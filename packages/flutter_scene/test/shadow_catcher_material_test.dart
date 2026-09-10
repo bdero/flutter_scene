@@ -90,7 +90,7 @@ void main() {
       expect(
         glsl,
         contains(
-          'frag_color = vec4(material.base_color.rgb, 1.0) * '
+          'return vec4(material.base_color.rgb, 1.0) * '
           'material.base_color.a;',
         ),
       );

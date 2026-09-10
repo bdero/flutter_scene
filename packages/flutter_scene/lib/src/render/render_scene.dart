@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter/foundation.dart' show ValueNotifier, internal;
+import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
@@ -95,6 +96,10 @@ class RenderItem {
   /// intersects (`light.channelMask & lightChannelMask != 0`), and a
   /// directional light's caster mask is tested against it the same way.
   int lightChannelMask = 0xFF;
+
+  /// The owning node's effective surface debug view override, refreshed each
+  /// frame (null inherits the scene's view). See `Node.debugView`.
+  DebugView? debugView;
 
   /// Whether the owning node's world transform reverses triangle winding.
   bool nodeWindingFlipped = false;

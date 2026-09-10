@@ -18,6 +18,7 @@ texture_transform;
 
 #include <material_varyings.glsl>
 #include <material_inputs.glsl>
+#include <material_debug.glsl>
 
 // Distance fog (the FogInfo block + ApplyFog). Declared after the varyings it
 // reads (v_position, v_viewvector).
@@ -43,5 +44,17 @@ void main() {
   // Unlit has no environment bound, so pass the flat fog color as the sky color;
   // the sky-color mix in ApplyFog is then inert (sky-colored fog is a lit-path
   // feature).
-  frag_color = ApplyFog(vec4(rgb, 1.0) * alpha, fog.color.rgb);
+  vec4 shaded = ApplyFog(vec4(rgb, 1.0) * alpha, fog.color.rgb);
+  // The surface debug view sees the resolved unlit color as the base color.
+  float debug_mode = DebugViewMode();
+  if (debug_mode > 0.5) {
+    MaterialInputs material = InitMaterialInputs();
+    material.base_color = vec4(rgb, alpha);
+    material.metallic = 0.0;
+    material.roughness = 1.0;
+    vec4 debug = DebugSurfaceOutput(material);
+    frag_color = debug_mode > 1.5 ? DebugViewSplit(debug, shaded) : debug;
+  } else {
+    frag_color = shaded;
+  }
 }
