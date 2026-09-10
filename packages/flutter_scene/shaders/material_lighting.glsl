@@ -37,19 +37,19 @@
 // Lagarde and Zanuttini 2012, "Local Image-based Lighting With
 // Parallax-corrected Cubemap" (SIGGRAPH). Returns [r] unchanged when no
 // proxy is active.
-vec3 ParallaxCorrectReflection(vec3 world_pos, vec3 r) {
+vec3 ParallaxCorrectReflection(highp vec3 world_pos, vec3 r) {
   vec3 corrected = r;
   if (frag_info.probe_box.w > 0.5) {
-    vec3 center = frag_info.probe_box.xyz;
-    vec3 half_ext = frag_info.probe_extents.xyz;
+    highp vec3 center = frag_info.probe_box.xyz;
+    highp vec3 half_ext = frag_info.probe_extents.xyz;
     // Nudge zero components so the slab division stays finite.
-    vec3 safe_r = r + (step(vec3(0.0), r) * 2.0 - 1.0) * 1e-6;
-    vec3 inv_r = vec3(1.0) / safe_r;
-    vec3 t_a = (center + half_ext - world_pos) * inv_r;
-    vec3 t_b = (center - half_ext - world_pos) * inv_r;
-    vec3 t_max = max(t_a, t_b);
-    float t = min(min(t_max.x, t_max.y), t_max.z);
-    vec3 hit = world_pos + r * max(t, 0.0);
+    highp vec3 safe_r = r + (step(vec3(0.0), r) * 2.0 - 1.0) * 1e-6;
+    highp vec3 inv_r = vec3(1.0) / safe_r;
+    highp vec3 t_a = (center + half_ext - world_pos) * inv_r;
+    highp vec3 t_b = (center - half_ext - world_pos) * inv_r;
+    highp vec3 t_max = max(t_a, t_b);
+    highp float t = min(min(t_max.x, t_max.y), t_max.z);
+    highp vec3 hit = world_pos + r * max(t, 0.0);
     corrected = normalize(hit - center);
   }
   return corrected;
@@ -92,8 +92,8 @@ float LtcClippedSphere(vec3 f) {
 // Integrates the transformed clamped-cosine over the rect [c0..c3] (counter
 // clockwise seen from the lit side) as seen from point [p] with normal [n]
 // and view direction [v].
-float LtcIntegrate(vec3 n, vec3 v, vec3 p, mat3 inv_m, vec3 c0, vec3 c1,
-                   vec3 c2, vec3 c3) {
+float LtcIntegrate(vec3 n, vec3 v, highp vec3 p, mat3 inv_m, highp vec3 c0,
+                   highp vec3 c1, highp vec3 c2, highp vec3 c3) {
   vec3 t1 = normalize(v - n * dot(v, n));
   vec3 t2 = -cross(n, t1);
   mat3 to_cosine = inv_m * transpose(mat3(t1, t2, n));
@@ -170,7 +170,7 @@ float SpecularAARoughness(vec3 normal, float roughness) {
 // One light's independent dielectric clearcoat lobe. The complete underlying
 // material is attenuated by the view Fresnel only after every contribution has
 // been accumulated.
-vec3 EvaluateClearcoatLight(vec3 light_vector, vec3 radiance,
+highp vec3 EvaluateClearcoatLight(vec3 light_vector, highp vec3 radiance,
                             vec3 coat_normal, vec3 camera_normal,
                             float coat_roughness) {
   float n_dot_l = max(dot(coat_normal, light_vector), 0.0);
@@ -196,8 +196,8 @@ vec3 EvaluateClearcoatLight(vec3 light_vector, vec3 radiance,
 // premultiplied by intensity and any distance/cone attenuation. Returns the
 // linear direct term; the caller multiplies in any shadow visibility. Shared by
 // the directional light and every punctual light so the BRDF lives in one place.
-vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
-                           vec3 radiance, vec3 normal,
+highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
+                                 highp vec3 radiance, vec3 normal,
                            vec3 camera_normal, vec3 albedo, float metallic,
                            float roughness, vec3 reflectance, float n_dot_v,
                            float specular_scale, vec3 anisotropic_tangent,
@@ -205,7 +205,7 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
   float signed_n_dot_l = dot(normal, light_vector);
   float n_dot_l = max(signed_n_dot_l, 0.0);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-  vec3 transmitted_diffuse = material.diffuse_transmission_color *
+  highp vec3 transmitted_diffuse = material.diffuse_transmission_color *
                              (1.0 / kPi) * radiance *
                              max(-signed_n_dot_l, 0.0) *
                              material.diffuse_transmission;
@@ -261,7 +261,7 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
       material.diffuse_transmission + specular_transmission, 0.0, 1.0);
   diffuse *= 1.0 - total_transmission;
 #endif
-  vec3 result = (diffuse + specular) * radiance * n_dot_l;
+  highp vec3 result = (diffuse + specular) * radiance * n_dot_l;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   if (dot(material.sheen_color, material.sheen_color) > 0.0) {
     vec3 sheen_half = normalize(light_vector + camera_normal);
@@ -283,7 +283,7 @@ vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
 // color (linear HDR, premultiplied by alpha). This is the engine-owned half of
 // the material contract; a material's Surface() function fills `material` and
 // main() calls this.
-vec4 EvaluateLighting(MaterialInputs material) {
+highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 albedo = material.base_color.rgb;
   float alpha = material.base_color.a;
   vec3 normal = material.normal;
@@ -296,8 +296,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
       coat_normal, material.clearcoat_roughness);
   float coat_n_dot_v = clamp(abs(dot(coat_normal, normalize(v_viewvector))),
                              0.0, 0.99);
-  vec3 coat_direct = vec3(0.0);
-  vec3 coat_ibl = vec3(0.0);
+  highp vec3 coat_direct = vec3(0.0);
+  highp vec3 coat_ibl = vec3(0.0);
 #endif
 
   // Diffuse occlusion: the material's (baked) occlusion modulated by the
@@ -310,7 +310,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   vec4 ssao_sample = vec4(1.0);
 #ifndef FLUTTER_SCENE_SKIP_SSAO
   if (frag_info.ssao_params.x > 0.5) {
-    vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
+    highp vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
     // TODO(flutter_scene): the occlusion target is stored top-down like the
     // other render-to-texture targets, which matches gl_FragCoord here. If a
     // backend reports gl_FragCoord with a flipped origin, this sample needs
@@ -451,19 +451,19 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // The bake already carries this surface's indirect diffuse, so it replaces
   // the SH ambient rather than adding to it. A bake has no direction, so the
   // back side reads the same value.
-  vec3 irradiance = BakedDiffuseRadiance();
+  highp vec3 irradiance = BakedDiffuseRadiance();
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-  vec3 transmitted_irradiance = irradiance;
+  highp vec3 transmitted_irradiance = irradiance;
 #endif
 #else
-  vec3 irradiance = max(EvaluateDiffuseSH(irradiance_field, env_normal, 0),
+  highp vec3 irradiance = max(EvaluateDiffuseSH(irradiance_field, env_normal, 0),
                         vec3(0.0));
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-  vec3 transmitted_irradiance = max(
+  highp vec3 transmitted_irradiance = max(
       EvaluateDiffuseSH(irradiance_field, -env_normal, 0), vec3(0.0));
 #endif
 #endif
-  vec3 prefiltered_color =
+  highp vec3 prefiltered_color =
       SampleRadianceEnv(prefiltered_radiance,
                         env_reflection, roughness);
   // Cross-fade a secondary environment in (area transitions) when active. Both
@@ -471,7 +471,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   float env_blend = frag_info.radiance_blend.x;
   if (env_blend > 0.0) {
 #ifndef FLUTTER_SCENE_LIGHTMAP
-    vec3 irradiance_b = max(EvaluateDiffuseSH(irradiance_field, env_normal, 1),
+    highp vec3 irradiance_b = max(EvaluateDiffuseSH(irradiance_field, env_normal, 1),
                             vec3(0.0));
 #endif
     // env_reflection is box-corrected for the primary probe; the secondary
@@ -479,7 +479,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     // the probe's parallax vector. Transient and weight-blended, so
     // effectively invisible. TODO(probe-crossfade-parallax): box-correct the
     // secondary against its own volume.
-    vec3 prefiltered_b =
+    highp vec3 prefiltered_b =
         SampleRadianceEnv(prefiltered_radiance_b,
                           env_reflection, roughness);
     // A baked diffuse ambient belongs to the surface, not to either
@@ -487,7 +487,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
 #ifndef FLUTTER_SCENE_LIGHTMAP
     irradiance = mix(irradiance, irradiance_b, env_blend);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-    vec3 transmitted_irradiance_b = max(
+    highp vec3 transmitted_irradiance_b = max(
         EvaluateDiffuseSH(irradiance_field, -env_normal, 1), vec3(0.0));
     transmitted_irradiance = mix(
         transmitted_irradiance, transmitted_irradiance_b, env_blend);
@@ -519,13 +519,13 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // scaled again here.
   float gi_coverage = IrradianceFieldCoverage(v_position);
   if (gi_coverage > 0.0) {
-    vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
+    highp vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
     irradiance = mix(irradiance, gi, gi_coverage);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     // TODO(gi-transmission): the transmitted direction repeats the whole
     // eight-tap cage. The weights only depend on the normal through the wrap
     // term, so one pass could return both lobes.
-    vec3 gi_back = SampleIrradianceField(v_position, -normal, camera_normal);
+    highp vec3 gi_back = SampleIrradianceField(v_position, -normal, camera_normal);
     transmitted_irradiance = mix(transmitted_irradiance, gi_back, gi_coverage);
 #endif
   }
@@ -556,8 +556,8 @@ vec4 EvaluateLighting(MaterialInputs material) {
 #endif
   vec3 k_D = diffuse_color * (1.0 - FssEss + FmsEms);
 
-  vec3 indirect_specular = FssEss * prefiltered_color * material.specular;
-  vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
+  highp vec3 indirect_specular = FssEss * prefiltered_color * material.specular;
+  highp vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
   // Occluding indirect specular with the diffuse factor over-darkens glossy
   // reflections, so derive a dedicated specular occlusion when it is
   // enabled; otherwise the specular lobe uses the same occlusion (the
@@ -617,7 +617,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // lit inside shadows.
   float ambient_shadow = mix(1.0, sun_visibility, frag_info.radiance_blend.y);
 
-  vec3 ambient =
+  highp vec3 ambient =
       (indirect_diffuse * diffuse_occlusion +
        indirect_specular * specular_occlusion) *
       ambient_shadow;
@@ -635,10 +635,10 @@ vec4 EvaluateLighting(MaterialInputs material) {
              transmitted_irradiance * occlusion * ambient_shadow;
   if (material.clearcoat > 0.0) {
     vec3 coat_reflection = reflect(-camera_normal, coat_normal);
-    vec3 coat_prefiltered = SampleRadianceEnv(prefiltered_radiance,
+    highp vec3 coat_prefiltered = SampleRadianceEnv(prefiltered_radiance,
         environment_transform * coat_reflection, coat_roughness);
     if (env_blend > 0.0) {
-      vec3 coat_prefiltered_b = SampleRadianceEnv(prefiltered_radiance_b,
+      highp vec3 coat_prefiltered_b = SampleRadianceEnv(prefiltered_radiance_b,
           environment_transform * coat_reflection, coat_roughness);
       coat_prefiltered = mix(coat_prefiltered, coat_prefiltered_b, env_blend);
     }
@@ -660,7 +660,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // Analytic directional light (Cook-Torrance, layered on top of the IBL
   // ambient term). The shadowed first directional light shades here; its shadow
   // visibility multiplies the whole term.
-  vec3 direct = vec3(0.0);
+  highp vec3 direct = vec3(0.0);
   if (frag_info.has_directional_light > 0.5) {
     direct = EvaluateAnalyticLight(material, light_vector,
                                    frag_info.directional_light_color.rgb, normal,
@@ -700,26 +700,26 @@ vec4 EvaluateLighting(MaterialInputs material) {
   for (int i = 0; i < punctual_count; i++) {
     // Resolve this slot to a light row through the per-object index buffer.
     int light_row = int(FetchPunctualIndex(punctual_offset + i) + 0.5);
-    vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
-    vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
+    highp vec4 l0 = FetchPunctualTexel(light_row, 0); // position.xyz, type
+    highp vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
     float type = l0.w;
-    vec3 radiance = l1.rgb;
+    highp vec3 radiance = l1.rgb;
     if (type > 2.5) {
       // Rect area light. Texel 2 carries the world right axis and width,
       // texel 3 the up axis and height; the light emits along
       // cross(right, up). The LTC form factor bakes in the cosine lobe and
       // inverse-square falloff, so only the range window applies here.
-      vec4 a2 = FetchPunctualTexel(light_row, 2);
-      vec4 a3 = FetchPunctualTexel(light_row, 3);
-      vec3 half_w = a2.xyz * (a2.w * 0.5);
-      vec3 half_h = a3.xyz * (a3.w * 0.5);
-      vec3 c0 = l0.xyz - half_w - half_h;
-      vec3 c1 = l0.xyz + half_w - half_h;
-      vec3 c2 = l0.xyz + half_w + half_h;
-      vec3 c3 = l0.xyz - half_w + half_h;
-      vec3 to_center = l0.xyz - v_position;
-      float dist_sq = dot(to_center, to_center);
-      float factor = dist_sq * l1.w * l1.w;
+      highp vec4 a2 = FetchPunctualTexel(light_row, 2);
+      highp vec4 a3 = FetchPunctualTexel(light_row, 3);
+      highp vec3 half_w = a2.xyz * (a2.w * 0.5);
+      highp vec3 half_h = a3.xyz * (a3.w * 0.5);
+      highp vec3 c0 = l0.xyz - half_w - half_h;
+      highp vec3 c1 = l0.xyz + half_w - half_h;
+      highp vec3 c2 = l0.xyz + half_w + half_h;
+      highp vec3 c3 = l0.xyz - half_w + half_h;
+      highp vec3 to_center = l0.xyz - v_position;
+      highp float dist_sq = dot(to_center, to_center);
+      highp float factor = dist_sq * l1.w * l1.w;
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
       float facing =
           step(0.0, dot(cross(c1 - c0, c3 - c0), v_position - c0));
@@ -761,25 +761,25 @@ vec4 EvaluateLighting(MaterialInputs material) {
       // Directional: the travel direction is in texel 2; no attenuation.
       punctual_light_vector = -normalize(FetchPunctualTexel(light_row, 2).xyz);
     } else {
-      vec3 to_light = l0.xyz - v_position;
-      float dist_sq = dot(to_light, to_light);
+      highp vec3 to_light = l0.xyz - v_position;
+      highp float dist_sq = dot(to_light, to_light);
       punctual_light_vector = to_light * inversesqrt(max(dist_sq, 1e-8));
       // Windowed distance falloff: with an inverse range of 0 (infinite
       // range) the window is 1. The falloff exponent (texel 3.z) is 2 for
       // the physical inverse square; lower exponents reach further without
       // brightening the near field (an artistic control), and pow(dist_sq,
       // e/2) = dist^e.
-      float inv_range = l1.w;
-      float factor = dist_sq * inv_range * inv_range;
+      highp float inv_range = l1.w;
+      highp float factor = dist_sq * inv_range * inv_range;
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
       // spot offset, shadow slot, falloff exponent
-      vec4 l3 = FetchPunctualTexel(light_row, 3);
+      highp vec4 l3 = FetchPunctualTexel(light_row, 3);
       radiance *=
           (window * window) / max(pow(dist_sq, l3.z * 0.5), 1e-4);
       if (type > 1.5) {
         // Spot cone: a squared linear ramp on the cosine between the inner and
         // outer cone, using the precomputed scale (texel 2 w) and offset.
-        vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
+        highp vec4 l2 = FetchPunctualTexel(light_row, 2); // direction.xyz, angular scale
         float cd = dot(normalize(l2.xyz), -punctual_light_vector);
         float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
         radiance *= cone * cone;
@@ -814,7 +814,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
     }
   }
 
-  vec3 emissive = material.emissive;
+  highp vec3 emissive = material.emissive;
 
   // Linear HDR, premultiplied by alpha. Exposure, the tone-mapping
   // operator, and display encoding are applied later by the tone-mapping
@@ -822,9 +822,9 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // floating-point scene-color target.
   float direct_occlusion = mix(
       1.0, occlusion, clamp(frag_info.ssao_lighting.x, 0.0, 1.0));
-  vec3 out_color = ambient + direct * direct_occlusion + emissive;
+  highp vec3 out_color = ambient + direct * direct_occlusion + emissive;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
-  vec3 transmitted_light = material.transmission_color * albedo *
+  highp vec3 transmitted_light = material.transmission_color * albedo *
                            (vec3(1.0) - clamp(FssEss, 0.0, 1.0));
   out_color += transmitted_light * specular_transmission;
   float coat_fresnel = FresnelSchlick(
@@ -839,7 +839,7 @@ vec4 EvaluateLighting(MaterialInputs material) {
   // scaled by environment_intensity) so far geometry dissolves into the sky
   // behind it, matching the unfogged skybox at the horizon. Only sampled when
   // fog and its sky-color influence are on, so it is free otherwise.
-  vec3 sky_fog_color = fog.color.rgb;
+  highp vec3 sky_fog_color = fog.color.rgb;
   if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
     // Sample the sharpest prefiltered level: the fog color should match the
     // crisp skybox as closely as the environment resolution allows, so avoid

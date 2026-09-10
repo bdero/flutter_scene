@@ -7,11 +7,11 @@
 uniform MaskInfo {
   // x: alpha cutoff   y: constant alpha factor (the material's base color
   // factor alpha)   z: vertex-color alpha weight   w: unused
-  vec4 params;
+  highp vec4 params;
   // xy: UV offset, zw: UV scale.
-  vec4 uv_transform;
+  highp vec4 uv_transform;
   // xy: cosine and sine of the UV rotation, z: UV channel.
-  vec4 uv_rotation;
+  highp vec4 uv_rotation;
 }
 mask_info;
 
@@ -20,7 +20,7 @@ uniform sampler2D mask_texture;
 
 // Discards the fragment when its masked alpha falls below the cutoff.
 void ApplyDepthAlphaMask() {
-  vec2 uv = MaterialTextureUv(mask_info.uv_transform, mask_info.uv_rotation);
+  highp vec2 uv = MaterialTextureUv(mask_info.uv_transform, mask_info.uv_rotation);
   float alpha = texture(mask_texture, uv).a *
                 mix(1.0, v_color.a, mask_info.params.z) * mask_info.params.y;
   if (alpha < mask_info.params.x) {

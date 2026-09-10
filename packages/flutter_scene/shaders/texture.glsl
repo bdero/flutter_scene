@@ -3,14 +3,14 @@
 /// See also: https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 ///
 
-const vec2 kInvAtan = vec2(0.15915494309189535, 0.3183098861837907);
+const highp vec2 kInvAtan = vec2(0.15915494309189535, 0.3183098861837907);
 
-vec2 SphericalToEquirectangular(vec3 direction) {
+highp vec2 SphericalToEquirectangular(vec3 direction) {
   // asin is only defined on [-1, 1]; a reflection/normal vector that is a hair
   // over unit length from accumulated float error (or a slightly non-orthonormal
   // environment transform) makes direction.y exceed 1 and asin() return a NaN,
   // which poisons the sampled radiance. Clamp to the domain.
-  vec2 uv = vec2(atan(direction.z, direction.x),
+  highp vec2 uv = vec2(atan(direction.z, direction.x),
                  asin(clamp(direction.y, -1.0, 1.0)));
   uv *= kInvAtan;
   uv += 0.5;
@@ -50,7 +50,7 @@ vec2 SphericalToEquirectangular(vec3 direction) {
 // Any equirect read with an implicit mip level needs this. A texture with no
 // mip chain hides the seam half of it, which is how it survives being written
 // the obvious way.
-vec3 SampleEquirectByFootprint(sampler2D tex, vec3 direction, vec2 uv) {
+vec3 SampleEquirectByFootprint(sampler2D tex, vec3 direction, highp vec2 uv) {
   // Radians per pixel, from the direction itself: for a unit vector the chord
   // and the angle agree to first order.
   float w = max(length(dFdx(direction)), length(dFdy(direction)));
@@ -69,7 +69,7 @@ vec3 SampleEnvironmentTexture(sampler2D tex, vec3 direction) {
 }
 
 vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
-  vec2 uv = SphericalToEquirectangular(direction);
+  highp vec2 uv = SphericalToEquirectangular(direction);
   // Compiles to texture2DLodEXT (GL_EXT_shader_texture_lod) on the GLES
   // 1.00 dialect; the sampler must use a mipmap min filter for the lod to
   // take effect.
@@ -78,9 +78,9 @@ vec3 SampleEnvironmentTextureLod(sampler2D tex, vec3 direction, float lod) {
 
 // Inverse of SphericalToEquirectangular: maps an equirectangular UV back to
 // a unit direction.
-vec3 EquirectangularToSpherical(vec2 uv) {
-  float phi = (uv.x - 0.5) / kInvAtan.x;  // atan(direction.z, direction.x)
-  float lat = (uv.y - 0.5) / kInvAtan.y;  // asin(direction.y)
+vec3 EquirectangularToSpherical(highp vec2 uv) {
+  highp float phi = (uv.x - 0.5) / kInvAtan.x;  // atan(direction.z, direction.x)
+  highp float lat = (uv.y - 0.5) / kInvAtan.y;  // asin(direction.y)
   float cos_lat = cos(lat);
   return vec3(cos_lat * cos(phi), sin(lat), cos_lat * sin(phi));
 }
@@ -148,7 +148,7 @@ radiance_layout_info;
 // sampler must use a linear mip filter for the lod to take effect.
 vec3 SamplePrefilteredRadianceLod(sampler2D radiance, vec3 direction,
                                   float roughness) {
-  vec2 eq = SphericalToEquirectangular(direction);
+  highp vec2 eq = SphericalToEquirectangular(direction);
   float lod = clamp(roughness, 0.0, 1.0) * (kPrefilterBands - 1.0);
   return textureLod(radiance, eq, lod).rgb;
 }
@@ -162,14 +162,14 @@ vec3 SamplePrefilteredRadiance(sampler2D atlas, vec3 direction,
   if (radiance_layout_info.mip_layout > 0.5) {
     return SamplePrefilteredRadianceLod(atlas, direction, roughness);
   }
-  vec2 eq = SphericalToEquirectangular(direction);
+  highp vec2 eq = SphericalToEquirectangular(direction);
   eq.y = clamp(eq.y, kPrefilterBandEdgeClamp, 1.0 - kPrefilterBandEdgeClamp);
   float band = clamp(roughness, 0.0, 1.0) * (kPrefilterBands - 1.0);
   float b0 = floor(band);
   float b1 = min(b0 + 1.0, kPrefilterBands - 1.0);
   float t = band - b0;
-  float v0 = (b0 + eq.y) / kPrefilterBands;
-  float v1 = (b1 + eq.y) / kPrefilterBands;
+  highp float v0 = (b0 + eq.y) / kPrefilterBands;
+  highp float v1 = (b1 + eq.y) / kPrefilterBands;
   return mix(texture(atlas, vec2(eq.x, v0)).rgb,
              texture(atlas, vec2(eq.x, v1)).rgb, t);
 }

@@ -14,11 +14,11 @@ uniform sampler2D lightmap_texture;
 
 uniform LightmapInfo {
   // xy offset, zw scale, the same packing the material texture transforms use.
-  vec4 transform;
+  highp vec4 transform;
   // x cos and y sin of the rotation, z the UV set, w the RGBM decode flag.
-  vec4 rotation;
+  highp vec4 rotation;
   // x scales the decoded radiance.
-  vec4 params;
+  highp vec4 params;
 }
 lightmap_info;
 

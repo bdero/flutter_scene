@@ -9,7 +9,7 @@
 #include <material_scene_inputs.glsl>
 
 // The per-draw model scale (see FragInfo.model_scale).
-vec3 GetModelScale() { return frag_info.model_scale.xyz; }
+highp vec3 GetModelScale() { return frag_info.model_scale.xyz; }
 
 // FLUTTER_SCENE_SHADOW_CATCHER compiles out the image-based-lighting
 // samplers: a shadow catcher never evaluates the lighting, and a declared

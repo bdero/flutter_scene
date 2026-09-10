@@ -41,30 +41,30 @@ vec3 ProbeOctDecode(vec2 uv) {
 
 // Wraps a probe's world lattice index into its storage slot. The modulo is
 // what lets the volume scroll without moving a probe that stayed inside it.
-vec3 ProbeWrapSlot(vec3 lattice, vec3 counts) {
+highp vec3 ProbeWrapSlot(highp vec3 lattice, highp vec3 counts) {
   return lattice - counts * floor(lattice / counts);
 }
 
 // Linear probe index from a storage slot.
-float ProbeLinearIndex(vec3 slot, vec3 counts) {
+highp float ProbeLinearIndex(highp vec3 slot, highp vec3 counts) {
   return slot.x + counts.x * (slot.y + counts.y * slot.z);
 }
 
 // Top-left texel of a probe's tile, in atlas texel coordinates measured from
 // the top of the atlas.
-vec2 ProbeTileOrigin(float index, float tiles_per_row, float region_origin_y,
-                     float tile_size) {
-  float row = floor(index / tiles_per_row);
-  float column = index - row * tiles_per_row;
+highp vec2 ProbeTileOrigin(highp float index, highp float tiles_per_row,
+                           highp float region_origin_y, float tile_size) {
+  highp float row = floor(index / tiles_per_row);
+  highp float column = index - row * tiles_per_row;
   return vec2(column * tile_size, region_origin_y + row * tile_size);
 }
 
 // Atlas UV of the interior texel a direction maps to, offset past the gutter
 // and kept half a texel inside so a bilinear read never straddles the tile.
-vec2 ProbeAtlasUv(vec3 dir, vec2 tile_origin, float interior,
-                  vec2 inverse_atlas_size) {
+highp vec2 ProbeAtlasUv(vec3 dir, highp vec2 tile_origin, float interior,
+                        highp vec2 inverse_atlas_size) {
   vec2 oct = ProbeOctEncode(dir);
-  vec2 texel = tile_origin + vec2(1.0) + clamp(oct, 0.0, 1.0) * interior;
+  highp vec2 texel = tile_origin + vec2(1.0) + clamp(oct, 0.0, 1.0) * interior;
   // Keep the sample inside the interior's outer half-texel so the bilinear
   // footprint reaches the gutter (which mirrors the interior) rather than a
   // neighbouring probe.
@@ -75,7 +75,7 @@ vec2 ProbeAtlasUv(vec3 dir, vec2 tile_origin, float interior,
 
 // The interior texel coordinate, in [0, interior], of an atlas fragment whose
 // window position is `frag` and whose tile starts at `tile_origin`.
-vec2 ProbeInteriorCoord(vec2 frag, vec2 tile_origin) {
+highp vec2 ProbeInteriorCoord(highp vec2 frag, highp vec2 tile_origin) {
   return frag - tile_origin - vec2(1.0);
 }
 
@@ -83,7 +83,7 @@ vec2 ProbeInteriorCoord(vec2 frag, vec2 tile_origin) {
 // the texel's integer coordinate inside the stored tile, in [0, interior + 1].
 // Returns the interior texel's integer coordinate in the same space. An
 // interior texel maps to itself.
-vec2 ProbeGutterSource(vec2 local, float interior) {
+highp vec2 ProbeGutterSource(highp vec2 local, float interior) {
   float last = interior + 1.0;
   bool left = local.x < 0.5;
   bool right = local.x > last - 0.5;
