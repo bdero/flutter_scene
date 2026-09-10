@@ -230,21 +230,13 @@ class CapturedUniformBlock {
 
   int get byteLength => bytes.lengthInBytes;
 
-  /// Declared blocks of the draw's shaders whose size matches, resolved
-  /// against loaded reflection. One entry means [decode] can name it.
+  /// Declared blocks of the draw's shaders this buffer can be (see
+  /// [matchUniformBlocks]), resolved against loaded reflection. One entry
+  /// means [decode] can name it.
   List<ShaderUniformBlockInfo> candidatesFor(CapturedDraw draw) {
-    final matches = <ShaderUniformBlockInfo>[];
-    for (final shader in [draw.vertexShader, draw.fragmentShader]) {
-      if (shader == null) continue;
-      final info = ShaderReflection.infoFor(shader)?.current;
-      if (info == null) continue;
-      for (final block in info.uniformBlocks) {
-        if (block.sizeBytes == byteLength && !matches.contains(block)) {
-          matches.add(block);
-        }
-      }
-    }
-    return matches;
+    final index = draw.uniformBlocks.indexOf(this);
+    if (index < 0) return const [];
+    return draw._matchedBlocks()[index];
   }
 
   /// The block's name when exactly one declared block matches (or the name
@@ -393,6 +385,23 @@ class CapturedDraw {
 
   /// Triangles this draw rasterizes, assuming a triangle list.
   int get triangles => vertexCount ~/ 3 * instanceCount;
+
+  // Candidate blocks per emplaced buffer, matched together so an exact
+  // match can rule a block out for the shorter buffers.
+  List<List<ShaderUniformBlockInfo>> _matchedBlocks() {
+    final declared = <ShaderUniformBlockInfo>[];
+    for (final shader in [vertexShader, fragmentShader]) {
+      if (shader == null) continue;
+      final info = ShaderReflection.infoFor(shader)?.current;
+      if (info == null) continue;
+      for (final block in info.uniformBlocks) {
+        if (!declared.contains(block)) declared.add(block);
+      }
+    }
+    return matchUniformBlocks(declared, [
+      for (final block in uniformBlocks) block.byteLength,
+    ]);
+  }
 
   /// [includeUniformBytes] adds each block's packed bytes, so a loaded
   /// capture keeps them.

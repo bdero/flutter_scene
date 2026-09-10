@@ -474,6 +474,53 @@ final class ShaderBundleInfo {
   }
 }
 
+/// Matches emplaced uniform buffers, by byte length, to the blocks a draw's
+/// shaders declare. Returns one candidate list per length, in order.
+///
+/// An exact size match wins. The engine also binds a block's leading members
+/// only (a `FrameInfo` written to 80 of its 128 bytes), so a shorter buffer
+/// matches a block when its length lands on a member boundary, among the
+/// blocks no exact match already claimed. More than one candidate means the
+/// buffer cannot be named.
+/// {@category Debugging and profiling}
+List<List<ShaderUniformBlockInfo>> matchUniformBlocks(
+  List<ShaderUniformBlockInfo> declared,
+  List<int> lengths,
+) {
+  final result = <List<ShaderUniformBlockInfo>>[];
+  final claimed = <ShaderUniformBlockInfo>{};
+  for (final length in lengths) {
+    final exact = [
+      for (final block in declared)
+        if (block.sizeBytes == length) block,
+    ];
+    result.add(exact);
+    if (exact.length == 1) claimed.add(exact.single);
+  }
+  for (var i = 0; i < lengths.length; i++) {
+    if (result[i].isNotEmpty) continue;
+    final length = lengths[i];
+    result[i] = [
+      for (final block in declared)
+        if (!claimed.contains(block) &&
+            block.sizeBytes > length &&
+            _endsOnMemberBoundary(block, length))
+          block,
+    ];
+  }
+  return result;
+}
+
+bool _endsOnMemberBoundary(ShaderUniformBlockInfo block, int length) {
+  for (final field in block.fields) {
+    final size = field.totalSizeBytes > 0
+        ? field.totalSizeBytes
+        : field.elementSizeBytes;
+    if (field.offsetBytes + size == length) return true;
+  }
+  return false;
+}
+
 /// One uniform member's value, decoded from packed block bytes.
 /// {@category Debugging and profiling}
 final class ShaderUniformValue {

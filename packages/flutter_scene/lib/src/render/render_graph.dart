@@ -424,11 +424,13 @@ class RenderGraph {
       stopwatch.stop();
       if (timeline) developer.Timeline.finishSync();
       final elapsed = stopwatch.elapsedMicroseconds;
-      observer?.onPassEnd(pass, elapsed);
+      // Settle the counters before the observer runs, since a capture copies
+      // textures at the pass boundary and those draws are not the pass's.
       if (passStats != null) {
         passStats.cpuMicros = elapsed;
         passStats.counters.setDelta(_passStart, activeRenderCounters);
       }
+      observer?.onPassEnd(pass, elapsed);
       if (profileRendering) {
         _profile.add(pass.name, elapsed, trackMax: true);
       }

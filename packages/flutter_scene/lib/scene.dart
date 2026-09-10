@@ -293,7 +293,8 @@ export 'src/shader_reflection/shader_reflection.dart'
         ShaderUniformBlockInfo,
         ShaderUniformFieldInfo,
         ShaderUniformValue,
-        decodeUniformBlock;
+        decodeUniformBlock,
+        matchUniformBlocks;
 export 'src/render/object_filter.dart' show NodeFilter;
 export 'src/render/render_layers.dart'
     show kRenderLayerAll, kRenderLayerDefault;
