@@ -27,6 +27,23 @@ class _FakePass extends RenderGraphPass {
   void execute(RenderGraphContext context) => body();
 }
 
+/// Draws once at every pass end, the way a capture's thumbnail copy does.
+class _CopyingObserver implements RenderGraphObserver {
+  @override
+  void onPassBegin(RenderGraphPass pass, int indexInGraph) {}
+  @override
+  void onPassEnd(RenderGraphPass pass, int elapsedMicros) => _draw();
+  @override
+  void onBlackboardRead(Object key, Object? value) {}
+  @override
+  void onBlackboardWrite(Object key, Object? value) {}
+  @override
+  void onTextureAcquired(
+    TransientTextureDescriptor descriptor,
+    gpu.Texture texture,
+  ) {}
+}
+
 void _draw({int vertices = 3, int instances = 1}) {
   activeRenderCounters.draws++;
   activeRenderCounters.instances += instances;
@@ -90,6 +107,27 @@ void main() {
     expect(frame.cpuMicros, greaterThanOrEqualTo(0));
     expect(stats.activeFrame, isNull);
     expect(stats.frameCount, 1);
+  });
+
+  test('observer work at the pass boundary is not charged to the pass', () {
+    final stats = RenderStats();
+    stats.beginFrame();
+    final view = stats.beginView(
+      viewIndex: 0,
+      width: 1,
+      height: 1,
+      offscreen: false,
+    )!;
+    final graph = RenderGraph()..addPass(_FakePass('scene', () => _draw()));
+    graph.execute(
+      transientsBuffer: _ThrowingWriter(),
+      texturePool: TransientTexturePool(),
+      observer: _CopyingObserver(),
+      stats: view,
+    );
+    stats.endFrame(pipelineCacheSize: 0);
+    expect(view.passes.single.counters.draws, 1);
+    expect(stats.latest!.counters.draws, 2);
   });
 
   test('history is bounded and latest is a distinct record per frame', () {

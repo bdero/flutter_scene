@@ -184,6 +184,60 @@ void main() {
     expect(short[1].values, isEmpty);
   });
 
+  test('matches emplaced buffers to declared blocks', () {
+    final frag = ShaderBundleInfo.parse(_bundle())['TestFragment']!
+        .backends[ShaderBackend.openglEs]!
+        .uniformBlock('FragInfo')!;
+    const frameInfo = ShaderUniformBlockInfo(
+      name: 'FrameInfo',
+      set: 0,
+      binding: 0,
+      sizeBytes: 128,
+      fields: [
+        ShaderUniformFieldInfo(
+          name: 'mvp',
+          type: ShaderScalarType.float32,
+          offsetBytes: 0,
+          elementSizeBytes: 64,
+          totalSizeBytes: 64,
+          arrayElements: 0,
+          vecSize: 4,
+          columns: 4,
+        ),
+        ShaderUniformFieldInfo(
+          name: 'camera_position',
+          type: ShaderScalarType.float32,
+          offsetBytes: 64,
+          elementSizeBytes: 16,
+          totalSizeBytes: 16,
+          arrayElements: 0,
+          vecSize: 3,
+          columns: 1,
+        ),
+        ShaderUniformFieldInfo(
+          name: 'extra',
+          type: ShaderScalarType.float32,
+          offsetBytes: 80,
+          elementSizeBytes: 48,
+          totalSizeBytes: 48,
+          arrayElements: 0,
+          vecSize: 3,
+          columns: 3,
+        ),
+      ],
+    );
+    // An exact 96-byte FragInfo, then an 80-byte prefix of FrameInfo. The
+    // prefix also lands on a FragInfo boundary (color + basis), but FragInfo
+    // is already claimed by the exact match.
+    final matches = matchUniformBlocks([frameInfo, frag], [96, 80, 12]);
+    expect(matches[0].map((b) => b.name), ['FragInfo']);
+    expect(matches[1].map((b) => b.name), ['FrameInfo']);
+    expect(matches[2], isEmpty);
+    // Without the exact match both blocks stay candidates.
+    final ambiguous = matchUniformBlocks([frameInfo, frag], [64]);
+    expect(ambiguous.single.map((b) => b.name), ['FrameInfo', 'FragInfo']);
+  });
+
   test('parses compiler diagnostics and windows the source', () {
     const log = '''
 impellerc failed for "Foo":
