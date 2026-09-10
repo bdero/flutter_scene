@@ -78,6 +78,9 @@ enum ShadowCatcherMode {
 /// bundled catcher shader, which loads there.
 /// {@category Materials}
 class ShadowCatcherMaterial extends Material {
+  @override
+  bool get participatesInDebugViews => true;
+
   /// Creates a shadow catcher. All parameters can be reassigned later.
   ShadowCatcherMaterial({
     Color shadowColor = const Color(0xFF000000),

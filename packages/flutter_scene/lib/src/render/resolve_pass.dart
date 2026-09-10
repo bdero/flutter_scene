@@ -33,12 +33,18 @@ class ResolvePass extends RenderGraphPass {
     required double agxWhite,
     required double agxContrast,
     required PostProcessSettings postProcess,
+    bool debugViewActive = false,
+    double debugViewSplit = -1.0,
+    bool debugSkipsPost = false,
   }) : _outputColor = outputColor,
        _exposure = exposure,
        _toneMappingMode = toneMappingMode,
        _agxWhite = agxWhite,
        _agxContrast = agxContrast,
-       _postProcess = postProcess;
+       _postProcess = postProcess,
+       _debugViewActive = debugViewActive,
+       _debugViewSplit = debugViewSplit,
+       _debugSkipsPost = debugSkipsPost;
 
   final gpu.Texture _outputColor;
   final double _exposure;
@@ -46,6 +52,13 @@ class ResolvePass extends RenderGraphPass {
   final double _agxWhite;
   final double _agxContrast;
   final PostProcessSettings _postProcess;
+  // A surface debug view is active: its pixels copy through the resolve
+  // untouched, right of the split (a width fraction, negative for all).
+  final bool _debugViewActive;
+  final double _debugViewSplit;
+  // The frame skipped bloom for a debug view, so the resolve must not add
+  // it back whatever the settings say.
+  final bool _debugSkipsPost;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -99,6 +112,9 @@ class ResolvePass extends RenderGraphPass {
       flipY: false,
       time: timeSeconds,
       settings: _postProcess,
+      debugViewActive: _debugViewActive,
+      debugViewSplit: _debugViewSplit,
+      bloomEnabled: _postProcess.bloom.enabled && !_debugSkipsPost,
     );
     renderPass.bindUniform(
       _fragmentShader.getUniformSlot('ResolveInfo'),

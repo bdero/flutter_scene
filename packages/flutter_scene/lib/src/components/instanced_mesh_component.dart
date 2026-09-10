@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/node.dart';
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/instanced_mesh.dart';
@@ -54,6 +55,9 @@ class InstancedMeshComponent extends Component {
   void refreshRenderItem() {
     final item = _renderItem;
     if (item == null) return;
+    item.debugView = Node.debugViewOverrideCount == 0
+        ? null
+        : node.effectiveDebugView;
     // A material can declare itself draw-less for the frame (the shadow
     // catcher at zero intensity); its item then joins no pass at all.
     final visible = !item.material.drawsNothing;

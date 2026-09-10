@@ -40,6 +40,9 @@ enum SplatCropMode {
 /// Pair with a `SplatMaterial` and attach through a `SplatComponent`.
 /// {@category Geometry}
 class SplatGeometry extends Geometry {
+  @override
+  bool get emitsStandardVaryings => false;
+
   /// Creates geometry for [splats].
   SplatGeometry(this.splats) {
     setVertexShaderName('SplatsVertex');

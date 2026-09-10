@@ -82,6 +82,9 @@ class TextureTransform {
 /// [baseColorFactor]'s alpha component.
 /// {@category Materials}
 class PhysicallyBasedMaterial extends Material {
+  @override
+  bool get participatesInDebugViews => true;
+
   /// Creates a PBR material with the given textures.
   ///
   /// All textures are optional; missing textures are replaced with

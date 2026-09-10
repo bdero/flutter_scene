@@ -482,3 +482,7 @@ Animation (`Animation`, `AnimationClip`, `AnimationPlayer` exported):
 The engine-agnostic scene-document core is a separate package `scene` (0.2.0), re-exported through
 `package:flutter_scene/fscene.dart`. `flutter_scene_importer` and `flutter_gpu_shim` no longer exist
 (folded in). Physics and audio are separate barrels (`physics.dart`, `audio.dart`).
+
+## Debugging the surface
+
+`Scene.debug` (a `SceneDebugSettings`): `view` is a `DebugView` over a `SurfaceDebugChannel` (geometry attributes, resolved surface channels, physical fields, object and material identity colors, validation flags, a `custom` channel fed by `material.debug` in a `.fmat`), with `gain`, a scalar range, and a `DebugRangePolicy`; `split` compares the view against the lit image; `overlays` holds `DebugOverlay.wireframe`. `Node.debugView` overrides or excludes a subtree. `DebugViewRegistry` lists every view by id for tools, and `Scene.debugViewId` selects one by id. Raw `ShaderMaterial`s opt in with `debugViews: true` after including `material_debug.glsl`; those that do not are drawn by a fallback that stripes the material channels.

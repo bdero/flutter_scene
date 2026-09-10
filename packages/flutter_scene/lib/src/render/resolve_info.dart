@@ -24,6 +24,9 @@ Float32List packResolveInfo({
   required bool flipY,
   required double time,
   required PostProcessSettings settings,
+  bool debugViewActive = false,
+  double debugViewSplit = -1.0,
+  bool? bloomEnabled,
 }) {
   final grading = settings.colorGrading;
   final aberration = settings.chromaticAberration;
@@ -79,8 +82,11 @@ Float32List packResolveInfo({
   info[33] = grain.intensity;
 
   // Row 9: bloom, then padding.
-  info[36] = bloom.enabled ? 1.0 : 0.0;
+  info[36] = (bloomEnabled ?? bloom.enabled) ? 1.0 : 0.0;
   info[37] = bloom.intensity;
+  // A surface debug view wrote display-referred pixels that copy through.
+  info[38] = debugViewActive ? 1.0 : 0.0;
+  info[39] = debugViewActive ? debugViewSplit : 0.0;
 
   // Row 10: AgX curve parameters.
   const crossover = 0.18;

@@ -204,6 +204,7 @@ String emitFragmentGlsl(
   }
   sb.writeln('#include <normals.glsl>');
   sb.writeln('#include <material_inputs.glsl>');
+  sb.writeln('#include <material_debug.glsl>');
   if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     // The catcher samples the shadow atlas and occlusion chain but never
     // evaluates the lighting, so it takes the engine bindings plus the
@@ -297,6 +298,42 @@ String emitFragmentGlsl(
   if (!material.fragmentSource.endsWith('\n')) sb.writeln();
   sb.writeln();
 
+  // The shaded output, in a function so main() can pick it, the debug view,
+  // or a per-pixel split of the two without duplicating the tail.
+  sb.writeln('vec4 MaterialOutput(MaterialInputs material) {');
+  final additive = material.blending == FmatBlending.additive;
+  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
+    sb.writeln(
+      '  // Shadow catcher: the surface color is the composed overlay,',
+    );
+    sb.writeln('  // output premultiplied without running the lighting.');
+    sb.writeln(
+      '  return vec4(material.base_color.rgb, 1.0) * material.base_color.a;',
+    );
+  } else if (lit) {
+    if (additive) {
+      // Zero the output alpha so an additive draw never darkens the
+      // destination, keeping the premultiplied color.
+      sb.writeln('  vec4 lit = EvaluateLighting(material);');
+      sb.writeln('  return vec4(lit.rgb, 0.0);');
+    } else {
+      sb.writeln('  return EvaluateLighting(material);');
+    }
+  } else {
+    sb.writeln('  // Unlit: output the surface color, premultiplied by alpha.');
+    if (additive) {
+      sb.writeln(
+        '  return vec4(material.base_color.rgb * material.base_color.a, 0.0);',
+      );
+    } else {
+      sb.writeln(
+        '  return vec4(material.base_color.rgb, 1.0) * material.base_color.a;',
+      );
+    }
+  }
+  sb.writeln('}');
+  sb.writeln();
+
   sb.writeln('void main() {');
   sb.writeln('  MaterialInputs material = InitMaterialInputs();');
   sb.writeln('  Surface(material);');
@@ -307,42 +344,27 @@ String emitFragmentGlsl(
       '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
   }
-  final additive = material.blending == FmatBlending.additive;
-  if (material.shadingModel == FmatShadingModel.shadowCatcher) {
-    sb.writeln(
-      '  // Shadow catcher: the surface color is the composed overlay,',
-    );
-    sb.writeln('  // output premultiplied without running the lighting.');
-    sb.writeln(
-      '  frag_color = vec4(material.base_color.rgb, 1.0) * '
-      'material.base_color.a;',
-    );
-  } else if (lit) {
-    if (additive) {
-      // Zero the output alpha so an additive draw never darkens the
-      // destination, keeping the premultiplied color.
-      sb.writeln('  vec4 lit = EvaluateLighting(material);');
-      sb.writeln('  frag_color = vec4(lit.rgb, 0.0);');
-    } else {
-      sb.writeln('  frag_color = EvaluateLighting(material);');
-    }
-  } else {
-    sb.writeln('  // Unlit: output the surface color, premultiplied by alpha.');
-    if (additive) {
-      sb.writeln(
-        '  frag_color = vec4(material.base_color.rgb * '
-        'material.base_color.a, 0.0);',
-      );
-    } else {
-      sb.writeln(
-        '  frag_color = vec4(material.base_color.rgb, 1.0) * '
-        'material.base_color.a;',
-      );
-    }
-  }
+  _writeDebugViewSelect(sb);
   sb.writeln('}');
 
   return sb.toString();
+}
+
+/// Writes the tail of a material's `main()`: the surface debug view when one
+/// is active, the shaded `MaterialOutput` otherwise, or both selected per
+/// pixel for a split. Every branch is under uniform control flow; the split
+/// evaluates both sides and selects, so the lit path never runs under a
+/// per-pixel branch.
+void _writeDebugViewSelect(StringBuffer sb) {
+  sb.writeln('  float debug_mode = DebugViewMode();');
+  sb.writeln('  if (debug_mode > 1.5) {');
+  sb.writeln('    frag_color = DebugViewSplit(DebugSurfaceOutput(material),');
+  sb.writeln('                                MaterialOutput(material));');
+  sb.writeln('  } else if (debug_mode > 0.5) {');
+  sb.writeln('    frag_color = DebugSurfaceOutput(material);');
+  sb.writeln('  } else {');
+  sb.writeln('    frag_color = MaterialOutput(material);');
+  sb.writeln('  }');
 }
 
 /// A scalar GLSL expression reading one component of [p] through the

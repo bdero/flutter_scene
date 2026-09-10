@@ -4,6 +4,7 @@
 #include <texture.glsl>
 #include <material_engine_lighting.glsl>
 #include <material_inputs.glsl>
+#include <material_debug.glsl>
 #include <material_lighting.glsl>
 #include <lod_fade.glsl>
 
@@ -110,5 +111,15 @@ void main() {
   ApplyLodFade(frag_info.fade);
   MaterialInputs material = InitMaterialInputs();
   Surface(material);
-  frag_color = EvaluateLighting(material);
+  // The surface debug view when one is active, the lit result otherwise, or
+  // both selected per pixel for a split (uniform control flow throughout).
+  float debug_mode = DebugViewMode();
+  if (debug_mode > 1.5) {
+    frag_color = DebugViewSplit(DebugSurfaceOutput(material),
+                                EvaluateLighting(material));
+  } else if (debug_mode > 0.5) {
+    frag_color = DebugSurfaceOutput(material);
+  } else {
+    frag_color = EvaluateLighting(material);
+  }
 }

@@ -46,6 +46,9 @@ struct MaterialInputs {
   float specular;
   // Ambient occlusion in [0, 1]: 1 unoccluded.
   float occlusion;
+  // A value the material wants to inspect. Never shaded; shown raw by the
+  // `custom` surface debug channel (see material_debug.glsl).
+  vec3 debug;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   // Advanced physical fields. These exist only in physical shader variants,
   // so standard/unlit materials keep their original interface and cost.
@@ -83,6 +86,7 @@ MaterialInputs InitMaterialInputs() {
   material.roughness = 1.0;
   material.specular = 1.0;
   material.occlusion = 1.0;
+  material.debug = vec3(0.0);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   material.specular_color = vec3(1.0);
   material.specular_weight = 1.0;

@@ -158,6 +158,15 @@ class MeshComponent extends Component {
   @internal
   void refreshRenderItems() {
     if (_renderItems.isEmpty) return;
+    // The debug view override is a plain per-frame copy; it never touches the
+    // shadow or bounds state below, and the walk is skipped while no node
+    // anywhere sets one.
+    final debugView = Node.debugViewOverrideCount == 0
+        ? null
+        : node.effectiveDebugView;
+    for (final item in _renderItems) {
+      item.debugView = debugView;
+    }
     final worldTransformVersion = node.worldTransformVersion;
     var staticStateUnchanged =
         node.skin == null &&

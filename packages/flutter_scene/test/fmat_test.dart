@@ -325,7 +325,7 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(c.glsl, contains('material_params;'));
       expect(c.glsl, contains('uniform sampler2D detail_texture;'));
       expect(c.glsl, contains('#line ${c.material.fragmentSourceLine}'));
-      expect(c.glsl, contains('frag_color = EvaluateLighting(material);'));
+      expect(c.glsl, contains('return EvaluateLighting(material);'));
       expect(c.glsl, contains('Surface(material);'));
     });
 
@@ -358,7 +358,7 @@ fragment {
       expect(
         c.glsl,
         contains(
-          'frag_color = vec4(material.base_color.rgb * '
+          'return vec4(material.base_color.rgb * '
           'material.base_color.a, 0.0);',
         ),
       );
@@ -370,7 +370,7 @@ material { name: "AddL", shading_model: lit, blending: additive }
 fragment { void Surface(inout MaterialInputs material) {} }
 ''');
       expect(c.glsl, contains('vec4 lit = EvaluateLighting(material);'));
-      expect(c.glsl, contains('frag_color = vec4(lit.rgb, 0.0);'));
+      expect(c.glsl, contains('return vec4(lit.rgb, 0.0);'));
     });
 
     test(

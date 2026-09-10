@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Surface debug views. `Scene.debug.view` shows a resolved material channel (base color, roughness, metallic, every physical field), a geometry attribute (normals, tangents, UV sets, vertex color, face orientation, UV checkers), an identity color per object or material, or a validation flag (NaN/Inf, albedo range, non-binary metallic, missing tangents, UV range) in place of the lit result, on every material including `.fmat` ones, at runtime in any build. `Scene.debug.split` compares a view against the lit image, `DebugView` carries a range, gain, and out-of-range policy, `Node.debugView` overrides or excludes a subtree, and `Scene.debug.overlays` adds a wireframe drawn through each mesh's own vertex path. `DebugViewRegistry` lists the views by id for tools; a `.fmat` shows any value through `material.debug` and the `custom` channel.
 * Projected box decals via `DecalNode`, an oriented projection volume that paints a `.fmat` material onto whatever opaque surfaces it intersects (scorch marks, splats), with no mesh work at the impact site.
 * Radial screen distortion pulses via `Scene.screenDistortion`, expanding shockwave rings that warp the composed image with optional chromatic fringing.
 * `.fmat` materials accept `blending: additive` alongside `opaque`/`alpha`, and `depth_write`/`depth_test` configure the translucent depth state.

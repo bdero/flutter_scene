@@ -621,6 +621,68 @@ backend without further care.
 
 ---
 
+# Surface debug views
+
+`Scene.debug.view` replaces every surface's lit result with one channel of
+its `MaterialInputs`, a geometry attribute, an identity color, or a validation
+flag (see `SurfaceDebugChannel`), so a wrong texture, a wrong parameter, and
+wrong lighting are three different pictures. A `.fmat` participates with no
+changes; the generated `main()` fills `MaterialInputs` through `Surface()` and
+then selects between `DebugSurfaceOutput()` and the shaded `MaterialOutput()`.
+Debug pixels are display-referred: the resolve pass hands them through
+untouched, so a roughness of 0.5 is mid gray on screen whatever the exposure.
+
+```dart
+scene.debug.view = const DebugView(channel: SurfaceDebugChannel.roughness);
+scene.debug.split = 0.5;                       // lit left, view right
+scene.debug.overlays.add(DebugOverlay.wireframe);
+node.debugView = DebugView.none;               // this subtree shades normally
+```
+
+To look at an intermediate of your own, write it into `material.debug` inside
+`Surface()` and select the `custom` channel; with hot reload that is a
+one-line probe.
+
+```glsl
+void Surface(inout MaterialInputs material) {
+  float mask = texture(mask_texture, GetUV0()).r;
+  material.debug = vec3(mask);
+  ...
+}
+```
+
+A raw `ShaderMaterial` opts in by including the hook and selecting its output
+the same way, then constructing with `debugViews: true`:
+
+```glsl
+#include <material_varyings.glsl>
+#include <material_inputs.glsl>
+#include <material_debug.glsl>
+
+void main() {
+  MaterialInputs material = InitMaterialInputs();
+  // ...fill material...
+  vec4 shaded = /* your lit color, linear premultiplied */;
+  float debug_mode = DebugViewMode();
+  if (debug_mode > 1.5) {
+    frag_color = DebugViewSplit(DebugSurfaceOutput(material), shaded);
+  } else if (debug_mode > 0.5) {
+    frag_color = DebugSurfaceOutput(material);
+  } else {
+    frag_color = shaded;
+  }
+}
+```
+
+A raw shader that does not opt in is drawn through the engine's fallback
+debug shader while a view is active, which serves the geometry and identity
+channels from the varyings and paints magenta stripes for everything that
+needs the surface description. Keep the three branches as written: the split
+is a per-pixel test, and evaluating both sides before selecting keeps every
+texture sample under uniform control flow.
+
+---
+
 # Decals
 
 A decal paints a mark (a scorch, a melt glow, a sticker) onto surfaces that are

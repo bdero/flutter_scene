@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, kDebugMode, visibleForTesting;
+    show debugPrint, internal, kDebugMode, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -17,12 +17,14 @@ import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
+import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
+import 'package:flutter_scene/src/shaders.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
 /// resolved pipeline, a per-pipeline grouping key, and the camera
@@ -520,8 +522,10 @@ base class SceneEncoder {
     this._cullingPlanes,
     this._cullInstances, {
     Matrix4? cameraTransform,
+    DebugViewFrame? debugView,
   }) : _renderPass = renderPass,
-       _transientsBuffer = transientsBuffer {
+       _transientsBuffer = transientsBuffer,
+       _debugView = debugView {
     currentSceneEncoderViewport = _dimensions;
     _cameraTransform = cameraTransform ?? _camera.getViewTransform(_dimensions);
     frustum = Frustum.matrix(_cameraTransform);
@@ -540,6 +544,18 @@ base class SceneEncoder {
   final ui.Size _dimensions;
   final Lighting _lighting;
   final int _layerMask;
+  // The frame's surface debug view state, or null when none is active.
+  final DebugViewFrame? _debugView;
+  // The DebugViewInfo block for one draw, and the shared block that turns
+  // the view off, emplaced once per encoder on first use.
+  final Float32List _debugViewScratch = Float32List(DebugViewFrame.floatCount);
+  gpu.BufferView? _debugViewInactive;
+  // Which material the inactive block is bound for, so a run of draws with
+  // one material binds it once.
+  Material? _debugViewBoundMaterial;
+  bool _debugViewBoundFallback = false;
+  static final gpu.Shader _debugFallbackShader =
+      baseShaderLibrary['DebugSurfaceFragment']!;
   final List<Plane> _cullingPlanes;
   final bool _cullInstances;
   // Not final because opaque and translucent draws can use separate passes.
@@ -564,12 +580,17 @@ base class SceneEncoder {
   /// the start of this frame. Used by [submit] for per-item culling.
   late final Frustum frustum;
 
+  /// The view-projection this encoder draws with.
+  @internal
+  Matrix4 get cameraTransform => _cameraTransform;
+
   // The pipeline currently bound on the render pass, or null before the
   // first bind. `clearBindings` does not clear the pipeline, so a draw
   // that reuses it can skip the rebind. Opaque draws are pipeline-sorted,
   // so reuse runs are common.
   gpu.RenderPipeline? _boundPipeline;
   Material? _boundMaterial;
+  bool _boundMaterialFallback = false;
   gpu.Shader? _boundMaterialVertex;
   gpu.Shader? _boundFrameInfoShader;
   double _boundFrameInfoDepthBias = double.nan;
@@ -624,10 +645,15 @@ base class SceneEncoder {
   ) {
     // A material with a `vertex { }` block supplies its own vertex shader for
     // this geometry's mesh type; otherwise the engine's standard one is used.
+    // A material that cannot show the active debug view draws through the
+    // engine's fallback debug fragment shader instead of its own.
+    final fallback = _usesDebugFallback(item, material, geometry);
     final pipeline = tryResolvePipeline(
       material.materialVertexShader(geometry.materialVertexVariant) ??
           geometry.vertexShader,
-      material.fragmentShaderForLighting(_lighting),
+      fallback
+          ? _debugFallbackShader
+          : material.fragmentShaderForLighting(_lighting),
       // A material declaring `instance_attributes` widens the instance-rate
       // slot, so the pipeline depends on the material as well as the geometry.
       vertexLayout: geometry.instancedVertexLayoutFor(
@@ -841,6 +867,7 @@ base class SceneEncoder {
     _renderPass.clearBindings();
     EngineLightingUniforms.invalidateBindMemo();
     _boundMaterial = null;
+    _debugViewBoundMaterial = null;
     _boundMaterialVertex = null;
     _boundFrameInfoShader = null;
     _boundFrameInfoDepthBias = double.nan;
@@ -852,16 +879,80 @@ base class SceneEncoder {
     _boundPrimitiveType = null;
   }
 
+  // The debug view [item] shows this frame: its node override when one is
+  // set, else the scene view, else none.
+  DebugView _effectiveDebugView(RenderItem? item) {
+    final frame = _debugView;
+    if (frame == null) return DebugView.none;
+    return frame.effectiveView(item?.debugView);
+  }
+
+  // Whether [material] draws through the engine's fallback debug shader for
+  // [item]: a view is active for it, the material cannot show views itself,
+  // and the geometry writes the standard varyings the fallback reads.
+  bool _usesDebugFallback(
+    RenderItem? item,
+    Material material,
+    Geometry geometry,
+  ) {
+    if (_debugView == null) return false;
+    return _effectiveDebugView(item).isActive &&
+        !material.participatesInDebugViews &&
+        geometry.emitsStandardVaryings;
+  }
+
+  // Binds the DebugViewInfo block for the draw about to be recorded. Every
+  // participating shader declares it, so it is bound even when no view is
+  // active (once per material run, the shared off block); an active view
+  // binds per draw, since the identity seeds are per item.
+  void _bindDebugView(Material material, RenderItem? item, bool fallback) {
+    if (!fallback && !material.participatesInDebugViews) return;
+    final shader = fallback
+        ? _debugFallbackShader
+        : material.fragmentShaderForLighting(_lighting);
+    final slot = shader.getUniformSlot('DebugViewInfo');
+    final view = _effectiveDebugView(item);
+    if (!view.isActive) {
+      if (identical(_debugViewBoundMaterial, material) &&
+          _debugViewBoundFallback == fallback) {
+        return;
+      }
+      _renderPass.bindUniform(
+        slot,
+        _debugViewInactive ??= _transientsBuffer.emplace(
+          ByteData.sublistView(DebugViewFrame.inactive),
+        ),
+      );
+      _debugViewBoundMaterial = material;
+      _debugViewBoundFallback = fallback;
+      return;
+    }
+    _debugView!.pack(
+      _debugViewScratch,
+      view,
+      objectSeed: item == null ? 0 : identityHashCode(item.sourceNode ?? item),
+      materialSeed: identityHashCode(material),
+    );
+    _renderPass.bindUniform(
+      slot,
+      _transientsBuffer.emplace(ByteData.sublistView(_debugViewScratch)),
+    );
+    // A per-draw block; the next draw with this material must rebind.
+    _debugViewBoundMaterial = null;
+  }
+
   void _bindMaterial(
     Material material,
     gpu.Shader? materialVertex,
-    double fade,
-  ) {
+    double fade, {
+    bool fallback = false,
+  }) {
     final lightOffset = material.lightListOffset;
     final lightCount = material.lightListCount;
     final lightChannelMask = material.lightChannelMask;
     if (identical(_boundMaterial, material) &&
         identical(_boundMaterialVertex, materialVertex) &&
+        _boundMaterialFallback == fallback &&
         _boundMaterialFade == fade &&
         _boundMaterialLightOffset == lightOffset &&
         _boundMaterialLightCount == lightCount &&
@@ -869,11 +960,19 @@ base class SceneEncoder {
       return;
     }
     material.lodFade = fade;
-    material.bind(_renderPass, _transientsBuffer, _lighting);
+    if (fallback) {
+      // The fallback debug shader has none of the material's fragment slots;
+      // only the pass state and the vertex stage bind.
+      _renderPass.setCullMode(material.renderCullMode);
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+    } else {
+      material.bind(_renderPass, _transientsBuffer, _lighting);
+    }
     _boundWindingOrder = null;
     if (materialVertex != null) {
       material.bindVertexStage(_renderPass, materialVertex, _transientsBuffer);
     }
+    _boundMaterialFallback = fallback;
     _boundMaterial = material;
     _boundMaterialVertex = materialVertex;
     _boundMaterialFade = fade;
@@ -953,8 +1052,10 @@ base class SceneEncoder {
     Geometry geometry,
     Material material,
     bool windingFlipped,
-    double fade,
-  ) {
+    double fade, {
+    RenderItem? item,
+  }) {
+    final fallback = _usesDebugFallback(item, material, geometry);
     // Bindings persist across draws within a pass, and every draw binds its
     // full slot set, so clearing is only needed when the pipeline (and with
     // it the shaders' slot layouts) changes; a stale entry from a different
@@ -987,7 +1088,8 @@ base class SceneEncoder {
         attributeFloats: material.instanceAttributes?.floatCount ?? 0,
       );
     }
-    _bindMaterial(material, materialVertex, fade);
+    _bindMaterial(material, materialVertex, fade, fallback: fallback);
+    _bindDebugView(material, item, fallback);
     // A mirrored transform reverses triangle winding. Set both cases because
     // a cached material bind no longer resets it between compatible draws.
     _setWindingOrder(
@@ -1023,6 +1125,7 @@ base class SceneEncoder {
     Uint8List? packedWorldWindingFlipped,
     Float32List? attributeData,
     int attributeFloats = 0,
+    RenderItem? item,
   }) {
     checkInstanceRecordWidth(material.instanceAttributes, attributeFloats);
     if (!identical(_boundPipeline, pipeline)) {
@@ -1032,7 +1135,9 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
-    _bindMaterial(material, materialVertex, fade);
+    final fallback = _usesDebugFallback(item, material, geometry);
+    _bindMaterial(material, materialVertex, fade, fallback: fallback);
+    _bindDebugView(material, item, fallback);
     _setPrimitiveType(geometry.primitiveType);
 
     if (geometry.instancedVertexLayout == null) {
@@ -1107,8 +1212,9 @@ base class SceneEncoder {
     Geometry geometry,
     Material material,
     List<InstanceDataBatch> batches,
-    double fade,
-  ) {
+    double fade, {
+    RenderItem? item,
+  }) {
     // Cross-node batching synthesizes instances, so a material declaring
     // per-instance attributes is kept out of it (see opaqueBatchEnd).
     assert(material.instanceAttributes == null);
@@ -1119,7 +1225,11 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
-    _bindMaterial(material, materialVertex, fade);
+    final fallback = _usesDebugFallback(item, material, geometry);
+    _bindMaterial(material, materialVertex, fade, fallback: fallback);
+    // TODO(debug-views): a cross-node batch carries the first item's object
+    // seed, so its members share one object color.
+    _bindDebugView(material, item, fallback);
     _setPrimitiveType(geometry.primitiveType);
     _bindGeometry(
       geometry,
@@ -1221,6 +1331,7 @@ base class SceneEncoder {
           record.material,
           _batchPool.batches,
           record.fade,
+          item: item,
         );
         index = end;
         continue;
@@ -1248,6 +1359,7 @@ base class SceneEncoder {
               : null,
           attributeData: item.instanceAttributeData,
           attributeFloats: item.instanceAttributeFloats,
+          item: item,
         );
       } else {
         _encode(
@@ -1257,6 +1369,7 @@ base class SceneEncoder {
           record.material,
           record.windingFlipped,
           record.fade,
+          item: item,
         );
       }
       index++;
@@ -1595,6 +1708,7 @@ base class SceneEncoder {
               : null,
           attributeData: record.item.instanceAttributeData,
           attributeFloats: record.item.instanceAttributeFloats,
+          item: record.item,
         );
       } else {
         _encode(
@@ -1604,6 +1718,7 @@ base class SceneEncoder {
           record.material,
           record.windingFlipped,
           record.fade,
+          item: record.item,
         );
       }
     }

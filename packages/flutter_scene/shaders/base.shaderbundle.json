@@ -115,6 +115,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_mask.frag"
   },
+  "DebugSurfaceFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_debug_surface.frag"
+  },
   "OutlineFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_outline.frag"
