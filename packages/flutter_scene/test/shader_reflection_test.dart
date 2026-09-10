@@ -236,6 +236,10 @@ void main() {
     // Without the exact match both blocks stay candidates.
     final ambiguous = matchUniformBlocks([frameInfo, frag], [64]);
     expect(ambiguous.single.map((b) => b.name), ['FrameInfo', 'FragInfo']);
+    // A buffer only FrameInfo can be claims it, which settles the other.
+    final settled = matchUniformBlocks([frameInfo, frag], [64, 80]);
+    expect(settled[0].map((b) => b.name), ['FragInfo']);
+    expect(settled[1].map((b) => b.name), ['FrameInfo']);
   });
 
   test('parses compiler diagnostics and windows the source', () {
