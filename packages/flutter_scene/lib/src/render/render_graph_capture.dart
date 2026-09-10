@@ -9,11 +9,17 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/fmat/material_registry.dart'
+    show fmatSourcePathOf;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
+import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/shader_reflection/shader_reflection.dart';
 import 'package:flutter_scene/src/shaders.dart';
 
 /// The process-wide opt-in for render graph debugging (capture and the
@@ -117,8 +123,167 @@ class CapturedResource {
       !snapshotFailed;
 }
 
-/// One executed pass: identity, CPU time, and the blackboard keys it read
-/// and wrote, in observation order.
+/// One uniform block emplaced for a draw: the packed bytes, resolved to a
+/// declared block of the draw's shaders by size when that is unambiguous.
+/// {@category Debugging and profiling}
+class CapturedUniformBlock {
+  CapturedUniformBlock(this.bytes);
+
+  /// A copy of the packed bytes.
+  final ByteData bytes;
+
+  int get byteLength => bytes.lengthInBytes;
+
+  /// Declared blocks of the draw's shaders whose size matches, resolved
+  /// against loaded reflection. One entry means [decode] can name it.
+  List<ShaderUniformBlockInfo> candidatesFor(CapturedDraw draw) {
+    final matches = <ShaderUniformBlockInfo>[];
+    for (final shader in [draw.vertexShader, draw.fragmentShader]) {
+      if (shader == null) continue;
+      final info = ShaderReflection.infoFor(shader)?.current;
+      if (info == null) continue;
+      for (final block in info.uniformBlocks) {
+        if (block.sizeBytes == byteLength && !matches.contains(block)) {
+          matches.add(block);
+        }
+      }
+    }
+    return matches;
+  }
+
+  /// The block's name when exactly one declared block matches, else null.
+  String? nameFor(CapturedDraw draw) {
+    final candidates = candidatesFor(draw);
+    return candidates.length == 1 ? candidates.single.name : null;
+  }
+
+  /// The decoded members when exactly one declared block matches, else
+  /// null. Needs the shaders' bundle reflection loaded (see
+  /// [ShaderReflection.loadBundleInfo]).
+  List<ShaderUniformValue>? decode(CapturedDraw draw) {
+    final candidates = candidatesFor(draw);
+    if (candidates.length != 1) return null;
+    return decodeUniformBlock(candidates.single, bytes);
+  }
+
+  Map<String, Object?> toJson(CapturedDraw draw) {
+    final decoded = decode(draw);
+    return {
+      'bytes': byteLength,
+      if (decoded != null) 'name': candidatesFor(draw).single.name,
+      if (decoded != null) 'values': [for (final v in decoded) v.toJson()],
+      if (decoded == null)
+        'candidates': [for (final c in candidatesFor(draw)) c.name],
+    };
+  }
+}
+
+/// One draw call issued during a captured pass, with what the encoder knew
+/// about it and the uniform bytes emplaced since the previous draw.
+/// {@category Debugging and profiling}
+class CapturedDraw {
+  CapturedDraw({
+    required this.passIndex,
+    required this.order,
+    required this.phase,
+    required this.vertexCount,
+    required this.instanceCount,
+    required this.indexed,
+    required this.batchedItems,
+    required this.batchBreak,
+    required this.uniformBlocks,
+    this.nodePath,
+    this.materialType,
+    this.materialSource,
+    this.vertexShader,
+    this.fragmentShader,
+    this.pipelineId,
+    this.geometryType,
+  });
+
+  final int passIndex;
+
+  /// Position among the pass's draws, from zero.
+  final int order;
+  final DrawPhase phase;
+
+  /// Vertices (or indices, when [indexed]) per instance.
+  final int vertexCount;
+  final int instanceCount;
+  final bool indexed;
+
+  /// Scene nodes merged into this draw, or 1.
+  final int batchedItems;
+
+  /// Why the opaque run this draw ended did not continue.
+  final BatchBreakReason batchBreak;
+
+  /// Uniform blocks emplaced between the previous draw and this one, in
+  /// emplacement order. Bindings the encoder kept from an earlier draw do
+  /// not reappear.
+  final List<CapturedUniformBlock> uniformBlocks;
+
+  /// Slash-joined node names from the scene root, when a node drew.
+  final String? nodePath;
+  final String? materialType;
+
+  /// The `.fmat` path for a preprocessed material.
+  final String? materialSource;
+  final String? geometryType;
+  final gpu.Shader? vertexShader;
+  final gpu.Shader? fragmentShader;
+
+  /// Identity of the bound pipeline, shared by draws that used the same
+  /// one.
+  final int? pipelineId;
+
+  /// The vertex shader's bundle entry name, once its bundle reflection has
+  /// loaded.
+  String? get vertexShaderName =>
+      vertexShader == null ? null : ShaderReflection.nameOf(vertexShader!);
+
+  String? get fragmentShaderName =>
+      fragmentShader == null ? null : ShaderReflection.nameOf(fragmentShader!);
+
+  /// Triangles this draw rasterizes, assuming a triangle list.
+  int get triangles => vertexCount ~/ 3 * instanceCount;
+
+  Map<String, Object?> toJson() => {
+    'pass': passIndex,
+    'order': order,
+    'phase': phase.name,
+    if (nodePath != null) 'node': nodePath,
+    if (materialType != null) 'material': materialType,
+    if (materialSource != null) 'materialSource': materialSource,
+    if (geometryType != null) 'geometry': geometryType,
+    if (vertexShaderName != null) 'vertexShader': vertexShaderName,
+    if (fragmentShaderName != null) 'fragmentShader': fragmentShaderName,
+    if (pipelineId != null) 'pipeline': pipelineId,
+    'vertexCount': vertexCount,
+    'instanceCount': instanceCount,
+    'indexed': indexed,
+    'batchedItems': batchedItems,
+    'batchBreak': batchBreak.name,
+    'uniformBlocks': [for (final block in uniformBlocks) block.toJson(this)],
+  };
+}
+
+/// A submitted item that did not draw in a captured pass.
+/// {@category Debugging and profiling}
+class CapturedSkip {
+  const CapturedSkip({required this.reason, this.nodePath});
+
+  final DrawSkipReason reason;
+  final String? nodePath;
+
+  Map<String, Object?> toJson() => {
+    'reason': reason.name,
+    if (nodePath != null) 'node': nodePath,
+  };
+}
+
+/// One executed pass: identity, CPU time, the blackboard keys it read and
+/// wrote in observation order, and its draws and skipped items.
 /// {@category Debugging and profiling}
 class CapturedPass {
   CapturedPass({required this.name, required this.indexInGraph});
@@ -128,6 +293,8 @@ class CapturedPass {
   int cpuMicros = 0;
   final List<String> reads = [];
   final List<String> writes = [];
+  final List<CapturedDraw> draws = [];
+  final List<CapturedSkip> skips = [];
 }
 
 /// The product of one captured frame.
@@ -151,6 +318,13 @@ class RenderGraphCaptureResult {
   final int pixelWidth;
   final int pixelHeight;
 
+  /// Every draw of the frame, in execution order.
+  Iterable<CapturedDraw> get draws sync* {
+    for (final pass in passes) {
+      yield* pass.draws;
+    }
+  }
+
   /// The latest write of [key] at or before [passIndex], or null.
   CapturedResource? resourceAt(String key, int passIndex) {
     CapturedResource? best;
@@ -166,7 +340,7 @@ class RenderGraphCaptureResult {
 /// The observer that performs a capture: records the graph and copies
 /// written textures at pass boundaries.
 /// {@category Debugging and profiling}
-class RenderGraphCapturer implements RenderGraphObserver {
+class RenderGraphCapturer implements RenderGraphObserver, DrawRecorder {
   RenderGraphCapturer({required this.request});
 
   final RenderGraphCaptureRequest request;
@@ -179,6 +353,8 @@ class RenderGraphCapturer implements RenderGraphObserver {
   // Acquired this pass but (not yet) published to the blackboard.
   final List<gpu.Texture> _pendingAcquires = [];
   CapturedPass? _current;
+  DrawContext? _drawContext;
+  final List<CapturedUniformBlock> _pendingUniforms = [];
 
   /// Finishes the capture over the executed graph.
   RenderGraphCaptureResult finish({
@@ -197,6 +373,75 @@ class RenderGraphCapturer implements RenderGraphObserver {
     _passes.add(_current!);
     _pendingWrites.clear();
     _pendingAcquires.clear();
+    _drawContext = null;
+    _pendingUniforms.clear();
+  }
+
+  @override
+  void setContext(DrawContext context) => _drawContext = context;
+
+  @override
+  void clearContext() => _drawContext = null;
+
+  @override
+  void onUniformEmplaced(ByteData bytes) {
+    if (_current == null) return;
+    // The encoders reuse scratch buffers across draws, so keep a copy.
+    final copy = Uint8List.fromList(
+      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+    );
+    _pendingUniforms.add(CapturedUniformBlock(ByteData.sublistView(copy)));
+  }
+
+  @override
+  void onDraw(int vertexCount, int instanceCount, {required bool indexed}) {
+    final current = _current;
+    if (current == null) return;
+    final context = _drawContext;
+    final item = context?.item;
+    final material = context?.material;
+    current.draws.add(
+      CapturedDraw(
+        passIndex: current.indexInGraph,
+        order: current.draws.length,
+        phase: context?.phase ?? DrawPhase.other,
+        vertexCount: vertexCount,
+        instanceCount: instanceCount,
+        indexed: indexed,
+        batchedItems: context?.batchedItems ?? 1,
+        batchBreak: context?.batchBreak ?? BatchBreakReason.none,
+        uniformBlocks: List.of(_pendingUniforms),
+        nodePath: item == null ? null : nodePathOf(item),
+        materialType: material?.runtimeType.toString(),
+        materialSource: material == null ? null : fmatSourcePathOf(material),
+        geometryType: context?.geometry?.runtimeType.toString(),
+        vertexShader: context?.vertexShader,
+        fragmentShader: context?.fragmentShader,
+        pipelineId: context?.pipeline == null
+            ? null
+            : identityHashCode(context!.pipeline),
+      ),
+    );
+    _pendingUniforms.clear();
+  }
+
+  @override
+  void onSkip(RenderItem item, DrawSkipReason reason) {
+    _current?.skips.add(
+      CapturedSkip(reason: reason, nodePath: nodePathOf(item)),
+    );
+  }
+
+  /// Slash-joined names from the scene root to the node that owns [item],
+  /// or null when the item has no node.
+  static String? nodePathOf(RenderItem item) {
+    final source = item.sourceNode;
+    if (source is! Node) return null;
+    final names = <String>[];
+    for (Node? node = source; node != null; node = node.parent) {
+      names.add(node.name.isEmpty ? '<unnamed>' : node.name);
+    }
+    return names.reversed.join('/');
   }
 
   @override

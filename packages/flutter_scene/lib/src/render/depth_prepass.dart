@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/material/material.dart' show Material;
+import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -490,6 +491,18 @@ class _DepthPrepassEncoder {
       _boundPipeline = pipeline;
     }
     _renderPass.setPrimitiveType(geometry.primitiveType);
+    activeDrawRecorder?.setContext(
+      DrawContext(
+        phase: DrawPhase.depth,
+        item: item,
+        geometry: geometry,
+        material: item.material,
+        vertexShader: activeVertex,
+        fragmentShader: fragmentShader,
+        pipeline: pipeline,
+        batchedItems: batches?.length ?? 1,
+      ),
+    );
     if (_writeNormals) {
       // Carry this material's roughness so the reflection trace can fade out
       // on rough surfaces. camera_forward.w holds the roughness factor; the

@@ -1,6 +1,8 @@
 import 'dart:developer' as developer;
+import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
 import 'package:flutter_scene/src/texture/texture_registry.dart'
@@ -83,6 +85,22 @@ class _RecordingBlackboard extends Blackboard {
   void set(Object key, Object? value) {
     _inner.set(key, value);
     _observer.onBlackboardWrite(key, value);
+  }
+}
+
+/// A [TransientWriter] view that reports every emplacement to a draw
+/// recorder, so a capture can attribute uniform bytes to the draw that
+/// follows them.
+class _RecordingTransientWriter implements TransientWriter {
+  _RecordingTransientWriter(this._inner, this._recorder);
+
+  final TransientWriter _inner;
+  final DrawRecorder _recorder;
+
+  @override
+  gpu.BufferView emplace(ByteData bytes) {
+    _recorder.onUniformEmplaced(bytes);
+    return _inner.emplace(bytes);
   }
 }
 
@@ -366,8 +384,13 @@ class RenderGraph {
     RenderViewStats? stats,
   }) {
     _blackboard._clear();
+    // An observer that also records draws gets the encoders' draw context
+    // and every uniform emplacement for the frame.
+    final recorder = observer is DrawRecorder ? observer as DrawRecorder : null;
     final context = RenderGraphContext(
-      transientsBuffer: transientsBuffer,
+      transientsBuffer: recorder == null
+          ? transientsBuffer
+          : _RecordingTransientWriter(transientsBuffer, recorder),
       texturePool: texturePool,
       blackboard: observer == null
           ? _blackboard
@@ -385,11 +408,19 @@ class RenderGraph {
         _passStart.copyFrom(activeRenderCounters);
       }
       observer?.onPassBegin(pass, i);
+      if (recorder != null) {
+        recorder.clearContext();
+        activeDrawRecorder = recorder;
+      }
       if (timeline) developer.Timeline.startSync(pass.name);
       stopwatch
         ..reset()
         ..start();
-      pass.execute(context);
+      try {
+        pass.execute(context);
+      } finally {
+        activeDrawRecorder = null;
+      }
       stopwatch.stop();
       if (timeline) developer.Timeline.finishSync();
       final elapsed = stopwatch.elapsedMicroseconds;

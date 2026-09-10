@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
+import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -607,6 +608,7 @@ base class SceneEncoder {
   gpu.PrimitiveType? _boundPrimitiveType;
   int _encodedDraws = 0;
   int _encodedInstances = 0;
+  DrawPhase _phase = DrawPhase.opaque;
 
   /// Queues a draw call for [item], unless it is hidden or frustum
   /// culled.
@@ -619,11 +621,13 @@ base class SceneEncoder {
     activeRenderCounters.submitted++;
     if ((item.layers & _layerMask) == 0) {
       activeRenderCounters.layerMasked++;
+      activeDrawRecorder?.onSkip(item, DrawSkipReason.layerMasked);
       return;
     }
     if (_cullInstances) {
       if (!item.cullVisibleInstances(frustum, _cullingPlanes)) {
         activeRenderCounters.culled++;
+        activeDrawRecorder?.onSkip(item, DrawSkipReason.frustumCulled);
         return;
       }
     } else {
@@ -638,7 +642,11 @@ base class SceneEncoder {
     // Queue the level(s) of detail to draw (or cull). A cross-fading node
     // returns its two adjacent levels with complementary dither coverage.
     if (lod != null) {
-      for (final selection in _resolveLod(lod, worldBounds)) {
+      final selections = _resolveLod(lod, worldBounds);
+      if (selections.isEmpty) {
+        activeDrawRecorder?.onSkip(item, DrawSkipReason.lodCulled);
+      }
+      for (final selection in selections) {
         final level = lod.levels[selection.level];
         _record(item, level.geometry, level.material, selection.fade);
       }
@@ -678,6 +686,7 @@ base class SceneEncoder {
     );
     if (pipeline == null) {
       activeRenderCounters.pipelineRejected++;
+      activeDrawRecorder?.onSkip(item, DrawSkipReason.pipelineRejected);
       return;
     }
 
@@ -1062,6 +1071,34 @@ base class SceneEncoder {
     geometry.draw(_renderPass, instanceCount: instanceCount);
   }
 
+  // Tells the capture recorder what the next draws are, at the cost of one
+  // null check per encode in steady state.
+  void _describeDraw(
+    RenderItem item,
+    Geometry geometry,
+    Material material,
+    gpu.Shader? materialVertex,
+    gpu.RenderPipeline pipeline, {
+    int batchedItems = 1,
+    BatchBreakReason batchBreak = BatchBreakReason.none,
+  }) {
+    final recorder = activeDrawRecorder;
+    if (recorder == null) return;
+    recorder.setContext(
+      DrawContext(
+        phase: _phase,
+        item: item,
+        geometry: geometry,
+        material: material,
+        vertexShader: materialVertex ?? geometry.vertexShader,
+        fragmentShader: material.fragmentShaderForLighting(_lighting),
+        pipeline: pipeline,
+        batchedItems: batchedItems,
+        batchBreak: batchBreak,
+      ),
+    );
+  }
+
   void _encode(
     gpu.RenderPipeline pipeline,
     Matrix4 worldTransform,
@@ -1070,6 +1107,7 @@ base class SceneEncoder {
     bool windingFlipped,
     double fade, {
     RenderItem? item,
+    BatchBreakReason batchBreak = BatchBreakReason.none,
   }) {
     final fallback = _usesDebugFallback(item, material, geometry);
     // Bindings persist across draws within a pass, and every draw binds its
@@ -1091,6 +1129,16 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
+    if (item != null) {
+      _describeDraw(
+        item,
+        geometry,
+        material,
+        materialVertex,
+        pipeline,
+        batchBreak: batchBreak,
+      );
+    }
     _bindGeometry(geometry, worldTransform, materialVertex, material.depthBias);
     if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
@@ -1142,6 +1190,7 @@ base class SceneEncoder {
     Float32List? attributeData,
     int attributeFloats = 0,
     RenderItem? item,
+    BatchBreakReason batchBreak = BatchBreakReason.none,
   }) {
     checkInstanceRecordWidth(material.instanceAttributes, attributeFloats);
     if (!identical(_boundPipeline, pipeline)) {
@@ -1151,6 +1200,16 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
+    if (item != null) {
+      _describeDraw(
+        item,
+        geometry,
+        material,
+        materialVertex,
+        pipeline,
+        batchBreak: batchBreak,
+      );
+    }
     final fallback = _usesDebugFallback(item, material, geometry);
     _bindMaterial(material, materialVertex, fade, fallback: fallback);
     _bindDebugView(material, item, fallback);
@@ -1230,6 +1289,8 @@ base class SceneEncoder {
     List<InstanceDataBatch> batches,
     double fade, {
     RenderItem? item,
+    int batchedItems = 1,
+    BatchBreakReason batchBreak = BatchBreakReason.none,
   }) {
     // Cross-node batching synthesizes instances, so a material declaring
     // per-instance attributes is kept out of it (see opaqueBatchEnd).
@@ -1241,6 +1302,17 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
+    if (item != null) {
+      _describeDraw(
+        item,
+        geometry,
+        material,
+        materialVertex,
+        pipeline,
+        batchedItems: batchedItems,
+        batchBreak: batchBreak,
+      );
+    }
     final fallback = _usesDebugFallback(item, material, geometry);
     _bindMaterial(material, materialVertex, fade, fallback: fallback);
     // TODO(debug-views): a cross-node batch carries the first item's object
@@ -1293,6 +1365,7 @@ base class SceneEncoder {
   /// Emits only the opaque phase (see [flush]). Used with [flushTranslucent]
   /// when the scene pass snapshots the opaque color between them.
   void flushOpaque() {
+    _phase = DrawPhase.opaque;
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
@@ -1331,6 +1404,13 @@ base class SceneEncoder {
       item.applyMorphWeights(record.geometry);
 
       final end = opaqueBatchEnd(_opaqueRecords, index);
+      // Only a capture asks why a run ended; steady state skips the walk.
+      final batchBreak = activeDrawRecorder == null
+          ? BatchBreakReason.none
+          : opaqueBatchBreakReason(
+              _opaqueRecords[end - 1],
+              end < _opaqueRecords.length ? _opaqueRecords[end] : null,
+            );
       if (end > index + 1) {
         activeRenderCounters.batches++;
         activeRenderCounters.batchedItems += end - index;
@@ -1350,6 +1430,8 @@ base class SceneEncoder {
           _batchPool.batches,
           record.fade,
           item: item,
+          batchedItems: end - index,
+          batchBreak: batchBreak,
         );
         index = end;
         continue;
@@ -1378,6 +1460,7 @@ base class SceneEncoder {
           attributeData: item.instanceAttributeData,
           attributeFloats: item.instanceAttributeFloats,
           item: item,
+          batchBreak: batchBreak,
         );
       } else {
         _encode(
@@ -1388,6 +1471,7 @@ base class SceneEncoder {
           record.windingFlipped,
           record.fade,
           item: item,
+          batchBreak: batchBreak,
         );
       }
       index++;
@@ -1655,6 +1739,7 @@ base class SceneEncoder {
   void _flushTranslucentThrough(int end, {gpu.RenderPass? translucentPass}) {
     _prepareTranslucent();
     if (_translucentCursor >= _translucentRecords.length) return;
+    _phase = DrawPhase.translucent;
 
     if (translucentPass != null) {
       _renderPass = translucentPass;

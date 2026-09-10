@@ -1,5 +1,6 @@
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 
@@ -47,6 +48,45 @@ bool _canBatchOpaque(OpaqueBatchRecord first, OpaqueBatchRecord next) {
       first.lightChannelMask == next.lightChannelMask &&
       next.jointsTexture == null &&
       next.morphWeights == null;
+}
+
+/// Why [first] does not merge with [next], mirroring [opaqueBatchEnd]'s
+/// rules in the order they are checked. Capture-only; the hot path never
+/// asks.
+BatchBreakReason opaqueBatchBreakReason(
+  OpaqueBatchRecord first,
+  OpaqueBatchRecord? next,
+) {
+  if (first.geometry.instancedVertexLayout == null) {
+    return BatchBreakReason.unbatchableGeometry;
+  }
+  if (first.jointsTexture != null) return BatchBreakReason.skinned;
+  if (first.morphWeights != null) return BatchBreakReason.morphed;
+  if (first.material.instanceAttributes != null) {
+    return BatchBreakReason.instanceAttributes;
+  }
+  if (next == null) return BatchBreakReason.none;
+  if (!identical(first.pipeline, next.pipeline)) {
+    return BatchBreakReason.differentPipeline;
+  }
+  if (!identical(first.geometry, next.geometry)) {
+    return BatchBreakReason.differentGeometry;
+  }
+  if (!identical(first.material, next.material)) {
+    return BatchBreakReason.differentMaterial;
+  }
+  if (first.fade != next.fade) return BatchBreakReason.differentLodFade;
+  if (first.lightListOffset != next.lightListOffset ||
+      first.lightListCount != next.lightListCount) {
+    return BatchBreakReason.differentLights;
+  }
+  if (first.lightChannelMask != next.lightChannelMask) {
+    return BatchBreakReason.differentLightChannels;
+  }
+  if (next.jointsTexture != null || next.morphWeights != null) {
+    return BatchBreakReason.nextSkinnedOrMorphed;
+  }
+  return BatchBreakReason.none;
 }
 
 int depthBatchEnd(List<RenderItem> records, int start) {
