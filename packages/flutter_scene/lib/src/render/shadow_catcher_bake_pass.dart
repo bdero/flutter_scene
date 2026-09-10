@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/shadow_catcher_material.dart';
+import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
@@ -211,6 +212,13 @@ class ShadowCatcherBakePass extends RenderGraphPass {
         ..lightListCount = item.lightListCount;
       try {
         material.bindForBake(pass, context.transientsBuffer, lighting);
+        // The bake never shows a debug view, but the catcher's shader still
+        // reads the block; leave it unbound and GLES reads garbage into it.
+        DebugViewFrame.bindInactive(
+          pass,
+          context.transientsBuffer,
+          fragmentShader,
+        );
         // The bake projects the plane flat, so both faces are equivalent; no
         // culling keeps a flipped or bottom-viewed plane baking identically.
         pass.setCullMode(gpu.CullMode.none);
