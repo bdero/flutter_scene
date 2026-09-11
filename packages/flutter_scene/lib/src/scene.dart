@@ -543,6 +543,28 @@ base class Scene implements SceneGraph {
   /// {@category Lighting and environment}
   bool punctualLightClustering = true;
 
+  /// How many frames of GPU work may be outstanding before a screen view
+  /// presents its previous image again instead of encoding a new frame.
+  ///
+  /// The Vulkan and Metal backends encode and queue GPU work on the thread
+  /// that calls [render]; when the GPU falls behind, queuing more work blocks
+  /// that thread for the backlog (the queue is serialized with the raster
+  /// thread's own submissions), so a GPU-bound scene stalls the UI thread
+  /// and everything else on it. Pacing instead re-presents the last frame
+  /// once [maxGpuFramesInFlight] frames are still running, which keeps the
+  /// UI thread free at the cost of the scene updating at the rate the GPU
+  /// finishes frames, which it did anyway. Scene time still advances on a
+  /// paced frame. Set to 0 to always encode. Only screen views pace;
+  /// render-to-texture views always render.
+  /// {@category Rendering}
+  int maxGpuFramesInFlight = 2;
+
+  /// Frames a screen view has presented from its previous image because the
+  /// GPU was [maxGpuFramesInFlight] frames behind. A diagnostic counter.
+  /// {@category Rendering}
+  int get pacedFrameCount => _pacedFrameCount;
+  int _pacedFrameCount = 0;
+
   /// How many overlap-safe scene color captures a frame may open for
   /// materials that read the opaque scene behind them (transmission), from 1
   /// to [maxSceneColorCaptureBatches]. Readers whose screen bounds overlap
@@ -1988,6 +2010,7 @@ base class Scene implements SceneGraph {
     }
 
     renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+    rendererSubmissions.endFrame();
 
     // A frame has now been submitted; the next one runs on a warm context (see
     // the rebuild near the environment resolution above).
@@ -2214,6 +2237,21 @@ base class Scene implements SceneGraph {
       capturer = RenderGraphCapturer(request: pendingCapture.request);
     }
 
+    // Pace the GPU: with enough frames still running, present the previous
+    // image rather than queue work the calling thread would block on.
+    final previous = surface.lastSwapchainColorTexture(viewIndex);
+    if (maxGpuFramesInFlight > 0 &&
+        previous != null &&
+        previous.width == pixelSize.width.toInt() &&
+        previous.height == pixelSize.height.toInt() &&
+        rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) {
+      _pacedFrameCount++;
+      final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
+      final paint = ui.Paint()
+        ..filterQuality = view.filterQuality ?? filterQuality;
+      canvas.drawImageRect(previous.asImage(), srcRect, drawArea, paint);
+      return;
+    }
     final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
       viewIndex,
