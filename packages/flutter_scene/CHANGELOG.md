@@ -31,6 +31,7 @@
 * `Scene.sceneColorCaptureBatches` caps how many scene color captures a frame opens for overlapping transmissive readers (1 makes them all share one snapshot), the biggest lever on tiled and low-end GPUs; null follows the quality tier.
 * Smooth transmission (zero roughness, or an index of refraction of 1) no longer builds the rough-transmission filter pyramid every capture, which the shader never sampled.
 * `ThirdPersonControllerComponent.rotatesToMovement` keeps the node's authored rotation while still moving it, and `yaw` exposes the smoothed heading, now seeded from the node's rotation instead of snapping to zero on the first step. The `flutter_scene-kit` skill (v4) covers it.
+* `DebugDraw.colliders` wireframes every physics collider in a node subtree, posed the way the simulation sees it, and `DebugDraw.shape` draws one `Shape` at a given transform. Triggers draw in their own color. The `flutter_scene-kit` skill (v6) covers it.
 
 * `SceneView` measures `onTick` deltas with a wall clock instead of the ticker's frame-begin timestamps, whose deltas alternate between tiny and double-length values under GPU load and stagger any motion integrated against them. The new `SceneView.clock` injects a clock for tests and time-controlling drivers; the ambient `package:clock` clock (faked under `flutter_test`) is the default.
 * `Scene.punctualLightOverflowCount` reports how many drawable items dropped punctual lights last frame because more lights reached them than the per-object budget shades.
