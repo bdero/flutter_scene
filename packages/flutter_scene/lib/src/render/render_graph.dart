@@ -270,8 +270,8 @@ class TransientTexturePool {
   /// reallocates. Call when the output size changes so stale-sized
   /// textures aren't kept alive, or to give the memory back under pressure.
   ///
-  /// Safe at any point in a frame: a pass that has already acquired a texture
-  /// holds its own reference, so this releases only the pool's claim.
+  /// Safe at any point in a frame, since a pass that has already acquired a
+  /// texture holds its own reference and this releases only the pool's claim.
   void clear() => _rings.clear();
 
   /// Resident bytes of every texture the pool holds, summed across mip chains.

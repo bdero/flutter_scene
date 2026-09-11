@@ -101,7 +101,7 @@ class Surface {
   /// Drops every transient attachment this surface's views hold and returns
   /// the bytes released.
   ///
-  /// The swapchain color ring is left alone: the compositor may still be
+  /// The swapchain color ring is left alone. The compositor may still be
   /// reading the texture most recently issued, and it is two textures against
   /// a pool holding the shadow atlas, scene color, depth and the post-process
   /// chain.

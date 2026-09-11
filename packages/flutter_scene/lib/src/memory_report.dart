@@ -35,12 +35,12 @@ class MemoryCategory {
 /// A snapshot of what flutter_scene is keeping resident.
 ///
 /// Covers what the engine's shared caches pin, which is the memory an app has
-/// no other way to see or release. Render targets are the exception: they can
-/// be released directly with [releaseTransientRenderTargets]. It does not cover resources the app holds
-/// itself (a [Texture2D] you constructed and kept), and it is a measure of
-/// what is *pinned*, not of what the GPU has actually reclaimed. Dropping the
-/// last reference to a resource makes it collectable, but the reclaim happens
-/// on the engine's schedule.
+/// no other way to see or release. Render targets are the exception, since
+/// [releaseTransientRenderTargets] drops them directly. It does not cover
+/// resources the app holds itself (a [Texture2D] you constructed and kept),
+/// and it is a measure of what is *pinned*, not of what the GPU has actually
+/// reclaimed. Dropping the last reference to a resource makes it collectable,
+/// but the reclaim happens on the engine's schedule.
 /// {@category Assets and loading}
 @immutable
 class MemoryReport {
@@ -73,7 +73,7 @@ MemoryReport takeMemoryReport() {
       count: textures.count,
     ),
     // The render graph's transient attachments, across every live surface.
-    // Counted by surface rather than by texture: the pool keys a ring per
+    // Counted by surface rather than by texture. The pool keys a ring per
     // attachment shape, so a texture count would say more about the shapes a
     // frame happened to need than about anything an app can act on.
     MemoryCategory(

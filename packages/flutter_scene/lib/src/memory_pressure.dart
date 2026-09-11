@@ -9,8 +9,8 @@ import 'surface.dart';
 /// Drops every transient render-graph attachment currently held and returns
 /// the bytes released.
 ///
-/// These are the intermediate render targets — shadow atlas, HDR scene color,
-/// depth, and the post-process chain — pooled per view and per frame in
+/// These are the intermediate render targets (shadow atlas, HDR scene color,
+/// depth, and the post-process chain), pooled per view and per frame in
 /// flight. The pool has no eviction of its own, so it settles at the
 /// high-water mark of every attachment shape any frame has needed and holds
 /// that for the life of the process. In a scene-heavy app it is routinely the
