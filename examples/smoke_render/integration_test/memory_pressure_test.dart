@@ -1,3 +1,7 @@
+// The pool and the surface's byte counters are engine internals; this test
+// reaches them the way the package's own tests do.
+// ignore_for_file: implementation_imports, invalid_use_of_internal_member
+
 import 'dart:async';
 import 'dart:ui' as ui;
 
@@ -6,9 +10,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-import 'package:flutter_scene/src/memory_pressure.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
-import 'package:flutter_scene/src/surface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -141,8 +143,8 @@ void main() {
 
   // The rest of this file checks the accounting. This one checks that the
   // release is actually safe to do against a scene that is drawing, which is
-  // the claim the automatic path rests on: a frame in flight may still be
-  // reading a texture the pool has just let go of.
+  // the claim the automatic path rests on, since a frame in flight may still
+  // be reading a texture the pool has just let go of.
   testWidgets('a scene keeps drawing with the pool shed every frame', (
     tester,
   ) async {
@@ -196,9 +198,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 64));
 
     final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
-    final rgba = (await image.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    ))!;
+    final rgba = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
     expect(
       _centerNonClearFraction(rgba, image.width, image.height),
       greaterThan(0.05),
