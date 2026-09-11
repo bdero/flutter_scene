@@ -8,6 +8,7 @@ import 'dart:math' as math;
 // import.
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BoxShape;
+import 'package:flutter_scene/kit.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
@@ -118,6 +119,15 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
 
   static final vm.Vector3 _spawn = vm.Vector3(0, 1.2, 0);
 
+  // Collider wireframes over the simulated world, rebuilt each frame while
+  // the toggle is on. Handy for seeing what the simulation actually holds
+  // (the character capsule, the staircase wedges, the sensor volumes) versus
+  // what the meshes suggest.
+  bool _showColliders = false;
+  bool _colliderDebugDrawn = false;
+  final Node _colliderDebugNode = Node();
+  late final MeshGeometry _colliderDebugGeometry;
+
   // Drives the 2D vignette overlay painted on top of the scene; updated each
   // frame from [_vignette] so the overlay repaints without rebuilding.
   final ValueNotifier<double> _vignetteListenable = ValueNotifier<double>(0.0);
@@ -152,6 +162,10 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
     _buildSeesaw();
     _buildClothCorridor();
     _spawnCharacter();
+
+    _colliderDebugGeometry = DebugDraw.createGeometry();
+    _colliderDebugNode.mesh = Mesh(_colliderDebugGeometry, UnlitMaterial());
+    scene.add(_colliderDebugNode);
 
     // React to Dash entering / leaving the trigger volume. Subscribing
     // adds a listener, which is what makes the world drain its events.
@@ -987,7 +1001,22 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         glow,
       );
 
+    _updateColliderDebug();
+
     exampleSettings.applyTo(scene);
+  }
+
+  // Rebuilds the collider wireframe from the poses this frame settled on,
+  // reusing the geometry's buffers. The frame the toggle goes off flushes
+  // once more, which empties it.
+  void _updateColliderDebug() {
+    if (!_showColliders && !_colliderDebugDrawn) return;
+    DebugDraw.clear();
+    if (_showColliders) {
+      DebugDraw.colliders(scene.root);
+    }
+    DebugDraw.flushInto(_colliderDebugGeometry);
+    _colliderDebugDrawn = _showColliders;
   }
 
   @override
@@ -1011,7 +1040,12 @@ class ExamplePhysicsState extends State<ExamplePhysics> {
         // Below the picker so the character remains visible in the scene
         // center, with no overlap with system chrome.
         ExampleOverlay.topCenterAction(
-          child: _PhysicsHeaderActions(onReset: () => setState(_reset)),
+          child: _PhysicsHeaderActions(
+            onReset: () => setState(_reset),
+            showColliders: _showColliders,
+            onToggleColliders: () =>
+                setState(() => _showColliders = !_showColliders),
+          ),
         ),
         // Right side: the joystick owns the bottom-left corner and the jump
         // button the bottom-right.
@@ -1067,9 +1101,15 @@ class _VignettePainter extends CustomPainter {
 }
 
 class _PhysicsHeaderActions extends StatelessWidget {
-  const _PhysicsHeaderActions({required this.onReset});
+  const _PhysicsHeaderActions({
+    required this.onReset,
+    required this.showColliders,
+    required this.onToggleColliders,
+  });
 
   final VoidCallback onReset;
+  final bool showColliders;
+  final VoidCallback onToggleColliders;
 
   @override
   Widget build(BuildContext context) {
@@ -1077,6 +1117,14 @@ class _PhysicsHeaderActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         const ExampleActionHint(message: 'Move: WASD/arrows  ·  Jump: Space'),
+        const SizedBox(width: 8),
+        ExampleActionButton(
+          tooltip: showColliders
+              ? 'Hide collider wireframes'
+              : 'Show collider wireframes',
+          onPressed: onToggleColliders,
+          icon: showColliders ? Icons.view_in_ar : Icons.view_in_ar_outlined,
+        ),
         const SizedBox(width: 8),
         ExampleActionButton(
           tooltip: 'Respawn character',
