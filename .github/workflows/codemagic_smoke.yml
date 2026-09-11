@@ -260,6 +260,14 @@ jobs:
           count=$(find smoke -type f -name '*.png' | wc -l | tr -d ' ')
           echo "frames: $count"
           echo "count=$count" >> "$GITHUB_OUTPUT"
+          # The drive's own log, published by the iOS workflow; its tail is
+          # the first thing to read when a render died.
+          drive_log=$(find staging -type f -name 'smoke-drive.log' | head -1)
+          if [ -n "$drive_log" ]; then
+            echo "::group::flutter drive output (last 120 lines)"
+            tail -n 120 "$drive_log"
+            echo "::endgroup::"
+          fi
 
       - name: Upload to Argos
         id: argos

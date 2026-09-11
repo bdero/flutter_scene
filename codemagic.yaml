@@ -118,7 +118,11 @@ workflows:
     max_build_duration: 45
     environment:
       <<: *smoke_environment
-      xcode: latest
+      # Pinned to the image this lane was stable on. Codemagic moved `latest`
+      # to 26.6 (Xcode 26.6 on macOS 26.5.1) on 2026-09-06, and from then on
+      # the iOS 26 simulator froze during boot or never launched the app in
+      # roughly one build in three. Retry `latest` after the next image roll.
+      xcode: 26.5
       vars:
         FLUTTER_DART_DATA_ASSETS: "true"
         SMOKE_SIM_DEVICE: iPhone 17 Pro
@@ -183,8 +187,11 @@ workflows:
               booted=1
               break
             fi
-            echo "The simulator did not finish booting in time; shutting it down."
+            echo "The simulator did not finish booting in time; resetting it."
             bounded 60 xcrun simctl shutdown "$udid" || true
+            # A device that froze mid-boot is not reused as is; erasing it
+            # returns it to a clean state before the next attempt.
+            bounded 60 xcrun simctl erase "$udid" || true
             sleep 5
           done
           if [ "$booted" -ne 1 ]; then
@@ -201,17 +208,24 @@ workflows:
         script: |
           cd "$CM_BUILD_DIR/examples/smoke_render"
           udid=$(cat "$CM_BUILD_DIR/smoke-sim-udid")
+          # The drive's own output ships as an artifact, so a failed build
+          # still says how far the app got.
+          log="$CM_BUILD_DIR/examples/smoke_render/build/smoke-drive.log"
           flutter drive \
             --driver=test_driver/integration_test.dart \
             --target=integration_test/smoke_test.dart \
             -d "$udid" \
-            --enable-impeller --enable-flutter-gpu &
+            --enable-impeller --enable-flutter-gpu 2>&1 | tee "$log" &
           pid=$!
           waited=0
           while kill -0 "$pid" 2>/dev/null; do
-            if [ "$waited" -ge 1500 ]; then
-              echo "flutter drive is still running after 25 minutes; killing it."
-              xcrun simctl list devices | grep -i "$udid" || true
+            if [ "$waited" -ge 1200 ]; then
+              echo "flutter drive is still running after 20 minutes; killing it." | tee -a "$log"
+              xcrun simctl list devices | grep -i "$udid" | tee -a "$log" || true
+              xcrun simctl spawn "$udid" log show --last 3m --style compact \
+                --predicate 'process == "Runner" OR process == "SpringBoard"' \
+                2>/dev/null | tail -n 80 >> "$log" || true
+              pkill -P "$pid" 2>/dev/null || true
               kill "$pid" 2>/dev/null || true
               sleep 5
               kill -9 "$pid" 2>/dev/null || true
@@ -228,3 +242,4 @@ workflows:
       - examples/smoke_render/build/smoke/*.png
       - examples/smoke_render/build/smoke-status.txt
       - examples/smoke_render/build/flutter-version.txt
+      - examples/smoke_render/build/smoke-drive.log
