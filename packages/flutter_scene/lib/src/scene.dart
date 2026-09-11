@@ -551,13 +551,16 @@ base class Scene implements SceneGraph {
   /// that thread for the backlog (the queue is serialized with the raster
   /// thread's own submissions), so a GPU-bound scene stalls the UI thread
   /// and everything else on it. Pacing instead re-presents the last frame
-  /// once [maxGpuFramesInFlight] frames are still running, which keeps the
-  /// UI thread free at the cost of the scene updating at the rate the GPU
-  /// finishes frames, which it did anyway. Scene time still advances on a
-  /// paced frame. Set to 0 to always encode. Only screen views pace;
-  /// render-to-texture views always render.
+  /// once [maxGpuFramesInFlight] frames are still running; the scene updates
+  /// at the rate the GPU finishes frames, which it did anyway. Scene time
+  /// still advances on a paced frame.
+  ///
+  /// The default of 1 keeps the UI thread free and costs about a tenth of
+  /// GPU throughput on a saturated GPU. 2 keeps the throughput but only
+  /// halves the stall on drivers with shallow queues. Set to 0 to always
+  /// encode. Only screen views pace; render-to-texture views always render.
   /// {@category Rendering}
-  int maxGpuFramesInFlight = 2;
+  int maxGpuFramesInFlight = 1;
 
   /// Frames a screen view has presented from its previous image because the
   /// GPU was [maxGpuFramesInFlight] frames behind. A diagnostic counter.
