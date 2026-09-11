@@ -17,12 +17,18 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// Packs immutable mesh uploads into shared GPU buffers.
 ///
 /// Pass one arena to many `MeshGeometry` objects to avoid one GPU allocation
-/// per mesh. The arena uses fixed-size bump-allocated blocks, while uploads
-/// larger than [blockSizeInBytes] receive a dedicated block. Geometry buffer
-/// views retain their blocks, so the arena itself need not outlive the meshes.
+/// per mesh. Uploads are bump-allocated into fixed-size blocks, filling the
+/// first block with room, while uploads larger than [blockSizeInBytes]
+/// receive a dedicated block. Geometry buffer views retain their blocks, so
+/// the arena itself need not outlive the meshes.
 ///
-/// This is intended for geometry loaded or generated in batches. Updatable
-/// geometry owns its ring buffers and cannot use an arena.
+/// The arena never reclaims space. An allocation stays reserved for as long
+/// as the arena is alive, whether or not the geometry that used it still
+/// exists, so an arena only ever grows. Use it for geometry loaded or
+/// generated in batches with a lifetime the arena can share (a level, a
+/// screen), and drop the arena with them. Geometry rebuilt every frame
+/// belongs in `GeometryStorage.updatable`, which reuses its buffers in
+/// place; an updatable geometry cannot use an arena.
 /// {@category Geometry}
 class GeometryBufferArena {
   /// Creates an arena with the given minimum block size.
@@ -55,11 +61,14 @@ class GeometryBufferArena {
   gpu.BufferView _allocate(int sizeInBytes) {
     assert(sizeInBytes > 0);
     final alignedSize = (sizeInBytes + 15) & ~15;
+    // First fit over every block, so a block's tail is not abandoned the
+    // first time an upload does not fit in it.
     _GeometryBufferBlock? block;
-    if (_blocks.isNotEmpty &&
-        _blocks.last.usedInBytes + alignedSize <=
-            _blocks.last.buffer.sizeInBytes) {
-      block = _blocks.last;
+    for (final candidate in _blocks) {
+      if (candidate.usedInBytes + alignedSize <= candidate.buffer.sizeInBytes) {
+        block = candidate;
+        break;
+      }
     }
     if (block == null) {
       final capacity = alignedSize > blockSizeInBytes

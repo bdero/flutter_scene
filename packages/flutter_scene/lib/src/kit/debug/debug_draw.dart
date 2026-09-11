@@ -128,7 +128,30 @@ class DebugDraw {
   /// Total number of line vertices accumulated for the current frame.
   static int get vertexCount => _positions.length ~/ 3;
 
-  /// Builds a [MeshGeometry] containing all accumulated line segments and clears the buffer.
+  /// Creates an empty updatable line geometry for [flushInto].
+  static MeshGeometry createGeometry() => MeshGeometry.fromArrays(
+    positions: Float32List(0),
+    primitiveType: gpu.PrimitiveType.line,
+    storage: GeometryStorage.updatable,
+  );
+
+  /// Rebuilds [geometry] from the accumulated line segments and clears the
+  /// buffer.
+  ///
+  /// [geometry] is an updatable, non-indexed line geometry, as returned by
+  /// [createGeometry]. Its GPU buffers are reused frame to frame, so this is
+  /// the path for debug lines redrawn every frame; [flushMesh] allocates a
+  /// new geometry per call.
+  static void flushInto(MeshGeometry geometry) {
+    geometry.rebuild(
+      positions: Float32List.fromList(_positions),
+      colors: Float32List.fromList(_colors),
+    );
+    clear();
+  }
+
+  /// Builds a new [MeshGeometry] containing all accumulated line segments and
+  /// clears the buffer. For lines redrawn every frame, prefer [flushInto].
   static MeshGeometry? flushMesh({
     GeometryBufferArena? bufferArena,
     GeometryStorage storage = GeometryStorage.fixed,

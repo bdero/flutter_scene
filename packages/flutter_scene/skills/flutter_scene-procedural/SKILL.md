@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-procedural
-version: 2
+version: 3
 description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, building oceans and Gerstner waves, setting up procedural skies and trees, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
 ---
 

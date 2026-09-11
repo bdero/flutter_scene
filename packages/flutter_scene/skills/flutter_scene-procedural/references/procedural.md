@@ -124,7 +124,7 @@ water.rebuild(positions: p2, indices: i2);
 
 An updatable mesh fixes its indexed-or-not state at construction, if you built it with `indices`, `rebuild` requires them thereafter, and vice versa. To start empty and fill later, pass a zero-length `positions` with `updatable`. Updatable geometry must retain CPU data and cannot use a buffer arena.
 
-`GeometryBufferArena({int blockSizeInBytes = 16 * 1024 * 1024})` lets many fixed meshes share immutable GPU buffer blocks, worth it when you build a large number of small static meshes.
+`GeometryBufferArena({int blockSizeInBytes = 16 * 1024 * 1024})` lets many fixed meshes share immutable GPU buffer blocks, worth it when you build a large number of small static meshes. It never reclaims space (an arena only grows for as long as it is alive), so give it the lifetime of the batch it serves and never feed it geometry rebuilt every frame; that is what `updatable` is for.
 
 ---
 
