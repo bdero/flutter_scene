@@ -42,6 +42,28 @@ void main() {
       expect(tracker.completedThrough, c);
     });
 
+    test('frames in flight counts ended frames the GPU has not finished', () {
+      final tracker = GpuSubmissionTracker();
+      expect(tracker.framesInFlight, 0);
+      tracker.endFrame();
+      expect(tracker.framesInFlight, 0, reason: 'nothing submitted yet');
+      final a = tracker.record();
+      final b = tracker.record();
+      tracker.endFrame();
+      final c = tracker.record();
+      tracker.endFrame();
+      expect(tracker.framesInFlight, 2);
+      // A paced frame submits nothing and adds no frame.
+      tracker.endFrame();
+      expect(tracker.framesInFlight, 2);
+      tracker.complete(a);
+      expect(tracker.framesInFlight, 2, reason: 'frame one still has b');
+      tracker.complete(b);
+      expect(tracker.framesInFlight, 1);
+      tracker.complete(c);
+      expect(tracker.framesInFlight, 0);
+    });
+
     test('before-submit listeners run with the id being recorded', () {
       final tracker = GpuSubmissionTracker();
       final seen = <int>[];
