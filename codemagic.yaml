@@ -126,6 +126,14 @@ workflows:
       vars:
         FLUTTER_DART_DATA_ASSETS: "true"
         SMOKE_SIM_DEVICE: iPhone 17 Pro
+        # Stable, not master, until the master regression is fixed upstream:
+        # since 2026-09-10 a master build launches on the iOS 26 simulator
+        # and then never reaches its VM service ("Waiting for VM Service port
+        # to be available" until the deadline), while stable renders every
+        # scene on the same image and master renders fine on an iOS 18
+        # simulator. The macOS lane keeps master coverage on Metal meanwhile.
+        # TODO(smoke-ios): drop this override once master launches on iOS 26.
+        FLUTTER_CHANNEL: "stable"
     cache: *smoke_cache
     scripts:
       - *script_select_channel
@@ -211,6 +219,7 @@ workflows:
           # The drive's own output ships as an artifact, so a failed build
           # still says how far the app got.
           log="$CM_BUILD_DIR/examples/smoke_render/build/smoke-drive.log"
+          started=$(date '+%Y-%m-%d %H:%M:%S')
           # Verbose, because the stall this lane has been hitting sits between
           # the Xcode build and the app launch, where the quiet output says
           # nothing; the shipped log is what names the step.
@@ -225,9 +234,15 @@ workflows:
             if [ "$waited" -ge 1200 ]; then
               echo "flutter drive is still running after 20 minutes; killing it." | tee -a "$log"
               xcrun simctl list devices | grep -i "$udid" | tee -a "$log" || true
-              xcrun simctl spawn "$udid" log show --last 3m --style compact \
-                --predicate 'process == "Runner" OR process == "SpringBoard"' \
-                2>/dev/null | grep -v RunningBoard | tail -n 40 >> "$log" || true
+              # The app's own log lines since the drive began, and any crash
+              # report it left, which is what an upstream report needs.
+              xcrun simctl spawn "$udid" log show --start "$started" --style compact \
+                --predicate 'process == "Runner"' 2>/dev/null \
+                | grep -v RunningBoard | head -n 150 >> "$log" || true
+              for report in $(ls -t "$HOME/Library/Logs/DiagnosticReports"/Runner* 2>/dev/null | head -2); do
+                echo "--- $report ---" >> "$log"
+                head -n 60 "$report" >> "$log"
+              done
               pkill -P "$pid" 2>/dev/null || true
               kill "$pid" 2>/dev/null || true
               sleep 5
