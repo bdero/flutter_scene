@@ -37,6 +37,10 @@ on:
         description: "Argos name prefix, keeps a non-master run off the baseline"
         required: false
         default: ""
+      flutter_revision:
+        description: "Pin the Apple shards to one Flutter framework commit (bisecting)"
+        required: false
+        default: ""
 
 concurrency:
   group: >-
@@ -134,7 +138,7 @@ jobs:
           echo "base_ref=$base" >> "$GITHUB_OUTPUT"
 
   render:
-    name: ${{ inputs.argos_prefix || '' }}${{ matrix.build_name }} (Flutter ${{ inputs.flutter_channel || 'master' }})
+    name: ${{ inputs.argos_prefix || '' }}${{ matrix.build_name }} (Flutter ${{ inputs.flutter_revision || inputs.flutter_channel || 'master' }})
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -158,12 +162,17 @@ jobs:
           # channel override adds the environment block, so a wrong guess about
           # that field cannot take the whole matrix down with it.
           channel="${{ inputs.flutter_channel || 'master' }}"
+          revision="${{ inputs.flutter_revision || '' }}"
           body=$(jq -nc \
             --arg appId "$CODEMAGIC_APP_ID" \
             --arg workflowId "${{ matrix.workflow_id }}" \
             --arg branch "${{ needs.prepare.outputs.branch }}" \
             '{appId: $appId, workflowId: $workflowId, branch: $branch}')
-          if [ "$channel" != "master" ]; then
+          if [ -n "$revision" ]; then
+            body=$(printf '%s' "$body" | jq -c \
+              --arg revision "$revision" \
+              '. + {environment: {variables: {FLUTTER_REVISION: $revision}}}')
+          elif [ "$channel" != "master" ]; then
             body=$(printf '%s' "$body" | jq -c \
               --arg channel "$channel" \
               '. + {environment: {variables: {FLUTTER_CHANNEL: $channel}}}')
