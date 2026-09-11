@@ -211,7 +211,10 @@ workflows:
           # The drive's own output ships as an artifact, so a failed build
           # still says how far the app got.
           log="$CM_BUILD_DIR/examples/smoke_render/build/smoke-drive.log"
-          flutter drive \
+          # Verbose, because the stall this lane has been hitting sits between
+          # the Xcode build and the app launch, where the quiet output says
+          # nothing; the shipped log is what names the step.
+          flutter drive -v \
             --driver=test_driver/integration_test.dart \
             --target=integration_test/smoke_test.dart \
             -d "$udid" \
@@ -224,7 +227,7 @@ workflows:
               xcrun simctl list devices | grep -i "$udid" | tee -a "$log" || true
               xcrun simctl spawn "$udid" log show --last 3m --style compact \
                 --predicate 'process == "Runner" OR process == "SpringBoard"' \
-                2>/dev/null | tail -n 80 >> "$log" || true
+                2>/dev/null | grep -v RunningBoard | tail -n 40 >> "$log" || true
               pkill -P "$pid" 2>/dev/null || true
               kill "$pid" 2>/dev/null || true
               sleep 5

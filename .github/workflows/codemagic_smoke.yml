@@ -264,8 +264,8 @@ jobs:
           # the first thing to read when a render died.
           drive_log=$(find staging -type f -name 'smoke-drive.log' | head -1)
           if [ -n "$drive_log" ]; then
-            echo "::group::flutter drive output (last 120 lines)"
-            tail -n 120 "$drive_log"
+            echo "::group::flutter drive output (last 400 lines)"
+            tail -n 400 "$drive_log"
             echo "::endgroup::"
           fi
 
