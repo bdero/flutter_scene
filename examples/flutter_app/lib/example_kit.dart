@@ -555,8 +555,8 @@ class _KitStageState extends State<_KitStage> {
   double _elapsed = 0.0;
   final Set<LogicalKeyboardKey> _pressedKeys = {};
 
-  final GeometryBufferArena _debugBufferArena = GeometryBufferArena();
   final UnlitMaterial _debugMaterial = UnlitMaterial();
+  MeshGeometry? _debugGeometry;
 
   @override
   void initState() {
@@ -1066,6 +1066,9 @@ class _KitStageState extends State<_KitStage> {
   }
 
   void _buildDebugVisuals() {
+    // One updatable geometry, rebuilt in place each frame.
+    _debugGeometry = DebugDraw.createGeometry();
+    _debugMeshNode.mesh = Mesh(_debugGeometry!, _debugMaterial);
     scene.add(_debugMeshNode);
     final groundMesh = PlaneGeometry(width: 24, depth: 24);
     final groundMat = PhysicallyBasedMaterial()
@@ -1556,11 +1559,7 @@ class _KitStageState extends State<_KitStage> {
       color: vm.Vector4(1.0, 0.8, 0.2, 0.7),
     );
 
-    // Flush to mesh reusing persistent arena
-    final mesh = DebugDraw.flushMesh(bufferArena: _debugBufferArena);
-    if (mesh != null) {
-      _debugMeshNode.mesh = Mesh(mesh, _debugMaterial);
-    }
+    DebugDraw.flushInto(_debugGeometry!);
 
     scene.update(dt);
   }

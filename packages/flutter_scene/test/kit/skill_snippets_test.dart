@@ -82,10 +82,9 @@ void _skillSnippetsCompilationCheck(Scene scene) {
   DebugDraw.sphere(vm.Vector3.zero(), 1.0, color: vm.Vector4(0, 0, 1, 1));
   DebugDraw.axes(vm.Matrix4.identity(), size: 2.0);
 
-  final debugMesh = DebugDraw.flushMesh();
-  if (debugMesh != null) {
-    cameraNode.mesh = Mesh(debugMesh, UnlitMaterial());
-  }
+  final debugGeometry = DebugDraw.createGeometry();
+  cameraNode.mesh = Mesh(debugGeometry, UnlitMaterial());
+  DebugDraw.flushInto(debugGeometry);
 }
 
 void main() {
