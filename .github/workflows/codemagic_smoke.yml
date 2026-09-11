@@ -201,6 +201,16 @@ jobs:
             if [ -n "$finished" ]; then
               echo "Codemagic build $BUILD_ID ended with status $status"
               printf '%s' "$out" > build.json
+              # The per-step timeline, so a build that ran to its cap says
+              # which step it was sitting in. The array name is checked
+              # loosely and the object's keys are listed when none matches,
+              # since the response shape is not documented.
+              printf '%s' "$out" | jq -r '
+                .build as $b
+                | ($b.buildActions // $b.actions // $b.steps // [])
+                | if length == 0 then "no step list; build keys: " + ($b | keys | tostring)
+                  else .[] | "\(.name // .type // "?")\t\(.status // "?")\t\(.startedAt // "")\t\(.finishedAt // "")" end' \
+                2>/dev/null || true
               echo "status=$status" >> "$GITHUB_OUTPUT"
               exit 0
             fi

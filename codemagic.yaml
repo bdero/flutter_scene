@@ -142,6 +142,11 @@ workflows:
         script: flutter config --enable-native-assets --enable-dart-data-assets
       - *script_pub_get
       - name: Boot the simulator
+        # iOS 26 simulators freeze during boot now and then on macOS virtual
+        # machines (Apple has the report), and `bootstatus -b` then waits
+        # forever, which is how this lane ran to its 45 minute cap with no
+        # artifacts. Every wait here is bounded: a boot that has not finished
+        # in two minutes is shut down and tried again, twice.
         script: |
           udid=$(xcrun simctl list devices available \
             | sed -n "s/.*${SMOKE_SIM_DEVICE} (\([0-9A-F-]\{36\}\)).*/\1/p" \
@@ -152,17 +157,70 @@ workflows:
               | sed -n 's/.*iPhone.* (\([0-9A-F-]\{36\}\)).*/\1/p' | head -1)
           fi
           test -n "$udid"
-          xcrun simctl boot "$udid" || true
-          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl list runtimes | grep -i ios || true
+
+          # Runs a command with a deadline in seconds; 124 when it ran out.
+          bounded() {
+            local limit=$1; shift
+            "$@" & local pid=$!
+            local waited=0
+            while kill -0 "$pid" 2>/dev/null; do
+              if [ "$waited" -ge "$limit" ]; then
+                kill "$pid" 2>/dev/null || true
+                wait "$pid" 2>/dev/null || true
+                return 124
+              fi
+              sleep 1; waited=$((waited + 1))
+            done
+            wait "$pid"
+          }
+
+          booted=0
+          for attempt in 1 2 3; do
+            echo "Boot attempt $attempt"
+            bounded 60 xcrun simctl boot "$udid" || true
+            if bounded 120 xcrun simctl bootstatus "$udid" -b; then
+              booted=1
+              break
+            fi
+            echo "The simulator did not finish booting in time; shutting it down."
+            bounded 60 xcrun simctl shutdown "$udid" || true
+            sleep 5
+          done
+          if [ "$booted" -ne 1 ]; then
+            echo "The simulator never booted after 3 attempts."
+            xcrun simctl list devices | grep -i "$udid" || true
+            exit 1
+          fi
           echo "$udid" > "$CM_BUILD_DIR/smoke-sim-udid"
       - name: Render smoke scenes
+        # A healthy render takes well under ten minutes. The deadline turns a
+        # hung drive (an app that never connects, a simulator that stalls
+        # after boot) into a failed step with output, instead of a build that
+        # runs to its cap and publishes nothing.
         script: |
           cd "$CM_BUILD_DIR/examples/smoke_render"
+          udid=$(cat "$CM_BUILD_DIR/smoke-sim-udid")
           flutter drive \
             --driver=test_driver/integration_test.dart \
             --target=integration_test/smoke_test.dart \
-            -d "$(cat "$CM_BUILD_DIR/smoke-sim-udid")" \
-            --enable-impeller --enable-flutter-gpu
+            -d "$udid" \
+            --enable-impeller --enable-flutter-gpu &
+          pid=$!
+          waited=0
+          while kill -0 "$pid" 2>/dev/null; do
+            if [ "$waited" -ge 1500 ]; then
+              echo "flutter drive is still running after 25 minutes; killing it."
+              xcrun simctl list devices | grep -i "$udid" || true
+              kill "$pid" 2>/dev/null || true
+              sleep 5
+              kill -9 "$pid" 2>/dev/null || true
+              echo 124 > "$CM_BUILD_DIR/smoke-status"
+              exit 0
+            fi
+            sleep 5; waited=$((waited + 5))
+          done
+          wait "$pid"
           echo $? > "$CM_BUILD_DIR/smoke-status"
         ignore_failure: true
       - *script_publish_status
