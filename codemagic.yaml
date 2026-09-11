@@ -58,6 +58,9 @@ definitions:
       script: |
         mkdir -p "$CM_BUILD_DIR/examples/smoke_render/build"
         flutter --version | tee "$CM_BUILD_DIR/examples/smoke_render/build/flutter-version.txt"
+        # The doctor block rides along so an upstream report about this
+        # machine can quote it.
+        flutter doctor -v >> "$CM_BUILD_DIR/examples/smoke_render/build/flutter-version.txt" 2>&1 || true
 
     - &script_assert_no_credentials
       name: Assert the build holds no credentials
