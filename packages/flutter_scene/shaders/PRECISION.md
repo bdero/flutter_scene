@@ -20,6 +20,9 @@ range of 65504) is not enough:
 - The HDR accumulators (`direct`, `ambient`, `out_color`, radiance from a
   light or an environment), since the frame is not pre-exposed.
 - Derivative-based tangent frames, whose intermediates underflow fp16.
+- Members of a uniform block the vertex stage also declares (an emitted
+  material's `MaterialParams`), since WebGL2 refuses to link a program whose
+  shared block members differ in precision between stages.
 
 Unit vectors, dot products, roughness, albedo, fresnel, occlusion, and the
 BRDF terms stay at the default. Terms that can exceed the fp16 range for
@@ -28,5 +31,13 @@ surface) or run in highp (the sheen lambda's exponentials, the thin-film
 phase).
 
 A material body in a `.fmat` inherits the mediump default like any engine
-source; declare `highp` on positions or coordinates it computes itself.
-Custom `ShaderMaterial` sources set their own precision.
+source; declare `highp` on positions or coordinates it computes itself, or
+open the body with `precision highp float;` after its includes to run all of
+it in float32. Custom `ShaderMaterial` sources set their own precision.
+
+An include whose contract is float32 (`noise.glsl`, whose outputs mirror the
+Dart port within tolerances below fp16 resolution) opens with
+`precision highp float;` and closes by restoring the default named by
+`FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION`, which every mediump source defines
+before its precision statement. A source that leaves it undefined (a vertex
+stage, a custom fragment) stays highp after the include.

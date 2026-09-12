@@ -1,5 +1,7 @@
 // Fragment math defaults to mediump; positions, coordinates, depth, and the
 // HDR accumulators opt back into highp (see PRECISION.md in this directory).
+// The define lets an include that runs in highp restore the default.
+#define FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION mediump
 precision mediump float;
 precision highp int;
 

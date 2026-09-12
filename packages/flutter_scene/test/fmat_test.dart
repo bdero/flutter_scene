@@ -320,8 +320,8 @@ fragment { void Surface(inout MaterialInputs material) {} }
       expect(c.glsl, contains('#include <material_lighting.glsl>'));
       expect(c.glsl, contains('#include <material_engine_lighting.glsl>'));
       expect(c.glsl, contains('uniform MaterialParams {'));
-      expect(c.glsl, contains('  vec4 tint;'));
-      expect(c.glsl, contains('  int steps;'));
+      expect(c.glsl, contains('  highp vec4 tint;'));
+      expect(c.glsl, contains('  highp int steps;'));
       expect(c.glsl, contains('material_params;'));
       expect(c.glsl, contains('uniform sampler2D detail_texture;'));
       expect(c.glsl, contains('#line ${c.material.fragmentSourceLine}'));

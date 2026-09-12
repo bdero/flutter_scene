@@ -27,6 +27,10 @@ material {
 fragment {
 #include <noise.glsl>
 
+  // The packing needs 24 bits of mantissa and the coordinates must match the
+  // Dart side bit for bit, so the probe runs in float32 (see PRECISION.md).
+  precision highp float;
+
   const float kCols = 8.0;
   const float kRows = 21.0;
 

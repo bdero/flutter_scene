@@ -38,6 +38,12 @@
 // SOFTWARE.
 // ---------------------------------------------------------------------------
 
+// The float layer of the parity contract is float32: the Dart mirror rounds
+// in float32 and the tolerances sit below fp16 resolution, so the library
+// runs in highp whatever the including source defaults to, and restores that
+// default at its end (see PRECISION.md).
+precision highp float;
+
 // --- Hashing -----------------------------------------------------------------
 
 const int noise_primeX = 501125321;
@@ -2217,3 +2223,7 @@ vec3 NoiseCurl3(vec3 p, int seed, float epsilon) {
               ((p0z1 - p0z0) - (p2x1 - p2x0)) * inv,
               ((p1x1 - p1x0) - (p0y1 - p0y0)) * inv);
 }
+
+#ifdef FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION
+precision FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION float;
+#endif

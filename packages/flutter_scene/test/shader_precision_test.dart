@@ -41,6 +41,71 @@ fragment {
     expect(glsl.indexOf('#include'), greaterThan(precision));
   });
 
+  test('the noise library runs in highp and restores the default', () {
+    final noise = _shader('noise.glsl');
+    final highp = noise.indexOf('precision highp float;');
+    expect(highp, greaterThanOrEqualTo(0));
+    expect(noise.indexOf('int noise_hash2('), greaterThan(highp));
+    expect(
+      noise.trimRight(),
+      endsWith(
+        '#ifdef FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION\n'
+        'precision FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION float;\n'
+        '#endif',
+      ),
+    );
+    // Every mediump source names its default before declaring it.
+    const define = '#define FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION mediump';
+    for (final source in [
+      _shader('flutter_scene_standard.frag'),
+      _shader('flutter_scene_unlit.frag'),
+      emitFragmentGlsl(
+        parseFmat('''
+material {
+  name: "Precision",
+  shading_model: unlit,
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {}
+}
+'''),
+      ),
+    ]) {
+      final defined = source.indexOf(define);
+      expect(defined, greaterThanOrEqualTo(0));
+      expect(source.indexOf('precision mediump float;'), greaterThan(defined));
+    }
+  });
+
+  test('a block shared with the vertex stage keeps highp members', () {
+    final material = parseFmat('''
+material {
+  name: "Shared",
+  shading_model: unlit,
+  parameters: [
+    { type: vec4, name: tint, default: [1.0, 1.0, 1.0, 1.0] },
+    { type: float, name: lift, default: 0.0 },
+  ],
+}
+
+vertex {
+  void Vertex(inout VertexInputs vertex) {
+    vertex.world_position.y += material_params.lift;
+  }
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = material_params.tint;
+  }
+}
+''');
+    final glsl = emitFragmentGlsl(material);
+    expect(glsl, contains('  highp vec4 tint;'));
+    expect(glsl, contains('  highp float lift;'));
+  });
+
   test('world space, coordinates, and depth stay highp', () {
     final varyings = _shader('material_varyings.glsl');
     for (final decl in [
