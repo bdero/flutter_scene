@@ -3,7 +3,7 @@
 /// edits (and compiled `.fmat` shaders) as they happen.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_scene/scene.dart' as fs;
 import 'package:vector_math/vector_math.dart' as vm;
 // ignore: implementation_imports

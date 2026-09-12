@@ -5,7 +5,7 @@
 /// renders this consistently everywhere a resource reference is shown.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
 

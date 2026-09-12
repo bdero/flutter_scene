@@ -12,7 +12,7 @@
 // the widget-tree half (the scaffold and its nested MaterialApp) rather than
 // the embedder half.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_scene_editor/src/shell/docking_shell.dart';
 import 'package:flutter_scene_editor/src/shell/editor_theme.dart';
 import 'package:flutter_test/flutter_test.dart';

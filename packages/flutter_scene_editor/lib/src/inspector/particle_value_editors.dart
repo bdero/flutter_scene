@@ -8,7 +8,7 @@ import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/particle_property_values.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/particles/distribution.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:vector_math/vector_math.dart' show Vector4;
 
 const _labelWidth = 90.0;

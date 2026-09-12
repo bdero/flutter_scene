@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_scene_editor/src/shell/dock_layout.dart';
 import 'package:flutter_scene_editor/src/shell/docking_shell.dart';
 import 'package:flutter_test/flutter_test.dart';

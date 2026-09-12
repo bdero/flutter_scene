@@ -6,7 +6,7 @@
 library;
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart' hide FTheme;
 
 import '../shell/editor_theme.dart';

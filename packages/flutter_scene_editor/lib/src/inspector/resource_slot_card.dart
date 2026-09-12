@@ -5,7 +5,7 @@
 /// layout that this pattern grew out of.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
 import 'resource_origin.dart';
