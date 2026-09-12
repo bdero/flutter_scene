@@ -27,6 +27,7 @@ dependencies:
   flutter_scene_mcp:
     path: ../../packages/flutter_scene_mcp
   hooks: ^2.0.0
+  material_ui: ^1.0.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0

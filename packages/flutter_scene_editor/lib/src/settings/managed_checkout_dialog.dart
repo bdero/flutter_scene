@@ -2,7 +2,7 @@
 /// phases with a live log tail, Cancel while running, and Close when done.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart' hide FTheme;
 
 import '../toolchains/managed_checkout.dart';

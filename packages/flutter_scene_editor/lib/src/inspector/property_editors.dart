@@ -3,7 +3,7 @@ import 'dart:async';
 // ignore: implementation_imports
 import 'package:scene/scene.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:forui/forui.dart';

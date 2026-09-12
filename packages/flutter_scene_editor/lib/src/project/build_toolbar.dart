@@ -7,7 +7,7 @@
 /// rather than a bare gray state.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../settings/editor_settings.dart';
 import '../shell/editor_theme.dart';

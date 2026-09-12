@@ -3,7 +3,7 @@
 /// [ColorEditor] (RGBA + HSV).
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart';
 
 /// Keeps inspector labels and values on one line unless a child opts out.

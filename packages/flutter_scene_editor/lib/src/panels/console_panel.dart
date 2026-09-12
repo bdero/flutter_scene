@@ -2,7 +2,7 @@
 /// Play session, with stop/clear controls.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../project/app_session.dart';
 import '../project/project_runner.dart';

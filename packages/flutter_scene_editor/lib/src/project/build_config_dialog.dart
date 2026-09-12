@@ -4,7 +4,7 @@
 /// save to the `.fproject` immediately.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:forui/forui.dart' hide FTheme;
 
 import 'fproject.dart';

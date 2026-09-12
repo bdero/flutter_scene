@@ -4,7 +4,7 @@
 // TODO(docking): drop these ignores when the windowing API is stable.
 // ignore_for_file: invalid_use_of_internal_member
 // ignore_for_file: implementation_imports
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 

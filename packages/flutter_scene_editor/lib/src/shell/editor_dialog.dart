@@ -9,7 +9,7 @@
 /// window. All shell dialogs go through this helper, never showDialog.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Shows [builder]'s widget as a modal dialog inside the current window.
 ///

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_scene_editor/src/inspector/resource_origin.dart';
 import 'package:flutter_scene_editor/src/inspector/resource_slot_card.dart';
 import 'package:flutter_scene_editor/src/shell/editor_theme.dart';

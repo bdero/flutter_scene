@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../shell/editor_dialog.dart';
 
 /// The up axis the imported model was authored in. glTF is Y-up by spec, so
