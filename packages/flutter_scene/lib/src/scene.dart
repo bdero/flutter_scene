@@ -568,6 +568,31 @@ base class Scene implements SceneGraph {
   int get pacedFrameCount => _pacedFrameCount;
   int _pacedFrameCount = 0;
 
+  /// Notifies when the scene wants painting again outside any repaint the
+  /// app drives: a screen view held its previous image because the GPU was
+  /// [maxGpuFramesInFlight] frames behind, and that work has now finished.
+  /// [SceneView] listens. A custom painter that repaints only on demand
+  /// should pass this as its `repaint`, or the held frame never shows.
+  /// {@category Rendering}
+  Listenable get repaintRequested => _repaintRequested;
+  final _RepaintRequest _repaintRequested = _RepaintRequest();
+  bool _paceHeld = false;
+
+  // Asks for a repaint once the GPU work that paced a frame completes. The
+  // listener lives only while a frame is held.
+  void _holdPace() {
+    if (_paceHeld) return;
+    _paceHeld = true;
+    rendererSubmissions.addCompletionListener(_onPaceRelease);
+  }
+
+  void _onPaceRelease() {
+    if (rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) return;
+    rendererSubmissions.removeCompletionListener(_onPaceRelease);
+    _paceHeld = false;
+    _repaintRequested.notify();
+  }
+
   /// How many overlap-safe scene color captures a frame may open for
   /// materials that read the opaque scene behind them (transmission), from 1
   /// to [maxSceneColorCaptureBatches]. Readers whose screen bounds overlap
@@ -2232,28 +2257,34 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    // Consume a pending render-graph capture aimed at this screen view.
-    RenderGraphCapturer? capturer;
     final pendingCapture = _pendingGraphCapture;
-    if (pendingCapture != null && pendingCapture.viewIndex == viewIndex) {
-      _pendingGraphCapture = null;
-      capturer = RenderGraphCapturer(request: pendingCapture.request);
-    }
+    final captureThisView =
+        pendingCapture != null && pendingCapture.viewIndex == viewIndex;
 
     // Pace the GPU: with enough frames still running, present the previous
-    // image rather than queue work the calling thread would block on.
+    // image rather than queue work the calling thread would block on. A
+    // pending capture must observe a rendered frame, so it is never paced.
     final previous = surface.lastSwapchainColorTexture(viewIndex);
-    if (maxGpuFramesInFlight > 0 &&
+    if (!captureThisView &&
+        maxGpuFramesInFlight > 0 &&
         previous != null &&
         previous.width == pixelSize.width.toInt() &&
         previous.height == pixelSize.height.toInt() &&
         rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) {
       _pacedFrameCount++;
+      _holdPace();
       final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
       final paint = ui.Paint()
         ..filterQuality = view.filterQuality ?? filterQuality;
       canvas.drawImageRect(previous.asImage(), srcRect, drawArea, paint);
       return;
+    }
+
+    // Consume a pending render-graph capture aimed at this screen view.
+    RenderGraphCapturer? capturer;
+    if (captureThisView) {
+      _pendingGraphCapture = null;
+      capturer = RenderGraphCapturer(request: pendingCapture.request);
     }
     final gpu.Texture swapchainColor = surface.getNextSwapchainColorTexture(
       pixelSize,
@@ -3494,4 +3525,8 @@ class _PlanarCaptureResources {
     }
     return texture;
   }
+}
+
+class _RepaintRequest extends ChangeNotifier {
+  void notify() => notifyListeners();
 }

@@ -7,6 +7,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/frame_transients.dart'
+    show rendererSubmissions;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -87,10 +90,13 @@ void main() {
           smokeSceneKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
 
+      // The build above painted the first frame; let it finish so no pump
+      // below is paced and every one renders.
+      await _settleGpu();
       for (var i = 0; i < settleFrames; i++) {
         if (i > 0) boundary.markNeedsPaint();
         await tester.pump(settleStep);
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _settleGpu();
       }
 
       final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
@@ -104,9 +110,13 @@ void main() {
       captures['${smoke.id}.png'] = base64Encode(png.buffer.asUint8List());
 
       final stats = _frameStats(rgba, image.width, image.height);
+      final scene = tester
+          .state<SmokeSceneViewState>(find.byType(SmokeSceneView))
+          .scene;
       // ignore: avoid_print
       print(
         'SMOKE ${smoke.id}: ${image.width}x${image.height} '
+        'paced=${scene.pacedFrameCount} '
         'cornersClear=${stats.cornersClear} '
         'centerCoverage=${stats.centerNonClearFraction.toStringAsFixed(3)} '
         'fgLuma=${stats.foregroundMeanLuma.toStringAsFixed(1)} '
@@ -295,8 +305,10 @@ void main() {
         ),
       ),
     );
+    await _settleGpu();
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 50));
+      await _settleGpu();
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
 
@@ -533,8 +545,10 @@ void main() {
     );
 
     Future<void> pumpFrames() async {
+      await _settleGpu();
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 50));
+        await _settleGpu();
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
     }
@@ -619,4 +633,17 @@ _frameStats(ByteData rgba, int w, int h) {
     foregroundMeanLuma: fgCount == 0 ? 0.0 : fgLumaSum / fgCount,
     distinctColors: colors.length,
   );
+}
+
+/// Waits for the GPU to finish the frame the last pump submitted, so the next
+/// pump renders instead of re-presenting under `Scene.maxGpuFramesInFlight`
+/// and the capture is the frame the last pump drew. Bounded, since the
+/// immediate-execution web shim never holds work.
+Future<void> _settleGpu() async {
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (rendererSubmissions.framesInFlight > 0 &&
+      DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+  await Future<void>.delayed(const Duration(milliseconds: 50));
 }
