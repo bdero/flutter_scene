@@ -199,7 +199,9 @@ String emitFragmentGlsl(
   }
   // Fragment math defaults to mediump; the engine includes opt positions,
   // coordinates, and depth back into highp (see shaders/PRECISION.md). The
-  // material body below inherits the default like any engine source.
+  // material body below inherits the default like any engine source, and the
+  // define lets an include that runs in highp restore it.
+  sb.writeln('#define FLUTTER_SCENE_DEFAULT_FLOAT_PRECISION mediump');
   sb.writeln('precision mediump float;');
   sb.writeln('precision highp int;');
   sb.writeln('#include <material_varyings.glsl>');
@@ -235,9 +237,12 @@ String emitFragmentGlsl(
   final uniforms = material.uniformParameters.toList();
   final samplers = material.samplerParameters.toList();
   if (uniforms.isNotEmpty) {
+    // The vertex stage declares the same block at its highp default, and a
+    // block shared by both stages must match member precision to link on
+    // WebGL2, so the members stay highp under the fragment mediump default.
     sb.writeln('uniform $kMaterialParamsBlock {');
     for (final p in uniforms) {
-      sb.writeln('  ${p.type.glslType} ${p.name};');
+      sb.writeln('  highp ${p.type.glslType} ${p.name};');
     }
     sb.writeln('}');
     sb.writeln('$kMaterialParamsInstance;');
@@ -664,9 +669,12 @@ String _emitSkyGlsl(
   final uniforms = material.uniformParameters.toList();
   final samplers = material.samplerParameters.toList();
   if (uniforms.isNotEmpty) {
+    // The vertex stage declares the same block at its highp default, and a
+    // block shared by both stages must match member precision to link on
+    // WebGL2, so the members stay highp under the fragment mediump default.
     sb.writeln('uniform $kMaterialParamsBlock {');
     for (final p in uniforms) {
-      sb.writeln('  ${p.type.glslType} ${p.name};');
+      sb.writeln('  highp ${p.type.glslType} ${p.name};');
     }
     sb.writeln('}');
     sb.writeln('$kMaterialParamsInstance;');
