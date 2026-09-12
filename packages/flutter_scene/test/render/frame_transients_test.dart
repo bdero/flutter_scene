@@ -64,6 +64,32 @@ void main() {
       expect(tracker.framesInFlight, 0);
     });
 
+    test('completion listeners run after a submission completes', () {
+      final tracker = GpuSubmissionTracker();
+      var fired = 0;
+      late void Function() once;
+      // A listener that removes itself once the tracker drains, the shape
+      // the scene uses to release a paced frame.
+      once = () {
+        fired++;
+        if (tracker.framesInFlight == 0) {
+          tracker.removeCompletionListener(once);
+        }
+      };
+      tracker.addCompletionListener(once);
+      final a = tracker.record();
+      final b = tracker.record();
+      tracker.endFrame();
+      tracker.complete(a);
+      expect(fired, 1);
+      tracker.complete(b);
+      expect(fired, 2);
+      final c = tracker.record();
+      tracker.endFrame();
+      tracker.complete(c);
+      expect(fired, 2, reason: 'removed itself once drained');
+    });
+
     test('before-submit listeners run with the id being recorded', () {
       final tracker = GpuSubmissionTracker();
       final seen = <int>[];

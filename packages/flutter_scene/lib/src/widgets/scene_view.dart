@@ -357,6 +357,7 @@ class _SceneViewState extends State<SceneView>
     _scene.renderScene.semanticsComponentsChanged.addListener(
       _onSemanticsChanged,
     );
+    _scene.repaintRequested.addListener(_onRepaintRequested);
     if (widget.autoTick) {
       _ticker = createTicker(_onTick)..start();
     }
@@ -374,6 +375,9 @@ class _SceneViewState extends State<SceneView>
   }
 
   void _onAssetsRefreshed() => _repaint.notify();
+
+  // A paced frame's GPU work finished; paint the frame the view held.
+  void _onRepaintRequested() => _repaint.notify();
 
   // Creates the owned scene for the declarative form and applies every scene
   // prop, the single creation path for initState and constructor-form
@@ -439,9 +443,11 @@ class _SceneViewState extends State<SceneView>
       oldScene?.renderScene.semanticsComponentsChanged.removeListener(
         _onSemanticsChanged,
       );
+      oldScene?.repaintRequested.removeListener(_onRepaintRequested);
       _scene.renderScene.semanticsComponentsChanged.addListener(
         _onSemanticsChanged,
       );
+      _scene.repaintRequested.addListener(_onRepaintRequested);
       _sceneSemantics = SceneSemanticsCoordinator(_scene);
       _autoPointer = null;
     }
@@ -653,6 +659,7 @@ class _SceneViewState extends State<SceneView>
     _scene.renderScene.semanticsComponentsChanged.removeListener(
       _onSemanticsChanged,
     );
+    _scene.repaintRequested.removeListener(_onRepaintRequested);
     _ticker?.dispose();
     _repaint.dispose();
     _elapsed.dispose();

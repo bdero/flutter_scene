@@ -2161,12 +2161,15 @@ class SmokeSceneView extends StatefulWidget {
   final SmokeScene scene;
 
   @override
-  State<SmokeSceneView> createState() => _SmokeSceneViewState();
+  State<SmokeSceneView> createState() => SmokeSceneViewState();
 }
 
-class _SmokeSceneViewState extends State<SmokeSceneView> {
+class SmokeSceneViewState extends State<SmokeSceneView> {
   late final Scene _scene;
   late final PerspectiveCamera _camera;
+
+  /// The rendered scene, for the test's frame diagnostics.
+  Scene get scene => _scene;
 
   @override
   void initState() {

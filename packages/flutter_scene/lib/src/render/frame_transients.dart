@@ -75,10 +75,24 @@ class GpuSubmissionTracker {
     return id;
   }
 
+  final List<void Function()> _onCompleted = [];
+
+  /// Registers [listener] to run after any submission completes.
+  void addCompletionListener(void Function() listener) {
+    _onCompleted.add(listener);
+  }
+
+  void removeCompletionListener(void Function() listener) {
+    _onCompleted.remove(listener);
+  }
+
   /// Marks a recorded submission as completed.
   @visibleForTesting
   void complete(int id) {
     _pending.remove(id);
+    for (final listener in List.of(_onCompleted)) {
+      listener();
+    }
   }
 }
 
