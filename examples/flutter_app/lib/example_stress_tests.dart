@@ -6,12 +6,10 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/gestures.dart' show PointerHoverEvent;
 import 'package:flutter/material.dart' hide Animation;
 import 'package:flutter/services.dart' show KeyDownEvent, LogicalKeyboardKey;
 import 'package:flutter_scene/scene.dart' hide Material;
-import 'package:native_mouse_cursor/native_mouse_cursor.dart';
+import 'package:flutter_scene_input/flutter_scene_input.dart' show PointerLock;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'environment_menu.dart';
@@ -21,7 +19,6 @@ import 'example_overlay.dart';
 import 'example_panel.dart';
 import 'lighting_panel.dart';
 import 'example_settings.dart';
-import 'focus_lock_observer.dart';
 import 'quake_camera.dart';
 
 // The in-memory offline (ahead-of-time) glTF -> .fsceneb conversion, used by
@@ -1177,11 +1174,6 @@ class _StressSceneState extends State<_StressScene> {
   double _cameraSoftness = 0.1;
   Node? _modelRoot;
   vm.Matrix4? _modelBaseTransform;
-  final InfiniteDragController _focusPointer = InfiniteDragController(
-    axis: InfiniteDragAxis.both,
-    edgeMargin: 24,
-  );
-  late final FocusLockObserver _focusLockObserver;
   bool _focused = false;
 
   // Load state. `null` total means the server didn't send a Content-Length
@@ -1208,9 +1200,7 @@ class _StressSceneState extends State<_StressScene> {
     );
     _modelScale = widget.test.modelScale;
     _applyCameraSoftness();
-    _focusLockObserver = createFocusLockObserver(() {
-      if (_focused) _exitFocus();
-    });
+    PointerLock.instance.addListener(_onPointerLockChanged);
     // Keep an actual scene visible while a remote stress asset is downloading.
     _scene.skybox = Skybox(
       GradientSkySource(
@@ -1475,8 +1465,8 @@ class _StressSceneState extends State<_StressScene> {
   @override
   void dispose() {
     if (_focused) exampleChromeVisible.value = true;
-    _focusLockObserver.dispose();
-    _focusPointer.dispose();
+    PointerLock.instance.removeListener(_onPointerLockChanged);
+    PointerLock.instance.unlock();
     _focusNode.dispose();
     _environmentSelector.dispose();
     _scene.removeAll();
@@ -1499,17 +1489,8 @@ class _StressSceneState extends State<_StressScene> {
 
   void _enterFocus() {
     if (_focused || !_ready) return;
-    if (!kIsWeb) {
-      unawaited(_enterNativeFocus());
-      return;
-    }
-    _activateFocus();
-  }
-
-  Future<void> _enterNativeFocus() async {
-    final available = await NativeMouseCursor.canWarpPointer();
-    if (!mounted || _focused || !_ready) return;
-    if (!available) {
+    final lock = PointerLock.instance;
+    if (!lock.isSupported) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Direct mouse input is unavailable on this platform.'),
@@ -1517,49 +1498,28 @@ class _StressSceneState extends State<_StressScene> {
       );
       return;
     }
-    _activateFocus();
-  }
-
-  void _activateFocus() {
-    final size = MediaQuery.sizeOf(context);
-    final center = Offset(size.width * 0.5, size.height * 0.5);
-    setState(() => _focused = true);
-    exampleChromeVisible.value = false;
-    _focusNode.requestFocus();
+    // Requested synchronously from the tap so the web counts it as a gesture.
     unawaited(
-      _focusPointer.start(
-        center,
-        viewportSize: size,
-        onLockedDelta: _onFocusLook,
-      ),
+      lock.lock().then((granted) {
+        if (!granted || !mounted || !_ready) return;
+        setState(() => _focused = true);
+        exampleChromeVisible.value = false;
+        _focusNode.requestFocus();
+      }),
     );
   }
 
   void _exitFocus() {
     if (!_focused) return;
     _quake.releaseKeys();
-    unawaited(_focusPointer.end());
+    PointerLock.instance.unlock();
     exampleChromeVisible.value = true;
     if (mounted) setState(() => _focused = false);
   }
 
-  void _onFocusLook(Offset delta) {
-    if (!_focused) return;
-    _quake.look(delta);
-  }
-
-  void _onPointerHover(PointerHoverEvent event) {
-    if (!_focused) return;
-    final size = MediaQuery.sizeOf(context);
-    unawaited(
-      _focusPointer
-          .updateOffset(
-            globalPosition: event.position,
-            delta: event.delta,
-            viewportSize: size,
-          )
-          .then(_onFocusLook),
-    );
+  // The lock can end without _exitFocus, e.g. Esc on the web or focus loss.
+  void _onPointerLockChanged() {
+    if (!PointerLock.instance.isLocked) _exitFocus();
   }
 
   @override
@@ -1576,28 +1536,23 @@ class _StressSceneState extends State<_StressScene> {
           child: IgnorePointer(
             ignoring: !_ready,
             child: MouseRegion(
-              cursor: _focused
-                  ? SystemMouseCursors.none
-                  : _ready
+              cursor: _ready
                   ? SystemMouseCursors.move
                   : SystemMouseCursors.basic,
-              child: Listener(
+              child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onPointerHover: _onPointerHover,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanDown: _focused ? null : (_) => _focusNode.requestFocus(),
-                  onPanUpdate: _focused ? null : _onPanUpdate,
-                  child: SceneView(
-                    _scene,
-                    cameraBuilder: (elapsed) {
-                      _quake.move(elapsed.inMicroseconds / 1e6);
-                      return _quake.camera;
-                    },
-                    onTick: (elapsed, deltaSeconds) {
-                      exampleSettings.applyTo(_scene);
-                    },
-                  ),
+                onPanDown: _focused ? null : (_) => _focusNode.requestFocus(),
+                onPanUpdate: _focused ? null : _onPanUpdate,
+                child: SceneView(
+                  _scene,
+                  cameraBuilder: (elapsed) {
+                    if (_focused) _quake.look(PointerLock.instance.movement);
+                    _quake.move(elapsed.inMicroseconds / 1e6);
+                    return _quake.camera;
+                  },
+                  onTick: (elapsed, deltaSeconds) {
+                    exampleSettings.applyTo(_scene);
+                  },
                 ),
               ),
             ),
