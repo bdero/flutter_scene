@@ -18,11 +18,12 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
@@ -34,8 +35,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+const _expectedAndroidImpellerBackend = String.fromEnvironment(
+  'SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND',
+);
+
 const _externalGlbs = String.fromEnvironment('SHADOW_PARITY_GLBS');
 const _skipCity = bool.fromEnvironment('SHADOW_PARITY_SKIP_CITY');
+
+/// Runs every Nth configuration, for slow software rasterizers.
+const _stride = int.fromEnvironment('SHADOW_PARITY_STRIDE', defaultValue: 1);
 
 /// Restricts the run to configurations whose name contains this.
 const _only = String.fromEnvironment('SHADOW_PARITY_ONLY');
@@ -47,6 +55,20 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final report = <String, Object?>{};
   final captures = <String, String>{};
+
+  if (_expectedAndroidImpellerBackend.isNotEmpty) {
+    testWidgets('Android requests the expected Impeller backend', (_) async {
+      expect(defaultTargetPlatform, TargetPlatform.android);
+      final backend =
+          await const MethodChannel(
+            'dev.bdero.smoke_render/android_manifest',
+          ).invokeMethod<String>(
+            'getApplicationMetadataValue',
+            'io.flutter.embedding.android.ImpellerBackend',
+          );
+      expect(backend, _expectedAndroidImpellerBackend);
+    });
+  }
 
   testWidgets('shadow receiver culling is pixel-identical', (tester) async {
     await tester.pumpWidget(const SizedBox.expand());
@@ -96,11 +118,18 @@ void main() {
       >
       render({required bool culling, required int frames}) async {
         receiver_culling.debugDisableShadowReceiverCulling = !culling;
+        final stats = parity.scene.renderStats;
+        final framesBefore = stats.frameCount;
+        final pacedBefore = parity.scene.pacedFrameCount;
         for (var i = 0; i < frames; i++) {
           boundary.markNeedsPaint();
           await tester.pump(const Duration(milliseconds: 16));
           await _settleGpu();
         }
+        // Every pump must render a fresh frame, or a capture could compare a
+        // stale image.
+        expect(stats.frameCount - framesBefore, frames);
+        expect(parity.scene.pacedFrameCount, pacedBefore);
         final image = await boundary.toImage(pixelRatio: 1.0);
         final bytes = await image.toByteData(
           format: ui.ImageByteFormat.rawRgba,
@@ -120,6 +149,7 @@ void main() {
       for (var c = 0; c < configs.length; c++) {
         final config = configs[c];
         if (_only.isNotEmpty && !config.name.contains(_only)) continue;
+        if (c % _stride != 0) continue;
         config.apply(parity, holder);
 
         // Settle until two consecutive frames match: the shadow cache
@@ -167,7 +197,12 @@ void main() {
         }
         if (parityDiff.pixels != 0) {
           captures['$name.diff.png'] = await _png(
-            await _diffImage(off.rgba, on.rgba),
+            await _diffImage(
+              off.rgba,
+              on.rgba,
+              off.image.width,
+              off.image.height,
+            ),
           );
         }
         off.image.dispose();
@@ -375,6 +410,8 @@ PerspectiveCamera _look(
 _ParityScene _buildCity() {
   final scene = Scene()
     ..antiAliasingMode = AntiAliasingMode.none
+    // Never re-present a stale image in place of a capture.
+    ..maxGpuFramesInFlight = 0
     ..environmentIntensity = 0.25
     ..exposure = 1.0;
   final random = math.Random(7);
@@ -542,6 +579,8 @@ Future<_ParityScene> _loadExternal(List<String> paths) async {
   }
   final scene = Scene()
     ..antiAliasingMode = AntiAliasingMode.none
+    // Never re-present a stale image in place of a capture.
+    ..maxGpuFramesInFlight = 0
     ..environmentIntensity = 0.25
     ..exposure = 1.0;
   scene.add(model);
@@ -617,7 +656,12 @@ Future<_ParityScene> _loadExternal(List<String> paths) async {
   return (pixels: pixels, maxDelta: maxDelta);
 }
 
-Future<ui.Image> _diffImage(Uint8List a, Uint8List b) async {
+Future<ui.Image> _diffImage(
+  Uint8List a,
+  Uint8List b,
+  int width,
+  int height,
+) async {
   final out = Uint8List(a.length);
   for (var i = 0; i < a.length; i += 4) {
     final delta = math.max(
@@ -633,8 +677,8 @@ Future<ui.Image> _diffImage(Uint8List a, Uint8List b) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(out);
   final descriptor = ui.ImageDescriptor.raw(
     buffer,
-    width: _width.toInt(),
-    height: _height.toInt(),
+    width: width,
+    height: height,
     pixelFormat: ui.PixelFormat.rgba8888,
   );
   final codec = await descriptor.instantiateCodec();
