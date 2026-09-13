@@ -56,6 +56,7 @@ class ShadowEncoder {
     ShadowCasterFaces casterFaces, {
     ShadowCasterFilter filter = ShadowCasterFilter.all,
     int casterChannelMask = 0xFF,
+    this.receiverPlanes = const [],
   }) : _filter = filter,
        _casterChannelMask = casterChannelMask {
     frustum = Frustum.matrix(_lightSpaceMatrix);
@@ -110,6 +111,10 @@ class ShadowEncoder {
   /// culling.
   late final Frustum frustum;
 
+  /// Extra planes rejecting casters that cannot shadow a visible receiver
+  /// (see `shadowReceiverCullingPlanes`), tested alongside [frustum].
+  final List<Plane> receiverPlanes;
+
   final Aabb3 _cullScratchAabb = Aabb3();
 
   /// The pipeline currently bound on the render pass, or null before the
@@ -140,9 +145,22 @@ class ShadowEncoder {
           ..copyFrom(bounds)
           ..transform(item.worldTransform);
         if (!frustum.intersectsWithAabb3(_cullScratchAabb)) return;
+        for (final plane in receiverPlanes) {
+          if (_aabbOutsidePlane(_cullScratchAabb, plane)) return;
+        }
       }
     }
     _records.add(item);
+  }
+
+  // Matches the Bvh's plane test: outside when the corner farthest along the
+  // normal is below the plane.
+  static bool _aabbOutsidePlane(Aabb3 box, Plane plane) {
+    final n = plane.normal;
+    final x = n.x < 0 ? box.min.x : box.max.x;
+    final y = n.y < 0 ? box.min.y : box.max.y;
+    final z = n.z < 0 ? box.min.z : box.max.z;
+    return n.x * x + n.y * y + n.z * z + plane.constant < 0;
   }
 
   /// Emits the accepted casters, merging compatible spatial cells back into

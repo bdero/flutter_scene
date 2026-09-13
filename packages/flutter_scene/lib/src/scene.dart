@@ -77,6 +77,7 @@ import 'material/shadow_catcher_material.dart';
 import 'render/shadow_catcher_bake_pass.dart';
 import 'render/shadow_cache.dart';
 import 'render/shadow_pass.dart';
+import 'render/shadow_receiver_culling.dart';
 import 'render/ssao_pass.dart';
 import 'render/resolve_pass.dart';
 import 'render_texture.dart';
@@ -2512,6 +2513,58 @@ base class Scene implements SceneGraph {
       _directionalShadowCache = null;
     }
 
+    // Baked shadow catchers refresh their footprint caches right after the
+    // atlas renders, so the scene pass samples a current cache this frame.
+    // Live catchers may widen their own shadow filter, which the receiver
+    // culling margin must cover.
+    List<RenderItem>? catcherBakes;
+    var maxReceiverSoftness = light?.shadowSoftness ?? 0.0;
+    for (final item in renderScene.items) {
+      final material = item.material;
+      if (!item.visible || material is! ShadowCatcherMaterial) continue;
+      if (material.needsBakedShadowRefresh) {
+        (catcherBakes ??= []).add(item);
+      }
+      maxReceiverSoftness = math.max(maxReceiverSoftness, material.softness);
+    }
+
+    // Cull cascade casters that cannot shadow anything this view shades. Only
+    // when every atlas reader is bounded by this camera: catcher bakes,
+    // planar captures, and custom passes can sample off-screen receivers.
+    // TODO(shadow-receiver-culling): fold the reflected cameras' frustums
+    // into the receiver volume instead of skipping frames with planar
+    // captures, and cull spot and point shadow tiles the same way.
+    var cascadeReceiverPlanes = const <List<Plane>>[];
+    final receiverCullingAllowed =
+        !debugDisableShadowReceiverCulling &&
+        effectiveCascades.isNotEmpty &&
+        catcherBakes == null &&
+        !(capturePlanarReflections &&
+            !captureLinearColor &&
+            renderScene.planarReflectorComponents.isNotEmpty) &&
+        !_renderPasses.any(
+          (pass) => pass.enabled && pass.inputs.contains(RenderInput.shadowMap),
+        );
+    if (receiverCullingAllowed) {
+      final receiverFrustum = shadowReceiverFrustum(
+        camera.getViewTransform(pixelSize),
+        pixelSize,
+      );
+      cascadeReceiverPlanes = [
+        for (final cascade in effectiveCascades)
+          shadowReceiverCullingPlanes(
+                receiverFrustum: receiverFrustum,
+                lightSpaceMatrix: cascade.lightSpaceMatrix,
+                margin: shadowReceiverMargin(
+                  light!,
+                  cascade.boxSize,
+                  maxReceiverSoftness,
+                ),
+              ) ??
+              const <Plane>[],
+      ];
+    }
+
     final graph = RenderGraph();
     // Directional cascades, shadow-casting spots, and shadow-casting point
     // lights share one atlas (and so one sampler in the lit shader). All tiles
@@ -2525,6 +2578,7 @@ base class Scene implements SceneGraph {
         ShadowPass(
           renderScene: renderScene,
           cascades: effectiveCascades,
+          cascadeReceiverPlanes: cascadeReceiverPlanes,
           tileResolution: cascades.isNotEmpty
               ? light!.shadowMapResolution
               : spotShadowFrame?.tileResolution ??
@@ -2553,17 +2607,6 @@ base class Scene implements SceneGraph {
               : null,
         ),
       );
-    }
-    // Baked shadow catchers refresh their footprint caches right after the
-    // atlas renders, so the scene pass samples a current cache this frame.
-    List<RenderItem>? catcherBakes;
-    for (final item in renderScene.items) {
-      final material = item.material;
-      if (item.visible &&
-          material is ShadowCatcherMaterial &&
-          material.needsBakedShadowRefresh) {
-        (catcherBakes ??= []).add(item);
-      }
     }
     if (catcherBakes != null) {
       graph.addPass(
