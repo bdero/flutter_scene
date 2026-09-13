@@ -30,6 +30,9 @@ dependencies:
   # TODO(input-release): raise to the flutter_scene release carrying
   # SceneTickListener before publishing.
   flutter_scene: ^0.23.0
+  # Cross-platform gamepad events; 0.1.11 fixes Android stick and dpad
+  # inversion.
+  gamepads: ^0.1.11
   hooks: ^2.0.0
   logging: ^1.2.0
   meta: ^1.16.0

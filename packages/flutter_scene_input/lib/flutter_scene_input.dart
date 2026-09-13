@@ -37,6 +37,7 @@ export 'src/core/controls.dart'
         ControlKind,
         DeviceKind,
         GamepadControl,
+        GamepadLayoutStyle,
         KeyControl,
         MouseControl;
 export 'src/core/input_system.dart'
@@ -76,6 +77,8 @@ export 'src/scene/drivers.dart'
 export 'src/scene/input_host.dart'
     show InputHost, InputRoot, NodeInput, PlayerBinding, SceneInput;
 export 'src/sources/flutter_input.dart' show FlutterInputSources;
+export 'src/sources/gamepad_source.dart'
+    show GamepadBackend, GamepadSource, GamepadsPackageBackend, JoinHelper;
 export 'src/sources/keyboard_source.dart'
     show KeyboardSource, PhysicalKeyControl;
 export 'src/sources/mouse_source.dart' show MouseSource;

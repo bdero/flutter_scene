@@ -262,3 +262,52 @@ enum GamepadControl implements Control {
     _ => null,
   };
 }
+
+/// The face-button labeling a gamepad uses, for prompts. Controls stay
+/// positional whatever the style.
+/// {@category Controls}
+enum GamepadLayoutStyle {
+  /// A, B, X, Y with A at the bottom.
+  xbox,
+
+  /// Cross, Circle, Square, Triangle.
+  playstation,
+
+  /// B, A, Y, X with B at the bottom.
+  nintendo,
+
+  /// Unknown labeling; prompts use positions.
+  generic;
+
+  static const _sony = 0x054c;
+  static const _nintendo = 0x057e;
+  static const _microsoft = 0x045e;
+
+  /// Guesses the labeling from a device [name] and USB [vendorId].
+  static GamepadLayoutStyle guess({String name = '', int? vendorId}) {
+    switch (vendorId) {
+      case _sony:
+        return playstation;
+      case _nintendo:
+        return nintendo;
+      case _microsoft:
+        return xbox;
+    }
+    final lower = name.toLowerCase();
+    if (lower.contains('xbox') || lower.contains('xinput')) return xbox;
+    if (lower.contains('dualsense') ||
+        lower.contains('dualshock') ||
+        lower.contains('playstation') ||
+        lower.contains('ps4') ||
+        lower.contains('ps5')) {
+      return playstation;
+    }
+    if (lower.contains('pro controller') ||
+        lower.contains('joy-con') ||
+        lower.contains('nintendo') ||
+        lower.contains('switch')) {
+      return nintendo;
+    }
+    return generic;
+  }
+}

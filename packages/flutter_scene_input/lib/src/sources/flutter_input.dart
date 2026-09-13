@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import 'package:flutter_scene_input/src/core/input_system.dart';
+import 'package:flutter_scene_input/src/sources/gamepad_source.dart';
 import 'package:flutter_scene_input/src/sources/keyboard_source.dart';
 import 'package:flutter_scene_input/src/sources/mouse_source.dart';
 
@@ -10,14 +11,15 @@ final class FlutterInputSources {
   FlutterInputSources._(this.system) {
     system
       ..addSource(keyboard)
-      ..addSource(mouse);
+      ..addSource(mouse)
+      ..addSource(gamepads);
     FocusManager.instance.addListener(_updateTextEntry);
     _updateTextEntry();
   }
 
   static final Expando<FlutterInputSources> _installed = Expando();
 
-  /// Attaches the keyboard and mouse sources and the text-entry guard to
+  /// Attaches the keyboard, mouse, and gamepad sources and the text-entry guard to
   /// [system] once, returning the installed sources on later calls.
   ///
   /// `InputListener` and `attachInput` call this, so apps rarely need to.
@@ -33,7 +35,8 @@ final class FlutterInputSources {
     FocusManager.instance.removeListener(installed._updateTextEntry);
     system
       ..removeSource(installed.keyboard)
-      ..removeSource(installed.mouse);
+      ..removeSource(installed.mouse)
+      ..removeSource(installed.gamepads);
   }
 
   /// The system these sources feed.
@@ -44,6 +47,9 @@ final class FlutterInputSources {
 
   /// The mouse source `InputListener` widgets feed.
   final MouseSource mouse = MouseSource();
+
+  /// The gamepad source.
+  final GamepadSource gamepads = GamepadSource();
 
   bool _textEntry = false;
 

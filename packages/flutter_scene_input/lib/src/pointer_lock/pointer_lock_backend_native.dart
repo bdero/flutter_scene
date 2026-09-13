@@ -1,6 +1,4 @@
-@DefaultAsset(
-  'package:flutter_scene_input/src/pointer_lock/pointer_lock_backend_native.dart',
-)
+@DefaultAsset('package:flutter_scene_input/native')
 library;
 
 import 'dart:ffi';
