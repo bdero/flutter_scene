@@ -49,6 +49,7 @@ class ShadowPass extends RenderGraphPass {
     required int tileResolution,
     required Vector3 cameraPosition,
     List<ShadowCascade> cascades = const [],
+    List<List<Plane>> cascadeReceiverPlanes = const [],
     ShadowCasterFaces casterFaces = ShadowCasterFaces.front,
     int casterChannelMask = 0xFF,
     SpotShadowFrame? spotShadows,
@@ -57,6 +58,7 @@ class ShadowPass extends RenderGraphPass {
     ShadowCachePlan? cachePlan,
   }) : _renderScene = renderScene,
        _cascades = cascades,
+       _cascadeReceiverPlanes = cascadeReceiverPlanes,
        _tileResolution = tileResolution,
        _casterFaces = casterFaces,
        _casterChannelMask = casterChannelMask,
@@ -68,6 +70,16 @@ class ShadowPass extends RenderGraphPass {
 
   final RenderScene _renderScene;
   final List<ShadowCascade> _cascades;
+
+  // Per-cascade receiver culling planes (see shadowReceiverCullingPlanes).
+  // Empty, or shorter than the cascades, for no receiver culling. Cached
+  // static tiles outlive the frame's view, so they never use these.
+  final List<List<Plane>> _cascadeReceiverPlanes;
+
+  List<Plane> _receiverPlanesFor(int cascade) =>
+      cascade < _cascadeReceiverPlanes.length
+      ? _cascadeReceiverPlanes[cascade]
+      : const [];
   final int _tileResolution;
   final ShadowCasterFaces _casterFaces;
 
@@ -165,6 +177,7 @@ class ShadowPass extends RenderGraphPass {
       ShadowCasterFaces faces, {
       ShadowCasterFilter filter = ShadowCasterFilter.all,
       int casterChannelMask = 0xFF,
+      List<Plane> receiverPlanes = const [],
     }) {
       renderPass.setViewport(
         gpu.Viewport(
@@ -182,8 +195,13 @@ class ShadowPass extends RenderGraphPass {
         faces,
         filter: filter,
         casterChannelMask: casterChannelMask,
+        receiverPlanes: receiverPlanes,
       );
-      _renderScene.cull(encoder.frustum, encoder.submitCulled);
+      _renderScene.cull(
+        encoder.frustum,
+        encoder.submitCulled,
+        additionalPlanes: receiverPlanes,
+      );
       encoder.flush();
     }
 
@@ -213,6 +231,7 @@ class ShadowPass extends RenderGraphPass {
           _casterFaces,
           filter: ShadowCasterFilter.dynamicOnly,
           casterChannelMask: _casterChannelMask,
+          receiverPlanes: _receiverPlanesFor(c),
         );
         for (final item in _renderScene.items) {
           encoder.submit(item);
@@ -224,6 +243,7 @@ class ShadowPass extends RenderGraphPass {
           _cascades[c].lightSpaceMatrix,
           _casterFaces,
           casterChannelMask: _casterChannelMask,
+          receiverPlanes: _receiverPlanesFor(c),
         );
       }
     }
