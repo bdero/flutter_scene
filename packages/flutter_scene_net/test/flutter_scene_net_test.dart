@@ -393,9 +393,8 @@ void main() {
 
     // One server tick per real tick interval, so the server's tick counter
     // tracks the clock the client derives its own target tick from.
-    final run = Stopwatch()..start();
     var moved = 0.0;
-    while (run.elapsedMilliseconds < 2000) {
+    Future<void> step() async {
       moved += 1;
       for (final decoy in decoys) {
         decoy.position.value = (moved, 0.0, 0.0);
@@ -403,6 +402,17 @@ void main() {
       component.update(dt);
       room.advance(dt);
       await Future<void>.delayed(const Duration(milliseconds: 33));
+    }
+
+    final run = Stopwatch()..start();
+    while (run.elapsedMilliseconds < 2000) {
+      await step();
+    }
+    // The pawn still rides along every few ticks, so a run can end on the tick
+    // that carried it. Step on until its pose is stale again.
+    while (pawn.snapshotTick >= replication.client.lastAppliedInputTick &&
+        run.elapsedMilliseconds < 4000) {
+      await step();
     }
 
     // The pawn really was starved, its pose is older than the acked input.
