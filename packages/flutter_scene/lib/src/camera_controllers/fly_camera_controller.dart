@@ -78,6 +78,12 @@ class FlyCameraController extends CameraController {
   final Set<LogicalKeyboardKey> _heldKeys = {};
   final Vector3 _velocity = Vector3.zero();
 
+  // Held until changed, and summed with the held keys so either can drive the
+  // camera without cancelling the other.
+  final Vector2 _moveInput = Vector2.zero();
+  double _elevateInput = 0.0;
+  bool _boostInput = false;
+
   /// World-space eye position.
   Vector3 get position => _position.clone();
   set position(Vector3 value) => _position = value.clone();
@@ -93,6 +99,22 @@ class FlyCameraController extends CameraController {
   }
 
   Vector3 get _right => Vector3(math.cos(_yaw), 0.0, -math.sin(_yaw));
+
+  /// Sets movement intent from an input system, a gamepad, or touch controls.
+  ///
+  /// [move] is `-1..1` per axis with +X right and +Y forward, matching
+  /// `ThirdPersonControllerComponent.setMoveInput`. [elevate] is `-1..1` with
+  /// +1 up and is ignored when [moveVertical] is false. [boost] applies
+  /// [boostMultiplier].
+  ///
+  /// The intent holds until changed and adds to the built-in key handling.
+  /// A partial push moves at partial speed; the combined direction is only
+  /// shortened when it exceeds unit length.
+  void setMoveInput(Vector2 move, {double elevate = 0.0, bool boost = false}) {
+    _moveInput.setFrom(move);
+    _elevateInput = elevate;
+    _boostInput = boost;
+  }
 
   /// Rotates the view by a drag delta (logical pixels). Horizontal drags turn,
   /// vertical drags pitch (clamped short of vertical).
@@ -122,6 +144,9 @@ class FlyCameraController extends CameraController {
   @override
   void releaseInput() {
     _heldKeys.clear();
+    _moveInput.setZero();
+    _elevateInput = 0.0;
+    _boostInput = false;
     _velocity.setZero();
   }
 
@@ -135,32 +160,32 @@ class FlyCameraController extends CameraController {
     final moveForward = moveVertical
         ? forward
         : (Vector3(forward.x, 0.0, forward.z)..normalize());
-    final targetVelocity = Vector3.zero();
-    if (_heldKeys.contains(LogicalKeyboardKey.keyW)) {
-      targetVelocity.add(moveForward);
-    }
-    if (_heldKeys.contains(LogicalKeyboardKey.keyS)) {
-      targetVelocity.sub(moveForward);
-    }
-    // D moves toward the camera's right side of the screen; A moves left.
-    if (_heldKeys.contains(LogicalKeyboardKey.keyD)) targetVelocity.sub(_right);
-    if (_heldKeys.contains(LogicalKeyboardKey.keyA)) targetVelocity.add(_right);
+    var alongForward = _moveInput.y;
+    var alongRight = _moveInput.x;
+    var alongUp = moveVertical ? _elevateInput : 0.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyW)) alongForward += 1.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyS)) alongForward -= 1.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyD)) alongRight += 1.0;
+    if (_heldKeys.contains(LogicalKeyboardKey.keyA)) alongRight -= 1.0;
     if (moveVertical) {
-      if (_heldKeys.contains(LogicalKeyboardKey.keyE)) {
-        targetVelocity.add(Vector3(0.0, 1.0, 0.0));
-      }
-      if (_heldKeys.contains(LogicalKeyboardKey.keyQ)) {
-        targetVelocity.sub(Vector3(0.0, 1.0, 0.0));
-      }
+      if (_heldKeys.contains(LogicalKeyboardKey.keyE)) alongUp += 1.0;
+      if (_heldKeys.contains(LogicalKeyboardKey.keyQ)) alongUp -= 1.0;
     }
+    // [_right] points toward the screen's left, so rightward motion subtracts
+    // it.
+    final targetVelocity = Vector3.zero()
+      ..addScaled(moveForward, alongForward)
+      ..addScaled(_right, -alongRight)
+      ..addScaled(Vector3(0.0, 1.0, 0.0), alongUp);
     final boosted =
+        _boostInput ||
         _heldKeys.contains(LogicalKeyboardKey.shiftLeft) ||
         _heldKeys.contains(LogicalKeyboardKey.shiftRight);
-    if (targetVelocity.length2 > 1e-12) {
-      targetVelocity
-        ..normalize()
-        ..scale(speed * (boosted ? boostMultiplier : 1.0));
-    }
+    // Clamp rather than normalize, so an analog push keeps its magnitude while
+    // key combinations still top out at full speed.
+    final length2 = targetVelocity.length2;
+    if (length2 > 1.0) targetVelocity.scale(1.0 / math.sqrt(length2));
+    targetVelocity.scale(speed * (boosted ? boostMultiplier : 1.0));
     final moveR = settleResponse(movementSmoothing, dt);
     _velocity.addScaled(targetVelocity - _velocity, moveR);
     if (_velocity.length2 > 1e-12) _position.addScaled(_velocity, dt);

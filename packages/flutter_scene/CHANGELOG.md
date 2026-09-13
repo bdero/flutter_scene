@@ -1,5 +1,7 @@
 ## 0.24.0
 
+* `Scene.addTickListener` runs a `SceneTickListener` at the start of every tick and before every fixed step, ahead of all components, for per-frame sampling such as input.
+* `FlyCameraController.setMoveInput` drives movement from a gamepad, touch controls, or an input system, summing with the keys and keeping analog magnitude.
 * Cascaded shadows skip casters that cannot shadow anything the camera shades, cutting shadow-pass draws with no change to the rendered image.
 * `releaseTransientRenderTargets()` drops the render graph's pooled attachments (shadow atlas, scene color, depth, the post-process chain) and returns the bytes released; they reallocate on the next frame that needs them.
 * Pooled render targets are released automatically on platform memory pressure (`releaseRenderTargetsOnMemoryPressure` turns that off), and `takeMemoryReport()` reports them as a `render targets` category.
