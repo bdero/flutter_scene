@@ -56,6 +56,8 @@ dependencies:
   # for HDR environment maps. WASM-safe (no dart:io/dart:html on its web graph).
   image: ^4.5.0
   logging: ^1.2.0
+  # Compiles the desktop pointer lock library (build hook).
+  native_toolchain_c: ^0.19.4
   vector_math: ^2.1.4
   # WebGL2 bindings for the web GPU backend.
   web: ^1.1.0

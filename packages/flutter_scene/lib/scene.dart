@@ -351,6 +351,8 @@ export 'src/scene_path.dart'
     show BezierPath, CatmullRomPath, PolylinePath, ScenePath, ScenePathFrame;
 export 'src/raycast.dart' show SceneRaycastHit, raycastNode, raycastNodeAll;
 export 'src/resource_group.dart' show ResourceGroup;
+export 'src/input/pointer_lock.dart' show PointerLock;
+export 'src/input/pointer_lock_backend.dart' show PointerLockLoss;
 export 'src/scene_pointer.dart' show ScenePointer;
 export 'src/scene.dart' show AntiAliasingMode, Scene, SceneGraph;
 export 'src/scene_encoder.dart' show maxSceneColorCaptureBatches;

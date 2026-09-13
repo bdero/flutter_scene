@@ -211,6 +211,12 @@ return CameraControls(
 The controllers also expose intent methods (`orbitBy`, `dollyBy`, `panBy`, `look`), so an app with its
 own input handling can drive them without the widget.
 
+For mouse look without holding a button, lock the cursor with `PointerLock.instance` instead of a
+third-party pointer lock package. Call `lock()` from a pointer or tap handler (the web requires a
+gesture), feed `look(PointerLock.instance.movement)` once per frame, and pause when a listener sees
+`isLocked` go false (Esc on the web and focus loss end it without `unlock()`). Fall back to drag-look
+when `isSupported` is false (mobile, Wayland).
+
 ### Behavior lives in components, not in the tick
 
 The bulk of per-object logic should be custom `Component`s, not a giant `onTick`. A component is
