@@ -1,0 +1,15 @@
+dartdoc:
+  categories:
+    "Actions":
+      markdown: doc/categories/actions.md
+    "Bindings":
+      markdown: doc/categories/bindings.md
+    "Controls":
+      markdown: doc/categories/controls.md
+    "Players and devices":
+      markdown: doc/categories/players_and_devices.md
+  categoryOrder:
+    - "Actions"
+    - "Bindings"
+    - "Controls"
+    - "Players and devices"

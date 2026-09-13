@@ -1,0 +1,35 @@
+name: flutter_scene_input
+description: Rebindable input actions for Flutter Scene games. Keyboard, mouse, gamepads, and pointer lock, with contexts, rebinding, and scene drivers.
+repository: https://github.com/bdero/flutter_scene
+homepage: https://fscene.dev
+version: 0.1.0-dev
+
+topics:
+  - input
+  - gamepad
+  - gamedev
+  - pointer-lock
+
+platforms:
+  macos:
+  ios:
+  android:
+  windows:
+  linux:
+  web:
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.47.0"
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.16.0
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+  flutter_test:
+    sdk: flutter
