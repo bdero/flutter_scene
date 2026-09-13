@@ -42,6 +42,10 @@ const _expectedAndroidImpellerBackend = String.fromEnvironment(
 const _externalGlbs = String.fromEnvironment('SHADOW_PARITY_GLBS');
 const _skipCity = bool.fromEnvironment('SHADOW_PARITY_SKIP_CITY');
 
+/// Measures frame cost with culling off and on instead of comparing pixels.
+/// Run in profile mode (`flutter drive --profile`).
+const _benchmark = bool.fromEnvironment('SHADOW_PARITY_BENCHMARK');
+
 /// Runs every Nth configuration, for slow software rasterizers.
 const _stride = int.fromEnvironment('SHADOW_PARITY_STRIDE', defaultValue: 1);
 
@@ -145,12 +149,20 @@ void main() {
         );
       }
 
-      final configs = _configs(parity);
+      final configs = _benchmark ? _benchmarkConfigs(parity) : _configs(parity);
       for (var c = 0; c < configs.length; c++) {
         final config = configs[c];
         if (_only.isNotEmpty && !config.name.contains(_only)) continue;
         if (c % _stride != 0) continue;
         config.apply(parity, holder);
+        if (_benchmark) {
+          final result = await _benchmarkConfig(parity, holder);
+          result['name'] = '${parity.name}__${config.name}';
+          results.add(result);
+          // ignore: avoid_print
+          print('BENCH ${jsonEncode(result)}');
+          continue;
+        }
 
         // Settle until two consecutive frames match: the shadow cache
         // refreshes static tiles over several frames after the light or view
@@ -220,6 +232,8 @@ void main() {
       ),
     };
 
+    if (_benchmark) return;
+
     // A config whose own frames differ run to run cannot prove parity; it
     // fails separately so noise is not mistaken for a culling bug.
     final nondeterministic = results.where((r) => r['deterministic'] != true);
@@ -239,6 +253,113 @@ void main() {
     );
     expect(culled, isNotEmpty, reason: 'culling never removed a caster');
   });
+}
+
+/// Default light settings across every pose and sun, live and cached, so the
+/// numbers describe ordinary use rather than the parity stress variants.
+List<_Config> _benchmarkConfigs(_ParityScene parity) => [
+  for (final pose in parity.poses)
+    for (final sun in _suns.entries)
+      for (final cached in [false, true])
+        _Config('${pose.name}_${sun.key}_${cached ? 'cached' : 'live'}', (
+          scene,
+          holder,
+        ) {
+          holder.camera = pose.camera;
+          scene.light
+            ..shadowFilter = DirectionalShadowFilter.rotatedPoisson
+            ..shadowCascadeCount = 4
+            ..cascadeOverlap = 0.0
+            ..shadowSoftness = 0.08
+            ..cacheStaticShadows = cached
+            ..shadowMaxDistance = pose.maxDistance ?? 80.0;
+          scene.lightNode.localTransform = _aim(sun.value.$1, sun.value.$2);
+          for (final node in scene.staticCandidates) {
+            node.shadowStatic = cached;
+          }
+          scene.catcher?.softness = 0.0;
+        }),
+];
+
+const _benchWarmupFrames = 30;
+const _benchRounds = 6;
+const _benchFramesPerBlock = 30;
+
+/// Renders straight into a throwaway canvas (no vsync) and waits for the GPU
+/// after each frame, alternating culling off and on in blocks so drift and
+/// background load land on both. Reports medians of whole-frame CPU time
+/// (`renderStats`, which includes building the culling planes) and of wall
+/// time from encode start to GPU completion.
+Future<Map<String, Object?>> _benchmarkConfig(
+  _ParityScene parity,
+  _CameraHolder holder,
+) async {
+  final scene = parity.scene;
+  const viewport = Rect.fromLTWH(0, 0, _width, _height);
+
+  Future<({int cpu, int wall, int shadowCpu, int draws})> frame() async {
+    final watch = Stopwatch()..start();
+    final recorder = ui.PictureRecorder();
+    scene.render(holder.camera, Canvas(recorder), viewport: viewport);
+    recorder.endRecording().dispose();
+    while (rendererSubmissions.completedThrough <
+        rendererSubmissions.latestSubmission) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    watch.stop();
+    final stats = scene.renderStats.latest!;
+    final shadow = stats.views.first.passes.where(
+      (p) => p.name == 'ShadowPass',
+    );
+    return (
+      cpu: stats.cpuMicros,
+      wall: watch.elapsedMicroseconds,
+      shadowCpu: shadow.isEmpty ? 0 : shadow.first.cpuMicros,
+      draws: shadow.isEmpty ? 0 : shadow.first.counters.draws,
+    );
+  }
+
+  for (final culling in [false, true]) {
+    receiver_culling.debugDisableShadowReceiverCulling = !culling;
+    for (var i = 0; i < _benchWarmupFrames; i++) {
+      await frame();
+    }
+  }
+
+  final samples = {
+    for (final mode in ['off', 'on'])
+      mode: (cpu: <int>[], wall: <int>[], shadowCpu: <int>[], draws: <int>[]),
+  };
+  for (var round = 0; round < _benchRounds; round++) {
+    final order = round.isEven ? ['off', 'on'] : ['on', 'off'];
+    for (final mode in order) {
+      receiver_culling.debugDisableShadowReceiverCulling = mode == 'off';
+      final bucket = samples[mode]!;
+      for (var i = 0; i < _benchFramesPerBlock; i++) {
+        final f = await frame();
+        bucket.cpu.add(f.cpu);
+        bucket.wall.add(f.wall);
+        bucket.shadowCpu.add(f.shadowCpu);
+        bucket.draws.add(f.draws);
+      }
+    }
+  }
+  receiver_culling.debugDisableShadowReceiverCulling = false;
+
+  int median(List<int> values) => (values.toList()..sort())[values.length ~/ 2];
+  int p90(List<int> values) =>
+      (values.toList()..sort())[(values.length * 9) ~/ 10];
+  return {
+    for (final mode in ['off', 'on']) ...{
+      'cpuMedianMicros_$mode': median(samples[mode]!.cpu),
+      'cpuP90Micros_$mode': p90(samples[mode]!.cpu),
+      'wallMedianMicros_$mode': median(samples[mode]!.wall),
+      'wallP90Micros_$mode': p90(samples[mode]!.wall),
+      'shadowPassCpuMedianMicros_$mode': median(samples[mode]!.shadowCpu),
+      'shadowDraws_$mode': median(samples[mode]!.draws),
+    },
+    'frames': _benchRounds * _benchFramesPerBlock,
+  };
 }
 
 class _CameraHolder {
