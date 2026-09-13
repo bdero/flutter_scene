@@ -132,6 +132,74 @@ void main() {
       expect(_pos(node).z, closeTo(-0.2, 1e-5));
     });
 
+    FlyCameraController fly(Node node, {bool moveVertical = true}) {
+      final c = FlyCameraController(
+        position: Vector3.zero(),
+        speed: 4.0,
+        smoothing: 0.0,
+        movementSmoothing: 0.0,
+        moveVertical: moveVertical,
+      );
+      node.addComponent(c);
+      return c;
+    }
+
+    test('a partial move intent moves at partial speed', () {
+      final node = Node();
+      fly(node).setMoveInput(Vector2(0.0, 0.5));
+      node.getComponent<FlyCameraController>()!.update(0.05);
+      // Half of speed*dt = 0.1 along forward (0,0,-1).
+      expect(_pos(node).z, closeTo(-0.1, 1e-5));
+    });
+
+    test('move intent and keys agree on direction', () {
+      final keyed = Node();
+      fly(keyed).handleKeyEvent(_down(LogicalKeyboardKey.keyD));
+      keyed.getComponent<FlyCameraController>()!.update(0.05);
+
+      final driven = Node();
+      fly(driven).setMoveInput(Vector2(1.0, 0.0));
+      driven.getComponent<FlyCameraController>()!.update(0.05);
+
+      expect((_pos(keyed) - _pos(driven)).length, lessThan(1e-6));
+      expect(_pos(driven).length, closeTo(0.2, 1e-5));
+    });
+
+    test('intent sums with keys but never exceeds full speed', () {
+      final node = Node();
+      final c = fly(node)..setMoveInput(Vector2(0.0, 1.0));
+      c.handleKeyEvent(_down(LogicalKeyboardKey.keyW));
+      c.update(0.05);
+      expect(_pos(node).z, closeTo(-0.2, 1e-5));
+    });
+
+    test('boost intent applies the boost multiplier', () {
+      final node = Node();
+      fly(node).setMoveInput(Vector2(0.0, 1.0), boost: true);
+      node.getComponent<FlyCameraController>()!.update(0.05);
+      expect(_pos(node).z, closeTo(-0.8, 1e-5));
+    });
+
+    test('elevate intent is ignored when grounded', () {
+      final node = Node();
+      fly(node, moveVertical: false).setMoveInput(Vector2.zero(), elevate: 1.0);
+      node.getComponent<FlyCameraController>()!.update(0.05);
+      expect(_pos(node).length, closeTo(0.0, 1e-9));
+
+      final flying = Node();
+      fly(flying).setMoveInput(Vector2.zero(), elevate: 1.0);
+      flying.getComponent<FlyCameraController>()!.update(0.05);
+      expect(_pos(flying).y, closeTo(0.2, 1e-5));
+    });
+
+    test('releaseInput clears move intent', () {
+      final node = Node();
+      final c = fly(node)..setMoveInput(Vector2(0.0, 1.0), boost: true);
+      c.releaseInput();
+      c.update(0.05);
+      expect(_pos(node).length, closeTo(0.0, 1e-9));
+    });
+
     test('look clamps pitch short of vertical', () {
       final node = Node();
       final c = FlyCameraController(position: Vector3.zero(), smoothing: 0.0);

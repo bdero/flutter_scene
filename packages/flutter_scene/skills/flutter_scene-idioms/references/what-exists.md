@@ -75,7 +75,7 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
   `toCamera()` gives a `NodeCamera`. Camera node must not be scaled.
 - Interactive cameras: `CameraController` components attached to the camera node. `OrbitCameraController`
   (turntable around `target`; `orbitBy`/`dollyBy`/`panBy`/`frame`), `FlyCameraController` (WASD + drag
-  free flight; `moveVertical: false` = grounded first-person; `look`), `FollowCameraController`
+  free flight; `moveVertical: false` = grounded first-person; `look`, `setMoveInput`), `FollowCameraController`
   (third-person easing behind `followTarget` node; `orbitBy`/`dollyBy`). All ease with frame-rate
   independent `smoothing` (settle seconds), clamp pitch short of vertical, and write the node via
   `lookAtFrom`. Wire input with the `CameraControls({required controller, enabled, autofocus, child})`
@@ -89,6 +89,9 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
 `update(double deltaSeconds)` (NOT `onUpdate`), `fixedUpdate(double)`, `onUnmount`, `onDetach`,
 `cloneFor(Node)`. Node side: `addComponent`, `removeComponent`, `getComponent<T>()`,
 `getComponents<T>()`.
+Components tick root-first in tree order. For code that must run before every component each frame
+(sampling input, applying network state), subclass `SceneTickListener` (`beforeTick(dt)`,
+`beforeFixedStep(fixedDt)`, both optional) and register it with `scene.addTickListener`.
 
 | Component | Constructor/notes |
 | --- | --- |
