@@ -215,7 +215,7 @@ For mouse look without holding a button, lock the cursor with `PointerLock.insta
 third-party pointer lock package. Call `lock()` from a pointer or tap handler (the web requires a
 gesture), feed `look(PointerLock.instance.movement)` once per frame, and pause when a listener sees
 `isLocked` go false (Esc on the web and focus loss end it without `unlock()`). Fall back to drag-look
-when `isSupported` is false (mobile, Wayland).
+when `isSupported` is false (mobile, or a Wayland compositor without pointer constraints).
 
 ### Behavior lives in components, not in the tick
 

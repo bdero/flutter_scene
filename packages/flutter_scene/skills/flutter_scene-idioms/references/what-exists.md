@@ -82,7 +82,7 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
   widget (Focus + gestures + wheel); `SceneView` has no camera-input params by design.
 - Cursor lock: `PointerLock.instance` (`isSupported`, `isLocked`, `lock()`, `unlock()`, per-frame
   `movement` in logical pixels, `lastLoss` as a `PointerLockLoss`; a `ChangeNotifier`). macOS, Windows,
-  Linux X11, web.
+  Linux (X11, Wayland), web.
 
 ---
 

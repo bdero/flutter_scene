@@ -33,9 +33,10 @@ import 'package:flutter_scene/src/input/pointer_lock_platform.dart';
 /// and [lastLoss] says why. On desktop Esc is an ordinary key, so a game
 /// handles it itself and calls [unlock].
 ///
-/// Supported on macOS, Windows, Linux (X11), and the web. Check [isSupported]
-/// and fall back to drag-to-look elsewhere, rather than branching on the
-/// platform.
+/// Supported on macOS, Windows, Linux, and the web. On Wayland the compositor
+/// must offer the pointer-constraints and relative-pointer protocols, which
+/// GNOME, KDE, and wlroots compositors do. Check [isSupported] and fall back
+/// to drag-to-look elsewhere, rather than branching on the platform.
 ///
 /// When the lock ends, the cursor reappears where it was when locked.
 /// {@category Picking and input}
