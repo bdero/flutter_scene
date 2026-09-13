@@ -1,10 +1,10 @@
 import 'package:hooks/hooks.dart';
 
-import 'package:flutter_scene_input/src/pointer_lock/pointer_lock_hook.dart';
+import 'package:flutter_scene_input/src/native_hook.dart';
 
-/// Compiles the desktop pointer lock library.
+/// Compiles the package's native input library.
 void main(List<String> args) async {
   await build(args, (input, output) async {
-    await buildPointerLockLibrary(input, output);
+    await buildNativeLibrary(input, output);
   });
 }

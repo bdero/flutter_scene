@@ -11,15 +11,37 @@ const fire = ButtonAction('fire');
 const look = DeltaAction('look');
 const zoom = DeltaAction('zoom');
 
+final List<InputSystem> _systems = [];
+
 InputSystem _system(WidgetTester tester) {
   final system = InputSystem();
-  addTearDown(() => FlutterInputSources.remove(system));
+  _systems.add(system);
   return system;
+}
+
+// Detaches every system's sources inside the test body, since the gamepad
+// source's poll timer must be cancelled before the test binding checks for
+// pending timers.
+void _detachAll() {
+  for (final system in _systems) {
+    FlutterInputSources.remove(system);
+  }
+  _systems.clear();
+}
+
+void testInput(String description, WidgetTesterCallback body) {
+  testWidgets(description, (tester) async {
+    try {
+      await body(tester);
+    } finally {
+      _detachAll();
+    }
+  });
 }
 
 void main() {
   group('keyboard', () {
-    testWidgets('physical keys drive actions and repeats are ignored', (
+    testInput('physical keys drive actions and repeats are ignored', (
       tester,
     ) async {
       final system = _system(tester);
@@ -42,7 +64,7 @@ void main() {
       expect(player.button(jump).justReleased, isTrue);
     });
 
-    testWidgets('losing app focus releases held keys', (tester) async {
+    testInput('losing app focus releases held keys', (tester) async {
       final system = _system(tester);
       FlutterInputSources.ensure(system);
       final player = system.defaultPlayer;
@@ -63,7 +85,7 @@ void main() {
       await simulateKeyUpEvent(LogicalKeyboardKey.space);
     });
 
-    testWidgets('a focused text field suppresses gameplay', (tester) async {
+    testInput('a focused text field suppresses gameplay', (tester) async {
       final system = _system(tester);
       final player = system.defaultPlayer;
       player.contexts.push(
@@ -137,7 +159,7 @@ void main() {
       );
     }
 
-    testWidgets('buttons and movement reach the player, +Y up', (tester) async {
+    testInput('buttons and movement reach the player, +Y up', (tester) async {
       await pumpView(tester);
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await gesture.addPointer(location: const Offset(200, 200));
@@ -153,7 +175,7 @@ void main() {
       await gesture.removePointer();
     });
 
-    testWidgets('widgets above the listener keep their clicks', (tester) async {
+    testInput('widgets above the listener keep their clicks', (tester) async {
       await pumpView(tester);
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await gesture.addPointer(location: const Offset(10, 10));
@@ -166,7 +188,7 @@ void main() {
       await gesture.removePointer();
     });
 
-    testWidgets('scrolling away from the user is +Y', (tester) async {
+    testInput('scrolling away from the user is +Y', (tester) async {
       await pumpView(tester);
       tester.binding.handlePointerEvent(
         const PointerScrollEvent(
@@ -178,7 +200,7 @@ void main() {
       expect(player.delta(zoom), Vector2(0, 120));
     });
 
-    testWidgets('InputScope provides the player', (tester) async {
+    testInput('InputScope provides the player', (tester) async {
       final system = _system(tester);
       late PlayerInput found;
       await tester.pumpWidget(

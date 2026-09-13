@@ -30,10 +30,11 @@ final class InputDevice {
     this.kind, {
     required this.name,
     this.identity,
-    this.vendorId,
-    this.productId,
+    int? vendorId,
+    int? productId,
     this.isVirtual = false,
-  });
+  }) : _vendorId = vendorId,
+       _productId = productId;
 
   /// A small integer that stays the same for this device for the life of the
   /// [InputSystem], across disconnects and reconnects.
@@ -50,10 +51,12 @@ final class InputDevice {
   final String? identity;
 
   /// The USB vendor id, when known.
-  final int? vendorId;
+  int? get vendorId => _vendorId;
+  int? _vendorId;
 
   /// The USB product id, when known.
-  final int? productId;
+  int? get productId => _productId;
+  int? _productId;
 
   /// Whether this device exists only to carry injected input.
   final bool isVirtual;
@@ -82,6 +85,15 @@ abstract interface class InputSink {
 
   /// Marks [device] disconnected and releases everything it held.
   void disconnectDevice(InputDevice device);
+
+  /// Updates what is known about [device], for sources that learn a name or
+  /// USB ids only after connecting.
+  void updateDevice(
+    InputDevice device, {
+    String? name,
+    int? vendorId,
+    int? productId,
+  });
 
   /// Records the level of a digital or analog [control] on [device].
   void publish(InputDevice device, Control control, double value);
@@ -129,6 +141,8 @@ final class InputSystem implements InputSink {
   final List<InputSource> _sources = [];
   final List<PlayerInput> _players = [];
   final List<void Function()> _deviceListeners = [];
+  final List<void Function(InputDevice device, Control control)>
+  _unpairedPressListeners = [];
   late final PlayerInput _defaultPlayer;
   int _nextHandle = 1;
 
@@ -182,6 +196,17 @@ final class InputSystem implements InputSink {
   /// Unregisters [listener].
   void removeDeviceListener(void Function() listener) =>
       _deviceListeners.remove(listener);
+
+  /// Registers [listener] for presses on devices no player has paired, the
+  /// hook a join-by-button-press flow watches.
+  void addUnpairedPressListener(
+    void Function(InputDevice device, Control control) listener,
+  ) => _unpairedPressListeners.add(listener);
+
+  /// Unregisters [listener].
+  void removeUnpairedPressListener(
+    void Function(InputDevice device, Control control) listener,
+  ) => _unpairedPressListeners.remove(listener);
 
   /// Polls sources, then advances every player's frame window.
   void advanceFrame(double deltaSeconds) {
@@ -250,9 +275,44 @@ final class InputSystem implements InputSink {
   }
 
   @override
+  void updateDevice(
+    InputDevice device, {
+    String? name,
+    int? vendorId,
+    int? productId,
+  }) {
+    var changed = false;
+    if (name != null && name != device.name) {
+      device.name = name;
+      changed = true;
+    }
+    if (vendorId != null && vendorId != device._vendorId) {
+      device._vendorId = vendorId;
+      changed = true;
+    }
+    if (productId != null && productId != device._productId) {
+      device._productId = productId;
+      changed = true;
+    }
+    if (changed) notifyDevicesChanged();
+  }
+
+  @override
   void publish(InputDevice device, Control control, double value) {
     if (!device._connected) return;
-    ownerOf(device).receive(device, control, value);
+    final owner = ownerOf(device);
+    if (_unpairedPressListeners.isNotEmpty &&
+        value.abs() >= 0.5 &&
+        control.kind == ControlKind.digital &&
+        !_players.any((player) => player.pairedDevices.contains(device))) {
+      for (final listener in List.of(_unpairedPressListeners)) {
+        listener(device, control);
+      }
+      // A listener may have paired the device; route to the new owner.
+      ownerOf(device).receive(device, control, value);
+      return;
+    }
+    owner.receive(device, control, value);
   }
 
   @override
