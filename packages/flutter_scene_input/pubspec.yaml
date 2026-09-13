@@ -24,10 +24,20 @@ environment:
 resolution: workspace
 
 dependencies:
+  code_assets: '>=1.2.1 <3.0.0'
   flutter:
     sdk: flutter
+  # TODO(input-release): raise to the flutter_scene release carrying
+  # SceneTickListener before publishing.
+  flutter_scene: ^0.23.0
+  hooks: ^2.0.0
+  logging: ^1.2.0
   meta: ^1.16.0
+  # Compiles the desktop pointer lock library (build hook).
+  native_toolchain_c: ^0.19.4
   vector_math: ^2.1.4
+  # Pointer Lock API bindings for the web backend.
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0

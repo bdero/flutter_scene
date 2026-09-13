@@ -93,6 +93,14 @@ final class ResponseCurve extends Processor {
   final double exponent;
 }
 
+/// Swaps the horizontal and vertical components, so a scalar binding can
+/// feed the vertical axis of a vector or delta action.
+/// {@category Bindings}
+final class SwapAxes extends Processor {
+  /// Swaps x and y.
+  const SwapAxes();
+}
+
 /// Turns a level into a displacement of [rate] units per second over the read
 /// window. Required when a stick, key, or axis binding feeds a `DeltaAction`.
 /// {@category Bindings}
@@ -155,6 +163,8 @@ final class PerSecond extends Processor {
         } else {
           x = x.sign * math.pow(x.abs(), exponent).toDouble();
         }
+      case SwapAxes():
+        if (isVector) (x, y) = (y, x);
       case PerSecond():
         break;
     }
