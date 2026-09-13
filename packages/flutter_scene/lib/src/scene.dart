@@ -34,6 +34,7 @@ import 'memory_pressure.dart';
 import 'mesh.dart';
 import 'node.dart';
 import 'raycast.dart';
+import 'scene_tick_listener.dart';
 import 'physics/physics_world.dart';
 import 'environment_settings.dart';
 import 'environment_volume.dart';
@@ -1580,8 +1581,22 @@ base class Scene implements SceneGraph {
   // physics driver can take an integer number of steps per frame.
   double _physicsAccumulator = 0;
 
+  final SceneTickListeners _tickListeners = SceneTickListeners();
+
+  /// Registers [listener] to run at the start of every tick and before every
+  /// fixed step, ahead of all components. Listeners run in the order added.
+  ///
+  /// Adding a listener that is already registered does nothing.
+  void addTickListener(SceneTickListener listener) =>
+      _tickListeners.add(listener);
+
+  /// Unregisters [listener]. Returns whether it was registered.
+  bool removeTickListener(SceneTickListener listener) =>
+      _tickListeners.remove(listener);
+
   void _tick(double deltaSeconds) {
     _lastTickMillis = DateTime.now().millisecondsSinceEpoch;
+    _tickListeners.beforeTick(deltaSeconds);
     _stepPhysics(deltaSeconds);
     root.scenePrePass(deltaSeconds);
     _syncAudio(deltaSeconds);
@@ -1608,10 +1623,15 @@ base class Scene implements SceneGraph {
     }
     _physicsAccumulator = advancePhysics(
       world: world,
-      fixedUpdateWalk: root.sceneFixedPass,
+      fixedUpdateWalk: _fixedStep,
       accumulator: _physicsAccumulator,
       frameDt: frameDt,
     );
+  }
+
+  void _fixedStep(double fixedDt) {
+    _tickListeners.beforeFixedStep(fixedDt);
+    root.sceneFixedPass(fixedDt);
   }
 
   /// Fixed-step substepping driver. Adds [frameDt] to [accumulator],
