@@ -119,6 +119,9 @@ final class InputSystem implements InputSink {
     _players.add(_defaultPlayer);
   }
 
+  /// The shared system most apps use.
+  static final InputSystem instance = InputSystem();
+
   /// The time source for hold durations and tap windows.
   final InputClock clock;
 
@@ -141,7 +144,8 @@ final class InputSystem implements InputSink {
   /// Creates an additional player. Pair devices to it with
   /// [PlayerInput.pair].
   PlayerInput createPlayer() {
-    final player = PlayerInput.internal(this);
+    final player = PlayerInput.internal(this)
+      ..textEntryActive = _defaultPlayer.textEntryActive;
     _players.add(player);
     return player;
   }

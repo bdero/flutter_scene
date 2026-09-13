@@ -8,8 +8,17 @@ dartdoc:
       markdown: doc/categories/controls.md
     "Players and devices":
       markdown: doc/categories/players_and_devices.md
+    "Scene integration":
+      markdown: doc/categories/scene_integration.md
+    "Sources":
+      markdown: doc/categories/sources.md
+    "Widgets":
+      markdown: doc/categories/widgets.md
   categoryOrder:
     - "Actions"
     - "Bindings"
     - "Controls"
     - "Players and devices"
+    - "Sources"
+    - "Scene integration"
+    - "Widgets"

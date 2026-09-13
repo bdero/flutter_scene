@@ -57,4 +57,28 @@ export 'src/core/processors.dart'
         PerSecond,
         Processor,
         ResponseCurve,
-        Scale;
+        Scale,
+        SwapAxes;
+export 'src/pointer_lock/pointer_lock.dart' show PointerLock;
+export 'src/pointer_lock/pointer_lock_backend.dart' show PointerLockLoss;
+export 'src/scene/default_actions.dart' show DefaultActions;
+export 'src/scene/drivers.dart'
+    show
+        CharacterInputDriver,
+        FlyCameraControllerInput,
+        FlyCameraInputDriver,
+        FollowCameraControllerInput,
+        FollowCameraInputDriver,
+        InputDriver,
+        OrbitCameraControllerInput,
+        OrbitCameraInputDriver,
+        ThirdPersonControllerInput;
+export 'src/scene/input_host.dart'
+    show InputHost, InputRoot, NodeInput, PlayerBinding, SceneInput;
+export 'src/sources/flutter_input.dart' show FlutterInputSources;
+export 'src/sources/keyboard_source.dart'
+    show KeyboardSource, PhysicalKeyControl;
+export 'src/sources/mouse_source.dart' show MouseSource;
+export 'src/widgets/input_debug_overlay.dart' show InputDebugOverlay;
+export 'src/widgets/input_listener.dart'
+    show InputListener, InputScope, PointerLockPolicy;

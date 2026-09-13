@@ -412,19 +412,23 @@ final class PlayerInput extends InputWindow {
     return true;
   }
 
-  double _scalar(Binding binding, _Reader reader) {
-    final raw = switch (binding) {
-      GatedBinding(:final modifiers, binding: final inner) =>
-        _allHeld(modifiers) ? _scalar(inner, reader) : 0.0,
-      ButtonBinding(:final control) ||
-      AxisBinding(:final control) => reader.read(control, modifiers: 0),
-      AxisPairBinding(:final negative, :final positive) =>
-        reader.read(positive, modifiers: 0) -
-            reader.read(negative, modifiers: 0),
-      _ => 0.0,
-    };
-    return _process(binding.processors, raw, 0, isVector: false).$1;
-  }
+  double _scalar(Binding binding, _Reader reader) => _process(
+    binding.processors,
+    _rawScalar(binding, reader),
+    0,
+    isVector: false,
+  ).$1;
+
+  // A scalar binding's value before its own processors.
+  double _rawScalar(Binding binding, _Reader reader) => switch (binding) {
+    GatedBinding(:final modifiers, binding: final inner) =>
+      _allHeld(modifiers) ? _scalar(inner, reader) : 0.0,
+    ButtonBinding(:final control) ||
+    AxisBinding(:final control) => reader.read(control, modifiers: 0),
+    AxisPairBinding(:final negative, :final positive) =>
+      reader.read(positive, modifiers: 0) - reader.read(negative, modifiers: 0),
+    _ => 0.0,
+  };
 
   bool _evaluateVector(
     Binding binding,
@@ -478,8 +482,9 @@ final class PlayerInput extends InputWindow {
         }
         raw = (x, y);
       case AxisPairBinding() || AxisBinding() || ButtonBinding():
-        raw = (_scalar(binding, reader), 0.0);
-        return raw;
+        // Processed as a vector, so SwapAxes and Invert.y can place a scalar
+        // on the vertical axis.
+        raw = (_rawScalar(binding, reader), 0.0);
       default:
         raw = (0.0, 0.0);
     }
