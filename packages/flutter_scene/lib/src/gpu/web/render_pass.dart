@@ -410,7 +410,20 @@ base class RenderPass {
       instanceRate = layout.buffers[slot].stepMode == VertexStepMode.instance;
     }
     // Deferred: applied (through the VAO cache) when the draw is issued.
-    _pendingVertexBindings.add((bufferView, slot, instanceRate));
+    // Bindings persist across same-pipeline draws (the encoder only clears on
+    // a pipeline change) and every draw binds its full slot set, so a re-bind
+    // of a slot replaces the previous entry. Appending instead grew the list
+    // by one per draw: every draw re-pointed every earlier draw's attributes
+    // (quadratic GL traffic over a same-pipeline run) and, because the VAO
+    // cache key covers the whole list, the cache missed once the run outgrew
+    // it and rebuilt a VAO per draw per frame.
+    final entry = (bufferView, slot, instanceRate);
+    final existing = _pendingVertexBindings.indexWhere((b) => b.$2 == slot);
+    if (existing >= 0) {
+      _pendingVertexBindings[existing] = entry;
+    } else {
+      _pendingVertexBindings.add(entry);
+    }
   }
 
   /// Applies one recorded vertex-stream binding to the currently bound VAO:
