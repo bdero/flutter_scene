@@ -37,7 +37,6 @@ dependencies:
   # Extracts the .tar.gz of reference DICOM slices for the DICOM Volume example.
   archive: ^4.0.0
   path_provider: ^2.1.0
-  native_mouse_cursor: ^1.2.1
   vector_math: ^2.1.4
   web: ^1.1.1
   video_player: ^2.13.0
