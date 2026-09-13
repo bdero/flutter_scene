@@ -122,10 +122,25 @@ List<Plane>? shadowReceiverCullingPlanes({
       planes.add(Plane.normalconstant(plane.normal, plane.constant + margin));
     }
   }
+  // The tile's sides in light-plane coordinates. A hull edge lying on one is
+  // looser than the light frustum's own side plane, so it is skipped.
+  final minX = (-1.0 - m[12]) / rightScale;
+  final maxX = (1.0 - m[12]) / rightScale;
+  final minY = (-1.0 - m[13]) / upScale;
+  final maxY = (1.0 - m[13]) / upScale;
+  final sideTolerance = 1e-5 / math.min(rightScale, upScale);
+  bool onSide(double a, double b, double side) =>
+      (a - side).abs() < sideTolerance && (b - side).abs() < sideTolerance;
   // Silhouette planes run along the light, through each hull edge.
   for (var i = 0; i < hull.length; i++) {
     final a = hull[i];
     final b = hull[(i + 1) % hull.length];
+    if (onSide(a.x, b.x, minX) ||
+        onSide(a.x, b.x, maxX) ||
+        onSide(a.y, b.y, minY) ||
+        onSide(a.y, b.y, maxY)) {
+      continue;
+    }
     final nx = -(b.y - a.y);
     final ny = b.x - a.x;
     final length = math.sqrt(nx * nx + ny * ny);

@@ -149,8 +149,9 @@ class Bvh {
   // visit callback must not query the same Bvh).
   final Int32List _stack = Int32List(64);
 
-  // Frustum planes as (nx, ny, nz, constant) rows, reloaded per query.
-  final Float64List _planes = Float64List(24);
+  // Frustum planes then additional planes as (nx, ny, nz, constant) rows,
+  // reloaded per query. Grows to fit the largest plane count seen.
+  Float64List _planes = Float64List(24);
 
   /// Calls [visit] once for every item whose world AABB intersects
   /// [frustum].
@@ -160,6 +161,13 @@ class Bvh {
     List<Plane> additionalPlanes = const [],
   }) {
     if (_nodeCount == 0) return;
+    final planeCount = 6 + additionalPlanes.length;
+    if (_planes.length < planeCount * 4) {
+      _planes = Float64List(planeCount * 4);
+    }
+    for (var i = 0; i < additionalPlanes.length; i++) {
+      _loadPlane(6 + i, additionalPlanes[i]);
+    }
     _loadPlane(0, frustum.plane0);
     _loadPlane(1, frustum.plane1);
     _loadPlane(2, frustum.plane2);
@@ -169,6 +177,7 @@ class Bvh {
     final bounds = _bounds;
     final children = _children;
     final planes = _planes;
+    final rowsEnd = planeCount * 4;
     final stack = _stack;
     var top = 0;
     stack[top++] = _nodeCount - 1;
@@ -178,7 +187,7 @@ class Bvh {
       // Outside when the corner farthest along a plane's normal is below
       // that plane, matching Frustum.intersectsWithAabb3.
       var outside = false;
-      for (var p = 0; p < 24; p += 4) {
+      for (var p = 0; p < rowsEnd; p += 4) {
         final nx = planes[p], ny = planes[p + 1], nz = planes[p + 2];
         final px = nx < 0 ? bounds[o] : bounds[o + 3];
         final py = ny < 0 ? bounds[o + 1] : bounds[o + 4];
@@ -186,20 +195,6 @@ class Bvh {
         if (nx * px + ny * py + nz * pz + planes[p + 3] < 0) {
           outside = true;
           break;
-        }
-      }
-      if (!outside) {
-        for (final plane in additionalPlanes) {
-          final nx = plane.normal.x;
-          final ny = plane.normal.y;
-          final nz = plane.normal.z;
-          final px = nx < 0 ? bounds[o] : bounds[o + 3];
-          final py = ny < 0 ? bounds[o + 1] : bounds[o + 4];
-          final pz = nz < 0 ? bounds[o + 2] : bounds[o + 5];
-          if (nx * px + ny * py + nz * pz + plane.constant < 0) {
-            outside = true;
-            break;
-          }
         }
       }
       if (outside) continue;
