@@ -1,6 +1,7 @@
 import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/src/generated_assets/build_engine_assets.dart';
+import 'package:flutter_scene/src/input/pointer_lock_hook.dart';
 
 /// Compiles the engine's own shaders for whatever app is being built, so
 /// `flutter pub add flutter_scene` is the whole setup. A shader bundle is only
@@ -9,5 +10,6 @@ import 'package:flutter_scene/src/generated_assets/build_engine_assets.dart';
 void main(List<String> args) async {
   await build(args, (input, output) async {
     await buildOwnEngineAssets(buildInput: input, buildOutput: output);
+    await buildPointerLockLibrary(input, output);
   });
 }

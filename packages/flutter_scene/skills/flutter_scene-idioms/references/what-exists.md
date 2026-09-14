@@ -80,6 +80,9 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
   independent `smoothing` (settle seconds), clamp pitch short of vertical, and write the node via
   `lookAtFrom`. Wire input with the `CameraControls({required controller, enabled, autofocus, child})`
   widget (Focus + gestures + wheel); `SceneView` has no camera-input params by design.
+- Cursor lock: `PointerLock.instance` (`isSupported`, `isLocked`, `lock()`, `unlock()`, per-frame
+  `movement` in logical pixels, `lastLoss` as a `PointerLockLoss`; a `ChangeNotifier`). macOS, Windows,
+  Linux (X11, Wayland), web.
 
 ---
 
