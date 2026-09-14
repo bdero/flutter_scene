@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Apps ship each engine shader bundle once and only for their own platform; a shared pub cache used to ship every platform's bundles, twice with data assets enabled.
 * `Scene.addTickListener` runs a `SceneTickListener` at the start of every tick and before every fixed step, ahead of all components, for per-frame sampling such as input.
 * `FlyCameraController.setMoveInput` drives movement from a gamepad, touch controls, or an input system, summing with the keys and keeping analog magnitude.
 * Cascaded shadows skip casters that cannot shadow anything the camera shades, cutting shadow-pass draws with no change to the rendered image.

@@ -55,9 +55,6 @@ enum TargetShaderBundleAssetMode {
 /// belongs to when the app's hook builds a dependency's shaders.
 ///
 /// [pruneGeneratedTree] drops a tree copy the data-asset registration replaces.
-/// flutter_scene's own hook turns that off: one build runs it several times
-/// with different asset types, so its tree copy is the fallback for the runs
-/// that have no data assets, not a leftover.
 Future<void> buildTargetShaderBundleJson({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
@@ -173,15 +170,17 @@ Future<void> buildTargetShaderBundleJson({
 /// resolve to GLES, so the native one must never overwrite the target build's
 /// outputs; [shaderBundleTargetKey] is what keeps them apart in the tree.
 ///
-/// That native data-only pass still compiles and ships a GLES set no native app
-/// loads, roughly 1.5 MB. It cannot be dropped here. Its hook input is
-/// byte-identical to a real web build's (both just `data_assets/data`, no code
-/// config, no target OS), and web genuinely needs the GLES set, so nothing the
-/// hook can read tells the wasteful native pass from the required web one. The
-/// invoker knows the target platform but never puts it on a data-asset-only
-/// input. `generated_target_isolation_test.dart` locks that indistinguishability.
+/// That native data-only pass still compiles a GLES set no native app loads. A
+/// tree that lists its target directories (flutter_scene's own does) puts it in
+/// the web-only directory, so a native app does not ship it, but the compile
+/// cannot be dropped here. Its hook input is byte-identical to a real web
+/// build's (both just `data_assets/data`, no code config, no target OS), and
+/// web genuinely needs the GLES set, so nothing the hook can read tells the
+/// wasteful native pass from the required web one. The invoker knows the target
+/// platform but never puts it on a data-asset-only input.
+/// `generated_target_isolation_test.dart` locks that indistinguishability.
 ///
-/// TODO(hook-target-invocations): dropping the waste needs an upstream change,
+/// TODO(hook-target-invocations): dropping the compile needs an upstream change,
 /// the invoker naming the target platform (or final artifact) on data-asset-only
 /// inputs, or flutter_tools not making the redundant native data pass. Revisit
 /// if a Flutter release adds such a field.

@@ -3,8 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
     show debugPrint, internal, visibleForTesting;
-import 'package:flutter/services.dart'
-    show AssetBundle, AssetManifest, rootBundle;
+import 'package:flutter/services.dart' show AssetBundle;
 import 'package:vector_math/vector_math.dart';
 
 import '../fmat/fmat_emitter.dart'
@@ -18,11 +17,6 @@ import 'engine_lighting.dart';
 import 'physical_material.dart';
 import 'physically_based_material.dart' show AlphaMode, TextureTransform;
 import 'preprocessed_material.dart';
-
-const _dataBundleKey =
-    'packages/flutter_scene/flutter_scene/fmat/physical/physical.shaderbundle';
-const _dataSidecarKey =
-    'packages/flutter_scene/flutter_scene/fmat/physical/physical.fmat.json';
 
 /// Nothing generated the bundle, which means the build ran without hooks.
 const _missingMessage =
@@ -75,23 +69,13 @@ Future<_PhysicalAssets> _loadPhysicalAssetsAndResetOnFailure() async {
   }
 }
 
-/// The physical bundle's keys: the data asset when the toolchain registered
-/// one, then the app's own generated tree, then flutter_scene's, which its own
-/// hook always fills. Null when nothing built it.
+/// The physical bundle's keys: the app's own generated tree, then
+/// flutter_scene's, which its own hook always fills. Null when nothing built
+/// it.
 @visibleForTesting
 Future<({String bundle, String sidecar})?> resolvePhysicalBundleKeys({
   AssetBundle? bundle,
 }) async {
-  try {
-    final manifest = await AssetManifest.loadFromAssetBundle(
-      bundle ?? rootBundle,
-    );
-    if (manifest.listAssets().contains(_dataBundleKey)) {
-      return (bundle: _dataBundleKey, sidecar: _dataSidecarKey);
-    }
-  } catch (_) {
-    // Nothing to scan; the generated trees below are the only source.
-  }
   final index = await loadGeneratedAssetIndex(bundle);
   final generatedBundle = index.resolveFirstKey(
     GeneratedAssetFamily.material,
