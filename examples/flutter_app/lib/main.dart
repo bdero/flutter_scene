@@ -30,6 +30,7 @@ import 'example_audio.dart';
 import 'example_auto_exposure.dart';
 import 'example_cloth.dart';
 import 'example_configurator.dart';
+import 'example_dice_shadows.dart';
 import 'example_dicom.dart';
 import 'example_kit.dart';
 import 'example_lights.dart';
@@ -304,6 +305,16 @@ class _MyAppState extends State<MyApp> {
             return const Center(child: CircularProgressIndicator());
           }
           return const ExamplePhysicsCar();
+        },
+      ),
+      'Dice Shadows': (context) => FutureBuilder<void>(
+        // Shares the Rapier backend with the Physics example.
+        future: _physicsReady,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return const ExampleDiceShadows();
         },
       ),
       'Shapes': (context) => FutureBuilder<void>(
