@@ -49,6 +49,7 @@
 * Batching comparators cache their identity keys, `sceneSortDepth` allocates nothing, and instance batch objects are pooled, cutting per-frame work that multiplies across shadow, depth-prepass, and reflection views.
 * Allow `code_assets` 2.x.
 * Fix vertex-attribute traffic on the web backend growing quadratically across same-pipeline draws.
+* On web, shader bundles and their generated JSON revalidate with the server on load, so a browser cache can no longer pair a previous build's bundle with new Dart code.
 
 ## 0.23.0
 

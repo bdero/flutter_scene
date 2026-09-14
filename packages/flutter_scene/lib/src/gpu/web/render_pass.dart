@@ -168,6 +168,12 @@ base class RenderTarget {
 // state setters are stubbed.
 // ---------------------------------------------------------------------------
 
+/// Appended to a missing-binding error, since a bundle from an earlier build
+/// reflects the same way as a name the shader never declared.
+const String _staleBundleHint =
+    'If the app was just rebuilt, a cache in front of the server (a service '
+    'worker, a CDN) may be serving a shader bundle from the previous build.';
+
 base class RenderPass {
   RenderPass._(this._gpuContext, this._target) {
     _bindFramebuffer();
@@ -577,7 +583,7 @@ base class RenderPass {
         'Failed to bind uniform. This shader declares no uniform block named '
         '"${slot.uniformName}". A block binds by its type name, not its '
         'instance name, and a block nothing in the shader reads is optimized '
-        'out by the compiler and reflects as absent.',
+        'out by the compiler and reflects as absent. $_staleBundleHint',
       );
     }
 
@@ -712,7 +718,7 @@ base class RenderPass {
         'Failed to bind texture. This shader declares no texture named '
         '"${slot.uniformName}". Check the sampler name spelling, and note '
         'that a sampler nothing in the shader reads is optimized out by the '
-        'compiler and reflects as absent.',
+        'compiler and reflects as absent. $_staleBundleHint',
       );
     }
 

@@ -47,9 +47,10 @@ base class ShaderLibrary {
     unawaited(reinitializeShaderLibraryAsync(assetKey));
   }
 
-  /// Load and compile a `.shaderbundle` asset.
+  /// Load and compile a `.shaderbundle` asset, revalidated so a browser cache
+  /// never pairs an old bundle with new Dart code.
   static Future<ShaderLibrary?> _loadFromAsset(String assetName) async {
-    final data = await rootBundle.load(assetName);
+    final data = await loadGeneratedAsset(assetName);
     return _loadFromBytes(data, assetName: assetName);
   }
 
@@ -235,8 +236,7 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
     return;
   }
 
-  rootBundle.evict(assetKey);
-  final data = await rootBundle.load(assetKey);
+  final data = await loadGeneratedAsset(assetKey);
   final bundle = fb.ShaderBundle(
     data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
   );

@@ -8,10 +8,10 @@ import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:vector_math/vector_math.dart' as vm;
 import 'package:web/web.dart' as web;
 
+import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/glsl_transpile.dart';
 import '../shared/shader_library_sources.dart';
 import 'shader_bundle_generated.dart' as fb;

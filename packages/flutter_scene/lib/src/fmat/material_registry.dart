@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
         sidecarSamplesEnvironment;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/generated_assets/generated_asset_fetch.dart';
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
@@ -122,7 +123,9 @@ final class FmatMaterialRegistry {
     for (final key in indexKeys) {
       // Evict so a hot reload re-reads a regenerated index.
       if (kDebugMode) assetBundle.evict(key);
-      final json = jsonDecode(await assetBundle.loadString(key));
+      final json = jsonDecode(
+        await loadGeneratedAssetString(key, bundle: assetBundle),
+      );
       final index = FmatMaterialBundleIndex.fromJson(
         (json as Map).cast<String, Object?>(),
         assetKey: key,
@@ -374,7 +377,9 @@ final class FmatMaterialRegistry {
   }
 
   Future<Map<String, Object?>> _loadSidecar(String assetKey) async {
-    final json = jsonDecode(await _bundle.loadString(assetKey));
+    final json = jsonDecode(
+      await loadGeneratedAssetString(assetKey, bundle: _bundle),
+    );
     return (json as Map).cast<String, Object?>();
   }
 }
