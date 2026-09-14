@@ -2,9 +2,9 @@
 /// physical material bundle.
 ///
 /// flutter_scene's own `hook/build.dart` calls [buildOwnEngineAssets], so a
-/// consumer needs no hook of their own. It registers data assets where the
-/// toolchain has them, and otherwise writes into flutter_scene's own
-/// `flutter_scene_generated/`, which its pubspec lists. Every output is stamped
+/// consumer needs no hook of their own. It writes into flutter_scene's own
+/// `flutter_scene_generated/`, one directory per target, which its pubspec
+/// lists with a platform filter each. Every output is stamped
 /// with the identity of the engine that compiled it, because a shader bundle is
 /// only valid for that engine, so one pub cache shared by projects on different
 /// Flutter versions rebuilds on each switch instead of loading a bundle the
@@ -18,7 +18,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
 import '../fmat/build_materials.dart'
@@ -42,21 +41,18 @@ const String _baseBundleManifest = 'shaders/base.shaderbundle.json';
 /// ES 3.0.
 const int _glesLanguageVersion = 300;
 
-/// Builds the engine's shaders from flutter_scene's own hook, into whichever
-/// place this toolchain can ship them from.
+/// Builds the engine's shaders from flutter_scene's own hook into its own
+/// generated tree.
+///
+/// Always the tree, even when the toolchain has data assets. One build runs
+/// this hook several times, and only some runs carry data assets, so a run
+/// without them would write the tree anyway and the app would ship both
+/// copies. Nothing a run can read says whether another run in the same build
+/// registers data assets.
 Future<void> buildOwnEngineAssets({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-}) => _build(
-  buildInput: buildInput,
-  buildOutput: buildOutput,
-  // Data assets are the tidiest home when they exist, no writes into the
-  // package directory at all. One build runs this hook several times with
-  // different asset types though, so a run that has them must not delete the
-  // tree copy a run without them wrote.
-  dataAssets: buildInput.config.buildDataAssets,
-  prune: false,
-);
+}) => _build(buildInput: buildInput, buildOutput: buildOutput);
 
 /// Builds the engine's shaders into the app's generated tree, from the app's
 /// `hook/build.dart` (which `dart run flutter_scene:init` writes for you).
@@ -67,32 +63,24 @@ Future<void> buildOwnEngineAssets({
 Future<void> buildEngineAssets({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-}) =>
-    _build(buildInput: buildInput, buildOutput: buildOutput, dataAssets: false);
+}) => _build(buildInput: buildInput, buildOutput: buildOutput);
 
 Future<void> _build({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-  required bool dataAssets,
-  bool prune = true,
 }) async {
   final root = await _flutterSceneRoot();
   await _buildBaseShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
-    dataAssets: dataAssets,
-    prune: prune,
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
     owner: _engineOwner,
-    assetMode: dataAssets
-        ? MaterialAssetMode.dataAssetsRequired
-        : MaterialAssetMode.generatedTree,
-    pruneGeneratedTree: prune,
+    assetMode: MaterialAssetMode.generatedTree,
     // Engine-compiled like the base bundle, so its name separates engines too.
     fileVariant: await engineIdentity(),
   );
@@ -116,8 +104,6 @@ Future<void> _buildBaseShaderBundle({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
-  required bool dataAssets,
-  required bool prune,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
   final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
@@ -152,43 +138,38 @@ Future<void> _buildBaseShaderBundle({
   }
   final stamp = stampBuffer.toString();
 
-  final assetMode = dataAssets
-      ? TargetShaderBundleAssetMode.dataAssetsRequired
-      : TargetShaderBundleAssetMode.generatedTree;
-  if (!dataAssets) {
-    final tree = GeneratedAssetTree.open(
-      buildInput.packageRoot,
-      buildInput.packageName,
-      options: options,
-    )..requireAssetEntry();
-    // The compiled bundle is valid only for the engine that produced it and
-    // only for the backends it was trimmed to, so both are part of the file
-    // name. Builds on different Flutter versions, or for different platforms,
-    // sharing this directory then write different files instead of racing on
-    // one, and the sweep drops the one no longer named by the manifest.
-    final target = shaderBundleTargetKey(buildInput);
-    final outputUri = tree.fileUri(
-      GeneratedAssetFamily.shaderBundle,
-      nameId: 'base',
-      extension: '.shaderbundle',
-      variant: await engineIdentity(),
-      target: target,
-    );
-    if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
-      outputUri,
-    ], target: target)) {
-      tree
-        ..recordFile(
-          family: GeneratedAssetFamily.shaderBundle,
-          id: 'base',
-          uri: outputUri,
-          stamp: stamp,
-          owner: _engineOwner,
-          target: target,
-        )
-        ..save();
-      return;
-    }
+  final tree = GeneratedAssetTree.open(
+    buildInput.packageRoot,
+    buildInput.packageName,
+    options: options,
+  )..requireAssetEntry();
+  // The compiled bundle is valid only for the engine that produced it and
+  // only for the backends it was trimmed to, so both are part of the file
+  // name. Builds on different Flutter versions, or for different platforms,
+  // sharing this directory then write different files instead of racing on
+  // one, and the sweep drops the one no longer named by the manifest.
+  final target = shaderBundleTargetKey(buildInput);
+  final outputUri = tree.fileUri(
+    GeneratedAssetFamily.shaderBundle,
+    nameId: 'base',
+    extension: '.shaderbundle',
+    variant: await engineIdentity(),
+    target: target,
+  );
+  if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
+    outputUri,
+  ], target: target)) {
+    tree
+      ..recordFile(
+        family: GeneratedAssetFamily.shaderBundle,
+        id: 'base',
+        uri: outputUri,
+        stamp: stamp,
+        owner: _engineOwner,
+        target: target,
+      )
+      ..save();
+    return;
   }
 
   // The compiler resolves a manifest entry's `file` against its own working
@@ -223,8 +204,7 @@ Future<void> _buildBaseShaderBundle({
     manifestFileName: manifestPath,
     includeDirectories: [shaders],
     glesLanguageVersion: _glesLanguageVersion,
-    assetMode: assetMode,
-    pruneGeneratedTree: prune,
+    assetMode: TargetShaderBundleAssetMode.generatedTree,
     owner: _engineOwner,
     stamp: stamp,
     fileVariant: await engineIdentity(),
