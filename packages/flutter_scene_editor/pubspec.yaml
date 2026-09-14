@@ -19,8 +19,8 @@ dependencies:
   flutter:
     sdk: flutter
   file_selector: ^1.0.0
-  flutter_scene: ^0.23.0
-  scene: ^0.3.0
+  flutter_scene: ^0.24.0
+  scene: ^0.4.0
   flutter_scene_editor_core:
     path: ../flutter_scene_editor_core
   flutter_scene_mcp:

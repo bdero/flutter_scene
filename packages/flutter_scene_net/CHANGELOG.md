@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.2
+- Widen the `flutter_scene` constraint to `^0.24.0` and the `scene` constraint to `^0.4.0`. No API changes.
+
 ## 0.2.1
 
 - Widen the `flutter_scene` constraint to `^0.23.0` and the `scene` constraint to `^0.3.0`. No API changes.

@@ -2,7 +2,7 @@ name: flutter_scene_soloud
 description: SoLoud audio backend for flutter_scene. Implements the abstract audio contract from flutter_scene over the SoLoud engine via flutter_soloud.
 repository: https://github.com/bdero/flutter_scene
 homepage: https://github.com/bdero/flutter_scene
-version: 0.1.2
+version: 0.2.0
 
 resolution: workspace
 
@@ -13,7 +13,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_scene: ^0.23.0
+  flutter_scene: ^0.24.0
   flutter_soloud: ^5.0.0
   vector_math: ^2.1.4
 
