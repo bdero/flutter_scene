@@ -44,7 +44,7 @@
 * A rejected collider names the node it was on and the degenerate cases that cause the rejection.
 * Batching comparators cache their identity keys, `sceneSortDepth` allocates nothing, and instance batch objects are pooled, cutting per-frame work that multiplies across shadow, depth-prepass, and reflection views.
 * Allow `code_assets` 2.x.
-* The web backend no longer re-points every earlier draw's vertex attributes on each draw of a same-pipeline run. A re-bind of a vertex slot now replaces the pending entry instead of appending, so per-draw GL traffic is linear in the draw count again and the VAO cache hits (a 400-draw scene went from ~400k `vertexAttribPointer` calls and ~80 ms per frame to ~2k calls and ~3 ms).
+* Fix vertex-attribute traffic on the web backend growing quadratically across same-pipeline draws.
 
 ## 0.23.0
 
