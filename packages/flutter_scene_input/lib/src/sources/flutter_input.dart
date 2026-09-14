@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:flutter_scene_input/src/core/controls.dart';
 import 'package:flutter_scene_input/src/core/input_system.dart';
 import 'package:flutter_scene_input/src/sources/gamepad_source.dart';
 import 'package:flutter_scene_input/src/sources/keyboard_source.dart';
@@ -13,6 +14,7 @@ final class FlutterInputSources {
       ..addSource(keyboard)
       ..addSource(mouse)
       ..addSource(gamepads);
+    system.keyLabelResolver ??= _keyLabel;
     FocusManager.instance.addListener(_updateTextEntry);
     _updateTextEntry();
   }
@@ -52,6 +54,11 @@ final class FlutterInputSources {
   final GamepadSource gamepads = GamepadSource();
 
   bool _textEntry = false;
+
+  String? _keyLabel(KeyControl control) {
+    final label = keyboard.logicalKeyFor(control)?.keyLabel;
+    return label == null || label.isEmpty ? null : label;
+  }
 
   void _updateTextEntry() {
     final context = FocusManager.instance.primaryFocus?.context;

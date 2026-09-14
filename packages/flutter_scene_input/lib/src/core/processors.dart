@@ -44,19 +44,27 @@ final class Deadzone extends Processor {
 /// {@category Bindings}
 final class Invert extends Processor {
   /// Negates a scalar, or a vector's horizontal component.
-  const Invert() : x = true, y = false;
+  const Invert() : x = true, y = false, tunable = null;
 
   /// Negates a vector's vertical component, the usual inverted look.
-  const Invert.y() : x = false, y = true;
+  const Invert.y() : x = false, y = true, tunable = null;
 
   /// Negates both components.
-  const Invert.both() : x = true, y = true;
+  const Invert.both() : x = true, y = true, tunable = null;
+
+  /// Negates the chosen components only while tunable [id] is nonzero, so an
+  /// invert-look setting lives in a profile. Off until set.
+  const Invert.tunable(String id, {this.x = false, this.y = true})
+    : tunable = id;
 
   /// Whether to negate the horizontal component.
   final bool x;
 
   /// Whether to negate the vertical component.
   final bool y;
+
+  /// The tunable that switches this inversion, or null when always on.
+  final String? tunable;
 }
 
 /// Multiplies by [x] and [y], optionally times a tunable a profile can set.
@@ -142,7 +150,8 @@ final class PerSecond extends Processor {
           x = x.sign * remap(x.abs());
           y = y.sign * remap(y.abs());
         }
-      case Invert(x: final invertX, y: final invertY):
+      case Invert(x: final invertX, y: final invertY, :final tunable):
+        if (tunable != null && readTunable(tunable, 0) == 0) break;
         if (invertX) x = -x;
         if (invertY && isVector) y = -y;
       case Scale(x: final fallback, :final tunable?):

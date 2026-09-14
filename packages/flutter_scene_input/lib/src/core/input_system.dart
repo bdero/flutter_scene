@@ -137,6 +137,14 @@ final class InputSystem implements InputSink {
   /// The time source for hold durations and tap windows.
   final InputClock clock;
 
+  /// Returns a key's label on the current keyboard layout, or null to use its
+  /// code name. The Flutter layer installs one reading logical keys.
+  String? Function(KeyControl control)? keyLabelResolver;
+
+  /// Returns art for a control in prompts (an asset path, an image), passed
+  /// through as `ControlLabel.glyph`.
+  Object? Function(Control control, GamepadLayoutStyle style)? glyphResolver;
+
   final List<InputDevice> _devices = [];
   final List<InputSource> _sources = [];
   final List<PlayerInput> _players = [];

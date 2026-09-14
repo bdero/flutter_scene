@@ -217,7 +217,7 @@ void main() {
       player.inject(GamepadControl.leftStickX, 1);
       player.advanceFrame(1 / 60);
       expect(player.axis(steer), 0.5);
-      player.setTunable('steerSensitivity', 0.8);
+      player.overrides.tune('steerSensitivity', 0.8);
       player.advanceFrame(1 / 60);
       expect(player.axis(steer), 0.8);
     });

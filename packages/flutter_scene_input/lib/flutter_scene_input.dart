@@ -40,6 +40,8 @@ export 'src/core/controls.dart'
         GamepadLayoutStyle,
         KeyControl,
         MouseControl;
+export 'src/core/display.dart'
+    show BindingDisplay, BindingDisplays, ControlLabel;
 export 'src/core/input_system.dart'
     show
         InputClock,
@@ -48,8 +50,18 @@ export 'src/core/input_system.dart'
         InputSource,
         InputSystem,
         StopwatchInputClock;
+export 'src/core/overrides.dart'
+    show BindingLocation, OverrideRecord, PlayerOverrides;
 export 'src/core/player_input.dart'
     show ButtonState, ContextEntry, ContextStack, InputWindow, PlayerInput;
+export 'src/core/rebind.dart'
+    show
+        BindingConflict,
+        ConflictResolution,
+        RebindOperation,
+        RebindResult,
+        RebindStatus,
+        Rebinding;
 export 'src/core/processors.dart'
     show
         Deadzone,
