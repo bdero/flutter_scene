@@ -1,5 +1,6 @@
 ## 0.2.2
 
+* Widen the `flutter_scene` constraint to `^0.24.0` and the `scene` constraint to `^0.4.0`.
 * Require `box3d` 0.1.2, which allows `code_assets` 2.x.
 
 ## 0.2.1
