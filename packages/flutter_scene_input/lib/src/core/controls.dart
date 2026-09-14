@@ -70,6 +70,24 @@ sealed class Control {
   String get path;
 }
 
+/// The control an explicitly cleared slot or part reads: never actuated.
+/// Internal; profiles persist it as `null`.
+final class UnboundControl implements Control {
+  const UnboundControl._();
+
+  /// The single unbound control.
+  static const UnboundControl instance = UnboundControl._();
+
+  @override
+  DeviceKind get device => DeviceKind.keyboard;
+
+  @override
+  ControlKind get kind => ControlKind.digital;
+
+  @override
+  String get path => 'unbound';
+}
+
 /// A keyboard key, identified by its USB HID usage (its physical position).
 ///
 /// Physical rather than logical, so WASD stays in place on every keyboard

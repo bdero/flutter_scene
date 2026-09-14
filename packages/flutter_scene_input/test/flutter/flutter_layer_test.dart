@@ -121,6 +121,36 @@ void main() {
     });
   });
 
+  testInput('rebinding listens to real key events and shows layout labels', (
+    tester,
+  ) async {
+    final system = _system(tester);
+    FlutterInputSources.ensure(system);
+    final player = system.defaultPlayer;
+    final set = ActionSet('gameplay', {
+      jump: {'keyboard': ButtonBinding(PhysicalKeyboardKey.space.control)},
+    });
+    player.contexts.push(set);
+
+    RebindResult? result;
+    player.listenForBinding(jump, slot: 'keyboard').result.then((r) {
+      result = r;
+    });
+    await simulateKeyDownEvent(LogicalKeyboardKey.keyF);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(result?.control, PhysicalKeyboardKey.keyF.control);
+    result!.apply();
+    await simulateKeyUpEvent(LogicalKeyboardKey.keyF);
+
+    // The keyboard source saw F's logical key, so the label uses it.
+    expect(player.bindingDisplay(jump)!.label, 'F');
+
+    await simulateKeyDownEvent(LogicalKeyboardKey.keyF);
+    player.advanceFrame(1 / 60);
+    expect(player.button(jump).pressed, isTrue);
+    await simulateKeyUpEvent(LogicalKeyboardKey.keyF);
+  });
+
   group('mouse through InputListener', () {
     late InputSystem system;
     late PlayerInput player;

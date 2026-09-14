@@ -221,3 +221,122 @@ final class GatedBinding extends Binding {
   @override
   Map<String, Control> get parts => binding.parts;
 }
+
+/// [binding] with the control at [part] (or its single control when [part] is
+/// null) replaced by [control], keeping processors and thresholds.
+///
+/// Throws [ArgumentError] when the binding has no such part.
+// TODO(input-rebind): gate modifiers are not rebindable yet; add
+// `gate0`-style parts to GatedBinding when a game needs them.
+Binding rebindPart(Binding binding, String? part, Control control) {
+  Never noPart() => throw ArgumentError.value(
+    part,
+    'part',
+    '${binding.runtimeType} has ${binding.parts.isEmpty ? 'no parts' : 'parts ${binding.parts.keys.join(', ')}'}',
+  );
+  switch (binding) {
+    case ButtonBinding(
+      :final pressPoint,
+      :final releasePoint,
+      :final processors,
+    ):
+      if (part != null) noPart();
+      return ButtonBinding(
+        control,
+        pressPoint: pressPoint,
+        releasePoint: releasePoint,
+        processors: processors,
+      );
+    case AxisBinding(:final processors):
+      if (part != null) noPart();
+      return AxisBinding(control, processors: processors);
+    case DeltaBinding(:final processors):
+      if (part != null) noPart();
+      return DeltaBinding(control, processors: processors);
+    case StickBinding(:final processors):
+      if (part != null) noPart();
+      if (control is! GamepadControl || control.axisX == null) {
+        throw ArgumentError.value(control, 'control', 'Not a stick control');
+      }
+      return StickBinding(control, processors: processors);
+    case AxisPairBinding(:final negative, :final positive, :final processors):
+      return switch (part) {
+        'negative' => AxisPairBinding(
+          negative: control,
+          positive: positive,
+          processors: processors,
+        ),
+        'positive' => AxisPairBinding(
+          negative: negative,
+          positive: control,
+          processors: processors,
+        ),
+        _ => noPart(),
+      };
+    case DpadBinding(
+      :final up,
+      :final down,
+      :final left,
+      :final right,
+      :final mode,
+      :final processors,
+    ):
+      if (!const {'up', 'down', 'left', 'right'}.contains(part)) noPart();
+      return DpadBinding(
+        up: part == 'up' ? control : up,
+        down: part == 'down' ? control : down,
+        left: part == 'left' ? control : left,
+        right: part == 'right' ? control : right,
+        mode: mode,
+        processors: processors,
+      );
+    case ChordBinding(
+      :final modifiers,
+      :final trigger,
+      :final pressPoint,
+      :final releasePoint,
+      :final processors,
+    ):
+      final index = part != null && part.startsWith('modifier')
+          ? int.tryParse(part.substring('modifier'.length))
+          : null;
+      if (part != 'trigger' &&
+          (index == null || index < 0 || index >= modifiers.length)) {
+        noPart();
+      }
+      return ChordBinding(
+        [
+          for (var i = 0; i < modifiers.length; i++)
+            i == index ? control : modifiers[i],
+        ],
+        part == 'trigger' ? control : trigger,
+        pressPoint: pressPoint,
+        releasePoint: releasePoint,
+        processors: processors,
+      );
+    case GatedBinding(
+      :final modifiers,
+      binding: final inner,
+      :final processors,
+    ):
+      return GatedBinding(
+        modifiers,
+        rebindPart(inner, part, control),
+        processors: processors,
+      );
+  }
+}
+
+/// The control [binding] reads at [part], or its single control when [part]
+/// is null.
+Control? controlAt(Binding binding, String? part) {
+  if (part != null) return binding.parts[part];
+  return switch (binding) {
+    ButtonBinding(:final control) ||
+    AxisBinding(:final control) ||
+    DeltaBinding(:final control) => control,
+    StickBinding(:final control) => control,
+    GatedBinding(binding: final inner) => controlAt(inner, null),
+    _ => null,
+  };
+}

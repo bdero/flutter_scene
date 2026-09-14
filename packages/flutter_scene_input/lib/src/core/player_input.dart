@@ -8,6 +8,7 @@ import 'package:flutter_scene_input/src/core/actions.dart';
 import 'package:flutter_scene_input/src/core/bindings.dart';
 import 'package:flutter_scene_input/src/core/controls.dart';
 import 'package:flutter_scene_input/src/core/input_system.dart';
+import 'package:flutter_scene_input/src/core/overrides.dart';
 import 'package:flutter_scene_input/src/core/processors.dart';
 
 /// A digital or analog control at or past this level counts as held for
@@ -45,6 +46,10 @@ final class PlayerInput extends InputWindow {
     _player = this;
     fixed = InputWindow._().._player = this;
     contexts = ContextStack._(this);
+    overrides = PlayerOverrides(
+      _handleOverridesChanged,
+      () => contexts.entries.map((entry) => entry.set),
+    );
   }
 
   /// The system this player belongs to.
@@ -56,9 +61,18 @@ final class PlayerInput extends InputWindow {
   /// The action sets live for this player, top first.
   late final ContextStack contexts;
 
+  /// This player's rebinds, tunables, and recognizer settings.
+  late final PlayerOverrides overrides;
+
   final Set<InputDevice> _paired = {};
   final Map<Control, Map<InputDevice, double>> _levels = {};
-  final Map<String, double> _tunables = {};
+  final List<void Function()> _bindingListeners = [];
+  final List<void Function(InputDevice device, Control control, double value)>
+  _controlListeners = [];
+  final Map<(ActionSet, InputAction, String), Binding?> _effective = {};
+  int _effectiveRevision = -1;
+  int _suppressions = 0;
+  InputDevice? _lastGamepad;
   final Map<DeviceKind, InputDevice> _virtualDevices = {};
   final List<void Function()> _activeDeviceListeners = [];
 
@@ -114,17 +128,70 @@ final class PlayerInput extends InputWindow {
       _activeDeviceListeners.remove(listener);
 
   /// The value of tunable [id] (a sensitivity, say), or [fallback] when unset.
-  double tunable(String id, double fallback) => _tunables[id] ?? fallback;
+  /// Set tunables through [overrides].
+  double tunable(String id, double fallback) => overrides.tunable(id, fallback);
 
-  /// Sets tunable [id]. Read by `Scale.tunable` processors.
-  void setTunable(String id, double value) {
-    _tunables[id] = value;
+  /// The gamepad this player most recently actuated, for prompt styles.
+  InputDevice? get lastGamepad => _lastGamepad;
+
+  /// Registers [listener] for anything that changes what bindings display:
+  /// overrides, the active device kind, or the last gamepad.
+  void addBindingsListener(void Function() listener) =>
+      _bindingListeners.add(listener);
+
+  /// Unregisters [listener].
+  void removeBindingsListener(void Function() listener) =>
+      _bindingListeners.remove(listener);
+
+  /// [slot] of [action] in [set] with overrides applied, or null when the slot
+  /// is unbound or absent.
+  Binding? effectiveBinding(ActionSet set, InputAction action, String slot) {
+    if (_effectiveRevision != overrides.revision) {
+      _effective.clear();
+      _effectiveRevision = overrides.revision;
+    }
+    return _effective.putIfAbsent((
+      set,
+      action,
+      slot,
+    ), () => overrides.effectiveBinding(set, action, slot));
+  }
+
+  /// Watches every level change from any device this player receives, before
+  /// evaluation. Listen-for-binding uses this.
+  @internal
+  void addControlListener(
+    void Function(InputDevice device, Control control, double value) listener,
+  ) => _controlListeners.add(listener);
+
+  /// The current level of [control] across this player's devices. Control
+  /// listeners see the level from before the event they are handling.
+  @internal
+  double levelOf(Control control) => _level(control);
+
+  /// Unregisters [listener].
+  @internal
+  void removeControlListener(
+    void Function(InputDevice device, Control control, double value) listener,
+  ) => _controlListeners.remove(listener);
+
+  /// Suppresses every action while [suppress] calls are outstanding, so a
+  /// rebind listen does not also fire gameplay. Balanced calls restore.
+  @internal
+  void suppressActions(bool suppress) {
+    _suppressions += suppress ? 1 : -1;
     _evaluate();
   }
 
-  /// Clears tunable [id] back to its binding default.
-  void clearTunable(String id) {
-    if (_tunables.remove(id) != null) _evaluate();
+  void _handleOverridesChanged() {
+    _evaluate();
+    _notifyBindings();
+  }
+
+  void _notifyBindings() {
+    for (final listener in List.of(_bindingListeners)) {
+      listener();
+    }
   }
 
   /// Sets [control] to [value] as if a device of its kind had, for tests,
@@ -158,12 +225,15 @@ final class PlayerInput extends InputWindow {
         'Publish ${control.kind.name} controls through their axes or deltas',
       );
     }
+    for (final listener in List.of(_controlListeners)) {
+      listener(device, control, value);
+    }
     final perDevice = _levels.putIfAbsent(control, () => {});
     if (value == 0) {
       perDevice.remove(device);
     } else {
       perDevice[device] = value;
-      if (value.abs() >= _heldLevel) _noteActivity(device.kind);
+      if (value.abs() >= _heldLevel) _noteActivity(device);
     }
     _evaluate();
   }
@@ -177,7 +247,7 @@ final class PlayerInput extends InputWindow {
     _accumulate(control, dx, dy);
     fixed._accumulate(control, dx, dy);
     if (dx * dx + dy * dy >= _deltaActivity * _deltaActivity) {
-      _noteActivity(device.kind);
+      _noteActivity(device);
     }
   }
 
@@ -191,12 +261,20 @@ final class PlayerInput extends InputWindow {
     if (changed) _evaluate();
   }
 
-  void _noteActivity(DeviceKind kind) {
-    if (_activeDeviceKind == kind) return;
-    _activeDeviceKind = kind;
-    for (final listener in List.of(_activeDeviceListeners)) {
-      listener();
+  void _noteActivity(InputDevice device) {
+    var bindingsChanged = false;
+    if (device.kind == DeviceKind.gamepad && !identical(_lastGamepad, device)) {
+      _lastGamepad = device;
+      bindingsChanged = true;
     }
+    if (_activeDeviceKind != device.kind) {
+      _activeDeviceKind = device.kind;
+      bindingsChanged = true;
+      for (final listener in List.of(_activeDeviceListeners)) {
+        listener();
+      }
+    }
+    if (bindingsChanged) _notifyBindings();
   }
 
   double _level(Control control) {
@@ -226,17 +304,21 @@ final class PlayerInput extends InputWindow {
     final axes = <AxisAction, double>{};
     final vectors = <VectorAction, (double, double)>{};
     final deltas = <DeltaAction, _DeltaRecipe>{};
-    final liveDerived = <DerivedButtonAction>{};
+    final liveDerived = <DerivedButtonAction, String>{};
     final liveSlots = <_SlotKey>{};
 
-    for (final entry in contexts.entries) {
+    for (final entry
+        in _suppressions > 0 ? const <ContextEntry>[] : contexts.entries) {
       if (_textEntryActive && !entry.set.allowDuringTextEntry) continue;
 
       // Longest chord wins. Trigger controls of chords whose modifiers are
       // held read as idle for bindings with fewer modifiers.
       final shadows = <Control, int>{};
-      for (final slots in entry.set.bindings.values) {
-        for (final binding in slots.values) {
+      for (final MapEntry(key: action, value: slots)
+          in entry.set.bindings.entries) {
+        for (final slot in slots.keys) {
+          final binding = effectiveBinding(entry.set, action, slot);
+          if (binding == null) continue;
           final chord = _chordOf(binding);
           if (chord == null || !_allHeld(chord.modifiers)) continue;
           final previous = shadows[chord.trigger] ?? 0;
@@ -248,7 +330,9 @@ final class PlayerInput extends InputWindow {
       final entryConsumed = <Control>{};
       for (final MapEntry(key: action, value: slots)
           in entry.set.bindings.entries) {
-        for (final MapEntry(key: slotName, value: binding) in slots.entries) {
+        for (final slotName in slots.keys) {
+          final binding = effectiveBinding(entry.set, action, slotName);
+          if (binding == null) continue;
           final key = _SlotKey(entry, action, slotName);
           liveSlots.add(key);
           final state = _slotStates.putIfAbsent(key, _SlotState.new);
@@ -275,7 +359,9 @@ final class PlayerInput extends InputWindow {
           }
         }
       }
-      liveDerived.addAll(entry.set.derived);
+      for (final derived in entry.set.derived) {
+        liveDerived.putIfAbsent(derived, () => entry.set.name);
+      }
       consumed.addAll(entryConsumed);
       if (entry.opaque) break;
     }
@@ -535,12 +621,12 @@ final class PlayerInput extends InputWindow {
     return true;
   }
 
-  void _evaluateDerived(Set<DerivedButtonAction> live, double now) {
-    _derivedStates.removeWhere((action, _) => !live.contains(action));
+  void _evaluateDerived(Map<DerivedButtonAction, String> live, double now) {
+    _derivedStates.removeWhere((action, _) => !live.containsKey(action));
     for (final action in {..._buttons.keys.whereType<DerivedButtonAction>()}) {
-      if (!live.contains(action)) _buttonFor(action).set(false, now);
+      if (!live.containsKey(action)) _buttonFor(action).set(false, now);
     }
-    for (final action in live) {
+    for (final MapEntry(key: action, value: setName) in live.entries) {
       final source = _buttons[action.source];
       final state = _derivedStates.putIfAbsent(action, () {
         return _DerivedState(
@@ -559,7 +645,8 @@ final class PlayerInput extends InputWindow {
         ..lastReleaseCount = releaseCount;
 
       switch (action) {
-        case HoldAction(:final duration, :final toggle):
+        case HoldAction(:final duration):
+          final toggle = overrides.toggleFor(setName, action);
           final heldLongEnough =
               sourcePressed && now - source!.pressedAt >= duration;
           if (!toggle) {

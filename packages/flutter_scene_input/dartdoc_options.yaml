@@ -8,6 +8,8 @@ dartdoc:
       markdown: doc/categories/controls.md
     "Players and devices":
       markdown: doc/categories/players_and_devices.md
+    "Rebinding":
+      markdown: doc/categories/rebinding.md
     "Scene integration":
       markdown: doc/categories/scene_integration.md
     "Sources":
@@ -19,6 +21,7 @@ dartdoc:
     - "Bindings"
     - "Controls"
     - "Players and devices"
+    - "Rebinding"
     - "Sources"
     - "Scene integration"
     - "Widgets"
