@@ -15,8 +15,8 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// How a [ShadowCatcherMaterial] evaluates its shadow term each frame.
 /// {@category Materials}
 enum ShadowCatcherMode {
-  /// The shadow atlas (cascades plus spot tiles) is sampled per fragment
-  /// every frame. Always correct, including moving lights and casters.
+  /// The shadow atlas (cascades plus spot and point tiles) is sampled per
+  /// fragment every frame. Always correct, including moving lights and casters.
   live,
 
   /// The atlas shadow is rendered once into a low-resolution footprint
@@ -39,11 +39,11 @@ enum ShadowCatcherMode {
 /// aoStrength * (1 - occlusion)) * radial fade`.
 ///
 /// The shadow term samples the same aggregate the lit path shades with, the
-/// directional light's cascades, every shadow-casting spot's atlas tile, and
-/// the sun contact term marched by the occlusion chain, so the catcher's
-/// shadow always matches what lit geometry receives. The occlusion term
-/// samples the screen-space ambient-occlusion chain and therefore needs the
-/// scene's ambient occlusion enabled to contribute (the contact term needs
+/// directional light's cascades, the atlas tiles of every shadow-casting spot
+/// and point light, and the sun contact term marched by the occlusion chain,
+/// so the catcher's shadow always matches what lit geometry receives. The
+/// occlusion term samples the screen-space ambient-occlusion chain and needs
+/// the scene's ambient occlusion enabled to contribute (the contact term needs
 /// `DirectionalLight.contactShadows`); with both off, only the mapped shadow
 /// term draws.
 ///
