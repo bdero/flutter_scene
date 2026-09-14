@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'example_action_hint.dart';
 import 'example_overlay.dart';
 import 'example_panel.dart';
+import 'input/controls_screen.dart';
 import 'kit/kit_controls.dart';
 
 enum _KitScenario {
@@ -1212,6 +1213,24 @@ class _KitStageState extends State<_KitStage> {
           ),
         ),
         if (widget.scenario == _KitScenario.characterCamera) ...[
+          Positioned(
+            top: 72,
+            right: 16,
+            child: FilledButton.tonalIcon(
+              icon: const Icon(Icons.sports_esports),
+              label: const Text('Controls'),
+              onPressed: () => ControlsScreen.show(
+                context,
+                player: _player,
+                set: _characterActions,
+                entries: const [
+                  ControlsEntry(_move, 'Move'),
+                  ControlsEntry(_jump, 'Jump'),
+                  ControlsEntry(_sprint, 'Sprint'),
+                ],
+              ),
+            ),
+          ),
           Positioned(
             bottom: 24,
             right: 24,
