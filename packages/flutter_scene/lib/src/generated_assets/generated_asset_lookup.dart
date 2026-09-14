@@ -9,6 +9,7 @@ library;
 import 'package:flutter/foundation.dart' show internal, kDebugMode;
 import 'package:flutter/services.dart';
 
+import 'generated_asset_fetch.dart';
 import 'generated_assets.dart';
 import 'runtime_target.dart';
 
@@ -164,7 +165,7 @@ Future<GeneratedAssetIndex> _load(AssetBundle bundle) async {
     try {
       if (kDebugMode) bundle.evict(key);
       final manifest = GeneratedAssetManifest.decode(
-        await bundle.loadString(key),
+        await loadGeneratedAssetString(key, bundle: bundle),
       );
       if (manifest == null) continue;
       sources.add(

@@ -9,6 +9,7 @@ import 'package:vector_math/vector_math.dart';
 
 import '../fmat/fmat_emitter.dart'
     show lightmapEntryName, radianceCubeEntryName;
+import '../generated_assets/generated_asset_fetch.dart';
 import '../generated_assets/generated_asset_lookup.dart';
 import '../generated_assets/generated_assets.dart';
 import '../gpu/gpu.dart' as gpu;
@@ -140,7 +141,7 @@ Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
   if (library[physicalBundleProbeName] == null) {
     throw StateError(physicalBundleUnusableMessage(keys.bundle));
   }
-  final sidecar = jsonDecode(await rootBundle.loadString(keys.sidecar));
+  final sidecar = jsonDecode(await loadGeneratedAssetString(keys.sidecar));
   return _PhysicalAssets(library, (sidecar as Map).cast<String, Object?>());
 }
 
