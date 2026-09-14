@@ -5,7 +5,7 @@
 - `NodeSpec.shadowCastingMode` carries a node's shadow casting mode (`off`, `on`, `doubleSided`, `shadowsOnly`), delta-serialized and overridable on prefab instances through the `shadowCasting` path.
 - `EnvironmentEffectsSpec` carries SMAA quality (`smaaThreshold`, `smaaMaxSearchSteps`, `smaaMaxDiagonalSearchSteps`, `smaaCornerRounding`), delta-serialized like the other effects.
 - The spec's temporal anti-aliasing defaults now match the renderer's.
-
+- `SceneDocument.editor` (`EditorStateSpec`, `EditorCameraSpec`) carries the editor camera pose and selection.
 - Added grid mesh splitting shared by editors and import pipelines: `splitTriangleMeshByGrid` bins whole triangles by world-space centroid into per-cell vertex/index buffers, and `applyMeshSplitHints` applies `-split<N>` node-name hints across a document (split children named `Ground_x0_z3`, hint stripped, orphaned source data removed).
 - Added `documentWorldMatrix`, `countResourceReferences`, and `isPayloadReferenced` document utilities.
 
