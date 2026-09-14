@@ -28,7 +28,16 @@ final class Deadzone extends Processor {
     this.inner, {
     this.outer = 1.0,
     this.shape = DeadzoneShape.scaledRadial,
-  });
+  }) : tunable = null;
+
+  /// A deadzone whose [inner] threshold is tunable [id], defaulting to
+  /// [inner] until a profile sets it, for a player-facing deadzone setting.
+  const Deadzone.tunable(
+    String id,
+    this.inner, {
+    this.outer = 1.0,
+    this.shape = DeadzoneShape.scaledRadial,
+  }) : tunable = id;
 
   /// Magnitudes at or below this read as zero.
   final double inner;
@@ -38,6 +47,9 @@ final class Deadzone extends Processor {
 
   /// Radial or per axis.
   final DeadzoneShape shape;
+
+  /// The tunable that sets [inner], or null for a fixed threshold.
+  final String? tunable;
 }
 
 /// Negates a value. A scalar uses [x] only.
@@ -132,7 +144,10 @@ final class PerSecond extends Processor {
 }) {
   for (final processor in processors) {
     switch (processor) {
-      case Deadzone(:final inner, :final outer, :final shape):
+      case Deadzone(:final outer, :final shape, :final tunable):
+        final inner = tunable == null
+            ? processor.inner
+            : readTunable(tunable, processor.inner);
         final span = math.max(outer - inner, 1e-9);
         double remap(double magnitude) =>
             ((magnitude - inner) / span).clamp(0.0, 1.0);

@@ -211,6 +211,24 @@ return CameraControls(
 The controllers also expose intent methods (`orbitBy`, `dollyBy`, `panBy`, `look`), so an app with its
 own input handling can drive them without the widget.
 
+### Game input (flutter_scene_input)
+
+For games (rebindable controls, gamepads, pointer lock, pause menus), do not hand-roll held-key sets or
+raw `gamepads` parsing: add the separate `flutter_scene_input` package. Declare typed const actions
+(`VectorAction('move')`, `ButtonAction('jump')`, `DeltaAction('look')`), bind them in an `ActionSet`
+with named slots (`'keyboard'`, `'gamepad'`), push the set on `player.contexts`, and call
+`scene.attachInput()` so read windows advance with the scene. Read `player.button(jump).justPressed`
+and `player.vector(move)` in `update`, and through `player.fixed` in `fixedUpdate`. Drivers
+(`CharacterInputDriver`, `FlyCameraInputDriver`, `OrbitCameraInputDriver`) feed the bundled
+controllers, and `DefaultActions` has ready-made sets.
+
+Traps. 2D values are +Y up everywhere, mouse movement included, so convert before passing a drag
+`Offset` to `look`. A stick feeding a `DeltaAction` needs a `PerSecond` processor. Wrap the game view (not
+the HUD) in `InputListener` for mouse input. Lock the cursor with `PointerLock.instance.lock()` from a
+pointer or tap handler and pause when a listener sees `isLocked` go false; never add the `pointer_lock`
+package. Rebinding goes through `player.overrides` and `listenForBinding`, and profiles persist with
+`overrides.toJsonString()`.
+
 ### Behavior lives in components, not in the tick
 
 The bulk of per-object logic should be custom `Component`s, not a giant `onTick`. A component is

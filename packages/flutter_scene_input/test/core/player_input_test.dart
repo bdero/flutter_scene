@@ -184,6 +184,26 @@ void main() {
       expect(player.vector(move).x, closeTo(1, 1e-9));
     });
 
+    test('a tunable deadzone reads the player setting', () {
+      final (_, player, _) = makeSystem();
+      player.contexts.push(
+        ActionSet('gameplay', {
+          move: {
+            'gamepad': const StickBinding(
+              GamepadControl.leftStick,
+              processors: [Deadzone.tunable('deadzone', 0.1)],
+            ),
+          },
+        }),
+      );
+      player.inject(GamepadControl.leftStickX, 0.3);
+      player.advanceFrame(1 / 60);
+      expect(player.vector(move).x, greaterThan(0));
+      player.overrides.tune('deadzone', 0.4);
+      player.advanceFrame(1 / 60);
+      expect(player.vector(move).x, 0);
+    });
+
     test('axis pairs and unipolar clamping', () {
       final (_, player, _) = makeSystem();
       player.contexts.push(

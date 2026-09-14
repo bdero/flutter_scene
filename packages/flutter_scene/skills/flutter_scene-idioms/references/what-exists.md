@@ -89,6 +89,12 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
 `update(double deltaSeconds)` (NOT `onUpdate`), `fixedUpdate(double)`, `onUnmount`, `onDetach`,
 `cloneFor(Node)`. Node side: `addComponent`, `removeComponent`, `getComponent<T>()`,
 `getComponents<T>()`.
+Game input lives in the separate `flutter_scene_input` package: `InputSystem`, `PlayerInput`
+(`button`, `axis`, `vector`, `delta`, `fixed`, `contexts`, `overrides`), `ActionSet`, typed actions,
+binding nodes (`ButtonBinding`, `DpadBinding`, `StickBinding`, `DeltaBinding`, `ChordBinding`,
+`GatedBinding`), processors (`Deadzone`, `Scale`, `Invert`, `PerSecond`), `scene.attachInput`,
+`InputListener`, `PointerLock`, `DefaultActions`, drivers, `listenForBinding`, `bindingDisplay`.
+
 Components tick root-first in tree order. For code that must run before every component each frame
 (sampling input, applying network state), subclass `SceneTickListener` (`beforeTick(dt)`,
 `beforeFixedStep(fixedDt)`, both optional) and register it with `scene.addTickListener`.
