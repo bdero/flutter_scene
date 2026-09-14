@@ -503,7 +503,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     return ExamplePanelCard(
       icon: Icons.light_mode,
       title: 'Dice shadows',
-      width: 300,
+      width: 340,
       body: DefaultTextStyle(
         style: const TextStyle(color: Colors.white, fontSize: 12),
         child: Column(
@@ -524,13 +524,20 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
                 side: const BorderSide(color: Colors.white24),
                 visualDensity: VisualDensity.compact,
               ),
-              segments: const [
-                ButtonSegment(
-                  value: _LightKind.directional,
-                  label: Text('Directional'),
-                ),
-                ButtonSegment(value: _LightKind.point, label: Text('Point')),
-                ButtonSegment(value: _LightKind.spot, label: Text('Spot')),
+              segments: [
+                for (final (kind, label) in const [
+                  (_LightKind.directional, 'Directional'),
+                  (_LightKind.point, 'Point'),
+                  (_LightKind.spot, 'Spot'),
+                ])
+                  ButtonSegment(
+                    value: kind,
+                    // Scale down rather than wrap when the segment is narrow.
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(label, maxLines: 1, softWrap: false),
+                    ),
+                  ),
               ],
               selected: {_kind},
               onSelectionChanged: (selection) {
