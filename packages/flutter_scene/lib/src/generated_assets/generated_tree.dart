@@ -193,6 +193,34 @@ final class GeneratedAssetTree {
 
   Uri get _root => packageRoot.resolve('$generatedAssetsDirectory/');
 
+  /// The target directories this package's pubspec lists, which are the only
+  /// ones outputs may be written to (an unlisted one would never ship).
+  late final List<GeneratedTargetDirectory> _listedTargetDirectories = () {
+    final assets = readPubspecAssets(
+      File.fromUri(packageRoot.resolve('pubspec.yaml')),
+    );
+    return [
+      for (final directory in generatedTargetDirectories)
+        if (assets.contains(normalizeAssetEntry(directory.assetEntry)))
+          directory,
+    ];
+  }();
+
+  // Where outputs recorded with [target] go: its listed directory, or the top
+  // of the tree.
+  Uri _directoryFor(String? target) {
+    if (target == null) return _root;
+    final directory = generatedTargetDirectory(target);
+    if (directory == null || !_listedTargetDirectories.contains(directory)) {
+      return _root;
+    }
+    final uri = _root.resolve('${directory.name}/');
+    guardGeneratedWrite(uri, () {
+      Directory.fromUri(uri).createSync(recursive: true);
+    });
+    return uri;
+  }
+
   void _createDirectory() => createGeneratedAssetsDirectory(packageRoot);
 
   /// Whether the tree already holds outputs of [family], so a run that now
@@ -215,14 +243,15 @@ final class GeneratedAssetTree {
   ///
   /// [target] names the build target an output is only valid for, and separates
   /// the file names of two builds sharing this tree the same way [variant] does
-  /// for two engines.
+  /// for two engines. The output goes into the target's directory when the
+  /// pubspec lists it, so only apps for that target ship it.
   Uri fileUri(
     GeneratedAssetFamily family, {
     required String nameId,
     required String extension,
     String? variant,
     String? target,
-  }) => _root.resolve(
+  }) => _directoryFor(target).resolve(
     generatedFileName(
       family,
       nameId,
@@ -354,26 +383,37 @@ final class GeneratedAssetTree {
   /// weight in a directory that ships, survives `flutter clean`, and for a
   /// pub-cache consumer is shared with every project on the machine.
   void save() {
+    // Entry files are relative to the tree, so a target directory's outputs
+    // carry the directory name.
     final referenced = {for (final entry in _manifest.entries) entry.file};
-    final variantsOfReferenced = referenced
-        .map(generatedNameWithoutTag)
-        .nonNulls
-        .toSet();
+    final variantsOfReferenced = {
+      for (final file in referenced)
+        if (_withoutTag(file) case final name?) name,
+    };
     final directory = Directory.fromUri(_root);
     if (directory.existsSync()) {
       final keepAfter = DateTime.now().subtract(variantRetention);
-      for (final file in directory.listSync(followLinks: false)) {
-        if (file is! File) continue;
-        final name = file.uri.pathSegments.last;
-        // Only ever delete files matching the generated naming scheme, so a
-        // keeper file in the tree survives.
-        if (!isGeneratedFileName(name)) continue;
-        if (referenced.contains(name)) continue;
-        if (variantsOfReferenced.contains(generatedNameWithoutTag(name)) &&
-            file.statSync().modified.isAfter(keepAfter)) {
-          continue;
+      for (final (prefix, uri) in [
+        ('', _root),
+        for (final target in generatedTargetDirectories)
+          ('${target.name}/', _root.resolve('${target.name}/')),
+      ]) {
+        final listed = Directory.fromUri(uri);
+        if (!listed.existsSync()) continue;
+        for (final file in listed.listSync(followLinks: false)) {
+          if (file is! File) continue;
+          final name = file.uri.pathSegments.last;
+          // Only ever delete files matching the generated naming scheme, so a
+          // keeper file in the tree survives.
+          if (!isGeneratedFileName(name)) continue;
+          final relative = '$prefix$name';
+          if (referenced.contains(relative)) continue;
+          if (variantsOfReferenced.contains(_withoutTag(relative)) &&
+              file.statSync().modified.isAfter(keepAfter)) {
+            continue;
+          }
+          file.deleteSync();
         }
-        file.deleteSync();
       }
     }
     if (_manifest.entries.isEmpty && !directory.existsSync()) return;
@@ -392,6 +432,13 @@ final class GeneratedAssetTree {
   }
 
   static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));
+
+  // [generatedNameWithoutTag] for a tree-relative path, keeping its directory.
+  static String? _withoutTag(String relative) {
+    final slash = relative.lastIndexOf('/');
+    final name = generatedNameWithoutTag(relative.substring(slash + 1));
+    return name == null ? null : '${relative.substring(0, slash + 1)}$name';
+  }
 
   static String? _variantKey(String? variant, String? target) {
     if (target == null) return variant;
@@ -452,6 +499,12 @@ final class PubspecEditResult {
 
 /// Adds [generatedAssetsEntry] to [pubspec]'s `flutter: assets:` list, keeping
 /// every comment and the surrounding order. Idempotent.
+///
+/// TODO(generated-target-dirs): also list the [generatedTargetDirectories]
+/// with their platform filters (creating each directory and its `.gitignore`),
+/// so an app tree's target outputs (its `.fmat` bundles, a `buildEngineAssets`
+/// call) stop accumulating across platform builds the way flutter_scene's own
+/// tree already does. Until then an app tree keeps them at its top level.
 PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
   if (!pubspec.existsSync()) {
     return const PubspecEditResult(

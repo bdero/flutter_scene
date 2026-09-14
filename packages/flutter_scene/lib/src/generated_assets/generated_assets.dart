@@ -24,20 +24,23 @@ const String generatedManifestFileName = 'manifest.json';
 /// The one `flutter.assets` entry an app needs to ship the generated tree.
 ///
 /// Flutter's directory entries are not recursive, so the tree is flat and one
-/// entry covers every family.
+/// entry covers every family, apart from the [GeneratedTargetDirectory]s a
+/// pubspec may list alongside it.
 const String generatedAssetsEntry = '$generatedAssetsDirectory/';
 
 /// The `.gitignore` written inside the tree, so generated outputs are ignored
 /// without editing the app's own `.gitignore`.
 const String generatedAssetsGitignoreFileName = '.gitignore';
 
-/// Contents of the tree's `.gitignore`. Ignores everything but itself, so the
-/// directory stays in version control while its contents do not.
+/// Contents of the tree's `.gitignore`. Ignores everything but itself and the
+/// `.gitignore` of each target directory, so the directories stay in version
+/// control while their contents do not.
 const String generatedAssetsGitignore =
     '''
 # Written by flutter_scene's build hook. Generated assets are tied to the
 # Flutter engine that built them, so they are never committed.
 *
+!*/
 !$generatedAssetsGitignoreFileName
 ''';
 
@@ -82,6 +85,51 @@ String shaderTargetKey(Set<ShaderBundleBackend> backends) =>
     (backends.toList()..sort((a, b) => a.index.compareTo(b.index)))
         .map((backend) => backend.name)
         .join(',');
+
+/// A directory inside the tree holding the outputs built for one shader target,
+/// and the Flutter platforms whose apps load them.
+///
+/// Flutter ships every file of a listed directory, and one tree serves every
+/// build that shares it (a package in the pub cache serves every project on the
+/// machine), so outputs for different targets would all ship in every app. A
+/// tree whose pubspec lists a target's directory with a `platforms:` filter
+/// keeps that target's outputs there, and each app ships only its own.
+final class GeneratedTargetDirectory {
+  const GeneratedTargetDirectory(this.name, this.platforms);
+
+  /// The directory name, directly under [generatedAssetsDirectory].
+  final String name;
+
+  /// The `platforms:` values of the directory's `flutter.assets` entry.
+  final List<String> platforms;
+
+  /// The directory's `flutter.assets` path.
+  String get assetEntry => '$generatedAssetsDirectory/$name/';
+}
+
+/// Every target directory, one per target key a build can produce that Flutter
+/// can filter by platform.
+const List<GeneratedTargetDirectory> generatedTargetDirectories = [
+  GeneratedTargetDirectory('metal_ios', ['ios']),
+  GeneratedTargetDirectory('metal_desktop', ['macos']),
+  GeneratedTargetDirectory('opengl_es_vulkan', ['android', 'linux', 'windows']),
+  GeneratedTargetDirectory('opengl_es', ['web']),
+];
+
+/// The directory for outputs recorded with [target], a [shaderTargetKey], or
+/// null when no platform filter selects exactly the apps that load it (Vulkan
+/// alone, which only Fuchsia takes). Those outputs stay at the top of the tree.
+GeneratedTargetDirectory? generatedTargetDirectory(String target) {
+  final name = switch (target) {
+    'metalIos' => 'metal_ios',
+    'metalDesktop' => 'metal_desktop',
+    'openglEs,vulkan' => 'opengl_es_vulkan',
+    'openglEs' => 'opengl_es',
+    _ => null,
+  };
+  if (name == null) return null;
+  return generatedTargetDirectories.firstWhere((d) => d.name == name);
+}
 
 /// One family of generated assets. The name prefixes every output file, so
 /// families share one flat directory without colliding.
