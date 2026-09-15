@@ -4,9 +4,13 @@ import 'dart:math' as math;
 // conflicting name is hidden from the import that does not need it.
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BoxShape;
+import 'package:flutter/services.dart';
+import 'package:flutter_scene/audio.dart';
 import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
+import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
+import 'package:flutter_soloud/flutter_soloud.dart' show SoLoud;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
@@ -26,11 +30,28 @@ class ExampleDiceShadows extends StatefulWidget {
 
 enum _LightKind { directional, point, spot }
 
+enum _Surface { off, wood, glass }
+
 class _Die {
   _Die(this.node, this.body);
 
   final Node node;
   final RigidBody body;
+  vm.Vector3? lastVelocity;
+  vm.Vector3? lastSpin;
+  double lastHitTime = -1.0;
+  double lastHitStrength = 0.0;
+}
+
+/// Runs [onUpdate] in the scene's component pass, right after the physics
+/// step, so impacts are heard the frame they happen.
+class _AfterPhysics extends Component {
+  _AfterPhysics(this.onUpdate);
+
+  final void Function(double deltaSeconds) onUpdate;
+
+  @override
+  void update(double deltaSeconds) => onUpdate(deltaSeconds);
 }
 
 class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
@@ -58,6 +79,25 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
   late final ShadowCatcherMaterial _catcher;
   final List<_Die> _dice = [];
   int _diceCount = 3;
+
+  SoloudAudioEngine? _audio;
+  AudioBus? _sfxBus;
+  double _volume = 1.0;
+  double _audioClock = 0.0;
+  // When and how hard each sound set last played, to merge dice landing in
+  // the same physics step.
+  final Map<String, ({double time, double strength, AudioVoice voice})>
+  _lastSetHit = {};
+  // Impact one-shots by set (table, glass, wall, clack), found by their
+  // `assets/sounds/dice_<set>_*.wav` names.
+  final Map<String, List<AudioClip>> _impactClips = {};
+  _Surface _surface = _Surface.wood;
+  // Dice sit at about the same distance from the camera, so skip distance
+  // falloff and keep only the left/right pan.
+  static final AudioAttenuation _flat = AudioAttenuation(
+    minDistance: 100,
+    dopplerFactor: 0,
+  );
 
   bool _rolling = false;
   double _rollTime = 0.0;
@@ -139,6 +179,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       ..add(_bulb());
     _applyLights();
 
+    scene.root.addComponent(_AfterPhysics(_listenForImpacts));
+    _startAudio();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 400), () {
         if (mounted) _roll();
@@ -148,9 +191,41 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
 
   @override
   void dispose() {
+    for (final clips in _impactClips.values) {
+      for (final clip in clips) {
+        clip.dispose();
+      }
+    }
     _lastRoll.dispose();
     _history.dispose();
     super.dispose();
+  }
+
+  Future<void> _startAudio() async {
+    // A 512 frame buffer keeps each click within about 12 ms of its impact
+    // (the default 2048 is about 46 ms). An already running SoLoud keeps its
+    // buffer.
+    // TODO(soloud-buffer): pass the buffer through SoloudAudioEngine once it
+    // takes init options, and drop the direct flutter_soloud dependency.
+    final soloud = SoLoud.instance;
+    if (!soloud.isInitialized) await soloud.init(bufferSize: 512);
+    if (!mounted) return;
+    final audio = SoloudAudioEngine();
+    scene.root.addComponent(audio);
+    _sfxBus = audio.createBus('sfx')..volume = _volume;
+    _audio = audio;
+
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    for (final path in manifest.listAssets()) {
+      final match = RegExp(r'assets/sounds/dice_(\w+?)_').firstMatch(path);
+      if (match == null) continue;
+      final clip = await audio.loadClip(path);
+      if (!mounted) {
+        clip.dispose();
+        return;
+      }
+      _impactClips.putIfAbsent(match.group(1)!, () => []).add(clip);
+    }
   }
 
   // --- Scene setup ----------------------------------------------------------
@@ -178,6 +253,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       fovNear: 0.5,
       fovFar: distance * 2,
     );
+    // TODO(audio-listener): drop once SceneView feeds its rendered camera to
+    // the audio listener. Until then only scene.camera drives it.
+    scene.camera = _camera;
     _ceilingY = math.min(distance * 0.55, 7.0);
     _sun.shadowMaxDistance = distance + 8.0;
 
@@ -429,6 +507,108 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     }
   }
 
+  /// Plays a hit for any die whose velocity jumped more than gravity explains
+  /// since the last physics step. Tumbling edge strikes register too, since
+  /// they change the spin.
+  void _listenForImpacts(double deltaSeconds) {
+    _audioClock += deltaSeconds;
+    final audio = _audio;
+    if (audio == null || _surface == _Surface.off || deltaSeconds <= 0) {
+      return;
+    }
+    final now = _audioClock;
+    final gravityStep = vm.Vector3(0, -30.0 * deltaSeconds, 0);
+    final eyeHeight = _camera.position.y;
+    final halfW = _viewSize.width / _pixelsPerUnit / 2;
+    final halfH = _viewSize.height / _pixelsPerUnit / 2;
+    for (final die in _dice) {
+      final velocity = die.body.linearVelocity;
+      final spin = die.body.angularVelocity;
+      final lastVelocity = die.lastVelocity;
+      final lastSpin = die.lastSpin;
+      die.lastVelocity = velocity;
+      die.lastSpin = spin;
+      if (lastVelocity == null || lastSpin == null) continue;
+
+      final change = velocity - lastVelocity - gravityStep;
+      final strength =
+          change.length + (spin - lastSpin).length * _dieHalf * 0.5;
+      if (strength < _minImpact) continue;
+      // The contact keeps resolving for a few steps after a hit. A follow-up
+      // plays only if it beats that echo, whose bar halves every 40 ms, so
+      // fresh hard hits in quick succession still sound.
+      final sinceHit = now - die.lastHitTime;
+      // Never twice in back-to-back physics steps.
+      if (sinceHit < 0.025) continue;
+      final echo = die.lastHitStrength * math.pow(0.5, sinceHit / 0.04);
+      if (strength <= echo) continue;
+
+      final position = die.node.globalTransform.getTranslation();
+      final shrink = 1 - position.y / eyeHeight;
+      final nearWall =
+          halfW * shrink - position.x.abs() < 0.6 ||
+          halfH * shrink - position.z.abs() < 0.6;
+      _Die? neighbor;
+      var neighborDistance = _dieHalf * 3.2;
+      for (final other in _dice) {
+        if (other == die) continue;
+        final d = other.node.globalTransform.getTranslation().distanceTo(
+          position,
+        );
+        if (d < neighborDistance) {
+          neighbor = other;
+          neighborDistance = d;
+        }
+      }
+      final horizontal = vm.Vector2(change.x, change.z).length;
+      // An upward kick low down is the surface, even beside another die.
+      final floorKick = position.y < _dieHalf * 1.8 && change.y > horizontal;
+      final String set;
+      if (!floorKick && neighbor != null) {
+        set = 'clack';
+      } else if (!floorKick && nearWall && horizontal > change.y.abs()) {
+        set = 'wall';
+      } else {
+        set = _surface == _Surface.glass ? 'glass' : 'table';
+      }
+      final clips = _impactClips[set];
+      if (clips == null || clips.isEmpty) continue;
+
+      // Dice landing within a step of each other would flam, so keep only the
+      // loudest; its click masks the cut tail of the one it replaces.
+      final last = _lastSetHit[set];
+      if (last != null && now - last.time < 0.02) {
+        if (strength <= last.strength) continue;
+        last.voice.stop();
+      }
+      die.lastHitTime = now;
+      die.lastHitStrength = strength;
+      // Both dice feel a die-on-die hit; one click covers the pair.
+      if (set == 'clack') {
+        neighbor!
+          ..lastHitTime = now
+          ..lastHitStrength = math.max(neighbor.lastHitStrength, strength);
+      }
+
+      // Decibels across the strength range, so a tap is far quieter than a
+      // slam.
+      final t = (math.log(strength / _minImpact) / math.log(30 / _minImpact))
+          .clamp(0.0, 1.0);
+      final voice = audio.playOneShot(
+        clips[_random.nextInt(clips.length)],
+        position: position,
+        volume: math.pow(10, (-32 + 32 * t) / 20).toDouble(),
+        // Softer hits ring a little lower.
+        pitch: 0.92 + 0.08 * t + _jitter(0.05),
+        bus: _sfxBus,
+        attenuation: _flat,
+      );
+      _lastSetHit[set] = (time: now, strength: strength, voice: voice);
+    }
+  }
+
+  static const double _minImpact = 1.2;
+
   /// The value on the face pointing most upward.
   int _topFace(Node node) {
     final m = node.globalTransform;
@@ -565,6 +745,39 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
                 (v) => _lampPosition.y = v,
               ),
             _slider('Softness', _softness, 0, 1, (v) => _softness = v),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const SizedBox(width: 64, child: Text('Sound')),
+                Expanded(
+                  child: SegmentedButton<_Surface>(
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      selectedForegroundColor: Colors.black,
+                      selectedBackgroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white24),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: const [
+                      ButtonSegment(value: _Surface.off, label: Text('Off')),
+                      ButtonSegment(value: _Surface.wood, label: Text('Wood')),
+                      ButtonSegment(
+                        value: _Surface.glass,
+                        label: Text('Glass'),
+                      ),
+                    ],
+                    selected: {_surface},
+                    onSelectionChanged: (selection) =>
+                        setState(() => _surface = selection.first),
+                  ),
+                ),
+              ],
+            ),
+            _slider('Volume', _volume, 0, 1, (v) {
+              _volume = v;
+              _sfxBus?.volume = v;
+            }),
             _slider(
               'Darkness',
               _catcher.shadowIntensity,
