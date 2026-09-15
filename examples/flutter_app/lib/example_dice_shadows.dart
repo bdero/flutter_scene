@@ -10,7 +10,6 @@ import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
-import 'package:flutter_soloud/flutter_soloud.dart' show SoLoud;
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'example_overlay.dart';
@@ -203,14 +202,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
 
   Future<void> _startAudio() async {
     // A 512 frame buffer keeps each click within about 12 ms of its impact
-    // (the default 2048 is about 46 ms). An already running SoLoud keeps its
-    // buffer.
-    // TODO(soloud-buffer): pass the buffer through SoloudAudioEngine once it
-    // takes init options, and drop the direct flutter_soloud dependency.
-    final soloud = SoLoud.instance;
-    if (!soloud.isInitialized) await soloud.init(bufferSize: 512);
-    if (!mounted) return;
-    final audio = SoloudAudioEngine();
+    // (the default 2048 is about 46 ms).
+    final audio = SoloudAudioEngine(bufferSize: 512);
     scene.root.addComponent(audio);
     _sfxBus = audio.createBus('sfx')..volume = _volume;
     _audio = audio;
@@ -253,9 +246,6 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       fovNear: 0.5,
       fovFar: distance * 2,
     );
-    // TODO(audio-listener): drop once SceneView feeds its rendered camera to
-    // the audio listener. Until then only scene.camera drives it.
-    scene.camera = _camera;
     _ceilingY = math.min(distance * 0.55, 7.0);
     _sun.shadowMaxDistance = distance + 8.0;
 
