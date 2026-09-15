@@ -288,6 +288,19 @@ some_tool:
   });
 
   group('ensureGeneratedAssetsEntry', () {
+    // The target directory entries as the editor appends them.
+    final targetEntries = [
+      for (final directory in generatedTargetDirectories)
+        '    - path: ${directory.assetEntry}\n'
+            '      platforms:\n'
+            '${directory.platforms.map((p) => '        - $p\n').join()}',
+    ].join();
+    final everyEntry = [
+      normalizeAssetEntry(generatedAssetsEntry),
+      for (final directory in generatedTargetDirectories)
+        normalizeAssetEntry(directory.assetEntry),
+    ];
+
     late Directory temp;
 
     setUp(() => temp = Directory.systemTemp.createTempSync('fs_pubspec'));
@@ -320,13 +333,11 @@ flutter:
     # keep me
     - assets/one.png
     - $generatedAssetsEntry
-''');
+$targetEntries''');
     });
 
     test('is idempotent', () {
-      final pubspec = write(
-        'name: app\nflutter:\n  assets:\n    - $generatedAssetsEntry\n',
-      );
+      final pubspec = write('name: app\n$generatedAssetsPubspecSnippet\n');
       final before = pubspec.readAsStringSync();
       expect(
         ensureGeneratedAssetsEntry(pubspec).status,
@@ -335,10 +346,10 @@ flutter:
       expect(pubspec.readAsStringSync(), before);
     });
 
-    test('matches an entry written without its trailing slash', () {
+    test('matches entries written without a trailing slash', () {
       final pubspec = write(
         'name: app\nflutter:\n  assets:\n'
-        '    - ${normalizeAssetEntry(generatedAssetsEntry)}\n',
+        '${everyEntry.map((entry) => '    - $entry\n').join()}',
       );
       expect(
         ensureGeneratedAssetsEntry(pubspec).status,
@@ -359,7 +370,7 @@ name: app
 flutter:
   assets:
     - $generatedAssetsEntry
-  uses-material-design: true
+$targetEntries  uses-material-design: true
 ''');
     });
 
@@ -379,7 +390,7 @@ flutter:
   assets:
     - assets/one.png
     - $generatedAssetsEntry
-  fonts:
+$targetEntries  fonts:
     - family: X
 ''');
     });
@@ -406,8 +417,50 @@ flutter:
       );
       expect(parsePubspecAssets(pubspec.readAsStringSync()), [
         'assets/one.png',
-        normalizeAssetEntry(generatedAssetsEntry),
+        ...everyEntry,
       ]);
+    });
+
+    test('adds the target directories to a pubspec that lists the tree', () {
+      final pubspec = write(
+        'name: app\nflutter:\n  assets:\n    - $generatedAssetsEntry\n',
+      );
+      expect(
+        ensureGeneratedAssetsEntry(pubspec).status,
+        PubspecEditStatus.added,
+      );
+      expect(
+        pubspec.readAsStringSync(),
+        'name: app\nflutter:\n  assets:\n    - $generatedAssetsEntry\n'
+        '$targetEntries',
+      );
+      expect(
+        ensureGeneratedAssetsEntry(pubspec).status,
+        PubspecEditStatus.alreadyPresent,
+      );
+    });
+
+    test('lists every entry or leaves the pubspec alone after a map entry', () {
+      const before = '''
+name: app
+flutter:
+  assets:
+    - path: assets/shaders/
+      transformers:
+        - package: vector_graphics_compiler
+  fonts:
+    - family: X
+''';
+      final pubspec = write(before);
+      final result = ensureGeneratedAssetsEntry(pubspec);
+      final after = pubspec.readAsStringSync();
+      if (result.status == PubspecEditStatus.unsupported) {
+        expect(after, before);
+        expect(result.message, contains(generatedAssetsPubspecSnippet));
+      } else {
+        expect(parsePubspecAssets(after), ['assets/shaders', ...everyEntry]);
+        expect(after, contains('  fonts:\n    - family: X\n'));
+      }
     });
 
     test('reports a pubspec that is not a mapping', () {

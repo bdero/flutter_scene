@@ -30,7 +30,7 @@ $_hookSnippet
 }
 ''';
 
-const String manualInstallInstructions =
+final String manualInstallInstructions =
     '''
 Add this call to your existing hook/build.dart:
 
@@ -51,8 +51,9 @@ final class InitHookResult {
 }
 
 /// Sets a project up for flutter_scene's build hook: installs (or refreshes)
-/// `hook/build.dart`, creates `flutter_scene_generated/` with its `.gitignore`,
-/// and lists that directory in `pubspec.yaml`. Idempotent.
+/// `hook/build.dart`, creates `flutter_scene_generated/` and its target
+/// directories with their `.gitignore` files, and lists them in `pubspec.yaml`.
+/// Idempotent.
 Future<InitHookResult> installFlutterSceneBuildHook({
   Directory? projectRoot,
 }) async {
@@ -64,8 +65,14 @@ Future<InitHookResult> installFlutterSceneBuildHook({
 
   // Creating the tree keeps the listed asset directory present in a fresh
   // clone, where its contents are ignored.
-  createGeneratedAssetsDirectory(root.uri);
-  notes.add('Created $generatedAssetsEntry with a .gitignore for its outputs.');
+  createGeneratedAssetsDirectory(
+    root.uri,
+    targetDirectories: generatedTargetDirectories,
+  );
+  notes.add(
+    'Created $generatedAssetsEntry and its target directories, each with a '
+    '.gitignore for its outputs.',
+  );
 
   final pubspec = ensureGeneratedAssetsEntry(
     File.fromUri(root.uri.resolve('pubspec.yaml')),
