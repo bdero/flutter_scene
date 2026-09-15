@@ -29,9 +29,6 @@ dependencies:
   # SoLoud audio backend, used by the Audio example.
   flutter_scene_soloud:
     path: ../../packages/flutter_scene_soloud
-  # Direct SoLoud access, so the Dice Shadows example can start it with a
-  # small low-latency buffer.
-  flutter_soloud: ^5.0.0
   # box3d physics backend, used by the Physics (box3d) example. Compiles
   # box3d from source through a C build hook.
   flutter_scene_box3d:
