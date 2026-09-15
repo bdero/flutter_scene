@@ -1609,7 +1609,7 @@ base class Scene implements SceneGraph {
   void _syncAudio(double frameDt) {
     root.getComponent<AudioEngine>()?.frameSync(
       frameDt,
-      fallbackCamera: camera,
+      fallbackCamera: renderScene.listenerCamera,
     );
   }
 
@@ -1789,6 +1789,7 @@ base class Scene implements SceneGraph {
     ui.Rect? region,
     double? pixelRatio,
   }) {
+    renderScene.recordRenderedViews(views);
     if (!_readyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
       debugPrint(

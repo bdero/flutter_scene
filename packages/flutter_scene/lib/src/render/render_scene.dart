@@ -23,6 +23,7 @@ import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
+import 'package:flutter_scene/src/render_view.dart';
 
 /// One drawable primitive in the flat render layer.
 ///
@@ -702,6 +703,24 @@ class RenderScene {
   /// the first mounted [CameraComponent]'s camera, else null.
   Camera? get primaryCamera =>
       cameraOverride ?? (cameras.isEmpty ? null : cameras.first.toCamera());
+
+  Camera? _lastViewCamera;
+
+  /// Records the views a frame renders, so [listenerCamera] can follow the
+  /// first on-screen one (or the first view when all render offscreen).
+  void recordRenderedViews(List<RenderView> views) {
+    if (views.isEmpty) return;
+    _lastViewCamera = views
+        .firstWhere((view) => view.target == null, orElse: () => views.first)
+        .camera;
+  }
+
+  /// The camera the audio listener follows when no `AudioListener` is
+  /// mounted: [primaryCamera], else the camera of the last recorded on-screen
+  /// view (a `SceneView`'s camera or camera builder). A tick that runs before
+  /// render sees the previous frame's view, so the ears trail a moving view
+  /// camera by one frame.
+  Camera? get listenerCamera => primaryCamera ?? _lastViewCamera;
 
   Bvh _bvh = Bvh.build([]);
   int _structureRevision = 0;

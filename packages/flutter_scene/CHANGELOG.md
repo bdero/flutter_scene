@@ -50,6 +50,7 @@
 * Allow `code_assets` 2.x.
 * Fix vertex-attribute traffic on the web backend growing quadratically across same-pipeline draws.
 * On web, shader bundles and their generated JSON revalidate with the server on load, so a browser cache can no longer pair a previous build's bundle with new Dart code.
+* Spatial audio follows a `SceneView`'s camera (or `cameraBuilder`) when no scene camera or `AudioListener` is set, instead of a listener stuck at the origin.
 
 ## 0.23.0
 
