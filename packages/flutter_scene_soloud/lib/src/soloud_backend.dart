@@ -5,8 +5,8 @@ import 'package:flutter_scene_soloud/src/soloud_audio.dart';
 /// `audioEngine` component names it realize a [SoloudAudioEngine]. Call once
 /// at startup.
 ///
-/// Recognized `config` keys are `maxActiveVoices` (int) and
-/// `pauseWhenBackgrounded` (bool).
+/// Recognized `config` keys are `maxActiveVoices` (int),
+/// `pauseWhenBackgrounded` (bool), and `bufferSize` (int frames).
 void registerSoloudAudioBackend() {
   registerAudioEngineBackend(
     'soloud',
@@ -19,6 +19,11 @@ void registerSoloudAudioBackend() {
       pauseWhenBackgrounded: switch (config['pauseWhenBackgrounded']) {
         BoolValue(:final value) => value,
         _ => true,
+      },
+      bufferSize: switch (config['bufferSize']) {
+        IntValue(:final value) => value,
+        DoubleValue(:final value) => value.round(),
+        _ => null,
       },
     ),
   );
