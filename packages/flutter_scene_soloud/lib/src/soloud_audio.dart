@@ -127,7 +127,9 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
     Vector3 up,
     Vector3 velocity,
   ) {
-    if (!_soloud.isInitialized) return;
+    // flutter_soloud drops listener updates while no sound is loaded, so
+    // wait (without caching the pose) or a static camera is never sent.
+    if (!_soloud.isInitialized || _soloud.activeSounds.isEmpty) return;
     if (_closeEnough(position, _lastListenerPosition) &&
         _closeEnough(forward, _lastListenerForward) &&
         _closeEnough(up, _lastListenerUp) &&
