@@ -16,11 +16,17 @@ import '../importer/build_cache.dart';
 import 'generated_assets.dart';
 import 'generated_file_names.dart';
 
-/// The `flutter.assets` YAML the app needs, ready to paste.
-const String generatedAssetsPubspecSnippet =
-    'flutter:\n'
-    '  assets:\n'
-    '    - $generatedAssetsEntry';
+/// The `flutter.assets` YAML the app needs, ready to paste: the tree, and each
+/// target directory filtered to the platforms that load it.
+final String generatedAssetsPubspecSnippet = [
+  'flutter:',
+  '  assets:',
+  '    - $generatedAssetsEntry',
+  for (final directory in generatedTargetDirectories) ...[
+    '    - path: ${directory.assetEntry}',
+    '      platforms: [${directory.platforms.join(', ')}]',
+  ],
+].join('\n');
 
 /// Thrown when the hook generated assets the app does not list in
 /// `flutter.assets`, so the build fails instead of producing an app that dies
@@ -100,22 +106,32 @@ void writeGeneratedBytes(Uri uri, List<int> bytes) =>
 void writeGeneratedString(Uri uri, String contents) =>
     writeGeneratedBytes(uri, utf8.encode(contents));
 
-/// Creates the generated tree under [packageRoot] and writes its `.gitignore`,
-/// so the listed asset directory is present in a fresh clone whose contents are
-/// ignored. Writes no manifest.
-void createGeneratedAssetsDirectory(Uri packageRoot) {
+/// Creates the generated tree under [packageRoot], and each of
+/// [targetDirectories] inside it, writing a `.gitignore` into every one, so the
+/// listed asset directories are present in a fresh clone whose contents are
+/// ignored. Flutter fails a build on a listed directory that does not exist.
+/// Writes no manifest.
+void createGeneratedAssetsDirectory(
+  Uri packageRoot, {
+  Iterable<GeneratedTargetDirectory> targetDirectories = const [],
+}) {
   final root = packageRoot.resolve('$generatedAssetsDirectory/');
-  guardGeneratedWrite(root, () {
-    Directory.fromUri(root).createSync(recursive: true);
-  });
-  final gitignore = File.fromUri(
-    root.resolve(generatedAssetsGitignoreFileName),
-  );
-  if (gitignore.existsSync() &&
-      gitignore.readAsStringSync() == generatedAssetsGitignore) {
-    return;
+  for (final directory in [
+    root,
+    for (final target in targetDirectories) root.resolve('${target.name}/'),
+  ]) {
+    guardGeneratedWrite(directory, () {
+      Directory.fromUri(directory).createSync(recursive: true);
+    });
+    final gitignore = File.fromUri(
+      directory.resolve(generatedAssetsGitignoreFileName),
+    );
+    if (gitignore.existsSync() &&
+        gitignore.readAsStringSync() == generatedAssetsGitignore) {
+      continue;
+    }
+    writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
   }
-  writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
 }
 
 /// The app's generated tree, opened for a hook run.
@@ -214,14 +230,13 @@ final class GeneratedAssetTree {
     if (directory == null || !_listedTargetDirectories.contains(directory)) {
       return _root;
     }
-    final uri = _root.resolve('${directory.name}/');
-    guardGeneratedWrite(uri, () {
-      Directory.fromUri(uri).createSync(recursive: true);
-    });
-    return uri;
+    return _root.resolve('${directory.name}/');
   }
 
-  void _createDirectory() => createGeneratedAssetsDirectory(packageRoot);
+  void _createDirectory() => createGeneratedAssetsDirectory(
+    packageRoot,
+    targetDirectories: _listedTargetDirectories,
+  );
 
   /// Whether the tree already holds outputs of [family], so a run that now
   /// discovers no sources still has stale outputs to prune.
@@ -497,14 +512,9 @@ final class PubspecEditResult {
   final String message;
 }
 
-/// Adds [generatedAssetsEntry] to [pubspec]'s `flutter: assets:` list, keeping
-/// every comment and the surrounding order. Idempotent.
-///
-/// TODO(generated-target-dirs): also list the [generatedTargetDirectories]
-/// with their platform filters (creating each directory and its `.gitignore`),
-/// so an app tree's target outputs (its `.fmat` bundles, a `buildEngineAssets`
-/// call) stop accumulating across platform builds the way flutter_scene's own
-/// tree already does. Until then an app tree keeps them at its top level.
+/// Adds [generatedAssetsEntry] and every [generatedTargetDirectories] entry
+/// missing from [pubspec]'s `flutter: assets:` list, keeping every comment and
+/// the surrounding order. Idempotent.
 PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
   if (!pubspec.existsSync()) {
     return const PubspecEditResult(
@@ -513,13 +523,19 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
     );
   }
   final contents = pubspec.readAsStringSync();
-  if (parsePubspecAssets(
-    contents,
-  ).contains(normalizeAssetEntry(generatedAssetsEntry))) {
+  final listed = parsePubspecAssets(contents);
+  final missing = <Object>[
+    if (!listed.contains(normalizeAssetEntry(generatedAssetsEntry)))
+      generatedAssetsEntry,
+    for (final directory in generatedTargetDirectories)
+      if (!listed.contains(normalizeAssetEntry(directory.assetEntry)))
+        _targetDirectoryEntry(directory),
+  ];
+  if (missing.isEmpty) {
     return const PubspecEditResult(
       PubspecEditStatus.alreadyPresent,
-      'pubspec.yaml already lists $generatedAssetsEntry under `flutter: '
-      'assets:`.',
+      'pubspec.yaml already lists $generatedAssetsEntry and its target '
+      'directories under `flutter: assets:`.',
     );
   }
 
@@ -527,7 +543,7 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
   try {
     editor = YamlEditor(contents);
     if (editor.parseAt(<Object>[]) is! YamlMap) {
-      return const PubspecEditResult(
+      return PubspecEditResult(
         PubspecEditStatus.unsupported,
         'pubspec.yaml is not a YAML mapping, so it cannot be edited '
         'automatically. Add these lines by hand:\n\n'
@@ -546,20 +562,24 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
       );
       return const PubspecEditResult(
         PubspecEditStatus.added,
-        'Added a `flutter: assets:` section listing $generatedAssetsEntry to '
-        'pubspec.yaml.',
+        'Added a `flutter: assets:` section listing $generatedAssetsEntry and '
+        'its target directories to pubspec.yaml.',
       );
     } else if (editor.parseAt(<Object>[
           'flutter',
           'assets',
         ], orElse: () => wrapAsYamlNode(null))
         is YamlList) {
-      editor.appendToList(<Object>['flutter', 'assets'], generatedAssetsEntry);
+      // Inserted in reverse at one index, so each lands after a plain entry.
+      // Appending after a mapping entry that a sibling key follows makes
+      // yaml_edit write into that sibling.
+      final path = <Object>['flutter', 'assets'];
+      final end = (editor.parseAt(path) as YamlList).length;
+      for (final entry in missing.reversed) {
+        editor.insertIntoList(path, end, entry);
+      }
     } else {
-      editor.update(
-        <Object>['flutter', 'assets'],
-        <String>[generatedAssetsEntry],
-      );
+      editor.update(<Object>['flutter', 'assets'], missing);
     }
   } on YamlException catch (error) {
     return PubspecEditResult(
@@ -568,11 +588,26 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
       'automatically. Add these lines by hand:\n\n'
       '$generatedAssetsPubspecSnippet',
     );
+  } on AssertionError {
+    // yaml_edit asserts rather than throws when an edit would corrupt the
+    // document, which a pubspec shape it mishandles can still trigger.
+    return PubspecEditResult(
+      PubspecEditStatus.unsupported,
+      'pubspec.yaml could not be edited automatically. Add these lines by '
+      'hand:\n\n$generatedAssetsPubspecSnippet',
+    );
   }
 
   pubspec.writeAsStringSync(editor.toString());
   return const PubspecEditResult(
     PubspecEditStatus.added,
-    'Added $generatedAssetsEntry to `flutter: assets:` in pubspec.yaml.',
+    'Added $generatedAssetsEntry and its target directories to '
+    '`flutter: assets:` in pubspec.yaml.',
   );
 }
+
+// A target directory's asset entry. The platform list stays in the editor's
+// default block style; a flow list nested in an appended block mapping makes
+// yaml_edit emit invalid YAML.
+Map<String, Object> _targetDirectoryEntry(GeneratedTargetDirectory directory) =>
+    {'path': directory.assetEntry, 'platforms': directory.platforms};
