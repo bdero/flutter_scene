@@ -1,15 +1,8 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter/services.dart'
-    show AssetBundle, AssetManifest, rootBundle;
+import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
-
-/// The key flutter_scene's own hook registers when the toolchain has Dart data
-/// assets. Follows `flutter_gpu_shaders`' data-asset naming; a test guards the
-/// two against drifting apart.
-const String _kBaseShaderBundleDataAssetPath =
-    'packages/flutter_scene/flutter_gpu_shaders/shaderbundles/base.shaderbundle';
 
 gpu.ShaderLibrary? _baseShaderLibrary;
 
@@ -56,21 +49,10 @@ gpu.ShaderLibrary get baseShaderLibrary {
   return cached;
 }
 
-/// Resolves the asset key the base shader bundle shipped under: the data asset
-/// when the toolchain registered one, then the app's own generated tree, then
-/// flutter_scene's, which its own hook always fills.
+/// Resolves the asset key the base shader bundle shipped under: the app's own
+/// generated tree, then flutter_scene's, which its own hook always fills.
 @visibleForTesting
 Future<String?> resolveBaseShaderBundleKey({AssetBundle? bundle}) async {
-  try {
-    final manifest = await AssetManifest.loadFromAssetBundle(
-      bundle ?? rootBundle,
-    );
-    if (manifest.listAssets().contains(_kBaseShaderBundleDataAssetPath)) {
-      return _kBaseShaderBundleDataAssetPath;
-    }
-  } catch (_) {
-    // Nothing to scan; the generated trees below are the only source.
-  }
   return (await loadGeneratedAssetIndex(bundle)).resolveFirstKey(
     GeneratedAssetFamily.shaderBundle,
     'base',

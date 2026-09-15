@@ -16,11 +16,17 @@ import '../importer/build_cache.dart';
 import 'generated_assets.dart';
 import 'generated_file_names.dart';
 
-/// The `flutter.assets` YAML the app needs, ready to paste.
-const String generatedAssetsPubspecSnippet =
-    'flutter:\n'
-    '  assets:\n'
-    '    - $generatedAssetsEntry';
+/// The `flutter.assets` YAML the app needs, ready to paste: the tree, and each
+/// target directory filtered to the platforms that load it.
+final String generatedAssetsPubspecSnippet = [
+  'flutter:',
+  '  assets:',
+  '    - $generatedAssetsEntry',
+  for (final directory in generatedTargetDirectories) ...[
+    '    - path: ${directory.assetEntry}',
+    '      platforms: [${directory.platforms.join(', ')}]',
+  ],
+].join('\n');
 
 /// Thrown when the hook generated assets the app does not list in
 /// `flutter.assets`, so the build fails instead of producing an app that dies
@@ -100,22 +106,32 @@ void writeGeneratedBytes(Uri uri, List<int> bytes) =>
 void writeGeneratedString(Uri uri, String contents) =>
     writeGeneratedBytes(uri, utf8.encode(contents));
 
-/// Creates the generated tree under [packageRoot] and writes its `.gitignore`,
-/// so the listed asset directory is present in a fresh clone whose contents are
-/// ignored. Writes no manifest.
-void createGeneratedAssetsDirectory(Uri packageRoot) {
+/// Creates the generated tree under [packageRoot], and each of
+/// [targetDirectories] inside it, writing a `.gitignore` into every one, so the
+/// listed asset directories are present in a fresh clone whose contents are
+/// ignored. Flutter fails a build on a listed directory that does not exist.
+/// Writes no manifest.
+void createGeneratedAssetsDirectory(
+  Uri packageRoot, {
+  Iterable<GeneratedTargetDirectory> targetDirectories = const [],
+}) {
   final root = packageRoot.resolve('$generatedAssetsDirectory/');
-  guardGeneratedWrite(root, () {
-    Directory.fromUri(root).createSync(recursive: true);
-  });
-  final gitignore = File.fromUri(
-    root.resolve(generatedAssetsGitignoreFileName),
-  );
-  if (gitignore.existsSync() &&
-      gitignore.readAsStringSync() == generatedAssetsGitignore) {
-    return;
+  for (final directory in [
+    root,
+    for (final target in targetDirectories) root.resolve('${target.name}/'),
+  ]) {
+    guardGeneratedWrite(directory, () {
+      Directory.fromUri(directory).createSync(recursive: true);
+    });
+    final gitignore = File.fromUri(
+      directory.resolve(generatedAssetsGitignoreFileName),
+    );
+    if (gitignore.existsSync() &&
+        gitignore.readAsStringSync() == generatedAssetsGitignore) {
+      continue;
+    }
+    writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
   }
-  writeGeneratedString(gitignore.uri, generatedAssetsGitignore);
 }
 
 /// The app's generated tree, opened for a hook run.
@@ -193,7 +209,34 @@ final class GeneratedAssetTree {
 
   Uri get _root => packageRoot.resolve('$generatedAssetsDirectory/');
 
-  void _createDirectory() => createGeneratedAssetsDirectory(packageRoot);
+  /// The target directories this package's pubspec lists, which are the only
+  /// ones outputs may be written to (an unlisted one would never ship).
+  late final List<GeneratedTargetDirectory> _listedTargetDirectories = () {
+    final assets = readPubspecAssets(
+      File.fromUri(packageRoot.resolve('pubspec.yaml')),
+    );
+    return [
+      for (final directory in generatedTargetDirectories)
+        if (assets.contains(normalizeAssetEntry(directory.assetEntry)))
+          directory,
+    ];
+  }();
+
+  // Where outputs recorded with [target] go: its listed directory, or the top
+  // of the tree.
+  Uri _directoryFor(String? target) {
+    if (target == null) return _root;
+    final directory = generatedTargetDirectory(target);
+    if (directory == null || !_listedTargetDirectories.contains(directory)) {
+      return _root;
+    }
+    return _root.resolve('${directory.name}/');
+  }
+
+  void _createDirectory() => createGeneratedAssetsDirectory(
+    packageRoot,
+    targetDirectories: _listedTargetDirectories,
+  );
 
   /// Whether the tree already holds outputs of [family], so a run that now
   /// discovers no sources still has stale outputs to prune.
@@ -215,14 +258,15 @@ final class GeneratedAssetTree {
   ///
   /// [target] names the build target an output is only valid for, and separates
   /// the file names of two builds sharing this tree the same way [variant] does
-  /// for two engines.
+  /// for two engines. The output goes into the target's directory when the
+  /// pubspec lists it, so only apps for that target ship it.
   Uri fileUri(
     GeneratedAssetFamily family, {
     required String nameId,
     required String extension,
     String? variant,
     String? target,
-  }) => _root.resolve(
+  }) => _directoryFor(target).resolve(
     generatedFileName(
       family,
       nameId,
@@ -354,26 +398,37 @@ final class GeneratedAssetTree {
   /// weight in a directory that ships, survives `flutter clean`, and for a
   /// pub-cache consumer is shared with every project on the machine.
   void save() {
+    // Entry files are relative to the tree, so a target directory's outputs
+    // carry the directory name.
     final referenced = {for (final entry in _manifest.entries) entry.file};
-    final variantsOfReferenced = referenced
-        .map(generatedNameWithoutTag)
-        .nonNulls
-        .toSet();
+    final variantsOfReferenced = {
+      for (final file in referenced)
+        if (_withoutTag(file) case final name?) name,
+    };
     final directory = Directory.fromUri(_root);
     if (directory.existsSync()) {
       final keepAfter = DateTime.now().subtract(variantRetention);
-      for (final file in directory.listSync(followLinks: false)) {
-        if (file is! File) continue;
-        final name = file.uri.pathSegments.last;
-        // Only ever delete files matching the generated naming scheme, so a
-        // keeper file in the tree survives.
-        if (!isGeneratedFileName(name)) continue;
-        if (referenced.contains(name)) continue;
-        if (variantsOfReferenced.contains(generatedNameWithoutTag(name)) &&
-            file.statSync().modified.isAfter(keepAfter)) {
-          continue;
+      for (final (prefix, uri) in [
+        ('', _root),
+        for (final target in generatedTargetDirectories)
+          ('${target.name}/', _root.resolve('${target.name}/')),
+      ]) {
+        final listed = Directory.fromUri(uri);
+        if (!listed.existsSync()) continue;
+        for (final file in listed.listSync(followLinks: false)) {
+          if (file is! File) continue;
+          final name = file.uri.pathSegments.last;
+          // Only ever delete files matching the generated naming scheme, so a
+          // keeper file in the tree survives.
+          if (!isGeneratedFileName(name)) continue;
+          final relative = '$prefix$name';
+          if (referenced.contains(relative)) continue;
+          if (variantsOfReferenced.contains(_withoutTag(relative)) &&
+              file.statSync().modified.isAfter(keepAfter)) {
+            continue;
+          }
+          file.deleteSync();
         }
-        file.deleteSync();
       }
     }
     if (_manifest.entries.isEmpty && !directory.existsSync()) return;
@@ -392,6 +447,13 @@ final class GeneratedAssetTree {
   }
 
   static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));
+
+  // [generatedNameWithoutTag] for a tree-relative path, keeping its directory.
+  static String? _withoutTag(String relative) {
+    final slash = relative.lastIndexOf('/');
+    final name = generatedNameWithoutTag(relative.substring(slash + 1));
+    return name == null ? null : '${relative.substring(0, slash + 1)}$name';
+  }
 
   static String? _variantKey(String? variant, String? target) {
     if (target == null) return variant;
@@ -450,8 +512,9 @@ final class PubspecEditResult {
   final String message;
 }
 
-/// Adds [generatedAssetsEntry] to [pubspec]'s `flutter: assets:` list, keeping
-/// every comment and the surrounding order. Idempotent.
+/// Adds [generatedAssetsEntry] and every [generatedTargetDirectories] entry
+/// missing from [pubspec]'s `flutter: assets:` list, keeping every comment and
+/// the surrounding order. Idempotent.
 PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
   if (!pubspec.existsSync()) {
     return const PubspecEditResult(
@@ -460,13 +523,19 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
     );
   }
   final contents = pubspec.readAsStringSync();
-  if (parsePubspecAssets(
-    contents,
-  ).contains(normalizeAssetEntry(generatedAssetsEntry))) {
+  final listed = parsePubspecAssets(contents);
+  final missing = <Object>[
+    if (!listed.contains(normalizeAssetEntry(generatedAssetsEntry)))
+      generatedAssetsEntry,
+    for (final directory in generatedTargetDirectories)
+      if (!listed.contains(normalizeAssetEntry(directory.assetEntry)))
+        _targetDirectoryEntry(directory),
+  ];
+  if (missing.isEmpty) {
     return const PubspecEditResult(
       PubspecEditStatus.alreadyPresent,
-      'pubspec.yaml already lists $generatedAssetsEntry under `flutter: '
-      'assets:`.',
+      'pubspec.yaml already lists $generatedAssetsEntry and its target '
+      'directories under `flutter: assets:`.',
     );
   }
 
@@ -474,7 +543,7 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
   try {
     editor = YamlEditor(contents);
     if (editor.parseAt(<Object>[]) is! YamlMap) {
-      return const PubspecEditResult(
+      return PubspecEditResult(
         PubspecEditStatus.unsupported,
         'pubspec.yaml is not a YAML mapping, so it cannot be edited '
         'automatically. Add these lines by hand:\n\n'
@@ -493,20 +562,24 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
       );
       return const PubspecEditResult(
         PubspecEditStatus.added,
-        'Added a `flutter: assets:` section listing $generatedAssetsEntry to '
-        'pubspec.yaml.',
+        'Added a `flutter: assets:` section listing $generatedAssetsEntry and '
+        'its target directories to pubspec.yaml.',
       );
     } else if (editor.parseAt(<Object>[
           'flutter',
           'assets',
         ], orElse: () => wrapAsYamlNode(null))
         is YamlList) {
-      editor.appendToList(<Object>['flutter', 'assets'], generatedAssetsEntry);
+      // Inserted in reverse at one index, so each lands after a plain entry.
+      // Appending after a mapping entry that a sibling key follows makes
+      // yaml_edit write into that sibling.
+      final path = <Object>['flutter', 'assets'];
+      final end = (editor.parseAt(path) as YamlList).length;
+      for (final entry in missing.reversed) {
+        editor.insertIntoList(path, end, entry);
+      }
     } else {
-      editor.update(
-        <Object>['flutter', 'assets'],
-        <String>[generatedAssetsEntry],
-      );
+      editor.update(<Object>['flutter', 'assets'], missing);
     }
   } on YamlException catch (error) {
     return PubspecEditResult(
@@ -515,11 +588,26 @@ PubspecEditResult ensureGeneratedAssetsEntry(File pubspec) {
       'automatically. Add these lines by hand:\n\n'
       '$generatedAssetsPubspecSnippet',
     );
+  } on AssertionError {
+    // yaml_edit asserts rather than throws when an edit would corrupt the
+    // document, which a pubspec shape it mishandles can still trigger.
+    return PubspecEditResult(
+      PubspecEditStatus.unsupported,
+      'pubspec.yaml could not be edited automatically. Add these lines by '
+      'hand:\n\n$generatedAssetsPubspecSnippet',
+    );
   }
 
   pubspec.writeAsStringSync(editor.toString());
   return const PubspecEditResult(
     PubspecEditStatus.added,
-    'Added $generatedAssetsEntry to `flutter: assets:` in pubspec.yaml.',
+    'Added $generatedAssetsEntry and its target directories to '
+    '`flutter: assets:` in pubspec.yaml.',
   );
 }
+
+// A target directory's asset entry. The platform list stays in the editor's
+// default block style; a flow list nested in an appended block mapping makes
+// yaml_edit emit invalid YAML.
+Map<String, Object> _targetDirectoryEntry(GeneratedTargetDirectory directory) =>
+    {'path': directory.assetEntry, 'platforms': directory.platforms};

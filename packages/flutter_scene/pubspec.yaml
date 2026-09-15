@@ -86,7 +86,17 @@ flutter:
     - assets/smaa_search.bin
     # The engine's own shader bundles, compiled by this package's build hook for
     # the engine that consumes them (a bundle is only valid for that engine, so
-    # nothing here is published, the archive carries the directory and its
-    # .gitignore alone). An app that runs its own buildEngineAssets ships
-    # its copy instead.
+    # nothing here is published, the archive carries the directories and their
+    # .gitignore files alone). An app that runs its own buildEngineAssets ships
+    # its copy instead. Each target's bundles sit in their own directory, so an
+    # app ships only the ones its platform loads, however many other targets
+    # the shared pub cache has built.
     - flutter_scene_generated/
+    - path: flutter_scene_generated/metal_ios/
+      platforms: [ios]
+    - path: flutter_scene_generated/metal_desktop/
+      platforms: [macos]
+    - path: flutter_scene_generated/opengl_es_vulkan/
+      platforms: [android, linux, windows]
+    - path: flutter_scene_generated/opengl_es/
+      platforms: [web]

@@ -1,11 +1,10 @@
-/// The engine's two shader bundles can arrive three ways, and the app's own
-/// copy must always win over the one in flutter_scene's package directory.
+/// The engine's two shader bundles can arrive two ways, and the app's own copy
+/// must always win over the one in flutter_scene's package directory.
 library;
 
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_gpu_shaders/build.dart' as gpu_shaders;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 // ignore: implementation_imports
@@ -17,11 +16,6 @@ import 'package:flutter_scene/src/material/physical_material_variant.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-const String _baseDataAssetKey =
-    'packages/flutter_scene/flutter_gpu_shaders/shaderbundles/base.shaderbundle';
-const String _physicalDataAssetKey =
-    'packages/flutter_scene/flutter_scene/fmat/physical/physical.shaderbundle';
 
 /// The app's own tree, and flutter_scene's inside the package.
 const String _appTree = generatedAssetsDirectory;
@@ -101,15 +95,13 @@ String _manifestJson(String package) => GeneratedAssetManifest(
   ],
 ).encode();
 
-/// A bundle carrying the named generated trees, and optionally the data assets.
+/// A bundle carrying the named generated trees.
 _ManifestAssetBundle _bundleWith({
   bool appTree = false,
   bool packageTree = false,
-  bool dataAssets = false,
 }) {
   final keys = <String>[];
   final strings = <String, String>{};
-  if (dataAssets) keys.addAll([_baseDataAssetKey, _physicalDataAssetKey]);
   for (final (prefix, package) in [
     if (appTree) (_appTree, 'example_app'),
     if (packageTree) (_packageTree, 'flutter_scene'),
@@ -130,19 +122,6 @@ void main() {
   tearDown(clearGeneratedAssetIndexCache);
 
   group('the base shader bundle', () {
-    test('prefers the data asset', () async {
-      final bundle = _bundleWith(
-        dataAssets: true,
-        appTree: true,
-        packageTree: true,
-      );
-      addTearDown(() => clearGeneratedAssetIndexCache(bundle));
-      expect(
-        await resolveBaseShaderBundleKey(bundle: bundle),
-        _baseDataAssetKey,
-      );
-    });
-
     test("prefers the app tree over flutter_scene's own", () async {
       final bundle = _bundleWith(appTree: true, packageTree: true);
       addTearDown(() => clearGeneratedAssetIndexCache(bundle));
@@ -175,19 +154,6 @@ void main() {
   });
 
   group('the physical material bundle', () {
-    test('prefers the data asset', () async {
-      final bundle = _bundleWith(
-        dataAssets: true,
-        appTree: true,
-        packageTree: true,
-      );
-      addTearDown(() => clearGeneratedAssetIndexCache(bundle));
-      expect(
-        (await resolvePhysicalBundleKeys(bundle: bundle))?.bundle,
-        _physicalDataAssetKey,
-      );
-    });
-
     test("prefers the app tree over flutter_scene's own", () async {
       final bundle = _bundleWith(appTree: true, packageTree: true);
       addTearDown(() => clearGeneratedAssetIndexCache(bundle));
@@ -209,16 +175,6 @@ void main() {
       addTearDown(() => clearGeneratedAssetIndexCache(bundle));
       expect(await resolvePhysicalBundleKeys(bundle: bundle), isNull);
     });
-  });
-
-  test('the data-asset key matches what the shader hook registers', () {
-    expect(
-      gpu_shaders.flutterDataAssetKey(
-        package: 'flutter_scene',
-        name: gpu_shaders.shaderBundleDataAssetName('base.shaderbundle'),
-      ),
-      _baseDataAssetKey,
-    );
   });
 
   test('the load errors name what to do', () {
