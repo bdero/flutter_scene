@@ -21,7 +21,9 @@ import 'package:vector_math/vector_math.dart';
 /// Each frame the scene driver syncs the listener and lets the backend
 /// flush. The listener is the first mounted [AudioListener] in the
 /// engine's subtree; with none mounted, the ears follow the scene's
-/// primary camera, so spatial audio works with no listener setup.
+/// primary camera, or the camera of the view it last rendered (such as a
+/// `SceneView`'s) when none is set, so spatial audio works with no listener
+/// setup.
 ///
 /// Backends implement clip loading ([loadClip]), voice creation
 /// ([createVoice]), bus creation ([onCreateBus]), and the per-frame
