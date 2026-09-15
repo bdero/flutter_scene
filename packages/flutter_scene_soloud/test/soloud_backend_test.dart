@@ -19,6 +19,7 @@ void main() {
         'config': MapValue({
           'maxActiveVoices': const IntValue(48),
           'pauseWhenBackgrounded': const BoolValue(false),
+          'bufferSize': const IntValue(512),
         }),
       },
     );
@@ -27,6 +28,7 @@ void main() {
         registry.realize(spec, RealizeContext(document)) as SoloudAudioEngine;
     expect(engine.maxActiveVoices, 48);
     expect(engine.pauseWhenBackgrounded, isFalse);
+    expect(engine.bufferSize, 512);
 
     final serialized = registry.serialize(engine, SerializeContext(document))!;
     expect(serialized.type, 'audioEngine');

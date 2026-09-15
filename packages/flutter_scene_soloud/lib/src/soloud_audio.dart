@@ -23,6 +23,7 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
   SoloudAudioEngine({
     this.maxActiveVoices = 32,
     this.pauseWhenBackgrounded = true,
+    this.bufferSize,
   });
 
   /// Maximum simultaneous voices. SoLoud's default of 16 is low for
@@ -31,6 +32,15 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
 
   /// Pause all live voices while the app is backgrounded.
   final bool pauseWhenBackgrounded;
+
+  /// Mix buffer size in frames, or null for SoLoud's default of 2048 (about
+  /// 46 ms at 44.1 kHz).
+  ///
+  /// A smaller buffer shortens the delay between starting a sound and hearing
+  /// it, which matters for impacts and other reactive one-shots, at a higher
+  /// risk of crackling on slow devices. Takes effect only when this engine
+  /// initializes SoLoud; an instance the app already started keeps its buffer.
+  final int? bufferSize;
 
   final sl.SoLoud _soloud = sl.SoLoud.instance;
   final Completer<void> _ready = Completer<void>();
@@ -52,7 +62,8 @@ class SoloudAudioEngine extends AudioEngine with WidgetsBindingObserver {
   @override
   Future<void> onLoad() async {
     if (!_soloud.isInitialized) {
-      await _soloud.init();
+      final size = bufferSize;
+      await (size == null ? _soloud.init() : _soloud.init(bufferSize: size));
     }
     _soloud.setMaxActiveVoiceCount(maxActiveVoices);
     _master._pushNative();
