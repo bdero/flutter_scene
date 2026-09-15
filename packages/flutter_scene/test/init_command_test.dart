@@ -86,8 +86,18 @@ flutter:
     # my own assets
     - assets/logo.png
     - $generatedAssetsEntry
-''',
+${[for (final directory in generatedTargetDirectories) '    - path: ${directory.assetEntry}\n      platforms:\n${directory.platforms.map((p) => '        - $p\n').join()}'].join()}''',
     );
+    for (final directory in generatedTargetDirectories) {
+      expect(
+        File.fromUri(
+          temp.uri.resolve(
+            '${directory.assetEntry}$generatedAssetsGitignoreFileName',
+          ),
+        ).existsSync(),
+        isTrue,
+      );
+    }
   });
 
   test('refreshes the managed block in a generated hook', () async {
