@@ -13,6 +13,16 @@ in vec4 v_tangent;
 
 out vec4 frag_color;
 
+// The camera axis, for the view direction under an orthographic camera, where
+// every view ray is parallel and v_viewvector (which stays the true vector to
+// the eye, for derivatives and depth) does not point along one. Bound by the
+// engine wherever a shader reads it. xyz: the world-space camera forward.
+// w: 1 for an orthographic camera, 0 for perspective.
+uniform ViewInfo {
+  highp vec4 camera_forward;
+}
+view_info;
+
 // World-space position of the fragment.
 highp vec3 GetWorldPosition() { return v_position; }
 
@@ -23,8 +33,12 @@ vec3 GetWorldNormal() {
   return normalize(v_normal) * face_direction;
 }
 
-// Normalized direction from the fragment toward the camera.
-vec3 GetViewDirection() { return normalize(v_viewvector); }
+// Normalized direction from the fragment toward the viewer: toward the eye for
+// perspective, against the camera axis for orthographic.
+vec3 GetViewDirection() {
+  return view_info.camera_forward.w > 0.5 ? -view_info.camera_forward.xyz
+                                          : normalize(v_viewvector);
+}
 
 // Primary texture coordinates.
 highp vec2 GetUV0() { return v_texture_coords; }

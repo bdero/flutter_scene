@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
+import 'package:flutter_scene/src/render/planar_reflection.dart'
+    show ObliqueNearClipProjection;
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 
 /// The terms screen-space passes need to move between planar view depth and
@@ -40,6 +42,10 @@ class ProjectionParams {
     switch (projection) {
       case ViewportBoundProjection():
         return ProjectionParams.of(projection.inner, projection.viewportSize);
+      case ObliqueNearClipProjection():
+        // The oblique clip rewrites only the depth row, so the base projection
+        // still describes the lateral mapping and the planar depth range.
+        return ProjectionParams.of(projection.base, viewportSize);
       case PerspectiveProjection():
         final tanY = math.tan(projection.fovRadiansY * 0.5);
         final aspectRatio = viewportSize.height > 0
@@ -153,4 +159,25 @@ class ProjectionParams {
   @override
   int get hashCode =>
       Object.hash(scaleX, scaleY, offsetX, offsetY, orthographic, near, far);
+}
+
+/// Whether [viewProjection] is orthographic: its w row, the view depth under
+/// perspective, is constant.
+bool isOrthographicTransform(Matrix4 viewProjection) {
+  final s = viewProjection.storage;
+  return s[3] * s[3] + s[7] * s[7] + s[11] * s[11] < 1e-12;
+}
+
+/// The world-space forward axis of an orthographic [viewProjection] (or of
+/// [viewProjection] times a model transform, in that model's space), from the
+/// cross product of its x and y rows.
+///
+/// Those rows are the camera's right and up axes, which neither an oblique
+/// near-plane clip (it rewrites the z row) nor subpixel jitter (it moves the
+/// translation) touches, unlike the z row.
+Vector3 orthographicForward(Matrix4 viewProjection) {
+  final s = viewProjection.storage;
+  final xRow = Vector3(s[0], s[4], s[8]);
+  final yRow = Vector3(s[1], s[5], s[9]);
+  return xRow.cross(yRow)..normalize();
 }

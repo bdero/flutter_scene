@@ -381,6 +381,14 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         );
       }
     }
+    // Every shading model's Surface() and debug hook may read
+    // GetViewDirection.
+    EngineLightingUniforms.bindViewInfo(
+      pass,
+      shader,
+      transientsBuffer,
+      lighting,
+    );
 
     parameters.bind(pass, shader, transientsBuffer);
     // Bind the fragment keep-alive block (name matches kFragmentKeepAliveBlock

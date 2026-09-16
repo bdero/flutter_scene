@@ -58,8 +58,7 @@ void main() {
       vertex.world_position, frame_info.camera_transform,
       frame_info.camera_position, frame_info.depth_bias);
   gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
-  v_viewvector = ViewVector(frame_info.camera_transform,
-                            frame_info.camera_position, vertex.world_position);
+  v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vec3(0.0);
   v_texture_coords = vec2(0.0);
   v_texture_coords_1 = vec2(0.0);

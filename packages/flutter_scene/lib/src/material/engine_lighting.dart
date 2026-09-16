@@ -334,6 +334,36 @@ class EngineLightingUniforms {
   /// from [lighting]'s fog and directional light, and binds it on [shader].
   /// Every material shader declares `FogInfo`, so this is always bound; when
   /// there is no fog the `enabled` flag is 0 and `ApplyFog` is a no-op.
+  /// Binds the `ViewInfo` block `material_varyings.glsl` declares for
+  /// `GetViewDirection`, which needs the camera axis under an orthographic
+  /// camera. Does nothing when [shader] never reads it (the block is then
+  /// optimized away and reflects no size).
+  static void bindViewInfo(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+    Lighting lighting,
+  ) {
+    if (_memoPassIs(pass) && identical(_viewInfoMemo[shader], lighting)) {
+      return;
+    }
+    final slot = shader.getUniformSlot('ViewInfo');
+    if (slot.sizeInBytes == null) return;
+    _viewInfoMemo[shader] = lighting;
+    final forward = lighting.cameraForward;
+    final info = Float32List(4);
+    if (forward != null) {
+      info[0] = forward.x;
+      info[1] = forward.y;
+      info[2] = forward.z;
+    }
+    info[3] = lighting.orthographic && forward != null ? 1.0 : 0.0;
+    pass.bindUniform(
+      slot,
+      transientsBuffer.emplace(ByteData.sublistView(info)),
+    );
+  }
+
   static void bindFog(
     gpu.RenderPass pass,
     gpu.Shader shader,
@@ -520,6 +550,7 @@ class EngineLightingUniforms {
   static gpu.RenderPass? _memoPass;
   static final Map<gpu.Shader, (Lighting, EnvironmentMap)> _texturesMemo = {};
   static final Map<gpu.Shader, Lighting> _fogMemo = {};
+  static final Map<gpu.Shader, Lighting> _viewInfoMemo = {};
 
   /// Forgets all memoized bindings; the encoder calls this whenever it clears
   /// the render pass's bindings.
@@ -527,6 +558,7 @@ class EngineLightingUniforms {
     _memoPass = null;
     _texturesMemo.clear();
     _fogMemo.clear();
+    _viewInfoMemo.clear();
   }
 
   static bool _memoPassIs(gpu.RenderPass pass) {
@@ -534,6 +566,7 @@ class EngineLightingUniforms {
     _memoPass = pass;
     _texturesMemo.clear();
     _fogMemo.clear();
+    _viewInfoMemo.clear();
     return false;
   }
 

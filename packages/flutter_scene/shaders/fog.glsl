@@ -6,7 +6,8 @@
 // The FogInfo block is self-contained (it does not depend on either material's
 // FragInfo layout) so lit and unlit shaders share one declaration. It is packed
 // and bound by EngineLightingUniforms.bindFog. Uses the world-space varyings
-// v_position and v_viewvector (= cameraPosition - fragmentPosition).
+// v_position and v_viewvector (= cameraPosition - fragmentPosition), and the
+// ViewInfo block from material_varyings.glsl for orthographic cameras.
 
 uniform FogInfo {
   // x: mode (0 none, 1 linear, 2 exponential, 3 exponential-squared)
@@ -45,7 +46,12 @@ highp vec4 ApplyFog(highp vec4 premult_color, vec3 sky_color) {
     return premult_color;
   }
 
-  highp float d = length(v_viewvector); // camera -> fragment distance
+  // Camera to fragment distance. Orthographic view rays start on the eye plane,
+  // so the distance is the planar depth in front of it.
+  bool orthographic = view_info.camera_forward.w > 0.5;
+  highp float d = orthographic
+      ? max(dot(-v_viewvector, view_info.camera_forward.xyz), 0.0)
+      : length(v_viewvector);
   highp float cutoff = fog.params1.w;
   if (cutoff > 0.0 && d > cutoff) {
     return premult_color; // e.g. exclude an already-hazed skybox / far layer
@@ -68,7 +74,9 @@ highp vec4 ApplyFog(highp vec4 premult_color, vec3 sky_color) {
       // Analytic integral of an exponential height-density profile along the
       // view ray (Beer-Lambert). density(y) = density * exp(-falloff*(y-height)).
       highp vec3 frag_pos = v_position;
-      highp vec3 camera_pos = v_position + v_viewvector;
+      highp vec3 camera_pos = orthographic
+          ? v_position - view_info.camera_forward.xyz * d
+          : v_position + v_viewvector;
       highp float height = fog.params2.x;
       highp float density_at_camera = density * exp(-falloff * (camera_pos.y - height));
       highp float density_at_frag = density * exp(-falloff * (frag_pos.y - height));
@@ -99,7 +107,7 @@ highp vec4 ApplyFog(highp vec4 premult_color, vec3 sky_color) {
   // Cheap sun in-scatter: brighten the fog toward the directional light, so
   // looking into the sun through fog glows. No volumetrics.
   if (fog.sun.w > 0.5 && fog.params2.z > 0.0) {
-    vec3 ray_dir = -normalize(v_viewvector); // camera -> fragment
+    vec3 ray_dir = -GetViewDirection(); // camera -> fragment
     vec3 to_sun = -normalize(fog.sun_dir.xyz); // toward the light source
     float sun_amount = max(dot(ray_dir, to_sun), 0.0);
     float glow = pow(sun_amount, fog.params2.w);

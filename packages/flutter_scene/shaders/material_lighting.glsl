@@ -294,7 +294,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 coat_normal = normalize(material.clearcoat_normal);
   float coat_roughness = SpecularAARoughness(
       coat_normal, material.clearcoat_roughness);
-  float coat_n_dot_v = clamp(abs(dot(coat_normal, normalize(v_viewvector))),
+  float coat_n_dot_v = clamp(abs(dot(coat_normal, GetViewDirection())),
                              0.0, 0.99);
   highp vec3 coat_direct = vec3(0.0);
   highp vec3 coat_ibl = vec3(0.0);
@@ -342,7 +342,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   }
 #endif
 
-  vec3 camera_normal = normalize(v_viewvector);
+  vec3 camera_normal = GetViewDirection();
 
   vec3 anisotropic_tangent = vec3(1.0, 0.0, 0.0);
   vec3 anisotropic_bitangent = vec3(0.0, 1.0, 0.0);
@@ -845,7 +845,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     // crisp skybox as closely as the environment resolution allows, so avoid
     // extra roughness blur on top of the bake.
     const float kSkyFogRoughness = 0.0;
-    vec3 sky_dir = environment_transform * normalize(-v_viewvector);
+    vec3 sky_dir = environment_transform * -GetViewDirection();
     sky_fog_color = SampleRadianceEnv(prefiltered_radiance, sky_dir,
         kSkyFogRoughness);
     if (env_blend > 0.0) {

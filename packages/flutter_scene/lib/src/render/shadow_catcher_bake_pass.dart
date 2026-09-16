@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -218,6 +219,12 @@ class ShadowCatcherBakePass extends RenderGraphPass {
           pass,
           context.transientsBuffer,
           fragmentShader,
+        );
+        EngineLightingUniforms.bindViewInfo(
+          pass,
+          fragmentShader,
+          context.transientsBuffer,
+          lighting,
         );
         // The bake projects the plane flat, so both faces are equivalent; no
         // culling keeps a flipped or bottom-viewed plane baking identically.

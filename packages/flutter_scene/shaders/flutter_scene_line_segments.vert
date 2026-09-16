@@ -39,8 +39,8 @@ void main() {
   // ribbon always faces the camera. A segment pointing at the eye (or a
   // degenerate segment) collapses the cross product; it stays a hairline.
   vec3 dir = world_end - world_start;
-  vec3 view =
-      ViewVector(frame_info.camera_transform, frame_info.camera_position.xyz, pos);
+  vec3 view = DirectionToViewer(frame_info.camera_transform,
+                                frame_info.camera_position.xyz, pos);
   vec3 perp = cross(dir, view);
   float perp_len = length(perp);
   perp = perp_len > 1e-12 ? perp / perp_len : vec3(0.0);
@@ -60,7 +60,7 @@ void main() {
 
   v_position = pos;
   gl_Position = frame_info.camera_transform * vec4(pos, 1.0);
-  v_viewvector = view;
+  v_viewvector = frame_info.camera_position.xyz - pos;
   v_normal = n;
   // u runs along the segment, v across the ribbon.
   v_texture_coords = vec2(corner.x, corner.y * 0.5 + 0.5);
