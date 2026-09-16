@@ -393,34 +393,41 @@ void main() {
 
     // One server tick per real tick interval, so the server's tick counter
     // tracks the clock the client derives its own target tick from.
+    //
+    // The budget still fits the pawn every several ticks, so whether the last
+    // tick was starved depends on where the run stops. Each update instead
+    // records whether it reconciled against a pose older than the acked input,
+    // and the lead is checked at the last such update once prediction settled.
     final run = Stopwatch()..start();
     var moved = 0.0;
+    double? settledStarvedLead;
     while (run.elapsedMilliseconds < 2000) {
       moved += 1;
       for (final decoy in decoys) {
         decoy.position.value = (moved, 0.0, 0.0);
       }
+      final starved =
+          pawn.snapshotTick < replication.client.lastAppliedInputTick;
       component.update(dt);
       room.advance(dt);
+      if (starved && run.elapsedMilliseconds >= 1000) {
+        final predictedX = replication
+            .nodeFor(pawn.id!)!
+            .localTransform
+            .getTranslation()
+            .x;
+        settledStarvedLead = predictedX - serverX[replication.localPeerId]!;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 33));
     }
 
-    // The pawn really was starved, its pose is older than the acked input.
-    expect(
-      pawn.snapshotTick,
-      lessThan(replication.client.lastAppliedInputTick),
-    );
-
-    final predictedX = replication
-        .nodeFor(pawn.id!)!
-        .localTransform
-        .getTranslation()
-        .x;
-    final authoritativeX = serverX[replication.localPeerId]!;
+    // The pawn really was starved: some settled update reconciled against a
+    // pose older than the acked input.
+    expect(settledStarvedLead, isNotNull);
     // The prediction still leads authority by roughly the send-ahead. Pinning
     // that stale pose to the ack's tick instead discards the travel between
     // the two, which drags the lead to zero on every snapshot.
-    expect(predictedX - authoritativeX, greaterThan(_testSpeed * dt));
+    expect(settledStarvedLead, greaterThan(_testSpeed * dt));
 
     await replication.close();
     await room.stop();
