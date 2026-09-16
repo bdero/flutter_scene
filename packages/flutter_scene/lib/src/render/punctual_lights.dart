@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/components/point_light_component.dart';
 import 'package:flutter_scene/src/components/rect_area_light_component.dart';
 import 'package:flutter_scene/src/components/spot_light_component.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/light_culling.dart';
 import 'package:flutter_scene/src/render/point_shadow.dart';
@@ -15,8 +16,8 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 
 /// The per-object punctual light budget: how many lights the per-object
-/// culling path lists for a single item (the fallback for non-perspective
-/// views and light-channel-mask frames). The scene may hold any number of
+/// culling path lists for a single item (the fallback for light-channel-mask
+/// frames and degenerate projections). The scene may hold any number of
 /// lights; the fragment loop is dynamically bounded (every compiled dialect
 /// is GLSL ES 3.00 or newer), so this is purely the CPU-side list cap that
 /// bounds the per-object index buffer.
@@ -194,6 +195,7 @@ class FroxelLighting {
     required this.nz,
     required this.zScale,
     required this.zBias,
+    this.depthOffset = 0.0,
   });
 
   final gpu.Texture texture;
@@ -204,6 +206,11 @@ class FroxelLighting {
   final int nz;
   final double zScale;
   final double zBias;
+
+  /// Added to a fragment's planar view depth before slicing. Zero for
+  /// perspective; an orthographic volume can start behind the eye, so it
+  /// shifts the near plane onto the first slice.
+  final double depthOffset;
 }
 
 /// The packed light parameters plus the culling inputs derived from them.
@@ -352,8 +359,8 @@ class PunctualLightBuffer {
       lights: packed.cullables,
       maxPerItem: kMaxPunctualLights,
     );
-    // With froxels eligible the per-object lists only serve non-perspective
-    // views, so their overflow does not represent what the frame shades; the
+    // With froxels eligible the per-object lists only serve degenerate
+    // projections, so their overflow does not represent what the frame shades; the
     // per-view froxel builds add their own overflow instead.
     _overflowedItemCount = _froxelsEligible ? 0 : cull.overflowedItemCount;
 
@@ -451,27 +458,25 @@ class PunctualLightBuffer {
   final Vector3 _cachePosition = Vector3.zero();
   final Vector3 _cacheForward = Vector3.zero();
   final Vector3 _cacheRight = Vector3.zero();
-  double _cacheTanX = 0;
-  double _cacheTanY = 0;
+  ProjectionParams? _cacheProjection;
   int _cacheOverflow = 0;
   FroxelLighting? _cachedFroxels;
 
-  /// Builds this view's froxel clustering from the camera basis the lit
-  /// shaders already receive ([tanHalfFovX]/[tanHalfFovY] are the projection's
-  /// half-fov tangents). Returns null for a non-perspective view (the
-  /// per-object lists shade those). Call after [build] each frame.
+  /// Builds this view's froxel clustering from the camera basis and
+  /// [projection] the lit shaders already receive. Returns null for a
+  /// degenerate projection (the per-object lists shade those). Call after
+  /// [build] each frame.
   FroxelLighting? buildFroxels({
     required Vector3 cameraPosition,
     required Vector3 forward,
     required Vector3 right,
     required Vector3 up,
-    required double tanHalfFovX,
-    required double tanHalfFovY,
+    required ProjectionParams projection,
   }) {
     if (!_froxelsEligible ||
         _cullables.isEmpty ||
-        tanHalfFovX <= 0 ||
-        tanHalfFovY <= 0) {
+        projection.scaleX <= 0 ||
+        projection.scaleY <= 0) {
       return null;
     }
     final cached = _cachedFroxels;
@@ -480,8 +485,7 @@ class PunctualLightBuffer {
         _cachePosition == cameraPosition &&
         _cacheForward == forward &&
         _cacheRight == right &&
-        _cacheTanX == tanHalfFovX &&
-        _cacheTanY == tanHalfFovY) {
+        _cacheProjection == projection) {
       _overflowedItemCount += _cacheOverflow;
       return cached;
     }
@@ -491,8 +495,7 @@ class PunctualLightBuffer {
       forward: forward,
       right: right,
       up: up,
-      tanHalfFovX: tanHalfFovX,
-      tanHalfFovY: tanHalfFovY,
+      projection: projection,
       maxPerFroxel: kMaxFroxelLights,
     );
     _overflowedItemCount += result.overflowedFroxels;
@@ -507,13 +510,13 @@ class PunctualLightBuffer {
       nz: froxelCountZ,
       zScale: result.zScale,
       zBias: result.zBias,
+      depthOffset: result.depthOffset,
     );
     _froxelCacheEpoch = _buildEpoch;
     _cachePosition.setFrom(cameraPosition);
     _cacheForward.setFrom(forward);
     _cacheRight.setFrom(right);
-    _cacheTanX = tanHalfFovX;
-    _cacheTanY = tanHalfFovY;
+    _cacheProjection = projection;
     _cacheOverflow = result.overflowedFroxels;
     _cachedFroxels = froxels;
     return froxels;
@@ -524,6 +527,11 @@ class PunctualLightBuffer {
   /// completing the basis) and packs the froxel table plus deduplicated
   /// records into an RGBA32F texel array [_froxelTexWidth] wide. Pure so the
   /// slice math and conservative assignment can be unit tested.
+  ///
+  /// Tiles follow [projection], so perspective, orthographic, and off-center
+  /// views all cluster. Slices are exponential in planar depth plus
+  /// `depthOffset`, which is zero for perspective and moves an orthographic
+  /// volume's near plane onto the first slice.
   ///
   /// A light is assigned to every froxel its influence sphere can touch,
   /// tested conservatively (view-space AABB of the sphere, widened at the
@@ -537,6 +545,7 @@ class PunctualLightBuffer {
     int height,
     double zScale,
     double zBias,
+    double depthOffset,
     int overflowedFroxels,
   })
   computeFroxelData({
@@ -545,16 +554,21 @@ class PunctualLightBuffer {
     required Vector3 forward,
     required Vector3 right,
     required Vector3 up,
-    required double tanHalfFovX,
-    required double tanHalfFovY,
+    required ProjectionParams projection,
     required int maxPerFroxel,
   }) {
     const nx = froxelCountX, ny = froxelCountY, nz = froxelCountZ;
     const froxelCount = nx * ny * nz;
     final zScale = nz / (math.log(_froxelFar / _froxelNear) / math.ln2);
     final zBias = -(math.log(_froxelNear) / math.ln2) * zScale;
+    final orthographic = projection.orthographic;
+    final depthOffset = orthographic ? _froxelNear - projection.near : 0.0;
+    final scaleX = projection.scaleX;
+    final scaleY = projection.scaleY;
+    final offsetX = projection.offsetX;
+    final offsetY = projection.offsetY;
     int sliceOf(double depth) {
-      final clamped = depth.clamp(_froxelNear, _froxelFar);
+      final clamped = (depth + depthOffset).clamp(_froxelNear, _froxelFar);
       final slice = (math.log(clamped) / math.ln2) * zScale + zBias;
       return slice.floor().clamp(0, nz - 1);
     }
@@ -582,7 +596,8 @@ class PunctualLightBuffer {
         ..setFrom(position)
         ..sub(cameraPosition);
       final vz = rel.dot(forward);
-      if (vz + radius <= 0) continue; // Fully behind the camera.
+      // Entirely before the first slice (behind a perspective eye).
+      if (vz + radius + depthOffset <= 0) continue;
       final z0 = sliceOf(vz - radius);
       final z1 = sliceOf(vz + radius);
 
@@ -594,12 +609,20 @@ class PunctualLightBuffer {
       // than the light's shrinking on-screen influence at distance, so the
       // light visibly cuts off or vanishes.) A sphere reaching the near
       // window degenerates to huge extents and clamps to full coverage.
+      // Under an orthographic projection the extents do not shrink with
+      // depth, so the AABB's lateral extremes project directly.
       final zNearFace = math.max(vz - radius, _froxelNear);
       final zFarFace = vz + radius;
-      double ndcMax(double v) =>
-          v + radius >= 0 ? (v + radius) / zNearFace : (v + radius) / zFarFace;
-      double ndcMin(double v) =>
-          v - radius <= 0 ? (v - radius) / zNearFace : (v - radius) / zFarFace;
+      double ndcMax(double v) => orthographic
+          ? v + radius
+          : v + radius >= 0
+          ? (v + radius) / zNearFace
+          : (v + radius) / zFarFace;
+      double ndcMin(double v) => orthographic
+          ? v - radius
+          : v - radius <= 0
+          ? (v - radius) / zNearFace
+          : (v - radius) / zFarFace;
       final vx = rel.dot(right);
       final vy = rel.dot(up);
       int tileX(double ndc) =>
@@ -608,10 +631,10 @@ class PunctualLightBuffer {
       // shader's 0.5 - ndcY * 0.5 mapping).
       int tileY(double ndc) =>
           ((0.5 - ndc * 0.5) * ny).floor().clamp(0, ny - 1);
-      final x0 = tileX(ndcMin(vx) / tanHalfFovX);
-      final x1 = tileX(ndcMax(vx) / tanHalfFovX);
-      final y0 = tileY(ndcMax(vy) / tanHalfFovY);
-      final y1 = tileY(ndcMin(vy) / tanHalfFovY);
+      final x0 = tileX(ndcMin(vx) / scaleX + offsetX);
+      final x1 = tileX(ndcMax(vx) / scaleX + offsetX);
+      final y0 = tileY(ndcMax(vy) / scaleY + offsetY);
+      final y1 = tileY(ndcMin(vy) / scaleY + offsetY);
       for (var z = z0; z <= z1; z++) {
         for (var y = y0; y <= y1; y++) {
           final rowBase = (z * ny + y) * nx;
@@ -638,14 +661,16 @@ class PunctualLightBuffer {
         final fz = i ~/ (ny * nx);
         final fy = (i ~/ nx) % ny;
         final fx = i % nx;
-        final depth = math.pow(2.0, (fz + 0.5 - zBias) / zScale).toDouble();
+        final depth =
+            math.pow(2.0, (fz + 0.5 - zBias) / zScale).toDouble() - depthOffset;
         final ndcX = ((fx + 0.5) / nx) * 2.0 - 1.0;
         final ndcY = -(((fy + 0.5) / ny) * 2.0 - 1.0);
+        final lateral = orthographic ? 1.0 : depth;
         center
           ..setFrom(forward)
           ..scale(depth)
-          ..addScaled(right, ndcX * depth * tanHalfFovX)
-          ..addScaled(up, ndcY * depth * tanHalfFovY)
+          ..addScaled(right, (ndcX - offsetX) * lateral * scaleX)
+          ..addScaled(up, (ndcY - offsetY) * lateral * scaleY)
           ..add(cameraPosition);
         double distanceSq(int row) {
           final position = lightsByRow[row]?.worldPosition;
@@ -679,6 +704,7 @@ class PunctualLightBuffer {
       height: height,
       zScale: zScale,
       zBias: zBias,
+      depthOffset: depthOffset,
       overflowedFroxels: overflowed,
     );
   }

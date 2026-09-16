@@ -183,8 +183,17 @@ uniform FragInfo {
   // texels [0, x*y*z) hold each froxel's records offset (.r, absolute) and
   // light count (.g); records (.r a light row) follow.
   highp vec4 froxel_grid;
+  // The camera projection beyond the extents in scene_inputs.w and
+  // camera_forward.w. xy: the NDC position of the view axis (nonzero only
+  // off-center). z: 1 for an orthographic camera, whose extents are then the
+  // half width and height, 0 for perspective. w unused.
+  highp vec4 view_projection;
+  // xyz: the camera's world-space position. w unused.
+  highp vec4 camera_position;
 }
 frag_info;
+
+#include <view_projection.glsl>
 
 // Engine time in seconds (wrapped to keep float precision), for material
 // animation. Zero when the engine provides no time.
@@ -194,20 +203,28 @@ float GetTime() { return frag_info.scene_inputs.z; }
 // (the scene_opaque_color / scene_depth samplers below).
 highp vec2 GetScreenUv() { return gl_FragCoord.xy * frag_info.ssao_params.zw; }
 
+// The projection extents packed across scene_inputs.w and camera_forward.w.
+highp vec2 ViewProjectionScale() {
+  return vec2(frag_info.scene_inputs.w, frag_info.camera_forward.w);
+}
+
 // Projects a world-space offset from this fragment back into scene-color UV.
-// A zero/non-perspective field of view leaves the sample at this fragment.
+// Leaves the sample at this fragment when the projection is unavailable or the
+// point falls behind a perspective eye.
 highp vec2 ProjectWorldOffsetToScreenUv(highp vec3 world_offset) {
   if (frag_info.scene_inputs.w <= 0.0 || frag_info.camera_forward.w <= 0.0) {
     return GetScreenUv();
   }
-  highp vec3 from_camera = -v_viewvector + world_offset;
-  highp float view_z = dot(from_camera, frag_info.camera_forward.xyz);
-  if (view_z <= 1e-5) return GetScreenUv();
-  highp float view_x = dot(from_camera, frag_info.camera_right.xyz);
-  highp float view_y = dot(from_camera, frag_info.camera_up.xyz);
-  return vec2(0.5 + 0.5 * view_x / (view_z * frag_info.scene_inputs.w),
-              0.5 - 0.5 * view_y /
-                        (view_z * frag_info.camera_forward.w));
+  highp vec3 from_camera =
+      v_position + world_offset - frag_info.camera_position.xyz;
+  highp vec3 view = vec3(dot(from_camera, frag_info.camera_right.xyz),
+                         dot(from_camera, frag_info.camera_up.xyz),
+                         dot(from_camera, frag_info.camera_forward.xyz));
+  if (!ViewDepthProjectable(view.z, frag_info.view_projection.xyz)) {
+    return GetScreenUv();
+  }
+  return UvFromViewPosition(view, ViewProjectionScale(),
+                            frag_info.view_projection.xyz);
 }
 
 // This fragment's planar view-space depth (world units along the camera
@@ -251,9 +268,9 @@ highp float GetSceneDepth(highp vec2 uv_offset) {
 
 // The world-space point on the opaque surface behind this fragment, offset in
 // screen UV. The inverse of ProjectWorldOffsetToScreenUv, reusing the same
-// camera basis and half-fov tangents.
+// camera basis and projection.
 //
-// When depth is unavailable or the camera is not perspective, this returns a
+// When depth or the projection is unavailable, this returns a
 // point at the same huge sentinel depth GetSceneDepth reports, so a reader
 // fades out or falls outside its own volume. Returning the fragment's own
 // position instead would sit exactly on a projection volume's boundary, where
@@ -265,14 +282,11 @@ highp vec3 GetSceneWorldPosition(highp vec2 uv_offset) {
            frag_info.camera_forward.xyz * kSceneDepthUnavailable;
   }
   highp vec2 uv = clamp(GetScreenUv() + uv_offset, vec2(0.001), vec2(0.999));
-  highp float view_z = texture(scene_depth, uv).r;
-  // Screen UV back to view-space offsets at that depth (V grows downward).
-  highp float view_x = (uv.x * 2.0 - 1.0) * view_z * frag_info.scene_inputs.w;
-  highp float view_y = (1.0 - uv.y * 2.0) * view_z * frag_info.camera_forward.w;
-  highp vec3 camera_position = v_position + v_viewvector;
-  return camera_position + frag_info.camera_forward.xyz * view_z +
-         frag_info.camera_right.xyz * view_x +
-         frag_info.camera_up.xyz * view_y;
+  highp vec3 view =
+      ViewPositionFromUv(uv, texture(scene_depth, uv).r, ViewProjectionScale(),
+                         frag_info.view_projection.xyz);
+  return frag_info.camera_position.xyz + frag_info.camera_forward.xyz * view.z +
+         frag_info.camera_right.xyz * view.x + frag_info.camera_up.xyz * view.y;
 }
 #endif
 

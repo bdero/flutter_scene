@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/global_illumination.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart'
     show kLinearDepthBlackboardKey;
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -293,9 +294,7 @@ class IrradianceInjectPass extends RenderGraphPass {
     required this.cameraRight,
     required this.cameraUp,
     required this.cameraForward,
-    required this.tanHalfFovX,
-    required this.tanHalfFovY,
-    required this.far,
+    required this.projection,
     required this.sceneRadiance,
   });
 
@@ -306,9 +305,7 @@ class IrradianceInjectPass extends RenderGraphPass {
   final Vector3 cameraRight;
   final Vector3 cameraUp;
   final Vector3 cameraForward;
-  final double tanHalfFovX;
-  final double tanHalfFovY;
-  final double far;
+  final ProjectionParams projection;
   final gpu.Texture? sceneRadiance;
 
   static final gpu.Shader _vertexShader =
@@ -461,9 +458,9 @@ class IrradianceInjectPass extends RenderGraphPass {
     info[1] = sourceHeight.toDouble();
     info[2] = 1.0 / sourceWidth;
     info[3] = 1.0 / sourceHeight;
-    info[4] = tanHalfFovX;
-    info[5] = tanHalfFovY;
-    info[6] = far;
+    info[4] = projection.scaleX;
+    info[5] = projection.scaleY;
+    info[6] = projection.far;
     info[7] = settings.fireflyClamp;
     info[8] = cameraPosition.x;
     info[9] = cameraPosition.y;
@@ -472,12 +469,15 @@ class IrradianceInjectPass extends RenderGraphPass {
     info[12] = cameraRight.x;
     info[13] = cameraRight.y;
     info[14] = cameraRight.z;
+    info[15] = projection.offsetX;
     info[16] = cameraUp.x;
     info[17] = cameraUp.y;
     info[18] = cameraUp.z;
+    info[19] = projection.offsetY;
     info[20] = cameraForward.x;
     info[21] = cameraForward.y;
     info[22] = cameraForward.z;
+    info[23] = projection.orthographicFlag;
     info[24] = spacing.x;
     info[25] = spacing.y;
     info[26] = spacing.z;

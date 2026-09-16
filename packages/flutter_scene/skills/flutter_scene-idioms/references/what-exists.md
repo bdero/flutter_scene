@@ -70,7 +70,17 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
 - `PerspectiveCamera.framing(Aabb3 bounds, {direction, fovRadiansY, up, margin = 1.1})`.
 - `PerspectiveProjection({fovRadiansY, near = 0.1, far = 1000.0})` and abstract `CameraProjection`,
   `Camera`. Camera helpers: `screenPointToRay`, `worldToScreen`, `getViewMatrix`, `getFrustum`.
-- There is NO `OrthographicCamera`. Implement `CameraProjection`/`Camera` for other projections.
+- `OrthographicCamera({OrthographicProjection? projection, Vector3? position, target, up})` and
+  `OrthographicCamera.framing(bounds, {direction, up, margin})`.
+- `OrthographicProjection({OrthographicSize size = OrthographicSize.height(10), zoom = 1.0,
+  Vector2? offset, near = 0.0, far = 1000.0})`, plus `.bounds(left:, right:, bottom:, top:)` and
+  `.matchingPerspective(fovRadiansY:, distance:)`. Sizes are FULL world extents, never half:
+  `OrthographicSize.height(h)`, `.width(w)`, `.contain(w, h)`, `.cover(w, h)`, `.stretch(w, h)`,
+  or `.pixelsPerUnit(ppu)` (logical pixels per world unit, so the scale holds as the view resizes).
+  Frame with `zoom`/`size`, not by moving the eye. `near` may be negative (isometric scenes that
+  extend behind the eye).
+- Custom projections: implement `CameraProjection`. The renderer reads perspective versus
+  orthographic from the matrix, so effects follow.
 - Node-driven: `CameraComponent({CameraProjection? projection, activateOnMount = false})` ->
   `toCamera()` gives a `NodeCamera`. Camera node must not be scaled.
 - Interactive cameras: `CameraController` components attached to the camera node. `OrbitCameraController`

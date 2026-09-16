@@ -152,11 +152,26 @@ void main() {
       }
     });
 
-    test('a non-perspective projection passes through unclipped', () {
-      final projection = _FixedProjection();
-      final source = _FixedProjectionCamera(projection);
+    test('an orthographic projection clips at the mirror plane', () {
+      final source = OrthographicCamera(
+        position: Vector3(0, 3, -4),
+        target: Vector3(0, 0, 0),
+        projection: OrthographicProjection(
+          size: const OrthographicSize.height(8),
+          near: -5,
+          far: 30,
+        ),
+      );
       final reflected = PlanarReflectionCamera(source: source, plane: floor);
-      expect(reflected.projection, same(projection));
+      // The reflected camera sits below the mirror and captures the scene
+      // above it: a point on the mirror lands on the near plane (depth 0), a
+      // point above it inside the volume, and a point below it is clipped.
+      final onPlane = projectPoint(reflected, size, Vector3(0.5, 0, 0.5));
+      expect(onPlane.z / onPlane.w, closeTo(0, 1e-5));
+      final above = projectPoint(reflected, size, Vector3(0, 1, 0));
+      expect(above.z / above.w, inExclusiveRange(0.0, 1.0));
+      final below = projectPoint(reflected, size, Vector3(0, -1, 0));
+      expect(below.z / below.w, lessThan(0.0));
     });
   });
 
@@ -268,31 +283,4 @@ void main() {
       expectMatrix(unchanged, base);
     });
   });
-}
-
-class _FixedProjection extends CameraProjection {
-  @override
-  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
-      Matrix4.identity();
-}
-
-class _FixedProjectionCamera extends Camera {
-  _FixedProjectionCamera(this._projection);
-
-  final CameraProjection _projection;
-
-  @override
-  Vector3 get position => Vector3(0, 1, -2);
-
-  @override
-  Vector3 get forward => Vector3(0, 0, 1);
-
-  @override
-  Vector3 get up => Vector3(0, 1, 0);
-
-  @override
-  CameraProjection get projection => _projection;
-
-  @override
-  Matrix4 getViewMatrix() => makeViewMatrix(position, position + forward, up);
 }

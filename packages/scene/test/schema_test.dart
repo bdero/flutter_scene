@@ -214,6 +214,17 @@ void main() {
           far: GizmoScalar.bind('far'),
           visibility: GizmoVisibility.selected,
         ),
+        GizmoOrthographicVolume(
+          fitBind: 'orthographicSize',
+          width: GizmoScalar.bind('orthographicWidth'),
+          height: GizmoScalar.bind('orthographicHeight'),
+          pixelsPerUnit: GizmoScalar.bind('orthographicPixelsPerUnit'),
+          zoom: GizmoScalar.bind('orthographicZoom'),
+          near: GizmoScalar.bind('near'),
+          far: GizmoScalar(50),
+          offsetBind: 'orthographicOffset',
+          when: GizmoCondition('projection', 'orthographic'),
+        ),
       ]);
       final reread = GizmoSpec.fromJson(spec.toJson())!;
       expect(reread.primitives, hasLength(spec.primitives.length));

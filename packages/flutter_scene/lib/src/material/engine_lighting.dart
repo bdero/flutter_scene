@@ -25,14 +25,15 @@ import 'package:flutter_scene/src/render/irradiance_field.dart';
 /// [PhysicallyBasedMaterial] and `PreprocessedMaterial` use it so the lighting
 /// packing lives in one place.
 class EngineLightingUniforms {
-  /// The float count of the full `FragInfo` block (800 bytes / 200 floats:
+  /// The float count of the full `FragInfo` block (832 bytes / 208 floats:
   /// the mat4 `environment_transform` ends at float 155, the `ssao_params`
   /// vec4 at floats 156..159, then the `radiance_blend` vec4 at floats
   /// 160..163, `ssao_lighting` at 164..167, `model_scale` at 168..171,
   /// `dielectric_f0` at 172..175, the five irradiance-field vec4s at
-  /// 176..195, and `froxel_grid` at 196..199). See the layout map in the
+  /// 176..195, `froxel_grid` at 196..199, `view_projection` at 200..203, and
+  /// `camera_position` at 204..207). See the layout map in the
   /// implementation.
-  static const fragInfoFloatCount = 200;
+  static const fragInfoFloatCount = 208;
 
   /// Index of the `dielectric_f0` vec4 in `FragInfo`. [packInto] writes the
   /// standard 0.04 dielectric reflectance; a material with a non-default
@@ -258,6 +259,19 @@ class EngineLightingUniforms {
     fragInfo[197] = froxels?.ny.toDouble() ?? 0.0;
     fragInfo[198] = froxels?.nz.toDouble() ?? 0.0;
     fragInfo[199] = froxels?.zScale ?? 0.0;
+    // view_projection [200..203]: the projection's NDC axis offset, whether it
+    // is orthographic (the extents in scene_inputs.w and camera_forward.w are
+    // then half sizes), and the froxel depth-slice offset.
+    fragInfo[200] = lighting.projectionOffsetX;
+    fragInfo[201] = lighting.projectionOffsetY;
+    fragInfo[202] = lighting.orthographic ? 1.0 : 0.0;
+    fragInfo[203] = froxels?.depthOffset ?? 0.0;
+    // camera_position [204..207]: the eye, for projecting world positions.
+    final cameraPosition = lighting.cameraPosition;
+    fragInfo[204] = cameraPosition?.x ?? 0.0;
+    fragInfo[205] = cameraPosition?.y ?? 0.0;
+    fragInfo[206] = cameraPosition?.z ?? 0.0;
+    fragInfo[207] = 0.0;
     // spot_shadow_params [12..15] (more of the unused SH region): the shared
     // spot-shadow parameters. x is the total non-cascade tile count (spot
     // tiles then point-shadow tiles); 0 disables both spot and point shadow
@@ -275,10 +289,10 @@ class EngineLightingUniforms {
     fragInfo[16] = lighting.opaqueSceneColor != null ? 1.0 : 0.0;
     fragInfo[17] = lighting.sceneDepthLinear != null ? 1.0 : 0.0;
     fragInfo[18] = lighting.time;
-    // scene_inputs.w / camera_forward.w: the projection's half-fov
-    // tangents, for materials that project world positions to screen UV
-    // (screen-space reflection marches). Zero when non-perspective.
-    fragInfo[19] = lighting.tanHalfFovX;
+    // scene_inputs.w / camera_forward.w: the projection's view-space extent
+    // per unit of NDC (half-fov tangents, or half sizes when orthographic),
+    // for materials that project world positions to screen UV.
+    fragInfo[19] = lighting.projectionScaleX;
     // camera_forward [20..23]: the camera's world-space forward direction,
     // for a fragment's planar view depth (dot(-v_viewvector, forward)).
     final forward = lighting.cameraForward;
@@ -287,7 +301,7 @@ class EngineLightingUniforms {
       fragInfo[21] = forward.y;
       fragInfo[22] = forward.z;
     }
-    fragInfo[23] = lighting.tanHalfFovY;
+    fragInfo[23] = lighting.projectionScaleY;
     // camera_right/camera_up [24..31]: the remaining camera basis axes used
     // to project a world-space refraction exit back into scene-color UV. The
     // right axis' w slot [27] carries the sun's angular radius for the
@@ -770,7 +784,7 @@ class EngineLightingUniforms {
     final slot = shader.getUniformSlot('SceneInputInfo');
     if (slot.sizeInBytes == null) return;
 
-    final info = Float32List(20);
+    final info = Float32List(24);
     info[0] = lighting.opaqueSceneColor != null ? 1.0 : 0.0;
     info[1] = lighting.sceneDepthLinear != null ? 1.0 : 0.0;
     info[2] = lighting.filteredSceneColor != null ? 1.0 : 0.0;
@@ -785,20 +799,23 @@ class EngineLightingUniforms {
       info[9] = forward.y;
       info[10] = forward.z;
     }
-    info[11] = lighting.tanHalfFovY;
+    info[11] = lighting.projectionScaleY;
     final right = lighting.cameraRight;
     if (right != null) {
       info[12] = right.x;
       info[13] = right.y;
       info[14] = right.z;
     }
-    info[15] = lighting.tanHalfFovX;
+    info[15] = lighting.projectionScaleX;
     final up = lighting.cameraUp;
     if (up != null) {
       info[16] = up.x;
       info[17] = up.y;
       info[18] = up.z;
     }
+    info[20] = lighting.projectionOffsetX;
+    info[21] = lighting.projectionOffsetY;
+    info[22] = lighting.orthographic ? 1.0 : 0.0;
     pass.bindUniform(
       slot,
       transientsBuffer.emplace(ByteData.sublistView(info)),

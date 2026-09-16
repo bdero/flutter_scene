@@ -21,8 +21,9 @@ uniform PostFrameInfo {
 }
 post_frame;
 
-// projection: (tan(fovX/2), tan(fovY/2), near, far). Then the view basis
-// (right, up, forward) and the camera world position.
+// projection: (scale x, scale y, near, far), see view_projection.glsl. Then the
+// view basis (right, up, forward) with the NDC axis offset in right.w/up.w and
+// the orthographic flag in forward.w, and the camera world position.
 uniform PostCameraInfo {
   vec4 projection;
   vec4 camera_right;
@@ -60,12 +61,14 @@ const int kMaxSteps = 64;
 // against the surface that cast into the same texel.
 const float kShadowBias = 0.0015;
 
+#include <view_projection.glsl>
+
 // Reconstructs the view-space position at [uv] from the linear depth (the eye
 // at the origin looking down +forward; see PostCameraInfo).
 vec3 ViewPositionAt(vec2 uv) {
-  float z = texture(input_depth, uv).r;
-  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-  return vec3(ndc.x * z * cam.projection.x, ndc.y * z * cam.projection.y, z);
+  return ViewPositionFromUv(
+      uv, texture(input_depth, uv).r, cam.projection.xy,
+      vec3(cam.camera_right.w, cam.camera_up.w, cam.camera_forward.w));
 }
 
 // One cascade's shadow test for world point P: transform into the cascade's
@@ -121,7 +124,12 @@ void main() {
                    cam.camera_right.xyz * view_pos.x +
                    cam.camera_up.xyz * view_pos.y +
                    cam.camera_forward.xyz * view_pos.z;
-  vec3 to_end = world_end - cam.camera_position.xyz;
+  // Perspective rays leave the eye; orthographic rays enter the volume at the
+  // near plane under this pixel.
+  vec3 ray_origin = cam.camera_forward.w > 0.5
+      ? world_end + cam.camera_forward.xyz * (cam.projection.z - view_pos.z)
+      : cam.camera_position.xyz;
+  vec3 to_end = world_end - ray_origin;
   float ray_len = min(length(to_end), max_distance);
   vec3 ray_dir = to_end / max(length(to_end), 1e-4);
 
@@ -143,8 +151,7 @@ void main() {
   float lit_sum = 0.0;
   for (int i = 0; i < kMaxSteps; i++) {
     if (i >= steps) break;
-    vec3 p =
-        cam.camera_position.xyz + ray_dir * (offset + float(i) * step_len);
+    vec3 p = ray_origin + ray_dir * (offset + float(i) * step_len);
     lit_sum += ShadowVisibility(p, count);
   }
   float avg_lit = lit_sum / float(steps);

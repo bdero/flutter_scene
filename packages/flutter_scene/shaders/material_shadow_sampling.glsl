@@ -314,21 +314,27 @@ highp float FetchPunctualIndex(int j) { return FetchPunctualEntry(j).r; }
 // count) into the punctual_index texture. In froxel mode (froxel_grid.z > 0)
 // the slice comes from the fragment's froxel, derived from the camera basis
 // (not gl_FragCoord, whose vertical origin differs across backends):
-// view-space position via the camera axes, then perspective tile mapping with
-// the half-fov tangents, then an exponential depth slice. Otherwise it is the
-// draw's per-object slice. Shared by the lighting framework and the shadow
-// catcher so both walk the same lights.
+// view-space position via the camera axes, then tile mapping through the
+// projection, then an exponential depth slice (offset by view_projection.w so
+// an orthographic volume's near plane lands on the first slice). Otherwise it
+// is the draw's per-object slice. Shared by the lighting framework and the
+// shadow catcher so both walk the same lights.
 highp vec2 PunctualLightSlice() {
   if (frag_info.punctual_dims.x < 0.5) {
     return vec2(0.0);
   }
   if (frag_info.froxel_grid.z > 0.5) {
-    highp vec3 to_frag = -v_viewvector;
-    highp float view_z = max(dot(to_frag, frag_info.camera_forward.xyz), 1e-4);
-    highp float ndc_x = dot(to_frag, frag_info.camera_right.xyz) /
-                  max(view_z * frag_info.scene_inputs.w, 1e-6);
-    highp float ndc_y = dot(to_frag, frag_info.camera_up.xyz) /
-                  max(view_z * frag_info.camera_forward.w, 1e-6);
+    highp vec3 to_frag = v_position - frag_info.camera_position.xyz;
+    highp vec3 view = vec3(dot(to_frag, frag_info.camera_right.xyz),
+                           dot(to_frag, frag_info.camera_up.xyz),
+                           dot(to_frag, frag_info.camera_forward.xyz));
+    highp vec2 ndc = NdcFromViewPosition(
+        vec3(view.xy, max(view.z, 1e-4)),
+        max(vec2(frag_info.scene_inputs.w, frag_info.camera_forward.w), 1e-6),
+        frag_info.view_projection.xyz);
+    highp float ndc_x = ndc.x;
+    highp float ndc_y = ndc.y;
+    highp float view_z = max(view.z + frag_info.view_projection.w, 1e-4);
     highp float fnx = frag_info.froxel_grid.x;
     highp float fny = frag_info.froxel_grid.y;
     highp float fnz = frag_info.froxel_grid.z;

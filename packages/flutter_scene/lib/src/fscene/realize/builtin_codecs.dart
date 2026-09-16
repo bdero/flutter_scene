@@ -1301,14 +1301,22 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       SpotLightComponent(SpotLight());
 }
 
-/// Codec for [CameraComponent]. Handles perspective projections; the node
-/// transform supplies the view.
-// TODO(camera-projection-union): describe orthographic/off-axis projections
-// as a tagged union once they exist on CameraProjection (the flat keys stay
-// for document compatibility).
+/// Codec for [CameraComponent], perspective or orthographic; the node transform
+/// supplies the view. The projection is a flat set of keys selected by
+/// `projection`, so documents written before orthographic existed load
+/// unchanged.
 class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
   @override
   String get type => 'camera';
+
+  static const _orthographicSizeModes = [
+    'height',
+    'width',
+    'contain',
+    'cover',
+    'stretch',
+    'pixelsPerUnit',
+  ];
 
   @override
   ComponentSchema get schema => ComponentSchema(
@@ -1322,33 +1330,50 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
         near: GizmoScalar.bind('near'),
         far: GizmoScalar.bind('far'),
         visibility: GizmoVisibility.selected,
+        when: GizmoCondition('projection', 'perspective'),
+      ),
+      GizmoOrthographicVolume(
+        fitBind: 'orthographicSize',
+        width: GizmoScalar.bind('orthographicWidth'),
+        height: GizmoScalar.bind('orthographicHeight'),
+        pixelsPerUnit: GizmoScalar.bind('orthographicPixelsPerUnit'),
+        zoom: GizmoScalar.bind('orthographicZoom'),
+        near: GizmoScalar.bind('near'),
+        far: GizmoScalar.bind('far'),
+        offsetBind: 'orthographicOffset',
+        visibility: GizmoVisibility.selected,
+        when: GizmoCondition('projection', 'orthographic'),
       ),
     ]),
   );
 
   @override
   List<ComponentField<CameraComponent>> get fields => [
-    // Single-option until orthographic exists (the projection-union TODO
-    // above); options render as a dropdown rather than free text.
+    // Constructor-only; switching models replaces the projection.
     ComponentField(
       const ComponentPropertyDef(
         'projection',
         ComponentPropertyKind.string,
         defaultValue: StringValue('perspective'),
         doc: 'The projection model.',
-        options: ['perspective'],
+        options: ['perspective', 'orthographic'],
       ),
-      read: (c, _) => const StringValue('perspective'),
+      read: (c, _) => StringValue(
+        c.projection is OrthographicProjection ? 'orthographic' : 'perspective',
+      ),
     ),
     ComponentField.number(
       'fovRadiansY',
       defaultValue: 45 * degrees2Radians,
-      doc: 'Vertical field of view, in radians.',
+      doc: 'Vertical field of view, in radians (perspective).',
       constraints: [
         Range(1 * degrees2Radians, 179 * degrees2Radians),
         const AngleRadians(),
       ],
-      get: (c) => _perspective(c).fovRadiansY,
+      get: (c) => switch (c.projection) {
+        PerspectiveProjection(:final fovRadiansY) => fovRadiansY,
+        _ => 45 * degrees2Radians,
+      },
       set: (c, v) {
         final projection = c.projection;
         if (projection is PerspectiveProjection) projection.fovRadiansY = v;
@@ -1357,24 +1382,102 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
     ComponentField.number(
       'near',
       defaultValue: 0.1,
-      doc: 'Near clip distance.',
-      constraints: const [Range(0.0001, null)],
-      get: (c) => _perspective(c).near,
+      doc:
+          'Near clip distance. Must be positive for perspective; may be '
+          'negative for orthographic.',
+      get: (c) => switch (c.projection) {
+        PerspectiveProjection(:final near) => near,
+        OrthographicProjection(:final near) => near,
+        _ => 0.1,
+      },
       set: (c, v) {
-        final projection = c.projection;
-        if (projection is PerspectiveProjection) projection.near = v;
+        switch (c.projection) {
+          case PerspectiveProjection projection:
+            projection.near = v;
+          case OrthographicProjection projection:
+            projection.near = v;
+        }
       },
     ),
     ComponentField.number(
       'far',
       defaultValue: 1000.0,
       doc: 'Far clip distance.',
-      constraints: const [Range(0.0001, null)],
-      get: (c) => _perspective(c).far,
-      set: (c, v) {
-        final projection = c.projection;
-        if (projection is PerspectiveProjection) projection.far = v;
+      get: (c) => switch (c.projection) {
+        PerspectiveProjection(:final far) => far,
+        OrthographicProjection(:final far) => far,
+        _ => 1000.0,
       },
+      set: (c, v) {
+        switch (c.projection) {
+          case PerspectiveProjection projection:
+            projection.far = v;
+          case OrthographicProjection projection:
+            projection.far = v;
+        }
+      },
+    ),
+    ComponentField(
+      const ComponentPropertyDef(
+        'orthographicSize',
+        ComponentPropertyKind.string,
+        defaultValue: StringValue('height'),
+        doc:
+            'How the orthographic volume fits the viewport: a fixed height or '
+            'width, contain or cover a width and height, stretch to it, or a '
+            'fixed number of logical pixels per world unit.',
+        options: _orthographicSizeModes,
+      ),
+      read: (c, _) => StringValue(_sizeMode(_orthographic(c)?.size)),
+      write: (c, v, _) {
+        if (v is StringValue) _setSize(c, mode: v.value);
+      },
+    ),
+    ComponentField.number(
+      'orthographicWidth',
+      defaultValue: 10.0,
+      doc:
+          'Visible width in world units (orthographic width, contain, cover, '
+          'and stretch).',
+      constraints: const [Range(0.0001, null)],
+      get: (c) => _sizeExtents(_orthographic(c)?.size).$1,
+      set: (c, v) => _setSize(c, width: v),
+    ),
+    ComponentField.number(
+      'orthographicHeight',
+      defaultValue: 10.0,
+      doc:
+          'Visible height in world units (orthographic height, contain, '
+          'cover, and stretch).',
+      constraints: const [Range(0.0001, null)],
+      get: (c) => _sizeExtents(_orthographic(c)?.size).$2,
+      set: (c, v) => _setSize(c, height: v),
+    ),
+    ComponentField.number(
+      'orthographicPixelsPerUnit',
+      defaultValue: 32.0,
+      doc: 'Logical pixels per world unit (orthographic pixelsPerUnit).',
+      constraints: const [Range(0.0001, null)],
+      get: (c) => switch (_orthographic(c)?.size) {
+        OrthographicPixelsPerUnit(:final pixelsPerUnit) => pixelsPerUnit,
+        _ => 32.0,
+      },
+      set: (c, v) => _setSize(c, pixelsPerUnit: v),
+    ),
+    ComponentField.number(
+      'orthographicZoom',
+      defaultValue: 1.0,
+      doc: 'Orthographic magnification; the visible size is divided by it.',
+      constraints: const [Range(0.0001, null)],
+      get: (c) => _orthographic(c)?.zoom ?? 1.0,
+      set: (c, v) => _orthographic(c)?.zoom = v,
+    ),
+    ComponentField.vec2(
+      'orthographicOffset',
+      defaultValue: Vector2.zero,
+      doc: 'Orthographic lens shift in world units along camera right and up.',
+      get: (c) => _orthographic(c)?.offset ?? Vector2.zero(),
+      set: (c, v) => _orthographic(c)?.offset = v,
     ),
     // Constructor-only; a serialized true restores this camera as the
     // scene's primary on realize.
@@ -1389,27 +1492,104 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
     ),
   ];
 
-  static PerspectiveProjection _perspective(CameraComponent c) =>
-      c.projection as PerspectiveProjection;
+  static OrthographicProjection? _orthographic(CameraComponent c) =>
+      switch (c.projection) {
+        OrthographicProjection projection => projection,
+        _ => null,
+      };
+
+  static String _sizeMode(OrthographicSize? size) => switch (size) {
+    OrthographicWidth() => 'width',
+    OrthographicContain() => 'contain',
+    OrthographicCover() => 'cover',
+    OrthographicStretch() => 'stretch',
+    OrthographicPixelsPerUnit() => 'pixelsPerUnit',
+    OrthographicHeight() || null => 'height',
+  };
+
+  // The (width, height) an orthographic size carries. A single-axis mode
+  // reports the default for the axis it does not hold.
+  static (double, double) _sizeExtents(OrthographicSize? size) =>
+      switch (size) {
+        OrthographicHeight(:final height) => (10.0, height),
+        OrthographicWidth(:final width) => (width, 10.0),
+        OrthographicContain(:final width, :final height) => (width, height),
+        OrthographicCover(:final width, :final height) => (width, height),
+        OrthographicStretch(:final width, :final height) => (width, height),
+        OrthographicPixelsPerUnit() || null => (10.0, 10.0),
+      };
+
+  static void _setSize(
+    CameraComponent c, {
+    String? mode,
+    double? width,
+    double? height,
+    double? pixelsPerUnit,
+  }) {
+    final projection = _orthographic(c);
+    if (projection == null) return;
+    final (currentWidth, currentHeight) = _sizeExtents(projection.size);
+    final w = width ?? currentWidth;
+    final h = height ?? currentHeight;
+    final ppu =
+        pixelsPerUnit ??
+        switch (projection.size) {
+          OrthographicPixelsPerUnit(:final pixelsPerUnit) => pixelsPerUnit,
+          _ => 32.0,
+        };
+    projection.size = switch (mode ?? _sizeMode(projection.size)) {
+      'width' => OrthographicSize.width(w),
+      'contain' => OrthographicSize.contain(w, h),
+      'cover' => OrthographicSize.cover(w, h),
+      'stretch' => OrthographicSize.stretch(w, h),
+      'pixelsPerUnit' => OrthographicSize.pixelsPerUnit(ppu),
+      _ => OrthographicSize.height(h),
+    };
+  }
 
   @override
   bool claims(Component component) =>
       component is CameraComponent &&
-      component.projection is PerspectiveProjection;
+      (component.projection is PerspectiveProjection ||
+          component.projection is OrthographicProjection);
 
   @override
   ComponentSpec? serialize(Component component, SerializeContext context) =>
       claims(component) ? super.serialize(component, context) : null;
 
   @override
-  CameraComponent create(PropertyReader props) => CameraComponent(
-    projection: PerspectiveProjection(
-      fovRadiansY: props.number('fovRadiansY'),
-      near: props.number('near'),
-      far: props.number('far'),
-    ),
-    activateOnMount: props.boolean('activateOnMount'),
-  );
+  CameraComponent create(PropertyReader props) {
+    final CameraProjection projection;
+    if (props.string('projection') == 'orthographic') {
+      final orthographic = OrthographicProjection(
+        zoom: props.number('orthographicZoom'),
+        offset: props.vec2('orthographicOffset'),
+        near: props.number('near'),
+        far: props.number('far'),
+      );
+      projection = orthographic;
+    } else {
+      projection = PerspectiveProjection(
+        fovRadiansY: props.number('fovRadiansY'),
+        near: props.number('near'),
+        far: props.number('far'),
+      );
+    }
+    final component = CameraComponent(
+      projection: projection,
+      activateOnMount: props.boolean('activateOnMount'),
+    );
+    if (projection is OrthographicProjection) {
+      _setSize(
+        component,
+        mode: props.string('orthographicSize'),
+        width: props.number('orthographicWidth'),
+        height: props.number('orthographicHeight'),
+        pixelsPerUnit: props.number('orthographicPixelsPerUnit'),
+      );
+    }
+    return component;
+  }
 }
 
 /// Codec for [MaterialsVariantsComponent] (`KHR_materials_variants`).

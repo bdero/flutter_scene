@@ -31,8 +31,8 @@ import 'package:flutter_scene/src/render/lod.dart';
 ///   another's.
 /// - Hardware-instanced draws are not supported here; a [LodComponent]
 ///   draws a single mesh, so it picks one level for the whole node.
-/// - A non-perspective camera disables the metric and draws the
-///   highest-detail level.
+/// - Under an orthographic camera the metric is the sphere's fraction of the
+///   view height, which does not change with distance.
 ///
 /// ```dart
 /// node.addComponent(LodComponent([

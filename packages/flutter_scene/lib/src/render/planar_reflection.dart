@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
@@ -96,8 +97,10 @@ void _setRow(Matrix4 m, int row, Vector4 value) {
 /// near-plane modification for a depth range of `[0, 1]`.
 ///
 /// Points on the plane map to depth 0 and the far corner most opposed to the
-/// plane still maps to depth 1, so far clipping degrades minimally. Returns
-/// [projection] unchanged when the plane is degenerate for this frustum.
+/// plane still maps to depth 1, so far clipping degrades minimally. The
+/// replacement row is linear in view position, so it holds for perspective and
+/// orthographic projections alike. Returns [projection] unchanged when the
+/// plane is degenerate for this frustum.
 Matrix4 obliqueNearClipProjection(Matrix4 projection, Vector4 clipPlane) {
   final inverse = Matrix4.zero();
   if (inverse.copyInverse(projection) == 0.0) {
@@ -150,6 +153,15 @@ class ObliqueNearClipProjection extends CameraProjection {
         base.getProjectionMatrix(aspectRatio, jitter: jitter),
         _viewSpacePlane,
       );
+
+  @override
+  Matrix4 getProjectionMatrixForViewport(
+    ui.Size viewportSize, {
+    Vector2? jitter,
+  }) => obliqueNearClipProjection(
+    base.getProjectionMatrixForViewport(viewportSize, jitter: jitter),
+    _viewSpacePlane,
+  );
 }
 
 /// The camera a planar reflection capture renders with: [source] reflected
@@ -173,19 +185,12 @@ class PlanarReflectionCamera extends Camera {
              reflectDirectionAcrossPlane(source.forward, plane),
          up: reflectDirectionAcrossPlane(source.up, plane),
        ) {
-    final base = source.projection;
-    _projection = base is PerspectiveProjection
-        ? ObliqueNearClipProjection(
-            base: PerspectiveProjection(
-              fovRadiansY: base.fovRadiansY,
-              near: base.near,
-              far: base.far,
-            ),
-            worldPlane: plane,
-            viewMatrix: _inner.getViewMatrix(),
-            clipBias: clipBias,
-          )
-        : base;
+    _projection = ObliqueNearClipProjection(
+      base: source.projection,
+      worldPlane: plane,
+      viewMatrix: _inner.getViewMatrix(),
+      clipBias: clipBias,
+    );
   }
 
   final PerspectiveCamera _inner;

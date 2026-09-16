@@ -18,6 +18,7 @@ uniform FrameInfo {
   vec4 viewport;        // xy pixels, z kernel (0 classic, 1 aa), w splat scale
   vec4 params;          // x opacity, y crop (0 off, 1 include, 2 exclude)
   vec4 tint;            // linear RGBA multiplier
+  vec4 view_direction;  // xyz world camera forward, w 1 for orthographic
 }
 frame_info;
 
@@ -162,7 +163,10 @@ void main() {
   float degree = frame_info.sh_texture.w;
   if (degree >= 1.0) {
     vec3 world_pos = (frame_info.model_transform * vec4(t0.xyz, 1.0)).xyz;
-    vec3 dir = normalize(world_pos - frame_info.camera_position.xyz);
+    // Orthographic view rays all run along the camera's forward axis.
+    vec3 dir = frame_info.view_direction.w > 0.5
+        ? frame_info.view_direction.xyz
+        : normalize(world_pos - frame_info.camera_position.xyz);
     float x = dir.x;
     float y = dir.y;
     float z = dir.z;

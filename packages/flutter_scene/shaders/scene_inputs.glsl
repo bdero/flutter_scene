@@ -20,24 +20,32 @@
 // the material declares any scene input and the shader references this block.
 uniform SceneInputInfo {
   // Which inputs exist this frame. x scene color, y depth, z filtered color.
-  // An input can go missing for a frame (a non-perspective camera produces no
-  // depth), which is what the accessors gate on. w is reserved.
+  // An input can go missing for a frame, which is what the accessors gate on.
+  // w is reserved.
   highp vec4 available;
 
   // xy: the color-pass render-target size in pixels. zw: its reciprocal.
   highp vec4 screen;
 
-  // xyz: the camera's world-space forward axis. w: tan(fovY / 2), zero for a
-  // non-perspective camera.
+  // xyz: the camera's world-space forward axis. w: the view-space height per
+  // unit of NDC (tan(fovY / 2) for perspective, the half height for
+  // orthographic).
   highp vec4 camera_forward;
 
-  // xyz: the camera's world-space right axis. w: tan(fovX / 2).
+  // xyz: the camera's world-space right axis. w: the view-space width per unit
+  // of NDC, as camera_forward.w.
   highp vec4 camera_right;
 
   // xyz: the camera's world-space up axis. w is reserved.
   highp vec4 camera_up;
+
+  // xy: the NDC position of the view axis (nonzero only off-center). z: 1 for
+  // an orthographic camera, 0 for perspective. w is reserved.
+  highp vec4 view_projection;
 }
 scene_input_info;
+
+#include <view_projection.glsl>
 
 // This fragment's screen UV, for sampling the screen-space inputs below.
 highp vec2 GetScreenUv() { return gl_FragCoord.xy * scene_input_info.screen.zw; }
@@ -52,20 +60,32 @@ highp float GetFragmentViewDepth(highp vec3 view_vector) {
 
 // Projects a world-space offset from this fragment back into screen UV, for
 // refraction that exits the volume somewhere other than where it entered.
-// Leaves the sample at this fragment when the camera is not perspective.
+// Leaves the sample at this fragment when the projection is unavailable or the
+// point falls behind a perspective eye.
 highp vec2 ProjectWorldOffsetToScreenUv(highp vec3 world_offset,
                                         highp vec3 view_vector) {
   highp vec2 result = GetScreenUv();
-  if (scene_input_info.camera_right.w > 0.0 &&
-      scene_input_info.camera_forward.w > 0.0) {
-    highp vec3 from_camera = -view_vector + world_offset;
-    highp float view_z = dot(from_camera, scene_input_info.camera_forward.xyz);
-    if (view_z > 1e-5) {
-      highp float view_x = dot(from_camera, scene_input_info.camera_right.xyz);
-      highp float view_y = dot(from_camera, scene_input_info.camera_up.xyz);
-      result = vec2(
-          0.5 + 0.5 * view_x / (view_z * scene_input_info.camera_right.w),
-          0.5 - 0.5 * view_y / (view_z * scene_input_info.camera_forward.w));
+  highp vec2 scale = vec2(scene_input_info.camera_right.w,
+                          scene_input_info.camera_forward.w);
+  if (scale.x > 0.0 && scale.y > 0.0) {
+    if (scene_input_info.view_projection.z > 0.5) {
+      // Parallel rays, so the screen shift does not depend on depth or on
+      // where the eye sits.
+      highp vec2 shift =
+          vec2(dot(world_offset, scene_input_info.camera_right.xyz),
+               dot(world_offset, scene_input_info.camera_up.xyz)) /
+          scale;
+      result += vec2(0.5 * shift.x, -0.5 * shift.y);
+    } else {
+      highp vec3 from_camera = -view_vector + world_offset;
+      highp vec3 view =
+          vec3(dot(from_camera, scene_input_info.camera_right.xyz),
+               dot(from_camera, scene_input_info.camera_up.xyz),
+               dot(from_camera, scene_input_info.camera_forward.xyz));
+      if (view.z > 1e-5) {
+        result = UvFromViewPosition(view, scale,
+                                    scene_input_info.view_projection.xyz);
+      }
     }
   }
   return result;

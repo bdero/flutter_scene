@@ -77,14 +77,21 @@ void main() {
   });
 
   test('the block matches what bindSceneInputInfo packs', () {
-    // Five vec4s in this order, which is the Float32List the engine writes.
+    // Six vec4s in this order, which is the Float32List the engine writes.
     final block = header.substring(
       header.indexOf('uniform SceneInputInfo'),
       header.indexOf('scene_input_info;'),
     );
     expect(
       RegExp(r'vec4 (\w+);').allMatches(block).map((m) => m.group(1)).toList(),
-      ['available', 'screen', 'camera_forward', 'camera_right', 'camera_up'],
+      [
+        'available',
+        'screen',
+        'camera_forward',
+        'camera_right',
+        'camera_up',
+        'view_projection',
+      ],
     );
   });
 }

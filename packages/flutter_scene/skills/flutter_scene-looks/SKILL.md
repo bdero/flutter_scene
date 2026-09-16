@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-looks
-version: 4
+version: 5
 description: Give a flutter_scene render a deliberate, polished look. Use this whenever a scene looks flat, dull, or washed out, or whenever the ask is to make it look good, because a good look is lighting plus post-processing, not geometry. Ships copy-paste EnvironmentSettings presets that configure the whole stack coherently.
 ---
 
@@ -38,7 +38,7 @@ An unset `scene.environment` still resolves to a default studio IBL, so a `Physi
 
 ## The four looks
 
-Paste one whole. Each is a real `EnvironmentSettings` literal; import `package:vector_math/vector_math.dart as vm` for the `Vector3` color fields. AO, SSR, god rays, and depth of field require a `PerspectiveCamera` (the only built-in camera).
+Paste one whole. Each is a real `EnvironmentSettings` literal; import `package:vector_math/vector_math.dart as vm` for the `Vector3` color fields. AO, SSR, god rays, and depth of field work with perspective and orthographic cameras.
 
 ### showcase
 

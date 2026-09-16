@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/fmat/material_registry.dart'
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/draw_recorder.dart';
@@ -535,10 +536,10 @@ base class SceneEncoder {
     currentSceneEncoderViewport = _dimensions;
     _cameraTransform = cameraTransform ?? _camera.getViewTransform(_dimensions);
     frustum = Frustum.matrix(_cameraTransform);
-    // The screen-size LOD metric is perspective-specific; with any other
-    // projection LOD nodes draw their highest-detail level.
-    final camera = _camera;
-    _lodFovRadiansY = camera is PerspectiveCamera ? camera.fovRadiansY : null;
+    // A degenerate projection has no screen-size metric, so LOD nodes draw
+    // their highest-detail level.
+    final projection = ProjectionParams.of(_camera.projection, _dimensions);
+    _lodProjection = projection.scaleY > 0.0 ? projection : null;
 
     // Begin the opaque phase.
     _renderPass.setDepthWriteEnable(true);
@@ -568,9 +569,9 @@ base class SceneEncoder {
   gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
   late final Matrix4 _cameraTransform;
-  // The camera's vertical field of view in radians, or null for a
-  // non-perspective camera (which disables screen-size LOD).
-  late final double? _lodFovRadiansY;
+  // The projection terms for screen-size LOD, or null for a degenerate
+  // projection (which disables it).
+  late final ProjectionParams? _lodProjection;
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
   static final List<_OpaqueRecord> _opaqueRecordPool = [];
@@ -835,25 +836,30 @@ base class SceneEncoder {
 
   // The level(s) of detail to draw for [lod] from the item's [worldBounds],
   // each with a fade coverage; empty to cull. Falls back to the highest detail
-  // when no screen-size metric is available (no bounds, or a non-perspective
-  // camera).
+  // when no screen-size metric is available (no bounds, or a degenerate
+  // projection).
   List<({int level, double fade})> _resolveLod(
     LodSelection lod,
     Aabb3? worldBounds,
   ) {
-    final fovRadiansY = _lodFovRadiansY;
-    if (worldBounds == null || fovRadiansY == null) {
+    final projection = _lodProjection;
+    if (worldBounds == null || projection == null) {
       return const [(level: 0, fade: 1.0)];
     }
     // The circumscribed sphere of the world AABB (conservative, so detail is
     // kept slightly longer than a tight sphere would).
     final radius = worldBounds.max.distanceTo(worldBounds.min) * 0.5;
-    final size = lodScreenSize(
-      center: worldBounds.center,
-      radius: radius,
-      cameraPosition: _camera.position,
-      fovRadiansY: fovRadiansY,
-    );
+    final size = projection.orthographic
+        ? lodScreenSizeOrthographic(
+            radius: radius,
+            halfHeight: projection.scaleY,
+          )
+        : lodScreenSize(
+            center: worldBounds.center,
+            radius: radius,
+            cameraPosition: _camera.position,
+            fovRadiansY: 2.0 * math.atan(projection.scaleY),
+          );
     return lod.resolve(size);
   }
 

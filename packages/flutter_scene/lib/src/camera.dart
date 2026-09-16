@@ -9,13 +9,32 @@ import 'package:vector_math/vector_math.dart';
 /// camera is or what it looks at, only on the lens (field of view, clip
 /// planes) and the render target's aspect ratio. Pair one with a view (a
 /// [Camera]'s [Camera.getViewMatrix]) to form a full view-projection
-/// transform. [PerspectiveProjection] is the built-in option; applications
-/// can implement [CameraProjection] for orthographic or other projections.
+/// transform. [PerspectiveProjection] and [OrthographicProjection] are built
+/// in; applications can implement [CameraProjection] for others.
+///
+/// The renderer reads the projection's kind from its matrix, not its type, so
+/// a custom pinhole or parallel projection (including an off-center one) gets
+/// the same depth-based effects as the built-ins.
 /// {@category Scene graph}
 abstract class CameraProjection {
   /// Returns the projection matrix for a render target of the given
   /// [aspectRatio] (width / height).
   Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter});
+
+  /// Returns the projection matrix for a view [viewportSize] in logical pixels.
+  ///
+  /// The engine renders and picks through this, always passing the view's
+  /// logical size (never the render target's physical size), so a projection
+  /// whose volume follows the view's size renders what picking hits at any
+  /// device pixel ratio or render scale. The default uses only the aspect
+  /// ratio.
+  Matrix4 getProjectionMatrixForViewport(
+    ui.Size viewportSize, {
+    Vector2? jitter,
+  }) => getProjectionMatrix(
+    viewportSize.width / viewportSize.height,
+    jitter: jitter,
+  );
 }
 
 /// A standard pinhole perspective projection.
@@ -126,15 +145,13 @@ abstract class Camera {
     return Vector2((clip.x / clip.w + 1) / 2, (1 - clip.y / clip.w) / 2);
   }
 
-  /// Returns the combined projection-and-view transform for a render target
-  /// of the given [dimensions].
+  /// Returns the combined projection-and-view transform for a view of the
+  /// given [dimensions], in logical pixels (see
+  /// [CameraProjection.getProjectionMatrixForViewport]).
   ///
   /// Called once per [Scene.render] call.
   Matrix4 getViewTransform(ui.Size dimensions, {Vector2? jitter}) =>
-      projection.getProjectionMatrix(
-        dimensions.width / dimensions.height,
-        jitter: jitter,
-      ) *
+      projection.getProjectionMatrixForViewport(dimensions, jitter: jitter) *
       getViewMatrix();
 
   /// Returns the view frustum (six normalized clip planes) for a render
@@ -145,6 +162,261 @@ abstract class Camera {
   /// caller-driven culling.
   Frustum getFrustum(ui.Size dimensions) =>
       Frustum.matrix(getViewTransform(dimensions));
+}
+
+/// How an [OrthographicProjection] sizes its view volume against the render
+/// target's aspect ratio. Sizes are full world-unit extents, not half extents.
+/// {@category Scene graph}
+sealed class OrthographicSize {
+  const OrthographicSize();
+
+  /// Shows [height] world units vertically; the width follows the aspect ratio.
+  const factory OrthographicSize.height(double height) = OrthographicHeight;
+
+  /// Shows [width] world units horizontally; the height follows the aspect
+  /// ratio.
+  const factory OrthographicSize.width(double width) = OrthographicWidth;
+
+  /// Shows at least [width] by [height] world units, growing one axis to match
+  /// the aspect ratio so the whole area stays visible.
+  const factory OrthographicSize.contain(double width, double height) =
+      OrthographicContain;
+
+  /// Shows at most [width] by [height] world units, cropping one axis to match
+  /// the aspect ratio so the view is filled.
+  const factory OrthographicSize.cover(double width, double height) =
+      OrthographicCover;
+
+  /// Shows exactly [width] by [height] world units, stretching the image when
+  /// the aspect ratio differs.
+  const factory OrthographicSize.stretch(double width, double height) =
+      OrthographicStretch;
+
+  /// Shows one world unit per [pixelsPerUnit] logical pixels of the view, so
+  /// on-screen size stays constant as the view resizes (more of the world
+  /// shows in a bigger view).
+  ///
+  /// For crisp pixel art with `N` screen pixels per art texel, pair it with a
+  /// render scale that makes the render target `1/N` of the view's physical
+  /// size (`Scene.renderScale = 1 / (N * devicePixelRatio)`) and
+  /// `FilterQuality.none`.
+  const factory OrthographicSize.pixelsPerUnit(double pixelsPerUnit) =
+      OrthographicPixelsPerUnit;
+
+  /// The visible (width, height) in world units for a view of [viewportSize]
+  /// logical pixels.
+  Vector2 visibleSize(ui.Size viewportSize);
+}
+
+double _aspectOf(ui.Size viewportSize) =>
+    viewportSize.height > 0 ? viewportSize.width / viewportSize.height : 1.0;
+
+/// [OrthographicSize.height]: a fixed visible height.
+/// {@category Scene graph}
+final class OrthographicHeight extends OrthographicSize {
+  /// Creates a size showing [height] world units vertically.
+  const OrthographicHeight(this.height);
+
+  /// The visible height in world units.
+  final double height;
+
+  @override
+  Vector2 visibleSize(ui.Size viewportSize) =>
+      Vector2(height * _aspectOf(viewportSize), height);
+}
+
+/// [OrthographicSize.width]: a fixed visible width.
+/// {@category Scene graph}
+final class OrthographicWidth extends OrthographicSize {
+  /// Creates a size showing [width] world units horizontally.
+  const OrthographicWidth(this.width);
+
+  /// The visible width in world units.
+  final double width;
+
+  @override
+  Vector2 visibleSize(ui.Size viewportSize) =>
+      Vector2(width, width / _aspectOf(viewportSize));
+}
+
+/// [OrthographicSize.contain]: a minimum visible area.
+/// {@category Scene graph}
+final class OrthographicContain extends OrthographicSize {
+  /// Creates a size that keeps [width] by [height] world units visible.
+  const OrthographicContain(this.width, this.height);
+
+  /// The minimum visible width in world units.
+  final double width;
+
+  /// The minimum visible height in world units.
+  final double height;
+
+  @override
+  Vector2 visibleSize(ui.Size viewportSize) {
+    final aspectRatio = _aspectOf(viewportSize);
+    return aspectRatio * height >= width
+        ? Vector2(height * aspectRatio, height)
+        : Vector2(width, width / aspectRatio);
+  }
+}
+
+/// [OrthographicSize.cover]: a maximum visible area.
+/// {@category Scene graph}
+final class OrthographicCover extends OrthographicSize {
+  /// Creates a size that fills the view from [width] by [height] world units.
+  const OrthographicCover(this.width, this.height);
+
+  /// The maximum visible width in world units.
+  final double width;
+
+  /// The maximum visible height in world units.
+  final double height;
+
+  @override
+  Vector2 visibleSize(ui.Size viewportSize) {
+    final aspectRatio = _aspectOf(viewportSize);
+    return aspectRatio * height <= width
+        ? Vector2(height * aspectRatio, height)
+        : Vector2(width, width / aspectRatio);
+  }
+}
+
+/// [OrthographicSize.stretch]: an exact visible area.
+/// {@category Scene graph}
+final class OrthographicStretch extends OrthographicSize {
+  /// Creates a size showing exactly [width] by [height] world units.
+  const OrthographicStretch(this.width, this.height);
+
+  /// The visible width in world units.
+  final double width;
+
+  /// The visible height in world units.
+  final double height;
+
+  @override
+  Vector2 visibleSize(ui.Size viewportSize) => Vector2(width, height);
+}
+
+/// [OrthographicSize.pixelsPerUnit]: a fixed scale in logical pixels.
+/// {@category Scene graph}
+final class OrthographicPixelsPerUnit extends OrthographicSize {
+  /// Creates a size showing one world unit per [pixelsPerUnit] logical pixels.
+  const OrthographicPixelsPerUnit(this.pixelsPerUnit);
+
+  /// Logical pixels of the view per world unit.
+  final double pixelsPerUnit;
+
+  @override
+  Vector2 visibleSize(ui.Size viewportSize) => Vector2(
+    viewportSize.width / pixelsPerUnit,
+    viewportSize.height / pixelsPerUnit,
+  );
+}
+
+/// A parallel projection: objects keep their size at any distance, for
+/// isometric, top-down, pixel-art, CAD, and 2.5D views.
+///
+/// The view volume is a box along the camera's forward axis from [near] to
+/// [far], sized by [size] and divided by [zoom]. Unlike a perspective
+/// projection, [near] may be negative, which puts the volume's front behind
+/// the eye so an isometric camera does not clip what sits close to it.
+///
+/// ```dart
+/// final camera = OrthographicCamera(
+///   position: Vector3(10, 10, 10),
+///   target: Vector3.zero(),
+///   projection: OrthographicProjection(size: OrthographicSize.height(12)),
+/// );
+/// ```
+/// {@category Scene graph}
+class OrthographicProjection extends CameraProjection {
+  /// Creates an [OrthographicProjection] showing [size] world units, divided
+  /// by [zoom] and shifted by [offset], between [near] and [far].
+  OrthographicProjection({
+    this.size = const OrthographicSize.height(10.0),
+    this.zoom = 1.0,
+    Vector2? offset,
+    this.near = 0.0,
+    this.far = 1000.0,
+  }) : offset = offset ?? Vector2.zero();
+
+  /// An explicit view volume in view-space world units, independent of the
+  /// render target's aspect ratio (it stretches to fit).
+  factory OrthographicProjection.bounds({
+    required double left,
+    required double right,
+    required double bottom,
+    required double top,
+    double near = 0.0,
+    double far = 1000.0,
+  }) => OrthographicProjection(
+    size: OrthographicSize.stretch(right - left, top - bottom),
+    offset: Vector2((left + right) * 0.5, (bottom + top) * 0.5),
+    near: near,
+    far: far,
+  );
+
+  /// The orthographic projection that frames the plane [distance] in front of
+  /// the camera the same way a perspective projection with [fovRadiansY] does,
+  /// for switching projections without the view jumping.
+  factory OrthographicProjection.matchingPerspective({
+    required double fovRadiansY,
+    required double distance,
+    double near = 0.0,
+    double far = 1000.0,
+  }) => OrthographicProjection(
+    size: OrthographicSize.height(2.0 * distance * tan(fovRadiansY * 0.5)),
+    near: near,
+    far: far,
+  );
+
+  /// How the view volume is sized against the render target's aspect ratio.
+  OrthographicSize size;
+
+  /// Magnification. The visible extent is [size] divided by this, so 2 shows
+  /// half as much, twice as large.
+  double zoom;
+
+  /// Shifts the view volume across the view plane, in world units along the
+  /// camera's right (x) and up (y) axes, without moving the camera.
+  Vector2 offset;
+
+  /// Signed distance along the view direction to the near clipping plane.
+  /// Negative values extend the volume behind the eye.
+  double near;
+
+  /// Signed distance along the view direction to the far clipping plane. Must
+  /// be greater than [near].
+  double far;
+
+  /// The visible (width, height) in world units for a view of [viewportSize]
+  /// logical pixels, after [zoom].
+  Vector2 visibleSize(ui.Size viewportSize) =>
+      size.visibleSize(viewportSize) / zoom;
+
+  /// Resolves [size] against a unit-height view of [aspectRatio]. An
+  /// [OrthographicSize.pixelsPerUnit] size needs the view's real size, which
+  /// the engine supplies through [getProjectionMatrixForViewport].
+  @override
+  Matrix4 getProjectionMatrix(double aspectRatio, {Vector2? jitter}) =>
+      getProjectionMatrixForViewport(ui.Size(aspectRatio, 1.0), jitter: jitter);
+
+  @override
+  Matrix4 getProjectionMatrixForViewport(
+    ui.Size viewportSize, {
+    Vector2? jitter,
+  }) {
+    final extent = visibleSize(viewportSize);
+    return _matrix4Orthographic(
+      extent.x,
+      extent.y,
+      offset.x,
+      offset.y,
+      near,
+      far,
+      jitter: jitter,
+    );
+  }
 }
 
 Matrix4 _matrix4LookAt(Vector3 position, Vector3 target, Vector3 up) {
@@ -227,6 +499,48 @@ Matrix4 _matrix4Perspective(
     0.0,
     -(zFar * zNear) / (zFar - zNear),
     0.0,
+  );
+}
+
+Matrix4 _matrix4Orthographic(
+  double width,
+  double height,
+  double offsetX,
+  double offsetY,
+  double zNear,
+  double zFar, {
+  Vector2? jitter,
+}) {
+  assert(
+    width > 0 && height > 0 && width.isFinite && height.isFinite,
+    'The orthographic view volume is ${width}x$height world units. Both '
+    'extents must be positive and finite; check the size and a zoom of zero.',
+  );
+  assert(
+    zFar > zNear,
+    'The orthographic view volume is degenerate (near $zNear, far $zFar). far '
+    'must be greater than near, or the depth mapping collapses.',
+  );
+  final sx = 2.0 / width;
+  final sy = 2.0 / height;
+  final depthScale = 1.0 / (zFar - zNear);
+  return Matrix4(
+    sx,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    sy,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    depthScale,
+    0.0,
+    -offsetX * sx + (jitter?.x ?? 0.0),
+    -offsetY * sy + (jitter?.y ?? 0.0),
+    -zNear * depthScale,
+    1.0,
   );
 }
 
@@ -322,6 +636,81 @@ class PerspectiveCamera extends Camera {
     near: fovNear,
     far: fovFar,
   );
+
+  @override
+  Vector3 get forward => (target - position).normalized();
+
+  @override
+  Matrix4 getViewMatrix() => _matrix4LookAt(position, target, up);
+}
+
+/// A camera with a parallel [OrthographicProjection], placed by eye/target/up
+/// like [PerspectiveCamera].
+///
+/// Because an orthographic view has no perspective, moving the eye along the
+/// view direction does not change the image size; use
+/// [OrthographicProjection.zoom] or [OrthographicProjection.size] to frame.
+/// The eye still sets where the volume starts, since [OrthographicProjection]
+/// clip distances are measured from it.
+/// {@category Scene graph}
+class OrthographicCamera extends Camera {
+  /// Creates an [OrthographicCamera]. Defaults match [PerspectiveCamera] (eye
+  /// at `(0, 0, -5)` looking at the origin, `+Y` up) with a default
+  /// [OrthographicProjection].
+  OrthographicCamera({
+    OrthographicProjection? projection,
+    Vector3? position,
+    Vector3? target,
+    Vector3? up,
+  }) : projection = projection ?? OrthographicProjection(),
+       position = position ?? Vector3(0, 0, -5),
+       target = target ?? Vector3(0, 0, 0),
+       up = up ?? Vector3(0, 1, 0);
+
+  /// Places a camera to frame [bounds] (a model's world-space AABB, from
+  /// [Node.combinedWorldBounds]) so it fills the view on any aspect ratio.
+  ///
+  /// The camera looks at the bounds' center from [direction] (defaults to
+  /// `(0, 0, -1)`, as [PerspectiveCamera.framing]). The volume contains the
+  /// bounds' bounding sphere, scaled by [margin], and its clip planes enclose
+  /// it.
+  factory OrthographicCamera.framing(
+    Aabb3 bounds, {
+    Vector3? direction,
+    Vector3? up,
+    double margin = 1.1,
+  }) {
+    final center = bounds.center;
+    final radius = max((bounds.max - bounds.min).length * 0.5, 1e-4);
+    final reach = radius * margin;
+    final dir = (direction ?? Vector3(0, 0, -1)).normalized();
+    return OrthographicCamera(
+      projection: OrthographicProjection(
+        size: OrthographicSize.contain(reach * 2.0, reach * 2.0),
+        far: reach * 2.0,
+      ),
+      position: center + dir * reach,
+      target: center,
+      up: up,
+    );
+  }
+
+  /// The lens. Mutate its fields, or assign a new one, to reframe.
+  @override
+  OrthographicProjection projection;
+
+  /// World-space position of the eye, the origin the clip distances are
+  /// measured from.
+  @override
+  Vector3 position;
+
+  /// World-space point the camera is looking at.
+  Vector3 target;
+
+  /// World-space "up" direction used to orient the camera around the view
+  /// vector.
+  @override
+  Vector3 up;
 
   @override
   Vector3 get forward => (target - position).normalized();

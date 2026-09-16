@@ -12,15 +12,19 @@
 // recovers its tile from `gl_FragCoord` alone.
 
 #include <irradiance_field.glsl>
+#include <view_projection.glsl>
 
 uniform InjectInfo {
   // xy: the depth-normal buffer's size in texels. zw: its reciprocal.
   vec4 source_size;
-  // x/y: tangents of the half horizontal/vertical field of view. z: the far
-  // plane, past which a texel is background. w: the firefly luminance clamp.
+  // xy: the projection scale (see view_projection.glsl). z: the far plane,
+  // past which a texel is background. w: the firefly luminance clamp.
   vec4 proj;
   // xyz: world-space camera position. w: the emissive injection boost.
   vec4 camera_position;
+  // The camera basis in xyz. camera_right.w and camera_up.w are the NDC
+  // position of the view axis; camera_forward.w is 1 for an orthographic
+  // camera.
   vec4 camera_right;
   vec4 camera_up;
   vec4 camera_forward;
@@ -89,16 +93,17 @@ void main() {
 
   vec4 depth_normal = textureLod(linear_depth_normal, uv, 0.0);
   float depth = depth_normal.r;
-  if (depth <= 0.0 || depth >= info.proj.z) {
+  bool orthographic = info.camera_forward.w > 0.5;
+  if ((!orthographic && depth <= 0.0) || depth >= info.proj.z) {
     cull();
     return;
   }
 
   // The prepass writes planar view depth with the eye at the origin looking
-  // down +z, so the lateral offsets follow from the projection tangents.
-  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-  vec3 view_position = vec3(ndc.x * depth * info.proj.x,
-                            ndc.y * depth * info.proj.y, depth);
+  // down +z, so the lateral offsets follow from the projection.
+  vec3 view_position = ViewPositionFromUv(
+      uv, depth, info.proj.xy,
+      vec3(info.camera_right.w, info.camera_up.w, info.camera_forward.w));
   vec3 world_position = info.camera_position.xyz +
                         info.camera_right.xyz * view_position.x +
                         info.camera_up.xyz * view_position.y +

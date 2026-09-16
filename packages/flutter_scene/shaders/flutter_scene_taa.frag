@@ -7,11 +7,20 @@
 uniform TaaInfo {
   mat4 current_to_previous_view_projection;
   vec4 camera_position;
-  vec4 projection_params; // xy: tanHalfFovX, tanHalfFovY, z: far, w: near
+  vec4 projection_params; // xy: projection scale (view_projection.glsl), z: far, w: near
   vec4 jitter_params; // xy: current jitter NDC, zw: previous jitter NDC
   vec4 taa_settings; // x: minimumCurrentWeight, y: varianceGamma, z: sharpness, w: objectMotion
   vec4 screen_size; // xy: width, height, zw: 1.0/width, 1.0/height
+  vec4 projection_offset; // xy: NDC position of the view axis, z: 1 orthographic
 } info;
+
+#include <view_projection.glsl>
+
+// Whether planar depth [d] is a surface inside the view volume. Orthographic
+// volumes can start behind the eye, so the lower bound is the near plane.
+bool IsSurfaceDepth(float d) {
+  return d >= info.projection_params.w && d < info.projection_params.z;
+}
 
 uniform sampler2D current_color;
 uniform sampler2D history_color;
@@ -91,7 +100,7 @@ void main() {
     for (int dx = -1; dx <= 1; dx++) {
       vec2 tap_uv = uv + vec2(float(dx), float(dy)) * texel_size;
       float d = textureLod(current_depth, tap_uv, 0.0).r;
-      if (d > 0.0 && d < closest_depth) {
+      if (IsSurfaceDepth(d) && d < closest_depth) {
         closest_depth = d;
         closest_uv = tap_uv;
       }
@@ -108,13 +117,21 @@ void main() {
   vec2 unjittered_ndc = screen_ndc - info.jitter_params.xy;
 
   vec4 prev_clip;
-  if (depth > 0.0 && depth < info.projection_params.z) {
-    vec3 view_pos = vec3(unjittered_ndc.x * depth * info.projection_params.x,
-                         unjittered_ndc.y * depth * info.projection_params.y, depth);
+  if (IsSurfaceDepth(depth)) {
+    vec3 view_pos = ViewPositionFromNdc(unjittered_ndc, depth,
+                                        info.projection_params.xy,
+                                        info.projection_offset.xyz);
     prev_clip = info.current_to_previous_view_projection * vec4(view_pos, 1.0);
+  } else if (info.projection_offset.z > 0.5) {
+    // Parallel rays have no point at infinity; reproject the far plane.
+    vec3 far_pos = ViewPositionFromNdc(unjittered_ndc, info.projection_params.z,
+                                       info.projection_params.xy,
+                                       info.projection_offset.xyz);
+    prev_clip = info.current_to_previous_view_projection * vec4(far_pos, 1.0);
   } else {
-    vec3 view_dir = vec3(unjittered_ndc.x * info.projection_params.x,
-                         unjittered_ndc.y * info.projection_params.y, 1.0);
+    vec3 view_dir = ViewPositionFromNdc(unjittered_ndc, 1.0,
+                                       info.projection_params.xy,
+                                       info.projection_offset.xyz);
     prev_clip = info.current_to_previous_view_projection * vec4(view_dir, 0.0);
   }
 
@@ -138,10 +155,15 @@ void main() {
     // 4. History rejection.
     if (history_uv.x < 0.0 || history_uv.x > 1.0 || history_uv.y < 0.0 || history_uv.y > 1.0) {
       history_valid = false;
-    } else if (depth > 0.0 && depth < info.projection_params.z) {
+    } else if (IsSurfaceDepth(depth)) {
       float prev_depth = textureLod(previous_depth, history_uv, 0.0).r;
-      float expected_depth = prev_clip.w;
-      if (prev_depth > 0.0 && abs(prev_depth - expected_depth) / max(depth, 1.0) > 0.2) {
+      // Planar depth in the previous frame: clip w under perspective, the
+      // depth range mapping under an orthographic camera.
+      float expected_depth = info.projection_offset.z > 0.5
+          ? prev_clip.z * (info.projection_params.z - info.projection_params.w) +
+                info.projection_params.w
+          : prev_clip.w;
+      if (IsSurfaceDepth(prev_depth) && abs(prev_depth - expected_depth) / max(abs(depth), 1.0) > 0.2) {
         history_valid = false;
       }
     }

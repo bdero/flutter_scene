@@ -691,6 +691,54 @@ class ComponentGizmoPainter extends CustomPainter {
             color,
             segments,
           );
+        case GizmoOrthographicVolume():
+          final fit = primitive.fitBind == null
+              ? primitive.fit
+              : snapshot.string(primitive.fitBind!);
+          final width = snapshot.scalar(primitive.width);
+          final height = snapshot.scalar(primitive.height);
+          final pixelsPerUnit = snapshot.scalar(primitive.pixelsPerUnit);
+          final zoom = snapshot.scalar(primitive.zoom);
+          final near = snapshot.scalar(primitive.near);
+          final far = snapshot.scalar(primitive.far);
+          if (fit == null ||
+              width == null ||
+              height == null ||
+              pixelsPerUnit == null ||
+              zoom == null ||
+              zoom <= 0 ||
+              near == null ||
+              far == null) {
+            break;
+          }
+          // The engine's own fit math, against this viewport's size.
+          final size = switch (fit) {
+            'width' => OrthographicSize.width(width),
+            'contain' => OrthographicSize.contain(width, height),
+            'cover' => OrthographicSize.cover(width, height),
+            'stretch' => OrthographicSize.stretch(width, height),
+            'pixelsPerUnit' => OrthographicSize.pixelsPerUnit(pixelsPerUnit),
+            _ => OrthographicSize.height(height),
+          };
+          final projection = OrthographicProjection(
+            size: size,
+            zoom: zoom,
+            offset: primitive.offsetBind == null
+                ? null
+                : snapshot.vector2(primitive.offsetBind!),
+            near: near,
+            far: far,
+          );
+          _strokeOrthographicVolume(
+            origin,
+            basis,
+            projection.visibleSize(_size) * 0.5,
+            projection.offset,
+            near,
+            far,
+            color,
+            segments,
+          );
       }
     }
     if (sourceId != null) hits.addSegments(sourceId, segments, depth);
@@ -1056,6 +1104,41 @@ class ComponentGizmoPainter extends CustomPainter {
     }
   }
 
+  void _strokeOrthographicVolume(
+    vm.Vector3 origin,
+    List<vm.Vector3> basis,
+    vm.Vector2 halfExtent,
+    vm.Vector2 offset,
+    double near,
+    double far,
+    Color color,
+    List<(Offset, Offset)> segments,
+  ) {
+    List<vm.Vector3> plane(double depth) => [
+      for (final (sx, sy) in const [(1, 1), (-1, 1), (-1, -1), (1, -1)])
+        origin +
+            _frameVector(
+              basis,
+              offset.x + sx * halfExtent.x,
+              offset.y + sy * halfExtent.y,
+              depth,
+            ),
+    ];
+
+    final nearPlane = plane(near);
+    final farPlane = plane(far);
+    for (var i = 0; i < 4; i++) {
+      _strokeWorldSegment(
+        nearPlane[i],
+        nearPlane[(i + 1) % 4],
+        color,
+        segments,
+      );
+      _strokeWorldSegment(farPlane[i], farPlane[(i + 1) % 4], color, segments);
+      _strokeWorldSegment(nearPlane[i], farPlane[i], color, segments);
+    }
+  }
+
   @override
   bool shouldRepaint(ComponentGizmoPainter old) => true;
 }
@@ -1103,6 +1186,16 @@ class _Snapshot {
 
   vm.Vector3? vector(String path) => switch (valueAt(path)) {
     doc.Vec3Value(:final value) => value.clone(),
+    _ => null,
+  };
+
+  vm.Vector2? vector2(String path) => switch (valueAt(path)) {
+    doc.Vec2Value(:final value) => value.clone(),
+    _ => null,
+  };
+
+  String? string(String path) => switch (valueAt(path)) {
+    doc.StringValue(:final value) => value,
     _ => null,
   };
 
