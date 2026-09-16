@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -290,18 +291,27 @@ class SplatGeometry extends Geometry {
 
     // The MVP's w row measures view depth per unit of local position, so its
     // xyz is the local-space sort direction. An orthographic w row is
-    // constant, and its z row carries the depth gradient instead. Ordering
-    // along a direction is unaffected by camera translation, so only rotation
-    // triggers a re-sort.
+    // constant; its depth gradient is the camera forward carried into local
+    // space (the model's linear part transposed). Ordering along a direction
+    // is unaffected by camera translation, so only rotation triggers a
+    // re-sort.
     final storage = mvp.storage;
-    final orthographic =
-        storage[3] * storage[3] +
-            storage[7] * storage[7] +
-            storage[11] * storage[11] <
-        1e-12;
-    final sortDir = orthographic
-        ? vm.Vector3(storage[2], storage[6], storage[10])
-        : vm.Vector3(storage[3], storage[7], storage[11]);
+    final orthographic = isOrthographicTransform(cameraTransform);
+    final vm.Vector3 sortDir;
+    vm.Vector3? orthographicWorldForward;
+    if (orthographic) {
+      final forward = orthographicWorldForward = orthographicForward(
+        cameraTransform,
+      );
+      final m = modelTransform.storage;
+      sortDir = vm.Vector3(
+        m[0] * forward.x + m[1] * forward.y + m[2] * forward.z,
+        m[4] * forward.x + m[5] * forward.y + m[6] * forward.z,
+        m[8] * forward.x + m[9] * forward.y + m[10] * forward.z,
+      );
+    } else {
+      sortDir = vm.Vector3(storage[3], storage[7], storage[11]);
+    }
     if (sortDir.length2 > 1e-12) {
       sortDir.normalize();
       final last = _lastSortDir;
@@ -370,13 +380,9 @@ class SplatGeometry extends Geometry {
     frameInfo[70] = tint.z;
     frameInfo[71] = tint.w;
     // view_direction: under an orthographic camera every view ray runs along
-    // the camera's forward axis, the view-projection's z row.
-    if (orthographic) {
-      final forward = vm.Vector3(
-        cameraTransform.storage[2],
-        cameraTransform.storage[6],
-        cameraTransform.storage[10],
-      )..normalize();
+    // the camera's forward axis.
+    final forward = orthographicWorldForward;
+    if (forward != null) {
       frameInfo[72] = forward.x;
       frameInfo[73] = forward.y;
       frameInfo[74] = forward.z;

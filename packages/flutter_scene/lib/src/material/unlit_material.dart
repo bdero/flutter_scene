@@ -120,5 +120,11 @@ class UnlitMaterial extends Material {
       transientsBuffer,
       lighting,
     );
+    EngineLightingUniforms.bindViewInfo(
+      pass,
+      fragmentShader,
+      transientsBuffer,
+      lighting,
+    );
   }
 }

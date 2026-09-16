@@ -18,8 +18,10 @@ import 'package:flutter_scene/src/components/camera_component.dart';
 ///
 /// With an [OrthographicProjection], where moving the eye does not change the
 /// image size, dolly scales the projection's [OrthographicProjection.zoom]
-/// instead. The eye holds the distance it had when the controller first drove
-/// the orthographic camera, so the clip planes stay where they were authored.
+/// by the same ratio instead, so zoom set in code or an inspector is kept and
+/// scaled from. The eye holds the distance it had when the controller started
+/// driving that projection, so the clip planes stay where they were
+/// authored.
 ///
 /// Attach it to a node that also carries a [CameraComponent]. Drive it with a
 /// [CameraControls] widget, or call [orbitBy] / [dollyBy] / [panBy] directly.
@@ -78,9 +80,11 @@ class OrbitCameraController extends CameraController {
   Vector3 _targetGoal;
   double _distance;
   double _distanceGoal;
-  // The distance and zoom when this controller started driving an orthographic
-  // camera, which dolly scales relative to. Null for perspective.
-  ({double distance, double zoom})? _orthographicReference;
+  // The orthographic projection this controller drives, the eye distance it
+  // holds for it, and the distance its zoom was last scaled at. Null for
+  // perspective; replaced when a new projection is assigned.
+  ({OrthographicProjection projection, double eyeDistance, double zoomedAt})?
+  _orthographic;
 
   double _azimuth;
   double _azimuthGoal;
@@ -175,14 +179,26 @@ class OrbitCameraController extends CameraController {
     var eyeDistance = _distance;
     final projection = node.getComponent<CameraComponent>()?.projection;
     if (projection is OrthographicProjection) {
-      final reference = _orthographicReference ??= (
-        distance: _distance,
-        zoom: projection.zoom,
-      );
-      projection.zoom = reference.zoom * reference.distance / _distance;
-      eyeDistance = reference.distance;
+      var state = _orthographic;
+      if (state == null || !identical(state.projection, projection)) {
+        state = (
+          projection: projection,
+          eyeDistance: _distance,
+          zoomedAt: _distance,
+        );
+      } else if (_distance != state.zoomedAt) {
+        // Scale by this frame's dolly only, so zoom set elsewhere survives.
+        projection.zoom *= state.zoomedAt / _distance;
+        state = (
+          projection: projection,
+          eyeDistance: state.eyeDistance,
+          zoomedAt: _distance,
+        );
+      }
+      _orthographic = state;
+      eyeDistance = state.eyeDistance;
     } else {
-      _orthographicReference = null;
+      _orthographic = null;
     }
     node.lookAtFrom(_eyeFor(_target, eyeDistance), _target);
   }

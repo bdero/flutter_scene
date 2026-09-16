@@ -1338,8 +1338,8 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
         height: GizmoScalar.bind('orthographicHeight'),
         pixelsPerUnit: GizmoScalar.bind('orthographicPixelsPerUnit'),
         zoom: GizmoScalar.bind('orthographicZoom'),
-        near: GizmoScalar.bind('near'),
-        far: GizmoScalar.bind('far'),
+        near: GizmoScalar.bind('orthographicNear'),
+        far: GizmoScalar.bind('orthographicFar'),
         offsetBind: 'orthographicOffset',
         visibility: GizmoVisibility.selected,
         when: GizmoCondition('projection', 'orthographic'),
@@ -1382,40 +1382,46 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
     ComponentField.number(
       'near',
       defaultValue: 0.1,
-      doc:
-          'Near clip distance. Must be positive for perspective; may be '
-          'negative for orthographic.',
+      doc: 'Near clip distance (perspective).',
+      constraints: const [Range(0.0001, null)],
       get: (c) => switch (c.projection) {
         PerspectiveProjection(:final near) => near,
-        OrthographicProjection(:final near) => near,
         _ => 0.1,
       },
       set: (c, v) {
-        switch (c.projection) {
-          case PerspectiveProjection projection:
-            projection.near = v;
-          case OrthographicProjection projection:
-            projection.near = v;
-        }
+        final projection = c.projection;
+        if (projection is PerspectiveProjection) projection.near = v;
       },
     ),
     ComponentField.number(
       'far',
       defaultValue: 1000.0,
-      doc: 'Far clip distance.',
+      doc: 'Far clip distance (perspective).',
+      constraints: const [Range(0.0001, null)],
       get: (c) => switch (c.projection) {
         PerspectiveProjection(:final far) => far,
-        OrthographicProjection(:final far) => far,
         _ => 1000.0,
       },
       set: (c, v) {
-        switch (c.projection) {
-          case PerspectiveProjection projection:
-            projection.far = v;
-          case OrthographicProjection projection:
-            projection.far = v;
-        }
+        final projection = c.projection;
+        if (projection is PerspectiveProjection) projection.far = v;
       },
+    ),
+    ComponentField.number(
+      'orthographicNear',
+      defaultValue: 0.0,
+      doc:
+          'Signed near clip distance (orthographic); negative extends the '
+          'volume behind the camera.',
+      get: (c) => _orthographic(c)?.near ?? 0.0,
+      set: (c, v) => _orthographic(c)?.near = v,
+    ),
+    ComponentField.number(
+      'orthographicFar',
+      defaultValue: 1000.0,
+      doc: 'Signed far clip distance (orthographic); must exceed the near.',
+      get: (c) => _orthographic(c)?.far ?? 1000.0,
+      set: (c, v) => _orthographic(c)?.far = v,
     ),
     ComponentField(
       const ComponentPropertyDef(
@@ -1564,8 +1570,8 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
       final orthographic = OrthographicProjection(
         zoom: props.number('orthographicZoom'),
         offset: props.vec2('orthographicOffset'),
-        near: props.number('near'),
-        far: props.number('far'),
+        near: props.number('orthographicNear'),
+        far: props.number('orthographicFar'),
       );
       projection = orthographic;
     } else {

@@ -546,6 +546,15 @@ class ShaderMaterial extends Material {
       _bindEnvironmentTextures(pass, shader, lighting);
     }
 
+    // A shader that includes material_varyings.glsl and reads
+    // GetViewDirection declares this block.
+    EngineLightingUniforms.bindViewInfo(
+      pass,
+      shader,
+      transientsBuffer,
+      lighting,
+    );
+
     if (_sceneInputs.isNotEmpty) {
       EngineLightingUniforms.bindSceneInputTextures(
         pass,

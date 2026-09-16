@@ -941,6 +941,16 @@ base class SceneEncoder {
     final shader = fallback
         ? _debugFallbackShader
         : material.fragmentShaderForLighting(_lighting);
+    if (fallback) {
+      // The fallback replaces the material's own shader, so its bind never
+      // supplied the view block the debug hook reads.
+      EngineLightingUniforms.bindViewInfo(
+        _renderPass,
+        shader,
+        _transientsBuffer,
+        _lighting,
+      );
+    }
     final slot = shader.getUniformSlot('DebugViewInfo');
     final view = _effectiveDebugView(item);
     if (!view.isActive) {

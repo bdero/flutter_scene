@@ -1725,6 +1725,12 @@ class PhysicallyBasedMaterial extends Material {
       );
     }
     EngineLightingUniforms.bindFog(pass, shader, transientsBuffer, lighting);
+    EngineLightingUniforms.bindViewInfo(
+      pass,
+      shader,
+      transientsBuffer,
+      lighting,
+    );
   }
 
   static final Float32List _fragInfoScratch = Float32List(

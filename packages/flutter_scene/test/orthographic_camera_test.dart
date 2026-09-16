@@ -10,10 +10,12 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/fscene/realize/builtin_codecs.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/render/lod.dart';
+import 'package:flutter_scene/src/render/planar_reflection.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart' show ComponentPropertyDef;
 import 'package:vector_math/vector_math.dart';
 
 Vector3 _clip(Matrix4 m, Vector3 p) {
@@ -348,23 +350,61 @@ void main() {
     expect(lodScreenSizeOrthographic(radius: 2, halfHeight: 8), 0.25);
   });
 
-  test('the orbit controller zooms an orthographic camera', () {
-    final node = Node();
-    final projection = OrthographicProjection(zoom: 1.5);
-    node.addComponent(CameraComponent(projection: projection));
-    final controller = OrbitCameraController(distance: 10, smoothing: 0);
-    node.addComponent(controller);
-    controller.update(1 / 60);
-    final eyeDistance = node.globalTransform.getTranslation().length;
+  group('orbit controller under an orthographic camera', () {
+    test('dolly scales zoom and holds the eye distance', () {
+      final node = Node();
+      final projection = OrthographicProjection(zoom: 1.5);
+      node.addComponent(CameraComponent(projection: projection));
+      final controller = OrbitCameraController(distance: 10, smoothing: 0);
+      node.addComponent(controller);
+      controller.update(1 / 60);
+      final eyeDistance = node.globalTransform.getTranslation().length;
 
-    controller.dollyBy(1.0);
-    controller.update(1 / 60);
-    expect(controller.distance, lessThan(10));
-    expect(projection.zoom, closeTo(1.5 * 10 / controller.distance, 1e-5));
-    expect(
-      node.globalTransform.getTranslation().length,
-      closeTo(eyeDistance, 1e-5),
-    );
+      controller.dollyBy(1.0);
+      controller.update(1 / 60);
+      expect(controller.distance, lessThan(10));
+      expect(projection.zoom, closeTo(1.5 * 10 / controller.distance, 1e-9));
+      expect(
+        node.globalTransform.getTranslation().length,
+        closeTo(eyeDistance, 1e-9),
+      );
+    });
+
+    test('keeps zoom set elsewhere and scales from it', () {
+      final node = Node();
+      final projection = OrthographicProjection();
+      node.addComponent(CameraComponent(projection: projection));
+      final controller = OrbitCameraController(distance: 8, smoothing: 0);
+      node.addComponent(controller);
+      controller.update(1 / 60);
+
+      projection.zoom = 3.0;
+      controller.update(1 / 60);
+      expect(projection.zoom, 3.0);
+
+      final before = controller.distance;
+      controller.dollyBy(0.5);
+      controller.update(1 / 60);
+      expect(
+        projection.zoom,
+        closeTo(3.0 * before / controller.distance, 1e-9),
+      );
+    });
+
+    test('a replaced projection keeps its own zoom', () {
+      final node = Node();
+      final component = CameraComponent(projection: OrthographicProjection());
+      node.addComponent(component);
+      final controller = OrbitCameraController(distance: 8, smoothing: 0);
+      node.addComponent(controller);
+      controller.dollyBy(1.0);
+      controller.update(1 / 60);
+
+      final replacement = OrthographicProjection(zoom: 0.5);
+      component.projection = replacement;
+      controller.update(1 / 60);
+      expect(replacement.zoom, 0.5);
+    });
   });
 
   test('an orthographic camera document realizes its projection', () {
@@ -379,7 +419,7 @@ void main() {
                   'orthographicWidth': const DoubleValue(20),
                   'orthographicHeight': const DoubleValue(8),
                   'orthographicZoom': const DoubleValue(2),
-                  'near': const DoubleValue(-15),
+                  'orthographicNear': const DoubleValue(-15),
                 },
               ),
               RealizeContext(doc),
@@ -391,5 +431,44 @@ void main() {
     expect(size.height, 8);
     expect(projection.zoom, 2);
     expect(projection.near, -15);
+  });
+  test('perspective clip distances stay positive in the schema', () {
+    final schema = CameraCodec().propertySchema;
+    ComponentPropertyDef def(String name) =>
+        schema.firstWhere((d) => d.name == name);
+    expect(def('near').hardMin, greaterThan(0));
+    expect(def('far').hardMin, greaterThan(0));
+    expect(def('orthographicNear').hardMin, isNull);
+  });
+
+  group('oblique planar capture of an orthographic camera', () {
+    final source = OrthographicCamera(
+      position: Vector3(6, 5, -6),
+      target: Vector3.zero(),
+      projection: OrthographicProjection(near: -20, far: 40),
+    );
+    final capture = PlanarReflectionCamera(
+      source: source,
+      plane: Plane.normalconstant(Vector3(0, 1, 0), 0),
+    );
+    const size = ui.Size(320, 200);
+
+    test('recovers the reflected forward from the lateral rows', () {
+      final viewProjection = capture.getViewTransform(size);
+      expect(isOrthographicTransform(viewProjection), isTrue);
+      final forward = orthographicForward(viewProjection);
+      expect((forward - capture.forward.normalized()).length, lessThan(1e-5));
+      // The depth row now follows the mirror, not the camera.
+      final s = viewProjection.storage;
+      final depthRow = Vector3(s[2], s[6], s[10])..normalize();
+      expect(depthRow.dot(capture.forward.normalized()), lessThan(0.999));
+    });
+
+    test('reads the base projection terms', () {
+      final params = ProjectionParams.of(capture.projection, size);
+      expect(params.orthographic, isTrue);
+      expect(params.near, -20);
+      expect(params.far, 40);
+    });
   });
 }
