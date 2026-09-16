@@ -16,16 +16,28 @@ import 'package:flutter_scene_mcp/flutter_scene_mcp.dart';
 ///
 /// [pixelRatio] scales the capture relative to logical pixels (use the view's
 /// device pixel ratio for a 1:1 capture).
+///
+/// Works while the window is hidden, covered, or minimized. The capture
+/// forces its own frame, and throws if none arrives within [frameTimeout].
 ViewportScreenshot viewportScreenshot(
   GlobalKey boundaryKey, {
   double pixelRatio = 1.0,
+  Duration frameTimeout = const Duration(seconds: 10),
 }) {
   return () async {
     // Capture after the next painted frame, so a mutation made just before
     // the screenshot (an agent moving the camera, then looking) is in the
     // image. The boundary otherwise serves whatever frame painted last.
-    WidgetsBinding.instance.scheduleFrame();
-    await WidgetsBinding.instance.endOfFrame;
+    // Forced, since a hidden app disables frames and a plain scheduleFrame
+    // would never land.
+    WidgetsBinding.instance.scheduleForcedFrame();
+    await WidgetsBinding.instance.endOfFrame.timeout(
+      frameTimeout,
+      onTimeout: () => throw ToolError(
+        'No frame was produced within ${frameTimeout.inSeconds}s; '
+        'cannot capture',
+      ),
+    );
     final boundary =
         boundaryKey.currentContext?.findRenderObject()
             as RenderRepaintBoundary?;
