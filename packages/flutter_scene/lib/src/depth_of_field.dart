@@ -30,8 +30,9 @@ enum DepthOfFieldQuality {
 /// The effect renders as half-resolution fragment passes on the linear HDR
 /// scene color before bloom, and forces the camera depth prepass while
 /// enabled. Translucent surfaces blur by the opaque depth behind them (the
-/// standard post-process depth-of-field caveat). Requires a perspective
-/// camera.
+/// standard post-process depth-of-field caveat). An orthographic camera
+/// blurs by distance from the focus plane, scaled as the perspective lens that
+/// frames the same height at [focusDistance] (a tilt-shift look).
 /// {@category Rendering}
 class DepthOfField {
   /// Whether depth of field renders. Off by default; when off, the engine

@@ -19,6 +19,7 @@ export 'src/schema/gizmo_spec.dart'
         GizmoFrustum,
         GizmoIcon,
         GizmoLines,
+        GizmoOrthographicVolume,
         GizmoPrimitive,
         GizmoScalar,
         GizmoSpec,

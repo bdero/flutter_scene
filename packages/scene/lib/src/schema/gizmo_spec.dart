@@ -275,6 +275,24 @@ sealed class GizmoPrimitive {
           xray: xray,
           when: when,
         );
+      case 'orthographicVolume':
+        return GizmoOrthographicVolume(
+          fit: json['fit'] is String ? json['fit'] as String : 'height',
+          fitBind: json['fitBind'] is String ? json['fitBind'] as String : null,
+          width: scalar('width', 10),
+          height: scalar('height', 10),
+          pixelsPerUnit: scalar('pixelsPerUnit', 32),
+          zoom: scalar('zoom', 1),
+          near: scalar('near', 0),
+          far: scalar('far', 1000),
+          offsetBind: json['offsetBind'] is String
+              ? json['offsetBind'] as String
+              : null,
+          visibility: visibility,
+          color: color,
+          xray: xray,
+          when: when,
+        );
     }
     return null;
   }
@@ -603,6 +621,67 @@ class GizmoFrustum extends GizmoPrimitive {
     'near': near.toJson(),
     'far': far.toJson(),
     if (aspect != null) 'aspect': aspect!.toJson(),
+  };
+}
+
+/// An orthographic view volume, a box along node-local +Z from [near] to
+/// [far] (the engine camera looks along its node's local +Z), sized like the
+/// engine's orthographic projection against the editor viewport.
+class GizmoOrthographicVolume extends GizmoPrimitive {
+  const GizmoOrthographicVolume({
+    this.fit = 'height',
+    this.fitBind,
+    required this.width,
+    required this.height,
+    required this.pixelsPerUnit,
+    required this.zoom,
+    required this.near,
+    required this.far,
+    this.offsetBind,
+    super.visibility,
+    super.color,
+    super.xray,
+    super.when,
+  });
+
+  /// How the volume fits the viewport: `height`, `width`, `contain`, `cover`,
+  /// `stretch`, or `pixelsPerUnit`. Used when [fitBind] is null.
+  final String fit;
+
+  /// A string property path supplying [fit].
+  final String? fitBind;
+
+  /// Visible width and height in world units, for the modes that use them.
+  final GizmoScalar width;
+  final GizmoScalar height;
+
+  /// Viewport pixels per world unit, for the `pixelsPerUnit` mode.
+  final GizmoScalar pixelsPerUnit;
+
+  /// Divides the visible extent.
+  final GizmoScalar zoom;
+
+  /// Signed clip distances along +Z; near may be negative.
+  final GizmoScalar near;
+  final GizmoScalar far;
+
+  /// A vec2 property path shifting the volume along node-local +X and +Y.
+  final String? offsetBind;
+
+  @override
+  String get kind => 'orthographicVolume';
+
+  @override
+  Map<String, Object?> fieldsToJson() => {
+    if (fitBind == null) 'fit': fit,
+    if (fitBind != null) 'fitBind': fitBind,
+    'width': width.toJson(),
+    'height': height.toJson(),
+    'pixelsPerUnit': pixelsPerUnit.toJson(),
+    'zoom': zoom.toJson(),
+    'near': near.toJson(),
+    'far': far.toJson(),
+    if (offsetBind != null) 'offsetBind': offsetBind,
   };
 }
 

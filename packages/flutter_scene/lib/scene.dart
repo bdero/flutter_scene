@@ -153,7 +153,19 @@ export 'src/asset_helpers.dart'
         imageFromAsset,
         imageFromBytes;
 export 'src/camera.dart'
-    show Camera, CameraProjection, PerspectiveCamera, PerspectiveProjection;
+    show
+        Camera,
+        CameraProjection,
+        OrthographicCamera,
+        OrthographicContain,
+        OrthographicCover,
+        OrthographicHeight,
+        OrthographicProjection,
+        OrthographicSize,
+        OrthographicStretch,
+        OrthographicWidth,
+        PerspectiveCamera,
+        PerspectiveProjection;
 export 'src/camera_controllers/camera_controller.dart' show CameraController;
 export 'src/camera_controllers/fly_camera_controller.dart'
     show FlyCameraController;

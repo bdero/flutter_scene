@@ -289,10 +289,19 @@ class SplatGeometry extends Geometry {
     final mvp = cameraTransform * modelTransform;
 
     // The MVP's w row measures view depth per unit of local position, so its
-    // xyz is the local-space sort direction. Ordering along a direction is
-    // unaffected by camera translation, so only rotation triggers a re-sort.
+    // xyz is the local-space sort direction. An orthographic w row is
+    // constant, and its z row carries the depth gradient instead. Ordering
+    // along a direction is unaffected by camera translation, so only rotation
+    // triggers a re-sort.
     final storage = mvp.storage;
-    final sortDir = vm.Vector3(storage[3], storage[7], storage[11]);
+    final orthographic =
+        storage[3] * storage[3] +
+            storage[7] * storage[7] +
+            storage[11] * storage[11] <
+        1e-12;
+    final sortDir = orthographic
+        ? vm.Vector3(storage[2], storage[6], storage[10])
+        : vm.Vector3(storage[3], storage[7], storage[11]);
     if (sortDir.length2 > 1e-12) {
       sortDir.normalize();
       final last = _lastSortDir;
@@ -327,7 +336,7 @@ class SplatGeometry extends Geometry {
     );
 
     final viewport = currentSceneEncoderViewport;
-    final frameInfo = Float32List(72);
+    final frameInfo = Float32List(76);
     frameInfo.setRange(0, 16, mvp.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     final cropInverse = _cropInverse;
@@ -360,6 +369,19 @@ class SplatGeometry extends Geometry {
     frameInfo[69] = tint.y;
     frameInfo[70] = tint.z;
     frameInfo[71] = tint.w;
+    // view_direction: under an orthographic camera every view ray runs along
+    // the camera's forward axis, the view-projection's z row.
+    if (orthographic) {
+      final forward = vm.Vector3(
+        cameraTransform.storage[2],
+        cameraTransform.storage[6],
+        cameraTransform.storage[10],
+      )..normalize();
+      frameInfo[72] = forward.x;
+      frameInfo[73] = forward.y;
+      frameInfo[74] = forward.z;
+      frameInfo[75] = 1.0;
+    }
     pass.bindUniform(
       vertexShader.getUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),

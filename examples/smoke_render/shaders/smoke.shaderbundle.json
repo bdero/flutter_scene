@@ -6,5 +6,9 @@
     "RawPairFragment": {
         "type": "fragment",
         "file": "shaders/raw_pair.frag"
+    },
+    "ViewEdgesFragment": {
+        "type": "fragment",
+        "file": "shaders/view_edges.frag"
     }
 }

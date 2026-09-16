@@ -2,6 +2,7 @@
 
 ## 0.4.0
 
+- `GizmoOrthographicVolume` draws an orthographic camera's view volume, sized by a bound fit mode, extents, zoom, and offset.
 - `NodeSpec.shadowCastingMode` carries a node's shadow casting mode (`off`, `on`, `doubleSided`, `shadowsOnly`), delta-serialized and overridable on prefab instances through the `shadowCasting` path.
 - `EnvironmentEffectsSpec` carries SMAA quality (`smaaThreshold`, `smaaMaxSearchSteps`, `smaaMaxDiagonalSearchSteps`, `smaaCornerRounding`), delta-serialized like the other effects.
 - The spec's temporal anti-aliasing defaults now match the renderer's.

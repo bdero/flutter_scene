@@ -2,7 +2,10 @@
 //
 // The including shader must declare the samplers `linear_depth` and
 // `depth_mip1`..`depth_mip3`, and define AO_INFO as the uniform block instance
-// whose `proj.xy` holds the half-fov tangents.
+// whose `proj.xy` holds the projection scale and `proj_offset.xyz` the axis
+// offset and orthographic flag (see view_projection.glsl).
+
+#include <view_projection.glsl>
 
 // Fetches the view-space depth at [uv] from level [level] of the depth chain.
 float DepthAtLevel(vec2 uv, int level) {
@@ -15,12 +18,10 @@ float DepthAtLevel(vec2 uv, int level) {
 // Reconstructs a view-space position from a depth-buffer UV. Camera space
 // places the eye at the origin looking down +Z (the convention the depth
 // prepass writes), so the stored planar depth is the view-space Z and the
-// X/Y follow from the projection tangents.
+// X/Y follow from the projection.
 vec3 ViewPositionAt(vec2 uv, int level) {
-  float z = DepthAtLevel(uv, level);
-  // NDC from the full-screen UV (V runs downward in the UV).
-  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-  return vec3(ndc.x * z * AO_INFO.proj.x, ndc.y * z * AO_INFO.proj.y, z);
+  return ViewPositionFromUv(uv, DepthAtLevel(uv, level), AO_INFO.proj.xy,
+                            AO_INFO.proj_offset.xyz);
 }
 
 vec3 ViewPositionBase(ivec2 coord) {
@@ -28,8 +29,7 @@ vec3 ViewPositionBase(ivec2 coord) {
   coord = clamp(coord, ivec2(0), size - ivec2(1));
   float z = texelFetch(linear_depth, coord, 0).r;
   vec2 uv = (vec2(coord) + vec2(0.5)) / vec2(size);
-  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-  return vec3(ndc.x * z * AO_INFO.proj.x, ndc.y * z * AO_INFO.proj.y, z);
+  return ViewPositionFromUv(uv, z, AO_INFO.proj.xy, AO_INFO.proj_offset.xyz);
 }
 
 // Reconstructs the view-space geometric normal from linear depth.

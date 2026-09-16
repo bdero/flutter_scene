@@ -43,7 +43,7 @@ class SmokeScene {
   });
 
   final String id;
-  final ({Scene scene, PerspectiveCamera camera}) Function() setup;
+  final ({Scene scene, Camera camera}) Function() setup;
   final Future<void> Function()? preload;
 
   /// Frames to render before the capture, for a feature that converges over
@@ -525,6 +525,36 @@ MeshGeometry _phaseGrid() {
   // against SwiftShader if the fault is there.
   return MeshGeometry.fromArrays(positions: positions, indices: indices)
     ..setCustomAttribute('phase', phase, components: 1);
+}
+
+/// Outlines depth and normal edges from the engine's geometry buffers.
+class _ViewEdgesPass extends CustomRenderPass {
+  @override
+  String get name => 'view_edges';
+
+  @override
+  RenderStage get stage => RenderStage.afterScene;
+
+  @override
+  Set<RenderInput> get inputs => const {RenderInput.normals};
+
+  @override
+  void execute(RenderPassContext context) {
+    final depth = context.sceneDepthLinear;
+    if (depth == null) return;
+    context.applyShader(
+      _rawPairLibrary!['ViewEdgesFragment']!,
+      textures: {'input_depth': depth},
+      samplers: {
+        'input_depth': gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.nearest,
+          magFilter: gpu.MinMagFilter.nearest,
+        ),
+      },
+      uniforms: {'PostCameraInfo': context.cameraInfo},
+      frameInfo: true,
+    );
+  }
 }
 
 class _NormalsProbePass extends CustomRenderPass {
@@ -1398,6 +1428,61 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     scene.add(caster);
     return (scene: scene, camera: _shadowCamera());
   }),
+  // An isometric orthographic camera whose view volume starts behind the eye
+  // (the eye sits inside the scene), with a shadowed sun, ambient occlusion,
+  // and a custom pass outlining depth and normal edges. A backend or effect
+  // that still assumes perspective reconstruction draws misplaced shadows,
+  // occlusion, or outlines, and geometry behind the eye clips away.
+  SmokeScene('orthographic_camera', () {
+    final scene = Scene();
+    _configureAmbientOcclusion(scene);
+    scene.addRenderPass(_ViewEdgesPass());
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(-0.4, -1.0, -0.25),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 12.0),
+      ),
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          PlaneGeometry(width: 3.0, depth: 3.0),
+          PhysicallyBasedMaterial()
+            ..baseColorFactor = vm.Vector4(0.78, 0.78, 0.80, 1.0)
+            ..metallicFactor = 0.0
+            ..roughnessFactor = 0.9
+            ..vertexColorWeight = 0.0,
+        ),
+      ),
+    );
+    final colors = [
+      vm.Vector4(0.85, 0.45, 0.25, 1.0),
+      vm.Vector4(0.30, 0.65, 0.45, 1.0),
+      vm.Vector4(0.30, 0.45, 0.85, 1.0),
+    ];
+    for (var i = 0; i < 3; i++) {
+      scene.add(
+        _cuboid(colors[i], 0.0, 0.6)
+          ..localTransform =
+              vm.Matrix4.translation(
+                vm.Vector3(-0.8 + i * 0.8, 0.5 + i * 0.35, 0.6 - i * 0.6),
+              ) *
+              vm.Matrix4.rotationY(0.3 * i),
+      );
+    }
+    return (
+      scene: scene,
+      camera: OrthographicCamera(
+        position: vm.Vector3(0.4, 0.4, 0.4),
+        target: vm.Vector3.zero(),
+        projection: OrthographicProjection(
+          size: const OrthographicSize.contain(5.2, 5.2),
+          near: -10.0,
+          far: 10.0,
+        ),
+      ),
+    );
+  }, preload: loadSmokeMaterials),
   // The surface debug views. The left half is the lit shadow scene, the
   // right half its world normals (split at the middle), and the wireframe
   // overlay traces every edge on both. Covers the material hook, the split
@@ -2166,7 +2251,7 @@ class SmokeSceneView extends StatefulWidget {
 
 class SmokeSceneViewState extends State<SmokeSceneView> {
   late final Scene _scene;
-  late final PerspectiveCamera _camera;
+  late final Camera _camera;
 
   /// The rendered scene, for the test's frame diagnostics.
   Scene get scene => _scene;
@@ -2209,7 +2294,7 @@ class _SmokePainter extends CustomPainter {
   _SmokePainter(this.scene, this.camera);
 
   final Scene scene;
-  final PerspectiveCamera camera;
+  final Camera camera;
 
   @override
   void paint(Canvas canvas, Size size) {

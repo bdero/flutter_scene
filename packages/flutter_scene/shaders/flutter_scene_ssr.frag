@@ -24,7 +24,8 @@ uniform sampler2D linear_depth;
 uniform SsrInfo {
   // x, y: viewport size in pixels. z, w: its reciprocal.
   vec4 viewport;
-  // x: tan(fovX / 2). y: tan(fovY / 2). z: near plane. w: far plane.
+  // xy: the projection scale (see view_projection.glsl). z: near plane. w: far
+  // plane.
   vec4 proj;
   // x: max march distance (world units). y: thickness for hit acceptance
   // (world units). z: starting bias off the surface (world units). w: max
@@ -38,8 +39,12 @@ uniform SsrInfo {
   // reachable range. The reflection ramps to zero from here to the range
   // limit, so it tapers out instead of hard-cutting.
   vec4 fade;
+  // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
+  vec4 proj_offset;
 }
 ssr;
+
+#include <view_projection.glsl>
 
 in vec2 v_uv;
 out vec4 frag_color;
@@ -69,19 +74,27 @@ const float kGoldenAngle = 2.39996323;
 // Reconstructs a view-space position from a depth-buffer UV. Camera space
 // places the eye at the origin looking down +Z (the convention the depth
 // prepass writes), so the stored planar depth is the view-space Z and the
-// X/Y follow from the projection tangents. Mirrors the occlusion pass.
+// X/Y follow from the projection. Mirrors the occlusion pass.
 vec3 ViewPositionAt(vec2 uv) {
-  float z = texture(linear_depth, uv).r;
-  vec2 ndc = vec2(2.0 * uv.x - 1.0, 1.0 - 2.0 * uv.y);
-  return vec3(ndc.x * z * ssr.proj.x, ndc.y * z * ssr.proj.y, z);
+  return ViewPositionFromUv(uv, texture(linear_depth, uv).r, ssr.proj.xy,
+                            ssr.proj_offset.xyz);
 }
 
 // Projects a view-space position back to a depth-buffer UV (the inverse of
-// the X/Y mapping in ViewPositionAt). Valid for positions in front of the
-// eye (z > 0).
+// ViewPositionAt). Valid for positions past the near plane.
 vec2 UvFromView(vec3 p) {
-  vec2 ndc = vec2(p.x / (p.z * ssr.proj.x), p.y / (p.z * ssr.proj.y));
-  return vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+  return UvFromViewPosition(p, ssr.proj.xy, ssr.proj_offset.xyz);
+}
+
+// The ray depth term that interpolates linearly across the screen: 1/z under
+// perspective, z itself under an orthographic camera.
+float ScreenLinearDepth(float z) {
+  return ssr.proj_offset.z > 0.5 ? z : 1.0 / z;
+}
+
+// The view depth back from an interpolated ScreenLinearDepth.
+float DepthFromScreenLinear(float w) {
+  return ssr.proj_offset.z > 0.5 ? w : 1.0 / w;
 }
 
 // Un-premultiplies a sampled premultiplied-alpha color.
@@ -156,13 +169,13 @@ void main() {
   }
 
   // View-space reflection of the eye-to-pixel ray about the surface normal.
-  vec3 incident = normalize(origin);
+  vec3 incident = -ViewDirectionAt(origin, ssr.proj_offset.xyz);
   vec3 reflection = reflect(incident, normal);
 
   // March the reflected ray in screen space: project the ray's start and end
   // to UVs and walk the screen-space segment in equal steps. View-space
-  // depth is recovered per step from a perspective-correct interpolation of
-  // 1/z, which is linear across the screen.
+  // depth is recovered per step from ScreenLinearDepth, which is linear
+  // across the screen.
   vec3 ray_start = origin + normal * start_bias;
   vec3 ray_end = ray_start + reflection * max_distance;
   // Clip the segment to the near plane so the projection stays in front of
@@ -174,8 +187,8 @@ void main() {
 
   vec2 uv_start = UvFromView(ray_start);
   vec2 uv_end = UvFromView(ray_end);
-  float inv_z_start = 1.0 / ray_start.z;
-  float inv_z_end = 1.0 / ray_end.z;
+  float inv_z_start = ScreenLinearDepth(ray_start.z);
+  float inv_z_end = ScreenLinearDepth(ray_end.z);
 
   // The ray's screen-space length in pixels. Steps advance a fixed pixel
   // [stride] along it, so sampling density is set by the stride (not by the
@@ -214,7 +227,7 @@ void main() {
       break;
     }
     // Perspective-correct view-space depth of the ray at this screen point.
-    float ray_z = 1.0 / mix(inv_z_start, inv_z_end, t);
+    float ray_z = DepthFromScreenLinear(mix(inv_z_start, inv_z_end, t));
     float scene_z = texture(linear_depth, uv).r;
     // Skip background (sky) texels: no geometry to reflect there.
     if (scene_z >= far) {
@@ -236,7 +249,7 @@ void main() {
       for (int j = 0; j < MAX_SSR_REFINE_STEPS; j++) {
         float mid = 0.5 * (lo + hi);
         vec2 muv = mix(uv_start, uv_end, mid);
-        float mz = 1.0 / mix(inv_z_start, inv_z_end, mid);
+        float mz = DepthFromScreenLinear(mix(inv_z_start, inv_z_end, mid));
         if (mz - texture(linear_depth, muv).r > 0.0) {
           hi = mid;
         } else {

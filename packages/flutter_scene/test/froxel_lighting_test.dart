@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/render/light_culling.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -23,11 +24,22 @@ final _forward = Vector3(0, 0, -1);
 final _right = Vector3(1, 0, 0);
 final _up = Vector3(0, 1, 0);
 
+ProjectionParams _perspective(double tanX, double tanY) => ProjectionParams(
+  scaleX: tanX,
+  scaleY: tanY,
+  offsetX: 0,
+  offsetY: 0,
+  orthographic: false,
+  near: 0.1,
+  far: 1000,
+);
+
 ({
   Float32List data,
   int height,
   double zScale,
   double zBias,
+  double depthOffset,
   int overflowedFroxels,
 })
 _froxelize(List<CullableLight> lights) => PunctualLightBuffer.computeFroxelData(
@@ -36,8 +48,7 @@ _froxelize(List<CullableLight> lights) => PunctualLightBuffer.computeFroxelData(
   forward: _forward,
   right: _right,
   up: _up,
-  tanHalfFovX: 1.0,
-  tanHalfFovY: 1.0,
+  projection: _perspective(1.0, 1.0),
   maxPerFroxel: kMaxFroxelLights,
 );
 
@@ -163,8 +174,7 @@ void main() {
         forward: _forward,
         right: _right,
         up: _up,
-        tanHalfFovX: tanX,
-        tanHalfFovY: tanY,
+        projection: _perspective(tanX, tanY),
         maxPerFroxel: kMaxFroxelLights,
       );
       int froxelOf(Vector3 world) {
@@ -213,8 +223,7 @@ void main() {
       forward: _forward,
       right: _right,
       up: _up,
-      tanHalfFovX: tanX,
-      tanHalfFovY: tanY,
+      projection: _perspective(tanX, tanY),
       maxPerFroxel: kMaxFroxelLights,
     );
     final probe = Vector3(16.415, -9.108, -23.485);
@@ -296,5 +305,67 @@ void main() {
       _lightsAt(r.data, _froxelOf(position, r.zScale, r.zBias)),
       contains(0),
     );
+  });
+  test('orthographic views cluster through the projection', () {
+    // An off-center orthographic volume starting behind the eye: tiles map
+    // lateral position without a depth divide, and slices shift the near
+    // plane onto the first slice.
+    const projection = ProjectionParams(
+      scaleX: 12.0,
+      scaleY: 7.0,
+      offsetX: 0.25,
+      offsetY: -0.1,
+      orthographic: true,
+      near: -40.0,
+      far: 200.0,
+    );
+    final random = math.Random(7);
+    for (var trial = 0; trial < 200; trial++) {
+      final vz = -35.0 + random.nextDouble() * 200.0;
+      final vx = (random.nextDouble() * 2.4 - 1.2) * projection.scaleX;
+      final vy = (random.nextDouble() * 2.4 - 1.2) * projection.scaleY;
+      final radius = 0.5 + random.nextDouble() * 8.0;
+      final position = Vector3(vx, vy, -vz);
+      final result = PunctualLightBuffer.computeFroxelData(
+        lights: [_pointLight(3, position, radius)],
+        cameraPosition: Vector3.zero(),
+        forward: _forward,
+        right: _right,
+        up: _up,
+        projection: projection,
+        maxPerFroxel: kMaxFroxelLights,
+      );
+      expect(result.depthOffset, closeTo(0.25 + 40.0, 1e-9));
+      // The shader's lookup, mirrored for an orthographic projection.
+      int froxelOf(Vector3 world) {
+        final depth = math.max(world.dot(_forward) + result.depthOffset, 1e-4);
+        final ndcX = world.dot(_right) / projection.scaleX + projection.offsetX;
+        final ndcY = world.dot(_up) / projection.scaleY + projection.offsetY;
+        final fx = ((ndcX * 0.5 + 0.5) * _nx).floor().clamp(0, _nx - 1);
+        final fy = ((0.5 - ndcY * 0.5) * _ny).floor().clamp(0, _ny - 1);
+        final fz = ((math.log(depth) / math.ln2) * result.zScale + result.zBias)
+            .floor()
+            .clamp(0, _nz - 1);
+        return (fz * _ny + fy) * _nx + fx;
+      }
+
+      for (var sample = 0; sample < 30; sample++) {
+        final direction = Vector3(
+          random.nextDouble() * 2 - 1,
+          random.nextDouble() * 2 - 1,
+          random.nextDouble() * 2 - 1,
+        );
+        if (direction.length2 < 1e-6) continue;
+        direction.normalize();
+        final probe =
+            position + direction * (radius * 0.98 * random.nextDouble());
+        if (probe.dot(_forward) < projection.near) continue;
+        expect(
+          _lightsAt(result.data, froxelOf(probe)),
+          contains(3),
+          reason: 'light $position r=$radius lost at probe $probe',
+        );
+      }
+    }
   });
 }

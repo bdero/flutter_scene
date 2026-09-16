@@ -32,6 +32,14 @@ double lodScreenSize({
   return radius / (distance * math.tan(fovRadiansY / 2));
 }
 
+/// [lodScreenSize] for an orthographic camera showing [halfHeight] world units
+/// above and below its axis, where on-screen size does not change with
+/// distance.
+double lodScreenSizeOrthographic({
+  required double radius,
+  required double halfHeight,
+}) => radius / halfHeight;
+
 /// Selects the level-of-detail index for a projected [screenSize] against a
 /// list of [thresholds], or `-1` to cull (draw nothing).
 ///

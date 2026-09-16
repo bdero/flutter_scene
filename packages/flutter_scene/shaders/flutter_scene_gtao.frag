@@ -40,10 +40,12 @@ uniform sampler2D scene_radiance;
 uniform GtaoInfo {
   // x, y: occlusion target size in pixels. z, w: its reciprocal.
   vec4 viewport;
-  // x: tan(fovX / 2). y: tan(fovY / 2). z: near plane. w: far plane.
+  // xy: the projection scale (see view_projection.glsl). z: near plane. w: far
+  // plane.
   vec4 proj;
   // x: radius (world units). y: obscurance intensity. z: final visibility
-  // power. w: projection scale (pixels per world unit at depth 1).
+  // power. w: projection scale (pixels per world unit at depth 1, or at any
+  // depth for an orthographic camera).
   vec4 params;
   // x: slice count. y: steps per slice side. z: mip level count.
   // w: thickness heuristic (horizon mode).
@@ -62,6 +64,8 @@ uniform GtaoInfo {
   // indirect-light gather reads each tap where it sat when the history was
   // rendered instead of dragging a frame behind the camera.
   mat4 reproject;
+  // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
+  vec4 proj_offset;
 }
 gtao;
 
@@ -196,10 +200,12 @@ void main() {
   }
 
   vec3 normal = ReconstructNormal(v_uv, origin);
-  vec3 view_dir = -normalize(origin);
+  vec3 view_dir = ViewDirectionAt(origin, gtao.proj_offset.xyz);
 
   // Screen-space march radius: the world radius projected to this depth.
-  float screen_radius = proj_scale * radius / origin.z;
+  float screen_radius =
+      proj_scale * radius /
+      ViewProjectionDepthFactor(origin.z, gtao.proj_offset.xyz);
   float step_radius = screen_radius / (float(step_count) + 1.0);
 
   // Spatial-only noise: the slice fan rotates per pixel and the march start

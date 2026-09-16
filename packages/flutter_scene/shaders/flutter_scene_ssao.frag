@@ -23,10 +23,12 @@ uniform sampler2D depth_mip3;
 uniform SsaoInfo {
   // x, y: occlusion target size in pixels. z, w: its reciprocal.
   vec4 viewport;
-  // x: tan(fovX / 2). y: tan(fovY / 2). z: near plane. w: far plane.
+  // xy: the projection scale (see view_projection.glsl). z: near plane. w: far
+  // plane.
   vec4 proj;
   // x: radius (world units). y: bias (world units). z: obscurance intensity.
-  // w: projection scale (pixels per world unit at depth 1).
+  // w: projection scale (pixels per world unit at depth 1, or at any depth for
+  // an orthographic camera).
   vec4 params;
   // x: sample count. y: mip level count. z: minimum horizon sine term.
   // w: final visibility power.
@@ -36,6 +38,8 @@ uniform SsaoInfo {
   // xyz: view-space direction toward the sun. w: the contact-shadow march
   // distance in world units, 0 when contact shadows are off.
   vec4 contact;
+  // xy: the NDC position of the view axis. z: 1 for an orthographic camera.
+  vec4 proj_offset;
 }
 ssao;
 
@@ -91,7 +95,8 @@ void main() {
   // Keep the full radius at viewport boundaries. Depth sampling clamps there,
   // so the same normalized kernel remains stable without a separate output
   // fade or a boundary-dependent change in contact strength.
-  float screen_radius = 0.85 * proj_scale * radius / origin.z;
+  float screen_radius = 0.85 * proj_scale * radius /
+                        ViewProjectionDepthFactor(origin.z, ssao.proj_offset.xyz);
 
   // A non-repeating pixel hash avoids the screen-aligned 4x4 phase pattern
   // that survives filtering as horizontal and vertical bands.

@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart'
     show kLinearDepthBlackboardKey;
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -124,10 +125,7 @@ class TaaPass extends RenderGraphPass {
     required this.state,
     required this.currentToPreviousViewProjection,
     required this.cameraPosition,
-    required this.tanHalfFovX,
-    required this.tanHalfFovY,
-    required this.far,
-    required this.near,
+    required this.projection,
     required this.currentJitterNdc,
     required this.previousJitterNdc,
   });
@@ -137,10 +135,7 @@ class TaaPass extends RenderGraphPass {
   final TaaHistoryState state;
   final Matrix4 currentToPreviousViewProjection;
   final Vector3 cameraPosition;
-  final double tanHalfFovX;
-  final double tanHalfFovY;
-  final double far;
-  final double near;
+  final ProjectionParams projection;
   final Vector2 currentJitterNdc;
   final Vector2 previousJitterNdc;
 
@@ -198,10 +193,10 @@ class TaaPass extends RenderGraphPass {
     infoData[17] = cameraPosition.y;
     infoData[18] = cameraPosition.z;
     infoData[19] = 1.0;
-    infoData[20] = tanHalfFovX;
-    infoData[21] = tanHalfFovY;
-    infoData[22] = far;
-    infoData[23] = near;
+    infoData[20] = projection.scaleX;
+    infoData[21] = projection.scaleY;
+    infoData[22] = projection.far;
+    infoData[23] = projection.near;
     infoData[24] = currentJitterNdc.x;
     infoData[25] = currentJitterNdc.y;
     infoData[26] = previousJitterNdc.x;
@@ -214,6 +209,9 @@ class TaaPass extends RenderGraphPass {
     infoData[33] = height.toDouble();
     infoData[34] = 1.0 / width;
     infoData[35] = 1.0 / height;
+    infoData[36] = projection.offsetX;
+    infoData[37] = projection.offsetY;
+    infoData[38] = projection.orthographicFlag;
 
     renderPass.bindUniform(
       _fragmentShader.getUniformSlot('TaaInfo'),

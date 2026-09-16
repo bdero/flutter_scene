@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-idioms
-version: 8
+version: 9
 description: Write correct flutter_scene code. Use this whenever building 3D with the flutter_scene Dart/Flutter engine (rendering a scene, geometry, materials, lighting, loading a .glb model, animation, custom shaders). It corrects the wrong assumptions models carry from three.js, Godot, and Unity, and names the APIs and traps that are specific to this engine.
 ---
 
@@ -94,7 +94,7 @@ The two interoperate. A mostly-declarative scene can drop to an imperative node 
 
 **Materials.** `PhysicallyBasedMaterial` (base color, metallic, roughness, normal, emissive, plus clearcoat/sheen/transmission/etc.), `UnlitMaterial`, `ShaderMaterial` for custom shaders. Texture slots take a `TextureSource` (from `loadTexture(path)`), not a raw `gpu.Texture`.
 
-**Camera.** `PerspectiveCamera(position: ..., target: ...)`. There is no orthographic camera built in.
+**Camera.** `PerspectiveCamera(position: ..., target: ...)`, or `OrthographicCamera(position: ..., target: ..., projection: OrthographicProjection(size: OrthographicSize.height(12)))` for isometric, top-down, and pixel-art views. Every depth effect works under both.
 
 ## What you are probably underestimating (it is all here)
 

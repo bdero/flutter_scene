@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -10,6 +9,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/object_filter.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_graph_capture.dart'
     show RenderGraphDebug;
@@ -86,8 +86,8 @@ enum RenderStage {
 /// {@category Rendering}
 enum RenderInput {
   /// The linear (view-space) depth buffer, on
-  /// [RenderPassContext.sceneDepthLinear]. Needs a perspective camera;
-  /// reconstruct positions with [RenderPassContext.cameraInfo].
+  /// [RenderPassContext.sceneDepthLinear]. Reconstruct positions with
+  /// [RenderPassContext.cameraInfo].
   depth,
 
   /// View-space normals, octahedral-packed into the green/blue channels of the
@@ -242,8 +242,8 @@ class RenderPassContext {
   /// The linear (view-space) depth buffer: planar view-space depth (world
   /// units) in the red channel, with the octahedral-packed view-space normal in
   /// green/blue when [RenderInput.normals] was requested. Non-null when the pass
-  /// declared [RenderInput.depth] (or [RenderInput.normals]) and the camera is
-  /// perspective; also present when ambient occlusion or reflections ran.
+  /// declared [RenderInput.depth] (or [RenderInput.normals]); also present when
+  /// ambient occlusion or reflections ran.
   gpu.Texture? get sceneDepthLinear =>
       _context.blackboard.get<gpu.Texture>(kLinearDepthBlackboardKey);
 
@@ -264,23 +264,34 @@ class RenderPassContext {
       _context.blackboard.get<ByteData>(kShadowUniformBlackboardKey);
 
   /// A packed `PostCameraInfo` std140 uniform block for reconstructing world
-  /// positions from [sceneDepthLinear]. Layout: a `vec4` `(tan(fovX/2),
-  /// tan(fovY/2), near, far)`, then the camera basis as three `vec4`s (right,
-  /// up, forward, matching the depth prepass's view space: the eye at the origin
-  /// looking down +forward), then a `vec4` camera world position. Reconstruct
-  /// with `viewZ = depth; viewXY = (2*uv - 1 flipped) * viewZ * tangents;
-  /// world = position + right*viewX + up*viewY + forward*viewZ`. Bind it under a
-  /// `PostCameraInfo` block via [applyShader]'s `uniforms`. The projection terms
-  /// are zero for a non-perspective camera (where depth is unavailable).
+  /// positions from [sceneDepthLinear], for any camera projection. Layout:
+  ///
+  /// * `vec4 projection`: xy the view-space extent per unit of NDC (the half-fov
+  ///   tangents for perspective, the half width and height for orthographic),
+  ///   z near, w far.
+  /// * `vec4 camera_right`, `vec4 camera_up`, `vec4 camera_forward`: the camera
+  ///   basis in xyz, matching the depth prepass's view space (the eye at the
+  ///   origin looking down +forward). `camera_right.w` and `camera_up.w` are the
+  ///   NDC position of the view axis (zero unless off-center), and
+  ///   `camera_forward.w` is 1 for an orthographic camera and 0 for perspective.
+  /// * `vec4 camera_position`: the eye in xyz.
+  ///
+  /// `#include <view_projection.glsl>` and reconstruct with
+  /// `ViewPositionFromUv(uv, depth, projection.xy, offset)`, where `offset` is
+  /// `vec3(camera_right.w, camera_up.w, camera_forward.w)`, then
+  /// `world = position + right * view.x + up * view.y + forward * view.z`. Bind
+  /// it under a `PostCameraInfo` block via [applyShader]'s `uniforms`.
   ByteData get cameraInfo {
     final f = Float32List(20); // 5 vec4
-    final projection = camera.projection;
-    if (projection is PerspectiveProjection && dimensions.height > 0) {
-      final tanY = math.tan(projection.fovRadiansY * 0.5);
-      f[0] = tanY * (dimensions.width / dimensions.height);
-      f[1] = tanY;
+    if (dimensions.height > 0) {
+      final projection = ProjectionParams.of(camera.projection, dimensions);
+      f[0] = projection.scaleX;
+      f[1] = projection.scaleY;
       f[2] = projection.near;
       f[3] = projection.far;
+      f[7] = projection.offsetX;
+      f[11] = projection.offsetY;
+      f[15] = projection.orthographicFlag;
     }
     // The same view basis the depth prepass encodes against (eye at origin
     // looking down +forward), so a reconstructed view point maps to world.

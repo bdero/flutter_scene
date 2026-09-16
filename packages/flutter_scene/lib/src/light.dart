@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show internal;
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -317,6 +318,10 @@ class DirectionalLight {
   /// camera rotates; the projection is then texel-snapped so shadow
   /// edges do not shimmer.
   ///
+  /// An orthographic camera's slices are boxes of constant cross-section, so
+  /// its splits are uniform from the near plane (the logarithmic blend exists
+  /// to follow perspective's shrinking texel footprint).
+  ///
   /// [worldDirection] is the light's world-space travel direction. When
   /// omitted it falls back to [direction] (the light's own field), which
   /// is correct for a light placed without a node transform.
@@ -325,11 +330,19 @@ class DirectionalLight {
     double aspectRatio, [
     Vector3? worldDirection,
   ]) {
-    // Cascades fit the camera frustum, which is perspective-specific.
-    final perspective = camera.projection as PerspectiveProjection;
+    // The unit-height view carries the aspect ratio; a projection the renderer
+    // bound to its view ignores it.
+    final projection = ProjectionParams.of(
+      camera.projection,
+      ui.Size(aspectRatio, 1.0),
+    );
+    final orthographic = projection.orthographic;
     final count = shadowCascadeCount.clamp(1, 4);
-    final near = perspective.near;
-    final far = shadowMaxDistance;
+    final near = projection.near;
+    final far = orthographic
+        ? math.min(shadowMaxDistance, projection.far)
+        : shadowMaxDistance;
+    final lambda = orthographic ? 0.0 : shadowCascadeSplitLambda;
 
     // Practical split scheme: a blend of logarithmic and uniform
     // spacing, so the near cascades get proportionally more resolution. A
@@ -349,19 +362,28 @@ class DirectionalLight {
     final splitCount = pinned != null ? count - 1 : count;
     for (var i = 1; i <= splitCount; i++) {
       final ratio = i / splitCount;
-      final logSplit = splitNear * math.pow(far / splitNear, ratio);
       final uniformSplit = splitNear + (far - splitNear) * ratio;
-      splits.add(
-        shadowCascadeSplitLambda * logSplit +
-            (1.0 - shadowCascadeSplitLambda) * uniformSplit,
-      );
+      if (lambda == 0.0) {
+        splits.add(uniformSplit);
+        continue;
+      }
+      final logSplit = splitNear * math.pow(far / splitNear, ratio);
+      splits.add(lambda * logSplit + (1.0 - lambda) * uniformSplit);
     }
 
-    // Camera direction and field-of-view tangents.
+    // Camera basis and the projection's lateral extents (half-fov tangents,
+    // or half sizes when orthographic).
     final forward = camera.forward;
-    final tanV = math.tan(perspective.fovRadiansY * 0.5);
-    final tanH = tanV * aspectRatio;
-    final tanRadius2 = tanH * tanH + tanV * tanV;
+    final right = camera.up.cross(forward)..normalize();
+    final up = forward.cross(right)..normalize();
+    final tanRadius2 =
+        projection.scaleX * projection.scaleX +
+        projection.scaleY * projection.scaleY;
+    // Where the orthographic volume's axis sits off the eye (an offset
+    // projection shifts it across the view plane).
+    final lateralCenter =
+        right * (-projection.offsetX * projection.scaleX) +
+        up * (-projection.offsetY * projection.scaleY);
 
     final effectiveDirection = worldDirection ?? direction;
     final lightLength = effectiveDirection.length;
@@ -385,23 +407,33 @@ class DirectionalLight {
       final sliceFar = overlap > 0.0 && c < count - 1
           ? splits[c + 1] + (splits[c + 1] - sliceNear) * overlap
           : splits[c + 1];
-      final centerDepth = math.min(
-        sliceFar,
-        (sliceNear + sliceFar) * (1.0 + tanRadius2) * 0.5,
-      );
       final position = camera.position;
-      final center = Vector3(
-        position.x + forward.x * centerDepth,
-        position.y + forward.y * centerDepth,
-        position.z + forward.z * centerDepth,
-      );
-      final nearRadius2 =
-          (centerDepth - sliceNear) * (centerDepth - sliceNear) +
-          sliceNear * sliceNear * tanRadius2;
-      final farRadius2 =
-          (sliceFar - centerDepth) * (sliceFar - centerDepth) +
-          sliceFar * sliceFar * tanRadius2;
-      final radius = math.sqrt(math.max(nearRadius2, farRadius2));
+      final Vector3 center;
+      final double radius;
+      if (orthographic) {
+        // A box slice: its bounding sphere sits at the box center.
+        final centerDepth = (sliceNear + sliceFar) * 0.5;
+        final halfLength = (sliceFar - sliceNear) * 0.5;
+        center = position + forward * centerDepth + lateralCenter;
+        radius = math.sqrt(tanRadius2 + halfLength * halfLength);
+      } else {
+        final centerDepth = math.min(
+          sliceFar,
+          (sliceNear + sliceFar) * (1.0 + tanRadius2) * 0.5,
+        );
+        center = Vector3(
+          position.x + forward.x * centerDepth,
+          position.y + forward.y * centerDepth,
+          position.z + forward.z * centerDepth,
+        );
+        final nearRadius2 =
+            (centerDepth - sliceNear) * (centerDepth - sliceNear) +
+            sliceNear * sliceNear * tanRadius2;
+        final farRadius2 =
+            (sliceFar - centerDepth) * (sliceFar - centerDepth) +
+            sliceFar * sliceFar * tanRadius2;
+        radius = math.sqrt(math.max(nearRadius2, farRadius2));
+      }
 
       cascades.add(
         ShadowCascade(
@@ -998,8 +1030,11 @@ class Lighting {
     this.cameraForward,
     this.cameraRight,
     this.cameraUp,
-    this.tanHalfFovX = 0.0,
-    this.tanHalfFovY = 0.0,
+    this.projectionScaleX = 0.0,
+    this.projectionScaleY = 0.0,
+    this.projectionOffsetX = 0.0,
+    this.projectionOffsetY = 0.0,
+    this.orthographic = false,
     this.time = 0.0,
     this.planarReflectionsSuppressed = false,
   }) : environmentTransform = environmentTransform ?? Matrix3.identity();
@@ -1063,7 +1098,7 @@ class Lighting {
   final gpu.Texture? punctualIndexTexture;
 
   /// This view's froxel clustering, or null when the view shades through the
-  /// per-object light lists (non-perspective camera, non-uniform light
+  /// per-object light lists (a degenerate projection, non-uniform light
   /// channels, or clustering disabled). When set, [punctualIndexTexture] and
   /// its dimensions describe the froxel data texture.
   final FroxelLighting? froxels;
@@ -1163,11 +1198,35 @@ class Lighting {
   final Vector3? cameraRight;
   final Vector3? cameraUp;
 
-  /// Tangents of the half field of view (x and y), letting a material
-  /// project world positions to screen UV (screen-space marches). Zero
-  /// for non-perspective cameras; materials treat that as unavailable.
-  final double tanHalfFovX;
-  final double tanHalfFovY;
+  /// The view-space width per unit of NDC, letting a material project world
+  /// positions to screen UV (screen-space marches): the half-fov tangent for a
+  /// perspective camera (at unit depth), the half width for an orthographic
+  /// one. Zero when unavailable.
+  final double projectionScaleX;
+
+  /// The view-space height per unit of NDC, as [projectionScaleX].
+  final double projectionScaleY;
+
+  /// The NDC x position of the view axis, nonzero only for an off-center
+  /// projection.
+  final double projectionOffsetX;
+
+  /// The NDC y position of the view axis, as [projectionOffsetX].
+  final double projectionOffsetY;
+
+  /// Whether the camera projection is orthographic (parallel view rays), so
+  /// view-space x and y do not scale with depth.
+  final bool orthographic;
+
+  /// The perspective half-fov tangent along x, zero for an orthographic
+  /// camera.
+  @Deprecated('Use projectionScaleX, which also covers orthographic cameras.')
+  double get tanHalfFovX => orthographic ? 0.0 : projectionScaleX;
+
+  /// The perspective half-fov tangent along y, zero for an orthographic
+  /// camera.
+  @Deprecated('Use projectionScaleY, which also covers orthographic cameras.')
+  double get tanHalfFovY => orthographic ? 0.0 : projectionScaleY;
 
   /// Seconds since the scene started rendering, for engine-driven material
   /// animation (the same clock custom post passes receive).

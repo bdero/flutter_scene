@@ -1,5 +1,14 @@
 ## 0.24.0
 
+* `OrthographicCamera` and `OrthographicProjection` add parallel projection, sized by `OrthographicSize` (full world extents with height, width, contain, cover, or stretch fitting, or a fixed `pixelsPerUnit`) plus `zoom`, `offset`, and a `near` that may be negative.
+* `CameraProjection.getProjectionMatrixForViewport` lets a projection size its volume from the view's logical size, which rendering and picking both resolve against.
+* Shadows, AO, SSR, TAA, depth of field, god rays, GI, planar reflections, froxel lighting, LOD, and custom-pass depth/normals all work under orthographic and custom projections.
+* `#include <view_projection.glsl>` reconstructs view positions for any projection; `PostCameraInfo` carries its axis offset and orthographic flag in the formerly unused `w` slots.
+* `.fscene` cameras serialize orthographic projections, the editor draws their view volume, and `OrbitCameraController` dollies an orthographic camera by zoom.
+* Gaussian splats sort back to front and evaluate view-dependent color under orthographic cameras.
+* BREAKING: `Lighting` takes `projectionScaleX/Y`, `projectionOffsetX/Y`, and `orthographic` in place of `tanHalfFovX/Y`, which remain as deprecated getters.
+* Screen-size LOD applies to every perspective camera, not only `PerspectiveCamera`.
+* Update `flutter_scene-idioms` (v9) and `flutter_scene-looks` (v5) skills with orthographic cameras.
 * `Scene.addTickListener` runs a `SceneTickListener` at the start of every tick and before every fixed step, ahead of all components, for per-frame sampling such as input.
 * `FlyCameraController.setMoveInput` drives movement from a gamepad, touch controls, or an input system, summing with the keys and keeping analog magnitude.
 * Cascaded shadows skip casters that cannot shadow anything the camera shades, cutting shadow-pass draws with no change to the rendered image.

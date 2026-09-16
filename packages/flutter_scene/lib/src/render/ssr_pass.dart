@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
@@ -60,20 +61,14 @@ class SsrPass extends RenderGraphPass {
   SsrPass({
     required ui.Size dimensions,
     required ScreenSpaceReflectionsSettings settings,
-    required double fovRadiansY,
-    required double near,
-    required double far,
+    required ProjectionParams projection,
   }) : _dimensions = dimensions,
        _settings = settings,
-       _fovRadiansY = fovRadiansY,
-       _near = near,
-       _far = far;
+       _projection = projection;
 
   final ui.Size _dimensions;
   final ScreenSpaceReflectionsSettings _settings;
-  final double _fovRadiansY;
-  final double _near;
-  final double _far;
+  final ProjectionParams _projection;
 
   // The shader's constant march-loop bound; user step counts clamp to this.
   static const int _maxStepCeiling = 256;
@@ -114,10 +109,6 @@ class SsrPass extends RenderGraphPass {
       ),
     );
 
-    final tanHalfFovY = math.tan(_fovRadiansY * 0.5);
-    final aspect = _dimensions.width / _dimensions.height;
-    final tanHalfFovX = tanHalfFovY * aspect;
-
     final maxSteps = _settings.maxSteps.clamp(1, _maxStepCeiling);
     final maxDistance = _settings.maxDistance;
     final thickness = _settings.thickness;
@@ -130,15 +121,16 @@ class SsrPass extends RenderGraphPass {
 
     // Trace: the viewport is the reduced trace resolution, so the pixel-space
     // march (stride, step budget) is measured in trace pixels.
-    final info = Float32List(20)
+    final projection = _projection;
+    final info = Float32List(24)
       ..[0] = traceWidth.toDouble()
       ..[1] = traceHeight.toDouble()
       ..[2] = 1.0 / traceWidth
       ..[3] = 1.0 / traceHeight
-      ..[4] = tanHalfFovX
-      ..[5] = tanHalfFovY
-      ..[6] = _near
-      ..[7] = _far
+      ..[4] = projection.scaleX
+      ..[5] = projection.scaleY
+      ..[6] = projection.near
+      ..[7] = projection.far
       ..[8] = maxDistance
       ..[9] = thickness
       ..[10] = startBias
@@ -147,7 +139,10 @@ class SsrPass extends RenderGraphPass {
       ..[13] = debugView
       ..[14] = _settings.blur
       ..[15] = _settings.stride
-      ..[16] = _settings.distanceFadeStart;
+      ..[16] = _settings.distanceFadeStart
+      ..[20] = projection.offsetX
+      ..[21] = projection.offsetY
+      ..[22] = projection.orthographicFlag;
 
     final traceCmd = gpu.gpuContext.createCommandBuffer();
     final tracePass = traceCmd.createRenderPass(

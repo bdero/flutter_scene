@@ -12,6 +12,8 @@ uniform FrameInfo {
 }
 frame_info;
 
+#include <view_vector.glsl>
+
 // Per-vertex unit quad (slot 0): x selects the endpoint (0 start, 1 end),
 // y is the side of the ribbon (-1 or +1).
 in vec2 corner;
@@ -37,7 +39,8 @@ void main() {
   // ribbon always faces the camera. A segment pointing at the eye (or a
   // degenerate segment) collapses the cross product; it stays a hairline.
   vec3 dir = world_end - world_start;
-  vec3 view = frame_info.camera_position.xyz - pos;
+  vec3 view =
+      ViewVector(frame_info.camera_transform, frame_info.camera_position.xyz, pos);
   vec3 perp = cross(dir, view);
   float perp_len = length(perp);
   perp = perp_len > 1e-12 ? perp / perp_len : vec3(0.0);

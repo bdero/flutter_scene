@@ -14,7 +14,7 @@ uniform CocInfo {
   // y: focus distance S (world units)
   // z: max foreground CoC radius (px)   w: max background CoC radius (px)
   vec4 params0;
-  // xy: full-res texel size   zw: unused
+  // xy: full-res texel size   z: 1 for an orthographic camera   w: unused
   vec4 params1;
 }
 coc_info;
@@ -24,8 +24,12 @@ in vec2 v_uv;
 out vec4 frag_color;
 
 float CocAt(float depth) {
-  float coc =
-      coc_info.params0.x * (1.0 - coc_info.params0.y / max(depth, 1e-4));
+  float focus = coc_info.params0.y;
+  // An orthographic camera has no eye to divide by, so it takes the thin-lens
+  // term's first-order form around the focus plane, (d - S) / S.
+  float coc = coc_info.params1.z > 0.5
+      ? coc_info.params0.x * (depth - focus) / max(focus, 1e-4)
+      : coc_info.params0.x * (1.0 - focus / max(depth, 1e-4));
   coc = clamp(coc, -coc_info.params0.z, coc_info.params0.w);
   return abs(coc) < 1.0 ? 0.0 : coc;
 }

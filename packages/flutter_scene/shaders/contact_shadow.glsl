@@ -6,9 +6,10 @@
 // small-scale grounding that shadow-map resolution and bias miss.
 //
 // The including shader must declare the `linear_depth` sampler and define
-// AO_INFO as the uniform block instance carrying `proj` (xy half-fov
-// tangents, z near) and `contact` (xyz view-space direction toward the
-// light, w the march distance in world units, 0 disables).
+// AO_INFO as the uniform block instance carrying `proj` (xy projection
+// scale, z near), `proj_offset` (see view_projection.glsl), and `contact` (xyz
+// view-space direction toward the light, w the march distance in world units,
+// 0 disables). Include ssao_geometry.glsl first.
 
 float MarchContactShadow(vec3 origin, float noise) {
   vec3 to_light = AO_INFO.contact.xyz;
@@ -28,8 +29,7 @@ float MarchContactShadow(vec3 origin, float noise) {
     if (p.z <= AO_INFO.proj.z) {
       break;
     }
-    vec2 ndc = vec2(p.x / (p.z * AO_INFO.proj.x), p.y / (p.z * AO_INFO.proj.y));
-    vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    vec2 uv = UvFromViewPosition(p, AO_INFO.proj.xy, AO_INFO.proj_offset.xyz);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
       break;
     }

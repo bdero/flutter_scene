@@ -6,6 +6,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/render/viewport_camera.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
@@ -537,9 +539,8 @@ base class Scene implements SceneGraph {
   /// Whether punctual lights shade through per-view froxel clustering (the
   /// view frustum subdivided into screen tiles and depth slices, each shading
   /// only the lights that reach it) instead of per-object light lists. On by
-  /// default; perspective views use it automatically, while orthographic
-  /// views and frames using light channel masks fall back to the per-object
-  /// path. Clustering removes the per-object light cap, so a large mesh
+  /// default for perspective and orthographic views; frames using light
+  /// channel masks fall back to the per-object path. Clustering removes the per-object light cap, so a large mesh
   /// reached by many lights shades them all. Disable to compare, or to force
   /// the per-object path.
   /// {@category Lighting and environment}
@@ -941,23 +942,27 @@ base class Scene implements SceneGraph {
       debugLastPlanarCapturePasses = const [];
       return const [];
     }
-    // The oblique near-plane clip is a perspective-projection modification;
-    // other projections render without planar reflections (like the other
-    // camera-reconstruction effects).
-    final perspective = camera.projection is PerspectiveProjection;
+    final orthographic = ProjectionParams.of(
+      camera.projection,
+      pixelSize,
+    ).orthographic;
     final groups = <Object, List<PlanarReflectorComponent>>{};
     Frustum? frustum;
     for (final reflector in reflectors) {
       var active =
-          perspective &&
           reflector.enabled &&
           reflector.node.internalEffectiveVisible &&
           (reflector.node.layers & view.layerMask) != 0;
       if (active) {
         // A camera on or behind the mirror plane sees the surface's back (or
-        // nothing), so there is no reflection to capture.
+        // nothing), so there is no reflection to capture. Parallel view rays
+        // all share one direction, so an orthographic camera faces the mirror
+        // exactly when it looks against the plane normal.
         final plane = reflector.worldPlane();
-        if (plane.normal.dot(camera.position) + plane.constant <= 0.0) {
+        final facesBack = orthographic
+            ? plane.normal.dot(camera.forward) >= 0.0
+            : plane.normal.dot(camera.position) + plane.constant <= 0.0;
+        if (facesBack) {
           active = false;
         }
       }
@@ -1401,23 +1406,20 @@ base class Scene implements SceneGraph {
       _renderPasses.where((p) => p.enabled && p.stage == stage);
 
   /// Screen-space ambient occlusion settings. Off by default; set
-  /// [AmbientOcclusionSettings.enabled] to turn it on. Requires a
-  /// [PerspectiveCamera] (the occlusion is reconstructed from the camera's
-  /// perspective depth); it is skipped for other camera types.
+  /// [AmbientOcclusionSettings.enabled] to turn it on. Works with perspective
+  /// and orthographic cameras.
   final AmbientOcclusionSettings ambientOcclusion = AmbientOcclusionSettings();
 
   /// Screen-space reflection settings. Off by default; set
-  /// [ScreenSpaceReflectionsSettings.enabled] to turn it on. Requires a
-  /// [PerspectiveCamera] (the reflection trace is reconstructed from the
-  /// camera's perspective depth); it is skipped for other camera types.
+  /// [ScreenSpaceReflectionsSettings.enabled] to turn it on. Works with
+  /// perspective and orthographic cameras.
   final ScreenSpaceReflectionsSettings screenSpaceReflections =
       ScreenSpaceReflectionsSettings();
 
   /// World-space global illumination settings. Off by default; set
   /// [GlobalIlluminationSettings.enabled] to turn the irradiance field on.
-  /// Requires a [PerspectiveCamera] (the injection scatter reconstructs world
-  /// positions from the camera's perspective depth); it is skipped for other
-  /// camera types, and it forces the depth prepass with normals on.
+  /// Works with perspective and orthographic cameras, and forces the depth
+  /// prepass with normals on.
   final GlobalIlluminationSettings globalIllumination =
       GlobalIlluminationSettings();
 
@@ -2316,6 +2318,7 @@ base class Scene implements SceneGraph {
       view: view,
       outputColor: swapchainColor,
       pixelSize: pixelSize,
+      viewportSize: drawArea.size,
       pool: surface.transientTexturePool(viewIndex),
       environmentMap: environmentMap,
       transientsBuffer: transientsBuffer,
@@ -2351,6 +2354,10 @@ base class Scene implements SceneGraph {
     required RenderView view,
     required gpu.Texture outputColor,
     required ui.Size pixelSize,
+    // The view's logical size, which the camera projection resolves against
+    // (see CameraProjection.getProjectionMatrixForViewport). Defaults to
+    // [pixelSize] for views with no logical size (render textures, probes).
+    ui.Size? viewportSize,
     required TransientTexturePool pool,
     required EnvironmentMap environmentMap,
     required TransientWriter transientsBuffer,
@@ -2385,7 +2392,9 @@ base class Scene implements SceneGraph {
       offscreen: viewIndex < 0,
     );
     final viewWatch = viewStats == null ? null : (Stopwatch()..start());
-    final camera = view.camera;
+    // Bound to the logical size so every pass renders the volume picking
+    // hits, whatever render-target size it passes.
+    final camera = ViewportBoundCamera(view.camera, viewportSize ?? pixelSize);
     final effectiveAa = captureLinearColor
         ? AntiAliasingMode.none
         : _resolveAntiAliasingMode(view.antiAliasingMode ?? _antiAliasingMode);
@@ -2405,12 +2414,15 @@ base class Scene implements SceneGraph {
 
     final light = lightComponent?.light;
     final lightDirection = lightComponent?.worldDirection;
-    // Cascaded shadows fit the camera frustum, so they require a
-    // perspective projection; other projections render without shadows.
-    final cascades =
-        light != null &&
-            light.castsShadow &&
-            camera.projection is PerspectiveProjection
+    // Every depth-reconstructing effect reads the projection through these
+    // terms, so perspective, orthographic, and custom projections all take
+    // the same paths. A degenerate projection (zero extent) skips them.
+    final projection = ProjectionParams.of(camera.projection, pixelSize);
+    final projectionValid =
+        projection.scaleX > 0.0 &&
+        projection.scaleY > 0.0 &&
+        projection.far > projection.near;
+    final cascades = light != null && light.castsShadow && projectionValid
         ? light.computeCascades(
             camera,
             pixelSize.width / pixelSize.height,
@@ -2422,7 +2434,7 @@ base class Scene implements SceneGraph {
     // need both and a shadow-casting directional light.
     final wantGodRays =
         godRays.enabled &&
-        camera.projection is PerspectiveProjection &&
+        projectionValid &&
         cascades.isNotEmpty &&
         !debugActive;
 
@@ -2663,16 +2675,9 @@ base class Scene implements SceneGraph {
     // Ambient occlusion, screen-space reflections, normals, and materials
     // that sample scene depth need the geometry prepass. Depth-only post
     // effects reuse the stored main-pass depth when it is single-sampled.
-    // Depth and normal pre-passes need a perspective camera. Orthographic
-    // cameras skip these effects.
-    final perspective = camera.projection;
-    final perspectiveCamera = perspective is PerspectiveProjection
-        ? perspective
-        : null;
-
     final enableTaa =
         effectiveAa == AntiAliasingMode.taa &&
-        perspectiveCamera != null &&
+        projectionValid &&
         !captureLinearColor &&
         !debugActive;
 
@@ -2712,7 +2717,7 @@ base class Scene implements SceneGraph {
     final wantSsr =
         !captureLinearColor &&
         !debugActive &&
-        perspectiveCamera != null &&
+        projectionValid &&
         screenSpaceReflections.enabled;
     // A custom pass may request depth/normals; normals imply depth.
     final wantCustomNormals = customInputs.contains(RenderInput.normals);
@@ -2727,9 +2732,7 @@ base class Scene implements SceneGraph {
     // The irradiance field scatters from the depth prepass' normals and from
     // the previous frame's lit color, so it forces both on.
     final wantIrradianceField =
-        !captureLinearColor &&
-        perspectiveCamera != null &&
-        globalIllumination.enabled;
+        !captureLinearColor && projectionValid && globalIllumination.enabled;
     final wantSceneColorHistory = wantIndirectLight || wantIrradianceField;
     // The occlusion texture's channels carry radiance while indirect light
     // is on, so the contact-shadow term has nowhere to ride.
@@ -2750,7 +2753,7 @@ base class Scene implements SceneGraph {
         wantContactShadows ||
         wantCustomDepth;
     IrradianceFieldBinding? irradianceBinding;
-    if (perspectiveCamera != null) {
+    if (projectionValid) {
       // The occlusion chain also carries the sun contact-shadow term, so it
       // runs (with occlusion sampling zeroed) when only contact shadows ask
       // for it.
@@ -2789,7 +2792,7 @@ base class Scene implements SceneGraph {
             renderScene: renderScene,
             dimensions: depthDimensions,
             cameraForward: cameraForward,
-            farDepth: perspectiveCamera.far,
+            farDepth: projection.far,
             layerMask: view.layerMask,
             writeNormals: wantSsr || wantCustomNormals || wantIrradianceField,
             // Depth of field patches translucent surfaces into the linear
@@ -2871,9 +2874,7 @@ base class Scene implements SceneGraph {
           SsaoPass(
             dimensions: pixelSize,
             settings: ambientOcclusion,
-            fovRadiansY: perspectiveCamera.fovRadiansY,
-            near: perspectiveCamera.near,
-            far: perspectiveCamera.far,
+            projection: projection,
             contactDirectionView: contactDirectionView,
             contactDistance: wantContactShadows
                 ? light.contactShadowDistance
@@ -2894,7 +2895,7 @@ base class Scene implements SceneGraph {
           cameraForward: cameraForward,
           cameraRight: cameraRight,
           cameraUp: cameraUp,
-          perspectiveCamera: perspectiveCamera,
+          projection: projection,
           environmentMap: environmentMap,
         );
       }
@@ -2928,15 +2929,15 @@ base class Scene implements SceneGraph {
         ssaoDirectLightAffect: ambientOcclusion.directLightAffect,
         ssaoMultiBounce: ambientOcclusion.multiBounce,
         ssaoBentNormals: ambientOcclusionCarriesBentNormals(ambientOcclusion),
-        ssaoContactShadows: wantContactShadows && perspectiveCamera != null,
-        ssaoIndirectLight: wantIndirectLight && perspectiveCamera != null,
+        ssaoContactShadows: wantContactShadows && projectionValid,
+        ssaoIndirectLight: wantIndirectLight && projectionValid,
         irradianceField: irradianceBinding,
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,
         maxCaptureBatches: effectiveSceneColorCaptureBatches,
-        // Depth binding needs the prepass, which needs a perspective camera.
-        bindSceneDepth: bindSceneDepth && perspectiveCamera != null,
+        // Depth binding needs the prepass, which needs a valid projection.
+        bindSceneDepth: bindSceneDepth && projectionValid,
         time: DateTime.now().millisecondsSinceEpoch.remainder(100000) / 1000.0,
         cullingPlanes: view.cullingPlanes,
         includeOffscreen: _warmUpIncludeOffscreen,
@@ -2972,9 +2973,7 @@ base class Scene implements SceneGraph {
         SsrPass(
           dimensions: pixelSize,
           settings: screenSpaceReflections,
-          fovRadiansY: perspectiveCamera.fovRadiansY,
-          near: perspectiveCamera.near,
-          far: perspectiveCamera.far,
+          projection: projection,
         ),
       );
     }
@@ -3037,9 +3036,9 @@ base class Scene implements SceneGraph {
 
     // Depth of field on the linear HDR scene color, before the custom
     // effects and bloom so both act on the defocused image (bokeh highlights
-    // still bloom). Needs the perspective camera's FOV for the thin-lens
-    // math and camera depth.
-    if (wantDof && perspectiveCamera != null) {
+    // still bloom). Needs the projection for the circle-of-confusion scale and
+    // camera depth.
+    if (wantDof && projectionValid) {
       // Translucent depth-writing surfaces (glass) join the linear depth
       // here, after the opaque-only consumers above, so depth of field
       // focuses on the visible surface instead of the backdrop behind it.
@@ -3056,7 +3055,7 @@ base class Scene implements SceneGraph {
         DofPass(
           settings: depthOfField,
           dimensions: pixelSize,
-          fovRadiansY: perspectiveCamera.fovRadiansY,
+          projection: projection,
         ),
       );
     }
@@ -3102,9 +3101,6 @@ base class Scene implements SceneGraph {
         Vector4(camera.position.x, camera.position.y, camera.position.z, 1.0),
       );
       final currentToPrev = prevViewProj * viewToWorld;
-      final halfFovY = perspectiveCamera.fovRadiansY * 0.5;
-      final tanHalfFovY = math.tan(halfFovY);
-      final tanHalfFovX = tanHalfFovY * (pixelSize.width / pixelSize.height);
 
       graph.addPass(
         TaaPass(
@@ -3113,10 +3109,7 @@ base class Scene implements SceneGraph {
           state: taaState,
           currentToPreviousViewProjection: currentToPrev,
           cameraPosition: camera.position,
-          tanHalfFovX: tanHalfFovX,
-          tanHalfFovY: tanHalfFovY,
-          far: perspectiveCamera.far,
-          near: perspectiveCamera.near,
+          projection: projection,
           currentJitterNdc: currentJitterNdc,
           previousJitterNdc: prevJitterNdc,
         ),
@@ -3343,7 +3336,7 @@ base class Scene implements SceneGraph {
     required Vector3 cameraForward,
     required Vector3 cameraRight,
     required Vector3 cameraUp,
-    required PerspectiveProjection perspectiveCamera,
+    required ProjectionParams projection,
     required EnvironmentMap environmentMap,
   }) {
     final settings = globalIllumination;
@@ -3385,13 +3378,7 @@ base class Scene implements SceneGraph {
           cameraRight: cameraRight,
           cameraUp: cameraUp,
           cameraForward: cameraForward,
-          tanHalfFovX:
-              math.tan(perspectiveCamera.fovRadiansY * 0.5) *
-              (pixelSize.height <= 0
-                  ? 1.0
-                  : pixelSize.width / pixelSize.height),
-          tanHalfFovY: math.tan(perspectiveCamera.fovRadiansY * 0.5),
-          far: perspectiveCamera.far,
+          projection: projection,
           sceneRadiance: _ssgiHistoryColor,
         ),
       );

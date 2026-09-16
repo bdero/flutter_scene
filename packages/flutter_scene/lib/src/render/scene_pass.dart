@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/fog.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/environment.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
@@ -301,20 +302,15 @@ class ScenePass extends RenderGraphPass {
     final cameraForward = camera.forward.normalized();
     final cameraRight = camera.up.cross(cameraForward)..normalize();
     final cameraUp = cameraForward.cross(cameraRight)..normalize();
-    final projection = camera.projection;
-    final tanHalfFovY = projection is PerspectiveProjection
-        ? math.tan(projection.fovRadiansY / 2.0)
-        : 0.0;
-    final tanHalfFovX = height > 0 ? tanHalfFovY * width / height : 0.0;
-    // Froxel clustering for this view (perspective views with uniform light
-    // channels); its data texture rides the per-object index sampler slot.
+    final projection = ProjectionParams.of(camera.projection, _dimensions);
+    // Froxel clustering for this view (views with uniform light channels);
+    // its data texture rides the per-object index sampler slot.
     final froxels = _punctualLighting.internalBuffer?.buildFroxels(
       cameraPosition: camera.position,
       forward: cameraForward,
       right: cameraRight,
       up: cameraUp,
-      tanHalfFovX: tanHalfFovX,
-      tanHalfFovY: tanHalfFovY,
+      projection: projection,
     );
     final lighting = Lighting(
       environmentMap: _environmentMap,
@@ -361,8 +357,11 @@ class ScenePass extends RenderGraphPass {
       cameraForward: cameraForward,
       cameraRight: cameraRight,
       cameraUp: cameraUp,
-      tanHalfFovX: tanHalfFovX,
-      tanHalfFovY: tanHalfFovY,
+      projectionScaleX: projection.scaleX,
+      projectionScaleY: projection.scaleY,
+      projectionOffsetX: projection.offsetX,
+      projectionOffsetY: projection.offsetY,
+      orthographic: projection.orthographic,
       time: _time,
       planarReflectionsSuppressed: _suppressPlanarReflections,
     );

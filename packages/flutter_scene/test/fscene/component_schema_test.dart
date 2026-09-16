@@ -47,6 +47,17 @@ void main() {
 
       // Round-trip one non-default value per declared writable property kind.
       for (final def in codec.propertySchema) {
+        // Some properties only apply under a mode another property selects,
+        // so they round-trip with that mode set.
+        final modeProperties = <String, PropertyValue>{
+          if (type == 'camera' && def.name.startsWith('orthographic'))
+            'projection': const StringValue('orthographic'),
+          // The default size mode holds only a height.
+          if (type == 'camera' && def.name == 'orthographicWidth')
+            'orthographicSize': const StringValue('contain'),
+          if (type == 'camera' && def.name == 'orthographicPixelsPerUnit')
+            'orthographicSize': const StringValue('pixelsPerUnit'),
+        };
         final defaultValue = def.defaultValue;
         if (defaultValue == null) continue;
         // Stay inside any hard clamp, or the (correct) write-side clamping
@@ -82,13 +93,17 @@ void main() {
           continue;
         }
         final modified = codec.realize(
-          ComponentSpec(type, properties: {def.name: changed}),
+          ComponentSpec(
+            type,
+            properties: {...modeProperties, def.name: changed},
+          ),
           RealizeContext(doc),
         )!;
         final reserialized = codec.serialize(modified, SerializeContext(doc))!;
-        expect(reserialized.properties.keys, [
+        expect(reserialized.properties.keys.toSet(), {
+          ...modeProperties.keys,
           def.name,
-        ], reason: '$type.${def.name} should serialize exactly the delta');
+        }, reason: '$type.${def.name} should serialize exactly the delta');
         expect(
           propertyValuesEqual(reserialized.properties[def.name], changed),
           isTrue,
@@ -224,7 +239,7 @@ void main() {
     final projection = camera.propertySchema.firstWhere(
       (d) => d.name == 'projection',
     );
-    expect(projection.options, ['perspective']);
+    expect(projection.options, ['perspective', 'orthographic']);
     final fov = camera.propertySchema.firstWhere(
       (d) => d.name == 'fovRadiansY',
     );

@@ -6,6 +6,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 
 import 'package:flutter_scene/src/depth_of_field.dart';
+import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
@@ -27,14 +28,14 @@ class DofPass extends RenderGraphPass {
   DofPass({
     required DepthOfField settings,
     required ui.Size dimensions,
-    required double fovRadiansY,
+    required ProjectionParams projection,
   }) : _settings = settings,
        _dimensions = dimensions,
-       _fovRadiansY = fovRadiansY;
+       _projection = projection;
 
   final DepthOfField _settings;
   final ui.Size _dimensions;
-  final double _fovRadiansY;
+  final ProjectionParams _projection;
 
   static final gpu.Shader _vertexShader =
       baseShaderLibrary['FullscreenVertex']!;
@@ -100,13 +101,24 @@ class DofPass extends RenderGraphPass {
 
     // 1. Half-res downsample + signed CoC (in half-res pixel radii).
     final cocColor = acquire('dof_coc_color');
+    // An orthographic camera stands in the perspective lens that frames the
+    // same height at the focus distance.
+    final projection = _projection;
+    final fovRadiansY =
+        2.0 *
+        math.atan(
+          projection.orthographic
+              ? projection.scaleY / math.max(_settings.focusDistance, 1e-4)
+              : projection.scaleY,
+        );
     final cocInfo = Float32List(8)
-      ..[0] = _settings.cocScale(_fovRadiansY, halfHeight.toDouble())
+      ..[0] = _settings.cocScale(fovRadiansY, halfHeight.toDouble())
       ..[1] = _settings.focusDistance
       ..[2] = _settings.maxForegroundBlur
       ..[3] = _settings.maxBackgroundBlur
       ..[4] = 1.0 / fullWidth
-      ..[5] = 1.0 / fullHeight;
+      ..[5] = 1.0 / fullHeight
+      ..[6] = projection.orthographicFlag;
     _draw(
       context,
       _cocShader,
