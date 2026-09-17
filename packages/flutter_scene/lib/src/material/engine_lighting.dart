@@ -330,10 +330,6 @@ class EngineLightingUniforms {
     }
   }
 
-  /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
-  /// from [lighting]'s fog and directional light, and binds it on [shader].
-  /// Every material shader declares `FogInfo`, so this is always bound; when
-  /// there is no fog the `enabled` flag is 0 and `ApplyFog` is a no-op.
   /// Binds the `ViewInfo` block `material_varyings.glsl` declares for
   /// `GetViewDirection`, which needs the camera axis under an orthographic
   /// camera. Does nothing when [shader] never reads it (the block is then
@@ -364,6 +360,10 @@ class EngineLightingUniforms {
     );
   }
 
+  /// Packs the `FogInfo` block (6 vec4s / 24 floats, see `shaders/fog.glsl`)
+  /// from [lighting]'s fog and directional light, and binds it on [shader].
+  /// Every material shader declares `FogInfo`, so this is always bound; when
+  /// there is no fog the `enabled` flag is 0 and `ApplyFog` is a no-op.
   static void bindFog(
     gpu.RenderPass pass,
     gpu.Shader shader,
