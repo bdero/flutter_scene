@@ -97,6 +97,7 @@ class _SponsorMark extends StatelessWidget {
 }
 
 /// The editor's About dialog, versions, project links, and sponsor credits.
+/// Sponsors are named, never shown as logos, since this is a credits list.
 Future<void> showEditorAboutDialog(
   BuildContext context, {
   required EditorBuildInfo buildInfo,
@@ -226,10 +227,11 @@ class _SponsorRow extends StatelessWidget {
 
   final Sponsor sponsor;
 
+  // Names only, with a link. Logos belong to the start screen; the About
+  // dialog is a credits list.
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final logo = sponsor.logoFor(theme.brightness);
     final url = sponsor.url;
     return InkWell(
       onTap: url == null ? null : () => openUrl(url),
@@ -238,15 +240,6 @@ class _SponsorRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
-            if (logo != null) ...[
-              Image.asset(
-                logo,
-                height: 20,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              ),
-              const SizedBox(width: 8),
-            ],
             Expanded(
               child: Text(sponsor.name, style: theme.textTheme.bodyMedium),
             ),
