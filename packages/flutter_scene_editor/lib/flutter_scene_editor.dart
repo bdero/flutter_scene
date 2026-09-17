@@ -18,6 +18,7 @@ export 'src/controller/editor_controller.dart' show EditorController;
 export 'src/shell/editor_ui_handle.dart' show EditorUiHandle;
 export 'src/io/glb_import_options.dart'
     show GlbImportOptions, ImportUpAxis, showGlbImportOptions;
+export 'src/io/open_url.dart' show openUrl;
 export 'src/io/scene_io.dart'
     show
         importEnvironmentMap,
@@ -93,3 +94,6 @@ export 'src/shell/editor_theme.dart'
 export 'src/viewport/component_gizmos.dart' show GizmoPreferences;
 export 'src/viewport/viewport_camera_handle.dart' show ViewportCameraHandle;
 export 'src/viewport/viewport_panel.dart' show ViewportPanel;
+export 'src/sponsors/sponsor_widgets.dart'
+    show SponsorStrip, showEditorAboutDialog;
+export 'src/sponsors/sponsors.dart' show Sponsor, SponsorManifest, SponsorTier;
