@@ -131,6 +131,8 @@ class EditorShell extends StatefulWidget {
     this.onSaveNamedLayout,
     this.onDeleteNamedLayout,
     this.onShowSettings,
+    this.onShowAbout,
+    this.onOpenDocumentation,
     this.projectName,
     this.projectRootDirectory,
     this.onOpenProject,
@@ -151,6 +153,12 @@ class EditorShell extends StatefulWidget {
   /// Opens the host's settings window (Flutter installations, ...); null
   /// hides the menu item.
   final VoidCallback? onShowSettings;
+
+  /// Opens the host's About dialog; null hides the menu item.
+  final VoidCallback? onShowAbout;
+
+  /// Opens the documentation site; null hides the menu item.
+  final VoidCallback? onOpenDocumentation;
 
   /// The open project's display name, or null with no project open.
   final String? projectName;
@@ -806,6 +814,8 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
                   onNewViewport: _newViewport,
                   onShowToolchain: _showToolchain,
                   onShowSettings: widget.onShowSettings,
+                  onShowAbout: widget.onShowAbout,
+                  onOpenDocumentation: widget.onOpenDocumentation,
                   projectName: widget.projectName,
                   onOpenProject: widget.onOpenProject,
                   onNewProject: widget.onNewProject,
@@ -1262,6 +1272,8 @@ class _EditorMenuBar extends StatelessWidget {
     required this.onNewViewport,
     required this.onShowToolchain,
     this.onShowSettings,
+    this.onShowAbout,
+    this.onOpenDocumentation,
     this.projectName,
     this.onOpenProject,
     this.onNewProject,
@@ -1309,6 +1321,8 @@ class _EditorMenuBar extends StatelessWidget {
   final VoidCallback onNewViewport;
   final VoidCallback onShowToolchain;
   final VoidCallback? onShowSettings;
+  final VoidCallback? onShowAbout;
+  final VoidCallback? onOpenDocumentation;
   final String? projectName;
   final VoidCallback? onOpenProject;
   final VoidCallback? onNewProject;
@@ -1493,6 +1507,19 @@ class _EditorMenuBar extends StatelessWidget {
                 _MenuItem(label: 'Shader Toolchain…', onTap: onShowToolchain),
               ],
             ),
+            if (onOpenDocumentation != null || onShowAbout != null)
+              _Menu(
+                label: 'Help',
+                items: [
+                  if (onOpenDocumentation != null)
+                    _MenuItem(
+                      label: 'Documentation',
+                      onTap: onOpenDocumentation,
+                    ),
+                  if (onShowAbout != null)
+                    _MenuItem(label: 'About Scene Editor…', onTap: onShowAbout),
+                ],
+              ),
             _MenuButton(label: 'Commands', onTap: onPaletteOpen),
             const Spacer(),
             ...trailing,

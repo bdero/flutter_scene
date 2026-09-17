@@ -144,6 +144,9 @@ class _EditorHomeState extends State<_EditorHome> {
   EditorBuildInfo _buildInfo = EditorBuildInfo.unknown;
   final InstallationInspector _inspector = InstallationInspector();
 
+  // Sponsors baked into this build, for the start screen and About dialog.
+  SponsorManifest _sponsors = SponsorManifest.empty;
+
   @override
   void initState() {
     super.initState();
@@ -165,6 +168,11 @@ class _EditorHomeState extends State<_EditorHome> {
         'packages/flutter_scene_editor_app/editor_build_info.json',
       ).then((info) {
         if (mounted) setState(() => _buildInfo = info);
+      }),
+    );
+    unawaited(
+      SponsorManifest.load('assets/sponsors/sponsors.json').then((manifest) {
+        if (mounted) setState(() => _sponsors = manifest);
       }),
     );
     // The MCP server runs for the app's whole life (not per document), so an
@@ -866,6 +874,12 @@ class _EditorHomeState extends State<_EditorHome> {
     );
   }
 
+  Future<void> _showAbout() => showEditorAboutDialog(
+    context,
+    buildInfo: _buildInfo,
+    sponsors: _sponsors,
+  );
+
   Future<void> _showSettings() => showSettingsDialog(
     context,
     settings: _settings,
@@ -1405,6 +1419,8 @@ class _EditorHomeState extends State<_EditorHome> {
           old?.dispose();
         },
         onShowSettings: _showSettings,
+        onShowAbout: _showAbout,
+        onOpenDocumentation: () => unawaited(openUrl('https://fscene.dev')),
         projectName: _project?.name,
         projectRootDirectory: _project?.resolvedProjectRoot,
         onOpenProject: _openProject,
@@ -1485,6 +1501,8 @@ class _EditorHomeState extends State<_EditorHome> {
           onOpenRecent: _openRecentScene,
           onRemoveRecent: _forgetRecentScene,
           onClearRecent: _clearRecentScenes,
+          sponsors: _sponsors,
+          onShowAbout: _showAbout,
         ),
         Positioned(
           top: 0,
@@ -1517,6 +1535,8 @@ class _StartScreen extends StatelessWidget {
     required this.onOpenRecent,
     required this.onRemoveRecent,
     required this.onClearRecent,
+    required this.sponsors,
+    required this.onShowAbout,
   });
 
   final String? busy;
@@ -1533,6 +1553,8 @@ class _StartScreen extends StatelessWidget {
   final ValueChanged<String> onOpenRecent;
   final ValueChanged<String> onRemoveRecent;
   final VoidCallback onClearRecent;
+  final SponsorManifest sponsors;
+  final VoidCallback onShowAbout;
 
   @override
   Widget build(BuildContext context) {
@@ -1689,6 +1711,15 @@ class _StartScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+                const SizedBox(height: 36),
+                SponsorStrip(manifest: sponsors),
+                const SizedBox(height: 4),
+                Center(
+                  child: TextButton(
+                    onPressed: onShowAbout,
+                    child: const Text('About Scene Editor'),
+                  ),
+                ),
               ],
             ),
           ),
