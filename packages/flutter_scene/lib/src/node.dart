@@ -1148,6 +1148,10 @@ base class Node implements SceneGraph {
   /// unrecognized extension, an image that fell back to a placeholder);
   /// without it they print instead.
   ///
+  /// [maxTextureSize], when given, is the longest side a texture is uploaded
+  /// with: a larger image is scaled down as it is decoded, keeping its aspect
+  /// ratio, so its full-size pixels are never held.
+  ///
   /// Example:
   /// ```dart
   /// final bytes = await rootBundle.load('assets/dash.glb');
@@ -1156,8 +1160,13 @@ base class Node implements SceneGraph {
   static Future<Node> fromGlbBytes(
     Uint8List bytes, {
     GltfWarningCallback? onWarning,
+    int? maxTextureSize,
   }) {
-    return importGlb(bytes, onWarning: onWarning);
+    return importGlb(
+      bytes,
+      onWarning: onWarning,
+      maxTextureSize: maxTextureSize,
+    );
   }
 
   /// Convenience wrapper for [fromGlbBytes] that loads from the asset bundle.

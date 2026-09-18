@@ -74,6 +74,7 @@ Future<List<Texture2D>> buildTextures(
   Uint8List bufferData, {
   GltfResourceResolver? resolveUri,
   GltfWarningCallback? onWarning,
+  int? maxTextureSize,
 }) async {
   void warn(String message) {
     if (onWarning != null) {
@@ -124,7 +125,11 @@ Future<List<Texture2D>> buildTextures(
       continue;
     }
     try {
-      results[i] = await _decodeAndUpload(imageBytes, contents[i]);
+      results[i] = await _decodeAndUpload(
+        imageBytes,
+        contents[i],
+        maxTextureSize,
+      );
     } catch (e, st) {
       warn('Failed to decode glTF image $imageIdx: $e\n$st');
     }
@@ -151,8 +156,30 @@ Future<List<Texture2D>> buildTextures(
 Future<Texture2D> _decodeAndUpload(
   Uint8List bytes,
   TextureContent content,
+  int? maxSize,
 ) async {
-  final codec = await ui.instantiateImageCodec(bytes);
+  // Normal maps keep the CPU chain: their levels are renormalized, which a
+  // GPU box filter does not do.
+  if (content != TextureContent.normal) {
+    final direct = await gpu.createTextureFromEncodedImage(
+      bytes,
+      maxSize: maxSize,
+    );
+    if (direct != null) return Texture2D.fromGpuTexture(direct);
+  }
+  final codec = await ui.instantiateImageCodecWithSize(
+    await ui.ImmutableBuffer.fromUint8List(bytes),
+    getTargetSize: (width, height) {
+      final longest = width > height ? width : height;
+      if (maxSize == null || longest <= maxSize) {
+        return ui.TargetImageSize(width: width, height: height);
+      }
+      return ui.TargetImageSize(
+        width: (width * maxSize ~/ longest).clamp(1, maxSize),
+        height: (height * maxSize ~/ longest).clamp(1, maxSize),
+      );
+    },
+  );
   final frame = await codec.getNextFrame();
   try {
     return await Texture2D.fromImage(frame.image, content: content);

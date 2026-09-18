@@ -18,6 +18,7 @@ import 'shader_bundle_generated.dart' as fb;
 
 part 'buffer.dart';
 part 'command_buffer.dart';
+part 'encoded_image.dart';
 part 'formats.dart';
 part 'gpu_context.dart';
 part 'render_pass.dart';

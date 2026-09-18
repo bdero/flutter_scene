@@ -41,6 +41,7 @@ export 'gltf_resources.dart' show GltfResourceResolver;
 Future<Node> importGlb(
   Uint8List bytes, {
   GltfWarningCallback? onWarning,
+  int? maxTextureSize,
 }) async {
   final container = parseGlb(bytes);
   final doc = parseGltfJson(container.json);
@@ -58,6 +59,7 @@ Future<Node> importGlb(
     packed,
     null,
     onWarning: onWarning,
+    maxTextureSize: maxTextureSize,
   );
 }
 
@@ -191,6 +193,7 @@ Future<Node> _buildScene(
   List<List<_PackedPrimitiveVariants?>> packed,
   GltfResourceResolver? resolveUri, {
   GltfWarningCallback? onWarning,
+  int? maxTextureSize,
 }) async {
   // Decode all textures up front so material construction can reference
   // them by index without per-material async work.
@@ -199,6 +202,7 @@ Future<Node> _buildScene(
     bufferData,
     resolveUri: resolveUri,
     onWarning: onWarning,
+    maxTextureSize: maxTextureSize,
   );
   final materials = await Future.wait([
     for (final material in doc.materials) buildMaterial(material, textures),
