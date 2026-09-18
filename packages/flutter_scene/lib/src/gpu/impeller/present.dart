@@ -12,3 +12,12 @@ Future<ui.Image> presentTextureAsImage(
     'Texture.asImage().',
   );
 }
+
+
+/// The web backend uploads an encoded image straight into its own context;
+/// this backend has no such path, and the caller decodes through `dart:ui`.
+Future<Texture?> createTextureFromEncodedImage(
+  Uint8List encoded, {
+  bool mipmaps = true,
+  int? maxSize,
+}) async => null;
