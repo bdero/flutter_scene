@@ -77,6 +77,7 @@ Future<Node> importGltf(
   Uint8List gltfJson, {
   required GltfResourceResolver resolveUri,
   GltfWarningCallback? onWarning,
+  int? maxTextureSize,
 }) async {
   final json = jsonDecode(utf8.decode(gltfJson)) as Map<String, Object?>;
   final doc = parseGltfJson(json);
@@ -94,6 +95,7 @@ Future<Node> importGltf(
     packed,
     resolveUri,
     onWarning: onWarning,
+    maxTextureSize: maxTextureSize,
   );
 }
 

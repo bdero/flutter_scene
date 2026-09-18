@@ -34,8 +34,7 @@ base class GpuContext {
     _gl.getExtension('OES_texture_float_linear');
     // Anisotropic filtering. MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FF.
     if (_gl.getExtension('EXT_texture_filter_anisotropic') != null) {
-      final Object? max = _gl.getParameter(0x84FF);
-      _maxSupportedAnisotropy = max is num ? max.toInt() : 1;
+      _maxSupportedAnisotropy = _integerParameter(0x84FF) ?? 1;
     }
   }
 
@@ -102,12 +101,28 @@ base class GpuContext {
   /// draw (a lazily built placeholder, say) would otherwise replace the
   /// texture the pass bound on the active unit, a hazard Impeller's
   /// per-draw binding model does not have.
-  late final int _setupTextureUnit = () {
-    final Object? max = _gl.getParameter(
-      web.WebGL2RenderingContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS,
-    );
-    return (max is num ? max.toInt() : 32) - 1;
-  }();
+  late final int _setupTextureUnit =
+      (_integerParameter(
+            web.WebGL2RenderingContext.MAX_COMBINED_TEXTURE_IMAGE_UNITS,
+          ) ??
+          32) -
+      1;
+
+  /// The largest texture side the context allocates, or null when the query
+  /// yields no number.
+  late final int? _maxTextureSize = _integerParameter(
+    web.WebGL2RenderingContext.MAX_TEXTURE_SIZE,
+  );
+
+  /// An integer `getParameter` result, or null when it is not a number. Read
+  /// as a JS value: under dart2wasm the result is not a Dart `num`, so an
+  /// `is num` check silently takes the fallback.
+  int? _integerParameter(int pname) {
+    final JSAny? value = _gl.getParameter(pname);
+    return value.isA<JSNumber>() ? (value as JSNumber).toDartInt : null;
+  }
+
+  late final _MipGenerator _mipGenerator = _MipGenerator(this);
 
   /// Binds [texture] on the reserved setup unit for creation or upload work.
   void _bindTextureForSetup(int target, web.WebGLTexture? texture) {

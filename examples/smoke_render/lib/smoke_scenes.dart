@@ -482,6 +482,25 @@ Future<void> loadMorphSkinnedModel() async {
   _morphSkinnedModel = model;
 }
 
+/// A 64x64 PNG, a one-texel black and white checkerboard, uploaded through
+/// the encoded-image path by [loadMipChecker]. Every level above the base
+/// averages to one flat gray, so a minified sample shows which light the
+/// chain was built in.
+const String _kMipCheckerPng =
+    'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAb0lEQVR42u3SsQ0AMBCEsNt/abJH3hU1'
+    'kle1ravd5fmqEUAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEEAAAQQQ'
+    'QAABBBBAAAEEEEAAAQQQQAABBBBAAAEEEPBBH0+m2kofJeShAAAAAElFTkSuQmCC';
+
+Texture2D? _mipChecker;
+
+/// Decodes and uploads the checkerboard once, on whatever path the backend
+/// has for encoded images. Call before pumping the texture_mips scene.
+Future<void> loadMipChecker() async {
+  _mipChecker ??= await Texture2D.fromEncodedBytes(
+    base64Decode(_kMipCheckerPng),
+  );
+}
+
 /// The Draco-compressed KTX2-textured quads preloaded by [loadBasisuQuads].
 Node? _basisuQuads;
 
@@ -1633,6 +1652,34 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
     return (scene: scene, camera: _camera());
   }),
+  // One PNG uploaded through the encoded-image path on two unlit quads. The
+  // near quad is texel-sized, so its checker resolves; the far quad is minified
+  // to a level the box filter has collapsed to a flat gray. Averaged in linear
+  // light that gray is 188, averaged in sRGB space it is 128, so the far quad
+  // reads whether this backend's chain (CPU or GPU) matches the others. The
+  // scene renders at the view's pixel ratio while the capture is logical, so
+  // the far quad is small enough to stay past level 1 at a ratio of 3.
+  SmokeScene('texture_mips', () {
+    final material = UnlitMaterial()..baseColorTexture = _mipChecker!;
+    final scene = Scene();
+    // The rotation turns each plane to face +z, square on to the camera.
+    Node quad(double size, vm.Vector3 position) =>
+        Node(
+            mesh: Mesh(PlaneGeometry(width: size, depth: size), material),
+          )
+          ..localTransform =
+              vm.Matrix4.translation(position) *
+              vm.Matrix4.rotationX(math.pi / 2);
+    scene.add(quad(0.8, vm.Vector3(0.45, 0, 0)));
+    scene.add(quad(0.03, vm.Vector3(-0.45, 0, 0)));
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 0, 2.2),
+        target: vm.Vector3.zero(),
+      ),
+    );
+  }, preload: loadMipChecker),
   // Two quads sampling KHR_texture_basisu KTX2 textures through the standard
   // glTF path, one a mipped zstd-supercompressed UASTC sRGB file with no
   // alpha, the other an ETC1S sRGB file whose alpha blob is drawn with alpha
