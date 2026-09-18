@@ -1,6 +1,6 @@
 ## 0.2.0
 
-* Move to `flutter_soloud` 5, which compiles the engine from source through a build hook. Apps drop the bundled Xiph codec libraries by setting `hooks.user_defines.flutter_soloud.no_xiph_libs: true` in their pubspec.
+* Move to `flutter_soloud` 5.1, which compiles the engine through a build hook and fetches prebuilt Ogg, Vorbis, Opus, and FLAC libraries for the target on first build, Linux arm64 included. Apps can instead link system packages, compile the codecs from source, or build without them through `hooks.user_defines.flutter_soloud` in their pubspec (see the README).
 * Web apps load `assets/packages/flutter_soloud/web/init_soloud.js` from `index.html` (renamed upstream).
 * Requires Dart 3.11.
 * Add `SoloudAudioEngine.bufferSize` (config key `bufferSize`) to start SoLoud with a smaller, lower-latency mix buffer.
