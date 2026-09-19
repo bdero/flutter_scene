@@ -51,17 +51,22 @@ void main() {
   vec4 prev_deformed = pos;
 
   if (model_info.enable_skinning > 0.5) {
+    // Normalized as in flutter_scene_skinned_body.glsl, so both passes deform
+    // to the same positions.
+    float weight_sum = weights.x + weights.y + weights.z + weights.w;
+    vec4 w = weight_sum > 0.0 ? weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+
     mat4 cur_skin =
-      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.x) * weights.x +
-      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.y) * weights.y +
-      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.z) * weights.z +
-      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.w) * weights.w;
+      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.x) * w.x +
+      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.y) * w.y +
+      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.z) * w.z +
+      GetJoint(current_joints_texture, model_info.current_joint_texture_size, joints.w) * w.w;
 
     mat4 prev_skin =
-      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.x) * weights.x +
-      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.y) * weights.y +
-      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.z) * weights.z +
-      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.w) * weights.w;
+      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.x) * w.x +
+      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.y) * w.y +
+      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.z) * w.z +
+      GetJoint(previous_joints_texture, model_info.previous_joint_texture_size, joints.w) * w.w;
 
     cur_deformed = cur_skin * pos;
     prev_deformed = prev_skin * pos;
