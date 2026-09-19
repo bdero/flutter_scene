@@ -167,6 +167,35 @@ void main() {
     expect(File.fromUri(stale).existsSync(), isFalse);
   });
 
+  test('a save keeps a fresh output another target just wrote', () {
+    writePubspec(_pubspecListing(generatedTargetDirectories));
+    // Both opened before either saves, the way two builds share one tree.
+    final metalTree = GeneratedAssetTree.open(temp.uri, 'app');
+    final glesTree = GeneratedAssetTree.open(temp.uri, 'app');
+
+    Uri saveBundle(GeneratedAssetTree tree, String target) {
+      final uri = bundleUri(tree, target);
+      writeGeneratedBytes(uri, [1]);
+      tree
+        ..recordFile(
+          family: GeneratedAssetFamily.shaderBundle,
+          id: 'base',
+          uri: uri,
+          stamp: target,
+          owner: 'flutter_scene',
+          target: target,
+        )
+        ..save();
+      return uri;
+    }
+
+    final metal = saveBundle(metalTree, 'metalDesktop');
+    saveBundle(glesTree, 'openglEs,vulkan');
+    // The target is part of what names a file, so the gles save must read the
+    // metal one as a variant of the same output rather than as an orphan.
+    expect(File.fromUri(metal).existsSync(), isTrue);
+  });
+
   test('a tree listing only the top directory keeps outputs flat', () {
     writePubspec(_pubspecListing(const []));
     final tree = GeneratedAssetTree.open(temp.uri, 'app');
