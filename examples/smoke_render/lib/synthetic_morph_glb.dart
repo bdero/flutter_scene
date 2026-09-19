@@ -39,7 +39,10 @@ int get _vertexCount => _rows * _corners.length;
 
 /// Builds the GLB bytes. Every value is a literal or derived from one, with
 /// no randomness and no wall-clock input, so the bytes never vary.
-Uint8List buildMorphSkinnedGlb() {
+///
+/// [weightSum] scales every vertex's skin weights, so a value under 1 mimics
+/// an export whose weights do not sum to 1.
+Uint8List buildMorphSkinnedGlb({double weightSum = 1.0}) {
   final positions = Float32List(_vertexCount * 3);
   final normals = Float32List(_vertexCount * 3);
   final colors = Float32List(_vertexCount * 4);
@@ -74,8 +77,8 @@ Uint8List buildMorphSkinnedGlb() {
           : 0.0;
       joints[v * 4] = 0;
       joints[v * 4 + 1] = 1;
-      weights[v * 4] = 1.0 - upper;
-      weights[v * 4 + 1] = upper;
+      weights[v * 4] = (1.0 - upper) * weightSum;
+      weights[v * 4 + 1] = upper * weightSum;
 
       // The bulge target, a radial swell peaking at the waist.
       final bulge = math.sin(math.pi * t) * 0.22;
