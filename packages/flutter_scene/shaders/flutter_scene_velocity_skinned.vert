@@ -51,7 +51,7 @@ void main() {
   vec4 prev_deformed = pos;
 
   if (model_info.enable_skinning > 0.5) {
-    // Normalized as in flutter_scene_skinned_body.glsl, so both passes deform
+    // Normalized as in flutter_scene_skinned_body.glsl so both passes deform
     // to the same positions.
     float weight_sum = weights.x + weights.y + weights.z + weights.w;
     vec4 w = weight_sum > 0.0 ? weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);

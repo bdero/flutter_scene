@@ -81,10 +81,9 @@ void main() {
 
   mat4 skin_matrix;
   if (frame_info.enable_skinning == 1) {
-    // Normalize the influences: exports often miss a sum of 1 by a fraction
-    // of a percent, and because a joint matrix carries the model's world
-    // position in its translation, the deficit scales that position too --
-    // a 0.98 vertex lands 60 m short at 3 km from the origin.
+    // Exports often sum to slightly under 1, and since a joint matrix carries
+    // the model's world position the deficit scales that position too (a 0.98
+    // vertex lands 60 m short at 3 km). Normalize, first joint when all zero.
     float weight_sum = weights.x + weights.y + weights.z + weights.w;
     vec4 w = weight_sum > 0.0 ? weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
     skin_matrix = GetJoint(joints.x) * w.x + GetJoint(joints.y) * w.y +
@@ -124,7 +123,7 @@ void main() {
       frame_info.camera_position, frame_info.depth_bias);
   gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
   v_viewvector = frame_info.camera_position - vertex.world_position;
-  // Unit length before interpolation: see UnitOrZero in normal_transform.glsl.
+  // Unit length before interpolation (UnitOrZero, normal_transform.glsl).
   v_normal = UnitOrZero(vertex.world_normal);
   v_texture_coords = vertex.uv;
   v_texture_coords_1 = vertex.uv1;
