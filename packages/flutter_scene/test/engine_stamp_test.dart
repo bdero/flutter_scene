@@ -146,8 +146,10 @@ void main() {
           'message',
           allOf(
             contains('writable'),
-            contains('data assets'),
             contains('buildEngineAssets'),
+            // Engine bundles always go to the tree, so data assets are not a
+            // way out of a read-only one.
+            isNot(contains('data assets')),
           ),
         ),
       ),
