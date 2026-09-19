@@ -81,9 +81,14 @@ void main() {
 
   mat4 skin_matrix;
   if (frame_info.enable_skinning == 1) {
-    skin_matrix =
-        GetJoint(joints.x) * weights.x + GetJoint(joints.y) * weights.y +
-        GetJoint(joints.z) * weights.z + GetJoint(joints.w) * weights.w;
+    // Normalize the influences: exports often miss a sum of 1 by a fraction
+    // of a percent, and because a joint matrix carries the model's world
+    // position in its translation, the deficit scales that position too --
+    // a 0.98 vertex lands 60 m short at 3 km from the origin.
+    float weight_sum = weights.x + weights.y + weights.z + weights.w;
+    vec4 w = weight_sum > 0.0 ? weights / weight_sum : vec4(1.0, 0.0, 0.0, 0.0);
+    skin_matrix = GetJoint(joints.x) * w.x + GetJoint(joints.y) * w.y +
+                  GetJoint(joints.z) * w.z + GetJoint(joints.w) * w.w;
   } else {
     skin_matrix = mat4(1); // Identity matrix.
   }
