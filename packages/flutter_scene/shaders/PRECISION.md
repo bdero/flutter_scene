@@ -20,6 +20,11 @@ range of 65504) is not enough:
 - The HDR accumulators (`direct`, `ambient`, `out_color`, radiance from a
   light or an environment), since the frame is not pre-exposed.
 - Derivative-based tangent frames, whose intermediates underflow fp16.
+- The world normal and tangent varyings are written at unit length
+  (`UnitOrZero`, `normal_transform.glsl`): `WorldNormalMatrix` scales with
+  the square of the model scale, and a small model's ~1e-4 normal read
+  back as zero from the mediump varying on an Adreno 829 (a Mali-G710 was
+  unaffected).
 - Members of a uniform block the vertex stage also declares (an emitted
   material's `MaterialParams`), since WebGL2 refuses to link a program whose
   shared block members differ in precision between stages.

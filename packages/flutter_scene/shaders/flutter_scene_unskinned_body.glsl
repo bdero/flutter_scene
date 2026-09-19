@@ -80,11 +80,12 @@ void main() {
       frame_info.camera_position, frame_info.depth_bias);
   gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
   v_viewvector = frame_info.camera_position - vertex.world_position;
-  v_normal = vertex.world_normal;
+  // Unit length before interpolation: see UnitOrZero in normal_transform.glsl.
+  v_normal = UnitOrZero(vertex.world_normal);
   v_texture_coords = vertex.uv;
   v_texture_coords_1 = vertex.uv1;
   v_color = vertex.color;
-  v_tangent = vertex.world_tangent;
+  v_tangent = vec4(UnitOrZero(vertex.world_tangent.xyz), vertex.world_tangent.w);
 
 #ifdef MATERIAL_INSTANCE_VARYINGS
   // Forward the material's declared per-instance attributes to the fragment
