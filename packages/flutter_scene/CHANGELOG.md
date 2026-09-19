@@ -10,11 +10,13 @@
 * `.fscene` cameras serialize orthographic projections, the editor draws their view volume, and `OrbitCameraController` dollies an orthographic camera by zoom.
 * Gaussian splats sort back to front and evaluate view-dependent color under orthographic cameras.
 * BREAKING: `Lighting` takes `projectionScaleX/Y`, `projectionOffsetX/Y`, and `orthographic` in place of `tanHalfFovX/Y`, which remain as deprecated getters.
+* The vertex stage writes the world normal and tangent varyings at unit length, so a model authored at a small scale no longer lights black on GPUs that flush its tiny normals to zero in mediump varyings.
 * Screen-size LOD applies to every perspective camera, not only `PerspectiveCamera`.
 * Update `flutter_scene-idioms` (v9) and `flutter_scene-looks` (v5) skills with orthographic cameras.
 * `Scene.addTickListener` runs a `SceneTickListener` at the start of every tick and before every fixed step, ahead of all components, for per-frame sampling such as input.
 * `FlyCameraController.setMoveInput` drives movement from a gamepad, touch controls, or an input system, summing with the keys and keeping analog magnitude.
 * Cascaded shadows skip casters that cannot shadow anything the camera shades, cutting shadow-pass draws with no change to the rendered image.
+* Skinned vertex shaders normalize the four joint weights, so a mesh exported with weights summing to slightly under 1 no longer stretches toward the origin as it moves away from it.
 * `releaseTransientRenderTargets()` drops the render graph's pooled attachments (shadow atlas, scene color, depth, the post-process chain) and returns the bytes released; they reallocate on the next frame that needs them.
 * Pooled render targets are released automatically on platform memory pressure (`releaseRenderTargetsOnMemoryPressure` turns that off), and `takeMemoryReport()` reports them as a `render targets` category.
 * Surface debug views. `Scene.debug.view` shows a resolved material channel (base color, roughness, metallic, every physical field), a geometry attribute (normals, tangents, UV sets, vertex color, face orientation, UV checkers), an identity color per object or material, or a validation flag (NaN/Inf, albedo range, non-binary metallic, missing tangents, UV range) in place of the lit result, on every material including `.fmat` ones, at runtime in any build. `Scene.debug.split` compares a view against the lit image, `DebugView` carries a range, gain, and out-of-range policy, `Node.debugView` overrides or excludes a subtree, and `Scene.debug.overlays` adds a wireframe drawn through each mesh's own vertex path. `DebugViewRegistry` lists the views by id for tools; a `.fmat` shows any value through `material.debug` and the `custom` channel.

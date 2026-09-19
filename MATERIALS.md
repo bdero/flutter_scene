@@ -804,7 +804,7 @@ emit the same standard outputs. The `.fmat` accessors wrap these; a raw
 
 ```glsl
 in vec3 v_position;        // world space
-in vec3 v_normal;          // world space, not necessarily unit length
+in vec3 v_normal;          // world space, unit per vertex (renormalize)
 in vec3 v_viewvector;      // camera_position - vertex_position
 in vec2 v_texture_coords;
 in vec2 v_texture_coords_1;

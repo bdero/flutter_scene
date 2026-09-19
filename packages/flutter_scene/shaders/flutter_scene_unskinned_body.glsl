@@ -80,7 +80,7 @@ void main() {
       frame_info.camera_position, frame_info.depth_bias);
   gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
   v_viewvector = frame_info.camera_position - vertex.world_position;
-  // Unit length before interpolation: see UnitOrZero in normal_transform.glsl.
+  // Unit length before interpolation (UnitOrZero, normal_transform.glsl).
   v_normal = UnitOrZero(vertex.world_normal);
   v_texture_coords = vertex.uv;
   v_texture_coords_1 = vertex.uv1;

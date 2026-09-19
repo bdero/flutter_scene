@@ -20,11 +20,6 @@ range of 65504) is not enough:
 - The HDR accumulators (`direct`, `ambient`, `out_color`, radiance from a
   light or an environment), since the frame is not pre-exposed.
 - Derivative-based tangent frames, whose intermediates underflow fp16.
-- The world normal and tangent varyings are written at unit length
-  (`UnitOrZero`, `normal_transform.glsl`): `WorldNormalMatrix` scales with
-  the square of the model scale, and a small model's ~1e-4 normal read
-  back as zero from the mediump varying on an Adreno 829 (a Mali-G710 was
-  unaffected).
 - Members of a uniform block the vertex stage also declares (an emitted
   material's `MaterialParams`), since WebGL2 refuses to link a program whose
   shared block members differ in precision between stages.
@@ -34,6 +29,11 @@ BRDF terms stay at the default. Terms that can exceed the fp16 range for
 legal inputs clamp to `kMediumpFloatMax` (the GGX lobe of a mirror-smooth
 surface) or run in highp (the sheen lambda's exponentials, the thin-film
 phase).
+
+The world normal and tangent varyings stay mediump; the vertex stage writes
+them at unit length instead (`UnitOrZero` in `normal_transform.glsl`), since
+`WorldNormalMatrix` scales with the square of the model scale and a small
+model's ~1e-4 normal read back as zero on an Adreno 829.
 
 A material body in a `.fmat` inherits the mediump default like any engine
 source; declare `highp` on positions or coordinates it computes itself, or
