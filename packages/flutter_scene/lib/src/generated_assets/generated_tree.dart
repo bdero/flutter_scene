@@ -70,10 +70,9 @@ final class GeneratedAssetsNotWritableException implements Exception {
   @override
   String toString() =>
       'flutter_scene: could not write generated assets into $path ($cause). '
-      'Make that directory writable, or enable Dart data assets '
-      '(`flutter config --enable-dart-data-assets`), or call buildEngineAssets '
-      'from the app\'s own hook/build.dart (`dart run flutter_scene:init`) so '
-      'the engine shaders are built into the app instead.';
+      'Make that directory writable, or call buildEngineAssets from the app\'s '
+      'own hook/build.dart (`dart run flutter_scene:init`) so the engine '
+      'shaders are built into the app instead.';
 }
 
 /// Runs [write], reporting a read-only destination as an actionable failure
@@ -391,19 +390,23 @@ final class GeneratedAssetTree {
   /// output renamed by a source move, or left by an older flutter_scene).
   ///
   /// A recently written file that is another variant of a referenced name is
-  /// kept, since a concurrent build on a different engine is named by it and
-  /// would otherwise lose its asset between its hook and asset bundling. The
-  /// window bounds that, because a build racing this one wrote its file moments
-  /// ago while a variant left by a Flutter version retired weeks back is only
-  /// weight in a directory that ships, survives `flutter clean`, and for a
-  /// pub-cache consumer is shared with every project on the machine.
+  /// kept, since a concurrent build on a different engine or target is named by
+  /// it and would otherwise lose its asset between its hook and asset bundling.
+  /// The window bounds that, because a build racing this one wrote its file
+  /// moments ago while a variant left by a Flutter version retired weeks back
+  /// is only weight in a directory that ships, survives `flutter clean`, and
+  /// for a pub-cache consumer is shared with every project on the machine.
   void save() {
     // Entry files are relative to the tree, so a target directory's outputs
     // carry the directory name.
     final referenced = {for (final entry in _manifest.entries) entry.file};
+    // Variants match on the generated name alone, ignoring which target
+    // directory holds them, since a target is part of what names a file. A
+    // build for another target writing into this shared tree is a variant of
+    // the same output, not an orphan to sweep.
     final variantsOfReferenced = {
       for (final file in referenced)
-        if (_withoutTag(file) case final name?) name,
+        if (_basenameWithoutTag(file) case final name?) name,
     };
     final directory = Directory.fromUri(_root);
     if (directory.existsSync()) {
@@ -423,7 +426,7 @@ final class GeneratedAssetTree {
           if (!isGeneratedFileName(name)) continue;
           final relative = '$prefix$name';
           if (referenced.contains(relative)) continue;
-          if (variantsOfReferenced.contains(_withoutTag(relative)) &&
+          if (variantsOfReferenced.contains(generatedNameWithoutTag(name)) &&
               file.statSync().modified.isAfter(keepAfter)) {
             continue;
           }
@@ -448,12 +451,11 @@ final class GeneratedAssetTree {
 
   static String _digest(String stamp) => fnv1aHex(utf8.encode(stamp));
 
-  // [generatedNameWithoutTag] for a tree-relative path, keeping its directory.
-  static String? _withoutTag(String relative) {
-    final slash = relative.lastIndexOf('/');
-    final name = generatedNameWithoutTag(relative.substring(slash + 1));
-    return name == null ? null : '${relative.substring(0, slash + 1)}$name';
-  }
+  // [generatedNameWithoutTag] for a tree-relative path.
+  static String? _basenameWithoutTag(String relative) =>
+      generatedNameWithoutTag(
+        relative.substring(relative.lastIndexOf('/') + 1),
+      );
 
   static String? _variantKey(String? variant, String? target) {
     if (target == null) return variant;
