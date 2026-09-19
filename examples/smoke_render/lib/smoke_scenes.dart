@@ -482,6 +482,16 @@ Future<void> loadMorphSkinnedModel() async {
   _morphSkinnedModel = model;
 }
 
+/// The skinned tube whose weights sum to 0.98, for the skinned_weight_sum
+/// scene. Its targets stay at rest, so only the skin deforms it.
+Node? _weightSumModel;
+
+Future<void> loadWeightSumModel() async {
+  _weightSumModel ??= await Node.fromGlbBytes(
+    buildMorphSkinnedGlb(weightSum: 0.98),
+  );
+}
+
 /// A 64x64 PNG, a one-texel black and white checkerboard, uploaded through
 /// the encoded-image path by [loadMipChecker]. Every level above the base
 /// averages to one flat gray, so a minified sample shows which light the
@@ -1922,6 +1932,25 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadMorphSkinnedModel),
+  // The skinned tube with its weights summing to 0.98, placed 3 km from the
+  // origin. A joint matrix carries the model's world position, so an
+  // unnormalized weight sum pulls every vertex toward the origin by 2% of
+  // that distance (60 m here) and the tube draws as rails; the normalized
+  // sum keeps it whole. No CI lane honors mediump, so the small-scale normal
+  // underflow the vertex-stage normalization also fixes has no capture.
+  SmokeScene('skinned_weight_sum', () {
+    final scene = Scene();
+    final model = _weightSumModel!;
+    model.localTransform = vm.Matrix4.translation(vm.Vector3(3000, 0, 0));
+    scene.add(model);
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(3000.5, 2.0, -5.6),
+        target: vm.Vector3(3000, 0.9, 0),
+      ),
+    );
+  }, preload: loadWeightSumModel),
 
   // A hand-written vertex/fragment pair driven through ShaderMaterial, with no
   // engine vertex shader involved. The vertex stage displaces the grid along
