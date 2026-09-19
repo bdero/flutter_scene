@@ -26,11 +26,18 @@ int _getNextPowerOfTwoSize(int x) {
 ///
 /// One matrix spans four consecutive texels, and the vertex shader reads all
 /// four from the same row, so the edge must be a multiple of four; the next
-/// power of two at or above 4 satisfies both that and GPU sizing.
+/// power of two at or above the required size satisfies both that and GPU
+/// sizing.
+///
+/// The floor is 16: at edge 4 (a skin of up to 4 joints) every joint past
+/// row 0 read back corrupted, while 16x16 textures were always correct.
+/// Likely a row-pitch requirement in the upload (a 16-wide RGBA32F row is
+/// 256 bytes); not confirmed, and edge 8 was not tested. Costs 4 KiB per
+/// skin, which skins of 17 or more joints already paid.
 int _jointsTextureEdge(int jointCount) {
   // 1 matrix = 16 floats, 1 texel = 4 floats, so 4 texels per joint.
   final int requiredTexels = jointCount * 4;
-  return max(4, _getNextPowerOfTwoSize(sqrt(requiredTexels).ceil()));
+  return max(16, _getNextPowerOfTwoSize(sqrt(requiredTexels).ceil()));
 }
 
 /// A skeletal binding used by skinned meshes for animation.
