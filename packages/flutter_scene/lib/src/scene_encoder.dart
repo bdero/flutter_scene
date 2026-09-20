@@ -574,6 +574,7 @@ base class SceneEncoder {
   late final ProjectionParams? _lodProjection;
   final List<_OpaqueRecord> _opaqueRecords = [];
   final List<_TranslucentRecord> _translucentRecords = [];
+  final List<_TranslucentRecord> _displayReferredRecords = [];
   static final List<_OpaqueRecord> _opaqueRecordPool = [];
   static final List<_TranslucentRecord> _translucentRecordPool = [];
   // Refilled per batch group and consumed synchronously by
@@ -691,6 +692,21 @@ base class SceneEncoder {
       return;
     }
 
+    // Display-referred surfaces draw past the tone curve into their own
+    // layer, so they leave both scene buckets. They are depth-sorted like
+    // translucency and share its record shape.
+    if (material.displayReferred) {
+      _addDepthSortedRecord(
+        item,
+        geometry,
+        material,
+        fade,
+        pipeline,
+        _displayReferredRecords,
+      );
+      return;
+    }
+
     if (material.isOpaque()) {
       _opaqueRecords.add(
         _obtainOpaqueRecord(
@@ -707,12 +723,31 @@ base class SceneEncoder {
       return;
     }
 
-    // Keep instanced translucency in one record. The instances are sorted
-    // back to front while their transform buffer is packed at draw time.
+    _addDepthSortedRecord(
+      item,
+      geometry,
+      material,
+      fade,
+      pipeline,
+      _translucentRecords,
+    );
+  }
+
+  // Appends one back-to-front record to [target]. Keeps instanced draws in a
+  // single record; their instances are sorted while the transform buffer is
+  // packed at draw time.
+  void _addDepthSortedRecord(
+    RenderItem item,
+    Geometry geometry,
+    Material material,
+    double fade,
+    gpu.RenderPipeline pipeline,
+    List<_TranslucentRecord> target,
+  ) {
     final instances = item.instanceTransforms;
     if (instances != null) {
       final bounds = item.worldBounds;
-      _translucentRecords.add(
+      target.add(
         _obtainTranslucentRecord(
           item,
           item.worldTransform,
@@ -735,7 +770,7 @@ base class SceneEncoder {
         ),
       );
     } else {
-      _translucentRecords.add(
+      target.add(
         _obtainTranslucentRecord(
           item,
           item.worldTransform,
@@ -1873,6 +1908,107 @@ base class SceneEncoder {
       flushNextTranslucentBatch(translucentPass: pass);
       pass = null;
     }
+  }
+
+  /// Whether any recorded draw is display-referred (see
+  /// [Material.displayReferred]).
+  bool get hasDisplayReferred => _displayReferredRecords.isNotEmpty;
+
+  /// Emits the display-referred layer into [pass], back to front with
+  /// premultiplied source-over blending.
+  ///
+  /// The pass writes display-encoded color into its own target and shares the
+  /// scene's depth attachment, so these surfaces are occluded by opaque
+  /// geometry but never write depth and never order against translucency.
+  void flushDisplayReferred(gpu.RenderPass pass) {
+    if (_displayReferredRecords.isEmpty) return;
+    _phase = DrawPhase.translucent;
+    _displayReferredRecords.sort((a, b) => b.depth.compareTo(a.depth));
+
+    _renderPass = pass;
+    _boundPipeline = null;
+    _boundMaterial = null;
+    _boundMaterialVertex = null;
+    _boundFrameInfoShader = null;
+    _boundFrameInfoDepthBias = double.nan;
+    _boundMaterialFade = double.nan;
+    _boundMaterialLightOffset = -1;
+    _boundMaterialLightCount = -1;
+    _boundMaterialLightChannelMask = -1;
+    _boundWindingOrder = null;
+    _boundPrimitiveType = null;
+    EngineLightingUniforms.invalidateBindMemo();
+
+    _renderPass.setDepthWriteEnable(false);
+    _renderPass.setColorBlendEnable(true);
+    _renderPass.setColorBlendEquation(
+      gpu.ColorBlendEquation(
+        colorBlendOperation: gpu.BlendOperation.add,
+        sourceColorBlendFactor: gpu.BlendFactor.one,
+        destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+        alphaBlendOperation: gpu.BlendOperation.add,
+        sourceAlphaBlendFactor: gpu.BlendFactor.one,
+        destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+      ),
+    );
+
+    for (final record in _displayReferredRecords) {
+      _renderPass.setDepthCompareOperation(record.material.depthCompare);
+      record.material.lightListOffset = record.lightListOffset;
+      record.material.lightListCount = record.lightListCount;
+      record.material.lightChannelMask = record.item.lightChannelMask;
+      record.material.setModelScaleFromTransform(record.item.worldTransform);
+      final joints = record.jointsTexture;
+      if (joints != null) {
+        record.geometry.setJointsTexture(joints, record.jointsTextureWidth);
+      }
+      record.item.applyMorphWeights(record.geometry);
+      final instances = record.item.instanceTransforms;
+      if (instances != null) {
+        _encodeInstanced(
+          record.pipeline,
+          record.worldTransform,
+          record.geometry,
+          record.material,
+          instances,
+          record.item.instanceColors!,
+          record.windingFlipped,
+          record.fade,
+          instanceWindingFlipped: record.item.instanceWindingFlipped,
+          instanceIndices: record.item.visibleInstanceIndices,
+          sortBackToFrontFrom: record.item.sortTransparentInstances
+              ? _camera.position
+              : null,
+          packedWorldData: record.windingFlipped == record.item.windingFlipped
+              ? record.item.instanceWorldData
+              : null,
+          packedWorldWindingFlipped:
+              record.windingFlipped == record.item.windingFlipped
+              ? record.item.instanceWorldWindingFlipped
+              : null,
+          attributeData: record.item.instanceAttributeData,
+          attributeFloats: record.item.instanceAttributeFloats,
+          item: record.item,
+        );
+      } else {
+        _encode(
+          record.pipeline,
+          record.worldTransform,
+          record.geometry,
+          record.material,
+          record.windingFlipped,
+          record.fade,
+          item: record.item,
+        );
+      }
+    }
+
+    for (final record in _displayReferredRecords) {
+      if (_translucentRecordPool.length == _recordPoolLimit) break;
+      record.release();
+      _translucentRecordPool.add(record);
+    }
+    _displayReferredRecords.clear();
   }
 
   static bool _readsSceneColor(Material material) {

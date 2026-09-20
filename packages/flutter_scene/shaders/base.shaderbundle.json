@@ -306,5 +306,9 @@
   "TaaFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_taa.frag"
+  },
+  "DisplayReferredCompositeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_display_referred_composite.frag"
   }
 }

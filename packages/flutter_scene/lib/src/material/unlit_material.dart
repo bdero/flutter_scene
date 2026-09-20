@@ -65,6 +65,21 @@ class UnlitMaterial extends Material {
   @override
   bool isOpaque() => alphaMode == AlphaMode.opaque;
 
+  /// Treats [baseColorTexture] and [baseColorFactor] as display-referred
+  /// (final screen values) instead of scene-referred radiance.
+  ///
+  /// The surface is drawn past the tone curve and composited onto the
+  /// resolved image, so an authored color arrives on screen unchanged. Use it
+  /// for captured widgets and other UI textured into the scene;
+  /// `WidgetComponent` sets it on the material it owns. The surface keeps its
+  /// depth test against the scene but takes no exposure, grading, tone
+  /// mapping, fog or bloom, and does not order against translucent geometry.
+  ///
+  /// With this set, [baseColorFactor] multiplies in display space rather than
+  /// linear space.
+  @override
+  bool displayReferred = false;
+
   /// Linear RGBA tint multiplied with [baseColorTexture].
   Vector4 baseColorFactor = Colors.white;
 
@@ -86,6 +101,7 @@ class UnlitMaterial extends Material {
       baseColorFactor.b, baseColorFactor.a, // color
       vertexColorWeight, // vertex_color_weight
       lodFade, // fade
+      displayReferred ? 1.0 : 0.0, // display_referred
     ]);
     pass.bindUniform(
       fragmentShader.getUniformSlot("FragInfo"),

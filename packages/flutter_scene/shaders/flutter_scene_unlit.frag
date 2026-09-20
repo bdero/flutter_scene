@@ -10,6 +10,9 @@ uniform FragInfo {
   float vertex_color_weight;
   // LOD cross-fade coverage; see lod_fade.glsl.
   float fade;
+  // 1 when the base color is display-referred and passes through unchanged
+  // (see Material.displayReferred); 0 for ordinary scene-referred shading.
+  float display_referred;
 }
 frag_info;
 
@@ -46,12 +49,23 @@ void main() {
   // Linearize the sRGB-encoded base color so what we write to the
   // floating-point scene-color target is linear; the tone-mapping resolve
   // pass applies display encoding. Output is premultiplied by alpha.
-  vec3 rgb = SRGBToLinear(base.rgb) * vertex_color.rgb * frag_info.color.rgb;
+  //
+  // A display-referred surface skips that: it draws into the display-referred
+  // layer, which is composited after the resolve has already encoded, so its
+  // texel has to arrive unchanged.
+  bool display_referred = frag_info.display_referred > 0.5;
+  vec3 decoded = display_referred ? base.rgb : SRGBToLinear(base.rgb);
+  vec3 rgb = decoded * vertex_color.rgb * frag_info.color.rgb;
   float alpha = base.a * vertex_color.a * frag_info.color.a;
   // Unlit has no environment bound, so pass the flat fog color as the sky color;
   // the sky-color mix in ApplyFog is then inert (sky-colored fog is a lit-path
   // feature).
-  vec4 shaded = ApplyFog(vec4(rgb, 1.0) * alpha, fog.color.rgb);
+  // Fog is scene-referred depth cueing; it would tint UI that is meant to
+  // read as an overlay, so a display-referred surface takes none.
+  vec4 premultiplied = vec4(rgb, 1.0) * alpha;
+  vec4 shaded = display_referred
+                    ? premultiplied
+                    : ApplyFog(premultiplied, fog.color.rgb);
   // The surface debug view sees the resolved unlit color as the base color.
   float debug_mode = DebugViewMode();
   if (debug_mode > 0.5) {

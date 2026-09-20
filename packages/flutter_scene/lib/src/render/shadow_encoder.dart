@@ -138,6 +138,8 @@ class ShadowEncoder {
     // reject before any virtual call.
     if (!shadowCasterAccepted(item, _filter, _casterChannelMask)) return;
     if (!item.material.isOpaque()) return;
+    // UI composited over the scene casts no shadow into it.
+    if (item.material.displayReferred) return;
     if (!alreadyCulled && item.frustumCulled) {
       final bounds = item.cullBounds;
       if (bounds != null) {

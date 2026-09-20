@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/punctual_lights.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/depth_prepass.dart';
+import 'package:flutter_scene/src/render/display_referred_pass.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
@@ -91,6 +92,8 @@ class ScenePass extends RenderGraphPass {
     int layerMask = kRenderLayerAll,
     Fog? fog,
     bool captureOpaqueColor = false,
+    bool displayReferredLayer = false,
+    gpu.PixelFormat? displayReferredFormat,
     int maxCaptureBatches = maxSceneColorCaptureBatches,
     bool bindSceneDepth = false,
     double time = 0.0,
@@ -101,6 +104,8 @@ class ScenePass extends RenderGraphPass {
     DebugViewFrame? debugView,
   }) : _debugView = debugView,
        _captureOpaqueColor = captureOpaqueColor,
+       _displayReferredLayer = displayReferredLayer,
+       _displayReferredFormat = displayReferredFormat,
        _maxCaptureBatches = maxCaptureBatches,
        _suppressPlanarReflections = suppressPlanarReflections,
        _bindSceneDepth = bindSceneDepth,
@@ -164,6 +169,15 @@ class ScenePass extends RenderGraphPass {
   // depth, and the engine time for material animation.
   final bool _captureOpaqueColor;
 
+  // The scene holds a display-referred surface, so depth must survive the
+  // scene's own passes and the extra layer is drawn after them.
+  final bool _displayReferredLayer;
+
+  // The display chain's color format, which the layer matches so the
+  // composite blends two identically encoded images. The swapchain's own
+  // default format is not necessarily creatable offscreen.
+  final gpu.PixelFormat? _displayReferredFormat;
+
   // Overlap-safe capture batches this frame may open before the remaining
   // readers share the final snapshot. See Scene.sceneColorCaptureBatches.
   final int _maxCaptureBatches;
@@ -199,7 +213,7 @@ class ScenePass extends RenderGraphPass {
     // pooled texture (see TransientTextureDescriptor.attachmentKey).
     final attachmentKey = _enableMsaa
         ? 'resolve'
-        : capture
+        : capture || _displayReferredLayer
         ? 'depth_stored'
         : 'depth_transient';
     final hdrColor = context.texturePool.acquire(
@@ -211,15 +225,23 @@ class ScenePass extends RenderGraphPass {
         attachmentKey: attachmentKey,
       ),
     );
-    // Depth must survive from the opaque pass into the translucent pass, so it
-    // cannot be tile-transient when scene color is captured.
+    // Depth must outlive the render pass that wrote it whenever a later pass
+    // re-attaches it: a capture splits the scene across passes, and the
+    // display-referred layer draws in a pass of its own. Tile-transient
+    // storage does not survive that, so those cases take device memory.
+    // Shader-read usage is a separate question and only the capture path
+    // samples it.
+    final keepDepth = capture || _displayReferredLayer;
     final depth = context.texturePool.acquire(
-      TransientTextureDescriptor.depth(
+      TransientTextureDescriptor(
         width: width,
         height: height,
         format: gpu.gpuContext.defaultDepthStencilFormat,
         sampleCount: _enableMsaa ? 4 : 1,
-        shaderReadable: capture,
+        storageMode: keepDepth
+            ? gpu.StorageMode.devicePrivate
+            : gpu.StorageMode.deviceTransient,
+        enableShaderReadUsage: capture,
         debugName: 'scene_depth',
       ),
     );
@@ -264,7 +286,7 @@ class ScenePass extends RenderGraphPass {
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
         depthClearValue: 1.0,
-        depthStoreAction: capture
+        depthStoreAction: keepDepth
             ? gpu.StoreAction.store
             : gpu.StoreAction.dontCare,
       ),
@@ -426,6 +448,7 @@ class ScenePass extends RenderGraphPass {
         );
       }
       rendererSubmissions.submit(commandBuffer);
+      _encodeDisplayReferredLayer(context, encoder, depth, width, height);
       context.blackboard.set(kSceneColorBlackboardKey, hdrColor);
       return;
     }
@@ -547,6 +570,7 @@ class ScenePass extends RenderGraphPass {
       captureBatch++;
     }
 
+    _encodeDisplayReferredLayer(context, encoder, depth, width, height);
     context.blackboard.set(kSceneColorBlackboardKey, currentColor);
     flushWatch?.stop();
     if (profileRendering) {
@@ -555,6 +579,73 @@ class ScenePass extends RenderGraphPass {
         flushWatch?.elapsedMicroseconds ?? 0,
       );
     }
+  }
+
+  // Draws the display-referred surfaces into their own display-encoded layer,
+  // sharing the scene's depth attachment so opaque geometry occludes them.
+  // The layer is composited onto the resolved image by
+  // DisplayReferredCompositePass, past the tone curve.
+  void _encodeDisplayReferredLayer(
+    RenderGraphContext context,
+    SceneEncoder encoder,
+    gpu.Texture depth,
+    int width,
+    int height,
+  ) {
+    if (!_displayReferredLayer || !encoder.hasDisplayReferred) return;
+
+    final format = _displayReferredFormat;
+    if (format == null) return;
+    final layer = context.texturePool.acquire(
+      TransientTextureDescriptor.color(
+        width: width,
+        height: height,
+        format: format,
+        debugName: 'display_referred_color',
+      ),
+    );
+    // The depth attachment carries the scene's sample count, so the layer's
+    // own color must match it and resolve down, exactly as the scene targets
+    // do.
+    gpu.Texture? msaaLayer;
+    if (_enableMsaa) {
+      msaaLayer = context.texturePool.acquire(
+        TransientTextureDescriptor(
+          width: width,
+          height: height,
+          format: format,
+          sampleCount: 4,
+          storageMode: gpu.StorageMode.deviceTransient,
+          enableShaderReadUsage: false,
+          debugName: 'display_referred_color_msaa',
+        ),
+      );
+    }
+
+    final attachment = gpu.ColorAttachment(
+      texture: msaaLayer ?? layer,
+      clearValue: Vector4.zero(),
+    );
+    if (_enableMsaa) {
+      attachment.resolveTexture = layer;
+      attachment.storeAction = gpu.StoreAction.multisampleResolve;
+    }
+    final commands = gpu.gpuContext.createCommandBuffer();
+    final pass = commands.createRenderPass(
+      gpu.RenderTarget.singleColor(
+        attachment,
+        depthStencilAttachment: gpu.DepthStencilAttachment(
+          texture: depth,
+          depthLoadAction: gpu.LoadAction.load,
+          depthStoreAction: gpu.StoreAction.dontCare,
+          depthClearValue: 1.0,
+        ),
+      ),
+    );
+    encoder.flushDisplayReferred(pass);
+    rendererSubmissions.submit(commands);
+
+    context.blackboard.set(kDisplayReferredBlackboardKey, layer);
   }
 
   // Draws the debug overlays (wireframe) into the pass the scene finished
