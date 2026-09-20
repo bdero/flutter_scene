@@ -4,6 +4,7 @@
 * Web decodes glTF, `.fscene`, and asset textures in the browser and builds their mip chains on the GPU, so large images no longer render in pieces and no longer stall the main thread.
 * `Texture2D.fromEncodedBytes` uploads an encoded image. It, `Texture2D.fromAsset`, and the glTF loaders take a size cap that scales larger images down as they decode.
 * Web wasm builds now enable anisotropic filtering, which a mistyped limit query had silently disabled.
+* Web mesh uploads (`MeshGeometry.fromArrays` and everything else that reaches `Geometry._uploadStreams` without a `GeometryBufferArena`) use one role-typed GL buffer each for vertex and index data, written directly, instead of one shared buffer that was mirrored in Dart and uploaded to GL twice.
 * `OrthographicCamera` and `OrthographicProjection` add parallel projection, sized by `OrthographicSize` (full world extents with height, width, contain, cover, or stretch fitting, or a fixed `pixelsPerUnit`) plus `zoom`, `offset`, and a `near` that may be negative.
 * `CameraProjection.getProjectionMatrixForViewport` lets a projection size its volume from the view's logical size, which rendering and picking both resolve against.
 * Shadows, AO, SSR, TAA, depth of field, god rays, GI, planar reflections, froxel lighting, LOD, and custom-pass depth/normals all work under orthographic and custom projections.
