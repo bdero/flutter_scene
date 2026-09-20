@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 // ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/raster_sync.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
@@ -45,7 +46,21 @@ Future<void> probePlatformMipSampling() async {
     return;
   }
   try {
-    platformMipSamplingWorks = await measureMipSampling();
+    // A reading that reports the defect is taken again before it is believed.
+    // The two answers are not equally cheap to get wrong: a false "works"
+    // costs one device its mipmaps' benefit, while a false "broken" drops
+    // every mip chain in the app -- minified textures alias, and image based
+    // lighting falls back to the atlas -- on hardware that samples chains
+    // perfectly well. Measured on a Galaxy A16 (Mali-G57, Impeller GLES): one
+    // cold run in three read the base level from a target the other two read
+    // the chain from, with the same texture, the same draw and the raster
+    // rendezvous below already in place. Two independent readings agreeing is
+    // the evidence the expensive answer needs.
+    var works = await measureMipSampling();
+    if (!works) {
+      works = await measureMipSampling();
+    }
+    platformMipSamplingWorks = works;
   } catch (error) {
     // Leave the result unknown rather than asserting the defect. Radiance
     // layout selection already treats unknown as broken (the atlas works
@@ -56,7 +71,8 @@ Future<void> probePlatformMipSampling() async {
   }
   if (platformMipSamplingWorks == false) {
     debugPrint(
-      'flutter_scene: this device samples every texture at its base mip, so '
+      'flutter_scene: this device samples every texture at its base mip '
+      '(measured twice), so '
       'mipmaps are skipped and minified textures will alias. Cooked mip '
       'chains are not uploaded, and image based lighting uses the radiance '
       'atlas. See https://github.com/flutter/flutter/issues/189965',
@@ -136,6 +152,16 @@ Future<bool> measureMipSampling() async {
   );
   drawCompat(renderPass, 6);
   rendererSubmissions.submit(commandBuffer);
+  // Flutter GPU does not execute a command buffer where it is submitted: on
+  // the OpenGL ES backend `submit` posts the encode and the reactor flush to
+  // the raster thread. Reading the target back without waiting for that races
+  // the draw, and an unrendered target answers with whatever its memory
+  // happened to hold: measured on a Galaxy A16, one cold run in three read
+  // white and so reported base-mip clamping on a device that samples mip
+  // chains perfectly well, which silently dropped every mip chain in the app
+  // (minified textures aliasing, and ~250 ms of mip building saved for the
+  // wrong reason).
+  await awaitRasterThread();
 
   final ui.Image image = target.asImage();
   final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
@@ -145,5 +171,6 @@ Future<bool> measureMipSampling() async {
   }
   // Sample the center texel; mid-gray or darker means the chain was read.
   final center = (4 * 2 + 2) * 4;
-  return bytes.getUint8(center) < 128;
+  final sampled = bytes.getUint8(center);
+  return sampled < 128;
 }
