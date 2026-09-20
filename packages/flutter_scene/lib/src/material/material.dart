@@ -214,9 +214,13 @@ abstract class Material {
   /// when the asset is missing (an app bundling its own trimmed copy of the
   /// package's assets).
   ///
-  /// The integration is 4.19 M Monte-Carlo samples: a few hundred milliseconds
-  /// of solid CPU, which is why it never runs on the isolate that renders.
+  /// The integration is 4.19 M Monte-Carlo samples, a few hundred
+  /// milliseconds of solid CPU, which is why it never runs on the isolate that
+  /// renders. It is also why the fallback is loud. Losing the asset costs
+  /// every cold start that time for a table that is the same bytes on every
+  /// device, and silently paying it is worse than being told.
   static Future<Uint16List> _loadDfgTable() async {
+    String? fallbackReason;
     try {
       final data = await rootBundle.load(
         'packages/flutter_scene/assets/dfg.bin',
@@ -227,14 +231,18 @@ abstract class Material {
           data.lengthInBytes ~/ 2,
         );
       }
-      debugPrint(
-        'flutter_scene: packages/flutter_scene/assets/dfg.bin is '
-        '${data.lengthInBytes} bytes, expected $kDfgLutTileBytes; '
-        'integrating the environment BRDF instead.',
-      );
-    } catch (_) {
-      // Not bundled; fall through to the integration below.
+      fallbackReason =
+          'it is ${data.lengthInBytes} bytes, expected $kDfgLutTileBytes';
+    } catch (error) {
+      fallbackReason = 'it could not be read ($error)';
     }
+    final message =
+        'flutter_scene: packages/flutter_scene/assets/dfg.bin is unusable, '
+        '$fallbackReason. Integrating the environment BRDF instead, which '
+        'costs a few hundred milliseconds of CPU at every cold start. Ship '
+        "the package's assets unmodified to avoid it.";
+    debugPrint(message);
+    assert(false, message);
     return compute<Object?, Uint16List>(
       _integrateDfgTable,
       null,
