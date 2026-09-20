@@ -51,23 +51,21 @@ vec3 SampleSourceRadiance(vec3 direction) {
 // sample set (see main) reads as fine noise rather than visible swirls.
 const int kPrefilterSamples = 256;
 
-// Van der Corput radical inverse in base 2, computed with float ops only
-// (no integer bit operations, which aren't reliably available in the GLSL
-// dialects Impeller targets). `i` is an integer-valued float in [0, n).
-float RadicalInverseVdC(float i) {
-  float result = 0.0;
-  float f = 0.5;
-  float x = i;
-  for (int k = 0; k < 20; k++) {
-    result += mod(x, 2.0) * f;
-    x = floor(x * 0.5);
-    f *= 0.5;
-  }
-  return result;
-}
+// The i'th point of a rank-1 lattice: stratified in x, and in y the
+// golden-ratio (Kronecker) sequence, whose discrepancy matches the Hammersley
+// set this replaces. Two multiplies instead of a 20-iteration float emulation
+// of a base-2 radical inverse, which the integer bit operations missing from
+// the GLSL dialects Impeller targets would otherwise need. That loop cost more
+// than the texture fetch it fed.
+//
+// highp is required, not decorative: the y term grows to ~158 by the last
+// sample, where fp16's 10-bit mantissa cannot resolve the fractional part at
+// all and every sample would collapse onto the same few directions.
+const highp float kGoldenRatioConjugate = 0.6180339887498949;
 
-vec2 Hammersley(int i, int n) {
-  return vec2(float(i) / float(n), RadicalInverseVdC(float(i)));
+vec2 LatticePoint(int i, int n) {
+  highp float kronecker = 0.5 + float(i) * kGoldenRatioConjugate;
+  return vec2(float(i) / float(n), fract(kronecker));
 }
 
 // Samples a half-vector from the GGX normal distribution around `n`.
@@ -132,7 +130,7 @@ void main() {
   vec3 color = vec3(0.0);
   float total_weight = 0.0;
   for (int i = 0; i < kPrefilterSamples; i++) {
-    vec2 xi = Hammersley(i, kPrefilterSamples);
+    vec2 xi = LatticePoint(i, kPrefilterSamples);
     xi.x = fract(xi.x + jitter);
     vec3 h = ImportanceSampleGGX(xi, n, roughness);
     vec3 l = normalize(2.0 * dot(v, h) * h - v);
