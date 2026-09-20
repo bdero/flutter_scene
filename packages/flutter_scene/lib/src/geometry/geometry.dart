@@ -426,15 +426,20 @@ abstract class Geometry {
     );
   }
 
-  /// Allocates a [gpu.DeviceBuffer] and uploads [vertices] (and optional
-  /// [indices]) into it in one step.
+  /// Allocates GPU storage and uploads [vertices] (and optional [indices])
+  /// into it in one step.
   ///
   /// The vertices must match this geometry subclass's expected interleaved
   /// layout (72 bytes per vertex for [UnskinnedGeometry], 104 bytes for
   /// [SkinnedGeometry]). The subclass may split the interleaved bytes into
   /// several tightly packed streams (see [_vertexStreamBytes]); the streams
-  /// and any [indices] are packed back-to-back into one buffer, the streams
-  /// bound via [setVertexStreams] and the indices via [setIndices].
+  /// are bound via [setVertexStreams] and the indices via [setIndices].
+  ///
+  /// How many [gpu.DeviceBuffer]s that takes, and where in them the indices
+  /// land, is the backend's to decide (see [_uploadStreams]), so read the
+  /// bound [gpu.BufferView]s rather than assuming a layout. Native packs the
+  /// streams and indices back to back into one buffer; web gives each role a
+  /// buffer of its own, since WebGL2 types a buffer on first bind.
   ///
   /// Pass [vertices] and [indices] as the element type their store was
   /// allocated as (the engine's packers build interleaved vertices in a

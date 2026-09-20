@@ -3,13 +3,14 @@
 // takes its storage from createGeometryBuffers, and both accept a stream as
 // the typed list it already is. GPU-gated like the other buffer suites.
 //
-// This runs on the VM, so it pins the native contract - one shared buffer,
-// indices after the vertex streams. The web backend returns one buffer per
-// role from the same helper; that split needs a WebGL2 context and has no
-// harness here.
+// The storage is backend-defined, so the layout expectations branch on
+// [kIsWeb]: native packs one shared buffer with the indices after the vertex
+// streams, web hands back a buffer per role with the indices at zero. Run the
+// web half with `flutter test --platform chrome`.
 
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_scene/scene.dart';
 
 // ignore: implementation_imports
@@ -69,6 +70,25 @@ _RecordingGeometry _upload({
 int _streamBytes(_RecordingGeometry geometry) =>
     geometry.streams.fold(0, (total, view) => total + view.lengthInBytes);
 
+/// Checks where an upload put its indices, which is backend-defined: web gives
+/// them their own buffer from offset zero, native appends them to the shared
+/// one after the vertex streams.
+void _expectIndexPlacement(_RecordingGeometry geometry) {
+  final indices = geometry.indices!;
+  if (kIsWeb) {
+    for (final stream in geometry.streams) {
+      expect(identical(stream.buffer, indices.buffer), isFalse);
+    }
+    expect(indices.offsetInBytes, 0);
+    expect(indices.buffer.sizeInBytes, indices.lengthInBytes);
+  } else {
+    for (final stream in geometry.streams) {
+      expect(identical(stream.buffer, indices.buffer), isTrue);
+    }
+    expect(indices.offsetInBytes, _streamBytes(geometry));
+  }
+}
+
 void main() {
   if (!_gpuAvailable()) {
     test(
@@ -80,12 +100,20 @@ void main() {
   }
 
   group('createGeometryBuffers', () {
-    test('gives the vertex and index data one buffer, indices after', () {
+    test('gives each role the storage its backend allocates', () {
       final buffers = gpu.createGeometryBuffers(64, 32);
 
-      expect(identical(buffers.vertex, buffers.index), isTrue);
-      expect(buffers.indexBaseOffset, 64);
-      expect(buffers.vertex.sizeInBytes, 96);
+      if (kIsWeb) {
+        // WebGL2 types a buffer on first bind, so the roles cannot share one.
+        expect(identical(buffers.vertex, buffers.index), isFalse);
+        expect(buffers.indexBaseOffset, 0);
+        expect(buffers.vertex.sizeInBytes, 64);
+        expect(buffers.index.sizeInBytes, 32);
+      } else {
+        expect(identical(buffers.vertex, buffers.index), isTrue);
+        expect(buffers.indexBaseOffset, 64);
+        expect(buffers.vertex.sizeInBytes, 96);
+      }
     });
 
     test(
@@ -144,16 +172,13 @@ void main() {
   });
 
   group('upload', () {
-    test('packs the indices after the vertex streams in the same buffer', () {
+    test('binds the indices where its backend put them', () {
       final geometry = _upload(indices: Uint16List.fromList([0, 1, 2]));
 
       expect(geometry.streams, isNotEmpty);
       expect(geometry.indices, isNotNull);
-      for (final stream in geometry.streams) {
-        expect(identical(stream.buffer, geometry.indices!.buffer), isTrue);
-      }
-      expect(geometry.indices!.offsetInBytes, _streamBytes(geometry));
       expect(geometry.indices!.lengthInBytes, 6);
+      _expectIndexPlacement(geometry);
     });
 
     test('lays the vertex streams out back to back from offset zero', () {
@@ -183,7 +208,7 @@ void main() {
       );
 
       expect(geometry.indices!.lengthInBytes, 6);
-      expect(geometry.indices!.offsetInBytes, _streamBytes(geometry));
+      _expectIndexPlacement(geometry);
     });
 
     test('an arena allocation stays one contiguous block', () {
