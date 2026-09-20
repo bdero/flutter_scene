@@ -58,4 +58,38 @@ void main() {
       });
     });
   }
+
+  // A progressive fill seeds every band at roughness 0 before pacing the real
+  // ones, so a frame that samples a still-filling environment reads a sharp
+  // environment instead of the clear color. The seed is only cheap because
+  // roughness 0 takes the delta-lobe shortcut, so the override has to land
+  // before the sample loop reads it.
+  group('mirror seed', () {
+    const atlasShader = 'shaders/flutter_scene_prefilter_env.frag';
+
+    test('the atlas prefilter can force roughness to 0', () {
+      final source = _read(atlasShader);
+      expect(source, contains('float force_mirror;'));
+      expect(
+        source.indexOf('prefilter_info.force_mirror'),
+        lessThan(source.indexOf('if (roughness <= 0.0)')),
+        reason: 'the override must be applied before the shortcut tests it',
+      );
+    });
+
+    test('PrefilterInfo still fits the four floats Dart writes', () {
+      final source = _read(atlasShader);
+      final block = source.substring(
+        source.indexOf('uniform PrefilterInfo {'),
+        source.indexOf('prefilter_info;'),
+      );
+      expect(
+        RegExp(r'^\s*float \w+;', multiLine: true).allMatches(block).length,
+        4,
+        reason:
+            'env_prefilter.dart writes a Float32List(4); a fifth member grows '
+            'the std140 block past what it uploads',
+      );
+    });
+  });
 }

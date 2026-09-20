@@ -131,6 +131,22 @@ base class EnvironmentMap {
   /// texture in the app, which no layout choice can work around.
   static bool useMipRadianceLayout = true;
 
+  /// Builds radiance in one submission instead of pacing it across frames.
+  ///
+  /// New environments normally seed their radiance and then refine it a
+  /// roughness band per frame, because submitting the whole prefilter at once
+  /// hands the driver more GPU work than a display pipeline can absorb inside
+  /// a frame (see [prefilterEquirectRadianceProgressive]). The cost is that an
+  /// environment is an approximation for its first few frames.
+  ///
+  /// Turn this on where the next frame has to show the converged environment
+  /// and a stall does not matter: an offline bake, a golden or smoke capture,
+  /// a still being rendered for export. Affects only environments built
+  /// afterwards.
+  ///
+  /// {@category Lighting and environment}
+  static bool synchronousRadiancePrefilter = false;
+
   /// Base-mip face size of the prefiltered radiance cubemap new environments
   /// build (the convolved reflection/ambient cube).
   /// Higher is sharper reflections at more memory (a cube is `6 * size^2`
@@ -1045,17 +1061,30 @@ base class EnvironmentMap {
   static RadiancePrefilterFill _buildRadiance(
     gpu.Texture source, {
     bool sourceIsLinear = false,
-  }) => effectiveMipRadianceLayout
-      ? prefilterEquirectRadianceToCubeProgressive(
-          source,
-          sourceIsLinear: sourceIsLinear,
-          size: radianceCubeSize,
-        )
-      : prefilterEquirectRadianceProgressive(
-          source,
-          sourceIsLinear: sourceIsLinear,
-          mipLayout: false,
-        );
+  }) {
+    if (synchronousRadiancePrefilter) {
+      return RadiancePrefilterFill.completed(
+        effectiveMipRadianceLayout
+            ? prefilterEquirectRadianceToCube(
+                source,
+                sourceIsLinear: sourceIsLinear,
+                size: radianceCubeSize,
+              )
+            : prefilterEquirectRadiance(source, sourceIsLinear: sourceIsLinear),
+      );
+    }
+    return effectiveMipRadianceLayout
+        ? prefilterEquirectRadianceToCubeProgressive(
+            source,
+            sourceIsLinear: sourceIsLinear,
+            size: radianceCubeSize,
+          )
+        : prefilterEquirectRadianceProgressive(
+            source,
+            sourceIsLinear: sourceIsLinear,
+            mipLayout: false,
+          );
+  }
 
   /// The [kDiffuseShCoefficientCount] RGB L2 spherical-harmonic
   /// coefficients describing the diffuse (Lambertian) irradiance.

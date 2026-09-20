@@ -2,30 +2,25 @@
 import 'package:flutter_scene/src/gpu/raster_sync.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// [awaitFrame] paces the progressive radiance prefilter, one band per frame.
+/// [FramePacer] paces the progressive radiance prefilter, one band per frame.
 /// Where nothing presents (a headless test, a backgrounded embedding) there is
 /// no frame to pace against, and waiting out a timeout per band would turn the
-/// fill into one long stall. The first timeout has to switch the rest of the
-/// fill over to the raster rendezvous alone.
+/// fill into one long stall.
 void main() {
   const timeout = Duration(milliseconds: 40);
 
-  setUp(debugResetFramePacing);
-  tearDown(debugResetFramePacing);
-
   test('stops waiting for frames once one has timed out', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
+    final pacer = FramePacer();
 
-    final firstCall = Stopwatch()..start();
-    await awaitFrame(timeout: timeout);
-    firstCall.stop();
+    // Whether the binding serves that first frame decides how long the first
+    // call takes, so only the calls after it are asserted on. If it did serve
+    // one, pacing stays on and every call is fast for the other reason.
+    await pacer.awaitFrame(timeout: timeout);
 
-    // Whether the binding served that frame decides how long the first call
-    // took, so only the calls after it are asserted on. If it did serve one,
-    // pacing stays on and every call is fast for the other reason.
     final laterCalls = Stopwatch()..start();
     for (var band = 0; band < 7; band++) {
-      await awaitFrame(timeout: timeout);
+      await pacer.awaitFrame(timeout: timeout);
     }
     laterCalls.stop();
 
@@ -33,9 +28,24 @@ void main() {
       laterCalls.elapsed,
       lessThan(timeout * 7),
       reason:
-          'seven more bands must not cost seven more timeouts; the latch '
-          'should have dropped frame pacing after the first one',
+          'seven more bands must not cost seven more timeouts; the pacer '
+          'should have stopped waiting after the first one',
     );
+  });
+
+  test('a later fill is willing to wait again', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    // The degradation above is scoped to one fill. A process that stops
+    // presenting for one environment must not stop pacing every environment
+    // built after it, which would queue bands faster than the GPU retires
+    // them and rebuild the stall this pacing exists to avoid.
+    final stalled = FramePacer();
+    await stalled.awaitFrame(timeout: timeout);
+    await stalled.awaitFrame(timeout: timeout);
+
+    final fresh = FramePacer();
+    expect(fresh, isNot(same(stalled)));
+    await fresh.awaitFrame(timeout: timeout);
   });
 
   test('completes without a GPU context', () async {

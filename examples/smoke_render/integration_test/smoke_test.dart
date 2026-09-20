@@ -30,6 +30,15 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final captures = <String, String>{};
 
+  // Capture the converged environment. A scene normally refines its radiance
+  // a roughness band per frame so one oversized prefilter cannot stall the
+  // display, which means an environment is an approximation for its first few
+  // frames. These captures settle a single frame on Android (the emulator
+  // watchdog terminates sustained software rendering), so without this they
+  // would photograph the approximation on Android and the converged image
+  // everywhere else, and compare the two against one baseline.
+  EnvironmentMap.synchronousRadiancePrefilter = true;
+
   if (_expectedAndroidImpellerBackend.isNotEmpty) {
     testWidgets('Android requests the expected Impeller backend', (_) async {
       expect(defaultTargetPlatform, TargetPlatform.android);

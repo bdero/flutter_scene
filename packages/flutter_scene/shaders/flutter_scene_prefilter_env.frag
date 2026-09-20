@@ -21,6 +21,12 @@ uniform PrefilterInfo {
   // equirect, so there is no atlas math and no discard). band_index must
   // be non-negative in this mode.
   float whole_target;
+  // 1.0 to compute every band at roughness 0 (the mirror), which the delta
+  // lobe answers in one fetch. A progressive fill seeds the whole atlas with
+  // this before pacing the real bands, so a frame that samples the atlas
+  // while it is still filling reads the environment rather than the clear
+  // color. Each paced band then overwrites its seed.
+  float force_mirror;
 }
 prefilter_info;
 
@@ -100,7 +106,9 @@ void main() {
   vec3 n = normalize(EquirectangularToSpherical(vec2(v_uv.x, band_v)));
   // Standard "view == normal" prefiltering assumption.
   vec3 v = n;
-  float roughness = band_index / max(kPrefilterBands - 1.0, 1.0);
+  float roughness = prefilter_info.force_mirror > 0.5
+                        ? 0.0
+                        : band_index / max(kPrefilterBands - 1.0, 1.0);
 
   // Per-texel azimuthal rotation of the importance-sample set. The GGX
   // samples live in a tangent frame that rotates with n, so a fixed
