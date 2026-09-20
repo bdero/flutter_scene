@@ -40,11 +40,17 @@ class SmokeScene {
     this.preload,
     this.warmupFrames = 0,
     this.fullCoverage = false,
+    this.colorPassCounters,
   });
 
   final String id;
   final ({Scene scene, Camera camera}) Function() setup;
   final Future<void> Function()? preload;
+
+  /// Counters the captured frame's `ScenePass` must report exactly, keyed
+  /// as `RenderCounters.toJson` names them. For pinning a statistic the
+  /// image cannot show.
+  final Map<String, int>? colorPassCounters;
 
   /// Frames to render before the capture, for a feature that converges over
   /// time instead of resolving in one frame.
@@ -1951,6 +1957,48 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadWeightSumModel),
+  // Nine unit cubes ahead of the camera and twenty-seven behind it. The
+  // frame shows the nine; the counters have to say the other twenty-seven
+  // were culled, which is what a rejected BVH subtree never reported.
+  SmokeScene('bvh_culled', () {
+    final scene = Scene();
+    var index = 0;
+    void cube(double x, double y, double z) {
+      final tint = vm.Vector4(
+        0.25 + 0.75 * (index % 3) / 2,
+        0.25 + 0.75 * ((index ~/ 3) % 3) / 2,
+        0.9,
+        1,
+      );
+      scene.add(
+        Node(
+          name: 'cube${index++}',
+          mesh: Mesh(
+            CuboidGeometry(vm.Vector3.all(1)),
+            UnlitMaterial()..baseColorFactor = tint,
+          ),
+        )..position = vm.Vector3(x, y, z),
+      );
+    }
+
+    for (var row = -1; row <= 1; row++) {
+      for (var column = -1; column <= 1; column++) {
+        cube(column * 1.6, row * 1.6, 6);
+      }
+    }
+    for (var row = -1; row <= 1; row++) {
+      for (var column = -4; column <= 4; column++) {
+        cube(column * 1.6, row * 1.6, -6);
+      }
+    }
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3.zero(),
+        target: vm.Vector3(0, 0, 1),
+      ),
+    );
+  }, colorPassCounters: const {'draws': 9, 'submitted': 36, 'culled': 27}),
 
   // A hand-written vertex/fragment pair driven through ShaderMaterial, with no
   // engine vertex shader involved. The vertex stage displaces the grid along

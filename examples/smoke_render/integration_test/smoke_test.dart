@@ -119,6 +119,7 @@ void main() {
       captures['${smoke.id}.png'] = base64Encode(png.buffer.asUint8List());
 
       final stats = _frameStats(rgba, image.width, image.height);
+      final colorPass = _colorPassCounters(scene);
       // ignore: avoid_print
       print(
         'SMOKE ${smoke.id}: ${image.width}x${image.height} '
@@ -128,7 +129,9 @@ void main() {
         'cornersClear=${stats.cornersClear} '
         'centerCoverage=${stats.centerNonClearFraction.toStringAsFixed(3)} '
         'fgLuma=${stats.foregroundMeanLuma.toStringAsFixed(1)} '
-        'colors=${stats.distinctColors}',
+        'colors=${stats.distinctColors} '
+        'draws=${colorPass?.draws} submitted=${colorPass?.submitted} '
+        'culled=${colorPass?.culled}',
       );
       _settleMaxMs = _settleTimeouts = _repumps = 0;
 
@@ -164,6 +167,19 @@ void main() {
         greaterThan(8),
         reason: 'frame looks uniform; possible blank render',
       );
+      // A scene may pin counters instead of pixels.
+      final expectedCounters = smoke.colorPassCounters;
+      if (expectedCounters != null) {
+        expect(colorPass, isNotNull, reason: 'no ScenePass in the frame stats');
+        final actual = colorPass!.toJson();
+        for (final entry in expectedCounters.entries) {
+          expect(
+            actual[entry.key],
+            entry.value,
+            reason: 'ScenePass ${entry.key} for the captured frame',
+          );
+        }
+      }
       if (smoke.id == 'irradiance_field') {
         // Both colored walls are emissive and nothing else lights the scene,
         // so the floor's color is entirely bounce light carried by the probe
@@ -775,6 +791,17 @@ _frameStats(ByteData rgba, int w, int h) {
     foregroundMeanLuma: fgCount == 0 ? 0.0 : fgLumaSum / fgCount,
     distinctColors: colors.length,
   );
+}
+
+/// The color pass's counters for the frame [scene] last rendered, or null
+/// when no frame has rendered or none of its passes is the color pass.
+RenderCounters? _colorPassCounters(Scene scene) {
+  final views = scene.renderStats.latest?.views;
+  if (views == null || views.isEmpty) return null;
+  for (final pass in views.first.passes) {
+    if (pass.name == 'ScenePass') return pass.counters;
+  }
+  return null;
 }
 
 /// Waits for the GPU to finish the frame the last pump submitted, so the next
