@@ -6,6 +6,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -76,6 +77,18 @@ Node _unitCubeNodeAt(Vector3 position) {
 }
 
 const ui.Size _viewport = ui.Size(800, 600);
+
+/// Mounts [node] under a fresh root, runs a pre-pass so its render item
+/// picks up a world AABB, and brings the BVH up to date, so
+/// [RenderScene.cull] on the result reflects [node]'s current position.
+RenderScene _sceneWith(Node node) {
+  final renderScene = RenderScene();
+  final root = Node()..debugMountInto(renderScene);
+  root.add(node);
+  root.scenePrePass(0);
+  renderScene.rebuildIfDirty();
+  return renderScene;
+}
 
 PerspectiveCamera _cameraLookingAtOrigin() {
   // Eye at -10z, looking at origin, default 45deg FOV. The default
@@ -173,6 +186,40 @@ void main() {
       );
       flip.add(cube);
       expect(cube.isVisibleTo(_cameraLookingAtOrigin(), _viewport), isTrue);
+    });
+  });
+
+  group('RenderScene.cull rejection count', () {
+    // The BVH rejects a whole subtree at an interior node without ever
+    // touching the leaf items inside it, so a naive "count what the
+    // encoder saw" approach sees nothing for a rejected item. These check
+    // the count `cull` returns instead, the fix for that hole.
+    test('a node far off-screen counts as culled', () {
+      final scene = _sceneWith(_unitCubeNodeAt(Vector3(1000, 0, 0)));
+      final frustum = _cameraLookingAtOrigin().getFrustum(_viewport);
+
+      final rejected = scene.cull(frustum, (_) {});
+
+      expect(rejected, 1);
+    });
+
+    test('an on-screen node does not count as culled', () {
+      final scene = _sceneWith(_unitCubeNodeAt(Vector3.zero()));
+      final frustum = _cameraLookingAtOrigin().getFrustum(_viewport);
+
+      final rejected = scene.cull(frustum, (_) {});
+
+      expect(rejected, 0);
+    });
+
+    test('frustumCulled = false never counts, even far off-screen', () {
+      final node = _unitCubeNodeAt(Vector3(1000, 0, 0))..frustumCulled = false;
+      final scene = _sceneWith(node);
+      final frustum = _cameraLookingAtOrigin().getFrustum(_viewport);
+
+      final rejected = scene.cull(frustum, (_) {});
+
+      expect(rejected, 0);
     });
   });
 }

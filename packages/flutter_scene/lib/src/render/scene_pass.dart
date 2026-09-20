@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/render/irradiance_field.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_profile.dart';
+import 'package:flutter_scene/src/render/render_stats.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/wireframe_overlay.dart';
@@ -435,11 +436,15 @@ class ScenePass extends RenderGraphPass {
         encoder.submit(item);
       }
     } else {
-      _renderScene.cull(
+      final rejected = _renderScene.cull(
         encoder.frustum,
         encoder.submit,
         additionalPlanes: _cullingPlanes,
       );
+      // A rejected subtree never reaches `encoder.submit`, so nothing else
+      // counts the items in it.
+      activeRenderCounters.submitted += rejected;
+      activeRenderCounters.culled += rejected;
     }
     cullWatch?.stop();
 

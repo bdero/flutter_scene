@@ -811,15 +811,25 @@ class RenderScene {
   /// Visits every item potentially visible to [frustum]: the bounded
   /// items whose world AABB intersects it, plus every always-visible
   /// item.
-  void cull(
+  ///
+  /// Returns how many bounded items the BVH rejected without ever visiting
+  /// them. Every pass culls against its own frustum, so the count is
+  /// returned rather than recorded here; only the color pass charges it to
+  /// the render stats.
+  int cull(
     Frustum frustum,
     void Function(RenderItem) visit, {
     List<Plane> additionalPlanes = const [],
   }) {
-    _bvh.query(frustum, visit, additionalPlanes: additionalPlanes);
+    final visited = _bvh.query(
+      frustum,
+      visit,
+      additionalPlanes: additionalPlanes,
+    );
     for (final item in _alwaysVisible) {
       visit(item);
     }
+    return _bvh.itemCount - visited;
   }
 
   /// Collects material inputs requested by this view's frustum candidates.

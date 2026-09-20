@@ -144,6 +144,9 @@ class Bvh {
   final List<RenderItem> _items;
   final int _nodeCount;
 
+  /// Items this tree was built over.
+  int get itemCount => _items.length;
+
   // Traversal stack, sized for a balanced tree far deeper than any
   // realistic item count. Queries are single-threaded and never nest (a
   // visit callback must not query the same Bvh).
@@ -154,13 +157,14 @@ class Bvh {
   Float64List _planes = Float64List(24);
 
   /// Calls [visit] once for every item whose world AABB intersects
-  /// [frustum].
-  void query(
+  /// [frustum]. Returns how many it visited; a rejected node's subtree is
+  /// skipped whole, so [itemCount] minus this is the number rejected.
+  int query(
     Frustum frustum,
     void Function(RenderItem) visit, {
     List<Plane> additionalPlanes = const [],
   }) {
-    if (_nodeCount == 0) return;
+    if (_nodeCount == 0) return 0;
     final planeCount = 6 + additionalPlanes.length;
     if (_planes.length < planeCount * 4) {
       _planes = Float64List(planeCount * 4);
@@ -181,6 +185,7 @@ class Bvh {
     final stack = _stack;
     var top = 0;
     stack[top++] = _nodeCount - 1;
+    var visited = 0;
     while (top > 0) {
       final node = stack[--top];
       final o = node * 6;
@@ -201,11 +206,13 @@ class Bvh {
       final left = children[node * 2];
       if (left < 0) {
         visit(_items[~left]);
+        visited++;
         continue;
       }
       stack[top++] = left;
       stack[top++] = children[node * 2 + 1];
     }
+    return visited;
   }
 
   void _loadPlane(int index, Plane plane) {
