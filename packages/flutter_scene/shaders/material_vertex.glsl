@@ -40,7 +40,7 @@ struct VertexInputs {
 // vertex and fragment stages assign matching interpolant locations. The body
 // includes (flutter_scene_*_body.glsl) write these in main().
 out vec3 v_position; // world-space position
-out vec3 v_normal; // world-space normal, not normalized
+out vec3 v_normal; // world-space normal, unit length per vertex
 out vec3 v_viewvector; // camera_position - vertex_position (world space)
 out vec2 v_texture_coords;
 out vec2 v_texture_coords_1;
