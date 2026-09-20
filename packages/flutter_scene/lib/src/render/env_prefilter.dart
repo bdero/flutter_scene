@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -8,6 +9,7 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/radiance_layout.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/gpu/raster_sync.dart';
 
 // The layout constants and the cube face bases live in radiance_layout.dart so
 // the pure-Dart importer can share them without pulling in the GPU.
@@ -114,6 +116,11 @@ gpu.Texture createRadianceCubeTexture({int size = kRadianceCubeSize}) =>
 /// The result is exactly what `EnvironmentMap.fromGpuTextures` expects for the
 /// cube layout, and what `EnvironmentMap.fromKtx2Bytes` reproduces from a
 /// pre-baked file. [sourceEquirect] is sRGB-encoded unless [sourceIsLinear].
+///
+/// Prefer [prefilterEquirectRadianceToCubeProgressive] from an asynchronous
+/// load: submitting all `6 * kPrefilterBandCount` passes at once hands the
+/// driver one very large batch, which on some Android GLES stacks stalls the
+/// display pipeline for hundreds of milliseconds.
 /// {@category Lighting and environment}
 gpu.Texture prefilterEquirectRadianceToCube(
   gpu.Texture sourceEquirect, {
@@ -133,6 +140,117 @@ gpu.Texture prefilterEquirectRadianceToCube(
     }
   }
   return cube;
+}
+
+/// Prefilters [sourceEquirect] for image-based specular lighting like
+/// [prefilterEquirectRadiance], but returns the atlas immediately and fills
+/// its roughness bands in over the following frames.
+///
+/// The one-shot form hands the driver the whole prefilter as a single draw:
+/// with the legacy atlas that is `kPrefilterBandWidth` x
+/// `kPrefilterBandHeight * kPrefilterBandCount` texels, each running the
+/// shader's `kPrefilterSamples`-tap GGX loop. Measured on a Mali-G57 (Galaxy
+/// A16, Impeller GLES) that single draw is ~850 ms of GPU time, and because it
+/// is flushed inside a Flutter frame, that frame's buffer never completes: the
+/// raster thread blocks in `eglSwapBuffers`, SurfaceFlinger and the vendor
+/// composer wait on the buffer's fence, and the display only recovers on the
+/// driver's ~880 ms `QUEUE_BUFFER_TIMEOUT`. Every environment an app builds
+/// costs it the better part of a second of frozen screen.
+///
+/// Here each band is its own draw (~1/8 the sample work), paced one per frame.
+/// The same total GPU work, but the display keeps presenting while it happens
+/// and it overlaps whatever else the app is still loading. Band 0 is submitted
+/// before returning, so the atlas is never entirely unwritten; the rest arrive
+/// over the next [kPrefilterBandCount] - 1 frames, which is invisible while a
+/// scene is still loading and reads as the specular sharpening up otherwise.
+/// {@category Lighting and environment}
+gpu.Texture prefilterEquirectRadianceProgressive(
+  gpu.Texture sourceEquirect, {
+  bool sourceIsLinear = false,
+  bool mipLayout = false,
+}) {
+  final atlas = createPrefilterAtlasTexture(mipLayout: mipLayout);
+  _prefilterBand(sourceEquirect, atlas, 0, mipLayout, sourceIsLinear);
+  unawaited(
+    _prefilterRemainingBands(
+      sourceEquirect,
+      atlas,
+      mipLayout: mipLayout,
+      sourceIsLinear: sourceIsLinear,
+    ),
+  );
+  return atlas;
+}
+
+Future<void> _prefilterRemainingBands(
+  gpu.Texture sourceEquirect,
+  gpu.Texture atlas, {
+  required bool mipLayout,
+  required bool sourceIsLinear,
+}) async {
+  for (var band = 1; band < kPrefilterBandCount; band++) {
+    await awaitFrame();
+    _prefilterBand(sourceEquirect, atlas, band, mipLayout, sourceIsLinear);
+  }
+}
+
+void _prefilterBand(
+  gpu.Texture sourceEquirect,
+  gpu.Texture atlas,
+  int band,
+  bool mipLayout,
+  bool sourceIsLinear,
+) => _prefilterPass(
+  sourceEquirect,
+  atlas,
+  band: band,
+  // The mip layout owns a whole mip level per band, so every pass clears its
+  // own. The legacy atlas shares one image between the bands: only the first
+  // pass may clear it, the rest load it back.
+  clear: mipLayout || band == 0,
+  sourceIsLinear: sourceIsLinear,
+);
+
+/// Prefilters [sourceEquirect] into a roughness-mip cubemap like
+/// [prefilterEquirectRadianceToCube], but returns the cube immediately and
+/// fills it a face at a time over the following frames, for the same reason
+/// [prefilterEquirectRadianceProgressive] does: all `6 * kPrefilterBandCount`
+/// passes in one submission is more than a mobile display pipeline can absorb
+/// between presents. Face 0 is submitted before returning.
+/// {@category Lighting and environment}
+gpu.Texture prefilterEquirectRadianceToCubeProgressive(
+  gpu.Texture sourceEquirect, {
+  bool sourceIsLinear = false,
+  int size = kRadianceCubeSize,
+}) {
+  final cube = createRadianceCubeTexture(size: size);
+  _prefilterCubeFace(sourceEquirect, cube, 0, sourceIsLinear);
+  unawaited(
+    (() async {
+      for (var face = 1; face < 6; face++) {
+        await awaitFrame();
+        _prefilterCubeFace(sourceEquirect, cube, face, sourceIsLinear);
+      }
+    })(),
+  );
+  return cube;
+}
+
+void _prefilterCubeFace(
+  gpu.Texture sourceEquirect,
+  gpu.Texture cube,
+  int face,
+  bool sourceIsLinear,
+) {
+  for (var band = 0; band < kPrefilterBandCount; band++) {
+    prefilterEquirectRadianceCubeFace(
+      sourceEquirect,
+      cube,
+      face,
+      band,
+      sourceIsLinear: sourceIsLinear,
+    );
+  }
 }
 
 /// Prefilters one [face] of one roughness [band] (mip level) of [cube] from
