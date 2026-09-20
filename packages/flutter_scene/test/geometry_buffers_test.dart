@@ -11,6 +11,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
+
+// ignore: implementation_imports
+import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // ignore: implementation_imports
@@ -201,6 +204,49 @@ void main() {
         expect(identical(stream.buffer, geometry.indices!.buffer), isTrue);
       }
       expect(geometry.indices!.offsetInBytes, base + _streamBytes(geometry));
+    });
+  });
+
+  group('uploadVertexData element types', () {
+    // An upload must accept the element type its data was packed as, since
+    // that is what makes the web crossing cheap, and lay it out identically
+    // whichever type it arrives as.
+    test('lays a Float32List out exactly like the same bytes as ByteData', () {
+      final floats = Float32List(3 * kUnskinnedPerVertexSize ~/ 4);
+      for (var i = 0; i < floats.length; i++) {
+        floats[i] = i.toDouble();
+      }
+
+      final fromFloats = _RecordingGeometry()
+        ..uploadVertexData(floats, 3, Uint16List.fromList([0, 1, 2]));
+      final fromBytes = _RecordingGeometry()
+        ..uploadVertexData(
+          ByteData.sublistView(floats),
+          3,
+          ByteData.sublistView(Uint16List.fromList([0, 1, 2])),
+        );
+
+      expect(
+        fromFloats.streams.map((v) => (v.offsetInBytes, v.lengthInBytes)),
+        fromBytes.streams.map((v) => (v.offsetInBytes, v.lengthInBytes)),
+      );
+      expect(
+        fromFloats.indices!.offsetInBytes,
+        fromBytes.indices!.offsetInBytes,
+      );
+      expect(
+        fromFloats.indices!.lengthInBytes,
+        fromBytes.indices!.lengthInBytes,
+      );
+    });
+
+    test('retains CPU data whichever element type it was given', () {
+      final floats = Float32List(3 * kUnskinnedPerVertexSize ~/ 4);
+
+      final geometry = _RecordingGeometry()
+        ..uploadVertexData(floats, 3, Uint16List.fromList([0, 1, 2]));
+
+      expect(geometry.isReadable, isTrue);
     });
   });
 }

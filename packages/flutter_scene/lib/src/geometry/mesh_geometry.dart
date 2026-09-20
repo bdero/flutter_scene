@@ -557,9 +557,10 @@ class MeshGeometry extends UnskinnedGeometry {
       indexBytes = ByteData.sublistView(packed.bytes);
       // The same bytes again, as the integer list they already are, so the
       // upload keeps their element type; see Geometry._uploadStreams.
-      indexUpload = packed.is32Bit
-          ? Uint32List.sublistView(packed.bytes)
-          : Uint16List.sublistView(packed.bytes);
+      indexUpload = InterleavedLayoutAdapter.indexUploadView(
+        packed.bytes,
+        is32Bit: packed.is32Bit,
+      );
       indexType = packed.is32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16;
       if (retainCpuData) _packedIndexBytes = packed.bytes;
       _packedIndices32Bit = packed.is32Bit;

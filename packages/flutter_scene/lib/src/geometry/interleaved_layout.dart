@@ -300,6 +300,8 @@ abstract final class InterleavedLayoutAdapter {
       interleaved.offsetInBytes,
       interleaved.lengthInBytes,
     );
+    // Unlike [unskinnedAttributeStreams], these streams are allocated as
+    // bytes, so an upload hands them over as the Uint8Lists they are.
     final position = Uint8List(positionStreamBytes * vertexCount);
     final normal = Uint8List(normalStreamBytes * vertexCount);
     final texCoord = Uint8List(texCoordStreamBytes * vertexCount);
@@ -362,6 +364,8 @@ abstract final class InterleavedLayoutAdapter {
     // only absent attributes walk per vertex to fill their defaults. Large
     // streamed meshes construct on the UI thread, so per-element Dart loops
     // here are a frame hitch.
+    // These streams are allocated as floats and returned as byte views, so an
+    // upload must put the Float32List back on (see `Geometry._uploadStreams`).
     final position = Float32List(3 * vertexCount)..setAll(0, positions);
     final normal = Float32List(3 * vertexCount);
     if (normals != null) {
@@ -398,6 +402,9 @@ abstract final class InterleavedLayoutAdapter {
   /// Returns the packed bytes and whether a 32-bit element width was
   /// needed; a 16-bit buffer is used when every index is at most
   /// `0xFFFF`. Throws an [ArgumentError] if any index is negative.
+  ///
+  /// The bytes always view a `Uint16List` or `Uint32List` store, so an
+  /// upload wants [indexUploadView], not these bytes (see [indexUploadView]).
   static ({Uint8List bytes, bool is32Bit}) packIndices(List<int> indices) {
     // Already-typed index lists pass through without the validation scan or
     // a repack: their element types cannot hold negatives, and a caller
@@ -442,6 +449,25 @@ abstract final class InterleavedLayoutAdapter {
       bytes: Uint16List.fromList(indices).buffer.asUint8List(),
       is32Bit: false,
     );
+  }
+
+  /// Packed index bytes as the integer list their store already is.
+  ///
+  /// Index bytes are always a byte view over a `Uint16List` or `Uint32List`
+  /// (see [packIndices]), and an upload must hand GL the element type the
+  /// store was allocated as or pay for a per-element read (see
+  /// `Geometry._uploadStreams`). Falls back to a byte view when [bytes] does
+  /// not start on an element boundary, which no engine path produces but a
+  /// caller-supplied slice could.
+  static TypedData indexUploadView(Uint8List bytes, {required bool is32Bit}) {
+    final elementBytes = is32Bit ? 4 : 2;
+    if (bytes.offsetInBytes % elementBytes != 0 ||
+        bytes.lengthInBytes % elementBytes != 0) {
+      return ByteData.sublistView(bytes);
+    }
+    return is32Bit
+        ? Uint32List.sublistView(bytes)
+        : Uint16List.sublistView(bytes);
   }
 
   /// Computes area-weighted vertex normals for [positions]

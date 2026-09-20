@@ -256,6 +256,14 @@ base class DeviceBuffer {
   /// own first: handing `toJS` a byte view over someone else's typed list is
   /// the slowest thing there is under dart2wasm (see [overwriteTypedData]),
   /// several times worse than copying the bytes and crossing the copy.
+  ///
+  /// What decides the cost is the backing store, not the static type, so the
+  /// pass-through cases below are only fast when the caller passed the type
+  /// its store was allocated as. Measured on 4.65 MB under dart2wasm, a
+  /// matched list crosses in 1.4 ms (floats) to 4.4 ms (bytes), a mismatched
+  /// view in 90 ms to 340 ms, and the copy this falls back to in 45 ms. The
+  /// copy is why a [ByteData] over float storage is not handed over as a byte
+  /// view. `Geometry._uploadStreams` documents what each producer allocates.
   static JSObject _jsViewOf(TypedData source) => switch (source) {
     Float32List() => source.toJS,
     Uint16List() => source.toJS,

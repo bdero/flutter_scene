@@ -526,4 +526,44 @@ void main() {
       );
     });
   });
+
+  group('indexUploadView', () {
+    test('hands back the integer list the packed bytes already are', () {
+      final packed = InterleavedLayoutAdapter.packIndices([0, 1, 2]);
+
+      final view = InterleavedLayoutAdapter.indexUploadView(
+        packed.bytes,
+        is32Bit: packed.is32Bit,
+      );
+
+      expect(view, isA<Uint16List>());
+      expect((view as Uint16List).toList(), [0, 1, 2]);
+    });
+
+    test('keeps a 32-bit packing 32 bits wide', () {
+      final packed = InterleavedLayoutAdapter.packIndices([0, 1, 0x10000]);
+
+      final view = InterleavedLayoutAdapter.indexUploadView(
+        packed.bytes,
+        is32Bit: packed.is32Bit,
+      );
+
+      expect(packed.is32Bit, isTrue);
+      expect(view, isA<Uint32List>());
+      expect((view as Uint32List).toList(), [0, 1, 0x10000]);
+    });
+
+    test('falls back to bytes when the slice is not element aligned', () {
+      final packed = InterleavedLayoutAdapter.packIndices([0, 1, 2, 3]);
+      final unaligned = Uint8List.sublistView(packed.bytes, 1);
+
+      final view = InterleavedLayoutAdapter.indexUploadView(
+        unaligned,
+        is32Bit: false,
+      );
+
+      expect(view, isA<ByteData>());
+      expect(view.lengthInBytes, unaligned.lengthInBytes);
+    });
+  });
 }

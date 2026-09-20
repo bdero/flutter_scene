@@ -592,7 +592,11 @@ class ResourceRealizer {
               ? MorphedUnskinnedGeometry(morphData)
               : UnskinnedGeometry());
 
-    ByteData? indexBytes;
+    // Held as the Uint8List the payload already is: these bytes are byte
+    // backed, so an upload crosses them natively as bytes and would pay a
+    // per-element read as any wider element type (see
+    // InterleavedLayoutAdapter.indexUploadView for the packer's opposite case).
+    Uint8List? indexBytes;
     var indexType = gpu.IndexType.int16;
     final indexId = res.indices;
     if (indexId != null) {
@@ -624,12 +628,12 @@ class ResourceRealizer {
             u16[i + 2] = tmp;
           }
         }
-        indexBytes = ByteData.sublistView(migrated);
+        indexBytes = migrated;
       } else {
         // TODO(winding): Support legacy winding migration for triangleStrip
         // topology (requires vertex-order reversal, not index-triple swap).
         // TODO(winding): Support non-indexed geometry winding migration.
-        indexBytes = ByteData.sublistView(rawIndexBytes);
+        indexBytes = rawIndexBytes;
       }
     }
 
@@ -660,18 +664,18 @@ class ResourceRealizer {
         vertexBytes,
         vertexCount,
       );
+      final interleaved = InterleavedLayoutAdapter.packUnskinned(
+        positions: Float32List.sublistView(streams.position),
+        vertexCount: vertexCount,
+        normals: Float32List.sublistView(streams.normal),
+        texCoords: Float32List.sublistView(streams.texCoord),
+        texCoords1: Float32List.sublistView(streams.texCoord1),
+        colors: Float32List.sublistView(streams.color),
+        tangents: Float32List.sublistView(streams.tangent),
+      );
       geometry.uploadVertexData(
-        ByteData.sublistView(
-          InterleavedLayoutAdapter.packUnskinned(
-            positions: Float32List.sublistView(streams.position),
-            vertexCount: vertexCount,
-            normals: Float32List.sublistView(streams.normal),
-            texCoords: Float32List.sublistView(streams.texCoord),
-            texCoords1: Float32List.sublistView(streams.texCoord1),
-            colors: Float32List.sublistView(streams.color),
-            tangents: Float32List.sublistView(streams.tangent),
-          ),
-        ),
+        // Packed into floats just above, so uploaded as floats.
+        Float32List.sublistView(interleaved),
         vertexCount,
         indexBytes,
         indexType: indexType,
@@ -701,9 +705,11 @@ class ResourceRealizer {
                     ByteData.sublistView(vertexBytes),
                     vertexCount,
                   )
-          : vertexBytes;
+          : null;
       geometry.uploadVertexData(
-        ByteData.sublistView(upgraded),
+        // An upgrade repacks into floats; a pass-through stays the payload's
+        // own bytes. Either way the upload gets the store's element type.
+        upgraded == null ? vertexBytes : Float32List.sublistView(upgraded),
         vertexCount,
         indexBytes,
         indexType: indexType,
