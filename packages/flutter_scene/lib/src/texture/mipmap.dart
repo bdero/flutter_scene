@@ -74,63 +74,151 @@ Uint8List _downsample(
   TextureContent content,
 ) {
   final dst = Uint8List(dw * dh * 4);
-  for (var y = 0; y < dh; y++) {
-    // Map each destination texel to a 2x2 (edge-clamped) block of the source.
-    final y0 = math.min(y * 2, sh - 1);
-    final y1 = math.min(y0 + 1, sh - 1);
-    for (var x = 0; x < dw; x++) {
-      final x0 = math.min(x * 2, sw - 1);
-      final x1 = math.min(x0 + 1, sw - 1);
-      final a = (y0 * sw + x0) * 4;
-      final b = (y0 * sw + x1) * 4;
-      final c = (y1 * sw + x0) * 4;
-      final d = (y1 * sw + x1) * 4;
-      final o = (y * dw + x) * 4;
-      switch (content) {
-        case TextureContent.color:
-          for (var ch = 0; ch < 3; ch++) {
-            final avg =
-                (_srgbToLinear(src[a + ch]) +
-                    _srgbToLinear(src[b + ch]) +
-                    _srgbToLinear(src[c + ch]) +
-                    _srgbToLinear(src[d + ch])) *
-                0.25;
-            dst[o + ch] = _linearToSrgb(avg);
-          }
-          dst[o + 3] =
-              ((src[a + 3] + src[b + 3] + src[c + 3] + src[d + 3]) + 2) ~/ 4;
-        case TextureContent.data:
-          for (var ch = 0; ch < 4; ch++) {
-            dst[o + ch] =
-                ((src[a + ch] + src[b + ch] + src[c + ch] + src[d + ch]) + 2) ~/
-                4;
-          }
-        case TextureContent.normal:
-          var nx = 0.0, ny = 0.0, nz = 0.0;
-          for (final p in [a, b, c, d]) {
-            nx += src[p] / 127.5 - 1.0;
-            ny += src[p + 1] / 127.5 - 1.0;
-            nz += src[p + 2] / 127.5 - 1.0;
-          }
-          final len = math.sqrt(nx * nx + ny * ny + nz * nz);
-          if (len > 1e-6) {
-            nx /= len;
-            ny /= len;
-            nz /= len;
-          } else {
-            nx = 0.0;
-            ny = 0.0;
-            nz = 1.0;
-          }
-          dst[o] = _encodeUnit(nx);
-          dst[o + 1] = _encodeUnit(ny);
-          dst[o + 2] = _encodeUnit(nz);
-          dst[o + 3] = 255;
-      }
-    }
+  // The content switch is hoisted out of the per-texel loop: a mip chain of a
+  // 2048x2048 texture walks ~1.4 M destination texels, so anything left inside
+  // is paid a million times over.
+  switch (content) {
+    case TextureContent.color:
+      _downsampleColor(src, sw, sh, dw, dh, dst);
+    case TextureContent.data:
+      _downsampleData(src, sw, sh, dw, dh, dst);
+    case TextureContent.normal:
+      _downsampleNormal(src, sw, sh, dw, dh, dst);
   }
   return dst;
 }
+
+// The 2x2 (edge-clamped) source block of destination texel (x, y), as the four
+// byte offsets of its texels.
+@pragma('vm:prefer-inline')
+int _clampDouble(int coordinate, int extent) {
+  final doubled = coordinate * 2;
+  return doubled < extent ? doubled : extent - 1;
+}
+
+void _downsampleColor(
+  Uint8List src,
+  int sw,
+  int sh,
+  int dw,
+  int dh,
+  Uint8List dst,
+) {
+  for (var y = 0; y < dh; y++) {
+    final y0 = _clampDouble(y, sh);
+    final y1 = y0 + 1 < sh ? y0 + 1 : sh - 1;
+    final row0 = y0 * sw;
+    final row1 = y1 * sw;
+    for (var x = 0; x < dw; x++) {
+      final x0 = _clampDouble(x, sw);
+      final x1 = x0 + 1 < sw ? x0 + 1 : sw - 1;
+      final a = (row0 + x0) * 4;
+      final b = (row0 + x1) * 4;
+      final c = (row1 + x0) * 4;
+      final d = (row1 + x1) * 4;
+      final o = (y * dw + x) * 4;
+      for (var ch = 0; ch < 3; ch++) {
+        final avg =
+            (_srgbToLinearTable[src[a + ch]] +
+                _srgbToLinearTable[src[b + ch]] +
+                _srgbToLinearTable[src[c + ch]] +
+                _srgbToLinearTable[src[d + ch]]) *
+            0.25;
+        dst[o + ch] = _linearToSrgb(avg);
+      }
+      dst[o + 3] =
+          ((src[a + 3] + src[b + 3] + src[c + 3] + src[d + 3]) + 2) ~/ 4;
+    }
+  }
+}
+
+void _downsampleData(
+  Uint8List src,
+  int sw,
+  int sh,
+  int dw,
+  int dh,
+  Uint8List dst,
+) {
+  for (var y = 0; y < dh; y++) {
+    final y0 = _clampDouble(y, sh);
+    final y1 = y0 + 1 < sh ? y0 + 1 : sh - 1;
+    final row0 = y0 * sw;
+    final row1 = y1 * sw;
+    for (var x = 0; x < dw; x++) {
+      final x0 = _clampDouble(x, sw);
+      final x1 = x0 + 1 < sw ? x0 + 1 : sw - 1;
+      final a = (row0 + x0) * 4;
+      final b = (row0 + x1) * 4;
+      final c = (row1 + x0) * 4;
+      final d = (row1 + x1) * 4;
+      final o = (y * dw + x) * 4;
+      for (var ch = 0; ch < 4; ch++) {
+        dst[o + ch] =
+            ((src[a + ch] + src[b + ch] + src[c + ch] + src[d + ch]) + 2) ~/ 4;
+      }
+    }
+  }
+}
+
+void _downsampleNormal(
+  Uint8List src,
+  int sw,
+  int sh,
+  int dw,
+  int dh,
+  Uint8List dst,
+) {
+  for (var y = 0; y < dh; y++) {
+    final y0 = _clampDouble(y, sh);
+    final y1 = y0 + 1 < sh ? y0 + 1 : sh - 1;
+    final row0 = y0 * sw;
+    final row1 = y1 * sw;
+    for (var x = 0; x < dw; x++) {
+      final x0 = _clampDouble(x, sw);
+      final x1 = x0 + 1 < sw ? x0 + 1 : sw - 1;
+      final a = (row0 + x0) * 4;
+      final b = (row0 + x1) * 4;
+      final c = (row1 + x0) * 4;
+      final d = (row1 + x1) * 4;
+      final o = (y * dw + x) * 4;
+      // Unrolled: the `for (final p in [a, b, c, d])` this replaces allocated a
+      // four-element list per destination texel.
+      var nx = src[a] / 127.5 - 1.0;
+      var ny = src[a + 1] / 127.5 - 1.0;
+      var nz = src[a + 2] / 127.5 - 1.0;
+      nx += src[b] / 127.5 - 1.0;
+      ny += src[b + 1] / 127.5 - 1.0;
+      nz += src[b + 2] / 127.5 - 1.0;
+      nx += src[c] / 127.5 - 1.0;
+      ny += src[c + 1] / 127.5 - 1.0;
+      nz += src[c + 2] / 127.5 - 1.0;
+      nx += src[d] / 127.5 - 1.0;
+      ny += src[d + 1] / 127.5 - 1.0;
+      nz += src[d + 2] / 127.5 - 1.0;
+      final len = math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (len > 1e-6) {
+        nx /= len;
+        ny /= len;
+        nz /= len;
+      } else {
+        nx = 0.0;
+        ny = 0.0;
+        nz = 1.0;
+      }
+      dst[o] = _encodeUnit(nx);
+      dst[o + 1] = _encodeUnit(ny);
+      dst[o + 2] = _encodeUnit(nz);
+      dst[o + 3] = 255;
+    }
+  }
+}
+
+// sRGB decode of every possible byte, so the color path costs a table lookup
+// instead of a `pow` per channel per texel. Same values as _srgbToLinear.
+final Float64List _srgbToLinearTable = Float64List.fromList([
+  for (var byte = 0; byte < 256; byte++) _srgbToLinear(byte),
+]);
 
 double _srgbToLinear(int byte) {
   final c = byte / 255.0;
