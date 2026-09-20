@@ -73,6 +73,7 @@ import 'render/render_quality.dart';
 import 'scene_encoder.dart' show maxSceneColorCaptureBatches;
 import 'render/ssr_pass.dart';
 import 'screen_space_reflections.dart';
+import 'render/display_referred_pass.dart';
 import 'render/selection_outline_pass.dart';
 import 'depth_of_field.dart';
 import 'render/dof_pass.dart';
@@ -2515,6 +2516,9 @@ base class Scene implements SceneGraph {
     }
     final staticShadowSignature = _cachedStaticShadowSignature;
     final hasStaticShadowCasters = _cachedHasStaticShadowCasters;
+    // A display-referred surface pays for an extra layer and forces the
+    // scene depth to be stored, so the frame checks for one up front.
+    final displayReferredActive = sceneHasDisplayReferred(renderScene);
     final captureOpaqueColor =
         materialInputs.contains(RenderInput.opaqueSceneColor) ||
         materialInputs.contains(RenderInput.filteredSceneColor);
@@ -2935,6 +2939,8 @@ base class Scene implements SceneGraph {
         layerMask: view.layerMask,
         fog: fog,
         captureOpaqueColor: captureOpaqueColor,
+        displayReferredLayer: displayReferredActive,
+        displayReferredFormat: outputColor.format,
         maxCaptureBatches: effectiveSceneColorCaptureBatches,
         // Depth binding needs the prepass, which needs a valid projection.
         bindSceneDepth: bindSceneDepth && projectionValid,
@@ -3237,6 +3243,15 @@ base class Scene implements SceneGraph {
           dimensions: pixelSize,
           time: postTime,
         ),
+      );
+    }
+
+    // Display-referred surfaces composite after anti-aliasing so crisp UI is
+    // not resampled, and before the overlay stages so a custom overlay and
+    // the selection outline still draw on top.
+    if (displayReferredActive) {
+      displaySteps.add(
+        (output) => DisplayReferredCompositePass(output: output),
       );
     }
 

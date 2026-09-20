@@ -89,6 +89,26 @@ abstract class Material {
     return texture ?? getWhitePlaceholderTexture();
   }
 
+  static gpu.Texture? _transparentPlaceholderTexture;
+
+  /// Returns a 1x1 fully transparent texture, lazily created on first use.
+  ///
+  /// Composites as a no-op under premultiplied source-over, so a pass whose
+  /// layer is absent this frame can bind it and blend nothing.
+  static gpu.Texture getTransparentPlaceholderTexture() {
+    if (_transparentPlaceholderTexture != null) {
+      return _transparentPlaceholderTexture!;
+    }
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      1,
+      1,
+    );
+    texture.overwrite(Uint32List.fromList(<int>[0]).buffer.asByteData());
+    _transparentPlaceholderTexture = texture;
+    return texture;
+  }
+
   static gpu.Texture? _normalPlaceholderTexture;
 
   /// Returns a 1×1 "flat" tangent-space normal texture (`(0.5, 0.5, 1)`),
@@ -491,7 +511,9 @@ abstract class Material {
   /// screen-space chain, the shadow catcher, overrides this to true so
   /// occlusion is evaluated at its own depth instead of the backdrop's.
   @internal
-  bool get depthPrepassParticipates => isOpaque();
+  // A display-referred surface is composited past the scene's depth, so it
+  // must not seed the prepass that ambient occlusion and reflections read.
+  bool get depthPrepassParticipates => isOpaque() && !displayReferred;
 
   /// Whether this material currently draws nothing at all, keeping its render
   /// items out of every pass (color, depth prepass, shadows).
@@ -518,6 +540,21 @@ abstract class Material {
   bool isOpaque() {
     return true;
   }
+
+  /// Whether this material's color is display-referred (already final screen
+  /// values) rather than scene-referred radiance.
+  ///
+  /// A display-referred surface is drawn into its own layer past the tone
+  /// curve and composited onto the resolved image, so its colors survive
+  /// exactly. Captured widgets are the motivating case, and
+  /// `WidgetComponent` turns it on for the material it owns. The surface is
+  /// still depth-tested against the scene, but it receives no exposure,
+  /// grading, tone mapping, fog, bloom or depth of field, and it is not
+  /// ordered against translucent geometry.
+  ///
+  /// A material that returns true must write display-encoded color
+  /// premultiplied by alpha, not linear HDR.
+  bool get displayReferred => false;
 
   /// Whether this material's fragment shader declares the `DebugViewInfo`
   /// block and switches on it (see `material_debug.glsl`), so the scene's

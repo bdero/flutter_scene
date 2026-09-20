@@ -67,6 +67,7 @@ class WidgetComponent extends Component {
     Geometry? geometry,
     Material? material,
     void Function(gpu.Texture texture)? bind,
+    this.displayReferred = true,
   }) : _child = child,
        _size = size,
        _pixelRatio = pixelRatio,
@@ -88,7 +89,8 @@ class WidgetComponent extends Component {
     WidgetUpdatePolicy update = WidgetUpdatePolicy.everyFrame,
     this.input = WidgetInput.automatic,
     this.occlusionHiding = false,
-  }) : _child = child,
+  }) : displayReferred = false,
+       _child = child,
        _size = size,
        _pixelRatio = pixelRatio,
        _worldHeight = 1.0,
@@ -100,6 +102,21 @@ class WidgetComponent extends Component {
 
   /// How this surface receives pointer input.
   final WidgetInput input;
+
+  /// Whether the owned material treats the capture as display-referred, so
+  /// the widget's colors reach the screen unchanged. Defaults to true.
+  ///
+  /// The surface is drawn past the scene's tone curve and composited onto the
+  /// resolved image (see [UnlitMaterial.displayReferred]). It is still
+  /// occluded by opaque geometry, but it takes no exposure, grading, tone
+  /// mapping, fog, bloom or depth of field, and does not order against
+  /// translucent geometry. Set it false for a screen that should read as a lit
+  /// object in the world rather than as UI.
+  ///
+  /// Ignored when you supply your own [Material]; that material decides
+  /// through [Material.displayReferred]. Always false for
+  /// [WidgetComponent.bindOnly], which owns no material.
+  final bool displayReferred;
 
   /// Whether the surface's hosted subtree leaves the semantics tree while
   /// scene geometry occludes it from the camera. Defaults to false (an
@@ -184,7 +201,8 @@ class WidgetComponent extends Component {
     if (material == null) {
       // Fully owned: unlit, alpha-blended.
       final owned = _ownedMaterial ??= UnlitMaterial()
-        ..alphaMode = AlphaMode.blend;
+        ..alphaMode = AlphaMode.blend
+        ..displayReferred = displayReferred;
       owned.baseColorTexture = source;
     } else if (_bind == null) {
       // Implicit binding for the known built-in materials; anything else
