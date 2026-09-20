@@ -144,6 +144,13 @@ base class GpuContext {
   /// and the lazy first-bind upload a generic buffer needs; see
   /// [DeviceBuffer._initializeTyped]. [createGeometryBuffers] is built from
   /// it, and so can a caller that manages its own [BufferView]s.
+  ///
+  /// The GL store is hinted STATIC_DRAW, which suits geometry written once at
+  /// creation. A geometry uploaded repeatedly (CPU morph blending re-uploads
+  /// on every weight change) allocates fresh buffers per upload rather than
+  /// rewriting these, so each one is still written once.
+  // TODO(web-buffers): Reuse a geometry's buffers when it re-uploads at the
+  // same size, instead of allocating a new pair and dropping the old one.
   DeviceBuffer createTypedDeviceBuffer(int sizeInBytes, {required bool index}) {
     return DeviceBuffer._initializeTyped(
       this,
