@@ -214,8 +214,8 @@ vec3 DebugMetallicBinary(MaterialInputs material, vec3 base) {
       : base;
 }
 
-// An interpolated normal far from unit length (a degenerate or unnormalized
-// source normal).
+// An interpolated normal far from unit length (a zero source normal, or vertex
+// normals that nearly cancel across the triangle).
 vec3 DebugNormalLength(vec3 base) {
   float len = length(v_normal);
   return len < 0.3 || len > 1.7 ? vec3(1.0, 0.5, 0.0) : base;

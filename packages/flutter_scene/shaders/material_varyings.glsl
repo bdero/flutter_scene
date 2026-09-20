@@ -4,7 +4,7 @@
 // instead of touching the raw varyings.
 
 in highp vec3 v_position; // world-space position
-in vec3 v_normal; // world-space normal, not normalized
+in vec3 v_normal; // world-space normal, unit per vertex, renormalize
 in highp vec3 v_viewvector; // camera_position - vertex_position (world space)
 in highp vec2 v_texture_coords;
 in highp vec2 v_texture_coords_1;
