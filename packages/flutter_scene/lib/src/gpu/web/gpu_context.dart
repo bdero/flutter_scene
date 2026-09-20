@@ -139,6 +139,21 @@ base class GpuContext {
     return DeviceBuffer._initialize(this, storageMode, sizeInBytes);
   }
 
+  /// Web-only. A host-visible buffer committed to ONE GL role: vertex
+  /// (`index: false`) or index (`index: true`) data. Skips the staging mirror
+  /// and the lazy first-bind upload a generic buffer needs; see
+  /// [DeviceBuffer._initializeTyped]. [createGeometryBuffers] is built from
+  /// it, and so can a caller that manages its own [BufferView]s.
+  DeviceBuffer createTypedDeviceBuffer(int sizeInBytes, {required bool index}) {
+    return DeviceBuffer._initializeTyped(
+      this,
+      sizeInBytes,
+      index
+          ? web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER
+          : web.WebGL2RenderingContext.ARRAY_BUFFER,
+    );
+  }
+
   DeviceBuffer createDeviceBufferWithCopy(ByteData data) {
     final buffer = DeviceBuffer._initialize(
       this,
@@ -372,3 +387,33 @@ Future<ui.Image> presentTextureAsImage(
   texture,
   transferOwnership: transferOwnership,
 );
+
+/// Writes mesh data into a buffer from [createGeometryBuffers] (or an arena's).
+/// [source] keeps its element type so the web backend can hand it to GL as-is;
+/// see [DeviceBuffer.overwriteTypedData].
+bool writeGeometryData(
+  DeviceBuffer buffer,
+  TypedData source, {
+  required int destinationOffsetInBytes,
+}) => buffer.overwriteTypedData(
+  source,
+  destinationOffsetInBytes: destinationOffsetInBytes,
+);
+
+/// The buffers one mesh upload needs: [vertexBytes] of vertex streams and
+/// [indexBytes] of indices. On web they are two role-typed buffers, because
+/// WebGL2 cannot share one buffer between the two roles and sharing one
+/// [DeviceBuffer] costs a staging mirror and a second full upload.
+/// [indexBaseOffset] is where the indices start inside [index].
+({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})
+createGeometryBuffers(int vertexBytes, int indexBytes) {
+  final vertex = gpuContext.createTypedDeviceBuffer(vertexBytes, index: false);
+  return (
+    vertex: vertex,
+    // Non-indexed geometry never binds an index buffer; do not allocate one.
+    index: indexBytes == 0
+        ? vertex
+        : gpuContext.createTypedDeviceBuffer(indexBytes, index: true),
+    indexBaseOffset: 0,
+  );
+}
