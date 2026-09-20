@@ -1,0 +1,206 @@
+// Covers the buffers a geometry upload allocates and how the streams reach
+// them: an arena allocation stays one contiguous block, a non-arena upload
+// takes its storage from createGeometryBuffers, and both accept a stream as
+// the typed list it already is. GPU-gated like the other buffer suites.
+//
+// This runs on the VM, so it pins the native contract - one shared buffer,
+// indices after the vertex streams. The web backend returns one buffer per
+// role from the same helper; that split needs a WebGL2 context and has no
+// harness here.
+
+import 'dart:typed_data';
+
+import 'package:flutter_scene/scene.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+// ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+
+bool _gpuAvailable() {
+  try {
+    gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, 4);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Records the views [Geometry._uploadStreams] binds, so a test can see which
+/// buffer each stream landed in and at what offset.
+class _RecordingGeometry extends UnskinnedGeometry {
+  List<gpu.BufferView> streams = const [];
+  gpu.BufferView? indices;
+
+  @override
+  void setVertexStreams(List<gpu.BufferView> streams, int vertexCount) {
+    this.streams = streams;
+    super.setVertexStreams(streams, vertexCount);
+  }
+
+  @override
+  void setIndices(gpu.BufferView indices, gpu.IndexType indexType) {
+    this.indices = indices;
+    super.setIndices(indices, indexType);
+  }
+}
+
+/// A triangle, as the structure-of-arrays upload path takes it.
+final _positions = Float32List.fromList([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+
+_RecordingGeometry _upload({
+  TypedData? indices,
+  gpu.IndexType indexType = gpu.IndexType.int16,
+  GeometryBufferArena? bufferArena,
+}) {
+  final geometry = _RecordingGeometry();
+  geometry.uploadUnskinnedAttributes(
+    positions: _positions,
+    vertexCount: 3,
+    indices: indices,
+    indexType: indexType,
+    bufferArena: bufferArena,
+  );
+  return geometry;
+}
+
+int _streamBytes(_RecordingGeometry geometry) =>
+    geometry.streams.fold(0, (total, view) => total + view.lengthInBytes);
+
+void main() {
+  if (!_gpuAvailable()) {
+    test(
+      'geometry buffer allocation requires a GPU context',
+      () {},
+      skip: 'Requires a GPU device.',
+    );
+    return;
+  }
+
+  group('createGeometryBuffers', () {
+    test('gives the vertex and index data one buffer, indices after', () {
+      final buffers = gpu.createGeometryBuffers(64, 32);
+
+      expect(identical(buffers.vertex, buffers.index), isTrue);
+      expect(buffers.indexBaseOffset, 64);
+      expect(buffers.vertex.sizeInBytes, 96);
+    });
+
+    test(
+      'sizes the buffer for vertex data alone when there are no indices',
+      () {
+        final buffers = gpu.createGeometryBuffers(64, 0);
+
+        expect(identical(buffers.vertex, buffers.index), isTrue);
+        expect(buffers.vertex.sizeInBytes, 64);
+      },
+    );
+  });
+
+  group('writeGeometryData', () {
+    test('takes a stream as a float, integer, or byte list alike', () {
+      final buffers = gpu.createGeometryBuffers(64, 16);
+
+      expect(
+        gpu.writeGeometryData(
+          buffers.vertex,
+          Float32List(16),
+          destinationOffsetInBytes: 0,
+        ),
+        isTrue,
+      );
+      expect(
+        gpu.writeGeometryData(
+          buffers.index,
+          Uint16List(8),
+          destinationOffsetInBytes: buffers.indexBaseOffset,
+        ),
+        isTrue,
+      );
+      expect(
+        gpu.writeGeometryData(
+          buffers.vertex,
+          ByteData(64),
+          destinationOffsetInBytes: 0,
+        ),
+        isTrue,
+      );
+    });
+
+    test('refuses a write that runs past the end of the buffer', () {
+      final buffers = gpu.createGeometryBuffers(64, 0);
+
+      expect(
+        gpu.writeGeometryData(
+          buffers.vertex,
+          Float32List(17),
+          destinationOffsetInBytes: 0,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('upload', () {
+    test('packs the indices after the vertex streams in the same buffer', () {
+      final geometry = _upload(indices: Uint16List.fromList([0, 1, 2]));
+
+      expect(geometry.streams, isNotEmpty);
+      expect(geometry.indices, isNotNull);
+      for (final stream in geometry.streams) {
+        expect(identical(stream.buffer, geometry.indices!.buffer), isTrue);
+      }
+      expect(geometry.indices!.offsetInBytes, _streamBytes(geometry));
+      expect(geometry.indices!.lengthInBytes, 6);
+    });
+
+    test('lays the vertex streams out back to back from offset zero', () {
+      final geometry = _upload();
+
+      var offset = 0;
+      for (final stream in geometry.streams) {
+        expect(stream.offsetInBytes, offset);
+        offset += stream.lengthInBytes;
+      }
+      expect(geometry.indices, isNull);
+    });
+
+    test('takes 32-bit indices as a Uint32List', () {
+      final geometry = _upload(
+        indices: Uint32List.fromList([0, 1, 2]),
+        indexType: gpu.IndexType.int32,
+      );
+
+      expect(geometry.indices!.lengthInBytes, 12);
+      expect(geometry.indexType, gpu.IndexType.int32);
+    });
+
+    test('takes indices as ByteData as well', () {
+      final geometry = _upload(
+        indices: ByteData.sublistView(Uint16List.fromList([0, 1, 2])),
+      );
+
+      expect(geometry.indices!.lengthInBytes, 6);
+      expect(geometry.indices!.offsetInBytes, _streamBytes(geometry));
+    });
+
+    test('an arena allocation stays one contiguous block', () {
+      final arena = GeometryBufferArena();
+      final geometry = _upload(
+        indices: Uint16List.fromList([0, 1, 2]),
+        bufferArena: arena,
+      );
+
+      final base = geometry.streams.first.offsetInBytes;
+      expect(arena.bufferCount, 1);
+      // One allocation for the whole upload (the arena aligns its tail).
+      expect(
+        arena.usedInBytes,
+        greaterThanOrEqualTo(_streamBytes(geometry) + 6),
+      );
+      for (final stream in geometry.streams) {
+        expect(identical(stream.buffer, geometry.indices!.buffer), isTrue);
+      }
+      expect(geometry.indices!.offsetInBytes, base + _streamBytes(geometry));
+    });
+  });
+}
