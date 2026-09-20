@@ -46,21 +46,7 @@ Future<void> probePlatformMipSampling() async {
     return;
   }
   try {
-    // A reading that reports the defect is taken again before it is believed.
-    // The two answers are not equally cheap to get wrong: a false "works"
-    // costs one device its mipmaps' benefit, while a false "broken" drops
-    // every mip chain in the app -- minified textures alias, and image based
-    // lighting falls back to the atlas -- on hardware that samples chains
-    // perfectly well. Measured on a Galaxy A16 (Mali-G57, Impeller GLES): one
-    // cold run in three read the base level from a target the other two read
-    // the chain from, with the same texture, the same draw and the raster
-    // rendezvous below already in place. Two independent readings agreeing is
-    // the evidence the expensive answer needs.
-    var works = await measureMipSampling();
-    if (!works) {
-      works = await measureMipSampling();
-    }
-    platformMipSamplingWorks = works;
+    platformMipSamplingWorks = await _measureMipSamplingBiasedToWorking();
   } catch (error) {
     // Leave the result unknown rather than asserting the defect. Radiance
     // layout selection already treats unknown as broken (the atlas works
@@ -72,10 +58,10 @@ Future<void> probePlatformMipSampling() async {
   if (platformMipSamplingWorks == false) {
     debugPrint(
       'flutter_scene: this device samples every texture at its base mip '
-      '(measured twice), so '
-      'mipmaps are skipped and minified textures will alias. Cooked mip '
-      'chains are not uploaded, and image based lighting uses the radiance '
-      'atlas. See https://github.com/flutter/flutter/issues/189965',
+      '(measured $_kConfirmationsBeforeDisabling times), so mipmaps are '
+      'skipped and minified textures will alias. Cooked mip chains are not '
+      'uploaded, and image based lighting uses the radiance atlas. '
+      'See https://github.com/flutter/flutter/issues/189965',
     );
   }
 }
@@ -93,6 +79,40 @@ final gpu.BufferView _fullscreenQuadView = gpu.BufferView(
   offsetInBytes: 0,
   lengthInBytes: 6 * 2 * 4,
 );
+
+/// How many readings must agree that mip sampling is broken before the
+/// process acts on it.
+const int _kConfirmationsBeforeDisabling = 2;
+
+/// Measures mip sampling, deliberately biased toward believing it works.
+///
+/// The two wrong answers do not cost the same. A false "works" costs this one
+/// device the benefit of its mip chains. A false "broken" drops every mip
+/// chain in the app and changes the rendered image on hardware that samples
+/// chains perfectly well, since minified textures then alias and image-based
+/// lighting falls back to the radiance atlas. So one reading is enough to
+/// accept the cheap answer, and the expensive one has to be reproduced.
+///
+/// This is a bias, not a retry. The readings are independent measurements of a
+/// probe known to be unreliable on at least one device, not repeated attempts
+/// at an operation that might have failed. Measured on a Galaxy A16 (Mali-G57,
+/// Impeller GLES), one cold run in three read the base level from a target the
+/// other two read the chain from, with the same texture, the same draw, and
+/// the raster rendezvous in [measureMipSampling] already in place. That
+/// rendezvous is necessary and not sufficient, which is why the bias exists.
+///
+/// TODO(mip-probe): drop this once the readback can be trusted. The fix is
+/// either an engine capability bit for base-mip clamping or an ordering
+/// guarantee for a readback of a just-drawn devicePrivate target, tracked in
+/// https://github.com/flutter/flutter/issues/189965.
+Future<bool> _measureMipSamplingBiasedToWorking() async {
+  for (var reading = 0; reading < _kConfirmationsBeforeDisabling; reading++) {
+    if (await measureMipSampling()) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// Renders a white-base, black-mips texture at a heavy minification and
 /// returns whether the sampled result read the mip chain.
@@ -171,6 +191,5 @@ Future<bool> measureMipSampling() async {
   }
   // Sample the center texel; mid-gray or darker means the chain was read.
   final center = (4 * 2 + 2) * 4;
-  final sampled = bytes.getUint8(center);
-  return sampled < 128;
+  return bytes.getUint8(center) < 128;
 }
