@@ -57,54 +57,51 @@ Future<void> awaitRasterThread({
   return completer.future.timeout(timeout, onTimeout: () {});
 }
 
-/// Whether a previous [awaitFrame] timed out waiting for a frame.
+/// Paces a producer against presented frames.
 ///
-/// Once nothing is presenting, nothing will pace a producer, and making every
-/// later call wait out its own timeout would turn a paced fill into one long
-/// stall. So the first timeout switches [awaitFrame] to the raster rendezvous
-/// alone for the rest of the process. Set in a headless test and in any
-/// embedding that is not serving frames.
-bool _framesArePresenting = true;
+/// One pacer per producer (one radiance fill), because the degradation below
+/// is a statement about this fill's lifetime, not about the process.
+class FramePacer {
+  /// Set when a frame failed to arrive inside the timeout. Nothing is going to
+  /// pace this fill, and making every later step wait out its own timeout
+  /// would turn a paced fill into one long stall, so the rest of it runs on
+  /// the raster rendezvous alone. Scoped to this pacer, so a later fill starts
+  /// out willing to wait again.
+  bool _framesStalled = false;
 
-/// Waits for one whole frame to go through the pipeline, so a batch of GPU
-/// passes submitted before it is paced by the display instead of piling up.
-///
-/// [awaitRasterThread] only says that the raster thread has *encoded* and
-/// submitted the GL commands. On GLES `CommandBuffer.submit` posts the reactor
-/// flush and calls back as soon as it has run, long before the GPU has
-/// executed anything. There is no GPU-completion signal exposed to Dart, so
-/// the thing to wait on is a frame: a frame cannot be presented until the GPU
-/// has finished the work queued ahead of it, and the engine will not let the
-/// UI thread run more than a frame ahead of the raster thread. Awaiting the
-/// end of a frame therefore throttles a producer to what the GPU is actually
-/// retiring.
-///
-/// Degrades to the raster rendezvous alone where there is no binding (a
-/// headless test) or where nothing is presenting, so a paced producer still
-/// finishes promptly instead of waiting out one timeout per step.
-Future<void> awaitFrame({Duration timeout = const Duration(seconds: 2)}) async {
-  final binding = SchedulerBinding.instance;
-  if (!_framesArePresenting) {
-    return awaitRasterThread(timeout: timeout);
+  /// Waits for one whole frame to go through the pipeline, so a batch of GPU
+  /// passes submitted before it is paced by the display instead of piling up.
+  ///
+  /// [awaitRasterThread] only says that the raster thread has *encoded* and
+  /// submitted the GL commands. On GLES `CommandBuffer.submit` posts the
+  /// reactor flush and calls back as soon as it has run, long before the GPU
+  /// has executed anything. There is no GPU-completion signal exposed to Dart,
+  /// so the thing to wait on is a frame: a frame cannot be presented until the
+  /// GPU has finished the work queued ahead of it, and the engine will not let
+  /// the UI thread run more than a frame ahead of the raster thread.
+  ///
+  /// Skips the wait while the embedder has frames disabled (backgrounded, or
+  /// the screen off), where waiting would only burn the timeout. That check is
+  /// re-read every step, so a fill that spans a resume goes back to pacing on
+  /// its own.
+  Future<void> awaitFrame({
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    final binding = SchedulerBinding.instance;
+    if (_framesStalled || !binding.framesEnabled) {
+      return awaitRasterThread(timeout: timeout);
+    }
+    var timedOut = false;
+    binding.scheduleFrame();
+    await binding.endOfFrame.timeout(
+      timeout,
+      onTimeout: () {
+        timedOut = true;
+      },
+    );
+    if (timedOut) {
+      _framesStalled = true;
+    }
+    await awaitRasterThread(timeout: timeout);
   }
-  var timedOut = false;
-  binding.scheduleFrame();
-  await binding.endOfFrame.timeout(
-    timeout,
-    onTimeout: () {
-      timedOut = true;
-    },
-  );
-  if (timedOut) {
-    _framesArePresenting = false;
-  }
-  await awaitRasterThread(timeout: timeout);
-}
-
-/// Restores the frame-pacing assumption [awaitFrame] starts with.
-///
-/// Only for tests that drive [awaitFrame] with no frames being served; the
-/// timeout latch is otherwise a one-way process-wide switch.
-void debugResetFramePacing() {
-  _framesArePresenting = true;
 }

@@ -152,11 +152,18 @@ gpu.Texture prefilterEquirectRadianceToCube(
 class RadiancePrefilterFill {
   RadiancePrefilterFill._(this.texture);
 
+  /// Wraps a radiance texture that is already complete, so a caller that does
+  /// not pace its prefilter still hands back the same type.
+  RadiancePrefilterFill.completed(this.texture) {
+    _done.complete();
+  }
+
   /// The radiance texture, valid from construction and refined as the fill
   /// proceeds.
   final gpu.Texture texture;
 
   final Completer<void> _done = Completer<void>();
+  final FramePacer _pacer = FramePacer();
   bool _cancelled = false;
 
   /// Completes once every pass has been submitted, or immediately on
@@ -178,7 +185,14 @@ class RadiancePrefilterFill {
     }
   }
 
-  void _finish() {
+  /// Completes [done] once the raster thread is past the final submission.
+  ///
+  /// `CommandBuffer.submit` only queues the draw on the OpenGL ES backend, so
+  /// completing as the loop ends would let a caller that awaited [done] read
+  /// the texture back, or capture a frame, while the last band is still
+  /// unencoded.
+  Future<void> _finishAfterRaster() async {
+    await awaitRasterThread();
     if (!_done.isCompleted) {
       _done.complete();
     }
@@ -217,7 +231,26 @@ RadiancePrefilterFill prefilterEquirectRadianceProgressive(
   final fill = RadiancePrefilterFill._(
     createPrefilterAtlasTexture(mipLayout: mipLayout),
   );
-  _prefilterBand(sourceEquirect, fill.texture, 0, mipLayout, sourceIsLinear);
+  // Seed every band with the mirror before returning. At roughness 0 the GGX
+  // lobe is a delta, so a band costs one fetch instead of kPrefilterSamples,
+  // and the whole seed is roughly 1/kPrefilterSamples of one real band. A
+  // frame that samples the atlas while it is still filling then reads a sharp
+  // environment rather than the clear color, which is the difference between
+  // specular that is too crisp for a frame or two and specular that is black.
+  for (var band = 0; band < kPrefilterBandCount; band++) {
+    _prefilterBand(
+      sourceEquirect,
+      fill.texture,
+      band,
+      mipLayout,
+      sourceIsLinear,
+      // Only the first pass may clear the legacy atlas; the rest share the
+      // image and load it back. Every mip-layout band owns its own level.
+      clear: mipLayout || band == 0,
+      forceMirror: true,
+    );
+  }
+  // Band 0 is the mirror, so its seed is already the final value.
   unawaited(
     _fillBands(
       fill,
@@ -236,7 +269,7 @@ Future<void> _fillBands(
   required bool sourceIsLinear,
 }) async {
   for (var band = 1; band < kPrefilterBandCount; band++) {
-    await awaitFrame();
+    await fill._pacer.awaitFrame();
     if (fill._cancelled) {
       return;
     }
@@ -246,9 +279,10 @@ Future<void> _fillBands(
       band,
       mipLayout,
       sourceIsLinear,
+      clear: mipLayout,
     );
   }
-  fill._finish();
+  await fill._finishAfterRaster();
 }
 
 void _prefilterBand(
@@ -256,16 +290,16 @@ void _prefilterBand(
   gpu.Texture atlas,
   int band,
   bool mipLayout,
-  bool sourceIsLinear,
-) => _prefilterPass(
+  bool sourceIsLinear, {
+  required bool clear,
+  bool forceMirror = false,
+}) => _prefilterPass(
   sourceEquirect,
   atlas,
   band: band,
-  // The mip layout owns a whole mip level per band, so every pass clears its
-  // own. The legacy atlas shares one image between the bands, so only the
-  // first pass may clear it and the rest load it back.
-  clear: mipLayout || band == 0,
+  clear: clear,
   sourceIsLinear: sourceIsLinear,
+  forceMirror: forceMirror,
 );
 
 /// Prefilters [sourceEquirect] into a roughness-mip cubemap like
@@ -281,39 +315,57 @@ RadiancePrefilterFill prefilterEquirectRadianceToCubeProgressive(
   int size = kRadianceCubeSize,
 }) {
   final fill = RadiancePrefilterFill._(createRadianceCubeTexture(size: size));
-  _prefilterCubeFace(sourceEquirect, fill.texture, 0, sourceIsLinear);
-  unawaited(_fillCubeFaces(fill, sourceEquirect, sourceIsLinear));
+  // Seed every face of every band with the mirror before returning, for the
+  // reason prefilterEquirectRadianceProgressive does. A cube is sampled in
+  // every direction at once, so seeding one face would leave five directions
+  // reading the clear color; and the roughness a shader asks for picks a mip,
+  // so seeding one band would leave the rest unwritten.
+  for (var band = 0; band < kPrefilterBandCount; band++) {
+    _prefilterCubeBand(
+      sourceEquirect,
+      fill.texture,
+      band,
+      sourceIsLinear,
+      forceMirror: true,
+    );
+  }
+  unawaited(_fillCubeBands(fill, sourceEquirect, sourceIsLinear));
   return fill;
 }
 
-Future<void> _fillCubeFaces(
+Future<void> _fillCubeBands(
   RadiancePrefilterFill fill,
   gpu.Texture sourceEquirect,
   bool sourceIsLinear,
 ) async {
-  for (var face = 1; face < 6; face++) {
-    await awaitFrame();
+  // Band major, not face major: a band is a mip level across all six faces, so
+  // finishing a band leaves the cube consistent in every direction at that
+  // roughness. Face-major would sharpen one direction at a time.
+  for (var band = 1; band < kPrefilterBandCount; band++) {
+    await fill._pacer.awaitFrame();
     if (fill._cancelled) {
       return;
     }
-    _prefilterCubeFace(sourceEquirect, fill.texture, face, sourceIsLinear);
+    _prefilterCubeBand(sourceEquirect, fill.texture, band, sourceIsLinear);
   }
-  fill._finish();
+  await fill._finishAfterRaster();
 }
 
-void _prefilterCubeFace(
+void _prefilterCubeBand(
   gpu.Texture sourceEquirect,
   gpu.Texture cube,
-  int face,
-  bool sourceIsLinear,
-) {
-  for (var band = 0; band < kPrefilterBandCount; band++) {
+  int band,
+  bool sourceIsLinear, {
+  bool forceMirror = false,
+}) {
+  for (var face = 0; face < 6; face++) {
     prefilterEquirectRadianceCubeFace(
       sourceEquirect,
       cube,
       face,
       band,
       sourceIsLinear: sourceIsLinear,
+      forceMirror: forceMirror,
     );
   }
 }
@@ -327,11 +379,14 @@ void prefilterEquirectRadianceCubeFace(
   int face,
   int band, {
   bool sourceIsLinear = false,
+  bool forceMirror = false,
 }) {
   assert(face >= 0 && face < 6);
   assert(band >= 0 && band < kPrefilterBandCount);
   final (right, up, forward) = cubeFaceBases[face];
-  final roughness = radianceBandRoughness(band);
+  // Roughness 0 is the delta lobe the shader answers in one fetch, so a seed
+  // pass costs a fraction of the real band it stands in for.
+  final roughness = forceMirror ? 0.0 : radianceBandRoughness(band);
   final vertexShader = baseShaderLibrary['FullscreenVertex']!;
   final fragmentShader = baseShaderLibrary['PrefilterRadianceCubeFragment']!;
   final commandBuffer = gpu.gpuContext.createCommandBuffer();
@@ -446,6 +501,7 @@ void _prefilterPass(
   required int band,
   required bool clear,
   required bool sourceIsLinear,
+  bool forceMirror = false,
 }) {
   final vertexShader = baseShaderLibrary['FullscreenVertex']!;
   final fragmentShader = baseShaderLibrary['PrefilterEnvFragment']!;
@@ -487,7 +543,8 @@ void _prefilterPass(
   final info = Float32List(4)
     ..[0] = sourceIsLinear ? 1.0 : 0.0
     ..[1] = band.toDouble()
-    ..[2] = mipLayout ? 1.0 : 0.0;
+    ..[2] = mipLayout ? 1.0 : 0.0
+    ..[3] = forceMirror ? 1.0 : 0.0;
   renderPass.bindUniform(
     fragmentShader.getUniformSlot('PrefilterInfo'),
     uniformTransients.emplace(ByteData.sublistView(info)),
