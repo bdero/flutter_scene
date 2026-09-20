@@ -27,18 +27,75 @@ class BufferView {
 /// everything else (vertex / uniform / copy). Both mirror the full staging,
 /// so the caller's absolute byte offsets line up in either. The duplication
 /// is web-only and limited to buffers actually used as both.
+///
+/// A caller that knows a buffer's single role does not need any of that; see
+/// [DeviceBuffer._initializeTyped] and [createGeometryBuffers].
 base class DeviceBuffer {
   DeviceBuffer._initialize(
     GpuContext gpuContext,
     this.storageMode,
     this.sizeInBytes,
-  ) : _gpuContext = gpuContext {
+  ) : _gpuContext = gpuContext,
+      _typedTarget = null {
     _staging = Uint8List(sizeInBytes);
     _valid = true;
   }
 
+  /// A buffer whose single GL role is known up front ([target] is
+  /// `ARRAY_BUFFER` or `ELEMENT_ARRAY_BUFFER`).
+  ///
+  /// The staging mirror exists only because a generic DeviceBuffer may later
+  /// be bound as BOTH kinds. When the caller commits to one, there is nothing
+  /// to defer: the GL data store is allocated here, [overwrite] goes straight
+  /// to `bufferSubData` from the caller's bytes, and no CPU copy is kept.
+  DeviceBuffer._initializeTyped(
+    GpuContext gpuContext,
+    this.sizeInBytes,
+    int target,
+  ) : _gpuContext = gpuContext,
+      storageMode = StorageMode.hostVisible,
+      _typedTarget = target {
+    final gl = gpuContext._gl;
+    final buffer = gl.createBuffer();
+    if (buffer == null) {
+      throw StateError('Failed to create WebGL buffer');
+    }
+    _bindTypedForUpload(gl, target, buffer);
+    gl.bufferData(
+      target,
+      sizeInBytes.toJS,
+      web.WebGL2RenderingContext.STATIC_DRAW,
+    );
+    if (target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER) {
+      _glElementBuffer = buffer;
+    } else {
+      _glOtherBuffer = buffer;
+    }
+    _staging = Uint8List(0);
+    _valid = true;
+  }
+
+  /// Binds [buffer] to its own [target] for an upload outside a render pass.
+  ///
+  /// ELEMENT_ARRAY_BUFFER is per-VAO state, so binding it here would silently
+  /// re-point whichever cached VAO the last draw left bound. Drop to the
+  /// default VAO first; RenderPass re-binds its VAO on every draw.
+  static void _bindTypedForUpload(
+    web.WebGL2RenderingContext gl,
+    int target,
+    web.WebGLBuffer buffer,
+  ) {
+    if (target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER) {
+      gl.bindVertexArray(null);
+    }
+    gl.bindBuffer(target, buffer);
+  }
+
   final GpuContext _gpuContext;
   late final Uint8List _staging;
+
+  /// Non-null for a buffer created by [DeviceBuffer._initializeTyped].
+  final int? _typedTarget;
 
   /// A float view over the whole staging buffer, used by the uniform upload
   /// path with srcOffset/srcLength so no per-draw views are created.
@@ -72,6 +129,15 @@ base class DeviceBuffer {
     final gl = _gpuContext._gl;
     final isElement = target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER;
     var buffer = isElement ? _glElementBuffer : _glOtherBuffer;
+    if (buffer == null && _typedTarget != null) {
+      final role =
+          _typedTarget == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER
+          ? 'index'
+          : 'vertex';
+      throw StateError(
+        'A DeviceBuffer created for $role use was bound to the other target.',
+      );
+    }
     if (buffer == null) {
       buffer = gl.createBuffer();
       if (buffer == null) {
@@ -111,6 +177,12 @@ base class DeviceBuffer {
     if (destinationOffsetInBytes + length > sizeInBytes) {
       return false;
     }
+    if (_typedTarget != null) {
+      return overwriteTypedData(
+        sourceBytes,
+        destinationOffsetInBytes: destinationOffsetInBytes,
+      );
+    }
     _staging.setRange(
       destinationOffsetInBytes,
       destinationOffsetInBytes + length,
@@ -145,6 +217,54 @@ base class DeviceBuffer {
     }
     return true;
   }
+
+  /// [overwrite] for a caller that still knows its data's element type.
+  ///
+  /// On a role-typed buffer [source] crosses to JS as the typed array it is,
+  /// which matters under dart2wasm: a `Float32List` is backed by a wasm array
+  /// of f32, so reading it through a byte view (what a [ByteData] over it is)
+  /// goes element by element, ~35x slower than crossing it as floats. On
+  /// dart2js every typed list is already a JS typed array and all of this is
+  /// free. A staged buffer takes the ordinary [overwrite] path.
+  bool overwriteTypedData(
+    TypedData source, {
+    int destinationOffsetInBytes = 0,
+  }) {
+    final target = _typedTarget;
+    if (target == null) {
+      return overwrite(
+        source is ByteData ? source : ByteData.sublistView(source),
+        destinationOffsetInBytes: destinationOffsetInBytes,
+      );
+    }
+    if (destinationOffsetInBytes < 0) {
+      throw Exception('destinationOffsetInBytes must be positive');
+    }
+    if (destinationOffsetInBytes + source.lengthInBytes > sizeInBytes) {
+      return false;
+    }
+    final gl = _gpuContext._gl;
+    _bindTypedForUpload(gl, target, (_glElementBuffer ?? _glOtherBuffer)!);
+    gl.bufferSubData(target, destinationOffsetInBytes, _jsViewOf(source));
+    return true;
+  }
+
+  /// [source] as a JS `ArrayBufferView`, without reinterpreting its elements.
+  ///
+  /// The element types mesh data arrives in cross as a view of their own kind.
+  /// Anything else - a [ByteData], say - is COPIED into a byte list of its
+  /// own first: handing `toJS` a byte view over someone else's typed list is
+  /// the slowest thing there is under dart2wasm (see [overwriteTypedData]),
+  /// several times worse than copying the bytes and crossing the copy.
+  static JSObject _jsViewOf(TypedData source) => switch (source) {
+    Float32List() => source.toJS,
+    Uint16List() => source.toJS,
+    Uint32List() => source.toJS,
+    Uint8List() => source.toJS,
+    _ => Uint8List.fromList(
+      source.buffer.asUint8List(source.offsetInBytes, source.lengthInBytes),
+    ).toJS,
+  };
 
   /// On native this flushes host-coherent caches. WebGL2 has no equivalent;
   /// `bufferSubData` is immediately visible to the GL implementation.
