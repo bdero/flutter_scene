@@ -142,16 +142,59 @@ gpu.Texture prefilterEquirectRadianceToCube(
   return cube;
 }
 
+/// A radiance prefilter whose passes are still being submitted over frames.
+///
+/// [texture] is usable immediately, holding the first band (or face) and
+/// nothing else; the rest arrive over the following frames and [done]
+/// completes once every pass has been submitted. [cancel] stops the fill,
+/// for a caller that has replaced the texture and no longer wants the
+/// remaining work.
+class RadiancePrefilterFill {
+  RadiancePrefilterFill._(this.texture);
+
+  /// The radiance texture, valid from construction and refined as the fill
+  /// proceeds.
+  final gpu.Texture texture;
+
+  final Completer<void> _done = Completer<void>();
+  bool _cancelled = false;
+
+  /// Completes once every pass has been submitted, or immediately on
+  /// [cancel]. Never completes with an error.
+  Future<void> get done => _done.future;
+
+  /// Whether the fill has finished or been cancelled.
+  bool get isComplete => _done.isCompleted;
+
+  /// Stops submitting further passes.
+  ///
+  /// The texture keeps whatever has landed so far. Called when an environment
+  /// replaces its radiance before the fill finishes (the web warm-context
+  /// re-bake), so the abandoned texture stops consuming GPU time.
+  void cancel() {
+    _cancelled = true;
+    if (!_done.isCompleted) {
+      _done.complete();
+    }
+  }
+
+  void _finish() {
+    if (!_done.isCompleted) {
+      _done.complete();
+    }
+  }
+}
+
 /// Prefilters [sourceEquirect] for image-based specular lighting like
-/// [prefilterEquirectRadiance], but returns the atlas immediately and fills
-/// its roughness bands in over the following frames.
+/// [prefilterEquirectRadiance], but returns as soon as the atlas exists and
+/// fills its roughness bands in over the following frames.
 ///
 /// The one-shot form hands the driver the whole prefilter as a single draw:
 /// with the legacy atlas that is `kPrefilterBandWidth` x
 /// `kPrefilterBandHeight * kPrefilterBandCount` texels, each running the
 /// shader's `kPrefilterSamples`-tap GGX loop. Measured on a Mali-G57 (Galaxy
 /// A16, Impeller GLES) that single draw is ~850 ms of GPU time, and because it
-/// is flushed inside a Flutter frame, that frame's buffer never completes: the
+/// is flushed inside a Flutter frame, that frame's buffer never completes. The
 /// raster thread blocks in `eglSwapBuffers`, SurfaceFlinger and the vendor
 /// composer wait on the buffer's fence, and the display only recovers on the
 /// driver's ~880 ms `QUEUE_BUFFER_TIMEOUT`. Every environment an app builds
@@ -163,35 +206,49 @@ gpu.Texture prefilterEquirectRadianceToCube(
 /// before returning, so the atlas is never entirely unwritten; the rest arrive
 /// over the next [kPrefilterBandCount] - 1 frames, which is invisible while a
 /// scene is still loading and reads as the specular sharpening up otherwise.
-/// {@category Lighting and environment}
-gpu.Texture prefilterEquirectRadianceProgressive(
+///
+/// Prefer [prefilterEquirectRadiance] where the atlas must be complete on
+/// return, such as an offline bake or a readback.
+RadiancePrefilterFill prefilterEquirectRadianceProgressive(
   gpu.Texture sourceEquirect, {
   bool sourceIsLinear = false,
   bool mipLayout = false,
 }) {
-  final atlas = createPrefilterAtlasTexture(mipLayout: mipLayout);
-  _prefilterBand(sourceEquirect, atlas, 0, mipLayout, sourceIsLinear);
+  final fill = RadiancePrefilterFill._(
+    createPrefilterAtlasTexture(mipLayout: mipLayout),
+  );
+  _prefilterBand(sourceEquirect, fill.texture, 0, mipLayout, sourceIsLinear);
   unawaited(
-    _prefilterRemainingBands(
+    _fillBands(
+      fill,
       sourceEquirect,
-      atlas,
       mipLayout: mipLayout,
       sourceIsLinear: sourceIsLinear,
     ),
   );
-  return atlas;
+  return fill;
 }
 
-Future<void> _prefilterRemainingBands(
-  gpu.Texture sourceEquirect,
-  gpu.Texture atlas, {
+Future<void> _fillBands(
+  RadiancePrefilterFill fill,
+  gpu.Texture sourceEquirect, {
   required bool mipLayout,
   required bool sourceIsLinear,
 }) async {
   for (var band = 1; band < kPrefilterBandCount; band++) {
     await awaitFrame();
-    _prefilterBand(sourceEquirect, atlas, band, mipLayout, sourceIsLinear);
+    if (fill._cancelled) {
+      return;
+    }
+    _prefilterBand(
+      sourceEquirect,
+      fill.texture,
+      band,
+      mipLayout,
+      sourceIsLinear,
+    );
   }
+  fill._finish();
 }
 
 void _prefilterBand(
@@ -205,35 +262,43 @@ void _prefilterBand(
   atlas,
   band: band,
   // The mip layout owns a whole mip level per band, so every pass clears its
-  // own. The legacy atlas shares one image between the bands: only the first
-  // pass may clear it, the rest load it back.
+  // own. The legacy atlas shares one image between the bands, so only the
+  // first pass may clear it and the rest load it back.
   clear: mipLayout || band == 0,
   sourceIsLinear: sourceIsLinear,
 );
 
 /// Prefilters [sourceEquirect] into a roughness-mip cubemap like
-/// [prefilterEquirectRadianceToCube], but returns the cube immediately and
-/// fills it a face at a time over the following frames, for the same reason
-/// [prefilterEquirectRadianceProgressive] does: all `6 * kPrefilterBandCount`
-/// passes in one submission is more than a mobile display pipeline can absorb
-/// between presents. Face 0 is submitted before returning.
-/// {@category Lighting and environment}
-gpu.Texture prefilterEquirectRadianceToCubeProgressive(
+/// [prefilterEquirectRadianceToCube], but returns as soon as the cube exists
+/// and fills it a face at a time over the following frames, for the same
+/// reason [prefilterEquirectRadianceProgressive] does: all
+/// `6 * kPrefilterBandCount` passes in one submission is more than a mobile
+/// display pipeline can absorb between presents. Face 0 is submitted before
+/// returning.
+RadiancePrefilterFill prefilterEquirectRadianceToCubeProgressive(
   gpu.Texture sourceEquirect, {
   bool sourceIsLinear = false,
   int size = kRadianceCubeSize,
 }) {
-  final cube = createRadianceCubeTexture(size: size);
-  _prefilterCubeFace(sourceEquirect, cube, 0, sourceIsLinear);
-  unawaited(
-    (() async {
-      for (var face = 1; face < 6; face++) {
-        await awaitFrame();
-        _prefilterCubeFace(sourceEquirect, cube, face, sourceIsLinear);
-      }
-    })(),
-  );
-  return cube;
+  final fill = RadiancePrefilterFill._(createRadianceCubeTexture(size: size));
+  _prefilterCubeFace(sourceEquirect, fill.texture, 0, sourceIsLinear);
+  unawaited(_fillCubeFaces(fill, sourceEquirect, sourceIsLinear));
+  return fill;
+}
+
+Future<void> _fillCubeFaces(
+  RadiancePrefilterFill fill,
+  gpu.Texture sourceEquirect,
+  bool sourceIsLinear,
+) async {
+  for (var face = 1; face < 6; face++) {
+    await awaitFrame();
+    if (fill._cancelled) {
+      return;
+    }
+    _prefilterCubeFace(sourceEquirect, fill.texture, face, sourceIsLinear);
+  }
+  fill._finish();
 }
 
 void _prefilterCubeFace(
