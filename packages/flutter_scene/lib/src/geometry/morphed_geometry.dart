@@ -133,7 +133,7 @@ mixin _MorphBlending on Geometry {
   // blend can re-upload without the caller's buffers.
   Float32List? _baseVertexFloats;
   int _baseVertexCount = 0;
-  ByteData? _baseIndices;
+  TypedData? _baseIndices;
   gpu.IndexType _baseIndexType = gpu.IndexType.int16;
 
   // CPU path: the last-blended weights and the reused blend output.
@@ -169,9 +169,9 @@ mixin _MorphBlending on Geometry {
 
   @override
   void uploadVertexData(
-    ByteData vertices,
+    TypedData vertices,
     int vertexCount,
-    ByteData? indices, {
+    TypedData? indices, {
     gpu.IndexType indexType = gpu.IndexType.int16,
   }) {
     if (!_uploadingBlend) {
@@ -216,7 +216,7 @@ mixin _MorphBlending on Geometry {
     _uploadingBlend = true;
     try {
       uploadVertexData(
-        ByteData.sublistView(blended),
+        blended,
         _baseVertexCount,
         _baseIndices,
         indexType: _baseIndexType,

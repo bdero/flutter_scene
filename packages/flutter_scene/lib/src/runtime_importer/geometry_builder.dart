@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/gltf.dart';
 
 import '../geometry/geometry.dart';
+import '../geometry/interleaved_layout.dart';
 import '../geometry/morph_targets.dart';
 import '../geometry/morphed_geometry.dart';
 
@@ -41,10 +42,15 @@ Geometry geometryFromPacked(
                 ),
               ))
       : (packed.isSkinned ? SkinnedGeometry() : UnskinnedGeometry());
+  // Uploaded as the lists the packer allocated (floats, and indices at their
+  // packed width) so the web upload crosses them natively.
   geometry.uploadVertexData(
-    ByteData.sublistView(packed.vertexBytes),
+    Float32List.sublistView(packed.vertexBytes),
     packed.vertexCount,
-    ByteData.sublistView(packed.indexBytes),
+    InterleavedLayoutAdapter.indexUploadView(
+      packed.indexBytes,
+      is32Bit: packed.indices32Bit,
+    ),
     indexType: packed.indices32Bit ? gpu.IndexType.int32 : gpu.IndexType.int16,
   );
   geometry.sourceWindingFlipped = packed.sourceWindingFlipped;
