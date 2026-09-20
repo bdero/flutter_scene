@@ -88,8 +88,8 @@ Uint8List _downsample(
   return dst;
 }
 
-// The 2x2 (edge-clamped) source block of destination texel (x, y), as the four
-// byte offsets of its texels.
+// The first of the two source coordinates a destination coordinate covers,
+// clamped to the source extent for an odd-sized level.
 @pragma('vm:prefer-inline')
 int _clampDouble(int coordinate, int extent) {
   final doubled = coordinate * 2;
