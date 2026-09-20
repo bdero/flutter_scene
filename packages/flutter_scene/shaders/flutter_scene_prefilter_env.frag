@@ -120,6 +120,13 @@ void main() {
   // self-disables (every sample equals the center). Mirrors the cube prefilter.
   const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
   vec3 center = SampleSourceRadiance(n);
+  // The mirror band is the source itself: at roughness 0 the GGX lobe is a
+  // delta, so every one of the samples below would read exactly the center.
+  // Taking it directly is the same answer for 1/256th of the work.
+  if (roughness <= 0.0) {
+    frag_color = vec4(center, 1.0);
+    return;
+  }
   float max_luma = max(dot(center, kLuma), 1.0) * 8.0;
 
   vec3 color = vec3(0.0);

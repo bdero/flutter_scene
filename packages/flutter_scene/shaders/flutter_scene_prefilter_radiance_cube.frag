@@ -129,6 +129,12 @@ void main() {
   // center and nothing is clamped (the mirror band stays sharp).
   const vec3 kLuma = vec3(0.2126, 0.7152, 0.0722);
   vec3 center = SampleSourceRadianceLod(n, 0.0);
+  // The mirror band is the source itself: at roughness 0 the GGX lobe is a
+  // delta, so every one of the samples below would read exactly the center.
+  if (roughness <= 0.0) {
+    frag_color = vec4(center, 1.0);
+    return;
+  }
   float max_luma = max(dot(center, kLuma), 1.0) * 8.0;
 
   vec3 color = vec3(0.0);
