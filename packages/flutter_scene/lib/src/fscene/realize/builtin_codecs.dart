@@ -739,6 +739,7 @@ class MeshCodec extends ComponentCodec {
       'baseColor': _color(m.baseColorFactor),
       'doubleSided': BoolValue(m.doubleSided),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
+      if (m.displayReferred) 'displayReferred': BoolValue(true),
     };
     _textureProperty(
       properties,

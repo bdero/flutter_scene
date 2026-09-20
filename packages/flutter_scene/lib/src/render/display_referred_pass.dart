@@ -18,7 +18,18 @@ const String kDisplayReferredBlackboardKey = 'display_referred_color';
 /// [Material.displayReferred]), which the frame pays the extra layer for.
 bool sceneHasDisplayReferred(RenderScene renderScene) {
   for (final item in renderScene.items) {
-    if (item.visible && item.material.displayReferred) return true;
+    if (!item.visible) continue;
+    if (item.material.displayReferred) return true;
+    // The encoder draws the selected level's material, not the item's, so a
+    // level that opts in has to activate the layer even when the fallback
+    // does not. Which level the view selects is not known here, so any level
+    // counts: over-activating costs an unused layer, while under-activating
+    // would route the draw out of both scene buckets and drop it.
+    final lod = item.lod;
+    if (lod == null) continue;
+    for (final level in lod.levels) {
+      if (level.material.displayReferred) return true;
+    }
   }
   return false;
 }
@@ -26,9 +37,10 @@ bool sceneHasDisplayReferred(RenderScene renderScene) {
 /// Blends the display-referred layer over the resolved display image.
 ///
 /// Both are display-encoded and premultiplied, so this is a source-over with
-/// no color transform. It runs after anti-aliasing so crisp UI is not
-/// resampled, and the layer's own silhouette is anti-aliased by the scene
-/// pass it was drawn in.
+/// no color transform. Under MSAA it runs after anti-aliasing, since the
+/// layer's silhouette is already multisampled and crisp UI is better left
+/// unresampled. Without MSAA it runs before FXAA/SMAA instead, which is the
+/// only thing that would smooth that silhouette.
 class DisplayReferredCompositePass extends RenderGraphPass {
   DisplayReferredCompositePass({required gpu.Texture output})
     : _output = output;

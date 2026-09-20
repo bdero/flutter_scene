@@ -2941,6 +2941,13 @@ base class Scene implements SceneGraph {
         captureOpaqueColor: captureOpaqueColor,
         displayReferredLayer: displayReferredActive,
         displayReferredFormat: outputColor.format,
+        // TAA resolves the scene color only, and the layer composites after
+        // that, so it draws unjittered or it would shake by the jitter every
+        // frame. Its depth test still runs against the jittered scene depth,
+        // which costs sub-pixel accuracy at the occlusion edge.
+        displayReferredCameraTransform: enableTaa
+            ? camera.getViewTransform(pixelSize)
+            : null,
         maxCaptureBatches: effectiveSceneColorCaptureBatches,
         // Depth binding needs the prepass, which needs a valid projection.
         bindSceneDepth: bindSceneDepth && projectionValid,
@@ -3216,6 +3223,15 @@ base class Scene implements SceneGraph {
       );
     }
 
+    // No MSAA this frame, so the display-referred layer is single-sampled and
+    // the display-chain anti-aliasing is the only thing that can smooth its
+    // silhouette; composite it before that rather than after.
+    if (displayReferredActive && !enableMsaa) {
+      displaySteps.add(
+        (output) => DisplayReferredCompositePass(output: output),
+      );
+    }
+
     // FXAA/SMAA run after the resolve so custom after-tone-mapping effects
     // receive the anti-aliased image. The resolve applies film grain and
     // vignette first, so heavy grain is softened slightly here.
@@ -3246,10 +3262,11 @@ base class Scene implements SceneGraph {
       );
     }
 
-    // Display-referred surfaces composite after anti-aliasing so crisp UI is
-    // not resampled, and before the overlay stages so a custom overlay and
-    // the selection outline still draw on top.
-    if (displayReferredActive) {
+    // Under MSAA the layer's silhouette is already multisampled, so the
+    // composite runs here, after anti-aliasing, and crisp UI is never
+    // resampled. Without MSAA it composites ahead of FXAA/SMAA instead (see
+    // above), since nothing else would smooth that silhouette.
+    if (displayReferredActive && enableMsaa) {
       displaySteps.add(
         (output) => DisplayReferredCompositePass(output: output),
       );

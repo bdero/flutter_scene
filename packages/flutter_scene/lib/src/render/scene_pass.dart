@@ -101,6 +101,7 @@ class ScenePass extends RenderGraphPass {
     bool includeOffscreen = false,
     bool suppressPlanarReflections = false,
     Matrix4? cameraTransform,
+    Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
   }) : _debugView = debugView,
        _captureOpaqueColor = captureOpaqueColor,
@@ -112,6 +113,7 @@ class ScenePass extends RenderGraphPass {
        _time = time,
        _camera = camera,
        _cameraTransform = cameraTransform,
+       _displayReferredCameraTransform = displayReferredCameraTransform,
        _layerMask = layerMask,
        _renderScene = renderScene,
        _dimensions = dimensions,
@@ -139,6 +141,10 @@ class ScenePass extends RenderGraphPass {
 
   final Camera _camera;
   final Matrix4? _cameraTransform;
+
+  // The unjittered transform the display-referred layer draws with under TAA;
+  // null when there is no jitter to undo.
+  final Matrix4? _displayReferredCameraTransform;
   final RenderScene _renderScene;
   // The frame's surface debug view state, or null when none is active.
   final DebugViewFrame? _debugView;
@@ -420,6 +426,7 @@ class ScenePass extends RenderGraphPass {
       _cullingPlanes,
       !_includeOffscreen,
       cameraTransform: _cameraTransform,
+      displayReferredCameraTransform: _displayReferredCameraTransform,
       debugView: _debugView,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;

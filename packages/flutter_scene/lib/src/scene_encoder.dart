@@ -529,12 +529,14 @@ base class SceneEncoder {
     this._cullingPlanes,
     this._cullInstances, {
     Matrix4? cameraTransform,
+    Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
   }) : _renderPass = renderPass,
        _transientsBuffer = transientsBuffer,
        _debugView = debugView {
     currentSceneEncoderViewport = _dimensions;
     _cameraTransform = cameraTransform ?? _camera.getViewTransform(_dimensions);
+    _displayReferredCameraTransform = displayReferredCameraTransform;
     frustum = Frustum.matrix(_cameraTransform);
     // A degenerate projection has no screen-size metric, so LOD nodes draw
     // their highest-detail level.
@@ -569,6 +571,20 @@ base class SceneEncoder {
   gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
   late final Matrix4 _cameraTransform;
+
+  // The transform the display-referred layer draws with, when it differs from
+  // the scene's. Under TAA the scene is jittered and resolved temporally, but
+  // this layer composites after that resolve, so drawing it jittered would
+  // shake it by the jitter every frame.
+  late final Matrix4? _displayReferredCameraTransform;
+
+  // Swapped in for the display-referred flush; null everywhere else. Only the
+  // draw transform changes, not culling or screen bounds, which stay on the
+  // scene's own frustum.
+  Matrix4? _drawTransformOverride;
+
+  Matrix4 get _drawCameraTransform =>
+      _drawTransformOverride ?? _cameraTransform;
   // The projection terms for screen-size LOD, or null for a degenerate
   // projection (which disables it).
   late final ProjectionParams? _lodProjection;
@@ -1084,7 +1100,7 @@ base class SceneEncoder {
           _renderPass,
           _transientsBuffer,
           shader,
-          _cameraTransform,
+          _drawCameraTransform,
           _camera.position,
           depthBias: depthBias,
         );
@@ -1096,7 +1112,7 @@ base class SceneEncoder {
         _renderPass,
         _transientsBuffer,
         worldTransform,
-        _cameraTransform,
+        _drawCameraTransform,
         _camera.position,
         shaderOverride: materialVertex,
         depthBias: depthBias,
@@ -1923,6 +1939,7 @@ base class SceneEncoder {
   void flushDisplayReferred(gpu.RenderPass pass) {
     if (_displayReferredRecords.isEmpty) return;
     _phase = DrawPhase.translucent;
+    _drawTransformOverride = _displayReferredCameraTransform;
     _displayReferredRecords.sort((a, b) => b.depth.compareTo(a.depth));
 
     _renderPass = pass;
@@ -2003,6 +2020,7 @@ base class SceneEncoder {
       }
     }
 
+    _drawTransformOverride = null;
     for (final record in _displayReferredRecords) {
       if (_translucentRecordPool.length == _recordPoolLimit) break;
       record.release();

@@ -124,9 +124,32 @@ void main() {
       expect(component.updatePolicy, WidgetUpdatePolicy.everyFrame);
       expect(component.input, WidgetInput.automatic);
       expect(component.occlusionHiding, isFalse);
+      expect(component.displayReferred, isTrue);
 
       // All defaults serialize to the slot alone (delta persistence).
       expect(_serialized(codec, component).keys, ['slot']);
+    });
+
+    test('opting out of display-referred round-trips', () {
+      registerWidgetSlot('screen', () => const SizedBox());
+      final spec = ComponentSpec(
+        'widget',
+        properties: {
+          'slot': const StringValue('screen'),
+          'displayReferred': const BoolValue(false),
+        },
+      );
+      final component =
+          codec.realize(spec, RealizeContext(SceneDocument()))
+              as WidgetComponent;
+      expect(component.displayReferred, isFalse);
+
+      final props = _serialized(codec, component);
+      expect(props.keys.toSet(), {'slot', 'displayReferred'});
+      expect(
+        propertyValuesEqual(props['displayReferred'], const BoolValue(false)),
+        isTrue,
+      );
     });
 
     test('configured values round trip, including the interval policy', () {
@@ -144,6 +167,7 @@ void main() {
           }),
           'input': const StringValue('manual'),
           'occlusionHiding': const BoolValue(true),
+          'displayReferred': const BoolValue(false),
         },
       );
       final component =
@@ -159,6 +183,7 @@ void main() {
       );
       expect(component.input, WidgetInput.manual);
       expect(component.occlusionHiding, isTrue);
+      expect(component.displayReferred, isFalse);
 
       final props = _serialized(codec, component);
       expect(props.keys.toSet(), spec.properties.keys.toSet());
