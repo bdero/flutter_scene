@@ -1008,16 +1008,21 @@ base class EnvironmentMap {
   /// Prefilters [source] into the radiance representation this backend uses:
   /// a roughness-mip cubemap where supported (no pole distortion), the legacy
   /// equirect band atlas otherwise.
+  ///
+  /// Returns as soon as the atlas exists; its roughness bands are filled in
+  /// over the next few frames, because submitting the whole prefilter as one
+  /// draw freezes the display for most of a second on an Android GLES device
+  /// (see [prefilterEquirectRadianceProgressive]).
   static gpu.Texture _buildRadiance(
     gpu.Texture source, {
     bool sourceIsLinear = false,
   }) => effectiveMipRadianceLayout
-      ? prefilterEquirectRadianceToCube(
+      ? prefilterEquirectRadianceToCubeProgressive(
           source,
           sourceIsLinear: sourceIsLinear,
           size: radianceCubeSize,
         )
-      : prefilterEquirectRadiance(
+      : prefilterEquirectRadianceProgressive(
           source,
           sourceIsLinear: sourceIsLinear,
           mipLayout: false,
