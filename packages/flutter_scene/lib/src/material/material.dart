@@ -9,6 +9,7 @@ import 'package:vector_math/vector_math.dart' show Matrix4;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/dfg_lut.dart';
+import 'package:flutter_scene/src/material/dfg_lut_data.dart';
 
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/instance_attributes.dart';
@@ -197,15 +198,51 @@ abstract class Material {
       final ltc = await rootBundle.load(
         'packages/flutter_scene/assets/ltc.bin',
       );
+      final dfg = await _loadDfgTable();
       _brdfLutTexture = buildBrdfLutTexture(
         ltcHalfData: ltc.buffer.asUint16List(
           ltc.offsetInBytes,
           ltc.lengthInBytes ~/ 2,
         ),
+        dfgHalfData: dfg,
       );
     }
     await PhysicallyBasedMaterial.initializeStaticResources();
   }
+
+  /// Reads the precomputed DFG table, or integrates it off the current isolate
+  /// when the asset is missing (an app bundling its own trimmed copy of the
+  /// package's assets).
+  ///
+  /// The integration is 4.19 M Monte-Carlo samples: a few hundred milliseconds
+  /// of solid CPU, which is why it never runs on the isolate that renders.
+  static Future<Uint16List> _loadDfgTable() async {
+    try {
+      final data = await rootBundle.load(
+        'packages/flutter_scene/assets/dfg.bin',
+      );
+      if (data.lengthInBytes == kDfgLutTileBytes) {
+        return data.buffer.asUint16List(
+          data.offsetInBytes,
+          data.lengthInBytes ~/ 2,
+        );
+      }
+      debugPrint(
+        'flutter_scene: packages/flutter_scene/assets/dfg.bin is '
+        '${data.lengthInBytes} bytes, expected $kDfgLutTileBytes; '
+        'integrating the environment BRDF instead.',
+      );
+    } catch (_) {
+      // Not bundled; fall through to the integration below.
+    }
+    return compute<Object?, Uint16List>(
+      _integrateDfgTable,
+      null,
+      debugLabel: 'flutter_scene environment BRDF integration',
+    );
+  }
+
+  static Uint16List _integrateDfgTable(Object? _) => buildDfgLutHalfData();
 
   /// The name of this material, used for identification.
   ///

@@ -79,6 +79,11 @@ flutter:
     # magnitude/Fresnel fit). See lib/src/material/dfg_lut.dart for the data's
     # provenance and license.
     - assets/ltc.bin
+    # The precomputed split-sum environment-BRDF (DFG) table, 64x64 RGBA
+    # half-float. Regenerate with `dart run tool/generate_dfg_lut.dart`;
+    # integrating it at startup instead costs a few hundred milliseconds of
+    # CPU (see lib/src/material/dfg_lut_data.dart).
+    - assets/dfg.bin
     # The SMAA precomputed area (160x560 RG8) and search (64x16 R8) textures
     # from the reference implementation. See lib/src/render/smaa_pass.dart
     # for the data's provenance and license.
