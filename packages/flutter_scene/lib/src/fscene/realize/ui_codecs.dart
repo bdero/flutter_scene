@@ -167,6 +167,12 @@ class WidgetCodec extends DeclarativeComponentCodec<WidgetComponent> {
       doc: 'Drop the subtree\'s semantics while scene geometry occludes it.',
       get: (c) => c.occlusionHiding,
     ),
+    ComponentField.boolean(
+      'displayReferred',
+      defaultValue: true,
+      doc: 'Keep the capture\'s colours by drawing past the tone curve.',
+      get: (c) => c.displayReferred,
+    ),
   ];
 
   @override
@@ -212,6 +218,7 @@ class WidgetCodec extends DeclarativeComponentCodec<WidgetComponent> {
       update: _decodeUpdatePolicy(props.value('updatePolicy')),
       input: props.enumValue('input', WidgetInput.values),
       occlusionHiding: props.boolean('occlusionHiding'),
+      displayReferred: props.boolean('displayReferred'),
     );
     _widgetSlot[component] = slot;
     return component;

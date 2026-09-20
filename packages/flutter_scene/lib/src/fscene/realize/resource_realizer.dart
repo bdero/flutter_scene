@@ -946,6 +946,7 @@ class ResourceRealizer {
       'baseColorTextureTransform',
     );
     m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
+    m.displayReferred = readBool(p, 'displayReferred', m.displayReferred);
     m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
     return m;
   }

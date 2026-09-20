@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 
 const _expectedAndroidImpellerBackend = String.fromEnvironment(
   'SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND',
@@ -605,6 +606,118 @@ void main() {
     debugPrint('SMOKE depth_pairing: msaa=$msaa none=$none');
     expect(none.$1, greaterThan(200), reason: 'no-AA frame center $none');
     expect(none.$2, lessThan(60), reason: 'no-AA frame center $none');
+  });
+
+  testWidgets('a display-referred surface keeps its colours', (tester) async {
+    // Pixel-level guard for the display-referred layer (issue #382). A
+    // scene-referred quad is transformed by whatever tone curve is set; a
+    // display-referred one must arrive byte-exact under every one of them.
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.initializeStaticResources();
+
+    final material = UnlitMaterial()
+      ..alphaMode = AlphaMode.opaque
+      ..displayReferred = true;
+    final scene = Scene()..environment = EnvironmentMap.empty();
+    scene.add(
+      Node(mesh: Mesh(CuboidGeometry(vm.Vector3(4, 4, 0.01)), material)),
+    );
+
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: kSmokeClear,
+          body: Center(
+            child: RepaintBoundary(
+              key: boundaryKey,
+              child: SizedBox(
+                width: kSmokeSize.toDouble(),
+                height: kSmokeSize.toDouble(),
+                child: SceneView(
+                  scene,
+                  camera: PerspectiveCamera(position: vm.Vector3(0, 0, 3)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Android software rendering pays for every frame, so settle in fewer,
+    // longer steps there, matching the scene loop above.
+    final isAndroid =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final frames = isAndroid ? 2 : 10;
+    Future<int> render(int value, ToneMappingMode mode) async {
+      final pixels = Uint8List(4 * 4 * 4);
+      for (var i = 0; i < pixels.length; i += 4) {
+        pixels[i] = value;
+        pixels[i + 1] = value;
+        pixels[i + 2] = value;
+        pixels[i + 3] = 255;
+      }
+      material.baseColorTexture = Texture2D.fromPixels(pixels, 4, 4);
+      scene.toneMapping = mode;
+
+      await _settleGpu();
+      var paced = false;
+      for (var i = 0; i < frames; i++) {
+        paced = await _pumpSettled(
+          tester,
+          scene,
+          const Duration(milliseconds: 50),
+        );
+      }
+      await _capturableFrame(
+        tester,
+        scene,
+        const Duration(milliseconds: 50),
+        paced,
+        null,
+      );
+
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
+      final rgba = (await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ))!;
+      final o = ((image.height ~/ 2) * image.width + image.width ~/ 2) * 4;
+      final red = rgba.getUint8(o);
+      image.dispose();
+      return red;
+    }
+
+    // Near-black is where the default operator's black-point term does its
+    // worst (27 resolves to 2 scene-referred), so it earns a row.
+    const inputs = [255, 128, 27];
+    final mismatches = <String>[];
+    for (final mode in ToneMappingMode.values) {
+      final row = <String>[];
+      for (final value in inputs) {
+        final out = await render(value, mode);
+        row.add('$value->$out');
+        if (out != value) mismatches.add('${mode.name} $value gave $out');
+      }
+      debugPrint('SMOKE display_referred ${mode.name}: ${row.join('  ')}');
+    }
+    expect(
+      mismatches,
+      isEmpty,
+      reason:
+          'a display-referred surface must reach the screen unchanged, '
+          'whatever the scene tone curve is',
+    );
   });
 
   tearDownAll(() {

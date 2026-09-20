@@ -70,7 +70,11 @@ void main() {
   float debug_mode = DebugViewMode();
   if (debug_mode > 0.5) {
     MaterialInputs material = InitMaterialInputs();
-    material.base_color = vec4(rgb, alpha);
+    // MaterialInputs is linear and the debug views encode it themselves, so a
+    // display-referred color has to come back to linear here or it would be
+    // encoded twice.
+    vec3 debug_rgb = display_referred ? SRGBToLinear(rgb) : rgb;
+    material.base_color = vec4(debug_rgb, alpha);
     material.metallic = 0.0;
     material.roughness = 1.0;
     vec4 debug = DebugSurfaceOutput(material);
