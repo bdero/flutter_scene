@@ -635,8 +635,8 @@ base class SceneEncoder {
   /// emits them. A translucent instanced item is queued as one draw per
   /// instance so each can be depth-sorted independently.
   void submit(RenderItem item) {
-    if (!item.drawsColor) return;
     activeRenderCounters.submitted++;
+    if (!item.drawsColor) return;
     if ((item.layers & _layerMask) == 0) {
       activeRenderCounters.layerMasked++;
       activeDrawRecorder?.onSkip(item, DrawSkipReason.layerMasked);

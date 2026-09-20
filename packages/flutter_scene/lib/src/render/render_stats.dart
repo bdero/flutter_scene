@@ -26,10 +26,12 @@ class RenderCounters {
   /// instance count.
   int vertices = 0;
 
-  /// Render items submitted to a scene encoder before culling.
+  /// Render items the pass considered, including hidden ones and the whole
+  /// BVH subtrees the frustum rejected.
   int submitted = 0;
 
-  /// Items rejected by the encoder's frustum or instance culling.
+  /// Items a frustum test rejected: a BVH subtree skipped whole, or the
+  /// encoder's per-instance culling.
   int culled = 0;
 
   /// Items rejected by the view's render layer mask.
