@@ -21,7 +21,9 @@ class EditorSettings {
     this.gizmosEnabled = true,
     this.giProbesVisible = false,
     Set<String>? hiddenGizmoTypes,
-  }) : hiddenGizmoTypes = Set.of(hiddenGizmoTypes ?? const {}),
+    Map<String, Object?> unknown = const {},
+  }) : unknown = Map.of(unknown),
+       hiddenGizmoTypes = Set.of(hiddenGizmoTypes ?? const {}),
        editorCommand = editorCommand ?? defaultEditorCommand,
        namedLayouts = LinkedHashMap.of(namedLayouts ?? const {}),
        recentScenes = List.of(recentScenes ?? const []),
@@ -61,6 +63,10 @@ class EditorSettings {
       }
     }
     return EditorSettings(
+      unknown: {
+        for (final entry in json.entries)
+          if (!_knownKeys.contains(entry.key)) entry.key: entry.value,
+      },
       dockLayout: _decodeLayout(json['dockLayout']),
       namedLayouts: layouts,
       recentScenes: [
@@ -178,6 +184,23 @@ class EditorSettings {
   /// default.
   final Set<String> hiddenGizmoTypes;
 
+  /// Keys this build does not read, kept so settings written by a newer
+  /// editor survive this one saving over them.
+  final Map<String, Object?> unknown;
+
+  static const Set<String> _knownKeys = {
+    'version',
+    'dockLayout',
+    'namedLayouts',
+    'recentScenes',
+    'flutterInstallations',
+    'selectedInstallationId',
+    'editorCommand',
+    'gizmos',
+    'recentProjects',
+    'projectState',
+  };
+
   static String? _decodeLayout(Object? value) {
     return value is Map ? jsonEncode(value) : null;
   }
@@ -226,6 +249,7 @@ class EditorSettings {
             if (lastScenes[key] case final scene?) 'lastScenePath': scene,
           },
       },
+    ...unknown,
   });
 
   static Map<String, Object?>? _encodeLayout(String? source) {

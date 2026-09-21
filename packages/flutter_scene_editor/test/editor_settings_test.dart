@@ -7,6 +7,13 @@ void main() {
   const layoutA = '{"type":"tabs","panels":["viewport"]}';
   const layoutB = '{"type":"tabs","panels":["inspector"]}';
 
+  test('settings keep keys this build does not read', () {
+    const source = '{"version": 1, "dev.example.tool": {"pinned": true}}';
+    final settings = EditorSettings.fromJsonString(source);
+    expect(settings.unknown['dev.example.tool'], {'pinned': true});
+    expect(settings.toJsonString(), contains('dev.example.tool'));
+  });
+
   test('settings round trip layouts and recent scenes', () {
     final settings = EditorSettings(dockLayout: layoutA);
     settings.saveNamedLayout('Modeling', layoutB);

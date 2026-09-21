@@ -152,10 +152,24 @@ class FProject {
     required List<BuildConfiguration> buildConfigurations,
     List<ProjectTask> tasks = const [],
     this.defaultScene,
+    Map<String, Object?> unknown = const {},
   }) : buildConfigurations = List.of(buildConfigurations),
-       tasks = List.of(tasks);
+       tasks = List.of(tasks),
+       unknown = Map.of(unknown);
+
+  /// Keys this build does not read, kept so a file written by a newer editor
+  /// (or by a tool of its own) is not stripped on the next save.
+  final Map<String, Object?> unknown;
 
   static const int currentVersion = 2;
+
+  static const Set<String> _knownKeys = {
+    'version',
+    'flutterProjectRoot',
+    'defaultScene',
+    'buildConfigurations',
+    'tasks',
+  };
 
   /// The absolute `.fproject` file path.
   final String path;
@@ -246,6 +260,10 @@ class FProject {
       buildConfigurations: configurations,
       tasks: tasks,
       defaultScene: json['defaultScene'] as String?,
+      unknown: {
+        for (final entry in json.entries)
+          if (!_knownKeys.contains(entry.key)) entry.key: entry.value,
+      },
     );
   }
 
@@ -267,6 +285,7 @@ class FProject {
         for (final config in buildConfigurations) config.toJson(),
       ],
       if (tasks.isNotEmpty) 'tasks': [for (final task in tasks) task.toJson()],
+      ...unknown,
     });
     final file = File(path);
     final temporary = File('$path.tmp');
