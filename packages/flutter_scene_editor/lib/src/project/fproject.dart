@@ -8,6 +8,12 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+/// The entries of [json] whose keys [known] does not cover.
+Map<String, Object?> _rest(Map<String, Object?> json, Set<String> known) => {
+  for (final entry in json.entries)
+    if (!known.contains(entry.key)) entry.key: entry.value,
+};
+
 /// Parameters for the editor-owned run session (`flutter run --machine`).
 ///
 /// Run is not a free-form command; the editor composes the invocation so it
@@ -16,7 +22,11 @@ import 'dart:io';
 /// (device, mode, target); each token is variable-substituted like command
 /// templates. Free-form automation belongs in a [ProjectTask].
 class RunParameters {
-  const RunParameters({this.target = defaultTarget, this.args = const []});
+  const RunParameters({
+    this.target = defaultTarget,
+    this.args = const [],
+    this.unknown = const {},
+  });
 
   factory RunParameters.fromJson(Map<String, Object?> json) => RunParameters(
     target: json['target'] as String? ?? defaultTarget,
@@ -25,9 +35,15 @@ class RunParameters {
         for (final arg in json['args'] as List)
           if (arg is String) arg,
     ],
+    unknown: _rest(json, _knownKeys),
   );
 
   static const String defaultTarget = 'lib/main.dart';
+
+  static const Set<String> _knownKeys = {'target', 'args'};
+
+  /// Keys this build does not read, kept verbatim through a load and save.
+  final Map<String, Object?> unknown;
 
   /// The entrypoint passed as `--target`, relative to the working directory.
   final String target;
@@ -38,10 +54,14 @@ class RunParameters {
   Map<String, Object?> toJson() => {
     if (target != defaultTarget) 'target': target,
     if (args.isNotEmpty) 'args': args,
+    ...unknown,
   };
 
-  RunParameters copyWith({String? target, List<String>? args}) =>
-      RunParameters(target: target ?? this.target, args: args ?? this.args);
+  RunParameters copyWith({String? target, List<String>? args}) => RunParameters(
+    target: target ?? this.target,
+    args: args ?? this.args,
+    unknown: unknown,
+  );
 }
 
 /// A named free-form command template, run as a raw subprocess with Console
@@ -52,24 +72,37 @@ class ProjectTask {
     required this.id,
     required this.name,
     required this.command,
+    this.unknown = const {},
   });
 
   factory ProjectTask.fromJson(Map<String, Object?> json) => ProjectTask(
     id: json['id'] as String? ?? '',
     name: json['name'] as String? ?? '',
     command: json['command'] as String? ?? '',
+    unknown: _rest(json, _knownKeys),
   );
+
+  static const Set<String> _knownKeys = {'id', 'name', 'command'};
+
+  /// Keys this build does not read, kept verbatim through a load and save.
+  final Map<String, Object?> unknown;
 
   final String id;
   final String name;
   final String command;
 
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'command': command};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'command': command,
+    ...unknown,
+  };
 
   ProjectTask copyWith({String? name, String? command}) => ProjectTask(
     id: id,
     name: name ?? this.name,
     command: command ?? this.command,
+    unknown: unknown,
   );
 }
 
@@ -86,6 +119,7 @@ class BuildConfiguration {
     required this.buildCommand,
     this.run = const RunParameters(),
     this.workingDirectory = '',
+    this.unknown = const {},
   });
 
   factory BuildConfiguration.fromJson(Map<String, Object?> json) =>
@@ -102,7 +136,24 @@ class BuildConfiguration {
               )
             : const RunParameters(),
         workingDirectory: json['workingDirectory'] as String? ?? '',
+        unknown: _rest(json, _knownKeys),
       );
+
+  // `platform` and `runCommand` are migrated-away keys, deliberately dropped
+  // rather than preserved.
+  static const Set<String> _knownKeys = {
+    'id',
+    'name',
+    'mode',
+    'buildCommand',
+    'run',
+    'workingDirectory',
+    'platform',
+    'runCommand',
+  };
+
+  /// Keys this build does not read, kept verbatim through a load and save.
+  final Map<String, Object?> unknown;
 
   final String id;
   final String name;
@@ -126,6 +177,7 @@ class BuildConfiguration {
     'buildCommand': buildCommand,
     if (run.toJson().isNotEmpty) 'run': run.toJson(),
     if (workingDirectory.isNotEmpty) 'workingDirectory': workingDirectory,
+    ...unknown,
   };
 
   BuildConfiguration copyWith({
@@ -141,6 +193,7 @@ class BuildConfiguration {
     buildCommand: buildCommand ?? this.buildCommand,
     run: run ?? this.run,
     workingDirectory: workingDirectory ?? this.workingDirectory,
+    unknown: unknown,
   );
 }
 
@@ -260,10 +313,7 @@ class FProject {
       buildConfigurations: configurations,
       tasks: tasks,
       defaultScene: json['defaultScene'] as String?,
-      unknown: {
-        for (final entry in json.entries)
-          if (!_knownKeys.contains(entry.key)) entry.key: entry.value,
-      },
+      unknown: _rest(json, _knownKeys),
     );
   }
 

@@ -29,6 +29,52 @@ dependencies:
     expect(File(path).readAsStringSync(), contains('dev.example.tool'));
   });
 
+  test('a configuration, its run, and a task keep their unknown keys', () {
+    final path = '${root.path}/game.fproject';
+    File(path).writeAsStringSync(
+      '{"version": 2, "flutterProjectRoot": ".", '
+      '"buildConfigurations": [{"id": "debug", "name": "Debug", '
+      '"mode": "debug", "buildCommand": "build", '
+      '"run": {"target": "lib/main.dart", "dev.example.profiler": true}, '
+      '"dev.example.tag": "nightly"}], '
+      '"tasks": [{"id": "gen", "name": "Generate", "command": "dart run", '
+      '"dev.example.watch": ["lib"]}]}',
+    );
+
+    final project = FProject.load(path);
+    final config = project.buildConfigurations.single;
+    expect(config.unknown['dev.example.tag'], 'nightly');
+    expect(config.run.unknown['dev.example.profiler'], isTrue);
+    expect(project.tasks.single.unknown['dev.example.watch'], ['lib']);
+
+    project.save();
+    final reloaded = FProject.load(path);
+    expect(
+      reloaded.buildConfigurations.single.unknown['dev.example.tag'],
+      'nightly',
+    );
+    expect(
+      reloaded.buildConfigurations.single.run.unknown['dev.example.profiler'],
+      isTrue,
+    );
+    expect(reloaded.tasks.single.unknown['dev.example.watch'], ['lib']);
+  });
+
+  test('a migrated v1 run command is dropped, not preserved', () {
+    final path = '${root.path}/game.fproject';
+    File(path).writeAsStringSync(
+      '{"version": 1, "flutterProjectRoot": ".", '
+      '"buildConfigurations": [{"id": "debug", "name": "Debug", '
+      '"mode": "debug", "buildCommand": "build", '
+      r'"runCommand": "${FLUTTER_CLI} run -d ${DEVICE}"}]}',
+    );
+
+    final project = FProject.load(path);
+    expect(project.buildConfigurations.single.unknown, isEmpty);
+    project.save();
+    expect(File(path).readAsStringSync(), isNot(contains('runCommand')));
+  });
+
   test('createDefault writes an fproject with mode defaults, round trips', () {
     final project = FProject.createDefault(root.path);
     expect(File(project.path).existsSync(), isTrue);

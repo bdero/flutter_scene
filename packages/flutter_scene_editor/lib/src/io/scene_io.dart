@@ -341,6 +341,32 @@ Future<EditorController> importModel(
   );
 }
 
+/// Rebuilds [fresh] carrying whatever unknown keys [loaded] arrived with. A
+/// save replaces the editor state wholesale from the live camera and
+/// selection, which would otherwise drop them.
+EditorStateSpec keepEditorStateUnknown(
+  EditorStateSpec fresh,
+  EditorStateSpec? loaded,
+) {
+  if (loaded == null) return fresh;
+  final camera = fresh.camera;
+  final loadedCamera = loaded.camera;
+  return EditorStateSpec(
+    camera: camera == null || loadedCamera == null
+        ? camera
+        : EditorCameraSpec(
+            azimuth: camera.azimuth,
+            elevation: camera.elevation,
+            radius: camera.radius,
+            target: camera.target,
+            orthographic: camera.orthographic,
+            unknown: {...loadedCamera.unknown, ...camera.unknown},
+          ),
+    selection: fresh.selection,
+    unknown: {...loaded.unknown, ...fresh.unknown},
+  );
+}
+
 /// Writes [controller]'s document to a `.fscene` file at [path].
 ///
 /// Throws an [IOException] on write failure.
@@ -352,7 +378,12 @@ Future<void> saveFscene(EditorController controller, String path) async {
   _rewriteFmatRefsForSave(controller, File(path).absolute.parent.path);
   // Carry the current editor state (camera pose, selection) in the document.
   final editorState = controller.editorStateProvider?.call();
-  if (editorState != null) controller.document.editor = editorState;
+  if (editorState != null) {
+    controller.document.editor = keepEditorStateUnknown(
+      editorState,
+      controller.document.editor,
+    );
+  }
   // Payload bytes live in the sidecar, not the lean text, so a session that
   // touched the payload pool (a mesh split, an embedded import) must rewrite
   // it or those bytes are lost on reopen. Name the sidecar before writing
