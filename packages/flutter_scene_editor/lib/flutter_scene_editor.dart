@@ -15,6 +15,7 @@ export 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
         ViewportScreenshot;
 
 export 'src/controller/editor_controller.dart' show EditorController;
+export 'src/shell/editor_ui_handle.dart' show EditorUiHandle;
 export 'src/io/glb_import_options.dart'
     show GlbImportOptions, ImportUpAxis, showGlbImportOptions;
 export 'src/io/scene_io.dart'

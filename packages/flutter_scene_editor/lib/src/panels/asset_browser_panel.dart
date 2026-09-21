@@ -599,7 +599,7 @@ class _AssetBrowserPanelState extends State<AssetBrowserPanel> {
         'prefabAsset': source,
         'name': name,
       });
-      _ctrl.selection.selectOnly(tx.records.first.targetId);
+      _ctrl.selectAfterEdit([tx.records.first.targetId]);
     } catch (e) {
       if (_ctrl.history.canUndo) await _ctrl.undo();
       if (mounted) {

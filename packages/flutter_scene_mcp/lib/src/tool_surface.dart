@@ -1759,6 +1759,17 @@ class EditorToolSurface {
       );
     }
     try {
+      final entry = session.registry.lookup(command);
+      if (entry != null && entry.kind == CommandKind.application) {
+        // Asynchronous, and outside the document, so it reports what it did
+        // rather than a transaction.
+        await session.invoke(command, params);
+        return {
+          'ok': true,
+          'applied': command,
+          'canUndo': session.history.canUndo,
+        };
+      }
       final transaction = commandRunner != null
           ? await commandRunner!(command, params)
           : session.run(command, params);
