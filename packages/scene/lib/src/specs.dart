@@ -56,8 +56,11 @@ class TrsTransform extends TransformSpec {
 /// {@category Documents}
 class ComponentSpec {
   /// Creates a component of the given [type] with optional [properties].
-  ComponentSpec(this.type, {Map<String, PropertyValue>? properties})
-    : properties = properties ?? {};
+  ComponentSpec(
+    this.type, {
+    Map<String, PropertyValue>? properties,
+    this.unknown = const {},
+  }) : properties = properties ?? {};
 
   /// The registered component type name (for example `mesh`,
   /// `directionalLight`, `camera`).
@@ -65,6 +68,11 @@ class ComponentSpec {
 
   /// The component's typed fields, keyed by field name.
   final Map<String, PropertyValue> properties;
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 }
 
 /// Whether a prefab instance's content loads eagerly with the scene or is
@@ -228,12 +236,18 @@ class NodeSpec {
     this.instance,
     this.visible = true,
     this.shadowCastingMode = 'on',
+    this.unknown = const {},
   }) : transform = transform ?? TrsTransform(),
        children = children ?? [],
        components = components ?? [];
 
   /// This node's stable, document-scoped id.
   final LocalId id;
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// A non-identifying label (used for animation binding and name lookup).
   String name;
@@ -282,10 +296,15 @@ class BoundsSpec {
 /// A shared, id-keyed resource referenced by nodes (and other resources).
 /// {@category Documents}
 sealed class ResourceSpec {
-  ResourceSpec(this.id);
+  ResourceSpec(this.id, {this.unknown = const {}});
 
   /// This resource's stable, document-scoped id.
   final LocalId id;
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 }
 
 /// A procedural geometry the runtime builds from parameters (rather than from
@@ -402,6 +421,7 @@ class GeometryResource extends ResourceSpec {
     this.topology = 'triangle',
     this.morphTargets,
     this.legacyWinding = false,
+    super.unknown,
   }) : assert(
          (vertices == null) != (procedural == null),
          'A geometry has exactly one source: a vertex payload or a procedural '
@@ -483,8 +503,13 @@ class MorphTargetsSpec {
 /// {@category Documents}
 class TextureResource extends ResourceSpec {
   /// Creates a texture from an embedded [payload] or an external [asset].
-  TextureResource(super.id, {this.payload, this.asset, this.content = 'color'})
-    : assert(
+  TextureResource(
+    super.id, {
+    this.payload,
+    this.asset,
+    this.content = 'color',
+    super.unknown,
+  }) : assert(
         (payload == null) != (asset == null),
         'A texture has exactly one source: a payload or an asset',
       );
@@ -514,6 +539,7 @@ class RenderTextureResource extends ResourceSpec {
     this.intervalMilliseconds,
     this.filter = 'linear',
     this.wrap = 'clampToEdge',
+    super.unknown,
   });
 
   /// Target width in physical pixels.
@@ -548,6 +574,7 @@ class MaterialResource extends ResourceSpec {
     this.name = '',
     Map<String, PropertyValue>? properties,
     this.asset,
+    super.unknown,
   }) : properties = properties ?? {};
 
   /// The material kind (`physicallyBased`, `unlit`, `fmat`, ...).
@@ -603,6 +630,7 @@ class EnvironmentResource extends ResourceSpec {
     this.skyEnvironment,
     EnvironmentEffectsSpec? effects,
     this.overridesEffects = true,
+    super.unknown,
   }) : effects = effects ?? EnvironmentEffectsSpec();
 
   /// A human-readable label shown in the editor (not load-bearing).
@@ -1095,7 +1123,13 @@ class SkinSpec {
     List<LocalId>? joints,
     required this.inverseBindMatrices,
     this.skeleton,
+    this.unknown = const {},
   }) : joints = joints ?? [];
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// This skin's stable id.
   final LocalId id;
@@ -1142,7 +1176,13 @@ class AnimationChannelSpec {
     required this.property,
     required this.timeline,
     required this.keyframes,
+    this.unknown = const {},
   });
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// The node this channel animates (primary, id-based binding).
   final LocalId target;
@@ -1164,8 +1204,17 @@ class AnimationChannelSpec {
 /// {@category Documents}
 class AnimationSpec {
   /// Creates an animation with the given stable [id].
-  AnimationSpec(this.id, {this.name = '', List<AnimationChannelSpec>? channels})
-    : channels = channels ?? [];
+  AnimationSpec(
+    this.id, {
+    this.name = '',
+    List<AnimationChannelSpec>? channels,
+    this.unknown = const {},
+  }) : channels = channels ?? [];
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// This animation's stable id.
   final LocalId id;
@@ -1216,7 +1265,13 @@ class PayloadSpec {
     this.height,
     this.length,
     this.bytes,
+    this.unknown = const {},
   });
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// This payload's stable id.
   final LocalId id;
@@ -1605,7 +1660,13 @@ class RenderViewSpec {
     this.antiAliasingMode,
     this.renderScale,
     this.filterQuality,
+    this.unknown = const {},
   });
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// The node whose `CameraComponent` provides this view's camera.
   final LocalId cameraNode;
@@ -1646,7 +1707,13 @@ class StageMetadata {
     this.antiAliasingMode = 'auto',
     this.renderScale = 1.0,
     this.filterQuality = 'medium',
+    this.unknown = const {},
   });
+
+  /// Keys this build of the engine does not recognize, kept verbatim so a
+  /// document written by a newer engine or an extension survives a load and
+  /// save unchanged.
+  final Map<String, Object?> unknown;
 
   /// The anti-aliasing mode name (`none`, `msaa`, `fxaa`, `auto`), the
   /// scene-wide default views inherit.

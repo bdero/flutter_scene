@@ -85,6 +85,11 @@ class FscenebFormatException implements Exception {
 Uint8List writeFsceneb(SceneDocument document) {
   final body = BytesBuilder();
 
+  var chunkIndex = 0;
+  final unknown = [...document.unknownChunks]
+    ..sort((a, b) => a.index.compareTo(b.index));
+  var nextUnknown = 0;
+
   void addChunk(String type, Uint8List data) {
     final preamble = ByteData(8)..setUint32(0, data.length, Endian.little);
     final typeBytes = ascii.encode(type);
@@ -95,9 +100,20 @@ Uint8List writeFsceneb(SceneDocument document) {
     body.add(data);
     final remainder = data.length % _alignment;
     if (remainder != 0) body.add(Uint8List(_alignment - remainder));
+    chunkIndex++;
+  }
+
+  // Puts back every preserved chunk that sat at or before the next index.
+  void drainUnknown() {
+    while (nextUnknown < unknown.length &&
+        unknown[nextUnknown].index <= chunkIndex) {
+      final chunk = unknown[nextUnknown++];
+      addChunk(chunk.type, chunk.data);
+    }
   }
 
   addChunk(_chunkJson, utf8.encode(writeFscene(document)));
+  drainUnknown();
 
   // Emit payloads in a deterministic (id-sorted) order, matching the JSON
   // manifest's enumeration so two writes of the same document are identical.
@@ -126,10 +142,18 @@ Uint8List writeFsceneb(SceneDocument document) {
       }
       if (compressed.length < blob.length) {
         addChunk(_chunkGzipBlob, compressed);
+        drainUnknown();
         continue;
       }
     }
     addChunk(_chunkBlob, blob);
+    drainUnknown();
+  }
+
+  // Anything recorded past the last chunk written above lands at the end.
+  while (nextUnknown < unknown.length) {
+    final chunk = unknown[nextUnknown++];
+    addChunk(chunk.type, chunk.data);
   }
 
   final bodyBytes = body.toBytes();
@@ -178,6 +202,8 @@ SceneDocument readFsceneb(Uint8List bytes) {
 
   String? manifest;
   final blobs = <LocalId, Uint8List>{};
+  final unknownChunks = <UnknownChunk>[];
+  var chunkIndex = 0;
   var offset = _headerByteLength;
   while (offset + 8 <= total) {
     final dataLength = view.getUint32(offset, Endian.little);
@@ -205,8 +231,17 @@ SceneDocument readFsceneb(Uint8List bytes) {
           throw FscenebFormatException('Invalid gzip payload chunk ($error)');
         }
       default:
-        break; // Skip unrecognized chunk types.
+        // Kept verbatim so a rewrite carries a chunk kind this build does not
+        // know through instead of dropping it.
+        unknownChunks.add(
+          UnknownChunk(
+            index: chunkIndex,
+            type: type,
+            data: Uint8List.fromList(data),
+          ),
+        );
     }
+    chunkIndex++;
     final padded = dataLength + ((-dataLength) & (_alignment - 1));
     offset = dataStart + padded;
   }
@@ -218,6 +253,7 @@ SceneDocument readFsceneb(Uint8List bytes) {
   blobs.forEach((id, payload) {
     document.payload(id)?.bytes = payload;
   });
+  document.unknownChunks.addAll(unknownChunks);
   return document;
 }
 

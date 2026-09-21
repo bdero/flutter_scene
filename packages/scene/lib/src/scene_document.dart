@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:scene/src/id.dart';
 import 'package:scene/src/specs.dart';
 
@@ -5,6 +7,24 @@ import 'package:scene/src/specs.dart';
 /// are refused; older ones migrate on read.
 /// {@category Serialization}
 const int currentFsceneVersion = 5;
+
+/// One `.fsceneb` container chunk this build does not recognize, preserved
+/// verbatim so a rewrite carries it through.
+/// {@category Serialization}
+class UnknownChunk {
+  /// Records the chunk of [type] holding [data], found at [index].
+  UnknownChunk({required this.index, required this.type, required this.data});
+
+  /// Where the chunk sat among the container's chunks, so a rewrite can put
+  /// it back where it was.
+  final int index;
+
+  /// The four-character chunk type.
+  final String type;
+
+  /// The chunk's bytes.
+  final Uint8List data;
+}
 
 /// The in-memory `.fscene` document: a GPU-free, encoding-independent
 /// description of a scene that the encoders serialize and the realizer turns
@@ -78,6 +98,15 @@ class SceneDocument {
   /// on save and restored on open; null for documents that never carried it.
   /// The runtime ignores it.
   EditorStateSpec? editor;
+
+  /// Top-level keys this build does not recognize, kept verbatim through a
+  /// load and save so a newer document, or one an extension wrote, loses
+  /// nothing.
+  final Map<String, Object?> unknown = {};
+
+  /// Binary container chunks this build does not recognize, kept in read
+  /// order so a `.fsceneb` rewrite carries them through.
+  final List<UnknownChunk> unknownChunks = [];
 
   /// Serialized render views, in order. Each binds a camera node to a
   /// target (a [RenderTextureResource] id, or null for the screen).
