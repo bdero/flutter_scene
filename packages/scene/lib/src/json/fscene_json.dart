@@ -911,6 +911,13 @@ Map<String, dynamic> _encodePayload(PayloadSpec p) => {
 
 /// The entries of [json] this build does not recognize.
 ///
+/// TODO(preservation): entity objects are covered (the document, nodes,
+/// components, resources, skins, animations and their channels, payloads,
+/// the stage, and render views). Nested value objects are not yet, so an
+/// unknown key inside a transform, bounds, procedural shape, sky source,
+/// environment effects group, or a prefab instance's overrides is still
+/// dropped.
+///
 /// Decoders pass the keys they read; whatever is left is kept on the spec and
 /// written back out unchanged, so a document from a newer engine or from an
 /// extension survives a load and save. Preserved keys are re-emitted after
