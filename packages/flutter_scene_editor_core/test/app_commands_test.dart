@@ -130,17 +130,24 @@ void main() {
     );
   });
 
-  test('tool and panel commands are view commands', () async {
+  test('tool and panel commands leave the document clean', () async {
     final session = EditorSession.empty();
     final host = _Host();
     session.host = host;
+
+    expect(session.registry.lookup('setToolMode')!.kind, CommandKind.ui);
+    expect(session.registry.lookup('showPanel')!.kind, CommandKind.ui);
 
     await session.invoke('setToolMode', {'mode': 'rotate'});
     await session.invoke('focusPanel', {'panel': 'inspector'});
     expect(host.calls, ['setToolMode rotate', 'focusPanel inspector']);
     expect(host.toolMode, 'rotate');
     expect(session.history.transactions, isEmpty);
-    expect(session.isDirty, isTrue, reason: 'view state saves with the file');
+    expect(
+      session.isDirty,
+      isFalse,
+      reason: 'the tool and the panels are not part of the document',
+    );
 
     expect(
       () => session.run('setToolMode', {'mode': 'nope'}),

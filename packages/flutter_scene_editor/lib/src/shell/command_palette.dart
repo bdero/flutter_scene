@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:forui/forui.dart';
@@ -52,6 +54,16 @@ class _CommandPaletteOverlayState extends State<CommandPaletteOverlay> {
     super.dispose();
   }
 
+  /// Dismisses, then runs, since an application command (opening a file, a
+  /// build) outlives the palette. The controller records a failure and the
+  /// shell shows it, so there is nothing left to report here.
+  void _invoke(String name, Map<String, Object?> params) {
+    widget.onDismiss();
+    unawaited(
+      widget.controller.invoke(name, params).catchError((Object _) => null),
+    );
+  }
+
   void _run(CommandEntry entry) {
     final descriptors = uiDescriptors(entry);
     // Compute which params need user input (excluding nodeId when there is a
@@ -74,19 +86,7 @@ class _CommandPaletteOverlayState extends State<CommandPaletteOverlay> {
           if (d.field == 'nodeId') params['nodeId'] = primary.toToken();
         }
       }
-      try {
-        widget.controller.run(entry.name, params);
-      } on CommandException catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.message),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      }
-      widget.onDismiss();
+      _invoke(entry.name, params);
     } else {
       setState(() => _selected = entry);
     }
@@ -112,21 +112,7 @@ class _CommandPaletteOverlayState extends State<CommandPaletteOverlay> {
                         entry: _selected!,
                         controller: widget.controller,
                         onCancel: () => setState(() => _selected = null),
-                        onRun: (params) {
-                          try {
-                            widget.controller.run(_selected!.name, params);
-                          } on CommandException catch (e) {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(e.message),
-                                  duration: const Duration(seconds: 3),
-                                ),
-                              );
-                            }
-                          }
-                          widget.onDismiss();
-                        },
+                        onRun: (params) => _invoke(_selected!.name, params),
                       )
                     : _CommandList(
                         search: _search,

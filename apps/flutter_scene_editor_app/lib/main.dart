@@ -204,7 +204,7 @@ class _EditorHomeState extends State<_EditorHome> {
     };
     final restoredCamera = controller.restoredEditorState?.camera;
     if (restoredCamera != null) {
-      _cameraHandle.setPose(
+      _cameraHandle.restorePose(
         azimuth: restoredCamera.azimuth,
         elevation: restoredCamera.elevation,
         radius: restoredCamera.radius,

@@ -66,12 +66,14 @@ class EditHistory {
   /// clutter the undo stack.
   void commit(Transaction transaction) {
     transaction.selectionBefore ??= _snapshot();
+    transaction.apply(_mutator);
+    transaction.selectionAfter = _snapshot();
+    // Judged before the redo tail goes, so a no-op after an undo cannot
+    // destroy what redo would have re-applied.
+    if (transaction.isEmpty) return;
     if (_cursor < _transactions.length) {
       _transactions.removeRange(_cursor, _transactions.length);
     }
-    transaction.apply(_mutator);
-    transaction.selectionAfter = _snapshot();
-    if (transaction.isEmpty) return;
     _transactions.add(transaction);
     _cursor++;
     _trim();

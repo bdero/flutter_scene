@@ -128,6 +128,20 @@ void main() {
       });
       expect(s.history.transactions, hasLength(1));
     });
+
+    test('reselecting after an undo keeps redo', () {
+      final s = EditorSession.empty();
+      final a = _node(s, 'a');
+      s.run('setNodeName', {'nodeId': a.toToken(), 'name': 'renamed'});
+      s.undo();
+
+      s.run('selectNodes', {
+        'nodeIds': [...s.selection.ids.map((id) => id.toToken())],
+      });
+      expect(s.history.canRedo, isTrue);
+      expect(s.redo(), isTrue);
+      expect(s.document.node(a)!.name, 'renamed');
+    });
   });
 
   group('viewport', () {

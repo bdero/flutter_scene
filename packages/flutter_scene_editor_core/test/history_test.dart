@@ -66,6 +66,16 @@ void main() {
     expect(history.transactions, isEmpty);
   });
 
+  test('an empty transaction after an undo keeps the redo tail', () {
+    history.commit(_rename(node, 'A', 'B'));
+    history.undo();
+
+    history.commit(Transaction(name: 'noop', records: const []));
+    expect(history.canRedo, isTrue);
+    expect(history.redo(), isTrue);
+    expect(doc.node(node.id)!.name, 'B');
+  });
+
   test('notifies listeners on commit and undo', () {
     var count = 0;
     history.addListener(() => count++);

@@ -126,9 +126,6 @@ class CommandContext {
 
 /// What a command touches, which decides how a host runs it and whether it
 /// reaches the undo history.
-///
-/// TODO(command-kinds): application commands (open, save, run, hot reload)
-/// need an asynchronous body before they can join the registry.
 enum CommandKind {
   /// Edits the document. Returns the transaction the host commits.
   document,
@@ -141,6 +138,11 @@ enum CommandKind {
   /// Moves the viewport. Never a history step, though it does mark the
   /// document dirty, since the camera is saved with it.
   view,
+
+  /// Changes the editor around the document (the active tool, panels, debug
+  /// visualizations). Never a history step, and never saved, so it leaves a
+  /// clean document clean.
+  ui,
 
   /// Drives the application around the document: opening and saving, the
   /// project, the running app, the editor's own panels. Asynchronous, and
