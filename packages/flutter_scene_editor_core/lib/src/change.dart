@@ -207,14 +207,35 @@ class Transaction {
   Transaction({required this.name, required List<ChangeRecord> records})
     : records = List.unmodifiable(records);
 
+  /// What was selected before this transaction, filled in when it is
+  /// committed so undo restores what the user was looking at.
+  List<LocalId>? selectionBefore;
+
+  /// What was selected after it, restored by redo.
+  List<LocalId>? selectionAfter;
+
+  /// Whether this changed the selection, which makes it worth keeping even
+  /// with no records (a plain selection step).
+  bool get changesSelection {
+    final before = selectionBefore;
+    final after = selectionAfter;
+    if (before == null || after == null) return false;
+    if (before.length != after.length) return true;
+    for (var i = 0; i < before.length; i++) {
+      if (before[i] != after[i]) return true;
+    }
+    return false;
+  }
+
   /// A human-readable label (shown in the undo-history UI).
   final String name;
 
   /// The records, in application order.
   final List<ChangeRecord> records;
 
-  /// Whether this transaction makes no change (an empty record list).
-  bool get isEmpty => records.isEmpty;
+  /// Whether this transaction makes no change (no records and no selection
+  /// change).
+  bool get isEmpty => records.isEmpty && !changesSelection;
 
   /// Applies the records forward, advancing [mutator]'s document to the
   /// post-change state.

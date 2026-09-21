@@ -86,10 +86,15 @@ void main() {
     expect(s.selection.contains(id), isFalse);
     expect(s.selection.isEmpty, isTrue);
 
-    // Undo brings the node back; selection stays pruned (selection is not
-    // undoable), which is the documented behavior.
+    // Undo brings the node back and restores the selection the delete was
+    // made from, so the node is selected again.
     s.undo();
     expect(s.query.node(id), isNotNull);
+    expect(s.selection.contains(id), isTrue);
+
+    // Redo deletes it again, and the selection follows.
+    s.redo();
+    expect(s.query.node(id), isNull);
     expect(s.selection.contains(id), isFalse);
   });
 }

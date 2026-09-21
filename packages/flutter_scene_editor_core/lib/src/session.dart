@@ -29,9 +29,11 @@ class EditorSession {
       _mutator = DocumentMutator(document),
       query = SceneQuery(document),
       selection = Selection() {
-    history = EditHistory(_mutator);
+    history = EditHistory(_mutator, selection: selection);
     // Keep the selection valid as nodes come and go across edits and undo.
     history.addListener(_pruneSelection);
+    // Undo and redo move the document away from what was saved, too.
+    history.addListener(markDirty);
   }
 
   static CommandRegistry _defaultRegistry() {
@@ -68,6 +70,44 @@ class EditorSession {
   /// Null leaves every view command inapplicable.
   ViewHost? viewHost;
 
+  /// Whether anything has changed since the document was last saved.
+  ///
+  /// Selection and the viewport camera both save with the document, so both
+  /// mark it dirty even though the camera is never an undo step.
+  bool get isDirty => _dirty;
+  bool _dirty = false;
+
+  /// Marks the document changed. The host calls this for state that does not
+  /// go through a command, such as an orbit drag.
+  void markDirty() {
+    if (_dirty) return;
+    _dirty = true;
+    _notifyDirty();
+  }
+
+  /// Marks the document saved.
+  void markSaved() {
+    if (!_dirty) return;
+    _dirty = false;
+    _notifyDirty();
+  }
+
+  final List<void Function()> _dirtyListeners = [];
+
+  /// Registers [listener], called when [isDirty] changes.
+  void addDirtyListener(void Function() listener) =>
+      _dirtyListeners.add(listener);
+
+  /// Removes a previously registered [listener].
+  void removeDirtyListener(void Function() listener) =>
+      _dirtyListeners.remove(listener);
+
+  void _notifyDirty() {
+    for (final listener in List.of(_dirtyListeners)) {
+      listener();
+    }
+  }
+
   /// The undo/redo history.
   late final EditHistory history;
 
@@ -90,8 +130,13 @@ class EditorSession {
     if (!entry.applicable(context, params)) {
       throw CommandException('$name cannot run right now');
     }
+    // Captured before the command runs, since a selection command changes the
+    // selection as it executes.
+    final before = selection.ids.toList();
     final transaction = entry.execute(context, params);
+    transaction.selectionBefore = before;
     history.commit(transaction);
+    if (!transaction.isEmpty || entry.kind == CommandKind.view) markDirty();
     return transaction;
   }
 
