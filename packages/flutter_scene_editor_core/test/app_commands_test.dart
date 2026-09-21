@@ -116,6 +116,20 @@ void main() {
     );
   });
 
+  test('a host failure reads as a command error', () async {
+    final session = EditorSession.empty()..host = _FailingHost();
+    await expectLater(
+      session.invoke('saveDocument'),
+      throwsA(
+        isA<CommandException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('saveDocument failed'), contains('never been saved')),
+        ),
+      ),
+    );
+  });
+
   test('tool and panel commands are view commands', () async {
     final session = EditorSession.empty();
     final host = _Host();
@@ -139,4 +153,10 @@ void main() {
       ),
     );
   });
+}
+
+class _FailingHost extends _Host {
+  @override
+  Future<void> saveDocument({String? path}) async =>
+      throw const FormatException('The document has never been saved');
 }
