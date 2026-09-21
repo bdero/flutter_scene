@@ -165,6 +165,7 @@ class RadiancePrefilterFill {
   final Completer<void> _done = Completer<void>();
   final FramePacer _pacer = FramePacer();
   bool _cancelled = false;
+  bool _counted = false;
 
   /// Completes once every pass has been submitted, or immediately on
   /// [cancel]. Never completes with an error.
@@ -180,6 +181,14 @@ class RadiancePrefilterFill {
   /// re-bake), so the abandoned texture stops consuming GPU time.
   void cancel() {
     _cancelled = true;
+    _settle();
+  }
+
+  void _settle() {
+    if (_counted) {
+      _counted = false;
+      _pendingRadianceFills--;
+    }
     if (!_done.isCompleted) {
       _done.complete();
     }
@@ -193,11 +202,24 @@ class RadiancePrefilterFill {
   /// unencoded.
   Future<void> _finishAfterRaster() async {
     await awaitRasterThread();
-    if (!_done.isCompleted) {
-      _done.complete();
-    }
+    _settle();
+  }
+
+  void _track() {
+    _counted = true;
+    _pendingRadianceFills++;
   }
 }
+
+int _pendingRadianceFills = 0;
+
+/// Whether any environment is still filling its radiance over frames.
+///
+/// A progressive fill needs a few frames of pacing to converge, so a caller
+/// that has to photograph the finished environment (a golden capture, a still
+/// for export) pumps frames until this goes false rather than forcing the
+/// prefilter into one submission, which is the stall the pacing avoids.
+bool get radiancePrefilterPending => _pendingRadianceFills > 0;
 
 /// Prefilters [sourceEquirect] for image-based specular lighting like
 /// [prefilterEquirectRadiance], but returns as soon as the atlas exists and
@@ -230,7 +252,7 @@ RadiancePrefilterFill prefilterEquirectRadianceProgressive(
 }) {
   final fill = RadiancePrefilterFill._(
     createPrefilterAtlasTexture(mipLayout: mipLayout),
-  );
+  ).._track();
   // Seed every band with the mirror before returning. At roughness 0 the GGX
   // lobe is a delta, so a band costs one fetch instead of kPrefilterSamples,
   // and the whole seed is roughly 1/kPrefilterSamples of one real band. A
@@ -314,7 +336,8 @@ RadiancePrefilterFill prefilterEquirectRadianceToCubeProgressive(
   bool sourceIsLinear = false,
   int size = kRadianceCubeSize,
 }) {
-  final fill = RadiancePrefilterFill._(createRadianceCubeTexture(size: size));
+  final fill = RadiancePrefilterFill._(createRadianceCubeTexture(size: size))
+    .._track();
   // Seed every face of every band with the mirror before returning, for the
   // reason prefilterEquirectRadianceProgressive does. A cube is sampled in
   // every direction at once, so seeding one face would leave five directions

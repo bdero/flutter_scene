@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/render/env_prefilter.dart'
+    show radiancePrefilterPending;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
 import 'package:flutter_test/flutter_test.dart';
@@ -29,15 +32,6 @@ const _onlyScene = String.fromEnvironment('SMOKE_ONLY');
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final captures = <String, String>{};
-
-  // Capture the converged environment. A scene normally refines its radiance
-  // a roughness band per frame so one oversized prefilter cannot stall the
-  // display, which means an environment is an approximation for its first few
-  // frames. These captures settle a single frame on Android (the emulator
-  // watchdog terminates sustained software rendering), so without this they
-  // would photograph the approximation on Android and the converged image
-  // everywhere else, and compare the two against one baseline.
-  EnvironmentMap.synchronousRadiancePrefilter = true;
 
   if (_expectedAndroidImpellerBackend.isNotEmpty) {
     testWidgets('Android requests the expected Impeller backend', (_) async {
@@ -115,6 +109,7 @@ void main() {
           markNeedsPaint: i > 0 ? boundary.markNeedsPaint : null,
         );
       }
+      await _drainRadianceFills(tester, scene, settleStep, boundary);
       await _capturableFrame(tester, scene, settleStep, paced, boundary);
 
       final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
@@ -849,6 +844,38 @@ Future<bool> _pumpSettled(
 /// Vulkan host signals some fences only when the next frame presents, so a
 /// pump right after such a frame is paced no matter how long the wait; pump
 /// again until one renders, bounded.
+/// Pumps until no environment is still filling its radiance.
+///
+/// A scene refines its radiance a roughness band per frame so one oversized
+/// prefilter cannot stall the display, which leaves an environment an
+/// approximation for its first few frames. These captures settle a single
+/// frame on Android (the emulator watchdog terminates sustained software
+/// rendering), so without this they would photograph the approximation there
+/// and the converged image everywhere else, then compare the two against one
+/// baseline.
+///
+/// Pumping is what the fill paces against, so this drives it rather than
+/// waiting on it. Forcing the prefilter into one submission instead puts back
+/// exactly the stall the pacing exists to avoid, which on the software Vulkan
+/// emulator is enough to time the device out.
+Future<void> _drainRadianceFills(
+  WidgetTester tester,
+  Scene scene,
+  Duration settleStep,
+  RenderRepaintBoundary boundary,
+) async {
+  // One pump per band, plus slack for an environment built during the drain.
+  const maxPumps = kPrefilterBandCount * 2;
+  for (var i = 0; i < maxPumps && radiancePrefilterPending; i++) {
+    await _pumpSettled(
+      tester,
+      scene,
+      settleStep,
+      markNeedsPaint: boundary.markNeedsPaint,
+    );
+  }
+}
+
 Future<void> _capturableFrame(
   WidgetTester tester,
   Scene scene,
