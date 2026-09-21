@@ -131,7 +131,8 @@ const float kPrefilterBandEdgeClamp = 1.0 / kPrefilterBandHeight;
 #define RadianceSampler sampler2D
 #endif
 
-#ifndef FLUTTER_SCENE_RADIANCE_CUBE
+#if !defined(FLUTTER_SCENE_RADIANCE_CUBE) && \
+    !defined(FLUTTER_SCENE_NO_ENGINE_RADIANCE)
 // Tells the two 2D layouts apart. The cube variant's bands are always mip
 // levels, so it declares neither this block nor the 2D samplers below.
 // Leaving them declared keeps a block whose liveness backends disagree on,
@@ -174,8 +175,9 @@ vec3 SamplePrefilteredRadiance(sampler2D atlas, vec3 direction,
              texture(atlas, vec2(eq.x, v1)).rgb, t);
 }
 
-#endif  // FLUTTER_SCENE_RADIANCE_CUBE
+#endif  // !FLUTTER_SCENE_RADIANCE_CUBE && !FLUTTER_SCENE_NO_ENGINE_RADIANCE
 
+#ifndef FLUTTER_SCENE_NO_ENGINE_RADIANCE
 // Samples a roughness-mip prefiltered radiance cubemap (mip i = band i) for
 // reflection `direction`. The cube has no pole distortion and seamless edges.
 vec3 SamplePrefilteredRadianceCube(samplerCube radiance, vec3 direction,
@@ -196,3 +198,4 @@ vec3 SampleRadianceEnv(RadianceSampler radiance, vec3 direction,
   return SamplePrefilteredRadiance(radiance, direction, roughness);
 #endif
 }
+#endif  // FLUTTER_SCENE_NO_ENGINE_RADIANCE
