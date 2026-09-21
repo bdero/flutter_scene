@@ -82,6 +82,14 @@ class EditHistory {
 
   List<LocalId>? _snapshot() => selection?.ids.toList();
 
+  /// Folds the current selection into the step just committed, for a host
+  /// that selects what an edit created. Redo then restores that selection
+  /// instead of leaving a second step behind.
+  void syncSelectionAfter() {
+    if (_cursor == 0) return;
+    _transactions[_cursor - 1].selectionAfter = _snapshot();
+  }
+
   void _restore(List<LocalId>? ids) {
     if (ids == null) return;
     selection?.set(ids);

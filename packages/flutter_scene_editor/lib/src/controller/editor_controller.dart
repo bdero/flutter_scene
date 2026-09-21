@@ -18,6 +18,7 @@
 /// realizer's own id tagging ([nodeFsceneId]).
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -187,6 +188,8 @@ class EditorController extends ChangeNotifier {
         controller.displayDocument.nodes.containsKey(id);
     await controller._realizeAll();
     session.selection.addListener(controller._onSelectionChanged);
+    // The title marks unsaved work, so a dirtiness change is a rebuild.
+    session.addDirtyListener(controller.notifyListeners);
     // Restore the document's carried editor state. The selection applies
     // here; the shell reads [restoredEditorState] for the camera pose.
     final editorState = session.document.editor;
@@ -344,6 +347,39 @@ class EditorController extends ChangeNotifier {
 
   /// The current selection.
   Selection get selection => session.selection;
+
+  /// Selects [ids], replacing the selection unless [mode] says otherwise
+  /// (`add`, `remove`, `toggle`).
+  ///
+  /// Goes through the `selectNodes` command, so a click, a script, and an
+  /// agent take one path, and the change lands on the undo history.
+  void select(Iterable<LocalId> ids, {String mode = 'replace'}) {
+    final nodeIds = [for (final id in ids) id.toToken()];
+    if (nodeIds.isEmpty && mode == 'replace') {
+      clearSelection();
+      return;
+    }
+    unawaited(run('selectNodes', {'nodeIds': nodeIds, 'mode': mode}));
+  }
+
+  /// Selects exactly [id].
+  void selectOnly(LocalId id) => select([id]);
+
+  /// Selects what an edit just created, without adding a step of its own.
+  /// The selection folds into the edit, so undo and redo move together.
+  void selectAfterEdit(Iterable<LocalId> ids) {
+    final list = ids.toList();
+    if (list.isEmpty) return;
+    selection.set(list);
+    session.history.syncSelectionAfter();
+    notifyListeners();
+  }
+
+  /// Clears the selection.
+  void clearSelection() {
+    if (selection.isEmpty) return;
+    unawaited(run('clearSelection'));
+  }
 
   /// The outliner listens here; setting a node id asks it to expand the
   /// node's ancestors and scroll the row into view.
@@ -580,10 +616,7 @@ class EditorController extends ChangeNotifier {
     }
     await _realizeAll();
     if (graft.rootIds.isNotEmpty) {
-      selection.selectOnly(graft.rootIds.first);
-      for (final id in graft.rootIds.skip(1)) {
-        selection.add(id);
-      }
+      selectAfterEdit(graft.rootIds);
     }
     notifyListeners();
   }
@@ -671,7 +704,7 @@ class EditorController extends ChangeNotifier {
       'nodeIds': [for (final id in tops) id.toToken()],
     });
     final created = attachedIds(tx);
-    if (created.isNotEmpty) selection.set(created);
+    if (created.isNotEmpty) selectAfterEdit(created);
   }
 
   /// Pastes the clipboard subtrees under the primary selection (the root list
@@ -685,7 +718,7 @@ class EditorController extends ChangeNotifier {
       'subtrees': _clipboard,
     });
     final created = attachedIds(tx);
-    if (created.isNotEmpty) selection.set(created);
+    if (created.isNotEmpty) selectAfterEdit(created);
   }
 
   /// Deletes the selection. Prefab-internal nodes are removed through their
@@ -799,7 +832,7 @@ class EditorController extends ChangeNotifier {
       if (parent != null) 'parent': parent.toToken(),
     });
     final created = attachedIds(tx);
-    if (created.isNotEmpty) selection.set(created);
+    if (created.isNotEmpty) selectAfterEdit(created);
   }
 
   /// The node ids newly added to a container by [transaction] (the difference
@@ -2561,6 +2594,7 @@ class EditorController extends ChangeNotifier {
   @override
   void dispose() {
     session.selection.removeListener(_onSelectionChanged);
+    session.removeDirtyListener(notifyListeners);
     fmatLibrary.dispose();
     lastError.dispose();
     previewEpoch.dispose();

@@ -16,6 +16,7 @@ import '../render_graph/debug_shaders.dart' show loadEditorDebugShaders;
 import '../shell/editor_theme.dart';
 import 'component_gizmos.dart';
 import 'debug_visualize.dart';
+import '../shell/editor_ui_handle.dart';
 import 'free_look_camera.dart';
 import 'orbit_camera.dart';
 import 'orientation_gizmo.dart';
@@ -48,6 +49,7 @@ class ViewportPanel extends StatefulWidget {
     required this.controller,
     this.repaintBoundaryKey,
     this.cameraHandle,
+    this.uiHandle,
     this.gizmoPreferences,
   });
 
@@ -60,6 +62,9 @@ class ViewportPanel extends StatefulWidget {
   /// Optional remote control this viewport attaches its camera to (the MCP
   /// camera tools).
   final ViewportCameraHandle? cameraHandle;
+
+  /// Lets commands read and switch this viewport's transform tool.
+  final EditorUiHandle? uiHandle;
 
   /// Shared component-gizmo visibility preferences; null uses a private
   /// per-viewport default (everything visible).
@@ -132,6 +137,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     // Repaint overlays while a drag in any viewport previews a transform.
     _ctrl.previewEpoch.addListener(_onControllerChanged);
     _gizmoPrefs.addListener(_onControllerChanged);
+    widget.uiHandle?.attachTool(_readToolMode, _writeToolMode);
     widget.cameraHandle?.attach(_camera, _bumpView);
   }
 
@@ -161,6 +167,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   @override
   void dispose() {
     widget.cameraHandle?.detach(_camera);
+    widget.uiHandle?.detachTool(_readToolMode);
     _ctrl.removeListener(_onControllerChanged);
     _ctrl.previewEpoch.removeListener(_onControllerChanged);
     _gizmoPrefs.removeListener(_onControllerChanged);
@@ -182,6 +189,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   void _bumpView() => _viewEpoch.value++;
+
+  /// The camera saves with the document, so navigating it is a change, even
+  /// though it never becomes an undo step.
+  void _cameraMoved() {
+    _ctrl.session.markDirty();
+    _bumpView();
+  }
 
   void _onTick(Duration elapsed, double deltaSeconds) {
     if (deltaSeconds > 0) {
@@ -606,6 +620,17 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (batch.isNotEmpty) unawaited(_ctrl.setNodeTransformsBatch(batch));
   }
 
+  String _readToolMode() => _gizmo.mode.name;
+
+  void _writeToolMode(String mode) {
+    for (final candidate in GizmoMode.values) {
+      if (candidate.name == mode) {
+        _setMode(candidate);
+        return;
+      }
+    }
+  }
+
   void _setMode(GizmoMode mode) {
     if (_gizmo.mode == mode) return;
     _gizmo.mode = mode;
@@ -948,14 +973,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final toggle = keys.isMetaPressed || keys.isControlPressed;
     void apply(LocalId? id) {
       if (id == null) {
-        if (!toggle) _ctrl.selection.clear();
+        if (!toggle) _ctrl.clearSelection();
         return;
       }
-      if (toggle) {
-        _ctrl.selection.toggle(id);
-      } else {
-        _ctrl.selection.selectOnly(id);
-      }
+      _ctrl.select([id], mode: toggle ? 'toggle' : 'replace');
     }
 
     // Component gizmos win over the scene raycast: a gizmo is often a
@@ -1055,7 +1076,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                                 _draggingGizmo ||
                                 _modal != null ||
                                 _freeLookActive,
-                            onChanged: _bumpView,
+                            onChanged: _cameraMoved,
                             child: Listener(
                               behavior: HitTestBehavior.opaque,
                               onPointerDown: (e) => _onPointerDown(e, size),

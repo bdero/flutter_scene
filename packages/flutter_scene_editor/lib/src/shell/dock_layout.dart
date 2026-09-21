@@ -212,6 +212,17 @@ class DockLayout {
     root = _collapse(root);
   }
 
+  /// Brings [id] forward in its tab group, docking it first when it is not
+  /// in the layout.
+  void focusPanel(String id) {
+    final group = groupOf(id);
+    if (group == null) {
+      showPanel(id);
+      return;
+    }
+    group.active = group.panels.indexOf(id);
+  }
+
   /// Detaches [id] from the tree into its own floating window.
   void floatPanel(String id) {
     removePanel(id);
