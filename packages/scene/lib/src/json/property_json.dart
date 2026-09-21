@@ -18,6 +18,8 @@ typedef IdTokenResolver = String Function(LocalId id);
 /// {@category Serialization}
 Object encodePropertyValue(PropertyValue value, IdTokenResolver idToken) {
   switch (value) {
+    case UnknownValue(:final json):
+      return json;
     case BoolValue(:final value):
       return {'b': value};
     case IntValue(:final value):
@@ -119,7 +121,9 @@ PropertyValue decodePropertyValue(Object? json) {
           e.key as String: decodePropertyValue(e.value),
       });
     default:
-      throw FormatException('Unknown property value tag: $tag');
+      // A tag from a newer engine or an extension. Keeping it inert beats
+      // failing the whole document, and it survives the next save.
+      return UnknownValue({tag: payload});
   }
 }
 

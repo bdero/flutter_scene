@@ -39,6 +39,21 @@ sealed class PropertyValue {
   const PropertyValue();
 }
 
+/// A value whose tag this build does not recognize, kept verbatim.
+///
+/// A document written by a newer engine, or by an extension, can carry value
+/// kinds this build has never heard of. Decoding one to this instead of
+/// failing keeps the whole document loadable, and re-encoding writes [json]
+/// back unchanged. Nothing reads it, so it is inert everywhere else.
+/// {@category Property values}
+class UnknownValue extends PropertyValue {
+  /// Wraps the tagged JSON object verbatim.
+  const UnknownValue(this.json);
+
+  /// The single-key tagged object as it was read.
+  final Map<String, Object?> json;
+}
+
 /// A boolean value.
 /// {@category Property values}
 class BoolValue extends PropertyValue {

@@ -81,6 +81,8 @@ NodeSpec _copyNode(NodeSpec n, LocalId Function(LocalId) remap) => NodeSpec(
   skin: n.skin == null ? null : remap(n.skin!),
   instance: n.instance == null ? null : _copyInstance(n.instance!, remap),
   visible: n.visible,
+  shadowCastingMode: n.shadowCastingMode,
+  unknown: n.unknown,
 );
 
 TransformSpec _copyTransform(TransformSpec t) => switch (t) {
@@ -88,8 +90,9 @@ TransformSpec _copyTransform(TransformSpec t) => switch (t) {
     translation: trs.translation.clone(),
     rotation: trs.rotation.clone(),
     scale: trs.scale.clone(),
+    unknown: trs.unknown,
   ),
-  MatrixTransform m => MatrixTransform(m.matrix.clone()),
+  MatrixTransform m => MatrixTransform(m.matrix.clone(), unknown: m.unknown),
 };
 
 ComponentSpec _copyComponent(
@@ -100,6 +103,7 @@ ComponentSpec _copyComponent(
   properties: {
     for (final e in c.properties.entries) e.key: _copyValue(e.value, remap),
   },
+  unknown: c.unknown,
 );
 
 /// Deep-copies a property value, remapping node references through [remap].
@@ -128,10 +132,16 @@ PrefabInstanceSpec _copyInstance(
   // remap leaves alone, so they are simply deep-copied.
   overrides: [
     for (final o in i.overrides)
-      PropertyOverride(target: o.target, path: o.path, value: o.value),
+      PropertyOverride(
+        target: o.target,
+        path: o.path,
+        value: o.value,
+        unknown: o.unknown,
+      ),
   ],
   attachments: [
-    for (final a in i.attachments) Attachment(remap(a.node), parent: a.parent),
+    for (final a in i.attachments)
+      Attachment(remap(a.node), parent: a.parent, unknown: a.unknown),
   ],
   removedNodes: List.of(i.removedNodes),
   addedComponents: [
@@ -145,6 +155,8 @@ PrefabInstanceSpec _copyInstance(
       MemberComponent(
         member: mc.member,
         component: _copyComponent(mc.component, remap),
+        unknown: mc.unknown,
       ),
   ],
+  unknown: i.unknown,
 );

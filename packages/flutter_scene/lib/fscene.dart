@@ -40,6 +40,7 @@ export 'package:scene/scene.dart'
         Matrix4Value,
         NodeRefValue,
         PropertyValue,
+        UnknownValue,
         QuaternionValue,
         ResourceRefValue,
         StringValue,

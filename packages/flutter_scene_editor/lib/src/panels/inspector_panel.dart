@@ -1091,6 +1091,8 @@ class _SchemaPropertyRow extends StatelessWidget {
 /// field changed.
 Object? _rawFromValue(PropertyValue? value) => switch (value) {
   null => null,
+  // A value kind this build does not know; shown as stored, never edited.
+  UnknownValue(:final json) => json,
   BoolValue(:final value) => value,
   IntValue(:final value) => value,
   DoubleValue(:final value) => value,

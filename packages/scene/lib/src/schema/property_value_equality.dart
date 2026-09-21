@@ -2,6 +2,8 @@
 /// (omit values equal to the schema default) and by tooling comparing specs.
 library;
 
+import 'dart:convert';
+
 import 'package:vector_math/vector_math.dart';
 
 import 'package:scene/src/property_value.dart';
@@ -12,6 +14,9 @@ bool propertyValuesEqual(PropertyValue? a, PropertyValue? b) {
   if (identical(a, b)) return true;
   if (a == null || b == null) return false;
   return switch (a) {
+    // Compared by their encoded form, the only thing known about them.
+    UnknownValue(:final json) =>
+      b is UnknownValue && jsonEncode(json) == jsonEncode(b.json),
     BoolValue(:final value) => b is BoolValue && b.value == value,
     IntValue(:final value) => b is IntValue && b.value == value,
     DoubleValue(:final value) => b is DoubleValue && b.value == value,

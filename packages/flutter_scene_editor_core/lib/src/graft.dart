@@ -153,6 +153,7 @@ PayloadSpec _copyPayload(PayloadSpec p, _Remap remap) => PayloadSpec(
   height: p.height,
   length: p.length,
   bytes: p.bytes,
+  unknown: p.unknown,
 );
 
 ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
@@ -163,11 +164,16 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     procedural: g.procedural,
     bounds: g.bounds,
     topology: g.topology,
+    morphTargets: g.morphTargets,
+    legacyWinding: g.legacyWinding,
+    unknown: g.unknown,
   ),
   TextureResource t => TextureResource(
     remap(t.id),
     payload: t.payload == null ? null : remap(t.payload!),
     asset: t.asset,
+    content: t.content,
+    unknown: t.unknown,
   ),
   MaterialResource m => MaterialResource(
     remap(m.id),
@@ -177,6 +183,7 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
       for (final e in m.properties.entries) e.key: _copyValue(e.value, remap),
     },
     asset: m.asset,
+    unknown: m.unknown,
   ),
   RenderTextureResource rt => RenderTextureResource(
     remap(rt.id),
@@ -186,6 +193,7 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     intervalMilliseconds: rt.intervalMilliseconds,
     filter: rt.filter,
     wrap: rt.wrap,
+    unknown: rt.unknown,
   ),
   EnvironmentResource e => EnvironmentResource(
     remap(e.id),
@@ -202,6 +210,7 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     skyEnvironment: e.skyEnvironment,
     effects: EnvironmentEffectsSpec.copy(e.effects),
     overridesEffects: e.overridesEffects,
+    unknown: e.unknown,
   ),
 };
 
@@ -210,6 +219,7 @@ SkinSpec _copySkin(SkinSpec s, _Remap remap) => SkinSpec(
   joints: [for (final j in s.joints) remap(j)],
   inverseBindMatrices: remap(s.inverseBindMatrices),
   skeleton: s.skeleton == null ? null : remap(s.skeleton!),
+  unknown: s.unknown,
 );
 
 AnimationSpec _copyAnimation(AnimationSpec a, _Remap remap) => AnimationSpec(
@@ -223,8 +233,10 @@ AnimationSpec _copyAnimation(AnimationSpec a, _Remap remap) => AnimationSpec(
         property: c.property,
         timeline: remap(c.timeline),
         keyframes: remap(c.keyframes),
+        unknown: c.unknown,
       ),
   ],
+  unknown: a.unknown,
 );
 
 NodeSpec _copyNode(NodeSpec n, _Remap remap) => NodeSpec(
@@ -237,6 +249,8 @@ NodeSpec _copyNode(NodeSpec n, _Remap remap) => NodeSpec(
   skin: n.skin == null ? null : remap(n.skin!),
   instance: n.instance == null ? null : _copyInstance(n.instance!, remap),
   visible: n.visible,
+  shadowCastingMode: n.shadowCastingMode,
+  unknown: n.unknown,
 );
 
 TransformSpec _copyTransform(TransformSpec t) => switch (t) {
@@ -244,8 +258,9 @@ TransformSpec _copyTransform(TransformSpec t) => switch (t) {
     translation: trs.translation.clone(),
     rotation: trs.rotation.clone(),
     scale: trs.scale.clone(),
+    unknown: trs.unknown,
   ),
-  MatrixTransform m => MatrixTransform(m.matrix.clone()),
+  MatrixTransform m => MatrixTransform(m.matrix.clone(), unknown: m.unknown),
 };
 
 ComponentSpec _copyComponent(ComponentSpec c, _Remap remap) => ComponentSpec(
@@ -253,6 +268,7 @@ ComponentSpec _copyComponent(ComponentSpec c, _Remap remap) => ComponentSpec(
   properties: {
     for (final e in c.properties.entries) e.key: _copyValue(e.value, remap),
   },
+  unknown: c.unknown,
 );
 
 // Remaps both node and resource references, since a grafted document brings
@@ -277,11 +293,16 @@ PrefabInstanceSpec _copyInstance(PrefabInstanceSpec i, _Remap remap) =>
       // and attached nodes carry document ids that the remap covers.
       overrides: [
         for (final o in i.overrides)
-          PropertyOverride(target: o.target, path: o.path, value: o.value),
+          PropertyOverride(
+            target: o.target,
+            path: o.path,
+            value: o.value,
+            unknown: o.unknown,
+          ),
       ],
       attachments: [
         for (final a in i.attachments)
-          Attachment(remap(a.node), parent: a.parent),
+          Attachment(remap(a.node), parent: a.parent, unknown: a.unknown),
       ],
       removedNodes: List.of(i.removedNodes),
       addedComponents: [
@@ -294,6 +315,8 @@ PrefabInstanceSpec _copyInstance(PrefabInstanceSpec i, _Remap remap) =>
           MemberComponent(
             member: mc.member,
             component: _copyComponent(mc.component, remap),
+            unknown: mc.unknown,
           ),
       ],
+      unknown: i.unknown,
     );

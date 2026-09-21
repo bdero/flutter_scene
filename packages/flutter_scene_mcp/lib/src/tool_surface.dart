@@ -1931,6 +1931,8 @@ class EditorToolSurface {
   };
 
   Object? _propertyJson(PropertyValue value) => switch (value) {
+    // A value kind this build does not know; shown as it was stored.
+    UnknownValue v => v.json,
     BoolValue v => v.value,
     IntValue v => v.value,
     DoubleValue v => v.value,
