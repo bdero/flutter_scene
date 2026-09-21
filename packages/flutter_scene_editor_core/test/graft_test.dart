@@ -7,6 +7,7 @@
 // Runs only when the source GLB corpus is present (CI without it skips).
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
 import 'package:flutter_scene/src/importer/in_memory_import.dart';
@@ -139,6 +140,56 @@ void main() {
       expect(target.payloads, isEmpty);
       expect(target.resources, isEmpty);
     });
+
+    test('a morph mesh reads the deltas that came with it', () {
+      final source = SceneDocument(allocator: IdAllocator(session: 5));
+      final deltas = source.addPayload(
+        PayloadSpec(
+          source.newId(),
+          encoding: PayloadEncoding.floats,
+          bytes: Uint8List.fromList(const [1, 2, 3, 4]),
+          length: 4,
+        ),
+      );
+      final vertices = source.addPayload(
+        PayloadSpec(
+          source.newId(),
+          encoding: PayloadEncoding.vertexBuffer,
+          layout: 'default',
+          bytes: Uint8List(8),
+          length: 8,
+        ),
+      );
+      final geometry = GeometryResource(
+        source.newId(),
+        vertices: vertices.id,
+        morphTargets: MorphTargetsSpec(deltas: deltas.id, targetCount: 1),
+      );
+      source.resources[geometry.id] = geometry;
+      source
+          .createNode(name: 'Face', root: true)
+          .components
+          .add(
+            ComponentSpec(
+              'mesh',
+              properties: {'geometry': ResourceRefValue(geometry.id)},
+            ),
+          );
+
+      final target = SceneDocument(allocator: IdAllocator(session: 6));
+      final graft = graftDocumentRecords(target, source);
+      Transaction(
+        name: 'Import',
+        records: graft.records,
+      ).apply(DocumentMutator(target));
+
+      final copied = target.resources.values
+          .whereType<GeometryResource>()
+          .single;
+      expect(copied.morphTargets, isNotNull);
+      expect(copied.morphTargets!.deltas, isNot(deltas.id));
+      _expectNoDanglingRefs(target);
+    });
   });
 }
 
@@ -172,6 +223,13 @@ void _expectNoDanglingRefs(SceneDocument doc) {
         }
         if (g.indices != null) {
           expect(payload(g.indices!), isTrue, reason: 'indices missing');
+        }
+        if (g.morphTargets != null) {
+          expect(
+            payload(g.morphTargets!.deltas),
+            isTrue,
+            reason: 'morph deltas missing',
+          );
         }
       case TextureResource t:
         if (t.payload != null) {

@@ -156,6 +156,19 @@ PayloadSpec _copyPayload(PayloadSpec p, _Remap remap) => PayloadSpec(
   unknown: p.unknown,
 );
 
+/// Rebuilds a morph description against the copy's payload ids, so the deltas
+/// slab a grafted mesh reads is the one that came with it.
+MorphTargetsSpec _copyMorphTargets(MorphTargetsSpec m, _Remap remap) =>
+    MorphTargetsSpec(
+      deltas: remap(m.deltas),
+      targetCount: m.targetCount,
+      hasNormalDeltas: m.hasNormalDeltas,
+      hasTangentDeltas: m.hasTangentDeltas,
+      targetNames: m.targetNames,
+      defaultWeights: m.defaultWeights,
+      unknown: m.unknown,
+    );
+
 ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
   GeometryResource g => GeometryResource(
     remap(g.id),
@@ -164,7 +177,9 @@ ResourceSpec _copyResource(ResourceSpec r, _Remap remap) => switch (r) {
     procedural: g.procedural,
     bounds: g.bounds,
     topology: g.topology,
-    morphTargets: g.morphTargets,
+    morphTargets: g.morphTargets == null
+        ? null
+        : _copyMorphTargets(g.morphTargets!, remap),
     legacyWinding: g.legacyWinding,
     unknown: g.unknown,
   ),
