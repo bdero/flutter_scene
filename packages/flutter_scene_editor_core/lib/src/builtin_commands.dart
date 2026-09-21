@@ -15,6 +15,7 @@ import 'package:vector_math/vector_math.dart';
 import 'change.dart';
 import 'clone.dart';
 import 'command.dart';
+import 'app_commands.dart';
 import 'params.dart';
 import 'view_commands.dart';
 
@@ -3434,6 +3435,7 @@ void registerBuiltinCommands(CommandRegistry registry) {
 /// The built-in command set.
 final List<CommandEntry> builtinCommands = [
   ...viewCommands,
+  ...applicationCommands,
   setNodeName,
   setNodeVisible,
   setNodeShadowCasting,

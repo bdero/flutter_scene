@@ -17,6 +17,7 @@ import 'change.dart';
 import 'command.dart';
 import 'history.dart';
 import 'query.dart';
+import 'editor_host.dart';
 import 'selection.dart';
 import 'view_host.dart';
 
@@ -69,6 +70,10 @@ class EditorSession {
   /// The viewport view commands act on, set by the host that renders one.
   /// Null leaves every view command inapplicable.
   ViewHost? viewHost;
+
+  /// The application around the document, set by the editor. Null leaves
+  /// every application command inapplicable.
+  EditorHost? host;
 
   /// Whether anything has changed since the document was last saved.
   ///
@@ -145,7 +150,28 @@ class EditorSession {
     componentSchema: componentSchemaLookup,
     selection: selection,
     view: viewHost,
+    host: host,
   );
+
+  /// Runs the command named [name], whatever its kind.
+  ///
+  /// Document, selection, and view commands run synchronously through [run]
+  /// and return their transaction; an application command awaits its work and
+  /// returns null.
+  Future<Transaction?> invoke(
+    String name, [
+    Map<String, Object?> params = const {},
+  ]) async {
+    final entry = registry.lookup(name);
+    if (entry == null) throw ArgumentError('Unknown command: $name');
+    if (entry.kind != CommandKind.application) return run(name, params);
+    final context = _context();
+    if (!entry.applicable(context, params)) {
+      throw CommandException('$name cannot run right now');
+    }
+    await entry.perform!(context, params);
+    return null;
+  }
 
   /// Whether the command named [name] can run with [params] right now.
   bool canRun(String name, [Map<String, Object?> params = const {}]) {
