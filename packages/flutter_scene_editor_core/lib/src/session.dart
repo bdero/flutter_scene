@@ -18,6 +18,7 @@ import 'command.dart';
 import 'history.dart';
 import 'query.dart';
 import 'selection.dart';
+import 'view_host.dart';
 
 /// A headless editing session over one [SceneDocument].
 class EditorSession {
@@ -63,6 +64,10 @@ class EditorSession {
   /// The transient selection (not document state, not undoable).
   final Selection selection;
 
+  /// The viewport view commands act on, set by the host that renders one.
+  /// Null leaves every view command inapplicable.
+  ViewHost? viewHost;
+
   /// The undo/redo history.
   late final EditHistory history;
 
@@ -81,22 +86,26 @@ class EditorSession {
   Transaction run(String name, [Map<String, Object?> params = const {}]) {
     final entry = registry.lookup(name);
     if (entry == null) throw ArgumentError('Unknown command: $name');
-    final transaction = entry.execute(
-      CommandContext(document, componentSchema: componentSchemaLookup),
-      params,
-    );
+    final context = _context();
+    if (!entry.applicable(context, params)) {
+      throw CommandException('$name cannot run right now');
+    }
+    final transaction = entry.execute(context, params);
     history.commit(transaction);
     return transaction;
   }
 
+  CommandContext _context() => CommandContext(
+    document,
+    componentSchema: componentSchemaLookup,
+    selection: selection,
+    view: viewHost,
+  );
+
   /// Whether the command named [name] can run with [params] right now.
   bool canRun(String name, [Map<String, Object?> params = const {}]) {
     final entry = registry.lookup(name);
-    return entry != null &&
-        entry.applicable(
-          CommandContext(document, componentSchema: componentSchemaLookup),
-          params,
-        );
+    return entry != null && entry.applicable(_context(), params);
   }
 
   /// Applies [transaction] without recording it on the history. For transient

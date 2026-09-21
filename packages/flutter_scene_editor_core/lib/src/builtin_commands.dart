@@ -16,6 +16,7 @@ import 'change.dart';
 import 'clone.dart';
 import 'command.dart';
 import 'params.dart';
+import 'view_commands.dart';
 
 // ---------------------------------------------------------------------------
 // Shared helpers.
@@ -3432,6 +3433,7 @@ void registerBuiltinCommands(CommandRegistry registry) {
 
 /// The built-in command set.
 final List<CommandEntry> builtinCommands = [
+  ...viewCommands,
   setNodeName,
   setNodeVisible,
   setNodeShadowCasting,

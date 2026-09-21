@@ -1170,10 +1170,13 @@ class EditorToolSurface {
       case 'get_selection':
         return _selectionResult();
       case 'select_node':
-        session.selection.selectOnly(_resolve(_requireRef(args)).id);
+        // Through the command, so this tool and a script take one path.
+        await _invoke('selectNodes', {
+          'nodeIds': [_resolve(_requireRef(args)).id.toToken()],
+        });
         return _selectionResult();
       case 'clear_selection':
-        session.selection.clear();
+        await _invoke('clearSelection', const {});
         return _selectionResult();
       case 'new_document':
         final creator = newDocument;
@@ -1728,6 +1731,18 @@ class EditorToolSurface {
       'target': {'x': pose.target.x, 'y': pose.target.y, 'z': pose.target.z},
       'orthographic': pose.orthographic,
     };
+  }
+
+  /// Runs [command] the way `run_command` does, so tools that wrap a command
+  /// cannot drift from it.
+  Future<void> _invoke(String command, Map<String, Object?> params) async {
+    try {
+      commandRunner != null
+          ? await commandRunner!(command, params)
+          : session.run(command, params);
+    } on CommandException catch (e) {
+      throw ToolError(e.message);
+    }
   }
 
   Future<Map<String, Object?>> _runCommand(Map<String, Object?> args) async {

@@ -20,10 +20,13 @@ dependencies:
   file_selector: ^1.0.0
   flutter_scene: ^0.23.0
   scene: ^0.3.0
+  vector_math: ^2.1.4
   flutter_scene_codegen:
     path: ../../packages/flutter_scene_codegen
   flutter_scene_editor:
     path: ../../packages/flutter_scene_editor
+  flutter_scene_editor_core:
+    path: ../../packages/flutter_scene_editor_core
   flutter_scene_mcp:
     path: ../../packages/flutter_scene_mcp
   hooks: ^2.0.0
