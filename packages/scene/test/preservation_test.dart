@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
+import 'package:vector_math/vector_math.dart';
 import 'package:test/test.dart';
 
 /// A document with one of everything the preservation contract covers.
@@ -38,7 +39,8 @@ String _inject(String text, List<String> path, Map<String, Object?> keys) {
   Object? cursor = json;
   for (final step in path) {
     cursor = switch (cursor) {
-      Map<String, Object?> map when step == '*' => map.values.first,
+      Map<String, Object?> map when step.startsWith('*') =>
+        map.values.elementAt(step == '*' ? 0 : int.parse(step.substring(1))),
       Map<String, Object?> map => map[step],
       List<Object?> list => list[int.parse(step)],
       _ => throw StateError('no $step'),
@@ -118,6 +120,77 @@ void main() {
     expect(doc.nodes.values.single.name, 'Crate');
   });
 
+  test('unknown keys survive inside nested value objects', () {
+    var text = writeFscene(_nested());
+    for (final path in [
+      ['nodes', '*', 'transform'],
+      ['resources', '*', 'bounds'],
+      ['nodes', '*1', 'instance'],
+      ['nodes', '*1', 'instance', 'overrides', '0'],
+      ['nodes', '*1', 'instance', 'attachments', '0'],
+    ]) {
+      text = _inject(text, path, {'dev.example.sdf': 'deep'});
+    }
+    final written = writeFscene(readFscene(text));
+    expect('deep'.allMatches(written).length, 5, reason: written);
+    expect(writeFscene(readFscene(written)), written);
+  });
+
+  test('unknown effects keys survive, group by group', () {
+    final doc = SceneDocument();
+    final env = doc.allocator.mint();
+    doc.resources[env] = EnvironmentResource(
+      env,
+      effects: EnvironmentEffectsSpec(),
+    );
+    var text = writeFscene(doc);
+    text = _inject(
+      text,
+      ['resources', '*', 'effects'],
+      {
+        'bloom': {'dev.example.sdf': 'in a known group'},
+        'dev.example.sdf': {'strength': 2},
+      },
+    );
+    final reread = readFscene(text);
+    final effects = (reread.resources[env]! as EnvironmentResource).effects;
+    expect(effects.unknownInGroups['bloom'], {
+      'dev.example.sdf': 'in a known group',
+    });
+    expect(effects.unknown['dev.example.sdf'], {'strength': 2});
+    final written = writeFscene(reread);
+    expect(written, contains('in a known group'));
+    expect(writeFscene(readFscene(written)), written);
+  });
+
+  test('an unknown property value tag loads instead of failing', () {
+    final doc = SceneDocument();
+    final node = doc.allocator.mint();
+    doc.nodes[node] = NodeSpec(id: node, components: [ComponentSpec('mesh')]);
+    doc.roots.add(node);
+    var text = writeFscene(doc);
+    text = _inject(
+      text,
+      ['nodes', '*', 'components', '0'],
+      {
+        'properties': {
+          'volume': {
+            'sdfBrick': [1, 2, 3],
+          },
+        },
+      },
+    );
+    final reread = readFscene(text);
+    final value = reread.nodes[node]!.components.single.properties['volume'];
+    expect(value, isA<UnknownValue>());
+    expect((value! as UnknownValue).json, {
+      'sdfBrick': [1, 2, 3],
+    });
+    final written = writeFscene(reread);
+    expect(written, contains('sdfBrick'));
+    expect(writeFscene(readFscene(written)), written);
+  });
+
   group('binary container', () {
     test('a rewrite carries an unrecognized chunk through', () {
       final original = writeFsceneb(_document());
@@ -175,4 +248,35 @@ List<String> _chunkTypes(Uint8List container) {
     offset += 8 + length + ((-length) & 7);
   }
   return types;
+}
+
+/// A document with a prefab instance, so the nested objects have somewhere to
+/// hang foreign keys.
+SceneDocument _nested() {
+  final doc = _document();
+  final node = doc.nodes.keys.first;
+  final child = doc.allocator.mint();
+  doc.nodes[child] = NodeSpec(
+    id: child,
+    name: 'Instance',
+    instance: PrefabInstanceSpec(
+      source: const AssetRef('prefabs/crate.fscene'),
+      overrides: [
+        PropertyOverride(
+          target: node,
+          path: 'name',
+          value: const StringValue('override'),
+        ),
+      ],
+      attachments: [Attachment(node)],
+    ),
+  );
+  doc.roots.add(child);
+  final geometry = doc.resources.values.whereType<GeometryResource>().single;
+  doc.resources[geometry.id] = GeometryResource(
+    geometry.id,
+    vertices: geometry.vertices,
+    bounds: BoundsSpec(min: Vector3.zero(), max: Vector3.all(1)),
+  );
+  return doc;
 }
