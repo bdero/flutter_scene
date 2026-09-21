@@ -362,10 +362,14 @@ void main() {
       expect(() => readFscene(loose), returnsNormally);
     });
 
-    test('ignores unknown fields', () {
+    test('keeps unknown fields through a load and save', () {
       final text = writeFscene(_sampleDocument());
       final withExtra = text.replaceFirst('{', '{\n  "futureField": 123,');
-      expect(() => readFscene(withExtra), returnsNormally);
+      final doc = readFscene(withExtra);
+      expect(doc.unknown['futureField'], 123);
+      final written = writeFscene(doc);
+      expect(written, contains('"futureField": 123'));
+      expect(writeFscene(readFscene(written)), written);
     });
   });
 
