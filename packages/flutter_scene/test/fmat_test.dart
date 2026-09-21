@@ -288,6 +288,39 @@ fragment { void Surface(inout MaterialInputs material) {} }
       );
     });
 
+    test('an unlit surface material carries no RadianceLayoutInfo block', () {
+      // The block is only written by the engine lighting path, and nothing
+      // binds it on an unlit material (see PreprocessedMaterial.bind). A
+      // fragment-stage uniform block no draw writes is reflected at set 0 /
+      // binding 0, which collides with the vertex stage's FrameInfo: GLES
+      // resolves uniforms per stage and ignores it, Vulkan builds one
+      // descriptor set layout for both stages and every draw with the
+      // material disappears.
+      final m = parseFmat('''
+material { name: "U", shading_model: unlit }
+fragment {
+  void Surface(inout MaterialInputs material) {
+    material.base_color = vec4(SphericalToEquirectangular(vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
+  }
+}
+''');
+      final glsl = emitFragmentGlsl(m);
+      // texture.glsl is still included -- unlit shaders use its UV helpers.
+      expect(glsl, contains('#include <texture.glsl>'));
+      expect(glsl, contains('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE'));
+    });
+
+    test('a lit material keeps the RadianceLayoutInfo block', () {
+      final m = parseFmat('''
+material { name: "L", shading_model: lit }
+fragment { void Surface(inout MaterialInputs material) {} }
+''');
+      expect(
+        emitFragmentGlsl(m),
+        isNot(contains('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE')),
+      );
+    });
+
     test('materials without engine_inputs get no scene-input samplers', () {
       final m = parseFmat('''
 material { name: "Plain" }
