@@ -169,7 +169,15 @@ class EditorSession {
     if (!entry.applicable(context, params)) {
       throw CommandException('$name cannot run right now');
     }
-    await entry.perform!(context, params);
+    try {
+      await entry.perform!(context, params);
+    } on CommandException {
+      rethrow;
+    } on Object catch (error) {
+      // The host throws its own failures (a missing path, a closed project);
+      // agents and scripts should see one kind of error from a command.
+      throw CommandException('$name failed, $error');
+    }
     return null;
   }
 

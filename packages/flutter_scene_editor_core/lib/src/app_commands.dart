@@ -4,6 +4,11 @@
 /// These act on the session's [EditorHost], so they are inapplicable in a
 /// headless session. Application commands are asynchronous and never reach
 /// the undo history; tool and panel commands change view state.
+///
+/// TODO(session-scoped-commands): the registry lives on a session, so the
+/// three commands that would create one (`newDocument`, `openDocument`,
+/// `openProject`) cannot be reached before a document is open. The editor's
+/// start screen and the MCP tools of the same name cover that case today.
 library;
 
 import 'change.dart';
