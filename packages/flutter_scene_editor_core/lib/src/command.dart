@@ -128,8 +128,13 @@ enum CommandKind {
   /// Edits the document. Returns the transaction the host commits.
   document,
 
-  /// Changes transient view state (selection, camera). Returns an empty
-  /// transaction and never reaches the history.
+  /// Changes the selection. Carries no records, but is a history step of its
+  /// own, so undo walks back through selections the way it does through
+  /// edits.
+  selection,
+
+  /// Moves the viewport. Never a history step, though it does mark the
+  /// document dirty, since the camera is saved with it.
   view,
 }
 

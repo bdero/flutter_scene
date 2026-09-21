@@ -1,5 +1,5 @@
 // Selection and camera are commands, so a script drives them exactly as the
-// UI does, and neither touches the undo history.
+// UI does. Selection is a history step; the camera is not.
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:scene/scene.dart';
 import 'package:test/test.dart';
@@ -93,15 +93,40 @@ void main() {
       );
     });
 
-    test('never reaches the undo history', () {
+    test('is a history step of its own, and undo walks back through it', () {
+      final s = EditorSession.empty();
+      final a = _node(s, 'a');
+      final b = _node(s, 'b');
+      s.history.clear();
+
+      s.run('selectNodes', {
+        'nodeIds': [a.toToken()],
+      });
+      s.run('selectNodes', {
+        'nodeIds': [b.toToken()],
+      });
+      expect(s.history.transactions, hasLength(2));
+      expect(s.history.undoLabel, 'Select');
+
+      s.undo();
+      expect(s.selection.ids, {a});
+      s.undo();
+      expect(s.selection.isEmpty, isTrue);
+      s.redo();
+      expect(s.selection.ids, {a});
+    });
+
+    test('selecting the same nodes again is not a step', () {
       final s = EditorSession.empty();
       final a = _node(s, 'a');
       s.history.clear();
       s.run('selectNodes', {
         'nodeIds': [a.toToken()],
       });
-      s.run('clearSelection');
-      expect(s.history.transactions, isEmpty);
+      s.run('selectNodes', {
+        'nodeIds': [a.toToken()],
+      });
+      expect(s.history.transactions, hasLength(1));
     });
   });
 
@@ -135,7 +160,11 @@ void main() {
       expect(view.camera.target, Vector3(1, 2, 3));
       expect(view.camera.azimuth, 1, reason: 'omitted fields hold');
       expect(view.camera.elevation, 2);
-      expect(s.history.transactions, isEmpty);
+      expect(
+        s.history.transactions,
+        isEmpty,
+        reason: 'the camera saves with the document but is not undoable',
+      );
     });
 
     test('frames nodes, and reports when there is nothing to frame', () {
@@ -158,10 +187,12 @@ void main() {
     });
   });
 
-  test('view commands declare their kind, document commands keep theirs', () {
+  test('commands declare what they touch', () {
     final registry = EditorSession.empty().registry;
-    expect(registry.lookup('selectNodes')!.kind, CommandKind.view);
+    expect(registry.lookup('selectNodes')!.kind, CommandKind.selection);
+    expect(registry.lookup('clearSelection')!.kind, CommandKind.selection);
     expect(registry.lookup('frameNodes')!.kind, CommandKind.view);
+    expect(registry.lookup('setViewportCamera')!.kind, CommandKind.view);
     expect(registry.lookup('createNode')!.kind, CommandKind.document);
   });
 }

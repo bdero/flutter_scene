@@ -30,7 +30,7 @@ final selectNodes = CommandEntry(
       'Select nodes. "mode" replaces the selection by default, or adds to, '
       'removes from, or toggles it. The last id given becomes primary.',
   category: 'Selection',
-  kind: CommandKind.view,
+  kind: CommandKind.selection,
   paramSchema: const [
     ParamSpec(name: 'nodeIds', type: ParamType.nodeRefList, label: 'Nodes'),
     ParamSpec(
@@ -76,7 +76,7 @@ final clearSelection = CommandEntry(
   name: 'clearSelection',
   doc: 'Clear the selection.',
   category: 'Selection',
-  kind: CommandKind.view,
+  kind: CommandKind.selection,
   paramSchema: const [],
   applicable: (ctx, params) => ctx.selection != null,
   execute: (ctx, params) {
