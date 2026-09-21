@@ -566,11 +566,18 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _ctrl.lastError.addListener(_showError);
+    _ctrl.session.addDirtyListener(_onDirtyChanged);
     widget.uiHandle?.attachPanels(_panelIdsForHost, _showPanelForHost);
     // The Render Graph panel and viewport debug modes need the engine's
     // capture hooks; opting in editor-wide keeps shipping apps unaffected.
     Scene.debugAllowRenderGraphCapture = true;
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  // The title's unsaved mark is the only thing reading dirtiness, and nothing
+  // else rebuilds the shell when it flips.
+  void _onDirtyChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -585,7 +592,9 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
     super.didUpdateWidget(old);
     if (old.controller != widget.controller) {
       old.controller.lastError.removeListener(_showError);
+      old.controller.session.removeDirtyListener(_onDirtyChanged);
       _ctrl.lastError.addListener(_showError);
+      _ctrl.session.addDirtyListener(_onDirtyChanged);
     }
     // The host is the path's source of truth (it can save/open externally,
     // over MCP for example).
@@ -598,6 +607,7 @@ class _EditorShellState extends State<EditorShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _ctrl.lastError.removeListener(_showError);
+    _ctrl.session.removeDirtyListener(_onDirtyChanged);
     widget.uiHandle?.detachPanels(_panelIdsForHost);
     super.dispose();
   }

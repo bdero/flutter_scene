@@ -138,7 +138,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _ctrl.previewEpoch.addListener(_onControllerChanged);
     _gizmoPrefs.addListener(_onControllerChanged);
     widget.uiHandle?.attachTool(_readToolMode, _writeToolMode);
-    widget.cameraHandle?.attach(_camera, _bumpView);
+    widget.cameraHandle?.attach(_camera, _cameraMoved);
   }
 
   @override
@@ -160,7 +160,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     if (oldWidget.cameraHandle != widget.cameraHandle) {
       oldWidget.cameraHandle?.detach(_camera);
-      widget.cameraHandle?.attach(_camera, _bumpView);
+      widget.cameraHandle?.attach(_camera, _cameraMoved);
+      // Attaching may have applied a pose held for this viewport.
+      _bumpView();
     }
   }
 
@@ -209,7 +211,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (shadows != _shadowOverflow.value) _shadowOverflow.value = shadows;
     if (_freeLookActive && _freeLook.move(deltaSeconds)) {
       _syncOrbitToFreeLook();
-      _bumpView();
+      _cameraMoved();
     }
   }
 
@@ -363,6 +365,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _pendingSelection = null;
     _freeLook.syncTo(_camera.camera);
     _camera.orthographic = false;
+    _cameraMoved();
     setState(() => _freeLookActive = true);
     unawaited(
       _freeLookPointer.start(
@@ -378,7 +381,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (!_freeLookActive || delta == Offset.zero) return;
     _freeLook.look(delta);
     _syncOrbitToFreeLook();
-    _bumpView();
+    _cameraMoved();
   }
 
   void _syncOrbitToFreeLook() {

@@ -212,7 +212,7 @@ final setToolMode = CommandEntry(
   name: 'setToolMode',
   doc: 'Switch the active viewport tool (translate, rotate, scale).',
   category: 'View',
-  kind: CommandKind.view,
+  kind: CommandKind.ui,
   paramSchema: const [
     ParamSpec(name: 'mode', type: ParamType.string, label: 'Tool'),
   ],
@@ -235,7 +235,7 @@ final showPanel = CommandEntry(
   name: 'showPanel',
   doc: 'Show an editor panel, docking it when it is not in the layout.',
   category: 'View',
-  kind: CommandKind.view,
+  kind: CommandKind.ui,
   paramSchema: const [
     ParamSpec(name: 'panel', type: ParamType.string, label: 'Panel'),
   ],
@@ -258,7 +258,7 @@ final focusPanel = CommandEntry(
   name: 'focusPanel',
   doc: 'Focus an editor panel, showing it first when it is hidden.',
   category: 'View',
-  kind: CommandKind.view,
+  kind: CommandKind.ui,
   paramSchema: const [
     ParamSpec(name: 'panel', type: ParamType.string, label: 'Panel'),
   ],
@@ -281,7 +281,7 @@ final setViewportDebugMode = CommandEntry(
   name: 'setViewportDebugMode',
   doc: 'Switch the viewport debug visualization.',
   category: 'View',
-  kind: CommandKind.view,
+  kind: CommandKind.ui,
   paramSchema: const [
     ParamSpec(name: 'mode', type: ParamType.string, label: 'Mode'),
   ],

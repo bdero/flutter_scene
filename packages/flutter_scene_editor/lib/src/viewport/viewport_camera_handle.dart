@@ -23,20 +23,23 @@ class ViewportCameraHandle {
   })?
   _pendingPose;
 
-  /// Called by the hosting viewport when it comes up. A pose set before any
-  /// viewport attached (restoring a saved scene's camera) applies now.
+  /// Called by the hosting viewport when it comes up. [onChanged] reports a
+  /// pose something moved. A pose set before any viewport attached (restoring
+  /// a saved scene's camera) applies now, unreported, since it is the pose
+  /// the document already holds.
   void attach(OrbitCamera camera, VoidCallback onChanged) {
     _camera = camera;
     _onChanged = onChanged;
     final pending = _pendingPose;
     if (pending != null) {
       _pendingPose = null;
-      setPose(
+      _applyPose(
         azimuth: pending.azimuth,
         elevation: pending.elevation,
         radius: pending.radius,
         target: pending.target,
         orthographic: pending.orthographic,
+        report: false,
       );
     }
   }
@@ -70,13 +73,47 @@ class ViewportCameraHandle {
     );
   }
 
-  /// Applies any subset of the pose and repaints the viewport.
+  /// Applies any subset of the pose, repaints the viewport, and reports the
+  /// move, since the pose saves with the document.
   void setPose({
     double? azimuth,
     double? elevation,
     double? radius,
     vm.Vector3? target,
     bool? orthographic,
+  }) => _applyPose(
+    azimuth: azimuth,
+    elevation: elevation,
+    radius: radius,
+    target: target,
+    orthographic: orthographic,
+    report: true,
+  );
+
+  /// Applies a pose the document already holds (a scene restoring its saved
+  /// camera), without reporting a move, so opening a file leaves it clean.
+  void restorePose({
+    double? azimuth,
+    double? elevation,
+    double? radius,
+    vm.Vector3? target,
+    bool? orthographic,
+  }) => _applyPose(
+    azimuth: azimuth,
+    elevation: elevation,
+    radius: radius,
+    target: target,
+    orthographic: orthographic,
+    report: false,
+  );
+
+  void _applyPose({
+    double? azimuth,
+    double? elevation,
+    double? radius,
+    vm.Vector3? target,
+    bool? orthographic,
+    required bool report,
   }) {
     final camera = _camera;
     if (camera == null) {
@@ -94,7 +131,7 @@ class ViewportCameraHandle {
     if (radius != null) camera.radius = max(radius, 0.01);
     if (target != null) camera.target = target.clone();
     if (orthographic != null) camera.orthographic = orthographic;
-    _onChanged?.call();
+    if (report) _onChanged?.call();
   }
 
   /// Aims at [bounds]' center and pulls back so the bounds' sphere fits the

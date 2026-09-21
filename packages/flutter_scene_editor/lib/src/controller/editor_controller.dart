@@ -589,6 +589,26 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Runs the command named [name] whatever its kind, so a caller that takes
+  /// commands from the registry (the palette, a menu, an extension) does not
+  /// have to know which ones are asynchronous. Application commands await
+  /// their work and return null; every other kind goes through [run].
+  Future<Transaction?> invoke(
+    String name, [
+    Map<String, Object?> params = const {},
+  ]) async {
+    final entry = session.registry.lookup(name);
+    if (entry?.kind != CommandKind.application) return run(name, params);
+    try {
+      await session.invoke(name, params);
+      notifyListeners();
+      return null;
+    } catch (error) {
+      lastError.value = '$name, $error';
+      rethrow;
+    }
+  }
+
   /// Grafts an already-imported [source] document (from a `.glb` or `.gltf`)
   /// into the current scene as a new subtree under [parentId] (or the scene
   /// roots when null or missing), as one undoable edit. The imported root
