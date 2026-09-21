@@ -17,6 +17,18 @@ dependencies:
 
   tearDown(() => root.deleteSync(recursive: true));
 
+  test('an fproject keeps keys this build does not read', () {
+    final path = '${root.path}/game.fproject';
+    File(path).writeAsStringSync(
+      '{"version": 2, "flutterProjectRoot": ".", '
+      '"dev.example.tool": {"pinned": true}}',
+    );
+    final project = FProject.load(path);
+    expect(project.unknown['dev.example.tool'], {'pinned': true});
+    project.save();
+    expect(File(path).readAsStringSync(), contains('dev.example.tool'));
+  });
+
   test('createDefault writes an fproject with mode defaults, round trips', () {
     final project = FProject.createDefault(root.path);
     expect(File(project.path).existsSync(), isTrue);
