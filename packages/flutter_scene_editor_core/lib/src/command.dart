@@ -13,6 +13,7 @@ library;
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
 
+import 'editor_host.dart';
 import 'selection.dart';
 import 'view_host.dart';
 
@@ -103,6 +104,7 @@ class CommandContext {
     this.componentSchema,
     this.selection,
     this.view,
+    this.host,
   });
 
   /// The document being edited (read access plus [SceneDocument.newId]).
@@ -117,6 +119,9 @@ class CommandContext {
 
   /// The viewport, present only when the host supplied one.
   final ViewHost? view;
+
+  /// The application around the document, present only in a hosted editor.
+  final EditorHost? host;
 }
 
 /// What a command touches, which decides how a host runs it and whether it
@@ -136,6 +141,11 @@ enum CommandKind {
   /// Moves the viewport. Never a history step, though it does mark the
   /// document dirty, since the camera is saved with it.
   view,
+
+  /// Drives the application around the document: opening and saving, the
+  /// project, the running app, the editor's own panels. Asynchronous, and
+  /// never a history step.
+  application,
 }
 
 /// Thrown when a command receives invalid or missing parameters.
@@ -161,7 +171,30 @@ class CommandEntry {
     this.category = '',
     this.kind = CommandKind.document,
     this.applicable = _always,
-  });
+  }) : perform = null;
+
+  /// Declares an asynchronous command that acts on the host rather than the
+  /// document. Run it with `EditorSession.invoke`; `run` refuses it.
+  CommandEntry.application({
+    required this.name,
+    required this.doc,
+    required this.paramSchema,
+    required Future<void> Function(CommandContext, Map<String, Object?>)
+    this.perform,
+    this.category = '',
+    this.applicable = _always,
+  }) : kind = CommandKind.application,
+       execute = _refuseSync;
+
+  static Transaction _refuseSync(
+    CommandContext context,
+    Map<String, Object?> params,
+  ) => throw const CommandException(
+    'This command is asynchronous; call invoke instead of run',
+  );
+
+  /// The asynchronous body, set only for [CommandKind.application].
+  final Future<void> Function(CommandContext, Map<String, Object?>)? perform;
 
   /// The stable command name (for example `setNodeTransform`).
   final String name;

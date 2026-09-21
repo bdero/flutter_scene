@@ -81,6 +81,8 @@ export 'src/params.dart'
         coercePropertyValue;
 
 // The built-in command set.
+export 'src/app_commands.dart' show applicationCommands;
+
 export 'src/view_commands.dart'
     show
         clearSelection,
@@ -104,6 +106,7 @@ export 'src/graft.dart' show graftDocumentRecords, wrapRootsUnderGroup;
 
 // Selection, queries, and the session that ties it all together.
 export 'src/selection.dart' show Selection;
+export 'src/editor_host.dart' show EditorHost;
 export 'src/view_host.dart' show ViewHost;
 export 'src/query.dart' show SceneQuery;
 export 'src/session.dart' show EditorSession;
