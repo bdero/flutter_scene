@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/render/instance_packing.dart'
     show beginRetainedInstanceFrame;
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/raster_sync.dart';
 import 'package:vector_math/vector_math.dart'
     show Frustum, Matrix3, Matrix4, Plane, Ray, Vector2, Vector3, Vector4;
 
@@ -1780,6 +1781,23 @@ base class Scene implements SceneGraph {
     if (views.isEmpty) {
       return;
     }
+    // Rendezvous with the raster thread before drawing anything.
+    //
+    // The warm-up frame's first draw is what compiles a pipeline, and on the
+    // OpenGL ES backend the engine builds a pipeline by posting a task to the
+    // raster thread and *blocking* the calling (UI) thread on its result --
+    // see `flutter::gpu::RenderPass::GetOrCreatePipeline` in
+    // `flutter/lib/gpu/render_pass.cc`, whose own comment warns it "could hang
+    // the UI thread long enough to miss a frame". If the raster thread is
+    // inside `eglSwapBuffers` waiting for the display to release a buffer, the
+    // UI thread inherits that whole wait: on a Mali/BLAST device that is
+    // hundreds of milliseconds, and it is spent with Dart frozen.
+    //
+    // Waiting for the raster thread here costs the same wall clock but does
+    // not block Dart: the completion callback of an empty command buffer only
+    // runs once the raster thread has drained its queue, so the draws below
+    // find it idle and the pipeline round-trips return immediately.
+    await awaitRasterThread();
     // Encode one real frame into a discarded recording. The GPU passes (and so
     // the pipeline compilations and resource uploads) are submitted during
     // rendering; only the final canvas blit is thrown away. A small area is
@@ -1812,6 +1830,9 @@ base class Scene implements SceneGraph {
     // building. A view paced by GPU backpressure re-presents its last image
     // and resolves no pipelines, so it proves nothing.
     for (var slice = 0; slice < 1000; slice++) {
+      // Every slice compiles pipelines, and the raster thread may be back in
+      // eglSwapBuffers after the yield below, so rendezvous before each one.
+      if (slice > 0) await awaitRasterThread();
       final paced = _pacedFrameCount;
       withPipelineBuildBudget(sliceBudget, encode);
       if (_pacedFrameCount == paced && deferredPipelineBuilds == 0) return;
