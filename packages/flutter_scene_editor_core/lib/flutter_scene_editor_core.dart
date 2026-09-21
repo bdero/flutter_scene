@@ -49,6 +49,7 @@ export 'src/command.dart'
         CommandContext,
         CommandException,
         CommandEntry,
+        CommandKind,
         CommandRegistry,
         UiFieldDescriptor,
         mcpToolSchema,
@@ -60,9 +61,11 @@ export 'src/params.dart'
         requireString,
         optionalString,
         requireBool,
+        optionalBool,
         requireInt,
         optionalInt,
         requireDouble,
+        optionalDouble,
         requireVec3,
         optionalVec3,
         requireQuaternion,
@@ -78,6 +81,14 @@ export 'src/params.dart'
         coercePropertyValue;
 
 // The built-in command set.
+export 'src/view_commands.dart'
+    show
+        clearSelection,
+        frameNodes,
+        selectNodes,
+        setViewportCamera,
+        viewCommands;
+
 export 'src/builtin_commands.dart'
     show
         builtinCommands,
@@ -93,5 +104,6 @@ export 'src/graft.dart' show graftDocumentRecords, wrapRootsUnderGroup;
 
 // Selection, queries, and the session that ties it all together.
 export 'src/selection.dart' show Selection;
+export 'src/view_host.dart' show ViewHost;
 export 'src/query.dart' show SceneQuery;
 export 'src/session.dart' show EditorSession;

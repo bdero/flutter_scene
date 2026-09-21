@@ -13,6 +13,9 @@ library;
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
 
+import 'selection.dart';
+import 'view_host.dart';
+
 import 'change.dart';
 
 /// The wire type of a command parameter, shared by the JSON schema and the UI.
@@ -95,7 +98,12 @@ class CommandContext {
   /// Creates a context over [document], optionally with a [componentSchema]
   /// lookup so component commands can coerce and clamp property values
   /// against their declared descriptors.
-  CommandContext(this.document, {this.componentSchema});
+  CommandContext(
+    this.document, {
+    this.componentSchema,
+    this.selection,
+    this.view,
+  });
 
   /// The document being edited (read access plus [SceneDocument.newId]).
   final SceneDocument document;
@@ -103,6 +111,26 @@ class CommandContext {
   /// Resolves a component type to its schema, or null when unknown (the
   /// host decides what is registered; commands fall back to shape-guessing).
   final ComponentSchema? Function(String type)? componentSchema;
+
+  /// The session's selection, present whenever a session runs the command.
+  final Selection? selection;
+
+  /// The viewport, present only when the host supplied one.
+  final ViewHost? view;
+}
+
+/// What a command touches, which decides how a host runs it and whether it
+/// reaches the undo history.
+///
+/// TODO(command-kinds): application commands (open, save, run, hot reload)
+/// need an asynchronous body before they can join the registry.
+enum CommandKind {
+  /// Edits the document. Returns the transaction the host commits.
+  document,
+
+  /// Changes transient view state (selection, camera). Returns an empty
+  /// transaction and never reaches the history.
+  view,
 }
 
 /// Thrown when a command receives invalid or missing parameters.
@@ -126,6 +154,7 @@ class CommandEntry {
     required this.paramSchema,
     required this.execute,
     this.category = '',
+    this.kind = CommandKind.document,
     this.applicable = _always,
   });
 
@@ -137,6 +166,9 @@ class CommandEntry {
 
   /// A grouping label for menus and tool browsing (for example `Node`).
   final String category;
+
+  /// What this command touches.
+  final CommandKind kind;
 
   /// The parameter declarations, the single source of truth from which the
   /// MCP schema and the UI descriptors are derived.

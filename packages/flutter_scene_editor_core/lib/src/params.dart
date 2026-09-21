@@ -45,6 +45,14 @@ bool requireBool(Map<String, Object?> params, String key) {
   return v;
 }
 
+/// Reads an optional boolean [key], or null when absent.
+bool? optionalBool(Map<String, Object?> params, String key) {
+  final v = _get(params, key);
+  if (v == null) return null;
+  if (v is! bool) throw CommandException('Param $key must be a boolean');
+  return v;
+}
+
 /// Reads a required integer [key].
 int requireInt(Map<String, Object?> params, String key) {
   final v = _get(params, key);
@@ -65,6 +73,14 @@ int? optionalInt(Map<String, Object?> params, String key) {
 double requireDouble(Map<String, Object?> params, String key) {
   final v = _get(params, key);
   if (v == null) _missing(key);
+  if (v is! num) throw CommandException('Param $key must be a number');
+  return v.toDouble();
+}
+
+/// Reads an optional number [key], or null when absent.
+double? optionalDouble(Map<String, Object?> params, String key) {
+  final v = _get(params, key);
+  if (v == null) return null;
   if (v is! num) throw CommandException('Param $key must be a number');
   return v.toDouble();
 }

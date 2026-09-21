@@ -15,9 +15,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
+import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
+    show CommandException, ViewHost;
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
-import 'package:scene/scene.dart' show EditorCameraSpec, EditorStateSpec;
+import 'package:scene/scene.dart'
+    show EditorCameraSpec, EditorStateSpec, LocalId;
+import 'package:vector_math/vector_math.dart' show Aabb3;
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
 
@@ -177,6 +181,7 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   void _configureController(EditorController controller) {
+    controller.session.viewHost = _EditorViewHost(this);
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
     // Saves carry the viewport camera and selection in the document; a
     // restored pose applies now (buffered until a viewport attaches).
@@ -1742,5 +1747,50 @@ class _RecentSceneTile extends StatelessWidget {
       ),
       onTap: onOpen,
     );
+  }
+}
+
+/// Lets view commands drive the viewport the same way the UI does.
+class _EditorViewHost implements ViewHost {
+  _EditorViewHost(this._home);
+
+  final _EditorHomeState _home;
+
+  @override
+  EditorCameraSpec get camera {
+    final pose = _home._cameraHandle.pose;
+    if (pose == null) {
+      throw const CommandException('The viewport has no camera yet');
+    }
+    return EditorCameraSpec(
+      azimuth: pose.azimuth,
+      elevation: pose.elevation,
+      radius: pose.radius,
+      target: pose.target,
+      orthographic: pose.orthographic,
+    );
+  }
+
+  @override
+  void setCamera(EditorCameraSpec pose) => _home._cameraHandle.setPose(
+    azimuth: pose.azimuth,
+    elevation: pose.elevation,
+    radius: pose.radius,
+    target: pose.target,
+    orthographic: pose.orthographic,
+  );
+
+  @override
+  bool frame(Iterable<LocalId> ids) {
+    Aabb3? bounds;
+    for (final id in ids) {
+      final node = _home._requireController.liveNode(id);
+      final nodeBounds = node?.combinedWorldBounds;
+      if (nodeBounds == null) continue;
+      bounds = bounds == null ? nodeBounds : (bounds..hull(nodeBounds));
+    }
+    if (bounds == null) return false;
+    _home._cameraHandle.frame(bounds);
+    return true;
   }
 }
