@@ -12,6 +12,8 @@ in vec2 v_uv;
 out vec4 frag_color;
 
 #include <pbr.glsl>      // kPi
+// Equirect helpers only; the radiance block would be declared unread.
+#define FLUTTER_SCENE_NO_ENGINE_RADIANCE
 #include <texture.glsl>  // SphericalToEquirectangular
 
 // Quadrature grid over the sphere. Coarser than the CPU's (the diffuse SH is

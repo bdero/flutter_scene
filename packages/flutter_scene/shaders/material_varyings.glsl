@@ -13,6 +13,15 @@ in vec4 v_tangent;
 
 out vec4 frag_color;
 
+// A shader that takes only the varyings (the depth and mask passes) defines
+// FLUTTER_SCENE_NO_VIEW_INFO to leave the block out. Declared but unread, it
+// gets no binding and reflects at 0, where it collides with the vertex
+// stage's FrameInfo; Vulkan rejects the pipeline layout and drops the draws.
+// TODO(binding-liveness): a custom shader that includes this file and never
+// calls GetViewDirection hits the same collision. The durable fix is for the
+// shader compiler to give unread resources a binding too; until then
+// test/shader_binding_ranges_test.dart guards the engine's own shaders.
+#ifndef FLUTTER_SCENE_NO_VIEW_INFO
 // The camera axis, for the view direction under an orthographic camera, where
 // every view ray is parallel and v_viewvector (which stays the true vector to
 // the eye, for derivatives and depth) does not point along one. Bound by the
@@ -22,6 +31,7 @@ uniform ViewInfo {
   highp vec4 camera_forward;
 }
 view_info;
+#endif  // FLUTTER_SCENE_NO_VIEW_INFO
 
 // World-space position of the fragment.
 highp vec3 GetWorldPosition() { return v_position; }
@@ -33,12 +43,14 @@ vec3 GetWorldNormal() {
   return normalize(v_normal) * face_direction;
 }
 
+#ifndef FLUTTER_SCENE_NO_VIEW_INFO
 // Normalized direction from the fragment toward the viewer: toward the eye for
 // perspective, against the camera axis for orthographic.
 vec3 GetViewDirection() {
   return view_info.camera_forward.w > 0.5 ? -view_info.camera_forward.xyz
                                           : normalize(v_viewvector);
 }
+#endif  // FLUTTER_SCENE_NO_VIEW_INFO
 
 // Primary texture coordinates.
 highp vec2 GetUV0() { return v_texture_coords; }

@@ -12,6 +12,8 @@
 // than by linearizing gl_FragCoord.z, so it does not depend on the
 // backend's clip-space depth-range convention.
 
+// Varyings only; nothing here reads the view axis.
+#define FLUTTER_SCENE_NO_VIEW_INFO
 #include <material_varyings.glsl>
 
 uniform DepthInfo {

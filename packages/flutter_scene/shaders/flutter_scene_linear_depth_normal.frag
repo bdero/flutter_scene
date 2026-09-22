@@ -16,6 +16,8 @@
 // The world normal is rotated into view space with the camera basis passed
 // in, matching the lookAt view matrix (+X right, +Y up, +Z forward).
 
+// Varyings only; nothing here reads the view axis.
+#define FLUTTER_SCENE_NO_VIEW_INFO
 #include <material_varyings.glsl>
 #include <material_inputs.glsl>
 

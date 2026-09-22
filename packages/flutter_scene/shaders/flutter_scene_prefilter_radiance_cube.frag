@@ -39,6 +39,8 @@ in vec2 v_uv;
 out vec4 frag_color;
 
 #include <pbr.glsl>      // kPi, SRGBToLinear
+// Equirect helpers only; the radiance block would be declared unread.
+#define FLUTTER_SCENE_NO_ENGINE_RADIANCE
 #include <texture.glsl>  // SphericalToEquirectangular
 
 const int kPrefilterSamples = 256;
