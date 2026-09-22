@@ -1021,6 +1021,8 @@ class ResourceRealizer {
     );
     m.emissiveTextureTexCoord = _textureTexCoord(p, 'emissiveTextureTransform');
     m.normalScale = readDouble(p, 'normalScale', m.normalScale);
+    m.parallaxScale = readDouble(p, 'parallaxScale', m.parallaxScale);
+    m.parallaxSteps = readInt(p, 'parallaxSteps', m.parallaxSteps);
     m.doubleSided = readBool(p, 'doubleSided', m.doubleSided);
     m.alphaMode = _alphaMode(readString(p, 'alphaMode', 'opaque'));
     m.alphaCutoff = readDouble(p, 'alphaCutoff', m.alphaCutoff);
@@ -1105,6 +1107,8 @@ class ResourceRealizer {
       anisotropyTexture: _physicalTexture(p, 'anisotropyTexture'),
       anisotropy: readDouble(p, 'anisotropy', 0.0),
       anisotropyRotation: readDouble(p, 'anisotropyRotation', 0.0),
+      parallaxScale: readDouble(p, 'parallaxScale', 0.0),
+      parallaxSteps: readInt(p, 'parallaxSteps', 16),
       alphaMode: _alphaMode(readString(p, 'alphaMode', 'opaque')),
       alphaCutoff: readDouble(p, 'alphaCutoff', 0.5),
       doubleSided: readBool(p, 'doubleSided', false),

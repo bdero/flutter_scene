@@ -103,7 +103,7 @@ Uint8List _reference(
           dst[o] = _encodeUnit(nx);
           dst[o + 1] = _encodeUnit(ny);
           dst[o + 2] = _encodeUnit(nz);
-          dst[o + 3] = 255;
+          dst[o + 3] = _average(src, taps, 3);
       }
     }
   }

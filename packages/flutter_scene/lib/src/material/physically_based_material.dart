@@ -72,7 +72,9 @@ class TextureTransform {
 ///    optional per-vertex color, weighted by [vertexColorWeight]).
 ///  * Metallic-roughness: [metallicFactor], [roughnessFactor],
 ///    [metallicRoughnessTexture] (B = metallic, G = roughness).
-///  * Normal: [normalTexture] with [normalScale].
+///  * Normal: [normalTexture] with [normalScale], whose alpha channel is a
+///    height field (1 at the surface, 0 at the deepest point) that
+///    [parallaxScale] turns into parallax occlusion mapping.
 ///  * Emissive: [emissiveFactor], [emissiveTexture].
 ///  * Occlusion: [occlusionTexture] with [occlusionStrength].
 ///  * Lighting: [environment] (overrides the [Scene]-wide environment
@@ -265,6 +267,37 @@ class PhysicallyBasedMaterial extends Material {
   double _normalScale = 1.0;
   set normalScale(double value) {
     _normalScale = value;
+    _markMaterialDataDirty();
+  }
+
+  /// Depth of the parallax occlusion height field in UV units, `0` for none
+  /// (the default, which costs nothing).
+  ///
+  /// The height field rides the alpha channel of [normalTexture], `1` at the
+  /// surface and `0` at the deepest point, so it needs no texture of its own;
+  /// a normal map with an opaque alpha is flat. Each fragment marches the view
+  /// ray through the field in tangent space and every material texture is
+  /// then sampled at the point the ray hits, so bricks, tiles, and cobbles
+  /// occlude each other at grazing angles. The offset is measured on
+  /// [normalTexture]'s coordinates ([normalTextureTexCoord],
+  /// [normalTextureTransform]) and applied to every other slot. Values
+  /// around `0.02` to `0.08` suit most surfaces; large depths need more
+  /// [parallaxSteps]. Meshes without tangents use the same derivative frame
+  /// as the normal map.
+  double get parallaxScale => _parallaxScale;
+  double _parallaxScale = 0.0;
+  set parallaxScale(double value) {
+    _parallaxScale = math.max(value, 0.0);
+    _markMaterialDataDirty();
+  }
+
+  /// Depth layers the parallax ray march samples, clamped to 4 through 64.
+  /// Defaults to `16`; more steps resolve deeper or finer height fields at a
+  /// linear cost per fragment. Unused while [parallaxScale] is `0`.
+  int get parallaxSteps => _parallaxSteps;
+  int _parallaxSteps = 16;
+  set parallaxSteps(int value) {
+    _parallaxSteps = value.clamp(4, 64);
     _markMaterialDataDirty();
   }
 
@@ -1300,6 +1333,9 @@ class PhysicallyBasedMaterial extends Material {
     ),
     anisotropy: anisotropy,
     anisotropyRotation: anisotropyRotation,
+    // No height field without the normal texture that carries it.
+    parallaxScale: normalTexture != null ? parallaxScale : 0.0,
+    parallaxSteps: parallaxSteps,
     alphaMode: alphaMode,
     alphaCutoff: alphaCutoff,
     doubleSided: doubleSided,
@@ -1459,6 +1495,8 @@ class PhysicallyBasedMaterial extends Material {
     );
     _anisotropy = d.anisotropy;
     anisotropyRotation = d.anisotropyRotation;
+    parallaxScale = d.parallaxScale;
+    parallaxSteps = d.parallaxSteps;
   }
 
   void _applyTexture(
@@ -1578,6 +1616,8 @@ class PhysicallyBasedMaterial extends Material {
     //   [133]     float alpha_cutoff
     //   [138]     float specular_aa_variance
     //   [139]     float specular_aa_threshold
+    //   [171]     float model_scale.w, the parallax step count
+    //   [175]     float dielectric_f0.w, the parallax scale (0 off)
     // A shared scratch (zeroed each bind, matching a fresh allocation's
     // unwritten slots) instead of a per-draw allocation; emplace below copies
     // the bytes out immediately.
@@ -1609,6 +1649,10 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[133] = alphaCutoff;
     fragInfo[138] = specularAntiAliasingVariance;
     fragInfo[139] = specularAntiAliasingThreshold;
+    // The parallax controls ride the unused w of two material vec4s, so
+    // the block keeps its size and no other lit material has to pack them.
+    fragInfo[171] = parallaxSteps.toDouble();
+    fragInfo[175] = normalTexture != null ? parallaxScale : 0.0;
     // dielectric_f0 [172..174]: packInto wrote the plain 0.04; a scalar ior,
     // specular factor, or specular color replaces it with their product so
     // the draw stays on the standard shader.

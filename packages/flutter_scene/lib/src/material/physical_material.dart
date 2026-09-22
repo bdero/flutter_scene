@@ -76,6 +76,8 @@ class PhysicalMaterialDescriptor {
     PhysicalTexture? anisotropyTexture,
     this.anisotropy = 0.0,
     this.anisotropyRotation = 0.0,
+    this.parallaxScale = 0.0,
+    this.parallaxSteps = 16,
     this.alphaMode = AlphaMode.opaque,
     this.alphaCutoff = 0.5,
     this.doubleSided = false,
@@ -253,6 +255,12 @@ class PhysicalMaterialDescriptor {
 
   /// Anisotropy direction rotation in radians.
   final double anisotropyRotation;
+
+  /// Parallax occlusion depth in UV units, 0 for none.
+  final double parallaxScale;
+
+  /// Parallax occlusion ray-march layer count.
+  final int parallaxSteps;
 
   /// Alpha interpretation.
   final AlphaMode alphaMode;

@@ -339,7 +339,9 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
       ..setFloat('iridescence_thickness_minimum', d.iridescenceThicknessMinimum)
       ..setFloat('iridescence_thickness_maximum', d.iridescenceThicknessMaximum)
       ..setFloat('anisotropy', d.anisotropy)
-      ..setFloat('anisotropy_rotation', d.anisotropyRotation);
+      ..setFloat('anisotropy_rotation', d.anisotropyRotation)
+      ..setFloat('parallax_scale', d.parallaxScale)
+      ..setInt('parallax_steps', d.parallaxSteps);
     _setTexture('base_color_texture', d.baseColorTexture);
     _setTransform('base_color', d.baseColorTexture);
     _setTexture('metallic_roughness_texture', d.metallicRoughnessTexture);

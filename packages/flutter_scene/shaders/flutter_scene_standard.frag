@@ -46,11 +46,36 @@ void Surface(inout MaterialInputs material) {
   // transform reproduces the raw UV bit-exactly, so the uniform branch only
   // skips work.
   bool transformed_uvs = texture_transforms.base_color_rotation.w > 0.5;
+  // Parallax occlusion displaces every lookup below by one offset, computed
+  // once from the height field in the normal texture's alpha against the
+  // normal slot's UVs and carried back to raw channel space so each slot's
+  // own transform still applies. dielectric_f0.w holds the scale (0 is off,
+  // and skips the whole march) and model_scale.w the step count.
+  // TODO(parallax-uv-channels): the offset is measured on the normal slot's
+  // channel; a slot reading the other channel is displaced by it anyway.
+  highp vec2 uv_offset = vec2(0.0);
+  highp vec2 parallax_uv = transformed_uvs
+      ? MaterialTextureUv(
+            texture_transforms.normal_transform,
+            texture_transforms.normal_rotation)
+      : GetUV0();
+  float parallax_scale = frag_info.dielectric_f0.w;
+  if (parallax_scale > 0.0 && frag_info.has_normal_map > 0.5) {
+    highp vec2 offset = ParallaxOcclusionOffset(
+        normal_texture, GetWorldNormal(), v_viewvector, parallax_uv,
+        parallax_scale, int(frag_info.model_scale.w + 0.5));
+    uv_offset = transformed_uvs
+        ? UntransformMaterialUvOffset(
+              offset, texture_transforms.normal_transform,
+              texture_transforms.normal_rotation.xy)
+        : offset;
+  }
+  highp vec2 uv0 = GetUV0() + uv_offset;
   highp vec2 base_color_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.base_color_transform,
-            texture_transforms.base_color_rotation)
-      : GetUV0();
+            texture_transforms.base_color_rotation, uv_offset)
+      : uv0;
   vec4 base_color_srgb = texture(base_color_texture, base_color_uv);
   vec3 albedo = SRGBToLinear(base_color_srgb.rgb) * vertex_color.rgb *
                 frag_info.color.rgb;
@@ -74,18 +99,18 @@ void Surface(inout MaterialInputs material) {
     highp vec2 normal_uv = transformed_uvs
         ? MaterialTextureUv(
               texture_transforms.normal_transform,
-              texture_transforms.normal_rotation)
-        : GetUV0();
-    normal = PerturbNormal(normal_texture, normal, v_viewvector,
-                           normal_uv, frag_info.normal_scale);
+              texture_transforms.normal_rotation, uv_offset)
+        : uv0;
+    normal = PerturbNormal(normal_texture, normal, v_viewvector, normal_uv,
+                           parallax_uv, vec2(frag_info.normal_scale));
   }
   material.normal = normal;
 
   highp vec2 metallic_roughness_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.metallic_roughness_transform,
-            texture_transforms.metallic_roughness_rotation)
-      : GetUV0();
+            texture_transforms.metallic_roughness_rotation, uv_offset)
+      : uv0;
   vec4 metallic_roughness =
       texture(metallic_roughness_texture, metallic_roughness_uv);
   material.metallic = clamp(metallic_roughness.b * frag_info.metallic_factor,
@@ -97,16 +122,16 @@ void Surface(inout MaterialInputs material) {
   highp vec2 occlusion_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.occlusion_transform,
-            texture_transforms.occlusion_rotation)
-      : GetUV0();
+            texture_transforms.occlusion_rotation, uv_offset)
+      : uv0;
   float occlusion = texture(occlusion_texture, occlusion_uv).r;
   material.occlusion = 1.0 - (1.0 - occlusion) * frag_info.occlusion_strength;
 
   highp vec2 emissive_uv = transformed_uvs
       ? MaterialTextureUv(
             texture_transforms.emissive_transform,
-            texture_transforms.emissive_rotation)
-      : GetUV0();
+            texture_transforms.emissive_rotation, uv_offset)
+      : uv0;
   material.emissive = SRGBToLinear(texture(emissive_texture, emissive_uv).rgb) *
                       frag_info.emissive_factor.rgb *
                       frag_info.emissive_factor.a;

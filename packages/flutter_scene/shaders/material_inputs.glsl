@@ -25,10 +25,40 @@ highp vec2 ApplyMaterialUvTransform(highp vec2 uv, highp vec4 transform,
       uv, transform, vec2(cos(rotation), sin(rotation)));
 }
 
+// Selects the packed UV channel, displaces it by `offset` (a parallax offset in
+// raw channel space), and applies its texture transform.
+highp vec2 MaterialTextureUv(highp vec4 transform, highp vec4 rotation,
+                             highp vec2 offset) {
+  highp vec2 uv = GetUV(int(rotation.z + 0.5)) + offset;
+  return ApplyMaterialUvTransform(uv, transform, rotation.xy);
+}
+
 // Selects the packed UV channel and applies its texture transform.
 highp vec2 MaterialTextureUv(highp vec4 transform, highp vec4 rotation) {
-  highp vec2 uv = GetUV(int(rotation.z + 0.5));
-  return ApplyMaterialUvTransform(uv, transform, rotation.xy);
+  return MaterialTextureUv(transform, rotation, vec2(0.0));
+}
+
+// Maps a UV offset measured in a slot's transformed space back to the raw
+// channel space, undoing the transform's rotation and scale (the translation
+// does not move an offset). A parallax offset is computed against the normal
+// texture's transformed UVs and then shared with every other slot, each of
+// which applies its own transform on top.
+highp vec2 UntransformMaterialUvOffset(highp vec2 offset, highp vec4 transform,
+                                       vec2 rotation) {
+  highp vec2 unrotated =
+      vec2(rotation.x * offset.x + rotation.y * offset.y,
+           -rotation.y * offset.x + rotation.x * offset.y);
+  highp vec2 scale = transform.zw;
+  scale.x = scale.x != 0.0 ? scale.x : 1.0;
+  scale.y = scale.y != 0.0 ? scale.y : 1.0;
+  return unrotated / scale;
+}
+
+// The angle-stored rotation form of UntransformMaterialUvOffset.
+highp vec2 UntransformMaterialUvOffset(highp vec2 offset, highp vec4 transform,
+                                       float rotation) {
+  return UntransformMaterialUvOffset(offset, transform,
+                                     vec2(cos(rotation), sin(rotation)));
 }
 
 struct MaterialInputs {

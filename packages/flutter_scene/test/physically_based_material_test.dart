@@ -36,6 +36,30 @@ void main() {
     expect(material.isOpaque(), isTrue);
   });
 
+  test('parallax occlusion is off by default and clamps its controls', () {
+    final material = PhysicallyBasedMaterial();
+    expect(material.parallaxScale, 0.0);
+    expect(material.parallaxSteps, 16);
+
+    material.parallaxScale = 0.05;
+    expect(material.parallaxScale, 0.05);
+    material.parallaxScale = -1.0;
+    expect(material.parallaxScale, 0.0);
+
+    material.parallaxSteps = 1;
+    expect(material.parallaxSteps, 4);
+    material.parallaxSteps = 200;
+    expect(material.parallaxSteps, 64);
+    material.parallaxSteps = 24;
+    expect(material.parallaxSteps, 24);
+
+    // The march is a uniform branch on the standard shader, not a physical
+    // variant, so it does not change the material's shader selection.
+    material.parallaxScale = 0.05;
+    expect(material.hasPhysicalConfiguration, isFalse);
+    expect(material.isOpaque(), isTrue);
+  });
+
   test('transmission updates opacity and cached render requirements', () {
     final revision = material_internal.materialSceneInputsRevision;
     final material = PhysicallyBasedMaterial()..transmission = 0.75;

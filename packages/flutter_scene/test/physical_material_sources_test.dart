@@ -795,6 +795,78 @@ void main() {
     );
   });
 
+  test(
+    'parallax occlusion marches the normal texture alpha on every lit path',
+    () {
+      final normals = File('shaders/normals.glsl').readAsStringSync();
+      final inputs = File('shaders/material_inputs.glsl').readAsStringSync();
+      final standard = File(
+        'shaders/flutter_scene_standard.frag',
+      ).readAsStringSync();
+
+      // One march, constant-bounded with a dynamic break, sampling the height
+      // with explicit gradients so the mip level is defined inside the loop.
+      expect(normals, contains('highp vec2 ParallaxOcclusionOffset('));
+      expect(normals, contains('for (int i = 0; i < kParallaxMaxSteps; i++)'));
+      expect(
+        normals,
+        contains('if (i >= steps || current_depth >= surface_depth) break;'),
+      );
+      expect(
+        normals,
+        contains('textureGrad(height_tex, current_uv, dx, dy).a'),
+      );
+      expect(
+        normals,
+        contains('mix(current_uv, current_uv + delta_uv, weight)'),
+      );
+      // The normal map's frame keeps the undisplaced coordinates.
+      expect(
+        normals,
+        contains('highp vec2 texcoord, highp vec2 frame_texcoord,'),
+      );
+      expect(inputs, contains('highp vec2 UntransformMaterialUvOffset('));
+
+      // The standard shader gates the march on a uniform and displaces every
+      // slot; the height field shares the normal sampler, so no unit is added.
+      expect(
+        standard,
+        contains('float parallax_scale = frag_info.dielectric_f0.w;'),
+      );
+      expect(standard, contains('int(frag_info.model_scale.w + 0.5)'));
+      expect(
+        standard,
+        contains('if (parallax_scale > 0.0 && frag_info.has_normal_map > 0.5)'),
+      );
+      expect(standard, isNot(contains('height_texture')));
+      expect('uv_offset)'.allMatches(standard), hasLength(5));
+      expect(standard, contains('parallax_uv, vec2(frag_info.normal_scale)'));
+
+      for (final name in ['physical_opaque', 'physical_transmission']) {
+        final compiled = _compile(name);
+        final params = compiled.material.parameters.map((p) => p.name).toSet();
+        expect(
+          params,
+          containsAll(<String>{'parallax_scale', 'parallax_steps'}),
+        );
+        expect(
+          compiled.material.samplerParameters,
+          hasLength(name == 'physical_opaque' ? 6 : 5),
+        );
+        expect(
+          compiled.glsl,
+          contains('if (material_params.parallax_scale > 0.0)'),
+        );
+        expect(compiled.glsl, contains('ParallaxOcclusionOffset('));
+        expect(
+          '+ uv_offset,'.allMatches(compiled.glsl),
+          hasLength(name == 'physical_opaque' ? 6 : 5),
+          reason: '$name displaces every texture slot',
+        );
+      }
+    },
+  );
+
   test('vertex bodies carry normals by the inverse-transpose', () {
     final helper = File('shaders/normal_transform.glsl').readAsStringSync();
     final unskinned = File(

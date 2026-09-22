@@ -1,5 +1,7 @@
 ## 0.24.0
 
+* `PhysicallyBasedMaterial.parallaxScale` and `parallaxSteps` add parallax occlusion mapping. The height field rides the alpha channel of `normalTexture` (1 at the surface, 0 at the deepest point), so it costs no extra sampler, and every material texture is sampled where the marched view ray lands. Off by default. `ParallaxOcclusionOffset` does the same for a `.fmat`.
+* Mip chains built for `TextureContent.normal` average the alpha channel instead of forcing it opaque, so a packed height field survives minification.
 * Display-referred surfaces. `Material.displayReferred` (settable on `UnlitMaterial`) marks a surface whose color is already final screen values, so it draws past the tone curve into its own layer and composites onto the resolved image with its colors unchanged. `WidgetComponent` turns it on for the material it owns, fixing captured widgets arriving dark and dark tones crushed (#382); pass `displayReferred: false` for a screen that should read as a lit object. The layer is still occluded by opaque geometry, but takes no exposure, grading, tone mapping, fog, bloom or depth of field, casts no shadow, and does not order against translucent geometry.
 * Web decodes glTF, `.fscene`, and asset textures in the browser and builds their mip chains on the GPU, so large images no longer render in pieces and no longer stall the main thread.
 * `Texture2D.fromEncodedBytes` uploads an encoded image. It, `Texture2D.fromAsset`, and the glTF loaders take a size cap that scales larger images down as they decode.
