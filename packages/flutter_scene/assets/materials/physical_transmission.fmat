@@ -36,6 +36,8 @@ material {
     { type: float, name: iridescence_thickness_maximum, default: 400 },
     { type: float, name: anisotropy, default: 0 },
     { type: float, name: anisotropy_rotation, default: 0 },
+    { type: float, name: parallax_scale, default: 0 },
+    { type: int, name: parallax_steps, default: 16 },
     { type: int, name: transmission_texture_kind, default: 0 },
     { type: vec4, name: base_color_uv_transform, default: [0, 0, 1, 1] },
     { type: float, name: base_color_uv_rotation, default: 0 },
@@ -68,24 +70,43 @@ fragment {
   }
 
   void Surface(inout MaterialInputs material) {
-    vec2 base_uv = ApplyMaterialUvTransform(
-        GetUV(material_params.base_color_uv_set),
-        material_params.base_color_uv_transform,
-        material_params.base_color_uv_rotation);
-    vec2 mr_uv = ApplyMaterialUvTransform(
-        GetUV(material_params.metallic_roughness_uv_set),
-        material_params.metallic_roughness_uv_transform,
-        material_params.metallic_roughness_uv_rotation);
-    vec2 normal_uv = ApplyMaterialUvTransform(
+    // Parallax occlusion displaces every lookup below by one offset, computed
+    // once from the height field in the normal texture's alpha against the
+    // normal slot's UVs and carried back to raw channel space so each slot's
+    // own transform still applies. A zero scale skips the march.
+    // TODO(parallax-uv-channels): the offset is measured on the normal slot's
+    // channel; a slot reading the other channel is displaced by it anyway.
+    highp vec2 parallax_uv = ApplyMaterialUvTransform(
         GetUV(material_params.normal_uv_set),
         material_params.normal_uv_transform,
         material_params.normal_uv_rotation);
+    highp vec2 uv_offset = vec2(0.0);
+    if (material_params.parallax_scale > 0.0) {
+      highp vec2 offset = ParallaxOcclusionOffset(
+          normal_texture, GetWorldNormal(), v_viewvector, parallax_uv,
+          material_params.parallax_scale, material_params.parallax_steps);
+      uv_offset = UntransformMaterialUvOffset(
+          offset, material_params.normal_uv_transform,
+          material_params.normal_uv_rotation);
+    }
+    vec2 base_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.base_color_uv_set) + uv_offset,
+        material_params.base_color_uv_transform,
+        material_params.base_color_uv_rotation);
+    vec2 mr_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.metallic_roughness_uv_set) + uv_offset,
+        material_params.metallic_roughness_uv_transform,
+        material_params.metallic_roughness_uv_rotation);
+    vec2 normal_uv = ApplyMaterialUvTransform(
+        GetUV(material_params.normal_uv_set) + uv_offset,
+        material_params.normal_uv_transform,
+        material_params.normal_uv_rotation);
     vec2 emissive_uv = ApplyMaterialUvTransform(
-        GetUV(material_params.emissive_uv_set),
+        GetUV(material_params.emissive_uv_set) + uv_offset,
         material_params.emissive_uv_transform,
         material_params.emissive_uv_rotation);
     vec2 data_uv = ApplyMaterialUvTransform(
-        GetUV(material_params.transmission_data_uv_set),
+        GetUV(material_params.transmission_data_uv_set) + uv_offset,
         material_params.transmission_data_uv_transform,
         material_params.transmission_data_uv_rotation);
 
@@ -100,8 +121,8 @@ fragment {
     material.roughness = clamp(mr.g * material_params.roughness_factor,
                                kMinRoughness, 1.0);
     material.normal = PerturbNormal(normal_texture, GetWorldNormal(),
-                                    v_viewvector, normal_uv,
-                                    material_params.normal_scale);
+                                    v_viewvector, normal_uv, parallax_uv,
+                                    vec2(material_params.normal_scale));
     material.emissive = material_params.emissive_factor *
                         material_params.emissive_strength *
                         SRGBToLinear(texture(emissive_texture,

@@ -300,7 +300,21 @@ vec4 GetVertexColor();     // interpolated per-vertex color (white if none)
 The standard GLSL helpers from the engine's shader library are `#include`d for
 you and available in `Surface()`: `SRGBToLinear`, the Cook-Torrance BRDF pieces
 (`FresnelSchlick`, `DistributionGGX`, ...), `PerturbNormal` (normal-map
-perturbation), and `SamplePrefilteredRadiance`.
+perturbation), `ParallaxOcclusionOffset` (parallax occlusion mapping), and
+`SamplePrefilteredRadiance`.
+
+**Parallax occlusion** reads its height field from the alpha channel of a
+normal texture (1 at the surface, 0 at the deepest point), the packing
+`PhysicallyBasedMaterial.parallaxScale` uses, so it costs no sampler against
+the budget below. `ParallaxOcclusionOffset(normal_tex, GetWorldNormal(),
+v_viewvector, uv, scale, steps)` marches the view ray through `steps` layers
+and returns the UV offset to add to `uv` for every texture lookup of the
+surface, with `scale` the depth of the 0 level in UV units. Sample the normal
+map at the displaced coordinates but pass the undisplaced ones as
+`PerturbNormal`'s `frame_texcoord`, so the tangent frame's derivatives stay
+smooth. Meshes without tangents work; the frame falls back to screen-space
+derivatives like the normal map's. Wrap the call in `if (scale > 0.0)` so a
+material with parallax off pays nothing.
 
 For a `lit` material, fill `base_color` / `metallic` / `roughness` / `normal` /
 `occlusion` / `emissive` and the engine produces the lit color (image-based

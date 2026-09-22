@@ -497,6 +497,10 @@ class MeshCodec extends ComponentCodec {
       'roughness': DoubleValue(m.roughnessFactor),
       'occlusionStrength': DoubleValue(m.occlusionStrength),
       'normalScale': DoubleValue(m.normalScale),
+      if (m.parallaxScale != 0) ...{
+        'parallaxScale': DoubleValue(m.parallaxScale),
+        'parallaxSteps': IntValue(m.parallaxSteps),
+      },
       'doubleSided': BoolValue(m.doubleSided),
       'alphaMode': StringValue(m.alphaMode.name),
       'alphaCutoff': DoubleValue(m.alphaCutoff),

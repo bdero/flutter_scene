@@ -13,7 +13,8 @@ enum TextureContent {
   /// Linear data (metallic-roughness, ambient occlusion). Averaged directly.
   data,
 
-  /// A tangent-space normal map. Averaged as vectors and renormalized.
+  /// A tangent-space normal map. Averaged as vectors and renormalized; the
+  /// alpha (a parallax height field) is averaged as data.
   normal,
 }
 
@@ -209,7 +210,8 @@ void _downsampleNormal(
       dst[o] = _encodeUnit(nx);
       dst[o + 1] = _encodeUnit(ny);
       dst[o + 2] = _encodeUnit(nz);
-      dst[o + 3] = 255;
+      dst[o + 3] =
+          ((src[a + 3] + src[b + 3] + src[c + 3] + src[d + 3]) + 2) ~/ 4;
     }
   }
 }
