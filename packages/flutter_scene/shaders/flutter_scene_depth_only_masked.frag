@@ -6,6 +6,8 @@
 // SkinnedVertex), not the position-only depth vertex path, because the mask
 // needs the texture-coordinate and vertex-color varyings.
 
+// Varyings only; nothing here reads the view axis.
+#define FLUTTER_SCENE_NO_VIEW_INFO
 #include <material_varyings.glsl>
 #include <material_inputs.glsl>
 #include <depth_mask.glsl>

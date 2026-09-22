@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Fixed unlit `.fmat` materials drawing nothing on Impeller Vulkan. Their shader carried an unread radiance block that collided with the vertex stage's frame block in the pipeline layout, which some drivers reject; the block is now compiled out where nothing reads it.
 * Display-referred surfaces. `Material.displayReferred` (settable on `UnlitMaterial`) marks a surface whose color is already final screen values, so it draws past the tone curve into its own layer and composites onto the resolved image with its colors unchanged. `WidgetComponent` turns it on for the material it owns, fixing captured widgets arriving dark and dark tones crushed (#382); pass `displayReferred: false` for a screen that should read as a lit object. The layer is still occluded by opaque geometry, but takes no exposure, grading, tone mapping, fog, bloom or depth of field, casts no shadow, and does not order against translucent geometry.
 * Web decodes glTF, `.fscene`, and asset textures in the browser and builds their mip chains on the GPU, so large images no longer render in pieces and no longer stall the main thread.
 * `Texture2D.fromEncodedBytes` uploads an encoded image. It, `Texture2D.fromAsset`, and the glTF loaders take a size cap that scales larger images down as they decode.

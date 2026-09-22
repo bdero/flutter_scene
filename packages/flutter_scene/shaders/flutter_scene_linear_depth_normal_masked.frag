@@ -3,6 +3,8 @@
 // MASK coverage rejects, so screen-space reflections trace against cutout
 // surfaces only where they are actually opaque.
 
+// Varyings only; nothing here reads the view axis.
+#define FLUTTER_SCENE_NO_VIEW_INFO
 #include <material_varyings.glsl>
 #include <material_inputs.glsl>
 #include <depth_mask.glsl>

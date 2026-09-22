@@ -5,6 +5,8 @@
 // engine's standard vertex shaders (UnskinnedVertex / SkinnedVertex), like the
 // depth prepass; the per-vertex varyings are unused.
 
+// Varyings only; nothing here reads the view axis.
+#define FLUTTER_SCENE_NO_VIEW_INFO
 #include <material_varyings.glsl>
 
 uniform MaskInfo {

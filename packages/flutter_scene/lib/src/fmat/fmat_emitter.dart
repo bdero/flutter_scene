@@ -675,6 +675,11 @@ String _emitSkyGlsl(
   for (final define in defines) {
     sb.writeln('#define $define');
   }
+  if (!material.useEnvironment) {
+    // Same dead-block hazard as an unlit surface material; the skybox vertex
+    // stage owns binding 0.
+    sb.writeln('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE');
+  }
   sb.writeln('#include <pbr.glsl>');
   sb.writeln('#include <texture.glsl>');
   sb.writeln();

@@ -852,6 +852,24 @@ sky {
 }
 ''';
 
+    test(
+      'a sky that never samples the environment drops the radiance block',
+      () {
+        expect(
+          emitFragmentGlsl(parseFmat(validSky, fileName: 'sky.fmat')),
+          contains('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE'),
+        );
+        final sampling = parseFmat('''
+material { name: "Env", requires: [environment] }
+sky { vec3 Sky(vec3 d) { return SampleEnvironment(d, 0.0); } }
+''', fileName: 'env.fmat');
+        expect(
+          emitFragmentGlsl(sampling),
+          isNot(contains('#define FLUTTER_SCENE_NO_ENGINE_RADIANCE')),
+        );
+      },
+    );
+
     test('parses a sky domain', () {
       final m = parseFmat(validSky, fileName: 'sky.fmat');
       expect(m.domain, FmatDomain.sky);

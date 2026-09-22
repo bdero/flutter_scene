@@ -29,6 +29,8 @@ in vec2 v_uv;
 
 out vec4 frag_color;
 
+// Equirect helpers only; the radiance block would be declared unread.
+#define FLUTTER_SCENE_NO_ENGINE_RADIANCE
 #include <texture.glsl>  // EquirectangularToSpherical
 
 vec2 _faceUv(float nx, float ny) {

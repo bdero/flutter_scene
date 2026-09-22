@@ -35,6 +35,8 @@ in vec2 v_uv;  // [0, 1]^2 over the whole atlas; v_uv.y = 0 at the top.
 out vec4 frag_color;
 
 #include <pbr.glsl>      // kPi, SRGBToLinear
+// Equirect helpers only; the radiance block would be declared unread.
+#define FLUTTER_SCENE_NO_ENGINE_RADIANCE
 #include <texture.glsl>  // kPrefilterBands, Spherical<->Equirectangular
 
 // Samples the source environment as linear radiance. An sRGB source is

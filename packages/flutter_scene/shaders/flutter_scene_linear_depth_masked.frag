@@ -6,6 +6,8 @@
 // Pairs with the engine's full vertex shaders, which supply the
 // texture-coordinate and vertex-color varyings the mask needs.
 
+// Varyings only; nothing here reads the view axis.
+#define FLUTTER_SCENE_NO_VIEW_INFO
 #include <material_varyings.glsl>
 #include <material_inputs.glsl>
 #include <depth_mask.glsl>
