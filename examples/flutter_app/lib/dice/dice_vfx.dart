@@ -177,43 +177,16 @@ class DiceVfx {
     _rings.add(_RingPulse(node, sprite, radius, duration, _hdr(color, 2.5)));
   }
 
-  /// Confetti fired up out of the score and raining down on the table, plus
-  /// a glitter burst. The slabs are real meshes, so they cast shadows.
+  /// Confetti fired up out of the score. The pieces flutter down, land flat
+  /// on the table, rest, and fade out. They are instanced meshes, so they
+  /// cast shadows on the widgets like everything else.
   void confetti(vm.Vector3 position, List<vm.Vector4> colors) {
     if (!_ready) return;
-    for (var i = 0; i < colors.length; i++) {
-      final color = colors[i];
-      final system = ParticleSystem(
-        maxParticles: 36,
-        shape: const ConeEmitterShape(angle: 0.55, radius: 0.2),
-        spawner: Spawner(bursts: [ParticleBurst(time: 0.02 * i, count: 26)]),
-        looping: false,
-        duration: 0.4,
-        lifetime: const UniformFloat(1.5, 2.1),
-        startSpeed: const UniformFloat(6.5, 11.0),
-        startSize: const UniformFloat(0.7, 1.3),
-        startAngularVelocity: const UniformFloat(-22.0, 22.0),
-        gravity: vm.Vector3(0, -13.0, 0),
-        modules: [LinearDragModule(1.1), const RotationModule()],
-        seed: _random.nextInt(1 << 30),
-      );
-      final material = PhysicallyBasedMaterial()
-        ..baseColorFactor = color
-        ..metallicFactor = 0.0
-        ..roughnessFactor = 0.55
-        ..clearcoat = 0.4
-        ..clearcoatRoughness = 0.3;
-      final emitter = MeshParticleEmitterComponent(
-        system: system,
-        geometries: [
-          CuboidGeometry(vm.Vector3(0.16, 0.012, 0.10)),
-          CuboidGeometry(vm.Vector3(0.09, 0.012, 0.14)),
-          CylinderGeometry(bottomRadius: 0.06, topRadius: 0.06, height: 0.012),
-        ],
-        material: material,
-      );
-      _spawn(position, emitter, lifetime: 2.4);
-    }
+    _spawn(
+      position,
+      ConfettiComponent(colors: colors, seed: _random.nextInt(1 << 30)),
+      lifetime: ConfettiComponent.maxLifetime,
+    );
     // Glitter riding the pop.
     final glitter = ParticleSystem(
       maxParticles: 120,
@@ -415,5 +388,213 @@ class _Shockwave {
     pulse
       ..radius = 0.02 + 0.55 * (1 - math.pow(1 - p, 2).toDouble())
       ..strength = strength * (1 - p) * (1 - p);
+  }
+}
+
+/// One piece of confetti through its life.
+class _ConfettiPiece {
+  _ConfettiPiece({
+    required this.position,
+    required this.velocity,
+    required this.rotation,
+    required this.spinAxis,
+    required this.spinRate,
+    required this.color,
+    required this.scale,
+    required this.phase,
+    required this.restFor,
+  });
+
+  final vm.Vector3 position;
+  final vm.Vector3 velocity;
+  vm.Quaternion rotation;
+  final vm.Vector3 spinAxis;
+  double spinRate;
+  final vm.Vector4 color;
+  final vm.Vector3 scale;
+  final double phase;
+  final double restFor;
+
+  bool landed = false;
+  double rested = 0.0;
+  double fade = 0.0;
+  bool get done => fade >= 1.0;
+}
+
+/// Simulates confetti that bursts, flutters down like paper, lands flat,
+/// rests, and fades. Flying and resting pieces live in an opaque instanced
+/// mesh so they cast shadows; a fading piece moves to a blended one.
+class ConfettiComponent extends Component {
+  ConfettiComponent({required List<vm.Vector4> colors, int seed = 0})
+    : _random = math.Random(seed) {
+    final geometry = CuboidGeometry(vm.Vector3(0.16, 0.012, 0.10));
+    _opaque = InstancedMesh(
+      geometry: geometry,
+      material: PhysicallyBasedMaterial()
+        ..metallicFactor = 0.0
+        ..roughnessFactor = 0.55
+        ..clearcoat = 0.35
+        ..clearcoatRoughness = 0.3,
+    );
+    _fading = InstancedMesh(
+      geometry: geometry,
+      material: PhysicallyBasedMaterial()
+        ..metallicFactor = 0.0
+        ..roughnessFactor = 0.55
+        ..alphaMode = AlphaMode.blend,
+      sortTransparentInstances: true,
+    );
+    for (var i = 0; i < 110; i++) {
+      final up = vm.Vector3(0, 1, 0);
+      // A cone about +y.
+      final angle = _random.nextDouble() * 0.6;
+      final around = _random.nextDouble() * math.pi * 2;
+      final direction = vm.Vector3(
+        math.sin(angle) * math.cos(around),
+        math.cos(angle),
+        math.sin(angle) * math.sin(around),
+      )..normalize();
+      final speed = 6.0 + _random.nextDouble() * 5.5;
+      final axis = vm.Vector3(
+        _random.nextDouble() * 2 - 1,
+        _random.nextDouble() * 2 - 1,
+        _random.nextDouble() * 2 - 1,
+      );
+      if (axis.length2 < 1e-4) axis.setFrom(up);
+      _pieces.add(
+        _ConfettiPiece(
+          position: vm.Vector3(
+            (_random.nextDouble() - 0.5) * 0.3,
+            0.0,
+            (_random.nextDouble() - 0.5) * 0.3,
+          ),
+          velocity: direction * speed,
+          rotation: vm.Quaternion.random(_random),
+          spinAxis: axis..normalize(),
+          spinRate: 10.0 + _random.nextDouble() * 18.0,
+          color: colors[i % colors.length],
+          scale: vm.Vector3(
+            0.7 + _random.nextDouble() * 0.6,
+            1.0,
+            0.7 + _random.nextDouble() * 0.6,
+          ),
+          phase: _random.nextDouble() * math.pi * 2,
+          restFor: 1.2 + _random.nextDouble() * 1.4,
+        ),
+      );
+    }
+  }
+
+  /// Seconds after which every piece has faded.
+  static const double maxLifetime = 9.0;
+
+  final math.Random _random;
+  final List<_ConfettiPiece> _pieces = [];
+  late final InstancedMesh _opaque;
+  late final InstancedMesh _fading;
+  Node? _opaqueNode;
+  Node? _fadingNode;
+  double _time = 0.0;
+
+  // Paper falls slowly and sways; these set the feel.
+  static const double _gravity = -13.0;
+  static const double _terminal = 1.4;
+  static const double _restHeight = 0.006;
+
+  final vm.Matrix4 _scratch = vm.Matrix4.zero();
+  final vm.Quaternion _spin = vm.Quaternion.identity();
+
+  @override
+  void onMount() {
+    _opaqueNode = Node()..addComponent(InstancedMeshComponent(_opaque));
+    _fadingNode = Node()
+      ..shadowCastingMode = ShadowCastingMode.off
+      ..addComponent(InstancedMeshComponent(_fading));
+    node
+      ..add(_opaqueNode!)
+      ..add(_fadingNode!);
+  }
+
+  @override
+  void onUnmount() {
+    final o = _opaqueNode, f = _fadingNode;
+    if (o != null) node.remove(o);
+    if (f != null) node.remove(f);
+    _opaqueNode = null;
+    _fadingNode = null;
+  }
+
+  @override
+  void update(double deltaSeconds) {
+    final dt = math.min(deltaSeconds, 1 / 30);
+    _time += dt;
+    // The emitter's own translation is the burst origin; pieces are kept in
+    // world space so they land on the world floor.
+    final origin = node.globalTransform.getTranslation();
+    final inverse = vm.Matrix4.inverted(node.globalTransform);
+    _opaque.clearInstances();
+    _fading.clearInstances();
+    for (final piece in _pieces) {
+      if (piece.done) continue;
+      _step(piece, dt, origin);
+      final world = _scratch
+        ..setFromTranslationRotationScale(
+          piece.position,
+          piece.rotation,
+          piece.scale,
+        );
+      final local = inverse * world;
+      if (piece.fade > 0) {
+        final c = piece.color;
+        _fading.addInstance(
+          local,
+          color: vm.Vector4(c.x, c.y, c.z, 1.0 - piece.fade),
+        );
+      } else {
+        _opaque.addInstance(local, color: piece.color);
+      }
+    }
+  }
+
+  void _step(_ConfettiPiece piece, double dt, vm.Vector3 origin) {
+    if (piece.landed) {
+      piece.rested += dt;
+      if (piece.rested > piece.restFor) {
+        piece.fade = math.min(1.0, piece.fade + dt / 0.6);
+      }
+      return;
+    }
+    final v = piece.velocity;
+    // Ballistic while fast; once the pop is spent, paper drag takes over
+    // and the piece drifts down at terminal speed, swaying side to side.
+    final speed = v.length;
+    final fluttering = speed < 4.0 && v.y < 0.5;
+    if (fluttering) {
+      final sway = math.sin(_time * 3.1 + piece.phase);
+      final swayZ = math.cos(_time * 2.3 + piece.phase * 1.7);
+      v.x += (sway * 1.6 - v.x) * dt * 3.0;
+      v.z += (swayZ * 1.2 - v.z) * dt * 3.0;
+      v.y += (-_terminal - v.y) * dt * 4.0;
+      // Lazy tumble, mostly about a horizontal axis.
+      piece.spinRate += (4.0 - piece.spinRate) * dt * 2.0;
+    } else {
+      v.y += _gravity * dt;
+      v.scale(math.max(0.0, 1.0 - 1.4 * dt));
+    }
+    final worldY = origin.y + piece.position.y;
+    piece.position.addScaled(v, dt);
+    // Air pieces spin; a piece about to land settles flat.
+    _spin.setAxisAngle(piece.spinAxis, piece.spinRate * dt);
+    piece.rotation = (_spin * piece.rotation)..normalize();
+    if (worldY + v.y * dt <= _restHeight && v.y < 0) {
+      piece.landed = true;
+      piece.position.y = _restHeight - origin.y;
+      // Lie flat, keeping only the heading.
+      final forward = piece.rotation.rotate(vm.Vector3(1, 0, 0))..y = 0;
+      final yaw = forward.length2 < 1e-6
+          ? _random.nextDouble() * math.pi * 2
+          : math.atan2(-forward.z, forward.x);
+      piece.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
+    }
   }
 }

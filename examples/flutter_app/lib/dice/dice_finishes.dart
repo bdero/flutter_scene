@@ -40,6 +40,17 @@ enum DiceFinish {
 
   bool get isGlass => this == glass || this == frosted || this == iridescent;
 
+  /// How much of a glass die's footprint its shadow proxy covers, or null
+  /// for a finish that casts its own shadow. The proxy is alpha-masked with
+  /// an ordered dither at this coverage, so the shadow reads lighter once
+  /// the light's softness blurs the dots.
+  double? get shadowCoverage => switch (this) {
+    glass => 0.38,
+    iridescent => 0.5,
+    frosted => 0.68,
+    _ => null,
+  };
+
   /// Pitch multiplier for this finish's impact sounds. Glass rings high,
   /// wood knocks low.
   double get impactPitch => switch (this) {
@@ -88,11 +99,29 @@ class DieTextures {
   final Texture2D wood;
   final Texture2D marble;
 
+  /// Dithered alpha masks by coverage, for the glass shadow proxies. Pips
+  /// are always solid.
+  final Map<double, Texture2D> _shadowMasks = {};
+  late final Float32List _pipCoverage128;
+
+  Texture2D shadowMask(double coverage) => _shadowMasks.putIfAbsent(
+    coverage,
+    () => _fromCoverage(128, _pipCoverage128, (c, x, y) {
+      // A 4x4 Bayer matrix over 4 px cells; a cell is solid when its
+      // threshold falls under the wanted coverage.
+      const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+      final cx = (x ~/ 4) % 4, cy = (y ~/ 4) % 4;
+      final threshold = (bayer[cy * 4 + cx] + 0.5) / 16.0;
+      final solid = c > 0.5 || threshold < coverage;
+      return (255, 255, 255, solid ? 255.0 : 0.0);
+    }),
+  );
+
   /// Bakes every atlas. Call after `Scene.initializeStaticResources()`.
   static DieTextures bake() {
     final pipCoverage = _pipCoverage(128);
     final grainCoverage = _pipCoverage(192);
-    return DieTextures._(
+    final textures = DieTextures._(
       pips: _fromCoverage(128, pipCoverage, (c, _, _) {
         final shade = 255 - c * 227;
         return (shade, shade, shade, 255.0);
@@ -108,6 +137,8 @@ class DieTextures {
       wood: _bakeWood(192, grainCoverage),
       marble: _bakeMarble(192, grainCoverage),
     );
+    textures._pipCoverage128 = pipCoverage;
+    return textures;
   }
 
   /// Pip coverage per texel for a 6x1 atlas of [cell]-sized faces.
@@ -248,6 +279,7 @@ PhysicallyBasedMaterial buildDieMaterial(
   int index,
   DieTextures textures, {
   required bool refractive,
+  double thickness = 0.7,
 }) {
   final color = dieColors[index % dieColors.length];
   final material = PhysicallyBasedMaterial()..metallicFactor = 0.0;
@@ -270,6 +302,7 @@ PhysicallyBasedMaterial buildDieMaterial(
         attenuation: color,
         roughness: 0.04,
         refractive: refractive,
+        thickness: thickness,
       );
     case DiceFinish.frosted:
       _glass(
@@ -284,6 +317,7 @@ PhysicallyBasedMaterial buildDieMaterial(
         ),
         roughness: 0.42,
         refractive: refractive,
+        thickness: thickness,
         compositedAlpha: 0.6,
       );
     case DiceFinish.iridescent:
@@ -294,6 +328,7 @@ PhysicallyBasedMaterial buildDieMaterial(
         attenuation: vm.Vector4(0.85, 0.85, 0.95, 1),
         roughness: 0.06,
         refractive: refractive,
+        thickness: thickness,
       );
       material
         ..iridescence = 1.0
@@ -348,6 +383,7 @@ void _glass(
   required vm.Vector4 attenuation,
   required double roughness,
   required bool refractive,
+  required double thickness,
   double compositedAlpha = 0.45,
 }) {
   material
@@ -359,7 +395,7 @@ void _glass(
       ..baseColorFactor = tint
       ..transmission = 1.0
       ..transmissionTexture = textures.pips
-      ..thickness = 0.7
+      ..thickness = thickness
       ..attenuationColor = attenuation
       ..attenuationDistance = 1.6
       ..dispersion = 0.12;
@@ -376,4 +412,18 @@ void _glass(
       compositedAlpha / 0.6,
     )
     ..alphaMode = AlphaMode.blend;
+}
+
+/// The material for a glass die's shadow proxy, or null when [finish] casts
+/// its own shadow. Alpha-masked so only the dithered texels cast.
+PhysicallyBasedMaterial? buildShadowProxyMaterial(
+  DiceFinish finish,
+  DieTextures textures,
+) {
+  final coverage = finish.shadowCoverage;
+  if (coverage == null) return null;
+  return PhysicallyBasedMaterial()
+    ..baseColorTexture = textures.shadowMask(coverage)
+    ..alphaMode = AlphaMode.mask
+    ..alphaCutoff = 0.5;
 }
