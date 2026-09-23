@@ -168,6 +168,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   int _total = 1240;
   // The score banner's centre in view coordinates, measured by the screen.
   Offset? _bannerCenter;
+  // Where the counter flies, relative to the middle of the view. Measured
+  // after layout, so the counter listens rather than reading it at build.
+  final ValueNotifier<Offset> _flight = ValueNotifier(const Offset(0, -260));
   final math.Random _vfxRandom = math.Random();
 
   SoloudAudioEngine? _audio;
@@ -340,6 +343,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     }
     _vfx.dispose();
     _contacts.dispose();
+    _flight.dispose();
     _capture.removeListener(_bindCapture);
     _capture.dispose();
     _frame.dispose();
@@ -1411,6 +1415,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   void _onScreenLayout(DiceScreenLayout layout) {
     _bannerCenter = _toView(layout.banner);
+    if (!_viewSize.isEmpty) {
+      _flight.value = _bannerCenter! - _viewSize.center(Offset.zero);
+    }
     _cardRects = [
       for (final rect in layout.cards)
         Rect.fromPoints(_toView(rect.topLeft), _toView(rect.bottomRight)),
@@ -1497,7 +1504,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           _total = total;
           debugPrint(
             'dice: rolled ${_lastRoll.value?.join('+')} '
-            'x${celebration.multiplier} = $scored, total $total',
+            'x${celebration.multiplier} = $scored, total $total, '
+            'slam to ${_bannerCenter} in $_viewSize',
           );
           _history.value = [
             (
@@ -1722,9 +1730,6 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           contacts: _contacts,
           onLayout: _onScreenLayout,
         );
-        final flight = _bannerCenter == null
-            ? const Offset(0, -260)
-            : _bannerCenter! - constraints.biggest.center(Offset.zero);
         return Stack(
           key: _viewKey,
           children: [
@@ -1771,7 +1776,11 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
                 child: ScreenThemeScope(
                   theme: _theme,
                   child: Center(
-                    child: RollCounter(frame: _frame, flightOffset: flight),
+                    child: ValueListenableBuilder<Offset>(
+                      valueListenable: _flight,
+                      builder: (context, flight, _) =>
+                          RollCounter(frame: _frame, flightOffset: flight),
+                    ),
                   ),
                 ),
               ),
