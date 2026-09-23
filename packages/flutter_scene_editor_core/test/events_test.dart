@@ -124,6 +124,63 @@ void main() {
     expect(subscription.drain().events, hasLength(1));
   });
 
+  test('opening and saving are announced with their paths', () {
+    final session = EditorSession.empty();
+    final subscription = session.events.subscribe(const [
+      EditorEventType.documentOpened,
+      EditorEventType.documentSaved,
+    ]);
+
+    session.announceOpened(path: '/scenes/level.fscene');
+    session.markDirty();
+    session.announceSaved(path: '/scenes/level.fscene');
+    session.events.flush();
+
+    final events = subscription.drain().events;
+    expect(events.map((e) => e.type), [
+      EditorEventType.documentOpened,
+      EditorEventType.documentSaved,
+    ]);
+    expect(events.first.data['path'], '/scenes/level.fscene');
+    expect(session.isDirty, isFalse, reason: 'a save cleans the document');
+  });
+
+  test('a save is announced even when the document was already clean', () {
+    final session = EditorSession.empty();
+    final subscription = session.events.subscribe(const [
+      EditorEventType.documentSaved,
+    ]);
+
+    session.announceSaved(path: '/a.fscene');
+    session.events.flush();
+
+    expect(subscription.drain().events, hasLength(1));
+  });
+
+  test('a subscription survives the document it was made against', () {
+    final shared = EventBus();
+    final first = EditorSession.empty()..events = shared;
+    final subscription = shared.subscribe(const [
+      EditorEventType.documentOpened,
+      EditorEventType.documentChanged,
+    ]);
+    first.run('createNode', {'name': 'Old'});
+
+    // What the editor does when a document opens: a new session, the same bus.
+    final second = EditorSession.empty()..events = shared;
+    second.announceOpened(path: '/new.fscene');
+    second.run('createNode', {'name': 'New'});
+    shared.flush();
+
+    expect(
+      subscription.drain().events.map((e) => e.type),
+      containsAll([
+        EditorEventType.documentOpened,
+        EditorEventType.documentChanged,
+      ]),
+    );
+  });
+
   test('an unheard event costs nothing when nobody subscribed', () {
     final session = EditorSession.empty();
     session.run('createNode', {'name': 'Cube'});

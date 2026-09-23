@@ -16,7 +16,7 @@ import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
-    show CommandException, EditorHost, ViewHost;
+    show CommandException, EditorHost, EventBus, ViewHost;
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
 import 'package:scene/scene.dart'
@@ -181,13 +181,19 @@ class _EditorHomeState extends State<_EditorHome> {
     return fmatToolchainForInstallation(selected);
   }
 
+  /// One event bus for the app, handed to each session as it comes up. One
+  /// delivery per frame, so a drag is one selection event rather than one per
+  /// pointer move.
+  final EventBus _events = EventBus()
+    ..flushScheduler = ((flush) =>
+        WidgetsBinding.instance.addPostFrameCallback((_) => flush()));
+
   void _configureController(EditorController controller) {
     controller.session.viewHost = _EditorViewHost(this);
     controller.session.host = _EditorHostImpl(this);
-    // One delivery per frame, so a drag is one selection event rather than
-    // one per pointer move.
-    controller.session.events.flushScheduler = (flush) =>
-        WidgetsBinding.instance.addPostFrameCallback((_) => flush());
+    // The same bus across every document, so a client's subscription survives
+    // an open instead of dying with the session it was made against.
+    controller.session.events = _events;
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
     // Saves carry the viewport camera and selection in the document; a
     // restored pose applies now (buffered until a viewport attaches).
@@ -799,7 +805,7 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   void _onSceneSaved(String path) {
-    _controller?.session.markSaved();
+    _controller?.session.announceSaved(path: path);
     if (!_restartOnSceneSave) return;
     if (_session.state != AppSessionState.running) return;
     unawaited(() async {
@@ -954,6 +960,7 @@ class _EditorHomeState extends State<_EditorHome> {
     // MCP) gets the project-first hooks (recents, ancestor discovery, last
     // scene).
     _setScenePath(path);
+    controller.session.announceOpened(path: path);
     old?.dispose();
   }
 

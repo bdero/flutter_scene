@@ -1289,14 +1289,16 @@ class EditorToolSurface {
     String tool,
     Map<String, Object?> args,
   ) async {
-    // TODO(query-parity): describe_scene, get_node, and list_resources answer
-    // from their own helpers rather than the nodeSubtree, getResource, and
-    // listResources queries, so the same data has two encoders that can drift.
-    // Collapse them onto run_query before a client package pins either shape.
+    // TODO(query-parity): get_node still assembles its own answer, because it
+    // mixes in world bounds only the host can compute. Give queries a host
+    // seam and it collapses onto getResource and nodeSubtree like the rest.
     switch (tool) {
       case 'describe_scene':
         return {
-          'roots': [for (final n in _query.roots) _nodeTree(n)],
+          'roots': [
+            for (final node in session.ask('nodeSubtree').body['nodes'] as List)
+              _compactTree(node as Map<String, Object?>),
+          ],
         };
       case 'get_node':
         return _nodeDetail(_resolve(_requireRef(args)));
@@ -1563,12 +1565,7 @@ class EditorToolSurface {
         final redone = await (redoRunner?.call() ?? Future.value(_redoHere()));
         return {'redone': redone, 'canRedo': session.history.canRedo};
       case 'list_resources':
-        return {
-          'resources': [
-            for (final entry in session.document.resources.entries)
-              {'id': entry.key.toToken(), 'kind': _resourceKind(entry.value)},
-          ],
-        };
+        return session.ask('listResources').body;
       case 'get_viewport_camera':
         return _cameraResult();
       case 'set_viewport_camera':
@@ -2019,14 +2016,6 @@ class EditorToolSurface {
 
   bool _redoHere() => session.redo();
 
-  String _resourceKind(ResourceSpec spec) => switch (spec) {
-    GeometryResource() => 'geometry',
-    TextureResource() => 'texture',
-    RenderTextureResource() => 'renderTexture',
-    MaterialResource() => 'material',
-    EnvironmentResource() => 'environment',
-  };
-
   ViewportCameraPose _requireCamera() {
     final pose = readCamera?.call();
     if (pose == null) {
@@ -2162,13 +2151,20 @@ class EditorToolSurface {
     'selected': [for (final id in session.selection.ids) id.toToken()],
   };
 
-  Map<String, Object?> _nodeTree(NodeSpec node) => {
-    'id': node.id.toToken(),
-    'path': _query.namePathOf(node.id),
-    'name': node.name,
-    'components': [for (final c in node.components) c.type],
+  /// The compact tree an agent reads first, projected from the `nodeSubtree`
+  /// query so both describe the same data. Component types only, since the
+  /// whole point of this view is to be small enough to take in at once.
+  Map<String, Object?> _compactTree(Map<String, Object?> node) => {
+    'id': node['id'],
+    'path': node['path'],
+    'name': node['name'],
+    'components': [
+      for (final component in node['components'] as List)
+        (component as Map)['type'],
+    ],
     'children': [
-      for (final child in _query.childrenOf(node.id)) _nodeTree(child),
+      for (final child in (node['children'] as List? ?? const []))
+        _compactTree(child as Map<String, Object?>),
     ],
   };
 
@@ -2192,7 +2188,7 @@ class EditorToolSurface {
           'type': c.type,
           'properties': {
             for (final entry in c.properties.entries)
-              entry.key: _propertyJson(entry.value),
+              entry.key: propertyValueToJson(entry.value),
           },
           // Declared kinds for the carried properties, when the type's
           // schema is known (see describe_component_type for the full one).
@@ -2258,40 +2254,6 @@ class EditorToolSurface {
       'scale': _vec3(t.scale),
     },
     MatrixTransform m => {'matrix': m.matrix.storage.toList()},
-  };
-
-  Object? _propertyJson(PropertyValue value) => switch (value) {
-    // A value kind this build does not know; shown as it was stored.
-    UnknownValue v => v.json,
-    BoolValue v => v.value,
-    IntValue v => v.value,
-    DoubleValue v => v.value,
-    StringValue v => v.value,
-    Vec2Value v => {'x': v.value.x, 'y': v.value.y},
-    Vec3Value v => {'x': v.value.x, 'y': v.value.y, 'z': v.value.z},
-    Vec4Value v => {
-      'x': v.value.x,
-      'y': v.value.y,
-      'z': v.value.z,
-      'w': v.value.w,
-    },
-    QuaternionValue v => {
-      '\$quat': {
-        'x': v.value.x,
-        'y': v.value.y,
-        'z': v.value.z,
-        'w': v.value.w,
-      },
-    },
-    Matrix4Value v => v.value.storage.toList(),
-    ColorValue v => {'r': v.r, 'g': v.g, 'b': v.b, 'a': v.a},
-    ResourceRefValue v => {'\$resource': v.id.toToken()},
-    NodeRefValue v => {'\$node': v.id.toToken()},
-    ListValue v => [for (final e in v.values) _propertyJson(e)],
-    MapValue v => {
-      for (final entry in v.values.entries)
-        entry.key: _propertyJson(entry.value),
-    },
   };
 
   Map<String, Object?> _vec3(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};

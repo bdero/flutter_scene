@@ -139,7 +139,32 @@ class EditorSession {
   }
 
   /// What this session announces to subscribed clients.
-  final EventBus events = EventBus();
+  ///
+  /// Settable, because a subscription belongs to the client that made it, not
+  /// to the document it was made against. A host that swaps sessions when a
+  /// document opens installs the same bus on each one, so a client keeps
+  /// hearing across the open rather than losing its subscription to exactly
+  /// the event that announces it.
+  EventBus events = EventBus();
+
+  /// Announces that a document was opened into this session. The host calls
+  /// it, since only the host knows an open happened.
+  void announceOpened({String? path}) => events.emit(
+    EditorEvent(EditorEventType.documentOpened, {
+      if (path != null) 'path': path,
+    }),
+  );
+
+  /// Announces a save, and marks the document clean, since a save is what
+  /// makes it clean. The host calls it for the same reason.
+  void announceSaved({String? path}) {
+    markSaved();
+    events.emit(
+      EditorEvent(EditorEventType.documentSaved, {
+        if (path != null) 'path': path,
+      }),
+    );
+  }
 
   void _announceSelection() => events.emit(
     EditorEvent(EditorEventType.selectionChanged, {

@@ -69,7 +69,12 @@ export 'src/queries.dart'
         QueryEntry,
         QueryRegistry,
         querySchema;
-export 'src/builtin_queries.dart' show builtinQueries, registerBuiltinQueries;
+export 'src/builtin_queries.dart'
+    show
+        builtinQueries,
+        registerBuiltinQueries,
+        propertyValueToJson,
+        resourceKindOf;
 
 // Events and per-client subscriptions.
 export 'src/events.dart'

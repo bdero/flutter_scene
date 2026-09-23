@@ -26,17 +26,11 @@ abstract final class EditorEventType {
   /// The document became dirty or clean. Coalesced.
   static const String dirtyChanged = 'dirtyChanged';
 
-  /// A document was opened, replacing what was loaded.
-  ///
-  /// TODO(lifecycle-events): declared but never emitted. Only the host knows
-  /// an open happened, and it does not tell the bus; wire it where the editor
-  /// swaps the controller.
+  /// A document was opened, replacing what was loaded. Carries its `path`
+  /// when it came from a file.
   static const String documentOpened = 'documentOpened';
 
-  /// The document was saved.
-  ///
-  /// TODO(lifecycle-events): declared but never emitted, for the same reason
-  /// as [documentOpened]. A subscriber sees the dirty flag clear instead.
+  /// The document was saved, carrying the `path` it went to.
   static const String documentSaved = 'documentSaved';
 
   /// Every name above.
