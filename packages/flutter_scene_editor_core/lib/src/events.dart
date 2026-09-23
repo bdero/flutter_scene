@@ -27,9 +27,16 @@ abstract final class EditorEventType {
   static const String dirtyChanged = 'dirtyChanged';
 
   /// A document was opened, replacing what was loaded.
+  ///
+  /// TODO(lifecycle-events): declared but never emitted. Only the host knows
+  /// an open happened, and it does not tell the bus; wire it where the editor
+  /// swaps the controller.
   static const String documentOpened = 'documentOpened';
 
   /// The document was saved.
+  ///
+  /// TODO(lifecycle-events): declared but never emitted, for the same reason
+  /// as [documentOpened]. A subscriber sees the dirty flag clear instead.
   static const String documentSaved = 'documentSaved';
 
   /// Every name above.
