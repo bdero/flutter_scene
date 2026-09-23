@@ -303,6 +303,125 @@ class DiceVfx {
 
   void removeCaustic(Caustic caustic) => scene.remove(caustic.node);
 
+  /// A firework: a rocket climbs from [from] with a trail, then bursts into
+  /// a shell of sparks in [color]. [onBurst] fires at the apex.
+  void firework(
+    vm.Vector3 from,
+    vm.Vector4 color, {
+    double height = 4.5,
+    double drift = 0.8,
+    void Function(vm.Vector3 apex)? onBurst,
+  }) {
+    if (!_ready) return;
+    final apex =
+        from +
+        vm.Vector3(
+          (_random.nextDouble() - 0.5) * drift * 2,
+          height * (0.85 + _random.nextDouble() * 0.3),
+          (_random.nextDouble() - 0.5) * drift * 2,
+        );
+    final rocket = _Rocket(
+      from: from,
+      apex: apex,
+      duration: 0.55 + _random.nextDouble() * 0.2,
+      onApex: () {
+        _burst(apex, color);
+        onBurst?.call(apex);
+      },
+    );
+    final trail = TrailComponent(
+      width: 0.09,
+      lifetime: 0.35,
+      minVertexDistance: 0.02,
+      widthOverTrail: ParticleCurve.linear(from: 1.0, to: 0.0),
+      colorOverTrail: ColorGradient([
+        ColorStop(0.0, vm.Vector4(5.0, 4.2, 2.6, 0.9)),
+        ColorStop(1.0, _hdr(color, 1.5)..w = 0.0),
+      ]),
+    );
+    final head = Sprite(
+      texture: _dot,
+      width: 0.16,
+      height: 0.16,
+      color: vm.Vector4(6.0, 5.0, 3.0, 1.0),
+      blendMode: _blend,
+    );
+    final node = Node(localTransform: vm.Matrix4.translation(from))
+      ..shadowCastingMode = ShadowCastingMode.off
+      ..addComponent(rocket)
+      ..addComponent(trail)
+      ..add(Node(mesh: head.mesh));
+    scene.add(node);
+    _live.add((node: node, deadline: _time + rocket.duration + 0.5));
+  }
+
+  /// The shell of sparks a rocket becomes: a bright flash, a sphere of
+  /// streaks that hang and then fall, and a slow glitter afterglow.
+  void _burst(vm.Vector3 apex, vm.Vector4 color) {
+    final shell = ParticleSystem(
+      maxParticles: 160,
+      shape: const SphereEmitterShape(radius: 0.05, surfaceOnly: true),
+      spawner: Spawner(bursts: const [ParticleBurst(time: 0.0, count: 130)]),
+      looping: false,
+      duration: 0.2,
+      lifetime: const UniformFloat(1.1, 1.7),
+      startSpeed: const UniformFloat(4.5, 6.0),
+      startSize: const UniformFloat(0.06, 0.11),
+      gravity: vm.Vector3(0, -3.5, 0),
+      modules: [
+        LinearDragModule(1.9),
+        SizeOverLifeModule(
+          CurveFloat(
+            ParticleCurve([
+              const ParticleKeyframe(0.0, 0.6),
+              const ParticleKeyframe(0.1, 1.0),
+              const ParticleKeyframe(0.8, 0.7),
+              const ParticleKeyframe(1.0, 0.0),
+            ]),
+          ),
+        ),
+        ColorOverLifeModule(
+          GradientColor(
+            ColorGradient([
+              ColorStop(0.0, vm.Vector4(6.0, 5.6, 4.5, 1.0)),
+              ColorStop(0.15, _hdr(color, 4.5)),
+              ColorStop(0.7, _hdr(color, 2.5)),
+              ColorStop(0.85, _hdr(color, 2.5)..w = 0.3),
+              ColorStop(0.92, _hdr(color, 3.0)),
+              ColorStop(1.0, _hdr(color, 1.0)..w = 0.0),
+            ]),
+          ),
+        ),
+      ],
+      seed: _random.nextInt(1 << 30),
+    );
+    final shellMaterial = SpriteMaterial(colorTexture: _dot)
+      ..blendMode = _blend;
+    _spawn(
+      apex,
+      ParticleEmitterComponent(system: shell, material: shellMaterial)
+        ..facing = BillboardFacing.velocityStretched
+        ..velocityStretch = 0.06,
+      lifetime: 2.2,
+    );
+    // The flash.
+    final flash = Sprite(
+      texture: _dot,
+      width: 1.4,
+      height: 1.4,
+      color: vm.Vector4(8.0, 7.5, 6.0, 1.0),
+      blendMode: _blend,
+    );
+    final flashNode = Node(
+      mesh: flash.mesh,
+      localTransform: vm.Matrix4.translation(apex),
+    )..shadowCastingMode = ShadowCastingMode.off;
+    scene.add(flashNode);
+    _rings.add(
+      _RingPulse(flashNode, flash, 2.6, 0.22, flash.color, grow: true),
+    );
+  }
+
   /// A screen-space shockwave ring from [screenUv] (origin top-left).
   void shockwave(vm.Vector2 screenUv, {double strength = 0.035}) {
     final pulse = DistortionPulse(
@@ -743,6 +862,40 @@ class ConfettiComponent extends Component {
           ? _random.nextDouble() * math.pi * 2
           : math.atan2(-forward.z, forward.x);
       piece.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw);
+    }
+  }
+}
+
+/// Carries a firework rocket from launch to apex on an eased arc, then
+/// fires [onApex] once.
+class _Rocket extends Component {
+  _Rocket({
+    required this.from,
+    required this.apex,
+    required this.duration,
+    required this.onApex,
+  });
+
+  final vm.Vector3 from;
+  final vm.Vector3 apex;
+  final double duration;
+  final void Function() onApex;
+  double _t = 0.0;
+  bool _burst = false;
+
+  @override
+  void update(double deltaSeconds) {
+    if (_burst) return;
+    _t += deltaSeconds;
+    final p = (_t / duration).clamp(0.0, 1.0);
+    // Fast off the pad, slowing toward the top.
+    final e = 1 - math.pow(1 - p, 2.2).toDouble();
+    final at = from + (apex - from) * e;
+    node.localTransform = vm.Matrix4.translation(at);
+    if (p >= 1.0) {
+      _burst = true;
+      node.visible = false;
+      onApex();
     }
   }
 }

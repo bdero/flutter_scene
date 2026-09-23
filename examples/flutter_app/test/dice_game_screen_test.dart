@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:example_app/dice/dice_breakage.dart';
 import 'package:example_app/dice/dice_celebration.dart';
 import 'package:example_app/dice/dice_contacts.dart';
 import 'package:example_app/dice/pop_theme.dart';
@@ -35,6 +36,7 @@ Future<({Uint8List bytes, int width, int height})> _render(
               ]),
               frame: ValueNotifier(frame),
               contacts: ValueNotifier(const DiceContacts()),
+              breaks: CardBreakController(),
             ),
             // The host draws the counter over the scene, so it is not part
             // of the screen itself.
