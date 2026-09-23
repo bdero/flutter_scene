@@ -26,6 +26,8 @@ class DiceVfx {
   late final Texture2D _dot;
   late final Texture2D _star;
   late final Texture2D _ring;
+  late final Texture2D _streak;
+  late final Texture2D _caustic;
   bool _ready = false;
 
   // Live effect nodes with the time they may be removed.
@@ -39,6 +41,8 @@ class DiceVfx {
     _dot = _bakeDot(64);
     _star = _bakeStar(96);
     _ring = _bakeRing(128);
+    _streak = _bakeStreak(96);
+    _caustic = _bakeCaustic(128);
     _ready = true;
   }
 
@@ -230,6 +234,75 @@ class DiceVfx {
     );
   }
 
+  /// A short dark streak where a die scuffed the table, fading out. Always
+  /// alpha-blended: ink darkens what is under it in either mode.
+  void skid(vm.Vector3 position, double angle, vm.Vector4 color, double size) {
+    if (!_ready) return;
+    final sprite = Sprite(
+      texture: _streak,
+      width: size * 1.6,
+      height: size * 0.55,
+      rotation: angle,
+      color: vm.Vector4(color.x * 0.25, color.y * 0.25, color.z * 0.25, 0.55),
+    );
+    final node = Node(
+      mesh: sprite.mesh,
+      localTransform: vm.Matrix4.translation(
+        vm.Vector3(position.x, 0.012, position.z),
+      ),
+    )..shadowCastingMode = ShadowCastingMode.off;
+    scene.add(node);
+    _rings.add(_RingPulse(node, sprite, size, 2.6, sprite.color, grow: false));
+  }
+
+  /// Makes a caustic pool for a glass die; drive it with [placeCaustic] and
+  /// drop it with [removeCaustic].
+  Caustic createCaustic(vm.Vector4 color) {
+    final node = Node()..shadowCastingMode = ShadowCastingMode.off;
+    final layers = <Sprite>[];
+    for (var i = 0; i < 2; i++) {
+      final sprite = Sprite(
+        texture: _caustic,
+        color: vm.Vector4(color.x, color.y, color.z, 0.0),
+        blendMode: _blend,
+      );
+      node.add(Node(mesh: sprite.mesh));
+      layers.add(sprite);
+    }
+    scene.add(node);
+    return Caustic._(node, layers, color);
+  }
+
+  void placeCaustic(
+    Caustic caustic,
+    vm.Vector3 position,
+    double size,
+    double intensity,
+    double time,
+  ) {
+    caustic.node.localTransform = vm.Matrix4.translation(
+      vm.Vector3(position.x, 0.02, position.z),
+    );
+    final c = caustic.color;
+    final gain = additive ? 2.2 : 0.9;
+    for (var i = 0; i < caustic.layers.length; i++) {
+      final sprite = caustic.layers[i];
+      final wobble = 1.0 + 0.08 * math.sin(time * (1.7 + i) + i * 2.1);
+      sprite
+        ..width = size * wobble
+        ..height = size * (2.0 - wobble)
+        ..rotation = time * (i == 0 ? 0.35 : -0.5) + i * 1.3
+        ..color = vm.Vector4(
+          c.x * gain,
+          c.y * gain,
+          c.z * gain,
+          intensity * (i == 0 ? 0.55 : 0.4),
+        );
+    }
+  }
+
+  void removeCaustic(Caustic caustic) => scene.remove(caustic.node);
+
   /// A screen-space shockwave ring from [screenUv] (origin top-left).
   void shockwave(vm.Vector2 screenUv, {double strength = 0.035}) {
     final pulse = DistortionPulse(
@@ -312,6 +385,45 @@ class DiceVfx {
     });
   }
 
+  /// A soft elongated smear, the skid mark.
+  static Texture2D _bakeStreak(int size) {
+    final half = size / 2;
+    return _bake(size, (x, y) {
+      final dx = (x - half) / half, dy = (y - half) / half;
+      final d = math.sqrt(dx * dx * 0.5 + dy * dy * 3.0);
+      return math.exp(-d * d * 2.2).clamp(0.0, 1.0) * (1 - d).clamp(0.0, 1.0);
+    });
+  }
+
+  /// Bright ridges between random cells, the look of light focused through
+  /// rippled glass, inside a soft disc.
+  static Texture2D _bakeCaustic(int size) {
+    final random = math.Random(5);
+    final points = [
+      for (var i = 0; i < 26; i++)
+        (random.nextDouble() * 2 - 1, random.nextDouble() * 2 - 1),
+    ];
+    final half = size / 2;
+    return _bake(size, (x, y) {
+      final px = (x - half) / half, py = (y - half) / half;
+      final r = math.sqrt(px * px + py * py);
+      if (r >= 1) return 0.0;
+      var f1 = 9.0, f2 = 9.0;
+      for (final (cx, cy) in points) {
+        final d = math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+        if (d < f1) {
+          f2 = f1;
+          f1 = d;
+        } else if (d < f2) {
+          f2 = d;
+        }
+      }
+      final ridge = math.exp(-(f2 - f1) * 14.0);
+      final disc = math.pow(1 - r, 1.4).toDouble();
+      return (ridge * disc).clamp(0.0, 1.0);
+    });
+  }
+
   static Texture2D _bakeRing(int size) {
     final half = size / 2;
     return _bake(size, (x, y) {
@@ -348,13 +460,21 @@ class DiceVfx {
 }
 
 class _RingPulse {
-  _RingPulse(this.node, this.sprite, this.radius, this.duration, this.color);
+  _RingPulse(
+    this.node,
+    this.sprite,
+    this.radius,
+    this.duration,
+    this.color, {
+    this.grow = true,
+  });
 
   final Node node;
   final Sprite sprite;
   final double radius;
   final double duration;
   final vm.Vector4 color;
+  final bool grow;
   double _t = 0.0;
 
   bool get done => _t >= duration;
@@ -362,14 +482,30 @@ class _RingPulse {
   void advance(double dt) {
     _t += dt;
     final p = (_t / duration).clamp(0.0, 1.0);
-    // Fast out, then coast, while fading.
-    final grow = 1 - math.pow(1 - p, 3).toDouble();
-    final size = 0.3 + (radius - 0.3) * grow;
-    sprite
-      ..width = size
-      ..height = size
-      ..color = vm.Vector4(color.x, color.y, color.z, (1 - p) * (1 - p));
+    if (grow) {
+      // Fast out, then coast, while fading.
+      final g = 1 - math.pow(1 - p, 3).toDouble();
+      final size = 0.3 + (radius - 0.3) * g;
+      sprite
+        ..width = size
+        ..height = size;
+    }
+    sprite.color = vm.Vector4(
+      color.x,
+      color.y,
+      color.z,
+      color.w * (1 - p) * (1 - p),
+    );
   }
+}
+
+/// A glass die's pool of focused light on the table.
+class Caustic {
+  Caustic._(this.node, this.layers, this.color);
+
+  final Node node;
+  final List<Sprite> layers;
+  final vm.Vector4 color;
 }
 
 class _Shockwave {
@@ -412,6 +548,7 @@ class _ConfettiPiece {
   double spinRate;
   final vm.Vector4 color;
   final vm.Vector3 scale;
+  late final vm.Vector3 baseScale = scale.clone();
   final double phase;
   final double restFor;
 
@@ -524,19 +661,27 @@ class ConfettiComponent extends Component {
     _fadingNode = null;
   }
 
+  bool _seeded = false;
+
   @override
   void update(double deltaSeconds) {
     final dt = math.min(deltaSeconds, 1 / 30);
     _time += dt;
-    // The emitter's own translation is the burst origin; pieces are kept in
-    // world space so they land on the world floor.
+    // Pieces live in world space so they land on the world floor; the
+    // emitter's translation is only where the burst starts.
     final origin = node.globalTransform.getTranslation();
+    if (!_seeded) {
+      _seeded = true;
+      for (final piece in _pieces) {
+        piece.position.add(origin);
+      }
+    }
     final inverse = vm.Matrix4.inverted(node.globalTransform);
     _opaque.clearInstances();
     _fading.clearInstances();
     for (final piece in _pieces) {
       if (piece.done) continue;
-      _step(piece, dt, origin);
+      _step(piece, dt);
       final world = _scratch
         ..setFromTranslationRotationScale(
           piece.position,
@@ -556,11 +701,15 @@ class ConfettiComponent extends Component {
     }
   }
 
-  void _step(_ConfettiPiece piece, double dt, vm.Vector3 origin) {
+  void _step(_ConfettiPiece piece, double dt) {
     if (piece.landed) {
       piece.rested += dt;
       if (piece.rested > piece.restFor) {
-        piece.fade = math.min(1.0, piece.fade + dt / 0.6);
+        piece.fade = math.min(1.0, piece.fade + dt / 0.7);
+        // Shrink into the table as it goes, so the last of it never pops.
+        final s = 1.0 - piece.fade * piece.fade;
+        piece.scale.x = piece.scale.x.sign * s * piece.baseScale.x;
+        piece.scale.z = piece.scale.z.sign * s * piece.baseScale.z;
       }
       return;
     }
@@ -581,14 +730,13 @@ class ConfettiComponent extends Component {
       v.y += _gravity * dt;
       v.scale(math.max(0.0, 1.0 - 1.4 * dt));
     }
-    final worldY = origin.y + piece.position.y;
     piece.position.addScaled(v, dt);
     // Air pieces spin; a piece about to land settles flat.
     _spin.setAxisAngle(piece.spinAxis, piece.spinRate * dt);
     piece.rotation = (_spin * piece.rotation)..normalize();
-    if (worldY + v.y * dt <= _restHeight && v.y < 0) {
+    if (piece.position.y <= _restHeight && v.y < 0) {
       piece.landed = true;
-      piece.position.y = _restHeight - origin.y;
+      piece.position.y = _restHeight;
       // Lie flat, keeping only the heading.
       final forward = piece.rotation.rotate(vm.Vector3(1, 0, 0))..y = 0;
       final yaw = forward.length2 < 1e-6

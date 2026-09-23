@@ -181,6 +181,20 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..ambientOcclusion.intensity = 1.4,
   // A strong sun for the adaptation walk: the outdoor half of the path
   // should overexpose while the meter is adapted to the room.
+  // The dice table: a warm sun from the south-east, two cascades (the view is
+  // small), a soft environment, and bloom for the neon pips and sparks.
+  'Dice Shadows': () => ExampleSettings()
+    ..lightAzimuthDegrees = 137.5
+    ..lightElevationDegrees = 55.0
+    ..lightIntensity = 3.0
+    ..lightColor.setValues(1.0, 0.97, 0.92)
+    ..shadowSoftness = 0.105
+    ..shadowCascadeCount = 2
+    ..environmentIntensity = 0.7
+    ..bloom.enabled = true
+    ..bloom.threshold = 1.15
+    ..bloom.intensity = 0.28
+    ..bloom.scatter = 0.75,
   'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
   'Stress Tests': () => ExampleSettings()..directionalLightEnabled = false,
   // A cinematic grade for the dark materialize stage: no key light (the

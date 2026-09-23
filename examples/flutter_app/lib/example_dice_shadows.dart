@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 // flutter_scene's physics BoxShape and Material clash with Flutter's, so each
 // conflicting name is hidden from the import that does not need it.
@@ -14,11 +15,13 @@ import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'dice/dice_celebration.dart';
+import 'dice/dice_contacts.dart';
 import 'dice/dice_finishes.dart';
 import 'dice/dice_vfx.dart';
 import 'dice/pop_theme.dart';
 import 'example_overlay.dart';
 import 'example_panel.dart';
+import 'example_settings.dart';
 
 /// Dice thrown over an ordinary Flutter screen. The scene clears to
 /// transparent and an invisible [ShadowCatcherMaterial] plane stands in for
@@ -72,6 +75,10 @@ class _Die {
   final TrailComponent trail;
   DiceFinish finish;
   final vm.Vector4 color;
+
+  /// The pool of light under a glass die.
+  Caustic? caustic;
+  double lastSkidTime = -1.0;
   vm.Vector3? lastVelocity;
   vm.Vector3? lastSpin;
   double lastHitTime = -1.0;
@@ -200,13 +207,52 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   static const double _sunElevationLow = 7.0;
 
   _LightKind _kind = _LightKind.directional;
-  // 0..1, mapped per light type (directional softness is an angle, punctual
-  // softness a filter radius).
-  double _softness = 0.35;
 
-  late final DirectionalLight _sun;
-  double _sunAzimuth = 2.4; // Radians in the world XZ plane.
-  double _sunElevation = 55.0 * vm.degrees2Radians;
+  // The sun is the shared settings' directional light, so the settings
+  // sidebar and this panel drive the same thing. Radians here.
+  double get _sunAzimuth =>
+      exampleSettings.lightAzimuthDegrees * vm.degrees2Radians;
+  double get _sunElevation =>
+      exampleSettings.lightElevationDegrees * vm.degrees2Radians;
+
+  // 0..1 shadow softness; the sun's is an angle, the lamps' a filter radius.
+  double get _softness =>
+      (exampleSettings.shadowSoftness / 0.3).clamp(0.0, 1.0);
+  set _softness(double value) => exampleSettings.shadowSoftness = value * 0.3;
+
+  // Real seconds since the example opened, and the physics time scale the
+  // slow-motion beat dips.
+  double _realTime = 0.0;
+  double _timeScale = 1.0;
+  double _slowUntil = -1.0;
+  bool _slowFired = false;
+
+  // Where the dice touch the screen, for the widgets under them.
+  final ValueNotifier<DiceContacts> _contacts = ValueNotifier(
+    const DiceContacts(),
+  );
+  final List<DiceHit> _hits = [];
+
+  // The screen's cards and button as measured, in view coordinates, and the
+  // raised colliders standing in for them.
+  List<Rect> _cardRects = const [];
+  Rect? _buttonRect;
+  final List<Node> _uiBounds = [];
+  String _uiBoundsKey = '';
+
+  // The Roll pill glows, and the TOTAL sticker flashes when a slam lands.
+  late final PointLight _buttonLight;
+  late final PointLight _stickerLight;
+  late final Node _buttonLightNode;
+  late final Node _stickerLightNode;
+  double _stickerFlash = 0.0;
+
+  // A drag that starts on a die shoves the dice instead of aiming.
+  bool _sweeping = false;
+  Offset? _sweepLast;
+  double _sweepTime = 0.0;
+
+  ScreenTheme _theme = ScreenTheme.pop;
 
   late final PointLight _point;
   late final SpotLight _spot;
@@ -233,22 +279,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _vfx = DiceVfx(scene)
       ..load()
       ..additive = _embedBackdrop;
-    if (_embedBackdrop) scene.toneMapping = ToneMappingMode.linear;
-    // Bright sprites and neon pips glow; the outline marks counted dice.
-    scene.postProcess.bloom
-      ..enabled = true
-      ..threshold = 1.15
-      ..intensity = 0.28
-      ..scatter = 0.75;
+    if (_embedBackdrop) exampleSettings.toneMapping = ToneMappingMode.linear;
     scene.highlightStyle.thickness = 3.5;
 
-    _sun = DirectionalLight(
-      color: vm.Vector3(1.0, 0.97, 0.92),
-      intensity: 3.0,
-      castsShadow: true,
-      cacheStaticShadows: false,
-      shadowCascadeCount: 2,
-    );
     _point = PointLight(
       color: vm.Vector3(1.0, 0.9, 0.75),
       castsShadow: true,
@@ -266,7 +299,16 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _spotNode = Node()
       ..addComponent(SpotLightComponent(_spot))
       ..add(_bulb());
+    _buttonLight = PointLight(intensity: 0.0, range: 5.0);
+    _stickerLight = PointLight(intensity: 0.0, range: 7.0);
+    _buttonLightNode = Node()..addComponent(PointLightComponent(_buttonLight));
+    _stickerLightNode = Node()
+      ..addComponent(PointLightComponent(_stickerLight));
+    scene
+      ..add(_buttonLightNode)
+      ..add(_stickerLightNode);
     _applyLights();
+    _buildEnvironment();
 
     scene.root.addComponent(_AfterPhysics(_listenForImpacts));
     _startAudio();
@@ -297,6 +339,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       clip.dispose();
     }
     _vfx.dispose();
+    _contacts.dispose();
     _capture.removeListener(_bindCapture);
     _capture.dispose();
     _frame.dispose();
@@ -318,7 +361,11 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     for (final path in manifest.listAssets()) {
-      final impact = RegExp(r'assets/sounds/dice_(\w+?)_').firstMatch(path);
+      // `dice_<set>_N` are the table's own sounds, `land_<set>_N` a die
+      // finish's, `celebrate_<name>` the one-shots.
+      final impact = RegExp(
+        r'assets/sounds/(dice|land)_(\w+?)_',
+      ).firstMatch(path);
       final fx = RegExp(r'assets/sounds/celebrate_(\w+)\.').firstMatch(path);
       if (impact == null && fx == null) continue;
       final clip = await audio.loadClip(path);
@@ -327,7 +374,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         return;
       }
       if (impact != null) {
-        _impactClips.putIfAbsent(impact.group(1)!, () => []).add(clip);
+        final key = impact.group(1) == 'land'
+            ? 'land_${impact.group(2)}'
+            : impact.group(2)!;
+        _impactClips.putIfAbsent(key, () => []).add(clip);
       } else {
         _fxClips[fx!.group(1)!] = clip;
       }
@@ -364,7 +414,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _vfx.additive = value;
     // The copy is unlit and its colors must survive the resolve, so the tone
     // curve comes off while it is in the scene. The dice clip a little.
-    scene.toneMapping = value
+    exampleSettings.toneMapping = value
         ? ToneMappingMode.linear
         : ToneMappingMode.pbrNeutral;
     if (!value) {
@@ -424,9 +474,63 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     scene.add(_backdropNode!);
   }
 
-  DiceFinish _finishFor(int index) => _finish == DiceFinish.mixed
-      ? DiceFinish.concrete[index % DiceFinish.concrete.length]
-      : _finish;
+  /// Each look brings its own handful when the picker says mix.
+  static const Map<ScreenLook, List<DiceFinish>> _themeDice = {
+    ScreenLook.pop: DiceFinish.concrete,
+    ScreenLook.blueprint: [
+      DiceFinish.steel,
+      DiceFinish.glass,
+      DiceFinish.frosted,
+      DiceFinish.gold,
+    ],
+    ScreenLook.washi: [
+      DiceFinish.wood,
+      DiceFinish.marble,
+      DiceFinish.gold,
+      DiceFinish.classic,
+    ],
+  };
+
+  DiceFinish _finishFor(int index) {
+    if (_finish != DiceFinish.mixed) return _finish;
+    final set = _themeDice[_theme.look]!;
+    return set[index % set.length];
+  }
+
+  void _setTheme(ScreenTheme theme) {
+    if (theme == _theme) return;
+    setState(() => _theme = theme);
+    _buildEnvironment();
+    _respawnInPlace();
+  }
+
+  /// Lights the dice with the screen itself: the look's background is
+  /// painted below the horizon of a small equirect and a soft sky above, so
+  /// metal and glass reflect the pattern they sit on.
+  Future<void> _buildEnvironment() async {
+    final theme = _theme;
+    const width = 512, height = 256;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const w = 512.0, h = 256.0;
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, w, h / 2),
+      Paint()
+        ..shader = ui.Gradient.linear(Offset.zero, const Offset(0, h / 2), [
+          const Color(0xFFFFFFFF),
+          theme.cream,
+        ]),
+    );
+    canvas.save();
+    canvas.translate(0, height / 2);
+    canvas.clipRect(const Rect.fromLTWH(0, 0, w, h / 2));
+    theme.paintBackground(canvas, const Size(w, h / 2), 0.0);
+    canvas.restore();
+    final image = await recorder.endRecording().toImage(width, height);
+    final environment = await EnvironmentMap.fromUIImages(radianceImage: image);
+    if (!mounted || theme != _theme) return;
+    scene.environment = environment;
+  }
 
   PhysicallyBasedMaterial _materialFor(DiceFinish finish, int index) =>
       buildDieMaterial(
@@ -470,7 +574,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         ),
     ];
     for (final die in _dice) {
-      scene.remove(die.node);
+      _removeDie(die);
     }
     _dice.clear();
     for (var i = 0; i < poses.length; i++) {
@@ -592,23 +696,32 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   // --- Lights ---------------------------------------------------------------
 
+  /// Pushes the shared settings into the scene, then places this example's
+  /// own lights. Runs every tick, like the other examples, so the settings
+  /// sidebar always wins.
   void _applyLights() {
-    scene.directionalLight = _kind == _LightKind.directional ? _sun : null;
+    exampleSettings.directionalLightEnabled = _kind == _LightKind.directional;
+    exampleSettings.applyTo(scene);
     _setAttached(_pointNode, _kind == _LightKind.point);
     _setAttached(_spotNode, _kind == _LightKind.spot);
 
-    final toLight = vm.Vector3(
-      math.cos(_sunAzimuth) * math.cos(_sunElevation),
-      math.sin(_sunElevation),
-      math.sin(_sunAzimuth) * math.cos(_sunElevation),
-    );
-    _sun.direction = -toLight;
-    _sun.shadowSoftness = _softness * 0.3;
-    // A die throws a shadow of its height over the tangent of the elevation,
-    // so the cascades have to reach much further when the sun sits low.
-    final tangent = math.max(math.tan(_sunElevation), 0.06);
-    _sun.shadowMaxDistance =
-        _shadowBaseDistance + math.min(48.0, 4.0 / tangent);
+    final sun = scene.directionalLight;
+    if (sun != null) {
+      // A die throws a shadow of its height over the tangent of the
+      // elevation, so the cascades have to reach much further when the sun
+      // sits low.
+      final tangent = math.max(math.tan(_sunElevation), 0.06);
+      sun.shadowMaxDistance =
+          _shadowBaseDistance + math.min(48.0, 4.0 / tangent);
+    }
+
+    // The Roll pill's glow and the sticker's flash.
+    _buttonLight
+      ..color = _linear(_theme.button)
+      ..intensity = 9.0;
+    _stickerLight
+      ..color = _linear(_theme.score)
+      ..intensity = 160.0 * _stickerFlash;
 
     // Scale intensity with height squared so the dice stay evenly exposed as
     // the lamp rises and falls.
@@ -644,10 +757,12 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       final halfExtent =
           math.min(_viewSize.width, _viewSize.height) / _pixelsPerUnit / 2;
       final reach = (offset.length / halfExtent).clamp(0.0, 1.0);
-      if (offset.length > 1e-3) _sunAzimuth = math.atan2(offset.z, offset.x);
-      _sunElevation =
-          (_sunElevationHigh - reach * (_sunElevationHigh - _sunElevationLow)) *
-          vm.degrees2Radians;
+      if (offset.length > 1e-3) {
+        exampleSettings.lightAzimuthDegrees =
+            math.atan2(offset.z, offset.x) * vm.radians2Degrees;
+      }
+      exampleSettings.lightElevationDegrees =
+          _sunElevationHigh - reach * (_sunElevationHigh - _sunElevationLow);
     } else {
       final height = _lampPosition.y;
       _lampPosition = _planeHit(position, height)..y = height;
@@ -688,9 +803,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     if (_viewSize.isEmpty) return;
     _endCelebration();
     for (final die in _dice) {
-      scene.remove(die.node);
+      _removeDie(die);
     }
     _dice.clear();
+    _slowFired = false;
     _lastRoll.value = null;
     _playFx('throw', volume: 0.7, pitch: 0.95 + _random.nextDouble() * 0.1);
 
@@ -931,7 +1047,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       ),
     );
     scene.add(node);
-    _dice.add(_Die(node, visual, body, trail, finish, color));
+    final die = _Die(node, visual, body, trail, finish, color);
+    if (finish.isGlass) die.caustic = _vfx.createCaustic(color);
+    _dice.add(die);
   }
 
   /// Distance from [point] to the edge of the view along [direction], measured
@@ -994,18 +1112,76 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   void _aimStart(Offset position) {
     // The light handle owns its own drag.
     if (_lightHandleRect.contains(position)) return;
+    // A drag that starts on a die shoves the dice around instead. That
+    // counts as a fresh roll once they settle.
+    if (_dieUnder(position) != null) {
+      _sweeping = true;
+      _sweepLast = position;
+      _sweepTime = _realTime;
+      _endCelebration();
+      _slowFired = false;
+      _rolling = true;
+      _rollTime = 0.0;
+      _stillTime = 0.0;
+      return;
+    }
     _aimDissolve.stop();
     _spentAim.value = null;
     _aim.value = _Aim(position, position);
   }
 
   void _aimUpdate(Offset position) {
+    if (_sweeping) {
+      _sweep(position);
+      return;
+    }
     final aim = _aim.value;
     if (aim == null) return;
     _aim.value = _Aim(aim.start, position);
   }
 
+  /// The die whose footprint the finger is on, if any.
+  _Die? _dieUnder(Offset position) {
+    final reach = _dieHalf * _pixelsPerUnit * 1.6;
+    for (final die in _dice) {
+      if ((_screenPositionOf(die) - position).distance < reach) return die;
+    }
+    return null;
+  }
+
+  /// Pushes the dice near the finger along with it.
+  void _sweep(Offset position) {
+    final last = _sweepLast;
+    final dt = math.max(_realTime - _sweepTime, 1 / 120);
+    _sweepLast = position;
+    _sweepTime = _realTime;
+    if (last == null) return;
+    final here = _floorHit(position);
+    final push = (here - _floorHit(last)) / dt;
+    final reach = _dieHalf * 2.4;
+    for (final die in _dice) {
+      final at = die.node.localTransform.getTranslation();
+      final gap = vm.Vector2(at.x - here.x, at.z - here.z).length;
+      if (gap > reach || at.y > _dieHalf * 2.5) continue;
+      // Carried by the hand, with a little lift so it tumbles.
+      die.body.linearVelocity =
+          push * 0.8 +
+          vm.Vector3(_jitter(0.6), 1.6 + _random.nextDouble(), _jitter(0.6));
+      die.body.angularVelocity = vm.Vector3(
+        _jitter(9.0),
+        _jitter(9.0),
+        _jitter(9.0),
+      );
+    }
+  }
+
   void _aimRelease() {
+    if (_sweeping) {
+      _sweeping = false;
+      _sweepLast = null;
+      _aim.value = null;
+      return;
+    }
     final aim = _aim.value;
     _aim.value = null;
     if (aim == null) return;
@@ -1016,13 +1192,35 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _roll(aim: aim);
   }
 
-  void _onTick(Duration elapsed, double deltaSeconds) {
+  void _onTick(Duration elapsed, double realDelta) {
+    _realTime += realDelta;
+    _applyLights();
+    _stickerFlash *= math.exp(-realDelta * 4.0);
+
+    // Slow motion dips the scene clock, not the wall clock: the scene is
+    // ticked here with the scaled delta, so the view skips its own tick.
+    final slow = _slowUntil > _realTime ? (_slowUntil - _realTime) / 0.9 : 0.0;
+    _timeScale = slow <= 0 ? 1.0 : 0.18 + 0.82 * math.pow(1 - slow, 3);
+    final deltaSeconds = realDelta * _timeScale;
+    if (slow > 0) {
+      scene.postProcess.chromaticAberration
+        ..enabled = true
+        ..intensity = 1.4 * slow;
+    }
+    // Everything that changes nodes (highlights, effects) runs before the
+    // scene ticks, so the render items are in sync by the time they draw.
     _vfx.update(deltaSeconds);
-    _advanceCelebration(deltaSeconds);
+    _advanceCelebration(realDelta);
+    scene.update(deltaSeconds);
+
+    _publishContacts(realDelta);
     for (final die in _dice) {
       // Streak only while flying; a rolling die drags no light behind it.
       die.trail.emitting = die.body.linearVelocity.length > 5.0;
+      _placeCaustic(die);
+      _skid(die);
     }
+    _watchForMatch();
     if (_openWalls.isNotEmpty) {
       _openWallTime += deltaSeconds;
       final allInside = _dice.every(
@@ -1048,6 +1246,194 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       _lastRoll.value = faces;
       _startCelebration(faces);
     }
+  }
+
+  /// Fires the slow-motion beat the moment a match shows while the dice are
+  /// still coming to rest.
+  void _watchForMatch() {
+    if (!_rolling || _slowFired || _rollTime < 0.5 || _dice.length < 2) return;
+    var fastest = 0.0;
+    for (final die in _dice) {
+      fastest = math.max(fastest, die.body.linearVelocity.length);
+      if (die.node.localTransform.getTranslation().y > _dieHalf * 1.4) return;
+    }
+    // Still moving a little, so the slow motion has something to show.
+    if (fastest > 2.4 || fastest < 0.25) return;
+    final faces = [for (final d in _dice) _topFace(d.node)];
+    if (Celebration.multiplierOf(faces) < 2) return;
+    _slowFired = true;
+    _slowUntil = _realTime + 0.9;
+    _playFx('slowmo', volume: 0.8);
+    final matched = Celebration.matchedIndices(faces);
+    final center = matched.fold(
+      vm.Vector3.zero(),
+      (sum, i) => sum + _dice[i].node.localTransform.getTranslation(),
+    )..scale(1 / matched.length);
+    _vfx.shockwave(
+      _screenUv(_camera.worldToScreen(center, _viewSize) ?? Offset.zero),
+      strength: 0.02,
+    );
+  }
+
+  /// Publishes where the dice sit and hit, in global coordinates, for the
+  /// widgets under them.
+  void _publishContacts(double dt) {
+    final time = _contacts.value.time + dt;
+    _hits.removeWhere((hit) => time - hit.time > 1.2);
+    final resting = <(Offset, double)>[];
+    for (final die in _dice) {
+      final at = die.node.localTransform.getTranslation();
+      if (at.y > _dieHalf * 1.6 + 0.15) continue;
+      if (die.body.linearVelocity.length > 0.3) continue;
+      resting.add((
+        _toGlobal(_screenPositionOf(die)),
+        _dieHalf * _pixelsPerUnit,
+      ));
+    }
+    _contacts.value = DiceContacts(
+      resting: resting,
+      hits: List.of(_hits),
+      time: time,
+    );
+  }
+
+  Offset _toGlobal(Offset viewLocal) {
+    final view = _viewKey.currentContext?.findRenderObject() as RenderBox?;
+    return view?.localToGlobal(viewLocal) ?? viewLocal;
+  }
+
+  Offset _toView(Offset global) {
+    final view = _viewKey.currentContext?.findRenderObject() as RenderBox?;
+    return view?.globalToLocal(global) ?? global;
+  }
+
+  /// Keeps a glass die's caustic under it, thrown along the light.
+  void _placeCaustic(_Die die) {
+    final caustic = die.caustic;
+    if (caustic == null) return;
+    final at = die.node.localTransform.getTranslation();
+    // Which way the light comes from, and how steeply.
+    vm.Vector3 toLight;
+    if (_kind == _LightKind.directional) {
+      toLight = vm.Vector3(
+        math.cos(_sunAzimuth) * math.cos(_sunElevation),
+        math.sin(_sunElevation),
+        math.sin(_sunAzimuth) * math.cos(_sunElevation),
+      );
+    } else {
+      toLight = (_lampPosition - at)..normalize();
+    }
+    final elevation = math.asin(toLight.y.clamp(-1.0, 1.0));
+    final tangent = math.max(math.tan(elevation), 0.2);
+    final horizontal = vm.Vector2(toLight.x, toLight.z);
+    if (horizontal.length > 1e-4) horizontal.normalize();
+    final throwDistance = math.min(
+      (_dieHalf * 0.7 + at.y) / tangent,
+      _dieHalf * 2.5,
+    );
+    final position = vm.Vector3(
+      at.x - horizontal.x * throwDistance,
+      0,
+      at.z - horizontal.y * throwDistance,
+    );
+    // Fades as the die lifts off, brightest under a low light.
+    final lift = ((at.y - _dieHalf) / (_dieHalf * 1.5)).clamp(0.0, 1.0);
+    final intensity =
+        (1 - lift) * (0.45 + 0.55 * (1 - elevation / (math.pi / 2)));
+    _vfx.placeCaustic(caustic, position, _dieHalf * 2.4, intensity, _realTime);
+  }
+
+  /// Leaves ink where a die scuffs along the table.
+  void _skid(_Die die) {
+    final at = die.node.localTransform.getTranslation();
+    if (at.y > _dieHalf * 1.1) return;
+    final v = die.body.linearVelocity;
+    final along = vm.Vector2(v.x, v.z);
+    if (along.length < 2.5) return;
+    if (_realTime - die.lastSkidTime < 0.035) return;
+    die.lastSkidTime = _realTime;
+    final a = _camera.worldToScreen(at, _viewSize);
+    final b = _camera.worldToScreen(at + v, _viewSize);
+    if (a == null || b == null) return;
+    final angle = math.atan2(b.dy - a.dy, b.dx - a.dx);
+    _vfx.skid(at, angle, die.color, _dieHalf * 1.2);
+  }
+
+  /// Raised slabs where the screen's cards and button are, so dice bounce
+  /// off their edges and come to rest on them.
+  void _rebuildUiBounds() {
+    final rects = [..._cardRects, if (_buttonRect != null) _buttonRect!];
+    final key = rects.map((r) => r.toString()).join();
+    if (key == _uiBoundsKey || _viewSize.isEmpty) return;
+    _uiBoundsKey = key;
+    for (final node in _uiBounds) {
+      scene.remove(node);
+    }
+    _uiBounds.clear();
+    const thickness = 0.12;
+    for (final rect in rects) {
+      final center = _floorHit(rect.center);
+      final node = Node(
+        localTransform: vm.Matrix4.translation(
+          vm.Vector3(center.x, thickness / 2, center.z),
+        ),
+      );
+      node.addComponent(RigidBody(type: BodyType.fixed));
+      node.addComponent(
+        Collider(
+          shape: BoxShape(
+            halfExtents: vm.Vector3(
+              rect.width / _pixelsPerUnit / 2,
+              thickness / 2,
+              rect.height / _pixelsPerUnit / 2,
+            ),
+          ),
+          material: const PhysicsMaterial(friction: 0.55, restitution: 0.3),
+        ),
+      );
+      scene.add(node);
+      _uiBounds.add(node);
+    }
+    // The pill's glow and the sticker's flash sit over their widgets.
+    final button = _buttonRect;
+    if (button != null) {
+      _buttonLightNode.localTransform = vm.Matrix4.translation(
+        _floorHit(button.center) + vm.Vector3(0, 1.1, 0),
+      );
+    }
+    final banner = _bannerCenter;
+    if (banner != null) {
+      _stickerLightNode.localTransform = vm.Matrix4.translation(
+        _floorHit(banner) + vm.Vector3(0, 1.6, 0),
+      );
+    }
+  }
+
+  void _onScreenLayout(DiceScreenLayout layout) {
+    _bannerCenter = _toView(layout.banner);
+    _cardRects = [
+      for (final rect in layout.cards)
+        Rect.fromPoints(_toView(rect.topLeft), _toView(rect.bottomRight)),
+    ];
+    final button = layout.button;
+    _buttonRect = Rect.fromPoints(
+      _toView(button.topLeft),
+      _toView(button.bottomRight),
+    );
+    _rebuildUiBounds();
+  }
+
+  static vm.Vector3 _linear(Color color) {
+    double channel(double c) => c <= 0.04045
+        ? c / 12.92
+        : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+    return vm.Vector3(channel(color.r), channel(color.g), channel(color.b));
+  }
+
+  void _removeDie(_Die die) {
+    final caustic = die.caustic;
+    if (caustic != null) _vfx.removeCaustic(caustic);
+    scene.remove(die.node);
   }
 
   // --- Scoring ----------------------------------------------------------------
@@ -1093,6 +1479,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             pitch: 1.0 + 0.09 * ordinal,
             position: position,
           );
+          if (ordinal == 0) _playFx('riser', volume: 0.5);
         case MultiplierRevealed(:final matchedIndices):
           for (final index in matchedIndices) {
             final die = _dice[index];
@@ -1122,9 +1509,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           ];
           final banner = _bannerWorldPosition();
           final loud = celebration.multiplier > 1;
+          _stickerFlash = 1.0;
           _vfx.confetti(banner, [
-            for (var i = 0; i < (loud ? 5 : 4); i++)
-              dieColors[(i + _vfxRandom.nextInt(2)) % dieColors.length],
+            for (final color in _theme.confetti) _linearColor(color),
+            if (loud) _linearColor(_theme.confetti[_vfxRandom.nextInt(4)]),
           ]);
           _vfx.ringPulse(
             banner..y = 0.0,
@@ -1148,6 +1536,11 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           _endCelebration();
       }
     }
+  }
+
+  static vm.Vector4 _linearColor(Color color) {
+    final c = _linear(color);
+    return vm.Vector4(c.x, c.y, c.z, 1.0);
   }
 
   vm.Vector4 _highlightFor(_Die die) {
@@ -1241,7 +1634,20 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       } else if (!floorKick && nearWall && horizontal > change.y.abs()) {
         set = 'wall';
       } else {
-        set = _surface == _Surface.glass ? 'glass' : 'table';
+        // The die's own material speaks on the table, when it has a voice.
+        final landing = die.finish.landingSet;
+        set = landing != null && _impactClips.containsKey('land_$landing')
+            ? 'land_$landing'
+            : (_surface == _Surface.glass ? 'glass' : 'table');
+        _hits.add(
+          DiceHit(
+            _toGlobal(
+              _camera.worldToScreen(position, _viewSize) ?? Offset.zero,
+            ),
+            (strength / 12.0).clamp(0.15, 1.0),
+            _contacts.value.time,
+          ),
+        );
       }
       final clips = _impactClips[set];
       if (clips == null || clips.isEmpty) continue;
@@ -1308,12 +1714,17 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             ? Rect.zero
             : Rect.fromCenter(center: handle, width: 64, height: 64);
         final screen = DiceGameScreen(
+          theme: _theme,
           onRoll: _roll,
           lastRoll: _lastRoll,
           history: _history,
           frame: _frame,
-          onBannerCenter: (center) => _bannerCenter = center,
+          contacts: _contacts,
+          onLayout: _onScreenLayout,
         );
+        final flight = _bannerCenter == null
+            ? const Offset(0, -260)
+            : _bannerCenter! - constraints.biggest.center(Offset.zero);
         return Stack(
           key: _viewKey,
           children: [
@@ -1352,6 +1763,17 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
                 onPanUpdate: (d) => _aimUpdate(d.localPosition),
                 onPanEnd: (_) => _aimRelease(),
                 onPanCancel: () => _aim.value = null,
+              ),
+            ),
+            // The running number sits over the dice, never under them.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ScreenThemeScope(
+                  theme: _theme,
+                  child: Center(
+                    child: RollCounter(frame: _frame, flightOffset: flight),
+                  ),
+                ),
               ),
             ),
             Positioned.fill(
@@ -1408,6 +1830,37 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             ),
             const SizedBox(height: 8),
             _FinishPicker(selected: _finish, onChanged: _setFinish),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const SizedBox(width: 64, child: Text('Look')),
+                Expanded(
+                  child: SegmentedButton<ScreenLook>(
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      selectedForegroundColor: Colors.black,
+                      selectedBackgroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white24),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: [
+                      for (final theme in ScreenTheme.all)
+                        ButtonSegment(
+                          value: theme.look,
+                          label: Text(theme.label),
+                        ),
+                    ],
+                    selected: {_theme.look},
+                    onSelectionChanged: (selection) => _setTheme(
+                      ScreenTheme.all.firstWhere(
+                        (t) => t.look == selection.first,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 4),
             Row(
               children: [
@@ -1461,10 +1914,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             if (directional)
               _slider(
                 'Elevation',
-                _sunElevation * vm.radians2Degrees,
-                20,
+                exampleSettings.lightElevationDegrees,
+                7,
                 90,
-                (v) => _sunElevation = v * vm.degrees2Radians,
+                (v) => exampleSettings.lightElevationDegrees = v,
               )
             else
               _slider(
@@ -1947,38 +2400,61 @@ class _FinishPicker extends StatelessWidget {
 /// is embedded (once live for input, once captured for the scene), so it
 /// carries no state of its own beyond the banner measurement. Public so a
 /// test can render it without a scene.
+/// Where the screen's pieces landed, in global coordinates.
+class DiceScreenLayout {
+  const DiceScreenLayout({
+    required this.cards,
+    required this.button,
+    required this.banner,
+  });
+
+  final List<Rect> cards;
+  final Rect button;
+  final Offset banner;
+}
+
+/// The ordinary app screen the dice roll over. Built twice when the backdrop
+/// is embedded (once live for input, once captured for the scene), so it
+/// carries no state of its own beyond the layout measurement. Public so a
+/// test can render it without a scene.
 class DiceGameScreen extends StatefulWidget {
   const DiceGameScreen({
     super.key,
     this.rollKey,
+    required this.theme,
     required this.onRoll,
     required this.lastRoll,
     required this.history,
     required this.frame,
-    this.onBannerCenter,
+    required this.contacts,
+    this.onLayout,
   });
 
   /// The same screen with the roll button keyed, for the live copy. Only
-  /// the live copy reports where its banner is.
+  /// the live copy reports its layout.
   static DiceGameScreen withRollKey(DiceGameScreen screen, GlobalKey rollKey) =>
       DiceGameScreen(
         rollKey: rollKey,
+        theme: screen.theme,
         onRoll: screen.onRoll,
         lastRoll: screen.lastRoll,
         history: screen.history,
         frame: screen.frame,
-        onBannerCenter: screen.onBannerCenter,
+        contacts: screen.contacts,
+        onLayout: screen.onLayout,
       );
 
   final GlobalKey? rollKey;
+  final ScreenTheme theme;
   final VoidCallback onRoll;
   final ValueListenable<List<int>?> lastRoll;
   final ValueListenable<List<RollRecord>> history;
   final ValueListenable<CelebrationFrame> frame;
+  final ValueListenable<DiceContacts> contacts;
 
-  /// Reports the score banner's centre in this screen's coordinates after
-  /// layout, so the host can aim effects at it.
-  final ValueChanged<Offset>? onBannerCenter;
+  /// Reports where the cards, the button, and the banner landed after
+  /// layout, so the host can build colliders and aim effects at them.
+  final ValueChanged<DiceScreenLayout>? onLayout;
 
   @override
   State<DiceGameScreen> createState() => DiceGameScreenState();
@@ -1986,18 +2462,17 @@ class DiceGameScreen extends StatefulWidget {
 
 class DiceGameScreenState extends State<DiceGameScreen>
     with SingleTickerProviderStateMixin {
-  // A slow loop the stripes drift and the sticker rocks on.
+  // A slow loop the background drifts and the sticker rocks on.
   late final AnimationController _clock = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 14),
   )..repeat();
   final GlobalKey _bannerKey = GlobalKey();
-  final GlobalKey _stackKey = GlobalKey();
-  // Where the total sits relative to the counter's resting spot (the middle
-  // of the screen), measured after layout so the slam lands on the number.
-  Offset _flight = const Offset(0, -260);
+  final List<GlobalKey> _cardKeys = [for (var i = 0; i < 4; i++) GlobalKey()];
+  final GlobalKey _buttonKey = GlobalKey();
+  DiceScreenLayout? _reported;
 
-  // The cards keep to a column on the left, so the dice have stripes to land
+  // The cards keep to a column on the left, so the dice have pattern to land
   // on and glass has something to bend.
   static const double _columnWidth = 400;
 
@@ -2011,99 +2486,141 @@ class DiceGameScreenState extends State<DiceGameScreen>
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     final insets = ExampleOverlay.safeInsetsOf(context);
-    return Stack(
-      key: _stackKey,
-      children: [
-        Positioned.fill(child: PopStripesBackground(animation: _clock)),
-        Padding(
-          padding: EdgeInsets.fromLTRB(28, insets.top + 64, 28, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const OutlinedText('Game night', size: 56),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Round 3, your turn',
-                          style: Pop.label.copyWith(fontSize: 18),
-                        ),
-                      ],
-                    ),
-                  ),
-                  KeyedSubtree(
-                    key: _bannerKey,
-                    child: ScoreBanner(frame: widget.frame, clock: _clock),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: _columnWidth),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+    final theme = widget.theme;
+    return ScreenThemeScope(
+      theme: theme,
+      child: Stack(
+        children: [
+          Positioned.fill(child: ThemedBackground(animation: _clock)),
+          Padding(
+            padding: EdgeInsets.fromLTRB(28, insets.top + 64, 28, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
-                      children: [
-                        Expanded(
-                          child: _PlayerCard(
-                            name: 'Ava',
-                            score: 42,
-                            color: Pop.coral,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const OutlinedText('Game night', size: 56),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Round 3, your turn',
+                            style: theme.labelStyle.copyWith(
+                              fontSize: 18,
+                              color: theme.look == ScreenLook.pop
+                                  ? theme.ink
+                                  : theme.cream,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 16),
-                        Expanded(
-                          child: _PlayerCard(
-                            name: 'Theo',
-                            score: 37,
-                            color: Pop.teal,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 20),
-                    _LastRollCard(lastRoll: widget.lastRoll),
-                    const SizedBox(height: 20),
-                    _HistoryCard(history: widget.history),
+                    KeyedSubtree(
+                      key: _bannerKey,
+                      child: ScoreBanner(frame: widget.frame, clock: _clock),
+                    ),
                   ],
                 ),
+                const SizedBox(height: 22),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _columnWidth),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _pressable(
+                              0,
+                              _PlayerCard(
+                                name: 'Ava',
+                                score: 42,
+                                color: theme.accent,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _pressable(
+                              1,
+                              _PlayerCard(
+                                name: 'Theo',
+                                score: 37,
+                                color: theme.accent2,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      _pressable(2, _LastRollCard(lastRoll: widget.lastRoll)),
+                      const SizedBox(height: 20),
+                      _pressable(3, _HistoryCard(history: widget.history)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            right: 32,
+            bottom: insets.bottom + 32,
+            child: Pressable(
+              contacts: widget.contacts,
+              child: KeyedSubtree(
+                key: _buttonKey,
+                child: KeyedSubtree(
+                  key: widget.rollKey,
+                  child: PopButton(label: 'Roll', onPressed: widget.onRoll),
+                ),
               ),
-            ],
+            ),
           ),
-        ),
-        Center(
-          child: RollCounter(frame: widget.frame, flightOffset: _flight),
-        ),
-        Positioned(
-          right: 32,
-          bottom: insets.bottom + 32,
-          child: KeyedSubtree(
-            key: widget.rollKey,
-            child: PopButton(label: 'Roll', onPressed: widget.onRoll),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
+  Widget _pressable(int index, Widget child) => Pressable(
+    contacts: widget.contacts,
+    child: KeyedSubtree(key: _cardKeys[index], child: child),
+  );
+
+  static Rect? _globalRect(GlobalKey key) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
   void _measure() {
-    if (!mounted) return;
-    final banner = _bannerKey.currentContext?.findRenderObject() as RenderBox?;
-    final stack = _stackKey.currentContext?.findRenderObject() as RenderBox?;
-    if (banner == null || stack == null || !banner.hasSize) return;
-    final target = stack.globalToLocal(
-      banner.localToGlobal(banner.size.center(Offset.zero)),
+    if (!mounted || widget.rollKey == null) return;
+    final banner = _globalRect(_bannerKey);
+    final button = _globalRect(_buttonKey);
+    if (banner == null || button == null) return;
+    final cards = [
+      for (final key in _cardKeys)
+        if (_globalRect(key) case final rect?) rect,
+    ];
+    final layout = DiceScreenLayout(
+      cards: cards,
+      button: button,
+      banner: banner.center,
     );
-    if (widget.rollKey != null) widget.onBannerCenter?.call(target);
-    final flight = target - stack.size.center(Offset.zero);
-    if ((flight - _flight).distance < 0.5) return;
-    setState(() => _flight = flight);
+    final last = _reported;
+    if (last != null &&
+        last.banner == layout.banner &&
+        last.button == layout.button &&
+        last.cards.length == layout.cards.length &&
+        [
+          for (var i = 0; i < cards.length; i++) last.cards[i] == cards[i],
+        ].every((same) => same)) {
+      return;
+    }
+    _reported = layout;
+    widget.onLayout?.call(layout);
   }
 }
 
@@ -2120,6 +2637,7 @@ class _PlayerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ScreenTheme.of(context);
     return PopCard(
       padding: const EdgeInsets.all(12),
       child: Row(
@@ -2131,7 +2649,7 @@ class _PlayerCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Pop.ink, width: 2.5),
+              border: Border.all(color: theme.ink, width: 2.5),
             ),
             alignment: Alignment.center,
             child: OutlinedText(name[0], size: 30, shadow: false),
@@ -2140,10 +2658,13 @@ class _PlayerCard extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name, style: Pop.label.copyWith(fontSize: 18)),
+              Text(name, style: theme.labelStyle.copyWith(fontSize: 18)),
               Text(
                 '$score',
-                style: Pop.label.copyWith(fontSize: 30, letterSpacing: -1),
+                style: theme.labelStyle.copyWith(
+                  fontSize: 30,
+                  letterSpacing: -1,
+                ),
               ),
             ],
           ),
@@ -2153,7 +2674,7 @@ class _PlayerCard extends StatelessWidget {
   }
 }
 
-/// The faces of the roll being scored, and their sum on a mustard block.
+/// The faces of the roll being scored, and their sum on a colored block.
 class _LastRollCard extends StatelessWidget {
   const _LastRollCard({required this.lastRoll});
 
@@ -2161,14 +2682,16 @@ class _LastRollCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ScreenTheme.of(context);
     return ValueListenableBuilder<List<int>?>(
       valueListenable: lastRoll,
       builder: (context, faces, _) {
         final total = faces?.fold(0, (a, b) => a + b);
+        final light = theme.score.computeLuminance() > 0.5;
         return PopCard(
           padding: EdgeInsets.zero,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(Pop.radius - Pop.stroke),
+            borderRadius: BorderRadius.circular(theme.radius - theme.stroke),
             child: IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2181,13 +2704,13 @@ class _LastRollCard extends StatelessWidget {
                         children: [
                           Text(
                             'Last roll',
-                            style: Pop.label.copyWith(fontSize: 18),
+                            style: theme.labelStyle.copyWith(fontSize: 18),
                           ),
                           const SizedBox(height: 8),
                           if (faces == null)
                             Text(
                               'Rolling...',
-                              style: Pop.small.copyWith(fontSize: 15),
+                              style: theme.smallStyle.copyWith(fontSize: 15),
                             )
                           else
                             _PipRow(faces, size: 28),
@@ -2197,10 +2720,10 @@ class _LastRollCard extends StatelessWidget {
                   ),
                   Container(
                     width: 112,
-                    decoration: const BoxDecoration(
-                      color: Pop.mustard,
+                    decoration: BoxDecoration(
+                      color: theme.score,
                       border: Border(
-                        left: BorderSide(color: Pop.ink, width: Pop.stroke),
+                        left: BorderSide(color: theme.ink, width: theme.stroke),
                       ),
                     ),
                     alignment: Alignment.center,
@@ -2209,6 +2732,7 @@ class _LastRollCard extends StatelessWidget {
                       size: 54,
                       shadow: false,
                       letterSpacing: -2,
+                      fill: light ? theme.cream : theme.cream,
                     ),
                   ),
                 ],
@@ -2229,13 +2753,17 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ScreenTheme.of(context);
     return PopCard(
       child: ValueListenableBuilder<List<RollRecord>>(
         valueListenable: history,
         builder: (context, entries, _) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Roll history', style: Pop.label.copyWith(fontSize: 18)),
+            Text(
+              'Roll history',
+              style: theme.labelStyle.copyWith(fontSize: 18),
+            ),
             for (final entry in entries) ...[
               const SizedBox(height: 8),
               Row(
@@ -2249,19 +2777,19 @@ class _HistoryCard extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Pop.teal,
+                        color: theme.accent2,
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: Pop.ink, width: 2),
+                        border: Border.all(color: theme.ink, width: 2),
                       ),
                       child: Text(
                         'x${entry.multiplier}',
-                        style: Pop.small.copyWith(color: Pop.cream),
+                        style: theme.smallStyle.copyWith(color: theme.cream),
                       ),
                     ),
                   const SizedBox(width: 10),
                   Text(
                     '${entry.scored}',
-                    style: Pop.label.copyWith(fontSize: 18),
+                    style: theme.labelStyle.copyWith(fontSize: 18),
                   ),
                 ],
               ),
@@ -2282,13 +2810,15 @@ class _PipRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ScreenTheme.of(context);
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 5,
       runSpacing: 4,
       children: [
         for (var i = 0; i < faces.length; i++) ...[
-          if (i > 0) Text('+', style: Pop.label.copyWith(fontSize: size * 0.6)),
+          if (i > 0)
+            Text('+', style: theme.labelStyle.copyWith(fontSize: size * 0.6)),
           PipFace(faces[i], size: size),
         ],
       ],
