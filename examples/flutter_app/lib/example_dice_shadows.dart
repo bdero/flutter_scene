@@ -18,8 +18,9 @@ import 'example_panel.dart';
 /// Dice thrown over an ordinary Flutter screen. The scene clears to
 /// transparent and an invisible [ShadowCatcherMaterial] plane stands in for
 /// the screen surface, so the dice cast shadows onto the widgets underneath.
-/// Drag anywhere to move the light, and switch between a directional, point,
-/// and spot light in the panel.
+/// Drag to aim an arrow and release to throw the dice in from off screen, and
+/// drag the light's handle to move it. The panel switches between a
+/// directional, point, and spot light.
 class ExampleDiceShadows extends StatefulWidget {
   const ExampleDiceShadows({super.key});
 
@@ -30,6 +31,22 @@ class ExampleDiceShadows extends StatefulWidget {
 enum _LightKind { directional, point, spot }
 
 enum _Surface { off, wood, glass }
+
+/// A drawn aim arrow, live while dragging and again while it dissolves.
+class _Aim {
+  const _Aim(this.start, this.end);
+
+  final Offset start;
+  final Offset end;
+
+  Offset get delta => end - start;
+
+  /// 0 at rest, 1 once the drag is long enough to throw at full speed.
+  double get strength => (delta.distance / _kFullPullPixels).clamp(0.0, 1.0);
+}
+
+/// Drag length that reaches the hardest throw.
+const double _kFullPullPixels = 420.0;
 
 class _Die {
   _Die(this.node, this.body);
@@ -53,7 +70,8 @@ class _AfterPhysics extends Component {
   void update(double deltaSeconds) => onUpdate(deltaSeconds);
 }
 
-class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
+class ExampleDiceShadowsState extends State<ExampleDiceShadows>
+    with SingleTickerProviderStateMixin {
   final Scene scene = Scene();
   late final PhysicsWorld world;
 
@@ -71,7 +89,24 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
   Size _viewSize = Size.zero;
   PerspectiveCamera _camera = PerspectiveCamera();
   double _ceilingY = 6.0;
+  // Shadow range with the sun overhead. A low sun stretches shadows far past
+  // this, so [_applyLights] extends it.
+  double _shadowBaseDistance = 20.0;
   final List<Node> _bounds = [];
+  // The four frustum walls, by the world direction each one faces from the
+  // middle of the view. Dice thrown in from off screen need one of them to
+  // let go for a moment, since the walls trace the screen edges.
+  final List<({vm.Vector3 outward, Collider collider})> _walls = [];
+  final List<Collider> _openWalls = [];
+  double _openWallTime = 0.0;
+
+  // Where the light handle sits, so a drag that starts on it aims the light
+  // instead of the dice.
+  Rect _lightHandleRect = Rect.zero;
+  // The arrow under the finger, then the one dissolving after the throw.
+  final ValueNotifier<_Aim?> _aim = ValueNotifier(null);
+  final ValueNotifier<_Aim?> _spentAim = ValueNotifier(null);
+  late final AnimationController _aimDissolve;
 
   late final MeshGeometry _dieGeometry;
   late final List<PhysicallyBasedMaterial> _dieMaterials;
@@ -107,6 +142,11 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     'Ava rolled 7',
     'Theo rolled 15',
   ]);
+
+  // Sun elevation at the middle of the view and out at the edge. Low enough
+  // that a die at the rim throws a shadow most of the way across.
+  static const double _sunElevationHigh = 90.0;
+  static const double _sunElevationLow = 7.0;
 
   _LightKind _kind = _LightKind.directional;
   // 0..1, mapped per light type (directional softness is an angle, punctual
@@ -181,6 +221,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     scene.root.addComponent(_AfterPhysics(_listenForImpacts));
     _startAudio();
 
+    _aimDissolve = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addStatusListener((status) {
+      if (status == AnimationStatus.completed) _spentAim.value = null;
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 400), () {
         if (mounted) _roll();
@@ -197,6 +244,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     }
     _lastRoll.dispose();
     _history.dispose();
+    _aim.dispose();
+    _spentAim.dispose();
+    _aimDissolve.dispose();
     super.dispose();
   }
 
@@ -247,12 +297,14 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       fovFar: distance * 2,
     );
     _ceilingY = math.min(distance * 0.55, 7.0);
-    _sun.shadowMaxDistance = distance + 8.0;
+    _shadowBaseDistance = distance + 8.0;
 
     for (final node in _bounds) {
       scene.remove(node);
     }
     _bounds.clear();
+    _walls.clear();
+    _openWalls.clear();
 
     final reach = math.max(size.width, size.height) / _pixelsPerUnit + 20;
     _addBound(vm.Vector3(0, -0.5, 0), vm.Vector3(reach, 0.5, reach));
@@ -276,15 +328,16 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       final slant = (eye - e)..normalize();
       final wallLength = _ceilingY / slant.y;
       final basis = vm.Matrix3.columns(inward, along.cross(inward), along);
-      _addBound(
+      final collider = _addBound(
         e + slant * (wallLength / 2) - inward * 0.5,
         vm.Vector3(0.5, wallLength / 2 + 0.5, reach),
         rotation: vm.Quaternion.fromRotation(basis),
       );
+      _walls.add((outward: (-inward)..y = 0, collider: collider));
     }
   }
 
-  void _addBound(
+  Collider _addBound(
     vm.Vector3 position,
     vm.Vector3 halfExtents, {
     vm.Quaternion? rotation,
@@ -297,14 +350,14 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       ),
     );
     node.addComponent(RigidBody(type: BodyType.fixed));
-    node.addComponent(
-      Collider(
-        shape: BoxShape(halfExtents: halfExtents),
-        material: const PhysicsMaterial(friction: 0.4, restitution: 0.45),
-      ),
+    final collider = Collider(
+      shape: BoxShape(halfExtents: halfExtents),
+      material: const PhysicsMaterial(friction: 0.4, restitution: 0.45),
     );
+    node.addComponent(collider);
     scene.add(node);
     _bounds.add(node);
+    return collider;
   }
 
   vm.Vector3 _planeHit(Offset screen, double height) {
@@ -329,6 +382,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     );
     _sun.direction = -toLight;
     _sun.shadowSoftness = _softness * 0.3;
+    // A die throws a shadow of its height over the tangent of the elevation,
+    // so the cascades have to reach much further when the sun sits low.
+    final tangent = math.max(math.tan(_sunElevation), 0.06);
+    _sun.shadowMaxDistance = _shadowBaseDistance + math.min(48.0, 4.0 / tangent);
 
     // Scale intensity with height squared so the dice stay evenly exposed as
     // the lamp rises and falls.
@@ -365,7 +422,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
           math.min(_viewSize.width, _viewSize.height) / _pixelsPerUnit / 2;
       final reach = (offset.length / halfExtent).clamp(0.0, 1.0);
       if (offset.length > 1e-3) _sunAzimuth = math.atan2(offset.z, offset.x);
-      _sunElevation = (90.0 - reach * 70.0) * vm.degrees2Radians;
+      _sunElevation =
+          (_sunElevationHigh -
+              reach * (_sunElevationHigh - _sunElevationLow)) *
+          vm.degrees2Radians;
     } else {
       final height = _lampPosition.y;
       _lampPosition = _planeHit(position, height)..y = height;
@@ -373,12 +433,25 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     setState(_applyLights);
   }
 
+  /// Where the light's handle sits on screen. The lamps project from their
+  /// world position; the sun has none, so it rides the direction it shines
+  /// from (the inverse of [_dragLight]).
+  Offset? _lightHandlePosition() {
+    if (_viewSize.isEmpty) return null;
+    if (_kind != _LightKind.directional) {
+      return _camera.worldToScreen(_lampPosition, _viewSize);
+    }
+    return _sunMarkerPosition();
+  }
+
   /// Where the sun marker sits on screen, the inverse of [_dragLight].
   Offset? _sunMarkerPosition() {
     if (_viewSize.isEmpty) return null;
     final halfExtent =
         math.min(_viewSize.width, _viewSize.height) / _pixelsPerUnit / 2;
-    final reach = (90.0 - _sunElevation * vm.radians2Degrees) / 70.0;
+    final reach =
+        (_sunElevationHigh - _sunElevation * vm.radians2Degrees) /
+        (_sunElevationHigh - _sunElevationLow);
     final center = _floorHit(_viewSize.center(Offset.zero));
     final point =
         center +
@@ -389,12 +462,17 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
 
   // --- Dice -----------------------------------------------------------------
 
-  void _roll() {
+  void _roll({_Aim? aim}) {
     if (_viewSize.isEmpty) return;
     for (final die in _dice) {
       scene.remove(die.node);
     }
     _dice.clear();
+
+    if (aim != null) {
+      _throwAlong(aim);
+      return;
+    }
 
     // Launch from the roll button toward the middle of the screen.
     var origin = _viewSize.bottomRight(const Offset(-80, -80));
@@ -441,44 +519,253 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
             4.0 + _random.nextDouble() * 4.0,
             _jitter(1.5),
           );
-      final spin = vm.Vector3(_jitter(25), _jitter(25), _jitter(25));
-      final rotation = vm.Quaternion.euler(
-        _random.nextDouble() * math.pi * 2,
-        _random.nextDouble() * math.pi * 2,
-        _random.nextDouble() * math.pi * 2,
-      );
-      final node = Node(
-        mesh: Mesh(_dieGeometry, _dieMaterials[i % _dieMaterials.length]),
-        localTransform: vm.Matrix4.compose(
-          position,
-          rotation,
-          vm.Vector3.all(1.0),
-        ),
-      );
-      final body = RigidBody(
-        linearVelocity: velocity,
-        angularVelocity: spin,
-        angularDamping: 0.3,
-        ccdEnabled: true,
-      );
-      node.addComponent(body);
-      node.addComponent(
-        Collider(
-          shape: BoxShape(halfExtents: vm.Vector3.all(_dieHalf)),
-          material: const PhysicsMaterial(friction: 0.5, restitution: 0.35),
-        ),
-      );
-      scene.add(node);
-      _dice.add(_Die(node, body));
+      _spawnDie(position, velocity, i, spin: vm.Vector3(_jitter(25), _jitter(25), _jitter(25)));
     }
     _rolling = true;
     _rollTime = 0.0;
     _stillTime = 0.0;
   }
 
+  /// Throws the dice in from off screen along the drawn arrow. The dice start
+  /// outside the view, so the wall they cross stops blocking until they land
+  /// inside (see [_closeEntryWalls]).
+  void _throwAlong(_Aim aim) {
+    final from = _floorHit(aim.start);
+    final to = _floorHit(aim.end);
+    final direction = (to - from)..y = 0;
+    if (direction.length2 < 1e-4) return;
+    final pull = direction.length; // World units dragged.
+    direction.normalize();
+
+    final side = vm.Vector3(-direction.z, 0, direction.x);
+    // Room the loose handful needs, wider as dice are added.
+    final cluster = 0.5 + 0.16 * _diceCount;
+    // Back the throw up just past the edge of the view at the height the dice
+    // fly at. The view narrows toward the floor, so that is a shorter run than
+    // the floor rectangle would suggest.
+    const spawnHeight = 1.15;
+    final runway =
+        _exitDistance(from, -direction, height: spawnHeight) + 0.6 + cluster;
+    final origin = from - direction * runway;
+
+    // Speed follows the arrow and nothing else, so a flick stays a flick.
+    var speed = (3.0 + pull * 3.0).clamp(3.0, 28.0);
+
+    // The dice still have to cross the runway before gravity lands them, so a
+    // slow throw buys its distance with a higher arc rather than more speed.
+    const gravity = 30.0;
+    final reach = runway + 0.6;
+    var lift = 2.0 + speed * 0.12;
+    final wantedAirTime = reach / speed;
+    // Vertical launch speed that keeps a die up for exactly that long.
+    final lofted = (0.5 * gravity * wantedAirTime * wantedAirTime -
+            spawnHeight) /
+        wantedAirTime;
+    // Arcing into the ceiling looks worse than throwing a little harder.
+    final headroom = math.max(_ceilingY - spawnHeight - 0.6, 0.5);
+    final maxLift = math.sqrt(2 * gravity * headroom);
+    lift = math.max(lift, math.min(lofted, maxLift));
+    final airTime =
+        (lift + math.sqrt(lift * lift + 2 * gravity * spawnHeight)) / gravity;
+    speed = math.max(speed, reach / airTime);
+
+    _openEntryWalls(direction);
+    final placed = _scatterCluster(origin, direction, side, spawnHeight, cluster);
+    final tumble = direction.cross(vm.Vector3(0, 1, 0));
+    for (var i = 0; i < placed.length; i++) {
+      // Each die leaves the hand slightly differently, so the handful opens
+      // up as it flies rather than travelling as a block.
+      final velocity =
+          direction * (speed * (1.0 + _jitter(0.10))) +
+          side * _jitter(1.1) +
+          vm.Vector3(0, lift * (1.0 + _jitter(0.18)), 0);
+      final axis = vm.Vector3(
+        _jitter(1.0),
+        _jitter(1.0),
+        _jitter(1.0),
+      );
+      if (axis.length2 < 1e-6) axis.setValues(0, 1, 0);
+      axis.normalize();
+      _spawnDie(
+        placed[i],
+        velocity,
+        i,
+        // Mostly end over end along the throw, plus a random tumble.
+        spin:
+            tumble * (speed * (0.7 + _random.nextDouble() * 0.7)) +
+            axis * (6.0 + _random.nextDouble() * 16.0),
+      );
+    }
+    _rolling = true;
+    _rollTime = 0.0;
+    _stillTime = 0.0;
+  }
+
+  /// Random spots for a loose handful of dice, none of them touching. Dice
+  /// spin freely, so centres stay a full diagonal apart.
+  List<vm.Vector3> _scatterCluster(
+    vm.Vector3 origin,
+    vm.Vector3 direction,
+    vm.Vector3 side,
+    double height,
+    double radius,
+  ) {
+    final minGap = _dieHalf * 2 * math.sqrt(3) + 0.06;
+    final placed = <vm.Vector3>[];
+    var reach = radius;
+    for (var i = 0; i < _diceCount; i++) {
+      vm.Vector3? spot;
+      for (var attempt = 0; attempt < 80 && spot == null; attempt++) {
+        // Flatter than it is wide, the way a handful leaves the fingers.
+        final candidate =
+            origin + side * _jitter(reach) + direction * _jitter(reach * 0.8);
+        candidate.y = math.max(
+          height + _jitter(reach * 0.55),
+          _dieHalf + 0.15,
+        );
+        if (placed.every((p) => p.distanceTo(candidate) >= minGap)) {
+          spot = candidate;
+        }
+        // Loosen up if the handful is too tight to fit.
+        if (attempt == 40) reach += minGap * 0.5;
+      }
+      // Fall back to a straight line if the sampling never found room.
+      final fallback = origin + side * (i * minGap)
+        ..y = height;
+      placed.add(spot ?? fallback);
+    }
+    return placed;
+  }
+
+  void _spawnDie(
+    vm.Vector3 position,
+    vm.Vector3 velocity,
+    int index, {
+    required vm.Vector3 spin,
+  }) {
+    final rotation = vm.Quaternion.euler(
+      _random.nextDouble() * math.pi * 2,
+      _random.nextDouble() * math.pi * 2,
+      _random.nextDouble() * math.pi * 2,
+    );
+    final node = Node(
+      mesh: Mesh(_dieGeometry, _dieMaterials[index % _dieMaterials.length]),
+      localTransform: vm.Matrix4.compose(
+        position,
+        rotation,
+        vm.Vector3.all(1.0),
+      ),
+    );
+    final body = RigidBody(
+      linearVelocity: velocity,
+      angularVelocity: spin,
+      angularDamping: 0.3,
+      ccdEnabled: true,
+    );
+    node.addComponent(body);
+    node.addComponent(
+      Collider(
+        shape: BoxShape(halfExtents: vm.Vector3.all(_dieHalf)),
+        material: const PhysicsMaterial(friction: 0.5, restitution: 0.35),
+      ),
+    );
+    scene.add(node);
+    _dice.add(_Die(node, body));
+  }
+
+  /// Distance from [point] to the edge of the view along [direction], measured
+  /// at [height] (the view narrows toward the floor).
+  double _exitDistance(
+    vm.Vector3 point,
+    vm.Vector3 direction, {
+    double height = 0.0,
+  }) {
+    final shrink = math.max(1 - height / _camera.position.y, 0.05);
+    final halfW = _viewSize.width / _pixelsPerUnit / 2 * shrink;
+    final halfH = _viewSize.height / _pixelsPerUnit / 2 * shrink;
+    var distance = double.infinity;
+    if (direction.x.abs() > 1e-6) {
+      final edge = direction.x > 0 ? halfW : -halfW;
+      distance = math.min(distance, (edge - point.x) / direction.x);
+    }
+    if (direction.z.abs() > 1e-6) {
+      final edge = direction.z > 0 ? halfH : -halfH;
+      distance = math.min(distance, (edge - point.z) / direction.z);
+    }
+    return distance.isFinite ? math.max(distance, 0.0) : 0.0;
+  }
+
+  /// Lets go of every wall the dice could cross on their way in. A throw
+  /// across a corner passes two of them, so opening only the most opposed one
+  /// leaves the dice bouncing off the other from outside.
+  void _openEntryWalls(vm.Vector3 direction) {
+    _closeEntryWalls();
+    for (final wall in _walls) {
+      if (wall.outward.dot(-direction) > 0.05) {
+        wall.collider.isTrigger = true;
+        _openWalls.add(wall.collider);
+      }
+    }
+    _openWallTime = 0.0;
+  }
+
+  void _closeEntryWalls() {
+    for (final collider in _openWalls) {
+      collider.isTrigger = false;
+    }
+    _openWalls.clear();
+  }
+
   double _jitter(double amount) => (_random.nextDouble() * 2 - 1) * amount;
 
+  /// Whether a point sits inside the visible frustum at its own height. The
+  /// view narrows toward the floor, so higher points have less room.
+  bool _insideView(vm.Vector3 point, double margin) {
+    final shrink = 1 - point.y / _camera.position.y;
+    if (shrink <= 0) return false;
+    final maxX = _viewSize.width / _pixelsPerUnit / 2 * shrink - margin;
+    final maxZ = _viewSize.height / _pixelsPerUnit / 2 * shrink - margin;
+    return point.x.abs() < maxX && point.z.abs() < maxZ;
+  }
+
+  // --- Aiming ---------------------------------------------------------------
+
+  void _aimStart(Offset position) {
+    // The light handle owns its own drag.
+    if (_lightHandleRect.contains(position)) return;
+    _aimDissolve.stop();
+    _spentAim.value = null;
+    _aim.value = _Aim(position, position);
+  }
+
+  void _aimUpdate(Offset position) {
+    final aim = _aim.value;
+    if (aim == null) return;
+    _aim.value = _Aim(aim.start, position);
+  }
+
+  void _aimRelease() {
+    final aim = _aim.value;
+    _aim.value = null;
+    if (aim == null) return;
+    // Ignore a stray tap.
+    if (aim.delta.distance < 24) return;
+    _spentAim.value = aim;
+    _aimDissolve.forward(from: 0);
+    _roll(aim: aim);
+  }
+
   void _onTick(Duration elapsed, double deltaSeconds) {
+    if (_openWalls.isNotEmpty) {
+      _openWallTime += deltaSeconds;
+      final allInside = _dice.every(
+        (d) => _insideView(d.node.localTransform.getTranslation(), 0.2),
+      );
+      // Time out too, in case a die never makes it in.
+      if ((allInside && _openWallTime > 0.1) || _openWallTime > 2.5) {
+        _closeEntryWalls();
+      }
+    }
     if (!_rolling) return;
     _rollTime += deltaSeconds;
     final still = _dice.every(
@@ -621,9 +908,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
     return LayoutBuilder(
       builder: (context, constraints) {
         _configureView(constraints.biggest);
-        final sunMarker = _kind == _LightKind.directional
-            ? _sunMarkerPosition()
-            : null;
+        final handle = _lightHandlePosition();
+        _lightHandleRect = handle == null
+            ? Rect.zero
+            : Rect.fromCenter(center: handle, width: 64, height: 64);
         return Stack(
           key: _viewKey,
           children: [
@@ -649,16 +937,38 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onPanStart: (d) => _dragLight(d.localPosition),
-                onPanUpdate: (d) => _dragLight(d.localPosition),
+                onPanStart: (d) => _aimStart(d.localPosition),
+                onPanUpdate: (d) => _aimUpdate(d.localPosition),
+                onPanEnd: (_) => _aimRelease(),
+                onPanCancel: () => _aim.value = null,
               ),
             ),
-            if (sunMarker != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _AimArrowPainter(
+                    aim: _aim,
+                    spent: _spentAim,
+                    dissolve: _aimDissolve,
+                  ),
+                ),
+              ),
+            ),
+            if (handle != null)
               Positioned(
-                left: sunMarker.dx - 18,
-                top: sunMarker.dy - 18,
-                child: const IgnorePointer(
-                  child: Icon(Icons.wb_sunny, size: 36, color: Colors.amber),
+                left: handle.dx - 32,
+                top: handle.dy - 32,
+                child: LightHandle(
+                  glyph: _kind == _LightKind.directional
+                      ? LightGlyph.sun
+                      : LightGlyph.bulb,
+                  onDrag: (global) {
+                    final view =
+                        _viewKey.currentContext?.findRenderObject()
+                            as RenderBox?;
+                    if (view == null) return;
+                    _dragLight(view.globalToLocal(global));
+                  },
                 ),
               ),
             ExampleOverlay.bottomLeftPanel(child: _buildPanel()),
@@ -681,7 +991,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Drag anywhere to move the light.',
+              'Drag to aim, release to throw. Drag the light to move it.',
               style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 8),
@@ -823,6 +1133,312 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows> {
       ],
     );
   }
+}
+
+/// The grabbable light. It lifts and glows under the cursor, and brightens
+/// again while being dragged, so it reads as a handle rather than a label.
+///
+/// The disc and the glyph are painted opaque into one layer, and the layer is
+/// what fades. Fading them separately lets the glyph blend into the disc and
+/// go muddy.
+class LightHandle extends StatefulWidget {
+  const LightHandle({
+    super.key,
+    required this.glyph,
+    required this.onDrag,
+    this.emphasisOverride,
+  });
+
+  /// Diameter of the hit target.
+  static const double hitSize = 64.0;
+
+  /// Diameter of the visible disc at rest.
+  static const double discSize = 44.0;
+
+  final LightGlyph glyph;
+  final ValueChanged<Offset> onDrag;
+
+  /// Pins the hover/press look, for tests.
+  final double? emphasisOverride;
+
+  @override
+  State<LightHandle> createState() => _LightHandleState();
+}
+
+class _LightHandleState extends State<LightHandle> {
+  bool _hovered = false;
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    // One value drives every part of the look, so they move together.
+    final emphasis =
+        widget.emphasisOverride ??
+        (_dragging ? 1.0 : (_hovered ? 0.55 : 0.0));
+    return MouseRegion(
+      cursor: _dragging
+          ? SystemMouseCursors.grabbing
+          : SystemMouseCursors.grab,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (d) {
+          setState(() => _dragging = true);
+          widget.onDrag(d.globalPosition);
+        },
+        onPanUpdate: (d) => widget.onDrag(d.globalPosition),
+        onPanEnd: (_) => setState(() => _dragging = false),
+        onPanCancel: () => setState(() => _dragging = false),
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(end: emphasis),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          builder: (context, t, child) {
+            return SizedBox(
+              width: LightHandle.hitSize,
+              height: LightHandle.hitSize,
+              // Opacity draws its subtree into a layer and fades that, so the
+              // glyph never mixes with the disc under it.
+              child: Opacity(
+                opacity: 0.45 + 0.55 * t,
+                child: CustomPaint(
+                  painter: _LightHandlePainter(
+                    glyph: widget.glyph,
+                    emphasis: t,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Which light the handle stands for.
+enum LightGlyph { sun, bulb }
+
+/// Paints the disc and its glyph. The glyph is a path centred on its own
+/// bounds, so it never depends on an icon font's metrics.
+class _LightHandlePainter extends CustomPainter {
+  _LightHandlePainter({required this.glyph, required this.emphasis});
+
+  final LightGlyph glyph;
+  final double emphasis;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final scale = 1.0 + 0.16 * emphasis;
+    final radius = LightHandle.discSize / 2 * scale;
+    final amber = Color.lerp(
+      const Color(0xFFFFB524),
+      const Color(0xFFFFF4D2),
+      emphasis,
+    )!;
+
+    // Glow, dark halo, disc, rim.
+    canvas.drawCircle(
+      center,
+      radius + 2,
+      Paint()
+        ..color = amber.withValues(alpha: 0.22 + 0.40 * emphasis)
+        ..maskFilter = MaskFilter.blur(
+          BlurStyle.normal,
+          6.0 + 16.0 * emphasis,
+        ),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.25 + 0.20 * emphasis)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = Color.lerp(
+          const Color(0xFF241A0C),
+          const Color(0xFF2E1F06),
+          emphasis,
+        )!,
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 + 0.5 * emphasis
+        ..color = amber.withValues(alpha: 0.45 + 0.55 * emphasis),
+    );
+
+    final path = glyph == LightGlyph.sun
+        ? _sunPath(30 * scale)
+        : _bulbPath(30 * scale);
+    // Sit the drawing in the middle of the disc by its own extents.
+    final bounds = path.getBounds();
+    canvas.save();
+    canvas.translate(
+      center.dx - bounds.center.dx,
+      center.dy - bounds.center.dy,
+    );
+    canvas.drawPath(path, Paint()..color = amber);
+    canvas.restore();
+  }
+
+  /// A round sun with eight rays.
+  Path _sunPath(double size) {
+    final path = Path()
+      ..addOval(Rect.fromCircle(center: Offset.zero, radius: size * 0.21));
+    final ray = RRect.fromRectAndRadius(
+      Rect.fromLTWH(-size * 0.045, -size * 0.50, size * 0.09, size * 0.15),
+      Radius.circular(size * 0.045),
+    );
+    for (var i = 0; i < 8; i++) {
+      final spoke = Path()..addRRect(ray);
+      path.addPath(
+        spoke.transform(
+          (Matrix4.identity()..rotateZ(i * math.pi / 4)).storage,
+        ),
+        Offset.zero,
+      );
+    }
+    return path;
+  }
+
+  /// A bulb with a screw base.
+  Path _bulbPath(double size) {
+    final glass = Rect.fromCircle(
+      center: Offset(0, -size * 0.10),
+      radius: size * 0.26,
+    );
+    final path = Path()..addOval(glass);
+    // Neck into the base.
+    path.addRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(-size * 0.13, size * 0.10, size * 0.26, size * 0.12),
+        Radius.circular(size * 0.03),
+      ),
+    );
+    path.addRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(-size * 0.10, size * 0.24, size * 0.20, size * 0.10),
+        Radius.circular(size * 0.04),
+      ),
+    );
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(_LightHandlePainter oldDelegate) =>
+      oldDelegate.emphasis != emphasis || oldDelegate.glyph != glyph;
+}
+
+/// Draws the aim arrow under the finger, and the spent one dissolving forward
+/// after the throw. Both are repainted from their own listenables so dragging
+/// never rebuilds the scene.
+class _AimArrowPainter extends CustomPainter {
+  _AimArrowPainter({
+    required this.aim,
+    required this.spent,
+    required this.dissolve,
+  }) : super(repaint: Listenable.merge([aim, spent, dissolve]));
+
+  final ValueListenable<_Aim?> aim;
+  final ValueListenable<_Aim?> spent;
+  final AnimationController dissolve;
+
+  static const _weak = Color(0xFFFFE9A8);
+  static const _strong = Color(0xFFFF5A3C);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final live = aim.value;
+    if (live != null) _drawArrow(canvas, live, 1.0, 0.0);
+    final gone = spent.value;
+    if (gone != null) _drawArrow(canvas, gone, 1.0, dissolve.value);
+  }
+
+  /// [decay] slides the arrow apart and fades it, 0 while the finger is down.
+  void _drawArrow(Canvas canvas, _Aim arrow, double opacity, double decay) {
+    final delta = arrow.delta;
+    final length = delta.distance;
+    if (length < 1) return;
+    final direction = delta / length;
+    final strength = arrow.strength;
+    final color = Color.lerp(_weak, _strong, strength)!;
+    final width = 5.0 + 9.0 * strength;
+
+    // Fade the arrow as one layer. Drawing the pieces individually translucent
+    // shows every overlap between them.
+    final alpha = opacity * (1.0 - decay).clamp(0.0, 1.0);
+    if (alpha <= 0) return;
+    final bounds = Rect.fromPoints(
+      arrow.start,
+      arrow.end,
+    ).inflate(120.0 + decay * 120.0);
+    canvas.saveLayer(
+      bounds,
+      Paint()..color = const Color(0xFF000000).withValues(alpha: alpha),
+    );
+
+    // One stroke, never pieces. As it goes the whole arrow drifts along the
+    // aim and the tail is eaten away behind it.
+    final headLength = math.min(34.0 + 18.0 * strength, length * 0.5);
+    final shaft = length - headLength;
+    final drift = decay * 26.0;
+    final tail = shaft * decay;
+    if (shaft > tail) {
+      canvas.drawLine(
+        arrow.start + direction * (tail + drift),
+        arrow.start + direction * (shaft + drift),
+        Paint()
+          ..color = color
+          ..strokeWidth = width
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 0.6 + decay * 3.0),
+      );
+    }
+
+    final tip = arrow.end + direction * drift;
+    final back = tip - direction * headLength;
+    final side = Offset(-direction.dy, direction.dx) * (headLength * 0.42);
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(back.dx + side.dx, back.dy + side.dy)
+      ..lineTo(
+        back.dx + direction.dx * headLength * 0.25,
+        back.dy + direction.dy * headLength * 0.25,
+      )
+      ..lineTo(back.dx - side.dx, back.dy - side.dy)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 0.8 + decay * 4.0),
+    );
+
+    // The anchor belongs to the finger, so it goes the moment the throw does.
+    if (decay == 0) {
+      canvas.drawCircle(
+        arrow.start,
+        6.0 + 3.0 * strength,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..color = color,
+      );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_AimArrowPainter oldDelegate) => false;
 }
 
 /// The ordinary app screen the dice roll over.
