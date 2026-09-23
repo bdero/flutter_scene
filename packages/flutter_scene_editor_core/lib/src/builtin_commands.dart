@@ -946,6 +946,138 @@ final createCuboidGeometry = CommandEntry(
   },
 );
 
+/// Puts bytes into the document's payload pool.
+///
+/// The counterpart to the `readPayload` query, and the only way a caller that
+/// is not the engine can produce mesh or image data. Pair it with
+/// [createMeshGeometry] to build a geometry the engine never authored.
+final createPayload = CommandEntry(
+  name: 'createPayload',
+  doc:
+      'Create a payload chunk from base64 bytes. encoding is one of '
+      'vertexBuffer, indexBuffer, image, matrices, floats, bytes. Returns the '
+      'new payload id under "created".',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(name: 'bytes', type: ParamType.bytes, label: 'Bytes'),
+    ParamSpec(
+      name: 'encoding',
+      type: ParamType.string,
+      label: 'Encoding',
+      description: 'How the bytes are interpreted',
+    ),
+    ParamSpec(
+      name: 'layout',
+      type: ParamType.string,
+      label: 'Vertex layout',
+      description: 'For vertexBuffer, the vertex layout name',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'format',
+      type: ParamType.string,
+      label: 'Format',
+      description: 'For indexBuffer (uint16/uint32) or image (rgba8)',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'width',
+      type: ParamType.integer,
+      label: 'Width',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'height',
+      type: ParamType.integer,
+      label: 'Height',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    final bytes = requireBytes(params, 'bytes');
+    final encodingName = requireString(params, 'encoding');
+    final encoding = PayloadEncoding.values
+        .where((e) => e.name == encodingName)
+        .firstOrNull;
+    if (encoding == null) {
+      throw CommandException(
+        'Unknown encoding "$encodingName"; use one of '
+        '${PayloadEncoding.values.map((e) => e.name).join(', ')}',
+      );
+    }
+    final payload = PayloadSpec(
+      ctx.document.newId(),
+      encoding: encoding,
+      layout: optionalString(params, 'layout'),
+      format: optionalString(params, 'format'),
+      width: optionalInt(params, 'width'),
+      height: optionalInt(params, 'height'),
+      length: bytes.lengthInBytes,
+      bytes: bytes,
+    );
+    return Transaction(
+      name: 'Create payload',
+      records: [
+        ChangeRecord(
+          targetId: payload.id,
+          slot: ChangeSlot.poolPayload,
+          oldValue: const PayloadChange(null),
+          newValue: PayloadChange(payload),
+        ),
+      ],
+    );
+  },
+);
+
+/// Creates a geometry resource over payloads the caller already made, which
+/// is how an out-of-tree mesh operation lands its result.
+final createMeshGeometry = CommandEntry(
+  name: 'createMeshGeometry',
+  doc:
+      'Create a geometry resource from an existing vertex payload, and '
+      'optionally an index payload. Use createPayload to make them first.',
+  category: 'Resource',
+  paramSchema: const [
+    ParamSpec(
+      name: 'vertices',
+      type: ParamType.resourceRef,
+      label: 'Vertex payload',
+    ),
+    ParamSpec(
+      name: 'indices',
+      type: ParamType.resourceRef,
+      label: 'Index payload',
+      required: false,
+    ),
+    ParamSpec(
+      name: 'topology',
+      type: ParamType.string,
+      label: 'Topology',
+      required: false,
+    ),
+  ],
+  execute: (ctx, params) {
+    LocalId payload(String key) {
+      final id = requireResourceId(params, key);
+      if (!ctx.document.payloads.containsKey(id)) {
+        throw CommandException('No payload "${id.toToken()}" to use as $key');
+      }
+      return id;
+    }
+
+    final resource = GeometryResource(
+      ctx.document.newId(),
+      vertices: payload('vertices'),
+      indices: params['indices'] == null ? null : payload('indices'),
+      topology: optionalString(params, 'topology') ?? 'triangles',
+    );
+    return Transaction(
+      name: 'Create mesh geometry',
+      records: [_addResourceRecord(resource)],
+    );
+  },
+);
+
 final createSphereGeometry = CommandEntry(
   name: 'createSphereGeometry',
   doc: 'Create a procedural sphere geometry resource.',
@@ -3453,6 +3585,8 @@ final List<CommandEntry> builtinCommands = [
   removeComponent,
   setComponentProperties,
   createCuboidGeometry,
+  createPayload,
+  createMeshGeometry,
   createSphereGeometry,
   createMaterial,
   createTextureResource,

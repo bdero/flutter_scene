@@ -12,10 +12,14 @@ library;
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
 
+import 'batch.dart';
 import 'builtin_commands.dart';
+import 'builtin_queries.dart';
 import 'change.dart';
 import 'command.dart';
+import 'events.dart';
 import 'history.dart';
+import 'queries.dart';
 import 'query.dart';
 import 'editor_host.dart';
 import 'selection.dart';
@@ -25,21 +29,33 @@ import 'view_host.dart';
 class EditorSession {
   /// Creates a session over [document]. A fresh [CommandRegistry] pre-loaded
   /// with the built-in commands is used unless [registry] is given.
-  EditorSession(this.document, {CommandRegistry? registry})
-    : registry = registry ?? _defaultRegistry(),
-      _mutator = DocumentMutator(document),
-      query = SceneQuery(document),
-      selection = Selection() {
+  EditorSession(
+    this.document, {
+    CommandRegistry? registry,
+    QueryRegistry? queries,
+  }) : registry = registry ?? _defaultRegistry(),
+       queries = queries ?? _defaultQueries(),
+       _mutator = DocumentMutator(document),
+       query = SceneQuery(document),
+       selection = Selection() {
     history = EditHistory(_mutator, selection: selection);
     // Keep the selection valid as nodes come and go across edits and undo.
     history.addListener(_pruneSelection);
     // Undo and redo move the document away from what was saved, too.
     history.addListener(markDirty);
+    history.addListener(_announceHistory);
+    selection.addListener(_announceSelection);
   }
 
   static CommandRegistry _defaultRegistry() {
     final registry = CommandRegistry();
     registerBuiltinCommands(registry);
+    return registry;
+  }
+
+  static QueryRegistry _defaultQueries() {
+    final registry = QueryRegistry();
+    registerBuiltinQueries(registry);
     return registry;
   }
 
@@ -55,6 +71,9 @@ class EditorSession {
 
   /// The command registry this session runs.
   final CommandRegistry registry;
+
+  /// The query registry this session answers.
+  final QueryRegistry queries;
 
   /// Resolves component types to schemas for property coercion, injected by
   /// the host (the editor wires its component registry here). Null falls
@@ -88,6 +107,9 @@ class EditorSession {
     if (_dirty) return;
     _dirty = true;
     _notifyDirty();
+    events.emit(
+      const EditorEvent(EditorEventType.dirtyChanged, {'dirty': true}),
+    );
   }
 
   /// Marks the document saved.
@@ -95,6 +117,9 @@ class EditorSession {
     if (!_dirty) return;
     _dirty = false;
     _notifyDirty();
+    events.emit(
+      const EditorEvent(EditorEventType.dirtyChanged, {'dirty': false}),
+    );
   }
 
   final List<void Function()> _dirtyListeners = [];
@@ -111,6 +136,27 @@ class EditorSession {
     for (final listener in List.of(_dirtyListeners)) {
       listener();
     }
+  }
+
+  /// What this session announces to subscribed clients.
+  final EventBus events = EventBus();
+
+  void _announceSelection() => events.emit(
+    EditorEvent(EditorEventType.selectionChanged, {
+      'nodeIds': [for (final id in selection.ids) id.toToken()],
+    }),
+  );
+
+  void _announceHistory() {
+    events.emit(
+      EditorEvent(EditorEventType.historyChanged, {
+        'canUndo': history.canUndo,
+        'canRedo': history.canRedo,
+        'undoLabel': history.undoLabel,
+        'redoLabel': history.redoLabel,
+      }),
+    );
+    events.emit(const EditorEvent(EditorEventType.documentChanged));
   }
 
   /// The undo/redo history.
@@ -151,6 +197,59 @@ class EditorSession {
     selection: selection,
     view: viewHost,
     host: host,
+  );
+
+  /// Runs [calls] in order and commits them as one history step named [name],
+  /// so a script that touches a thousand nodes is one undo for the user.
+  ///
+  /// Each call sees what the calls before it did, so a batch can create a
+  /// node and then address it. Nothing is committed unless every call
+  /// succeeds; the first failure reverts the run and throws a
+  /// [BatchException] naming which call stopped it.
+  Transaction runAll(
+    Iterable<CommandCall> calls, {
+    String name = 'Batch edit',
+  }) {
+    final before = selection.ids.toList();
+    final composer = BatchComposer(
+      document: document,
+      registry: registry,
+      contextFor: _context,
+    );
+    var index = 0;
+    for (final call in calls) {
+      try {
+        composer.add(call);
+      } on Object catch (error) {
+        composer.revert();
+        throw BatchException(index: index, command: call.name, cause: error);
+      }
+      index++;
+    }
+    final transaction = composer.build(name);
+    transaction.selectionBefore = before;
+    history.commit(transaction);
+    if (!transaction.isEmpty) markDirty();
+    return transaction;
+  }
+
+  /// Answers the query named [name] with [params].
+  ///
+  /// Throws [ArgumentError] for an unknown query and [QueryException] for
+  /// invalid params.
+  QueryResult ask(String name, [Map<String, Object?> params = const {}]) {
+    final entry = queries.lookup(name);
+    if (entry == null) throw ArgumentError('Unknown query: $name');
+    return entry.read(_queryContext(), params);
+  }
+
+  QueryContext _queryContext() => QueryContext(
+    document: document,
+    query: query,
+    selection: selection,
+    history: history,
+    commands: registry,
+    queries: queries,
   );
 
   /// Runs the command named [name], whatever its kind.
