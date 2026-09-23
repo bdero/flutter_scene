@@ -34,23 +34,31 @@ abstract final class Pop {
   );
 }
 
-/// Diagonal stripes with confetti scattered over them.
+/// Diagonal stripes with confetti scattered over them. The stripes drift
+/// slowly along their normal and the confetti bobs, driven by [animation]
+/// (0..1, looping), so something is always moving under the dice.
 class PopStripesBackground extends StatelessWidget {
-  const PopStripesBackground({super.key, this.child});
+  const PopStripesBackground({super.key, required this.animation, this.child});
 
+  final Animation<double> animation;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: const _StripesPainter(),
+      painter: _StripesPainter(animation),
       child: child ?? const SizedBox.expand(),
     );
   }
 }
 
 class _StripesPainter extends CustomPainter {
-  const _StripesPainter();
+  _StripesPainter(this.animation) : super(repaint: animation);
+
+  final Animation<double> animation;
+
+  /// One full band cycle of drift per loop.
+  static double get _period => _bands.fold(0.0, (sum, band) => sum + band.$2);
 
   // Stripe colors and widths repeat in this order.
   static const _bands = <(Color, double)>[
@@ -73,7 +81,8 @@ class _StripesPainter extends CustomPainter {
     canvas.save();
     canvas.translate(size.width / 2, size.height / 2);
     canvas.rotate(angle);
-    var x = -reach;
+    final t = animation.value;
+    var x = -reach - _period + t * _period;
     var i = 0;
     final paint = Paint();
     while (x < reach) {
@@ -97,14 +106,18 @@ class _StripesPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     final count = (size.width * size.height / 9000).round();
     for (var n = 0; n < count; n++) {
+      // Each bit bobs on its own phase, a few pixels over the loop.
+      final bob = random.nextDouble() * math.pi * 2;
       final p = Offset(
-        random.nextDouble() * size.width,
-        random.nextDouble() * size.height,
+        random.nextDouble() * size.width + math.sin(t * math.pi * 6 + bob) * 3,
+        random.nextDouble() * size.height + math.cos(t * math.pi * 4 + bob) * 4,
       );
       final color = colors[random.nextInt(colors.length)];
       if (random.nextInt(3) == 0) {
-        // A little wave.
-        final a = random.nextDouble() * math.pi;
+        // A little wave that slowly rocks.
+        final a =
+            random.nextDouble() * math.pi +
+            math.sin(t * math.pi * 2 + bob) * 0.35;
         final len = 14 + random.nextDouble() * 10;
         final path = Path()..moveTo(-len / 2, 0);
         path.cubicTo(-len / 4, -6, len / 4, 6, len / 2, 0);
@@ -120,7 +133,8 @@ class _StripesPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_StripesPainter oldDelegate) => false;
+  bool shouldRepaint(_StripesPainter oldDelegate) =>
+      oldDelegate.animation != animation;
 }
 
 /// A panel with a thick ink outline and a hard offset shadow.

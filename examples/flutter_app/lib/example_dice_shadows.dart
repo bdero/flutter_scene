@@ -97,7 +97,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   // Logical pixels per world unit, so dice keep a steady on-screen size.
   static const double _pixelsPerUnit = 100.0;
   static const double _fovY = 35.0 * vm.degrees2Radians;
-  static const double _dieHalf = 0.35;
+  // Half the die's edge, set by the size slider.
+  double _dieHalf = 0.35;
 
   static const _faceValues = <int>[2, 5, 1, 6, 3, 4]; // +X -X +Y -Y +Z -Z
 
@@ -127,7 +128,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   final ValueNotifier<_Aim?> _spentAim = ValueNotifier(null);
   late final AnimationController _aimDissolve;
 
-  late final MeshGeometry _dieGeometry;
+  late MeshGeometry _dieGeometry;
   late final DieTextures _textures;
   late final ShadowCatcherMaterial _catcher;
   late final DiceVfx _vfx;
@@ -224,7 +225,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _catcher = ShadowCatcherMaterial(shadowIntensity: 0.55, aoStrength: 0.0);
     scene.add(Node(mesh: Mesh(PlaneGeometry(width: 80, depth: 80), _catcher)));
 
-    _dieGeometry = _buildDieGeometry(half: _dieHalf, radius: 0.08);
+    _dieGeometry = _buildDieGeometry(half: _dieHalf, radius: _dieHalf * 0.23);
     _textures = DieTextures.bake();
     _backdropMaterial = UnlitMaterial();
     _capture.addListener(_bindCapture);
@@ -374,12 +375,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     }
     // The plane waits for the first capture (see _bindCapture), so it never
     // shows untextured.
-    for (final die in _dice) {
-      die.visual.mesh = Mesh(
-        _dieGeometry,
-        _materialFor(die.finish, _dice.indexOf(die)),
-      );
-    }
+    _respawnInPlace();
     setState(() {});
   }
 
@@ -433,16 +429,67 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       : _finish;
 
   PhysicallyBasedMaterial _materialFor(DiceFinish finish, int index) =>
-      buildDieMaterial(finish, index, _textures, refractive: _embedBackdrop);
+      buildDieMaterial(
+        finish,
+        index,
+        _textures,
+        refractive: _embedBackdrop,
+        thickness: _dieHalf * 2,
+      );
+
+  /// Resizes the dice. While the slider drags only the meshes follow, so it
+  /// stays cheap; [commit] on release rebuilds the colliders too.
+  void _setDieSize(double half, {required bool commit}) {
+    if (half != _dieHalf) {
+      _dieHalf = half;
+      _dieGeometry = _buildDieGeometry(half: half, radius: half * 0.23);
+      for (var i = 0; i < _dice.length; i++) {
+        final die = _dice[i];
+        die.visual.mesh = Mesh(_dieGeometry, _materialFor(die.finish, i));
+        final proxy = buildShadowProxyMaterial(die.finish, _textures);
+        for (final child in die.visual.children) {
+          child.mesh = Mesh(_dieGeometry, proxy!);
+        }
+      }
+    }
+    if (commit) _respawnInPlace();
+  }
+
+  /// Rebuilds every die where it lies (new geometry, collider, material and
+  /// shadow proxy) with its motion dropped, so a panel change shows at once.
+  /// Not a roll: the score stands and nothing is counted again.
+  void _respawnInPlace() {
+    _endCelebration();
+    final poses = [
+      for (final die in _dice)
+        (
+          position: die.node.localTransform.getTranslation(),
+          rotation: vm.Quaternion.fromRotation(
+            die.node.localTransform.getRotation(),
+          ),
+        ),
+    ];
+    for (final die in _dice) {
+      scene.remove(die.node);
+    }
+    _dice.clear();
+    for (var i = 0; i < poses.length; i++) {
+      final pose = poses[i];
+      _spawnDie(
+        pose.position,
+        vm.Vector3.zero(),
+        i,
+        spin: vm.Vector3.zero(),
+        rotation: pose.rotation,
+      );
+    }
+  }
 
   void _setFinish(DiceFinish finish) {
     if (finish == _finish) return;
     setState(() => _finish = finish);
     // Re-skin the dice on the table so the pick shows without a throw.
-    for (var i = 0; i < _dice.length; i++) {
-      final die = _dice[i]..finish = _finishFor(i);
-      die.visual.mesh = Mesh(_dieGeometry, _materialFor(die.finish, i));
-    }
+    _respawnInPlace();
   }
 
   // --- Scene setup ----------------------------------------------------------
@@ -726,7 +773,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     // Back the throw up just past the edge of the view at the height the dice
     // fly at. The view narrows toward the floor, so that is a shorter run than
     // the floor rectangle would suggest.
-    const spawnHeight = 1.15;
+    final spawnHeight = math.max(1.15, _dieHalf * 2 + 0.5);
     final runway =
         _exitDistance(from, -direction, height: spawnHeight) + 0.6 + cluster;
     final origin = from - direction * runway;
@@ -824,8 +871,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     vm.Vector3 velocity,
     int index, {
     required vm.Vector3 spin,
+    vm.Quaternion? rotation,
   }) {
-    final rotation = vm.Quaternion.euler(
+    rotation ??= vm.Quaternion.euler(
       _random.nextDouble() * math.pi * 2,
       _random.nextDouble() * math.pi * 2,
       _random.nextDouble() * math.pi * 2,
@@ -833,10 +881,20 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     final finish = _finishFor(index);
     final color = dieColors[index % dieColors.length];
     final visual = Node(mesh: Mesh(_dieGeometry, _materialFor(finish, index)));
+    // Glass is translucent, which the shadow pass skips, so a glass die
+    // casts through an invisible dithered stand-in that reads as a lighter
+    // shadow once the light's softness blurs the dots.
+    final proxyMaterial = buildShadowProxyMaterial(finish, _textures);
+    if (proxyMaterial != null) {
+      visual.add(
+        Node(mesh: Mesh(_dieGeometry, proxyMaterial))
+          ..shadowCastingMode = ShadowCastingMode.shadowsOnly,
+      );
+    }
     // A streak in the die's color while it flies. It rides the body node,
     // which carries no mesh of its own, so it never casts a shadow.
     final trail = TrailComponent(
-      width: 0.18,
+      width: _dieHalf * 0.5,
       lifetime: 0.26,
       minVertexDistance: 0.03,
       widthOverTrail: ParticleCurve.linear(from: 1.0, to: 0.0),
@@ -1028,7 +1086,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           final die = _dice[index];
           final position = _dieTop(die);
           die.visual.highlightColor = _highlightFor(die);
-          _vfx.sparkle(position, die.color);
+          _vfx.sparkle(position, die.color, scale: _dieHalf / 0.35);
           _playFx(
             ordinal.isEven ? 'tick_a' : 'tick_b',
             volume: 0.85,
@@ -1465,6 +1523,14 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
               (v) => _diceCount = v.round(),
               divisions: 5,
             ),
+            _slider(
+              'Size',
+              _dieHalf * 2,
+              0.4,
+              1.3,
+              (v) => _setDieSize(v / 2, commit: false),
+              onChangeEnd: (v) => _setDieSize(v / 2, commit: true),
+            ),
           ],
         ),
       ),
@@ -1478,6 +1544,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     double max,
     ValueChanged<double> onChanged, {
     int? divisions,
+    ValueChanged<double>? onChangeEnd,
   }) {
     return Row(
       children: [
@@ -1492,6 +1559,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
               onChanged(v);
               _applyLights();
             }),
+            onChangeEnd: onChangeEnd,
           ),
         ),
         SizedBox(
@@ -1916,7 +1984,13 @@ class DiceGameScreen extends StatefulWidget {
   State<DiceGameScreen> createState() => DiceGameScreenState();
 }
 
-class DiceGameScreenState extends State<DiceGameScreen> {
+class DiceGameScreenState extends State<DiceGameScreen>
+    with SingleTickerProviderStateMixin {
+  // A slow loop the stripes drift and the sticker rocks on.
+  late final AnimationController _clock = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 14),
+  )..repeat();
   final GlobalKey _bannerKey = GlobalKey();
   final GlobalKey _stackKey = GlobalKey();
   // Where the total sits relative to the counter's resting spot (the middle
@@ -1928,13 +2002,19 @@ class DiceGameScreenState extends State<DiceGameScreen> {
   static const double _columnWidth = 400;
 
   @override
+  void dispose() {
+    _clock.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     final insets = ExampleOverlay.safeInsetsOf(context);
     return Stack(
       key: _stackKey,
       children: [
-        const Positioned.fill(child: PopStripesBackground()),
+        Positioned.fill(child: PopStripesBackground(animation: _clock)),
         Padding(
           padding: EdgeInsets.fromLTRB(28, insets.top + 64, 28, 0),
           child: Column(
@@ -1958,7 +2038,7 @@ class DiceGameScreenState extends State<DiceGameScreen> {
                   ),
                   KeyedSubtree(
                     key: _bannerKey,
-                    child: ScoreBanner(frame: widget.frame),
+                    child: ScoreBanner(frame: widget.frame, clock: _clock),
                   ),
                 ],
               ),

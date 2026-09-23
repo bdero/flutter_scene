@@ -387,16 +387,23 @@ class RollCounter extends StatelessWidget {
 /// The score total, a scalloped sticker. It kicks and flashes when a slam
 /// lands.
 class ScoreBanner extends StatelessWidget {
-  const ScoreBanner({super.key, required this.frame});
+  const ScoreBanner({super.key, required this.frame, this.clock});
 
   final ValueListenable<CelebrationFrame> frame;
 
+  /// A looping 0..1 animation the sticker rocks on; still when null.
+  final Animation<double>? clock;
+
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<CelebrationFrame>(
-      valueListenable: frame,
-      builder: (context, f, _) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([frame, if (clock != null) clock!]),
+      builder: (context, _) {
+        final f = frame.value;
         final kick = f.totalPunch;
+        final rock = clock == null
+            ? 0.0
+            : math.sin(clock!.value * math.pi * 2) * 0.05;
         // A quick shake that dies with the punch.
         final shake = Offset(
           math.sin(kick * 40) * 6 * kick,
@@ -405,7 +412,7 @@ class ScoreBanner extends StatelessWidget {
         return Transform.translate(
           offset: shake,
           child: Transform.rotate(
-            angle: 0.08 - 0.25 * kick,
+            angle: 0.08 + rock - 0.25 * kick,
             child: Transform.scale(
               scale: 1.0 + 0.28 * kick,
               child: PopBadge(
