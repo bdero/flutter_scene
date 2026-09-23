@@ -53,7 +53,30 @@ export 'src/command.dart'
         CommandRegistry,
         UiFieldDescriptor,
         mcpToolSchema,
+        paramJsonSchema,
         uiDescriptors;
+
+// Many commands as one undo step.
+export 'src/batch.dart' show CommandCall, BatchException, BatchComposer;
+
+// The read half of the protocol.
+export 'src/queries.dart'
+    show
+        QueryBlob,
+        QueryResult,
+        QueryContext,
+        QueryException,
+        QueryEntry,
+        QueryRegistry,
+        querySchema;
+export 'src/builtin_queries.dart' show builtinQueries, registerBuiltinQueries;
+
+// Events and per-client subscriptions.
+export 'src/events.dart'
+    show EditorEvent, EditorEventType, EventBus, EventSubscription;
+
+// The protocol's own version and capabilities.
+export 'src/protocol.dart' show EditorProtocol;
 
 // Parameter coercion helpers (for command authors).
 export 'src/params.dart'
@@ -76,6 +99,7 @@ export 'src/params.dart'
         requireResourceId,
         optionalResourceId,
         requireAssetRef,
+        requireBytes,
         optionalPropertyMap,
         optionalOverrides,
         coercePropertyValue;

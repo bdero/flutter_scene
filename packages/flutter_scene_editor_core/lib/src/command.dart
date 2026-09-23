@@ -59,6 +59,11 @@ enum ParamType {
 
   /// A list of prefab overrides (`{target, path, value}` objects).
   overrideList,
+
+  /// Raw bytes, base64-encoded on the wire. The only way to hand the engine
+  /// data it cannot describe in JSON, which is what mesh and image payloads
+  /// are.
+  bytes,
 }
 
 /// One declared parameter of a command.
@@ -251,22 +256,26 @@ class CommandRegistry {
 /// Returns an MCP-tool definition (JSON Schema draft-07 input schema) for
 /// [entry], ready to `jsonEncode`. Derived entirely from [entry]'s
 /// declaration.
-Map<String, Object> mcpToolSchema(CommandEntry entry) {
+Map<String, Object> mcpToolSchema(CommandEntry entry) => {
+  'name': entry.name,
+  'description': entry.doc,
+  'inputSchema': paramJsonSchema(entry.paramSchema),
+};
+
+/// Returns the JSON Schema (draft-07) object for [params], the argument
+/// schema a command or a query declares.
+Map<String, Object> paramJsonSchema(List<ParamSpec> params) {
   final properties = <String, Object>{};
   final required = <String>[];
-  for (final param in entry.paramSchema) {
+  for (final param in params) {
     properties[param.name] = _paramJsonSchema(param);
     if (param.required) required.add(param.name);
   }
   return {
-    'name': entry.name,
-    'description': entry.doc,
-    'inputSchema': {
-      'type': 'object',
-      'properties': properties,
-      if (required.isNotEmpty) 'required': required,
-      'additionalProperties': false,
-    },
+    'type': 'object',
+    'properties': properties,
+    if (required.isNotEmpty) 'required': required,
+    'additionalProperties': false,
   };
 }
 
@@ -346,6 +355,12 @@ Map<String, Object> _paramJsonSchema(ParamSpec param) {
           },
           ['target', 'path', 'value'],
         ),
+      };
+    case ParamType.bytes:
+      return {
+        'type': 'string',
+        'description': '${param.description} (base64-encoded bytes)'.trim(),
+        'contentEncoding': 'base64',
       };
   }
 }

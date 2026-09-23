@@ -7,6 +7,9 @@
 /// the document.
 library;
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:scene/scene.dart';
 import 'package:scene/schema.dart';
 import 'package:vector_math/vector_math.dart';
@@ -152,6 +155,17 @@ LocalId? optionalResourceId(Map<String, Object?> params, String key) =>
 /// Reads a required asset path key [key] as an [AssetRef].
 AssetRef requireAssetRef(Map<String, Object?> params, String key) =>
     AssetRef(requireString(params, key));
+
+/// Reads required bytes at [key], base64-encoded (the only way JSON carries
+/// them). Throws [CommandException] when absent or not decodable.
+Uint8List requireBytes(Map<String, Object?> params, String key) {
+  final value = requireString(params, key);
+  try {
+    return base64Decode(value);
+  } on FormatException {
+    throw CommandException('Param "$key" is not valid base64');
+  }
+}
 
 /// Reads an optional property bag [key] (a JSON object of typed values),
 /// coercing each entry through [coercePropertyValue]. Returns an empty map
