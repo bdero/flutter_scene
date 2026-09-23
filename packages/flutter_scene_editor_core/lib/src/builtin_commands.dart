@@ -946,6 +946,32 @@ final createCuboidGeometry = CommandEntry(
   },
 );
 
+/// The vertex-buffer layouts the renderer realizes, current spellings first.
+///
+/// The authority is the engine's interleaved layout adapter; a payload naming
+/// anything else fails when the geometry is realized, which is a long way
+/// from where the mistake was made.
+const Set<String> _vertexLayouts = {
+  'unskinned_soa_uv1_tangent',
+  'unskinned_uv1_tangent',
+  'skinned_uv1_tangent',
+  'unskinned_soa',
+  'skinned',
+  'unskinned',
+};
+
+/// The index formats the renderer reads, and their element sizes.
+const Map<String, int> _indexFormats = {'uint16': 2, 'uint32': 4};
+
+/// The topologies [GeometryResource.topology] documents.
+const Set<String> _topologies = {
+  'triangle',
+  'triangleStrip',
+  'line',
+  'lineStrip',
+  'point',
+};
+
 /// Puts bytes into the document's payload pool.
 ///
 /// The counterpart to the `readPayload` query, and the only way a caller that
@@ -955,8 +981,9 @@ final createPayload = CommandEntry(
   name: 'createPayload',
   doc:
       'Create a payload chunk from base64 bytes. encoding is one of '
-      'vertexBuffer, indexBuffer, image, matrices, floats, bytes. Returns the '
-      'new payload id under "created".',
+      'vertexBuffer, indexBuffer, image, matrices, floats, bytes. A '
+      'vertexBuffer needs a known layout and an indexBuffer needs a uint16 or '
+      'uint32 format. Returns the new payload id under "created".',
   category: 'Resource',
   paramSchema: const [
     ParamSpec(name: 'bytes', type: ParamType.bytes, label: 'Bytes'),
@@ -1005,11 +1032,38 @@ final createPayload = CommandEntry(
         '${PayloadEncoding.values.map((e) => e.name).join(', ')}',
       );
     }
+    final layout = optionalString(params, 'layout');
+    final format = optionalString(params, 'format');
+    // Checked here rather than at realize time, since a malformed payload
+    // that reaches the history is a malformed document the user has to undo.
+    if (encoding == PayloadEncoding.vertexBuffer) {
+      if (layout == null || !_vertexLayouts.contains(layout)) {
+        throw CommandException(
+          'A vertexBuffer payload needs a known "layout"; use one of '
+          '${_vertexLayouts.join(', ')}',
+        );
+      }
+    }
+    if (encoding == PayloadEncoding.indexBuffer) {
+      final elementBytes = _indexFormats[format];
+      if (elementBytes == null) {
+        throw CommandException(
+          'An indexBuffer payload needs "format" to be '
+          '${_indexFormats.keys.join(' or ')}',
+        );
+      }
+      if (bytes.lengthInBytes % elementBytes != 0) {
+        throw CommandException(
+          '${bytes.lengthInBytes} bytes is not a whole number of $format '
+          'indices',
+        );
+      }
+    }
     final payload = PayloadSpec(
       ctx.document.newId(),
       encoding: encoding,
-      layout: optionalString(params, 'layout'),
-      format: optionalString(params, 'format'),
+      layout: layout,
+      format: format,
       width: optionalInt(params, 'width'),
       height: optionalInt(params, 'height'),
       length: bytes.lengthInBytes,
@@ -1034,8 +1088,10 @@ final createPayload = CommandEntry(
 final createMeshGeometry = CommandEntry(
   name: 'createMeshGeometry',
   doc:
-      'Create a geometry resource from an existing vertex payload, and '
-      'optionally an index payload. Use createPayload to make them first.',
+      'Create a geometry resource over an existing vertexBuffer payload, and '
+      'optionally an indexBuffer payload. Use createPayload to make them '
+      'first, naming each one with "as" so this call can reference it. '
+      'topology defaults to triangle.',
   category: 'Resource',
   paramSchema: const [
     ParamSpec(
@@ -1057,19 +1113,36 @@ final createMeshGeometry = CommandEntry(
     ),
   ],
   execute: (ctx, params) {
-    LocalId payload(String key) {
+    LocalId payload(String key, PayloadEncoding expected) {
       final id = requireResourceId(params, key);
-      if (!ctx.document.payloads.containsKey(id)) {
+      final spec = ctx.document.payloads[id];
+      if (spec == null) {
         throw CommandException('No payload "${id.toToken()}" to use as $key');
+      }
+      // A geometry that names an image chunk as its vertices realizes into
+      // garbage, so the roles are checked rather than assumed.
+      if (spec.encoding != expected) {
+        throw CommandException(
+          '"$key" needs a ${expected.name} payload, but '
+          '"${id.toToken()}" is ${spec.encoding.name}',
+        );
       }
       return id;
     }
 
+    final topology = optionalString(params, 'topology') ?? 'triangle';
+    if (!_topologies.contains(topology)) {
+      throw CommandException(
+        'Unknown topology "$topology"; use one of ${_topologies.join(', ')}',
+      );
+    }
     final resource = GeometryResource(
       ctx.document.newId(),
-      vertices: payload('vertices'),
-      indices: params['indices'] == null ? null : payload('indices'),
-      topology: optionalString(params, 'topology') ?? 'triangles',
+      vertices: payload('vertices', PayloadEncoding.vertexBuffer),
+      indices: params['indices'] == null
+          ? null
+          : payload('indices', PayloadEncoding.indexBuffer),
+      topology: topology,
     );
     return Transaction(
       name: 'Create mesh geometry',

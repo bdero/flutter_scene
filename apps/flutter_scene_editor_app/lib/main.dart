@@ -1217,8 +1217,11 @@ class _EditorHomeState extends State<_EditorHome> {
           },
           commandRunner: (command, params) =>
               _requireController.run(command, params),
-          batchRunner: (calls, name) =>
-              _requireController.runAll(calls, name: name ?? 'Batch edit'),
+          batchRunner: (calls, name, bindings) => _requireController.runAll(
+            calls,
+            name: name ?? 'Batch edit',
+            bindings: bindings,
+          ),
           undoRunner: () async {
             final controller = _requireController;
             final can = controller.history.canUndo;

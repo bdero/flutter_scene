@@ -227,19 +227,26 @@ class EditorSession {
   /// Runs [calls] in order and commits them as one history step named [name],
   /// so a script that touches a thousand nodes is one undo for the user.
   ///
-  /// Each call sees what the calls before it did, so a batch can create a
-  /// node and then address it. Nothing is committed unless every call
-  /// succeeds; the first failure reverts the run and throws a
-  /// [BatchException] naming which call stopped it.
+  /// Each call sees what the calls before it did, and a call that names
+  /// itself with an alias can be referenced by the calls after it, so a batch
+  /// can create a payload and then build geometry over it. Nothing is
+  /// committed unless every call succeeds; the first failure reverts the run,
+  /// restores the selection, and throws a [BatchException] naming which call
+  /// stopped it. [bindings], when given, receives what each alias named.
+  ///
+  /// Only document and selection commands ride in a batch. See
+  /// [BatchComposer.acceptedKinds].
   Transaction runAll(
     Iterable<CommandCall> calls, {
     String name = 'Batch edit',
+    Map<String, LocalId>? bindings,
   }) {
     final before = selection.ids.toList();
     final composer = BatchComposer(
       document: document,
       registry: registry,
       contextFor: _context,
+      selection: selection,
     );
     var index = 0;
     for (final call in calls) {
@@ -253,6 +260,7 @@ class EditorSession {
     }
     final transaction = composer.build(name);
     transaction.selectionBefore = before;
+    bindings?.addAll(composer.bindings);
     history.commit(transaction);
     if (!transaction.isEmpty) markDirty();
     return transaction;

@@ -50,6 +50,9 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
         'events': [for (final event in events) event.toJson()],
       }),
     );
+    // A client that goes away must not leave its subscriptions buffering
+    // events and holding push closures into a dead channel.
+    unawaited(done.then((_) => surface.dispose()));
     for (final def in surface.bootstrapTools()) {
       registerTool(
         Tool(
