@@ -17,6 +17,7 @@ enum DiceFinish {
   gold('Gold', Color(0xFFE0B04A)),
   steel('Steel', Color(0xFF9EA6AE)),
   neon('Neon', Color(0xFF3CF2B0)),
+  clock('Clock', Color(0xFFBFE3F0)),
   mixed('Mix', Color(0xFFFFFFFF));
 
   const DiceFinish(this.label, this.swatch);
@@ -36,9 +37,11 @@ enum DiceFinish {
     steel,
     frosted,
     classic,
+    clock,
   ];
 
-  bool get isGlass => this == glass || this == frosted || this == iridescent;
+  bool get isGlass =>
+      this == glass || this == frosted || this == iridescent || this == clock;
 
   /// How much of a glass die's footprint its shadow proxy covers, or null
   /// for a finish that casts its own shadow. The proxy is alpha-masked with
@@ -48,13 +51,14 @@ enum DiceFinish {
     glass => 0.38,
     iridescent => 0.5,
     frosted => 0.68,
+    clock => 0.55,
     _ => null,
   };
 
   /// The landing sound set for this finish (`assets/sounds/land_<set>_*`),
   /// or null to use the table's own.
   String? get landingSet => switch (this) {
-    glass || frosted || iridescent => 'glass',
+    glass || frosted || iridescent || clock => 'glass',
     gold || steel => 'metal',
     wood => 'wood',
     marble => 'stone',
@@ -64,7 +68,7 @@ enum DiceFinish {
   /// Pitch multiplier for this finish's impact sounds. Glass rings high,
   /// wood knocks low.
   double get impactPitch => switch (this) {
-    glass || iridescent => 1.3,
+    glass || iridescent || clock => 1.3,
     frosted => 1.22,
     marble => 1.14,
     steel => 1.1,
@@ -372,6 +376,18 @@ PhysicallyBasedMaterial buildDieMaterial(
         ..roughnessFactor = 0.38
         ..anisotropy = 0.85
         ..anisotropyRotation = 0.35 * index;
+    case DiceFinish.clock:
+      // Clear glass with a cool tint, a window onto the widget inside.
+      _glass(
+        material,
+        textures,
+        tint: vm.Vector4(0.92, 0.97, 1.0, 1),
+        attenuation: vm.Vector4(0.85, 0.95, 1.0, 1),
+        roughness: 0.03,
+        refractive: refractive,
+        thickness: thickness,
+        compositedAlpha: 0.35,
+      );
     case DiceFinish.neon:
       material
         ..baseColorTexture = textures.pips

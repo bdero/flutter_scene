@@ -114,11 +114,14 @@ class Celebration {
     required List<int> order,
     required int total,
     required this.frame,
+    double? afterglow,
   }) : _faces = faces,
        _order = order,
        _startTotal = total,
        multiplier = multiplierOf(faces),
        matched = matchedIndices(faces) {
+    // Bigger matches get a longer show after the slam.
+    _afterglow = afterglow ?? (1.4 + math.max(0, multiplier - 2) * 1.6);
     _sum = faces.fold(0, (a, b) => a + b);
     _scored = _sum * multiplier;
     _plan();
@@ -165,7 +168,7 @@ class Celebration {
   static const double _multiplierReveal = 0.75;
   static const double _holdAfterMultiplier = 0.45;
   static const double _flight = 0.36;
-  static const double _afterglow = 1.4;
+  late final double _afterglow;
 
   void _plan() {
     var t = _pause;

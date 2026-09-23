@@ -14,7 +14,9 @@ import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'dice/dice_breakage.dart';
 import 'dice/dice_celebration.dart';
+import 'dice/dice_clock.dart';
 import 'dice/dice_contacts.dart';
 import 'dice/dice_finishes.dart';
 import 'dice/dice_vfx.dart';
@@ -62,6 +64,18 @@ const double _kFullPullPixels = 420.0;
 
 /// One scored roll in the history list.
 typedef RollRecord = ({List<int> faces, int multiplier, int scored});
+
+/// A card's break in progress on the host side.
+class _BreakRun {
+  _BreakRun({required this.hit, required this.seed, required this.start});
+
+  final Offset hit;
+  final int seed;
+  final double start;
+  ui.Image? image;
+  bool shattered = false;
+  bool rebuilding = false;
+}
 
 class _Die {
   _Die(this.node, this.visual, this.body, this.trail, this.finish, this.color);
@@ -257,6 +271,36 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   ScreenTheme _theme = ScreenTheme.pop;
 
+  // The camera the view renders through. The base camera stays fixed for
+  // every screen mapping; the slam borrows a moving one for its beat.
+  double _cinematic = 0.0;
+  double _cinematicStart = -1.0;
+  bool? _embedBeforeCinematic;
+
+  // Timed one-shots queued by the celebration (fireworks, hops, breaks).
+  final List<({double at, void Function() run})> _cues = [];
+
+  // Golden hour: the sun swings low and warm for a big match, then back.
+  double _goldenStart = -1.0;
+  double _goldenEnd = -1.0;
+  ({
+    double azimuth,
+    double elevation,
+    double intensity,
+    vm.Vector3 color,
+    double environment,
+  })?
+  _goldenRestore;
+
+  // Cards a die has broken, and the shards on the table.
+  final CardBreakController _breaks = CardBreakController();
+  final Map<int, _BreakRun> _breakRuns = {};
+  final List<
+    ({PhysicallyBasedMaterial material, double fadeAt, List<Node> nodes})
+  >
+  _shardSets = [];
+  final List<Node?> _cardColliders = [];
+
   late final PointLight _point;
   late final SpotLight _spot;
   late final Node _pointNode;
@@ -344,6 +388,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _vfx.dispose();
     _contacts.dispose();
     _flight.dispose();
+    _breaks.dispose();
     _capture.removeListener(_bindCapture);
     _capture.dispose();
     _frame.dispose();
@@ -412,7 +457,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   /// Copies the screen into the scene (or takes it back out). Glass dice are
   /// rebuilt so they refract the copy instead of alpha-blending.
-  void _setEmbedBackdrop(bool value) {
+  void _setEmbedBackdrop(bool value, {bool rebuildDice = true}) {
     if (value == _embedBackdrop) return;
     _embedBackdrop = value;
     _vfx.additive = value;
@@ -429,7 +474,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     }
     // The plane waits for the first capture (see _bindCapture), so it never
     // shows untextured.
-    _respawnInPlace();
+    if (rebuildDice) _respawnInPlace();
     setState(() {});
   }
 
@@ -806,6 +851,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   void _roll({_Aim? aim}) {
     if (_viewSize.isEmpty) return;
     _endCelebration();
+    _cues.clear();
     for (final die in _dice) {
       _removeDie(die);
     }
@@ -1004,6 +1050,24 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     // Glass is translucent, which the shadow pass skips, so a glass die
     // casts through an invisible dithered stand-in that reads as a lighter
     // shadow once the light's softness blurs the dots.
+    if (finish == DiceFinish.clock) {
+      // A live clock sealed inside the glass. The quad faces +z, so turn it
+      // to face up, with its top toward the top of the screen.
+      final clock = Node(localTransform: vm.Matrix4.rotationX(-math.pi / 2))
+        ..shadowCastingMode = ShadowCastingMode.off;
+      clock.addComponent(
+        WidgetComponent(
+          child: DieClockFace(theme: _theme),
+          size: const Size(128, 128),
+          worldHeight: _dieHalf * 1.3,
+          update: const WidgetUpdatePolicy.interval(Duration(milliseconds: 40)),
+          input: WidgetInput.manual,
+          // Opaque, so the glass refracts it like any surface behind it.
+          material: UnlitMaterial(),
+        ),
+      );
+      visual.add(clock);
+    }
     final proxyMaterial = buildShadowProxyMaterial(finish, _textures);
     if (proxyMaterial != null) {
       visual.add(
@@ -1198,6 +1262,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   void _onTick(Duration elapsed, double realDelta) {
     _realTime += realDelta;
+    _runCues();
+    _advanceGolden();
+    _advanceCinematic();
+    _advanceBreaks();
     _applyLights();
     _stickerFlash *= math.exp(-realDelta * 4.0);
 
@@ -1246,10 +1314,483 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     // A die propped on a wall may never fully settle, so time out too.
     if ((_rollTime > 0.6 && _stillTime > 0.3) || _rollTime > 8.0) {
       _rolling = false;
-      final faces = [for (final d in _dice) _topFace(d.node)];
+      var faces = [for (final d in _dice) _topFace(d.node)];
+      // `--dart-define=DICE_DEBUG_MATCH=<n>` scores every roll as an n-of-a-
+      // kind, to drive the jackpot tiers from a script. Debug only.
+      const forced = int.fromEnvironment('DICE_DEBUG_MATCH');
+      if (kDebugMode && forced >= 2 && faces.length >= forced) {
+        faces = [for (var i = 0; i < faces.length; i++) i < forced ? 6 : i + 1];
+      }
       _lastRoll.value = faces;
       _startCelebration(faces);
     }
+  }
+
+  void _runCues() {
+    if (_cues.isEmpty) return;
+    final due = _cues.where((cue) => cue.at <= _realTime).toList();
+    _cues.removeWhere((cue) => cue.at <= _realTime);
+    for (final cue in due) {
+      cue.run();
+    }
+  }
+
+  void _cue(double delay, void Function() run) =>
+      _cues.add((at: _realTime + delay, run: run));
+
+  // --- The slam's camera --------------------------------------------------
+
+  /// The camera the view draws with: the base camera, or during the slam a
+  /// lower one that swings toward the sticker and reveals the table's
+  /// depth, then eases back.
+  Camera get _viewCamera {
+    final amount = _cinematic;
+    final banner = _bannerCenter;
+    if (amount <= 0.0 || banner == null) return _camera;
+    final sticker = _floorHit(banner);
+    final base = _camera.position;
+    final distance = base.y;
+    // Pull toward the sticker and down, standing off toward the middle of
+    // the table so the view tilts rather than dropping straight in.
+    final toward = (vm.Vector3.zero() - sticker)..y = 0;
+    if (toward.length2 > 1e-4) toward.normalize();
+    final position =
+        sticker +
+        (base - sticker) * 0.5 +
+        toward * (distance * 0.28) +
+        vm.Vector3(0, distance * 0.05, 0);
+    final t = _smooth(amount);
+    return PerspectiveCamera(
+      position: base + (position - base) * t,
+      target: vm.Vector3.zero() + (sticker - vm.Vector3.zero()) * t,
+      up: vm.Vector3(0, 0, -1),
+      fovRadiansY: _fovY * (1.0 - 0.12 * t),
+      fovNear: 0.5,
+      fovFar: distance * 2,
+    );
+  }
+
+  static double _smooth(double x) {
+    final t = x.clamp(0.0, 1.0);
+    return t * t * (3 - 2 * t);
+  }
+
+  void _startCinematic() {
+    _cinematicStart = _realTime;
+    // The move only makes sense over the copied screen, since the live
+    // widgets cannot tilt with the camera. Borrow the copy for the beat.
+    _embedBeforeCinematic = _embedBackdrop;
+    if (!_embedBackdrop) _setEmbedBackdrop(true, rebuildDice: false);
+  }
+
+  void _endCinematic() {
+    _cinematicStart = -1.0;
+    _cinematic = 0.0;
+    final restore = _embedBeforeCinematic;
+    _embedBeforeCinematic = null;
+    if (restore != null && restore != _embedBackdrop) {
+      _setEmbedBackdrop(restore, rebuildDice: false);
+    }
+  }
+
+  void _advanceCinematic() {
+    if (_cinematicStart < 0) return;
+    final t = _realTime - _cinematicStart;
+    // In over the flight, hold while the confetti falls, then back.
+    const inTime = 0.4, hold = 1.5, outTime = 0.6;
+    if (t < inTime) {
+      _cinematic = t / inTime;
+    } else if (t < inTime + hold) {
+      _cinematic = 1.0;
+    } else if (t < inTime + hold + outTime) {
+      _cinematic = 1.0 - (t - inTime - hold) / outTime;
+    } else {
+      _endCinematic();
+    }
+  }
+
+  // --- Golden hour --------------------------------------------------------
+
+  /// Swings the sun low and warm from the sticker's side so every shadow
+  /// stretches across the screen, for [seconds], then eases back.
+  void _startGolden(double seconds) {
+    _goldenRestore ??= (
+      azimuth: exampleSettings.lightAzimuthDegrees,
+      elevation: exampleSettings.lightElevationDegrees,
+      intensity: exampleSettings.lightIntensity,
+      color: exampleSettings.lightColor.clone(),
+      environment: exampleSettings.environmentIntensity,
+    );
+    _goldenStart = _realTime;
+    _goldenEnd = _realTime + seconds;
+  }
+
+  void _advanceGolden() {
+    final restore = _goldenRestore;
+    if (restore == null) return;
+    const ramp = 0.9;
+    final t = _realTime;
+    final double amount;
+    if (t < _goldenStart + ramp) {
+      amount = (t - _goldenStart) / ramp;
+    } else if (t < _goldenEnd) {
+      amount = 1.0;
+    } else if (t < _goldenEnd + 1.3) {
+      amount = 1.0 - (t - _goldenEnd) / 1.3;
+    } else {
+      exampleSettings
+        ..lightAzimuthDegrees = restore.azimuth
+        ..lightElevationDegrees = restore.elevation
+        ..lightIntensity = restore.intensity
+        ..environmentIntensity = restore.environment
+        ..lightColor.setFrom(restore.color);
+      _goldenRestore = null;
+      return;
+    }
+    final a = _smooth(amount);
+    final banner = _bannerCenter;
+    final sticker = banner == null ? vm.Vector3(1, 0, -1) : _floorHit(banner);
+    final azimuth = math.atan2(sticker.z, sticker.x) * vm.radians2Degrees;
+    exampleSettings
+      ..lightAzimuthDegrees = _lerpAngle(restore.azimuth, azimuth, a)
+      ..lightElevationDegrees =
+          restore.elevation + (9.0 - restore.elevation) * a
+      ..lightIntensity = restore.intensity + (4.6 - restore.intensity) * a
+      ..environmentIntensity =
+          restore.environment + (0.3 - restore.environment) * a;
+    exampleSettings.lightColor.setValues(
+      restore.color.x + (1.0 - restore.color.x) * a,
+      restore.color.y + (0.66 - restore.color.y) * a,
+      restore.color.z + (0.38 - restore.color.z) * a,
+    );
+  }
+
+  static double _lerpAngle(double from, double to, double t) {
+    var delta = (to - from) % 360.0;
+    if (delta > 180) delta -= 360;
+    return from + delta * t;
+  }
+
+  // --- Jackpot escalation -------------------------------------------------
+
+  /// What a match of [multiplier] earns beyond the confetti, queued from
+  /// the moment the slam lands.
+  void _escalate(int multiplier, List<int> matched) {
+    if (multiplier < 3) return;
+    final banner = _bannerCenter;
+    final sticker = banner == null
+        ? vm.Vector3.zero()
+        : (_floorHit(banner)..y = 0.2);
+    final rockets = 3 + (multiplier - 3) * 2;
+    for (var i = 0; i < rockets; i++) {
+      _cue(0.35 + i * 0.28, () {
+        final from =
+            i == 0
+                  ? sticker
+                  : _floorHit(
+                      Offset(
+                        _viewSize.width * (0.15 + _random.nextDouble() * 0.7),
+                        _viewSize.height * (0.2 + _random.nextDouble() * 0.6),
+                      ),
+                    )
+              ..y = 0.2;
+        final color = _linearColor(
+          _theme.confetti[_random.nextInt(_theme.confetti.length)],
+        );
+        _playFx('firework_launch', volume: 0.5, position: from);
+        _vfx.firework(
+          from,
+          color,
+          height: math.max(3.5, _camera.position.y * 0.55),
+          onBurst: (apex) {
+            _stickerFlash = math.max(_stickerFlash, 0.8);
+            _playFx('firework_burst', volume: 0.8, position: apex);
+            _vfx.shockwave(
+              _screenUv(_camera.worldToScreen(apex, _viewSize) ?? Offset.zero),
+              strength: 0.012,
+            );
+          },
+        );
+      });
+    }
+    if (multiplier >= 4) {
+      _startGolden(2.2 + (multiplier - 4) * 1.4);
+    }
+    if (multiplier >= 5) {
+      _playFx('jackpot', volume: 1.0);
+      // The matched dice leap in turn, three rounds, landing on the same
+      // faces since they only spin about the vertical.
+      for (var round = 0; round < 3; round++) {
+        for (var k = 0; k < matched.length; k++) {
+          final index = matched[k];
+          _cue(0.6 + round * 0.55 + k * 0.08, () {
+            if (index >= _dice.length) return;
+            final die = _dice[index];
+            die.body.linearVelocity = vm.Vector3(0, 6.5, 0);
+            die.body.angularVelocity = vm.Vector3(0, 16.0, 0);
+          });
+        }
+      }
+    }
+    if (multiplier >= 6) {
+      // The screen gives way: every card cracks and shatters in turn.
+      for (var i = 0; i < _cardRects.length; i++) {
+        _cue(1.2 + i * 0.22, () => _breakCard(i, const Offset(0.5, 0.5)));
+      }
+    }
+  }
+
+  // --- Breaking cards -----------------------------------------------------
+
+  /// Cracks card [index] where [hit] (0..1 across the card) struck it, then
+  /// shatters it into shards that fly and land, leaves the socket empty, and
+  /// snaps the card back after a while.
+  void _breakCard(int index, Offset hit) {
+    if (index >= _cardRects.length || _breakRuns.containsKey(index)) return;
+    final seed = _random.nextInt(1 << 30);
+    _breakRuns[index] = _BreakRun(hit: hit, seed: seed, start: _realTime);
+    _breaks.set(
+      index,
+      CardBreak(phase: BreakPhase.cracked, hit: hit, progress: 0, seed: seed),
+    );
+    _playFx('card_crack', volume: 0.9);
+    _vfx.shockwave(_screenUv(_cardRects[index].center), strength: 0.015);
+    // Grab the pixels while the card is still whole.
+    _breaks.capture(index, MediaQuery.devicePixelRatioOf(context)).then((
+      image,
+    ) {
+      if (image == null || !mounted) return;
+      _breakRuns[index]?.image = image;
+    });
+  }
+
+  void _advanceBreaks() {
+    for (final entry in _breakRuns.entries.toList()) {
+      final index = entry.key;
+      final run = entry.value;
+      final t = _realTime - run.start;
+      const crack = 0.45, shattered = 3.4, rebuild = 0.9;
+      if (t < crack) {
+        _breaks.set(
+          index,
+          CardBreak(
+            phase: BreakPhase.cracked,
+            hit: run.hit,
+            progress: t / crack,
+            seed: run.seed,
+          ),
+        );
+      } else if (t < crack + shattered) {
+        if (!run.shattered) {
+          run.shattered = true;
+          _shatterCard(index, run);
+        }
+      } else if (t < crack + shattered + rebuild) {
+        if (!run.rebuilding) {
+          run.rebuilding = true;
+          _setCardCollider(index, true);
+          _playFx('card_rewind', volume: 0.8);
+        }
+        _breaks.set(
+          index,
+          CardBreak(
+            phase: BreakPhase.reassembling,
+            hit: run.hit,
+            progress: (t - crack - shattered) / rebuild,
+            seed: run.seed,
+          ),
+        );
+      } else {
+        _breaks.set(index, null);
+        _breakRuns.remove(index);
+      }
+    }
+    // Shards fade once they have rested, then go.
+    for (final set in _shardSets.toList()) {
+      final since = _realTime - set.fadeAt;
+      if (since < 0) continue;
+      if (since >= 0.9) {
+        for (final node in set.nodes) {
+          scene.remove(node);
+        }
+        _shardSets.remove(set);
+        continue;
+      }
+      set.material
+        ..alphaMode = AlphaMode.blend
+        ..baseColorFactor = vm.Vector4(1, 1, 1, 1.0 - since / 0.9);
+    }
+  }
+
+  void _shatterCard(int index, _BreakRun run) {
+    _breaks.set(
+      index,
+      CardBreak(
+        phase: BreakPhase.shattered,
+        hit: run.hit,
+        progress: 0,
+        seed: run.seed,
+      ),
+    );
+    _setCardCollider(index, false);
+    _playFx('card_shatter', volume: 1.0);
+    _vfx.shockwave(_screenUv(_cardRects[index].center), strength: 0.03);
+    final image = run.image;
+    if (image == null || index >= _cardRects.length) return;
+    final rect = _cardRects[index];
+    Texture2D.fromImage(image).then((texture) {
+      if (!mounted) return;
+      _spawnShards(rect, run, texture);
+    });
+  }
+
+  /// Turns the card's captured pixels into thick shards that burst out of
+  /// the socket, tumble, and settle on the table as real bodies.
+  void _spawnShards(Rect rect, _BreakRun run, Texture2D texture) {
+    const height = 0.12, thickness = 0.035;
+    final material = PhysicallyBasedMaterial()
+      ..baseColorTexture = texture
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.6;
+    final hitWorld = _floorHit(
+      rect.topLeft + Offset(run.hit.dx * rect.width, run.hit.dy * rect.height),
+    );
+    final nodes = <Node>[];
+    for (final shard in shatter(run.hit, 11, run.seed)) {
+      final world = [
+        for (final p in shard.polygon)
+          _floorHit(
+            rect.topLeft + Offset(p.dx * rect.width, p.dy * rect.height),
+          )..y = height,
+      ];
+      var centroid = vm.Vector3.zero();
+      for (final p in world) {
+        centroid += p;
+      }
+      centroid /= world.length.toDouble();
+      final local = [for (final p in world) p - centroid];
+      final geometry = _buildShardGeometry(local, shard.polygon, thickness);
+      if (geometry == null) continue;
+      var maxX = 0.0, maxZ = 0.0;
+      for (final p in local) {
+        maxX = math.max(maxX, p.x.abs());
+        maxZ = math.max(maxZ, p.z.abs());
+      }
+      final node = Node(
+        mesh: Mesh(geometry, material),
+        localTransform: vm.Matrix4.translation(
+          centroid + vm.Vector3(0, thickness / 2 + 0.01, 0),
+        ),
+      );
+      // Out from the strike, up, and tumbling.
+      final away = (centroid - hitWorld)..y = 0;
+      final reach = away.length;
+      if (reach > 1e-4) away.normalize();
+      final kick = 2.0 + 4.5 / (1.0 + reach * 2.0);
+      node.addComponent(
+        RigidBody(
+          linearVelocity:
+              away * kick +
+              vm.Vector3(
+                _jitter(0.8),
+                3.5 + _random.nextDouble() * 3.0,
+                _jitter(0.8),
+              ),
+          angularVelocity: vm.Vector3(_jitter(14), _jitter(6), _jitter(14)),
+          angularDamping: 0.6,
+        ),
+      );
+      node.addComponent(
+        Collider(
+          shape: BoxShape(
+            halfExtents: vm.Vector3(
+              math.max(maxX, 0.02),
+              thickness / 2,
+              math.max(maxZ, 0.02),
+            ),
+          ),
+          material: const PhysicsMaterial(friction: 0.7, restitution: 0.15),
+        ),
+      );
+      scene.add(node);
+      nodes.add(node);
+    }
+    _shardSets.add((material: material, fadeAt: _realTime + 2.4, nodes: nodes));
+    debugPrint('dice: card broke into ${nodes.length} shards');
+  }
+
+  /// A thick slab with the card's pixels on top and bottom.
+  MeshGeometry? _buildShardGeometry(
+    List<vm.Vector3> ring,
+    List<Offset> uvs,
+    double thickness,
+  ) {
+    if (ring.length < 3) return null;
+    // Make the ring counter-clockwise seen from above.
+    final n = (ring[1] - ring[0]).cross(ring[2] - ring[0]);
+    var order = List<int>.generate(ring.length, (i) => i);
+    if (n.y < 0) order = order.reversed.toList();
+    final positions = <double>[];
+    final normals = <double>[];
+    final texCoords = <double>[];
+    final indices = <int>[];
+    final half = thickness / 2;
+
+    int vertex(vm.Vector3 p, vm.Vector3 normal, Offset uv) {
+      positions.addAll([p.x, p.y, p.z]);
+      normals.addAll([normal.x, normal.y, normal.z]);
+      texCoords.addAll([uv.dx, uv.dy]);
+      return positions.length ~/ 3 - 1;
+    }
+
+    // Top and bottom fans.
+    final top = [
+      for (final i in order)
+        vertex(ring[i] + vm.Vector3(0, half, 0), vm.Vector3(0, 1, 0), uvs[i]),
+    ];
+    for (var i = 1; i + 1 < top.length; i++) {
+      indices.addAll([top[0], top[i], top[i + 1]]);
+    }
+    final bottom = [
+      for (final i in order)
+        vertex(ring[i] - vm.Vector3(0, half, 0), vm.Vector3(0, -1, 0), uvs[i]),
+    ];
+    for (var i = 1; i + 1 < bottom.length; i++) {
+      indices.addAll([bottom[0], bottom[i + 1], bottom[i]]);
+    }
+    // Sides, one quad per edge, facing outward.
+    for (var k = 0; k < order.length; k++) {
+      final a = ring[order[k]];
+      final b = ring[order[(k + 1) % order.length]];
+      final edge = b - a;
+      final outward = edge.cross(vm.Vector3(0, 1, 0))..normalize();
+      final ua = uvs[order[k]], ub = uvs[order[(k + 1) % order.length]];
+      final v0 = vertex(a + vm.Vector3(0, half, 0), outward, ua);
+      final v1 = vertex(b + vm.Vector3(0, half, 0), outward, ub);
+      final v2 = vertex(b - vm.Vector3(0, half, 0), outward, ub);
+      final v3 = vertex(a - vm.Vector3(0, half, 0), outward, ua);
+      // Winding so the face's normal matches outward.
+      final face = (b - a).cross(vm.Vector3(0, -thickness, 0));
+      if (face.dot(outward) > 0) {
+        indices.addAll([v0, v1, v2, v0, v2, v3]);
+      } else {
+        indices.addAll([v0, v2, v1, v0, v3, v2]);
+      }
+    }
+    return MeshGeometry.fromArrays(
+      positions: Float32List.fromList(positions),
+      normals: Float32List.fromList(normals),
+      texCoords: Float32List.fromList(texCoords),
+      indices: indices,
+    );
+  }
+
+  void _setCardCollider(int index, bool present) {
+    if (index >= _cardColliders.length) return;
+    final node = _cardColliders[index];
+    if (node == null) return;
+    if (present && node.parent == null) scene.add(node);
+    if (!present && node.parent != null) scene.remove(node);
   }
 
   /// Fires the slow-motion beat the moment a match shows while the dice are
@@ -1371,9 +1912,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     if (key == _uiBoundsKey || _viewSize.isEmpty) return;
     _uiBoundsKey = key;
     for (final node in _uiBounds) {
-      scene.remove(node);
+      if (node.parent != null) scene.remove(node);
     }
     _uiBounds.clear();
+    _cardColliders.clear();
     const thickness = 0.12;
     for (final rect in rects) {
       final center = _floorHit(rect.center);
@@ -1395,8 +1937,15 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           material: const PhysicsMaterial(friction: 0.55, restitution: 0.3),
         ),
       );
-      scene.add(node);
+      // A broken card's socket has no top to land on.
+      final cardIndex = _uiBounds.length;
+      final broken =
+          cardIndex < _cardRects.length &&
+          (_breakRuns[cardIndex]?.shattered ?? false) &&
+          !(_breakRuns[cardIndex]?.rebuilding ?? false);
+      if (!broken) scene.add(node);
       _uiBounds.add(node);
+      if (cardIndex < _cardRects.length) _cardColliders.add(node);
     }
     // The pill's glow and the sticker's flash sit over their widgets.
     final button = _buttonRect;
@@ -1500,12 +2049,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           _playFx('multiplier', volume: 1.0);
         case SlamLaunched():
           _playFx('throw', volume: 0.45, pitch: 1.5);
+          _startCinematic();
         case SlamLanded(:final scored, :final total):
           _total = total;
           debugPrint(
             'dice: rolled ${_lastRoll.value?.join('+')} '
             'x${celebration.multiplier} = $scored, total $total, '
-            'slam to ${_bannerCenter} in $_viewSize',
+            'slam to $_bannerCenter in $_viewSize',
           );
           _history.value = [
             (
@@ -1540,6 +2090,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             volume: loud ? 1.0 : 0.6,
             pitch: loud ? 1.0 : 1.06,
           );
+          _escalate(celebration.multiplier, celebration.matched);
         case CelebrationEnded():
           _endCelebration();
       }
@@ -1647,15 +2198,30 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         set = landing != null && _impactClips.containsKey('land_$landing')
             ? 'land_$landing'
             : (_surface == _Surface.glass ? 'glass' : 'table');
+        final screen =
+            _camera.worldToScreen(position, _viewSize) ?? Offset.zero;
         _hits.add(
           DiceHit(
-            _toGlobal(
-              _camera.worldToScreen(position, _viewSize) ?? Offset.zero,
-            ),
+            _toGlobal(screen),
             (strength / 12.0).clamp(0.15, 1.0),
             _contacts.value.time,
           ),
         );
+        // A hard enough landing on a card cracks it.
+        if (strength > 11.0) {
+          for (var i = 0; i < _cardRects.length; i++) {
+            final rect = _cardRects[i];
+            if (!rect.contains(screen)) continue;
+            _breakCard(
+              i,
+              Offset(
+                (screen.dx - rect.left) / rect.width,
+                (screen.dy - rect.top) / rect.height,
+              ),
+            );
+            break;
+          }
+        }
       }
       final clips = _impactClips[set];
       if (clips == null || clips.isEmpty) continue;
@@ -1728,6 +2294,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           history: _history,
           frame: _frame,
           contacts: _contacts,
+          breaks: _breaks,
           onLayout: _onScreenLayout,
         );
         return Stack(
@@ -1754,7 +2321,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
               child: IgnorePointer(
                 child: SceneView(
                   scene,
-                  cameraBuilder: (_) => _camera,
+                  cameraBuilder: (_) => _viewCamera,
                   onTick: _onTick,
                   warmUp: true,
                 ),
@@ -2436,6 +3003,7 @@ class DiceGameScreen extends StatefulWidget {
     required this.history,
     required this.frame,
     required this.contacts,
+    required this.breaks,
     this.onLayout,
   });
 
@@ -2450,6 +3018,7 @@ class DiceGameScreen extends StatefulWidget {
         history: screen.history,
         frame: screen.frame,
         contacts: screen.contacts,
+        breaks: screen.breaks,
         onLayout: screen.onLayout,
       );
 
@@ -2460,6 +3029,7 @@ class DiceGameScreen extends StatefulWidget {
   final ValueListenable<List<RollRecord>> history;
   final ValueListenable<CelebrationFrame> frame;
   final ValueListenable<DiceContacts> contacts;
+  final CardBreakController breaks;
 
   /// Reports where the cards, the button, and the banner landed after
   /// layout, so the host can build colliders and aim effects at them.
@@ -2478,6 +3048,9 @@ class DiceGameScreenState extends State<DiceGameScreen>
   )..repeat();
   final GlobalKey _bannerKey = GlobalKey();
   final List<GlobalKey> _cardKeys = [for (var i = 0; i < 4; i++) GlobalKey()];
+  final List<GlobalKey> _captureKeys = [
+    for (var i = 0; i < 4; i++) GlobalKey(),
+  ];
   final GlobalKey _buttonKey = GlobalKey();
   DiceScreenLayout? _reported;
 
@@ -2503,75 +3076,81 @@ class DiceGameScreenState extends State<DiceGameScreen>
           Positioned.fill(child: ThemedBackground(animation: _clock)),
           Padding(
             padding: EdgeInsets.fromLTRB(28, insets.top + 64, 28, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const OutlinedText('Game night', size: 56),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Round 3, your turn',
-                            style: theme.labelStyle.copyWith(
-                              fontSize: 18,
-                              color: theme.look == ScreenLook.pop
-                                  ? theme.ink
-                                  : theme.cream,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    KeyedSubtree(
-                      key: _bannerKey,
-                      child: ScoreBanner(frame: widget.frame, clock: _clock),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 22),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _columnWidth),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            // A short window lets the column run off the bottom rather than
+            // assert; nothing here scrolls.
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _pressable(
-                              0,
-                              _PlayerCard(
-                                name: 'Ava',
-                                score: 42,
-                                color: theme.accent,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const OutlinedText('Game night', size: 56),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Round 3, your turn',
+                              style: theme.labelStyle.copyWith(
+                                fontSize: 18,
+                                color: theme.look == ScreenLook.pop
+                                    ? theme.ink
+                                    : theme.cream,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _pressable(
-                              1,
-                              _PlayerCard(
-                                name: 'Theo',
-                                score: 37,
-                                color: theme.accent2,
-                              ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 20),
-                      _pressable(2, _LastRollCard(lastRoll: widget.lastRoll)),
-                      const SizedBox(height: 20),
-                      _pressable(3, _HistoryCard(history: widget.history)),
+                      KeyedSubtree(
+                        key: _bannerKey,
+                        child: ScoreBanner(frame: widget.frame, clock: _clock),
+                      ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 22),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _columnWidth),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _pressable(
+                                0,
+                                _PlayerCard(
+                                  name: 'Ava',
+                                  score: 42,
+                                  color: theme.accent,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _pressable(
+                                1,
+                                _PlayerCard(
+                                  name: 'Theo',
+                                  score: 37,
+                                  color: theme.accent2,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        _pressable(2, _LastRollCard(lastRoll: widget.lastRoll)),
+                        const SizedBox(height: 20),
+                        _pressable(3, _HistoryCard(history: widget.history)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Positioned(
@@ -2595,7 +3174,24 @@ class DiceGameScreenState extends State<DiceGameScreen>
 
   Widget _pressable(int index, Widget child) => Pressable(
     contacts: widget.contacts,
-    child: KeyedSubtree(key: _cardKeys[index], child: child),
+    child: KeyedSubtree(
+      key: _cardKeys[index],
+      child: widget.rollKey == null
+          // The captured copy shows the socket too, but only the live copy
+          // supplies the shards' pixels.
+          ? Breakable(
+              index: index,
+              controller: widget.breaks,
+              captureKey: GlobalKey(),
+              child: child,
+            )
+          : Breakable(
+              index: index,
+              controller: widget.breaks,
+              captureKey: _captureKeys[index],
+              child: child,
+            ),
+    ),
   );
 
   static Rect? _globalRect(GlobalKey key) {
