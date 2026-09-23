@@ -35,8 +35,21 @@ base class EditorMcpServer extends MCPServer with ToolsSupport {
   /// The tool surface every call is delegated to.
   final EditorToolSurface surface;
 
+  /// The notification an event subscription arrives as. Namespaced, since it
+  /// is this editor's own, not part of MCP.
+  static const String eventsNotification = 'notifications/flutter_scene/events';
+
   @override
   FutureOr<InitializeResult> initialize(InitializeRequest request) {
+    // Subscriptions push from here, since the surface is transport-free and
+    // has no way to reach the client on its own.
+    surface.eventPush = (subscription, events) => sendNotification(
+      eventsNotification,
+      Notification({
+        'subscription': subscription,
+        'events': [for (final event in events) event.toJson()],
+      }),
+    );
     for (final def in surface.bootstrapTools()) {
       registerTool(
         Tool(
