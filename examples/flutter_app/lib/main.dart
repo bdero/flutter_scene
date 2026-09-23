@@ -336,7 +336,11 @@ class _MyAppState extends State<MyApp> {
       'Split Screen': (context) => const ExampleSplitScreen(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };
-    selectedExample = examples.keys.first;
+    // `--dart-define=EXAMPLE=<name>` opens straight into that example.
+    const initial = String.fromEnvironment('EXAMPLE');
+    selectedExample = examples.containsKey(initial)
+        ? initial
+        : examples.keys.first;
     resetExampleSettings(settingsDefaults[selectedExample]);
 
     _ready = Future.wait([
