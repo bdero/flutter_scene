@@ -6,12 +6,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide BoxShape;
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/audio.dart';
+import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene/scene.dart' hide Material;
 import 'package:flutter_scene_rapier/flutter_scene_rapier.dart';
 import 'package:flutter_scene_soloud/flutter_scene_soloud.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'dice/dice_celebration.dart';
+import 'dice/dice_finishes.dart';
+import 'dice/dice_vfx.dart';
 import 'example_overlay.dart';
 import 'example_panel.dart';
 
@@ -20,7 +24,11 @@ import 'example_panel.dart';
 /// the screen surface, so the dice cast shadows onto the widgets underneath.
 /// Drag to aim an arrow and release to throw the dice in from off screen, and
 /// drag the light's handle to move it. The panel switches between a
-/// directional, point, and spot light.
+/// directional, point, and spot light, picks what the dice are made of, and
+/// can copy the screen into the scene so glass dice refract it.
+///
+/// A settled roll counts itself up die by die, multiplies a matched set, and
+/// slams the result into the running total with confetti.
 class ExampleDiceShadows extends StatefulWidget {
   const ExampleDiceShadows({super.key});
 
@@ -49,10 +57,17 @@ class _Aim {
 const double _kFullPullPixels = 420.0;
 
 class _Die {
-  _Die(this.node, this.body);
+  _Die(this.node, this.visual, this.body, this.trail, this.finish, this.color);
 
+  /// The physics body. Its transform is the die's pose.
   final Node node;
+
+  /// The child carrying the mesh (and the outline highlight).
+  final Node visual;
   final RigidBody body;
+  final TrailComponent trail;
+  DiceFinish finish;
+  final vm.Vector4 color;
   vm.Vector3? lastVelocity;
   vm.Vector3? lastSpin;
   double lastHitTime = -1.0;
@@ -109,10 +124,39 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   late final AnimationController _aimDissolve;
 
   late final MeshGeometry _dieGeometry;
-  late final List<PhysicallyBasedMaterial> _dieMaterials;
+  late final DieTextures _textures;
   late final ShadowCatcherMaterial _catcher;
+  late final DiceVfx _vfx;
   final List<_Die> _dice = [];
-  int _diceCount = 3;
+  int _diceCount = const int.fromEnvironment(
+    'DICE_COUNT',
+    defaultValue: 3,
+  ).clamp(1, 6);
+  // `--dart-define=DICE_FINISH=<name>` and `DICE_EMBED_BACKDROP=true` pick
+  // the starting look, for driving a launch from a script.
+  DiceFinish _finish = DiceFinish.values.firstWhere(
+    (f) => f.name == const String.fromEnvironment('DICE_FINISH'),
+    orElse: () => DiceFinish.mixed,
+  );
+
+  // The screen copied into the scene as an opaque plane under the shadow
+  // catcher, so glass dice have something to refract. Off, the scene stays
+  // transparent and glass composites over the widgets with plain alpha.
+  bool _embedBackdrop = const bool.fromEnvironment('DICE_EMBED_BACKDROP');
+  final WidgetTextureController _capture = WidgetTextureController();
+  late final UnlitMaterial _backdropMaterial;
+  Node? _backdropNode;
+  gpu.Texture? _boundCapture;
+
+  // The roll being scored, and the frame the score widgets draw from.
+  Celebration? _celebration;
+  final ValueNotifier<CelebrationFrame> _frame = ValueNotifier(
+    const CelebrationFrame(total: 1240),
+  );
+  int _total = 1240;
+  // The score banner's centre in view coordinates, measured by the screen.
+  Offset? _bannerCenter;
+  final math.Random _vfxRandom = math.Random();
 
   SoloudAudioEngine? _audio;
   AudioBus? _sfxBus;
@@ -125,6 +169,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   // Impact one-shots by set (table, glass, wall, clack), found by their
   // `assets/sounds/dice_<set>_*.wav` names.
   final Map<String, List<AudioClip>> _impactClips = {};
+  // Celebration one-shots by name (`assets/sounds/celebrate_<name>.wav`).
+  final Map<String, AudioClip> _fxClips = {};
   _Surface _surface = _Surface.wood;
   // Dice sit at about the same distance from the camera, so skip distance
   // falloff and keep only the left/right pan.
@@ -175,22 +221,21 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     scene.add(Node(mesh: Mesh(PlaneGeometry(width: 80, depth: 80), _catcher)));
 
     _dieGeometry = _buildDieGeometry(half: _dieHalf, radius: 0.08);
-    final pips = _buildPipAtlas();
-    _dieMaterials = [
-      for (final color in [
-        vm.Vector4(0.95, 0.93, 0.88, 1),
-        vm.Vector4(0.86, 0.22, 0.20, 1),
-        vm.Vector4(0.20, 0.42, 0.86, 1),
-        vm.Vector4(0.22, 0.66, 0.42, 1),
-        vm.Vector4(0.95, 0.70, 0.20, 1),
-        vm.Vector4(0.55, 0.32, 0.80, 1),
-      ])
-        PhysicallyBasedMaterial()
-          ..baseColorTexture = pips
-          ..baseColorFactor = color
-          ..roughnessFactor = 0.32
-          ..metallicFactor = 0.0,
-    ];
+    _textures = DieTextures.bake();
+    _backdropMaterial = UnlitMaterial();
+    _capture.addListener(_bindCapture);
+
+    _vfx = DiceVfx(scene)
+      ..load()
+      ..additive = _embedBackdrop;
+    if (_embedBackdrop) scene.toneMapping = ToneMappingMode.linear;
+    // Bright sprites and neon pips glow; the outline marks counted dice.
+    scene.postProcess.bloom
+      ..enabled = true
+      ..threshold = 1.15
+      ..intensity = 0.28
+      ..scatter = 0.75;
+    scene.highlightStyle.thickness = 3.5;
 
     _sun = DirectionalLight(
       color: vm.Vector3(1.0, 0.97, 0.92),
@@ -221,12 +266,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     scene.root.addComponent(_AfterPhysics(_listenForImpacts));
     _startAudio();
 
-    _aimDissolve = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 420),
-    )..addStatusListener((status) {
-      if (status == AnimationStatus.completed) _spentAim.value = null;
-    });
+    _aimDissolve =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 420),
+        )..addStatusListener((status) {
+          if (status == AnimationStatus.completed) _spentAim.value = null;
+        });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(milliseconds: 400), () {
@@ -242,6 +288,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         clip.dispose();
       }
     }
+    for (final clip in _fxClips.values) {
+      clip.dispose();
+    }
+    _vfx.dispose();
+    _capture.removeListener(_bindCapture);
+    _capture.dispose();
+    _frame.dispose();
     _lastRoll.dispose();
     _history.dispose();
     _aim.dispose();
@@ -260,14 +313,131 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     for (final path in manifest.listAssets()) {
-      final match = RegExp(r'assets/sounds/dice_(\w+?)_').firstMatch(path);
-      if (match == null) continue;
+      final impact = RegExp(r'assets/sounds/dice_(\w+?)_').firstMatch(path);
+      final fx = RegExp(r'assets/sounds/celebrate_(\w+)\.').firstMatch(path);
+      if (impact == null && fx == null) continue;
       final clip = await audio.loadClip(path);
       if (!mounted) {
         clip.dispose();
         return;
       }
-      _impactClips.putIfAbsent(match.group(1)!, () => []).add(clip);
+      if (impact != null) {
+        _impactClips.putIfAbsent(impact.group(1)!, () => []).add(clip);
+      } else {
+        _fxClips[fx!.group(1)!] = clip;
+      }
+    }
+  }
+
+  /// Plays a celebration sound, positional when [position] is given.
+  void _playFx(
+    String name, {
+    double volume = 1.0,
+    double pitch = 1.0,
+    vm.Vector3? position,
+  }) {
+    final audio = _audio;
+    final clip = _fxClips[name];
+    if (audio == null || clip == null || _surface == _Surface.off) return;
+    audio.playOneShot(
+      clip,
+      position: position,
+      volume: volume,
+      pitch: pitch,
+      bus: _sfxBus,
+      attenuation: _flat,
+    );
+  }
+
+  // --- Backdrop ---------------------------------------------------------------
+
+  /// Copies the screen into the scene (or takes it back out). Glass dice are
+  /// rebuilt so they refract the copy instead of alpha-blending.
+  void _setEmbedBackdrop(bool value) {
+    if (value == _embedBackdrop) return;
+    _embedBackdrop = value;
+    _vfx.additive = value;
+    // The copy is unlit and its colors must survive the resolve, so the tone
+    // curve comes off while it is in the scene. The dice clip a little.
+    scene.toneMapping = value
+        ? ToneMappingMode.linear
+        : ToneMappingMode.pbrNeutral;
+    if (!value) {
+      final node = _backdropNode;
+      if (node != null) scene.remove(node);
+      _backdropNode = null;
+      _boundCapture = null;
+    }
+    // The plane waits for the first capture (see _bindCapture), so it never
+    // shows untextured.
+    for (final die in _dice) {
+      die.visual.mesh = Mesh(
+        _dieGeometry,
+        _materialFor(die.finish, _dice.indexOf(die)),
+      );
+    }
+    setState(() {});
+  }
+
+  void _bindCapture() {
+    final texture = _capture.texture;
+    if (texture == null || identical(texture, _boundCapture)) return;
+    final first = _boundCapture == null;
+    _boundCapture = texture;
+    _backdropMaterial.baseColorTexture = GpuTextureSource(
+      texture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.linear,
+        magFilter: gpu.MinMagFilter.linear,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    );
+    if (first) _rebuildBackdropPlane();
+  }
+
+  /// Lays the screen copy over the floor rectangle the view sees at y = 0,
+  /// just under the shadow catcher. The plane's texture axes are matched to
+  /// the screen's from the camera itself, so the copy lines up with the live
+  /// widgets whichever way the view's axes run.
+  void _rebuildBackdropPlane() {
+    if (!_embedBackdrop || _viewSize.isEmpty || _boundCapture == null) return;
+    final node = _backdropNode;
+    if (node != null) scene.remove(node);
+    final width = _viewSize.width / _pixelsPerUnit;
+    final depth = _viewSize.height / _pixelsPerUnit;
+    final center = _viewSize.center(Offset.zero);
+    // PlaneGeometry puts u = 0 at -x and v = 0 at -z. The capture has u = 0
+    // at screen left and v = 0 at screen top.
+    final minusX = _camera.worldToScreen(vm.Vector3(-1, 0, 0), _viewSize);
+    final minusZ = _camera.worldToScreen(vm.Vector3(0, 0, -1), _viewSize);
+    final mirrorU = minusX != null && minusX.dx > center.dx;
+    final mirrorV = minusZ != null && minusZ.dy > center.dy;
+    _backdropMaterial.baseColorTextureTransform = TextureTransform(
+      scale: vm.Vector2(mirrorU ? -1 : 1, mirrorV ? -1 : 1),
+      offset: vm.Vector2(mirrorU ? 1 : 0, mirrorV ? 1 : 0),
+    );
+    _backdropNode = Node(
+      mesh: Mesh(PlaneGeometry(width: width, depth: depth), _backdropMaterial),
+      localTransform: vm.Matrix4.translation(vm.Vector3(0, -0.01, 0)),
+    )..shadowCastingMode = ShadowCastingMode.off;
+    scene.add(_backdropNode!);
+  }
+
+  DiceFinish _finishFor(int index) => _finish == DiceFinish.mixed
+      ? DiceFinish.concrete[index % DiceFinish.concrete.length]
+      : _finish;
+
+  PhysicallyBasedMaterial _materialFor(DiceFinish finish, int index) =>
+      buildDieMaterial(finish, index, _textures, refractive: _embedBackdrop);
+
+  void _setFinish(DiceFinish finish) {
+    if (finish == _finish) return;
+    setState(() => _finish = finish);
+    // Re-skin the dice on the table so the pick shows without a throw.
+    for (var i = 0; i < _dice.length; i++) {
+      final die = _dice[i]..finish = _finishFor(i);
+      die.visual.mesh = Mesh(_dieGeometry, _materialFor(die.finish, i));
     }
   }
 
@@ -298,6 +468,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     );
     _ceilingY = math.min(distance * 0.55, 7.0);
     _shadowBaseDistance = distance + 8.0;
+    _rebuildBackdropPlane();
 
     for (final node in _bounds) {
       scene.remove(node);
@@ -385,7 +556,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     // A die throws a shadow of its height over the tangent of the elevation,
     // so the cascades have to reach much further when the sun sits low.
     final tangent = math.max(math.tan(_sunElevation), 0.06);
-    _sun.shadowMaxDistance = _shadowBaseDistance + math.min(48.0, 4.0 / tangent);
+    _sun.shadowMaxDistance =
+        _shadowBaseDistance + math.min(48.0, 4.0 / tangent);
 
     // Scale intensity with height squared so the dice stay evenly exposed as
     // the lamp rises and falls.
@@ -423,8 +595,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       final reach = (offset.length / halfExtent).clamp(0.0, 1.0);
       if (offset.length > 1e-3) _sunAzimuth = math.atan2(offset.z, offset.x);
       _sunElevation =
-          (_sunElevationHigh -
-              reach * (_sunElevationHigh - _sunElevationLow)) *
+          (_sunElevationHigh - reach * (_sunElevationHigh - _sunElevationLow)) *
           vm.degrees2Radians;
     } else {
       final height = _lampPosition.y;
@@ -464,10 +635,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   void _roll({_Aim? aim}) {
     if (_viewSize.isEmpty) return;
+    _endCelebration();
     for (final die in _dice) {
       scene.remove(die.node);
     }
     _dice.clear();
+    _lastRoll.value = null;
+    _playFx('throw', volume: 0.7, pitch: 0.95 + _random.nextDouble() * 0.1);
 
     if (aim != null) {
       _throwAlong(aim);
@@ -519,7 +693,12 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             4.0 + _random.nextDouble() * 4.0,
             _jitter(1.5),
           );
-      _spawnDie(position, velocity, i, spin: vm.Vector3(_jitter(25), _jitter(25), _jitter(25)));
+      _spawnDie(
+        position,
+        velocity,
+        i,
+        spin: vm.Vector3(_jitter(25), _jitter(25), _jitter(25)),
+      );
     }
     _rolling = true;
     _rollTime = 0.0;
@@ -558,8 +737,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     var lift = 2.0 + speed * 0.12;
     final wantedAirTime = reach / speed;
     // Vertical launch speed that keeps a die up for exactly that long.
-    final lofted = (0.5 * gravity * wantedAirTime * wantedAirTime -
-            spawnHeight) /
+    final lofted =
+        (0.5 * gravity * wantedAirTime * wantedAirTime - spawnHeight) /
         wantedAirTime;
     // Arcing into the ceiling looks worse than throwing a little harder.
     final headroom = math.max(_ceilingY - spawnHeight - 0.6, 0.5);
@@ -570,7 +749,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     speed = math.max(speed, reach / airTime);
 
     _openEntryWalls(direction);
-    final placed = _scatterCluster(origin, direction, side, spawnHeight, cluster);
+    final placed = _scatterCluster(
+      origin,
+      direction,
+      side,
+      spawnHeight,
+      cluster,
+    );
     final tumble = direction.cross(vm.Vector3(0, 1, 0));
     for (var i = 0; i < placed.length; i++) {
       // Each die leaves the hand slightly differently, so the handful opens
@@ -579,11 +764,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           direction * (speed * (1.0 + _jitter(0.10))) +
           side * _jitter(1.1) +
           vm.Vector3(0, lift * (1.0 + _jitter(0.18)), 0);
-      final axis = vm.Vector3(
-        _jitter(1.0),
-        _jitter(1.0),
-        _jitter(1.0),
-      );
+      final axis = vm.Vector3(_jitter(1.0), _jitter(1.0), _jitter(1.0));
       if (axis.length2 < 1e-6) axis.setValues(0, 1, 0);
       axis.normalize();
       _spawnDie(
@@ -619,10 +800,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         // Flatter than it is wide, the way a handful leaves the fingers.
         final candidate =
             origin + side * _jitter(reach) + direction * _jitter(reach * 0.8);
-        candidate.y = math.max(
-          height + _jitter(reach * 0.55),
-          _dieHalf + 0.15,
-        );
+        candidate.y = math.max(height + _jitter(reach * 0.55), _dieHalf + 0.15);
         if (placed.every((p) => p.distanceTo(candidate) >= minGap)) {
           spot = candidate;
         }
@@ -648,14 +826,35 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       _random.nextDouble() * math.pi * 2,
       _random.nextDouble() * math.pi * 2,
     );
-    final node = Node(
-      mesh: Mesh(_dieGeometry, _dieMaterials[index % _dieMaterials.length]),
-      localTransform: vm.Matrix4.compose(
-        position,
-        rotation,
-        vm.Vector3.all(1.0),
-      ),
+    final finish = _finishFor(index);
+    final color = dieColors[index % dieColors.length];
+    final visual = Node(mesh: Mesh(_dieGeometry, _materialFor(finish, index)));
+    // A streak in the die's color while it flies. It rides the body node,
+    // which carries no mesh of its own, so it never casts a shadow.
+    final trail = TrailComponent(
+      width: 0.18,
+      lifetime: 0.26,
+      minVertexDistance: 0.03,
+      widthOverTrail: ParticleCurve.linear(from: 1.0, to: 0.0),
+      colorOverTrail: ColorGradient([
+        ColorStop(
+          0.0,
+          vm.Vector4(color.x * 2.5, color.y * 2.5, color.z * 2.5, 0.55),
+        ),
+        ColorStop(1.0, vm.Vector4(color.x, color.y, color.z, 0.0)),
+      ]),
     );
+    final node =
+        Node(
+            localTransform: vm.Matrix4.compose(
+              position,
+              rotation,
+              vm.Vector3.all(1.0),
+            ),
+          )
+          ..shadowCastingMode = ShadowCastingMode.off
+          ..add(visual)
+          ..addComponent(trail);
     final body = RigidBody(
       linearVelocity: velocity,
       angularVelocity: spin,
@@ -670,7 +869,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       ),
     );
     scene.add(node);
-    _dice.add(_Die(node, body));
+    _dice.add(_Die(node, visual, body, trail, finish, color));
   }
 
   /// Distance from [point] to the edge of the view along [direction], measured
@@ -756,6 +955,12 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   }
 
   void _onTick(Duration elapsed, double deltaSeconds) {
+    _vfx.update(deltaSeconds);
+    _advanceCelebration(deltaSeconds);
+    for (final die in _dice) {
+      // Streak only while flying; a rolling die drags no light behind it.
+      die.trail.emitting = die.body.linearVelocity.length > 5.0;
+    }
     if (_openWalls.isNotEmpty) {
       _openWallTime += deltaSeconds;
       final allInside = _dice.every(
@@ -779,10 +984,135 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       _rolling = false;
       final faces = [for (final d in _dice) _topFace(d.node)];
       _lastRoll.value = faces;
-      final total = faces.fold(0, (a, b) => a + b);
-      _history.value = ['You rolled $total', ..._history.value.take(5)];
+      _startCelebration(faces);
     }
   }
+
+  // --- Scoring ----------------------------------------------------------------
+
+  /// Counts the settled dice left to right across the screen.
+  void _startCelebration(List<int> faces) {
+    final order = List<int>.generate(_dice.length, (i) => i);
+    order.sort((a, b) {
+      final pa = _screenPositionOf(_dice[a]);
+      final pb = _screenPositionOf(_dice[b]);
+      return pa.dx.compareTo(pb.dx);
+    });
+    _celebration = Celebration(
+      faces: faces,
+      order: order,
+      total: _total,
+      frame: _frame,
+    );
+  }
+
+  void _endCelebration() {
+    if (_celebration == null) return;
+    _celebration = null;
+    for (final die in _dice) {
+      die.visual.highlightColor = null;
+    }
+    _frame.value = CelebrationFrame(total: _total);
+  }
+
+  void _advanceCelebration(double dt) {
+    final celebration = _celebration;
+    if (celebration == null) return;
+    for (final event in celebration.advance(dt)) {
+      switch (event) {
+        case DieCounted(:final index, :final ordinal):
+          final die = _dice[index];
+          final position = _dieTop(die);
+          die.visual.highlightColor = _highlightFor(die);
+          _vfx.sparkle(position, die.color);
+          _playFx(
+            ordinal.isEven ? 'tick_a' : 'tick_b',
+            volume: 0.85,
+            pitch: 1.0 + 0.09 * ordinal,
+            position: position,
+          );
+        case MultiplierRevealed(:final matchedIndices):
+          for (final index in matchedIndices) {
+            final die = _dice[index];
+            die.visual.highlightColor = vm.Vector4(1.0, 0.95, 0.75, 1.0);
+            _vfx.emberRing(_dieTop(die)..y = 0.05, die.color);
+          }
+          _vfx.shockwave(
+            _screenUv(_viewSize.center(Offset.zero)),
+            strength: 0.02,
+          );
+          _playFx('multiplier', volume: 1.0);
+        case SlamLaunched():
+          _playFx('throw', volume: 0.45, pitch: 1.5);
+        case SlamLanded(:final scored, :final total):
+          _total = total;
+          debugPrint(
+            'dice: rolled ${_lastRoll.value?.join('+')} '
+            'x${celebration.multiplier} = $scored, total $total',
+          );
+          _history.value = [
+            'You rolled $scored'
+                '${celebration.multiplier > 1 ? ' (x${celebration.multiplier})' : ''}',
+            ..._history.value.take(5),
+          ];
+          final banner = _bannerWorldPosition();
+          final loud = celebration.multiplier > 1;
+          _vfx.confetti(banner, [
+            for (var i = 0; i < (loud ? 5 : 4); i++)
+              dieColors[(i + _vfxRandom.nextInt(2)) % dieColors.length],
+          ]);
+          _vfx.ringPulse(
+            banner..y = 0.0,
+            vm.Vector4(1.0, 0.8, 0.3, 1.0),
+            radius: 3.5,
+          );
+          _vfx.shockwave(
+            _screenUv(
+              _camera.worldToScreen(banner, _viewSize) ??
+                  _viewSize.center(Offset.zero),
+            ),
+            strength: loud ? 0.045 : 0.03,
+          );
+          _playFx('slam', volume: 1.0);
+          _playFx(
+            'fanfare',
+            volume: loud ? 1.0 : 0.6,
+            pitch: loud ? 1.0 : 1.06,
+          );
+        case CelebrationEnded():
+          _endCelebration();
+      }
+    }
+  }
+
+  vm.Vector4 _highlightFor(_Die die) {
+    final c = die.color;
+    // Glass and metal dice are lit from inside the outline's color, so keep
+    // it warm and bright rather than tinting them.
+    if (die.finish.isGlass || die.finish == DiceFinish.gold) {
+      return vm.Vector4(1.0, 0.85, 0.45, 1.0);
+    }
+    return vm.Vector4(0.4 + 0.6 * c.x, 0.4 + 0.6 * c.y, 0.4 + 0.6 * c.z, 1.0);
+  }
+
+  vm.Vector3 _dieTop(_Die die) =>
+      die.node.globalTransform.getTranslation() + vm.Vector3(0, _dieHalf, 0);
+
+  Offset _screenPositionOf(_Die die) =>
+      _camera.worldToScreen(
+        die.node.globalTransform.getTranslation(),
+        _viewSize,
+      ) ??
+      Offset.zero;
+
+  vm.Vector2 _screenUv(Offset position) => vm.Vector2(
+    (position.dx / _viewSize.width).clamp(0.0, 1.0),
+    (position.dy / _viewSize.height).clamp(0.0, 1.0),
+  );
+
+  /// The floor point under the score banner, where the confetti pops from.
+  vm.Vector3 _bannerWorldPosition() =>
+      _floorHit(_bannerCenter ?? _viewSize.center(Offset.zero))..y = 0.3;
 
   /// Plays a hit for any die whose velocity jumped more than gravity explains
   /// since the last physics step. Tumbling edge strikes register too, since
@@ -875,8 +1205,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         clips[_random.nextInt(clips.length)],
         position: position,
         volume: math.pow(10, (-32 + 32 * t) / 20).toDouble(),
-        // Softer hits ring a little lower.
-        pitch: 0.92 + 0.08 * t + _jitter(0.05),
+        // Softer hits ring a little lower; glass rings higher than wood.
+        pitch: (0.92 + 0.08 * t + _jitter(0.05)) * die.finish.impactPitch,
         bus: _sfxBus,
         attenuation: _flat,
       );
@@ -912,17 +1242,31 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         _lightHandleRect = handle == null
             ? Rect.zero
             : Rect.fromCenter(center: handle, width: 64, height: 64);
+        final screen = _GameScreen(
+          onRoll: _roll,
+          lastRoll: _lastRoll,
+          history: _history,
+          frame: _frame,
+          onBannerCenter: (center) => _bannerCenter = center,
+        );
         return Stack(
           key: _viewKey,
           children: [
-            Positioned.fill(
-              child: _GameScreen(
-                rollKey: _rollKey,
-                onRoll: _roll,
-                lastRoll: _lastRoll,
-                history: _history,
+            // The live screen takes the taps. With the backdrop embedded, the
+            // scene's copy of it covers this one exactly.
+            Positioned.fill(child: _GameScreen.withRollKey(screen, _rollKey)),
+            if (_embedBackdrop)
+              // Paints nothing here; it only feeds the capture the scene's
+              // backdrop plane samples.
+              Positioned.fill(
+                child: WidgetTexture(
+                  controller: _capture,
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                  child: screen,
+                ),
               ),
-            ),
             Positioned.fill(
               child: IgnorePointer(
                 child: SceneView(
@@ -984,6 +1328,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       icon: Icons.light_mode,
       title: 'Dice shadows',
       width: 340,
+      maxBodyHeight: 560,
       body: DefaultTextStyle(
         style: const TextStyle(color: Colors.white, fontSize: 12),
         child: Column(
@@ -995,6 +1340,24 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
               style: TextStyle(color: Colors.white70),
             ),
             const SizedBox(height: 8),
+            _FinishPicker(selected: _finish, onChanged: _setFinish),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Copy the screen into the scene, so glass refracts it',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+                Switch(
+                  value: _embedBackdrop,
+                  onChanged: _setEmbedBackdrop,
+                  activeThumbColor: Colors.white,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
             SegmentedButton<_LightKind>(
               showSelectedIcon: false,
               style: SegmentedButton.styleFrom(
@@ -1173,12 +1536,9 @@ class _LightHandleState extends State<LightHandle> {
   Widget build(BuildContext context) {
     // One value drives every part of the look, so they move together.
     final emphasis =
-        widget.emphasisOverride ??
-        (_dragging ? 1.0 : (_hovered ? 0.55 : 0.0));
+        widget.emphasisOverride ?? (_dragging ? 1.0 : (_hovered ? 0.55 : 0.0));
     return MouseRegion(
-      cursor: _dragging
-          ? SystemMouseCursors.grabbing
-          : SystemMouseCursors.grab,
+      cursor: _dragging ? SystemMouseCursors.grabbing : SystemMouseCursors.grab,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
@@ -1245,10 +1605,7 @@ class _LightHandlePainter extends CustomPainter {
       radius + 2,
       Paint()
         ..color = amber.withValues(alpha: 0.22 + 0.40 * emphasis)
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          6.0 + 16.0 * emphasis,
-        ),
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 6.0 + 16.0 * emphasis),
     );
     canvas.drawCircle(
       center,
@@ -1301,9 +1658,7 @@ class _LightHandlePainter extends CustomPainter {
     for (var i = 0; i < 8; i++) {
       final spoke = Path()..addRRect(ray);
       path.addPath(
-        spoke.transform(
-          (Matrix4.identity()..rotateZ(i * math.pi / 4)).storage,
-        ),
+        spoke.transform((Matrix4.identity()..rotateZ(i * math.pi / 4)).storage),
         Offset.zero,
       );
     }
@@ -1441,25 +1796,130 @@ class _AimArrowPainter extends CustomPainter {
   bool shouldRepaint(_AimArrowPainter oldDelegate) => false;
 }
 
-/// The ordinary app screen the dice roll over.
-class _GameScreen extends StatelessWidget {
-  const _GameScreen({
-    required this.rollKey,
-    required this.onRoll,
-    required this.lastRoll,
-    required this.history,
-  });
+/// One swatch per finish, plus the mix.
+class _FinishPicker extends StatelessWidget {
+  const _FinishPicker({required this.selected, required this.onChanged});
 
-  final GlobalKey rollKey;
-  final VoidCallback onRoll;
-  final ValueListenable<List<int>?> lastRoll;
-  final ValueListenable<List<String>> history;
+  final DiceFinish selected;
+  final ValueChanged<DiceFinish> onChanged;
 
   @override
   Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const SizedBox(width: 64, child: Text('Dice')),
+        Expanded(
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final finish in DiceFinish.values)
+                Tooltip(
+                  message: finish.label,
+                  waitDuration: const Duration(milliseconds: 300),
+                  child: GestureDetector(
+                    onTap: () => onChanged(finish),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: finish == DiceFinish.mixed
+                            ? const SweepGradient(
+                                colors: [
+                                  Color(0xFFE85D4A),
+                                  Color(0xFFE0B04A),
+                                  Color(0xFF3CF2B0),
+                                  Color(0xFF6FA8FF),
+                                  Color(0xFFC9B6F0),
+                                  Color(0xFFE85D4A),
+                                ],
+                              )
+                            : null,
+                        color: finish == DiceFinish.mixed
+                            ? null
+                            : finish.swatch,
+                        border: Border.all(
+                          color: finish == selected
+                              ? Colors.white
+                              : Colors.white24,
+                          width: finish == selected ? 2.5 : 1,
+                        ),
+                        boxShadow: finish == selected
+                            ? [
+                                BoxShadow(
+                                  color: finish.swatch.withValues(alpha: 0.7),
+                                  blurRadius: 8,
+                                ),
+                              ]
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The ordinary app screen the dice roll over. Built twice when the backdrop
+/// is embedded (once live for input, once captured for the scene), so it
+/// carries no state of its own beyond the banner measurement.
+class _GameScreen extends StatefulWidget {
+  const _GameScreen({
+    this.rollKey,
+    required this.onRoll,
+    required this.lastRoll,
+    required this.history,
+    required this.frame,
+    this.onBannerCenter,
+  });
+
+  /// The same screen with the roll button keyed, for the live copy. Only
+  /// the live copy reports where its banner is.
+  static _GameScreen withRollKey(_GameScreen screen, GlobalKey rollKey) =>
+      _GameScreen(
+        rollKey: rollKey,
+        onRoll: screen.onRoll,
+        lastRoll: screen.lastRoll,
+        history: screen.history,
+        frame: screen.frame,
+        onBannerCenter: screen.onBannerCenter,
+      );
+
+  final GlobalKey? rollKey;
+  final VoidCallback onRoll;
+  final ValueListenable<List<int>?> lastRoll;
+  final ValueListenable<List<String>> history;
+  final ValueListenable<CelebrationFrame> frame;
+
+  /// Reports the score banner's centre in this screen's coordinates after
+  /// layout, so the host can aim effects at it.
+  final ValueChanged<Offset>? onBannerCenter;
+
+  static const Color accent = Color(0xFFE76F51);
+
+  @override
+  State<_GameScreen> createState() => _GameScreenState();
+}
+
+class _GameScreenState extends State<_GameScreen> {
+  final GlobalKey _bannerKey = GlobalKey();
+  final GlobalKey _stackKey = GlobalKey();
+  // Where the total sits relative to the counter's resting spot (the middle
+  // of the screen), measured after layout so the slam lands on the number.
+  Offset _flight = const Offset(0, -260);
+
+  @override
+  Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     final insets = ExampleOverlay.safeInsetsOf(context);
     final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE76F51)),
+      colorScheme: ColorScheme.fromSeed(seedColor: _GameScreen.accent),
       useMaterial3: true,
     );
     return Theme(
@@ -1467,23 +1927,43 @@ class _GameScreen extends StatelessWidget {
       child: ColoredBox(
         color: const Color(0xFFF4EFE6),
         child: Stack(
+          key: _stackKey,
           children: [
             Padding(
               padding: EdgeInsets.fromLTRB(20, insets.top + 72, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Game night',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    'Round 3, your turn',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: Colors.black54,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Game night',
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'Round 3, your turn',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      KeyedSubtree(
+                        key: _bannerKey,
+                        child: ScoreBanner(
+                          frame: widget.frame,
+                          accent: _GameScreen.accent,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   const Row(
@@ -1512,7 +1992,7 @@ class _GameScreen extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: ValueListenableBuilder<List<int>?>(
-                        valueListenable: lastRoll,
+                        valueListenable: widget.lastRoll,
                         builder: (context, faces, _) {
                           final total = faces?.fold(0, (a, b) => a + b);
                           return Row(
@@ -1553,7 +2033,7 @@ class _GameScreen extends StatelessWidget {
                     color: const Color(0xFFE9C46A),
                     elevation: 0,
                     child: ValueListenableBuilder<List<String>>(
-                      valueListenable: history,
+                      valueListenable: widget.history,
                       builder: (context, entries, _) => Column(
                         children: [
                           for (final entry in entries)
@@ -1569,12 +2049,19 @@ class _GameScreen extends StatelessWidget {
                 ],
               ),
             ),
+            Center(
+              child: RollCounter(
+                frame: widget.frame,
+                flightOffset: _flight,
+                accent: _GameScreen.accent,
+              ),
+            ),
             Positioned(
               right: 20,
               bottom: insets.bottom + 20,
               child: FloatingActionButton.extended(
-                key: rollKey,
-                onPressed: onRoll,
+                key: widget.rollKey,
+                onPressed: widget.onRoll,
                 icon: const Icon(Icons.casino),
                 label: const Text('Roll'),
               ),
@@ -1583,6 +2070,20 @@ class _GameScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _measure() {
+    if (!mounted) return;
+    final banner = _bannerKey.currentContext?.findRenderObject() as RenderBox?;
+    final stack = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (banner == null || stack == null || !banner.hasSize) return;
+    final target = stack.globalToLocal(
+      banner.localToGlobal(banner.size.center(Offset.zero)),
+    );
+    if (widget.rollKey != null) widget.onBannerCenter?.call(target);
+    final flight = target - stack.size.center(Offset.zero);
+    if ((flight - _flight).distance < 0.5) return;
+    setState(() => _flight = flight);
   }
 }
 
@@ -1690,40 +2191,4 @@ MeshGeometry _buildDieGeometry({
     texCoords: texCoords,
     indices: indices,
   );
-}
-
-/// White faces with dark pips, one 128px cell per value (1 through 6).
-Texture2D _buildPipAtlas() {
-  const cell = 128;
-  const lo = 0.27, mid = 0.5, hi = 0.73;
-  const layouts = <List<(double, double)>>[
-    [(mid, mid)],
-    [(lo, lo), (hi, hi)],
-    [(lo, lo), (mid, mid), (hi, hi)],
-    [(lo, lo), (hi, lo), (lo, hi), (hi, hi)],
-    [(lo, lo), (hi, lo), (mid, mid), (lo, hi), (hi, hi)],
-    [(lo, lo), (hi, lo), (lo, mid), (hi, mid), (lo, hi), (hi, hi)],
-  ];
-  const pipRadius = cell * 0.095;
-  final pixels = Uint8List(cell * 6 * cell * 4);
-  for (var y = 0; y < cell; y++) {
-    for (var x = 0; x < cell * 6; x++) {
-      final value = x ~/ cell;
-      final cx = x - value * cell + 0.5;
-      final cy = y + 0.5;
-      var coverage = 0.0;
-      for (final (px, py) in layouts[value]) {
-        final dx = cx - px * cell, dy = cy - py * cell;
-        final d = math.sqrt(dx * dx + dy * dy);
-        coverage = math.max(coverage, (pipRadius - d + 0.5).clamp(0.0, 1.0));
-      }
-      final shade = (255 - coverage * 227).round();
-      final o = (y * cell * 6 + x) * 4;
-      pixels[o] = shade;
-      pixels[o + 1] = shade;
-      pixels[o + 2] = shade;
-      pixels[o + 3] = 255;
-    }
-  }
-  return Texture2D.fromPixels(pixels, cell * 6, cell);
 }
