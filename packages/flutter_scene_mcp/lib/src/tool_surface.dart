@@ -83,6 +83,11 @@ class ToolError implements Exception {
 typedef CommandRunner =
     Future<Transaction> Function(String command, Map<String, Object?> params);
 
+/// Runs many commands through the host as one undoable step, named [name]
+/// when the caller supplied one.
+typedef BatchRunner =
+    Future<Transaction> Function(List<CommandCall> calls, String? name);
+
 /// Captures the next frame's render graph as a JSON-shaped summary
 /// (passes, timings, data flow, resources). [thumbnails] false is a
 /// metadata-only capture.
@@ -275,6 +280,7 @@ class EditorToolSurface {
     this.screenshot,
     this.windowScreenshot,
     this.commandRunner,
+    this.batchRunner,
     this.undoRunner,
     this.redoRunner,
     this.readCamera,
@@ -350,6 +356,13 @@ class EditorToolSurface {
 
   /// Host-routed mutation, so applied commands reach the host's display.
   final CommandRunner? commandRunner;
+
+  /// Host-routed batch, for the same reason. Null runs on the session.
+  final BatchRunner? batchRunner;
+
+  /// Pushes events to the connected client, set by a transport that can send
+  /// server notifications. Null leaves every subscription poll-only.
+  void Function(String subscription, List<EditorEvent> events)? eventPush;
 
   /// Host-routed undo; returns whether a transaction was undone.
   final Future<bool> Function()? undoRunner;
@@ -1135,6 +1148,122 @@ class EditorToolSurface {
       },
     ),
     ToolDefinition(
+      name: 'run_commands',
+      description:
+          'Run many commands in order as ONE undoable step. Each call sees '
+          'what the calls before it did, so a batch can create a node and '
+          'then address it. Nothing is kept unless every call succeeds. Use '
+          'this instead of repeated run_command whenever you are making more '
+          'than a couple of edits.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'commands': {
+            'type': 'array',
+            'description': 'The calls, in order.',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'command': {'type': 'string'},
+                'params': {'type': 'object'},
+              },
+              'required': ['command'],
+            },
+          },
+          'name': {
+            'type': 'string',
+            'description': 'The label the undo history shows for the step.',
+          },
+        },
+        'required': ['commands'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'search_queries',
+      description:
+          'Search the read surface by name, category, or words in the '
+          'description. Returns each match with its argument schema, ready to '
+          'pass to run_query.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {
+            'type': 'string',
+            'description': 'Substring to match, or empty for every query.',
+          },
+        },
+      },
+    ),
+    ToolDefinition(
+      name: 'run_query',
+      description:
+          'Read the document through a named query. Queries answer in bulk '
+          '(a whole subtree, a whole resource, a whole payload), so prefer '
+          'one query over many small reads. Binary comes back base64-encoded '
+          'under "blobs".',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'query': {'type': 'string'},
+          'params': {'type': 'object'},
+        },
+        'required': ['query'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'subscribe_events',
+      description:
+          'Subscribe to editor events. Returns a subscription id to pass to '
+          'poll_events. Events are coalesced, so a batch of a thousand edits '
+          'is one notification.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'types': {
+            'type': 'array',
+            'description': 'Event names; omit for every event.',
+            'items': {'type': 'string'},
+          },
+        },
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'poll_events',
+      description:
+          'Drain the events buffered for a subscription, oldest first. '
+          'Reports how many were dropped when a client fell far behind.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'subscription': {'type': 'string'},
+        },
+        'required': ['subscription'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'unsubscribe_events',
+      description: 'Cancel a subscription and release what it buffered.',
+      inputSchema: {
+        'type': 'object',
+        'properties': {
+          'subscription': {'type': 'string'},
+        },
+        'required': ['subscription'],
+        'additionalProperties': false,
+      },
+    ),
+    ToolDefinition(
+      name: 'get_protocol_info',
+      description:
+          'The protocol version this editor speaks, what it can do, and the '
+          'event names it emits. Ask before assuming a capability is here.',
+      inputSchema: {'type': 'object', 'properties': {}},
+    ),
+    ToolDefinition(
       name: 'list_resources',
       description:
           'List every resource in the document (geometries, materials, '
@@ -1399,6 +1528,30 @@ class EditorToolSurface {
         return {'commands': _searchCommands(args['query'] as String? ?? '')};
       case 'run_command':
         return _runCommand(args);
+      case 'run_commands':
+        return _runCommands(args);
+      case 'search_queries':
+        return {'queries': _searchQueries(args['query'] as String? ?? '')};
+      case 'run_query':
+        return _runQuery(args);
+      case 'subscribe_events':
+        return _subscribeEvents(args);
+      case 'poll_events':
+        return _pollEvents(args);
+      case 'unsubscribe_events':
+        return _unsubscribeEvents(args);
+      case 'get_protocol_info':
+        // Answered without a document, since a client asks what this build
+        // speaks before it decides what to open.
+        final open = _sessionProvider();
+        return {
+          'version': EditorProtocol.version,
+          'capabilities': EditorProtocol.capabilities,
+          'events': EditorEventType.all,
+          'documentOpen': open != null,
+          if (open != null) 'commandCount': open.registry.all.length,
+          if (open != null) 'queryCount': open.queries.all.length,
+        };
       case 'undo':
         final undone = await (undoRunner?.call() ?? Future.value(_undoHere()));
         return {'undone': undone, 'canUndo': session.history.canUndo};
@@ -1702,6 +1855,162 @@ class EditorToolSurface {
     ];
   }
 
+  List<Map<String, Object?>> _searchQueries(String query) {
+    final q = query.toLowerCase();
+    bool matches(QueryEntry e) =>
+        q.isEmpty ||
+        e.name.toLowerCase().contains(q) ||
+        e.category.toLowerCase().contains(q) ||
+        e.doc.toLowerCase().contains(q);
+    return [
+      for (final entry in session.queries.all)
+        if (matches(entry))
+          {
+            'name': entry.name,
+            'category': entry.category,
+            'description': entry.doc,
+            'inputSchema': querySchema(entry)['inputSchema'],
+          },
+    ];
+  }
+
+  Map<String, Object?> _runQuery(Map<String, Object?> args) {
+    final name = args['query'];
+    if (name is! String || name.isEmpty) {
+      throw const ToolError('run_query needs a string "query"');
+    }
+    final params =
+        (args['params'] as Map?)?.cast<String, Object?>() ?? const {};
+    final QueryResult result;
+    try {
+      result = session.ask(name, params);
+    } on QueryException catch (e) {
+      throw ToolError(e.message);
+    } on ArgumentError catch (e) {
+      throw ToolError('${e.message}');
+    }
+    // JSON-RPC cannot frame binary, so blobs ride in the body as base64, the
+    // fallback the protocol declares. A transport that can frame them sends
+    // the same blobs beside the body instead, with the body unchanged.
+    return {
+      ...result.body,
+      if (result.blobs.isNotEmpty)
+        'blobs': {
+          for (final blob in result.blobs)
+            blob.id: {
+              'mimeType': blob.mimeType,
+              'byteCount': blob.bytes.lengthInBytes,
+              'base64': base64Encode(blob.bytes),
+            },
+        },
+    };
+  }
+
+  Future<Map<String, Object?>> _runCommands(Map<String, Object?> args) async {
+    final entries = args['commands'];
+    if (entries is! List) {
+      throw const ToolError('run_commands needs a "commands" array');
+    }
+    if (entries.isEmpty) {
+      throw const ToolError('run_commands needs at least one command');
+    }
+    final calls = <CommandCall>[];
+    for (final entry in entries) {
+      if (entry is! Map) {
+        throw const ToolError('Every entry in "commands" must be an object');
+      }
+      try {
+        calls.add(CommandCall.fromJson(entry.cast<String, Object?>()));
+      } on CommandException catch (e) {
+        throw ToolError(e.message);
+      }
+    }
+    final name = args['name'];
+    final runner = batchRunner;
+    final transaction = runner != null
+        ? await runner(calls, name is String && name.isNotEmpty ? name : null)
+        : _runBatchHere(calls, name is String && name.isNotEmpty ? name : null);
+    return {
+      'ok': true,
+      'applied': transaction.name,
+      'commandCount': calls.length,
+      'recordCount': transaction.records.length,
+      'noOp': transaction.isEmpty,
+      'canUndo': session.history.canUndo,
+      'created': _createdIn(transaction),
+    };
+  }
+
+  Transaction _runBatchHere(List<CommandCall> calls, String? name) {
+    try {
+      return session.runAll(calls, name: name ?? 'Batch edit');
+    } on BatchException catch (e) {
+      throw ToolError(e.message);
+    }
+  }
+
+  Map<String, Object?> _subscribeEvents(Map<String, Object?> args) {
+    final types = args['types'];
+    final wanted = <String>[];
+    if (types == null) {
+      wanted.addAll(EditorEventType.all);
+    } else if (types is List) {
+      for (final type in types) {
+        if (type is! String) {
+          throw const ToolError('"types" must be an array of event names');
+        }
+        wanted.add(type);
+      }
+    } else {
+      throw const ToolError('"types" must be an array of event names');
+    }
+    try {
+      // The closure names the subscription it belongs to, which only exists
+      // once subscribe returns; nothing can fire before then.
+      late final EventSubscription subscription;
+      subscription = session.events.subscribe(
+        wanted,
+        onEvents: (events) => eventPush?.call(subscription.id, events),
+      );
+      return {
+        'subscription': subscription.id,
+        'types': subscription.types.toList(),
+        'pushed': eventPush != null,
+      };
+    } on ArgumentError catch (e) {
+      throw ToolError('${e.message}');
+    }
+  }
+
+  EventSubscription _requireSubscription(Map<String, Object?> args) {
+    final id = args['subscription'];
+    if (id is! String || id.isEmpty) {
+      throw const ToolError('Expected a "subscription" id');
+    }
+    final subscription = session.events.lookup(id);
+    if (subscription == null) {
+      throw ToolError('No subscription "$id"; it may have been cancelled');
+    }
+    return subscription;
+  }
+
+  Map<String, Object?> _pollEvents(Map<String, Object?> args) {
+    final subscription = _requireSubscription(args);
+    // Deliver whatever this turn produced before draining, so a client that
+    // edits and immediately polls does not have to poll twice.
+    session.events.flush();
+    final drained = subscription.drain();
+    return {
+      'events': [for (final event in drained.events) event.toJson()],
+      'dropped': drained.dropped,
+    };
+  }
+
+  Map<String, Object?> _unsubscribeEvents(Map<String, Object?> args) {
+    _requireSubscription(args).cancel();
+    return {'ok': true};
+  }
+
   bool _undoHere() => session.undo();
 
   bool _redoHere() => session.redo();
@@ -1824,6 +2133,12 @@ class EditorToolSurface {
           AnimationChange(value: final n),
         ) =>
           ('animation', o == null, n != null),
+        (
+          ChangeSlot.poolPayload,
+          PayloadChange(value: final o),
+          PayloadChange(value: final n),
+        ) =>
+          ('payload', o == null, n != null),
         _ => ('', false, false),
       };
       if (wasAbsent && isPresent) {

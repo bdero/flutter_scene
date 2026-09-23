@@ -589,6 +589,24 @@ class EditorController extends ChangeNotifier {
     }
   }
 
+  /// Runs [calls] as one undoable step and reflects the result onto the live
+  /// scene. The out-of-process path for a script that edits in bulk; a
+  /// thousand calls are one round trip, one history entry, and one realize.
+  Future<Transaction> runAll(
+    Iterable<CommandCall> calls, {
+    String name = 'Batch edit',
+  }) async {
+    try {
+      final transaction = session.runAll(calls, name: name);
+      await _reflect(transaction);
+      notifyListeners();
+      return transaction;
+    } catch (error) {
+      lastError.value = '$name, $error';
+      rethrow;
+    }
+  }
+
   /// Runs the command named [name] whatever its kind, so a caller that takes
   /// commands from the registry (the palette, a menu, an extension) does not
   /// have to know which ones are asynchronous. Application commands await

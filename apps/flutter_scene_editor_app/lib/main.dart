@@ -184,6 +184,10 @@ class _EditorHomeState extends State<_EditorHome> {
   void _configureController(EditorController controller) {
     controller.session.viewHost = _EditorViewHost(this);
     controller.session.host = _EditorHostImpl(this);
+    // One delivery per frame, so a drag is one selection event rather than
+    // one per pointer move.
+    controller.session.events.flushScheduler = (flush) =>
+        WidgetsBinding.instance.addPostFrameCallback((_) => flush());
     controller.fmatLibrary.toolchainResolver = _resolveToolchain;
     // Saves carry the viewport camera and selection in the document; a
     // restored pose applies now (buffered until a viewport attaches).
@@ -1206,6 +1210,8 @@ class _EditorHomeState extends State<_EditorHome> {
           },
           commandRunner: (command, params) =>
               _requireController.run(command, params),
+          batchRunner: (calls, name) =>
+              _requireController.runAll(calls, name: name ?? 'Batch edit'),
           undoRunner: () async {
             final controller = _requireController;
             final can = controller.history.canUndo;
