@@ -271,11 +271,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   ScreenTheme _theme = ScreenTheme.pop;
 
-  // The camera the view renders through. The base camera stays fixed for
-  // every screen mapping; the slam borrows a moving one for its beat.
-  double _cinematic = 0.0;
-  double _cinematicStart = -1.0;
-  bool? _embedBeforeCinematic;
+  // Screen shake, applied to the whole view (widgets and scene together) so
+  // nothing drifts out of alignment. Amplitude decays; the offset is noise.
+  double _shake = 0.0;
+  final ValueNotifier<(Offset, double)> _shakeOffset = ValueNotifier((
+    Offset.zero,
+    0.0,
+  ));
 
   // Timed one-shots queued by the celebration (fireworks, hops, breaks).
   final List<({double at, void Function() run})> _cues = [];
@@ -389,6 +391,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _contacts.dispose();
     _flight.dispose();
     _breaks.dispose();
+    _shakeOffset.dispose();
     _capture.removeListener(_bindCapture);
     _capture.dispose();
     _frame.dispose();
@@ -457,7 +460,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   /// Copies the screen into the scene (or takes it back out). Glass dice are
   /// rebuilt so they refract the copy instead of alpha-blending.
-  void _setEmbedBackdrop(bool value, {bool rebuildDice = true}) {
+  void _setEmbedBackdrop(bool value) {
     if (value == _embedBackdrop) return;
     _embedBackdrop = value;
     _vfx.additive = value;
@@ -474,7 +477,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     }
     // The plane waits for the first capture (see _bindCapture), so it never
     // shows untextured.
-    if (rebuildDice) _respawnInPlace();
+    _respawnInPlace();
     setState(() {});
   }
 
@@ -1264,7 +1267,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     _realTime += realDelta;
     _runCues();
     _advanceGolden();
-    _advanceCinematic();
+    _advanceShake(realDelta);
     _advanceBreaks();
     _applyLights();
     _stickerFlash *= math.exp(-realDelta * 4.0);
@@ -1338,75 +1341,33 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   void _cue(double delay, void Function() run) =>
       _cues.add((at: _realTime + delay, run: run));
 
-  // --- The slam's camera --------------------------------------------------
+  // --- Screen shake -------------------------------------------------------
 
-  /// The camera the view draws with: the base camera, or during the slam a
-  /// lower one that swings toward the sticker and reveals the table's
-  /// depth, then eases back.
-  Camera get _viewCamera {
-    final amount = _cinematic;
-    final banner = _bannerCenter;
-    if (amount <= 0.0 || banner == null) return _camera;
-    final sticker = _floorHit(banner);
-    final base = _camera.position;
-    final distance = base.y;
-    // Pull toward the sticker and down, standing off toward the middle of
-    // the table so the view tilts rather than dropping straight in.
-    final toward = (vm.Vector3.zero() - sticker)..y = 0;
-    if (toward.length2 > 1e-4) toward.normalize();
-    final position =
-        sticker +
-        (base - sticker) * 0.5 +
-        toward * (distance * 0.28) +
-        vm.Vector3(0, distance * 0.05, 0);
-    final t = _smooth(amount);
-    return PerspectiveCamera(
-      position: base + (position - base) * t,
-      target: vm.Vector3.zero() + (sticker - vm.Vector3.zero()) * t,
-      up: vm.Vector3(0, 0, -1),
-      fovRadiansY: _fovY * (1.0 - 0.12 * t),
-      fovNear: 0.5,
-      fovFar: distance * 2,
-    );
-  }
+  /// Kicks the shake up to at least [amount] (0..1).
+  void _kickShake(double amount) => _shake = math.max(_shake, amount);
 
   static double _smooth(double x) {
     final t = x.clamp(0.0, 1.0);
     return t * t * (3 - 2 * t);
   }
 
-  void _startCinematic() {
-    _cinematicStart = _realTime;
-    // The move only makes sense over the copied screen, since the live
-    // widgets cannot tilt with the camera. Borrow the copy for the beat.
-    _embedBeforeCinematic = _embedBackdrop;
-    if (!_embedBackdrop) _setEmbedBackdrop(true, rebuildDice: false);
-  }
-
-  void _endCinematic() {
-    _cinematicStart = -1.0;
-    _cinematic = 0.0;
-    final restore = _embedBeforeCinematic;
-    _embedBeforeCinematic = null;
-    if (restore != null && restore != _embedBackdrop) {
-      _setEmbedBackdrop(restore, rebuildDice: false);
+  void _advanceShake(double dt) {
+    if (_shake <= 0.002) {
+      if (_shakeOffset.value.$1 != Offset.zero) {
+        _shakeOffset.value = (Offset.zero, 0.0);
+      }
+      _shake = 0.0;
+      return;
     }
-  }
-
-  void _advanceCinematic() {
-    if (_cinematicStart < 0) return;
-    final t = _realTime - _cinematicStart;
-    // In over the flight, hold while the confetti falls, then back.
-    const inTime = 0.4, hold = 1.5, outTime = 0.6;
-    if (t < inTime) {
-      _cinematic = t / inTime;
-    } else if (t < inTime + hold) {
-      _cinematic = 1.0;
-    } else if (t < inTime + hold + outTime) {
-      _cinematic = 1.0 - (t - inTime - hold) / outTime;
-    } else {
-      _endCinematic();
-    }
+    _shake *= math.exp(-dt * 5.5);
+    final t = _realTime;
+    // Two incommensurate frequencies per axis read as a rattle, not a wobble.
+    final offset = Offset(
+      math.sin(t * 61.0) * 0.6 + math.sin(t * 37.3) * 0.4,
+      math.cos(t * 53.0) * 0.6 + math.sin(t * 43.7) * 0.4,
+    );
+    final reach = 16.0 * _shake * _shake + 4.0 * _shake;
+    _shakeOffset.value = (offset * reach, math.sin(t * 47.0) * 0.014 * _shake);
   }
 
   // --- Golden hour --------------------------------------------------------
@@ -1504,6 +1465,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           height: math.max(3.5, _camera.position.y * 0.55),
           onBurst: (apex) {
             _stickerFlash = math.max(_stickerFlash, 0.8);
+            _kickShake(0.3);
             _playFx('firework_burst', volume: 0.8, position: apex);
             _vfx.shockwave(
               _screenUv(_camera.worldToScreen(apex, _viewSize) ?? Offset.zero),
@@ -1553,6 +1515,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       index,
       CardBreak(phase: BreakPhase.cracked, hit: hit, progress: 0, seed: seed),
     );
+    _kickShake(0.25);
     _playFx('card_crack', volume: 0.9);
     _vfx.shockwave(_screenUv(_cardRects[index].center), strength: 0.015);
     // Grab the pixels while the card is still whole.
@@ -1633,6 +1596,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       ),
     );
     _setCardCollider(index, false);
+    _kickShake(0.55);
     _playFx('card_shatter', volume: 1.0);
     _vfx.shockwave(_screenUv(_cardRects[index].center), strength: 0.03);
     final image = run.image;
@@ -1808,6 +1772,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     if (Celebration.multiplierOf(faces) < 2) return;
     _slowFired = true;
     _slowUntil = _realTime + 0.9;
+    _kickShake(0.3);
     _playFx('slowmo', volume: 0.8);
     final matched = Celebration.matchedIndices(faces);
     final center = matched.fold(
@@ -2046,10 +2011,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             _screenUv(_viewSize.center(Offset.zero)),
             strength: 0.02,
           );
+          _kickShake(0.35);
           _playFx('multiplier', volume: 1.0);
         case SlamLaunched():
           _playFx('throw', volume: 0.45, pitch: 1.5);
-          _startCinematic();
         case SlamLanded(:final scored, :final total):
           _total = total;
           debugPrint(
@@ -2084,6 +2049,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             ),
             strength: loud ? 0.045 : 0.03,
           );
+          _kickShake(loud ? 1.0 : 0.7);
           _playFx('slam', volume: 1.0);
           _playFx(
             'fanfare',
@@ -2297,91 +2263,98 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           breaks: _breaks,
           onLayout: _onScreenLayout,
         );
-        return Stack(
-          key: _viewKey,
-          children: [
-            // The live screen takes the taps. With the backdrop embedded, the
-            // scene's copy of it covers this one exactly.
-            Positioned.fill(
-              child: DiceGameScreen.withRollKey(screen, _rollKey),
-            ),
-            if (_embedBackdrop)
-              // Paints nothing here; it only feeds the capture the scene's
-              // backdrop plane samples.
+        return ValueListenableBuilder<(Offset, double)>(
+          valueListenable: _shakeOffset,
+          builder: (context, shake, child) => Transform.translate(
+            offset: shake.$1,
+            child: Transform.rotate(angle: shake.$2, child: child),
+          ),
+          child: Stack(
+            key: _viewKey,
+            children: [
+              // The live screen takes the taps. With the backdrop embedded, the
+              // scene's copy of it covers this one exactly.
               Positioned.fill(
-                child: WidgetTexture(
-                  controller: _capture,
-                  width: constraints.maxWidth,
-                  height: constraints.maxHeight,
-                  pixelRatio: MediaQuery.devicePixelRatioOf(context),
-                  child: screen,
+                child: DiceGameScreen.withRollKey(screen, _rollKey),
+              ),
+              if (_embedBackdrop)
+                // Paints nothing here; it only feeds the capture the scene's
+                // backdrop plane samples.
+                Positioned.fill(
+                  child: WidgetTexture(
+                    controller: _capture,
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
+                    pixelRatio: MediaQuery.devicePixelRatioOf(context),
+                    child: screen,
+                  ),
+                ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: SceneView(
+                    scene,
+                    cameraBuilder: (_) => _camera,
+                    onTick: _onTick,
+                    warmUp: true,
+                  ),
                 ),
               ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: SceneView(
-                  scene,
-                  cameraBuilder: (_) => _viewCamera,
-                  onTick: _onTick,
-                  warmUp: true,
+              // Pan only, so taps still reach the widgets underneath.
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onPanStart: (d) => _aimStart(d.localPosition),
+                  onPanUpdate: (d) => _aimUpdate(d.localPosition),
+                  onPanEnd: (_) => _aimRelease(),
+                  onPanCancel: () => _aim.value = null,
                 ),
               ),
-            ),
-            // Pan only, so taps still reach the widgets underneath.
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onPanStart: (d) => _aimStart(d.localPosition),
-                onPanUpdate: (d) => _aimUpdate(d.localPosition),
-                onPanEnd: (_) => _aimRelease(),
-                onPanCancel: () => _aim.value = null,
-              ),
-            ),
-            // The running number sits over the dice, never under them.
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ScreenThemeScope(
-                  theme: _theme,
-                  child: Center(
-                    child: ValueListenableBuilder<Offset>(
-                      valueListenable: _flight,
-                      builder: (context, flight, _) =>
-                          RollCounter(frame: _frame, flightOffset: flight),
+              // The running number sits over the dice, never under them.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ScreenThemeScope(
+                    theme: _theme,
+                    child: Center(
+                      child: ValueListenableBuilder<Offset>(
+                        valueListenable: _flight,
+                        builder: (context, flight, _) =>
+                            RollCounter(frame: _frame, flightOffset: flight),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _AimArrowPainter(
-                    aim: _aim,
-                    spent: _spentAim,
-                    dissolve: _aimDissolve,
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: _AimArrowPainter(
+                      aim: _aim,
+                      spent: _spentAim,
+                      dissolve: _aimDissolve,
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (handle != null)
-              Positioned(
-                left: handle.dx - 32,
-                top: handle.dy - 32,
-                child: LightHandle(
-                  glyph: _kind == _LightKind.directional
-                      ? LightGlyph.sun
-                      : LightGlyph.bulb,
-                  onDrag: (global) {
-                    final view =
-                        _viewKey.currentContext?.findRenderObject()
-                            as RenderBox?;
-                    if (view == null) return;
-                    _dragLight(view.globalToLocal(global));
-                  },
+              if (handle != null)
+                Positioned(
+                  left: handle.dx - 32,
+                  top: handle.dy - 32,
+                  child: LightHandle(
+                    glyph: _kind == _LightKind.directional
+                        ? LightGlyph.sun
+                        : LightGlyph.bulb,
+                    onDrag: (global) {
+                      final view =
+                          _viewKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                      if (view == null) return;
+                      _dragLight(view.globalToLocal(global));
+                    },
+                  ),
                 ),
-              ),
-            ExampleOverlay.bottomLeftPanel(child: _buildPanel()),
-          ],
+              ExampleOverlay.bottomLeftPanel(child: _buildPanel()),
+            ],
+          ),
         );
       },
     );
