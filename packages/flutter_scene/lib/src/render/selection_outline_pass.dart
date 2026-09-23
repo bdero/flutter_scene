@@ -96,7 +96,9 @@ class SelectionMaskPass extends RenderGraphPass {
       transientsBuffer: context.transientsBuffer,
       layerMask: _layerMask,
       filter: NodeFilter.where((node) => (node as Node).highlightColor != null),
-      colorOf: (item) => item.highlightColor!,
+      // The node can carry a color its item has not synced yet (set after
+      // the tick, before the draw), so fall back rather than throw.
+      colorOf: (item) => item.highlightColor ?? Vector4(1, 1, 1, 1),
     );
 
     context.blackboard.set(kSelectionMaskBlackboardKey, mask);
