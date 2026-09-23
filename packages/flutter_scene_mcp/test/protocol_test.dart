@@ -7,6 +7,7 @@ import 'package:scene/scene.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart';
 import 'package:test/test.dart';
+import 'package:vector_math/vector_math.dart';
 
 EditorSession _session() =>
     EditorSession(SceneDocument(allocator: IdAllocator(session: 1)));
@@ -226,6 +227,59 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('the compact scene view is a projection of the query', () async {
+    final session = _session();
+    final surface = EditorToolSurface.of(session);
+    await surface.dispatch('run_commands', {
+      'commands': [
+        {
+          'command': 'createNode',
+          'params': {'name': 'Root'},
+        },
+      ],
+    });
+    final root = session.document.roots.single.toToken();
+    await surface.dispatch('run_command', {
+      'command': 'createNode',
+      'params': {'name': 'Child', 'parentId': root},
+    });
+
+    final described = await surface.dispatch('describe_scene', const {});
+    final queried = session.ask('nodeSubtree').body;
+
+    final describedRoot = (described['roots'] as List).single as Map;
+    final queriedRoot = (queried['nodes'] as List).single as Map;
+    expect(describedRoot['id'], queriedRoot['id']);
+    expect(describedRoot['path'], queriedRoot['path']);
+    expect(
+      (describedRoot['children'] as List).single,
+      isA<Map<String, Object?>>().having(
+        (child) => child['name'],
+        'name',
+        'Child',
+      ),
+    );
+    expect(
+      describedRoot['components'],
+      isA<List<Object?>>(),
+      reason: 'the compact view keeps component types, not whole components',
+    );
+  });
+
+  test('list_resources answers with the query it wraps', () async {
+    final session = _session();
+    final geometry = GeometryResource(
+      session.document.newId(),
+      procedural: CuboidGeometrySpec(extents: Vector3.all(1)),
+    );
+    session.document.resources[geometry.id] = geometry;
+
+    final listed = await EditorToolSurface.of(
+      session,
+    ).dispatch('list_resources', const {});
+    expect(listed, session.ask('listResources').body);
   });
 
   test('a host-routed batch goes through the host, not the session', () async {

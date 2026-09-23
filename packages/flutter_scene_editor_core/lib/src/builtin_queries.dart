@@ -196,7 +196,7 @@ final listResources = QueryEntry(
     final kind = _optionalString(params, 'kind');
     final out = <Map<String, Object?>>[];
     for (final resource in ctx.document.resources.values) {
-      final resourceKind = _resourceKind(resource);
+      final resourceKind = resourceKindOf(resource);
       if (kind != null && resourceKind != kind) continue;
       out.add({'id': resource.id.toToken(), 'kind': resourceKind});
     }
@@ -367,7 +367,7 @@ Map<String, Object?> _nodeJson(
           'type': component.type,
           'properties': {
             for (final entry in component.properties.entries)
-              entry.key: _propertyJson(entry.value),
+              entry.key: propertyValueToJson(entry.value),
           },
         }
       else
@@ -402,7 +402,9 @@ Map<String, Object?> _transformJson(TransformSpec transform) =>
 
 Map<String, Object?> _vec3Json(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
 
-Object? _propertyJson(PropertyValue value) => switch (value) {
+/// The JSON form of a property value, the one encoder every read shares so a
+/// tool and a query cannot describe the same value differently.
+Object? propertyValueToJson(PropertyValue value) => switch (value) {
   // A kind this build does not know, shown as it was stored.
   UnknownValue v => v.json,
   BoolValue v => v.value,
@@ -424,13 +426,15 @@ Object? _propertyJson(PropertyValue value) => switch (value) {
   ColorValue v => {'r': v.r, 'g': v.g, 'b': v.b, 'a': v.a},
   ResourceRefValue v => {r'$resource': v.id.toToken()},
   NodeRefValue v => {r'$node': v.id.toToken()},
-  ListValue v => [for (final e in v.values) _propertyJson(e)],
+  ListValue v => [for (final e in v.values) propertyValueToJson(e)],
   MapValue v => {
-    for (final entry in v.values.entries) entry.key: _propertyJson(entry.value),
+    for (final entry in v.values.entries)
+      entry.key: propertyValueToJson(entry.value),
   },
 };
 
-String _resourceKind(ResourceSpec resource) => switch (resource) {
+/// The wire name for a resource's kind, shared for the same reason.
+String resourceKindOf(ResourceSpec resource) => switch (resource) {
   GeometryResource() => 'geometry',
   TextureResource() => 'texture',
   MaterialResource() => 'material',
@@ -440,7 +444,7 @@ String _resourceKind(ResourceSpec resource) => switch (resource) {
 
 Map<String, Object?> _resourceJson(ResourceSpec resource) => {
   'id': resource.id.toToken(),
-  'kind': _resourceKind(resource),
+  'kind': resourceKindOf(resource),
   ...switch (resource) {
     GeometryResource g => {
       if (g.vertices != null) 'vertices': g.vertices!.toToken(),
@@ -462,7 +466,7 @@ Map<String, Object?> _resourceJson(ResourceSpec resource) => {
       if (m.asset != null) 'asset': m.asset,
       'properties': {
         for (final entry in m.properties.entries)
-          entry.key: _propertyJson(entry.value),
+          entry.key: propertyValueToJson(entry.value),
       },
     },
     RenderTextureResource rt => {'width': rt.width, 'height': rt.height},
