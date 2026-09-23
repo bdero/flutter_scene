@@ -16,6 +16,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'dice/dice_celebration.dart';
 import 'dice/dice_finishes.dart';
 import 'dice/dice_vfx.dart';
+import 'dice/pop_theme.dart';
 import 'example_overlay.dart';
 import 'example_panel.dart';
 
@@ -55,6 +56,9 @@ class _Aim {
 
 /// Drag length that reaches the hardest throw.
 const double _kFullPullPixels = 420.0;
+
+/// One scored roll in the history list.
+typedef RollRecord = ({List<int> faces, int multiplier, int scored});
 
 class _Die {
   _Die(this.node, this.visual, this.body, this.trail, this.finish, this.color);
@@ -183,10 +187,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   double _rollTime = 0.0;
   double _stillTime = 0.0;
   final ValueNotifier<List<int>?> _lastRoll = ValueNotifier(null);
-  final ValueNotifier<List<String>> _history = ValueNotifier([
-    'Theo rolled 11',
-    'Ava rolled 7',
-    'Theo rolled 15',
+  final ValueNotifier<List<RollRecord>> _history = ValueNotifier([
+    (faces: [3, 5, 3], multiplier: 2, scored: 22),
+    (faces: [6, 2, 1], multiplier: 1, scored: 9),
+    (faces: [4, 4, 4], multiplier: 3, scored: 36),
   ]);
 
   // Sun elevation at the middle of the view and out at the edge. Low enough
@@ -1051,9 +1055,12 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             'x${celebration.multiplier} = $scored, total $total',
           );
           _history.value = [
-            'You rolled $scored'
-                '${celebration.multiplier > 1 ? ' (x${celebration.multiplier})' : ''}',
-            ..._history.value.take(5),
+            (
+              faces: _lastRoll.value ?? const [],
+              multiplier: celebration.multiplier,
+              scored: scored,
+            ),
+            ..._history.value.take(4),
           ];
           final banner = _bannerWorldPosition();
           final loud = celebration.multiplier > 1;
@@ -1242,7 +1249,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         _lightHandleRect = handle == null
             ? Rect.zero
             : Rect.fromCenter(center: handle, width: 64, height: 64);
-        final screen = _GameScreen(
+        final screen = DiceGameScreen(
           onRoll: _roll,
           lastRoll: _lastRoll,
           history: _history,
@@ -1254,7 +1261,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           children: [
             // The live screen takes the taps. With the backdrop embedded, the
             // scene's copy of it covers this one exactly.
-            Positioned.fill(child: _GameScreen.withRollKey(screen, _rollKey)),
+            Positioned.fill(
+              child: DiceGameScreen.withRollKey(screen, _rollKey),
+            ),
             if (_embedBackdrop)
               // Paints nothing here; it only feeds the capture the scene's
               // backdrop plane samples.
@@ -1868,9 +1877,11 @@ class _FinishPicker extends StatelessWidget {
 
 /// The ordinary app screen the dice roll over. Built twice when the backdrop
 /// is embedded (once live for input, once captured for the scene), so it
-/// carries no state of its own beyond the banner measurement.
-class _GameScreen extends StatefulWidget {
-  const _GameScreen({
+/// carries no state of its own beyond the banner measurement. Public so a
+/// test can render it without a scene.
+class DiceGameScreen extends StatefulWidget {
+  const DiceGameScreen({
+    super.key,
     this.rollKey,
     required this.onRoll,
     required this.lastRoll,
@@ -1881,8 +1892,8 @@ class _GameScreen extends StatefulWidget {
 
   /// The same screen with the roll button keyed, for the live copy. Only
   /// the live copy reports where its banner is.
-  static _GameScreen withRollKey(_GameScreen screen, GlobalKey rollKey) =>
-      _GameScreen(
+  static DiceGameScreen withRollKey(DiceGameScreen screen, GlobalKey rollKey) =>
+      DiceGameScreen(
         rollKey: rollKey,
         onRoll: screen.onRoll,
         lastRoll: screen.lastRoll,
@@ -1894,181 +1905,110 @@ class _GameScreen extends StatefulWidget {
   final GlobalKey? rollKey;
   final VoidCallback onRoll;
   final ValueListenable<List<int>?> lastRoll;
-  final ValueListenable<List<String>> history;
+  final ValueListenable<List<RollRecord>> history;
   final ValueListenable<CelebrationFrame> frame;
 
   /// Reports the score banner's centre in this screen's coordinates after
   /// layout, so the host can aim effects at it.
   final ValueChanged<Offset>? onBannerCenter;
 
-  static const Color accent = Color(0xFFE76F51);
-
   @override
-  State<_GameScreen> createState() => _GameScreenState();
+  State<DiceGameScreen> createState() => DiceGameScreenState();
 }
 
-class _GameScreenState extends State<_GameScreen> {
+class DiceGameScreenState extends State<DiceGameScreen> {
   final GlobalKey _bannerKey = GlobalKey();
   final GlobalKey _stackKey = GlobalKey();
   // Where the total sits relative to the counter's resting spot (the middle
   // of the screen), measured after layout so the slam lands on the number.
   Offset _flight = const Offset(0, -260);
 
+  // The cards keep to a column on the left, so the dice have stripes to land
+  // on and glass has something to bend.
+  static const double _columnWidth = 400;
+
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
     final insets = ExampleOverlay.safeInsetsOf(context);
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: _GameScreen.accent),
-      useMaterial3: true,
-    );
-    return Theme(
-      data: theme,
-      child: ColoredBox(
-        color: const Color(0xFFF4EFE6),
-        child: Stack(
-          key: _stackKey,
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(20, insets.top + 72, 20, 0),
-              child: Column(
+    return Stack(
+      key: _stackKey,
+      children: [
+        const Positioned.fill(child: PopStripesBackground()),
+        Padding(
+          padding: EdgeInsets.fromLTRB(28, insets.top + 64, 28, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Game night',
-                              style: theme.textTheme.headlineMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              'Round 3, your turn',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Colors.black54,
-                              ),
-                            ),
-                          ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const OutlinedText('Game night', size: 56),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Round 3, your turn',
+                          style: Pop.label.copyWith(fontSize: 18),
                         ),
-                      ),
-                      KeyedSubtree(
-                        key: _bannerKey,
-                        child: ScoreBanner(
-                          frame: widget.frame,
-                          accent: _GameScreen.accent,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Row(
-                    children: [
-                      Expanded(
-                        child: _PlayerCard(
-                          name: 'Ava',
-                          score: 42,
-                          color: Color(0xFFE76F51),
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: _PlayerCard(
-                          name: 'Theo',
-                          score: 37,
-                          color: Color(0xFF2A9D8F),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
-                    color: Colors.white,
-                    elevation: 0,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: ValueListenableBuilder<List<int>?>(
-                        valueListenable: widget.lastRoll,
-                        builder: (context, faces, _) {
-                          final total = faces?.fold(0, (a, b) => a + b);
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Last roll',
-                                      style: theme.textTheme.labelLarge,
-                                    ),
-                                    Text(
-                                      faces == null
-                                          ? 'Rolling...'
-                                          : faces.join(' + '),
-                                      style: theme.textTheme.bodyMedium
-                                          ?.copyWith(color: Colors.black54),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                total == null ? '-' : '$total',
-                                style: theme.textTheme.displaySmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.primary,
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Card(
-                    color: const Color(0xFFE9C46A),
-                    elevation: 0,
-                    child: ValueListenableBuilder<List<String>>(
-                      valueListenable: widget.history,
-                      builder: (context, entries, _) => Column(
-                        children: [
-                          for (final entry in entries)
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.casino_outlined),
-                              title: Text(entry),
-                            ),
-                        ],
-                      ),
-                    ),
+                  KeyedSubtree(
+                    key: _bannerKey,
+                    child: ScoreBanner(frame: widget.frame),
                   ),
                 ],
               ),
-            ),
-            Center(
-              child: RollCounter(
-                frame: widget.frame,
-                flightOffset: _flight,
-                accent: _GameScreen.accent,
+              const SizedBox(height: 22),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: _columnWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Row(
+                      children: [
+                        Expanded(
+                          child: _PlayerCard(
+                            name: 'Ava',
+                            score: 42,
+                            color: Pop.coral,
+                          ),
+                        ),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: _PlayerCard(
+                            name: 'Theo',
+                            score: 37,
+                            color: Pop.teal,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    _LastRollCard(lastRoll: widget.lastRoll),
+                    const SizedBox(height: 20),
+                    _HistoryCard(history: widget.history),
+                  ],
+                ),
               ),
-            ),
-            Positioned(
-              right: 20,
-              bottom: insets.bottom + 20,
-              child: FloatingActionButton.extended(
-                key: widget.rollKey,
-                onPressed: widget.onRoll,
-                icon: const Icon(Icons.casino),
-                label: const Text('Roll'),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+        Center(
+          child: RollCounter(frame: widget.frame, flightOffset: _flight),
+        ),
+        Positioned(
+          right: 32,
+          bottom: insets.bottom + 32,
+          child: KeyedSubtree(
+            key: widget.rollKey,
+            child: PopButton(label: 'Roll', onPressed: widget.onRoll),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2100,26 +2040,178 @@ class _PlayerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-    return Card(
-      color: color,
-      elevation: 0,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(name, style: text.titleMedium?.copyWith(color: Colors.white)),
-            Text(
-              '$score',
-              style: text.headlineLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+    return PopCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          // A sticker avatar with the player's initial.
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Pop.ink, width: 2.5),
+            ),
+            alignment: Alignment.center,
+            child: OutlinedText(name[0], size: 30, shadow: false),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: Pop.label.copyWith(fontSize: 18)),
+              Text(
+                '$score',
+                style: Pop.label.copyWith(fontSize: 30, letterSpacing: -1),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The faces of the roll being scored, and their sum on a mustard block.
+class _LastRollCard extends StatelessWidget {
+  const _LastRollCard({required this.lastRoll});
+
+  final ValueListenable<List<int>?> lastRoll;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<List<int>?>(
+      valueListenable: lastRoll,
+      builder: (context, faces, _) {
+        final total = faces?.fold(0, (a, b) => a + b);
+        return PopCard(
+          padding: EdgeInsets.zero,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(Pop.radius - Pop.stroke),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Last roll',
+                            style: Pop.label.copyWith(fontSize: 18),
+                          ),
+                          const SizedBox(height: 8),
+                          if (faces == null)
+                            Text(
+                              'Rolling...',
+                              style: Pop.small.copyWith(fontSize: 15),
+                            )
+                          else
+                            _PipRow(faces, size: 28),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 112,
+                    decoration: const BoxDecoration(
+                      color: Pop.mustard,
+                      border: Border(
+                        left: BorderSide(color: Pop.ink, width: Pop.stroke),
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: OutlinedText(
+                      total == null ? '-' : '$total',
+                      size: 54,
+                      shadow: false,
+                      letterSpacing: -2,
+                    ),
+                  ),
+                ],
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Recent rolls as pips, with the multiplier and what they scored.
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({required this.history});
+
+  final ValueListenable<List<RollRecord>> history;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopCard(
+      child: ValueListenableBuilder<List<RollRecord>>(
+        valueListenable: history,
+        builder: (context, entries, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Roll history', style: Pop.label.copyWith(fontSize: 18)),
+            for (final entry in entries) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: _PipRow(entry.faces, size: 22)),
+                  if (entry.multiplier > 1)
+                    Container(
+                      margin: const EdgeInsets.only(left: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Pop.teal,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Pop.ink, width: 2),
+                      ),
+                      child: Text(
+                        'x${entry.multiplier}',
+                        style: Pop.small.copyWith(color: Pop.cream),
+                      ),
+                    ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '${entry.scored}',
+                    style: Pop.label.copyWith(fontSize: 18),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Die faces joined by plus signs.
+class _PipRow extends StatelessWidget {
+  const _PipRow(this.faces, {required this.size});
+
+  final List<int> faces;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 5,
+      runSpacing: 4,
+      children: [
+        for (var i = 0; i < faces.length; i++) ...[
+          if (i > 0) Text('+', style: Pop.label.copyWith(fontSize: size * 0.6)),
+          PipFace(faces[i], size: size),
+        ],
+      ],
     );
   }
 }

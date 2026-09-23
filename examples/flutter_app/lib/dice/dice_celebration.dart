@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'pop_theme.dart';
+
 /// Where the roll's score choreography is.
 enum CelebrationPhase { idle, counting, multiplier, slam, afterglow }
 
@@ -314,12 +316,10 @@ class RollCounter extends StatelessWidget {
     super.key,
     required this.frame,
     required this.flightOffset,
-    required this.accent,
   });
 
   final ValueListenable<CelebrationFrame> frame;
   final Offset flightOffset;
-  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -329,71 +329,51 @@ class RollCounter extends StatelessWidget {
         if (f.counterAlpha <= 0.001) return const SizedBox.shrink();
         final scale = (1.0 + 0.32 * f.punch) * (1.0 - 0.55 * f.slam);
         final offset = flightOffset * f.slam;
-        final glow = (0.35 + 0.65 * f.punch) * f.counterAlpha;
         final badge = f.multiplierReveal;
         final revealed = f.multiplier > 1 && badge > 0;
+        // A tilt that kicks with each count and settles back.
+        final tilt = -0.06 + 0.10 * f.punch * (f.counter.isEven ? 1 : -1);
         return IgnorePointer(
           child: Opacity(
             opacity: f.counterAlpha,
             child: Transform.translate(
               offset: offset,
-              child: Transform.scale(
-                scale: scale,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${f.counter}',
-                      style: TextStyle(
-                        fontSize: 132,
-                        height: 1.0,
-                        fontWeight: FontWeight.w900,
-                        color: Color.lerp(accent, Colors.white, 0.2 * f.punch),
-                        letterSpacing: -4,
-                        shadows: [
-                          Shadow(
-                            color: accent.withValues(alpha: glow),
-                            blurRadius: 34 + 40 * f.punch,
-                          ),
-                          const Shadow(
-                            color: Color(0x33000000),
-                            blurRadius: 6,
-                            offset: Offset(0, 3),
-                          ),
-                        ],
+              child: Transform.rotate(
+                angle: tilt,
+                child: Transform.scale(
+                  scale: scale,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedText(
+                        '${f.counter}',
+                        size: 150,
+                        fill: Color.lerp(Pop.mustard, Pop.cream, f.punch)!,
+                        letterSpacing: -6,
                       ),
-                    ),
-                    if (revealed)
-                      Transform.scale(
-                        scale: 0.4 + 0.6 * badge + 0.25 * f.punch * badge,
-                        child: Container(
-                          margin: const EdgeInsets.only(top: 6),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: accent,
-                            borderRadius: BorderRadius.circular(999),
-                            boxShadow: [
-                              BoxShadow(
-                                color: accent.withValues(alpha: 0.55 * badge),
-                                blurRadius: 24,
+                      if (revealed)
+                        Transform.scale(
+                          scale: 0.4 + 0.6 * badge + 0.25 * f.punch * badge,
+                          child: Transform.rotate(
+                            angle: -0.05,
+                            child: PopCard(
+                              color: Pop.teal,
+                              radius: 999,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 22,
+                                vertical: 8,
                               ),
-                            ],
-                          ),
-                          child: Text(
-                            '${f.multiplierLabel}  x${f.multiplier}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
+                              child: OutlinedText(
+                                '${f.multiplierLabel}  x${f.multiplier}',
+                                size: 30,
+                                shadow: false,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -404,12 +384,12 @@ class RollCounter extends StatelessWidget {
   }
 }
 
-/// The score total. It kicks and flashes when a slam lands.
+/// The score total, a scalloped sticker. It kicks and flashes when a slam
+/// lands.
 class ScoreBanner extends StatelessWidget {
-  const ScoreBanner({super.key, required this.frame, required this.accent});
+  const ScoreBanner({super.key, required this.frame});
 
   final ValueListenable<CelebrationFrame> frame;
-  final Color accent;
 
   @override
   Widget build(BuildContext context) {
@@ -424,49 +404,32 @@ class ScoreBanner extends StatelessWidget {
         );
         return Transform.translate(
           offset: shake,
-          child: Transform.scale(
-            scale: 1.0 + 0.28 * kick,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-              decoration: BoxDecoration(
-                color: Color.lerp(Colors.white, accent, 0.85 * kick),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.7 * kick),
-                    blurRadius: 40 * kick + 8,
-                    spreadRadius: 6 * kick,
-                  ),
-                  const BoxShadow(
-                    color: Color(0x14000000),
-                    blurRadius: 10,
-                    offset: Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'TOTAL',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 3,
-                      color: Color.lerp(Colors.black45, Colors.white, kick),
+          child: Transform.rotate(
+            angle: 0.08 - 0.25 * kick,
+            child: Transform.scale(
+              scale: 1.0 + 0.28 * kick,
+              child: PopBadge(
+                color: Color.lerp(Pop.coral, Pop.mustard, kick)!,
+                size: 148,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const OutlinedText(
+                      'TOTAL',
+                      size: 15,
+                      shadow: false,
+                      letterSpacing: 2,
+                      strokeWidth: 3,
                     ),
-                  ),
-                  Text(
-                    _grouped(f.total),
-                    style: TextStyle(
-                      fontSize: 44,
-                      height: 1.05,
-                      fontWeight: FontWeight.w900,
-                      color: Color.lerp(accent, Colors.white, kick),
+                    const SizedBox(height: 2),
+                    OutlinedText(
+                      _grouped(f.total),
+                      size: 31,
+                      shadow: false,
                       letterSpacing: -1,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
