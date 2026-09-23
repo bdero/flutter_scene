@@ -1289,6 +1289,10 @@ class EditorToolSurface {
     String tool,
     Map<String, Object?> args,
   ) async {
+    // TODO(query-parity): describe_scene, get_node, and list_resources answer
+    // from their own helpers rather than the nodeSubtree, getResource, and
+    // listResources queries, so the same data has two encoders that can drift.
+    // Collapse them onto run_query before a client package pins either shape.
     switch (tool) {
       case 'describe_scene':
         return {
