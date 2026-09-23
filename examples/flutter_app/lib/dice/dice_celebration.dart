@@ -327,6 +327,7 @@ class RollCounter extends StatelessWidget {
       valueListenable: frame,
       builder: (context, f, _) {
         if (f.counterAlpha <= 0.001) return const SizedBox.shrink();
+        final theme = ScreenTheme.of(context);
         final scale = (1.0 + 0.32 * f.punch) * (1.0 - 0.55 * f.slam);
         final offset = flightOffset * f.slam;
         final badge = f.multiplierReveal;
@@ -348,7 +349,7 @@ class RollCounter extends StatelessWidget {
                       OutlinedText(
                         '${f.counter}',
                         size: 150,
-                        fill: Color.lerp(Pop.mustard, Pop.cream, f.punch)!,
+                        fill: Color.lerp(theme.score, theme.cream, f.punch)!,
                         letterSpacing: -6,
                       ),
                       if (revealed)
@@ -357,7 +358,7 @@ class RollCounter extends StatelessWidget {
                           child: Transform.rotate(
                             angle: -0.05,
                             child: PopCard(
-                              color: Pop.teal,
+                              color: theme.accent2,
                               radius: 999,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 22,
@@ -399,6 +400,7 @@ class ScoreBanner extends StatelessWidget {
     return AnimatedBuilder(
       animation: Listenable.merge([frame, if (clock != null) clock!]),
       builder: (context, _) {
+        final theme = ScreenTheme.of(context);
         final f = frame.value;
         final kick = f.totalPunch;
         final rock = clock == null
@@ -416,26 +418,35 @@ class ScoreBanner extends StatelessWidget {
             child: Transform.scale(
               scale: 1.0 + 0.28 * kick,
               child: PopBadge(
-                color: Color.lerp(Pop.coral, Pop.mustard, kick)!,
+                color: Color.lerp(theme.badge, theme.score, kick)!,
                 size: 148,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const OutlinedText(
-                      'TOTAL',
-                      size: 15,
-                      shadow: false,
-                      letterSpacing: 2,
-                      strokeWidth: 3,
-                    ),
-                    const SizedBox(height: 2),
-                    OutlinedText(
-                      _grouped(f.total),
-                      size: 31,
-                      shadow: false,
-                      letterSpacing: -1,
-                    ),
-                  ],
+                child: Builder(
+                  builder: (context) {
+                    final badge = Color.lerp(theme.badge, theme.score, kick)!;
+                    final light = badge.computeLuminance() > 0.5;
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        OutlinedText(
+                          'TOTAL',
+                          size: 15,
+                          shadow: false,
+                          letterSpacing: 2,
+                          strokeWidth: light ? 0.0 : 3,
+                          fill: light ? theme.ink : null,
+                        ),
+                        const SizedBox(height: 2),
+                        OutlinedText(
+                          _grouped(f.total),
+                          size: 31,
+                          shadow: false,
+                          letterSpacing: -1,
+                          strokeWidth: light ? 0.0 : null,
+                          fill: light ? theme.ink : null,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

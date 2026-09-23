@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:example_app/dice/dice_celebration.dart';
+import 'package:example_app/dice/dice_contacts.dart';
+import 'package:example_app/dice/pop_theme.dart';
 import 'package:example_app/example_dice_shadows.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,14 +23,31 @@ Future<({Uint8List bytes, int width, int height})> _render(
     MaterialApp(
       home: RepaintBoundary(
         key: key,
-        child: DiceGameScreen(
-          onRoll: () {},
-          lastRoll: ValueNotifier<List<int>?>([3, 5, 3]),
-          history: ValueNotifier<List<RollRecord>>([
-            (faces: [3, 5, 3], multiplier: 2, scored: 22),
-            (faces: [6, 2, 1], multiplier: 1, scored: 9),
-          ]),
-          frame: ValueNotifier(frame),
+        child: Stack(
+          children: [
+            DiceGameScreen(
+              theme: ScreenTheme.pop,
+              onRoll: () {},
+              lastRoll: ValueNotifier<List<int>?>([3, 5, 3]),
+              history: ValueNotifier<List<RollRecord>>([
+                (faces: [3, 5, 3], multiplier: 2, scored: 22),
+                (faces: [6, 2, 1], multiplier: 1, scored: 9),
+              ]),
+              frame: ValueNotifier(frame),
+              contacts: ValueNotifier(const DiceContacts()),
+            ),
+            // The host draws the counter over the scene, so it is not part
+            // of the screen itself.
+            ScreenThemeScope(
+              theme: ScreenTheme.pop,
+              child: Center(
+                child: RollCounter(
+                  frame: ValueNotifier(frame),
+                  flightOffset: const Offset(320, -260),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     ),

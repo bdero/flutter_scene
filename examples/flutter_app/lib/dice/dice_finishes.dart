@@ -51,6 +51,16 @@ enum DiceFinish {
     _ => null,
   };
 
+  /// The landing sound set for this finish (`assets/sounds/land_<set>_*`),
+  /// or null to use the table's own.
+  String? get landingSet => switch (this) {
+    glass || frosted || iridescent => 'glass',
+    gold || steel => 'metal',
+    wood => 'wood',
+    marble => 'stone',
+    _ => null,
+  };
+
   /// Pitch multiplier for this finish's impact sounds. Glass rings high,
   /// wood knocks low.
   double get impactPitch => switch (this) {
