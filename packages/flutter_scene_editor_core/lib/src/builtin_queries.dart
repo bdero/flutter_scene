@@ -356,10 +356,19 @@ Map<String, Object?> _nodeJson(
   'id': node.id.toToken(),
   'name': node.name,
   'path': ctx.query.namePathOf(node.id),
+  // Stated even at their defaults, since a client should not have to know
+  // what the format omits.
   'visible': node.visible,
+  'layers': node.layers,
+  'shadowCastingMode': node.shadowCastingMode,
   'transform': _transformJson(node.transform),
   if (node.skin != null) 'skin': node.skin!.toToken(),
-  if (node.instance != null) 'isPrefabInstance': true,
+  // The instance delta is deep (overrides, attachments, removals, member
+  // components), so the format's own encoder writes it rather than a second
+  // one here that would forget a field at a time.
+  if (node.instance != null)
+    'instance': encodeNode(node, (id) => id.toToken())['instance'],
+  if (node.unknown.isNotEmpty) 'unknown': node.unknown,
   'components': [
     for (final component in node.components)
       if (withComponents)
@@ -442,37 +451,27 @@ String resourceKindOf(ResourceSpec resource) => switch (resource) {
   EnvironmentResource() => 'environment',
 };
 
-Map<String, Object?> _resourceJson(ResourceSpec resource) => {
-  'id': resource.id.toToken(),
-  'kind': resourceKindOf(resource),
-  ...switch (resource) {
-    GeometryResource g => {
-      if (g.vertices != null) 'vertices': g.vertices!.toToken(),
-      if (g.indices != null) 'indices': g.indices!.toToken(),
-      'topology': g.topology,
-      if (g.morphTargets != null)
-        'morphTargets': {
-          'deltas': g.morphTargets!.deltas.toToken(),
-          'targetCount': g.morphTargets!.targetCount,
-        },
-    },
-    TextureResource t => {
-      if (t.payload != null) 'payload': t.payload!.toToken(),
-      if (t.asset != null) 'asset': t.asset,
-    },
-    MaterialResource m => {
-      'type': m.type,
-      if (m.name.isNotEmpty) 'name': m.name,
-      if (m.asset != null) 'asset': m.asset,
-      'properties': {
-        for (final entry in m.properties.entries)
-          entry.key: propertyValueToJson(entry.value),
-      },
-    },
-    RenderTextureResource rt => {'width': rt.width, 'height': rt.height},
-    EnvironmentResource e => {if (e.name.isNotEmpty) 'name': e.name},
-  },
-};
+/// One resource in the document's own encoding, plus the kind name so a
+/// client can switch without inspecting the shape.
+///
+/// The format's encoder does the work rather than a second one written here,
+/// so every authored field arrives, including the procedural descriptors,
+/// bounds, winding, texture content, render-target policy, morph metadata,
+/// and the whole environment block that a hand-written encoder would forget
+/// one at a time.
+Map<String, Object?> _resourceJson(ResourceSpec resource) {
+  final encoded = encodeResource(resource, (id) => id.toToken());
+  return {
+    'id': resource.id.toToken(),
+    'kind': resourceKindOf(resource),
+    if (encoded is Map<String, Object?>)
+      ...encoded
+    else
+      // A kind the format encodes as something other than an object; handed
+      // over as it stands rather than guessed at.
+      'encoded': encoded,
+  };
+}
 
 NodeSpec _requireNode(QueryContext ctx, Object? token) {
   if (token is! String || token.isEmpty) {

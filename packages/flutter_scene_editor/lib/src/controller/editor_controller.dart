@@ -595,9 +595,10 @@ class EditorController extends ChangeNotifier {
   Future<Transaction> runAll(
     Iterable<CommandCall> calls, {
     String name = 'Batch edit',
+    Map<String, LocalId>? bindings,
   }) async {
     try {
-      final transaction = session.runAll(calls, name: name);
+      final transaction = session.runAll(calls, name: name, bindings: bindings);
       await _reflect(transaction);
       notifyListeners();
       return transaction;

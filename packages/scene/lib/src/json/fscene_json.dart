@@ -831,6 +831,13 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
   }
 }
 
+/// Encodes a single node the same way [encodeDocument] does, for a caller
+/// that needs one node's authored form (the read protocol hands a prefab
+/// instance's delta over this way rather than encoding it a second time).
+/// {@category Serialization}
+Map<String, dynamic> encodeNode(NodeSpec n, String Function(LocalId) idKey) =>
+    _encodeNode(n, idKey);
+
 Map<String, dynamic> _encodeNode(NodeSpec n, String Function(LocalId) idKey) {
   return {
     if (n.name.isNotEmpty) 'name': n.name,

@@ -99,7 +99,7 @@ void main() {
       PayloadSpec(
         session.document.newId(),
         encoding: PayloadEncoding.vertexBuffer,
-        layout: 'default',
+        layout: 'unskinned_uv1_tangent',
         bytes: Uint8List.fromList(List.generate(64, (i) => i)),
         length: 64,
       ),
@@ -111,7 +111,7 @@ void main() {
     expect(whole.body['totalBytes'], 64);
     expect(whole.body['byteCount'], 64);
     expect(whole.body['encoding'], 'vertexBuffer');
-    expect(whole.body['layout'], 'default');
+    expect(whole.body['layout'], 'unskinned_uv1_tangent');
     expect(whole.blobs.single.id, whole.body['blob']);
     expect(whole.blobs.single.bytes, hasLength(64));
     expect(whole.blobs.single.bytes.first, 0);
@@ -158,7 +158,7 @@ void main() {
       PayloadSpec(
         session.document.newId(),
         encoding: PayloadEncoding.vertexBuffer,
-        layout: 'default',
+        layout: 'unskinned_uv1_tangent',
         bytes: Uint8List(16),
         length: 16,
       ),
@@ -209,6 +209,174 @@ void main() {
     );
   });
 
+  test('a node carries the fields that change how it renders', () {
+    final session = EditorSession.empty();
+    final id = _node(session, 'Prop');
+    session.document.node(id)!
+      ..layers = 5
+      ..shadowCastingMode = 'shadowsOnly'
+      ..visible = false;
+
+    final node =
+        (session.ask('nodeSubtree', {'nodeId': id.toToken()}).body['nodes']
+                    as List)
+                .single
+            as Map;
+    expect(node['layers'], 5);
+    expect(node['shadowCastingMode'], 'shadowsOnly');
+    expect(node['visible'], isFalse);
+  });
+
+  test('defaults are stated, not left for a client to know', () {
+    final session = EditorSession.empty();
+    final id = _node(session, 'Plain');
+    final node =
+        (session.ask('nodeSubtree', {'nodeId': id.toToken()}).body['nodes']
+                    as List)
+                .single
+            as Map;
+    expect(node['layers'], 1);
+    expect(node['shadowCastingMode'], 'on');
+    expect(node['visible'], isTrue);
+  });
+
+  test('a procedural geometry keeps its descriptor and bounds', () {
+    final session = EditorSession.empty();
+    final created = session.run('createCuboidGeometry', {
+      'extents': {'x': 2.0, 'y': 3.0, 'z': 4.0},
+    });
+    final id = created.records.single.targetId;
+
+    final body = session.ask('getResource', {'resourceId': id.toToken()}).body;
+    expect(body['kind'], 'geometry');
+    expect(
+      body['procedural'],
+      isA<Map<String, Object?>>().having((p) => p['shape'], 'shape', 'cuboid'),
+    );
+  });
+
+  test('a render texture keeps its update policy and sampling', () {
+    final session = EditorSession.empty();
+    final resource = RenderTextureResource(
+      session.document.newId(),
+      width: 256,
+      height: 128,
+      update: 'onDemand',
+      intervalMilliseconds: 250,
+      filter: 'nearest',
+      wrap: 'repeat',
+    );
+    session.document.resources[resource.id] = resource;
+
+    final body = session.ask('getResource', {
+      'resourceId': resource.id.toToken(),
+    }).body;
+    expect(body['width'], 256);
+    expect(body['update'], 'onDemand');
+    expect(body['intervalMilliseconds'], 250);
+    expect(body['filter'], 'nearest');
+    expect(body['wrap'], 'repeat');
+  });
+
+  test('an environment keeps its lighting settings', () {
+    final session = EditorSession.empty();
+    final resource = EnvironmentResource(
+      session.document.newId(),
+      name: 'Dusk',
+      exposure: 2.5,
+      toneMapping: 'agx',
+      environmentRotationY: 1.25,
+    );
+    session.document.resources[resource.id] = resource;
+
+    final body = session.ask('getResource', {
+      'resourceId': resource.id.toToken(),
+    }).body;
+    expect(body['name'], 'Dusk');
+    expect(body['exposure'], 2.5);
+    expect(body['toneMapping'], 'agx');
+    expect(body['environmentRotationY'], 1.25);
+    expect(body['environment'], isA<Map<String, Object?>>());
+  });
+
+  test('createPayload refuses data the renderer cannot read', () {
+    final session = EditorSession.empty();
+    expect(
+      () => session.run('createPayload', {
+        'bytes': base64Encode(Uint8List(72)),
+        'encoding': 'vertexBuffer',
+        'layout': 'not_a_layout',
+      }),
+      throwsA(
+        isA<CommandException>().having(
+          (e) => e.message,
+          'message',
+          contains('known "layout"'),
+        ),
+      ),
+    );
+    expect(
+      () => session.run('createPayload', {
+        'bytes': base64Encode(Uint8List(7)),
+        'encoding': 'indexBuffer',
+        'format': 'uint16',
+      }),
+      throwsA(
+        isA<CommandException>().having(
+          (e) => e.message,
+          'message',
+          contains('whole number'),
+        ),
+      ),
+    );
+  });
+
+  test('createMeshGeometry checks each payload is for its role', () {
+    final session = EditorSession.empty();
+    final image = session.document.addPayload(
+      PayloadSpec(
+        session.document.newId(),
+        encoding: PayloadEncoding.image,
+        format: 'rgba8',
+        bytes: Uint8List(16),
+        length: 16,
+      ),
+    );
+    expect(
+      () => session.run('createMeshGeometry', {'vertices': image.id.toToken()}),
+      throwsA(
+        isA<CommandException>().having(
+          (e) => e.message,
+          'message',
+          contains('needs a vertexBuffer payload'),
+        ),
+      ),
+    );
+
+    final verts = session.document.addPayload(
+      PayloadSpec(
+        session.document.newId(),
+        encoding: PayloadEncoding.vertexBuffer,
+        layout: 'unskinned_uv1_tangent',
+        bytes: Uint8List(72),
+        length: 72,
+      ),
+    );
+    expect(
+      () => session.run('createMeshGeometry', {
+        'vertices': verts.id.toToken(),
+        'topology': 'triangles',
+      }),
+      throwsA(
+        isA<CommandException>().having(
+          (e) => e.message,
+          'message',
+          contains('Unknown topology'),
+        ),
+      ),
+    );
+  });
+
   test('bytes go in through a command and come back out through a query', () {
     final session = EditorSession.empty();
     final data = Uint8List.fromList(List.generate(48, (i) => i * 2));
@@ -217,7 +385,7 @@ void main() {
       CommandCall('createPayload', {
         'bytes': base64Encode(data),
         'encoding': 'vertexBuffer',
-        'layout': 'default',
+        'layout': 'unskinned_uv1_tangent',
       }),
     ]);
     final payloadId = made.records

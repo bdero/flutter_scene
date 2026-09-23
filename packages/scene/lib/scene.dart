@@ -96,6 +96,7 @@ export 'src/json/fscene_json.dart'
     show
         decodeDocument,
         encodeDocument,
+        encodeNode,
         encodeResource,
         encodeSkySource,
         encodeStage,

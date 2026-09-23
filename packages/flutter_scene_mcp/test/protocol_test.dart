@@ -132,7 +132,7 @@ void main() {
       PayloadSpec(
         session.document.newId(),
         encoding: PayloadEncoding.vertexBuffer,
-        layout: 'default',
+        layout: 'unskinned_uv1_tangent',
         bytes: Uint8List.fromList(List.generate(32, (i) => i)),
         length: 32,
       ),
@@ -282,14 +282,100 @@ void main() {
     expect(listed, session.ask('listResources').body);
   });
 
+  test('one connection cannot reach another connection\'s events', () async {
+    final session = _session();
+    final mine = EditorToolSurface.of(session);
+    final theirs = EditorToolSurface.of(session);
+
+    final subscribed = await mine.dispatch('subscribe_events', {
+      'types': ['documentChanged'],
+    });
+    final id = subscribed['subscription'] as String;
+
+    await expectLater(
+      theirs.dispatch('poll_events', {'subscription': id}),
+      throwsA(
+        isA<ToolError>().having(
+          (e) => e.message,
+          'message',
+          contains('another client'),
+        ),
+      ),
+      reason: 'the bus is shared, the subscriptions are not',
+    );
+    await expectLater(
+      theirs.dispatch('unsubscribe_events', {'subscription': id}),
+      throwsA(isA<ToolError>()),
+    );
+    expect(
+      ((await mine.dispatch('poll_events', {'subscription': id}))['events']
+          as List),
+      isEmpty,
+      reason: 'and the owner still has it',
+    );
+  });
+
+  test('a disconnected client leaves nothing buffering', () async {
+    final session = _session();
+    final surface = EditorToolSurface.of(session);
+    await surface.dispatch('subscribe_events', {
+      'types': ['documentChanged'],
+    });
+    expect(session.events.subscriptions, hasLength(1));
+
+    surface.dispose();
+
+    expect(session.events.subscriptions, isEmpty);
+    session.run('createNode', {'name': 'Unheard'});
+    session.events.flush();
+  });
+
+  test('a batch call can name what it creates for the next one', () async {
+    final session = _session();
+    final result = await EditorToolSurface.of(session).dispatch(
+      'run_commands',
+      {
+        'commands': [
+          {
+            'command': 'createPayload',
+            'as': 'verts',
+            'params': {
+              'bytes': base64Encode(Uint8List(144)),
+              'encoding': 'vertexBuffer',
+              'layout': 'unskinned_uv1_tangent',
+            },
+          },
+          {
+            'command': 'createMeshGeometry',
+            'params': {'vertices': r'$verts'},
+          },
+        ],
+        'name': 'Build a mesh',
+      },
+    );
+
+    expect(result['ok'], isTrue);
+    final bound = result['bindings'] as Map<String, Object?>;
+    expect(bound['verts'], isA<String>());
+    final geometry = session.document.resources.values
+        .whereType<GeometryResource>()
+        .single;
+    expect(geometry.vertices!.toToken(), bound['verts']);
+    expect(session.history.transactions, hasLength(1));
+  });
+
   test('a host-routed batch goes through the host, not the session', () async {
     final session = _session();
     var routed = 0;
     final surface = EditorToolSurface(
       () => session,
-      batchRunner: (calls, name) async {
+      batchRunner: (calls, name, bindings) async {
         routed++;
-        return session.runAll(calls, name: name ?? 'Batch edit');
+        return session.runAll(
+          calls,
+          name: name ?? 'Batch edit',
+          bindings: bindings,
+        );
       },
     );
 
@@ -304,5 +390,24 @@ void main() {
 
     expect(routed, 1);
     expect(session.document.nodes, hasLength(1));
+
+    // A host-routed failure reads like any other, not as a stack trace.
+    await expectLater(
+      surface.dispatch('run_commands', {
+        'commands': [
+          {
+            'command': 'setNodeName',
+            'params': {'nodeId': 'nope', 'name': 'X'},
+          },
+        ],
+      }),
+      throwsA(
+        isA<ToolError>().having(
+          (e) => e.message,
+          'message',
+          isNot(contains('#0')),
+        ),
+      ),
+    );
   });
 }

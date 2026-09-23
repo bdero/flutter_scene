@@ -84,9 +84,14 @@ typedef CommandRunner =
     Future<Transaction> Function(String command, Map<String, Object?> params);
 
 /// Runs many commands through the host as one undoable step, named [name]
-/// when the caller supplied one.
+/// when the caller supplied one, filling [bindings] with what each call's
+/// alias named.
 typedef BatchRunner =
-    Future<Transaction> Function(List<CommandCall> calls, String? name);
+    Future<Transaction> Function(
+      List<CommandCall> calls,
+      String? name,
+      Map<String, LocalId> bindings,
+    );
 
 /// Captures the next frame's render graph as a JSON-shaped summary
 /// (passes, timings, data flow, resources). [thumbnails] false is a
@@ -363,6 +368,23 @@ class EditorToolSurface {
   /// Pushes events to the connected client, set by a transport that can send
   /// server notifications. Null leaves every subscription poll-only.
   void Function(String subscription, List<EditorEvent> events)? eventPush;
+
+  /// The subscriptions this connection made.
+  ///
+  /// The bus is shared across every connection and outlives any one of them,
+  /// so a surface that did not make a subscription must not be able to poll
+  /// or cancel it, and one that goes away must not leave its buffers and push
+  /// closures behind. Both follow from owning them here.
+  final Map<String, EventSubscription> _subscriptions = {};
+
+  /// Cancels every subscription this connection made. The transport calls it
+  /// when the client disconnects.
+  void dispose() {
+    for (final subscription in _subscriptions.values) {
+      subscription.cancel();
+    }
+    _subscriptions.clear();
+  }
 
   /// Host-routed undo; returns whether a transaction was undone.
   final Future<bool> Function()? undoRunner;
@@ -1150,11 +1172,12 @@ class EditorToolSurface {
     ToolDefinition(
       name: 'run_commands',
       description:
-          'Run many commands in order as ONE undoable step. Each call sees '
-          'what the calls before it did, so a batch can create a node and '
-          'then address it. Nothing is kept unless every call succeeds. Use '
-          'this instead of repeated run_command whenever you are making more '
-          'than a couple of edits.',
+          'Run many commands in order as ONE undoable step. Name a call with '
+          '"as" and later calls reference what it created as "\$name" '
+          'wherever an id goes, so a payload and the geometry over it are one '
+          'batch. Nothing is kept unless every call succeeds. Takes document '
+          'and selection commands only. Use this instead of repeated '
+          'run_command whenever you are making more than a couple of edits.',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1166,6 +1189,12 @@ class EditorToolSurface {
               'properties': {
                 'command': {'type': 'string'},
                 'params': {'type': 'object'},
+                'as': {
+                  'type': 'string',
+                  'description':
+                      'Name what this call creates, so a later call can '
+                      'reference it as "\$name" wherever an id goes.',
+                },
               },
               'required': ['command'],
             },
@@ -1927,10 +1956,25 @@ class EditorToolSurface {
       }
     }
     final name = args['name'];
+    final label = name is String && name.isNotEmpty ? name : null;
+    final bindings = <String, LocalId>{};
     final runner = batchRunner;
-    final transaction = runner != null
-        ? await runner(calls, name is String && name.isNotEmpty ? name : null)
-        : _runBatchHere(calls, name is String && name.isNotEmpty ? name : null);
+    // Caught around both paths, since a host-routed batch throws the same
+    // failure and a client should read it, not a stack trace.
+    final Transaction transaction;
+    try {
+      transaction = runner != null
+          ? await runner(calls, label, bindings)
+          : session.runAll(
+              calls,
+              name: label ?? 'Batch edit',
+              bindings: bindings,
+            );
+    } on BatchException catch (e) {
+      throw ToolError(e.message);
+    } on CommandException catch (e) {
+      throw ToolError(e.message);
+    }
     return {
       'ok': true,
       'applied': transaction.name,
@@ -1939,15 +1983,12 @@ class EditorToolSurface {
       'noOp': transaction.isEmpty,
       'canUndo': session.history.canUndo,
       'created': _createdIn(transaction),
+      if (bindings.isNotEmpty)
+        'bindings': {
+          for (final entry in bindings.entries)
+            entry.key: entry.value.toToken(),
+        },
     };
-  }
-
-  Transaction _runBatchHere(List<CommandCall> calls, String? name) {
-    try {
-      return session.runAll(calls, name: name ?? 'Batch edit');
-    } on BatchException catch (e) {
-      throw ToolError(e.message);
-    }
   }
 
   Map<String, Object?> _subscribeEvents(Map<String, Object?> args) {
@@ -1973,6 +2014,7 @@ class EditorToolSurface {
         wanted,
         onEvents: (events) => eventPush?.call(subscription.id, events),
       );
+      _subscriptions[subscription.id] = subscription;
       return {
         'subscription': subscription.id,
         'types': subscription.types.toList(),
@@ -1988,9 +2030,14 @@ class EditorToolSurface {
     if (id is! String || id.isEmpty) {
       throw const ToolError('Expected a "subscription" id');
     }
-    final subscription = session.events.lookup(id);
+    // Looked up among this connection's own, so one client cannot reach
+    // another's by guessing an id.
+    final subscription = _subscriptions[id];
     if (subscription == null) {
-      throw ToolError('No subscription "$id"; it may have been cancelled');
+      throw ToolError(
+        'No subscription "$id" on this connection; it may have been '
+        'cancelled, or it belongs to another client',
+      );
     }
     return subscription;
   }
@@ -2008,7 +2055,8 @@ class EditorToolSurface {
   }
 
   Map<String, Object?> _unsubscribeEvents(Map<String, Object?> args) {
-    _requireSubscription(args).cancel();
+    final subscription = _requireSubscription(args)..cancel();
+    _subscriptions.remove(subscription.id);
     return {'ok': true};
   }
 
