@@ -43,6 +43,9 @@ enum DiceFinish {
   bool get isGlass =>
       this == glass || this == frosted || this == iridescent || this == clock;
 
+  /// Clear glass focuses light into a pool; frosted glass scatters it.
+  bool get castsCaustic => isGlass && this != frosted;
+
   /// How much of a glass die's footprint its shadow proxy covers, or null
   /// for a finish that casts its own shadow. The proxy is alpha-masked with
   /// an ordered dither at this coverage, so the shadow reads lighter once

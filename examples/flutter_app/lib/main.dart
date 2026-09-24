@@ -184,17 +184,44 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
   // The dice table: a warm sun from the south-east, two cascades (the view is
   // small), a soft environment, and bloom for the neon pips and sparks.
   'Dice Shadows': () => ExampleSettings()
-    ..lightAzimuthDegrees = 137.5
-    ..lightElevationDegrees = 55.0
+    ..lightAzimuthDegrees = 143.2
+    ..lightElevationDegrees = 54.6
     ..lightIntensity = 3.0
     ..lightColor.setValues(1.0, 0.97, 0.92)
     ..shadowSoftness = 0.105
     ..shadowCascadeCount = 2
     ..environmentIntensity = 0.7
+    ..exposure = 1.43
+    ..filterQuality = FilterQuality.high
+    ..colorGrading.enabled = true
+    ..colorGrading.brightness = 0.974
+    ..colorGrading.contrast = 1.365
+    ..colorGrading.saturation = 1.149
+    ..colorGrading.temperature = 0.268
+    ..colorGrading.tint = -0.166
     ..bloom.enabled = true
-    ..bloom.threshold = 1.15
+    ..bloom.threshold = 1.39
     ..bloom.intensity = 0.28
-    ..bloom.scatter = 0.75,
+    ..bloom.scatter = 0.324
+    ..bloom.lensFlare.enabled = true
+    ..bloom.lensFlare.intensity = 0.865
+    ..bloom.lensFlare.ghostCount = 4
+    ..bloom.lensFlare.ghostSpacing = 0.3
+    ..bloom.lensFlare.haloRadius = 0.35
+    ..bloom.lensFlare.haloIntensity = 1.0
+    ..bloom.lensFlare.chromaticAberration = 0.005
+    ..depthOfField.enabled = true
+    ..depthOfField.focusDistance = 15.1
+    ..depthOfField.fStop = 0.7
+    ..depthOfField.focalLength = 0.154
+    ..depthOfField.sensorHeight = 0.024
+    ..depthOfField.maxForegroundBlur = 24.0
+    ..depthOfField.maxBackgroundBlur = 32.0
+    ..depthOfField.quality = DepthOfFieldQuality.high
+    ..vignette.enabled = true
+    ..vignette.intensity = 0.297
+    ..vignette.radius = 0.75
+    ..vignette.smoothness = 0.5,
   'Auto Exposure': () => ExampleSettings()..lightIntensity = 7.0,
   'Stress Tests': () => ExampleSettings()..directionalLightEnabled = false,
   // A cinematic grade for the dark materialize stage: no key light (the

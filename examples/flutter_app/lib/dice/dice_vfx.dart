@@ -259,15 +259,20 @@ class DiceVfx {
   /// drop it with [removeCaustic].
   Caustic createCaustic(vm.Vector4 color) {
     final node = Node()..shadowCastingMode = ShadowCastingMode.off;
-    final layers = <Sprite>[];
+    final layers = <(Node, UnlitMaterial)>[];
     for (var i = 0; i < 2; i++) {
-      final sprite = Sprite(
-        texture: _caustic,
-        color: vm.Vector4(color.x, color.y, color.z, 0.0),
-        blendMode: _blend,
-      );
-      node.add(Node(mesh: sprite.mesh));
-      layers.add(sprite);
+      // Flat quads on the table. A billboard would tilt toward the camera
+      // and dip its far edge through the floor.
+      final material = UnlitMaterial()
+        ..baseColorTexture = _caustic
+        ..alphaMode = AlphaMode.blend
+        ..vertexColorWeight = 0.0
+        ..baseColorFactor = vm.Vector4(color.x, color.y, color.z, 0.0);
+      final layer = Node(
+        mesh: Mesh(PlaneGeometry(width: 1, depth: 1), material),
+      )..shadowCastingMode = ShadowCastingMode.off;
+      node.add(layer);
+      layers.add((layer, material));
     }
     scene.add(node);
     return Caustic._(node, layers, color);
@@ -281,23 +286,28 @@ class DiceVfx {
     double time,
   ) {
     caustic.node.localTransform = vm.Matrix4.translation(
-      vm.Vector3(position.x, 0.02, position.z),
+      vm.Vector3(position.x, 0.015, position.z),
     );
     final c = caustic.color;
-    final gain = additive ? 2.2 : 0.9;
+    final gain = additive ? 1.6 : 0.9;
     for (var i = 0; i < caustic.layers.length; i++) {
-      final sprite = caustic.layers[i];
+      final (layer, material) = caustic.layers[i];
       final wobble = 1.0 + 0.08 * math.sin(time * (1.7 + i) + i * 2.1);
-      sprite
-        ..width = size * wobble
-        ..height = size * (2.0 - wobble)
-        ..rotation = time * (i == 0 ? 0.35 : -0.5) + i * 1.3
-        ..color = vm.Vector4(
-          c.x * gain,
-          c.y * gain,
-          c.z * gain,
-          intensity * (i == 0 ? 0.55 : 0.4),
-        );
+      // Each layer a hair higher than the last, so they never z-fight.
+      layer.localTransform = vm.Matrix4.compose(
+        vm.Vector3(0, 0.004 * i, 0),
+        vm.Quaternion.axisAngle(
+          vm.Vector3(0, 1, 0),
+          time * (i == 0 ? 0.35 : -0.5) + i * 1.3,
+        ),
+        vm.Vector3(size * wobble, 1.0, size * (2.0 - wobble)),
+      );
+      material.baseColorFactor = vm.Vector4(
+        c.x * gain,
+        c.y * gain,
+        c.z * gain,
+        intensity * (i == 0 ? 0.55 : 0.4),
+      );
     }
   }
 
@@ -623,7 +633,7 @@ class Caustic {
   Caustic._(this.node, this.layers, this.color);
 
   final Node node;
-  final List<Sprite> layers;
+  final List<(Node, UnlitMaterial)> layers;
   final vm.Vector4 color;
 }
 
