@@ -731,7 +731,9 @@ class ConfettiComponent extends Component {
     int seed = 0,
     vm.Vector3? axis,
   }) : _random = math.Random(seed) {
-    final aim = DiceVfx._rotationTo(axis ?? vm.Vector3(0, 1, 0));
+    // Quaternion.rotate applies the conjugate, so conjugate first to get the
+    // same rotation the node transform applies.
+    final aim = DiceVfx._rotationTo(axis ?? vm.Vector3(0, 1, 0)).conjugated();
     final geometry = CuboidGeometry(vm.Vector3(0.16, 0.012, 0.10));
     _opaque = InstancedMesh(
       geometry: geometry,
@@ -832,6 +834,9 @@ class ConfettiComponent extends Component {
   }
 
   bool _seeded = false;
+  // Where the burst started on the floor; fluttering pieces drift back
+  // toward it so they settle around the burst rather than downrange.
+  final vm.Vector3 _home = vm.Vector3.zero();
 
   @override
   void update(double deltaSeconds) {
@@ -842,6 +847,7 @@ class ConfettiComponent extends Component {
     final origin = node.globalTransform.getTranslation();
     if (!_seeded) {
       _seeded = true;
+      _home.setValues(origin.x, 0, origin.z);
       for (final piece in _pieces) {
         piece.position.add(origin);
       }
@@ -891,8 +897,11 @@ class ConfettiComponent extends Component {
     if (fluttering) {
       final sway = math.sin(_time * 3.1 + piece.phase);
       final swayZ = math.cos(_time * 2.3 + piece.phase * 1.7);
-      v.x += (sway * 1.6 - v.x) * dt * 3.0;
-      v.z += (swayZ * 1.2 - v.z) * dt * 3.0;
+      // A breeze back toward where the burst came from.
+      final homeX = ((_home.x - piece.position.x) * 0.9).clamp(-2.5, 2.5);
+      final homeZ = ((_home.z - piece.position.z) * 0.9).clamp(-2.5, 2.5);
+      v.x += (sway * 1.6 + homeX - v.x) * dt * 3.0;
+      v.z += (swayZ * 1.2 + homeZ - v.z) * dt * 3.0;
       v.y += (-_terminal - v.y) * dt * 4.0;
       // Lazy tumble, mostly about a horizontal axis.
       piece.spinRate += (4.0 - piece.spinRate) * dt * 2.0;
