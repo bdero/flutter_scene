@@ -333,7 +333,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       ..load()
       ..additive = _embedBackdrop;
     if (_embedBackdrop) exampleSettings.toneMapping = ToneMappingMode.linear;
-    scene.highlightStyle.thickness = 3.5;
+    scene.highlightStyle.thickness = 6.5;
 
     _point = PointLight(
       color: vm.Vector3(1.0, 0.9, 0.75),
@@ -2053,10 +2053,12 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
           final banner = _bannerWorldPosition();
           final loud = celebration.multiplier > 1;
           _stickerFlash = 1.0;
+          // Fire toward the camera, so the pop stays over the sticker as the
+          // pieces rise instead of drifting outward in perspective.
           _vfx.confetti(banner, [
             for (final color in _theme.confetti) _linearColor(color),
             if (loud) _linearColor(_theme.confetti[_vfxRandom.nextInt(4)]),
-          ]);
+          ], axis: (_camera.position - banner).normalized());
           _vfx.ringPulse(
             banner..y = 0.0,
             vm.Vector4(1.0, 0.8, 0.3, 1.0),
@@ -2115,7 +2117,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
 
   /// The floor point under the score banner, where the confetti pops from.
   vm.Vector3 _bannerWorldPosition() =>
-      _floorHit(_bannerCenter ?? _viewSize.center(Offset.zero))..y = 0.3;
+      _floorHit(_bannerCenter ?? _viewSize.center(Offset.zero))..y = 0.05;
 
   /// Plays a hit for any die whose velocity jumped more than gravity explains
   /// since the last physics step. Tumbling edge strikes register too, since
