@@ -169,6 +169,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   // catcher, so glass dice have something to refract. Off, the scene stays
   // transparent and glass composites over the widgets with plain alpha.
   bool _embedBackdrop = const bool.fromEnvironment('DICE_EMBED_BACKDROP');
+
+  // Pools of light under clear glass dice. Off unless asked for
+  // (`--dart-define=DICE_CAUSTICS=true` starts them on).
+  bool _caustics = const bool.fromEnvironment('DICE_CAUSTICS');
   final WidgetTextureController _capture = WidgetTextureController();
   late final UnlitMaterial _backdropMaterial;
   Node? _backdropNode;
@@ -638,6 +642,20 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         spin: vm.Vector3.zero(),
         rotation: pose.rotation,
       );
+    }
+  }
+
+  void _setCaustics(bool value) {
+    if (value == _caustics) return;
+    setState(() => _caustics = value);
+    for (final die in _dice) {
+      final existing = die.caustic;
+      if (!value && existing != null) {
+        _vfx.removeCaustic(existing);
+        die.caustic = null;
+      } else if (value && existing == null && die.finish.castsCaustic) {
+        die.caustic = _vfx.createCaustic(die.color);
+      }
     }
   }
 
@@ -1119,7 +1137,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     );
     scene.add(node);
     final die = _Die(node, visual, body, trail, finish, color);
-    if (finish.isGlass) die.caustic = _vfx.createCaustic(color);
+    if (_caustics && finish.castsCaustic) {
+      die.caustic = _vfx.createCaustic(color);
+    }
     _dice.add(die);
   }
 
@@ -2422,6 +2442,21 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
                 Switch(
                   value: _embedBackdrop,
                   onChanged: _setEmbedBackdrop,
+                  activeThumbColor: Colors.white,
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Caustics under clear glass dice',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ),
+                Switch(
+                  value: _caustics,
+                  onChanged: _setCaustics,
                   activeThumbColor: Colors.white,
                 ),
               ],
