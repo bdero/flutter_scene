@@ -184,12 +184,29 @@ class DiceVfx {
   /// Confetti fired up out of the score. The pieces flutter down, land flat
   /// on the table, rest, and fade out. They are instanced meshes, so they
   /// cast shadows on the widgets like everything else.
-  void confetti(vm.Vector3 position, List<vm.Vector4> colors) {
+  /// [axis] is the direction the burst fires along, world up by default.
+  /// Aiming it at the camera keeps the pop over the same screen point as
+  /// the pieces rise, instead of drifting outward under perspective.
+  void confetti(
+    vm.Vector3 position,
+    List<vm.Vector4> colors, {
+    vm.Vector3? axis,
+  }) {
     if (!_ready) return;
-    _spawn(
+    final up = axis ?? vm.Vector3(0, 1, 0);
+    final node = _spawn(
       position,
-      ConfettiComponent(colors: colors, seed: _random.nextInt(1 << 30)),
+      ConfettiComponent(
+        colors: colors,
+        seed: _random.nextInt(1 << 30),
+        axis: up,
+      ),
       lifetime: ConfettiComponent.maxLifetime,
+    );
+    node.localTransform = vm.Matrix4.compose(
+      position,
+      _rotationTo(up),
+      vm.Vector3.all(1.0),
     );
     // Glitter riding the pop.
     final glitter = ParticleSystem(
@@ -225,12 +242,17 @@ class DiceVfx {
     );
     final glitterMaterial = SpriteMaterial(colorTexture: _dot)
       ..blendMode = _blend;
-    _spawn(
+    final glitterNode = _spawn(
       position,
       ParticleEmitterComponent(system: glitter, material: glitterMaterial)
         ..facing = BillboardFacing.velocityStretched
         ..velocityStretch = 0.03,
       lifetime: 1.6,
+    );
+    glitterNode.localTransform = vm.Matrix4.compose(
+      position,
+      _rotationTo(up),
+      vm.Vector3.all(1.0),
     );
   }
 
@@ -448,6 +470,19 @@ class DiceVfx {
     scene.screenDistortion.pulses.add(pulse);
     scene.screenDistortion.enabled = true;
     _shockwaves.add(_Shockwave(pulse, strength));
+  }
+
+  /// The rotation taking world up onto [direction].
+  static vm.Quaternion _rotationTo(vm.Vector3 direction) {
+    final up = vm.Vector3(0, 1, 0);
+    final d = direction.normalized();
+    final dot = up.dot(d).clamp(-1.0, 1.0);
+    if (dot > 0.9999) return vm.Quaternion.identity();
+    if (dot < -0.9999) {
+      return vm.Quaternion.axisAngle(vm.Vector3(1, 0, 0), math.pi);
+    }
+    final axis = up.cross(d)..normalize();
+    return vm.Quaternion.axisAngle(axis, math.acos(dot));
   }
 
   Node _spawn(
@@ -691,8 +726,12 @@ class _ConfettiPiece {
 /// rests, and fades. Flying and resting pieces live in an opaque instanced
 /// mesh so they cast shadows; a fading piece moves to a blended one.
 class ConfettiComponent extends Component {
-  ConfettiComponent({required List<vm.Vector4> colors, int seed = 0})
-    : _random = math.Random(seed) {
+  ConfettiComponent({
+    required List<vm.Vector4> colors,
+    int seed = 0,
+    vm.Vector3? axis,
+  }) : _random = math.Random(seed) {
+    final aim = DiceVfx._rotationTo(axis ?? vm.Vector3(0, 1, 0));
     final geometry = CuboidGeometry(vm.Vector3(0.16, 0.012, 0.10));
     _opaque = InstancedMesh(
       geometry: geometry,
@@ -715,11 +754,13 @@ class ConfettiComponent extends Component {
       // A cone about +y.
       final angle = _random.nextDouble() * 0.6;
       final around = _random.nextDouble() * math.pi * 2;
-      final direction = vm.Vector3(
-        math.sin(angle) * math.cos(around),
-        math.cos(angle),
-        math.sin(angle) * math.sin(around),
-      )..normalize();
+      final direction = aim.rotate(
+        vm.Vector3(
+          math.sin(angle) * math.cos(around),
+          math.cos(angle),
+          math.sin(angle) * math.sin(around),
+        )..normalize(),
+      );
       final speed = 6.0 + _random.nextDouble() * 5.5;
       final axis = vm.Vector3(
         _random.nextDouble() * 2 - 1,
