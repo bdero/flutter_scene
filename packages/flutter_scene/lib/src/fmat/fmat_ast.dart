@@ -274,6 +274,7 @@ class FmatMaterial {
     this.engineInputs = const [],
     this.sceneColorReach,
     this.environmentLighting = true,
+    this.alphaToCoverage = false,
   });
 
   final String name;
@@ -283,6 +284,11 @@ class FmatMaterial {
   /// environment, BRDF LUT, SH, and SSAO samplers; the material then supplies
   /// its indirect light itself through `Composite()`.
   final bool environmentLighting;
+
+  /// Whether an opaque material turns its surface alpha into MSAA coverage
+  /// (`alpha_to_coverage:`, default false), for crisp, sort-free cutouts
+  /// such as foliage cards.
+  final bool alphaToCoverage;
 
   /// The rendering contract this `.fmat` targets (surface material or sky).
   final FmatDomain domain;

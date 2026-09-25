@@ -572,6 +572,7 @@ FmatMaterial _build(
     'engine_inputs',
     'scene_color_reach',
     'environment_lighting',
+    'alpha_to_coverage',
   };
   for (final key in tree.keys) {
     if (!knownKeys.contains(key)) {
@@ -626,6 +627,24 @@ FmatMaterial _build(
     throw FmatException(
       '`environment_lighting: false` is only supported with '
       '`shading_model: lit`.',
+      fileName: fileName,
+    );
+  }
+
+  final alphaToCoverageValue = tree['alpha_to_coverage'];
+  if (alphaToCoverageValue != null && alphaToCoverageValue is! bool) {
+    throw FmatException(
+      '`alpha_to_coverage` must be a boolean.',
+      fileName: fileName,
+    );
+  }
+  final alphaToCoverage = alphaToCoverageValue as bool? ?? false;
+  if (alphaToCoverage &&
+      (blending != FmatBlending.opaque ||
+          shadingModel == FmatShadingModel.shadowCatcher)) {
+    throw FmatException(
+      '`alpha_to_coverage` needs `blending: opaque`; blended materials '
+      'already use their alpha.',
       fileName: fileName,
     );
   }
@@ -866,6 +885,7 @@ FmatMaterial _build(
     engineInputs: engineInputs,
     sceneColorReach: sceneColorReach,
     environmentLighting: environmentLighting,
+    alphaToCoverage: alphaToCoverage,
   );
 }
 
