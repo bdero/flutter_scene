@@ -260,6 +260,9 @@ String emitFragmentGlsl(
   sb.writeln('#include <normals.glsl>');
   sb.writeln('#include <material_inputs.glsl>');
   sb.writeln('#include <material_debug.glsl>');
+  if (material.alphaToCoverage) {
+    sb.writeln('#include <material_coverage.glsl>');
+  }
   if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     // The catcher samples the shadow atlas and occlusion chain but never
     // evaluates the lighting, so it takes the engine bindings plus the
@@ -395,6 +398,11 @@ String emitFragmentGlsl(
   sb.writeln('void main() {');
   sb.writeln('  MaterialInputs material = InitMaterialInputs();');
   sb.writeln('  Surface(material);');
+  if (material.alphaToCoverage) {
+    // Coverage carries the alpha; the covered samples take the full color.
+    sb.writeln('  ApplyAlphaToCoverage(material.base_color.a);');
+    sb.writeln('  material.base_color.a = 1.0;');
+  }
   final keepAlive = _fragmentKeepAliveTerm(material, uniforms, samplers);
   if (keepAlive != null) {
     sb.writeln(
@@ -811,6 +819,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     if (material.useEnvironment) 'use_environment': true,
     'shading_model': material.shadingModel.name,
     if (!material.environmentLighting) 'environment_lighting': false,
+    if (material.alphaToCoverage) 'alpha_to_coverage': true,
     'blending': material.blending.name,
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,

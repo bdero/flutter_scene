@@ -121,6 +121,7 @@ const _frameworkShaderFiles = <String>[
   'irradiance_receiver.glsl',
   'lightmap.glsl',
   'lod_fade.glsl',
+  'material_coverage.glsl',
   'material_engine_lighting.glsl',
   'material_inputs.glsl',
   'material_lighting.glsl',
