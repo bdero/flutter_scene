@@ -456,7 +456,10 @@ class _DepthPrepassEncoder {
     // falls back to its full vertex shader and bind. The normal-writing path
     // always uses the full vertex shader, since the position-only path
     // carries no normal.
-    final depthVertex = (_writeNormals || masked)
+    final depthVertex =
+        (_writeNormals ||
+            masked ||
+            item.material.needsFullVertexForDepth(geometry))
         ? null
         : geometry.depthOnlyVertex;
     // A `vertex { }` material displaces geometry in the color pass, so the

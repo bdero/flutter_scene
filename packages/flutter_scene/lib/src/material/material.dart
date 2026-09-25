@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:vector_math/vector_math.dart' show Matrix4;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/dfg_lut.dart';
 import 'package:flutter_scene/src/material/dfg_lut_data.dart';
@@ -493,6 +494,16 @@ abstract class Material {
   /// pipeline's vertex layout as well as of what an instanced mesh accepts.
   @internal
   InstanceAttributeSchema? get instanceAttributes => null;
+
+  /// Whether the depth-style passes (shadow maps, the depth prepass) must run
+  /// this material's full vertex variant for [geometry] rather than the
+  /// position-only one. True when a `vertex { }` stage can read custom or
+  /// per-instance attributes, which the position-only path does not fetch, so
+  /// geometry built in the vertex shader casts the shadow it draws.
+  @internal
+  bool needsFullVertexForDepth(Geometry geometry) =>
+      materialVertexShader(geometry.materialVertexVariant) != null &&
+      (geometry.hasCustomAttributes || instanceAttributes != null);
 
   /// Binds this material's vertex-stage uniforms to [vertexShader], called by
   /// the encoder only when it used a material-supplied vertex shader (see

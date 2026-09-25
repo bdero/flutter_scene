@@ -221,7 +221,10 @@ class ShadowEncoder {
     // skinned geometry falls back to its full vertex shader and bind.
     // A `vertex { }` material displaces geometry in the color pass, so run its
     // vertex variant here too or the shadow detaches from the visible surface.
-    final depthVertex = masked ? null : geometry.depthOnlyVertex;
+    final depthVertex =
+        masked || item.material.needsFullVertexForDepth(geometry)
+        ? null
+        : geometry.depthOnlyVertex;
     final materialVertex = item.material.materialVertexShader(
       depthVertex != null ? 'depth' : geometry.materialVertexVariant,
     );
