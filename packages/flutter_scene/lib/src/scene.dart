@@ -2009,10 +2009,20 @@ base class Scene implements SceneGraph {
     }
     planarCaptureView ??= textureViews.isNotEmpty ? textureViews.first : null;
 
+    // A frame whose screen views will re-present their previous images skips
+    // the texture views too. Rendering them anyway keeps the GPU a frame
+    // behind, so the screen views would pace indefinitely.
+    final pacingFrame =
+        maxGpuFramesInFlight > 0 &&
+        _hasPresentedFrame &&
+        _pendingGraphCapture == null &&
+        views.any((view) => view.target == null) &&
+        rendererSubmissions.framesInFlight >= maxGpuFramesInFlight;
+
     final now = DateTime.now();
     for (final view in textureViews) {
       final target = view.target!;
-      if (!target.shouldUpdate(now)) {
+      if (pacingFrame || !target.shouldUpdate(now)) {
         continue;
       }
       _renderViewToTexture(
