@@ -164,6 +164,32 @@ bool sidecarSamplesEnvironment(Map<String, Object?> metadata) =>
       _ => true,
     };
 
+const _lightingHookDefines = {
+  'Light': 'FLUTTER_SCENE_HOOK_LIGHT',
+  'Ambient': 'FLUTTER_SCENE_HOOK_AMBIENT',
+  'Composite': 'FLUTTER_SCENE_HOOK_COMPOSITE',
+};
+
+final _lightingHookPattern = RegExp(
+  r'(?:^|[\s;}])(?:highp\s+)?(LightTerms|void|vec4)\s+(Light|Ambient|Composite)\s*\(',
+  multiLine: true,
+);
+
+/// The optional lighting hooks a lit fragment source defines: `Light()`,
+/// `Ambient()`, and `Composite()` (see shaders/material_lighting.glsl).
+Set<String> lightingHooksIn(String fragmentSource) {
+  const signatures = {
+    'Light': 'LightTerms',
+    'Ambient': 'void',
+    'Composite': 'vec4',
+  };
+  final hooks = <String>{};
+  for (final m in _lightingHookPattern.allMatches(fragmentSource)) {
+    if (signatures[m.group(2)] == m.group(1)) hooks.add(m.group(2)!);
+  }
+  return hooks;
+}
+
 String emitFragmentGlsl(
   FmatMaterial material, {
   Iterable<String> defines = const [],
@@ -189,6 +215,11 @@ String emitFragmentGlsl(
   }
   if (material.engineInputs.contains('filtered_scene_color')) {
     sb.writeln('#define FLUTTER_SCENE_SKIP_SSAO');
+  }
+  if (lit && material.shadingModel != FmatShadingModel.shadowCatcher) {
+    for (final hook in lightingHooksIn(material.fragmentSource)) {
+      sb.writeln('#define ${_lightingHookDefines[hook]}');
+    }
   }
   // Compile the scene-input samplers and their accessors in or out by what the
   // material declares (see material_scene_inputs.glsl); a declared-but-unread

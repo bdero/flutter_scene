@@ -30,6 +30,74 @@
 
 #include <material_shadow_sampling.glsl>
 
+// Optional material lighting hooks. A `.fmat` that defines `Light()`,
+// `Ambient()`, or `Composite()` in its fragment source gets the matching
+// FLUTTER_SCENE_HOOK_* define, and EvaluateLighting calls the material's
+// function through the prototype below (the definition follows later in the
+// generated source). Materials without hooks compile exactly as before.
+#if defined(FLUTTER_SCENE_HOOK_LIGHT) || defined(FLUTTER_SCENE_HOOK_AMBIENT) || \
+    defined(FLUTTER_SCENE_HOOK_COMPOSITE)
+#define FLUTTER_SCENE_LIGHTING_HOOKS
+#endif
+
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+// One analytic light as seen from the shaded point. `radiance` is what the
+// default BRDF receives: `color` times every attenuation term and the shadow.
+struct LightContext {
+  highp vec3 light_vector;  // Surface to light, unit length.
+  highp vec3 radiance;
+  highp vec3 color;         // Color times intensity, unattenuated.
+  highp vec3 position;      // World position (directional: unused).
+  highp vec3 direction;     // Travel direction (directional and spot).
+  float distance_attenuation;
+  float cone_attenuation;
+  float shadow;
+  float type;               // 0 directional, 1 point, 2 spot.
+  vec3 normal;              // Shading normal.
+  vec3 view;                // Surface to camera, unit length.
+};
+
+// A light's contribution split into lobes, so Composite() can weigh them.
+struct LightTerms {
+  highp vec3 diffuse;
+  highp vec3 specular;
+};
+
+// The image-based lighting inputs before the split-sum BRDF is applied.
+// Ambient() may rescale or add to the incoming light and replace occlusion.
+struct AmbientContext {
+  highp vec3 irradiance;  // Diffuse irradiance (environment SH, intensity).
+  highp vec3 radiance;    // Prefiltered specular radiance along reflection.
+  vec3 diffuse_occlusion;
+  float specular_occlusion;
+  vec3 normal;
+  vec3 reflection;
+  float n_dot_v;
+  float roughness;
+};
+
+// Every lobe of the lit result, before alpha premultiplication and fog.
+struct LightingResult {
+  highp vec3 direct_diffuse;
+  highp vec3 direct_specular;
+  highp vec3 indirect_diffuse;
+  highp vec3 indirect_specular;
+  highp vec3 emissive;
+  float alpha;
+};
+
+#ifdef FLUTTER_SCENE_HOOK_LIGHT
+LightTerms Light(MaterialInputs material, LightContext light);
+#endif
+#ifdef FLUTTER_SCENE_HOOK_AMBIENT
+void Ambient(MaterialInputs material, inout AmbientContext ambient);
+#endif
+#ifdef FLUTTER_SCENE_HOOK_COMPOSITE
+// Returns linear HDR premultiplied by alpha; engine fog is applied after.
+highp vec4 Composite(MaterialInputs material, LightingResult result);
+#endif
+#endif
+
 // Parallax-corrected reflection for a local environment probe: intersects
 // the reflected ray with the probe's box proxy and re-aims the lookup from
 // the capture point (the box center) at the hit, so reflections track the
@@ -531,6 +599,22 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   }
 #endif
 
+#ifdef FLUTTER_SCENE_HOOK_AMBIENT
+  AmbientContext ambient_context;
+  ambient_context.irradiance = irradiance;
+  ambient_context.radiance = prefiltered_color;
+  ambient_context.diffuse_occlusion = diffuse_occlusion;
+  ambient_context.specular_occlusion = -1.0;
+  ambient_context.normal = normal;
+  ambient_context.reflection = env_reflection;
+  ambient_context.n_dot_v = n_dot_v_energy;
+  ambient_context.roughness = roughness;
+  Ambient(material, ambient_context);
+  irradiance = ambient_context.irradiance;
+  prefiltered_color = ambient_context.radiance;
+  diffuse_occlusion = ambient_context.diffuse_occlusion;
+#endif
+
   // Split-sum DFG terms (Karis '13) from the RGBA16F environment-BRDF LUT
   // (scale in R, bias in G), indexed by (n_dot_v, roughness) with roughness up
   // the V axis; sampled slightly inside [0, 1] to avoid edge-tap artifacts.
@@ -572,6 +656,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   } else {
     specular_occlusion = occlusion;
   }
+#ifdef FLUTTER_SCENE_HOOK_AMBIENT
+  // A non-negative value from Ambient() replaces the engine's choice.
+  if (ambient_context.specular_occlusion >= 0.0) {
+    specular_occlusion = ambient_context.specular_occlusion;
+  }
+#endif
   // Sun direction and how squarely this surface faces it. `facing` ramps from
   // 0 (at or past the terminator) to 1 (sun-facing) over a small band, so the
   // sun's influence falls off smoothly rather than at a hard line.
@@ -661,7 +751,36 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // ambient term). The shadowed first directional light shades here; its shadow
   // visibility multiplies the whole term.
   highp vec3 direct = vec3(0.0);
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+  // The hooked path accumulates each light's lobes separately for Composite().
+  highp vec3 direct_diffuse = vec3(0.0);
+  highp vec3 direct_specular = vec3(0.0);
+  LightContext light_context;
+  light_context.normal = normal;
+  light_context.view = camera_normal;
+  light_context.position = vec3(0.0);
+#endif
   if (frag_info.has_directional_light > 0.5) {
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+    light_context.light_vector = light_vector;
+    light_context.color = frag_info.directional_light_color.rgb;
+    light_context.radiance = light_context.color * sun_visibility;
+    light_context.direction = -light_vector;
+    light_context.distance_attenuation = 1.0;
+    light_context.cone_attenuation = facing;
+    light_context.shadow = shadow;
+    light_context.type = 0.0;
+#ifdef FLUTTER_SCENE_HOOK_LIGHT
+    LightTerms sun_terms = Light(material, light_context);
+    direct_diffuse += sun_terms.diffuse;
+    direct_specular += sun_terms.specular;
+#else
+    direct_diffuse += EvaluateAnalyticLight(material, light_vector,
+        light_context.radiance, normal, camera_normal, albedo, metallic,
+        roughness, reflectance, n_dot_v, material.specular,
+        anisotropic_tangent, anisotropic_bitangent);
+#endif
+#else
     direct = EvaluateAnalyticLight(material, light_vector,
                                    frag_info.directional_light_color.rgb, normal,
                                    camera_normal, albedo, metallic, roughness,
@@ -669,6 +788,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                                    anisotropic_tangent,
                                    anisotropic_bitangent) *
              sun_visibility;
+#endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     coat_direct += EvaluateClearcoatLight(
         light_vector, frag_info.directional_light_color.rgb, coat_normal,
@@ -757,9 +877,21 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #endif
     } else {
     vec3 punctual_light_vector;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+    light_context.color = radiance;
+    light_context.position = l0.xyz;
+    light_context.type = type;
+    light_context.distance_attenuation = 1.0;
+    light_context.cone_attenuation = 1.0;
+    light_context.shadow = 1.0;
+    light_context.direction = vec3(0.0);
+#endif
     if (type < 0.5) {
       // Directional: the travel direction is in texel 2; no attenuation.
       punctual_light_vector = -normalize(FetchPunctualTexel(light_row, 2).xyz);
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+      light_context.direction = -punctual_light_vector;
+#endif
     } else {
       highp vec3 to_light = l0.xyz - v_position;
       highp float dist_sq = dot(to_light, to_light);
@@ -774,8 +906,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
       // spot offset, shadow slot, falloff exponent
       highp vec4 l3 = FetchPunctualTexel(light_row, 3);
-      radiance *=
+      highp float distance_attenuation =
           (window * window) / max(pow(dist_sq, l3.z * 0.5), 1e-4);
+      radiance *= distance_attenuation;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+      light_context.distance_attenuation = distance_attenuation;
+#endif
       if (type > 1.5) {
         // Spot cone: a squared linear ramp on the cosine between the inner and
         // outer cone, using the precomputed scale (texel 2 w) and offset.
@@ -783,12 +919,20 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         float cd = dot(normalize(l2.xyz), -punctual_light_vector);
         float cone = clamp(cd * l2.w + l3.x, 0.0, 1.0);
         radiance *= cone * cone;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+        light_context.cone_attenuation = cone * cone;
+        light_context.direction = normalize(l2.xyz);
+#endif
         // Spot shadow, when this spot has a slot in the shared atlas. Gate on
         // the geometric normal (the shadow is a geometric property).
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
         if (l3.y > -0.5 && frag_info.spot_shadow_params.x > 0.5) {
-          radiance *= SampleSpotShadow(
+          float spot_shadow = SampleSpotShadow(
               light_row, int(l3.y + 0.5), v_position, GetWorldNormal());
+          radiance *= spot_shadow;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+          light_context.shadow = spot_shadow;
+#endif
         }
 #endif
       }
@@ -797,15 +941,34 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                frag_info.spot_shadow_params.x > 0.5) {
         // Point shadow, when this light's cube faces ride the shared atlas
         // (l3.y is its first tile after the cascades).
-        radiance *= SamplePointShadow(
+        float point_shadow = SamplePointShadow(
             light_row, l3.y, v_position, GetWorldNormal());
+        radiance *= point_shadow;
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+        light_context.shadow = point_shadow;
+#endif
       }
 #endif
     }
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+    light_context.light_vector = punctual_light_vector;
+    light_context.radiance = radiance;
+#ifdef FLUTTER_SCENE_HOOK_LIGHT
+    LightTerms punctual_terms = Light(material, light_context);
+    direct_diffuse += punctual_terms.diffuse;
+    direct_specular += punctual_terms.specular;
+#else
+    direct_diffuse += EvaluateAnalyticLight(
+        material, punctual_light_vector, radiance, normal, camera_normal,
+        albedo, metallic, roughness, reflectance, n_dot_v, material.specular,
+        anisotropic_tangent, anisotropic_bitangent);
+#endif
+#else
     direct += EvaluateAnalyticLight(
         material, punctual_light_vector, radiance, normal, camera_normal,
         albedo, metallic, roughness, reflectance, n_dot_v, material.specular,
         anisotropic_tangent, anisotropic_bitangent);
+#endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     coat_direct += EvaluateClearcoatLight(
         punctual_light_vector, radiance, coat_normal, camera_normal,
@@ -815,6 +978,32 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   }
 
   highp vec3 emissive = material.emissive;
+
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+  // Area lights still accumulate into `direct`; they count as diffuse here.
+  direct_diffuse += direct;
+  float hooked_direct_occlusion = mix(
+      1.0, occlusion, clamp(frag_info.ssao_lighting.x, 0.0, 1.0));
+  LightingResult lighting_result;
+  lighting_result.direct_diffuse = direct_diffuse * hooked_direct_occlusion;
+  lighting_result.direct_specular = direct_specular * hooked_direct_occlusion;
+  lighting_result.indirect_diffuse =
+      indirect_diffuse * diffuse_occlusion * ambient_shadow;
+  lighting_result.indirect_specular =
+      indirect_specular * specular_occlusion * ambient_shadow;
+  lighting_result.emissive = emissive;
+  lighting_result.alpha = alpha;
+#ifdef FLUTTER_SCENE_HOOK_COMPOSITE
+  highp vec4 composite = Composite(material, lighting_result);
+#else
+  highp vec4 composite =
+      vec4(lighting_result.direct_diffuse + lighting_result.direct_specular +
+               lighting_result.indirect_diffuse +
+               lighting_result.indirect_specular + emissive,
+           1.0) *
+      alpha;
+#endif
+#endif
 
   // Linear HDR, premultiplied by alpha. Exposure, the tone-mapping
   // operator, and display encoding are applied later by the tone-mapping
@@ -857,5 +1046,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     }
     sky_fog_color *= frag_info.environment_intensity;
   }
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+  // TODO(lighting-hooks): the hooked path drops the physical clearcoat,
+  // transmission, sheen, and screen-space bounce terms. Fold them into
+  // LightingResult if a physical material ever needs hooks.
+  return ApplyFog(composite, sky_fog_color);
+#else
   return ApplyFog(vec4(out_color, 1.0) * alpha, sky_fog_color);
+#endif
 }
