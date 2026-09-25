@@ -158,8 +158,7 @@ void main() {
       const Offset(-2, 2),
       const Offset(2, 2),
     ];
-    final mean =
-        points.reduce((a, b) => a + b) / points.length.toDouble();
+    final mean = points.reduce((a, b) => a + b) / points.length.toDouble();
     expect(mean.distance, lessThan(1e-9));
     expect(math.sqrt(4), 2);
   });
