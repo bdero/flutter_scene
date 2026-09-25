@@ -260,6 +260,7 @@ export 'src/light.dart'
 export 'src/render/custom_render_pass.dart'
     show CustomRenderPass, RenderInput, RenderPassContext, RenderStage;
 export 'src/render/frame_transients.dart' show TransientWriter;
+export 'src/render/shadow_pass.dart' show SpotShadowInfo;
 export 'src/render/draw_recorder.dart'
     show BatchBreakReason, DrawPhase, DrawSkipReason;
 export 'src/render/render_graph_capture.dart'

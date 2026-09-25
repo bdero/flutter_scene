@@ -20,6 +20,35 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 /// from here.
 const String kShadowMapBlackboardKey = 'directional_shadow_map';
 
+/// Blackboard key for the frame's [SpotShadowInfo], set when spots cast.
+const String kSpotShadowInfoBlackboardKey = 'spot_shadow_info';
+
+/// Where the frame's spot shadows live in the shared shadow atlas (the
+/// texture under [kShadowMapBlackboardKey]): one square tile per casting spot,
+/// after the directional cascades, holding window-space depth in red.
+/// {@category Rendering}
+class SpotShadowInfo {
+  /// Creates the layout record for one frame's spot shadows.
+  const SpotShadowInfo({
+    required this.matrices,
+    required this.firstTile,
+    required this.totalTiles,
+    required this.tileResolution,
+  });
+
+  /// World to clip matrix of each casting spot, in shadow slot order.
+  final List<Matrix4> matrices;
+
+  /// Atlas tile index of slot 0; slot `i` is tile `firstTile + i`.
+  final int firstTile;
+
+  /// Tiles across the atlas (its width is `totalTiles * tileResolution`).
+  final int totalTiles;
+
+  /// Edge length of a tile in texels.
+  final int tileResolution;
+}
+
 /// Render-graph blackboard key under which [ShadowPass] publishes the packed
 /// shadow uniform (the `PostShadowInfo` std140 block: per-cascade world->light
 /// matrices, split distances, the light direction + cascade count, and the
@@ -294,6 +323,18 @@ class ShadowPass extends RenderGraphPass {
 
     rendererSubmissions.submit(commandBuffer);
     context.blackboard.set(kShadowMapBlackboardKey, color);
+    final spotFrame = _spotShadows;
+    if (spotFrame != null) {
+      context.blackboard.set(
+        kSpotShadowInfoBlackboardKey,
+        SpotShadowInfo(
+          matrices: spotFrame.matrices,
+          firstTile: _cascades.length,
+          totalTiles: totalTiles,
+          tileResolution: _tileResolution,
+        ),
+      );
+    }
     final shadowUniform = _shadowUniform;
     if (shadowUniform != null) {
       context.blackboard.set(kShadowUniformBlackboardKey, shadowUniform);
