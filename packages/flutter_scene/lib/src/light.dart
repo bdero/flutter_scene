@@ -49,7 +49,8 @@ enum ShadowCastingMode {
   off,
 
   /// The meshes cast shadows from the faces the light sees, respecting each
-  /// material's own culling. The default.
+  /// material's own culling: a double-sided material casts from both faces.
+  /// The default.
   on,
 
   /// The meshes cast from every face, ignoring material culling. Fixes light
