@@ -32,6 +32,10 @@ struct VertexInputs {
   // Read-only frame data the engine fills in before calling Vertex(). The
   // world-space camera position is available in every variant.
   vec3 camera_position;
+  // Read-only: the object-to-world transform (node and instance) the engine
+  // applied to produce world_position, so Vertex() can build geometry in the
+  // object's own space and place it itself.
+  mat4 model_transform;
 };
 
 // The engine's standard vertex outputs, consumed by the fragment stage's

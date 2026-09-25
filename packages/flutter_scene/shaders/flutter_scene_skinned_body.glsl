@@ -115,6 +115,9 @@ void main() {
   vertex.uv1 = texture_coords_1;
   vertex.color = color;
   vertex.camera_position = frame_info.camera_position;
+  // vertex.position is already skinned, so the object-to-world transform
+  // Vertex() sees is the node transform alone.
+  vertex.model_transform = frame_info.model_transform;
   Vertex(vertex);
 
   v_position = vertex.world_position;

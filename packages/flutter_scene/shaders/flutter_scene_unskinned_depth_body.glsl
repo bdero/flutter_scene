@@ -51,6 +51,7 @@ void main() {
   vertex.uv1 = vec2(0.0);
   vertex.color = vec4(0.0);
   vertex.camera_position = frame_info.camera_position;
+  vertex.model_transform = model_transform;
   Vertex(vertex);
 
   v_position = vertex.world_position;
