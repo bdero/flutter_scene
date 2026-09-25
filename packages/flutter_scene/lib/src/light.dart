@@ -617,7 +617,8 @@ class PointLight {
   /// The distance-falloff exponent. `2` (the default) is the physical
   /// inverse square; lower values are an artistic control that lets the
   /// light reach further without blowing out its near field (a hero light
-  /// touching distant scenery). Values at or below zero are clamped.
+  /// touching distant scenery). `0` disables the distance falloff, leaving
+  /// only the [range] window; negative values are clamped to `0`.
   double falloffExponent;
 
   /// Whether this light casts a shadow. When true, the renderer renders six
