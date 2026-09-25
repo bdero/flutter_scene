@@ -103,6 +103,24 @@ Uri discoveryDependencyDirectory(Uri packageRoot, String discoveryRoot) {
   return packageRoot;
 }
 
+/// The discovery directory and every directory below it, as hook
+/// dependencies. A directory dependency hashes only its direct children, so
+/// a source added or removed in a subdirectory reruns the hook only when that
+/// subdirectory is declared too.
+List<Uri> discoveryDependencyDirectories(
+  Uri packageRoot,
+  String discoveryRoot,
+) {
+  final root = discoveryDependencyDirectory(packageRoot, discoveryRoot);
+  final dir = Directory.fromUri(root);
+  if (!dir.existsSync()) return [root];
+  return [
+    root,
+    for (final entity in dir.listSync(recursive: true, followLinks: false))
+      if (entity is Directory) entity.uri,
+  ];
+}
+
 /// Converts scene assets so an app loads them by source path with `loadScene`
 /// without hand-editing the asset manifest. Discovers three source kinds under
 /// [discoveryRoot]: `.glb` (converted to `.fsceneb`), authored `.fscene`
@@ -178,8 +196,8 @@ void buildScenes({
     // TODO(hook-dep-cost): the hash covers direct children only, so a source
     // added in a subdirectory is not seen until something else reruns the hook.
     // Declaring each subdirectory found during discovery would close that.
-    buildOutput.dependencies.add(
-      discoveryDependencyDirectory(packageRoot, discoveryRoot),
+    buildOutput.dependencies.addAll(
+      discoveryDependencyDirectories(packageRoot, discoveryRoot),
     );
   }
 
