@@ -141,6 +141,16 @@ const _frameworkShaderFiles = <String>[
   'wireframe.glsl',
 ];
 
+/// The `.fmat` compiler sources, relative to flutter_scene's package root.
+/// Fingerprinted with the materials, so an engine change to how materials
+/// compile rebuilds them even when no material or shader file changed.
+const _compilerSourceFiles = <String>[
+  'lib/src/fmat/fmat.dart',
+  'lib/src/fmat/fmat_ast.dart',
+  'lib/src/fmat/fmat_emitter.dart',
+  'lib/src/fmat/fmat_parser.dart',
+];
+
 /// Compiles `.fmat` custom-material files into a Flutter GPU shader bundle plus
 /// a parameter-metadata sidecar, for use with `ShaderMaterial` /
 /// `PreprocessedMaterial` at runtime.
@@ -379,6 +389,12 @@ Future<void> _buildMaterials({
       File(frameworkShaders.resolve(name).toFilePath()),
       strict: options.strictHashing,
     );
+    stampBuffer.write(' $name=$hash');
+  }
+  for (final name in _compilerSourceFiles) {
+    final file = File(frameworkShaders.resolve('../$name').toFilePath());
+    if (!file.existsSync()) continue;
+    final hash = sourceFingerprint(file, strict: options.strictHashing);
     stampBuffer.write(' $name=$hash');
   }
   final stamp = stampBuffer.toString();
@@ -799,5 +815,8 @@ void _registerOutputs({
   buildOutput.dependencies.addAll(materialPaths.map(packageRoot.resolve));
   buildOutput.dependencies.addAll(
     _frameworkShaderFiles.map(frameworkShaders.resolve),
+  );
+  buildOutput.dependencies.addAll(
+    _compilerSourceFiles.map((name) => frameworkShaders.resolve('../$name')),
   );
 }
