@@ -14,8 +14,10 @@ import '../generated_assets/generated_tree.dart';
 import 'fmat.dart';
 import 'fmat_emitter.dart'
     show
+        depthSurfaceEntryName,
         kLightmapDefine,
         kRadianceCubeDefine,
+        materialHasDepthSurface,
         lightmapEntryName,
         materialSamplesEnvironment,
         radianceCubeEntryName;
@@ -668,8 +670,18 @@ Map<String, String> emitFragmentShaderVariants(
       byShadow[name] = defines;
     }
   });
+  // Cutouts cut the depth passes by their own surface alpha.
+  final depthSurfaces = <String, String>{
+    if (materialHasDepthSurface(material))
+      for (final kind in DepthSurfaceKind.values)
+        depthSurfaceEntryName(material, kind): emitFragmentGlsl(
+          material,
+          depthSurface: kind,
+        ),
+  };
   if (!materialSamplesEnvironment(material)) {
     return <String, String>{
+      ...depthSurfaces,
       for (final entry in byShadow.entries)
         entry.key: entry.value.isEmpty
             ? compiled.glsl
@@ -679,7 +691,7 @@ Map<String, String> emitFragmentShaderVariants(
   // Backends build the prefiltered radiance in one of two layouts and each
   // entry declares only its own sampler, so every entry gets a Cube twin that
   // the runtime picks from the bound environment.
-  final variants = <String, String>{};
+  final variants = <String, String>{...depthSurfaces};
   byShadow.forEach((name, defines) {
     variants[name] = defines.isEmpty
         ? compiled.glsl

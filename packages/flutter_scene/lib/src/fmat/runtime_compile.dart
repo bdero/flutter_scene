@@ -19,8 +19,10 @@ import 'package:flutter_gpu_shaders/build.dart'
 import 'package:flutter_scene/src/fmat/fmat.dart';
 import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show
+        depthSurfaceEntryName,
         emitFragmentGlsl,
         kRadianceCubeDefine,
+        materialHasDepthSurface,
         materialSamplesEnvironment,
         radianceCubeEntryName;
 import 'package:flutter_scene/src/importer/build_cache.dart';
@@ -168,6 +170,16 @@ final class FmatRuntimeCompiler {
             ),
           ),
         },
+      if (materialHasDepthSurface(compiled.material))
+        for (final kind in DepthSurfaceKind.values)
+          depthSurfaceEntryName(compiled.material, kind): {
+            'type': 'fragment',
+            'file': _writeShader(
+              genDir,
+              '${depthSurfaceEntryName(compiled.material, kind)}.frag',
+              emitFragmentGlsl(compiled.material, depthSurface: kind),
+            ),
+          },
       for (final MapEntry(key: vertexEntry, value: vertexGlsl)
           in compiled.vertexGlsl.entries)
         vertexEntry: {

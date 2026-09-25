@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
+import 'package:vector_math/vector_math.dart' show Vector3;
 
 /// A material driven by a `.fmat` custom-material shader and its sidecar
 /// metadata (produced at build time by `buildMaterials`).
@@ -109,6 +110,104 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   void setRadianceCubeFragmentShaders(gpu.Shader shader, {gpu.Shader? shadow}) {
     _cubeFragmentShader = shader;
     _cubeShadowFragmentShader = shadow;
+  }
+
+  Map<DepthSurfaceKind, gpu.Shader>? _depthSurfaceShaders;
+
+  /// Sets the depth-pass fragments named by a sidecar's `depth_surface` map,
+  /// looking each entry up with [shaderFor]. Missing entries leave the
+  /// engine's depth shaders in place for that pass.
+  @internal
+  void setDepthSurfaceShadersFromMetadata(
+    Map<String, Object?> metadata,
+    gpu.Shader? Function(String entryName) shaderFor,
+  ) {
+    final meta = metadata['depth_surface'];
+    if (meta is! Map) {
+      setDepthSurfaceShaders(null);
+      return;
+    }
+    setDepthSurfaceShaders({
+      for (final kind in DepthSurfaceKind.values)
+        if (meta[kind.sidecarKey] case final String entry)
+          if (shaderFor(entry) case final gpu.Shader shader) kind: shader,
+    });
+  }
+
+  /// Sets the material's own depth-pass fragments (see
+  /// [Material.depthSurfaceShader]), resolved by the loader from the
+  /// sidecar's `depth_surface` map.
+  @internal
+  void setDepthSurfaceShaders(Map<DepthSurfaceKind, gpu.Shader>? shaders) {
+    _depthSurfaceShaders = shaders == null || shaders.isEmpty ? null : shaders;
+  }
+
+  @override
+  @internal
+  gpu.Shader? depthSurfaceShader(DepthSurfaceKind kind) =>
+      _depthSurfaceShaders?[kind];
+
+  @override
+  @internal
+  void bindDepthSurface(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer, {
+    required Vector3 cameraPosition,
+    required Vector3 cameraForward,
+  }) {
+    // Surface() may read the camera through either engine block, which the
+    // variant always keeps (FragInfo exists only in lit shaders). Both are
+    // zero apart from the camera.
+    if (shadingModel != FmatShadingModel.unlit) {
+      _bindCameraBlock(
+        pass,
+        shader,
+        transientsBuffer,
+        'FragInfo',
+        cameraPosition,
+        cameraForward,
+      );
+    }
+    _bindCameraBlock(
+      pass,
+      shader,
+      transientsBuffer,
+      'ViewInfo',
+      cameraPosition,
+      cameraForward,
+    );
+    parameters.bind(pass, shader, transientsBuffer);
+    pass.bindUniform(
+      shader.getUniformSlot('FragmentKeepAlive'),
+      transientsBuffer.emplace(_zeroKeepAlive),
+    );
+  }
+
+  static void _bindCameraBlock(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+    String name,
+    Vector3 position,
+    Vector3 forward,
+  ) {
+    final slot = shader.getUniformSlot(name);
+    final size = slot.sizeInBytes;
+    if (size == null || size == 0) return;
+    final data = ByteData(size);
+    void put(String member, Vector3 v) {
+      final offset = slot.getMemberOffsetInBytes(member);
+      if (offset == null || offset + 12 > size) return;
+      data
+        ..setFloat32(offset, v.x, Endian.little)
+        ..setFloat32(offset + 4, v.y, Endian.little)
+        ..setFloat32(offset + 8, v.z, Endian.little);
+    }
+
+    put('camera_position', position);
+    put('camera_forward', forward);
+    pass.bindUniform(slot, transientsBuffer.emplace(data));
   }
 
   @override

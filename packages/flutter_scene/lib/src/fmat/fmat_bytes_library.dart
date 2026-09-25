@@ -93,6 +93,7 @@ final class FmatBytesLibrary {
         _shaderFor(radianceCubeEntryName(entryName)),
       );
     }
+    material.setDepthSurfaceShadersFromMetadata(metadata, (e) => _library[e]);
     if (sourcePath != null) setFmatSourcePath(material, sourcePath);
     _instances.add((entryName: entryName, instance: WeakReference(material)));
     return material;
@@ -157,6 +158,7 @@ final class FmatBytesLibrary {
       instance.updateFromMetadata(shader, cast);
       if (instance is PreprocessedMaterial) {
         instance.updateVertexShaders(vertexShaders);
+        instance.setDepthSurfaceShadersFromMetadata(cast, (e) => _library[e]);
       }
       affected.add(shader);
       if (vertexShaders != null) affected.addAll(vertexShaders.values);

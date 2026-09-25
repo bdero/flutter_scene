@@ -4,8 +4,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:vector_math/vector_math.dart' show Matrix4;
+import 'package:vector_math/vector_math.dart' show Matrix4, Vector3;
 
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/light.dart';
@@ -701,6 +702,27 @@ abstract class Material {
   /// call [bindDepthAlphaMask]. The base material writes full geometry.
   @internal
   bool get depthAlphaMasked => false;
+
+  /// The material's own fragment for a depth-writing pass, or null to use
+  /// the engine's. A cutout `.fmat` supplies one that runs its `Surface()` and
+  /// drops what it leaves uncovered, so the depth prepass and shadow maps
+  /// match its visible coverage. Such a draw uses the full vertex path and
+  /// binds through [bindDepthSurface].
+  @internal
+  gpu.Shader? depthSurfaceShader(DepthSurfaceKind kind) => null;
+
+  /// Binds what a [depthSurfaceShader] reads besides the pass's own info
+  /// block: the material parameters and any engine block its `Surface()`
+  /// kept, filled with the pass camera at [cameraPosition] looking along
+  /// [cameraForward].
+  @internal
+  void bindDepthSurface(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer, {
+    required Vector3 cameraPosition,
+    required Vector3 cameraForward,
+  }) {}
 
   /// Binds the mask texture and MaskInfo parameters consumed by the masked
   /// depth fragment shaders; [shader] is the masked variant the pass drew
