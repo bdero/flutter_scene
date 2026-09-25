@@ -186,6 +186,7 @@ class MeshComponent extends Component {
           item.primitiveVisible == primitive.visible &&
           item.frustumCulled == node.frustumCulled &&
           item.layers == node.layers &&
+          item.renderOrder == node.renderOrder &&
           item.lightChannelMask == node.lightChannelMask &&
           item.shadowStatic == node.shadowStatic &&
           item.shadowCastingMode == node.shadowCastingMode &&
@@ -238,6 +239,7 @@ class MeshComponent extends Component {
       final frustumCulledChanged = item.frustumCulled != frustumCulled;
       item.frustumCulled = frustumCulled;
       item.layers = layers;
+      item.renderOrder = node.renderOrder;
       item.lightChannelMask = lightChannelMask;
       final isMoving =
           transformChanged || (skin != null && jointsTexture != null);

@@ -1580,6 +1580,8 @@ base class SceneEncoder {
     _phase = DrawPhase.opaque;
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
+      final byOrder = a.item.renderOrder.compareTo(b.item.renderOrder);
+      if (byOrder != 0) return byOrder;
       final byPipeline = a.pipelineKey.compareTo(b.pipelineKey);
       if (byPipeline != 0) return byPipeline;
       final byMaterial = a.materialKey.compareTo(b.materialKey);
@@ -1849,10 +1851,16 @@ base class SceneEncoder {
     );
   }
 
+  // Render order first, then farthest first.
+  static int _backToFront(_TranslucentRecord a, _TranslucentRecord b) {
+    final byOrder = a.item.renderOrder.compareTo(b.item.renderOrder);
+    return byOrder != 0 ? byOrder : b.depth.compareTo(a.depth);
+  }
+
   void _prepareTranslucent() {
     if (_translucentPrepared) return;
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
-    _translucentRecords.sort((a, b) => b.depth.compareTo(a.depth));
+    _translucentRecords.sort(_backToFront);
     sortWatch?.stop();
     _translucentSortMicros = sortWatch?.elapsedMicroseconds ?? 0;
     _translucentPrepared = true;
@@ -2085,7 +2093,7 @@ base class SceneEncoder {
     if (_displayReferredRecords.isEmpty) return;
     _phase = DrawPhase.translucent;
     _drawTransformOverride = _displayReferredCameraTransform;
-    _displayReferredRecords.sort((a, b) => b.depth.compareTo(a.depth));
+    _displayReferredRecords.sort(_backToFront);
 
     _renderPass = pass;
     _boundPipeline = null;
