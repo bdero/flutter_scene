@@ -78,13 +78,31 @@ class _BreakRun {
 }
 
 class _Die {
-  _Die(this.node, this.visual, this.body, this.trail, this.finish, this.color);
+  _Die(
+    this.node,
+    this.visual,
+    this.body,
+    this.trail,
+    this.finish,
+    this.color,
+    this.builtHalf,
+  );
 
   /// The physics body. Its transform is the die's pose.
   final Node node;
 
   /// The child carrying the mesh (and the outline highlight).
   final Node visual;
+
+  /// The dithered stand-in that casts this die's shadow, when its finish is
+  /// too translucent for the shadow pass, and the clock quad sealed in a
+  /// clock die. Both ride [visual] and are resized with it.
+  Node? shadowProxy;
+  Node? clockFace;
+
+  /// The half-edge the meshes above were built for, so a resize can scale
+  /// what it cannot rebuild.
+  double builtHalf;
   final RigidBody body;
   final TrailComponent trail;
   DiceFinish finish;
@@ -98,6 +116,22 @@ class _Die {
   double lastHitTime = -1.0;
   double lastHitStrength = 0.0;
 }
+
+/// The camera distance the tuned lens defaults were printed at.
+const double _dofTunedDistance = 15.0;
+
+/// Depth of field that holds its look at any window size.
+///
+/// The camera pulls back to keep the same pixels per world unit, so the table
+/// sits [distance] away and that distance grows with the window. A fixed
+/// focus plane would then drift off the table (a small window blurs to mush),
+/// and the circle of confusion for a die a given height up goes as
+/// `1 / distance`, so the same lens smears a small window and sharpens a
+/// large one. Focusing on the table and scaling the blur with the distance
+/// cancels both.
+@visibleForTesting
+({double focusDistance, double blurScale}) diceDepthOfField(double distance) =>
+    (focusDistance: distance, blurScale: distance / _dofTunedDistance);
 
 /// Runs [onUpdate] in the scene's component pass, right after the physics
 /// step, so impacts are heard the frame they happen.
@@ -166,9 +200,12 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
   );
 
   // The screen copied into the scene as an opaque plane under the shadow
-  // catcher, so glass dice have something to refract. Off, the scene stays
-  // transparent and glass composites over the widgets with plain alpha.
-  bool _embedBackdrop = const bool.fromEnvironment('DICE_EMBED_BACKDROP');
+  // catcher, so glass dice have something to refract. On by default;
+  // `--dart-define=DICE_EMBED_BACKDROP=false` leaves the scene transparent
+  // and glass composites over the widgets with plain alpha.
+  bool _embedBackdrop = const bool.hasEnvironment('DICE_EMBED_BACKDROP')
+      ? const bool.fromEnvironment('DICE_EMBED_BACKDROP')
+      : true;
 
   // Pools of light under clear glass dice. Off unless asked for
   // (`--dart-define=DICE_CAUSTICS=true` starts them on).
@@ -418,11 +455,14 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     for (final path in manifest.listAssets()) {
       // `dice_<set>_N` are the table's own sounds, `land_<set>_N` a die
-      // finish's, `celebrate_<name>` the one-shots.
+      // finish's. The one-shots are keyed by the name their callers use, so
+      // `celebrate_` drops off and the rest keep their prefix.
       final impact = RegExp(
         r'assets/sounds/(dice|land)_(\w+?)_',
       ).firstMatch(path);
-      final fx = RegExp(r'assets/sounds/celebrate_(\w+)\.').firstMatch(path);
+      final fx = RegExp(
+        r'assets/sounds/(?:celebrate_(\w+)|((?:card|firework)_\w+|jackpot))\.',
+      ).firstMatch(path);
       if (impact == null && fx == null) continue;
       final clip = await audio.loadClip(path);
       if (!mounted) {
@@ -435,7 +475,7 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
             : impact.group(2)!;
         _impactClips.putIfAbsent(key, () => []).add(clip);
       } else {
-        _fxClips[fx!.group(1)!] = clip;
+        _fxClips[(fx!.group(1) ?? fx.group(2))!] = clip;
       }
     }
   }
@@ -607,9 +647,17 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         final die = _dice[i];
         die.visual.mesh = Mesh(_dieGeometry, _materialFor(die.finish, i));
         final proxy = buildShadowProxyMaterial(die.finish, _textures);
-        for (final child in die.visual.children) {
-          child.mesh = Mesh(_dieGeometry, proxy!);
+        if (die.shadowProxy != null && proxy != null) {
+          die.shadowProxy!.mesh = Mesh(_dieGeometry, proxy);
         }
+        // The clock is a widget quad, not die geometry, so it scales instead.
+        die.clockFace?.localTransform = vm.Matrix4.rotationX(-math.pi / 2)
+          ..scaleByDouble(
+            half / die.builtHalf,
+            half / die.builtHalf,
+            half / die.builtHalf,
+            1.0,
+          );
       }
     }
     if (commit) _respawnInPlace();
@@ -691,6 +739,10 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       fovNear: 0.5,
       fovFar: distance * 2,
     );
+    final dof = exampleSettings.depthOfField;
+    final fit = diceDepthOfField(distance);
+    dof.focusDistance = fit.focusDistance;
+    dof.blurScale = fit.blurScale;
     _ceilingY = math.min(distance * 0.55, 7.0);
     _shadowBaseDistance = distance + 8.0;
     _rebuildBackdropPlane();
@@ -1068,6 +1120,8 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
     final finish = _finishFor(index);
     final color = dieColors[index % dieColors.length];
     final visual = Node(mesh: Mesh(_dieGeometry, _materialFor(finish, index)));
+    Node? clockFace;
+    Node? shadowProxy;
     // Glass is translucent, which the shadow pass skips, so a glass die
     // casts through an invisible dithered stand-in that reads as a lighter
     // shadow once the light's softness blurs the dots.
@@ -1088,13 +1142,13 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
         ),
       );
       visual.add(clock);
+      clockFace = clock;
     }
     final proxyMaterial = buildShadowProxyMaterial(finish, _textures);
     if (proxyMaterial != null) {
-      visual.add(
-        Node(mesh: Mesh(_dieGeometry, proxyMaterial))
-          ..shadowCastingMode = ShadowCastingMode.shadowsOnly,
-      );
+      shadowProxy = Node(mesh: Mesh(_dieGeometry, proxyMaterial))
+        ..shadowCastingMode = ShadowCastingMode.shadowsOnly;
+      visual.add(shadowProxy);
     }
     // A streak in the die's color while it flies. It rides the body node,
     // which carries no mesh of its own, so it never casts a shadow.
@@ -1136,7 +1190,9 @@ class ExampleDiceShadowsState extends State<ExampleDiceShadows>
       ),
     );
     scene.add(node);
-    final die = _Die(node, visual, body, trail, finish, color);
+    final die = _Die(node, visual, body, trail, finish, color, _dieHalf)
+      ..clockFace = clockFace
+      ..shadowProxy = shadowProxy;
     if (_caustics && finish.castsCaustic) {
       die.caustic = _vfx.createCaustic(color);
     }
