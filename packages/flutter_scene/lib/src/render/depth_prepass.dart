@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'dart:math' as math;
+import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
+import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -56,7 +58,9 @@ class DepthPrepass extends RenderGraphPass {
     Vector3? cameraUp,
     List<Plane> cullingPlanes = const [],
     Matrix4? cameraTransform,
-  }) : _camera = camera,
+    bool primaryView = false,
+  }) : _primaryView = primaryView,
+       _camera = camera,
        _renderScene = renderScene,
        _dimensions = dimensions,
        _cameraForward = cameraForward,
@@ -70,6 +74,7 @@ class DepthPrepass extends RenderGraphPass {
        _cameraTransform = cameraTransform;
 
   final Matrix4? _cameraTransform;
+  final bool _primaryView;
 
   final Camera _camera;
   final RenderScene _renderScene;
@@ -167,6 +172,7 @@ class DepthPrepass extends RenderGraphPass {
       writeNormals: _writeNormals,
       cameraRight: _cameraRight,
       cameraUp: _cameraUp,
+      primaryView: _primaryView,
     );
     _renderScene.cull(
       encoder.frustum,
@@ -313,8 +319,10 @@ class _DepthPrepassEncoder {
     required Vector3 cameraRight,
     required Vector3 cameraUp,
     bool translucentPatch = false,
+    bool primaryView = false,
   }) : _writeNormals = writeNormals,
-       _translucentPatch = translucentPatch {
+       _translucentPatch = translucentPatch,
+       _primaryView = primaryView {
     frustum = Frustum.matrix(_cameraTransform);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
@@ -353,6 +361,9 @@ class _DepthPrepassEncoder {
   final int _layerMask;
   final List<Plane> _cullingPlanes;
   final bool _writeNormals;
+
+  // Whether this encodes a screen view's camera, for [MeshDrawSelector]s.
+  final bool _primaryView;
 
   // Flips the item filter from the prepass's opaque set to the translucent
   // depth-carrying set drawn by [TranslucentDepthPatchPass].
@@ -438,6 +449,31 @@ class _DepthPrepassEncoder {
   }
 
   void _encode(RenderItem item, {List<InstanceDataBatch>? batches}) {
+    if (batches != null) {
+      _encodeBody(item, batches: batches);
+      return;
+    }
+    final geometry = item.geometry;
+    final selection = beginMeshDraw(
+      item,
+      geometry,
+      MeshDrawPass.depth,
+      _cameraPosition,
+      _primaryView,
+    );
+    try {
+      if (selection.instanceCount == 0) return;
+      _encodeBody(item, instanceLimit: selection.instanceCount);
+    } finally {
+      endMeshDraw(geometry);
+    }
+  }
+
+  void _encodeBody(
+    RenderItem item, {
+    List<InstanceDataBatch>? batches,
+    int? instanceLimit,
+  }) {
     // Cull the same faces as the color pass; a double-sided (culling: none)
     // material must stay double-sided here, or its camera-facing back faces are
     // absent from the prepass and SSAO/SSR read the farther surface behind them.
@@ -606,9 +642,13 @@ class _DepthPrepassEncoder {
 
     final instances = item.instanceTransforms;
     if (instances != null) {
+      final visible = limitInstanceIndices(
+        item.visibleInstanceIndices,
+        instances.length,
+        instanceLimit,
+      );
       if (geometry.instancedVertexLayout == null) {
         // Skinned geometry has no instance-attribute path; loop.
-        final visible = item.visibleInstanceIndices;
         final count = visible?.length ?? instances.length;
         for (var slot = 0; slot < count; slot++) {
           final instanceIndex = visible?[slot] ?? slot;
@@ -645,7 +685,10 @@ class _DepthPrepassEncoder {
                 ? gpu.WindingOrder.counterClockwise
                 : gpu.WindingOrder.clockwise,
           );
-          geometry.draw(_renderPass, instanceCount: instances.length);
+          geometry.draw(
+            _renderPass,
+            instanceCount: visible?.length ?? instances.length,
+          );
           return;
         }
       }
@@ -654,7 +697,7 @@ class _DepthPrepassEncoder {
           : transientInstancePackingScratch.singleCachedBatch(
               packedWorldData: packedWorldData,
               packedWindingFlipped: packedWinding,
-              indices: item.visibleInstanceIndices,
+              indices: visible,
               attributeFloats: item.instanceAttributeFloats,
             );
       final PackedInstances packed = depthVertex == null
@@ -665,7 +708,7 @@ class _DepthPrepassEncoder {
                     item.instanceColors!,
                     nodeWindingFlipped: item.windingFlipped,
                     instanceWindingFlipped: item.instanceWindingFlipped,
-                    indices: item.visibleInstanceIndices,
+                    indices: visible,
                     attributeData: item.instanceAttributeData,
                     attributeFloats: attributeFloats,
                     scratch: transientInstancePackingScratch,
@@ -681,7 +724,7 @@ class _DepthPrepassEncoder {
                     instances,
                     nodeWindingFlipped: item.windingFlipped,
                     instanceWindingFlipped: item.instanceWindingFlipped,
-                    indices: item.visibleInstanceIndices,
+                    indices: visible,
                     scratch: transientInstancePackingScratch,
                   )
                 : packInstanceTransformBatches(

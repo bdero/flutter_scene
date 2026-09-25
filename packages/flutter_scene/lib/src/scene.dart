@@ -2826,6 +2826,7 @@ base class Scene implements SceneGraph {
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
             cameraTransform: currentJitteredViewProjection,
+            primaryView: viewIndex >= 0,
           ),
         );
       }
@@ -2924,6 +2925,7 @@ base class Scene implements SceneGraph {
     graph.addPass(
       ScenePass(
         camera: camera,
+        primaryView: viewIndex >= 0,
         renderScene: renderScene,
         dimensions: pixelSize,
         environmentMap: environmentMap,

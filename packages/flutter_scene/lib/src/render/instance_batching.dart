@@ -1,5 +1,6 @@
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -14,6 +15,9 @@ abstract interface class OpaqueBatchRecord {
   int get lightChannelMask;
   Object? get jointsTexture;
   Object? get morphWeights;
+
+  /// Whether the item picks its instances or index range per draw.
+  bool get hasDrawSelector;
 }
 
 int opaqueBatchEnd(List<OpaqueBatchRecord> records, int start) {
@@ -28,7 +32,8 @@ int opaqueBatchEnd(List<OpaqueBatchRecord> records, int start) {
   if (first.geometry.instancedVertexLayout == null ||
       first.jointsTexture != null ||
       first.morphWeights != null ||
-      first.material.instanceAttributes != null) {
+      first.material.instanceAttributes != null ||
+      first.hasDrawSelector) {
     return start + 1;
   }
   var end = start + 1;
@@ -47,7 +52,8 @@ bool _canBatchOpaque(OpaqueBatchRecord first, OpaqueBatchRecord next) {
       first.lightListCount == next.lightListCount &&
       first.lightChannelMask == next.lightChannelMask &&
       next.jointsTexture == null &&
-      next.morphWeights == null;
+      next.morphWeights == null &&
+      !next.hasDrawSelector;
 }
 
 /// Why [first] does not merge with [next], mirroring [opaqueBatchEnd]'s
@@ -65,6 +71,7 @@ BatchBreakReason opaqueBatchBreakReason(
   if (first.material.instanceAttributes != null) {
     return BatchBreakReason.instanceAttributes;
   }
+  if (first.hasDrawSelector) return BatchBreakReason.drawSelector;
   if (next == null) return BatchBreakReason.none;
   if (!identical(first.pipeline, next.pipeline)) {
     return BatchBreakReason.differentPipeline;
@@ -86,6 +93,7 @@ BatchBreakReason opaqueBatchBreakReason(
   if (next.jointsTexture != null || next.morphWeights != null) {
     return BatchBreakReason.nextSkinnedOrMorphed;
   }
+  if (next.hasDrawSelector) return BatchBreakReason.drawSelector;
   return BatchBreakReason.none;
 }
 
@@ -93,7 +101,8 @@ int depthBatchEnd(List<RenderItem> records, int start) {
   final first = records[start];
   if (first.geometry.instancedVertexLayout == null ||
       first.jointsTexture != null ||
-      first.morphWeights != null) {
+      first.morphWeights != null ||
+      hasMeshDrawSelector(first)) {
     return start + 1;
   }
   var end = start + 1;
@@ -102,7 +111,8 @@ int depthBatchEnd(List<RenderItem> records, int start) {
     if (!identical(first.geometry, next.geometry) ||
         !identical(first.material, next.material) ||
         next.jointsTexture != null ||
-        next.morphWeights != null) {
+        next.morphWeights != null ||
+        hasMeshDrawSelector(next)) {
       break;
     }
     end++;

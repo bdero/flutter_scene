@@ -105,10 +105,10 @@ class MeshComponent extends Component {
     final renderScene = node.internalRenderScene;
     if (renderScene == null) return;
     for (final primitive in _mesh.primitives) {
-      final item = RenderItem(
-        geometry: primitive.geometry,
-        material: primitive.material,
-      )..sourceNode = node;
+      final item =
+          RenderItem(geometry: primitive.geometry, material: primitive.material)
+            ..sourceNode = node
+            ..drawSource = primitive;
       _renderItems.add(item);
       _boundsVersions.add(-1);
       renderScene.add(item);

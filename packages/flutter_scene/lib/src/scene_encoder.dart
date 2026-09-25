@@ -20,6 +20,8 @@ import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/draw_recorder.dart';
+import 'package:flutter_scene/src/mesh_draw.dart';
+import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -50,6 +52,8 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
       materialKey = identityHashCode(material);
   RenderItem? _item;
   RenderItem get item => _item!;
+  @override
+  bool get hasDrawSelector => hasMeshDrawSelector(item);
   // The geometry and material to draw, which differ from the item's own when
   // a level of detail was selected.
   Geometry? _geometry;
@@ -532,9 +536,11 @@ base class SceneEncoder {
     Matrix4? cameraTransform,
     Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
+    bool primaryView = true,
   }) : _renderPass = renderPass,
        _transientsBuffer = transientsBuffer,
-       _debugView = debugView {
+       _debugView = debugView,
+       _primaryView = primaryView {
     currentSceneEncoderViewport = _dimensions;
     _cameraTransform = cameraTransform ?? _camera.getViewTransform(_dimensions);
     _displayReferredCameraTransform = displayReferredCameraTransform;
@@ -551,6 +557,9 @@ base class SceneEncoder {
   }
 
   final Camera _camera;
+
+  // Whether this encodes a screen view's camera, for [MeshDrawSelector]s.
+  final bool _primaryView;
   final ui.Size _dimensions;
   final Lighting _lighting;
   final int _layerMask;
@@ -1181,6 +1190,52 @@ base class SceneEncoder {
     RenderItem? item,
     BatchBreakReason batchBreak = BatchBreakReason.none,
   }) {
+    if (item == null) {
+      _encodeSingle(
+        pipeline,
+        worldTransform,
+        geometry,
+        material,
+        windingFlipped,
+        fade,
+        batchBreak: batchBreak,
+      );
+      return;
+    }
+    final selection = beginMeshDraw(
+      item,
+      geometry,
+      MeshDrawPass.color,
+      _camera.position,
+      _primaryView,
+    );
+    try {
+      if (selection.instanceCount == 0) return;
+      _encodeSingle(
+        pipeline,
+        worldTransform,
+        geometry,
+        material,
+        windingFlipped,
+        fade,
+        item: item,
+        batchBreak: batchBreak,
+      );
+    } finally {
+      endMeshDraw(geometry);
+    }
+  }
+
+  void _encodeSingle(
+    gpu.RenderPipeline pipeline,
+    Matrix4 worldTransform,
+    Geometry geometry,
+    Material material,
+    bool windingFlipped,
+    double fade, {
+    RenderItem? item,
+    BatchBreakReason batchBreak = BatchBreakReason.none,
+  }) {
     final fallback = _usesDebugFallback(item, material, geometry);
     // Bindings persist across draws within a pass, and every draw binds its
     // full slot set, so clearing is only needed when the pipeline (and with
@@ -1264,6 +1319,62 @@ base class SceneEncoder {
     RenderItem? item,
     BatchBreakReason batchBreak = BatchBreakReason.none,
   }) {
+    final selection = item == null
+        ? MeshDrawSelection.all
+        : beginMeshDraw(
+            item,
+            geometry,
+            MeshDrawPass.color,
+            _camera.position,
+            _primaryView,
+          );
+    try {
+      if (selection.instanceCount == 0) return;
+      _encodeInstancedBody(
+        pipeline,
+        nodeTransform,
+        geometry,
+        material,
+        instances,
+        colors,
+        windingFlipped,
+        fade,
+        instanceWindingFlipped: instanceWindingFlipped,
+        instanceIndices: instanceIndices,
+        sortBackToFrontFrom: sortBackToFrontFrom,
+        packedWorldData: packedWorldData,
+        packedWorldWindingFlipped: packedWorldWindingFlipped,
+        attributeData: attributeData,
+        attributeFloats: attributeFloats,
+        item: item,
+        batchBreak: batchBreak,
+        instanceLimit: selection.instanceCount,
+      );
+    } finally {
+      endMeshDraw(geometry);
+    }
+  }
+
+  void _encodeInstancedBody(
+    gpu.RenderPipeline pipeline,
+    Matrix4 nodeTransform,
+    Geometry geometry,
+    Material material,
+    List<Matrix4> instances,
+    List<Vector4> colors,
+    bool windingFlipped,
+    double fade, {
+    List<bool>? instanceWindingFlipped,
+    List<int>? instanceIndices,
+    Vector3? sortBackToFrontFrom,
+    Float32List? packedWorldData,
+    Uint8List? packedWorldWindingFlipped,
+    Float32List? attributeData,
+    int attributeFloats = 0,
+    RenderItem? item,
+    BatchBreakReason batchBreak = BatchBreakReason.none,
+    int? instanceLimit,
+  }) {
     checkInstanceRecordWidth(material.instanceAttributes, attributeFloats);
     if (!identical(_boundPipeline, pipeline)) {
       _clearBindings();
@@ -1287,6 +1398,12 @@ base class SceneEncoder {
     _bindDebugView(material, item, fallback);
     _setPrimitiveType(geometry.primitiveType);
 
+    final allInstances = instanceIndices == null;
+    instanceIndices = limitInstanceIndices(
+      instanceIndices,
+      instances.length,
+      instanceLimit,
+    );
     if (geometry.instancedVertexLayout == null) {
       final count = instanceIndices?.length ?? instances.length;
       for (var slot = 0; slot < count; slot++) {
@@ -1310,7 +1427,7 @@ base class SceneEncoder {
 
     _bindGeometry(geometry, nodeTransform, materialVertex, material.depthBias);
     if (sortBackToFrontFrom == null &&
-        instanceIndices == null &&
+        allInstances &&
         packedWorldData != null &&
         packedWorldWindingFlipped != null) {
       final flipped = bindRetainedInstanceData(
@@ -1325,7 +1442,10 @@ base class SceneEncoder {
               ? gpu.WindingOrder.counterClockwise
               : gpu.WindingOrder.clockwise,
         );
-        _drawGeometry(geometry, instanceCount: instances.length);
+        _drawGeometry(
+          geometry,
+          instanceCount: instanceIndices?.length ?? instances.length,
+        );
         return;
       }
     }
