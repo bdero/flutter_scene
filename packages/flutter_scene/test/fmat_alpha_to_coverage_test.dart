@@ -3,8 +3,6 @@ import 'dart:io';
 import 'package:flutter_gpu_shaders/environment.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/fmat/fmat.dart';
-// ignore: implementation_imports
-import 'package:flutter_scene/src/fmat/fmat_emitter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _cutout = '''
