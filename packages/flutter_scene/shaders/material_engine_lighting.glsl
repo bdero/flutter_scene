@@ -16,7 +16,10 @@ highp vec3 GetModelScale() { return frag_info.model_scale.xyz; }
 // sampler stays in the binding surface whether or not any live code reads it
 // (backends disagree on the liveness of dead declarations), so the runtime
 // would otherwise have to bind environment textures the shader cannot use.
-#ifndef FLUTTER_SCENE_SHADOW_CATCHER
+// FLUTTER_SCENE_CUSTOM_AMBIENT (a lit material with `environment_lighting:
+// false`) supplies its own indirect light, so the environment, BRDF LUT, SH,
+// and crossfade samplers are not declared and the runtime binds none of them.
+#if !defined(FLUTTER_SCENE_SHADOW_CATCHER) && !defined(FLUTTER_SCENE_CUSTOM_AMBIENT)
 // The prefiltered radiance in whichever layout this backend builds, a
 // roughness-mip cubemap or the 2D equirect atlas (see RadianceSampler).
 uniform RadianceSampler prefiltered_radiance;
@@ -25,7 +28,7 @@ uniform sampler2D brdf_lut;
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
 uniform sampler2D shadow_map;
 #endif
-#ifndef FLUTTER_SCENE_SHADOW_CATCHER
+#if !defined(FLUTTER_SCENE_SHADOW_CATCHER) && !defined(FLUTTER_SCENE_CUSTOM_AMBIENT)
 // The environment's diffuse SH coefficients and, when the world-space
 // irradiance field is on, that field's probe atlas. Coefficient i sits at
 // texel (i, row), row 0 the primary environment and row 1 the cross-fade

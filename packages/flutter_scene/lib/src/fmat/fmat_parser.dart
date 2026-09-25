@@ -571,6 +571,7 @@ FmatMaterial _build(
     'requires',
     'engine_inputs',
     'scene_color_reach',
+    'environment_lighting',
   };
   for (final key in tree.keys) {
     if (!knownKeys.contains(key)) {
@@ -612,6 +613,22 @@ FmatMaterial _build(
     throw FmatException('`depth_write` must be a boolean.', fileName: fileName);
   }
   final depthWrite = depthWriteValue as bool? ?? false;
+
+  final environmentLightingValue = tree['environment_lighting'];
+  if (environmentLightingValue != null && environmentLightingValue is! bool) {
+    throw FmatException(
+      '`environment_lighting` must be a boolean.',
+      fileName: fileName,
+    );
+  }
+  final environmentLighting = environmentLightingValue as bool? ?? true;
+  if (!environmentLighting && shadingModel != FmatShadingModel.lit) {
+    throw FmatException(
+      '`environment_lighting: false` is only supported with '
+      '`shading_model: lit`.',
+      fileName: fileName,
+    );
+  }
 
   // `depth_test` picks the translucent pass's depth comparison. `always` is for
   // a projection volume whose own faces sit behind the surface it shades.
@@ -848,6 +865,7 @@ FmatMaterial _build(
     instanceAttributes: instanceAttributes,
     engineInputs: engineInputs,
     sceneColorReach: sceneColorReach,
+    environmentLighting: environmentLighting,
   );
 }
 

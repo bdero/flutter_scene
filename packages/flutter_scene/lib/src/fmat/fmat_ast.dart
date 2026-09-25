@@ -273,9 +273,16 @@ class FmatMaterial {
     this.instanceAttributes = const [],
     this.engineInputs = const [],
     this.sceneColorReach,
+    this.environmentLighting = true,
   });
 
   final String name;
+
+  /// Whether a lit material receives the engine's image-based lighting
+  /// (`environment_lighting:`, default true). False compiles out the
+  /// environment, BRDF LUT, SH, and SSAO samplers; the material then supplies
+  /// its indirect light itself through `Composite()`.
+  final bool environmentLighting;
 
   /// The rendering contract this `.fmat` targets (surface material or sky).
   final FmatDomain domain;

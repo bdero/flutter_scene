@@ -47,6 +47,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _depthWrite = metadata['depth_write'] == true,
        _depthCompare = _parseDepthCompare(metadata['depth_test']),
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
+       _environmentLighting = metadata['environment_lighting'] != false,
        _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata),
        _usesPlanarReflection = parsePlanarReflectionInput(
          metadata['engine_inputs'],
@@ -85,6 +86,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       value is num ? value.toDouble() : null;
 
   Set<RenderInput> _sceneInputs;
+
+  // False when the material supplies its own indirect light
+  // (`environment_lighting: false`), so the engine IBL samplers are absent.
+  bool _environmentLighting;
   bool _usesPlanarReflection;
   double? _sceneColorReach;
   gpu.Shader? _shadowFragmentShader;
@@ -289,6 +294,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _depthWrite = metadata['depth_write'] == true;
     _depthCompare = _parseDepthCompare(metadata['depth_test']);
     _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
+    _environmentLighting = metadata['environment_lighting'] != false;
     // A reloaded declaration is a new schema object, which invalidates the
     // widened vertex layouts and instance buffers keyed on the old one.
     _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata);
@@ -358,7 +364,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
           shader,
           lighting,
           env,
-          bindSsao: !_sceneInputs.contains(RenderInput.filteredSceneColor),
+          bindSsao:
+              _environmentLighting &&
+              !_sceneInputs.contains(RenderInput.filteredSceneColor),
+          bindEnvironment: _environmentLighting,
           bindShadows: lighting.shadowMap != null,
           bindDiffuseSh: !usesLightmapVariant,
           cubeShader: usesRadianceCubeVariant(lighting),
