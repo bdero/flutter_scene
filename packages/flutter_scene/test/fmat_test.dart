@@ -639,8 +639,10 @@ fragment {
       );
       expect(c.glsl, contains('texture(unused_texture, vec2(0.0)).x'));
       expect(c.glsl, contains('texture(unused_cube, vec3(0.0, 0.0, 1.0)).x'));
-      // The sampler the fragment really uses pays no keep-alive fetch.
-      expect(c.glsl, isNot(contains('texture(used_texture, vec2(0.0))')));
+      // A sampler the source names is kept too, since the reference may be
+      // dead code; the fetches sit under a branch that never runs.
+      expect(c.glsl, contains('texture(used_texture, vec2(0.0)).x'));
+      expect(c.glsl, contains('if (fragment_keep_alive.keep_alive.x != 0.0)'));
     });
 
     test(
@@ -664,7 +666,7 @@ fragment {
           c.glsl,
           contains(
             'fragment_keep_alive.keep_alive.x * '
-            'fragment_keep_alive.keep_alive.y',
+            '(texture(tex, vec2(0.0)).x)',
           ),
         );
       },
