@@ -123,6 +123,16 @@ base class Node implements SceneGraph {
   /// inherited by children.
   int layers = kRenderLayerDefault;
 
+  /// Where this node's meshes draw within their pass, lowest first. Draws
+  /// sort by it before anything else: opaque ones before their state and
+  /// depth sort, translucent ones before their back-to-front sort. Use it to
+  /// pin the order of overlapping translucent surfaces that depth sorting
+  /// gets wrong (a thing seen through glass, or parts of one object). The
+  /// default 0 leaves ordering to the renderer. Not inherited by children.
+  // TODO(render-order-fscene): carry it in the .fscene document so authored
+  // scenes and the editor can set it.
+  double renderOrder = 0.0;
+
   // TODO(fscene): serialize this mask (NodeSpec field + json + diff).
   /// The light channels this node's meshes occupy, an 8-bit bitmask. A light
   /// reaches them only when its own channel mask intersects this one

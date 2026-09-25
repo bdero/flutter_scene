@@ -84,6 +84,7 @@ class InstancedMeshComponent extends Component {
     final frustumCulledChanged = item.frustumCulled != frustumCulled;
     item.frustumCulled = frustumCulled;
     item.layers = node.layers;
+    item.renderOrder = node.renderOrder;
     final worldTransform = node.globalTransform;
     final boundsChangedByInput =
         worldTransformVersion != _worldTransformVersion ||
