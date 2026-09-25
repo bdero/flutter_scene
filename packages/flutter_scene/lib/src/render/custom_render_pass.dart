@@ -247,12 +247,20 @@ class RenderPassContext {
   gpu.Texture? get sceneDepthLinear =>
       _context.blackboard.get<gpu.Texture>(kLinearDepthBlackboardKey);
 
-  /// The directional light's cascaded shadow map atlas (a horizontal strip of
-  /// `shadowInfo` cascade tiles, window-space depth in the red channel).
-  /// Non-null when the pass declared [RenderInput.shadowMap] and the scene has
-  /// a shadow-casting directional light. Pair with [shadowInfo].
+  /// The shared shadow atlas (a horizontal strip of tiles, window-space depth
+  /// in the red channel): the directional cascades first, then one tile per
+  /// casting spot (see [spotShadows]). Non-null when the pass declared
+  /// [RenderInput.shadowMap] and a light cast this frame. Pair with
+  /// [shadowInfo] for the cascades.
   gpu.Texture? get shadowMap =>
       _context.blackboard.get<gpu.Texture>(kShadowMapBlackboardKey);
+
+  /// The spot shadows' place in [shadowMap] (their matrices and tiles), or
+  /// null when no spot cast this frame. Spot tiles share the atlas with the
+  /// directional cascades, so a pass that samples spot shadows declares
+  /// [RenderInput.shadowMap] and reads the atlas from [shadowMap].
+  SpotShadowInfo? get spotShadows =>
+      _context.blackboard.get<SpotShadowInfo>(kSpotShadowInfoBlackboardKey);
 
   /// The packed `PostShadowInfo` std140 uniform block matching [shadowMap]:
   /// four `mat4` world->cascade-clip matrices, a `vec4` of the cascades'
