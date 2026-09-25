@@ -6,7 +6,7 @@ import 'package:hooks/hooks.dart';
 
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_scene/src/importer/build_hooks.dart'
-    show discoveryDependencyDirectory;
+    show discoveryDependencyDirectories;
 
 import '../generated_assets/engine_identity.dart' show engineIdentity;
 import '../generated_assets/generated_assets.dart';
@@ -271,10 +271,10 @@ Future<void> _buildMaterials({
       materials ??
       discoverFmatMaterials(materialRoot, discoveryRoot: discoveryRoot);
   if (materials == null) {
-    // Hashed as the names of its direct children, so an added or removed
-    // material reruns the hook for nothing.
-    buildOutput.dependencies.add(
-      discoveryDependencyDirectory(materialRoot, discoveryRoot),
+    // Each directory hashes the names of its direct children, so an added
+    // or removed material anywhere below the root reruns the hook.
+    buildOutput.dependencies.addAll(
+      discoveryDependencyDirectories(materialRoot, discoveryRoot),
     );
   }
   if (materialPaths.isEmpty) {

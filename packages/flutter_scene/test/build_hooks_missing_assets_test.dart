@@ -67,6 +67,24 @@ void main() {
     },
   );
 
+  test('discovery dependencies cover every subdirectory', () {
+    Directory.fromUri(
+      temp.uri.resolve('assets/materials/nested/'),
+    ).createSync(recursive: true);
+    final dirs = discoveryDependencyDirectories(
+      temp.uri,
+      'assets/',
+    ).map((u) => u.toFilePath()).toSet();
+    // A material added under assets/materials/ changes only that directory's
+    // listing, so it has to be declared for the hook to rerun.
+    expect(dirs, contains(temp.uri.resolve('assets/').toFilePath()));
+    expect(dirs, contains(temp.uri.resolve('assets/materials/').toFilePath()));
+    expect(
+      dirs,
+      contains(temp.uri.resolve('assets/materials/nested/').toFilePath()),
+    );
+  });
+
   test('the sequence the getting-started docs give builds clean', () async {
     await installFlutterSceneBuildHook(projectRoot: temp);
     expect(
