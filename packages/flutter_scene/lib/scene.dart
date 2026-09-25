@@ -317,6 +317,7 @@ export 'src/render_texture.dart'
 export 'src/render_view.dart' show RenderView;
 export 'src/math_extensions.dart' show QuaternionSlerp, Vector3Lerp;
 export 'src/mesh.dart' show Mesh, MeshPrimitive;
+export 'src/render/planar_reflection.dart' show PlanarReflectionCamera;
 export 'src/mesh_draw.dart'
     show MeshDrawContext, MeshDrawPass, MeshDrawSelection, MeshDrawSelector;
 export 'src/decal.dart' show DecalNode;

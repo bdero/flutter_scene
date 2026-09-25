@@ -2413,8 +2413,12 @@ base class Scene implements SceneGraph {
     // Bound to the logical size so every pass renders the volume picking
     // hits, whatever render-target size it passes.
     final camera = ViewportBoundCamera(view.camera, viewportSize ?? pixelSize);
+    // A linear capture skips every resampling pass, but multisampling
+    // resolves inside the scene pass, so a view that asks for it keeps it.
     final effectiveAa = captureLinearColor
-        ? AntiAliasingMode.none
+        ? (view.antiAliasingMode == AntiAliasingMode.msaa
+              ? _resolveAntiAliasingMode(AntiAliasingMode.msaa)
+              : AntiAliasingMode.none)
         : _resolveAntiAliasingMode(view.antiAliasingMode ?? _antiAliasingMode);
     // A surface debug view or overlay turns the frame into a measurement:
     // every post effect and every anti-aliasing pass that resamples the

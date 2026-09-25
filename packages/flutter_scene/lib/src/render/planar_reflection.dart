@@ -173,6 +173,11 @@ class ObliqueNearClipProjection extends CameraProjection {
 /// winding; sampling projects the fragment's world position through the
 /// capture's view-projection, which makes the mirroring consistent by
 /// construction.
+///
+/// Also usable for a custom mirror: render a [RenderView] with it into a
+/// texture and sample that texture through the camera's view-projection.
+/// The plane's normal points to the side that stays.
+/// {@category Rendering}
 class PlanarReflectionCamera extends Camera {
   PlanarReflectionCamera({
     required Camera source,
