@@ -96,15 +96,19 @@ void main() {
       expect(floats[14], closeTo(2.0, 1e-6));
     });
 
-    test('packs the falloff exponent into texel 3.z, clamped positive', () {
+    test('packs the falloff exponent into texel 3.z, clamped at zero', () {
       final (floats, _) = PunctualLightBuffer.packLights(
         directionals: const [],
         points: [_pointAt(Vector3.zero(), PointLight(falloffExponent: 1.3))],
-        spots: [_spotAt(Vector3.zero(), SpotLight(falloffExponent: -1.0))],
+        spots: [
+          _spotAt(Vector3.zero(), SpotLight(falloffExponent: -1.0)),
+          _spotAt(Vector3.zero(), SpotLight(falloffExponent: 0.0)),
+        ],
       );
       expect(floats[14], closeTo(1.3, 1e-6));
-      // The spot occupies row 1; a non-positive exponent clamps to 0.1.
-      expect(floats[32 + 14], closeTo(0.1, 1e-6));
+      // A negative exponent clamps to 0, and 0 (no distance falloff) is kept.
+      expect(floats[32 + 14], 0.0);
+      expect(floats[64 + 14], 0.0);
     });
 
     test('an infinite-range point light encodes inverse range 0', () {

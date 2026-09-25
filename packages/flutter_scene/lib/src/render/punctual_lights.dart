@@ -786,7 +786,7 @@ class PunctualLightBuffer {
       // Shadow slot (texel 3.y); -1 = no shadow. build() stamps the slot and
       // face-depth parameters for shadow-casting point lights.
       floats[base + 13] = -1.0;
-      floats[base + 14] = math.max(light.falloffExponent, 0.1);
+      floats[base + 14] = math.max(light.falloffExponent, 0.0);
       cullables.add(
         CullableLight(
           row,
@@ -823,7 +823,7 @@ class PunctualLightBuffer {
       // Shadow slot (texel 3.y); -1 = no shadow. build() stamps the slot and
       // matrix for shadow-casting spots.
       floats[base + 13] = -1.0;
-      floats[base + 14] = math.max(light.falloffExponent, 0.1);
+      floats[base + 14] = math.max(light.falloffExponent, 0.0);
       cullables.add(
         CullableLight(
           row,
