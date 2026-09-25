@@ -10,6 +10,8 @@ import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/instance_packing.dart'
+    show beginRetainedInstanceFrame;
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart'
@@ -1878,6 +1880,7 @@ base class Scene implements SceneGraph {
     // and reset the frame stats. Shared by every view this frame.
     uniformTransients.beginFrame();
     instanceTransients.beginFrame();
+    beginRetainedInstanceFrame();
     final TransientWriter transientsBuffer = uniformTransients;
 
     // Advance the scene once per frame (not once per view): tick components

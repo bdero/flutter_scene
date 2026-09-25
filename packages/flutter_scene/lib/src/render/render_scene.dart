@@ -21,6 +21,8 @@ import 'package:flutter_scene/src/light.dart' show ShadowCastingMode;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
+import 'package:flutter_scene/src/render/instance_packing.dart'
+    show invalidateRetainedInstanceData;
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render_view.dart';
@@ -330,6 +332,7 @@ class RenderItem {
       packedWinding[i] = windingFlipped != instanceFlipped ? 1 : 0;
     }
     _instanceWorldBounds = packedBounds;
+    if (packedData != null) invalidateRetainedInstanceData(packedData);
     instanceWorldData = packedData;
     instanceWorldWindingFlipped = packedWinding;
   }
