@@ -929,3 +929,65 @@ void bindInstanceData(gpu.RenderPass pass, Float32List packed, {int slot = 1}) {
     slot: slot,
   );
 }
+
+// Device-resident copies of cached instance records, keyed by the cached
+// list. An entry uploads only once the data has gone a frame unrefreshed, so
+// instancing refreshed every frame keeps using the transient arena.
+final Expando<_RetainedInstances> _retainedInstances = Expando();
+int _retainedInstanceFrame = 0;
+
+class _RetainedInstances {
+  _RetainedInstances(this.seenFrame);
+  final int seenFrame;
+  gpu.BufferView? view;
+  bool flipped = false;
+  bool mixed = false;
+}
+
+/// Advances the frame that decides when cached instance data counts as static.
+void beginRetainedInstanceFrame() => _retainedInstanceFrame++;
+
+/// Drops the device copy of [packedWorldData] after its records change.
+void invalidateRetainedInstanceData(Float32List packedWorldData) {
+  _retainedInstances[packedWorldData] = null;
+}
+
+/// Binds every record of [packedWorldData] from a retained device buffer.
+///
+/// Returns the winding the records share (true when flipped), or null when
+/// the data is not retained yet or mixes windings, in which case the caller
+/// packs into transients as usual.
+bool? bindRetainedInstanceData(
+  gpu.RenderPass pass,
+  Float32List packedWorldData,
+  Uint8List packedWindingFlipped, {
+  required int slot,
+}) {
+  if (packedWorldData.isEmpty) return null;
+  final entry = _retainedInstances[packedWorldData];
+  if (entry == null) {
+    _retainedInstances[packedWorldData] = _RetainedInstances(
+      _retainedInstanceFrame,
+    );
+    return null;
+  }
+  var view = entry.view;
+  if (view == null) {
+    if (entry.mixed || entry.seenFrame == _retainedInstanceFrame) return null;
+    final first = packedWindingFlipped.isEmpty ? 0 : packedWindingFlipped[0];
+    for (final flipped in packedWindingFlipped) {
+      if (flipped == first) continue;
+      entry.mixed = true;
+      return null;
+    }
+    final bytes = ByteData.sublistView(packedWorldData);
+    view = entry.view = gpu.BufferView(
+      gpu.gpuContext.createDeviceBufferWithCopy(bytes),
+      offsetInBytes: 0,
+      lengthInBytes: bytes.lengthInBytes,
+    );
+    entry.flipped = first != 0;
+  }
+  pass.bindVertexBuffer(view, slot: slot);
+  return entry.flipped;
+}

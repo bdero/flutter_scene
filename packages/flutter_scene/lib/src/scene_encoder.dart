@@ -1309,6 +1309,26 @@ base class SceneEncoder {
     }
 
     _bindGeometry(geometry, nodeTransform, materialVertex, material.depthBias);
+    if (sortBackToFrontFrom == null &&
+        instanceIndices == null &&
+        packedWorldData != null &&
+        packedWorldWindingFlipped != null) {
+      final flipped = bindRetainedInstanceData(
+        _renderPass,
+        packedWorldData,
+        packedWorldWindingFlipped,
+        slot: geometry.vertexStreamCount,
+      );
+      if (flipped != null) {
+        _setWindingOrder(
+          flipped
+              ? gpu.WindingOrder.counterClockwise
+              : gpu.WindingOrder.clockwise,
+        );
+        _drawGeometry(geometry, instanceCount: instances.length);
+        return;
+      }
+    }
     final packWatch = profileRendering ? (Stopwatch()..start()) : null;
     final packed =
         sortBackToFrontFrom == null &&

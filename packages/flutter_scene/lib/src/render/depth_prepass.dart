@@ -628,6 +628,27 @@ class _DepthPrepassEncoder {
       bindDraw(item.worldTransform);
       final packedWorldData = item.instanceWorldData;
       final packedWinding = item.instanceWorldWindingFlipped;
+      if (depthVertex == null &&
+          item.visibleInstanceIndices == null &&
+          packedWorldData != null &&
+          packedWinding != null &&
+          item.instanceAttributeFloats == attributeFloats) {
+        final flipped = bindRetainedInstanceData(
+          _renderPass,
+          packedWorldData,
+          packedWinding,
+          slot: instanceSlot,
+        );
+        if (flipped != null) {
+          _renderPass.setWindingOrder(
+            flipped
+                ? gpu.WindingOrder.counterClockwise
+                : gpu.WindingOrder.clockwise,
+          );
+          geometry.draw(_renderPass, instanceCount: instances.length);
+          return;
+        }
+      }
       final cached = packedWorldData == null || packedWinding == null
           ? null
           : transientInstancePackingScratch.singleCachedBatch(
