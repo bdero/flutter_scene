@@ -209,6 +209,8 @@ final Map<String, ExampleSettings Function()> settingsDefaults = {
     ..bloom.lensFlare.haloIntensity = 1.0
     ..bloom.lensFlare.chromaticAberration = 0.005
     ..depthOfField.enabled = true
+    // Focus and blur scale are re-fit to the view every resize; see
+    // diceDepthOfField. 15.0 is the distance the lens below was tuned at.
     ..depthOfField.focusDistance = 15.0
     ..depthOfField.fStop = 1.06
     ..depthOfField.focalLength = 0.154
