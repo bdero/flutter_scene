@@ -72,6 +72,7 @@ void main() {
   vertex.uv1 = texture_coords_1;
   vertex.color = color * instance_color;
   vertex.camera_position = frame_info.camera_position;
+  vertex.model_transform = model_transform;
   Vertex(vertex);
 
   v_position = vertex.world_position;
