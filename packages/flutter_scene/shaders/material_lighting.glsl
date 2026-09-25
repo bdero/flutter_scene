@@ -638,7 +638,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       material.diffuse_transmission + specular_transmission, 0.0, 1.0);
   diffuse_color *= 1.0 - total_transmission;
 #endif
-  vec3 k_D = diffuse_color * (1.0 - FssEss + FmsEms);
+  vec3 k_D = diffuse_color * (1.0 - FssEss - FmsEms);
 
   highp vec3 indirect_specular = FssEss * prefiltered_color * material.specular;
   highp vec3 indirect_diffuse = (FmsEms + k_D) * irradiance;
