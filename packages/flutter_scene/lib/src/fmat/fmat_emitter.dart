@@ -404,13 +404,17 @@ String emitFragmentGlsl(
     sb.writeln('  material.base_color.a = 1.0;');
   }
   final keepAlive = _fragmentKeepAliveTerm(material, uniforms, samplers);
+  _writeDebugViewSelect(sb);
   if (keepAlive != null) {
+    // Folded into the final output, since a lighting hook may never read the
+    // surface color, under a uniform branch that is never taken.
+    sb.writeln('  if ($kFragmentKeepAliveInstance.keep_alive.x != 0.0) {');
     sb.writeln(
-      '  material.base_color.r += '
+      '    frag_color.r += '
       '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
+    sb.writeln('  }');
   }
-  _writeDebugViewSelect(sb);
   sb.writeln('}');
 
   return sb.toString();
@@ -469,26 +473,15 @@ const Map<String, String> _engineInputSamplers = <String, String>{
   'planar_reflection': 'planar_reflection',
 };
 
-/// The accessors whose presence in the author's code already keeps each
-/// entry's sampler live, so it needs no keep-alive fetch.
-final Map<String, RegExp> _engineInputAccessors = <String, RegExp>{
-  'scene_color': RegExp(r'\bGetSceneColor(Filtered)?\b'),
-  'filtered_scene_color': RegExp(r'\bGetSceneColorFiltered\b'),
-  'scene_depth': RegExp(r'\bGetSceneDepth\b|\bGetSceneWorldPosition\b'),
-  'planar_reflection': RegExp(r'\bGetPlanarReflection\b'),
-};
-
 /// The scalar keep-alive term for a fragment (or sky) shader, or null when the
 /// material declares no parameters and no engine inputs (no keep-alive block is
 /// emitted then).
 ///
 /// Folds in a MaterialParams read plus a zero-multiplied fetch of every
-/// sampler [source] never mentions, so the runtime can bind every declared
-/// parameter resource safely. Samplers the author's code references are
-/// skipped (their real fetch keeps them live and they pay nothing here);
-/// the whole-word check errs toward the extra fetch when unsure. The engine
-/// scene inputs are covered the same way, by the accessors that read them, and
-/// an unlit material also reads FragInfo so the block it binds survives.
+/// declared sampler and engine input, so the runtime can bind every declared
+/// resource safely, and an unlit material also reads FragInfo so the block it
+/// binds survives. Callers emit it under a branch on the zero-bound block, so
+/// the fetches never run.
 String? _fragmentKeepAliveTerm(
   FmatMaterial material,
   List<FmatParameter> uniforms,
@@ -497,21 +490,21 @@ String? _fragmentKeepAliveTerm(
   if (uniforms.isEmpty && samplers.isEmpty && material.engineInputs.isEmpty) {
     return null;
   }
+  // Every sampler, even one the source names: a reference in dead code (a
+  // lighting hook that ignores a term) still lets the compiler drop it. The
+  // caller puts these under a branch the zero-bound block never takes, so the
+  // fetches cost nothing at runtime.
   final terms = <String>[
     if (uniforms.isNotEmpty) _paramsKeepAliveScalar(uniforms.first),
     for (final p in samplers)
-      if (!RegExp(
-        '\\b${RegExp.escape(p.name)}\\b',
-      ).hasMatch(material.fragmentSource))
-        p.type == FmatType.samplerCube
-            ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
-            : 'texture(${p.name}, vec2(0.0)).x',
+      p.type == FmatType.samplerCube
+          ? 'texture(${p.name}, vec3(0.0, 0.0, 1.0)).x'
+          : 'texture(${p.name}, vec2(0.0)).x',
     if (material.shadingModel == FmatShadingModel.unlit &&
         material.engineInputs.isNotEmpty)
       'frag_info.scene_inputs.x',
     for (final input in material.engineInputs)
-      if (!_engineInputAccessors[input]!.hasMatch(material.fragmentSource))
-        'texture(${_engineInputSamplers[input]!}, vec2(0.0)).x',
+      'texture(${_engineInputSamplers[input]!}, vec2(0.0)).x',
   ];
   // Every declared resource is already referenced; the block still needs a
   // live operand of its own so it cannot be folded away.
@@ -800,10 +793,12 @@ String _emitSkyGlsl(
     keepAlive = keepAlive == null ? envTerm : '($keepAlive + $envTerm)';
   }
   if (keepAlive != null) {
+    sb.writeln('  if ($kFragmentKeepAliveInstance.keep_alive.x != 0.0) {');
     sb.writeln(
-      '  frag_color.r += '
+      '    frag_color.r += '
       '$kFragmentKeepAliveInstance.keep_alive.x * $keepAlive;',
     );
+    sb.writeln('  }');
   }
   sb.writeln('}');
 
