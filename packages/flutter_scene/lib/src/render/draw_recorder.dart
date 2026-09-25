@@ -56,6 +56,10 @@ enum BatchBreakReason {
 
   /// The next item is skinned or morphed.
   nextSkinnedOrMorphed,
+
+  /// This or the next item picks its instances or index range per draw
+  /// (a [MeshDrawSelector]).
+  drawSelector,
 }
 
 /// What the encoder knows about the draw calls it is about to issue.

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -137,6 +138,11 @@ abstract class Geometry {
   gpu.BufferView? _indices;
   gpu.IndexType _indexType = gpu.IndexType.int16;
   int _indexCount = 0;
+
+  // The index (or vertex) range the next binds and draws use; see
+  // [setDrawWindow].
+  int _windowFirst = 0;
+  int? _windowCount;
 
   // CPU copies of the uploaded vertex/index data (references to the caller's
   // buffers, not copies), retained by [uploadVertexData] so scene raycasts
@@ -926,10 +932,60 @@ abstract class Geometry {
   /// Emits this geometry's draw call after [bind] has prepared the render pass.
   void draw(gpu.RenderPass pass, {int instanceCount = 1}) {
     if (_indices != null) {
-      drawIndexedCompat(pass, _indexCount, instanceCount: instanceCount);
+      final count = _windowIndexCount;
+      if (count == 0) return;
+      drawIndexedCompat(pass, count, instanceCount: instanceCount);
     } else {
-      drawCompat(pass, _vertexCount, instanceCount: instanceCount);
+      // TODO(draw-window-vertices): honor the window's first vertex, which
+      // needs every vertex stream bound at an offset. Only the count applies.
+      final count = math.min(_windowCount ?? _vertexCount, _vertexCount);
+      if (count == 0) return;
+      drawCompat(pass, count, instanceCount: instanceCount);
     }
+  }
+
+  /// Restricts the following binds and draws to [count] indices from
+  /// [first], or to the rest when [count] is null. Encoders set it for one
+  /// draw from a [MeshDrawSelection] and reset it with [clearDrawWindow].
+  @internal
+  void setDrawWindow(int first, int? count) {
+    _windowFirst = first;
+    _windowCount = count;
+  }
+
+  /// Draws the whole geometry again.
+  @internal
+  void clearDrawWindow() {
+    _windowFirst = 0;
+    _windowCount = null;
+  }
+
+  int get _windowIndexCount {
+    final rest = math.max(0, _indexCount - _windowFirst);
+    return math.min(_windowCount ?? rest, rest);
+  }
+
+  void _bindIndices(gpu.RenderPass pass) {
+    final indices = _indices!;
+    if (_windowFirst == 0 && _windowCount == null) {
+      bindIndexBufferCompat(pass, indices, _indexType, _indexCount);
+      return;
+    }
+    // Flutter GPU has no first-index draw argument, so the window becomes an
+    // offset view of the index buffer.
+    final size = _indexType == gpu.IndexType.int32 ? 4 : 2;
+    final first = math.min(_windowFirst, _indexCount);
+    final count = _windowIndexCount;
+    bindIndexBufferCompat(
+      pass,
+      gpu.BufferView(
+        indices.buffer,
+        offsetInBytes: indices.offsetInBytes + first * size,
+        lengthInBytes: count * size,
+      ),
+      _indexType,
+      count,
+    );
   }
 
   /// The explicit pipeline vertex layout this geometry's vertex shader
@@ -1081,9 +1137,7 @@ abstract class Geometry {
     for (final attr in _customAttributes.values) {
       bindVertexBufferCompat(pass, attr.view, _vertexCount, slot: slot++);
     }
-    if (_indices != null) {
-      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
-    }
+    if (_indices != null) _bindIndices(pass);
   }
 
   /// Binds only this geometry's position stream (slot 0) and its index
@@ -1096,9 +1150,7 @@ abstract class Geometry {
   void bindPositionStream(gpu.RenderPass pass) {
     _requireVertices();
     bindVertexBufferCompat(pass, _vertexStreams.first, _vertexCount, slot: 0);
-    if (_indices != null) {
-      bindIndexBufferCompat(pass, _indices!, _indexType, _indexCount);
-    }
+    if (_indices != null) _bindIndices(pass);
   }
 
   void _requireVertices() {

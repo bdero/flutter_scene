@@ -71,6 +71,8 @@ class _OpaqueCandidate implements OpaqueBatchRecord {
   final Object? jointsTexture;
   @override
   final Object? morphWeights;
+  @override
+  bool get hasDrawSelector => false;
 }
 
 RenderItem _item(Geometry geometry, Material material) =>

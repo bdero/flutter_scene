@@ -4,7 +4,9 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
+import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
+import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -194,6 +196,31 @@ class ShadowEncoder {
   }
 
   void _encode(RenderItem item, {List<InstanceDataBatch>? batches}) {
+    if (batches != null) {
+      _encodeBody(item, batches: batches);
+      return;
+    }
+    final geometry = item.geometry;
+    final selection = beginMeshDraw(
+      item,
+      geometry,
+      MeshDrawPass.shadow,
+      _cameraPosition,
+      false,
+    );
+    try {
+      if (selection.instanceCount == 0) return;
+      _encodeBody(item, instanceLimit: selection.instanceCount);
+    } finally {
+      endMeshDraw(geometry);
+    }
+  }
+
+  void _encodeBody(
+    RenderItem item, {
+    List<InstanceDataBatch>? batches,
+    int? instanceLimit,
+  }) {
     final geometry = item.geometry;
     // Skinned casters bind their joints texture through the full-vertex
     // path below; apply this item's skeleton to the (possibly shared)
@@ -329,9 +356,16 @@ class ShadowEncoder {
 
     final instances = item.instanceTransforms;
     if (instances != null) {
+      final visible = limitInstanceIndices(
+        null,
+        instances.length,
+        instanceLimit,
+      );
       if (geometry.instancedVertexLayout == null) {
         // Skinned geometry has no instance-attribute path; loop.
-        for (final instanceTransform in instances) {
+        for (final instanceTransform in instances.take(
+          visible?.length ?? instances.length,
+        )) {
           bindDraw(item.worldTransform * instanceTransform);
           final flip =
               item.windingFlipped != (instanceTransform.determinant() < 0);
@@ -363,7 +397,10 @@ class ShadowEncoder {
                 ? gpu.WindingOrder.counterClockwise
                 : gpu.WindingOrder.clockwise,
           );
-          geometry.draw(_renderPass, instanceCount: instances.length);
+          geometry.draw(
+            _renderPass,
+            instanceCount: visible?.length ?? instances.length,
+          );
           return;
         }
       }
@@ -372,6 +409,7 @@ class ShadowEncoder {
           : transientInstancePackingScratch.singleCachedBatch(
               packedWorldData: packedWorldData,
               packedWindingFlipped: packedWinding,
+              indices: visible,
               attributeFloats: item.instanceAttributeFloats,
             );
       final PackedInstances packed = depthVertex == null
@@ -382,6 +420,7 @@ class ShadowEncoder {
                     item.instanceColors!,
                     nodeWindingFlipped: item.windingFlipped,
                     instanceWindingFlipped: item.instanceWindingFlipped,
+                    indices: visible,
                     attributeData: item.instanceAttributeData,
                     attributeFloats: attributeFloats,
                     scratch: transientInstancePackingScratch,
@@ -397,6 +436,7 @@ class ShadowEncoder {
                     instances,
                     nodeWindingFlipped: item.windingFlipped,
                     instanceWindingFlipped: item.instanceWindingFlipped,
+                    indices: visible,
                     scratch: transientInstancePackingScratch,
                   )
                 : packInstanceTransformBatches(

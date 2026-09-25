@@ -28,10 +28,13 @@ class InstancedMeshComponent extends Component {
   void onMount() {
     final renderScene = node.internalRenderScene;
     if (renderScene == null) return;
-    final item = RenderItem(
-      geometry: instancedMesh.geometry,
-      material: instancedMesh.material,
-    )..sourceNode = node;
+    final item =
+        RenderItem(
+            geometry: instancedMesh.geometry,
+            material: instancedMesh.material,
+          )
+          ..sourceNode = node
+          ..drawSource = instancedMesh;
     _renderItem = item;
     renderScene.add(item);
   }

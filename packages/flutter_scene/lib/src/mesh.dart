@@ -1,6 +1,7 @@
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 /// Represents a single part of a [Mesh], containing both [Geometry] and [Material] properties.
@@ -15,7 +16,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 /// Each of these parts of the car has its own [Geometry] and [Material], and together
 /// they form the complete model.
 /// {@category Geometry}
-base class MeshPrimitive {
+base class MeshPrimitive implements MeshDrawSource {
   /// Pairs [geometry] with the [material] used to shade it.
   MeshPrimitive(this.geometry, this.material);
 
@@ -41,6 +42,12 @@ base class MeshPrimitive {
   /// self-shadowing, or stay invisible while still casting a shadow.
   /// {@category Geometry}
   bool castsShadow = true;
+
+  /// Picks the instances and index range each draw uses, or null to draw
+  /// everything. See [MeshDrawSelector].
+  /// {@category Geometry}
+  @override
+  MeshDrawSelector? drawSelector;
 }
 
 /// Defines the shape and appearance of a 3D model in the scene.
@@ -69,7 +76,8 @@ base class Mesh {
   /// Used by [Node.clone] so model instances can be reskinned per instance.
   Mesh clone() => Mesh.primitives(
     primitives: [
-      for (final p in primitives) MeshPrimitive(p.geometry, p.material),
+      for (final p in primitives)
+        MeshPrimitive(p.geometry, p.material)..drawSelector = p.drawSelector,
     ],
   );
 

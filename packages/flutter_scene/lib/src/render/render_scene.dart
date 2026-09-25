@@ -23,6 +23,7 @@ import 'package:flutter_scene/src/render/bvh.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart'
     show invalidateRetainedInstanceData;
+import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/lod.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render_view.dart';
@@ -42,6 +43,10 @@ class RenderItem {
 
   /// Vertex and index data for this primitive.
   final Geometry geometry;
+
+  /// The mesh part this item draws, for its [MeshDrawSelector].
+  @internal
+  MeshDrawSource? drawSource;
 
   /// Shader and per-material parameters.
   Material get material => _material;

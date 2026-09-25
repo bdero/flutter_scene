@@ -66,6 +66,9 @@ int transmissionFilterBandOffset(int width, int level) {
 /// [ShadowPass] ran earlier this frame its shadow map is picked up from
 /// the blackboard and threaded into the per-draw [Lighting].
 class ScenePass extends RenderGraphPass {
+  // Whether this renders a screen view's camera, for [MeshDrawSelector]s.
+  final bool _primaryView;
+
   static final RenderProfileAccumulator _profile = RenderProfileAccumulator();
 
   ScenePass({
@@ -104,7 +107,9 @@ class ScenePass extends RenderGraphPass {
     Matrix4? cameraTransform,
     Matrix4? displayReferredCameraTransform,
     DebugViewFrame? debugView,
+    bool primaryView = false,
   }) : _debugView = debugView,
+       _primaryView = primaryView,
        _captureOpaqueColor = captureOpaqueColor,
        _displayReferredLayer = displayReferredLayer,
        _displayReferredFormat = displayReferredFormat,
@@ -429,6 +434,7 @@ class ScenePass extends RenderGraphPass {
       cameraTransform: _cameraTransform,
       displayReferredCameraTransform: _displayReferredCameraTransform,
       debugView: _debugView,
+      primaryView: _primaryView,
     );
     final cullWatch = profileRendering ? (Stopwatch()..start()) : null;
     if (_includeOffscreen) {
