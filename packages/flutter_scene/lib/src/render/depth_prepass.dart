@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:math' as math;
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
@@ -312,7 +313,7 @@ class _DepthPrepassEncoder {
     this._transientsBuffer,
     this._cameraTransform,
     this._cameraPosition,
-    Vector3 cameraForward,
+    this._cameraForward,
     this._layerMask,
     this._cullingPlanes, {
     required bool writeNormals,
@@ -337,9 +338,9 @@ class _DepthPrepassEncoder {
     // normal into view space; the depth-only path uses just forward.
     if (writeNormals) {
       _depthInfo = Float32List(20)
-        ..[0] = cameraForward.x
-        ..[1] = cameraForward.y
-        ..[2] = cameraForward.z
+        ..[0] = _cameraForward.x
+        ..[1] = _cameraForward.y
+        ..[2] = _cameraForward.z
         ..[4] = cameraRight.x
         ..[5] = cameraRight.y
         ..[6] = cameraRight.z
@@ -348,9 +349,9 @@ class _DepthPrepassEncoder {
         ..[10] = cameraUp.z;
     } else {
       _depthInfo = Float32List(4)
-        ..[0] = cameraForward.x
-        ..[1] = cameraForward.y
-        ..[2] = cameraForward.z;
+        ..[0] = _cameraForward.x
+        ..[1] = _cameraForward.y
+        ..[2] = _cameraForward.z;
     }
   }
 
@@ -358,6 +359,7 @@ class _DepthPrepassEncoder {
   final TransientWriter _transientsBuffer;
   final Matrix4 _cameraTransform;
   final Vector3 _cameraPosition;
+  final Vector3 _cameraForward;
   final int _layerMask;
   final List<Plane> _cullingPlanes;
   final bool _writeNormals;
@@ -483,10 +485,19 @@ class _DepthPrepassEncoder {
     // skeleton to the (possibly shared) geometry first.
     item.applyJointsTexture(geometry);
     item.applyMorphWeights(geometry);
-    // An alpha-masked material samples its mask through the full-vertex
-    // varyings, so it skips the position-only path too.
-    final masked = item.material.depthAlphaMasked;
-    final fragmentShader = _fragmentShaderFor(masked);
+    // A cutout `.fmat` supplies its own depth fragment, cut by its surface
+    // alpha. That and an alpha-masked material both read the full-vertex
+    // varyings, so they skip the position-only path.
+    // An explicitly configured mask wins over the automatic surface variant.
+    final surfaceShader = item.material.depthAlphaMasked
+        ? null
+        : item.material.depthSurfaceShader(
+            _writeNormals
+                ? DepthSurfaceKind.linearDepthNormal
+                : DepthSurfaceKind.linearDepth,
+          );
+    final masked = surfaceShader != null || item.material.depthAlphaMasked;
+    final fragmentShader = surfaceShader ?? _fragmentShaderFor(masked);
     // Unskinned geometry draws depth through a position-only shader and layout
     // (fetching only position); skinned geometry has no such variant, so it
     // falls back to its full vertex shader and bind. The normal-writing path
@@ -560,19 +571,30 @@ class _DepthPrepassEncoder {
         ..[18] = item.material.reflectionRoughnessTextureTexCoord
             .clamp(0, 1)
             .toDouble();
-      _renderPass.bindTexture(
-        fragmentShader.getUniformSlot('metallic_roughness_texture'),
-        Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
-        sampler:
-            item.material.reflectionRoughnessTextureSampler ??
-            _roughnessSampler,
-      );
+      // A surface fragment takes its roughness from Surface() instead.
+      if (surfaceShader == null) {
+        _renderPass.bindTexture(
+          fragmentShader.getUniformSlot('metallic_roughness_texture'),
+          Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
+          sampler:
+              item.material.reflectionRoughnessTextureSampler ??
+              _roughnessSampler,
+        );
+      }
     }
     _renderPass.bindUniform(
       fragmentShader.getUniformSlot(_infoBlockName),
       _transientsBuffer.emplace(ByteData.sublistView(_depthInfo)),
     );
-    if (masked) {
+    if (surfaceShader != null) {
+      item.material.bindDepthSurface(
+        _renderPass,
+        fragmentShader,
+        _transientsBuffer,
+        cameraPosition: _cameraPosition,
+        cameraForward: _cameraForward,
+      );
+    } else if (masked) {
       item.material.bindDepthAlphaMask(
         _renderPass,
         fragmentShader,

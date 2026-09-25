@@ -190,9 +190,19 @@ Set<String> lightingHooksIn(String fragmentSource) {
   return hooks;
 }
 
+/// Whether [material] ships its own depth-pass fragments: an opaque cutout
+/// (`alpha_to_coverage`) whose shader reads no engine scene inputs.
+bool materialHasDepthSurface(FmatMaterial material) =>
+    material.alphaToCoverage && material.engineInputs.isEmpty;
+
+/// The bundle entry name of [material]'s depth-pass fragment for [kind].
+String depthSurfaceEntryName(FmatMaterial material, DepthSurfaceKind kind) =>
+    '${material.name}${kind.suffix}';
+
 String emitFragmentGlsl(
   FmatMaterial material, {
   Iterable<String> defines = const [],
+  DepthSurfaceKind? depthSurface,
 }) {
   if (material.domain == FmatDomain.sky) {
     return _emitSkyGlsl(material, defines: defines);
@@ -359,6 +369,11 @@ String emitFragmentGlsl(
   if (!material.fragmentSource.endsWith('\n')) sb.writeln();
   sb.writeln();
 
+  if (depthSurface != null) {
+    _writeDepthSurfaceMain(sb, material, uniforms, samplers, depthSurface);
+    return sb.toString();
+  }
+
   // The shaded output, in a function so main() can pick it, the debug view,
   // or a per-pixel split of the two without duplicating the tail.
   sb.writeln('vec4 MaterialOutput(MaterialInputs material) {');
@@ -418,6 +433,95 @@ String emitFragmentGlsl(
   sb.writeln('}');
 
   return sb.toString();
+}
+
+/// Writes the `main()` of a depth-pass fragment: the material's own
+/// `Surface()` decides coverage, and a fragment below half is cut the way
+/// alpha to coverage would drop it on a single sample.
+void _writeDepthSurfaceMain(
+  StringBuffer sb,
+  FmatMaterial material,
+  List<FmatParameter> uniforms,
+  List<FmatParameter> samplers,
+  DepthSurfaceKind kind,
+) {
+  switch (kind) {
+    case DepthSurfaceKind.linearDepth:
+      sb.writeln('uniform DepthInfo {');
+      sb.writeln('  vec4 camera_forward;');
+      sb.writeln('}');
+      sb.writeln('depth_info;');
+    case DepthSurfaceKind.linearDepthNormal:
+      // The engine prepass block's layout, so the pass binds it unchanged.
+      sb.writeln('uniform DepthNormalInfo {');
+      sb.writeln('  vec4 camera_forward;');
+      sb.writeln('  vec4 camera_right;');
+      sb.writeln('  vec4 camera_up;');
+      sb.writeln('  vec4 roughness_uv_transform;');
+      sb.writeln('  vec4 roughness_uv_rotation;');
+      sb.writeln('}');
+      sb.writeln('info;');
+      sb.writeln('vec2 DepthSurfaceOctEncode(vec3 n) {');
+      sb.writeln('  n /= (abs(n.x) + abs(n.y) + abs(n.z));');
+      sb.writeln('  return n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) *');
+      sb.writeln(
+        '      vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);',
+      );
+      sb.writeln('}');
+    case DepthSurfaceKind.shadow:
+      break;
+  }
+  // The main shader declares the keep-alive block only when the material
+  // has a resource to keep; this one always keeps the camera blocks.
+  if (uniforms.isEmpty && samplers.isEmpty && material.engineInputs.isEmpty) {
+    sb.writeln('uniform $kFragmentKeepAliveBlock { vec4 keep_alive; }');
+    sb.writeln('$kFragmentKeepAliveInstance;');
+  }
+  sb.writeln();
+  sb.writeln('void main() {');
+  sb.writeln('  MaterialInputs material = InitMaterialInputs();');
+  sb.writeln('  Surface(material);');
+  sb.writeln('  if (material.base_color.a < 0.5) {');
+  sb.writeln('    discard;');
+  sb.writeln('  }');
+  switch (kind) {
+    case DepthSurfaceKind.linearDepth:
+      sb.writeln(
+        '  float view_depth = -dot(v_viewvector, depth_info.camera_forward.xyz);',
+      );
+      sb.writeln('  frag_color = vec4(view_depth, 0.0, 0.0, 1.0);');
+    case DepthSurfaceKind.linearDepthNormal:
+      sb.writeln(
+        '  float view_depth = -dot(v_viewvector, info.camera_forward.xyz);',
+      );
+      sb.writeln('  vec3 n = normalize(material.normal);');
+      sb.writeln('  vec3 view_normal = normalize(vec3(');
+      sb.writeln('      dot(n, info.camera_right.xyz),');
+      sb.writeln('      dot(n, info.camera_up.xyz),');
+      sb.writeln('      dot(n, info.camera_forward.xyz)));');
+      sb.writeln('  vec2 oct = DepthSurfaceOctEncode(view_normal);');
+      sb.writeln(
+        '  frag_color = vec4(view_depth, oct.x, oct.y, '
+        'clamp(material.roughness, 0.0, 1.0));',
+      );
+    case DepthSurfaceKind.shadow:
+      sb.writeln('  frag_color = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0);');
+  }
+  // The engine blocks the pass binds (the camera ones Surface() may read)
+  // are kept too, so binding them is always valid.
+  final lit = material.shadingModel != FmatShadingModel.unlit;
+  final keepAlive = [
+    ?_fragmentKeepAliveTerm(material, uniforms, samplers),
+    'view_info.camera_forward.x',
+    if (lit) 'frag_info.camera_position.x',
+  ].join(' + ');
+  sb.writeln('  if ($kFragmentKeepAliveInstance.keep_alive.x != 0.0) {');
+  sb.writeln(
+    '    frag_color.r += '
+    '$kFragmentKeepAliveInstance.keep_alive.x * ($keepAlive);',
+  );
+  sb.writeln('  }');
+  sb.writeln('}');
 }
 
 /// Writes the tail of a material's `main()`: the surface debug view when one
@@ -838,6 +942,11 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
       ],
     if (material.instanceAttributes.isNotEmpty)
       'instance_record_bytes': material.instanceRecordBytes,
+    if (materialHasDepthSurface(material))
+      'depth_surface': <String, Object?>{
+        for (final kind in DepthSurfaceKind.values)
+          kind.sidecarKey: depthSurfaceEntryName(material, kind),
+      },
     if (material.hasVertexStage)
       'vertex': <String, Object?>{
         for (final variant in kVertexVariants.keys)

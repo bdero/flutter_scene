@@ -1,6 +1,27 @@
 // Abstract syntax tree for the `.fmat` custom-material format and the error
 // type the parser, validator, and emitter throw.
 
+/// A depth-pass fragment a cutout material supplies itself, so the depth
+/// prepass and shadow maps cut it by its own surface alpha.
+enum DepthSurfaceKind {
+  /// The camera depth prepass (planar view depth).
+  linearDepth('DepthSurface', 'linear_depth'),
+
+  /// The camera depth prepass that also writes the view normal and roughness.
+  linearDepthNormal('DepthNormalSurface', 'linear_depth_normal'),
+
+  /// A shadow map.
+  shadow('ShadowSurface', 'shadow');
+
+  const DepthSurfaceKind(this.suffix, this.sidecarKey);
+
+  /// Appended to the material name for the bundle entry.
+  final String suffix;
+
+  /// The key in the sidecar's `depth_surface` map.
+  final String sidecarKey;
+}
+
 /// Which rendering contract a `.fmat` targets.
 enum FmatDomain {
   /// A surface material: the author writes `void Surface(inout MaterialInputs)`

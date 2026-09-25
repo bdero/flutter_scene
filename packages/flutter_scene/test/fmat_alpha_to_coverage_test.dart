@@ -40,6 +40,22 @@ void main() {
     expect(buildSidecar(compiled.material)['alpha_to_coverage'], isTrue);
   });
 
+  test('a cutout ships depth fragments cut by its surface alpha', () {
+    final compiled = compileFmat(_cutout, fileName: 'cutout.fmat');
+    final sidecar = buildSidecar(compiled.material);
+    expect(sidecar['depth_surface'], {
+      'linear_depth': 'CutoutDepthSurface',
+      'linear_depth_normal': 'CutoutDepthNormalSurface',
+      'shadow': 'CutoutShadowSurface',
+    });
+    for (final kind in DepthSurfaceKind.values) {
+      final source = emitFragmentGlsl(compiled.material, depthSurface: kind);
+      expect(source, contains('if (material.base_color.a < 0.5)'));
+      expect(source, isNot(contains('EvaluateLighting(material)')));
+      expect(source, contains('texture(mask, vec2(0.0)).x'));
+    }
+  });
+
   test('alpha_to_coverage needs an opaque material', () {
     expect(
       () => compileFmat(
@@ -58,30 +74,36 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('alpha_to_coverage');
     try {
       final compiled = compileFmat(_cutout, fileName: 'cutout.fmat');
-      final source = emitFragmentGlsl(compiled.material);
-      for (final MapEntry(key: backend, value: define) in _backends.entries) {
-        final entry = 'cutout${backend.replaceAll('-', '_')}';
-        final input = File.fromUri(temp.uri.resolve('$entry.frag'))
-          ..writeAsStringSync(source);
-        final output = temp.uri.resolve('$entry.out').toFilePath();
-        final result = await Process.run(impellerc.toFilePath(), [
-          backend,
-          '--input-type=frag',
-          '--input=${input.path}',
-          '--sl=$output',
-          '--spirv=${temp.uri.resolve('$entry.spirv').toFilePath()}',
-          '--define=$define',
-          '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
-          '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
-          if (backend == '--opengl-es') '--gles-language-version=300',
-        ]);
-        expect(
-          result.exitCode,
-          0,
-          reason: '$entry\n${result.stdout}\n${result.stderr}',
-        );
-        if (backend == '--metal-desktop') {
-          expect(File(output).readAsStringSync(), contains('sample_mask'));
+      final sources = {
+        'color': emitFragmentGlsl(compiled.material),
+        for (final kind in DepthSurfaceKind.values)
+          kind.name: emitFragmentGlsl(compiled.material, depthSurface: kind),
+      };
+      for (final MapEntry(key: variant, value: source) in sources.entries) {
+        for (final MapEntry(key: backend, value: define) in _backends.entries) {
+          final entry = 'cutout_$variant${backend.replaceAll('-', '_')}';
+          final input = File.fromUri(temp.uri.resolve('$entry.frag'))
+            ..writeAsStringSync(source);
+          final output = temp.uri.resolve('$entry.out').toFilePath();
+          final result = await Process.run(impellerc.toFilePath(), [
+            backend,
+            '--input-type=frag',
+            '--input=${input.path}',
+            '--sl=$output',
+            '--spirv=${temp.uri.resolve('$entry.spirv').toFilePath()}',
+            '--define=$define',
+            '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
+            '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
+            if (backend == '--opengl-es') '--gles-language-version=300',
+          ]);
+          expect(
+            result.exitCode,
+            0,
+            reason: '$entry\n${result.stdout}\n${result.stderr}',
+          );
+          if (backend == '--metal-desktop' && variant == 'color') {
+            expect(File(output).readAsStringSync(), contains('sample_mask'));
+          }
         }
       }
     } finally {

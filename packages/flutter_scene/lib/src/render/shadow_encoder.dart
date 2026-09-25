@@ -4,6 +4,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
@@ -95,6 +96,10 @@ class ShadowEncoder {
   // bends shadow casters the same way as the color pass. The depth fragment
   // shader ignores it, so it is harmless for materials without a vertex stage.
   final Vector3 _cameraPosition;
+
+  // The forward handed to a surface depth fragment; a shadow pass has no
+  // view axis, and no cutout decision depends on it.
+  static final Vector3 _shadowForward = Vector3(0, -1, 0);
 
   static final gpu.Shader _depthShader =
       baseShaderLibrary['DepthOnlyFragment']!;
@@ -232,8 +237,15 @@ class ShadowEncoder {
     // the position-only path. It also keeps the material's own culling, so the
     // faces that are visible are the faces that cast; the caster-face mode's
     // second-depth trick has no meaning for cutout sheets.
-    final masked = item.material.depthAlphaMasked;
-    final fragmentShader = masked ? _maskedDepthShader : _depthShader;
+    // A cutout `.fmat` casts through its own depth fragment, cut by its
+    // surface alpha; it culls like a masked caster.
+    // An explicitly configured mask wins over the automatic surface variant.
+    final surfaceShader = item.material.depthAlphaMasked
+        ? null
+        : item.material.depthSurfaceShader(DepthSurfaceKind.shadow);
+    final masked = surfaceShader != null || item.material.depthAlphaMasked;
+    final fragmentShader =
+        surfaceShader ?? (masked ? _maskedDepthShader : _depthShader);
     // A double-sided caster records every face regardless of the light's
     // caster-face mode or the material's culling, which is what closes the
     // light leak through single-sided geometry. A double-sided material casts
@@ -326,7 +338,15 @@ class ShadowEncoder {
           _transientsBuffer,
         );
       }
-      if (masked) {
+      if (surfaceShader != null) {
+        item.material.bindDepthSurface(
+          _renderPass,
+          fragmentShader,
+          _transientsBuffer,
+          cameraPosition: _cameraPosition,
+          cameraForward: _shadowForward,
+        );
+      } else if (masked) {
         item.material.bindDepthAlphaMask(
           _renderPass,
           fragmentShader,

@@ -260,6 +260,10 @@ final class FmatMaterialRegistry {
       shaderLibrary,
       index.shaderBundleAssetKey,
     );
+    material.setDepthSurfaceShadersFromMetadata(
+      metadata,
+      (entry) => shaderLibrary[entry],
+    );
     _fmatSourcePaths[material] = sourcePath;
     // Track for in-place hot reload: a `.fmat` edit refreshes this material
     // from its regenerated sidecar without rebuilding the scene. Debug-only.
