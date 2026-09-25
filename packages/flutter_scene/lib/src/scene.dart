@@ -1892,7 +1892,19 @@ base class Scene implements SceneGraph {
       _tick((nowMillis - lastMillis) / 1000.0);
     }
     _tickedThisFrame = false;
-    _tickAdaptiveQuality();
+
+    // A frame whose screen views will re-present their previous images skips
+    // the texture views too. Rendering them anyway keeps the GPU a frame
+    // behind, so the screen views would pace indefinitely.
+    final pacingFrame =
+        maxGpuFramesInFlight > 0 &&
+        _hasPresentedFrame &&
+        _pendingGraphCapture == null &&
+        views.any((view) => view.target == null) &&
+        rendererSubmissions.framesInFlight >= maxGpuFramesInFlight;
+    // A paced frame renders nothing, so the adaptive controller measures the
+    // period between rendered frames rather than the vsync it ticks at.
+    if (!pacingFrame) _tickAdaptiveQuality();
 
     // Rebuild the spatial culling structure once if the pre-pass changed the
     // scene, before the views' render passes query it.
@@ -2011,16 +2023,6 @@ base class Scene implements SceneGraph {
       }
     }
     planarCaptureView ??= textureViews.isNotEmpty ? textureViews.first : null;
-
-    // A frame whose screen views will re-present their previous images skips
-    // the texture views too. Rendering them anyway keeps the GPU a frame
-    // behind, so the screen views would pace indefinitely.
-    final pacingFrame =
-        maxGpuFramesInFlight > 0 &&
-        _hasPresentedFrame &&
-        _pendingGraphCapture == null &&
-        views.any((view) => view.target == null) &&
-        rendererSubmissions.framesInFlight >= maxGpuFramesInFlight;
 
     final now = DateTime.now();
     for (final view in textureViews) {
