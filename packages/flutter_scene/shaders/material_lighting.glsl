@@ -53,6 +53,11 @@ struct LightContext {
   float cone_attenuation;
   float shadow;
   float type;               // 0 directional, 1 point, 2 spot.
+  // The light's row in the punctual light table and its shadow slot (-1 when
+  // it casts none), so a hook can sample the shadow atlas itself. The
+  // directional light reports row -1.
+  float light_row;
+  float shadow_slot;
   vec3 normal;              // Shading normal.
   vec3 view;                // Surface to camera, unit length.
 };
@@ -787,6 +792,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     light_context.cone_attenuation = facing;
     light_context.shadow = shadow;
     light_context.type = 0.0;
+    light_context.light_row = -1.0;
+    light_context.shadow_slot = -1.0;
 #ifdef FLUTTER_SCENE_HOOK_LIGHT
     LightTerms sun_terms = Light(material, light_context);
     direct_diffuse += sun_terms.diffuse;
@@ -905,6 +912,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     light_context.color = radiance;
     light_context.position = l0.xyz;
     light_context.type = type;
+    light_context.light_row = float(light_row);
+    light_context.shadow_slot = -1.0;
     light_context.distance_attenuation = 1.0;
     light_context.cone_attenuation = 1.0;
     light_context.shadow = 1.0;
@@ -930,6 +939,9 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       float window = clamp(1.0 - factor * factor, 0.0, 1.0);
       // spot offset, shadow slot, falloff exponent
       highp vec4 l3 = FetchPunctualTexel(light_row, 3);
+#ifdef FLUTTER_SCENE_LIGHTING_HOOKS
+      light_context.shadow_slot = l3.y;
+#endif
       highp float distance_attenuation =
           (window * window) / max(pow(dist_sq, l3.z * 0.5), 1e-4);
       radiance *= distance_attenuation;

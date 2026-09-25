@@ -821,6 +821,7 @@ class SpotLight {
     this.shadowDepthBias = 0.0,
     this.shadowNormalBias = 0.1,
     this.shadowSoftness = 1.0,
+    this.shadowFieldOfView,
     this.shadowCasterFaces = ShadowCasterFaces.front,
     this.channelMask = 0xFF,
     this.shadowCasterChannelMask = 0xFF,
@@ -885,6 +886,11 @@ class SpotLight {
   /// hard edge.
   double shadowSoftness;
 
+  /// Vertical field of view of the shadow frustum, in radians, or null to
+  /// cover the cone ([outerConeAngle] with a small margin). A narrower frustum
+  /// spends the tile's texels on the core of a wide, soft-edged cone.
+  double? shadowFieldOfView;
+
   /// Which faces are rendered into the shadow map. [ShadowCasterFaces.back]
   /// (second-depth) removes the shadow detaching from a solid caster's base
   /// (peter-panning) by recording the far side; [ShadowCasterFaces.front] is
@@ -933,7 +939,9 @@ class SpotLight {
     final far = range > 0.0 ? range : 100.0;
     // A small margin past the outer cone so its lit edge sits inside the
     // frustum rather than on its clipped border.
-    final fovY = math.min(2.0 * outerConeAngle * 1.05, math.pi * 0.98);
+    final fovY =
+        shadowFieldOfView ??
+        math.min(2.0 * outerConeAngle * 1.05, math.pi * 0.98);
     final projection = PerspectiveProjection(
       fovRadiansY: fovY,
       near: shadowNear,
