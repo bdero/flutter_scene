@@ -66,8 +66,11 @@ class Surface {
   /// [size], advancing that view's frame. The ring (and the view's
   /// transient pool) are dropped and rebuilt whenever [size] changes from
   /// the view's previous call.
-  gpu.Texture getNextSwapchainColorTexture(Size size, [int viewIndex = 0]) =>
-      _view(viewIndex).nextSwapchainColor(size);
+  gpu.Texture getNextSwapchainColorTexture(
+    Size size, [
+    int viewIndex = 0,
+    gpu.PixelFormat? format,
+  ]) => _view(viewIndex).nextSwapchainColor(size, format);
 
   /// The color texture most recently issued for [viewIndex] (the previous
   /// frame's output once the next frame begins), or null before the first
@@ -160,13 +163,16 @@ class _ViewSurface {
   Size _previousSize = const Size(0, 0);
   gpu.Texture? _lastIssued;
 
-  gpu.Texture nextSwapchainColor(Size size) {
+  gpu.PixelFormat? _format;
+
+  gpu.Texture nextSwapchainColor(Size size, [gpu.PixelFormat? format]) {
     pool.beginFrame();
-    if (size != _previousSize) {
+    if (size != _previousSize || format != _format) {
       _cursor = 0;
       _swapchainColors.clear();
       pool.clear();
       _previousSize = size;
+      _format = format;
       _lastIssued = null;
     }
     if (_cursor == _swapchainColors.length) {
@@ -175,6 +181,7 @@ class _ViewSurface {
           gpu.StorageMode.devicePrivate,
           size.width.toInt(),
           size.height.toInt(),
+          format: format ?? gpu.PixelFormat.r8g8b8a8UNormInt,
           enableRenderTargetUsage: true,
           enableShaderReadUsage: true,
         ),

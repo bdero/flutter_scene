@@ -123,6 +123,7 @@ class RenderTexture extends ChangeNotifier implements TextureSource {
     required int height,
     this.update = RenderTextureUpdate.everyFrame,
     this.sampling = const RenderTextureSampling(),
+    this.linearColor = false,
   }) : assert(width > 0 && height > 0, 'RenderTexture size must be positive'),
        _size = ui.Size(width.toDouble(), height.toDouble());
 
@@ -140,6 +141,13 @@ class RenderTexture extends ChangeNotifier implements TextureSource {
 
   /// When this target re-renders. See [RenderTextureUpdate].
   RenderTextureUpdate update;
+
+  /// Whether this target holds the view's linear HDR scene color (RGBA16F,
+  /// premultiplied) instead of the display-referred image. A linear target
+  /// stops after the scene pass: no post-processing, custom render passes,
+  /// tone mapping, or anti-aliasing, so it suits captures that feed further
+  /// lighting (mirrors composited in HDR, probes).
+  final bool linearColor;
 
   /// Sampling options used when a material samples this target.
   RenderTextureSampling sampling;
@@ -212,7 +220,11 @@ class RenderTexture extends ChangeNotifier implements TextureSource {
   /// until [markUpdated] publishes the new one.
   @internal
   gpu.Texture acquireNextTexture() =>
-      _pending = _surface.getNextSwapchainColorTexture(_size);
+      _pending = _surface.getNextSwapchainColorTexture(
+        _size,
+        0,
+        linearColor ? gpu.PixelFormat.r16g16b16a16Float : null,
+      );
 
   /// The transient texture pool for this target's render passes.
   @internal

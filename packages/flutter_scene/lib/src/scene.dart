@@ -2026,7 +2026,9 @@ base class Scene implements SceneGraph {
         punctualLighting: punctualLighting,
         spotShadowFrame: spotShadowFrame,
         pointShadowFrame: pointShadowFrame,
-        capturePlanarReflections: identical(view, planarCaptureView),
+        captureLinearColor: target.linearColor,
+        capturePlanarReflections:
+            !target.linearColor && identical(view, planarCaptureView),
       );
       target.markUpdated(now);
     }
