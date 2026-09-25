@@ -50,6 +50,65 @@ fragment {
 
 const _backends = ['--opengl-es', '--metal-desktop', '--vulkan'];
 
+// A lit material that supplies its own ambient: the engine IBL samplers are
+// compiled out, leaving room for many material textures.
+final _customAmbient =
+    '''
+material {
+  name: "CustomAmbient",
+  shading_model: lit,
+  environment_lighting: false,
+  parameters: [
+${[for (var i = 0; i < 12; i++) '    { type: sampler2D, name: tex$i },'].join('\n')}
+  ],
+}
+
+fragment {
+  highp vec3 g_ambient;
+
+  void Surface(inout MaterialInputs material) {
+    vec4 sum = vec4(0.0);
+${[for (var i = 0; i < 12; i++) '    sum += texture(tex$i, GetUV0());'].join('\n')}
+    material.base_color = vec4(sum.rgb / 12.0, 1.0);
+    g_ambient = sum.rgb * 0.1;
+  }
+
+  highp vec4 Composite(MaterialInputs material, LightingResult r) {
+    return vec4(r.direct_diffuse + r.direct_specular + g_ambient, 1.0) *
+        r.alpha;
+  }
+}
+''';
+
+Future<Map<String, Object?>> _compile(
+  Uri impellerc,
+  Directory temp,
+  String entry,
+  String source,
+  String backend,
+) async {
+  final input = File.fromUri(temp.uri.resolve('$entry.frag'))
+    ..writeAsStringSync(source);
+  final reflection = File.fromUri(temp.uri.resolve('$entry.json'));
+  final result = await Process.run(impellerc.toFilePath(), [
+    backend,
+    '--input-type=frag',
+    '--input=${input.path}',
+    '--sl=${temp.uri.resolve('$entry.out').toFilePath()}',
+    '--spirv=${temp.uri.resolve('$entry.spirv').toFilePath()}',
+    '--reflection-json=${reflection.path}',
+    '--include=${Directory.current.uri.resolve('shaders/').toFilePath()}',
+    '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
+    if (backend == '--opengl-es') '--gles-language-version=300',
+  ]);
+  expect(
+    result.exitCode,
+    0,
+    reason: '$entry\n${result.stdout}\n${result.stderr}',
+  );
+  return jsonDecode(reflection.readAsStringSync()) as Map<String, Object?>;
+}
+
 void main() {
   test('detects only hooks with the expected signature', () {
     expect(lightingHooksIn(_hooked), {'Light', 'Ambient', 'Composite'});
@@ -72,6 +131,60 @@ void main() {
       expect(source, contains('#define FLUTTER_SCENE_HOOK_AMBIENT'));
       expect(source, contains('#define FLUTTER_SCENE_HOOK_COMPOSITE'));
     }
+  });
+
+  test('custom ambient drops the engine IBL samplers', () async {
+    final impellerc = await findImpellerC();
+    final temp = Directory.systemTemp.createTempSync('custom_ambient');
+    try {
+      final compiled = compileFmat(_customAmbient, fileName: 'custom.fmat');
+      final variants = emitFragmentShaderVariants(
+        compiled,
+        generateShadowVariant: true,
+      );
+      // No radiance-cube twin: the material never samples the environment.
+      expect(variants.keys.where((k) => k.endsWith('Cube')), isEmpty);
+      for (final variant in variants.entries) {
+        expect(variant.value, contains('#define FLUTTER_SCENE_CUSTOM_AMBIENT'));
+        for (final backend in _backends) {
+          final json = await _compile(
+            impellerc,
+            temp,
+            '${variant.key}${backend.replaceAll('-', '_')}',
+            variant.value,
+            backend,
+          );
+          final names = [
+            for (final s in json['sampled_images']! as List) (s as Map)['name'],
+          ];
+          for (final absent in [
+            'prefiltered_radiance',
+            'prefiltered_radiance_b',
+            'brdf_lut',
+            'irradiance_field',
+            'ssao_texture',
+          ]) {
+            expect(names, isNot(contains(absent)));
+          }
+          expect(names.length, lessThanOrEqualTo(15));
+        }
+      }
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('environment_lighting: false requires a lit material', () {
+    expect(
+      () => compileFmat(
+        _customAmbient.replaceFirst(
+          'shading_model: lit',
+          'shading_model: unlit',
+        ),
+        fileName: 'bad.fmat',
+      ),
+      throwsA(isA<FmatException>()),
+    );
   });
 
   test('hooked lit variants compile on every backend', () async {

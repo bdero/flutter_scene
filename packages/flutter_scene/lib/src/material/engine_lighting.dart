@@ -580,6 +580,7 @@ class EngineLightingUniforms {
     bool bindSsao = true,
     bool bindShadows = true,
     bool bindDiffuseSh = true,
+    bool bindEnvironment = true,
     bool? cubeShader,
   }) {
     if (_memoPassIs(pass)) {
@@ -591,12 +592,14 @@ class EngineLightingUniforms {
       }
     }
     _texturesMemo[shader] = (lighting, env);
-    bindPrefilteredRadiance(pass, shader, env, cubeShader: cubeShader);
-    pass.bindTexture(
-      shader.getUniformSlot('brdf_lut'),
-      Material.getBrdfLutTexture(),
-      sampler: _clampLinearSampler,
-    );
+    if (bindEnvironment) {
+      bindPrefilteredRadiance(pass, shader, env, cubeShader: cubeShader);
+      pass.bindTexture(
+        shader.getUniformSlot('brdf_lut'),
+        Material.getBrdfLutTexture(),
+        sampler: _clampLinearSampler,
+      );
+    }
     if (bindShadows) {
       pass.bindTexture(
         shader.getUniformSlot('shadow_map'),
@@ -615,7 +618,7 @@ class EngineLightingUniforms {
     // texture is bound and both shader row coordinates land on its single
     // row. Sampled in EvaluateDiffuseSH. A baked-lightmap variant reads its
     // diffuse ambient from the lightmap and declares no such sampler.
-    if (bindDiffuseSh) {
+    if (bindDiffuseSh && bindEnvironment) {
       final field = lighting.irradianceField;
       pass.bindTexture(
         shader.getUniformSlot('irradiance_field'),
@@ -627,13 +630,15 @@ class EngineLightingUniforms {
     // When no cross-fade is active the primary is bound here too (a valid
     // no-op, since frag_info.radiance_blend.x is 0 and the shader never
     // reads it).
-    bindSecondaryRadiance(
-      pass,
-      shader,
-      lighting.environmentMapB ?? env,
-      primary: env,
-      cubeShader: cubeShader,
-    );
+    if (bindEnvironment) {
+      bindSecondaryRadiance(
+        pass,
+        shader,
+        lighting.environmentMapB ?? env,
+        primary: env,
+        cubeShader: cubeShader,
+      );
+    }
     // Punctual light parameters (all scene lights) and the per-object light
     // index buffer, both RGBA32F data textures, point-sampled (each texel is
     // packed data). White placeholders are bound when there are no lights or no

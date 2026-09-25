@@ -22,7 +22,7 @@
 // Diffuse-irradiance spherical harmonics, fetched from rows 0 and 1 of the
 // irradiance_field texture.
 #include <diffuse_sh.glsl>
-#ifndef FLUTTER_SCENE_LIGHTMAP
+#if !defined(FLUTTER_SCENE_LIGHTMAP) && !defined(FLUTTER_SCENE_CUSTOM_AMBIENT)
 // The world-space irradiance field's atlas addressing and its receiver.
 #include <irradiance_field.glsl>
 #include <irradiance_receiver.glsl>
@@ -515,6 +515,16 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 env_reflection =
       environment_transform *
       ParallaxCorrectReflection(v_position, reflection_normal);
+#ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
+  // The material supplies all of its indirect light (Composite()), so the
+  // engine environment is neither declared nor sampled.
+  highp vec3 irradiance = vec3(0.0);
+  highp vec3 prefiltered_color = vec3(0.0);
+  float env_blend = 0.0;
+#ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
+  highp vec3 transmitted_irradiance = vec3(0.0);
+#endif
+#else
 #ifdef FLUTTER_SCENE_LIGHTMAP
   // The bake already carries this surface's indirect diffuse, so it replaces
   // the SH ambient rather than adding to it. A bake has no direction, so the
@@ -598,6 +608,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #endif
   }
 #endif
+#endif  // FLUTTER_SCENE_CUSTOM_AMBIENT
 
 #ifdef FLUTTER_SCENE_HOOK_AMBIENT
   AmbientContext ambient_context;
@@ -618,10 +629,14 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // Split-sum DFG terms (Karis '13) from the RGBA16F environment-BRDF LUT
   // (scale in R, bias in G), indexed by (n_dot_v, roughness) with roughness up
   // the V axis; sampled slightly inside [0, 1] to avoid edge-tap artifacts.
+#ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
+  vec2 f_ab = vec2(0.0);
+#else
   vec2 f_ab = texture(
                   brdf_lut,
                   DfgLutUv(clamp(vec2(n_dot_v_energy, roughness), 0.0, 0.99)))
                   .rg;
+#endif
 
   // Single- and multiple-scattering energy compensation (Fdez-Aguera 2019;
   // see https://bruop.github.io/ibl/). Without the multiscatter term, rough
@@ -723,6 +738,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   ambient += material.diffuse_transmission_color * (1.0 - metallic) *
              material.diffuse_transmission *
              transmitted_irradiance * occlusion * ambient_shadow;
+#ifndef FLUTTER_SCENE_CUSTOM_AMBIENT
   if (material.clearcoat > 0.0) {
     vec3 coat_reflection = reflect(-camera_normal, coat_normal);
     highp vec3 coat_prefiltered = SampleRadianceEnv(prefiltered_radiance,
@@ -739,6 +755,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                (vec3(0.04) * coat_ab.x + coat_ab.y) *
                frag_info.environment_intensity;
   }
+#endif
   // TODO(sheen-ibl): replace this diffuse-scaled ambient term with a
   // preintegrated Charlie environment lobe and directional-albedo compensation.
   ambient += material.sheen_color * irradiance *
@@ -825,6 +842,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     float type = l0.w;
     highp vec3 radiance = l1.rgb;
     if (type > 2.5) {
+#ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
+      // TODO(custom-ambient-area-lights): the LTC tables ride brdf_lut, which
+      // a custom-ambient material does not declare, so rect area lights are
+      // skipped. Give the LTC tables their own binding to light these too.
+      continue;
+#else
       // Rect area light. Texel 2 carries the world right axis and width,
       // texel 3 the up axis and height; the light emits along
       // cross(right, up). The LTC form factor bakes in the cosine lobe and
@@ -874,6 +897,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         coat_direct += radiance * (window * window) * facing * coat_shape *
                        (0.04 * ct2.x + 0.96 * ct2.y);
       }
+#endif
 #endif
     } else {
     vec3 punctual_light_vector;
@@ -1029,6 +1053,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // behind it, matching the unfogged skybox at the horizon. Only sampled when
   // fog and its sky-color influence are on, so it is free otherwise.
   highp vec3 sky_fog_color = fog.color.rgb;
+#ifndef FLUTTER_SCENE_CUSTOM_AMBIENT
   if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
     // Sample the sharpest prefiltered level: the fog color should match the
     // crisp skybox as closely as the environment resolution allows, so avoid
@@ -1046,6 +1071,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     }
     sky_fog_color *= frag_info.environment_intensity;
   }
+#endif
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
   // TODO(lighting-hooks): the hooked path drops the physical clearcoat,
   // transmission, sheen, and screen-space bounce terms. Fold them into

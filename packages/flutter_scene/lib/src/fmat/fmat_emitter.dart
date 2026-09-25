@@ -132,7 +132,7 @@ bool materialSamplesEnvironment(FmatMaterial material) =>
     switch (material.shadingModel) {
       FmatShadingModel.unlit ||
       FmatShadingModel.shadowCatcher => material.useEnvironment,
-      _ => true,
+      _ => material.environmentLighting,
     };
 
 /// The bundle entry name of [entryName]'s cubemap-radiance twin.
@@ -161,7 +161,7 @@ String lightmapEntryName(String entryName) => '${entryName}Lightmap';
 bool sidecarSamplesEnvironment(Map<String, Object?> metadata) =>
     switch (metadata['shading_model']) {
       'unlit' || 'shadowCatcher' => metadata['use_environment'] == true,
-      _ => true,
+      _ => metadata['environment_lighting'] != false,
     };
 
 const _lightingHookDefines = {
@@ -213,8 +213,12 @@ String emitFragmentGlsl(
   if (material.shadingModel == FmatShadingModel.shadowCatcher) {
     sb.writeln('#define FLUTTER_SCENE_SHADOW_CATCHER');
   }
-  if (material.engineInputs.contains('filtered_scene_color')) {
+  if (material.engineInputs.contains('filtered_scene_color') ||
+      !material.environmentLighting) {
     sb.writeln('#define FLUTTER_SCENE_SKIP_SSAO');
+  }
+  if (!material.environmentLighting) {
+    sb.writeln('#define FLUTTER_SCENE_CUSTOM_AMBIENT');
   }
   if (lit && material.shadingModel != FmatShadingModel.shadowCatcher) {
     for (final hook in lightingHooksIn(material.fragmentSource)) {
@@ -806,6 +810,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'domain': material.domain.name,
     if (material.useEnvironment) 'use_environment': true,
     'shading_model': material.shadingModel.name,
+    if (!material.environmentLighting) 'environment_lighting': false,
     'blending': material.blending.name,
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,
