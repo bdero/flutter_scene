@@ -256,7 +256,10 @@ class MeshComponent extends Component {
         item.jointsTexture = jointsTexture;
         item.jointsTextureWidth = jointsTextureWidth;
       }
-      item.morphWeights = node.internalMorphWeights;
+      final morphWeights = node.internalMorphWeights;
+      item.morphWeights = morphWeights;
+      // Grow the bounds before this frame culls against them.
+      if (morphWeights != null) item.geometry.coverMorphWeights(morphWeights);
       if (staticShadowChanged) renderScene?.markStaticShadowDirty();
 
       final boundsVersion = item.geometry.localBoundsVersion;

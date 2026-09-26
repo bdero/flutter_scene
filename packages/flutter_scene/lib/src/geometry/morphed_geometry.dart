@@ -15,7 +15,7 @@
 /// fits, CPU otherwise; [usesGpuMorphing] reports the choice.
 library;
 
-import 'dart:math' show sqrt;
+import 'dart:math' show max, min, sqrt;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -43,6 +43,9 @@ class MorphedUnskinnedGeometry extends UnskinnedGeometry with _MorphBlending {
 
   @override
   int get _strideInFloats => kUnskinnedPerVertexSize ~/ 4;
+
+  @override
+  bool get _skinsAfterMorph => false;
 
   /// On the GPU path the depth-style passes must run the full morphed
   /// vertex shader (a position-only fetch would draw the unmorphed base);
@@ -95,6 +98,9 @@ class MorphedSkinnedGeometry extends SkinnedGeometry with _MorphBlending {
 
   @override
   int get _strideInFloats => kSkinnedPerVertexSize ~/ 4;
+
+  @override
+  bool get _skinsAfterMorph => true;
 
   @override
   void bind(
@@ -154,6 +160,20 @@ mixin _MorphBlending on Geometry {
   /// at offset 0 and normal at offset 3 in both layouts.
   int get _strideInFloats;
 
+  /// Whether a skin rotates the blended deltas, so bounds can only grow by
+  /// their length rather than per axis.
+  bool get _skinsAfterMorph;
+
+  // Bounds state. Each target's delta extents are scanned once; the bounds
+  // cover every weight in [_coveredLow, _coveredHigh], which only grows.
+  late final Float32List _deltaMin;
+  late final Float32List _deltaMax;
+  late final Float32List _deltaMaxLength;
+  late final Float32List _coveredLow;
+  late final Float32List _coveredHigh;
+  vm.Aabb3? _baseBounds;
+  int _expandedBoundsVersion = -1;
+
   @override
   MorphTargetData get morphTargets => _morphData;
 
@@ -165,6 +185,7 @@ mixin _MorphBlending on Geometry {
   void _initMorphState(MorphTargetData data) {
     _morphData = data;
     _packing = computeMorphTexturePacking(data);
+    _scanDeltaExtents();
   }
 
   @override
@@ -195,12 +216,35 @@ mixin _MorphBlending on Geometry {
       indices,
       indexType: indexType,
     );
-    if (!_uploadingBlend) _expandBoundsForMorphRange();
+    if (!_uploadingBlend) _updateMorphBounds();
+  }
+
+  @override
+  void coverMorphWeights(Float32List weights) {
+    final count = weights.length < _morphData.targetCount
+        ? weights.length
+        : _morphData.targetCount;
+    var grew = false;
+    for (var t = 0; t < count; t++) {
+      final w = weights[t];
+      if (w < _coveredLow[t]) {
+        _coveredLow[t] = w;
+        grew = true;
+      } else if (w > _coveredHigh[t]) {
+        _coveredHigh[t] = w;
+        grew = true;
+      }
+    }
+    // Bounds replaced since the last expansion need expanding too.
+    if (grew || localBoundsVersion != _expandedBoundsVersion) {
+      _updateMorphBounds();
+    }
   }
 
   @override
   void setMorphWeights(Float32List? weights) {
     if (weights == null) return;
+    coverMorphWeights(weights);
     if (usesGpuMorphing) {
       // Retained by reference: the render item hands the node's live list
       // right before each draw's bind, which reads it synchronously.
@@ -365,38 +409,80 @@ mixin _MorphBlending on Geometry {
     }
   }
 
-  // Expands the base AABB by each axis's summed worst-case delta, assuming
-  // weights stay in [0, 1] (the common authored range).
-  // TODO(morph-bounds): account for weights outside [0, 1] and fold morph
-  // extents into the skinned pose-union bake.
-  void _expandBoundsForMorphRange() {
-    final bounds = localBounds;
-    if (bounds == null) return;
+  // Scans each target's per-axis delta range and longest delta.
+  void _scanDeltaExtents() {
     final data = _morphData;
-    final lo = [0.0, 0.0, 0.0];
-    final hi = [0.0, 0.0, 0.0];
-    for (var t = 0; t < data.targetCount; t++) {
+    final targets = data.targetCount;
+    _deltaMin = Float32List(targets * 3);
+    _deltaMax = Float32List(targets * 3);
+    _deltaMaxLength = Float32List(targets);
+    final deltas = data.positionDeltas;
+    for (var t = 0; t < targets; t++) {
       final offset = t * data.vertexCount * 3;
-      for (var axis = 0; axis < 3; axis++) {
-        var minDelta = 0.0;
-        var maxDelta = 0.0;
-        for (var v = 0; v < data.vertexCount; v++) {
-          final delta = data.positionDeltas[offset + v * 3 + axis];
-          if (delta < minDelta) minDelta = delta;
-          if (delta > maxDelta) maxDelta = delta;
+      var longestSquared = 0.0;
+      for (var v = 0; v < data.vertexCount; v++) {
+        final d = offset + v * 3;
+        var lengthSquared = 0.0;
+        for (var axis = 0; axis < 3; axis++) {
+          final delta = deltas[d + axis];
+          if (delta < _deltaMin[t * 3 + axis]) _deltaMin[t * 3 + axis] = delta;
+          if (delta > _deltaMax[t * 3 + axis]) _deltaMax[t * 3 + axis] = delta;
+          lengthSquared += delta * delta;
         }
-        lo[axis] += minDelta;
-        hi[axis] += maxDelta;
+        if (lengthSquared > longestSquared) longestSquared = lengthSquared;
+      }
+      _deltaMaxLength[t] = sqrt(longestSquared);
+    }
+    // Weights in [0, 1] are the common authored range, so they are covered
+    // up front along with the defaults.
+    _coveredLow = Float32List(targets);
+    _coveredHigh = Float32List(targets)..fillRange(0, targets, 1.0);
+    coverMorphWeights(data.defaultWeights);
+  }
+
+  // Grows the base bounds to cover every weight in the covered ranges.
+  // Unskinned deltas add per axis. A skin rotates the blended delta, so
+  // skinned bounds grow on every axis by the longest blend, which holds for
+  // rigid joints.
+  // TODO(morph-bounds-scale): scale the skinned margin by the largest joint
+  // scale, which the baked pose union does not report.
+  void _updateMorphBounds() {
+    // Adopt bounds set or scanned since the last expansion as the new base.
+    if (localBoundsVersion != _expandedBoundsVersion) {
+      _baseBounds = localBounds == null ? null : vm.Aabb3.copy(localBounds!);
+    }
+    final base = _baseBounds;
+    if (base == null) return;
+    final lo = vm.Vector3.zero();
+    final hi = vm.Vector3.zero();
+    var margin = 0.0;
+    for (var t = 0; t < _morphData.targetCount; t++) {
+      final low = _coveredLow[t];
+      final high = _coveredHigh[t];
+      if (_skinsAfterMorph) {
+        final w = low.abs() > high.abs() ? low.abs() : high.abs();
+        margin += w * _deltaMaxLength[t];
+        continue;
+      }
+      for (var axis = 0; axis < 3; axis++) {
+        final dMin = _deltaMin[t * 3 + axis];
+        final dMax = _deltaMax[t * 3 + axis];
+        // The extremes of weight times delta sit at the interval corners.
+        final a = low * dMin, b = low * dMax, c = high * dMin, d = high * dMax;
+        lo[axis] += min(min(a, b), min(c, d));
+        hi[axis] += max(max(a, b), max(c, d));
       }
     }
-    final expanded = vm.Aabb3.minMax(
-      bounds.min + vm.Vector3(lo[0], lo[1], lo[2]),
-      bounds.max + vm.Vector3(hi[0], hi[1], hi[2]),
-    );
+    if (_skinsAfterMorph) {
+      lo.setValues(-margin, -margin, -margin);
+      hi.setValues(margin, margin, margin);
+    }
+    final expanded = vm.Aabb3.minMax(base.min + lo, base.max + hi);
     final center = (expanded.min + expanded.max) * 0.5;
     setLocalBounds(
       expanded,
       vm.Sphere.centerRadius(center, (expanded.max - center).length),
     );
+    _expandedBoundsVersion = localBoundsVersion;
   }
 }

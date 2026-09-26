@@ -885,6 +885,11 @@ abstract class Geometry {
   /// geometry shared between several nodes blends each node's own weights.
   void setMorphWeights(Float32List? weights) {}
 
+  /// Grows [localBounds] to cover a node drawing with [weights]. Called
+  /// before culling; the default does nothing.
+  @internal
+  void coverMorphWeights(Float32List weights) {}
+
   /// Hook for skinned geometries to receive the joints texture computed
   /// by [Skin.getJointsTexture].
   ///
