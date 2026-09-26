@@ -41,8 +41,9 @@ int get _vertexCount => _rows * _corners.length;
 /// no randomness and no wall-clock input, so the bytes never vary.
 ///
 /// [weightSum] scales every vertex's skin weights, so a value under 1 mimics
-/// an export whose weights do not sum to 1.
-Uint8List buildMorphSkinnedGlb({double weightSum = 1.0}) {
+/// an export whose weights do not sum to 1. With [skinned] false the tube has
+/// no skin and stands straight, taking the unskinned morph path.
+Uint8List buildMorphSkinnedGlb({double weightSum = 1.0, bool skinned = true}) {
   final positions = Float32List(_vertexCount * 3);
   final normals = Float32List(_vertexCount * 3);
   final colors = Float32List(_vertexCount * 4);
@@ -141,11 +142,11 @@ Uint8List buildMorphSkinnedGlb({double weightSum = 1.0}) {
     'scene': 0,
     'scenes': [
       {
-        'nodes': [0, 1],
+        'nodes': [0, if (skinned) 1],
       },
     ],
     'nodes': [
-      {'name': 'MorphSkinned', 'mesh': 0, 'skin': 0},
+      {'name': 'MorphSkinned', 'mesh': 0, if (skinned) 'skin': 0},
       {
         'name': 'Joint0',
         // 12 degrees about X, so the whole shape leans.
@@ -159,12 +160,13 @@ Uint8List buildMorphSkinnedGlb({double weightSum = 1.0}) {
         'rotation': [0, 0, math.sin(_deg(25)), math.cos(_deg(25))],
       },
     ],
-    'skins': [
-      {
-        'inverseBindMatrices': inverseBindAccessor,
-        'joints': [1, 2],
-      },
-    ],
+    if (skinned)
+      'skins': [
+        {
+          'inverseBindMatrices': inverseBindAccessor,
+          'joints': [1, 2],
+        },
+      ],
     'meshes': [
       {
         'name': 'MorphSkinned',
@@ -174,8 +176,8 @@ Uint8List buildMorphSkinnedGlb({double weightSum = 1.0}) {
               'POSITION': positionAccessor,
               'NORMAL': normalAccessor,
               'COLOR_0': colorAccessor,
-              'JOINTS_0': jointAccessor,
-              'WEIGHTS_0': weightAccessor,
+              if (skinned) 'JOINTS_0': jointAccessor,
+              if (skinned) 'WEIGHTS_0': weightAccessor,
             },
             'indices': indexAccessor,
             'material': 0,
