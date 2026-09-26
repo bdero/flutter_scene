@@ -12,7 +12,7 @@ import 'package:flutter_scene/src/geometry/morph_targets.dart';
 import 'package:flutter_scene/src/importer/gltf.dart';
 import 'package:flutter_scene/src/runtime_importer/animation_builder.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vector_math/vector_math.dart' show Matrix4;
+import 'package:vector_math/vector_math.dart' show Aabb3, Matrix4, Vector3;
 
 // A single-triangle primitive with two morph targets. Target 0's POSITION
 // deltas are sparse-encoded over a null bufferView (the spec-recommended
@@ -563,6 +563,77 @@ void main() {
       expect(node.morphTargetCount, 0);
       expect(node.morphWeights, isNull);
       expect(() => node.setMorphWeight(0, 1), throwsStateError);
+    });
+  });
+
+  group('morph bounds', () {
+    // One target: vertex 1 moves by (2, -1, 0), so the per-axis delta range
+    // is x [0, 2], y [-1, 0], and the longest delta is sqrt(5).
+    MorphTargetData data() => MorphTargetData(
+      vertexCount: 2,
+      targetCount: 1,
+      positionDeltas: Float32List.fromList([0, 0, 0, 2, -1, 0]),
+    );
+    final base = Aabb3.minMax(Vector3.zero(), Vector3.all(1));
+
+    void expectBounds(Geometry geometry, Vector3 min, Vector3 max) {
+      final bounds = geometry.localBounds!;
+      for (var axis = 0; axis < 3; axis++) {
+        expect(bounds.min[axis], closeTo(min[axis], 1e-5));
+        expect(bounds.max[axis], closeTo(max[axis], 1e-5));
+      }
+    }
+
+    test('unskinned bounds cover weights in [0, 1] per axis', () {
+      final geometry = MorphedUnskinnedGeometry(data())
+        ..setLocalBounds(base, null);
+      geometry.coverMorphWeights(Float32List.fromList([0.5]));
+      expectBounds(geometry, Vector3(0, -1, 0), Vector3(3, 1, 1));
+    });
+
+    test('unskinned bounds grow for weights outside [0, 1]', () {
+      final geometry = MorphedUnskinnedGeometry(data())
+        ..setLocalBounds(base, null);
+      geometry.coverMorphWeights(Float32List.fromList([-1]));
+      expectBounds(geometry, Vector3(-2, -1, 0), Vector3(3, 2, 1));
+      geometry.coverMorphWeights(Float32List.fromList([1.5]));
+      expectBounds(geometry, Vector3(-2, -1.5, 0), Vector3(4, 2, 1));
+    });
+
+    test('covered weights leave the bounds untouched', () {
+      final geometry = MorphedUnskinnedGeometry(data())
+        ..setLocalBounds(base, null);
+      geometry.coverMorphWeights(Float32List.fromList([-1]));
+      final version = geometry.localBoundsVersion;
+      geometry.coverMorphWeights(Float32List.fromList([0.25]));
+      geometry.coverMorphWeights(Float32List.fromList([-0.5]));
+      expect(geometry.localBoundsVersion, version);
+    });
+
+    test('bounds set after an expansion become the new base', () {
+      final geometry = MorphedUnskinnedGeometry(data())
+        ..setLocalBounds(base, null);
+      geometry.coverMorphWeights(Float32List.fromList([0]));
+      geometry.setLocalBounds(
+        Aabb3.minMax(Vector3.all(10), Vector3.all(11)),
+        null,
+      );
+      geometry.coverMorphWeights(Float32List.fromList([0]));
+      expectBounds(geometry, Vector3(10, 9, 10), Vector3(13, 11, 11));
+    });
+
+    test('skinned bounds grow on every axis by the longest blend', () {
+      final geometry = MorphedSkinnedGeometry(data())
+        ..setLocalBounds(base, null);
+      geometry.coverMorphWeights(Float32List.fromList([0]));
+      final root5 = 2.2360679;
+      expectBounds(geometry, Vector3.all(-root5), Vector3.all(1 + root5));
+      geometry.coverMorphWeights(Float32List.fromList([-3]));
+      expectBounds(
+        geometry,
+        Vector3.all(-3 * root5),
+        Vector3.all(1 + 3 * root5),
+      );
     });
   });
 

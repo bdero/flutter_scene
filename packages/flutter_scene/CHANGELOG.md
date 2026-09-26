@@ -1,6 +1,7 @@
 ## 0.24.0
 
 * Fixed morph targets on unskinned meshes not deforming on the GPU path; their weights animated but the mesh drew in its base pose (#428).
+* Morphed mesh bounds grow to cover every weight a node draws with, including weights below 0 or above 1, so animated blend shapes are no longer culled while on screen.
 * Setting `Node.highlightColor` between a tick and the next draw no longer throws inside the selection outline pass; the outline draws white for that frame and takes the color on the next.
 * Fixed unlit `.fmat` materials drawing nothing on Impeller Vulkan. Their shader carried an unread radiance block that collided with the vertex stage's frame block in the pipeline layout, which some drivers reject; the block is now compiled out where nothing reads it.
 * Display-referred surfaces. `Material.displayReferred` (settable on `UnlitMaterial`) marks a surface whose color is already final screen values, so it draws past the tone curve into its own layer and composites onto the resolved image with its colors unchanged. `WidgetComponent` turns it on for the material it owns, fixing captured widgets arriving dark and dark tones crushed (#382); pass `displayReferred: false` for a screen that should read as a lit object. The layer is still occluded by opaque geometry, but takes no exposure, grading, tone mapping, fog, bloom or depth of field, casts no shadow, and does not order against translucent geometry.
