@@ -1091,7 +1091,8 @@ base class SceneEncoder {
     gpu.Shader? materialVertex,
     double depthBias,
   ) {
-    if (geometry is UnskinnedGeometry) {
+    // Morphed geometry takes the full bind, which also binds its morph stage.
+    if (geometry is UnskinnedGeometry && geometry.morphTargets == null) {
       geometry.bindGeometryBuffers(_renderPass);
       final shader = materialVertex ?? geometry.vertexShader;
       if (!identical(_boundFrameInfoShader, shader) ||
