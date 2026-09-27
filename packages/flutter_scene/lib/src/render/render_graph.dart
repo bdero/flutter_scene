@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -258,6 +259,11 @@ class TransientTexturePool {
   final Map<TransientTextureDescriptor, List<gpu.Texture?>> _rings = {};
   int _frame = 0;
 
+  /// Textures every [TransientTexturePool] has created. For tests that check
+  /// steady-state rendering allocates nothing.
+  @visibleForTesting
+  static int texturesCreated = 0;
+
   /// Advances to the next frame's ring slot. Call once per frame before
   /// any [acquire] calls.
   void beginFrame() {
@@ -273,6 +279,7 @@ class TransientTexturePool {
     );
     var texture = ring[_frame];
     if (texture == null) {
+      texturesCreated++;
       texture = gpu.gpuContext.createTexture(
         descriptor.storageMode,
         descriptor.width,
