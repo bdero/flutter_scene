@@ -11,6 +11,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -273,6 +274,61 @@ void main() {
       _centerNonClearFraction(rgba, image.width, image.height),
       greaterThan(0.05),
       reason: 'the scene stopped drawing once the pool was shed each frame',
+    );
+  });
+
+  // Once a scene has warmed up, drawing it again must not allocate: per-frame
+  // uniform and instance data recycle through the transient pools and
+  // render-graph attachments come back from the texture pool. Every smoke
+  // scene is checked, so a feature that allocates per frame shows up by name.
+  testWidgets('warmed-up smoke scenes render without allocating', (
+    tester,
+  ) async {
+    int allocations() =>
+        TransientArena.buffersCreated +
+        ImmediatePoolTransients.buffersCreated +
+        TransientTexturePool.texturesCreated;
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    final offenders = <String>[];
+    for (final smoke in kSmokeScenes) {
+      await smoke.preload?.call();
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(
+            backgroundColor: kSmokeClear,
+            body: Center(child: SmokeSceneView(smoke, key: ValueKey(smoke.id))),
+          ),
+        ),
+      );
+      final boundary =
+          smokeSceneKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      Future<void> frames(int count) async {
+        for (var i = 0; i < count; i++) {
+          boundary.markNeedsPaint();
+          await tester.pump(const Duration(milliseconds: 16));
+          // Lets GPU completions arrive, as they would between real frames.
+          await Future<void>.delayed(const Duration(milliseconds: 4));
+        }
+      }
+
+      await frames(30);
+      final warm = allocations();
+      await frames(60);
+      final grew = allocations() - warm;
+      if (grew > 0) offenders.add('${smoke.id} (+$grew)');
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'these scenes kept allocating GPU memory after warming up',
     );
   });
 
