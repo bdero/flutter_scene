@@ -106,6 +106,18 @@ class GpuSubmissionTracker {
 /// The tracker for every command buffer the renderer submits.
 final GpuSubmissionTracker rendererSubmissions = GpuSubmissionTracker();
 
+/// How many `beginFrame` calls a pooled transient buffer may sit unused
+/// before it is released. Pools reuse their most recently used buffer first,
+/// so a steady workload keeps cycling the same buffers and never allocates,
+/// while buffers left over from a spike go idle and age out.
+///
+/// Sizing the idle pool to recent usage instead churned: how many buffers
+/// are idle at a given moment depends on when the GPU completes in-flight
+/// frames, and `beginFrame` runs once per rendered view (not per frame) and
+/// on paced frames that render nothing, so every such rule dropped buffers
+/// the next frame needed.
+const int kTransientIdleFrames = 240;
+
 /// Destination for per-frame transient GPU data (uniform blocks, instance
 /// vertex data). Emplaced data is valid for the current frame only.
 ///
@@ -138,8 +150,8 @@ abstract interface class FrameTransients implements TransientWriter {
 /// buffer (sized to the next power-of-two class), written exactly once via
 /// `overwrite` before the view is returned and never touched again while in
 /// flight. Buffers recycle through a completion-gated pool per size class
-/// and idle buffers beyond the previous frame's usage (plus a spare per
-/// class) are dropped, the same policies as [TransientArena].
+/// and are released after [kTransientIdleFrames] unused frames, the same
+/// policies as [TransientArena].
 class ImmediatePoolTransients implements FrameTransients {
   ImmediatePoolTransients(this._tracker) {
     _tracker.addBeforeSubmitListener(_onBeforeSubmit);
@@ -156,13 +168,16 @@ class ImmediatePoolTransients implements FrameTransients {
   /// Stamped buffers, reusable once the watermark passes their stamp.
   final List<_TransientBlock> _pooled = [];
 
-  /// Per-size-class usage counts for the shrink policy.
-  final Map<int, int> _lastFrameUse = {};
-  final Map<int, int> _thisFrameUse = {};
+  int _frame = 0;
 
   /// Total live buffers. For tests.
   @visibleForTesting
   int get bufferCount => _used.length + _pooled.length;
+
+  /// Device buffers every [ImmediatePoolTransients] has created. For tests
+  /// that check steady-state rendering allocates nothing.
+  @visibleForTesting
+  static int buffersCreated = 0;
 
   static int _sizeClassFor(int length) {
     var size = kMinBufferLengthInBytes;
@@ -178,8 +193,9 @@ class ImmediatePoolTransients implements FrameTransients {
     final sizeClass = _sizeClassFor(length);
     final completed = _tracker.completedThrough;
 
+    // Most recently used first, so surplus buffers age out.
     _TransientBlock? block;
-    for (var i = 0; i < _pooled.length; i++) {
+    for (var i = _pooled.length - 1; i >= 0; i--) {
       final candidate = _pooled[i];
       if (candidate.length == sizeClass && candidate.stamp <= completed) {
         block = candidate;
@@ -188,13 +204,13 @@ class ImmediatePoolTransients implements FrameTransients {
       }
     }
     block ??= _TransientBlock(
-      gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, sizeClass),
+      _createBuffer(sizeClass),
       ByteData(0), // No CPU staging: writes go straight to the device.
       sizeClass,
       false,
     );
+    block.lastUsed = _frame;
     _used.add(block);
-    _thisFrameUse[sizeClass] = (_thisFrameUse[sizeClass] ?? 0) + 1;
 
     // Device-resident before the view is returned: the immediate backend
     // consumes it as soon as the caller binds and draws.
@@ -211,6 +227,14 @@ class ImmediatePoolTransients implements FrameTransients {
     );
   }
 
+  static gpu.DeviceBuffer _createBuffer(int length) {
+    buffersCreated++;
+    return gpu.gpuContext.createDeviceBuffer(
+      gpu.StorageMode.hostVisible,
+      length,
+    );
+  }
+
   void _onBeforeSubmit(int id) {
     for (final block in _used) {
       block.stamp = id;
@@ -222,23 +246,13 @@ class ImmediatePoolTransients implements FrameTransients {
   @override
   void beginFrame() {
     _onBeforeSubmit(_tracker.latestSubmission);
-
-    // Shrink: per size class, keep completed buffers up to last frame's
-    // usage plus one spare; drop the rest.
+    _frame++;
     final completed = _tracker.completedThrough;
-    final kept = <int, int>{};
-    _pooled.removeWhere((block) {
-      if (block.stamp > completed) return false; // still in flight
-      final keep = (_lastFrameUse[block.length] ?? 0) + 1;
-      final count = (kept[block.length] ?? 0) + 1;
-      kept[block.length] = count;
-      return count > keep;
-    });
-
-    _lastFrameUse
-      ..clear()
-      ..addAll(_thisFrameUse);
-    _thisFrameUse.clear();
+    _pooled.removeWhere(
+      (block) =>
+          block.stamp <= completed &&
+          _frame - block.lastUsed > kTransientIdleFrames,
+    );
   }
 }
 
@@ -267,9 +281,9 @@ FrameTransients createFrameTransients(
 /// block per submitting pass.
 ///
 /// Blocks are pooled: reuse is gated on the tracker's completion watermark,
-/// the pool grows with actual GPU queue depth, and idle blocks beyond the
-/// previous frame's usage (plus a spare) are dropped so memory shrinks back
-/// after load spikes. Requests larger than [blockLengthInBytes] use pooled
+/// the pool grows with actual GPU queue depth, and blocks unused for
+/// [kTransientIdleFrames] are released so memory shrinks back after load
+/// spikes. Requests larger than [blockLengthInBytes] use pooled
 /// power-of-two size classes so a changing visible-instance count does not
 /// allocate a new CPU/GPU buffer every frame.
 class TransientArena implements FrameTransients {
@@ -307,18 +321,16 @@ class TransientArena implements FrameTransients {
   /// the tracker's watermark passes their stamp.
   final List<_TransientBlock> _sealed = [];
 
-  /// Standard-size blocks acquired by the previous/current frame, for the
-  /// shrink policy.
-  int _lastFrameBlockCount = 0;
-  int _thisFrameBlockCount = 0;
-
-  /// Oversize acquisitions by capacity class in the previous/current frame.
-  final Map<int, int> _lastOversizeUse = {};
-  final Map<int, int> _thisOversizeUse = {};
+  int _frame = 0;
 
   /// Total pooled blocks (open + sealed). For tests.
   @visibleForTesting
   int get blockCount => _open.length + _sealed.length;
+
+  /// Device buffers every [TransientArena] has created. For tests that
+  /// check steady-state rendering allocates nothing.
+  @visibleForTesting
+  static int buffersCreated = 0;
 
   /// Begins a new frame: applies the shrink policy and resets frame stats.
   /// Open blocks from the previous frame (possible when a frame emplaced
@@ -330,29 +342,13 @@ class TransientArena implements FrameTransients {
       _seal(block, _tracker.latestSubmission);
     }
     _open.clear();
-
-    // Shrink each capacity class to last frame's usage plus one spare.
+    _frame++;
     final completed = _tracker.completedThrough;
-    final keepStandard = _lastFrameBlockCount + 1;
-    var idleStandard = 0;
-    final keptOversize = <int, int>{};
-    _sealed.removeWhere((block) {
-      if (block.stamp > completed) return false; // still in flight
-      if (block.oversize) {
-        final count = (keptOversize[block.length] ?? 0) + 1;
-        keptOversize[block.length] = count;
-        return count > (_lastOversizeUse[block.length] ?? 0) + 1;
-      }
-      idleStandard++;
-      return idleStandard > keepStandard;
-    });
-
-    _lastFrameBlockCount = _thisFrameBlockCount;
-    _thisFrameBlockCount = 0;
-    _lastOversizeUse
-      ..clear()
-      ..addAll(_thisOversizeUse);
-    _thisOversizeUse.clear();
+    _sealed.removeWhere(
+      (block) =>
+          block.stamp <= completed &&
+          _frame - block.lastUsed > kTransientIdleFrames,
+    );
   }
 
   /// Decides where an emplacement of [length] lands: at the aligned offset
@@ -399,7 +395,6 @@ class TransientArena implements FrameTransients {
     if (block == null) {
       block = _acquireBlock(blockLengthInBytes);
       _open.add(block);
-      _thisFrameBlockCount++;
       offset = 0;
     }
 
@@ -422,7 +417,6 @@ class TransientArena implements FrameTransients {
     final capacity = _oversizeSizeClass(bytes.lengthInBytes);
     final block = _acquireBlock(capacity, oversize: true);
     _open.add(block);
-    _thisOversizeUse[capacity] = (_thisOversizeUse[capacity] ?? 0) + 1;
     block.staging.buffer
         .asUint8List(block.staging.offsetInBytes)
         .setRange(
@@ -446,23 +440,28 @@ class TransientArena implements FrameTransients {
     return capacity;
   }
 
-  /// Reuses a completed pooled block or creates a new one.
+  /// Reuses a completed pooled block, most recently used first so surplus
+  /// blocks age out, or creates a new one.
   _TransientBlock _acquireBlock(int length, {bool oversize = false}) {
     final completed = _tracker.completedThrough;
-    for (var i = 0; i < _sealed.length; i++) {
+    for (var i = _sealed.length - 1; i >= 0; i--) {
       final block = _sealed[i];
       if (block.stamp > completed) continue;
       if (block.oversize != oversize) continue;
       if (block.length != length) continue;
       _sealed.removeAt(i);
-      block.cursor = 0;
+      block
+        ..cursor = 0
+        ..lastUsed = _frame;
       return block;
     }
+    buffersCreated++;
     final device = gpu.gpuContext.createDeviceBuffer(
       gpu.StorageMode.hostVisible,
       length,
     );
-    return _TransientBlock(device, ByteData(length), length, oversize);
+    return _TransientBlock(device, ByteData(length), length, oversize)
+      ..lastUsed = _frame;
   }
 
   /// Uploads and seals every open block. Runs just before each submission,
@@ -511,6 +510,9 @@ class _TransientBlock {
 
   /// The last submission id that may reference this block's device buffer.
   int stamp = 0;
+
+  /// The owner's frame count when this block was last handed out.
+  int lastUsed = 0;
 }
 
 /// The renderer's per-frame uniform transients (alignment resolved from the
