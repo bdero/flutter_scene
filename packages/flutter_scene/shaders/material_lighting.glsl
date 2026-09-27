@@ -687,10 +687,14 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // sun's influence falls off smoothly rather than at a hard line.
   float geometric_n_dot_l = 0.0;
   vec3 light_vector = vec3(0.0);
+  // FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT (`directional_light: false`) compiles
+  // the directional light out: the material shades as if the scene had none.
+#ifndef FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT
   if (frag_info.has_directional_light > 0.5) {
     light_vector = -normalize(frag_info.directional_light_direction.xyz);
     geometric_n_dot_l = dot(GetWorldNormal(), light_vector);
   }
+#endif
   // Whether the surface faces the sun is a geometric property, so gate the
   // shadow terms on the geometric normal. Using the perturbed normal lets a
   // normal map's relief push n_dot_l across the terminator on a nearly sun-
@@ -704,14 +708,16 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // shadow-map lookup, whose normal-offset bias assumes a sun-facing receiver
   // and would otherwise stripe the back face with acne.
   float shadow = 1.0;
-#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && \
+    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
   shadow =
       (frag_info.has_directional_light > 0.5 && frag_info.casts_shadow > 0.5 &&
        facing > 0.0)
           ? SampleShadow(v_position, GetWorldNormal())
           : 1.0;
 #endif
-#ifndef FLUTTER_SCENE_SKIP_SSAO
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
   // Screen-space contact shadow for the sun, marched by the occlusion pass.
   // Applies whether or not a shadow map is active, grounding small contacts
   // that shadow-map resolution and bias miss.
@@ -782,6 +788,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   light_context.view = camera_normal;
   light_context.position = vec3(0.0);
 #endif
+#ifndef FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT
   if (frag_info.has_directional_light > 0.5) {
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
     light_context.light_vector = light_vector;
@@ -819,6 +826,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         camera_normal, coat_roughness) * sun_visibility;
 #endif
   }
+#endif
 
   // Additional analytic lights (point, spot, and directional lights past the
   // first). The scene may hold any number of lights; per-object culling (or
