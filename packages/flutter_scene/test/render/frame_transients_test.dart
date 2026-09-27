@@ -215,7 +215,7 @@ void main() {
       expect(second.lengthInBytes, 3500);
     });
 
-    test('oversize capacity classes shrink after an idle frame', () {
+    test('oversize capacity classes shrink after an idle window', () {
       final tracker = GpuSubmissionTracker();
       final arena = TransientArena(
         tracker,
@@ -232,8 +232,9 @@ void main() {
       for (final id in ids) {
         tracker.complete(id);
       }
-      arena.beginFrame();
-      arena.beginFrame();
+      for (var i = 0; i <= kTransientIdleFrames; i++) {
+        arena.beginFrame();
+      }
       expect(arena.blockCount, lessThanOrEqualTo(1));
     });
 
@@ -255,11 +256,12 @@ void main() {
       tracker.record();
       arena.beginFrame();
 
-      // Everything completed: the first block is reusable now.
+      // Everything completed: a pooled block is reused, most recent first.
       tracker.complete(1);
       tracker.complete(2);
       final third = arena.emplace(_bytes(100));
-      expect(identical(third.buffer, first.buffer), isTrue);
+      expect(identical(third.buffer, second.buffer), isTrue);
+      expect(arena.blockCount, 2);
     });
 
     test('a submission seals the open block mid-frame', () {
@@ -297,10 +299,67 @@ void main() {
       for (final id in ids) {
         tracker.complete(id);
       }
-      // Two idle frames: the pool trims to last frame's usage plus a spare.
+      // Freshly used blocks stay pooled; once idle long enough they go.
       arena.beginFrame();
+      expect(arena.blockCount, 4);
+      for (var i = 0; i <= kTransientIdleFrames; i++) {
+        arena.beginFrame();
+      }
+      expect(arena.blockCount, lessThanOrEqualTo(1));
+    });
+
+    test('a surplus block ages out while the working set is reused', () {
+      final tracker = GpuSubmissionTracker();
+      final arena = TransientArena(
+        tracker,
+        alignment: 256,
+        blockLengthInBytes: 1024,
+      );
+      // A spike needs two blocks at once, then one block per frame.
+      arena.emplace(_bytes(100));
+      final a = tracker.record();
+      arena.emplace(_bytes(100));
+      tracker
+        ..complete(a)
+        ..complete(tracker.record());
       arena.beginFrame();
-      expect(arena.blockCount, lessThanOrEqualTo(2));
+      expect(arena.blockCount, 2);
+      final seen = <Object>{};
+      for (var i = 0; i <= kTransientIdleFrames + 1; i++) {
+        seen.add(arena.emplace(_bytes(100)).buffer);
+        tracker.complete(tracker.record());
+        arena.beginFrame();
+      }
+      expect(seen.length, 1);
+      expect(arena.blockCount, 1);
+    });
+
+    test('paced frames and lighter frames keep the pool', () {
+      final tracker = GpuSubmissionTracker();
+      final arena = TransientArena(
+        tracker,
+        alignment: 256,
+        blockLengthInBytes: 1024,
+      );
+      // Each frame fills three blocks (one per submission), with a paced
+      // frame (no emplacements at all) and a lighter frame in between.
+      final seen = <Object>{};
+      void frame(int submissions) {
+        arena.beginFrame();
+        for (var i = 0; i < submissions; i++) {
+          seen.add(arena.emplace(_bytes(100)).buffer);
+          tracker.complete(tracker.record());
+        }
+      }
+
+      for (var i = 0; i < 20; i++) {
+        frame(3);
+        frame(0);
+        frame(1);
+      }
+      // Blocks complete as soon as they are submitted here, so steady state
+      // needs only what one frame fills; nothing is reallocated.
+      expect(seen.length, lessThanOrEqualTo(4));
     });
 
     test(
@@ -342,7 +401,7 @@ void main() {
       );
     });
 
-    test('immediate pool: shrinks idle size classes', () {
+    test('immediate pool: releases buffers left idle', () {
       final tracker = GpuSubmissionTracker();
       final pool = ImmediatePoolTransients(tracker);
 
@@ -357,8 +416,11 @@ void main() {
         tracker.complete(id);
       }
       pool.beginFrame();
-      pool.beginFrame();
-      // Last frame used none, so at most one spare per class survives.
+      expect(pool.bufferCount, greaterThan(1));
+      // Buffers idle for kTransientIdleFrames are released.
+      for (var i = 0; i <= kTransientIdleFrames; i++) {
+        pool.beginFrame();
+      }
       expect(pool.bufferCount, lessThanOrEqualTo(1));
     });
 
