@@ -187,6 +187,74 @@ void main() {
     );
   });
 
+  test('directional_light: false compiles the light out', () async {
+    final impellerc = await findImpellerC();
+    final temp = Directory.systemTemp.createTempSync('no_directional');
+    try {
+      final compiled = compileFmat(
+        _hooked.replaceFirst(
+          'shading_model: lit,',
+          'shading_model: lit,\n  directional_light: false,',
+        ),
+        fileName: 'no_directional.fmat',
+      );
+      expect(compiled.material.directionalLight, isFalse);
+      final variants = emitFragmentShaderVariants(
+        compiled,
+        generateShadowVariant: true,
+      );
+      final full = emitFragmentShaderVariants(
+        compileFmat(_hooked, fileName: 'hooked.fmat'),
+        generateShadowVariant: true,
+      );
+      for (final variant in variants.entries) {
+        expect(
+          variant.value,
+          contains('#define FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT'),
+        );
+        await _compile(
+          impellerc,
+          temp,
+          '${variant.key}_gles',
+          variant.value,
+          '--opengl-es',
+        );
+        // The light's inlined Light() copy is gone from the output.
+        await _compile(
+          impellerc,
+          temp,
+          '${variant.key}_full_gles',
+          full[variant.key]!,
+          '--opengl-es',
+        );
+        final trimmed = File.fromUri(
+          temp.uri.resolve('${variant.key}_gles.out'),
+        ).lengthSync();
+        final untrimmed = File.fromUri(
+          temp.uri.resolve('${variant.key}_full_gles.out'),
+        ).lengthSync();
+        expect(trimmed, lessThan(untrimmed));
+      }
+    } finally {
+      temp.deleteSync(recursive: true);
+    }
+  });
+
+  test('directional_light: false requires a lit material', () {
+    expect(
+      () => compileFmat(
+        _customAmbient
+            .replaceFirst('shading_model: lit', 'shading_model: unlit')
+            .replaceFirst(
+              'environment_lighting: false',
+              'directional_light: false',
+            ),
+        fileName: 'bad.fmat',
+      ),
+      throwsA(isA<FmatException>()),
+    );
+  });
+
   test('hooked lit variants compile on every backend', () async {
     final impellerc = await findImpellerC();
     final temp = Directory.systemTemp.createTempSync('lighting_hooks');

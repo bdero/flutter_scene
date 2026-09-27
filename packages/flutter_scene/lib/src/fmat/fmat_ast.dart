@@ -295,6 +295,7 @@ class FmatMaterial {
     this.engineInputs = const [],
     this.sceneColorReach,
     this.environmentLighting = true,
+    this.directionalLight = true,
     this.alphaToCoverage = false,
   });
 
@@ -305,6 +306,14 @@ class FmatMaterial {
   /// environment, BRDF LUT, SH, and SSAO samplers; the material then supplies
   /// its indirect light itself through `Composite()`.
   final bool environmentLighting;
+
+  /// Whether a lit material receives the scene's directional light
+  /// (`directional_light:`, default true). False compiles out the light, its
+  /// cascaded shadows, and its contact shadow, so the material shades as if
+  /// the scene had none. Worth it for a material that never sees one, since
+  /// the light's term inlines a second copy of `Light()` that some drivers
+  /// take many times longer to compile.
+  final bool directionalLight;
 
   /// Whether an opaque material turns its surface alpha into MSAA coverage
   /// (`alpha_to_coverage:`, default false), for crisp, sort-free cutouts

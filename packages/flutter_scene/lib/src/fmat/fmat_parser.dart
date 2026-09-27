@@ -572,6 +572,7 @@ FmatMaterial _build(
     'engine_inputs',
     'scene_color_reach',
     'environment_lighting',
+    'directional_light',
     'alpha_to_coverage',
   };
   for (final key in tree.keys) {
@@ -645,6 +646,22 @@ FmatMaterial _build(
     throw FmatException(
       '`alpha_to_coverage` needs `blending: opaque`; blended materials '
       'already use their alpha.',
+      fileName: fileName,
+    );
+  }
+
+  final directionalLightValue = tree['directional_light'];
+  if (directionalLightValue != null && directionalLightValue is! bool) {
+    throw FmatException(
+      '`directional_light` must be a boolean.',
+      fileName: fileName,
+    );
+  }
+  final directionalLight = directionalLightValue as bool? ?? true;
+  if (!directionalLight && shadingModel != FmatShadingModel.lit) {
+    throw FmatException(
+      '`directional_light: false` is only supported with '
+      '`shading_model: lit`.',
       fileName: fileName,
     );
   }
@@ -885,6 +902,7 @@ FmatMaterial _build(
     engineInputs: engineInputs,
     sceneColorReach: sceneColorReach,
     environmentLighting: environmentLighting,
+    directionalLight: directionalLight,
     alphaToCoverage: alphaToCoverage,
   );
 }
