@@ -1118,6 +1118,9 @@ base class SceneEncoder {
         shaderOverride: materialVertex,
         depthBias: depthBias,
       );
+      // The full bind rebinds FrameInfo, possibly on the cached shader.
+      _boundFrameInfoShader = null;
+      _boundFrameInfoDepthBias = double.nan;
     }
   }
 
