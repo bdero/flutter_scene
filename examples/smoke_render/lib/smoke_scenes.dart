@@ -622,6 +622,46 @@ class _NormalsProbePass extends CustomRenderPass {
   void execute(RenderPassContext context) {}
 }
 
+/// A square of half-width [half] facing the camera at depth [z], colored by
+/// [corners] (one RGBA per corner). Both windings are indexed so culling
+/// never hides it.
+Node _depthBiasQuad(
+  Geometry geometry,
+  double half,
+  double z,
+  UnlitMaterial material, {
+  List<List<double>> corners = const [
+    [1, 1, 1, 1],
+    [1, 1, 1, 1],
+    [1, 1, 1, 1],
+    [1, 1, 1, 1],
+  ],
+}) {
+  const positions = [(-1, -1), (1, -1), (1, 1), (-1, 1)];
+  final vertices = Float32List(4 * 18);
+  for (var i = 0; i < 4; i++) {
+    final (x, y) = positions[i];
+    vertices.setAll(i * 18, [
+      x * half, y * half, 0, 0, 0, -1, //
+      (x + 1) / 2, (y + 1) / 2, 0, 0, ...corners[i], 0, 0, 0, 0,
+    ]);
+  }
+  geometry.uploadVertexData(
+    vertices,
+    4,
+    Uint16List.fromList([0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2]),
+  );
+  return Node(mesh: Mesh(geometry, material))
+    ..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0, z));
+}
+
+UnlitMaterial _depthBiasMaterial(vm.Vector4 color, {double depthBias = 0}) =>
+    UnlitMaterial()
+      ..baseColorFactor = color
+      ..alphaMode = color.w < 1 ? AlphaMode.blend : AlphaMode.opaque
+      ..doubleSided = true
+      ..depthBias = depthBias;
+
 /// The smoke scene set. Mostly procedural for determinism; the final scenes
 /// exercise a custom `.fmat` material compiled by the build hook.
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
@@ -1957,6 +1997,65 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadMorphSkinnedModel),
+  // Three translucent squares behind an opaque wall, drawn back to front on
+  // one pipeline. The middle one is CPU-morphed (its 2100 targets overflow
+  // the delta texture) with a 0.75 depth bias, so it takes the full geometry
+  // bind. The green square sits 0.2 behind the wall with no bias and must
+  // stay hidden; inheriting the middle draw's bias pulls it in front.
+  SmokeScene('depth_bias_rebind', () {
+    final morphed = MorphedUnskinnedGeometry(
+      MorphTargetData(
+        vertexCount: 4,
+        targetCount: 2100,
+        positionDeltas: Float32List(2100 * 4 * 3),
+      ),
+    );
+    if (morphed.usesGpuMorphing) {
+      throw StateError('depth_bias_rebind expects CPU morphing');
+    }
+    final blue = vm.Vector4(0.1, 0.2, 1, 0.9);
+    final scene = Scene()
+      ..add(
+        _depthBiasQuad(
+          UnskinnedGeometry(),
+          1.5,
+          5.0,
+          _depthBiasMaterial(vm.Vector4(1, 1, 1, 1)),
+          corners: const [
+            [0.9, 0.05, 0.05, 1],
+            [0.6, 0.0, 0.3, 1],
+            [0.9, 0.3, 0.0, 1],
+            [0.5, 0.05, 0.1, 1],
+          ],
+        ),
+      )
+      ..add(
+        _depthBiasQuad(UnskinnedGeometry(), 1, 8.0, _depthBiasMaterial(blue)),
+      )
+      ..add(
+        _depthBiasQuad(
+          morphed,
+          1,
+          6.5,
+          _depthBiasMaterial(blue, depthBias: 0.75),
+        ),
+      )
+      ..add(
+        _depthBiasQuad(
+          UnskinnedGeometry(),
+          0.5,
+          5.2,
+          _depthBiasMaterial(vm.Vector4(0, 1, 0, 0.9)),
+        ),
+      );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3.zero(),
+        target: vm.Vector3(0, 0, 1),
+      ),
+    );
+  }),
   // The skinned tube with its weights summing to 0.98, placed 3 km from the
   // origin. A joint matrix carries the model's world position, so an
   // unnormalized weight sum pulls every vertex toward the origin by 2% of

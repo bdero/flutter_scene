@@ -184,6 +184,18 @@ void main() {
           );
         }
       }
+      if (smoke.id == 'depth_bias_rebind') {
+        // The hidden square is the only green in the frame.
+        var green = 0;
+        for (var p = 0; p < rgba.lengthInBytes; p += 4) {
+          if (rgba.getUint8(p + 1) > 128 && rgba.getUint8(p) < 100) green++;
+        }
+        expect(
+          green,
+          0,
+          reason: 'a draw after the full geometry bind kept its depth bias',
+        );
+      }
       if (smoke.id == 'irradiance_field') {
         // Both colored walls are emissive and nothing else lights the scene,
         // so the floor's color is entirely bounce light carried by the probe
