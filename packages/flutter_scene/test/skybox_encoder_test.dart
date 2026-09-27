@@ -5,8 +5,50 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/render/skybox_encoder.dart';
+import 'package:flutter_scene/src/render/planar_reflection.dart';
 
 void main() {
+  test('reflection sky rays use the unclipped projection', () {
+    final source = PerspectiveCamera(
+      position: Vector3(4.7, 3.9, -8),
+      target: Vector3(0, 1, 5),
+    );
+    final reflected = PlanarReflectionCamera(
+      source: source,
+      plane: Plane.normalconstant(Vector3(0, 1, 0), 0),
+    );
+    final unclipped = PerspectiveCamera(
+      position: reflected.position,
+      target: reflected.position + reflected.forward,
+      up: reflected.up,
+    );
+    final actual = skyboxInverseViewProjection(
+      reflected,
+      const ui.Size(1280, 800),
+    );
+    final expected = skyboxInverseViewProjection(
+      unclipped,
+      const ui.Size(1280, 800),
+    );
+    // Corner rays are interpolated over the fullscreen triangles. Oblique
+    // clipping must not distort that interpolation.
+    Vector3 ray(Matrix4 inverse, double x, double y) {
+      final h = inverse * Vector4(x, y, 1, 1);
+      return Vector3(h.x, h.y, h.z) / h.w;
+    }
+
+    for (final weights in [Vector3(.2, .3, .5), Vector3(.6, .1, .3)]) {
+      Vector3 interpolated(Matrix4 m) =>
+          (ray(m, -1, -1) * weights.x +
+                  ray(m, 1, -1) * weights.y +
+                  ray(m, -1, 1) * weights.z)
+              .normalized();
+      expect(
+        interpolated(actual).distanceTo(interpolated(expected)),
+        lessThan(1e-5),
+      );
+    }
+  });
   test('skybox transform ignores camera translation', () {
     final direction = Vector3(0, 0, 1);
     final originCamera = PerspectiveCamera(
