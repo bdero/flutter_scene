@@ -14,5 +14,8 @@
 
 void main() {
   MaterialInputs material = InitMaterialInputs();
-  frag_color = DebugSurfaceOutput(material);
+  vec4 debug = DebugSurfaceOutput(material);
+  frag_color = DebugViewMode() > 2.5
+                   ? DebugViewSplit(debug, DebugSurfaceOutputLeft(material))
+                   : debug;
 }

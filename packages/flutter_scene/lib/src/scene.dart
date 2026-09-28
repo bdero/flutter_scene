@@ -864,6 +864,7 @@ base class Scene implements SceneGraph {
       splitPixels: split == null
           ? -1.0
           : split.clamp(0.0, 1.0) * pixelSize.width,
+      splitView: debug.splitView?.isActive == true ? debug.splitView : null,
       hasNodeOverrides: hasOverrides,
       overlays: Set.of(debug.overlays),
       wireframeColor: debug.wireframeColor,
@@ -3230,7 +3231,10 @@ base class Scene implements SceneGraph {
         agxContrast: agxContrast,
         postProcess: postProcess,
         debugViewActive: debugFrame?.anyViewActive ?? false,
-        debugViewSplit: debugActive ? (debug.split ?? -1.0) : -1.0,
+        // A wipe between two views is debug output on both sides.
+        debugViewSplit: debugActive && debug.splitView?.isActive != true
+            ? (debug.split ?? -1.0)
+            : -1.0,
         debugSkipsPost: debugActive,
       ),
     );

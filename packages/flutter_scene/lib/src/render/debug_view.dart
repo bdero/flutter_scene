@@ -374,6 +374,11 @@ class SceneDebugSettings {
   /// view everywhere.
   double? split;
 
+  /// The view left of [split], in place of the lit result. Null (the
+  /// default) compares [view] against the lit image; a view wipes between
+  /// two channels. Only read while [split] is set.
+  DebugView? splitView;
+
   /// Overlays drawn after the surfaces.
   final Set<DebugOverlay> overlays = {};
 
@@ -456,6 +461,7 @@ class DebugViewFrame {
   DebugViewFrame({
     required this.sceneView,
     required this.splitPixels,
+    this.splitView,
     required this.hasNodeOverrides,
     required this.overlays,
     required this.wireframeColor,
@@ -467,6 +473,9 @@ class DebugViewFrame {
   /// The split as a pixel column of the scene color target, negative for no
   /// split.
   final double splitPixels;
+
+  /// The view left of the split, or null for the lit result.
+  final DebugView? splitView;
 
   /// Whether any node overrides the scene view this frame, which makes the
   /// effective view a per-item question.
@@ -481,8 +490,8 @@ class DebugViewFrame {
   /// The view an item with [nodeOverride] shows.
   DebugView effectiveView(DebugView? nodeOverride) => nodeOverride ?? sceneView;
 
-  /// Float count of the `DebugViewInfo` uniform block (two vec4s).
-  static const int floatCount = 8;
+  /// Float count of the `DebugViewInfo` uniform block (three vec4s).
+  static const int floatCount = 12;
 
   /// Writes the `DebugViewInfo` block for one draw into [out].
   ///
@@ -502,6 +511,11 @@ class DebugViewFrame {
     out[5] = view.rangeMax;
     out[6] = (objectSeed & 0xFFFF).toDouble();
     out[7] = (materialSeed & 0xFFFF).toDouble();
+    final left = splitPixels >= 0 ? splitView : null;
+    out[8] = left?.channel.shaderId.toDouble() ?? 0;
+    out[9] = left?.gain ?? 1;
+    out[10] = left?.rangeMin ?? 0;
+    out[11] = left?.rangeMax ?? 1;
   }
 
   /// The block that turns the view off for a draw.

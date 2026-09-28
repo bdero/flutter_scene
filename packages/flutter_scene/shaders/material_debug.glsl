@@ -25,8 +25,16 @@ uniform DebugViewInfo {
   // x, y: scalar remap range (min, max). z: object seed, w: material seed,
   // for the identity channels.
   vec4 params;
+  // The view left of the split in a wipe between two views. x: channel id
+  // (0 shows the lit result there). y: gain. z, w: scalar remap range.
+  vec4 left;
 }
 debug_view_info;
+
+// The view being encoded (channel, split, gain, policy) and its scalar
+// range, set by DebugSurfaceOutput() and DebugSurfaceOutputLeft().
+vec4 debug_active_view;
+vec2 debug_active_range;
 
 // Geometry.
 #define DEBUG_CHANNEL_WORLD_NORMAL 1.0
@@ -79,12 +87,16 @@ debug_view_info;
 // Custom.
 #define DEBUG_CHANNEL_CUSTOM 80.0
 
-// 0 when no view is active, 1 for a whole-viewport view, 2 for a split.
+// 0 when no view is active, 1 for a whole-viewport view, 2 for a split
+// against the lit result, 3 for a split between two views.
 float DebugViewMode() {
   if (debug_view_info.view.x < 0.5) {
     return 0.0;
   }
-  return debug_view_info.view.y < 0.0 ? 1.0 : 2.0;
+  if (debug_view_info.view.y < 0.0) {
+    return 1.0;
+  }
+  return debug_view_info.left.x > 0.5 ? 3.0 : 2.0;
 }
 
 // The split select: the view right of the split line, the lit result left.
@@ -102,10 +114,10 @@ vec3 DebugLinearToSRGB(vec3 c) {
 // Scalar channel encoding: remap through the range, apply the out-of-range
 // policy, then the gain.
 vec3 DebugScalar(float v) {
-  float lo = debug_view_info.params.x;
-  float hi = debug_view_info.params.y;
+  float lo = debug_active_range.x;
+  float hi = debug_active_range.y;
   float t = (v - lo) / max(hi - lo, 1e-6);
-  float policy = debug_view_info.view.w;
+  float policy = debug_active_view.w;
   if (policy > 1.5) {
     t = fract(t);
   } else if (policy > 0.5) {
@@ -113,20 +125,20 @@ vec3 DebugScalar(float v) {
   } else {
     t = clamp(t, 0.0, 1.0);
   }
-  return vec3(t * debug_view_info.view.z);
+  return vec3(t * debug_active_view.z);
 }
 
 // Direction encoding, unit vector to [0, 1].
 vec3 DebugDirection(vec3 d) {
   float len = length(d);
   d = len > 1e-6 ? d / len : vec3(0.0);
-  return (d * 0.5 + 0.5) * debug_view_info.view.z;
+  return (d * 0.5 + 0.5) * debug_active_view.z;
 }
 
 // Linear color encoding, display-encoded so the pixel matches the value an
 // author typed.
 vec3 DebugColor(vec3 c) {
-  return DebugLinearToSRGB(c * debug_view_info.view.z);
+  return DebugLinearToSRGB(c * debug_active_view.z);
 }
 
 // Screen-space 8 px checkerboard, the "this channel does not exist on this
@@ -274,8 +286,8 @@ vec3 DebugPhysical(MaterialInputs material, float channel) {
 
 // The display-referred color for the active channel. Alpha is always 1: a
 // view replaces the surface, it never blends with what is behind it.
-vec4 DebugSurfaceOutput(MaterialInputs material) {
-  float channel = debug_view_info.view.x;
+vec4 DebugSurfaceOutputFor(MaterialInputs material) {
+  float channel = debug_active_view.x;
   vec3 out_color;
   if (channel < 20.0) {
     // Geometry channels come from the varyings, so the fallback shader can
@@ -292,9 +304,9 @@ vec4 DebugSurfaceOutput(MaterialInputs material) {
     } else if (channel == DEBUG_CHANNEL_TANGENT_HANDEDNESS) {
       out_color = vec3(v_tangent.w < 0.0 ? 0.0 : 1.0);
     } else if (channel == DEBUG_CHANNEL_UV0) {
-      out_color = vec3(clamp(GetUV0(), 0.0, 1.0), 0.0) * debug_view_info.view.z;
+      out_color = vec3(clamp(GetUV0(), 0.0, 1.0), 0.0) * debug_active_view.z;
     } else if (channel == DEBUG_CHANNEL_UV1) {
-      out_color = vec3(clamp(GetUV1(), 0.0, 1.0), 0.0) * debug_view_info.view.z;
+      out_color = vec3(clamp(GetUV1(), 0.0, 1.0), 0.0) * debug_active_view.z;
     } else if (channel == DEBUG_CHANNEL_VERTEX_COLOR) {
       out_color = DebugColor(v_color.rgb);
     } else if (channel == DEBUG_CHANNEL_VIEW_DIRECTION) {
@@ -379,12 +391,27 @@ vec4 DebugSurfaceOutput(MaterialInputs material) {
       out_color = DebugUnavailable();
     }
   } else if (channel == DEBUG_CHANNEL_CUSTOM) {
-    out_color = material.debug * debug_view_info.view.z;
+    out_color = material.debug * debug_active_view.z;
   } else {
     out_color = DebugUnavailable();
   }
   return vec4(out_color, 1.0);
 #endif
+}
+
+// The view right of the split (or the whole viewport).
+vec4 DebugSurfaceOutput(MaterialInputs material) {
+  debug_active_view = debug_view_info.view;
+  debug_active_range = debug_view_info.params.xy;
+  return DebugSurfaceOutputFor(material);
+}
+
+// The view left of the split in a wipe between two views.
+vec4 DebugSurfaceOutputLeft(MaterialInputs material) {
+  debug_active_view = vec4(debug_view_info.left.x, debug_view_info.view.y,
+                           debug_view_info.left.y, debug_view_info.view.w);
+  debug_active_range = debug_view_info.left.zw;
+  return DebugSurfaceOutputFor(material);
 }
 
 #endif // MATERIAL_DEBUG_GLSL_

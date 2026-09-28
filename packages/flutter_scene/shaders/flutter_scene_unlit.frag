@@ -78,7 +78,8 @@ void main() {
     material.metallic = 0.0;
     material.roughness = 1.0;
     vec4 debug = DebugSurfaceOutput(material);
-    frag_color = debug_mode > 1.5 ? DebugViewSplit(debug, shaded) : debug;
+    vec4 left = debug_mode > 2.5 ? DebugSurfaceOutputLeft(material) : shaded;
+    frag_color = debug_mode > 1.5 ? DebugViewSplit(debug, left) : debug;
   } else {
     frag_color = shaded;
   }

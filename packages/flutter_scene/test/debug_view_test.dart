@@ -139,7 +139,37 @@ void main() {
       expect(out[5], closeTo(0.8, 1e-6));
       expect(out[6], (0x1234A & 0xFFFF).toDouble());
       expect(out[7], 7.0);
+      // No split view: the left side is the lit result.
+      expect(out[8], 0.0);
       expect(DebugViewFrame.inactive[0], 0.0);
+    });
+
+    test('packs the view left of a split between two views', () {
+      DebugViewFrame frame(double split) => DebugViewFrame(
+        sceneView: const DebugView(channel: SurfaceDebugChannel.baseColor),
+        splitPixels: split,
+        splitView: const DebugView(
+          channel: SurfaceDebugChannel.roughness,
+          gain: 2,
+          rangeMin: 0.1,
+          rangeMax: 0.9,
+        ),
+        hasNodeOverrides: false,
+        overlays: const {},
+        wireframeColor: Vector4(1, 1, 1, 1),
+      );
+      final out = Float32List(DebugViewFrame.floatCount);
+      final split = frame(300);
+      split.pack(out, split.sceneView, objectSeed: 0, materialSeed: 0);
+      expect(out[0], SurfaceDebugChannel.baseColor.shaderId.toDouble());
+      expect(out[8], SurfaceDebugChannel.roughness.shaderId.toDouble());
+      expect(out[9], 2.0);
+      expect(out[10], closeTo(0.1, 1e-6));
+      expect(out[11], closeTo(0.9, 1e-6));
+      // Without a split the second view has nowhere to show.
+      final whole = frame(-1);
+      whole.pack(out, whole.sceneView, objectSeed: 0, materialSeed: 0);
+      expect(out[8], 0.0);
     });
 
     test('a node override wins over the scene view', () {

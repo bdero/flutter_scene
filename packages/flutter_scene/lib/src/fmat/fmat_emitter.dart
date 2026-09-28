@@ -529,10 +529,10 @@ void _writeDepthSurfaceMain(
 }
 
 /// Writes the tail of a material's `main()`: the surface debug view when one
-/// is active, the shaded `MaterialOutput` otherwise, or both selected per
-/// pixel for a split. Every branch is under uniform control flow; the split
-/// evaluates both sides and selects, so the lit path never runs under a
-/// per-pixel branch.
+/// is active, the shaded `MaterialOutput` otherwise, or two outputs selected
+/// per pixel for a split (against the shaded result or another view). Every
+/// branch is under uniform control flow; the split evaluates both sides and
+/// selects, so the lit path never runs under a per-pixel branch.
 ///
 /// `MaterialOutput` has exactly one call site. Every call is inlined, so a
 /// second one duplicates the whole lighting and shadow code, which pushed
@@ -540,7 +540,12 @@ void _writeDepthSurfaceMain(
 /// build under fast math.
 void _writeDebugViewSelect(StringBuffer sb) {
   sb.writeln('  float debug_mode = DebugViewMode();');
-  sb.writeln('  if (debug_mode > 0.5 && debug_mode < 1.5) {');
+  sb.writeln('  if (debug_mode > 2.5) {');
+  sb.writeln('    frag_color = DebugViewSplit(DebugSurfaceOutput(material),');
+  sb.writeln(
+    '                                DebugSurfaceOutputLeft(material));',
+  );
+  sb.writeln('  } else if (debug_mode > 0.5 && debug_mode < 1.5) {');
   sb.writeln('    frag_color = DebugSurfaceOutput(material);');
   sb.writeln('  } else {');
   sb.writeln('    vec4 shaded = MaterialOutput(material);');
