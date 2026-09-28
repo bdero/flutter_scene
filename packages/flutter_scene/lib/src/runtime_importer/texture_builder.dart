@@ -198,7 +198,11 @@ gpu.SamplerOptions gltfSamplerOptions(
     _ => base.magFilter,
   };
   // minFilter also selects the mip filter (9984-9987 are the mipmapped
-  // variants); plain NEAREST / LINEAR keep the base mip filter.
+  // variants).
+  // TODO(gltf-sampler): plain NEAREST/LINEAR (9728/9729) mean base level only,
+  // but keep the base mip filter since SamplerOptions has no base-only mip
+  // mode. Honor it by building such textures with `mipmaps: false`, which
+  // needs the sampler resolved before upload.
   final (min, mip) = switch (sampler.minFilter) {
     9728 => (gpu.MinMagFilter.nearest, base.mipFilter),
     9729 => (gpu.MinMagFilter.linear, base.mipFilter),

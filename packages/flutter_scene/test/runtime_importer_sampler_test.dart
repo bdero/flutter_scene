@@ -1,6 +1,6 @@
-// glTF samplers on runtime-imported textures: wrap and filter modes map onto
-// Flutter GPU sampler options (the texture upload itself needs a GPU, so the
-// mapping is tested on its own).
+// How a glTF sampler's wrap and filter modes map onto the sampler options of
+// a runtime-imported texture. The upload needs a GPU, so only the mapping is
+// tested here.
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/gltf.dart';
