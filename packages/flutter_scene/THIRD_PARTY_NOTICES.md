@@ -12,8 +12,9 @@ licensed under the same terms. You may obtain a copy of the license at
 
 ## Basis Universal
 
-The Basis Universal (UASTC/ETC1S) decoding support under
-`lib/src/texture/basisu/` is a Dart port of tables and unpacking logic from
+The Basis Universal (UASTC/ETC1S) decoding and transcoding support under
+`lib/src/texture/basisu/` is a Dart port of tables and unpacking and block
+conversion logic from
 [basis_universal](https://github.com/BinomialLLC/basis_universal),
 Copyright (C) 2019-2024 Binomial LLC, licensed under the Apache License,
 Version 2.0. You may obtain a copy of the license at

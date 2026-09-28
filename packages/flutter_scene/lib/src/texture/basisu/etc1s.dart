@@ -1,27 +1,19 @@
-// An ETC1S/BasisLZ decoder producing RGBA8, for standard KTX2 textures
-// (glTF KHR_texture_basisu). The BasisLZ supercompression global data holds
-// Huffman-coded endpoint/selector codebooks shared by every slice; each mip
-// level is an independently coded slice of codebook references, with alpha
-// shipped as a second slice whose green channel carries the values.
+// An ETC1S/BasisLZ decoder producing RGBA8 (or GPU blocks, through
+// etc1s_targets.dart), for standard KTX2 textures (glTF KHR_texture_basisu).
+// The BasisLZ supercompression global data holds Huffman-coded
+// endpoint/selector codebooks shared by every slice; each mip level is an
+// independently coded slice of codebook references, with alpha shipped as a
+// second slice whose green channel carries the values.
 //
 // The bitstream layout, codebook models, and slice decode are ported from
 // Binomial LLC's basis_universal transcoder (Apache-2.0); see
-// THIRD_PARTY_NOTICES.md. Output matches the reference transcoder's RGBA32
-// target byte for byte.
+// THIRD_PARTY_NOTICES.md. Output matches the reference transcoder byte for
+// byte.
 
 import 'dart:typed_data';
 
-// ETC1 intensity modifier table, indexed by inten5 then selector value.
-const List<List<int>> _etc1IntenTables = [
-  [-8, -2, 2, 8],
-  [-17, -5, 5, 17],
-  [-29, -9, 9, 29],
-  [-42, -13, 13, 42],
-  [-60, -18, 18, 60],
-  [-80, -24, 24, 80],
-  [-106, -33, 33, 106],
-  [-183, -47, 47, 183],
-];
+import 'package:flutter_scene/src/texture/basisu/etc1s_tables.dart';
+import 'package:flutter_scene/src/texture/basisu/etc1s_targets.dart';
 
 // Huffman table serialization constants (basis_universal huffman coding).
 const int _maxSymsLog2 = 14;
@@ -419,11 +411,87 @@ class Etc1sTranscoder {
     int width,
     int height,
   ) {
+    final (:rgb, :alpha) = _decodeImage(levelData, imageIndex, width, height);
+    final out = Uint8List(width * height * 4);
+    if (alpha != null) {
+      _writePixels(alpha, out, width, height, _PixelTarget.alpha);
+    }
+    _writePixels(
+      rgb,
+      out,
+      width,
+      height,
+      alpha != null ? _PixelTarget.rgb : _PixelTarget.rgba,
+    );
+    return out;
+  }
+
+  /// Transcodes image [imageIndex] from its mip [levelData] to [target]
+  /// blocks, row-major. [allowThreeColorBc1] lets BC1 blocks use three-color
+  /// mode where it fits better, as basis_universal does by default.
+  Uint8List transcodeImage(
+    Uint8List levelData,
+    int imageIndex,
+    int width,
+    int height,
+    Etc1sTarget target, {
+    bool allowThreeColorBc1 = true,
+  }) {
+    final (:rgb, :alpha) = _decodeImage(
+      levelData,
+      imageIndex,
+      width,
+      height,
+      withAlpha: target.hasAlpha,
+    );
+    final converter = _converter ??= Etc1sBlockConverter(
+      _endpoints,
+      _selectors,
+    );
+    final out = Uint8List(rgb.length * target.bytesPerBlock);
+    for (var i = 0; i < rgb.length; i++) {
+      final e = rgb[i] >> 16;
+      final s = rgb[i] & 0xFFFF;
+      final o = i * target.bytesPerBlock;
+      switch (target) {
+        case Etc1sTarget.etc1:
+          converter.writeEtc1(out, o, e, s);
+        case Etc1sTarget.bc1:
+          converter.writeBc1(out, o, e, s, allowThreeColor: allowThreeColorBc1);
+        case Etc1sTarget.etc2Rgba:
+          if (alpha != null) {
+            converter.writeEacA8(out, o, alpha[i] >> 16, alpha[i] & 0xFFFF);
+          } else {
+            writeOpaqueEacA8(out, o);
+          }
+          converter.writeEtc1(out, o + 8, e, s);
+        case Etc1sTarget.bc3:
+          if (alpha != null) {
+            converter.writeBc4(out, o, alpha[i] >> 16, alpha[i] & 0xFFFF);
+          } else {
+            writeOpaqueBc4(out, o);
+          }
+          converter.writeBc1(out, o + 8, e, s, allowThreeColor: false);
+      }
+    }
+    return out;
+  }
+
+  Etc1sBlockConverter? _converter;
+
+  /// Decodes image [imageIndex]'s slices to `(endpoint << 16) | selector`
+  /// per block, row-major.
+  ({Uint32List rgb, Uint32List? alpha}) _decodeImage(
+    Uint8List levelData,
+    int imageIndex,
+    int width,
+    int height, {
+    bool withAlpha = true,
+  }) {
     if (imageIndex >= imageDescs.length) {
       throw const FormatException('BasisLZ image index out of range');
     }
     final desc = imageDescs[imageIndex];
-    final out = Uint8List(width * height * 4);
     Uint8List slice(int offset, int length) {
       if (offset + length > levelData.length) {
         throw const FormatException('BasisLZ slice overflows its mip level');
@@ -431,33 +499,22 @@ class Etc1sTranscoder {
       return Uint8List.sublistView(levelData, offset, offset + length);
     }
 
-    final hasAlphaSlice = desc.alphaSliceByteLength > 0;
-    if (hasAlphaSlice) {
-      _decodeSlice(
-        slice(desc.alphaSliceByteOffset, desc.alphaSliceByteLength),
-        out,
-        width,
-        height,
-        _SliceTarget.alpha,
-      );
-    }
-    _decodeSlice(
+    final alpha = withAlpha && desc.alphaSliceByteLength > 0
+        ? _decodeSlice(
+            slice(desc.alphaSliceByteOffset, desc.alphaSliceByteLength),
+            width,
+            height,
+          )
+        : null;
+    final rgb = _decodeSlice(
       slice(desc.rgbSliceByteOffset, desc.rgbSliceByteLength),
-      out,
       width,
       height,
-      hasAlphaSlice ? _SliceTarget.rgb : _SliceTarget.rgba,
     );
-    return out;
+    return (rgb: rgb, alpha: alpha);
   }
 
-  void _decodeSlice(
-    Uint8List sliceData,
-    Uint8List out,
-    int width,
-    int height,
-    _SliceTarget target,
-  ) {
+  Uint32List _decodeSlice(Uint8List sliceData, int width, int height) {
     final numBlocksX = (width + 3) >> 2;
     final numBlocksY = (height + 3) >> 2;
     final totalBlocks = numBlocksX * numBlocksY;
@@ -479,7 +536,7 @@ class Etc1sTranscoder {
     var endpointPredRepeatCount = 0;
     var prevEndpointIndex = 0;
 
-    final blockColors = Int32List(16);
+    final blocks = Uint32List(totalBlocks);
     for (var blockY = 0; blockY < numBlocksY; blockY++) {
       final curRow = blockY & 1;
       for (var blockX = 0; blockX < numBlocksX; blockX++) {
@@ -582,75 +639,70 @@ class Etc1sTranscoder {
           throw const FormatException('BasisLZ codebook index out of range');
         }
 
-        _writeBlock(
-          out,
-          width,
-          height,
-          blockX,
-          blockY,
-          endpointIndex,
-          selectorIndex,
-          target,
-          blockColors,
-        );
+        blocks[blockY * numBlocksX + blockX] =
+            (endpointIndex << 16) | selectorIndex;
       }
     }
+    return blocks;
   }
 
-  void _writeBlock(
+  /// Writes the pixels of decoded [blocks] into [out] (RGBA8), per [target].
+  void _writePixels(
+    Uint32List blocks,
     Uint8List out,
     int width,
     int height,
-    int blockX,
-    int blockY,
-    int endpointIndex,
-    int selectorIndex,
-    _SliceTarget target,
-    Int32List blockColors,
+    _PixelTarget target,
   ) {
-    final inten = _etc1IntenTables[_endpoints[endpointIndex * 4 + 3]];
-    // 5-bit endpoints expand to 8 bits; alpha slices use the green channel.
-    if (target == _SliceTarget.alpha) {
-      final g5 = _endpoints[endpointIndex * 4 + 1];
-      final g = (g5 << 3) | (g5 >> 2);
-      for (var s = 0; s < 4; s++) {
-        blockColors[s] = _clamp255(g + inten[s]);
-      }
-    } else {
-      for (var c = 0; c < 3; c++) {
-        final v5 = _endpoints[endpointIndex * 4 + c];
-        final v = (v5 << 3) | (v5 >> 2);
+    final numBlocksX = (width + 3) >> 2;
+    final blockColors = Int32List(16);
+    for (var i = 0; i < blocks.length; i++) {
+      final endpointIndex = blocks[i] >> 16;
+      final selectorIndex = blocks[i] & 0xFFFF;
+      final blockX = i % numBlocksX;
+      final blockY = i ~/ numBlocksX;
+      final inten = etc1IntenTables[_endpoints[endpointIndex * 4 + 3]];
+      // 5-bit endpoints expand to 8 bits; alpha slices use the green channel.
+      if (target == _PixelTarget.alpha) {
+        final g = expand5(_endpoints[endpointIndex * 4 + 1]);
         for (var s = 0; s < 4; s++) {
-          blockColors[s * 4 + c] = _clamp255(v + inten[s]);
+          blockColors[s] = _clamp255(g + inten[s]);
+        }
+      } else {
+        for (var c = 0; c < 3; c++) {
+          final v = expand5(_endpoints[endpointIndex * 4 + c]);
+          for (var s = 0; s < 4; s++) {
+            blockColors[s * 4 + c] = _clamp255(v + inten[s]);
+          }
         }
       }
-    }
-    final maxX = width - blockX * 4 < 4 ? width - blockX * 4 : 4;
-    final maxY = height - blockY * 4 < 4 ? height - blockY * 4 : 4;
-    for (var y = 0; y < maxY; y++) {
-      final rowSelectors = _selectors[selectorIndex * 4 + y];
-      var dst = ((blockY * 4 + y) * width + blockX * 4) * 4;
-      for (var x = 0; x < maxX; x++) {
-        final s = (rowSelectors >> (x * 2)) & 3;
-        switch (target) {
-          case _SliceTarget.alpha:
-            out[dst + 3] = blockColors[s];
-          case _SliceTarget.rgb:
-            out[dst] = blockColors[s * 4];
-            out[dst + 1] = blockColors[s * 4 + 1];
-            out[dst + 2] = blockColors[s * 4 + 2];
-          case _SliceTarget.rgba:
-            out[dst] = blockColors[s * 4];
-            out[dst + 1] = blockColors[s * 4 + 1];
-            out[dst + 2] = blockColors[s * 4 + 2];
-            out[dst + 3] = 255;
+      final maxX = width - blockX * 4 < 4 ? width - blockX * 4 : 4;
+      final maxY = height - blockY * 4 < 4 ? height - blockY * 4 : 4;
+      for (var y = 0; y < maxY; y++) {
+        final rowSelectors = _selectors[selectorIndex * 4 + y];
+        var dst = ((blockY * 4 + y) * width + blockX * 4) * 4;
+        for (var x = 0; x < maxX; x++) {
+          final s = (rowSelectors >> (x * 2)) & 3;
+          switch (target) {
+            case _PixelTarget.alpha:
+              out[dst + 3] = blockColors[s];
+            case _PixelTarget.rgb:
+              out[dst] = blockColors[s * 4];
+              out[dst + 1] = blockColors[s * 4 + 1];
+              out[dst + 2] = blockColors[s * 4 + 2];
+            case _PixelTarget.rgba:
+              out[dst] = blockColors[s * 4];
+              out[dst + 1] = blockColors[s * 4 + 1];
+              out[dst + 2] = blockColors[s * 4 + 2];
+              out[dst + 3] = 255;
+          }
+          dst += 4;
         }
-        dst += 4;
       }
     }
   }
 }
 
-enum _SliceTarget { rgba, rgb, alpha }
+enum _PixelTarget { rgba, rgb, alpha }
 
 int _clamp255(int v) => v < 0 ? 0 : (v > 255 ? 255 : v);
