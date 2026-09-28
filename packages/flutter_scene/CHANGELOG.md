@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Runtime-imported glTF textures now use their glTF sampler: `CLAMP_TO_EDGE` and `MIRRORED_REPEAT` wrap modes (per axis) and `NEAREST` filters were parsed but ignored, so every texture repeated. Anisotropy stays on only while all filters are linear.
 * Fixed morph targets on unskinned meshes not deforming on the GPU path; their weights animated but the mesh drew in its base pose (#428).
 * Morphed mesh bounds grow to cover every weight a node draws with, including weights below 0 or above 1, so animated blend shapes are no longer culled while on screen.
 * Setting `Node.highlightColor` between a tick and the next draw no longer throws inside the selection outline pass; the outline draws white for that frame and takes the color on the next.
