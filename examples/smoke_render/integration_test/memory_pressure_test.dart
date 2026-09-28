@@ -3,6 +3,7 @@
 // ignore_for_file: implementation_imports, invalid_use_of_internal_member
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
+import 'package:vector_math/vector_math.dart' as vm;
 
 /// The byte accounting and the release path, over real GPU textures. The unit
 /// tests in `packages/flutter_scene/test` cover the wiring but cannot allocate,
@@ -206,6 +208,74 @@ void main() {
     );
   });
 
+  // Cached static shadow tiles outlive the pool. A tile that borrowed a pooled
+  // depth kept a framebuffer on it past the shed, and its next refresh drew
+  // into the freed texture (a crash or GPU hang on Vulkan).
+  testWidgets('cached static shadows keep drawing with the pool shed', (
+    tester,
+  ) async {
+    final setup = kSmokeScenes
+        .firstWhere((scene) => scene.id == 'soft_shadows')
+        .setup();
+    for (final node in setup.scene.root.children) {
+      if (node.mesh != null) node.shadowStatic = true;
+    }
+    final holder = _CameraHolder(setup.camera);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: kSmokeClear,
+          body: Center(
+            child: RepaintBoundary(
+              key: _boundaryKey,
+              child: SizedBox(
+                width: 256,
+                height: 256,
+                child: CustomPaint(
+                  size: Size.infinite,
+                  painter: _ScenePainter(setup.scene, holder),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final boundary =
+        _boundaryKey.currentContext!.findRenderObject()
+            as RenderRepaintBoundary;
+
+    var everShed = false;
+    for (var i = 0; i < 24; i++) {
+      // Orbit far enough each frame that the near cascades leave their slack
+      // and refresh their tiles.
+      final angle = i * 0.6;
+      holder.camera = PerspectiveCamera(
+        position: vm.Vector3(5.0 * math.cos(angle), 3.1, 5.0 * math.sin(angle)),
+        target: vm.Vector3(0, 0.2, 0),
+      );
+      boundary.markNeedsPaint();
+      await tester.pump(const Duration(milliseconds: 16));
+      await Future<void>.delayed(const Duration(milliseconds: 32));
+      if (releaseTransientRenderTargets() > 0) everShed = true;
+    }
+    expect(everShed, isTrue);
+
+    boundary.markNeedsPaint();
+    await tester.pump(const Duration(milliseconds: 16));
+    await Future<void>.delayed(const Duration(milliseconds: 64));
+
+    final ui.Image image = await boundary.toImage(pixelRatio: 1.0);
+    final rgba = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+    expect(
+      _centerNonClearFraction(rgba, image.width, image.height),
+      greaterThan(0.05),
+      reason: 'the scene stopped drawing once the pool was shed each frame',
+    );
+  });
+
   testWidgets('the memory report counts render targets', (_) async {
     releaseTransientRenderTargets();
 
@@ -246,4 +316,25 @@ double _centerNonClearFraction(ByteData rgba, int width, int height) {
     }
   }
   return total == 0 ? 0 : nonClear / total;
+}
+
+final _boundaryKey = GlobalKey();
+
+class _CameraHolder {
+  _CameraHolder(this.camera);
+  Camera camera;
+}
+
+class _ScenePainter extends CustomPainter {
+  _ScenePainter(this.scene, this.holder);
+  final Scene scene;
+  final _CameraHolder holder;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    scene.render(holder.camera, canvas, viewport: Offset.zero & size);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
