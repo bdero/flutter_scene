@@ -362,6 +362,7 @@ base class RenderPass {
   void setPolygonMode(PolygonMode polygonMode) => _stub();
   void setPrimitiveType(PrimitiveType primitiveType) => _stub();
   void setWindingOrder(WindingOrder windingOrder) => _stub();
+  void setScissor(Scissor scissor) => _stub();
   void setViewport(Viewport viewport) => _stub();
   void draw(int vertexCount, {int instanceCount = 1}) => _stub();
   void drawIndexed(int indexCount, {int instanceCount = 1}) => _stub();

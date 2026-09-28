@@ -675,6 +675,17 @@ class ScenePass extends RenderGraphPass {
   ) {
     final frame = _debugView;
     if (frame == null || frame.overlays.isEmpty) return;
+    // Overlays follow a split, drawn only on the view side.
+    final width = _dimensions.width.toInt();
+    final height = _dimensions.height.toInt();
+    final clipped = frame.splitPixels >= 0;
+    if (clipped) {
+      final left = frame.splitPixels.ceil().clamp(0, width);
+      if (left >= width) return;
+      pass.setScissor(
+        gpu.Scissor(x: left, width: width - left, height: height),
+      );
+    }
     encodeWireframeOverlay(
       pass: pass,
       transients: transients,
@@ -687,6 +698,9 @@ class ScenePass extends RenderGraphPass {
       includeOffscreen: _includeOffscreen,
       frame: frame,
     );
+    if (clipped) {
+      pass.setScissor(gpu.Scissor(width: width, height: height));
+    }
   }
 
   static void _recordProfile(int cullMicros, int flushMicros) {

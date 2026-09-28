@@ -379,7 +379,8 @@ class SceneDebugSettings {
   /// two channels. Only read while [split] is set.
   DebugView? splitView;
 
-  /// Overlays drawn after the surfaces.
+  /// Overlays drawn after the surfaces, only right of [split] when it is
+  /// set.
   final Set<DebugOverlay> overlays = {};
 
   /// The wireframe overlay color, straight (non-premultiplied) alpha.
