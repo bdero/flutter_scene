@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart'
+    show StandardKtx2Upload;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/render/env_prefilter.dart'
     show radiancePrefilterPending;
 // ignore: implementation_imports
@@ -300,6 +303,129 @@ void main() {
       }
     });
   }
+
+  testWidgets('ETC1S block uploads sample like their decoded pixels', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(backgroundColor: kSmokeClear, body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await Scene.initializeStaticResources();
+    await loadEtc1sFixtures();
+
+    Future<ByteData?> render(
+      ({Scene scene, Camera camera})? setup,
+      String capture,
+    ) async {
+      if (setup == null) return null;
+      final boundaryKey = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(
+            backgroundColor: kSmokeClear,
+            body: Center(
+              child: RepaintBoundary(
+                key: boundaryKey,
+                child: SizedBox(
+                  width: kSmokeSize.toDouble(),
+                  height: kSmokeSize.toDouble(),
+                  child: SceneView(setup.scene, camera: setup.camera),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settleGpu();
+      const step = Duration(milliseconds: 50);
+      var paced = false;
+      for (var i = 0; i < 10; i++) {
+        paced = await _pumpSettled(tester, setup.scene, step);
+      }
+      await _capturableFrame(tester, setup.scene, step, paced, null);
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 1.0);
+      final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
+      captures['$capture.png'] = base64Encode(png.buffer.asUint8List());
+      return image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    }
+
+    // ETC2 must match the rgba8 upload exactly; BC1/BC3 re-fit, so close.
+    const cases = [
+      (
+        'etc1s_srgb_mips_64',
+        [StandardKtx2Upload.etc2Rgb, StandardKtx2Upload.bc1],
+      ),
+      (
+        'etc1s_features_rgba_64',
+        [StandardKtx2Upload.etc2Rgba, StandardKtx2Upload.bc3],
+      ),
+    ];
+    var compared = 0;
+    for (final (name, uploads) in cases) {
+      final reference = (await render(
+        buildEtc1sUploadScene(name, StandardKtx2Upload.rgba8),
+        'etc1s_${name}_rgba8',
+      ))!;
+      // Coverage by alpha: an empty capture is transparent black.
+      var covered = 0;
+      for (var i = 3; i < reference.lengthInBytes; i += 4) {
+        if (reference.getUint8(i) > 0) covered++;
+      }
+      expect(
+        covered / (reference.lengthInBytes / 4),
+        greaterThan(0.5),
+        reason: '$name rgba8 upload drew nothing',
+      );
+      for (final upload in uploads) {
+        final frame = await render(
+          buildEtc1sUploadScene(name, upload),
+          'etc1s_${name}_${upload.name}',
+        );
+        final label = '$name ${upload.name}';
+        if (frame == null) {
+          // ignore: avoid_print
+          print('SMOKE etc1s $label: not sampled on this device');
+          continue;
+        }
+        var total = 0;
+        var worst = 0;
+        var differing = 0;
+        for (var i = 0; i < frame.lengthInBytes; i += 4) {
+          var pixel = 0;
+          for (var c = 0; c < 4; c++) {
+            final d = (frame.getUint8(i + c) - reference.getUint8(i + c)).abs();
+            total += d;
+            if (d > pixel) pixel = d;
+          }
+          if (pixel > worst) worst = pixel;
+          if (pixel > 0) differing++;
+        }
+        final mean = total / frame.lengthInBytes;
+        // ignore: avoid_print
+        print(
+          'SMOKE etc1s $label: mean=${mean.toStringAsFixed(3)} '
+          'max=$worst differing=$differing',
+        );
+        if (upload == StandardKtx2Upload.etc2Rgb ||
+            upload == StandardKtx2Upload.etc2Rgba) {
+          expect(worst, 0, reason: '$label differs from the rgba8 upload');
+        } else {
+          expect(mean, lessThan(3.0), reason: '$label drifts from rgba8');
+        }
+        compared++;
+      }
+    }
+    // ignore: avoid_print
+    print('SMOKE etc1s: compared $compared block uploads');
+  });
 
   testWidgets('noise parity between CPU and GPU', (tester) async {
     // The probe evaluates all of noise.glsl's functions in one shader, so it

@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_scene/src/texture/basisu/etc1s.dart';
+import 'package:flutter_scene/src/texture/basisu/etc1s_targets.dart';
 import 'package:flutter_scene/src/texture/basisu/uastc.dart';
 import 'package:flutter_scene/src/texture/ktx2/dfd.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
@@ -78,16 +79,16 @@ class StandardKtx2Image {
   return (width: width, height: height);
 }
 
-/// One repacked ASTC 4x4 mip level.
-typedef AstcLevel = ({int width, int height, Uint8List blocks});
+/// One mip level of GPU blocks (ASTC 4x4, or an [Etc1sTarget] format).
+typedef BlockLevel = ({int width, int height, Uint8List blocks});
 
 /// Repacks the stored mip levels of a UASTC [texture] into ASTC 4x4 blocks
 /// (the direct compressed upload path), or returns null when [texture] does
 /// not carry UASTC. At most [maxLevels] levels are produced.
-List<AstcLevel>? repackStandardKtx2ToAstc(Ktx2Texture texture, int maxLevels) {
+List<BlockLevel>? repackStandardKtx2ToAstc(Ktx2Texture texture, int maxLevels) {
   final (:width, :height) = _checkStandard2d(texture);
   if (readDataFormat(texture).colorModel != kDfModelUastc) return null;
-  final levels = <AstcLevel>[];
+  final levels = <BlockLevel>[];
   final count = math.min(texture.levels.length, maxLevels);
   for (var level = 0; level < count; level++) {
     final size = mipSize(width, height, level);
@@ -100,6 +101,50 @@ List<AstcLevel>? repackStandardKtx2ToAstc(Ktx2Texture texture, int maxLevels) {
     ));
   }
   return levels;
+}
+
+/// Transcodes up to [maxLevels] stored levels of an ETC1S [texture] to
+/// [target] blocks, or returns null when it is not ETC1S.
+List<BlockLevel>? transcodeStandardKtx2Etc1s(
+  Ktx2Texture texture,
+  Etc1sTarget target,
+  int maxLevels, {
+  bool allowThreeColorBc1 = true,
+}) {
+  final (:width, :height) = _checkStandard2d(texture);
+  if (readDataFormat(texture).colorModel != kDfModelEtc1s) return null;
+  final transcoder = _etc1sTranscoder(texture);
+  final levels = <BlockLevel>[];
+  final count = math.min(texture.levels.length, maxLevels);
+  for (var level = 0; level < count; level++) {
+    final size = mipSize(width, height, level);
+    levels.add((
+      width: size.width,
+      height: size.height,
+      blocks: transcoder.transcodeImage(
+        texture.levels[level].data,
+        level,
+        size.width,
+        size.height,
+        target,
+        allowThreeColorBc1: allowThreeColorBc1,
+      ),
+    ));
+  }
+  return levels;
+}
+
+/// The ETC1S transcoder for [texture]'s BasisLZ global data.
+Etc1sTranscoder _etc1sTranscoder(Ktx2Texture texture) {
+  if (texture.supercompression != Ktx2Supercompression.basisLz) {
+    throw Ktx2FormatException(
+      'ETC1S color model without BasisLZ supercompression',
+    );
+  }
+  return Etc1sTranscoder(
+    texture.supercompressionGlobalData,
+    texture.levels.length,
+  );
 }
 
 /// Decodes every stored mip level of a standard KTX2 [texture] to RGBA8.
@@ -131,15 +176,7 @@ StandardKtx2Image decodeStandardKtx2(Ktx2Texture texture) {
         hasAlpha: format.hasAlpha,
       );
     case kDfModelEtc1s:
-      if (texture.supercompression != Ktx2Supercompression.basisLz) {
-        throw Ktx2FormatException(
-          'ETC1S color model without BasisLZ supercompression',
-        );
-      }
-      final transcoder = Etc1sTranscoder(
-        texture.supercompressionGlobalData,
-        texture.levels.length,
-      );
+      final transcoder = _etc1sTranscoder(texture);
       final levels = <MipLevel>[];
       for (var level = 0; level < texture.levels.length; level++) {
         final size = mipSize(width, height, level);

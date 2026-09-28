@@ -9,6 +9,8 @@ import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/radiance_layout.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/texture/compressed_texture.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/half_float.dart';
@@ -540,6 +542,80 @@ Node? _basisuQuads;
 /// scene.
 Future<void> loadBasisuQuads() async {
   _basisuQuads ??= await Node.fromGlbAsset('assets/basisu_quads_draco.glb');
+}
+
+/// The ETC1S KTX2 fixtures, by asset name.
+final Map<String, Uint8List> _etc1sFixtures = {};
+
+/// Loads the ETC1S fixtures once. Call before [buildEtc1sUploadScene].
+Future<void> loadEtc1sFixtures() async {
+  for (final name in ['etc1s_srgb_mips_64', 'etc1s_features_rgba_64']) {
+    if (_etc1sFixtures.containsKey(name)) continue;
+    final data = await rootBundle.load('assets/$name.ktx2');
+    _etc1sFixtures[name] = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
+  }
+}
+
+/// One unlit quad showing fixture [name]'s base level uploaded as [upload],
+/// sampled nearest, or null when the device cannot sample that format.
+({Scene scene, Camera camera})? buildEtc1sUploadScene(
+  String name,
+  StandardKtx2Upload upload,
+) {
+  final device = currentCompressionSupport();
+  // Offer only the requested format's family, so the loader picks it.
+  final CompressionSupport support = switch (upload) {
+    StandardKtx2Upload.etc2Rgb ||
+    StandardKtx2Upload.etc2Rgba => (astc: false, etc2: true, bc: false),
+    StandardKtx2Upload.bc1 ||
+    StandardKtx2Upload.bc3 => (astc: false, etc2: false, bc: true),
+    _ => (astc: false, etc2: false, bc: false),
+  };
+  if ((support.etc2 && !device.etc2) || (support.bc && !device.bc)) {
+    return null;
+  }
+  final decoded = decodeStandardKtx2ForUpload(
+    (bytes: _etc1sFixtures[name]!, content: TextureContent.color),
+    mips: false,
+    support: support,
+  );
+  if (decoded.error != null || decoded.upload != upload) {
+    throw StateError(
+      '$name decoded to ${decoded.upload} (${decoded.error}), not $upload',
+    );
+  }
+  final texture = uploadStandardKtx2(decoded);
+  final material = UnlitMaterial()
+    ..baseColorTexture = GpuTextureSource(
+      texture,
+      sampler: gpu.SamplerOptions(
+        minFilter: gpu.MinMagFilter.nearest,
+        magFilter: gpu.MinMagFilter.nearest,
+        mipFilter: gpu.MipFilter.nearest,
+        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      ),
+    )
+    // Unmirror u, so frames read like the source image.
+    ..baseColorTextureTransform = TextureTransform(
+      offset: vm.Vector2(1, 0),
+      scale: vm.Vector2(-1, 1),
+    );
+  final scene = Scene();
+  scene.add(
+    Node(mesh: Mesh(PlaneGeometry(width: 1.8, depth: 1.8), material))
+      ..localTransform = vm.Matrix4.rotationX(math.pi / 2),
+  );
+  return (
+    scene: scene,
+    camera: PerspectiveCamera(
+      position: vm.Vector3(0, 0, 2.2),
+      target: vm.Vector3.zero(),
+    ),
+  );
 }
 
 /// A flat NxN grid in the XZ plane carrying a per-vertex `phase` custom
