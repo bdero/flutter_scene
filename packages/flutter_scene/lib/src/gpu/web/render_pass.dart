@@ -177,6 +177,8 @@ const String _staleBundleHint =
 base class RenderPass {
   RenderPass._(this._gpuContext, this._target) {
     _bindFramebuffer();
+    // A scissor is per pass too, and would clip the load action's clear.
+    _gpuContext._gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
     _applyLoadActions();
     // Reset the fixed-function state that GL holds globally but Impeller
     // scopes per pass. Cull mode and winding order otherwise leak from the
@@ -995,6 +997,12 @@ base class RenderPass {
       case BlendFactor.oneMinusBlendAlpha:
         return web.WebGL2RenderingContext.ONE_MINUS_CONSTANT_ALPHA;
     }
+  }
+
+  void setScissor(Scissor scissor) {
+    final gl = _gpuContext._gl;
+    gl.enable(web.WebGL2RenderingContext.SCISSOR_TEST);
+    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
   }
 
   void setViewport(Viewport viewport) {
