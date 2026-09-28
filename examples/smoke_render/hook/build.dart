@@ -24,6 +24,16 @@ void main(List<String> args) {
           ? MaterialAssetMode.dataAssetsRequired
           : MaterialAssetMode.generatedTree,
     );
+    // Cooked to ETC1S for the etc1s_cooked_texture scene.
+    buildTextures(
+      buildInput: input,
+      buildOutput: output,
+      textures: ['assets/etc1s_cooked.png'],
+      encoding: const TextureEncoding.etc1s(),
+      assetMode: dataAssetsLane
+          ? TextureAssetMode.dataAssetsRequired
+          : TextureAssetMode.generatedTree,
+    );
     // The hand-written vertex/fragment pair the raw_shader_pair scene draws
     // with. Compiled here so every backend's compiler sees it.
     await buildTargetShaderBundleJson(

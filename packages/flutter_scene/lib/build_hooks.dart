@@ -5,7 +5,8 @@
 /// `.fsceneb` package format, [buildMaterials] compiles `.fmat`
 /// custom-material files into a Flutter GPU shader bundle plus a parameter
 /// sidecar, [buildTextures] cooks loose images into the engine's compressed
-/// `.fstex` container, and [buildTargetShaderBundleJson] compiles raw shader
+/// `.fstex` container (or standard ETC1S `.ktx2`, see [TextureEncoding]), and
+/// [buildTargetShaderBundleJson] compiles raw shader
 /// manifests without unused platform backends. [buildEngineAssets] is
 /// optional, putting the shaders flutter_scene itself needs in this app's
 /// generated assets rather than in flutter_scene's own.
@@ -45,7 +46,7 @@ export 'src/fmat/target_shader_bundle.dart'
     show TargetShaderBundleAssetMode, buildTargetShaderBundleJson;
 export 'src/texture/build_textures.dart'
     if (dart.library.js_interop) 'src/texture/build_textures_unsupported.dart'
-    show TextureAssetMode, buildTextures;
+    show TextureAssetMode, TextureEncoding, buildTextures;
 // The per-texture downsample rule accepted by [buildTextures]. Also exported
 // by `package:flutter_scene/scene.dart`; re-exported here because hook code
 // runs on the plain Dart VM and cannot import the Flutter library.

@@ -144,6 +144,20 @@ class _BitReader {
   }
 }
 
+/// Reads a Huffman table and then [count] symbols from [bytes]. For the
+/// encoder's tests.
+List<int> readHuffmanCodedSymbols(Uint8List bytes, int count) {
+  final reader = _BitReader(bytes);
+  final table = reader.readHuffTable();
+  return [for (var i = 0; i < count; i++) reader.decodeHuffman(table)];
+}
+
+/// Reads [count] variable-length values from [bytes]. For the same tests.
+List<int> readVlcValues(Uint8List bytes, int count, int chunkBits) {
+  final reader = _BitReader(bytes);
+  return [for (var i = 0; i < count; i++) reader.decodeVlc(chunkBits)];
+}
+
 /// A canonical Huffman decoding table as a full lookup over the maximum code
 /// length: entry = (codeSize << 16) | symbol, -1 for invalid prefixes.
 class _HuffTable {

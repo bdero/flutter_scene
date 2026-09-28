@@ -250,6 +250,25 @@ StandardKtx2Decoded decodeStandardKtx2ForUpload(
   }
 }
 
+/// Uploads any KTX2 payload, the engine's own or standard, decoding off the
+/// main isolate. Throws when it cannot be decoded.
+Future<gpu.Texture> gpuTextureFromAnyKtx2Async(
+  Uint8List bytes, {
+  TextureContent content = TextureContent.color,
+}) async {
+  if (isInternalKtx2(readKtx2(bytes))) return gpuTextureFromKtx2Async(bytes);
+  final decoded = await compute(_decodeBatch, (
+    requests: [(bytes: bytes, content: content)],
+    mips: uploadableMipChains,
+    support: currentCompressionSupport(),
+  ));
+  final result = decoded.single;
+  if (result.error != null) {
+    throw Ktx2FormatException('Failed to decode KTX2 texture: ${result.error}');
+  }
+  return uploadStandardKtx2(result);
+}
+
 /// Loads a single KTX2 payload, routing the engine's own cooked files through
 /// the internal transcode path and standard files through
 /// [loadStandardKtx2Batch].
