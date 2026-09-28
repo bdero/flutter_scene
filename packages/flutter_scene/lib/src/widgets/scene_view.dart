@@ -108,6 +108,7 @@ class SceneView extends StatefulWidget {
     this.pixelRatio,
     this.onTick,
     this.clock,
+    this.maxFrameRate,
     this.loading,
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
@@ -153,6 +154,7 @@ class SceneView extends StatefulWidget {
     this.pixelRatio,
     this.onTick,
     this.clock,
+    this.maxFrameRate,
     this.loading,
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
@@ -237,6 +239,15 @@ class SceneView extends StatefulWidget {
   /// controls time itself.
   final Clock? clock;
 
+  /// Caps how often the view ticks and renders, in frames per second. Null
+  /// renders every display frame.
+  ///
+  /// Each frame renders on the display refresh nearest its deadline, so a
+  /// cap that divides the refresh rate gives an even cadence (60 on a 120 Hz
+  /// display renders every other refresh), which suits screen recording and
+  /// saves power. Skipped refreshes neither call [onTick] nor repaint.
+  final double? maxFrameRate;
+
   /// Resources this view waits for before it reveals the scene.
   ///
   /// While the group is loading (and while the engine's shared static
@@ -319,6 +330,10 @@ class _SceneViewState extends State<SceneView>
   // The wall-clock instant of the previous tick, for [SceneTickCallback]
   // deltas; null until the first revealed tick.
   DateTime? _lastTickTime;
+
+  // When the next frame is due under [SceneView.maxFrameRate], in ticker
+  // time; null renders the next tick.
+  Duration? _frameDue;
 
   Clock get _clock => widget.clock ?? clock;
 
@@ -419,6 +434,7 @@ class _SceneViewState extends State<SceneView>
   @override
   void didUpdateWidget(SceneView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.maxFrameRate != oldWidget.maxFrameRate) _frameDue = null;
     if (widget.autoTick != oldWidget.autoTick) {
       _ticker?.dispose();
       _ticker = widget.autoTick ? (createTicker(_onTick)..start()) : null;
@@ -534,6 +550,18 @@ class _SceneViewState extends State<SceneView>
       _tickOrigin = elapsed;
       _lastTickTime = now;
       return;
+    }
+    final rate = widget.maxFrameRate;
+    if (rate != null && rate > 0) {
+      final period = Duration(microseconds: (1e6 / rate).round());
+      final due = _frameDue;
+      // A quarter period of slack picks the refresh nearest the deadline.
+      if (due != null && elapsed < due - period ~/ 4) return;
+      // Deadlines advance by whole periods to hold the average rate; one
+      // missed by more than a period restarts from this frame.
+      _frameDue = due == null || elapsed - due > period
+          ? elapsed + period
+          : due + period;
     }
     final revealElapsed = elapsed - _tickOrigin;
     final deltaSeconds = _lastTickTime == null
