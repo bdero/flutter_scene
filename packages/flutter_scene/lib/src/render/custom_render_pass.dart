@@ -87,7 +87,8 @@ enum RenderStage {
 enum RenderInput {
   /// The linear (view-space) depth buffer, on
   /// [RenderPassContext.sceneDepthLinear]. Reconstruct positions with
-  /// [RenderPassContext.cameraInfo].
+  /// [RenderPassContext.cameraInfo]. It holds the nearest visible surface,
+  /// including translucent materials that write depth.
   depth,
 
   /// View-space normals, octahedral-packed into the green/blue channels of the

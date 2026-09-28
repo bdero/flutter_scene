@@ -559,6 +559,12 @@ abstract class Material {
   @internal
   bool get translucentDepthWrite => false;
 
+  /// Whether this translucent material joins the visible-surface depth that
+  /// depth of field and depth-reading custom passes see. Defaults to
+  /// [translucentDepthWrite].
+  @internal
+  bool get translucentEffectsDepth => translucentDepthWrite;
+
   /// Whether this material's geometry joins the camera depth prepass that
   /// feeds the screen-space chain (ambient occlusion, contact shadows,
   /// reflections, depth of field).

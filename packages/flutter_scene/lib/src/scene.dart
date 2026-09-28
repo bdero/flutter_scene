@@ -2440,6 +2440,16 @@ base class Scene implements SceneGraph {
     final debugFrame = _debugViewFrame(pixelSize);
     final debugActive = debugFrame != null;
     final wantDof = depthOfField.enabled && !debugActive;
+    // Translucent depth-writing surfaces (glass, fish) join the linear depth
+    // after the opaque-only consumers (occlusion, reflections) and before
+    // everything that wants the visible surface: after-scene custom passes
+    // that read depth (a water composite fogs to the nearest surface, so a
+    // translucent fish must be in it) and depth of field.
+    final patchTranslucentDepth =
+        wantDof ||
+        _passesAt(
+          RenderStage.afterScene,
+        ).any((pass) => pass.inputs.contains(RenderInput.depth));
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
     final enableFxaa = effectiveAa == AntiAliasingMode.fxaa && !debugActive;
     final enableSmaa =
@@ -2834,12 +2844,13 @@ base class Scene implements SceneGraph {
             farDepth: projection.far,
             layerMask: view.layerMask,
             writeNormals: wantSsr || wantCustomNormals || wantIrradianceField,
-            // Depth of field patches translucent surfaces into the linear
-            // depth later; the patch depth-tests against this attachment.
-            // Storing it (a non-transient attachment plus store bandwidth)
-            // is paid whenever depth of field is on, patch or no patch.
+            // The translucent depth patch depth-tests against this
+            // attachment. Storing it (a non-transient attachment plus store
+            // bandwidth) is paid whenever the patch is wanted, whether or
+            // not a translucent surface qualifies.
             keepDepthStencil:
-                wantDof || (enableTaa && temporalAntiAliasing.objectMotion),
+                patchTranslucentDepth ||
+                (enableTaa && temporalAntiAliasing.objectMotion),
             cameraRight: cameraRight,
             cameraUp: cameraUp,
             cullingPlanes: view.cullingPlanes,
@@ -3071,6 +3082,18 @@ base class Scene implements SceneGraph {
       );
     }
 
+    if (patchTranslucentDepth) {
+      graph.addPass(
+        TranslucentDepthPatchPass(
+          camera: camera,
+          renderScene: renderScene,
+          cameraForward: camera.forward,
+          layerMask: view.layerMask,
+          cullingPlanes: view.cullingPlanes,
+        ),
+      );
+    }
+
     // Custom HDR passes right after the scene is drawn.
     _addHdrCustomPasses(
       graph,
@@ -3089,18 +3112,6 @@ base class Scene implements SceneGraph {
     // still bloom). Needs the projection for the circle-of-confusion scale and
     // camera depth.
     if (wantDof && projectionValid) {
-      // Translucent depth-writing surfaces (glass) join the linear depth
-      // here, after the opaque-only consumers above, so depth of field
-      // focuses on the visible surface instead of the backdrop behind it.
-      graph.addPass(
-        TranslucentDepthPatchPass(
-          camera: camera,
-          renderScene: renderScene,
-          cameraForward: camera.forward,
-          layerMask: view.layerMask,
-          cullingPlanes: view.cullingPlanes,
-        ),
-      );
       graph.addPass(
         DofPass(
           settings: depthOfField,

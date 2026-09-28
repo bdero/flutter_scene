@@ -196,8 +196,10 @@ class DepthPrepass extends RenderGraphPass {
 /// field).
 ///
 /// Draws items whose material is translucent but declares
-/// [Material.translucentDepthWrite] (fmat `depth_write: true`, or a
-/// transmissive [PhysicallyBasedMaterial]), depth-tested against the opaque
+/// [Material.translucentEffectsDepth] (fmat `depth_write: true` or
+/// `effects_depth: true`, or a transmissive [PhysicallyBasedMaterial]), cut
+/// by the material's own alpha where it supplies a depth fragment,
+/// depth-tested against the opaque
 /// scene through the prepass depth-stencil. Without this, depth of field
 /// reads the backdrop's depth at a glass surface's pixels and smears the
 /// backdrop's blur across it. Content seen through the surface inherits the
@@ -209,11 +211,11 @@ class DepthPrepass extends RenderGraphPass {
 /// qualifies. The patch overwrites the target's green/blue/alpha channels
 /// (view-space normals when reflections requested them), so it runs after
 /// the built-in consumers of those channels (ambient occlusion,
-/// reflections). Custom render passes at the later stages read the same
-/// blackboard texture and therefore see patched depth and normals at
-/// depth-writing translucent pixels; that is the visible-surface semantics
-/// depth of field wants, and the accepted tradeoff for any pass wanting
-/// opaque-only geometry.
+/// reflections). Custom render passes from [RenderStage.afterScene] on read
+/// the same blackboard texture and therefore see patched depth and normals
+/// at depth-writing translucent pixels; that is the visible-surface
+/// semantics depth of field and depth-fogging passes want, and the accepted
+/// tradeoff for any pass wanting opaque-only geometry.
 class TranslucentDepthPatchPass extends RenderGraphPass {
   TranslucentDepthPatchPass({
     required Camera camera,
@@ -237,7 +239,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
   String get name => 'TranslucentDepthPatchPass';
 
   static bool _qualifies(RenderItem item) =>
-      !item.material.isOpaque() && item.material.translucentDepthWrite;
+      !item.material.isOpaque() && item.material.translucentEffectsDepth;
 
   @override
   void execute(RenderGraphContext context) {
@@ -415,7 +417,7 @@ class _DepthPrepassEncoder {
     if (!item.drawsColor) return;
     if ((item.layers & _layerMask) == 0) return;
     if (_translucentPatch
-        ? (item.material.isOpaque() || !item.material.translucentDepthWrite)
+        ? (item.material.isOpaque() || !item.material.translucentEffectsDepth)
         : !item.material.depthPrepassParticipates) {
       return;
     }

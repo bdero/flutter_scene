@@ -46,6 +46,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _blending = _parseBlending(metadata['blending']),
        _culling = _parseCulling(metadata['culling']),
        _depthWrite = metadata['depth_write'] == true,
+       _effectsDepth = metadata['effects_depth'] == true,
        _depthCompare = _parseDepthCompare(metadata['depth_test']),
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _environmentLighting = metadata['environment_lighting'] != false,
@@ -373,6 +374,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   FmatBlending _blending;
   FmatCulling _culling;
   bool _depthWrite;
+  bool _effectsDepth;
   gpu.CompareFunction _depthCompare;
 
   /// Re-reads the render state and parameters from a regenerated [fragmentShader]
@@ -391,6 +393,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     _blending = _parseBlending(metadata['blending']);
     _culling = _parseCulling(metadata['culling']);
     _depthWrite = metadata['depth_write'] == true;
+    _effectsDepth = metadata['effects_depth'] == true;
     _depthCompare = _parseDepthCompare(metadata['depth_test']);
     _sceneInputs = _parseSceneInputs(metadata['engine_inputs']);
     _environmentLighting = metadata['environment_lighting'] != false;
@@ -616,6 +619,10 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   @internal
   bool get translucentDepthWrite => _depthWrite;
+
+  @override
+  @internal
+  bool get translucentEffectsDepth => _depthWrite || _effectsDepth;
 
   @override
   @internal

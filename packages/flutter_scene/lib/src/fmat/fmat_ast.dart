@@ -283,6 +283,7 @@ class FmatMaterial {
     required this.blending,
     required this.culling,
     this.depthWrite = false,
+    this.effectsDepth = false,
     this.depthTest = FmatDepthTest.lessEqual,
     required this.parameters,
     required this.fragmentSource,
@@ -331,6 +332,14 @@ class FmatMaterial {
   final FmatBlending blending;
   final FmatCulling culling;
   final bool depthWrite;
+
+  /// Whether a translucent material counts as the visible surface for
+  /// depth-reading effects (`effects_depth:`, default false): depth of field
+  /// and custom passes that read depth see it, cut where `Surface()` alpha
+  /// is below one half, while the color pass still writes no depth. For
+  /// soft cutouts such as fins, which must blur and fog with what they are
+  /// attached to without hiding what is behind them.
+  final bool effectsDepth;
 
   /// The depth test used in the translucent pass (`depth_test:`).
   final FmatDepthTest depthTest;
