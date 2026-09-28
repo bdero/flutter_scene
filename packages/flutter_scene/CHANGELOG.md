@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
 * Runtime-imported glTF textures honor their sampler's per-axis wrap modes (`CLAMP_TO_EDGE`, `MIRRORED_REPEAT`) and `NEAREST` filters instead of always repeating.
 * Fixed morph targets on unskinned meshes not deforming on the GPU path; their weights animated but the mesh drew in its base pose (#428).
 * Morphed mesh bounds grow to cover every weight a node draws with, including weights below 0 or above 1, so animated blend shapes are no longer culled while on screen.
