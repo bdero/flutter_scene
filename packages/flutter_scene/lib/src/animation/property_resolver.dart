@@ -160,8 +160,9 @@ class TranslationTimelineResolver extends TimelineResolver {
 }
 
 /// Resolves a rotation timeline with spherical linear interpolation,
-/// slerping the current animated rotation toward the keyframed rotation
-/// by the supplied weight.
+/// accumulating clip weights relative to the node's uncovered bind weight.
+/// Two fully covering clips interpolate directly between their poses. Three
+/// or more rotations use incremental weighted slerp in registration order.
 class RotationTimelineResolver extends TimelineResolver {
   final List<Quaternion> _values;
 
@@ -175,7 +176,7 @@ class RotationTimelineResolver extends TimelineResolver {
 
   @override
   void apply(AnimationTransforms target, double timeInSeconds, double weight) {
-    if (_values.isEmpty) {
+    if (_values.isEmpty || weight <= 0) {
       return;
     }
 
@@ -185,10 +186,14 @@ class RotationTimelineResolver extends TimelineResolver {
       value = _values[key.index - 1].slerp(value, key.lerp);
     }
 
+    final accumulated = target.rotationBlendWeight == null
+        ? null
+        : target.rotationBlendWeight! + weight;
     target.animatedPose.rotation = target.animatedPose.rotation.slerp(
       value,
-      weight,
+      accumulated == null ? weight : weight / accumulated,
     );
+    target.rotationBlendWeight = accumulated;
   }
 }
 
