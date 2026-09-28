@@ -563,6 +563,7 @@ FmatMaterial _build(
     'blending',
     'culling',
     'depth_write',
+    'effects_depth',
     'depth_test',
     'parameters',
     'varyings',
@@ -615,6 +616,21 @@ FmatMaterial _build(
     throw FmatException('`depth_write` must be a boolean.', fileName: fileName);
   }
   final depthWrite = depthWriteValue as bool? ?? false;
+  final effectsDepthValue = tree['effects_depth'];
+  if (effectsDepthValue != null && effectsDepthValue is! bool) {
+    throw FmatException(
+      '`effects_depth` must be a boolean.',
+      fileName: fileName,
+    );
+  }
+  final effectsDepth = effectsDepthValue as bool? ?? false;
+  if (effectsDepth && blending == FmatBlending.opaque) {
+    throw FmatException(
+      '`effects_depth` is for translucent materials; opaque ones already '
+      'write depth.',
+      fileName: fileName,
+    );
+  }
 
   final environmentLightingValue = tree['environment_lighting'];
   if (environmentLightingValue != null && environmentLightingValue is! bool) {
@@ -890,6 +906,7 @@ FmatMaterial _build(
     blending: blending,
     culling: culling,
     depthWrite: depthWrite,
+    effectsDepth: effectsDepth,
     depthTest: depthTest,
     parameters: parameters,
     fragmentSource: body.content,

@@ -193,7 +193,8 @@ Set<String> lightingHooksIn(String fragmentSource) {
 /// Whether [material] ships its own depth-pass fragments: an opaque cutout
 /// (`alpha_to_coverage`) whose shader reads no engine scene inputs.
 bool materialHasDepthSurface(FmatMaterial material) =>
-    material.alphaToCoverage && material.engineInputs.isEmpty;
+    (material.alphaToCoverage || material.effectsDepth) &&
+    material.engineInputs.isEmpty;
 
 /// The bundle entry name of [material]'s depth-pass fragment for [kind].
 String depthSurfaceEntryName(FmatMaterial material, DepthSurfaceKind kind) =>
@@ -925,6 +926,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'blending': material.blending.name,
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,
+    if (material.effectsDepth) 'effects_depth': true,
     if (material.depthTest != FmatDepthTest.lessEqual)
       'depth_test': material.depthTest.token,
     if (material.engineInputs.isNotEmpty)
