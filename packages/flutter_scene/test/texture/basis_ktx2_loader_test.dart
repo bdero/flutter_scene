@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart';
 import 'package:flutter_scene/src/texture/ktx2/dfd.dart';
 import 'package:flutter_scene/src/texture/mipmap.dart';
@@ -11,10 +12,14 @@ import 'package:flutter_test/flutter_test.dart';
 Uint8List _fixture(String name) =>
     File('test/fixtures/ktx2/$name').readAsBytesSync();
 
-const CompressionSupport _none = (astc: false, etc2: false, bc: false);
-const CompressionSupport _mobile = (astc: true, etc2: true, bc: false);
-const CompressionSupport _desktop = (astc: false, etc2: false, bc: true);
-const CompressionSupport _appleSilicon = (astc: true, etc2: true, bc: true);
+const _astc = gpu.TextureCompressionFamily.astc;
+const _bc = gpu.TextureCompressionFamily.bc;
+const _etc2 = gpu.TextureCompressionFamily.etc2;
+
+const CompressionSupport _none = [];
+const CompressionSupport _mobile = [_astc, _etc2];
+const CompressionSupport _desktop = [_bc];
+const CompressionSupport _appleSilicon = [_astc, _bc, _etc2];
 
 StandardKtx2Upload _choose({
   int colorModel = kDfModelEtc1s,
@@ -65,10 +70,11 @@ Uint8List _concat(List<MipLevel> levels) {
 
 void main() {
   group('upload format choice', () {
-    test('ETC1S prefers ETC2, then BC, then rgba8', () {
-      expect(_choose(support: _appleSilicon), StandardKtx2Upload.etc2Rgb);
+    test('ETC1S takes the first of BC and ETC2 in preference order', () {
+      expect(_choose(support: _appleSilicon), StandardKtx2Upload.bc1);
       expect(_choose(support: _mobile), StandardKtx2Upload.etc2Rgb);
       expect(_choose(support: _desktop), StandardKtx2Upload.bc1);
+      expect(_choose(support: [_etc2, _bc]), StandardKtx2Upload.etc2Rgb);
       expect(_choose(support: _none), StandardKtx2Upload.rgba8);
     });
 
@@ -91,7 +97,7 @@ void main() {
 
     test('a base-only file that needs a chain decodes to rgba8', () {
       expect(_choose(storedLevels: 1), StandardKtx2Upload.rgba8);
-      expect(_choose(storedLevels: 1, mips: false), StandardKtx2Upload.etc2Rgb);
+      expect(_choose(storedLevels: 1, mips: false), StandardKtx2Upload.bc1);
     });
 
     test('UASTC takes ASTC or rgba8', () {

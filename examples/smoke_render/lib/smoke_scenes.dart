@@ -7,6 +7,8 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/gpu.dart' as gpu;
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu_shim;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/render/radiance_layout.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart';
@@ -565,18 +567,19 @@ Future<void> loadEtc1sFixtures() async {
   String name,
   StandardKtx2Upload upload,
 ) {
-  final device = currentCompressionSupport();
   // Offer only the requested format's family, so the loader picks it.
-  final CompressionSupport support = switch (upload) {
+  final family = switch (upload) {
     StandardKtx2Upload.etc2Rgb ||
-    StandardKtx2Upload.etc2Rgba => (astc: false, etc2: true, bc: false),
+    StandardKtx2Upload.etc2Rgba => gpu_shim.TextureCompressionFamily.etc2,
     StandardKtx2Upload.bc1 ||
-    StandardKtx2Upload.bc3 => (astc: false, etc2: false, bc: true),
-    _ => (astc: false, etc2: false, bc: false),
+    StandardKtx2Upload.bc3 => gpu_shim.TextureCompressionFamily.bc,
+    _ => null,
   };
-  if ((support.etc2 && !device.etc2) || (support.bc && !device.bc)) {
+  if (family != null &&
+      !gpu_shim.gpuContext.supportsTextureCompression(family)) {
     return null;
   }
+  final CompressionSupport support = [?family];
   final decoded = decodeStandardKtx2ForUpload(
     (bytes: _etc1sFixtures[name]!, content: TextureContent.color),
     mips: false,
