@@ -280,13 +280,42 @@ void main() {
     });
   });
 
-  test('FocusPuller settles on a new goal without overshoot', () {
-    final puller = FocusPuller(value: 1, settleSeconds: 0.5);
-    var peak = 1.0;
-    for (var i = 0; i < 120; i++) {
-      peak = math.max(peak, puller.update(3, 1 / 60));
-    }
-    expect(puller.value, closeTo(3, 1e-3));
-    expect(peak, lessThanOrEqualTo(3 + 1e-6));
+  group('FocusPuller', () {
+    test('settles on a new goal without overshoot', () {
+      final puller = FocusPuller(value: 1, settleSeconds: 0.8);
+      var peak = 1.0;
+      for (var i = 0; i < 180; i++) {
+        peak = math.max(peak, puller.update(3, 1 / 60));
+      }
+      expect(puller.value, closeTo(3, 1e-3));
+      expect(peak, lessThanOrEqualTo(3 + 1e-6));
+    });
+
+    test('starts a pull gently', () {
+      final puller = FocusPuller(value: 1, settleSeconds: 1);
+      // The first frame of a pull moves a small fraction of the second's.
+      final first = puller.update(0.25, 1 / 60) - 1;
+      final second = puller.value;
+      final step2 = puller.update(0.25, 1 / 60) - second;
+      expect(first.abs(), lessThan(step2.abs() / 2));
+    });
+
+    test('eases in diopters', () {
+      // Easing in diopters, a near-to-far pull and a far-to-near pull cross
+      // their diopter midpoint (0.8 m, between 0.5 m and 2 m) together.
+      int midpointFrame(double from, double to) {
+        final puller = FocusPuller(value: from, settleSeconds: 1);
+        for (var i = 1; i < 600; i++) {
+          final v = puller.update(to, 1 / 240);
+          if ((v - 0.8).sign == (to - 0.8).sign) return i;
+        }
+        return -1;
+      }
+
+      final out = midpointFrame(0.5, 2);
+      final back = midpointFrame(2, 0.5);
+      expect(out, greaterThan(0));
+      expect((out - back).abs(), lessThanOrEqualTo(1));
+    });
   });
 }

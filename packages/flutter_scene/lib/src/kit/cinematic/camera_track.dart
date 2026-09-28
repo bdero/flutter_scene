@@ -371,8 +371,14 @@ class _ArcSpline {
   }
 }
 
-/// A value that follows a moving goal like a focus puller's hand: critically
-/// damped, so it settles without overshoot in about [settleSeconds].
+/// A focus distance that follows a moving goal like a focus puller's hand:
+/// it starts gently, eases out, and never overshoots, settling in about
+/// [settleSeconds].
+///
+/// It eases in diopters (one over the distance), the scale blur changes on,
+/// so racking between near and far subjects reads as even as between two
+/// far ones. Two critically damped stages run in series, so a sudden new
+/// goal changes the pull's acceleration smoothly instead of jolting it.
 ///
 /// Unlike [CameraTrack], this integrates frame deltas, so use it for goals
 /// that come from live simulation (keeping focus on a swimming fish) rather
@@ -380,34 +386,65 @@ class _ArcSpline {
 ///
 /// {@category Animation}
 class FocusPuller {
-  /// Creates a puller resting at [value].
-  FocusPuller({required this.value, this.settleSeconds = 0.6});
-
-  /// The current value.
-  double value;
-
-  /// Rate of change, per second.
-  double velocity = 0;
+  /// Creates a puller resting at [value] metres.
+  FocusPuller({required double value, this.settleSeconds = 1.0}) {
+    reset(value);
+  }
 
   /// Roughly how long a step change takes to settle.
   double settleSeconds;
 
-  /// Moves [value] toward [goal] over [deltaSeconds] and returns it.
+  /// The current focus distance.
+  double get value => _value;
+  double _value = 1;
+
+  // Diopters and their rates for the two stages.
+  double _d1 = 1, _v1 = 0, _d2 = 1, _v2 = 0;
+
+  static const double _minDiopters = 1e-4;
+
+  static double _diopters(double distance) => 1 / math.max(distance, 1 / 1e4);
+
+  /// Rests the puller at [value] metres.
+  void reset(double value) {
+    _d1 = _d2 = _diopters(value);
+    _v1 = _v2 = 0;
+    _value = value;
+  }
+
+  /// Moves toward [goal] metres over [deltaSeconds] and returns the focus
+  /// distance.
   double update(double goal, double deltaSeconds) {
-    if (deltaSeconds <= 0) return value;
+    if (deltaSeconds <= 0) return _value;
     if (settleSeconds <= 0) {
-      velocity = 0;
-      return value = goal;
+      reset(goal);
+      return _value;
     }
-    // The closed-form critically damped step (as in the common SmoothDamp),
-    // stable at any frame rate.
-    final omega = 4.0 / settleSeconds;
-    final x = omega * deltaSeconds;
+    // Two stages in series settle in about twice one stage's time.
+    final stage = settleSeconds / 2;
+    final (d1, v1) = _step(_d1, _v1, _diopters(goal), stage, deltaSeconds);
+    final (d2, v2) = _step(_d2, _v2, d1, stage, deltaSeconds);
+    _d1 = d1;
+    _v1 = v1;
+    _d2 = d2;
+    _v2 = v2;
+    return _value = 1 / math.max(_d2, _minDiopters);
+  }
+
+  // The closed-form critically damped step (as in the common SmoothDamp),
+  // stable at any frame rate.
+  static (double, double) _step(
+    double value,
+    double velocity,
+    double goal,
+    double settle,
+    double dt,
+  ) {
+    final omega = 4.0 / settle;
+    final x = omega * dt;
     final decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
     final change = value - goal;
-    final temp = (velocity + omega * change) * deltaSeconds;
-    velocity = (velocity - omega * temp) * decay;
-    value = goal + (change + temp) * decay;
-    return value;
+    final temp = (velocity + omega * change) * dt;
+    return (goal + (change + temp) * decay, (velocity - omega * temp) * decay);
   }
 }
