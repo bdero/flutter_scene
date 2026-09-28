@@ -165,6 +165,12 @@ class Texture2D implements TextureSource {
     sampling.toSamplerOptions(),
   );
 
+  /// This texture's GPU image sampled with [sampler] instead (for example a
+  /// glTF sampler's wrap and filter modes). The GPU texture is shared.
+  @internal
+  Texture2D withSampler(gpu.SamplerOptions sampler) =>
+      Texture2D._(_texture, sampler);
+
   /// Wraps an already-uploaded GPU [texture] with [sampling] (the KTX2 load
   /// paths, whose mip chains come from the file rather than the generator).
   @internal
