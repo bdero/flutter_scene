@@ -1,17 +1,21 @@
 // Near-field CoC dilation for depth of field. An out-of-focus foreground
-// object must blur PAST its geometric silhouette (the silhouette itself is
-// out of focus), but a gather driven by the center pixel's own CoC stops dead
-// at the edge. This pass blurs the near-field CoC over the maximum
-// foreground radius and applies Hammon's correction (GPU Gems 3 ch. 28),
-// D = 2 * max(D0, blurred) - D0, so blurriness grows outward across the
-// silhouette without shrinking inside the object.
+// object must blur past its geometric silhouette (the silhouette itself is
+// out of focus), but a gather driven by the center pixel's own CoC stops at
+// the edge. This finds the largest near-field CoC within the maximum
+// foreground radius, as a separable max filter run twice (horizontal from
+// the CoC, then vertical from that), so every pixel an out-of-focus object's
+// blur can reach gathers far enough to find it. Alongside it rides the reach
+// (the largest CoC minus its distance), which says how much of this pixel
+// the spill actually covers; beyond it the sharp image stays untouched. The
+// gather weights each sample by its own CoC, so only the object spreads.
 
 precision highp float;
 
-uniform sampler2D coc_color; // half res, signed CoC in alpha
+uniform sampler2D coc_color; // half res; signed CoC in alpha, or the last pass in rg
 
 uniform DilateInfo {
-  // x: blur radius in half-res pixels   yz: half-res texel size   w: unused
+  // x: radius in half-res pixels   yz: step between taps in uv
+  // w: 0 reads the near CoC from alpha, 1 reads the previous pass from rg
   vec4 params0;
 }
 dilate_info;
@@ -20,22 +24,27 @@ in vec2 v_uv;
 
 out vec4 frag_color;
 
-float NearAt(vec2 uv) { return max(-texture(coc_color, uv).a, 0.0); }
+// The near CoC and its reach at uv (both the CoC on the first pass).
+vec2 NearAt(vec2 uv) {
+  vec4 s = texture(coc_color, uv);
+  if (dilate_info.params0.w > 0.5) {
+    return s.rg;
+  }
+  float near = max(-s.a, 0.0);
+  return vec2(near);
+}
 
 void main() {
-  float d0 = NearAt(v_uv);
-  vec2 texel = dilate_info.params0.yz;
-  float radius = dilate_info.params0.x;
-  // 12-tap disc average (8 outer, 4 inner) plus the center.
-  float sum = d0;
-  for (int i = 0; i < 8; i++) {
-    float ang = float(i) * 0.7853982; // 2pi / 8
-    sum += NearAt(v_uv + vec2(cos(ang), sin(ang)) * radius * texel);
+  vec2 stride = dilate_info.params0.yz;
+  int radius = int(ceil(dilate_info.params0.x));
+  vec2 best = NearAt(v_uv);
+  for (int i = 1; i <= 64; i++) {
+    if (i > radius) break;
+    float d = float(i);
+    vec2 a = NearAt(v_uv + stride * d);
+    vec2 b = NearAt(v_uv - stride * d);
+    best.x = max(best.x, max(a.x, b.x));
+    best.y = max(best.y, max(a.y, b.y) - d);
   }
-  for (int i = 0; i < 4; i++) {
-    float ang = float(i) * 1.5707963 + 0.7853982; // 2pi / 4, offset
-    sum += NearAt(v_uv + vec2(cos(ang), sin(ang)) * radius * 0.5 * texel);
-  }
-  float blurred = sum / 13.0;
-  frag_color = vec4(2.0 * max(d0, blurred) - d0, 0.0, 0.0, 1.0);
+  frag_color = vec4(best, 0.0, 1.0);
 }
