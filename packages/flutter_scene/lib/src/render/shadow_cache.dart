@@ -12,6 +12,12 @@ class ShadowCascadeCacheEntry {
   /// planning logic stays GPU-free).
   gpu.Texture? tile;
 
+  /// Depth attachment paired with [tile] for the tile's entire lifetime.
+  /// Impeller's Vulkan backend caches a framebuffer on its color texture, so
+  /// rotating or releasing this attachment while keeping [tile] would leave
+  /// that framebuffer referring to the previous depth image view.
+  gpu.Texture? depth;
+
   /// World -> light-clip matrix the tile's content was rendered with. Every
   /// consumer (dynamic casters, the lit shader, custom passes) samples through
   /// this matrix, not the frame's ideal one, so the cached content stays

@@ -314,16 +314,18 @@ class ShadowPass extends RenderGraphPass {
         _tileResolution,
         format: gpu.PixelFormat.r32Float,
       );
-      // The depth attachment only backs this pass's depth test; the same
-      // pooled texture serves every refresh this frame (passes run in order
-      // and each clears it).
-      final depth = context.texturePool.acquire(
-        TransientTextureDescriptor.depth(
-          width: _tileResolution,
-          height: _tileResolution,
-          format: gpu.gpuContext.defaultDepthStencilFormat,
-          debugName: 'static_shadow_tile_depth',
-        ),
+      // Keep the attachment identity/lifetime paired with the persistent
+      // color tile. A view's transient pool rotates and is cleared on resize
+      // (including warm-up -> first visible frame), but Impeller Vulkan
+      // retains the tile's framebuffer and its original depth image view.
+      // Transient storage is still appropriate: each refresh clears depth.
+      entry.depth ??= gpu.gpuContext.createTexture(
+        gpu.StorageMode.deviceTransient,
+        _tileResolution,
+        _tileResolution,
+        format: gpu.gpuContext.defaultDepthStencilFormat,
+        enableRenderTargetUsage: true,
+        enableShaderReadUsage: false,
       );
       final target = gpu.RenderTarget.singleColor(
         gpu.ColorAttachment(
@@ -331,7 +333,7 @@ class ShadowPass extends RenderGraphPass {
           clearValue: Vector4(1.0, 1.0, 1.0, 1.0),
         ),
         depthStencilAttachment: gpu.DepthStencilAttachment(
-          texture: depth,
+          texture: entry.depth!,
           depthClearValue: 1.0,
         ),
       );
