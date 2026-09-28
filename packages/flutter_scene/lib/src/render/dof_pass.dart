@@ -127,18 +127,34 @@ class DofPass extends RenderGraphPass {
       textures: {'scene_color': scene, 'linear_depth': depth},
     );
 
-    // 2. Near-field CoC dilation, so foreground blur crosses silhouettes.
+    // 2. Near-field CoC dilation, so foreground blur crosses silhouettes: the
+    // largest near CoC within the foreground radius, horizontally then
+    // vertically.
+    final nearRow = acquire('dof_near_coc_row');
     final nearCoc = acquire('dof_near_coc');
-    final dilateInfo = Float32List(4)
-      ..[0] = _settings.maxForegroundBlur * 0.5
-      ..[1] = 1.0 / halfWidth
-      ..[2] = 1.0 / halfHeight;
+    final radius = _settings.maxForegroundBlur;
+    _draw(
+      context,
+      _dilateShader,
+      target: nearRow,
+      uniforms: {
+        'DilateInfo': Float32List(4)
+          ..[0] = radius
+          ..[1] = 1.0 / halfWidth,
+      },
+      textures: {'coc_color': cocColor},
+    );
     _draw(
       context,
       _dilateShader,
       target: nearCoc,
-      uniforms: {'DilateInfo': dilateInfo},
-      textures: {'coc_color': cocColor},
+      uniforms: {
+        'DilateInfo': Float32List(4)
+          ..[0] = radius
+          ..[2] = 1.0 / halfHeight
+          ..[3] = 1,
+      },
+      textures: {'coc_color': nearRow},
     );
 
     // 3. The bokeh gather. The kernel block is memoized on the settings

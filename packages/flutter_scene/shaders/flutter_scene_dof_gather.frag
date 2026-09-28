@@ -10,7 +10,7 @@
 precision highp float;
 
 uniform sampler2D coc_color; // half res, signed CoC in alpha
-uniform sampler2D near_coc;  // dilated near-field CoC (r)
+uniform sampler2D near_coc;  // dilated near-field CoC (r) and its reach (g)
 
 uniform GatherInfo {
   // x: tap vec4 count in use   yz: half-res texel size   w: unused
@@ -26,9 +26,14 @@ out vec4 frag_color;
 
 void main() {
   vec4 center = texture(coc_color, v_uv);
-  float nearC = texture(near_coc, v_uv).r;
+  vec2 near = texture(near_coc, v_uv).rg;
+  float nearC = near.r;
   float farC = max(center.a, 0.0);
-  float radius = max(nearC, farC);
+  // Inside an out-of-focus foreground object its own CoC is the search
+  // radius; only pixels beside one look as far as the dilated CoC, since a
+  // wider disc spreads the fixed taps thin and patterns the blur.
+  float ownNear = max(-center.a, 0.0);
+  float radius = ownNear >= 0.5 ? ownNear : max(nearC, farC);
   // Keep one exit from main. Some GLES translators fail this shader when main
   // returns before the dynamic gather loop.
   if (radius < 0.5) {
@@ -48,8 +53,10 @@ void main() {
         float dist = length(k) * radius;
         vec2 uv = v_uv + k * radius * texel;
         vec4 s = texture(coc_color, uv);
-        float sNear = texture(near_coc, uv).r;
-        float sCoc = max(abs(s.a), sNear);
+        // A sample spreads by its own CoC; the dilated near CoC only sets how
+        // far this pixel looks, so an in-focus background beside a blurred
+        // foreground object stays sharp under the object's spill.
+        float sCoc = abs(s.a);
         // CoC is monotonic in depth around the focus plane, so a larger signed
         // CoC means farther away; clamp how far behind-samples can spread.
         if (s.a > center.a) {
@@ -60,7 +67,9 @@ void main() {
         weightSum += w;
       }
     }
-    float coverage = clamp(radius - 0.5, 0.0, 1.0);
+    // How much of this pixel the blur covers: its own far-field CoC, or how
+    // far a nearby foreground object's spill reaches it.
+    float coverage = clamp(max(near.g, farC) - 0.5, 0.0, 1.0);
     // Premultiplied by coverage: the postfilter and the composite's bilinear
     // upsample average this output against the transparent-black pixels at the
     // focus boundary, and only premultiplied color survives that filtering
