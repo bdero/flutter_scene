@@ -145,7 +145,7 @@ void main() {
         focusDistance: 2,
         fStop: 1.4,
       ),
-    ]);
+    ], smoothing: 0);
 
     test('hits every key at its time', () {
       for (final k in track.keys) {
@@ -184,11 +184,99 @@ void main() {
           target: vm.Vector3(0, 0, -1),
           roll: math.pi / 2,
         ),
-      ]).sampleAt(0);
+      ], smoothing: 0).sampleAt(0);
       // Looking down -z with +x to the right, a clockwise camera roll
       // brings its up vector to +x.
       expect(rolled.up.x, closeTo(1, 1e-9));
       expect(rolled.up.y, closeTo(0, 1e-9));
+    });
+  });
+
+  group('CameraTrack smoothing', () {
+    // A fast leg into a stop, then a sharp turn at closely spaced keys.
+    List<CameraKey> keys() => [
+      CameraKey(
+        time: 0,
+        eye: vm.Vector3(0, 0, 0),
+        target: vm.Vector3(0, 0, -1),
+      ),
+      CameraKey(
+        time: 2,
+        eye: vm.Vector3(2, 0.5, 0),
+        target: vm.Vector3(2, 0.5, -1),
+      ),
+      CameraKey(
+        time: 3,
+        eye: vm.Vector3(2.2, 0.6, 0),
+        target: vm.Vector3(2.2, 0.6, -1),
+        ease: KeyframeEase.stop,
+      ),
+      CameraKey(
+        time: 3.4,
+        eye: vm.Vector3(2.2, 0.7, 0.4),
+        target: vm.Vector3(3, 0.7, 0.4),
+      ),
+      CameraKey(time: 6, eye: vm.Vector3(0, 1, 2), target: vm.Vector3(0, 1, 0)),
+    ];
+
+    // The largest change in acceleration between 240 Hz samples.
+    double worstJerk(CameraTrack track) {
+      const h = 1 / 240;
+      vm.Vector3 acc(double t) =>
+          (track.sampleAt(t + h).eye -
+              track.sampleAt(t).eye * 2 +
+              track.sampleAt(t - h).eye) /
+          (h * h);
+      var worst = 0.0;
+      var last = acc(h);
+      for (var t = 2 * h; t < 6 - h; t += h) {
+        final a = acc(t);
+        worst = math.max(worst, (a - last).length);
+        last = a;
+      }
+      return worst;
+    }
+
+    test('keeps acceleration continuous through stops and bends', () {
+      final rough = worstJerk(CameraTrack(keys(), smoothing: 0));
+      final smooth = worstJerk(CameraTrack(keys(), smoothing: 0.3));
+      expect(smooth, lessThan(rough / 20));
+      expect(smooth, lessThan(0.2));
+    });
+
+    test('never overshoots a channel that only rises', () {
+      final track = CameraTrack(keys(), smoothing: 0.5);
+      var last = -1.0;
+      for (var t = 0.0; t <= 6; t += 1 / 240) {
+        final y = track.sampleAt(t).eye.y;
+        expect(y, greaterThanOrEqualTo(last - 1e-9));
+        expect(y, inInclusiveRange(-1e-9, 1 + 1e-9));
+        last = y;
+      }
+    });
+
+    test('stays close to the keys of a gentle move', () {
+      final gentle = [
+        CameraKey(
+          time: 0,
+          eye: vm.Vector3(0, 0, 0),
+          target: vm.Vector3(0, 0, -1),
+        ),
+        CameraKey(
+          time: 5,
+          eye: vm.Vector3(1, 0, 0),
+          target: vm.Vector3(1, 0, -1),
+        ),
+        CameraKey(
+          time: 10,
+          eye: vm.Vector3(2, 0.5, 0),
+          target: vm.Vector3(2, 0, -1),
+        ),
+      ];
+      final track = CameraTrack(gentle, smoothing: 0.3);
+      for (final k in gentle) {
+        expect(track.sampleAt(k.time).eye.distanceTo(k.eye), lessThan(0.01));
+      }
     });
   });
 
