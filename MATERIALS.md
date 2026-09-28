@@ -118,6 +118,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `blending` | `opaque`, `alpha`, `additive` | `opaque` | `alpha` and `additive` both route the material through the depth-sorted translucent pass. `additive` forces the output alpha to zero, so the destination is never darkened, only brightened; allowed on `lit` and `unlit` alike. |
 | `culling` | `back`, `front`, `none` | `back` | Which faces are culled; `none` is double-sided. |
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
+| `effects_depth` | boolean | `false` | For `blending: alpha` surfaces, join the post-effect depth (depth of field, custom passes that read depth) where `Surface()` alpha is at least one half, without writing depth in the color pass. For soft cutouts such as fins that must blur with what they are attached to. |
 | `depth_test` | `less_equal`, `always` | `less_equal` | The depth test used in the translucent pass, so it needs `blending: alpha` or `additive`. `always` draws regardless of the opaque depth, for a projection volume whose own faces are not the surface being shaded (see Decals). |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
 | `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Surface materials, `lit` or `unlit` (`planar_reflection` is lit only). |
