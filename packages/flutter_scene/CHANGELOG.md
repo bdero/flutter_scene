@@ -1,5 +1,6 @@
 ## 0.24.4
 
+* A component that sets its node's `visible` in `update` shows or hides the node and its descendants that frame, not the next.
 * The sky in a planar reflection (`PlanarReflectionCamera`, or any camera with an oblique near plane) is no longer stretched.
 * `RenderStage.beforeScene` runs a `CustomRenderPass` before the view draws anything, so the same frame's materials can sample what it produces.
 * `Texture2DArray` uploads layered data textures, sampled in `.fmat` materials through `sampler2DArray` parameters. Arrays work on the web backends, and on Metal and Vulkan with Flutter 3.50 or newer (`Texture2DArray.isSupported`).
