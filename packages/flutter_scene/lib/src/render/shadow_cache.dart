@@ -12,12 +12,6 @@ class ShadowCascadeCacheEntry {
   /// planning logic stays GPU-free).
   gpu.Texture? tile;
 
-  /// Depth attachment paired with [tile] for the tile's entire lifetime.
-  /// Impeller's Vulkan backend caches a framebuffer on its color texture, so
-  /// rotating or releasing this attachment while keeping [tile] would leave
-  /// that framebuffer referring to the previous depth image view.
-  gpu.Texture? depth;
-
   /// World -> light-clip matrix the tile's content was rendered with. Every
   /// consumer (dynamic casters, the lit shader, custom passes) samples through
   /// this matrix, not the frame's ideal one, so the cached content stays
@@ -51,7 +45,7 @@ class ShadowTileRefresh {
 /// with (cached matrices, this frame's split distances) and the tiles to
 /// re-render.
 class ShadowCachePlan {
-  ShadowCachePlan(this.cascades, this.refreshes, this.entries);
+  ShadowCachePlan(this.cascades, this.refreshes, this.entries, this.cache);
 
   /// Effective cascades. Matrices and box sizes describe the cached tiles;
   /// split distances are the frame's ideal ones (they only select which
@@ -63,6 +57,9 @@ class ShadowCachePlan {
 
   /// All cache entries, indexed by cascade.
   final List<ShadowCascadeCacheEntry> entries;
+
+  /// The cache that made this plan (owns the shared tile depth).
+  final DirectionalShadowCache cache;
 }
 
 /// Cross-frame cache for the directional light's cascaded shadow tiles.
@@ -90,6 +87,15 @@ class DirectionalShadowCache {
   ShadowCasterFaces _casterFaces = ShadowCasterFaces.front;
   int _casterChannelMask = 0xFF;
 
+  /// The depth attachment every tile refresh renders with, allocated lazily by
+  /// the shadow pass and dropped with the tiles.
+  ///
+  /// Backends cache a framebuffer per color texture (flutter/flutter#192538),
+  /// so a tile must keep the depth it was first rendered with for as long as
+  /// it lives. A pooled depth rotates and is freed on resize or memory
+  /// pressure, leaving the cached framebuffer attached to a released texture.
+  gpu.Texture? tileDepth;
+
   /// Decides which tiles to re-render for this frame's [idealCascades] and
   /// returns the effective cascades to sample with.
   ///
@@ -112,6 +118,7 @@ class DirectionalShadowCache {
         (dir - _lightDir).length2 > 1e-10;
     if (paramsChanged) {
       _entries.clear();
+      tileDepth = null;
       for (var i = 0; i < idealCascades.length; i++) {
         _entries.add(ShadowCascadeCacheEntry());
       }
@@ -171,6 +178,6 @@ class DirectionalShadowCache {
         ),
       );
     }
-    return ShadowCachePlan(effective, refreshes, _entries);
+    return ShadowCachePlan(effective, refreshes, _entries, this);
   }
 }
