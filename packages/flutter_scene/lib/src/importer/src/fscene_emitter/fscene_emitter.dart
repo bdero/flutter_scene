@@ -87,6 +87,10 @@ SceneDocument buildSceneDocument(
 
   // Textures, then materials (which reference textures), then mesh geometry
   // (which references materials).
+  // TODO(gltf-sampler): glTF samplers are dropped here, so offline-imported
+  // textures always repeat. Carry wrap and filter modes on the texture
+  // resource and apply them at realize, as the runtime importer's
+  // gltfSamplerOptions does.
   final textureContents = gltfTextureContents(doc);
   final textureIds = [
     for (var i = 0; i < doc.textures.length; i++)
