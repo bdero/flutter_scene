@@ -3,8 +3,8 @@
 // import with several KTX2 textures builds the transcoder's lookup tables
 // once; only the uploads run on the main thread.
 //
-// UASTC repacks to ASTC where supported. ETC1S transcodes to ETC2 (exact) or
-// else BC. Everything else decodes to rgba8.
+// UASTC repacks to ASTC where supported. ETC1S transcodes to BC or ETC2, in
+// compressionFamilyPreference order. Everything else decodes to rgba8.
 // TODO(uastc-bc7-transcode): a BC7 repack would give BC-only desktops the
 // same compressed path for UASTC; they fall back to rgba8 today.
 
@@ -45,18 +45,15 @@ enum StandardKtx2Upload {
   bc3,
 }
 
-/// The block-compression families a device samples.
-typedef CompressionSupport = ({bool astc, bool etc2, bool bc});
+/// The block-compression families a device samples, most preferred first.
+typedef CompressionSupport = List<gpu.TextureCompressionFamily>;
 
-/// The families the current GPU context samples.
-CompressionSupport currentCompressionSupport() {
-  final context = gpu.gpuContext;
-  return (
-    astc: context.supportsTextureCompression(gpu.TextureCompressionFamily.astc),
-    etc2: context.supportsTextureCompression(gpu.TextureCompressionFamily.etc2),
-    bc: context.supportsTextureCompression(gpu.TextureCompressionFamily.bc),
-  );
-}
+/// The families the current GPU context samples, in
+/// [compressionFamilyPreference] order.
+CompressionSupport currentCompressionSupport() => [
+  for (final family in compressionFamilyPreference)
+    if (gpu.gpuContext.supportsTextureCompression(family)) family,
+];
 
 /// Picks the upload format for a standard KTX2 file. A base-only file that
 /// needs a mip chain ([mips] with one [storedLevels]) decodes to rgba8 so the
@@ -73,18 +70,20 @@ StandardKtx2Upload chooseStandardKtx2Upload({
   if (mips && storedLevels < 2) return StandardKtx2Upload.rgba8;
   switch (colorModel) {
     case kDfModelUastc:
-      return support.astc
+      return support.contains(gpu.TextureCompressionFamily.astc)
           ? StandardKtx2Upload.astc4x4
           : StandardKtx2Upload.rgba8;
     case kDfModelEtc1s:
       if (width % 4 != 0 || height % 4 != 0) return StandardKtx2Upload.rgba8;
-      if (support.etc2) {
-        return hasAlpha
-            ? StandardKtx2Upload.etc2Rgba
-            : StandardKtx2Upload.etc2Rgb;
-      }
-      if (support.bc) {
-        return hasAlpha ? StandardKtx2Upload.bc3 : StandardKtx2Upload.bc1;
+      for (final family in support) {
+        if (family == gpu.TextureCompressionFamily.bc) {
+          return hasAlpha ? StandardKtx2Upload.bc3 : StandardKtx2Upload.bc1;
+        }
+        if (family == gpu.TextureCompressionFamily.etc2) {
+          return hasAlpha
+              ? StandardKtx2Upload.etc2Rgba
+              : StandardKtx2Upload.etc2Rgb;
+        }
       }
       return StandardKtx2Upload.rgba8;
     default:

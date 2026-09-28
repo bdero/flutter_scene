@@ -28,8 +28,9 @@ import 'package:flutter_scene/src/texture/ktx2_image.dart';
 
 /// The order in which compressed families are preferred when the device
 /// supports more than one: ASTC (highest quality) > BC (desktop) > ETC2
-/// (mobile/GLES3/web). Reorder for testing a specific family on a device that
-/// supports several.
+/// (mobile/GLES3/web). ETC2 goes last because every GLES 3 context reports
+/// it, including desktop drivers that decompress it to rgba8 on upload.
+/// Reorder for testing a specific family on a device that supports several.
 List<gpu.TextureCompressionFamily> compressionFamilyPreference = [
   gpu.TextureCompressionFamily.astc,
   gpu.TextureCompressionFamily.bc,
