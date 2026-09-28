@@ -383,11 +383,18 @@ class SceneDebugSettings {
   /// set.
   final Set<DebugOverlay> overlays = {};
 
+  /// Overlays drawn left of [split], over [splitView] or the lit result, so
+  /// an overlay can wipe out as well as in. Only read while [split] is set.
+  final Set<DebugOverlay> splitOverlays = {};
+
   /// The wireframe overlay color, straight (non-premultiplied) alpha.
   Vector4 wireframeColor = Vector4(0.1, 0.9, 1.0, 0.85);
 
   /// Whether anything here changes the frame.
-  bool get isActive => view.isActive || overlays.isNotEmpty;
+  bool get isActive =>
+      view.isActive ||
+      overlays.isNotEmpty ||
+      (split != null && splitOverlays.isNotEmpty);
 
   /// The registry id of [view], or `none`.
   String get viewId => view.channel.id;
@@ -465,6 +472,7 @@ class DebugViewFrame {
     this.splitView,
     required this.hasNodeOverrides,
     required this.overlays,
+    this.splitOverlays = const {},
     required this.wireframeColor,
   });
 
@@ -483,6 +491,9 @@ class DebugViewFrame {
   final bool hasNodeOverrides;
 
   final Set<DebugOverlay> overlays;
+
+  /// The overlays left of the split.
+  final Set<DebugOverlay> splitOverlays;
   final Vector4 wireframeColor;
 
   /// Whether any draw this frame may show a view.
