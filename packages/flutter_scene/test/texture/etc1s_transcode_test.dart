@@ -30,6 +30,10 @@ const _fixtures = [
   'etc1s_linear_20x14',
   'alpha_simple_basis',
   'etc1s_features_rgba_64',
+  // Written by flutter_scene's own encoder (see etc1s_encoder_test.dart).
+  'etc1s_encoded_features_q128',
+  'etc1s_encoded_odd_q64',
+  'etc1s_encoded_shapes_q255',
 ];
 
 const _goldenExtension = {

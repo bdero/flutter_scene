@@ -20,6 +20,11 @@ const defaultFixtures = [
   'etc1s_linear_20x14',
   'alpha_simple_basis',
   'etc1s_features_rgba_64',
+  // Files written by this package's own encoder
+  // (tool/encode_etc1s_fixtures.dart).
+  'etc1s_encoded_features_q128',
+  'etc1s_encoded_odd_q64',
+  'etc1s_encoded_shapes_q255',
 ];
 
 const args = process.argv.slice(2);

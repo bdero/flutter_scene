@@ -256,6 +256,21 @@ Prefer it for anything that ships with your app. It is also how `.fmat` custom
 materials and block-compressed textures with full mip chains reach you, and
 editing any source reconverts just that source and hot reloads it.
 
+Loose images cook to the engine's own `.fstex` by default. For a smaller
+download, cook color textures to standard ETC1S KTX2 instead, typically a
+fifth of the size at some cost in quality:
+
+```dart
+buildTextures(
+  buildInput: input,
+  buildOutput: output,
+  textures: ['assets/ground.png', 'assets/ground_normal.png'],
+  encoding: const TextureEncoding.etc1s(quality: 128),
+  // Normal maps keep more detail in the default encoding.
+  encodings: {'assets/ground_normal.png': TextureEncoding.universal},
+);
+```
+
 Keep your sources in version control. The generated directory holds compiled
 output tied to the Flutter engine that built it, which is why the hook manages
 its `.gitignore` for you.
@@ -308,7 +323,7 @@ Flutter Scene is pre-1.0 and evolving quickly. Minor releases can carry breaking
 
 * glTF (`.glb` and multi-buffer `.gltf`) import at runtime, or pre-converted at build time into the engine's `.fsceneb` format through build hooks, loaded by source path. Sparse accessors, `KHR_materials_variants` with instant switching, and `KHR_texture_basisu`.
 * The `.fscene`/`.fsceneb` scene description format, human-readable as text and fast to load as binary, with prefabs and declarative components.
-* KTX2 compressed textures with full mip chains, `.fstex` texture builds, and HDR/EXR environment decoding.
+* KTX2 compressed textures with full mip chains, `.fstex` texture builds, standard ETC1S (Basis Universal) texture builds and transcoding, and HDR/EXR environment decoding.
 * Skinned meshes, morph targets, and a blended animation system with declarative per-clip playback control.
 * Hot reload for models, shaders, textures, environments, and scene documents.
 

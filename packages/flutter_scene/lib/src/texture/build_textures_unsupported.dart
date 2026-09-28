@@ -7,6 +7,9 @@
 library;
 
 import 'mipmap.dart';
+import 'texture_encoding.dart';
+
+export 'texture_encoding.dart';
 
 /// Web/wasm placeholder for the native build-hook enum.
 enum TextureAssetMode {
@@ -31,6 +34,8 @@ Never buildTextures({
   required Object buildOutput,
   required List<String> textures,
   Map<String, TextureContent> contents = const {},
+  TextureEncoding encoding = TextureEncoding.universal,
+  Map<String, TextureEncoding> encodings = const {},
   TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
 }) => throw UnsupportedError(

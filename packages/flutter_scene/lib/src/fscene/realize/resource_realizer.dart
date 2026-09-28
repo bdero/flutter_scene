@@ -28,7 +28,7 @@ import 'package:flutter_scene/src/material/physical_material.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
-import 'package:flutter_scene/src/texture/compressed_texture.dart';
+import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart';
 import 'package:flutter_scene/src/texture/encoded_image.dart';
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 import 'package:flutter_scene/src/texture/mipmap.dart';
@@ -376,7 +376,7 @@ class ResourceRealizer {
     // KTX2 block payloads carry their own mip chain and transcode off the main
     // isolate; the rest build one here, also off the main isolate.
     if (payload?.format == 'ktx2') {
-      return gpuTextureFromKtx2Async(bytes);
+      return gpuTextureFromAnyKtx2Async(bytes, content: content);
     }
     if (payload?.format == 'rgba8') {
       final width = payload!.width;

@@ -9,9 +9,13 @@ import 'package:scene/scene.dart' show sceneLog;
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
 import '../importer/build_cache.dart';
+import 'basisu/encode/etc1s_encoder.dart';
 import 'block_alignment.dart';
 import 'ktx2_image.dart';
 import 'mipmap.dart';
+import 'texture_encoding.dart';
+
+export 'texture_encoding.dart';
 
 /// Controls where [buildTextures] puts generated `.fstex` assets.
 enum TextureAssetMode {
@@ -51,11 +55,13 @@ const String _dataAssetsUnavailableMessage =
 /// The extension of a cooked loose texture. The container is the engine's own
 /// compressed block payload (a KTX2 wrapper around a format standard KTX2
 /// tooling cannot read), so it gets an engine extension rather than `.ktx2`.
+/// [TextureEncoding.etc1s] output is standard and keeps `.ktx2`.
 const String textureOutputExtension = '.fstex';
 
-/// Returns the DataAsset name for a generated `.fstex` output, where
+/// Returns the DataAsset name for a generated texture output, where
 /// [relativeTexturePath] is the source path relative to the package root with
-/// its extension swapped to `.fstex` (for example `assets/shadow_plane.fstex`).
+/// its extension swapped to the cooked one (for example
+/// `assets/shadow_plane.fstex`).
 String textureDataAssetName(String relativeTexturePath) =>
     'flutter_scene/texture/$relativeTexturePath';
 
@@ -74,6 +80,9 @@ String textureDataAssetName(String relativeTexturePath) =>
 /// not listed cook as [TextureContent.color] (sRGB, averaged in linear
 /// light). Use [TextureContent.normal] for tangent-space normal maps and
 /// [TextureContent.data] for non-color data.
+///
+/// [encoding] picks the stored format and [encodings] overrides it per
+/// source path; see [TextureEncoding].
 ///
 /// Source images must be block-aligned (width and height multiples of 4);
 /// misaligned images fail the build, or are resampled up to the next multiple
@@ -101,19 +110,24 @@ void buildTextures({
   required BuildOutputBuilder buildOutput,
   required List<String> textures,
   Map<String, TextureContent> contents = const {},
+  TextureEncoding encoding = TextureEncoding.universal,
+  Map<String, TextureEncoding> encodings = const {},
   TextureAssetMode assetMode = TextureAssetMode.generatedTree,
   bool alignForCompression = false,
 }) {
   // A typo here would silently cook a normal map with the sRGB color
-  // downsample, so unknown keys fail the build instead.
-  final unknownContentKeys = contents.keys
-      .where((key) => !textures.contains(key))
-      .toList();
-  if (unknownContentKeys.isNotEmpty) {
-    throw Exception(
-      'contents names sources that are not listed in textures: '
-      '${unknownContentKeys.join(', ')}. Fix the path or add it to textures.',
-    );
+  // downsample (or in the wrong format), so unknown keys fail the build.
+  for (final (name, keys) in [
+    ('contents', contents.keys),
+    ('encodings', encodings.keys),
+  ]) {
+    final unknown = keys.where((key) => !textures.contains(key)).toList();
+    if (unknown.isNotEmpty) {
+      throw Exception(
+        '$name names sources that are not listed in textures: '
+        '${unknown.join(', ')}. Fix the path or add it to textures.',
+      );
+    }
   }
 
   // ignore: deprecated_member_use_from_same_package
@@ -181,12 +195,14 @@ void buildTextures({
     final dot = inputFilePath.lastIndexOf('.');
     final slash = inputFilePath.lastIndexOf('/');
     final stem = dot > slash ? inputFilePath.substring(0, dot) : inputFilePath;
-    final relativeTexturePath = '$stem$textureOutputExtension';
+    final textureEncoding = encodings[inputFilePath] ?? encoding;
+    final extension = textureEncoding.extension;
+    final relativeTexturePath = '$stem$extension';
     final outputTextureUri =
         tree?.fileUri(
           GeneratedAssetFamily.texture,
           nameId: stem,
-          extension: textureOutputExtension,
+          extension: extension,
         ) ??
         texturesRoot.resolve(relativeTexturePath);
     Directory.fromUri(
@@ -194,8 +210,12 @@ void buildTextures({
     ).createSync(recursive: true);
 
     final content = contents[inputFilePath] ?? TextureContent.color;
+    final encodingStamp = textureEncoding.isEtc1s
+        ? ' encoding=etc1s/${textureEncoding.quality}'
+        : '';
     final stamp =
-        'rev=$buildCacheRevision texture content=${content.name} '
+        'rev=$buildCacheRevision texture content=${content.name}'
+        '$encodingStamp '
         'src=${sourceFingerprint(sourceFile, strict: options.strictHashing)}';
     final stampFile = File('${outputTextureUri.toFilePath()}.inputs');
     // The generated tree ships every file in it, so the stamp lives in the
@@ -232,16 +252,27 @@ void buildTextures({
         );
       }
       final rgba = source.convert(numChannels: 4, format: img.Format.uint8);
+      final pixels = rgba.getBytes(order: img.ChannelOrder.rgba);
       writeGeneratedBytes(
         outputTextureUri,
-        encodeImageToKtx2Bytes(
-          rgba.getBytes(order: img.ChannelOrder.rgba),
-          rgba.width,
-          rgba.height,
-          generateMips: true,
-          content: content,
-          supercompress: true,
-        ),
+        textureEncoding.isEtc1s
+            ? encodeEtc1sKtx2(
+                pixels,
+                rgba.width,
+                rgba.height,
+                options: Etc1sEncodeOptions(
+                  quality: textureEncoding.quality,
+                  content: content,
+                ),
+              )
+            : encodeImageToKtx2Bytes(
+                pixels,
+                rgba.width,
+                rgba.height,
+                generateMips: true,
+                content: content,
+                supercompress: true,
+              ),
       );
       if (tree == null) stampFile.writeAsStringSync(stamp);
     }

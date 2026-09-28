@@ -1,6 +1,6 @@
-/// Resolves and loads the `.fstex` compressed textures the `buildTextures` build
-/// hook cooked, keyed by source path (the texture counterpart of `loadScene` /
-/// `loadFmatMaterial`).
+/// Resolves and loads the textures the `buildTextures` build hook cooked
+/// (`.fstex`, or standard ETC1S `.ktx2`), keyed by source path (the texture
+/// counterpart of `loadScene` / `loadFmatMaterial`).
 library;
 
 import 'package:flutter/foundation.dart' show internal;
@@ -10,13 +10,23 @@ import '../generated_assets/generated_asset_lookup.dart';
 import '../generated_assets/generated_assets.dart';
 import '../gpu/gpu.dart' as gpu;
 import '../hot_reload/hot_reload_coordinator.dart';
-import 'compressed_texture.dart';
+import 'basisu/basis_ktx2_loader.dart';
 import 'texture2d.dart';
 
 const String _textureAssetMarker = 'flutter_scene/texture/';
-const String _textureAssetSuffix = '.fstex';
 
-/// One resolved cooked `.fstex`.
+/// The extensions `buildTextures` writes: the engine's `.fstex` and standard
+/// `.ktx2`.
+const List<String> _textureAssetSuffixes = ['.fstex', '.ktx2'];
+
+String? _textureSuffixOf(String assetKey) {
+  for (final suffix in _textureAssetSuffixes) {
+    if (assetKey.endsWith(suffix)) return suffix;
+  }
+  return null;
+}
+
+/// One resolved cooked texture.
 final class TextureEntry {
   TextureEntry({
     required this.assetKey,
@@ -47,7 +57,7 @@ final class TextureEntry {
     );
     final textureId = relativeTexturePath.substring(
       0,
-      relativeTexturePath.length - _textureAssetSuffix.length,
+      relativeTexturePath.length - _textureSuffixOf(assetKey)!.length,
     );
     return TextureEntry(
       assetKey: assetKey,
@@ -122,13 +132,13 @@ final class _SampledTextureView implements TextureSource {
   gpu.SamplerOptions get sampledSampler => _sampler;
 }
 
-/// Resolves generated `.fstex` textures by source path.
+/// Resolves generated textures by source path.
 final class TextureRegistry {
   TextureRegistry._(this._entries);
 
   final List<TextureEntry> _entries;
 
-  /// Loads the registry by scanning the asset manifest for `.fstex` data
+  /// Loads the registry by scanning the asset manifest for texture data
   /// assets, then the generated tree's manifest for everything else.
   static Future<TextureRegistry> load({
     AssetBundle? bundle,
@@ -164,11 +174,11 @@ final class TextureRegistry {
     return TextureRegistry._(entries);
   }
 
-  /// Returns true when [assetKey] is a generated `.fstex` data asset.
+  /// Returns true when [assetKey] is a generated texture data asset.
   static bool isTextureAssetKey(String assetKey) =>
       assetKey.startsWith('packages/') &&
       assetKey.contains('/$_textureAssetMarker') &&
-      assetKey.endsWith(_textureAssetSuffix);
+      _textureSuffixOf(assetKey) != null;
 
   /// Resolves [sourcePath] (relative to the owning package's root, with or
   /// without its image extension) to exactly one texture asset key.
@@ -183,7 +193,7 @@ final class TextureRegistry {
         .toList();
     if (matches.isEmpty) {
       throw StateError(
-        'No cooked .fstex for source "$sourcePath" was found. Make sure '
+        'No cooked texture for source "$sourcePath" was found. Make sure '
         'buildTextures lists this source. '
         '${generatedAssetFixHint('textures')}',
       );
@@ -191,7 +201,7 @@ final class TextureRegistry {
     if (matches.length > 1) {
       final choices = matches.map((match) => match.package).join(', ');
       throw StateError(
-        'Multiple cooked .fstex files for source "$sourcePath" were found in '
+        'Multiple cooked textures for source "$sourcePath" were found in '
         'packages: $choices. Pass package to disambiguate.',
       );
     }
@@ -205,7 +215,7 @@ final class TextureRegistry {
 }
 
 // The source path without its final extension (the cooked asset swaps it for
-// `.fstex`), so callers can pass `assets/shadow_plane.png` or
+// `.fstex` or `.ktx2`), so callers can pass `assets/shadow_plane.png` or
 // `assets/shadow_plane`.
 String _textureId(String sourcePath) {
   final dot = sourcePath.lastIndexOf('.');
@@ -250,14 +260,15 @@ Future<TextureSource> loadTexture(
     key,
     () => _TextureCacheEntry(() async {
       final source = _ReloadableTextureSource(
-        await gpuTextureFromKtx2Async(await loadBytes(key)),
+        await gpuTextureFromAnyKtx2Async(await loadBytes(key)),
       );
       HotReloadCoordinator.instance.registerTexture(
         source,
         assetKey: key,
         bundle: assetBundle,
-        onReload: () async =>
-            source._swap(await gpuTextureFromKtx2Async(await loadBytes(key))),
+        onReload: () async => source._swap(
+          await gpuTextureFromAnyKtx2Async(await loadBytes(key)),
+        ),
       );
       return source;
     }()),

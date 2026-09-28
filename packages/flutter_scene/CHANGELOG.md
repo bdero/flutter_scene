@@ -5,6 +5,7 @@
 * Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
 * Runtime-imported glTF textures honor their sampler's per-axis wrap modes (`CLAMP_TO_EDGE`, `MIRRORED_REPEAT`) and `NEAREST` filters instead of always repeating.
 * ETC1S KTX2 textures (`KHR_texture_basisu`) transcode to BC or ETC2 blocks on devices that sample them, instead of decoding to rgba8.
+* `buildTextures(encoding: TextureEncoding.etc1s(quality: ...))` cooks textures to standard ETC1S KTX2 (what `basisu -ktx2` writes) with a pure-Dart encoder, typically a fifth of the `.fstex` size at some cost in quality; `encodings` sets it per source. The files transcode to ETC2 or BC on the device and load with `loadTexture`; basisu's reference transcoder decodes them exactly as flutter_scene does.
 * Fixed morph targets on unskinned meshes not deforming on the GPU path; their weights animated but the mesh drew in its base pose (#428).
 * Morphed mesh bounds grow to cover every weight a node draws with, including weights below 0 or above 1, so animated blend shapes are no longer culled while on screen.
 * Setting `Node.highlightColor` between a tick and the next draw no longer throws inside the selection outline pass; the outline draws white for that frame and takes the color on the next.
