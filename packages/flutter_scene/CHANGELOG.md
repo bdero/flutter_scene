@@ -13,6 +13,7 @@
 * Views in one frame share spot and point shadow tiles when no directional light casts, so texture views such as mirrors no longer re-render them.
 * After-scene custom passes that read depth see translucent surfaces that write depth, so a depth-based fog or composite no longer paints over them.
 * `.fmat` `effects_depth: true` puts a translucent surface in the depth that depth of field and custom passes read, cut by its alpha, without writing depth in the color pass (fins, hair cards).
+* `Scene.debug.splitView` shows a second surface debug view left of `Scene.debug.split`, so a wipe can run between two channels instead of against the lit image.
 * `SceneView.maxFrameRate` caps rendering at an even cadence, every other refresh for 60 on a 120 Hz display.
 * Transient GPU buffers are recycled by idle age, so a loaded scene stops allocating per frame.
 * A view keeps render targets for its two most recent sizes, so a render scale toggling between two resolutions no longer reallocates.

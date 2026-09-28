@@ -124,7 +124,10 @@ void main() {
   // a second copy of the lighting pushes the shadowed variant past what
   // Apple's M3 and newer GPU compilers can build under fast math.
   float debug_mode = DebugViewMode();
-  if (debug_mode > 0.5 && debug_mode < 1.5) {
+  if (debug_mode > 2.5) {
+    frag_color = DebugViewSplit(DebugSurfaceOutput(material),
+                                DebugSurfaceOutputLeft(material));
+  } else if (debug_mode > 0.5 && debug_mode < 1.5) {
     frag_color = DebugSurfaceOutput(material);
   } else {
     vec4 lit = EvaluateLighting(material);
