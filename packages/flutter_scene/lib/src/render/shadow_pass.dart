@@ -49,6 +49,24 @@ class SpotShadowInfo {
   final int tileResolution;
 }
 
+/// Forces every view to render its own spot and point shadow tiles, so
+/// parity tests can render the same frame with and without sharing.
+bool debugDisableSharedShadowTiles = false;
+
+/// One frame's spot and point shadow tiles, shared across its views.
+///
+/// Those tiles depend only on the lights and casters, not on the camera, so
+/// the first view to render its [ShadowPass] fills this and later views in
+/// the frame publish the same atlas instead of re-rendering it. Only frames
+/// without directional cascades share, since cascades fit each view.
+class SharedShadowAtlas {
+  /// The atlas the first view rendered, or null before any view has.
+  gpu.Texture? atlas;
+
+  /// The spot layout published with [atlas].
+  SpotShadowInfo? spotInfo;
+}
+
 /// Render-graph blackboard key under which [ShadowPass] publishes the packed
 /// shadow uniform (the `PostShadowInfo` std140 block: per-cascade world->light
 /// matrices, split distances, the light direction + cascade count, and the
@@ -85,7 +103,9 @@ class ShadowPass extends RenderGraphPass {
     PointShadowFrame? pointShadows,
     ByteData? shadowUniform,
     ShadowCachePlan? cachePlan,
-  }) : _renderScene = renderScene,
+    SharedShadowAtlas? shared,
+  }) : assert(shared == null || cascades.isEmpty),
+       _renderScene = renderScene,
        _cascades = cascades,
        _cascadeReceiverPlanes = cascadeReceiverPlanes,
        _tileResolution = tileResolution,
@@ -95,7 +115,8 @@ class ShadowPass extends RenderGraphPass {
        _spotShadows = spotShadows,
        _pointShadows = pointShadows,
        _shadowUniform = shadowUniform,
-       _cachePlan = cachePlan;
+       _cachePlan = cachePlan,
+       _shared = shared;
 
   final RenderScene _renderScene;
   final List<ShadowCascade> _cascades;
@@ -118,6 +139,7 @@ class ShadowPass extends RenderGraphPass {
   final SpotShadowFrame? _spotShadows;
   final PointShadowFrame? _pointShadows;
   final ShadowCachePlan? _cachePlan;
+  final SharedShadowAtlas? _shared;
 
   // The packed PostShadowInfo block, published for depth-aware custom passes.
   final ByteData? _shadowUniform;
@@ -153,6 +175,16 @@ class ShadowPass extends RenderGraphPass {
 
   @override
   void execute(RenderGraphContext context) {
+    final shared = _shared;
+    final sharedAtlas = shared?.atlas;
+    if (sharedAtlas != null) {
+      context.blackboard.set(kShadowMapBlackboardKey, sharedAtlas);
+      final info = shared!.spotInfo;
+      if (info != null) {
+        context.blackboard.set(kSpotShadowInfoBlackboardKey, info);
+      }
+      return;
+    }
     final plan = _cachePlan;
     if (plan != null) {
       _renderStaticTiles(context, plan);
@@ -324,16 +356,23 @@ class ShadowPass extends RenderGraphPass {
     rendererSubmissions.submit(commandBuffer);
     context.blackboard.set(kShadowMapBlackboardKey, color);
     final spotFrame = _spotShadows;
+    SpotShadowInfo? spotInfo;
     if (spotFrame != null) {
-      context.blackboard.set(
-        kSpotShadowInfoBlackboardKey,
-        SpotShadowInfo(
-          matrices: spotFrame.matrices,
-          firstTile: _cascades.length,
-          totalTiles: totalTiles,
-          tileResolution: _tileResolution,
-        ),
+      spotInfo = SpotShadowInfo(
+        matrices: spotFrame.matrices,
+        firstTile: _cascades.length,
+        totalTiles: totalTiles,
+        tileResolution: _tileResolution,
       );
+      context.blackboard.set(kSpotShadowInfoBlackboardKey, spotInfo);
+    }
+    // The pooled texture stays intact for the rest of the frame: its pool is
+    // this view's, which renders nothing else until its next frame, and the
+    // GPU runs the frame's command buffers in submission order.
+    if (shared != null) {
+      shared
+        ..atlas = color
+        ..spotInfo = spotInfo;
     }
     final shadowUniform = _shadowUniform;
     if (shadowUniform != null) {

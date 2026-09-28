@@ -568,6 +568,9 @@ base class Scene implements SceneGraph {
   /// {@category Rendering}
   int maxGpuFramesInFlight = 1;
 
+  // The frame's shared spot and point shadow tiles while render() runs.
+  SharedShadowAtlas? _sharedShadowAtlas;
+
   /// Frames a screen view has presented from its previous image because the
   /// GPU was [maxGpuFramesInFlight] frames behind. A diagnostic counter.
   /// {@category Rendering}
@@ -1952,6 +1955,15 @@ base class Scene implements SceneGraph {
                   : pointShadowFrame.casters.first.light.shadowMapResolution *
                         2);
 
+    // Without directional cascades the atlas holds only view-independent
+    // spot and point tiles, so the frame's views share one render of it.
+    _sharedShadowAtlas =
+        !debugDisableSharedShadowTiles &&
+            lightComponent?.light.castsShadow != true &&
+            (spotShadowFrame != null || pointShadowFrame != null)
+        ? SharedShadowAtlas()
+        : null;
+
     _recordShadowCasterBudget(
       spots: visibleSpots,
       points: visiblePoints,
@@ -2079,6 +2091,7 @@ base class Scene implements SceneGraph {
       );
     }
 
+    _sharedShadowAtlas = null;
     renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
     rendererSubmissions.endFrame();
 
@@ -2652,6 +2665,7 @@ base class Scene implements SceneGraph {
           spotShadows: spotShadowFrame,
           pointShadows: pointShadowFrame,
           cachePlan: shadowCachePlan,
+          shared: cascades.isEmpty ? _sharedShadowAtlas : null,
           // PostShadowInfo describes the directional cascades, so publish it
           // only when they exist (a spot-only atlas has no directional light).
           shadowUniform:

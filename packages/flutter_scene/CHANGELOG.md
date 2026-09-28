@@ -11,6 +11,7 @@
 * Setting `Node.highlightColor` between a tick and the next draw no longer throws inside the selection outline pass; the outline draws white for that frame and takes the color on the next.
 * Cinematic kit. `Timeline` plays a duration with named `Cue`s, `KeyframeCurve` and `KeyframeTrack` ease values without overshoot, `CameraTrack` moves eye, target, field of view, roll, focus, and aperture along an arc-length spline, `FocusPuller` settles focus like a hand pull, and `CinematicCameraController` plays a track on a camera and depth of field.
 * Cinematic kit. `Timeline` plays a duration with named `Cue`s, `KeyframeCurve` and `KeyframeTrack` ease values without overshoot, `CameraTrack` moves eye, target, field of view, roll, focus, and aperture along an arc-length spline, `FocusPuller` settles focus like a hand pull, and `CinematicCameraController` plays a track on a camera and depth of field. `CameraTrack.smoothing` low-passes the move so acceleration stays continuous through keys and stops.
+* Views in one frame share spot and point shadow tiles when no directional light casts, so texture views such as mirrors no longer re-render them.
 * `SceneView.maxFrameRate` caps rendering at an even cadence, every other refresh for 60 on a 120 Hz display.
 * Transient GPU buffers are recycled by idle age, so a loaded scene stops allocating per frame.
 * A view keeps render targets for its two most recent sizes, so a render scale toggling between two resolutions no longer reallocates.
