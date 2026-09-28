@@ -2,7 +2,7 @@
 
 * Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
 * Runtime-imported glTF textures honor their sampler's per-axis wrap modes (`CLAMP_TO_EDGE`, `MIRRORED_REPEAT`) and `NEAREST` filters instead of always repeating.
-* ETC1S textures in glTF models loaded at runtime (`KHR_texture_basisu`) stay compressed on the GPU. They transcode straight to ETC2 where the device samples it (Android, iOS, Apple silicon Macs, and WebGL where the ETC extension is exposed) and to BC1 or BC3 on other desktops, instead of decoding to rgba8, so they take an eighth of the texture memory (a quarter with alpha) and load without a pixel decode. The ETC2 color is a lossless repack, and every target matches the reference Basis Universal transcoder byte for byte.
+* ETC1S KTX2 textures (`KHR_texture_basisu`) transcode to BC or ETC2 blocks on devices that sample them, instead of decoding to rgba8.
 * Fixed morph targets on unskinned meshes not deforming on the GPU path; their weights animated but the mesh drew in its base pose (#428).
 * Morphed mesh bounds grow to cover every weight a node draws with, including weights below 0 or above 1, so animated blend shapes are no longer culled while on screen.
 * Setting `Node.highlightColor` between a tick and the next draw no longer throws inside the selection outline pass; the outline draws white for that frame and takes the color on the next.
