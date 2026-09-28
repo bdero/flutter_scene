@@ -168,20 +168,18 @@ class Etc1sBlockConverter {
     if (inten >= 7 && _uniqueCount[s] == 2 && low == 0 && high == 3) {
       // Only the two extreme colors of the widest intensity: one per
       // endpoint.
-      final c0 = [
-        _clamp255(expand5(r5) + modifiers[0]),
-        _clamp255(expand5(g5) + modifiers[0]),
-        _clamp255(expand5(b5) + modifiers[0]),
-      ];
-      final c1 = [
-        _clamp255(expand5(r5) + modifiers[3]),
-        _clamp255(expand5(g5) + modifiers[3]),
-        _clamp255(expand5(b5) + modifiers[3]),
-      ];
       final m5 = Bc1SingleColor.match5Selector0;
       final m6 = Bc1SingleColor.match6Selector0;
-      var max16 = (m5.hi[c0[0]] << 11) | (m6.hi[c0[1]] << 5) | m5.hi[c0[2]];
-      var min16 = (m5.hi[c1[0]] << 11) | (m6.hi[c1[1]] << 5) | m5.hi[c1[2]];
+      final dark = modifiers[0];
+      final bright = modifiers[3];
+      var max16 =
+          (m5.hi[_clamp255(expand5(r5) + dark)] << 11) |
+          (m6.hi[_clamp255(expand5(g5) + dark)] << 5) |
+          m5.hi[_clamp255(expand5(b5) + dark)];
+      var min16 =
+          (m5.hi[_clamp255(expand5(r5) + bright)] << 11) |
+          (m6.hi[_clamp255(expand5(g5) + bright)] << 5) |
+          m5.hi[_clamp255(expand5(b5) + bright)];
       var l = 0;
       var h = 1;
       if (min16 == max16) {

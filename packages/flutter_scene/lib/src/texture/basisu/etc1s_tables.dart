@@ -289,12 +289,17 @@ const List<(int, int)> etc1sAlphaRanges = [(0, 3), (1, 3), (0, 2), (1, 2)];
 
 /// Index into [etc1sAlphaRanges] for a used-selector pair (0, the full
 /// range, when the pair is not listed).
-int etc1sAlphaRangeIndex(int low, int high) {
+int etc1sAlphaRangeIndex(int low, int high) =>
+    _etc1sAlphaRangeIndex[low * 4 + high];
+
+final Uint8List _etc1sAlphaRangeIndex = () {
+  final index = Uint8List(16);
   for (var i = 0; i < etc1sAlphaRanges.length; i++) {
-    if (etc1sAlphaRanges[i] == (low, high)) return i;
+    final (low, high) = etc1sAlphaRanges[i];
+    index[low * 4 + high] = i;
   }
-  return 0;
-}
+  return index;
+}();
 
 /// ETC1S alpha to EAC A8 triples: base, (table << 4) | multiplier, and the
 /// EAC selector per ETC1S selector (3 bits each). Indexed by

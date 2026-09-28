@@ -8,14 +8,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_scene/noise.dart';
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
-import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart'
-    show StandardKtx2Upload;
-// ignore: implementation_imports
 import 'package:flutter_scene/src/render/env_prefilter.dart'
     show radiancePrefilterPending;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/frame_transients.dart'
     show rendererSubmissions;
+// ignore: implementation_imports
+import 'package:flutter_scene/src/texture/basisu/basis_ktx2_loader.dart'
+    show StandardKtx2Upload;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
@@ -317,10 +317,9 @@ void main() {
     await Scene.initializeStaticResources();
     await loadEtc1sFixtures();
 
-    Future<ByteData?> render(
-      ({Scene scene, Camera camera})? setup,
-      String capture,
-    ) async {
+    // Compared in-test, not uploaded to Argos: which formats run differs by
+    // device.
+    Future<ByteData?> render(({Scene scene, Camera camera})? setup) async {
       if (setup == null) return null;
       final boundaryKey = GlobalKey();
       await tester.pumpWidget(
@@ -352,8 +351,6 @@ void main() {
           boundaryKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
       final image = await boundary.toImage(pixelRatio: 1.0);
-      final png = (await image.toByteData(format: ui.ImageByteFormat.png))!;
-      captures['$capture.png'] = base64Encode(png.buffer.asUint8List());
       return image.toByteData(format: ui.ImageByteFormat.rawRgba);
     }
 
@@ -372,7 +369,6 @@ void main() {
     for (final (name, uploads) in cases) {
       final reference = (await render(
         buildEtc1sUploadScene(name, StandardKtx2Upload.rgba8),
-        'etc1s_${name}_rgba8',
       ))!;
       // Coverage by alpha: an empty capture is transparent black.
       var covered = 0;
@@ -385,10 +381,7 @@ void main() {
         reason: '$name rgba8 upload drew nothing',
       );
       for (final upload in uploads) {
-        final frame = await render(
-          buildEtc1sUploadScene(name, upload),
-          'etc1s_${name}_${upload.name}',
-        );
+        final frame = await render(buildEtc1sUploadScene(name, upload));
         final label = '$name ${upload.name}';
         if (frame == null) {
           // ignore: avoid_print
