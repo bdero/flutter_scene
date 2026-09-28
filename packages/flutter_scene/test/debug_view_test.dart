@@ -193,6 +193,16 @@ void main() {
     });
   });
 
+  group('SceneDebugSettings', () {
+    test('split overlays count only while a split is set', () {
+      final debug = SceneDebugSettings()
+        ..splitOverlays.add(DebugOverlay.wireframe);
+      expect(debug.isActive, isFalse);
+      debug.split = 0.5;
+      expect(debug.isActive, isTrue);
+    });
+  });
+
   group('Node.debugView', () {
     test('counts overrides and resolves up the ancestry', () {
       final before = Node.debugViewOverrideCount;

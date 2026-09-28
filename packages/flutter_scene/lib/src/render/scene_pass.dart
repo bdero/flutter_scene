@@ -674,33 +674,43 @@ class ScenePass extends RenderGraphPass {
     SceneEncoder encoder,
   ) {
     final frame = _debugView;
-    if (frame == null || frame.overlays.isEmpty) return;
-    // Overlays follow a split, drawn only on the view side.
-    final width = _dimensions.width.toInt();
-    final height = _dimensions.height.toInt();
-    final clipped = frame.splitPixels >= 0;
-    if (clipped) {
-      final left = frame.splitPixels.ceil().clamp(0, width);
-      if (left >= width) return;
-      pass.setScissor(
-        gpu.Scissor(x: left, width: width - left, height: height),
+    if (frame == null) return;
+    void encode(Set<DebugOverlay> overlays) {
+      if (overlays.isEmpty) return;
+      encodeWireframeOverlay(
+        pass: pass,
+        transients: transients,
+        renderScene: _renderScene,
+        frustum: encoder.frustum,
+        cameraTransform: encoder.cameraTransform,
+        cameraPosition: _camera.position,
+        layerMask: _layerMask,
+        cullingPlanes: _cullingPlanes,
+        includeOffscreen: _includeOffscreen,
+        frame: frame,
+        overlays: overlays,
       );
     }
-    encodeWireframeOverlay(
-      pass: pass,
-      transients: transients,
-      renderScene: _renderScene,
-      frustum: encoder.frustum,
-      cameraTransform: encoder.cameraTransform,
-      cameraPosition: _camera.position,
-      layerMask: _layerMask,
-      cullingPlanes: _cullingPlanes,
-      includeOffscreen: _includeOffscreen,
-      frame: frame,
-    );
-    if (clipped) {
-      pass.setScissor(gpu.Scissor(width: width, height: height));
+
+    if (frame.splitPixels < 0) {
+      encode(frame.overlays);
+      return;
     }
+    // Split: the view's overlays right of it, the split view's left.
+    final width = _dimensions.width.toInt();
+    final height = _dimensions.height.toInt();
+    final edge = frame.splitPixels.ceil().clamp(0, width);
+    if (edge < width && frame.overlays.isNotEmpty) {
+      pass.setScissor(
+        gpu.Scissor(x: edge, width: width - edge, height: height),
+      );
+      encode(frame.overlays);
+    }
+    if (edge > 0 && frame.splitOverlays.isNotEmpty) {
+      pass.setScissor(gpu.Scissor(width: edge, height: height));
+      encode(frame.splitOverlays);
+    }
+    pass.setScissor(gpu.Scissor(width: width, height: height));
   }
 
   static void _recordProfile(int cullMicros, int flushMicros) {

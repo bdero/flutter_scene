@@ -358,9 +358,9 @@ vec4 DebugSurfaceOutputFor(MaterialInputs material) {
     out_color = DebugPhysical(material, channel);
   } else if (channel < 70.0) {
     if (channel == DEBUG_CHANNEL_OBJECT_COLOR) {
-      out_color = DebugSeedColor(debug_view_info.params.z);
+      out_color = DebugSeedColor(debug_view_info.params.z) * debug_active_view.z;
     } else if (channel == DEBUG_CHANNEL_MATERIAL_COLOR) {
-      out_color = DebugSeedColor(debug_view_info.params.w);
+      out_color = DebugSeedColor(debug_view_info.params.w) * debug_active_view.z;
     } else {
       out_color = DebugUnavailable();
     }

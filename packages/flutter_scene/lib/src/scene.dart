@@ -867,6 +867,7 @@ base class Scene implements SceneGraph {
       splitView: debug.splitView?.isActive == true ? debug.splitView : null,
       hasNodeOverrides: hasOverrides,
       overlays: Set.of(debug.overlays),
+      splitOverlays: split == null ? const {} : Set.of(debug.splitOverlays),
       wireframeColor: debug.wireframeColor,
     );
   }

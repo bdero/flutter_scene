@@ -31,8 +31,9 @@ void encodeWireframeOverlay({
   required List<Plane> cullingPlanes,
   required bool includeOffscreen,
   required DebugViewFrame frame,
+  required Set<DebugOverlay> overlays,
 }) {
-  if (!frame.overlays.contains(DebugOverlay.wireframe)) return;
+  if (!overlays.contains(DebugOverlay.wireframe)) return;
   final encoder = _WireframeEncoder(
     pass,
     transients,
