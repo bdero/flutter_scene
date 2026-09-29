@@ -224,17 +224,22 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
     required Vector3 cameraForward,
     int layerMask = kRenderLayerAll,
     List<Plane> cullingPlanes = const [],
+    bool primaryView = false,
   }) : _camera = camera,
        _renderScene = renderScene,
        _cameraForward = cameraForward,
        _layerMask = layerMask,
-       _cullingPlanes = cullingPlanes;
+       _cullingPlanes = cullingPlanes,
+       _primaryView = primaryView;
 
   final Camera _camera;
   final RenderScene _renderScene;
   final Vector3 _cameraForward;
   final int _layerMask;
   final List<Plane> _cullingPlanes;
+  // Whether this is a screen view, for mesh draw selectors, so the patch
+  // draws what the color pass drew.
+  final bool _primaryView;
 
   @override
   String get name => 'TranslucentDepthPatchPass';
@@ -294,6 +299,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
       cameraRight: Vector3.zero(),
       cameraUp: Vector3.zero(),
       translucentPatch: true,
+      primaryView: _primaryView,
     );
     for (final item in records) {
       encoder.submit(item);
