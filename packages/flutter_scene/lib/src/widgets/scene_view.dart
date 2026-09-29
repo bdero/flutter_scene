@@ -525,7 +525,11 @@ class _SceneViewState extends State<SceneView>
     // Compile the pipelines the first frame needs while the loading widget is
     // still up, so the reveal frame does not stall.
     if (widget.warmUp) {
-      await _scene.warmUp(_warmUpViews());
+      // In slices, so a slow device keeps answering input while it compiles.
+      await _scene.warmUp(
+        _warmUpViews(),
+        sliceBudget: const Duration(milliseconds: 50),
+      );
       if (!mounted || generation != _revealGeneration) return;
     }
     final remaining =

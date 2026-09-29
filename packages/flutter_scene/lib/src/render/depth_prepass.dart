@@ -17,7 +17,8 @@ import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
-import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/scene_encoder.dart'
+    show resolvePipelineOrDefer;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
@@ -530,13 +531,15 @@ class _DepthPrepassEncoder {
         ? item.material.instanceAttributes
         : null;
     final attributeFloats = instanceSchema?.floatCount ?? 0;
-    final pipeline = resolvePipeline(
+    final pipeline = resolvePipelineOrDefer(
       activeVertex,
       fragmentShader,
       vertexLayout:
           depthVertex?.layout ??
           geometry.instancedVertexLayoutFor(instanceSchema),
     );
+    // A sliced warm-up builds this pipeline in a later slice.
+    if (pipeline == null) return;
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.clearBindings();
       _renderPass.bindPipeline(pipeline);
