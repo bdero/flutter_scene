@@ -1763,15 +1763,14 @@ base class Scene implements SceneGraph {
     if (views.isEmpty) {
       return;
     }
-    // Advance a zero step so the warm-up frame does not move the scene's clock
-    // forward before the first real frame (render then skips its implicit
-    // wall-clock tick).
-    update(0.0);
     // Encode one real frame into a discarded recording. The GPU passes (and so
     // the pipeline compilations and resource uploads) are submitted during
     // rendering; only the final canvas blit is thrown away. A small area is
     // enough because pipeline identity is resolution-independent.
     void encode() {
+      // A zero step, so warm-up frames never move the scene's clock before
+      // the first real frame (render then skips its wall-clock tick).
+      update(0.0);
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
       _warmUpIncludeOffscreen = includeOffscreen;
@@ -2075,6 +2074,7 @@ base class Scene implements SceneGraph {
       if (pacingFrame || !target.shouldUpdate(now)) {
         continue;
       }
+      final deferred = deferredPipelineBuilds;
       _renderViewToTexture(
         view: view,
         outputColor: target.acquireNextTexture(),
@@ -2090,6 +2090,12 @@ base class Scene implements SceneGraph {
         capturePlanarReflections:
             !target.linearColor && identical(view, planarCaptureView),
       );
+      // A sliced warm-up skipped draws still waiting on pipelines, so keep
+      // the last image and render this target again next frame.
+      if (deferredPipelineBuilds > deferred) {
+        target.requestUpdate();
+        continue;
+      }
       target.markUpdated(now);
     }
 
