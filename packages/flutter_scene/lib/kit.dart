@@ -21,7 +21,7 @@ export 'src/kit/camera/virtual_joystick.dart'
     show JoystickCallback, VirtualJoystick;
 export 'src/kit/character/steering_behaviors.dart' show Steering;
 export 'src/kit/cinematic/camera_track.dart'
-    show CameraKey, CameraSample, CameraTrack, FocusPuller;
+    show CameraKey, CameraSample, CameraTrack, CameraWander, FocusPuller;
 export 'src/kit/cinematic/cinematic_camera_controller.dart'
     show CinematicCameraController;
 export 'src/kit/cinematic/timeline.dart'
