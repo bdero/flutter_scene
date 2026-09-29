@@ -1791,11 +1791,14 @@ base class Scene implements SceneGraph {
       encode();
       return;
     }
-    // Each slice is a whole offscreen frame; stop once one skips nothing,
-    // or after a generous cap if something never finishes building.
+    // Each slice is a whole offscreen frame; stop once one encodes every view
+    // and skips nothing, or after a generous cap if something never finishes
+    // building. A view paced by GPU backpressure re-presents its last image
+    // and resolves no pipelines, so it proves nothing.
     for (var slice = 0; slice < 1000; slice++) {
+      final paced = _pacedFrameCount;
       withPipelineBuildBudget(sliceBudget, encode);
-      if (deferredPipelineBuilds == 0) return;
+      if (_pacedFrameCount == paced && deferredPipelineBuilds == 0) return;
       await Future<void>.delayed(const Duration(milliseconds: 16));
     }
   }
@@ -2472,14 +2475,14 @@ base class Scene implements SceneGraph {
     final wantDof = depthOfField.enabled && !debugActive;
     // Translucent depth-writing surfaces (glass, fish) join the linear depth
     // after the opaque-only consumers (occlusion, reflections) and before
-    // everything that wants the visible surface: after-scene custom passes
-    // that read depth (a water composite fogs to the nearest surface, so a
-    // translucent fish must be in it) and depth of field.
+    // everything that wants the visible surface: custom passes that read
+    // depth at any stage (a water composite fogs to the nearest surface, so
+    // a translucent fish must be in it) and depth of field.
     final patchTranslucentDepth =
         wantDof ||
-        _passesAt(
-          RenderStage.afterScene,
-        ).any((pass) => pass.inputs.contains(RenderInput.depth));
+        _renderPasses.any(
+          (pass) => pass.enabled && pass.inputs.contains(RenderInput.depth),
+        );
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
     final enableFxaa = effectiveAa == AntiAliasingMode.fxaa && !debugActive;
     final enableSmaa =
@@ -3120,6 +3123,7 @@ base class Scene implements SceneGraph {
           cameraForward: camera.forward,
           layerMask: view.layerMask,
           cullingPlanes: view.cullingPlanes,
+          primaryView: viewIndex >= 0,
         ),
       );
     }
