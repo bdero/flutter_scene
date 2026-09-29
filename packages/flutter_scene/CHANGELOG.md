@@ -20,6 +20,7 @@
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
 * Fixed a crash on M3 and newer Macs and recent iPhones (macOS and iOS 26+) when drawing a lit material with directional shadows; the lit shaders no longer inline their lighting twice (#436).
+* Fixed bloom stamping a grid of square copies around bright highlights and popping as they moved. The first mip averages each texel's whole source footprint, the upsample tent no longer spreads its taps apart, `BloomSettings.scatter` weights the wider mips instead, and the resolve magnifies bloom with a B-spline.
 * Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
 * Runtime-imported glTF textures honor their sampler's per-axis wrap modes (`CLAMP_TO_EDGE`, `MIRRORED_REPEAT`) and `NEAREST` filters instead of always repeating.
 * ETC1S KTX2 textures (`KHR_texture_basisu`) transcode to BC or ETC2 blocks on devices that sample them, instead of decoding to rgba8.
