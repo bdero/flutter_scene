@@ -132,13 +132,17 @@ class PunctualLighting {
 // never overwritten. Reallocates when the requested size changes (mirrors the
 // skinning joints texture); steady light counts reuse the ring.
 class _TextureRing {
-  _TextureRing({int size = 3}) : _ring = List<gpu.Texture?>.filled(size, null);
+  _TextureRing({int size = 3})
+    : _ring = List<gpu.Texture?>.filled(size, null),
+      _contents = List<Float32List?>.filled(size, null);
 
   /// How many frames a handed-out texture must survive before its slot may be
   /// written again, matching the depth the per-frame rings already use.
   static const int _framesInFlight = 3;
 
   List<gpu.Texture?> _ring;
+  // What each slot's texture last received, so an unchanged upload is skipped.
+  List<Float32List?> _contents;
   int _cursor = 0;
   int _width = 0;
   int _height = 0;
@@ -150,6 +154,7 @@ class _TextureRing {
     final needed = _acquiredThisFrame * _framesInFlight;
     if (needed > _ring.length) {
       _ring = List<gpu.Texture?>.filled(needed, null);
+      _contents = List<Float32List?>.filled(needed, null);
       _cursor = 0;
     }
     _acquiredThisFrame = 0;
@@ -158,6 +163,7 @@ class _TextureRing {
   gpu.Texture acquire(int width, int height) {
     if (width != _width || height != _height) {
       _ring.fillRange(0, _ring.length, null);
+      _contents.fillRange(0, _contents.length, null);
       _width = width;
       _height = height;
     }
@@ -169,6 +175,23 @@ class _TextureRing {
       height,
       format: gpu.PixelFormat.r32g32b32a32Float,
     );
+  }
+
+  /// [acquire], then writes [data] unless the slot already holds exactly
+  /// that. Some drivers (Android's Vulkan) upload synchronously, and light
+  /// data rarely changes from frame to frame, so this saves a stall a frame
+  /// per texture in the common case.
+  gpu.Texture upload(int width, int height, Float32List data) {
+    final texture = acquire(width, height);
+    final held = _contents[_cursor];
+    if (held != null && PunctualLightBuffer._floatsEqual(held, data)) {
+      return texture;
+    }
+    texture.overwrite(
+      data.buffer.asByteData(data.offsetInBytes, data.lengthInBytes),
+    );
+    _contents[_cursor] = Float32List.fromList(data);
+    return texture;
   }
 }
 
@@ -375,8 +398,11 @@ class PunctualLightBuffer {
       return true;
     }());
 
-    final paramsTexture = _paramsRing.acquire(_texelsPerLight, count);
-    paramsTexture.overwrite(packed.params.buffer.asByteData());
+    final paramsTexture = _paramsRing.upload(
+      _texelsPerLight,
+      count,
+      packed.params,
+    );
 
     final indexLength = cull.indices.length;
     if (indexLength == 0) {
@@ -403,8 +429,7 @@ class PunctualLightBuffer {
     for (var i = 0; i < indexLength; i++) {
       indexData[i * 4] = cull.indices[i].toDouble();
     }
-    final indexTexture = _indexRing.acquire(indexWidth, indexHeight);
-    indexTexture.overwrite(indexData.buffer.asByteData());
+    final indexTexture = _indexRing.upload(indexWidth, indexHeight, indexData);
 
     return PunctualLighting(
       paramsTexture: paramsTexture,
@@ -499,8 +524,11 @@ class PunctualLightBuffer {
       maxPerFroxel: kMaxFroxelLights,
     );
     _overflowedItemCount += result.overflowedFroxels;
-    final texture = _froxelRing.acquire(_froxelTexWidth, result.height);
-    texture.overwrite(result.data.buffer.asByteData());
+    final texture = _froxelRing.upload(
+      _froxelTexWidth,
+      result.height,
+      result.data,
+    );
     final froxels = FroxelLighting(
       texture: texture,
       width: _froxelTexWidth,
