@@ -63,7 +63,8 @@ import 'render/irradiance_pass.dart';
 import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
 import 'render/render_stats.dart';
-import 'scene_encoder.dart' show pipelineCacheSize;
+import 'scene_encoder.dart'
+    show deferredPipelineBuilds, pipelineCacheSize, withPipelineBuildBudget;
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
@@ -1744,10 +1745,19 @@ base class Scene implements SceneGraph {
   /// Set [includeOffscreen] to encode every render item once. This costs more
   /// during loading, but avoids later pipeline stalls as a moving camera first
   /// reaches parts of a large scene.
+  ///
+  /// With [sliceBudget], the warm-up builds new pipelines for at most that
+  /// long per offscreen frame, skips the draws that still need one, and
+  /// yields to the event loop before the next, until nothing is left. A slow
+  /// device then keeps answering input and animating its loading screen
+  /// instead of blocking for the whole compile (Android declares an app
+  /// that ignores input for ten seconds not responding). A single build
+  /// longer than the budget still runs whole.
   /// {@category Assets and loading}
   Future<void> warmUp(
     List<RenderView> views, {
     bool includeOffscreen = false,
+    Duration? sliceBudget,
   }) async {
     await initializeStaticResources();
     if (views.isEmpty) {
@@ -1761,14 +1771,32 @@ base class Scene implements SceneGraph {
     // the pipeline compilations and resource uploads) are submitted during
     // rendering; only the final canvas blit is thrown away. A small area is
     // enough because pipeline identity is resolution-independent.
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
-    _warmUpIncludeOffscreen = includeOffscreen;
-    try {
-      renderViews(views, canvas, region: const ui.Rect.fromLTWH(0, 0, 64, 64));
-    } finally {
-      _warmUpIncludeOffscreen = false;
-      recorder.endRecording().dispose();
+    void encode() {
+      final recorder = ui.PictureRecorder();
+      final canvas = ui.Canvas(recorder);
+      _warmUpIncludeOffscreen = includeOffscreen;
+      try {
+        renderViews(
+          views,
+          canvas,
+          region: const ui.Rect.fromLTWH(0, 0, 64, 64),
+        );
+      } finally {
+        _warmUpIncludeOffscreen = false;
+        recorder.endRecording().dispose();
+      }
+    }
+
+    if (sliceBudget == null) {
+      encode();
+      return;
+    }
+    // Each slice is a whole offscreen frame; stop once one skips nothing,
+    // or after a generous cap if something never finishes building.
+    for (var slice = 0; slice < 1000; slice++) {
+      withPipelineBuildBudget(sliceBudget, encode);
+      if (deferredPipelineBuilds == 0) return;
+      await Future<void>.delayed(const Duration(milliseconds: 16));
     }
   }
 

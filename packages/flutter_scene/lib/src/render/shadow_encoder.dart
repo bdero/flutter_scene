@@ -11,7 +11,8 @@ import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
-import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/scene_encoder.dart'
+    show resolvePipelineOrDefer;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
@@ -279,13 +280,15 @@ class ShadowEncoder {
         ? item.material.instanceAttributes
         : null;
     final attributeFloats = instanceSchema?.floatCount ?? 0;
-    final pipeline = resolvePipeline(
+    final pipeline = resolvePipelineOrDefer(
       activeVertex,
       fragmentShader,
       vertexLayout:
           depthVertex?.layout ??
           geometry.instancedVertexLayoutFor(instanceSchema),
     );
+    // A sliced warm-up builds this pipeline in a later slice.
+    if (pipeline == null) return;
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.clearBindings();
       _renderPass.bindPipeline(pipeline);
