@@ -495,8 +495,9 @@ gpu.RenderPipeline? tryResolvePipeline(
 /// The encoder splits draws into two phases within the one render pass:
 ///
 /// 1. **Opaque**, with depth writes enabled and color blending disabled,
-///    sorted by pipeline (to reduce state changes) and then front-to-back
-///    (so the depth test can reject occluded fragments early).
+///    sorted by pipeline, material, and geometry (to reduce state changes
+///    and batch identical draws), with front-to-back depth only breaking
+///    ties among draws that share all three.
 /// 2. **Translucent**, depth-sorted back to front from the camera, drawn
 ///    with premultiplied source-over blending.
 ///
@@ -1422,12 +1423,12 @@ base class SceneEncoder {
 
   /// Sorts and emits every deferred draw, then finishes recording.
   ///
-  /// Opaque draws are sorted by pipeline (state-change grouping) and then
-  /// front-to-back (early-Z), and drawn first. Translucent draws are then
-  /// sorted back-to-front and drawn with premultiplied source-over
-  /// blending and depth writes disabled. After this returns the encoder
-  /// has finished recording into its render pass; the caller submits the
-  /// owning command buffer.
+  /// Opaque draws are sorted by pipeline, material, and geometry, with
+  /// front-to-back depth only as the last tie-breaker, and drawn first.
+  /// Translucent draws are then sorted back-to-front and drawn with
+  /// premultiplied source-over blending and depth writes disabled. After this
+  /// returns the encoder has finished recording into its render pass; the
+  /// caller submits the owning command buffer.
   void flush() {
     flushOpaque();
     flushTranslucent();
