@@ -108,6 +108,7 @@ class CameraTrack {
     double defaultFovRadiansY = 45 * math.pi / 180,
     double defaultFStop = 2.8,
     this.smoothing = 0.3,
+    this.wander,
   }) : assert(keys.isNotEmpty),
        assert(smoothing >= 0),
        keys = List.unmodifiable(keys) {
@@ -258,6 +259,9 @@ class CameraTrack {
 
   final Float64List _scratch = Float64List(_channels);
 
+  /// A slow drift layered over the smoothed path, or null for none.
+  final CameraWander? wander;
+
   /// The camera at [time] seconds; clamps outside the keys.
   CameraSample sampleAt(double time) {
     final v = _scratch;
@@ -268,6 +272,12 @@ class CameraTrack {
     }
     final eye = vm.Vector3(v[0], v[1], v[2]);
     final target = vm.Vector3(v[3], v[4], v[5]);
+    final drift = wander;
+    if (drift != null) {
+      final (e, t) = drift.offsetsAt(time, eye.distanceTo(target));
+      eye.add(e);
+      target.add(t);
+    }
     final forward = target - eye;
     final up = vm.Vector3(0, 1, 0);
     final roll = v[9];
@@ -285,6 +295,61 @@ class CameraTrack {
       focusDistance: v[7],
       fStop: v[8],
     );
+  }
+}
+
+/// A slow, deterministic drift for a [CameraTrack], like a camera held by
+/// hand or floating: three sines per axis at unrelated frequencies, so it
+/// never visibly repeats and never jerks. A pure function of time, so a
+/// track stays seekable; for gameplay impacts, see `CameraShake`.
+/// {@category Animation}
+class CameraWander {
+  /// Creates a drift of [amplitude] world units at the eye and [angle]
+  /// radians of aim, whose slowest component runs at [frequency] hertz.
+  const CameraWander({
+    this.amplitude = 0.004,
+    this.angle = 0.004,
+    this.frequency = 0.15,
+    this.seed = 0,
+  });
+
+  /// The eye's drift, in world units.
+  final double amplitude;
+
+  /// The aim's drift in radians; the target moves this fraction of its
+  /// distance from the eye.
+  final double angle;
+
+  /// The slowest component's frequency in hertz; the others run 1.73 and
+  /// 2.91 times faster.
+  final double frequency;
+
+  /// Picks the phases, so two tracks drift differently.
+  final int seed;
+
+  static const List<double> _ratios = [1, 1.73, 2.91];
+
+  // One axis of drift in [-1, 1].
+  double _axis(double t, int axis) {
+    var sum = 0.0, norm = 0.0;
+    for (var i = 0; i < _ratios.length; i++) {
+      final weight = 1 / (i + 1);
+      final phase = (seed * 31 + axis * 7 + i * 13) * 2.399963;
+      final hz = frequency * _ratios[i] * (1 + 0.071 * axis);
+      sum += weight * math.sin(2 * math.pi * hz * t + phase);
+      norm += weight;
+    }
+    return sum / norm;
+  }
+
+  /// The eye's and target's offsets at [time] seconds, for a target
+  /// [distance] from the eye.
+  (vm.Vector3, vm.Vector3) offsetsAt(double time, double distance) {
+    final eye = vm.Vector3(_axis(time, 0), _axis(time, 1), _axis(time, 2))
+      ..scale(amplitude);
+    final aim = vm.Vector3(_axis(time, 3), _axis(time, 4), _axis(time, 5))
+      ..scale(angle * distance);
+    return (eye, eye + aim);
   }
 }
 

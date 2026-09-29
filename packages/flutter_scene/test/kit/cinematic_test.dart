@@ -318,4 +318,41 @@ void main() {
       expect((out - back).abs(), lessThanOrEqualTo(1));
     });
   });
+
+  group('CameraWander', () {
+    test('drifts smoothly within its amplitude and is seekable', () {
+      const wander = CameraWander(amplitude: 0.01, angle: 0.02);
+      final track = CameraTrack(
+        [
+          CameraKey(
+            time: 0,
+            eye: vm.Vector3(0, 0, 5),
+            target: vm.Vector3.zero(),
+          ),
+          CameraKey(
+            time: 10,
+            eye: vm.Vector3(0, 0, 5),
+            target: vm.Vector3.zero(),
+          ),
+        ],
+        smoothing: 0,
+        wander: wander,
+      );
+      vm.Vector3? last;
+      var worstStep = 0.0;
+      for (var t = 0.0; t <= 10; t += 1 / 120) {
+        final eye = track.sampleAt(t).eye;
+        final off = eye - vm.Vector3(0, 0, 5);
+        expect(off.x.abs(), lessThanOrEqualTo(0.01 + 1e-9));
+        expect(off.y.abs(), lessThanOrEqualTo(0.01 + 1e-9));
+        if (last != null) {
+          worstStep = math.max(worstStep, (eye - last).length);
+        }
+        last = eye;
+      }
+      // A 0.15 Hz drift of 1 cm moves well under a millimetre a frame.
+      expect(worstStep, lessThan(0.001));
+      expect(track.sampleAt(3.7).eye, track.sampleAt(3.7).eye);
+    });
+  });
 }
