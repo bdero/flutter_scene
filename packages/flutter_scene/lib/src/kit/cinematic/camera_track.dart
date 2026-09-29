@@ -141,13 +141,10 @@ class CameraTrack {
     _fov = curve((i) => carry((k) => k.fovRadiansY, i, defaultFovRadiansY));
     _fStop = curve((i) => carry((k) => k.fStop, i, defaultFStop));
     _roll = curve((i) => keys[i].roll);
-    // Focus eases as an offset from the eye-to-target distance, zero where a
-    // key focuses on its target, so between such keys the sampled pose
-    // itself decides it and keyed distances still land on their keys.
-    _focusOffset = curve((i) {
-      final focus = keys[i].focusDistance;
-      return focus == null ? 0 : focus - (keys[i].target - keys[i].eye).length;
-    });
+    // Keyed distances interpolate as keyed. Keys without one focus on the
+    // sampled eye-to-target distance, blending in where the two kinds meet.
+    _focus = curve((i) => carry((k) => k.focusDistance, i, 0));
+    _focusAuto = curve((i) => keys[i].focusDistance == null ? 1 : 0);
     if (smoothing > 0) _smooth();
   }
 
@@ -164,8 +161,9 @@ class CameraTrack {
   /// keyed move exactly.
   final double smoothing;
 
-  // Channels per sample: eye xyz, target xyz, fov, focus offset, fStop, roll.
-  static const int _channels = 10;
+  // Channels per sample: eye xyz, target xyz, fov, keyed focus, fStop, roll,
+  // automatic focus weight.
+  static const int _channels = 11;
   static const double _rate = 120;
   late final Float64List _samples;
   late final double _sampleStart;
@@ -178,7 +176,8 @@ class CameraTrack {
   late final KeyframeCurve _fov;
   late final KeyframeCurve _fStop;
   late final KeyframeCurve _roll;
-  late final KeyframeCurve _focusOffset;
+  late final KeyframeCurve _focus;
+  late final KeyframeCurve _focusAuto;
 
   /// Time of the first key.
   double get startTime => keys.first.time;
@@ -198,9 +197,10 @@ class CameraTrack {
       ..[offset + 4] = target.y
       ..[offset + 5] = target.z
       ..[offset + 6] = _fov.valueAt(time)
-      ..[offset + 7] = _focusOffset.valueAt(time)
+      ..[offset + 7] = _focus.valueAt(time)
       ..[offset + 8] = _fStop.valueAt(time)
-      ..[offset + 9] = _roll.valueAt(time);
+      ..[offset + 9] = _roll.valueAt(time)
+      ..[offset + 10] = _focusAuto.valueAt(time);
   }
 
   // Samples the keyed move at a fixed rate, padded by the kernel's reach
@@ -296,7 +296,10 @@ class CameraTrack {
       target: target,
       up: up,
       fovRadiansY: v[6],
-      focusDistance: math.max(eye.distanceTo(target) + v[7], 1e-3),
+      focusDistance: math.max(
+        v[7] + (eye.distanceTo(target) - v[7]) * v[10],
+        1e-3,
+      ),
       fStop: v[8],
     );
   }
@@ -492,6 +495,12 @@ class FocusPuller {
     // Two stages in series settle in about twice one stage's time.
     final stage = settleSeconds / 2;
     final target = _diopters(goal);
+    // A goal at the current focus stops the pull there; retained speed
+    // would otherwise carry it away and back.
+    if ((_d2 - target).abs() <= 1e-9 * target) {
+      reset(goal);
+      return _value;
+    }
     var (d1, v1) = _step(_d1, _v1, target, stage, deltaSeconds);
     // A goal that moves mid-pull leaves speed the stages would carry past
     // it, so neither may cross the goal from the side it started on.
