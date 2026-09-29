@@ -269,12 +269,18 @@ highp vec3 EvaluateClearcoatLight(vec3 light_vector, highp vec3 radiance,
 // premultiplied by intensity and any distance/cone attenuation. Returns the
 // linear direct term; the caller multiplies in any shadow visibility. Shared by
 // the directional light and every punctual light so the BRDF lives in one place.
-highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
-                                 highp vec3 radiance, vec3 normal,
-                           vec3 camera_normal, vec3 albedo, float metallic,
-                           float roughness, vec3 reflectance, float n_dot_v,
-                           float specular_scale, vec3 anisotropic_tangent,
-                           vec3 anisotropic_bitangent) {
+// Returns the diffuse lobe (with sheen's partner, transmitted diffuse) and
+// writes the specular lobe (with sheen) to `specular_out`.
+highp vec3 EvaluateAnalyticLightTerms(MaterialInputs material, vec3 light_vector,
+                                      highp vec3 radiance, vec3 normal,
+                                      vec3 camera_normal, vec3 albedo,
+                                      float metallic, float roughness,
+                                      vec3 reflectance, float n_dot_v,
+                                      float specular_scale,
+                                      vec3 anisotropic_tangent,
+                                      vec3 anisotropic_bitangent,
+                                      out highp vec3 specular_out) {
+  specular_out = vec3(0.0);
   float signed_n_dot_l = dot(normal, light_vector);
   float n_dot_l = max(signed_n_dot_l, 0.0);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
@@ -334,7 +340,8 @@ highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
       material.diffuse_transmission + specular_transmission, 0.0, 1.0);
   diffuse *= 1.0 - total_transmission;
 #endif
-  highp vec3 result = (diffuse + specular) * radiance * n_dot_l;
+  highp vec3 result = diffuse * radiance * n_dot_l;
+  specular_out = specular * radiance * n_dot_l;
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
   if (dot(material.sheen_color, material.sheen_color) > 0.0) {
     vec3 sheen_half = normalize(light_vector + camera_normal);
@@ -344,12 +351,29 @@ highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
     float sheen_visibility = VisibilitySheen(
         n_dot_l, max(n_dot_v, 1e-4),
         max(material.sheen_roughness, kMinRoughness));
-    result += material.sheen_color * sheen_distribution * sheen_visibility *
-              radiance * n_dot_l;
+    specular_out += material.sheen_color * sheen_distribution *
+                    sheen_visibility * radiance * n_dot_l;
   }
   result += transmitted_diffuse;
 #endif
   return result;
+}
+
+// EvaluateAnalyticLightTerms with the lobes summed.
+highp vec3 EvaluateAnalyticLight(MaterialInputs material, vec3 light_vector,
+                                 highp vec3 radiance, vec3 normal,
+                                 vec3 camera_normal, vec3 albedo,
+                                 float metallic, float roughness,
+                                 vec3 reflectance, float n_dot_v,
+                                 float specular_scale,
+                                 vec3 anisotropic_tangent,
+                                 vec3 anisotropic_bitangent) {
+  highp vec3 specular;
+  highp vec3 diffuse = EvaluateAnalyticLightTerms(
+      material, light_vector, radiance, normal, camera_normal, albedo,
+      metallic, roughness, reflectance, n_dot_v, specular_scale,
+      anisotropic_tangent, anisotropic_bitangent, specular);
+  return diffuse + specular;
 }
 
 // Lights a surface described by `material` and returns the final fragment
@@ -806,10 +830,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     direct_diffuse += sun_terms.diffuse;
     direct_specular += sun_terms.specular;
 #else
-    direct_diffuse += EvaluateAnalyticLight(material, light_vector,
+    // No Light() hook: the default BRDF, still split into its lobes.
+    highp vec3 sun_specular;
+    direct_diffuse += EvaluateAnalyticLightTerms(material, light_vector,
         light_context.radiance, normal, camera_normal, albedo, metallic,
         roughness, reflectance, n_dot_v, material.specular,
-        anisotropic_tangent, anisotropic_bitangent);
+        anisotropic_tangent, anisotropic_bitangent, sun_specular);
+    direct_specular += sun_specular;
 #endif
 #else
     direct = EvaluateAnalyticLight(material, light_vector,
@@ -1002,10 +1029,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     direct_diffuse += punctual_terms.diffuse;
     direct_specular += punctual_terms.specular;
 #else
-    direct_diffuse += EvaluateAnalyticLight(
+    highp vec3 punctual_specular;
+    direct_diffuse += EvaluateAnalyticLightTerms(
         material, punctual_light_vector, radiance, normal, camera_normal,
         albedo, metallic, roughness, reflectance, n_dot_v, material.specular,
-        anisotropic_tangent, anisotropic_bitangent);
+        anisotropic_tangent, anisotropic_bitangent, punctual_specular);
+    direct_specular += punctual_specular;
 #endif
 #else
     direct += EvaluateAnalyticLight(

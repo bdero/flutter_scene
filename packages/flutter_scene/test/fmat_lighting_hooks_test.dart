@@ -298,4 +298,15 @@ void main() {
       temp.deleteSync(recursive: true);
     }
   });
+
+  test('without Light(), the default BRDF keeps its specular lobe', () {
+    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    // A Composite() that weighs the lobes separately still gets highlights.
+    expect(lighting, contains('direct_specular += sun_specular;'));
+    expect(lighting, contains('direct_specular += punctual_specular;'));
+    expect(
+      lighting,
+      isNot(contains('direct_diffuse += EvaluateAnalyticLight(')),
+    );
+  });
 }
