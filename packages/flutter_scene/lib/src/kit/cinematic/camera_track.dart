@@ -141,9 +141,13 @@ class CameraTrack {
     _fov = curve((i) => carry((k) => k.fovRadiansY, i, defaultFovRadiansY));
     _fStop = curve((i) => carry((k) => k.fStop, i, defaultFStop));
     _roll = curve((i) => keys[i].roll);
-    _focus = curve(
-      (i) => keys[i].focusDistance ?? (keys[i].target - keys[i].eye).length,
-    );
+    // Focus eases as an offset from the eye-to-target distance, zero where a
+    // key focuses on its target, so between such keys the sampled pose
+    // itself decides it and keyed distances still land on their keys.
+    _focusOffset = curve((i) {
+      final focus = keys[i].focusDistance;
+      return focus == null ? 0 : focus - (keys[i].target - keys[i].eye).length;
+    });
     if (smoothing > 0) _smooth();
   }
 
@@ -160,7 +164,7 @@ class CameraTrack {
   /// keyed move exactly.
   final double smoothing;
 
-  // Channels per sample: eye xyz, target xyz, fov, focus, fStop, roll.
+  // Channels per sample: eye xyz, target xyz, fov, focus offset, fStop, roll.
   static const int _channels = 10;
   static const double _rate = 120;
   late final Float64List _samples;
@@ -174,7 +178,7 @@ class CameraTrack {
   late final KeyframeCurve _fov;
   late final KeyframeCurve _fStop;
   late final KeyframeCurve _roll;
-  late final KeyframeCurve _focus;
+  late final KeyframeCurve _focusOffset;
 
   /// Time of the first key.
   double get startTime => keys.first.time;
@@ -194,7 +198,7 @@ class CameraTrack {
       ..[offset + 4] = target.y
       ..[offset + 5] = target.z
       ..[offset + 6] = _fov.valueAt(time)
-      ..[offset + 7] = _focus.valueAt(time)
+      ..[offset + 7] = _focusOffset.valueAt(time)
       ..[offset + 8] = _fStop.valueAt(time)
       ..[offset + 9] = _roll.valueAt(time);
   }
@@ -292,7 +296,7 @@ class CameraTrack {
       target: target,
       up: up,
       fovRadiansY: v[6],
-      focusDistance: v[7],
+      focusDistance: math.max(eye.distanceTo(target) + v[7], 1e-3),
       fStop: v[8],
     );
   }
@@ -487,14 +491,26 @@ class FocusPuller {
     }
     // Two stages in series settle in about twice one stage's time.
     final stage = settleSeconds / 2;
-    final (d1, v1) = _step(_d1, _v1, _diopters(goal), stage, deltaSeconds);
-    final (d2, v2) = _step(_d2, _v2, d1, stage, deltaSeconds);
+    final target = _diopters(goal);
+    var (d1, v1) = _step(_d1, _v1, target, stage, deltaSeconds);
+    // A goal that moves mid-pull leaves speed the stages would carry past
+    // it, so neither may cross the goal from the side it started on.
+    if (_crossed(_d1, d1, target)) (d1, v1) = (target, 0.0);
+    // The output chases stage one, but never past the goal: stage one can
+    // be beyond it, still carrying the old goal's pull.
+    final side = _d2 - target;
+    final chase = side == 0 || (d1 - target) * side < 0 ? target : d1;
+    var (d2, v2) = _step(_d2, _v2, chase, stage, deltaSeconds);
+    if (_crossed(_d2, d2, target)) (d2, v2) = (target, 0.0);
     _d1 = d1;
     _v1 = v1;
     _d2 = d2;
     _v2 = v2;
     return _value = 1 / math.max(_d2, _minDiopters);
   }
+
+  static bool _crossed(double from, double to, double goal) =>
+      (from - goal) * (to - goal) < 0;
 
   // The closed-form critically damped step (as in the common SmoothDamp),
   // stable at any frame rate.

@@ -119,7 +119,8 @@ class KeyframeCurve {
     final a = keys[hi - 1], b = keys[hi];
     final dt = b.time - a.time;
     if (dt <= 0) return b.value;
-    if (b.ease == KeyframeEase.hold) return a.value;
+    // A hold jumps on its key's own timestamp.
+    if (b.ease == KeyframeEase.hold) return time >= b.time ? b.value : a.value;
     final u = (time - a.time) / dt;
     if (b.ease == KeyframeEase.linear || a.ease == KeyframeEase.linear) {
       return a.value + (b.value - a.value) * u;
