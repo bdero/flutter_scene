@@ -120,13 +120,16 @@ void main() {
   Surface(material);
   // The surface debug view when one is active, the lit result otherwise, or
   // both selected per pixel for a split (uniform control flow throughout).
+  // EvaluateLighting has one call site on purpose. Every call is inlined, and
+  // a second copy of the lighting pushes the shadowed variant past what
+  // Apple's M3 and newer GPU compilers can build under fast math.
   float debug_mode = DebugViewMode();
-  if (debug_mode > 1.5) {
-    frag_color = DebugViewSplit(DebugSurfaceOutput(material),
-                                EvaluateLighting(material));
-  } else if (debug_mode > 0.5) {
+  if (debug_mode > 0.5 && debug_mode < 1.5) {
     frag_color = DebugSurfaceOutput(material);
   } else {
-    frag_color = EvaluateLighting(material);
+    vec4 lit = EvaluateLighting(material);
+    frag_color = debug_mode > 1.5
+        ? DebugViewSplit(DebugSurfaceOutput(material), lit)
+        : lit;
   }
 }

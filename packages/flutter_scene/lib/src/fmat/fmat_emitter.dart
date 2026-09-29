@@ -378,15 +378,20 @@ String emitFragmentGlsl(
 /// pixel for a split. Every branch is under uniform control flow; the split
 /// evaluates both sides and selects, so the lit path never runs under a
 /// per-pixel branch.
+///
+/// `MaterialOutput` has exactly one call site. Every call is inlined, so a
+/// second one duplicates the whole lighting and shadow code, which pushed
+/// the shadowed variants past what Apple's M3 and newer GPU compilers can
+/// build under fast math.
 void _writeDebugViewSelect(StringBuffer sb) {
   sb.writeln('  float debug_mode = DebugViewMode();');
-  sb.writeln('  if (debug_mode > 1.5) {');
-  sb.writeln('    frag_color = DebugViewSplit(DebugSurfaceOutput(material),');
-  sb.writeln('                                MaterialOutput(material));');
-  sb.writeln('  } else if (debug_mode > 0.5) {');
+  sb.writeln('  if (debug_mode > 0.5 && debug_mode < 1.5) {');
   sb.writeln('    frag_color = DebugSurfaceOutput(material);');
   sb.writeln('  } else {');
-  sb.writeln('    frag_color = MaterialOutput(material);');
+  sb.writeln('    vec4 shaded = MaterialOutput(material);');
+  sb.writeln('    frag_color = debug_mode > 1.5');
+  sb.writeln('        ? DebugViewSplit(DebugSurfaceOutput(material), shaded)');
+  sb.writeln('        : shaded;');
   sb.writeln('  }');
 }
 

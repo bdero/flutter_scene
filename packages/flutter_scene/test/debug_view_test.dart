@@ -259,8 +259,19 @@ void main() {
         expect(glsl, contains('vec4 MaterialOutput(MaterialInputs material)'));
         expect(glsl, contains('float debug_mode = DebugViewMode();'));
         expect(glsl, contains('DebugViewSplit(DebugSurfaceOutput(material)'));
-        expect(glsl, contains('frag_color = MaterialOutput(material);'));
+        expect('MaterialOutput(material)'.allMatches(glsl), hasLength(1));
       }
+    });
+
+    // Each call inlines the whole lighting. A second copy crashed Apple's M3
+    // and newer GPU compilers on the shadowed variants.
+    // TODO(metal-fast-math): replace with an offline Metal compile for those
+    // GPUs once CI can fetch the Metal toolchain.
+    test('the lit output is evaluated at one call site', () {
+      final glsl = compileFmat(_litFmat, fileName: 'probe.fmat').glsl;
+      expect('MaterialOutput(material)'.allMatches(glsl), hasLength(1));
+      final standard = _readShader('flutter_scene_standard.frag');
+      expect('EvaluateLighting(material)'.allMatches(standard), hasLength(1));
     });
 
     test('a material can write the custom channel', () {
