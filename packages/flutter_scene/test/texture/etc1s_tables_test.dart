@@ -11,7 +11,7 @@ int _clamp255(int v) => v < 0 ? 0 : (v > 255 ? 255 : v);
 /// basis_universal's exhaustive EAC A8 fit: the base, multiplier and table
 /// with the least squared error over [values], first found wins.
 (int base, int tableMultiplier) _fitEac(List<int> values) {
-  var bestError = 1 << 62;
+  var bestError = 0x7FFFFFFF;
   var best = (0, 0);
   for (var base = 0; base < 256; base++) {
     for (var multiplier = 1; multiplier < 16; multiplier++) {
