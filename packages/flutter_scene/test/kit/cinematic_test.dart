@@ -402,4 +402,36 @@ void main() {
     expect(furthest, lessThanOrEqualTo(goal + 1e-9));
     expect(puller.value, closeTo(goal, 1e-3));
   });
+
+  test('keyed focus distances interpolate independently of the path', () {
+    CameraTrack track(double focus) => CameraTrack([
+      CameraKey(
+        time: 0,
+        eye: vm.Vector3(-5, 0, 5),
+        target: vm.Vector3.zero(),
+        focusDistance: focus,
+      ),
+      CameraKey(
+        time: 1,
+        eye: vm.Vector3(5, 0, 5),
+        target: vm.Vector3.zero(),
+        focusDistance: focus,
+      ),
+    ], smoothing: 0);
+    expect(track(5).sampleAt(0.5).focusDistance, closeTo(5, 1e-9));
+    expect(track(1).sampleAt(0.5).focusDistance, closeTo(1, 1e-9));
+  });
+
+  test('a focus pull stops when the goal is its current distance', () {
+    final puller = FocusPuller(value: 1);
+    for (var i = 0; i < 20; i++) {
+      puller.update(10, 1 / 60);
+    }
+    final goal = puller.value;
+    var furthest = goal;
+    for (var i = 0; i < 240; i++) {
+      furthest = math.max(furthest, puller.update(puller.value, 1 / 60));
+    }
+    expect(furthest, closeTo(goal, 1e-9));
+  });
 }
