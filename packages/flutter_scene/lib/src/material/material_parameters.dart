@@ -715,8 +715,10 @@ class MaterialParameters {
 
   gpu.Texture _placeholder(FmatHintKind? kind) => switch (kind) {
     FmatHintKind.defaultNormal => Material.normalPlaceholder(null),
-    // White is the neutral fallback; dedicated black/transparent
-    // placeholders are a future addition.
+    FmatHintKind.defaultBlack => Material.getBlackPlaceholderTexture(),
+    FmatHintKind.defaultTransparent =>
+      Material.getTransparentPlaceholderTexture(),
+    // White is the neutral fallback for default_white and for no hint.
     _ => Material.whitePlaceholder(null),
   };
 }
