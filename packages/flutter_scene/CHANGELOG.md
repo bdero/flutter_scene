@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
 * Fixed a crash on M3 and newer Macs and recent iPhones (macOS and iOS 26+) when drawing a lit material with directional shadows; the lit shaders no longer inline their lighting twice (#436).
 * Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
 * Runtime-imported glTF textures honor their sampler's per-axis wrap modes (`CLAMP_TO_EDGE`, `MIRRORED_REPEAT`) and `NEAREST` filters instead of always repeating.
