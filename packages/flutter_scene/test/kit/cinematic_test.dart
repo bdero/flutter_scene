@@ -355,4 +355,51 @@ void main() {
       expect(track.sampleAt(3.7).eye, track.sampleAt(3.7).eye);
     });
   });
+
+  test('a hold key takes its value at its own timestamp', () {
+    final c = KeyframeCurve(const [
+      Keyframe(0, 0),
+      Keyframe(1, 10, ease: KeyframeEase.hold),
+      Keyframe(2, 20),
+    ]);
+    expect(c.valueAt(0.999), 0);
+    expect(c.valueAt(1), 10);
+  });
+
+  test('automatic focus follows the sampled pose between keys', () {
+    final track = CameraTrack([
+      CameraKey(time: 0, eye: vm.Vector3(-5, 0, 5), target: vm.Vector3.zero()),
+      CameraKey(time: 1, eye: vm.Vector3(5, 0, 5), target: vm.Vector3.zero()),
+    ], smoothing: 0);
+    final mid = track.sampleAt(0.5);
+    expect(mid.focusDistance, closeTo(mid.eye.distanceTo(mid.target), 1e-9));
+  });
+
+  test('keyed focus distances still land on their keys', () {
+    final track = CameraTrack([
+      CameraKey(
+        time: 0,
+        eye: vm.Vector3(0, 0, 5),
+        target: vm.Vector3.zero(),
+        focusDistance: 2,
+      ),
+      CameraKey(time: 1, eye: vm.Vector3(0, 0, 8), target: vm.Vector3.zero()),
+    ], smoothing: 0);
+    expect(track.sampleAt(0).focusDistance, closeTo(2, 1e-9));
+    expect(track.sampleAt(1).focusDistance, closeTo(8, 1e-9));
+  });
+
+  test('a focus pull never passes a goal that moves mid-pull', () {
+    final puller = FocusPuller(value: 1);
+    for (var i = 0; i < 20; i++) {
+      puller.update(10, 1 / 60);
+    }
+    final goal = puller.value + 0.1;
+    var furthest = puller.value;
+    for (var i = 0; i < 240; i++) {
+      furthest = math.max(furthest, puller.update(goal, 1 / 60));
+    }
+    expect(furthest, lessThanOrEqualTo(goal + 1e-9));
+    expect(puller.value, closeTo(goal, 1e-3));
+  });
 }
