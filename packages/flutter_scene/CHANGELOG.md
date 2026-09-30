@@ -9,7 +9,7 @@
 * Setting `Node.highlightColor` between a tick and the next draw no longer throws inside the selection outline pass; the outline draws white for that frame and takes the color on the next.
 * Punctual light data textures skip uploads that would not change them, saving a synchronous upload per texture per frame on drivers like Android Vulkan.
 * `Scene.warmUp(sliceBudget:)` compiles pipelines a slice at a time and yields between slices, so a slow device keeps answering input; `SceneView(warmUp: true)` now warms up this way.
-* Views in one frame share spot and point shadow tiles when no directional light casts, so texture views such as mirrors no longer re-render them.
+* Views in one frame share spot and point shadow tiles when no directional light casts and no caster's draw depends on the camera, so texture views such as mirrors no longer re-render them.
 * A `.fmat` vertex stage that reads custom or per-instance attributes runs in depth and shadow passes too, so geometry it moves casts the shadow it draws.
 * After-scene custom passes that read depth see translucent surfaces that write depth, so a depth-based fog or composite no longer paints over them.
 * `.fmat` `effects_depth: true` puts a translucent surface in the depth that depth of field and custom passes read, cut by its alpha, without writing depth in the color pass (fins, hair cards).

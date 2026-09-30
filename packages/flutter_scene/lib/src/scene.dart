@@ -65,6 +65,7 @@ import 'render/render_graph_capture.dart';
 import 'render/render_stats.dart';
 import 'scene_encoder.dart'
     show deferredPipelineBuilds, pipelineCacheSize, withPipelineBuildBudget;
+import 'render/mesh_draw_selection.dart' show hasMeshDrawSelector;
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
@@ -1804,6 +1805,16 @@ base class Scene implements SceneGraph {
 
   bool _warmUpIncludeOffscreen = false;
 
+  bool _hasViewDependentShadowCaster() {
+    for (final item in renderScene.items) {
+      if (!item.castsShadows) continue;
+      if (hasMeshDrawSelector(item) || item.material.shadowReadsCamera) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Renders a list of [views] of this scene onto [canvas].
   ///
   /// Each [RenderView] binds a camera to a normalized sub-rectangle of
@@ -1987,12 +1998,14 @@ base class Scene implements SceneGraph {
                   : pointShadowFrame.casters.first.light.shadowMapResolution *
                         2);
 
-    // Without directional cascades the atlas holds only view-independent
-    // spot and point tiles, so the frame's views share one render of it.
+    // Without directional cascades the atlas holds only spot and point tiles,
+    // so the frame's views share one render of it, unless a caster's draw
+    // depends on the camera (a draw selector, or a shadow shader reading it).
     _sharedShadowAtlas =
         !debugDisableSharedShadowTiles &&
             lightComponent?.light.castsShadow != true &&
-            (spotShadowFrame != null || pointShadowFrame != null)
+            (spotShadowFrame != null || pointShadowFrame != null) &&
+            !_hasViewDependentShadowCaster()
         ? SharedShadowAtlas()
         : null;
 

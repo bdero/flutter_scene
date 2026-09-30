@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, setEquals, visibleForTesting;
+    show debugPrint, internal, setEquals, visibleForTesting;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
@@ -353,6 +353,11 @@ class ShaderMaterial extends Material {
   gpu.Shader? vertexShaderFor(MeshVariant variant) => _vertexShaders[variant];
 
   final Set<MeshVariant> _warnedMissingVariants = <MeshVariant>{};
+
+  // A custom vertex shader cannot be inspected for camera reads.
+  @override
+  @internal
+  bool get shadowReadsCamera => _vertexShaders.isNotEmpty;
 
   @override
   gpu.Shader? materialVertexShader(String variant) {

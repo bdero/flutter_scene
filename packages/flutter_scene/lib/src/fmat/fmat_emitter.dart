@@ -196,6 +196,22 @@ bool materialHasDepthSurface(FmatMaterial material) =>
     (material.alphaToCoverage || material.effectsDepth) &&
     material.engineInputs.isEmpty;
 
+// Any identifier that can reach the camera or the view: the vertex input
+// `camera_position`, the view varying, and every view, screen, or camera
+// accessor. Deliberately broad; a false match only stops shadow sharing.
+final RegExp _cameraReadPattern = RegExp(
+  r'\b(?:\w*camera\w*|\w*Camera\w*|v_viewvector|\w*View\w*|\w*Screen\w*)\b',
+);
+
+/// Whether [material]'s shadow-pass shaders may read the camera: its vertex
+/// stage, and its own depth fragment when it ships one.
+bool materialShadowReadsCamera(FmatMaterial material) {
+  final vertex = material.vertexSource;
+  if (vertex != null && _cameraReadPattern.hasMatch(vertex)) return true;
+  return materialHasDepthSurface(material) &&
+      _cameraReadPattern.hasMatch(material.fragmentSource);
+}
+
 /// The bundle entry name of [material]'s depth-pass fragment for [kind].
 String depthSurfaceEntryName(FmatMaterial material, DepthSurfaceKind kind) =>
     '${material.name}${kind.suffix}';
@@ -932,6 +948,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     'culling': material.culling.name,
     if (material.depthWrite) 'depth_write': true,
     if (material.effectsDepth) 'effects_depth': true,
+    if (materialShadowReadsCamera(material)) 'shadow_reads_camera': true,
     if (material.depthTest != FmatDepthTest.lessEqual)
       'depth_test': material.depthTest.token,
     if (material.engineInputs.isNotEmpty)
