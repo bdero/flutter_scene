@@ -496,6 +496,12 @@ abstract class Material {
   @internal
   InstanceAttributeSchema? get instanceAttributes => null;
 
+  /// Whether this material's shadow-pass shaders may read the camera, so its
+  /// shadow can differ between views. Views share spot and point shadow tiles
+  /// only when no caster does.
+  @internal
+  bool get shadowReadsCamera => false;
+
   /// Whether the depth-style passes (shadow maps, the depth prepass) must run
   /// this material's full vertex variant for [geometry] rather than the
   /// position-only one. True when a `vertex { }` stage can read custom or

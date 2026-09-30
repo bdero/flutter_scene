@@ -17,14 +17,11 @@ bool _gpuAvailable() {
   }
 }
 
-Scene _scene({required bool sun}) {
+Scene _scene({required bool sun, MeshDrawSelector? selector}) {
+  final mesh = Mesh(CuboidGeometry(Vector3.all(1)), PhysicallyBasedMaterial());
+  mesh.primitives.first.drawSelector = selector;
   final scene = Scene()
-    ..add(
-      Node(
-        name: 'box',
-        mesh: Mesh(CuboidGeometry(Vector3.all(1)), PhysicallyBasedMaterial()),
-      ),
-    )
+    ..add(Node(name: 'box', mesh: mesh))
     ..add(
       Node(name: 'spot', localTransform: Matrix4.translation(Vector3(0, 4, 0)))
         ..addComponent(
@@ -84,6 +81,16 @@ void main() {
     if (!_gpuAvailable()) return;
     await Scene.initializeStaticResources();
     final draws = _shadowDraws(_scene(sun: true));
+    expect(draws, hasLength(2));
+    expect(draws.every((d) => d > 0), isTrue);
+  });
+
+  test('a caster whose draw depends on the camera renders per view', () async {
+    if (!_gpuAvailable()) return;
+    await Scene.initializeStaticResources();
+    final draws = _shadowDraws(
+      _scene(sun: false, selector: (context) => MeshDrawSelection.all),
+    );
     expect(draws, hasLength(2));
     expect(draws.every((d) => d > 0), isTrue);
   });
