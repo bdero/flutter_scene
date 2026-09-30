@@ -275,8 +275,10 @@ length, or set before uploading vertices, or not re-set after a `rebuild` change
 displacement shader shears the mesh, a color attribute smears. Nearly right, so hard to spot.
 
 **Do instead.** `data.length` must equal `vertexCount * components`. Set the attribute after uploading
-vertices, and re-set it after any rebuild. Also note custom attributes are not fetched by depth/shadow
-passes, so an attribute-driven displacement will not show in shadows.
+vertices, and re-set it after any rebuild. Depth and shadow passes run the material's full vertex
+variant, so an attribute-driven displacement casts its shadow. The mesh and material sides need not
+match: a declared attribute the mesh lacks reads zero, and a mesh's extra attributes are ignored by
+materials that do not declare them.
 
 **[0.22.0 catches this]** `setCustomAttribute` now throws an `ArgumentError` on a length mismatch
 (once the vertex count is known).

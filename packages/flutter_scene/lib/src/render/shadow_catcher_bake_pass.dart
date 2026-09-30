@@ -202,10 +202,12 @@ class ShadowCatcherBakePass extends RenderGraphPass {
         geometry.materialVertexVariant,
       );
       final fragmentShader = material.fragmentShaderForLighting(lighting);
+      final attributes = material.vertexAttributesFor(materialVertex);
+      geometry.useVertexAttributes(attributes);
       final pipeline = resolvePipeline(
         materialVertex ?? geometry.vertexShader,
         fragmentShader,
-        vertexLayout: geometry.instancedVertexLayout,
+        vertexLayout: geometry.instancedVertexLayoutFor(null, attributes),
       );
       pass.bindPipeline(pipeline);
       material

@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
 * Fixed a crash on M3 and newer Macs and recent iPhones (macOS and iOS 26+) when drawing a lit material with directional shadows; the lit shaders no longer inline their lighting twice (#436).
 * Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
@@ -38,7 +39,7 @@
 * BREAKING: `Lighting` takes `projectionScaleX/Y`, `projectionOffsetX/Y`, and `orthographic` in place of `tanHalfFovX/Y`, which remain as deprecated getters.
 * The vertex stage writes the world normal and tangent varyings at unit length, so a model authored at a small scale no longer lights black on GPUs that flush its tiny normals to zero in mediump varyings.
 * Screen-size LOD applies to every perspective camera, not only `PerspectiveCamera`.
-* Update `flutter_scene-idioms` (v9) and `flutter_scene-looks` (v5) skills with orthographic cameras.
+* Update `flutter_scene-idioms` (v10) and `flutter_scene-looks` (v5) skills with orthographic cameras and custom attribute matching.
 * Apps ship each engine shader bundle once and only for their own platform; a shared pub cache used to ship every platform's bundles, twice with data assets enabled.
 * `dart run flutter_scene:init` lists a directory per platform in the app's pubspec so the app's own generated shaders ship only for their platform too; rerun it in an existing app.
 * `Scene.addTickListener` runs a `SceneTickListener` at the start of every tick and before every fixed step, ahead of all components, for per-frame sampling such as input.

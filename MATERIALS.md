@@ -419,6 +419,11 @@ Supply the data on the geometry, one value per vertex, matching by name:
 geometry.setCustomAttribute('phase', phaseValues, components: 1);
 ```
 
+The two sides do not have to match. A declared attribute the mesh does not
+supply reads zero, and a mesh's extra attributes are ignored by materials that
+do not declare them, so one mesh can carry an attribute for an outline shell
+and still draw with a built-in material.
+
 Custom attributes work on both static and skinned meshes; attaching one to a
 skinned mesh switches its vertex layout to a described one, since reflection
 cannot know which slot the stream was bound to (`Geometry.setCustomAttribute`).

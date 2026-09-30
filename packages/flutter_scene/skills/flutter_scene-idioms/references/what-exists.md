@@ -193,8 +193,9 @@ static `merge(parts)`. `MeshAttributeData(data, {components})`; `UnweldAttribute
 
 `Geometry` base: `primitiveType`, `localBounds`, `localBoundingSphere`, `setLocalBounds(aabb,
 sphere)`, `setVertices(BufferView, vertexCount)`, `setIndices(BufferView, indexType)`,
-`setCustomAttribute(name, Float32List, {required components})` (1..4; not fetched by depth passes so
-it does not affect shadows), `uploadVertexData(ByteData, vertexCount, ByteData? indices, {indexType =
+`setCustomAttribute(name, Float32List, {required components})` (1..4; depth and shadow passes read
+it too, so attribute-driven displacement casts its shadow; materials that do not declare it ignore
+it, and one that declares an attribute the mesh lacks reads zero), `uploadVertexData(ByteData, vertexCount, ByteData? indices, {indexType =
 int16})`, `isReadable`, `extractMeshData()`, `setVertexShader`/`setVertexShaderName`,
 `setVertexLayout(descriptor, {bindsModelTransform = true})`, `draw(pass, {instanceCount = 1})`.
 `SkinnedGeometry`/`UnskinnedGeometry` subclasses. `GeometryBufferArena({blockSizeInBytes = 16MB})`.

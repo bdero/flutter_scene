@@ -8,6 +8,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/instance_attributes.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
@@ -51,6 +52,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _sceneInputs = _parseSceneInputs(metadata['engine_inputs']),
        _environmentLighting = metadata['environment_lighting'] != false,
        _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata),
+       _vertexAttributes = VertexAttributeSchema.fromMetadata(metadata),
        _usesPlanarReflection = parsePlanarReflectionInput(
          metadata['engine_inputs'],
        ),
@@ -333,6 +335,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   @override
   InstanceAttributeSchema? get instanceAttributes => _instanceAttributes;
 
+  VertexAttributeSchema? _vertexAttributes;
+
+  @override
+  VertexAttributeSchema? get vertexAttributes => _vertexAttributes;
+
   /// Replaces the generated vertex variants after a shader-library refresh (a
   /// hot-reloaded `.fmat` gaining, losing, or recompiling its `vertex { }`
   /// block). Pair with [updateFromMetadata].
@@ -400,6 +407,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // A reloaded declaration is a new schema object, which invalidates the
     // widened vertex layouts and instance buffers keyed on the old one.
     _instanceAttributes = InstanceAttributeSchema.fromMetadata(metadata);
+    _vertexAttributes = VertexAttributeSchema.fromMetadata(metadata);
     _usesPlanarReflection = parsePlanarReflectionInput(
       metadata['engine_inputs'],
     );

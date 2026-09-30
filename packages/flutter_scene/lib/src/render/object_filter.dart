@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 
 /// Selects which scene nodes an object-filtered draw includes.
 ///
@@ -146,10 +147,16 @@ class _ObjectMaskEncoder {
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
+    final attributes = depthVertex == null
+        ? item.material.vertexAttributesFor(materialVertex)
+        : VertexAttributeSchema.none;
+    geometry.useVertexAttributes(attributes);
     final pipeline = resolvePipeline(
       activeVertex,
       _maskShader,
-      vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
+      vertexLayout:
+          depthVertex?.layout ??
+          geometry.instancedVertexLayoutFor(null, attributes),
     );
     if (!identical(_boundPipeline, pipeline)) {
       _renderPass.bindPipeline(pipeline);
