@@ -13,6 +13,8 @@ library;
 import 'dart:typed_data';
 
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart';
+import 'package:vector_math/vector_math.dart';
 
 import 'command.dart';
 import 'history.dart';
@@ -54,6 +56,21 @@ class QueryResult {
   final List<QueryBlob> blobs;
 }
 
+/// What a query can ask the application, for facts that live in the
+/// rendered scene rather than the document.
+///
+/// The read counterpart to the hosts commands act through. A headless session
+/// has none, and a query answering without one says so rather than guessing.
+///
+/// TODO(async-queries): [QueryEntry.read] is synchronous, so capture and
+/// render-graph reads, which wait on a frame, cannot join this seam yet and
+/// stay tools. Letting a query return a future is what moves them over.
+abstract interface class QueryHost {
+  /// World-space bounds of [id] and everything under it, or null when none
+  /// of it draws.
+  Aabb3? worldBounds(LocalId id);
+}
+
 /// What a query can read.
 class QueryContext {
   /// Creates a context over [document] and the session state around it.
@@ -64,7 +81,16 @@ class QueryContext {
     required this.history,
     required this.commands,
     required this.queries,
+    this.componentSchema,
+    this.host,
   });
+
+  /// Resolves a component type to its schema, or null when the type is not
+  /// registered, so a read can report what each carried property is.
+  final ComponentSchema? Function(String type)? componentSchema;
+
+  /// The application around the document, or null in a headless session.
+  final QueryHost? host;
 
   /// The document being read.
   final SceneDocument document;

@@ -65,6 +65,7 @@ export 'src/queries.dart'
         QueryBlob,
         QueryResult,
         QueryContext,
+        QueryHost,
         QueryException,
         QueryEntry,
         QueryRegistry,

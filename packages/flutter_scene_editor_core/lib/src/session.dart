@@ -94,6 +94,10 @@ class EditorSession {
   /// every application command inapplicable.
   EditorHost? host;
 
+  /// What queries ask the application for, set by a host that renders the
+  /// document. Null leaves reads to what the document alone can answer.
+  QueryHost? queryHost;
+
   /// Whether anything has changed since the document was last saved.
   ///
   /// Selection and the viewport camera both save with the document, so both
@@ -283,6 +287,8 @@ class EditorSession {
     history: history,
     commands: registry,
     queries: queries,
+    componentSchema: componentSchemaLookup,
+    host: queryHost,
   );
 
   /// Runs the command named [name], whatever its kind.

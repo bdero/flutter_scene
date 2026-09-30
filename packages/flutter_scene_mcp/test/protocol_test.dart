@@ -268,6 +268,40 @@ void main() {
     );
   });
 
+  test('get_node is the query\'s node, not a second encoding of it', () async {
+    final session = _session();
+    final surface = EditorToolSurface.of(session);
+    await surface.dispatch('run_command', {
+      'command': 'createNode',
+      'params': {'name': 'Parent'},
+    });
+    final parent = session.document.roots.single.toToken();
+    await surface.dispatch('run_command', {
+      'command': 'createNode',
+      'params': {'name': 'Child', 'parentId': parent},
+    });
+
+    final detail = await surface.dispatch('get_node', {'ref': 'Parent'});
+    final queried =
+        (session.ask('nodeSubtree', {
+                      'nodeId': parent,
+                      'depth': 1,
+                      'components': true,
+                      'bounds': true,
+                    }).body['nodes']
+                    as List)
+                .single
+            as Map<String, Object?>;
+
+    for (final key in ['id', 'path', 'transform', 'layers', 'components']) {
+      expect(detail[key], queried[key], reason: key);
+    }
+    expect(detail['children'], [
+      {'id': (queried['children'] as List).single['id'], 'name': 'Child'},
+    ], reason: 'children stay a list to address, not the next level whole');
+    expect(detail['isPrefabInstance'], isFalse);
+  });
+
   test('list_resources answers with the query it wraps', () async {
     final session = _session();
     final geometry = GeometryResource(

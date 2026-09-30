@@ -5,7 +5,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart';
 import 'package:scene/scene.dart';
+import 'package:scene/schema.dart';
 import 'package:test/test.dart';
+import 'package:vector_math/vector_math.dart';
 
 LocalId _node(EditorSession s, String name, {LocalId? parent}) => LocalId.parse(
   s
@@ -417,8 +419,97 @@ void main() {
     );
   });
 
+  test('bounds come from the host, and only when asked for', () {
+    final session = EditorSession.empty()
+      ..queryHost = _FixedBounds(
+        Aabb3.minMax(Vector3(-1, 0, -1), Vector3(1, 2, 1)),
+      );
+    final id = _node(session, 'Box');
+
+    final plain =
+        (session.ask('nodeSubtree', {'nodeId': id.toToken()}).body['nodes']
+                    as List)
+                .single
+            as Map;
+    expect(plain.containsKey('worldBounds'), isFalse, reason: 'opt-in');
+
+    final withBounds =
+        (session.ask('nodeSubtree', {
+                      'nodeId': id.toToken(),
+                      'bounds': true,
+                    }).body['nodes']
+                    as List)
+                .single
+            as Map;
+    expect(((withBounds['worldBounds'] as Map)['max'] as Map)['y'], 2);
+  });
+
+  test('a headless session says it cannot answer bounds', () {
+    final session = EditorSession.empty();
+    final id = _node(session, 'Box');
+    final body = session.ask('nodeSubtree', {
+      'nodeId': id.toToken(),
+      'bounds': true,
+    }).body;
+    expect(body['boundsAvailable'], isFalse);
+    expect(
+      ((body['nodes'] as List).single as Map).containsKey('worldBounds'),
+      isFalse,
+    );
+  });
+
+  test('a node that draws nothing has no bounds, not zero bounds', () {
+    final session = EditorSession.empty()..queryHost = _FixedBounds(null);
+    final id = _node(session, 'Empty');
+    final body = session.ask('nodeSubtree', {
+      'nodeId': id.toToken(),
+      'bounds': true,
+    }).body;
+    expect(body.containsKey('boundsAvailable'), isFalse);
+    expect(
+      ((body['nodes'] as List).single as Map).containsKey('worldBounds'),
+      isFalse,
+    );
+  });
+
+  test('carried properties report their declared kinds', () {
+    final session = EditorSession.empty()
+      ..componentSchemaLookup = (type) => type == 'spin'
+          ? ComponentSchema(
+              'spin',
+              properties: [
+                ComponentPropertyDef('speed', ComponentPropertyKind.number),
+                ComponentPropertyDef('axis', ComponentPropertyKind.vec3),
+              ],
+            )
+          : null;
+    final id = _node(session, 'Wheel');
+    session.run('addComponent', {
+      'nodeId': id.toToken(),
+      'componentType': 'spin',
+      'properties': {'speed': 2.0},
+    });
+
+    final body = session.ask('nodeSubtree', {
+      'nodeId': id.toToken(),
+      'components': true,
+    }).body;
+    final node = (body['nodes'] as List).single as Map;
+    final component = (node['components'] as List).single as Map;
+    expect(component['kinds'], {'speed': 'number'}, reason: 'carried only');
+  });
+
   test('an unknown query is an error, not an empty answer', () {
     final session = EditorSession.empty();
     expect(() => session.ask('noSuchQuery'), throwsArgumentError);
   });
+}
+
+class _FixedBounds implements QueryHost {
+  _FixedBounds(this.bounds);
+
+  final Aabb3? bounds;
+
+  @override
+  Aabb3? worldBounds(LocalId id) => bounds;
 }

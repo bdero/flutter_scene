@@ -564,14 +564,11 @@ void documentTests() {
     });
   });
 
-  test('get_node reports world bounds from the host hook', () async {
+  test('get_node reports world bounds through the query host', () async {
     final session = EditorSession(
       SceneDocument(allocator: IdAllocator(session: 1)),
-    );
-    final surface = EditorToolSurface(
-      () => session,
-      nodeBounds: (_) => Aabb3.minMax(Vector3.zero(), Vector3(2, 4, 6)),
-    );
+    )..queryHost = _FixedBounds(Aabb3.minMax(Vector3.zero(), Vector3(2, 4, 6)));
+    final surface = EditorToolSurface(() => session);
     await surface.dispatch('run_command', {
       'command': 'createNode',
       'params': {'name': 'Box'},
@@ -580,4 +577,13 @@ void documentTests() {
     final bounds = detail['worldBounds'] as Map;
     expect((bounds['max'] as Map)['y'], 4);
   });
+}
+
+class _FixedBounds implements QueryHost {
+  _FixedBounds(this.bounds);
+
+  final Aabb3 bounds;
+
+  @override
+  Aabb3? worldBounds(LocalId id) => bounds;
 }

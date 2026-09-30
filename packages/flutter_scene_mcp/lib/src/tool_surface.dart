@@ -206,10 +206,6 @@ typedef ModelImporter =
 typedef EnvironmentImporter =
     Future<String> Function(String path, {LocalId? environmentId});
 
-/// The world-space bounds of a node's rendered subtree, or null when it has
-/// nothing renderable.
-typedef NodeBounds = Aabb3? Function(LocalId id);
-
 /// Creates a fresh empty document, replacing the current one.
 typedef DocumentCreator = Future<void> Function();
 
@@ -293,7 +289,6 @@ class EditorToolSurface {
     this.frameNode,
     this.importModel,
     this.importEnvironment,
-    this.nodeBounds,
     this.newDocument,
     this.openDocument,
     this.saveDocument,
@@ -408,10 +403,6 @@ class EditorToolSurface {
   /// Imports an equirectangular panorama as the environment; null when the
   /// host has no filesystem import pipeline.
   final EnvironmentImporter? importEnvironment;
-
-  /// Measures a node's rendered world-space bounds; null in a headless
-  /// session (bounds come from the realized scene).
-  final NodeBounds? nodeBounds;
 
   /// Creates a fresh document; null when the host does not expose document
   /// lifecycle control.
@@ -1318,9 +1309,6 @@ class EditorToolSurface {
     String tool,
     Map<String, Object?> args,
   ) async {
-    // TODO(query-parity): get_node still assembles its own answer, because it
-    // mixes in world bounds only the host can compute. Give queries a host
-    // seam and it collapses onto getResource and nodeSubtree like the rest.
     switch (tool) {
       case 'describe_scene':
         return {
@@ -2216,56 +2204,30 @@ class EditorToolSurface {
     ],
   };
 
-  Map<String, Object?> _nodeDetail(NodeSpec node) => {
-    'id': node.id.toToken(),
-    'path': _query.namePathOf(node.id),
-    'name': node.name,
-    'visible': node.visible,
-    'transform': _transformJson(node.transform),
-    // Rendered world-space bounds, the honest way to learn an asset's real
-    // size (kits differ in unit scale).
-    if (nodeBounds?.call(node.id) case final bounds?)
-      'worldBounds': {
-        'min': {'x': bounds.min.x, 'y': bounds.min.y, 'z': bounds.min.z},
-        'max': {'x': bounds.max.x, 'y': bounds.max.y, 'z': bounds.max.z},
-      },
-    'isPrefabInstance': node.instance != null,
-    'components': [
-      for (final c in node.components)
-        {
-          'type': c.type,
-          'properties': {
-            for (final entry in c.properties.entries)
-              entry.key: propertyValueToJson(entry.value),
-          },
-          // Declared kinds for the carried properties, when the type's
-          // schema is known (see describe_component_type for the full one).
-          if (_componentKinds(c) case final kinds?) 'kinds': kinds,
-        },
-    ],
-    'children': [
-      for (final child in _query.childrenOf(node.id))
-        {'id': child.id.toToken(), 'name': child.name},
-    ],
-  };
+  /// One node in full, projected from the `nodeSubtree` query so the tool and
+  /// the query cannot describe the same node differently. World bounds come
+  /// through the session's query host, the honest way to learn an asset's
+  /// real size when kits differ in unit scale.
+  Map<String, Object?> _nodeDetail(NodeSpec node) {
+    final body = session.ask('nodeSubtree', {
+      'nodeId': node.id.toToken(),
+      'depth': 1,
+      'components': true,
+      'bounds': true,
+    }).body;
+    final detail = (body['nodes'] as List).single as Map<String, Object?>;
+    return {
+      ...detail,
+      'isPrefabInstance': node.instance != null,
+      // Children as a list to address, not the whole next level.
+      'children': [
+        for (final child in detail['children'] as List? ?? const [])
+          {'id': (child as Map)['id'], 'name': child['name']},
+      ],
+    };
+  }
 
   // --- helpers ------------------------------------------------------------
-
-  Map<String, Object?>? _componentKinds(ComponentSpec component) {
-    final schema = describeComponentType?.call(component.type);
-    if (schema == null) return null;
-    final kinds = <String, Object?>{};
-    if (schema['properties'] is List) {
-      for (final def in schema['properties'] as List) {
-        if (def is! Map) continue;
-        final name = def['name'];
-        if (name is String && component.properties.containsKey(name)) {
-          kinds[name] = def['kind'];
-        }
-      }
-    }
-    return kinds.isEmpty ? null : kinds;
-  }
 
   String _requireRef(Map<String, Object?> args) {
     final ref = args['ref'];
@@ -2289,20 +2251,4 @@ class EditorToolSurface {
     }
     throw ToolError('No node matches: $ref');
   }
-
-  Object? _transformJson(TransformSpec transform) => switch (transform) {
-    TrsTransform t => {
-      'translation': _vec3(t.translation),
-      'rotation': {
-        'x': t.rotation.x,
-        'y': t.rotation.y,
-        'z': t.rotation.z,
-        'w': t.rotation.w,
-      },
-      'scale': _vec3(t.scale),
-    },
-    MatrixTransform m => {'matrix': m.matrix.storage.toList()},
-  };
-
-  Map<String, Object?> _vec3(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
 }

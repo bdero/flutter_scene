@@ -16,7 +16,7 @@ import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
-    show CommandException, EditorHost, EventBus, ViewHost;
+    show CommandException, EditorHost, EventBus, QueryHost, ViewHost;
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
 import 'package:scene/scene.dart'
@@ -191,6 +191,7 @@ class _EditorHomeState extends State<_EditorHome> {
   void _configureController(EditorController controller) {
     controller.session.viewHost = _EditorViewHost(this);
     controller.session.host = _EditorHostImpl(this);
+    controller.session.queryHost = _EditorQueryHost(controller);
     // The same bus across every document, so a client's subscription survives
     // an open instead of dying with the session it was made against.
     controller.session.events = _events;
@@ -1258,8 +1259,6 @@ class _EditorHomeState extends State<_EditorHome> {
             _cameraHandle.frame(bounds);
             return true;
           },
-          nodeBounds: (id) =>
-              _requireController.liveNode(id)?.combinedWorldBounds,
           importModel: (path, {parentId, scale = 1.0}) => importLinkedModel(
             _requireController,
             path,
@@ -1891,6 +1890,19 @@ class _EditorHostImpl implements EditorHost {
 
   @override
   void setViewportDebugMode(String mode) => _home._renderGraphMcp.setMode(mode);
+}
+
+/// Answers the reads only the realized scene can, for the controller whose
+/// document is being read. Bound to that controller rather than looked up,
+/// so a read that lands while another document opens answers for its own.
+class _EditorQueryHost implements QueryHost {
+  _EditorQueryHost(this._controller);
+
+  final EditorController _controller;
+
+  @override
+  Aabb3? worldBounds(LocalId id) =>
+      _controller.liveNode(id)?.combinedWorldBounds;
 }
 
 /// Lets view commands drive the viewport the same way the UI does.

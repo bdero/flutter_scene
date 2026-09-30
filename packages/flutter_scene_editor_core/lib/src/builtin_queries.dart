@@ -64,7 +64,9 @@ final nodeSubtree = QueryEntry(
   name: 'nodeSubtree',
   doc:
       'Read a node subtree in one call. Omit nodeId for the scene roots. '
-      'depth 0 is the node itself, -1 (the default) is everything under it.',
+      'depth 0 is the node itself, -1 (the default) is everything under it. '
+      'bounds adds rendered world-space bounds, which only a running editor '
+      'can compute.',
   category: 'Scene',
   paramSchema: const [
     ParamSpec(
@@ -86,14 +88,30 @@ final nodeSubtree = QueryEntry(
       name: 'components',
       type: ParamType.boolean,
       label: 'Components',
-      description: 'Include each node\'s component properties',
+      description:
+          'Include each node\'s component properties, and their declared '
+          'kinds when the component type is registered',
+      required: false,
+      defaultValue: false,
+    ),
+    ParamSpec(
+      name: 'bounds',
+      type: ParamType.boolean,
+      label: 'World bounds',
+      description:
+          'Include each node\'s rendered world-space bounds. Off by default, '
+          'since it costs a walk of the realized scene per node',
       required: false,
       defaultValue: false,
     ),
   ],
   read: (ctx, params) {
     final depth = _optionalInt(params, 'depth') ?? -1;
-    final withComponents = _optionalBool(params, 'components') ?? false;
+    final boundsAsked = _optionalBool(params, 'bounds') ?? false;
+    final options = _NodeOptions(
+      components: _optionalBool(params, 'components') ?? false,
+      bounds: boundsAsked && ctx.host != null,
+    );
     final rootToken = params['nodeId'];
     final roots = <NodeSpec>[];
     if (rootToken == null) {
@@ -102,13 +120,24 @@ final nodeSubtree = QueryEntry(
       roots.add(_requireNode(ctx, rootToken));
     }
     return QueryResult({
-      'nodes': [
-        for (final root in roots)
-          _nodeJson(ctx, root, depth, withComponents: withComponents),
-      ],
+      'nodes': [for (final root in roots) _nodeJson(ctx, root, depth, options)],
+      // Said outright, so a headless answer is not mistaken for nodes that
+      // simply draw nothing.
+      if (boundsAsked && ctx.host == null) 'boundsAvailable': false,
     });
   },
 );
+
+/// What [_nodeJson] includes beyond the always-present fields.
+class _NodeOptions {
+  const _NodeOptions({required this.components, required this.bounds});
+
+  /// Component properties and their declared kinds.
+  final bool components;
+
+  /// Rendered world-space bounds, from the host.
+  final bool bounds;
+}
 
 /// The nodes a tool wants to act on, without walking the tree client side.
 final findNodes = QueryEntry(
@@ -350,9 +379,9 @@ final listQueries = QueryEntry(
 Map<String, Object?> _nodeJson(
   QueryContext ctx,
   NodeSpec node,
-  int depth, {
-  required bool withComponents,
-}) => {
+  int depth,
+  _NodeOptions options,
+) => {
   'id': node.id.toToken(),
   'name': node.name,
   'path': ctx.query.namePathOf(node.id),
@@ -362,6 +391,12 @@ Map<String, Object?> _nodeJson(
   'layers': node.layers,
   'shadowCastingMode': node.shadowCastingMode,
   'transform': _transformJson(node.transform),
+  if (options.bounds)
+    if (ctx.host!.worldBounds(node.id) case final bounds?)
+      'worldBounds': {
+        'min': _vec3Json(bounds.min),
+        'max': _vec3Json(bounds.max),
+      },
   if (node.skin != null) 'skin': node.skin!.toToken(),
   // The instance delta is deep (overrides, attachments, removals, member
   // components), so the format's own encoder writes it rather than a second
@@ -371,13 +406,14 @@ Map<String, Object?> _nodeJson(
   if (node.unknown.isNotEmpty) 'unknown': node.unknown,
   'components': [
     for (final component in node.components)
-      if (withComponents)
+      if (options.components)
         {
           'type': component.type,
           'properties': {
             for (final entry in component.properties.entries)
               entry.key: propertyValueToJson(entry.value),
           },
+          if (_carriedKinds(ctx, component) case final kinds?) 'kinds': kinds,
         }
       else
         {'type': component.type},
@@ -386,9 +422,23 @@ Map<String, Object?> _nodeJson(
   if (depth != 0)
     'children': [
       for (final child in ctx.query.childrenOf(node.id))
-        _nodeJson(ctx, child, depth - 1, withComponents: withComponents),
+        _nodeJson(ctx, child, depth - 1, options),
     ],
 };
+
+/// The declared kind of each property [component] carries, or null when its
+/// type is unregistered or none of its properties are declared. A client
+/// needs the kind to write a value back without guessing its shape.
+Map<String, String>? _carriedKinds(QueryContext ctx, ComponentSpec component) {
+  final schema = ctx.componentSchema?.call(component.type);
+  if (schema == null) return null;
+  final kinds = {
+    for (final property in schema.properties)
+      if (component.properties.containsKey(property.name))
+        property.name: property.kind.name,
+  };
+  return kinds.isEmpty ? null : kinds;
+}
 
 Map<String, Object?> _transformJson(TransformSpec transform) =>
     switch (transform) {
