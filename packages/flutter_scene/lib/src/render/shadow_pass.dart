@@ -13,7 +13,8 @@ import 'package:flutter_scene/src/render/shadow_encoder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/spot_shadow.dart';
 import 'package:flutter_scene/src/shaders.dart';
-import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/scene_encoder.dart'
+    show deferredPipelineBuilds, resolvePipeline;
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the shadow
 /// map atlas (a depth-in-`.r` fp32 texture). The downstream scene pass reads it
@@ -185,6 +186,7 @@ class ShadowPass extends RenderGraphPass {
       }
       return;
     }
+    final deferredBefore = deferredPipelineBuilds;
     final plan = _cachePlan;
     if (plan != null) {
       _renderStaticTiles(context, plan);
@@ -369,7 +371,9 @@ class ShadowPass extends RenderGraphPass {
     // The pooled texture stays intact for the rest of the frame: its pool is
     // this view's, which renders nothing else until its next frame, and the
     // GPU runs the frame's command buffers in submission order.
-    if (shared != null) {
+    // An atlas missing deferred draws is not shared, so every later view
+    // renders its own and counts its own deferred draws.
+    if (shared != null && deferredPipelineBuilds == deferredBefore) {
       shared
         ..atlas = color
         ..spotInfo = spotInfo;
@@ -423,9 +427,13 @@ class ShadowPass extends RenderGraphPass {
         filter: ShadowCasterFilter.staticOnly,
         casterChannelMask: _casterChannelMask,
       );
+      final deferred = deferredPipelineBuilds;
       _renderScene.cull(encoder.frustum, encoder.submitCulled);
       encoder.flush();
       rendererSubmissions.submit(commandBuffer);
+      // A sliced warm-up skipped some of its casters, so render it again on
+      // the next frame rather than reuse it.
+      if (deferredPipelineBuilds > deferred) entry.hasContent = false;
     }
   }
 
