@@ -257,8 +257,8 @@ materials and block-compressed textures with full mip chains reach you, and
 editing any source reconverts just that source and hot reloads it.
 
 Loose images cook to the engine's own `.fstex` by default. For a smaller
-download, cook color textures to standard ETC1S KTX2 instead, typically a
-fifth of the size at some cost in quality:
+download, cook color textures to standard ETC1S KTX2 instead, several times
+smaller at some cost in quality:
 
 ```dart
 buildTextures(

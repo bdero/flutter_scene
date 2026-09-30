@@ -115,8 +115,9 @@ class HuffmanCode {
   }
 }
 
-/// Huffman code sizes for the [used] symbols, limited to [maxCodeSize] the
-/// way miniz does. Ties break by symbol index.
+/// Huffman code sizes for the [used] symbols, limited to [maxCodeSize] by
+/// folding deeper codes into the limit, then lengthening the longest shorter
+/// codes until the Kraft sum fits. Ties break by symbol index.
 void _assignSizes(
   List<int> frequencies,
   List<int> used,

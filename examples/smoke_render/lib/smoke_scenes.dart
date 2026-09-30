@@ -537,20 +537,15 @@ Future<void> loadMipChecker() async {
   );
 }
 
-/// The Draco-compressed KTX2-textured quads preloaded by [loadBasisuQuads].
+/// The Draco-compressed KTX2-textured quads preloaded by [loadBasisuTextures].
 Node? _basisuQuads;
 
-/// Imports the compressed quads once. Call before pumping the basisu_textures
-/// scene.
-Future<void> loadBasisuQuads() async {
-  _basisuQuads ??= await Node.fromGlbAsset('assets/basisu_quads_draco.glb');
-}
-
-/// The ETC1S texture the build hook cooked.
+/// The texture the build hook cooked to ETC1S.
 TextureSource? _etc1sCooked;
 
-/// Loads the cooked ETC1S texture once, before the etc1s_cooked_texture scene.
-Future<void> loadEtc1sCooked() async {
+/// Loads the basisu_textures scene's quads and cooked texture once.
+Future<void> loadBasisuTextures() async {
+  _basisuQuads ??= await Node.fromGlbAsset('assets/basisu_quads_draco.glb');
   _etc1sCooked ??= await loadTexture('assets/etc1s_cooked.png');
 }
 
@@ -1839,44 +1834,37 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }, preload: loadMipChecker),
-  // A texture the build hook cooked to ETC1S, drawn unlit through
-  // loadTexture: the path from encoder to GPU.
-  SmokeScene('etc1s_cooked_texture', () {
-    final scene = Scene();
-    // The rotation turns the plane to face +z, square on to the camera.
-    scene.add(
-      Node(
-        mesh: Mesh(
-          PlaneGeometry(width: 1.6, depth: 1.6),
-          UnlitMaterial()
-            ..baseColorTexture = _etc1sCooked!
-            // Unmirror u, so the frame reads like the source image.
-            ..baseColorTextureTransform = TextureTransform(
-              offset: vm.Vector2(1, 0),
-              scale: vm.Vector2(-1, 1),
-            ),
-        ),
-      )..localTransform = vm.Matrix4.rotationX(math.pi / 2),
-    );
-    return (
-      scene: scene,
-      camera: PerspectiveCamera(
-        position: vm.Vector3(0, 0, 2.2),
-        target: vm.Vector3.zero(),
-      ),
-    );
-  }, preload: loadEtc1sCooked),
   // Two quads sampling KHR_texture_basisu KTX2 textures through the standard
   // glTF path, one a mipped zstd-supercompressed UASTC sRGB file with no
   // alpha, the other an ETC1S sRGB file whose alpha blob is drawn with alpha
   // blending, so the magenta clear reads through everywhere it thins.
   // The quads themselves arrive Draco-compressed, so one scene covers
   // compressed geometry import and Basis Universal transcode all the way to
-  // pixels. Both materials are unlit, so the frame reads the decoded texels
-  // rather than a lighting response.
+  // pixels. A third, smaller quad draws a texture the build hook cooked to
+  // ETC1S, covering the encoder's path to the GPU. Every material is unlit,
+  // so the frame reads the decoded texels rather than a lighting response.
   SmokeScene('basisu_textures', () {
     final scene = Scene();
     scene.add(_basisuQuads!);
+    // Below them, a texture the build hook cooked to ETC1S, drawn through
+    // loadTexture. The rotation turns the plane to face the camera at -z, and
+    // the transform flips v so the frame reads like the source image.
+    scene.add(
+      Node(
+          mesh: Mesh(
+            PlaneGeometry(width: 0.5, depth: 0.5),
+            UnlitMaterial()
+              ..baseColorTexture = _etc1sCooked!
+              ..baseColorTextureTransform = TextureTransform(
+                offset: vm.Vector2(0, 1),
+                scale: vm.Vector2(1, -1),
+              ),
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translationValues(0, -0.95, 0) *
+            vm.Matrix4.rotationX(-math.pi / 2),
+    );
     return (
       scene: scene,
       // Square on to the quads' front, which the root handedness flip puts on
@@ -1886,7 +1874,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3.zero(),
       ),
     );
-  }, preload: loadBasisuQuads),
+  }, preload: loadBasisuTextures),
   // The single custom-material scene: one .fmat that customizes BOTH the
   // vertex stage (a world-space ripple, which also displaces the shadow) and
   // the fragment color (blended from a per-vertex attribute forwarded through a

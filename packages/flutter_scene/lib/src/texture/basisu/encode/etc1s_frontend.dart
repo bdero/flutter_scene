@@ -1,6 +1,6 @@
-// Quantizes 4x4 blocks into shared endpoint and selector codebooks: cluster
-// endpoints, refit and reassign; then the same for selectors; then refit the
-// endpoints to the final selectors.
+// Quantizes 4x4 blocks into shared endpoint and selector codebooks. It
+// clusters endpoints, refits and reassigns, does the same for selectors, then
+// refits the endpoints to the final selectors.
 
 import 'dart:typed_data';
 
@@ -52,7 +52,7 @@ class Etc1sQuantized {
     required this.blockToUnique,
   });
 
-  /// Endpoint codebook: red, green, blue (5-bit) and intensity per entry.
+  /// The endpoint codebook, red, green, blue (5-bit) and intensity per entry.
   final Uint8List endpoints;
 
   /// Selector codebook: 16 selectors (0-3, ETC1S order) per entry, texel
@@ -124,7 +124,7 @@ class _Frontend {
     final weights = <double>[];
     final rgb = source.rgb;
     for (var b = 0; b < source.count; b++) {
-      // Kept below 2^30 so it stays exact on the web.
+      // A 30-bit rolling hash of the block's pixels.
       var h = 0;
       for (var i = b * 48; i < b * 48 + 48; i++) {
         h = (h * 31 + rgb[i]) & 0x3FFFFFFF;
@@ -292,7 +292,7 @@ class _Frontend {
       fitter.evaluate(_pixelsOf(u), e.r, e.g, e.b, e.inten, selectors: scratch);
       _bestSelectors.setRange(u * 16, u * 16 + 16, scratch);
     }
-    // Weight each block by contrast, as basis_universal does: selectors
+    // Weight each block by contrast, as basis_universal does, since selectors
     // barely matter in flat blocks.
     final contrast = Float64List(endpointBook.length);
     final low = Float64List(3), high = Float64List(3);
