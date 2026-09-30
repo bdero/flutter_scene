@@ -2420,10 +2420,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // sweeps red to blue across the grid and dark to bright along it, and the
   // float lifts each cube (vertex stage) while ramping its gloss (fragment
   // stage), so a mispacked instance record scrambles the gradient or flattens
-  // the staircase. The light casts so the depth and shadow variants render
-  // too; they bind no instance data and read zero (the documented contract),
-  // so every cube's shadow sits in the flat unlifted grid while the cubes
-  // themselves stair-step above it.
+  // the staircase. The light casts, and the shadow pass runs the same vertex
+  // variant, so each cube's shadow follows it up the staircase.
   SmokeScene('instance_attributes', () {
     final scene = Scene();
     scene.add(
