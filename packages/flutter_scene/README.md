@@ -404,11 +404,18 @@ Impeller and Flutter GPU aren't available on the web, so `flutter_scene` ships a
 
 ## Sponsors
 
-Scene's development infrastructure is supported by:
+Scene's development is funded by its sponsors, listed in full at [fscene.dev/sponsors](https://fscene.dev/sponsors/).
 
-- [Codemagic](https://codemagic.io) - macOS CI on Apple silicon hardware
+### Silver
 
-Interested in supporting Scene's development? Reach out: x@bdero.me
+<a href="https://primio.dev"><picture><source media="(prefers-color-scheme: dark)" srcset="https://fscene.dev/sponsors/primio-on-dark.png"><img alt="Primio" src="https://fscene.dev/sponsors/primio-badge.png" height="64"></picture></a>
+
+### Infrastructure
+
+- [Codemagic](https://codemagic.io) (macOS CI on Apple silicon)
+- [Argos](https://argos-ci.com) (visual regression testing)
+
+To sponsor Scene, write to x@bdero.me.
 
 ## Repository
 
