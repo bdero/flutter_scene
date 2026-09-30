@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/importer/texture_roles.dart';
 import 'package:flutter_scene/src/importer/src/gltf/types.dart';
 import 'package:flutter_scene/src/texture/basisu/basis_ktx2.dart';
 import 'package:flutter_scene/src/texture/build_textures.dart';
+import 'package:flutter_scene/src/texture/texture_encoding.dart';
 import 'package:flutter_scene/src/texture/ktx2/dfd.dart';
 import 'package:flutter_scene/src/texture/ktx2/ktx2.dart';
 import 'package:flutter_scene/src/texture/ktx2_image.dart';
@@ -214,8 +215,8 @@ void main() {
       const TextureEncoding.etc1s(quality: 10),
       isNot(const TextureEncoding.etc1s(quality: 11)),
     );
-    expect(TextureEncoding.universal.extension, '.fstex');
-    expect(const TextureEncoding.etc1s().extension, '.ktx2');
+    expect(TextureEncoding.universal.fileExtension, '.fstex');
+    expect(const TextureEncoding.etc1s().fileExtension, '.ktx2');
   });
 
   test('rejects images that are not block-aligned', () {
