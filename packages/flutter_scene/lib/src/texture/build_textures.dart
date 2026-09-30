@@ -225,7 +225,8 @@ void buildTextures({
         ? ' encoding=etc1s/${textureEncoding.quality}'
         : '';
     final stamp =
-        'rev=$buildCacheRevision texture content=${content.name}'
+        'rev=$buildCacheRevision gen=${textureGeneratorFingerprint()} '
+        'texture content=${content.name}'
         '$encodingStamp '
         'src=${sourceFingerprint(sourceFile, strict: options.strictHashing)}';
     final stampFile = File('${outputTextureUri.toFilePath()}.inputs');

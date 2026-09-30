@@ -1,5 +1,6 @@
 ## 0.24.0
 
+* Generated scenes, textures, and materials rebuild when the flutter_scene code that writes them changes, so an upgrade no longer reuses outputs from the old importer, encoder, or `.fmat` compiler.
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
 * Fixed a crash on M3 and newer Macs and recent iPhones (macOS and iOS 26+) when drawing a lit material with directional shadows; the lit shaders no longer inline their lighting twice (#436).
