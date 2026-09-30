@@ -1,4 +1,4 @@
-// A deterministic, weighted, tree-structured vector quantizer: it splits the
+// A deterministic, weighted, tree-structured vector quantizer. It splits the
 // cluster with the largest error along its principal axis until it has
 // enough clusters, and keeps the split tree for finding near clusters.
 

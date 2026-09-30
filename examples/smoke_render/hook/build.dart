@@ -24,7 +24,7 @@ void main(List<String> args) {
           ? MaterialAssetMode.dataAssetsRequired
           : MaterialAssetMode.generatedTree,
     );
-    // Cooked to ETC1S for the etc1s_cooked_texture scene.
+    // Cooked to ETC1S for the basisu_textures scene.
     buildTextures(
       buildInput: input,
       buildOutput: output,
