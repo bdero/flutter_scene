@@ -30,7 +30,8 @@ struct VertexInputs {
   vec2 uv1;
   vec4 color;
   // Read-only frame data the engine fills in before calling Vertex(). The
-  // world-space camera position is available in every variant.
+  // world-space camera position is available in every variant; spot and point
+  // shadow maps shared by a frame's views get its screen view's camera.
   vec3 camera_position;
   // Read-only: the object-to-world transform (node and instance) the engine
   // applied to produce world_position, so Vertex() can build geometry in the

@@ -54,13 +54,23 @@ class SpotShadowInfo {
 /// parity tests can render the same frame with and without sharing.
 bool debugDisableSharedShadowTiles = false;
 
-/// One frame's spot and point shadow tiles, shared across its views.
+/// One frame's spot and point shadow tiles, shared by its texture views and
+/// its screen view.
 ///
-/// Those tiles depend only on the lights and casters, not on the camera, so
-/// the first view to render its [ShadowPass] fills this and later views in
-/// the frame publish the same atlas instead of re-rendering it. Only frames
-/// without directional cascades share, since cascades fit each view.
+/// The casters are drawn once, from [cameraPosition] (the screen view's
+/// camera), so a mirror or render texture shows the shadows the screen view
+/// sees. The first view to render its [ShadowPass] fills this and later
+/// views publish the same atlas. Only frames without directional cascades
+/// share, since cascades fit each view.
+// TODO(shared-shadow-opt-out): let a texture view that needs shadows drawn
+// from its own camera (a distant monitor view, say) render its own tiles.
 class SharedShadowAtlas {
+  /// Creates an empty atlas whose casters are drawn from [cameraPosition].
+  SharedShadowAtlas(this.cameraPosition);
+
+  /// The camera position every sharing view's casters are drawn from.
+  final Vector3 cameraPosition;
+
   /// The atlas the first view rendered, or null before any view has.
   gpu.Texture? atlas;
 
@@ -141,6 +151,9 @@ class ShadowPass extends RenderGraphPass {
   final PointShadowFrame? _pointShadows;
   final ShadowCachePlan? _cachePlan;
   final SharedShadowAtlas? _shared;
+
+  Vector3 get _casterCameraPosition =>
+      _shared?.cameraPosition ?? _cameraPosition;
 
   // The packed PostShadowInfo block, published for depth-aware custom passes.
   final ByteData? _shadowUniform;
@@ -254,7 +267,7 @@ class ShadowPass extends RenderGraphPass {
         renderPass,
         context.transientsBuffer,
         matrix,
-        _cameraPosition,
+        _casterCameraPosition,
         faces,
         filter: filter,
         casterChannelMask: casterChannelMask,
@@ -345,7 +358,7 @@ class ShadowPass extends RenderGraphPass {
             renderPass,
             context.transientsBuffer,
             pointFrame.faceMatrix(s, f),
-            _cameraPosition,
+            _casterCameraPosition,
             pointFrame.casterFaces,
             casterChannelMask: pointFrame.casterChannelMasks[s],
           );
