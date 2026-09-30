@@ -351,6 +351,10 @@ struct VertexInputs {
 };
 ```
 
+Spot and point shadow maps are drawn once per frame and shared by the render
+textures and the screen view, so there `camera_position` is the screen view's
+camera. A mirror shows the shadows the screen view sees.
+
 Write `world_position` to displace geometry (the engine projects it to clip
 space after `Vertex()` returns) and `world_normal` to change the shading normal.
 The `material_params.*` values are available in `Vertex()` just as in

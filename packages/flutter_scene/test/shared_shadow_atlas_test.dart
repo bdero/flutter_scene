@@ -1,6 +1,6 @@
-// Spot shadow tiles do not depend on the camera, so a frame with several
-// views renders them once and the later views reuse them; directional
-// cascades fit each view, so a frame with them renders per view.
+// A frame's render textures reuse the screen view's spot shadow tiles, drawn
+// once from the screen view's camera; directional cascades fit each view, so
+// a frame with them renders per view.
 
 import 'dart:ui' as ui;
 
@@ -85,13 +85,26 @@ void main() {
     expect(draws.every((d) => d > 0), isTrue);
   });
 
-  test('a caster whose draw depends on the camera renders per view', () async {
+  test('shared shadow casters draw from the screen view camera', () async {
     if (!_gpuAvailable()) return;
     await Scene.initializeStaticResources();
+    final cameras = <Vector3>[];
     final draws = _shadowDraws(
-      _scene(sun: false, selector: (context) => MeshDrawSelection.all),
+      _scene(
+        sun: false,
+        selector: (context) {
+          if (context.pass == MeshDrawPass.shadow) {
+            cameras.add(context.cameraPosition.clone());
+          }
+          return MeshDrawSelection.all;
+        },
+      ),
     );
-    expect(draws, hasLength(2));
-    expect(draws.every((d) => d > 0), isTrue);
+    expect(draws.first, greaterThan(0));
+    expect(draws.last, 0);
+    expect(cameras, isNotEmpty);
+    for (final camera in cameras) {
+      expect(camera, Vector3(0, 2, 5));
+    }
   });
 }

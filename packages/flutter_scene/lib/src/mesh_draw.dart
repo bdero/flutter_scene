@@ -29,7 +29,9 @@ final class MeshDrawContext {
   /// The pass being encoded.
   MeshDrawPass pass;
 
-  /// The world-space position of the camera (or light) rendering the pass.
+  /// The world-space position of the camera rendering the pass. Spot and
+  /// point shadow maps shared by a frame's views take its screen view's
+  /// camera, so a render texture shows the shadows the screen view sees.
   Vector3 cameraPosition;
 
   /// Whether the pass renders for a screen view's camera. False for texture

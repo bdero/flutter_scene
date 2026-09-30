@@ -65,7 +65,6 @@ import 'render/render_graph_capture.dart';
 import 'render/render_stats.dart';
 import 'scene_encoder.dart'
     show deferredPipelineBuilds, pipelineCacheSize, withPipelineBuildBudget;
-import 'render/mesh_draw_selection.dart' show hasMeshDrawSelector;
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
@@ -572,6 +571,7 @@ base class Scene implements SceneGraph {
 
   // The frame's shared spot and point shadow tiles while render() runs.
   SharedShadowAtlas? _sharedShadowAtlas;
+  RenderView? _sharedShadowAnchor;
 
   /// Frames a screen view has presented from its previous image because the
   /// GPU was [maxGpuFramesInFlight] frames behind. A diagnostic counter.
@@ -1805,16 +1805,6 @@ base class Scene implements SceneGraph {
 
   bool _warmUpIncludeOffscreen = false;
 
-  bool _hasViewDependentShadowCaster() {
-    for (final item in renderScene.items) {
-      if (!item.castsShadows) continue;
-      if (hasMeshDrawSelector(item) || item.material.shadowReadsCamera) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   /// Renders a list of [views] of this scene onto [canvas].
   ///
   /// Each [RenderView] binds a camera to a normalized sub-rectangle of
@@ -1999,14 +1989,30 @@ base class Scene implements SceneGraph {
                         2);
 
     // Without directional cascades the atlas holds only spot and point tiles,
-    // so the frame's views share one render of it, unless a caster's draw
-    // depends on the camera (a draw selector, or a shadow shader reading it).
+    // so the texture views and the first screen view share one render of it,
+    // with casters drawn from that screen view's camera (the first texture
+    // view's in a frame with no screen view). Other screen views render their
+    // own.
+    RenderView? anchor;
+    for (final view in views) {
+      if (view.target == null) {
+        anchor = view;
+        break;
+      }
+    }
+    if (anchor == null) {
+      for (final view in [...this.views, ...views]) {
+        if (view.target == null) continue;
+        if (anchor == null || view.order < anchor.order) anchor = view;
+      }
+    }
+    _sharedShadowAnchor = anchor;
     _sharedShadowAtlas =
         !debugDisableSharedShadowTiles &&
+            anchor != null &&
             lightComponent?.light.castsShadow != true &&
-            (spotShadowFrame != null || pointShadowFrame != null) &&
-            !_hasViewDependentShadowCaster()
-        ? SharedShadowAtlas()
+            (spotShadowFrame != null || pointShadowFrame != null)
+        ? SharedShadowAtlas(anchor.camera.position)
         : null;
 
     _recordShadowCasterBudget(
@@ -2144,6 +2150,7 @@ base class Scene implements SceneGraph {
     }
 
     _sharedShadowAtlas = null;
+    _sharedShadowAnchor = null;
     renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
     rendererSubmissions.endFrame();
 
@@ -2727,7 +2734,11 @@ base class Scene implements SceneGraph {
           spotShadows: spotShadowFrame,
           pointShadows: pointShadowFrame,
           cachePlan: shadowCachePlan,
-          shared: cascades.isEmpty ? _sharedShadowAtlas : null,
+          shared:
+              cascades.isEmpty &&
+                  (view.target != null || identical(view, _sharedShadowAnchor))
+              ? _sharedShadowAtlas
+              : null,
           // PostShadowInfo describes the directional cascades, so publish it
           // only when they exist (a spot-only atlas has no directional light).
           shadowUniform:
