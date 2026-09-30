@@ -2,8 +2,6 @@
 ///
 /// Import this barrel to access ready-to-use game components:
 /// - [SpringArmComponent] and [CameraShake] for camera rigs.
-/// - [Timeline], [CameraTrack], and [CinematicCameraController] for scripted
-///   cinematics.
 /// - [ThirdPersonControllerComponent] and [Steering] for character motion.
 /// - [DayNightCycleComponent] and [WaterSurfaceComponent] for atmospheric environments.
 /// - [SoundManager] and [SurfaceFootstepAudio] for game sound.
@@ -20,12 +18,6 @@ export 'src/kit/camera/spring_arm_component.dart' show SpringArmComponent;
 export 'src/kit/camera/virtual_joystick.dart'
     show JoystickCallback, VirtualJoystick;
 export 'src/kit/character/steering_behaviors.dart' show Steering;
-export 'src/kit/cinematic/camera_track.dart'
-    show CameraKey, CameraSample, CameraTrack, CameraWander, FocusPuller;
-export 'src/kit/cinematic/cinematic_camera_controller.dart'
-    show CinematicCameraController;
-export 'src/kit/cinematic/timeline.dart'
-    show Cue, Keyframe, KeyframeCurve, KeyframeEase, KeyframeTrack, Timeline;
 export 'src/kit/character/third_person_controller.dart'
     show ThirdPersonControllerComponent;
 export 'src/kit/debug/debug_draw.dart' show DebugDraw;
