@@ -84,6 +84,10 @@ class Etc1sRdo {
   final double selectorThreshold;
 }
 
+/// The most entries either codebook may hold. Huffman symbol counts are 14
+/// bits, and the selector model adds 65 history symbols to the codebook size.
+const int maxEtc1sCodebookEntries = 16128;
+
 /// Writes the payload for [images] against the endpoint codebook (4 bytes
 /// per entry) and selector codebook (16 selectors per entry).
 BasisLzPayload writeBasisLz({
@@ -97,8 +101,11 @@ BasisLzPayload writeBasisLz({
   if (endpointCount == 0 || selectorCount == 0) {
     throw ArgumentError('BasisLZ needs at least one endpoint and selector');
   }
-  if (endpointCount > 0xFFFF || selectorCount > 0xFFFF) {
-    throw ArgumentError('BasisLZ codebooks hold at most 65535 entries');
+  if (endpointCount > maxEtc1sCodebookEntries ||
+      selectorCount > maxEtc1sCodebookEntries) {
+    throw ArgumentError(
+      'BasisLZ codebooks hold at most $maxEtc1sCodebookEntries entries',
+    );
   }
 
   final slices = <Etc1sSlice>[
@@ -197,7 +204,8 @@ BasisLzPayload writeBasisLz({
   final selectorBytes = _writeSelectors(orderedSelectors);
   final tableBytes = tables.takeBytes();
 
-  // Global data: header, one descriptor per image, then the sections.
+  // The global data holds a header, one descriptor per image, then the
+  // sections.
   const headerSize = 20, descriptorSize = 20;
   final global = Uint8List(
     headerSize +
@@ -221,7 +229,7 @@ BasisLzPayload writeBasisLz({
     final alpha = images[i].alpha != null ? sliceBytes[sliceIndex++] : null;
     final o = headerSize + i * descriptorSize;
     view
-      ..setUint32(o, 0, Endian.little) // flags: an I-frame
+      ..setUint32(o, 0, Endian.little) // An I-frame.
       ..setUint32(o + 4, 0, Endian.little)
       ..setUint32(o + 8, rgb.length, Endian.little)
       ..setUint32(o + 12, alpha == null ? 0 : rgb.length, Endian.little)
@@ -508,7 +516,7 @@ Uint8List _writeSlice(
   for (var y = 0; y < slice.blocksY; y++) {
     for (var x = 0; x < bx; x++) {
       if ((x & 1) == 0 && (y & 1) == 0) {
-        // Per quad: a symbol, a repeat, or -1 when a repeat covers it.
+        // Each quad holds a symbol, a repeat, or -1 when a repeat covers it.
         final symbol = plan.predSymbols[predIndex++];
         if (symbol >= 0) out.writeCode(symbol, predModel);
         if (symbol == _endpointPredRepeatSymbol) {

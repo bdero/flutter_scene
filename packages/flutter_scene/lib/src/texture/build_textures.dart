@@ -15,7 +15,7 @@ import 'ktx2_image.dart';
 import 'mipmap.dart';
 import 'texture_encoding.dart';
 
-export 'texture_encoding.dart';
+export 'texture_encoding.dart' show TextureEncoding;
 
 /// Controls where [buildTextures] puts generated `.fstex` assets.
 enum TextureAssetMode {
@@ -129,6 +129,17 @@ void buildTextures({
       );
     }
   }
+  // A quality computed in the hook skips the constructor's assert.
+  for (final (source, value) in [
+    ('encoding', encoding),
+    for (final MapEntry(:key, :value) in encodings.entries) (key, value),
+  ]) {
+    if (value.isEtc1s && (value.quality < 1 || value.quality > 255)) {
+      throw ArgumentError(
+        'ETC1S quality for $source must be 1 to 255, got ${value.quality}.',
+      );
+    }
+  }
 
   // ignore: deprecated_member_use_from_same_package
   if (assetMode == TextureAssetMode.legacyOnly) {
@@ -196,7 +207,7 @@ void buildTextures({
     final slash = inputFilePath.lastIndexOf('/');
     final stem = dot > slash ? inputFilePath.substring(0, dot) : inputFilePath;
     final textureEncoding = encodings[inputFilePath] ?? encoding;
-    final extension = textureEncoding.extension;
+    final extension = textureEncoding.fileExtension;
     final relativeTexturePath = '$stem$extension';
     final outputTextureUri =
         tree?.fileUri(
@@ -253,6 +264,8 @@ void buildTextures({
       }
       final rgba = source.convert(numChannels: 4, format: img.Format.uint8);
       final pixels = rgba.getBytes(order: img.ChannelOrder.rgba);
+      // TODO(etc1s-fscene-textures): textures embedded in .fscene/.fsceneb
+      // still cook to the engine's format; offer ETC1S to scene builds too.
       writeGeneratedBytes(
         outputTextureUri,
         textureEncoding.isEtc1s

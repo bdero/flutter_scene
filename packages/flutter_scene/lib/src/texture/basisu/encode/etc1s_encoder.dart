@@ -44,6 +44,9 @@ Uint8List encodeEtc1sKtx2(
   if (rgba.length < width * height * 4) {
     throw ArgumentError('rgba is too small for ${width}x$height');
   }
+  if (options.quality < 1 || options.quality > 255) {
+    throw ArgumentError.value(options.quality, 'quality', 'must be 1 to 255');
+  }
   final levels = options.mipmaps
       ? generateMipChain(rgba, width, height, options.content)
       : [MipLevel(width, height, rgba)];
@@ -52,6 +55,10 @@ Uint8List encodeEtc1sKtx2(
     hasAlpha = rgba[i] != 255;
   }
 
+  // TODO(etc1s-encode-scale): encoding is single-threaded, and the fit
+  // buffers are sized to the largest cluster, so a 4096x4096 texture with
+  // alpha takes minutes and about 1 GB. Split the work across isolates and
+  // bound the per-cluster buffers.
   // Color and alpha slices share the codebooks.
   final sliceSizes = <(int, int)>[];
   var blockCount = 0;
@@ -160,6 +167,9 @@ int _gatherBlocks(MipLevel level, bool alpha, Uint8List out, int first) {
           final sx = bx + x < w ? bx + x : w - 1;
           final s = (sy * w + sx) * 4;
           if (alpha) {
+            // TODO(etc1s-alpha-error): alpha blocks are fitted and scored in
+            // RGB though the decoder reads only green; scoring green alone
+            // would spend the error budget where it shows.
             out[o] = out[o + 1] = out[o + 2] = px[s + 3];
           } else {
             out[o] = px[s];
@@ -177,7 +187,8 @@ int _gatherBlocks(MipLevel level, bool alpha, Uint8List out, int first) {
 
 /// Codebook sizes for [quality], after basis_universal's mapping.
 (int, int) _codebookSizes(int quality, int totalTexels, int totalBlocks) {
-  const maxEndpoints = 16128, maxSelectors = 16128;
+  const maxEndpoints = maxEtc1sCodebookEntries;
+  const maxSelectors = maxEtc1sCodebookEntries;
   final q = quality / 255;
   const mid = 128 / 255;
   final texelBudget = totalTexels ~/ 14;
@@ -225,7 +236,7 @@ Etc1sRdo _rdoFor(int quality, Etc1sBlockErrors errors) {
 /// The ETC1S data format descriptor basisu writes.
 Uint8List _etc1sDataFormat({required bool srgb, required bool alpha}) {
   final samples = alpha ? 2 : 1;
-  // 44 or 60 bytes: the only sizes basisu accepts.
+  // 44 or 60 bytes, the only sizes basisu accepts.
   final size = 28 + 16 * samples;
   final dfd = ByteData(size);
   dfd

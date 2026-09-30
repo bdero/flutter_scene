@@ -9,7 +9,7 @@ library;
 import 'mipmap.dart';
 import 'texture_encoding.dart';
 
-export 'texture_encoding.dart';
+export 'texture_encoding.dart' show TextureEncoding;
 
 /// Web/wasm placeholder for the native build-hook enum.
 enum TextureAssetMode {
