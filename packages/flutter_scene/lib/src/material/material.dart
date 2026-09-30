@@ -17,6 +17,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/physically_based_material.dart';
 import 'package:flutter_scene/src/material/unlit_material.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/planar_reflection.dart';
 import 'package:flutter_scene/src/render_texture.dart';
@@ -505,6 +506,22 @@ abstract class Material {
   bool needsFullVertexForDepth(Geometry geometry) =>
       materialVertexShader(geometry.materialVertexVariant) != null &&
       (geometry.hasCustomAttributes || instanceAttributes != null);
+
+  /// The custom vertex attributes this material's own vertex shaders read, or
+  /// null to bind every stream the geometry carries (a raw `ShaderMaterial`,
+  /// whose inputs the engine cannot see).
+  ///
+  /// TODO(raw-shader-vertex-attributes): let a raw `ShaderMaterial` declare
+  /// its attributes so a geometry's extra streams stop breaking its pipeline.
+  @internal
+  VertexAttributeSchema? get vertexAttributes => null;
+
+  /// The custom vertex attributes a draw reads when it runs [materialVertex]
+  /// (this material's vertex shader for the pass, or null for the engine's).
+  /// Engine vertex shaders read none.
+  @internal
+  VertexAttributeSchema? vertexAttributesFor(gpu.Shader? materialVertex) =>
+      materialVertex == null ? VertexAttributeSchema.none : vertexAttributes;
 
   /// Binds this material's vertex-stage uniforms to [vertexShader], called by
   /// the encoder only when it used a material-supplied vertex shader (see

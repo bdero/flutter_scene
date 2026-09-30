@@ -939,6 +939,11 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     if (material.sceneColorReach != null)
       'scene_color_reach': material.sceneColorReach,
     'uniform_block': kMaterialParamsBlock,
+    // Always written, so a sidecar without it is from an older build.
+    'attributes': [
+      for (final a in material.attributes)
+        <String, Object?>{'name': a.name, 'components': a.components},
+    ],
     // Declared order plus the resolved record offsets, so the runtime lays out
     // the instance-rate buffer without re-deriving the padding rule.
     if (material.instanceAttributes.isNotEmpty)

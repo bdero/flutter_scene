@@ -1928,6 +1928,28 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         ),
       )..localTransform = vm.Matrix4.translation(vm.Vector3(0, 0.5, 0)),
     );
+    // Mesh and material need not agree on custom attributes. A patch with no
+    // `phase` stream drawn with the material reads it as zero, and the hero
+    // grid, which carries one, still draws with a built-in material.
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 0.7, depth: 0.7), material))
+        ..localTransform = vm.Matrix4.translation(vm.Vector3(1.3, 0.3, 0.8)),
+    );
+    scene.add(
+      Node(
+          mesh: Mesh(
+            grid,
+            PhysicallyBasedMaterial()
+              ..baseColorFactor = vm.Vector4(0.9, 0.45, 0.15, 1.0)
+              ..metallicFactor = 0.0
+              ..roughnessFactor = 0.6
+              ..vertexColorWeight = 0.0,
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0.1, 0.3, 1.5)) *
+            vm.Matrix4.diagonal3Values(0.35, 1.0, 0.35),
+    );
     return (scene: scene, camera: _shadowCamera());
   }, preload: loadSmokeMaterials),
   // A projected box decal over a ground plane and one prop. The decal's

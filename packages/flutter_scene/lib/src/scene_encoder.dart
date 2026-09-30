@@ -756,16 +756,20 @@ base class SceneEncoder {
     // A material that cannot show the active debug view draws through the
     // engine's fallback debug fragment shader instead of its own.
     final fallback = _usesDebugFallback(item, material, geometry);
+    final materialVertex = material.materialVertexShader(
+      geometry.materialVertexVariant,
+    );
     final pipeline = tryResolvePipeline(
-      material.materialVertexShader(geometry.materialVertexVariant) ??
-          geometry.vertexShader,
+      materialVertex ?? geometry.vertexShader,
       fallback
           ? _debugFallbackShader
           : material.fragmentShaderForLighting(_lighting),
       // A material declaring `instance_attributes` widens the instance-rate
-      // slot, so the pipeline depends on the material as well as the geometry.
+      // slot, and its custom vertex `attributes` pick the geometry streams, so
+      // the pipeline depends on the material as well as the geometry.
       vertexLayout: geometry.instancedVertexLayoutFor(
         material.instanceAttributes,
+        material.vertexAttributesFor(materialVertex),
       ),
       debugContext: () =>
           '${fmatSourcePathOf(material) ?? material.runtimeType} on '
@@ -1158,9 +1162,11 @@ base class SceneEncoder {
   void _bindGeometry(
     Geometry geometry,
     Matrix4 worldTransform,
+    Material material,
     gpu.Shader? materialVertex,
-    double depthBias,
   ) {
+    final depthBias = material.depthBias;
+    geometry.useVertexAttributes(material.vertexAttributesFor(materialVertex));
     // Morphed geometry takes the full bind, which also binds its morph stage.
     if (geometry is UnskinnedGeometry && geometry.morphTargets == null) {
       geometry.bindGeometryBuffers(_renderPass);
@@ -1326,7 +1332,7 @@ base class SceneEncoder {
         batchBreak: batchBreak,
       );
     }
-    _bindGeometry(geometry, worldTransform, materialVertex, material.depthBias);
+    _bindGeometry(geometry, worldTransform, material, materialVertex);
     if (geometry.bindsModelTransformInstance) {
       // The model matrix arrives through the instance-rate vertex buffer,
       // bound to the slot after the geometry's vertex streams.
@@ -1472,8 +1478,8 @@ base class SceneEncoder {
         _bindGeometry(
           geometry,
           nodeTransform * instanceTransform,
+          material,
           materialVertex,
-          material.depthBias,
         );
         // Each instance can itself mirror; combine with the node's parity.
         final flip = windingFlipped != (instanceTransform.determinant() < 0);
@@ -1485,7 +1491,7 @@ base class SceneEncoder {
       return;
     }
 
-    _bindGeometry(geometry, nodeTransform, materialVertex, material.depthBias);
+    _bindGeometry(geometry, nodeTransform, material, materialVertex);
     if (sortBackToFrontFrom == null &&
         allInstances &&
         packedWorldData != null &&
@@ -1591,12 +1597,7 @@ base class SceneEncoder {
     // seed, so its members share one object color.
     _bindDebugView(material, item, fallback);
     _setPrimitiveType(geometry.primitiveType);
-    _bindGeometry(
-      geometry,
-      _identityTransform,
-      materialVertex,
-      material.depthBias,
-    );
+    _bindGeometry(geometry, _identityTransform, material, materialVertex);
     final packWatch = profileRendering ? (Stopwatch()..start()) : null;
     final packed = packInstanceDataBatches(
       batches,

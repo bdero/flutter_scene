@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/material/instance_attributes.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
@@ -242,6 +244,7 @@ abstract class Geometry {
   /// turn-key path that allocates and uploads in one step, see
   /// [uploadVertexData].
   void setVertices(gpu.BufferView vertices, int vertexCount) {
+    _clearResolvedOnLayoutChange(1);
     _vertexStreams = [vertices];
     _vertexCount = vertexCount;
   }
@@ -254,15 +257,16 @@ abstract class Geometry {
   /// uses [setVertices].
   @internal
   void setVertexStreams(List<gpu.BufferView> streams, int vertexCount) {
+    _clearResolvedOnLayoutChange(streams.length);
     _vertexStreams = streams;
     _vertexCount = vertexCount;
   }
 
   // Extra per-vertex attribute streams a material's custom `attributes` read,
-  // keyed by the shader `in` name (insertion order is the slot order). Bound
-  // after the base vertex streams in the color pass; the depth passes fetch
-  // only position and ignore them. Populated by [setCustomAttribute], which
-  // retains the caller's data for [extractMeshData].
+  // keyed by the shader `in` name. Bound after the base vertex streams, as the
+  // draw's vertex shader declares them (see [useVertexAttributes]). Populated
+  // by [setCustomAttribute], which retains the caller's data for
+  // [extractMeshData].
   final Map<
     String,
     ({
@@ -274,12 +278,113 @@ abstract class Geometry {
   >
   _customAttributes = {};
 
-  /// The number of vertex buffer streams this geometry binds: the built-in
-  /// streams (one interleaved, or several de-interleaved) plus any custom
-  /// attribute streams. The color pass binds the instance-rate transform
-  /// buffer to the slot after these.
+  /// The number of vertex buffer streams this geometry binds for the current
+  /// draw: the built-in streams (one interleaved, or several de-interleaved)
+  /// plus the custom attribute streams its vertex shader reads. The color pass
+  /// binds the instance-rate transform buffer to the slot after these.
   @internal
-  int get vertexStreamCount => _vertexStreams.length + _customAttributes.length;
+  int get vertexStreamCount =>
+      _vertexStreams.length +
+      (_resolveAttributes(_activeAttributes)?.streams.length ??
+          _customAttributes.length);
+
+  // The custom attributes the next draw's vertex shader reads, set by the
+  // encoder before binding. Null binds every stream the geometry carries.
+  VertexAttributeSchema? _activeAttributes;
+
+  /// Selects the custom attributes the next bind supplies: the ones [schema]
+  /// declares, reading zero where this geometry has no stream, or every
+  /// stream when [schema] is null. The encoders call this before each bind,
+  /// like [setJointsTexture], and must resolve the pipeline layout with the
+  /// same schema (see [instancedVertexLayoutFor]).
+  @internal
+  void useVertexAttributes(VertexAttributeSchema? schema) {
+    _activeAttributes = schema;
+  }
+
+  // Resolved streams and layouts per schema, since one geometry alternates
+  // between a material's schema (color) and none (depth) every frame. Cleared
+  // when the custom streams or the vertex count change.
+  final Map<VertexAttributeSchema, _ResolvedAttributes> _resolved =
+      HashMap.identity();
+  int _resolvedVertexCount = -1;
+
+  /// Whether this geometry's layout can be narrowed to what a draw's vertex
+  /// shader reads. Only the built-in mesh layouts describe their custom slots.
+  bool get _resolvesCustomAttributes => false;
+
+  // The streams and layout slots for [schema], or null to bind every stream
+  // (no schema, a caller-declared layout, or a geometry kind whose layout
+  // cannot be narrowed).
+  _ResolvedAttributes? _resolveAttributes(VertexAttributeSchema? schema) {
+    if (schema == null || _vertexLayout != null || !_resolvesCustomAttributes) {
+      return null;
+    }
+    if (_resolvedVertexCount != _vertexCount) {
+      _resolved.clear();
+      _resolvedVertexCount = _vertexCount;
+    }
+    return _resolved[schema] ??= _buildResolvedAttributes(schema);
+  }
+
+  // The built-in layout depends only on how many streams hold the vertex
+  // data (interleaved or not), so updatable meshes swapping in same-shaped
+  // streams every frame keep their resolved layouts.
+  void _clearResolvedOnLayoutChange(int streamCount) {
+    if (streamCount != _vertexStreams.length) _resolved.clear();
+  }
+
+  _ResolvedAttributes _buildResolvedAttributes(VertexAttributeSchema schema) {
+    final slots = resolveVertexAttributeSlots(schema, {
+      for (final entry in _customAttributes.entries)
+        entry.key: entry.value.format,
+    });
+    return _ResolvedAttributes([
+      for (final slot in slots)
+        slot.provided
+            ? _customAttributes[slot.name]!.view
+            : _zeroAttributeStream(_vertexCount * slot.format.bytesPerElement),
+    ], _describedLayoutWith([for (final slot in slots) slot.buffer]));
+  }
+
+  /// The pipeline layout for a draw whose vertex shader reads [schema], built
+  /// from the custom streams this geometry has now. Null means the shader's
+  /// reflected layout.
+  @visibleForTesting
+  VertexLayoutDescriptor? debugLayoutForAttributes(
+    VertexAttributeSchema schema,
+  ) {
+    if (!_resolvesCustomAttributes) return instancedVertexLayout;
+    final slots = resolveVertexAttributeSlots(schema, {
+      for (final entry in _customAttributes.entries)
+        entry.key: entry.value.format,
+    });
+    return _describedLayoutWith([for (final slot in slots) slot.buffer]);
+  }
+
+  /// The built-in layout with [customBuffers] appended to its vertex slots.
+  /// Only called when [_resolvesCustomAttributes] is true.
+  VertexLayoutDescriptor? _describedLayoutWith(
+    List<VertexBufferDescriptor> customBuffers,
+  ) => null;
+
+  // One zero-filled buffer serves every declared attribute a geometry lacks,
+  // grown to the largest stream asked of it.
+  static gpu.DeviceBuffer? _zeroBuffer;
+  static int _zeroBufferBytes = 0;
+
+  static gpu.BufferView _zeroAttributeStream(int bytes) {
+    final size = bytes < 16 ? 16 : bytes;
+    if (_zeroBuffer == null || _zeroBufferBytes < size) {
+      final capacity = 1 << (size - 1).bitLength;
+      _zeroBuffer = gpu.gpuContext.createDeviceBuffer(
+        gpu.StorageMode.hostVisible,
+        capacity,
+      )..overwrite(ByteData(capacity));
+      _zeroBufferBytes = capacity;
+    }
+    return gpu.BufferView(_zeroBuffer!, offsetInBytes: 0, lengthInBytes: size);
+  }
 
   /// Whether this geometry carries any custom attribute streams (see
   /// [setCustomAttribute]).
@@ -345,6 +450,7 @@ abstract class Geometry {
       bytes.lengthInBytes,
     );
     buffer.overwrite(bytes);
+    _resolved.clear();
     _customAttributes[name] = (
       format: _vertexFormatForComponents(components),
       view: gpu.BufferView(
@@ -1016,27 +1122,42 @@ abstract class Geometry {
   /// A material's `instance_attributes` append to the instance record the
   /// engine already binds, so the pipeline this geometry draws with depends on
   /// the material as well as the geometry.
+  ///
+  /// [attributes] narrows the custom attribute slots to the ones the draw's
+  /// vertex shader reads (see [useVertexAttributes]); null keeps every stream
+  /// this geometry carries.
   @internal
   VertexLayoutDescriptor? instancedVertexLayoutFor(
-    InstanceAttributeSchema? schema,
-  ) {
-    final base = instancedVertexLayout;
+    InstanceAttributeSchema? schema, [
+    VertexAttributeSchema? attributes,
+  ]) {
+    final resolved = _resolveAttributes(attributes);
+    final base = resolved == null ? instancedVertexLayout : resolved.layout;
     if (schema == null || base == null || !bindsModelTransformInstance) {
       return base;
+    }
+    if (resolved != null) {
+      if (identical(schema, resolved.widenedSchema)) return resolved.widened;
+      resolved.widenedSchema = schema;
+      return resolved.widened = _widen(base, schema);
     }
     if (identical(schema, _widenedSchema) && identical(base, _widenedBase)) {
       return _widenedLayout;
     }
-    final widened = VertexLayoutDescriptor(
-      buffers: [
-        ...base.buffers.sublist(0, base.buffers.length - 1),
-        schema.widen(base.buffers.last),
-      ],
-    );
     _widenedSchema = schema;
     _widenedBase = base;
-    return _widenedLayout = widened;
+    return _widenedLayout = _widen(base, schema);
   }
+
+  static VertexLayoutDescriptor _widen(
+    VertexLayoutDescriptor base,
+    InstanceAttributeSchema schema,
+  ) => VertexLayoutDescriptor(
+    buffers: [
+      ...base.buffers.sublist(0, base.buffers.length - 1),
+      schema.widen(base.buffers.last),
+    ],
+  );
 
   VertexLayoutDescriptor? _vertexLayout;
   bool? _bindsModelTransformInstance;
@@ -1133,9 +1254,16 @@ abstract class Geometry {
       );
     }
     // Custom attribute streams follow the built-in streams, one slot each, in
-    // insertion order (matching customAttributeBuffers in the layout).
-    for (final attr in _customAttributes.values) {
-      bindVertexBufferCompat(pass, attr.view, _vertexCount, slot: slot++);
+    // the order the layout declares them.
+    final resolved = _resolveAttributes(_activeAttributes);
+    if (resolved != null) {
+      for (final view in resolved.streams) {
+        bindVertexBufferCompat(pass, view, _vertexCount, slot: slot++);
+      }
+    } else {
+      for (final attr in _customAttributes.values) {
+        bindVertexBufferCompat(pass, attr.view, _vertexCount, slot: slot++);
+      }
     }
     if (_indices != null) _bindIndices(pass);
   }
@@ -1324,18 +1452,27 @@ class UnskinnedGeometry extends Geometry {
   }
 
   @override
-  VertexLayoutDescriptor? get defaultVertexLayout {
+  VertexLayoutDescriptor? get defaultVertexLayout =>
+      _describedLayoutWith(customAttributeBuffers);
+
+  @override
+  bool get _resolvesCustomAttributes => true;
+
+  @override
+  VertexLayoutDescriptor _describedLayoutWith(
+    List<VertexBufferDescriptor> customBuffers,
+  ) {
     final base = _isDeInterleaved
         ? kUnskinnedSoAColorLayout
         : kUnskinnedInstancedLayout;
-    if (!hasCustomAttributes) return base;
+    if (customBuffers.isEmpty) return base;
     // Splice the custom attribute buffers in before the trailing instance-rate
     // model-transform buffer, so their slots follow the built-in streams and
     // the instance buffer stays at the last slot (vertexStreamCount).
     return VertexLayoutDescriptor(
       buffers: [
         ...base.buffers.sublist(0, base.buffers.length - 1),
-        ...customAttributeBuffers,
+        ...customBuffers,
         base.buffers.last,
       ],
     );
@@ -1401,14 +1538,23 @@ class SkinnedGeometry extends Geometry {
   String get materialVertexVariant => 'skinned';
 
   @override
-  VertexLayoutDescriptor? get defaultVertexLayout {
+  VertexLayoutDescriptor? get defaultVertexLayout =>
+      _describedLayoutWith(customAttributeBuffers);
+
+  @override
+  bool get _resolvesCustomAttributes => true;
+
+  @override
+  VertexLayoutDescriptor? _describedLayoutWith(
+    List<VertexBufferDescriptor> customBuffers,
+  ) {
     // Without custom attributes the pipeline layout comes from the shader's
     // own reflection, which is how skinned meshes have always drawn. Custom
-    // attribute streams have to be described, though, since reflection cannot
-    // know which slot the caller bound them to.
-    if (!hasCustomAttributes) return null;
+    // attribute streams have to be described, though, since reflection folds
+    // every declared input into the one interleaved buffer.
+    if (customBuffers.isEmpty) return null;
     return VertexLayoutDescriptor(
-      buffers: [kSkinnedVertexBuffer, ...customAttributeBuffers],
+      buffers: [kSkinnedVertexBuffer, ...customBuffers],
     );
   }
 
@@ -1516,6 +1662,44 @@ class SkinnedGeometry extends Geometry {
     );
     pass.bindUniform(frameInfoSlot, frameInfoView);
   }
+}
+
+/// The custom attribute slots a draw binds when its vertex shader reads
+/// [schema] and the geometry [provided] these streams: one per declared
+/// attribute, in declaration order, reading the geometry's stream when it has
+/// one and zero otherwise. Streams nobody declared are left out.
+@visibleForTesting
+List<({String name, gpu.VertexFormat format, bool provided})>
+resolveVertexAttributeSlots(
+  VertexAttributeSchema schema,
+  Map<String, gpu.VertexFormat> provided,
+) => [
+  for (final declared in schema.attributes)
+    (
+      name: declared.name,
+      format:
+          provided[declared.name] ??
+          _vertexFormatForComponents(declared.components),
+      provided: provided.containsKey(declared.name),
+    ),
+];
+
+extension on ({String name, gpu.VertexFormat format, bool provided}) {
+  VertexBufferDescriptor get buffer => VertexBufferDescriptor(
+    strideInBytes: format.bytesPerElement,
+    attributes: [VertexAttributeDescriptor(name: name, format: format)],
+  );
+}
+
+// A geometry's custom streams resolved against one vertex attribute schema.
+class _ResolvedAttributes {
+  _ResolvedAttributes(this.streams, this.layout);
+
+  final List<gpu.BufferView> streams;
+  final VertexLayoutDescriptor? layout;
+
+  InstanceAttributeSchema? widenedSchema;
+  VertexLayoutDescriptor? widened;
 }
 
 /// The float [gpu.VertexFormat] for a 1..4-component custom attribute.

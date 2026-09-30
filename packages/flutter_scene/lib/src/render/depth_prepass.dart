@@ -17,11 +17,11 @@ import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
-import 'package:flutter_scene/src/scene_encoder.dart'
-    show resolvePipelineOrDefer;
+import 'package:flutter_scene/src/scene_encoder.dart' show tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 
 /// Render-graph blackboard key under which [DepthPrepass] publishes the
 /// camera linear-depth texture: planar view-space depth (world units) in
@@ -537,12 +537,19 @@ class _DepthPrepassEncoder {
         ? item.material.instanceAttributes
         : null;
     final attributeFloats = instanceSchema?.floatCount ?? 0;
-    final pipeline = resolvePipelineOrDefer(
+    // The full-vertex path supplies the custom attributes its vertex shader
+    // reads; the position-only path fetches none.
+    final attributes = depthVertex == null
+        ? item.material.vertexAttributesFor(materialVertex)
+        : VertexAttributeSchema.none;
+    geometry.useVertexAttributes(attributes);
+    final pipeline = tryResolvePipeline(
       activeVertex,
       fragmentShader,
       vertexLayout:
           depthVertex?.layout ??
-          geometry.instancedVertexLayoutFor(instanceSchema),
+          geometry.instancedVertexLayoutFor(instanceSchema, attributes),
+      debugContext: () => 'depth prepass ${geometry.runtimeType}',
     );
     // A sliced warm-up builds this pipeline in a later slice.
     if (pipeline == null) return;

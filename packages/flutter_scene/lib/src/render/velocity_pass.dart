@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 
 /// Render-graph blackboard key for the screen-space velocity buffer.
 const String kVelocityBlackboardKey = 'velocity';
@@ -218,7 +219,10 @@ class VelocityPass extends RenderGraphPass {
           item.previousJointsTexture ?? item.jointsTexture!,
           sampler: _nearestClamp,
         );
-        item.geometry.bindGeometryBuffers(renderPass);
+        // The velocity shaders read no custom attributes.
+        item.geometry
+          ..useVertexAttributes(VertexAttributeSchema.none)
+          ..bindGeometryBuffers(renderPass);
       } else {
         unskinnedModelInfo.setRange(0, 16, item.worldTransform.storage);
         unskinnedModelInfo.setRange(

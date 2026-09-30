@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 
 /// Draws every visible mesh's triangle edges as lines into [pass], on top of
 /// the scene it just finished, depth-tested against the scene's own depth.
@@ -136,10 +137,16 @@ class _WireframeEncoder {
     );
     final activeVertex =
         materialVertex ?? depthVertex?.shader ?? geometry.vertexShader;
+    final attributes = depthVertex == null
+        ? material.vertexAttributesFor(materialVertex)
+        : VertexAttributeSchema.none;
+    geometry.useVertexAttributes(attributes);
     final pipeline = resolvePipeline(
       activeVertex,
       _fragment,
-      vertexLayout: depthVertex?.layout ?? geometry.instancedVertexLayout,
+      vertexLayout:
+          depthVertex?.layout ??
+          geometry.instancedVertexLayoutFor(null, attributes),
     );
     if (!identical(_boundPipeline, pipeline)) {
       _pass.bindPipeline(pipeline);

@@ -11,10 +11,10 @@ import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
-import 'package:flutter_scene/src/scene_encoder.dart'
-    show resolvePipelineOrDefer;
+import 'package:flutter_scene/src/scene_encoder.dart' show tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 
 /// Which shadow casters a [ShadowEncoder] draws, keyed off
 /// `RenderItem.shadowStatic`. The shadow cache renders static casters into
@@ -280,12 +280,21 @@ class ShadowEncoder {
         ? item.material.instanceAttributes
         : null;
     final attributeFloats = instanceSchema?.floatCount ?? 0;
-    final pipeline = resolvePipelineOrDefer(
+    // The full-vertex path supplies the custom attributes its vertex shader
+    // reads; the position-only path fetches none.
+    final attributes = depthVertex == null
+        ? item.material.vertexAttributesFor(materialVertex)
+        : VertexAttributeSchema.none;
+    geometry.useVertexAttributes(attributes);
+    // A caster whose pipeline cannot build skips its own draw rather than
+    // throwing out of the whole shadow pass.
+    final pipeline = tryResolvePipeline(
       activeVertex,
       fragmentShader,
       vertexLayout:
           depthVertex?.layout ??
-          geometry.instancedVertexLayoutFor(instanceSchema),
+          geometry.instancedVertexLayoutFor(instanceSchema, attributes),
+      debugContext: () => 'shadow caster ${geometry.runtimeType}',
     );
     // A sliced warm-up builds this pipeline in a later slice.
     if (pipeline == null) return;

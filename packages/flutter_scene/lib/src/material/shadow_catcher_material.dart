@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/physical_material_variant.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
+import 'package:flutter_scene/src/material/vertex_attributes.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// How a [ShadowCatcherMaterial] evaluates its shadow term each frame.
@@ -263,6 +264,9 @@ class ShadowCatcherMaterial extends Material {
   @override
   gpu.Shader? materialVertexShader(String variant) =>
       _prepared.materialVertexShader(variant);
+
+  @override
+  VertexAttributeSchema? get vertexAttributes => _prepared.vertexAttributes;
 
   @override
   void bindVertexStage(
