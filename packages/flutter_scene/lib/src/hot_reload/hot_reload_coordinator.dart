@@ -168,15 +168,19 @@ class HotReloadCoordinator {
     }
   }
 
-  /// Registers a texture [source] loaded from the cooked `.fstex` asset
+  /// Registers a texture [source] loaded from the cooked texture asset
   /// [assetKey]. On hot reload, when the asset's content changes, [onReload]
-  /// is invoked to re-read and re-upload it in place (see `loadTexture`); the
-  /// registration is dropped once [source] is collected. No-op outside debug.
+  /// is invoked with the key to re-read and re-upload it in place (see
+  /// `loadTexture`); the registration is dropped once [source] is collected.
+  /// [resolveAssetKey] re-resolves the key each pass, so a texture whose
+  /// cooked file is renamed (a `buildTextures` encoding switch swaps `.fstex`
+  /// and `.ktx2`) keeps reloading. No-op outside debug.
   void registerTexture(
     Object source, {
     required String assetKey,
     AssetBundle? bundle,
-    required Future<void> Function() onReload,
+    Future<String> Function()? resolveAssetKey,
+    required Future<void> Function(String assetKey) onReload,
   }) {
     if (!kDebugMode) return;
     _textures.add(
@@ -184,6 +188,7 @@ class HotReloadCoordinator {
         WeakReference<Object>(source),
         assetKey,
         bundle ?? rootBundle,
+        resolveAssetKey,
         onReload,
       ),
     );
@@ -354,11 +359,25 @@ class HotReloadCoordinator {
     }
   }
 
-  /// Re-reads any changed cooked `.fstex` texture asset and re-uploads it in
+  /// Re-reads any changed cooked texture asset and re-uploads it in
   /// place via each registration's reload closure, so materials bound to the
   /// live source pick up the new texture on their next frame.
   Future<void> _refreshChangedTextures() async {
     if (_textures.isEmpty) return;
+    for (final r in List.of(_textures)) {
+      final resolve = r.resolveAssetKey;
+      if (resolve == null || r.source.target == null) continue;
+      final String key;
+      try {
+        key = await resolve();
+      } catch (_) {
+        continue; // unresolvable this reload; keep the last key
+      }
+      if (key == r.assetKey) continue;
+      r.assetKey = key;
+      // Dropping the hash makes the pass below treat the new key as changed.
+      _textureHashes.remove(key);
+    }
     final bundles = <String, AssetBundle>{
       for (final r in _textures) r.assetKey: r.bundle,
     };
@@ -384,7 +403,7 @@ class HotReloadCoordinator {
       if (r.source.target == null) continue;
       if (!changedKeys.contains(r.assetKey)) continue;
       try {
-        await r.onReload();
+        await r.onReload(r.assetKey);
         debugPrint('flutter_scene: hot-reloaded texture "${r.assetKey}"');
       } catch (e) {
         debugPrint(
@@ -571,12 +590,19 @@ class _MaterialRegistration {
 }
 
 class _TextureRegistration {
-  _TextureRegistration(this.source, this.assetKey, this.bundle, this.onReload);
+  _TextureRegistration(
+    this.source,
+    this.assetKey,
+    this.bundle,
+    this.resolveAssetKey,
+    this.onReload,
+  );
 
   final WeakReference<Object> source;
-  final String assetKey;
+  String assetKey;
   final AssetBundle bundle;
-  final Future<void> Function() onReload;
+  final Future<String> Function()? resolveAssetKey;
+  final Future<void> Function(String assetKey) onReload;
 }
 
 class _SceneRegistration {

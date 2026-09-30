@@ -262,13 +262,22 @@ Future<TextureSource> loadTexture(
       final source = _ReloadableTextureSource(
         await gpuTextureFromAnyKtx2Async(await loadBytes(key)),
       );
+      var loadedKey = key;
       HotReloadCoordinator.instance.registerTexture(
         source,
         assetKey: key,
         bundle: assetBundle,
-        onReload: () async => source._swap(
-          await gpuTextureFromAnyKtx2Async(await loadBytes(key)),
-        ),
+        resolveAssetKey: () async => (await TextureRegistry.load(
+          bundle: bundle,
+        )).resolveKey(sourcePath, package: package),
+        onReload: (assetKey) async {
+          source._swap(
+            await gpuTextureFromAnyKtx2Async(await loadBytes(assetKey)),
+          );
+          if (assetKey == loadedKey) return;
+          _rekeyCachedTexture(source, from: loadedKey, to: assetKey);
+          loadedKey = assetKey;
+        },
       );
       return source;
     }()),
@@ -287,6 +296,21 @@ Future<TextureSource> loadTexture(
   }
   if (sampling == null) return source;
   return _SampledTextureView(source, sampling.toSamplerOptions());
+}
+
+/// Moves [source]'s cache entry from [from] to [to] after its cooked file was
+/// renamed, so later loads and releases of the same source find it.
+void _rekeyCachedTexture(
+  _ReloadableTextureSource source, {
+  required String from,
+  required String to,
+}) {
+  final entry = _textureCache[from];
+  if (entry == null || !identical(entry._resolved, source)) return;
+  if (_textureCache.containsKey(to)) return;
+  _textureCache
+    ..remove(from)
+    ..[to] = entry;
 }
 
 /// Releases one claim on the texture [loadTexture] returned for [sourcePath],
