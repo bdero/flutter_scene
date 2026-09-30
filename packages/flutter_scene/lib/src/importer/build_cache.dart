@@ -8,13 +8,17 @@
 /// skipped and the existing outputs are registered as-is.
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:hooks/hooks.dart';
 
-/// Bump when the hooks' generated output changes for the same inputs (the
-/// importer, the scene emitter, or the material pipeline), so outputs cached
-/// by an older flutter_scene revision are rebuilt.
+/// Bump when the hooks' generated output changes for the same inputs and the
+/// code that caused it is not covered by a generator fingerprint (see
+/// [sceneGeneratorFingerprint]), so outputs cached by an older flutter_scene
+/// revision are rebuilt. A change to the importer, the texture encoder, the
+/// `.fmat` compiler, or the `scene` format rebuilds on its own.
 const int buildCacheRevision = 8;
 
 /// Disables the per-input build cache, so every source is reconverted. Only
@@ -121,4 +125,113 @@ bool isBuildCacheFresh(File stampFile, String stamp, List<File> outputs) {
   } catch (_) {
     return false;
   }
+}
+
+/// The code that writes `.fsceneb` scenes: the importer, the texture encoder it
+/// embeds, and the `scene` package's format. Its fingerprint is part of every
+/// scene's build stamp, so a change to any of it rebuilds the scene.
+const List<String> _sceneGenerator = [
+  'package:flutter_scene/src/importer/',
+  'package:flutter_scene/src/texture/',
+  'package:scene/',
+];
+const List<String> _textureGenerator = ['package:flutter_scene/src/texture/'];
+const List<String> _materialCompiler = ['package:flutter_scene/src/fmat/'];
+
+/// Fingerprint of the code that writes `.fsceneb` scenes.
+String sceneGeneratorFingerprint() => _generator(_sceneGenerator).fingerprint;
+
+/// Fingerprint of the code that writes `.fstex` textures.
+String textureGeneratorFingerprint() =>
+    _generator(_textureGenerator).fingerprint;
+
+/// Fingerprint of the `.fmat` compiler.
+String materialCompilerFingerprint() =>
+    _generator(_materialCompiler).fingerprint;
+
+/// The `.fmat` compiler's source files, declared as hook dependencies so an
+/// edit to them reruns the hook.
+List<Uri> materialCompilerSources() => _generator(_materialCompiler).files;
+
+final Map<String, ({String fingerprint, List<Uri> files})> _generators = {};
+
+// Hashes every Dart file under [packageDirectories]. A file that imports
+// Flutter cannot run in a build hook, so it is runtime code and left out; any
+// other file counts, so new generator code is covered without a list to keep.
+// Unresolvable directories (a package missing from this isolate's config)
+// contribute nothing, leaving [buildCacheRevision] as the backstop.
+({String fingerprint, List<Uri> files}) _generator(
+  List<String> packageDirectories,
+) => _generators[packageDirectories.join(',')] ??= () {
+  final entries = <String>[];
+  final sources = <Uri>[];
+  for (final directory in packageDirectories) {
+    final resolved = _resolvePackageUri(Uri.parse(directory));
+    if (resolved == null) continue;
+    final root = Directory.fromUri(resolved);
+    if (!root.existsSync()) continue;
+    final files =
+        root
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.dart'))
+            .toList()
+          ..sort((a, b) => a.path.compareTo(b.path));
+    for (final file in files) {
+      final bytes = file.readAsBytesSync();
+      if (_importsFlutter(bytes)) continue;
+      final relative = file.path.substring(root.path.length);
+      entries.add('$directory$relative=${contentHash(bytes)}');
+      sources.add(file.uri);
+    }
+  }
+  return (
+    fingerprint: contentHash(entries.join('\n').codeUnits),
+    files: sources,
+  );
+}();
+
+// A hook's plain Dart VM resolves package URIs itself; the Flutter test VM
+// does not, so fall back to the nearest package config above the working
+// directory.
+Uri? _resolvePackageUri(Uri packageUri) {
+  try {
+    return Isolate.resolvePackageUriSync(packageUri);
+  } on UnsupportedError {
+    return _resolveFromPackageConfig(packageUri);
+  }
+}
+
+Uri? _resolveFromPackageConfig(Uri packageUri) {
+  final name = packageUri.pathSegments.first;
+  final rest = packageUri.pathSegments.skip(1).join('/');
+  for (
+    var dir = Directory.current.absolute;
+    dir.parent.path != dir.path;
+    dir = dir.parent
+  ) {
+    final config = File('${dir.path}/.dart_tool/package_config.json');
+    if (!config.existsSync()) continue;
+    final packages =
+        (jsonDecode(config.readAsStringSync()) as Map)['packages'] as List;
+    for (final entry in packages.cast<Map<String, Object?>>()) {
+      if (entry['name'] != name) continue;
+      final root = config.uri.resolve(_asDirectory(entry['rootUri'] as String));
+      final lib = root.resolve(
+        _asDirectory(entry['packageUri'] as String? ?? ''),
+      );
+      return lib.resolve(rest);
+    }
+    return null;
+  }
+  return null;
+}
+
+String _asDirectory(String path) =>
+    path.isEmpty || path.endsWith('/') ? path : '$path/';
+
+bool _importsFlutter(List<int> bytes) {
+  final source = String.fromCharCodes(bytes);
+  return source.contains("import 'dart:ui") ||
+      source.contains("import 'package:flutter/");
 }

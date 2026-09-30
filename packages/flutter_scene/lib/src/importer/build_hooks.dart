@@ -351,7 +351,8 @@ void buildScenes({
     }
     final assetStamp = (assetHashes..sort()).join(',');
     final stamp =
-        'rev=$buildCacheRevision scene compress=$compressTextures '
+        'rev=$buildCacheRevision gen=${sceneGeneratorFingerprint()} '
+        'scene compress=$compressTextures '
         'kind=$extension src=$sourceHash assets=[$assetStamp]';
     final stampFile = File('${outputSceneUri.toFilePath()}.inputs');
     // The generated tree ships every file in it, so the stamp lives in the
