@@ -686,8 +686,8 @@ void _writeAttributes(
 
 /// Writes a vertex variant's instance-attribute declarations into [sb]. The
 /// unskinned color variant reads them from the instance-rate slot; the other
-/// variants never bind that data, so they read zero (an attribute-driven
-/// displacement does not shadow, matching custom vertex attributes).
+/// variants never bind that data, so they read zero. Depth and shadow passes
+/// run the color variant for such a material, so its displacement still casts.
 void _writeInstanceAttributes(
   StringBuffer sb,
   FmatMaterial material, {

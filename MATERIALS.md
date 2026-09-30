@@ -418,10 +418,8 @@ geometry.setCustomAttribute('phase', phaseValues, components: 1);
 Custom attributes work on both static and skinned meshes; attaching one to a
 skinned mesh switches its vertex layout to a described one, since reflection
 cannot know which slot the stream was bound to (`Geometry.setCustomAttribute`).
-The depth/shadow pass fetches only position, so an attribute reads zero there:
-a displacement driven by a custom attribute is not reflected in the shadow,
-while one driven by `world_position`/a parameter is (world position is
-available in every pass).
+Depth and shadow passes run the material's full vertex variant for such a
+mesh, so a displacement driven by a custom attribute casts the shadow it draws.
 
 ## Custom instance attributes (instance to vertex and fragment)
 
@@ -480,8 +478,9 @@ The rules:
 - An instance whose attributes are never set draws with zeros, and so does a
   non-instanced draw of the same material (a single node has nowhere to take
   per-instance values from).
-- The skinned and depth/shadow variants bind no instance attribute data, so
-  they read zero there, matching per-vertex custom attributes.
+- The skinned variant binds no instance attribute data, so it reads zero.
+  Depth and shadow passes run the full unskinned variant, so an attribute-driven
+  displacement casts the shadow it draws.
 - A declaring material **opts out of automatic cross-node batching**. That
   optimization synthesizes one instance per node, and a node carries no
   attribute values; each instanced mesh draws from its own data instead.
@@ -1366,7 +1365,7 @@ attributes), and hot reload are implemented. Remaining and in-flight work:
   translucent depth state).
 - **Per-instance custom attributes** work on unskinned instanced meshes, but a
   declaring material opts out of automatic cross-node batching and reads zero in
-  the skinned and depth/shadow variants.
+  the skinned variant.
 - **An inspector** that surfaces the parameter hints as UI does not exist (the
   metadata is emitted for future tooling).
 

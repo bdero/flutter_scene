@@ -14,6 +14,7 @@
 * `CameraTrack.wander` layers a `CameraWander` over a cinematic track: a slow, seekable drift of the eye and aim, like a camera held by hand.
 * Cinematic kit. `Timeline` plays a duration with named `Cue`s, `KeyframeCurve` and `KeyframeTrack` ease values without overshoot, `CameraTrack` moves eye, target, field of view, roll, focus, and aperture along an arc-length spline, `FocusPuller` eases focus in diopters through two springs, so a pull starts gently and never overshoots, and `CinematicCameraController` plays a track on a camera and depth of field. `CameraTrack.smoothing` low-passes the move so acceleration stays continuous through keys and stops.
 * Views in one frame share spot and point shadow tiles when no directional light casts, so texture views such as mirrors no longer re-render them.
+* A `.fmat` vertex stage that reads custom or per-instance attributes runs in depth and shadow passes too, so geometry it moves casts the shadow it draws.
 * After-scene custom passes that read depth see translucent surfaces that write depth, so a depth-based fog or composite no longer paints over them.
 * `.fmat` `effects_depth: true` puts a translucent surface in the depth that depth of field and custom passes read, cut by its alpha, without writing depth in the color pass (fins, hair cards).
 * `Scene.debug.splitView` shows a second surface debug view left of `Scene.debug.split`, so a wipe can run between two channels instead of against the lit image.
