@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show internal;
 import 'package:vector_math/vector_math.dart';
 
 /// A lens projection that maps view-space coordinates into clip space.
@@ -464,6 +465,7 @@ Matrix4 _matrix4Perspective(
   double zNear,
   double zFar, {
   Vector2? jitter,
+  bool reversed = false,
 }) {
   assert(
     fovRadiansY > 0 && fovRadiansY < pi,
@@ -481,6 +483,18 @@ Matrix4 _matrix4Perspective(
   double width = height * aspectRatio;
   final jx = jitter?.x ?? 0.0;
   final jy = jitter?.y ?? 0.0;
+  // Clip z is `depthScale * z + depthOffset` over w = z. An infinite far plane
+  // is the limit of the finite terms.
+  final infinite = zFar == double.infinity;
+  final double depthScale;
+  final double depthOffset;
+  if (reversed) {
+    depthScale = infinite ? 0.0 : -zNear / (zFar - zNear);
+    depthOffset = infinite ? zNear : (zFar * zNear) / (zFar - zNear);
+  } else {
+    depthScale = infinite ? 1.0 : zFar / (zFar - zNear);
+    depthOffset = infinite ? -zNear : -(zFar * zNear) / (zFar - zNear);
+  }
 
   return Matrix4(
     1.0 / width,
@@ -493,11 +507,11 @@ Matrix4 _matrix4Perspective(
     0.0,
     jx,
     jy,
-    zFar / (zFar - zNear),
+    depthScale,
     1.0,
     0.0,
     0.0,
-    -(zFar * zNear) / (zFar - zNear),
+    depthOffset,
     0.0,
   );
 }
@@ -510,6 +524,7 @@ Matrix4 _matrix4Orthographic(
   double zNear,
   double zFar, {
   Vector2? jitter,
+  bool reversed = false,
 }) {
   assert(
     width > 0 && height > 0 && width.isFinite && height.isFinite,
@@ -535,13 +550,57 @@ Matrix4 _matrix4Orthographic(
     0.0,
     0.0,
     0.0,
-    depthScale,
+    reversed ? -depthScale : depthScale,
     0.0,
     -offsetX * sx + (jitter?.x ?? 0.0),
     -offsetY * sy + (jitter?.y ?? 0.0),
-    -zNear * depthScale,
+    reversed ? zFar * depthScale : -zNear * depthScale,
     1.0,
   );
+}
+
+/// The matrix a built-in projection rasterizes with, or null for any other
+/// projection (subclasses included, since their override is the source of
+/// truth).
+///
+/// [reversed] maps the near plane to depth 1 and the far plane to 0. [near]
+/// replaces a perspective projection's near plane when larger (the plane
+/// `Scene.fitNearPlane` fits to visible content); orthographic depth is
+/// linear, so it keeps its own planes.
+@internal
+Matrix4? buildRasterProjectionMatrix(
+  CameraProjection projection,
+  ui.Size viewportSize, {
+  required bool reversed,
+  double? near,
+  Vector2? jitter,
+}) {
+  if (projection.runtimeType == PerspectiveProjection) {
+    final perspective = projection as PerspectiveProjection;
+    return _matrix4Perspective(
+      perspective.fovRadiansY,
+      _aspectOf(viewportSize),
+      near != null && near > perspective.near ? near : perspective.near,
+      perspective.far,
+      jitter: jitter,
+      reversed: reversed,
+    );
+  }
+  if (projection.runtimeType == OrthographicProjection) {
+    final orthographic = projection as OrthographicProjection;
+    final extent = orthographic.visibleSize(viewportSize);
+    return _matrix4Orthographic(
+      extent.x,
+      extent.y,
+      orthographic.offset.x,
+      orthographic.offset.y,
+      orthographic.near,
+      orthographic.far,
+      jitter: jitter,
+      reversed: reversed,
+    );
+  }
+  return null;
 }
 
 /// A standard pinhole-style perspective camera.

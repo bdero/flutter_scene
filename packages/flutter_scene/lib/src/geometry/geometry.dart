@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/material/vertex_attributes.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 
 /// [data] as a [ByteData], without copying when it already is one.
@@ -1656,6 +1657,13 @@ class SkinnedGeometry extends Geometry {
       _jointsTexture != null ? 1 : 0,
       _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
       depthBias,
+      // std140 places the depth offset vec4 at the next 16-byte boundary.
+      0.0,
+      0.0,
+      currentDrawDepthOffset[0],
+      currentDrawDepthOffset[1],
+      0.0,
+      0.0,
     ]);
     final frameInfoView = transientsBuffer.emplace(
       frameInfoFloats.buffer.asByteData(),
@@ -1954,7 +1962,7 @@ final VertexLayoutDescriptor kUnskinnedSoADepthLayout = VertexLayoutDescriptor(
 // Reused across every call: this runs for every draw of every pass, and
 // [TransientWriter.emplace] copies the bytes out immediately, so a shared
 // scratch is safe and avoids a per-draw allocation.
-final Float32List _unskinnedFrameInfoScratch = Float32List(20);
+final Float32List _unskinnedFrameInfoScratch = Float32List(24);
 
 @internal
 void bindUnskinnedFrameInfo(
@@ -1971,7 +1979,8 @@ void bindUnskinnedFrameInfo(
     ..[16] = cameraPosition.x
     ..[17] = cameraPosition.y
     ..[18] = cameraPosition.z
-    ..[19] = depthBias;
+    ..[19] = depthBias
+    ..setAll(20, currentDrawDepthOffset);
   pass.bindUniform(
     frameInfoSlot,
     transientsBuffer.emplace(ByteData.sublistView(scratch)),

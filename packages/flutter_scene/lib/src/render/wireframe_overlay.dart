@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
@@ -27,6 +28,7 @@ void encodeWireframeOverlay({
   required RenderScene renderScene,
   required Frustum frustum,
   required Matrix4 cameraTransform,
+  required DepthRaster raster,
   required Vector3 cameraPosition,
   required int layerMask,
   required List<Plane> cullingPlanes,
@@ -39,6 +41,7 @@ void encodeWireframeOverlay({
     pass,
     transients,
     cameraTransform,
+    raster,
     cameraPosition,
     layerMask,
     frame,
@@ -56,22 +59,22 @@ void encodeWireframeOverlay({
 // enough; the overlay is a debugging aid, not a rendering path.
 bool _reportedMissingEdges = false;
 
-/// World-space distance the lines are pulled toward the camera, scaled by
-/// distance in the vertex shader, so they sit on top of the fill they trace
-/// instead of z-fighting with it.
-const double _wireframeDepthBias = 0.004;
+/// Depth layers the lines are pulled toward the camera, so they sit on top of
+/// the fill they trace instead of z-fighting with it at any distance.
+const int _wireframeDepthLayers = 2;
 
 class _WireframeEncoder {
   _WireframeEncoder(
     this._pass,
     this._transients,
     this._cameraTransform,
+    this._raster,
     this._cameraPosition,
     this._layerMask,
     this._frame,
   ) {
     _pass.setDepthWriteEnable(false);
-    _pass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    _pass.setDepthCompareOperation(_raster.nearerOrEqual);
     _pass.setCullMode(gpu.CullMode.none);
     _pass.setWindingOrder(gpu.WindingOrder.clockwise);
     _pass.setColorBlendEnable(true);
@@ -96,6 +99,7 @@ class _WireframeEncoder {
   final gpu.RenderPass _pass;
   final TransientWriter _transients;
   final Matrix4 _cameraTransform;
+  final DepthRaster _raster;
   final Vector3 _cameraPosition;
   final int _layerMask;
   final DebugViewFrame _frame;
@@ -158,6 +162,11 @@ class _WireframeEncoder {
       _transients.emplace(ByteData.sublistView(_color)),
     );
 
+    setCurrentDrawDepthOffset(
+      _raster,
+      material.depthLayer + _wireframeDepthLayers,
+      0,
+    );
     void bindDraw(Matrix4 worldTransform) {
       if (depthVertex != null) {
         geometry.bindPositionStream(_pass);
@@ -167,7 +176,7 @@ class _WireframeEncoder {
           activeVertex,
           _cameraTransform,
           _cameraPosition,
-          depthBias: _wireframeDepthBias,
+          depthBias: material.depthBias,
         );
       } else {
         geometry.bind(
@@ -177,7 +186,7 @@ class _WireframeEncoder {
           _cameraTransform,
           _cameraPosition,
           shaderOverride: materialVertex,
-          depthBias: _wireframeDepthBias,
+          depthBias: material.depthBias,
         );
       }
       if (materialVertex != null) {

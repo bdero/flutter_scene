@@ -881,12 +881,10 @@ base class RenderPass {
 
   void setDepthCompareOperation(CompareFunction compareFunction) {
     final gl = _gpuContext._gl;
-    if (compareFunction == CompareFunction.always) {
-      gl.disable(web.WebGL2RenderingContext.DEPTH_TEST);
-    } else {
-      gl.enable(web.WebGL2RenderingContext.DEPTH_TEST);
-      gl.depthFunc(_glCompare(compareFunction));
-    }
+    // GL skips depth writes while the test is disabled, so `always` keeps
+    // the test on with GL_ALWAYS, as Impeller's GLES backend does.
+    gl.enable(web.WebGL2RenderingContext.DEPTH_TEST);
+    gl.depthFunc(_glCompare(compareFunction));
   }
 
   void setStencilReference(int referenceValue) {

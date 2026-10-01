@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:flutter_scene/src/render/viewport_camera.dart';
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -106,7 +108,7 @@ class _ObjectMaskEncoder {
     this._filter,
     this._colorOf,
   ) {
-    frustum = Frustum.matrix(_cameraTransform);
+    frustum = cullingFrustum(_cameraTransform);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
@@ -178,6 +180,14 @@ class _ObjectMaskEncoder {
     _renderPass.bindUniform(
       _maskShader.getUniformSlot('MaskInfo'),
       _transientsBuffer.emplace(ByteData.sublistView(color)),
+    );
+
+    // Masks keep the standard depth mapping in their own depth buffer; layers
+    // still order coplanar surfaces the way the color pass does.
+    setCurrentDrawDepthOffset(
+      DepthRaster.standard,
+      item.material.depthLayer,
+      item.material.tieBreakRank,
     );
 
     // Binds the vertex/index buffers and the per-frame uniform for one draw.

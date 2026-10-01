@@ -6,6 +6,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/render/depth_raster.dart';
+import 'package:flutter_scene/src/render/near_fit.dart';
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/debug_view.dart';
@@ -813,6 +815,52 @@ base class Scene implements SceneGraph {
     }
   }
 
+  /// Whether camera passes store depth reversed, 1 at the near plane and 0 at
+  /// the far plane.
+  ///
+  /// A float depth buffer has fine steps near zero, and reversing puts them
+  /// in the distance, where the standard mapping is coarsest. With float
+  /// depth (Metal, and the web on browsers with clip control) this spreads
+  /// precision almost evenly over distance, so distant surfaces a few
+  /// centimetres apart stay distinct instead of flickering (z-fighting). On
+  /// 24-bit depth it changes nothing. Shadow maps, the public projection,
+  /// and every depth effect read the same values either way.
+  ///
+  /// It costs nothing per frame. Turn it off only for a custom
+  /// `ShaderMaterial` vertex shader that writes clip-space depth assuming the
+  /// standard mapping (a sky drawn at `z = w`, say). Defaults to true.
+  bool reversedDepth = true;
+
+  /// Whether exactly coplanar surfaces of different materials resolve to a
+  /// stable winner instead of flickering (z-fighting).
+  ///
+  /// Each material without an explicit `Material.depthLayer` gets a small
+  /// automatic rank from its creation order (and each instance one from its
+  /// position), a fraction of a layer, so overlapping faces in one plane
+  /// stop trading pixels as the camera moves. Explicit layers always win
+  /// over it. The rank is arbitrary, so an overlay that should show can end
+  /// up consistently hidden; prefer fixing the overlap or setting
+  /// `depthLayer`, and use this as a safety net for generated content.
+  /// Experimental. Defaults to false.
+  bool coplanarTieBreak = false;
+
+  /// Whether perspective views rasterize with a near plane fitted to the
+  /// content they draw, each frame.
+  ///
+  /// Depth precision scales with the near plane, so a camera that never gets
+  /// close to anything (a chase, orbit, or aerial camera) wastes most of it on
+  /// the default `0.1`, and surfaces a few centimetres apart flicker
+  /// (z-fighting) in the distance. With this on, the projection's `near` is a
+  /// floor: the engine raises the plane it rasterizes with to just short of
+  /// the nearest thing the view draws, judged from bounds, so nothing visible
+  /// is ever clipped and the image changes only in precision. Picking, the
+  /// public projection, and shadow cascades keep the authored plane.
+  ///
+  /// Costs one bounds query per view per frame. Turn it off when something
+  /// draws near the camera outside the scene's bounds (a custom pass, or a
+  /// vertex shader that moves geometry beyond its bounds). Defaults to true.
+  bool fitNearPlane = true;
+
   /// Linear exposure multiplier applied to the HDR scene color before
   /// tone mapping. `1.0` (the default) is neutral; see
   /// [physicalCameraExposure] to derive a value from camera settings.
@@ -1022,6 +1070,18 @@ base class Scene implements SceneGraph {
         plane: plane,
         clipBias: lead.clipBias,
       );
+      // The capture rasterizes with the view's depth convention; its oblique
+      // projection replaces the near plane, so no fitted near applies.
+      final viewRaster = depthRasterOf(camera);
+      final captureCamera = ViewportBoundCamera(
+        reflectedCamera,
+        captureSize,
+        raster: DepthRaster(
+          reversed: viewRaster.reversed,
+          floatDepth: viewRaster.floatDepth,
+          tieBreak: viewRaster.tieBreak,
+        ),
+      );
       final frame = PlanarReflectionFrame(
         texture: texture,
         viewProjection: reflectedCamera.getViewTransform(captureSize),
@@ -1032,7 +1092,7 @@ base class Scene implements SceneGraph {
       passes.add(
         PlanarReflectionCapturePass(
           scenePass: ScenePass(
-            camera: reflectedCamera,
+            camera: captureCamera,
             renderScene: renderScene,
             dimensions: captureSize,
             environmentMap: environmentMap,
@@ -2436,6 +2496,139 @@ base class Scene implements SceneGraph {
     canvas.drawImageRect(image, srcRect, drawArea, paint);
   }
 
+  // How [view]'s passes rasterize depth for a view of [viewportSize] logical
+  // pixels: the depth convention, and a near plane fitted to its content.
+  DepthRaster _depthRasterFor(
+    RenderView view,
+    ui.Size viewportSize,
+    int viewIndex,
+  ) {
+    final projection = view.camera.projection;
+    final fittable =
+        projection.runtimeType == PerspectiveProjection &&
+        viewportSize.width > 0 &&
+        viewportSize.height > 0;
+    final state = _nearFitStateFor(view, viewIndex);
+    final near = fitNearPlane && fittable
+        ? _fitNear(
+            view,
+            projection as PerspectiveProjection,
+            viewportSize,
+            state,
+          )
+        : null;
+    if (fittable) {
+      assert(() {
+        if (!fitNearPlane) {
+          // Measure what a fit would gain, for the advisory only.
+          final previous = state.fitted;
+          _fitNear(
+            view,
+            projection as PerspectiveProjection,
+            viewportSize,
+            state,
+          );
+          state.fitted = previous;
+        }
+        final fit = state.last;
+        if (fit != null) _reportNearPlane(fit, fitEnabled: fitNearPlane);
+        return true;
+      }());
+    }
+    return DepthRaster(
+      reversed: reversedDepth,
+      near: near,
+      floatDepth:
+          gpu.gpuContext.defaultDepthStencilFormat ==
+          gpu.PixelFormat.d32FloatS8UInt,
+      tieBreak: coplanarTieBreak,
+    );
+  }
+
+  // Near-plane fit state that persists across frames for one view. Apps
+  // often build a new camera and view every frame, so screen views are
+  // keyed by index and offscreen views by their render target (or camera).
+  final Map<int, _NearFitState> _screenNearFits = {};
+  final Expando<_NearFitState> _offscreenNearFits = Expando('near fit');
+
+  _NearFitState _nearFitStateFor(RenderView view, int viewIndex) {
+    if (viewIndex >= 0) {
+      return _screenNearFits.putIfAbsent(viewIndex, _NearFitState.new);
+    }
+    final Object key = view.target ?? view.camera;
+    return _offscreenNearFits[key] ??= _NearFitState();
+  }
+
+  /// The near plane screen view [viewIndex] last rasterized with under
+  /// [fitNearPlane], or null before its first frame.
+  @visibleForTesting
+  double? debugFittedNearPlane([int viewIndex = 0]) =>
+      _screenNearFits[viewIndex]?.last?.fittedNear;
+
+  // The largest near plane, at least the authored one, that clips nothing
+  // [view] draws, or null to keep the authored plane.
+  double? _fitNear(
+    RenderView view,
+    PerspectiveProjection projection,
+    ui.Size viewportSize,
+    _NearFitState state,
+  ) {
+    final camera = view.camera;
+    final tanY = math.tan(projection.fovRadiansY * 0.5);
+    final tanX = tanY * viewportSize.width / viewportSize.height;
+    final cosHalfAngle = 1.0 / math.sqrt(1.0 + tanX * tanX + tanY * tanY);
+    final result = renderScene.nearestVisibleDepth(
+      frustum: cullingFrustumOf(camera, viewportSize),
+      eye: camera.position,
+      forward: camera.forward,
+      cosHalfAngle: cosHalfAngle,
+      layerMask: view.layerMask,
+      additionalPlanes: view.cullingPlanes,
+    );
+    final fitted = fittedNearPlane(
+      visibleDepth: result.depth,
+      authoredNear: projection.near,
+      far: projection.far,
+      previous: state.fitted,
+    );
+    state.fitted = fitted;
+    final nearestBounds = result.nearest?.worldBounds;
+    final fit = NearPlaneFit(
+      authoredNear: projection.near,
+      fittedNear: fitted,
+      visibleDepth: result.depth,
+      nearestNode: result.nearest?.sourceNode,
+      nearestContainsEye:
+          nearestBounds != null &&
+          nearestBounds.containsVector3(camera.position),
+      nearestExtent: nearestBounds == null
+          ? 0.0
+          : (nearestBounds.max - nearestBounds.min).storage.reduce(math.max),
+    );
+    state.last = fit;
+    return fitted > projection.near ? fitted : null;
+  }
+
+  // Near-plane advisories already printed, by kind (and node), so each
+  // prints once per scene however often views and cameras are rebuilt.
+  final Set<String> _warnedNearPlane = {};
+
+  // Debug-only. Prints the near-plane advisory for [fit] once.
+  void _reportNearPlane(NearPlaneFit fit, {required bool fitEnabled}) {
+    final node = fit.nearestNode;
+    final nodeName = node is Node ? node.name : null;
+    final latch = fitEnabled ? 'pinned:${nodeName ?? ''}' : 'unfitted';
+    if (_warnedNearPlane.contains(latch)) return;
+    final message = nearPlaneAdvisory(
+      fit,
+      fitEnabled: fitEnabled,
+      nodeName: nodeName,
+    );
+    if (message == null) return;
+    _warnedNearPlane.add(latch);
+    debugPrint(message);
+  }
+
   // Builds and submits one view's render graph into [outputColor] (a
   // swapchain texture for screen views, or a [RenderTexture] ring slot).
   // [pool] supplies the view's transient attachments; each view (and each
@@ -2484,7 +2677,11 @@ base class Scene implements SceneGraph {
     final viewWatch = viewStats == null ? null : (Stopwatch()..start());
     // Bound to the logical size so every pass renders the volume picking
     // hits, whatever render-target size it passes.
-    final camera = ViewportBoundCamera(view.camera, viewportSize ?? pixelSize);
+    final camera = ViewportBoundCamera(
+      view.camera,
+      viewportSize ?? pixelSize,
+      raster: _depthRasterFor(view, viewportSize ?? pixelSize, viewIndex),
+    );
     // A linear capture skips every resampling pass, but multisampling
     // resolves inside the scene pass, so a view that asks for it keeps it.
     final effectiveAa = captureLinearColor
@@ -2686,8 +2883,10 @@ base class Scene implements SceneGraph {
           (pass) => pass.enabled && pass.inputs.contains(RenderInput.shadowMap),
         );
     if (receiverCullingAllowed) {
+      // Receivers past the last cascade never sample the atlas, so an
+      // infinite far plane can stop there.
       final receiverFrustum = shadowReceiverFrustum(
-        camera.getViewTransform(pixelSize),
+        finiteViewTransformOf(camera, pixelSize, light!.shadowMaxDistance),
         pixelSize,
       );
       cascadeReceiverPlanes = [
@@ -2696,7 +2895,7 @@ base class Scene implements SceneGraph {
                 receiverFrustum: receiverFrustum,
                 lightSpaceMatrix: cascade.lightSpaceMatrix,
                 margin: shadowReceiverMargin(
-                  light!,
+                  light,
                   cascade.boxSize,
                   maxReceiverSoftness,
                 ),
@@ -2820,8 +3019,10 @@ base class Scene implements SceneGraph {
       taaState.previousJitterUv = currentJitterUv;
     }
 
+    // The jittered raster view-projection the depth prepass, scene pass, and
+    // velocity pass all draw with, so their depths match exactly.
     final currentJitteredViewProjection = enableTaa
-        ? camera.getViewTransform(pixelSize, jitter: currentJitterNdc)
+        ? camera.rasterViewTransform(jitter: currentJitterNdc)
         : null;
 
     // Reflections run after the scene is drawn (they sample the lit color),
@@ -2933,8 +3134,7 @@ base class Scene implements SceneGraph {
             renderScene: renderScene,
             dimensions: pixelSize,
             currentViewProjection:
-                currentJitteredViewProjection ??
-                camera.getViewTransform(pixelSize),
+                currentJitteredViewProjection ?? camera.rasterViewTransform(),
             previousViewProjection: prevViewProj,
             currentJitterNdc: currentJitterNdc,
             previousJitterNdc: prevJitterNdc,
@@ -3057,7 +3257,7 @@ base class Scene implements SceneGraph {
         // frame. Its depth test still runs against the jittered scene depth,
         // which costs sub-pixel accuracy at the occlusion edge.
         displayReferredCameraTransform: enableTaa
-            ? camera.getViewTransform(pixelSize)
+            ? camera.rasterViewTransform()
             : null,
         maxCaptureBatches: effectiveSceneColorCaptureBatches,
         // Depth binding needs the prepass, which needs a valid projection.
@@ -3727,4 +3927,11 @@ class _PlanarCaptureResources {
 
 class _RepaintRequest extends ChangeNotifier {
   void notify() => notifyListeners();
+}
+
+// One view's near-plane fit across frames: the plane it rasterized with (for
+// hysteresis) and its last fit (for the advisory).
+class _NearFitState {
+  double? fitted;
+  NearPlaneFit? last;
 }

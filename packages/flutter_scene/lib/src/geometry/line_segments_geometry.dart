@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/mesh_data.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
@@ -161,7 +162,7 @@ class LineSegmentsGeometry extends Geometry {
       pass.bindVertexBuffer(instances, slot: 1);
     }
 
-    final frameInfo = Float32List(40);
+    final frameInfo = Float32List(44);
     frameInfo.setRange(0, 16, cameraTransform.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     frameInfo[32] = cameraPosition.x;
@@ -170,6 +171,8 @@ class LineSegmentsGeometry extends Geometry {
     // [35] padding
     frameInfo[36] = _width * 0.5;
     // [37..39] unused
+    frameInfo[40] = currentDrawDepthOffset[0];
+    frameInfo[41] = currentDrawDepthOffset[1];
     pass.bindUniform(
       vertexShader.getUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),

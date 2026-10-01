@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -297,7 +298,7 @@ class ScenePass extends RenderGraphPass {
       colorAttachment,
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
-        depthClearValue: 1.0,
+        depthClearValue: depthRasterOf(_camera).clearDepth,
         depthStoreAction: keepDepth
             ? gpu.StoreAction.store
             : gpu.StoreAction.dontCare,
@@ -558,7 +559,7 @@ class ScenePass extends RenderGraphPass {
           texture: depth,
           depthLoadAction: gpu.LoadAction.load,
           depthStoreAction: gpu.StoreAction.store,
-          depthClearValue: 1.0,
+          depthClearValue: depthRasterOf(_camera).clearDepth,
         ),
       );
       final translucentCommands = gpu.gpuContext.createCommandBuffer();
@@ -656,7 +657,7 @@ class ScenePass extends RenderGraphPass {
           texture: depth,
           depthLoadAction: gpu.LoadAction.load,
           depthStoreAction: gpu.StoreAction.dontCare,
-          depthClearValue: 1.0,
+          depthClearValue: depthRasterOf(_camera).clearDepth,
         ),
       ),
     );
@@ -683,6 +684,7 @@ class ScenePass extends RenderGraphPass {
         renderScene: _renderScene,
         frustum: encoder.frustum,
         cameraTransform: encoder.cameraTransform,
+        raster: depthRasterOf(_camera),
         cameraPosition: _camera.position,
         layerMask: _layerMask,
         cullingPlanes: _cullingPlanes,

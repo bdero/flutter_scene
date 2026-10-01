@@ -481,6 +481,8 @@ class MeshCodec extends ComponentCodec {
                     _serializeTexture(texture, context),
               ),
               if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
+              if (m.depthLayer != m.declaredDepthLayer)
+                'depthLayer': IntValue(m.depthLayer),
             },
           ),
         )
@@ -501,6 +503,7 @@ class MeshCodec extends ComponentCodec {
       'alphaMode': StringValue(m.alphaMode.name),
       'alphaCutoff': DoubleValue(m.alphaCutoff),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
+      if (m.depthLayer != 0) 'depthLayer': IntValue(m.depthLayer),
       if (physical) ...{
         'specular': DoubleValue(m.specular),
         'specularColor': _color(m.specularColor),
@@ -739,6 +742,7 @@ class MeshCodec extends ComponentCodec {
       'baseColor': _color(m.baseColorFactor),
       'doubleSided': BoolValue(m.doubleSided),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
+      if (m.depthLayer != 0) 'depthLayer': IntValue(m.depthLayer),
       if (m.displayReferred) 'displayReferred': BoolValue(true),
     };
     _textureProperty(
@@ -1397,15 +1401,40 @@ class CameraCodec extends DeclarativeComponentCodec<CameraComponent> {
     ComponentField.number(
       'far',
       defaultValue: 1000.0,
-      doc: 'Far clip distance (perspective).',
+      doc:
+          'Far clip distance (perspective). Ignored while infiniteFar is '
+          'on.',
       constraints: const [Range(0.0001, null)],
+      // JSON has no infinity, so an infinite plane rides in infiniteFar.
       get: (c) => switch (c.projection) {
-        PerspectiveProjection(:final far) => far,
+        PerspectiveProjection(:final far) when far.isFinite => far,
         _ => 1000.0,
       },
       set: (c, v) {
         final projection = c.projection;
-        if (projection is PerspectiveProjection) projection.far = v;
+        if (projection is PerspectiveProjection && projection.far.isFinite) {
+          projection.far = v;
+        }
+      },
+    ),
+    ComponentField.boolean(
+      'infiniteFar',
+      defaultValue: false,
+      doc:
+          'Whether the far plane is at infinity (perspective), so nothing is '
+          'ever clipped by distance.',
+      get: (c) => switch (c.projection) {
+        PerspectiveProjection(:final far) => far == double.infinity,
+        _ => false,
+      },
+      set: (c, v) {
+        final projection = c.projection;
+        if (projection is! PerspectiveProjection) return;
+        if (v) {
+          projection.far = double.infinity;
+        } else if (!projection.far.isFinite) {
+          projection.far = 1000.0;
+        }
       },
     ),
     ComponentField.number(

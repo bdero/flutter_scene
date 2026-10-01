@@ -19,8 +19,13 @@ uniform FrameInfo {
   vec4 params;          // x opacity, y crop (0 off, 1 include, 2 exclude)
   vec4 tint;            // linear RGBA multiplier
   vec4 view_direction;  // xyz world camera forward, w 1 for orthographic
+  // xy: the material's depth-layer offset (see ApplyDepthOffset). z: the far
+  // plane's clip depth over w (1 standard, 0 reversed).
+  vec4 depth_offset;
 }
 frame_info;
+
+#include <depth_bias.glsl>
 
 uniform sampler2D splat_params_texture;
 uniform sampler2D splat_sh_texture;
@@ -87,7 +92,9 @@ void main() {
   vec3 ndc = clip.xyz / clip.w;
   // Cull splats behind the camera or far outside the frustum (the margin
   // leaves room for large footprints straddling the edge).
-  if (clip.w <= 0.0 || abs(ndc.x) > 1.3 || abs(ndc.y) > 1.3 || ndc.z > 1.0) {
+  bool beyond_far =
+      frame_info.depth_offset.z > 0.5 ? ndc.z > 1.0 : ndc.z < 0.0;
+  if (clip.w <= 0.0 || abs(ndc.x) > 1.3 || abs(ndc.y) > 1.3 || beyond_far) {
     cull();
     return;
   }
@@ -154,8 +161,9 @@ void main() {
   float radius2 = min(sigma_cut * sqrt(lambda2), max_radius);
 
   vec2 offset_px = corner.x * radius1 * axis1 + corner.y * radius2 * axis2;
-  gl_Position =
-      vec4(ndc.xy * clip.w + offset_px / half_viewport * clip.w, clip.zw);
+  gl_Position = ApplyDepthOffset(
+      vec4(ndc.xy * clip.w + offset_px / half_viewport * clip.w, clip.zw),
+      vec4(frame_info.depth_offset.xy, 0.0, 0.0), 0.0);
   v_quad = corner * sigma_cut;
 
   // The base (degree 0) color plus the view-dependent rest bands.

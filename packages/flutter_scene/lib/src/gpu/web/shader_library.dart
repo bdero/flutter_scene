@@ -96,10 +96,13 @@ base class ShaderLibrary {
     if (sourceBytes == null || sourceBytes.isEmpty) {
       throw Exception('Shader has no opengl_es source bytes.');
     }
-    final source = transpileGlslEs100To300(
+    var source = transpileGlslEs100To300(
       utf8.decode(sourceBytes),
       isFragment: shader.stage == ShaderStage.fragment,
     );
+    if (shader.stage == ShaderStage.vertex && gpuContext.clipDepthZeroToOne) {
+      source = stripClipSpaceDepthRemap(source);
+    }
     shader._compile(source);
 
     // Rebuild the reflection state from scratch (a reload may have changed

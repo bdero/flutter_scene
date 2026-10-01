@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:vector_math/vector_math.dart';
@@ -75,7 +76,7 @@ void encodeSkybox(
   // drawn (depth still at the cleared far value) and never write depth, so
   // opaque geometry draws in front.
   renderPass.setDepthWriteEnable(false);
-  renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+  renderPass.setDepthCompareOperation(depthRasterOf(camera).nearerOrEqual);
   renderPass.setCullMode(gpu.CullMode.none);
   renderPass.setPrimitiveType(gpu.PrimitiveType.triangle);
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
@@ -131,6 +132,7 @@ void _bindFrameInfo(
     inverseViewProjection,
     camera.position,
     environmentTransform,
+    farClipDepth: depthRasterOf(camera).farClipDepth,
   );
 }
 
@@ -159,8 +161,11 @@ void bindSkyboxFrameInfo(
   gpu.Shader vertexShader,
   Matrix4 inverseViewProjection,
   Vector3 cameraPosition,
-  Matrix3? environmentTransform,
-) {
+  Matrix3? environmentTransform, {
+  // The clip depth the sky draws at, the far plane of the pass's depth
+  // mapping (see DepthRaster.farClipDepth).
+  double farClipDepth = 1.0,
+}) {
   final transform = (environmentTransform ?? Matrix3.identity()).storage;
   final frameInfo = Float32List(36);
   frameInfo.setRange(0, 16, inverseViewProjection.storage);
@@ -175,6 +180,7 @@ void bindSkyboxFrameInfo(
   frameInfo[32] = cameraPosition.x;
   frameInfo[33] = cameraPosition.y;
   frameInfo[34] = cameraPosition.z;
+  frameInfo[35] = farClipDepth;
   renderPass.bindUniform(
     vertexShader.getUniformSlot('SkyboxFrameInfo'),
     transientsBuffer.emplace(ByteData.sublistView(frameInfo)),

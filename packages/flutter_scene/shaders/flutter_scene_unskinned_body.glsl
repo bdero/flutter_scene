@@ -8,6 +8,9 @@ uniform FrameInfo {
   mat4 camera_transform;
   vec3 camera_position;
   float depth_bias;
+  // The draw's depth-layer offset (xy) and one instance tie-break rank's
+  // (zw), see ApplyDepthOffset.
+  vec4 depth_offset;
 }
 frame_info;
 
@@ -79,7 +82,9 @@ void main() {
   vec3 draw_position = ApplyDepthBias(
       vertex.world_position, frame_info.camera_transform,
       frame_info.camera_position, frame_info.depth_bias);
-  gl_Position = frame_info.camera_transform * vec4(draw_position, 1.0);
+  gl_Position = ApplyDepthOffset(
+      frame_info.camera_transform * vec4(draw_position, 1.0),
+      frame_info.depth_offset, InstanceDepthRank(model_transform_3.xyz));
   v_viewvector = frame_info.camera_position - vertex.world_position;
   // Unit length before interpolation (UnitOrZero, normal_transform.glsl).
   v_normal = UnitOrZero(vertex.world_normal);

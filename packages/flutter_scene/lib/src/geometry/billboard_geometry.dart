@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -209,7 +210,7 @@ class BillboardGeometry extends Geometry {
       pass.bindVertexBuffer(instanceTransients.emplace(liveBytes), slot: 1);
     }
 
-    final frameInfo = Float32List(44);
+    final frameInfo = Float32List(48);
     frameInfo.setRange(0, 16, cameraTransform.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     frameInfo[32] = cameraPosition.x;
@@ -224,6 +225,8 @@ class BillboardGeometry extends Geometry {
     frameInfo[41] = flipbookColumns.toDouble();
     frameInfo[42] = flipbookRows.toDouble();
     frameInfo[43] = velocityStretch;
+    frameInfo[44] = currentDrawDepthOffset[0];
+    frameInfo[45] = currentDrawDepthOffset[1];
     pass.bindUniform(
       vertexShader.getUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),

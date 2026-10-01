@@ -8,12 +8,19 @@ uniform VelocityFrameInfo {
   mat4 current_view_projection;
   mat4 previous_view_projection;
   vec4 current_previous_jitter; // xy: current jitter NDC, zw: previous jitter NDC
+  vec4 camera_position;         // xyz: world-space eye
 } frame_info;
 
 uniform VelocityModelInfo {
   mat4 current_model_transform;
   mat4 previous_model_transform;
+  // The material's depth-layer offset, matching the depth prepass this pass
+  // tests against with equal (see ApplyDepthOffset).
+  vec4 depth_offset;
+  vec4 depth_bias; // x: Material.depthBias
 } model_info;
+
+#include <depth_bias.glsl>
 
 in vec3 position;
 
@@ -36,6 +43,14 @@ void main() {
   v_previous_clip = frame_info.previous_view_projection * prev_world;
   v_static_clip = frame_info.previous_view_projection * cur_world;
 
-  gl_Position = v_current_clip;
+  // Rasterize exactly where the depth prepass did, so the equal test holds
+  // for a biased or layered surface. Motion reads the unbiased clips above;
+  // the bias moves along the eye ray and the layer touches only depth.
+  vec3 draw_position = ApplyDepthBias(
+      cur_world.xyz, frame_info.current_view_projection,
+      frame_info.camera_position.xyz, model_info.depth_bias.x);
+  gl_Position = ApplyDepthOffset(
+      frame_info.current_view_projection * vec4(draw_position, 1.0),
+      model_info.depth_offset, InstanceDepthRank(model_transform_3.xyz));
 }
 

@@ -7,6 +7,7 @@ uniform VelocityFrameInfo {
   mat4 current_view_projection;
   mat4 previous_view_projection;
   vec4 current_previous_jitter; // xy: current jitter NDC, zw: previous jitter NDC
+  vec4 camera_position;         // xyz: world-space eye
 } frame_info;
 
 uniform VelocitySkinnedModelInfo {
@@ -15,8 +16,13 @@ uniform VelocitySkinnedModelInfo {
   float current_joint_texture_size;
   float previous_joint_texture_size;
   float enable_skinning;
-  float padding;
+  float depth_bias; // Material.depthBias
+  // The material's depth-layer offset, matching the depth prepass (see
+  // ApplyDepthOffset).
+  vec4 depth_offset;
 } model_info;
+
+#include <depth_bias.glsl>
 
 uniform sampler2D current_joints_texture;
 uniform sampler2D previous_joints_texture;
@@ -79,5 +85,11 @@ void main() {
   v_previous_clip = frame_info.previous_view_projection * prev_world;
   v_static_clip = frame_info.previous_view_projection * cur_world;
 
-  gl_Position = v_current_clip;
+  // Rasterize exactly where the depth prepass did (see the unskinned stage).
+  vec3 draw_position = ApplyDepthBias(
+      cur_world.xyz, frame_info.current_view_projection,
+      frame_info.camera_position.xyz, model_info.depth_bias);
+  gl_Position = ApplyDepthOffset(
+      frame_info.current_view_projection * vec4(draw_position, 1.0),
+      model_info.depth_offset, 0.0);
 }

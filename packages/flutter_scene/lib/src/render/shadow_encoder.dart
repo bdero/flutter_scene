@@ -1,3 +1,4 @@
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -316,6 +317,9 @@ class ShadowEncoder {
         batchedItems: batches?.length ?? 1,
       ),
     );
+
+    // Shadow maps take no depth layers or tie-break offsets.
+    clearCurrentDrawDepthOffset();
 
     // Binds the vertex/index buffers and the per-frame uniform for one draw.
     // The light-space matrix takes the place of the camera transform (the depth
