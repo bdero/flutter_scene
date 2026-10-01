@@ -934,6 +934,7 @@ Map<String, Object?> buildSidecar(FmatMaterial material) {
     if (material.effectsDepth) 'effects_depth': true,
     if (material.depthTest != FmatDepthTest.lessEqual)
       'depth_test': material.depthTest.token,
+    if (material.depthLayer != 0) 'depth_layer': material.depthLayer,
     if (material.engineInputs.isNotEmpty)
       'engine_inputs': material.engineInputs,
     if (material.sceneColorReach != null)

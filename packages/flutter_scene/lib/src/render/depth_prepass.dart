@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 import 'dart:math' as math;
+import 'package:flutter_scene/src/render/viewport_camera.dart';
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
@@ -154,7 +156,7 @@ class DepthPrepass extends RenderGraphPass {
       ),
       depthStencilAttachment: gpu.DepthStencilAttachment(
         texture: depth,
-        depthClearValue: 1.0,
+        depthClearValue: depthRasterOf(_camera).clearDepth,
         depthStoreAction: _keepDepthStencil
             ? gpu.StoreAction.store
             : gpu.StoreAction.dontCare,
@@ -166,7 +168,9 @@ class DepthPrepass extends RenderGraphPass {
     final encoder = _DepthPrepassEncoder(
       renderPass,
       context.transientsBuffer,
-      _cameraTransform ?? _camera.getViewTransform(_dimensions),
+      _cameraTransform ?? rasterViewTransformOf(_camera, _dimensions),
+      cullingFrustumOf(_camera, _dimensions),
+      depthRasterOf(_camera),
       _camera.position,
       _cameraForward,
       _layerMask,
@@ -263,8 +267,7 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
       linearDepth.width.toDouble(),
       linearDepth.height.toDouble(),
     );
-    final viewTransform = _camera.getViewTransform(dimensions);
-    final frustum = Frustum.matrix(viewTransform);
+    final frustum = cullingFrustumOf(_camera, dimensions);
     final records = <RenderItem>[];
     _renderScene.cull(frustum, (item) {
       if (!item.drawsColor) return;
@@ -290,7 +293,9 @@ class TranslucentDepthPatchPass extends RenderGraphPass {
     final encoder = _DepthPrepassEncoder(
       renderPass,
       context.transientsBuffer,
-      viewTransform,
+      rasterViewTransformOf(_camera, dimensions),
+      frustum,
+      depthRasterOf(_camera),
       _camera.position,
       _cameraForward,
       _layerMask,
@@ -321,6 +326,8 @@ class _DepthPrepassEncoder {
     this._renderPass,
     this._transientsBuffer,
     this._cameraTransform,
+    this.frustum,
+    this._raster,
     this._cameraPosition,
     this._cameraForward,
     this._layerMask,
@@ -333,10 +340,9 @@ class _DepthPrepassEncoder {
   }) : _writeNormals = writeNormals,
        _translucentPatch = translucentPatch,
        _primaryView = primaryView {
-    frustum = Frustum.matrix(_cameraTransform);
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
-    _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
     // Winding and culling are matched to each material per draw in [submit]
     // (winding follows the node/instance parity, culling follows the material's
     // own mode), so the same faces the color pass draws contribute depth.
@@ -366,7 +372,9 @@ class _DepthPrepassEncoder {
 
   final gpu.RenderPass _renderPass;
   final TransientWriter _transientsBuffer;
+  // The view-projection draws rasterize with (see DepthRaster).
   final Matrix4 _cameraTransform;
+  final DepthRaster _raster;
   final Vector3 _cameraPosition;
   final Vector3 _cameraForward;
   final int _layerMask;
@@ -406,7 +414,7 @@ class _DepthPrepassEncoder {
   String get _infoBlockName => _writeNormals ? 'DepthNormalInfo' : 'DepthInfo';
 
   /// Frustum of the camera view-projection, used for per-item culling.
-  late final Frustum frustum;
+  final Frustum frustum;
 
   /// The pipeline currently bound on the render pass, or null before the
   /// first draw. `clearBindings` leaves the pipeline in place, so
@@ -624,6 +632,11 @@ class _DepthPrepassEncoder {
     // The position-only path resolves FrameInfo against the depth shader; the
     // skinned fallback uses the geometry's own bind (which ignores the model
     // transform passed here, since skinned uses joint matrices).
+    setCurrentDrawDepthOffset(
+      _raster,
+      item.material.depthLayer,
+      item.material.tieBreakRank,
+    );
     void bindDraw(Matrix4 worldTransform) {
       if (depthVertex != null) {
         geometry.bindPositionStream(_renderPass);

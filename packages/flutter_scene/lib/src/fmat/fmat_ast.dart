@@ -285,6 +285,7 @@ class FmatMaterial {
     this.depthWrite = false,
     this.effectsDepth = false,
     this.depthTest = FmatDepthTest.lessEqual,
+    this.depthLayer = 0,
     required this.parameters,
     required this.fragmentSource,
     required this.fragmentSourceLine,
@@ -343,6 +344,11 @@ class FmatMaterial {
 
   /// The depth test used in the translucent pass (`depth_test:`).
   final FmatDepthTest depthTest;
+
+  /// The initial `Material.depthLayer` of materials built from this file
+  /// (`depth_layer:`, default 0): which surface wins where it and another lie
+  /// in one plane.
+  final int depthLayer;
   final List<FmatParameter> parameters;
 
   /// The verbatim contents of the code block (`fragment { }` for a surface

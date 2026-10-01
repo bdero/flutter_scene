@@ -447,7 +447,8 @@ class ResourceRealizer {
       _materials[res.id] = tagResourceOrigin(
         _unlit(res.properties)
           ..name = res.name
-          ..depthBias = readDouble(res.properties, 'depthBias', 0),
+          ..depthBias = readDouble(res.properties, 'depthBias', 0)
+          ..depthLayer = readInt(res.properties, 'depthLayer', 0),
         document,
         res.id,
       );
@@ -459,7 +460,12 @@ class ResourceRealizer {
           : await fmatMaterialLoader!(asset);
       material
         ..name = res.name
-        ..depthBias = readDouble(res.properties, 'depthBias', 0);
+        ..depthBias = readDouble(res.properties, 'depthBias', 0)
+        ..depthLayer = readInt(
+          res.properties,
+          'depthLayer',
+          material.declaredDepthLayer,
+        );
       // Apply the document's parameter overrides (scalars, vectors, colors,
       // and texture-resource references) over the sidecar defaults.
       applyFmatParameterOverrides(
@@ -473,7 +479,8 @@ class ResourceRealizer {
       _materials[res.id] = tagResourceOrigin(
         _unlit(res.properties)
           ..name = res.name
-          ..depthBias = readDouble(res.properties, 'depthBias', 0),
+          ..depthBias = readDouble(res.properties, 'depthBias', 0)
+          ..depthLayer = readInt(res.properties, 'depthLayer', 0),
         document,
         res.id,
       );
@@ -836,7 +843,8 @@ class ResourceRealizer {
     }
     return _materialForType(res)
       ..name = res.name
-      ..depthBias = readDouble(res.properties, 'depthBias', 0);
+      ..depthBias = readDouble(res.properties, 'depthBias', 0)
+      ..depthLayer = readInt(res.properties, 'depthLayer', 0);
   }
 
   Material _materialForType(MaterialResource res) {

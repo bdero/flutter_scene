@@ -36,7 +36,26 @@ base class GpuContext {
     if (_gl.getExtension('EXT_texture_filter_anisotropic') != null) {
       _maxSupportedAnisotropy = _integerParameter(0x84FF) ?? 1;
     }
+    // Clip-space depth in [0, 1], as Metal and Vulkan rasterize it. The
+    // bundles' GLES shaders end by remapping z to [-1, 1] for core GL, which
+    // the loader strips while this is on (see stripClipSpaceDepthRemap); with
+    // both, a float depth buffer stores clip depth directly, so reversed
+    // depth keeps its precision. Without the extension the remap stays and
+    // depth is 24-bit, which renders the same with standard precision.
+    final clipControl =
+        _gl.getExtension('EXT_clip_control') as _ExtClipControl?;
+    if (clipControl != null) {
+      // LOWER_LEFT_EXT keeps the default origin, ZERO_TO_ONE_EXT the range.
+      clipControl.clipControlEXT(0x8CA1, 0x935F);
+      _clipDepthZeroToOne = true;
+    }
   }
+
+  bool _clipDepthZeroToOne = false;
+
+  /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
+  /// shaders run without their `[-1, 1]` depth remap.
+  bool get clipDepthZeroToOne => _clipDepthZeroToOne;
 
   late final web.OffscreenCanvas _canvas;
   late final web.WebGL2RenderingContext _gl;
@@ -64,7 +83,11 @@ base class GpuContext {
 
   PixelFormat get defaultStencilFormat => PixelFormat.s8UInt;
 
-  PixelFormat get defaultDepthStencilFormat => PixelFormat.d24UnormS8Uint;
+  // Float depth only pays off with [0, 1] clip depth; under the remap a
+  // float buffer holds no more than 24 bits would.
+  PixelFormat get defaultDepthStencilFormat => _clipDepthZeroToOne
+      ? PixelFormat.d32FloatS8UInt
+      : PixelFormat.d24UnormS8Uint;
 
   int get minimumUniformByteAlignment => 256;
 
@@ -423,4 +446,9 @@ createGeometryBuffers(int vertexBytes, int indexBytes) {
         : gpuContext.createTypedDeviceBuffer(indexBytes, index: true),
     indexBaseOffset: 0,
   );
+}
+
+/// `EXT_clip_control`, which sets the clip-space origin and depth range.
+extension type _ExtClipControl._(JSObject _) implements JSObject {
+  external void clipControlEXT(int origin, int depth);
 }

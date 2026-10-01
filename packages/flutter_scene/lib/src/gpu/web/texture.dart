@@ -62,6 +62,12 @@ const Map<PixelFormat, _GlFormat> _formatTable = <PixelFormat, _GlFormat>{
     web.WebGL2RenderingContext.UNSIGNED_INT_24_8,
     4,
   ),
+  PixelFormat.d32FloatS8UInt: _GlFormat(
+    web.WebGL2RenderingContext.DEPTH32F_STENCIL8,
+    web.WebGL2RenderingContext.DEPTH_STENCIL,
+    web.WebGL2RenderingContext.FLOAT_32_UNSIGNED_INT_24_8_REV,
+    8,
+  ),
   // Block-compressed formats. The internal format is an extension constant
   // (the matching extension must be enabled, see supportsTextureCompression);
   // format/type/bytesPerTexel are unused (size comes from _compressedBlockBytes).

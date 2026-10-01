@@ -565,6 +565,7 @@ FmatMaterial _build(
     'depth_write',
     'effects_depth',
     'depth_test',
+    'depth_layer',
     'parameters',
     'varyings',
     'attributes',
@@ -704,6 +705,22 @@ FmatMaterial _build(
       '`blending: alpha` or `blending: additive`.',
       fileName: fileName,
     );
+  }
+
+  // `depth_layer` orders this surface against coplanar ones (see
+  // `Material.depthLayer`).
+  final depthLayerValue = tree['depth_layer'];
+  var depthLayer = 0;
+  if (depthLayerValue != null) {
+    if (depthLayerValue is! num ||
+        depthLayerValue != depthLayerValue.roundToDouble() ||
+        depthLayerValue.abs() > 8) {
+      throw FmatException(
+        '`depth_layer` must be a whole number from -8 to 8.',
+        fileName: fileName,
+      );
+    }
+    depthLayer = depthLayerValue.toInt();
   }
 
   final parameters = _buildParameters(tree['parameters'], fileName);
@@ -908,6 +925,7 @@ FmatMaterial _build(
     depthWrite: depthWrite,
     effectsDepth: effectsDepth,
     depthTest: depthTest,
+    depthLayer: depthLayer,
     parameters: parameters,
     fragmentSource: body.content,
     fragmentSourceLine: body.startLine,

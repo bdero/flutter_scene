@@ -60,7 +60,21 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
        _vertexShaders = vertexShaders,
        parameters = MaterialParameters.fromMetadata(fragmentShader, metadata) {
     setFragmentShader(fragmentShader);
+    _declaredDepthLayer = _parseDepthLayer(metadata['depth_layer']);
+    depthLayer = _declaredDepthLayer;
   }
+
+  // The `.fmat`'s `depth_layer:`, reapplied on reload only when it changes so
+  // a layer set at runtime survives an unrelated edit.
+  int _declaredDepthLayer = 0;
+
+  /// The `depth_layer:` this material's `.fmat` declares, the [depthLayer]
+  /// it starts with.
+  @internal
+  int get declaredDepthLayer => _declaredDepthLayer;
+
+  static int _parseDepthLayer(Object? value) =>
+      value is num ? value.toInt() : 0;
 
   /// Parses the sidecar's `engine_inputs` list into requested render inputs.
   static Set<RenderInput> _parseSceneInputs(Object? value) {
@@ -412,6 +426,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       metadata['engine_inputs'],
     );
     _sceneColorReach = _parseSceneColorReach(metadata['scene_color_reach']);
+    final declaredDepthLayer = _parseDepthLayer(metadata['depth_layer']);
+    if (declaredDepthLayer != _declaredDepthLayer) {
+      _declaredDepthLayer = declaredDepthLayer;
+      depthLayer = declaredDepthLayer;
+    }
     markMaterialSceneInputsChanged();
     setFragmentShader(fragmentShader);
     parameters.updateFromMetadata(fragmentShader, metadata);

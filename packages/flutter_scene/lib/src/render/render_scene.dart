@@ -277,6 +277,7 @@ class RenderItem {
   /// or instance change. Static groups pay this once during setup.
   @internal
   void refreshInstanceData() {
+    _depthFitInstanceBounds = null;
     final instances = instanceTransforms;
     final bounds = geometry.localBounds;
     final colors = instanceColors;
@@ -405,6 +406,95 @@ class RenderItem {
         ? null
         : visible;
     return visible.isNotEmpty;
+  }
+
+  // World-space instance AABBs for the near-plane fit when instance culling
+  // keeps none, built on demand and dropped by [refreshInstanceData].
+  Float32List? _depthFitInstanceBounds;
+
+  // Instanced items with more instances than this fall back to their
+  // aggregate bounds in the near-plane fit, bounding its cost.
+  static const int _maxDepthFitInstances = 16384;
+
+  /// A lower bound on the planar view depth of any of this item's visible
+  /// points (see [aabbDepthLowerBound]), using per-instance bounds when the
+  /// aggregate reaches the eye. Infinity when the item draws nothing in
+  /// [frustum].
+  @internal
+  double depthLowerBound(
+    Frustum frustum,
+    Vector3 eye,
+    Vector3 forward,
+    double cosHalfAngle,
+    double best,
+  ) {
+    final aggregate = worldBounds;
+    if (aggregate == null) return 0.0;
+    final whole = aggregate.depthLowerBound(eye, forward, cosHalfAngle);
+    final instances = instanceTransforms;
+    final localBounds = geometry.localBounds;
+    if (whole >= best ||
+        whole > 0.0 ||
+        instances == null ||
+        localBounds == null ||
+        instances.length > _maxDepthFitInstances) {
+      return whole;
+    }
+    var packed = _instanceWorldBounds;
+    if (packed == null || packed.length != instances.length * 6) {
+      packed = _depthFitInstanceBounds;
+      if (packed == null || packed.length != instances.length * 6) {
+        packed = Float32List(instances.length * 6);
+        for (var i = 0; i < instances.length; i++) {
+          _instanceWorldScratch
+            ..setFrom(worldTransform)
+            ..multiply(instances[i]);
+          _instanceAabbScratch
+            ..copyFrom(localBounds)
+            ..transform(_instanceWorldScratch);
+          final offset = i * 6;
+          packed[offset] = _instanceAabbScratch.min.x;
+          packed[offset + 1] = _instanceAabbScratch.min.y;
+          packed[offset + 2] = _instanceAabbScratch.min.z;
+          packed[offset + 3] = _instanceAabbScratch.max.x;
+          packed[offset + 4] = _instanceAabbScratch.max.y;
+          packed[offset + 5] = _instanceAabbScratch.max.z;
+        }
+        _depthFitInstanceBounds = packed;
+      }
+    }
+    var nearest = double.infinity;
+    for (var i = 0; i < instances.length; i++) {
+      final offset = i * 6;
+      if (_outsidePlane(packed, offset, frustum.plane0) ||
+          _outsidePlane(packed, offset, frustum.plane1) ||
+          _outsidePlane(packed, offset, frustum.plane2) ||
+          _outsidePlane(packed, offset, frustum.plane3) ||
+          _outsidePlane(packed, offset, frustum.plane4) ||
+          _outsidePlane(packed, offset, frustum.plane5)) {
+        continue;
+      }
+      final bound = aabbDepthLowerBound(
+        packed[offset],
+        packed[offset + 1],
+        packed[offset + 2],
+        packed[offset + 3],
+        packed[offset + 4],
+        packed[offset + 5],
+        eye.x,
+        eye.y,
+        eye.z,
+        forward.x,
+        forward.y,
+        forward.z,
+        cosHalfAngle,
+      );
+      if (bound < nearest) {
+        nearest = bound;
+        if (nearest <= 0.0) break;
+      }
+    }
+    return nearest;
   }
 
   static bool _outsidePlane(Float32List bounds, int offset, Plane plane) {
@@ -843,6 +933,64 @@ class RenderScene {
     return _bvh.itemCount - visited;
   }
 
+  /// The smallest lower bound on planar view depth, along [forward] from
+  /// [eye], over the items drawn into a perspective view (layers in
+  /// [layerMask]) through [frustum], whose corner ray makes an angle with
+  /// forward of cosine [cosHalfAngle]. A view can raise its near plane to
+  /// this without clipping anything it draws.
+  ///
+  /// [nearest] is the item that set the bound, so a caller can name what
+  /// pins the plane (an unbounded item, or one whose bounds hold the eye).
+  ({double depth, RenderItem? nearest}) nearestVisibleDepth({
+    required Frustum frustum,
+    required Vector3 eye,
+    required Vector3 forward,
+    required double cosHalfAngle,
+    int layerMask = kRenderLayerAll,
+    List<Plane> additionalPlanes = const [],
+  }) {
+    RenderItem? nearest;
+    var best = double.infinity;
+    for (final item in _alwaysVisible) {
+      if (!item.drawsColor || (item.layers & layerMask) == 0) continue;
+      final bound = item.depthLowerBound(
+        frustum,
+        eye,
+        forward,
+        cosHalfAngle,
+        best,
+      );
+      if (bound < best) {
+        best = bound;
+        nearest = item;
+        if (best <= 0.0) return (depth: best, nearest: nearest);
+      }
+    }
+    best = _bvh.nearestBound(
+      frustum,
+      eye,
+      forward,
+      cosHalfAngle,
+      (item, currentBest) {
+        if (!item.drawsColor || (item.layers & layerMask) == 0) {
+          return double.infinity;
+        }
+        final bound = item.depthLowerBound(
+          frustum,
+          eye,
+          forward,
+          cosHalfAngle,
+          currentBest,
+        );
+        if (bound < currentBest) nearest = item;
+        return bound;
+      },
+      additionalPlanes: additionalPlanes,
+      best: best,
+    );
+    return (depth: best, nearest: nearest);
+  }
+
   /// Collects material inputs requested by this view's frustum candidates.
   Set<RenderInput> collectMaterialInputs(
     Frustum frustum, {
@@ -888,4 +1036,23 @@ class RenderScene {
     }
     return inputs;
   }
+}
+
+extension on Aabb3 {
+  double depthLowerBound(Vector3 eye, Vector3 forward, double cosHalfAngle) =>
+      aabbDepthLowerBound(
+        min.x,
+        min.y,
+        min.z,
+        max.x,
+        max.y,
+        max.z,
+        eye.x,
+        eye.y,
+        eye.z,
+        forward.x,
+        forward.y,
+        forward.z,
+        cosHalfAngle,
+      );
 }

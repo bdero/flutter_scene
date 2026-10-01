@@ -8,6 +8,11 @@ import 'package:flutter_scene/src/render/planar_reflection.dart'
     show ObliqueNearClipProjection;
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 
+/// The planar depth that stands in for an infinite far plane in the terms
+/// below: what the depth prepass clears to and what depth effects treat as
+/// background. Matches the `kSceneDepthUnavailable` sentinel materials read.
+const double kInfiniteFarDepth = 1.0e8;
+
 /// The terms screen-space passes need to move between planar view depth and
 /// view-space position, derived from a projection matrix so perspective,
 /// orthographic, off-center, and custom projections all reconstruct the same
@@ -58,7 +63,7 @@ class ProjectionParams {
           offsetY: 0.0,
           orthographic: false,
           near: projection.near,
-          far: projection.far,
+          far: projection.far.isFinite ? projection.far : kInfiniteFarDepth,
         );
       case OrthographicProjection():
         final extent = projection.visibleSize(viewportSize);
@@ -100,7 +105,7 @@ class ProjectionParams {
       far = (1.0 - b) / a;
     } else {
       near = -b / a;
-      far = a == 1.0 ? double.infinity : b / (1.0 - a);
+      far = a == 1.0 ? kInfiniteFarDepth : b / (1.0 - a);
     }
     return ProjectionParams(
       scaleX: sx == 0.0 ? 0.0 : 1.0 / sx,

@@ -9,10 +9,13 @@ uniform FrameInfo {
   vec4 camera_position;  // world-space camera position (xyz)
   // x: half width in world units. yzw: unused.
   vec4 params;
+  // The material's depth-layer offset (xy), see ApplyDepthOffset.
+  vec4 depth_offset;
 }
 frame_info;
 
 #include <view_vector.glsl>
+#include <depth_bias.glsl>
 
 // Per-vertex unit quad (slot 0): x selects the endpoint (0 start, 1 end),
 // y is the side of the ribbon (-1 or +1).
@@ -59,7 +62,9 @@ void main() {
   vec3 n = dir_len > 1e-12 ? cross(dir / dir_len, perp) : vec3(0.0, 0.0, 1.0);
 
   v_position = pos;
-  gl_Position = frame_info.camera_transform * vec4(pos, 1.0);
+  gl_Position = ApplyDepthOffset(
+      frame_info.camera_transform * vec4(pos, 1.0), frame_info.depth_offset,
+      0.0);
   v_viewvector = frame_info.camera_position.xyz - pos;
   v_normal = n;
   // u runs along the segment, v across the ribbon.

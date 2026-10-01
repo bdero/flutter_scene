@@ -12,7 +12,8 @@ uniform SkyboxFrameInfo {
   // A mat4 carrying the 3x3 environment rotation (mat3 has awkward std140
   // padding on some backends); column 3 is (0, 0, 0, 1).
   mat4 environment_transform;
-  // xyz = camera world position; w unused.
+  // xyz = camera world position; w = the far plane's clip depth over w (1
+  // standard, 0 reversed).
   vec4 camera_position;
 }
 frame_info;
@@ -31,8 +32,8 @@ void main() {
   vec4 world =
       frame_info.inverse_view_projection * vec4(position, 1.0, 1.0);
   v_ray = mat3(frame_info.environment_transform) * world.xyz;
-  // Sit at the far plane so geometry (depth-tested lessEqual against the
-  // cleared far value) always draws in front.
-  gl_Position = vec4(position, 1.0, 1.0);
+  // Sit at the far plane so geometry (depth-tested against the cleared far
+  // value) always draws in front.
+  gl_Position = vec4(position, frame_info.camera_position.w, 1.0);
 }
 

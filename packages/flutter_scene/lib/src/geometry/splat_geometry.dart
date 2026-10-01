@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
@@ -346,7 +347,7 @@ class SplatGeometry extends Geometry {
     );
 
     final viewport = currentSceneEncoderViewport;
-    final frameInfo = Float32List(76);
+    final frameInfo = Float32List(80);
     frameInfo.setRange(0, 16, mvp.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     final cropInverse = _cropInverse;
@@ -388,6 +389,9 @@ class SplatGeometry extends Geometry {
       frameInfo[74] = forward.z;
       frameInfo[75] = 1.0;
     }
+    frameInfo[76] = currentDrawDepthOffset[0];
+    frameInfo[77] = currentDrawDepthOffset[1];
+    frameInfo[78] = currentRasterFarClipDepth;
     pass.bindUniform(
       vertexShader.getUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),

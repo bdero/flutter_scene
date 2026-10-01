@@ -124,3 +124,18 @@ String transpileGlslEs100To300(String source, {required bool isFragment}) {
 
   return out;
 }
+
+// The line SPIRV-Cross's `fixup_clipspace` appends to a vertex shader, which
+// remaps a [0, 1] clip depth to GL's [-1, 1].
+final RegExp _clipSpaceDepthRemap = RegExp(
+  r'^[ \t]*gl_Position\.z\s*=\s*2\.0\s*\*\s*gl_Position\.z\s*-\s*gl_Position\.w\s*;[ \t]*\r?\n?',
+  multiLine: true,
+);
+
+/// [source] (a vertex shader) without SPIRV-Cross's clip-space depth remap,
+/// for a context whose clip depth already spans `[0, 1]` (EXT_clip_control).
+///
+/// Clip control and the remap must go together: with the range set to
+/// `[0, 1]` and the remap left in, the first half of the depth range clips.
+String stripClipSpaceDepthRemap(String source) =>
+    source.replaceAll(_clipSpaceDepthRemap, '');
