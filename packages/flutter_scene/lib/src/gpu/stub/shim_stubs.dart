@@ -328,7 +328,28 @@ base class CommandBuffer {
     _stub();
   }
   RenderPass createRenderPass(RenderTarget renderTarget) => _stub();
+  void copyBufferToTexture(BufferView source, TextureRegion destination) =>
+      _stub();
   void submit({CompletionCallback? completionCallback}) => _stub();
+}
+
+base class TextureRegion {
+  const TextureRegion(
+    this.texture, {
+    this.x = 0,
+    this.y = 0,
+    this.width = -1,
+    this.height = -1,
+    this.mipLevel = 0,
+    this.slice = 0,
+  });
+  final Texture texture;
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+  final int mipLevel;
+  final int slice;
 }
 
 base class RenderPass {
