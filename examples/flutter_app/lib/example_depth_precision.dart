@@ -12,13 +12,13 @@ import 'example_chrome.dart';
 enum DepthDemoAct {
   layers(
     'Depth layers',
-    'Screens 5 mm off their backing and road paint flush with the road',
+    'Screens flush with their backing and paint flush with the road',
     'depthLayer 0',
     'depthLayer 1',
   ),
   nearFit(
     'Fitted near plane',
-    'Window bands 15 cm proud of towers 150 to 280 m away',
+    'Window bands 4 cm proud of towers 150 to 280 m away',
     'near 0.10 m',
     'near fitted to content',
   ),
@@ -56,7 +56,12 @@ class ExampleDepthPrecision extends StatefulWidget {
   State<ExampleDepthPrecision> createState() => _ExampleDepthPrecisionState();
 }
 
-const String _demoActName = String.fromEnvironment('DEPTH_DEMO');
+// The act to record, from `--dart-define=DEPTH_DEMO=<act>` or, on desktop,
+// the `DEPTH_DEMO` environment variable.
+final String _demoActName =
+    const String.fromEnvironment('DEPTH_DEMO').isNotEmpty
+    ? const String.fromEnvironment('DEPTH_DEMO')
+    : depthDemoActFromEnvironment();
 
 /// Seconds one act plays in demo mode.
 const double _actSeconds = 16.0;
@@ -88,6 +93,34 @@ class _ExampleDepthPrecisionState extends State<ExampleDepthPrecision> {
       _quitTimer = Timer(
         Duration(milliseconds: (1500 + _actSeconds * 1000 + 500).round()),
         quitDepthDemo,
+      );
+      if (depthDemoProbeFromEnvironment()) {
+        // Evidence for a take: probe both halves from the same camera at a
+        // few moments of the act and log what fights.
+        for (final at in [3.0, 8.0, 13.0]) {
+          Timer(Duration(milliseconds: (1500 + at * 1000).round()), () {
+            _logProbes(at);
+          });
+        }
+      }
+    }
+  }
+
+  Future<void> _logProbes(double at) async {
+    final camera = _scenes.camera(at);
+    for (final (label, scene) in [
+      ('BEFORE', _scenes.before),
+      ('AFTER', _scenes.after),
+    ]) {
+      final report = await scene.probeDepthConflicts(
+        camera: camera,
+        width: 800,
+        height: 900,
+      );
+      debugPrint(
+        'DEPTH_PROBE ${_act.name} t=${at.toStringAsFixed(0)} $label '
+        'pairs=${report.conflicts.length} '
+        'pixels=${report.conflictPixelCount}\n${report.describe(limit: 6)}',
       );
     }
   }
@@ -306,8 +339,14 @@ UnlitMaterial _flat(double r, double g, double b) =>
 Scene _sceneWith(void Function(Scene scene) configure) {
   final scene = Scene()
     ..skybox = _sky()
-    ..antiAliasingMode = AntiAliasingMode.msaa;
+    ..antiAliasingMode = AntiAliasingMode.msaa
+    // Two scenes share the frame, and pacing one on the other's in-flight
+    // GPU work would freeze it.
+    ..maxGpuFramesInFlight = 0;
   configure(scene);
+  if (depthDemoOverlayFromEnvironment()) {
+    scene.debug.overlays.add(DebugOverlay.depthConflicts);
+  }
   return scene;
 }
 
@@ -330,10 +369,10 @@ Node _screen(
 }
 
 // Act 1. Gantry signs span a street: each is a black backing box with a
-// bright screen 5 mm in front of it, the spacing an agent-built billboard
-// typically uses. The road's dashed center line and crosswalks lie flush on
-// the road. The camera pulls back from the first sign to beyond the last,
-// so the signs recede from 10 m to about 450 m.
+// bright screen lying on its face, the way an agent-built billboard often
+// sits. The road's dashed center line and crosswalks lie flush on the road.
+// The camera pulls back from the first sign to beyond the last, so the signs
+// recede from 10 m to about 450 m.
 _ActScenes _buildLayers() {
   void content(Scene scene, {required int overlayLayer}) {
     final asphalt = _flat(0.10, 0.10, 0.11);
@@ -352,27 +391,33 @@ _ActScenes _buildLayers() {
     }
 
     scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 16, depth: 700), asphalt))
-        ..position = vm.Vector3(0, 0, 300),
+      Node(
+        name: 'road',
+        mesh: Mesh(PlaneGeometry(width: 16, depth: 1000), asphalt),
+      )..position = vm.Vector3(0, 0, 150),
     );
     // Dashed center line and a crosswalk every 50 m, flush with the road.
-    for (var z = -200.0; z < 650; z += 6) {
+    for (var z = -350.0; z < 650; z += 6) {
       scene.add(
-        Node(mesh: Mesh(PlaneGeometry(width: 0.25, depth: 3), paint))
-          ..position = vm.Vector3(0, 0, z),
+        Node(
+          name: 'center_line_${z.round()}',
+          mesh: Mesh(PlaneGeometry(width: 0.25, depth: 3), paint),
+        )..position = vm.Vector3(0, 0, z),
       );
     }
-    for (var z = 0.0; z < 650; z += 50) {
+    for (var z = -300.0; z < 650; z += 50) {
       for (var x = -6.0; x <= 6.0; x += 1.5) {
         scene.add(
-          Node(mesh: Mesh(PlaneGeometry(width: 0.8, depth: 3.5), paint))
-            ..position = vm.Vector3(x, 0, z + 25),
+          Node(
+            name: 'crosswalk_${(z + 25).round()}',
+            mesh: Mesh(PlaneGeometry(width: 0.8, depth: 3.5), paint),
+          )..position = vm.Vector3(x, 0, z + 25),
         );
       }
     }
     // Buildings lining the street.
     final random = Random(7);
-    for (var z = -200.0; z < 650; z += 18) {
+    for (var z = -350.0; z < 650; z += 18) {
       for (final side in [-1.0, 1.0]) {
         final height = 14 + random.nextDouble() * 30;
         scene.add(
@@ -380,7 +425,7 @@ _ActScenes _buildLayers() {
             vm.Vector3(10, height, 16),
             building,
             vm.Vector3(side * 14, height / 2, z),
-          ),
+          )..name = 'building',
         );
       }
     }
@@ -389,39 +434,43 @@ _ActScenes _buildLayers() {
     for (final z in [20.0, 60.0, 110.0, 170.0, 240.0, 330.0, 440.0]) {
       final backingDepth = 0.3;
       scene.add(
-        _box(vm.Vector3(11, 5, backingDepth), backing, vm.Vector3(0, 9, z)),
+        _box(vm.Vector3(11, 5, backingDepth), backing, vm.Vector3(0, 9, z))
+          ..name = 'sign_backing_${z.round()}',
       );
       for (final x in [-5.2, 5.2]) {
-        scene.add(_box(vm.Vector3(0.4, 7, 0.4), post, vm.Vector3(x, 3.5, z)));
+        scene.add(
+          _box(vm.Vector3(0.4, 7, 0.4), post, vm.Vector3(x, 3.5, z))
+            ..name = 'sign_post',
+        );
       }
-      // The screen sits 5 mm in front of the backing's camera-facing face.
+      // The screen lies on the backing's camera-facing face.
       scene.add(
         _screen(
           10,
           4.2,
           screens[i++ % screens.length],
-          vm.Vector3(0, 9, z - backingDepth / 2 - 0.005),
-        ),
+          vm.Vector3(0, 9, z - backingDepth / 2),
+        )..name = 'sign_screen_${z.round()}',
       );
     }
   }
 
-  // Standard depth and the authored near plane on both sides, so only the
-  // layer differs.
-  void standard(Scene s) => s
-    ..fitNearPlane = false
-    ..reversedDepth = false;
-  final before = _sceneWith(standard);
-  final after = _sceneWith(standard);
+  // The engine's depth defaults on both sides, so only the layer differs.
+  final before = _sceneWith((_) {});
+  final after = _sceneWith((_) {});
   content(before, overlayLayer: 0);
   content(after, overlayLayer: 1);
+  // A slow pull back down the street with a gentle sway, so the signs
+  // recede from about 15 m to 500 m and the view never stops moving.
   return _ActScenes(before, after, (t) {
     final u = t / _actSeconds;
     final eased = u * u * (3 - 2 * u);
-    final z = 5 - eased * 230;
+    final z = 5 - eased * 70;
+    final sway = sin(t * 0.9) * 1.2;
     return PerspectiveCamera(
-      position: vm.Vector3(1.5, 4.0 + eased * 6, z),
-      target: vm.Vector3(0, 7.5, z + 60),
+      position: vm.Vector3(1.5 + sway, 4.0 + eased * 3, z),
+      target: vm.Vector3(sway * 0.3, 8.0, z + 80),
+      fovRadiansY: 40 * vm.degrees2Radians,
       fovNear: 0.1,
       fovFar: 1000,
     );
@@ -429,10 +478,10 @@ _ActScenes _buildLayers() {
 }
 
 // Act 2. A skyline ring around a race track, built the way the reported
-// game builds it: dark towers wrapped by window bands 15 cm proud, 165 to
-// 235 m from the track center. A chase camera circles the track 3.6 m up,
-// so nothing comes within a few metres of it while the towers sit 150 to
-// 280 m away.
+// game builds it: dark towers wrapped by window bands, 165 to 235 m from the
+// track center, here 4 cm proud (the game's 15 cm only just fights). A chase
+// camera circles the track 3.6 m up, so nothing comes within a few metres of
+// it while the towers sit 150 to 280 m away.
 _ActScenes _buildNearFit() {
   void content(Scene scene) {
     final ground = _flat(0.05, 0.08, 0.05);
@@ -446,8 +495,14 @@ _ActScenes _buildNearFit() {
     final warm = _flat(1.0, 0.55, 0.20);
     final cool = _flat(0.20, 0.60, 1.0);
 
-    scene.add(Node(mesh: Mesh(PlaneGeometry(width: 700, depth: 700), ground)));
+    scene.add(
+      Node(
+        name: 'ground',
+        mesh: Mesh(PlaneGeometry(width: 700, depth: 700), ground),
+      ),
+    );
     final track = Node(
+      name: 'track',
       mesh: Mesh(
         RingGeometry(innerRadius: 52, outerRadius: 64, segments: 128),
         road,
@@ -493,20 +548,28 @@ _ActScenes _buildNearFit() {
           vm.Vector3(w, h, d),
         ),
       );
+      // Up to three bands per tower, each in its own height slot so no two
+      // overlap.
+      final slots = [0.35, 0.6, 0.85]..shuffle(random);
       final bands = 1 + random.nextInt(3);
       for (var b = 0; b < bands; b++) {
-        final y = h * (0.3 + 0.6 * random.nextDouble());
+        final y = h * slots[b];
         (random.nextDouble() < 0.7 ? warmBands : coolBands).addInstance(
           vm.Matrix4.compose(
             vm.Vector3(x, y, z),
             rotation,
-            vm.Vector3(w + 0.3, 0.7, d + 0.3),
+            vm.Vector3(w + 0.08, 0.7, d + 0.08),
           ),
         );
       }
     }
-    for (final mesh in [towers, towersB, warmBands, coolBands]) {
-      scene.add(Node()..addComponent(InstancedMeshComponent(mesh)));
+    for (final (name, mesh) in [
+      ('towers_a', towers),
+      ('towers_b', towersB),
+      ('window_bands_warm', warmBands),
+      ('window_bands_cool', coolBands),
+    ]) {
+      scene.add(Node(name: name)..addComponent(InstancedMeshComponent(mesh)));
     }
   }
 
@@ -582,8 +645,10 @@ _ActScenes _buildReversedZ() {
     ];
     final buoy = _flat(0.95, 0.35, 0.10);
     scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 3000, depth: 3000), water))
-        ..position = vm.Vector3(0, -0.6, 300),
+      Node(
+        name: 'river',
+        mesh: Mesh(PlaneGeometry(width: 3000, depth: 3000), water),
+      )..position = vm.Vector3(0, -0.6, 300),
     );
     final random = Random(34);
     final towerMeshes = [
@@ -628,8 +693,15 @@ _ActScenes _buildReversedZ() {
         }
       }
     }
-    for (final mesh in [...towerMeshes, ...windowMeshes]) {
-      scene.add(Node()..addComponent(InstancedMeshComponent(mesh)));
+    for (var i = 0; i < 3; i++) {
+      scene.add(
+        Node(name: 'towers_$i')
+          ..addComponent(InstancedMeshComponent(towerMeshes[i])),
+      );
+      scene.add(
+        Node(name: 'windows_$i')
+          ..addComponent(InstancedMeshComponent(windowMeshes[i])),
+      );
     }
     scene.add(
       Node(mesh: Mesh(SphereGeometry(radius: 0.6), buoy))..name = 'buoy',
@@ -669,7 +741,7 @@ _ActScenes _buildReversedZ() {
       return PerspectiveCamera(
         position: eye,
         target: vm.Vector3(eye.x * 0.6, 35, 420),
-        fovRadiansY: 50 * vm.degrees2Radians,
+        fovRadiansY: 26 * vm.degrees2Radians,
         fovNear: 0.09,
         fovFar: 2200,
       );
@@ -697,11 +769,13 @@ _ActScenes _buildTieBreak() {
       _flat(0.22, 0.14, 0.07),
     ];
     scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 400, depth: 900), ground))
-        ..position = vm.Vector3(0, 0, 350),
+      Node(
+        name: 'ground',
+        mesh: Mesh(PlaneGeometry(width: 400, depth: 900), ground),
+      )..position = vm.Vector3(0, 0, 350),
     );
     scene.add(
-      Node(mesh: Mesh(PlaneGeometry(width: 8, depth: 900), road))
+      Node(name: 'road', mesh: Mesh(PlaneGeometry(width: 8, depth: 900), road))
         ..position = vm.Vector3(0, 0.01, 350),
     );
     final barrierRed = InstancedMesh(
@@ -724,7 +798,7 @@ _ActScenes _buildTieBreak() {
     final patches = [
       for (final color in patchColors)
         InstancedMesh(
-          geometry: CuboidGeometry(vm.Vector3.all(1)),
+          geometry: PlaneGeometry(width: 1, depth: 1),
           material: color,
         ),
     ];
@@ -738,14 +812,24 @@ _ActScenes _buildTieBreak() {
       // Every patch at one height, so overlapping colors share a plane.
       patches[i % 3].addInstance(
         vm.Matrix4.compose(
-          vm.Vector3(x, 0.02, z),
+          vm.Vector3(x, 0.08, z),
           vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), yaw),
-          vm.Vector3(w, 0.02, d),
+          vm.Vector3(w, 1, d),
         ),
       );
     }
-    for (final mesh in [barrierRed, barrierWhite, ...patches]) {
-      scene.add(Node()..addComponent(InstancedMeshComponent(mesh)));
+    final names = [
+      'barriers_red',
+      'barriers_white',
+      'patch_light',
+      'patch_dark',
+      'patch_dirt',
+    ];
+    final meshes = [barrierRed, barrierWhite, ...patches];
+    for (var i = 0; i < meshes.length; i++) {
+      scene.add(
+        Node(name: names[i])..addComponent(InstancedMeshComponent(meshes[i])),
+      );
     }
   }
 
