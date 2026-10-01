@@ -1,5 +1,10 @@
 ## 0.24.0
 
+* `Scene.initializeStaticResources` no longer loads the physical material shader bundle (4.4 MB) or the SMAA tables. The bundle loads when the first material needs a physical variant, with `Scene.isReadyToRender` false until it lands, and the tables load when a scene first resolves to SMAA, so a scene that uses neither reaches its first frame sooner.
+* `loadScene` and the async `.fsceneb` loaders inflate and parse the container on a background isolate, so loading a texture-heavy scene no longer stalls the frames on screen; `readFscenebAsync` is exported from `fscene.dart`.
+* A generated mip chain uploads in one submission instead of one per level, saving a staging buffer, a command buffer, and a submission per level on Vulkan and Metal.
+* `Texture2D.fromImage(opaque: true)` wraps the decoded image's GPU texture instead of reading its pixels back and uploading them again, when the texture needs no mip chain.
+* `Scene.warmUp` waits for the raster thread before each frame it draws, so on OpenGL ES the pipeline compiles it triggers no longer block the UI thread behind a swap.
 * Generated scenes, textures, and materials rebuild when the flutter_scene code that writes them changes, so an upgrade no longer reuses outputs from the old importer, encoder, or `.fmat` compiler.
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
