@@ -120,6 +120,7 @@ into one bundle; each becomes an entry keyed by its `name`.
 | `depth_write` | boolean | `false` | For `blending: alpha` surfaces, write depth in the color pass (self-sorting) and join the post-effect depth, so depth of field focuses on the surface instead of the backdrop seen through it. |
 | `effects_depth` | boolean | `false` | For `blending: alpha` surfaces, join the post-effect depth (depth of field, custom passes that read depth) where `Surface()` alpha is at least one half, without writing depth in the color pass. For soft cutouts such as fins that must blur with what they are attached to. |
 | `depth_test` | `less_equal`, `always` | `less_equal` | The depth test used in the translucent pass, so it needs `blending: alpha` or `additive`. `always` draws regardless of the opaque depth, for a projection volume whose own faces are not the surface being shaded (see Decals). |
+| `depth_layer` | whole number, `-8` to `8` | `0` | Which surface wins where this material's geometry and another's share a plane: a higher layer draws over a lower one at any distance, so an overlay that lies on a surface (a sign, road paint, a decal quad) gets `1`. `Material.depthLayer` overrides it per instance. |
 | `parameters` | list of objects | `[]` | The material's parameters (see below). |
 | `engine_inputs` | list of `scene_color`, `scene_depth`, `planar_reflection` | `[]` | Per-frame engine textures the shader samples (see below). Surface materials, `lit` or `unlit` (`planar_reflection` is lit only). |
 | `scene_color_reach` | number | unbounded | How far past its own surface the shader samples, in local units. Lets readers whose screen rects are disjoint share one scene-color capture. Requires `engine_inputs`. |
@@ -699,13 +700,14 @@ already drawn. Two tiers, depending on how flat the receiver is.
 
 ## Mesh decals, for a flat receiver
 
-A translucent quad parented just above the receiving surface, with a nonzero
-`Material.depthBias` so it wins the depth comparison without moving:
+A translucent quad laid on the receiving surface, with `Material.depthLayer`
+(or `depth_layer: 1` in the `.fmat`) so it wins the depth comparison at any
+distance without moving:
 
 ```dart
 final mark = Node(mesh: Mesh(PlaneGeometry(width: 2, depth: 2), scorch))
   ..position = impactPoint;
-scorch.depthBias = 0.02;
+scorch.depthLayer = 1;
 ```
 
 The material is `blending: alpha` with the mark's coverage in `base_color.a`.
@@ -1168,7 +1170,12 @@ a raw `ShaderMaterial` has no such declaration and always sees the fixed record.
 Your shader writes `gl_Position` and the standard outputs the fragment stage reads
 (`v_position`, `v_normal`, `v_viewvector`, `v_texture_coords`,
 `v_texture_coords_1`, `v_color`, `v_tangent`), plus any of
-your own varyings. A skinned mesh
+your own varyings. Write clip space as `camera_transform * world_position`.
+`camera_transform` already carries the view's depth convention, which is
+reversed (near at 1, far at 0) on most devices (`Scene.reversedDepth`), so a
+shader that writes clip depth itself (a sky at `z = w`) is only right with
+`Scene.reversedDepth = false`. `FrameInfo` continues past `camera_position`
+with engine fields a shader may leave undeclared. A skinned mesh
 instead takes its model transform,
 `enable_skinning`, and `joint_texture_size` in `FrameInfo`, and adds the
 `joints` and `weights` attributes and a `joints_texture` sampler.

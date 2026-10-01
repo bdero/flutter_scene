@@ -34,6 +34,10 @@ typedef PrimitiveArrays = ({
 /// (visualized with an unlit material, as in the Cuboid example). It is off
 /// by default so a lit material renders the box in its own base color rather
 /// than tinted by the debug colors.
+///
+/// Repeated boxes (a fence, a barrier, a row of tiles) must abut, each as
+/// long as the spacing between them: overlapping faces in one plane flicker
+/// against each other at any distance (z-fighting).
 /// {@category Geometry}
 class CuboidGeometry extends MeshGeometry {
   /// Builds a cuboid sized to [extents].
@@ -96,6 +100,11 @@ class WedgeGeometry extends MeshGeometry {
 /// [width] spans X and [depth] spans Z. [segmentsX] and [segmentsZ] set
 /// the number of grid cells along each axis; subdividing is useful when
 /// the surface will be deformed or lit by per-vertex data.
+///
+/// Two planes of different materials that overlap at one height flicker
+/// against each other (z-fighting). Keep patches apart, or give one that
+/// lies on another (paint, a rug, a decal quad) a higher
+/// `Material.depthLayer`.
 /// {@category Geometry}
 class PlaneGeometry extends MeshGeometry {
   /// Builds a plane of the given size and subdivision.

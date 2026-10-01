@@ -2619,7 +2619,7 @@ base class Scene implements SceneGraph {
         return true;
       }());
     }
-    return DepthRaster(
+    final raster = DepthRaster(
       reversed: reversedDepth,
       near: near,
       floatDepth:
@@ -2627,7 +2627,25 @@ base class Scene implements SceneGraph {
           gpu.PixelFormat.d32FloatS8UInt,
       tieBreak: coplanarTieBreak,
     );
+    assert(() {
+      if (fittable && viewIndex >= 0 && _reportedPrecision.add(viewIndex)) {
+        debugPrint(
+          depthPrecisionSummary(
+            reversed: raster.reversed,
+            floatDepth: raster.floatDepth,
+            authoredNear: (projection as PerspectiveProjection).near,
+            fittedNear: near,
+          ),
+        );
+      }
+      return true;
+    }());
+    return raster;
   }
+
+  // Debug-only. The screen views whose depth precision line has printed, once
+  // each.
+  final Set<int> _reportedPrecision = {};
 
   // Near-plane fit state that persists across frames for one view. Apps
   // often build a new camera and view every frame, so screen views are

@@ -690,10 +690,16 @@ class PerspectiveCamera extends Camera {
 
   /// Distance to the near clipping plane. Geometry closer than this is
   /// clipped away.
+  ///
+  /// The scene rasterizes with the largest near plane that clips nothing
+  /// visible, with this as the floor (`Scene.fitNearPlane`), so depth
+  /// precision follows the content and this only needs to be small enough
+  /// that nothing the camera approaches is clipped.
   double fovNear;
 
   /// Distance to the far clipping plane. Geometry beyond this is clipped
-  /// away. Must be greater than [fovNear].
+  /// away. Must be greater than [fovNear]. It barely affects depth precision;
+  /// the near plane dominates.
   double fovFar;
 
   @override

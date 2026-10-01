@@ -18,7 +18,9 @@ const String kDecalFadeParameter = 'decal_fade';
 
 /// A box-projected decal. Its material paints every opaque surface inside the
 /// box, conforming to that surface rather than to the box's own faces, so a
-/// scorch mark follows terrain, steps, and props.
+/// scorch mark follows terrain, steps, and props. It adds no geometry in the
+/// surface's plane, so it never fights the surface (z-fighting) the way a
+/// quad laid on it can; prefer it for marks on uneven surfaces.
 ///
 /// Drive it with a `.fmat` declaring `engine_inputs: [scene_depth]`,
 /// `depth_test: always`, and `culling: front` (see the decals section of

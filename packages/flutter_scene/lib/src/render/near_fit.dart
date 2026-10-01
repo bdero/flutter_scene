@@ -92,6 +92,37 @@ String? nearPlaneAdvisory(
   return null;
 }
 
+/// One line for the debug log on how a perspective view stores depth and how
+/// far apart two parallel faces must be to stay distinct there: eight
+/// depth-buffer steps, face-on (grazing views also need a fraction of a
+/// pixel of the faces' depth slope, which `Material.depthLayer` covers).
+@internal
+String depthPrecisionSummary({
+  required bool reversed,
+  required bool floatDepth,
+  required double authoredNear,
+  double? fittedNear,
+}) {
+  final near = fittedNear ?? authoredNear;
+  final storage = floatDepth
+      ? (reversed ? '32-bit float, reversed' : '32-bit float')
+      : (reversed ? '24-bit, reversed' : '24-bit');
+  final nearText = fittedNear != null && fittedNear > authoredNear
+      ? 'near ${_metres(authoredNear)}, fitted to ${_metres(fittedNear)}'
+      : 'near ${_metres(authoredNear)}';
+  // A gap holds while eight steps at its distance fit inside it.
+  const gap = 0.01;
+  final reach = reversed && floatDepth
+      ? gap * 8388608.0 / 8
+      : math.sqrt(gap * near * 16777216.0 / 8);
+  final reachText = reach >= 10000
+      ? 'beyond 10 km'
+      : 'to about ${_metres(reach)}';
+  return 'flutter_scene: depth is $storage, $nearText. Faces 1 cm apart '
+      'stay distinct $reachText face-on; an overlay that touches its surface '
+      'needs a higher Material.depthLayer.';
+}
+
 String _metres(double value) => value >= 10
     ? '${value.toStringAsFixed(0)} m'
     : (value >= 1

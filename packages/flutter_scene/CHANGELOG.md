@@ -1,5 +1,14 @@
 ## 0.24.0
 
+* `Material.depthLayer` (`.fmat` `depth_layer:`) orders surfaces that share a plane. A higher layer draws over a lower one at any distance, so signs, screens, and road paint laid on a surface stop flickering (z-fighting).
+* Scenes store reversed float depth where the device supports it (Metal, and WebGL2 with `EXT_clip_control`) and rasterize with a near plane fitted to visible content each frame, so distant surfaces centimetres apart stay distinct. `Scene.reversedDepth` and `Scene.fitNearPlane` turn each off; projections and picking keep the authored planes.
+* `PerspectiveProjection` and `PerspectiveCamera` accept an infinite far plane (`.fscene` `infiniteFar`).
+* `Scene.probeDepthConflicts` names each pair of nodes that trades pixels as the camera moves, and `DebugOverlay.depthConflicts` marks them live.
+* `Scene.findCoplanarOverlaps` lists faces that overlap in one plane, with the length that fixes a repeated piece; debug builds print it once the scene settles.
+* `SurfaceDebugChannel.depthGap` shows the gap two surfaces need at each pixel to keep their order.
+* `Scene.coplanarTieBreak` (experimental) gives unlayered exact overlaps a stable winner.
+* Custom `ShaderMaterial` vertex shaders that write clip depth themselves (a sky at `z = w`) need `Scene.reversedDepth = false`; ones that use `camera_transform` are unaffected.
+
 * Generated scenes, textures, and materials rebuild when the flutter_scene code that writes them changes, so an upgrade no longer reuses outputs from the old importer, encoder, or `.fmat` compiler.
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
