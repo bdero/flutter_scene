@@ -2277,9 +2277,9 @@ base class Scene implements SceneGraph {
   /// more than 0.01 m² in one plane. From a [camera] (the last on-screen
   /// view's, then the primary camera, when omitted), it also reports pairs
   /// whose planes sit closer than the depth buffer can separate at their
-  /// distance from it, given the scene's depth settings. Overlaps that draw identical pixels (one material
-  /// and color) and pairs whose `Material.depthLayer` differs are left out,
-  /// since neither flickers.
+  /// distance from it, given the scene's depth settings. Overlaps that draw
+  /// identical pixels (one material and color) and pairs whose
+  /// `Material.depthLayer` differs are left out, since neither flickers.
   ///
   /// Each overlap names its nodes and, for repeated pieces longer than their
   /// spacing, the fix. [probeDepthConflicts] finds the same fights by
