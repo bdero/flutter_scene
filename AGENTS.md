@@ -43,6 +43,10 @@ They do not exist here, or they break the build.
 - **Not `node.position.set(...)`.** `Node` has `position`, `rotation` (a `Quaternion`), and `scale`, but they are whole-value get/set (`node.position = Vector3(0, 1, 0)`); the getters return copies. For a raw matrix edit use `node.mutateLocalTransform((m) => ...)`, not a bare in-place edit of `node.localTransform`.
 - **Not the removed `Environment` class.** Environment lighting is `EnvironmentMap` on `Scene.environment`; unset means a default studio map, `EnvironmentMap.empty()` means none.
 
+## Surfaces that share a plane flicker
+
+Two faces of different surfaces overlapping in one plane trade pixels as the camera moves (z-fighting), and any one screenshot can look right. Make repeated pieces abut (each as long as its spacing), keep same-height patches apart, and give an overlay that lies on a surface (a sign, a screen, road paint) `material.depthLayer = 1`. Leave the near plane at its default; the engine fits it to visible content. Check with `await scene.probeDepthConflicts()`, which names every pair that fights from a camera.
+
 ## It has more than you expect
 
 Cold assumptions undersell the engine. Before hand-rolling any of these, know they exist: **directional, point, spot, and area lights, shadows (PCSS and contact shadows), GTAO ambient occlusion, screen-space reflections, SSGI, depth of field, god rays, fog, auto exposure, LUT color grading, bloom, anti-aliasing, tone mapping, instancing, and LOD**, plus ten built-in primitive geometries and `GeometryBuilder` for custom meshes. Custom `ShaderMaterial` output is linear HDR premultiplied by alpha; the engine applies exposure, tone mapping, and the display transform afterward.

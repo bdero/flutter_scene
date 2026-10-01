@@ -146,6 +146,32 @@ void main() {
       expect(currentDrawDepthSlope, everyElement(0.0));
     });
 
+    test('the precision line states the storage, the fit, and the gap', () {
+      final standard = depthPrecisionSummary(
+        reversed: false,
+        floatDepth: false,
+        authoredNear: 0.1,
+      );
+      expect(standard, contains('depth is 24-bit, near 0.10 m.'));
+      // Eight steps of d^2 / (near 2^24) fit in 1 cm out to about 46 m.
+      expect(standard, contains('to about 46 m face-on'));
+      final fitted = depthPrecisionSummary(
+        reversed: false,
+        floatDepth: true,
+        authoredNear: 0.1,
+        fittedNear: 1.6,
+      );
+      expect(fitted, contains('near 0.10 m, fitted to 1.6 m'));
+      expect(fitted, contains('to about 183 m'));
+      final reversed = depthPrecisionSummary(
+        reversed: true,
+        floatDepth: true,
+        authoredNear: 0.1,
+      );
+      expect(reversed, contains('32-bit float, reversed'));
+      expect(reversed, contains('beyond 10 km'));
+    });
+
     test('pixel depth slope is the depth constant over the focal length', () {
       final reversed = buildRasterProjectionMatrix(
         PerspectiveProjection(fovRadiansY: math.pi / 2, near: 0.5, far: 400),

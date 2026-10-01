@@ -16,6 +16,9 @@ import 'package:vector_math/vector_math.dart';
 /// [InstancedMeshComponent]; the whole set is then one render item, one
 /// pipeline, and one cull test rather than one node per copy.
 ///
+/// Instances with different colors whose faces overlap in one plane flicker
+/// against each other (z-fighting); place repeated pieces so they abut.
+///
 /// {@category Scene graph}
 class InstancedMesh implements MeshDrawSource {
   /// Creates an instanced mesh that draws [geometry] shaded by

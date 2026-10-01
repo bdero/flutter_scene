@@ -267,6 +267,10 @@ abstract class Material {
   /// culling so the geometry is visible from both sides; otherwise back faces
   /// are culled. Defaults to false. The runtime importer sets it from the glTF
   /// material.
+  ///
+  /// Turn it on only for geometry that needs it: culling is what hides the
+  /// coincident faces of pieces placed back to back, which flicker against
+  /// each other once both sides draw.
   bool doubleSided = false;
 
   /// World-space offset toward the camera used for coplanar surface details.
