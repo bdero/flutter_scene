@@ -174,6 +174,21 @@ void main() {
         greaterThan(8),
         reason: 'frame looks uniform; possible blank render',
       );
+      // A scene may bound the pixels its surfaces fight over (z-fighting).
+      final maxConflictPixels = smoke.maxDepthConflictPixels;
+      if (maxConflictPixels != null) {
+        final report = await scene.probeDepthConflicts(width: 256, height: 256);
+        // ignore: avoid_print
+        print(
+          'SMOKE ${smoke.id}: depthConflicts=${report.conflicts.length} '
+          'pixels=${report.conflictPixelCount}\n${report.describe(limit: 4)}',
+        );
+        expect(
+          report.conflictPixelCount,
+          lessThanOrEqualTo(maxConflictPixels),
+          reason: report.describe(limit: 4),
+        );
+      }
       // A scene may pin counters instead of pixels.
       final expectedCounters = smoke.colorPassCounters;
       if (expectedCounters != null) {
