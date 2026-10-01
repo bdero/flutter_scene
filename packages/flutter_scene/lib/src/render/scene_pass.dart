@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:flutter_scene/src/depth_conflicts.dart' show DepthConflictIds;
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
@@ -218,6 +219,7 @@ class ScenePass extends RenderGraphPass {
   void execute(RenderGraphContext context) {
     final width = _dimensions.width.toInt();
     final height = _dimensions.height.toInt();
+    _conflictIds = _renderDepthConflictIds(context);
 
     final capture = _captureOpaqueColor;
     // With MSAA the color targets are resolve destinations with no depth
@@ -667,6 +669,126 @@ class ScenePass extends RenderGraphPass {
     context.blackboard.set(kDisplayReferredBlackboardKey, layer);
   }
 
+  // The object-id images the depth conflict overlay compares (random nudges,
+  // the same negated, and other nudges in reversed draw order), drawn before
+  // the scene when the overlay is on, else null.
+  List<gpu.Texture>? _conflictIds;
+
+  // Seeds the overlay's nudges, new every frame so a pair nudged alike in
+  // one frame is caught in the next.
+  static int _conflictFrame = 0;
+
+  static final gpu.Shader _conflictOverlayShader =
+      baseShaderLibrary['DepthConflictOverlayFragment']!;
+
+  static final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+    mipFilter: gpu.MipFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
+  List<gpu.Texture>? _renderDepthConflictIds(RenderGraphContext context) {
+    final frame = _debugView;
+    final camera = _camera;
+    if (frame == null || camera is! ViewportBoundCamera) return null;
+    if (!frame.overlays.contains(DebugOverlay.depthConflicts) &&
+        !frame.splitOverlays.contains(DebugOverlay.depthConflicts)) {
+      return null;
+    }
+    final width = _dimensions.width.toInt();
+    final height = _dimensions.height.toInt();
+    final ids = DepthConflictIds(
+      renderScene: _renderScene,
+      camera: camera,
+      size: _dimensions,
+      layerMask: _layerMask,
+    );
+    final random = math.Random(_conflictFrame++);
+    final first = ids.randomNudges(random);
+    final second = ids.randomNudges(random);
+    final depth = context.texturePool.acquire(
+      TransientTextureDescriptor.depth(
+        width: width,
+        height: height,
+        format: gpu.gpuContext.defaultDepthStencilFormat,
+        debugName: 'depth_conflict_depth',
+      ),
+    );
+    return [
+      for (var i = 0; i < 3; i++)
+        () {
+          final target = context.texturePool.acquire(
+            TransientTextureDescriptor.color(
+              width: width,
+              height: height,
+              format: gpu.PixelFormat.r8g8b8a8UNormInt,
+              debugName: 'depth_conflict_ids_$i',
+            ),
+          );
+          ids.draw(
+            target: target,
+            depth: depth,
+            transients: context.transientsBuffer,
+            reverseOrder: i == 2,
+            nudge: switch (i) {
+              0 => (appearance) => first[appearance],
+              1 => (appearance) => -first[appearance],
+              _ => (appearance) => second[appearance],
+            },
+            byAppearance: true,
+          );
+          return target;
+        }(),
+    ];
+  }
+
+  // Marks the pixels the id images disagree on, over the finished scene.
+  void _encodeDepthConflictOverlay(
+    gpu.RenderPass pass,
+    TransientWriter transients,
+  ) {
+    final ids = _conflictIds;
+    if (ids == null) return;
+    pass.clearBindings();
+    pass.bindPipeline(
+      resolvePipeline(_copyVertexShader, _conflictOverlayShader),
+    );
+    pass.setDepthWriteEnable(false);
+    pass.setDepthCompareOperation(gpu.CompareFunction.always);
+    pass.setCullMode(gpu.CullMode.none);
+    pass.setColorBlendEnable(true);
+    pass.setColorBlendEquation(
+      gpu.ColorBlendEquation(
+        colorBlendOperation: gpu.BlendOperation.add,
+        sourceColorBlendFactor: gpu.BlendFactor.one,
+        destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+        alphaBlendOperation: gpu.BlendOperation.add,
+        sourceAlphaBlendFactor: gpu.BlendFactor.one,
+        destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+      ),
+    );
+    bindVertexBufferCompat(pass, _quadView, 6);
+    const names = ['id_nudged', 'id_opposite', 'id_reordered'];
+    for (var i = 0; i < 3; i++) {
+      pass.bindTexture(
+        _conflictOverlayShader.getUniformSlot(names[i]),
+        ids[i],
+        sampler: _nearestClamp,
+      );
+    }
+    final info = Float32List(4)
+      ..[0] = _time
+      ..[1] = 6.0
+      ..[2] = 0.85;
+    pass.bindUniform(
+      _conflictOverlayShader.getUniformSlot('DepthConflictInfo'),
+      transients.emplace(ByteData.sublistView(info)),
+    );
+    drawCompat(pass, 6);
+  }
+
   // Draws the debug overlays (wireframe) into the pass the scene finished
   // in, so they depth-test against the scene's own depth attachment.
   void _encodeDebugOverlays(
@@ -678,6 +800,9 @@ class ScenePass extends RenderGraphPass {
     if (frame == null) return;
     void encode(Set<DebugOverlay> overlays) {
       if (overlays.isEmpty) return;
+      if (overlays.contains(DebugOverlay.depthConflicts)) {
+        _encodeDepthConflictOverlay(pass, transients);
+      }
       encodeWireframeOverlay(
         pass: pass,
         transients: transients,

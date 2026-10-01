@@ -95,9 +95,11 @@ void main() {
   }
 
   vec3 world_pos = world_center + right * scaled.x + up * scaled.y;
+  vec4 clip_position = frame_info.camera_transform * vec4(world_pos, 1.0);
   gl_Position = ApplyDepthOffset(
-      frame_info.camera_transform * vec4(world_pos, 1.0),
-      frame_info.depth_offset, 0.0);
+      clip_position, frame_info.depth_offset, 0.0,
+      DepthRoundingSteps(clip_position, frame_info.camera_transform, world_pos,
+                         frame_info.camera_position.xyz));
   // For a perspective projection clip w is the planar view-space depth.
   v_view_depth = gl_Position.w;
 

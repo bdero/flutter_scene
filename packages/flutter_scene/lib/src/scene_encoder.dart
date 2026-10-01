@@ -605,6 +605,7 @@ base class SceneEncoder {
        _primaryView = primaryView {
     currentSceneEncoderViewport = _dimensions;
     _raster = depthRasterOf(_camera);
+    _pixelSlope = pixelDepthSlopeOf(_camera, _dimensions);
     _cameraTransform =
         cameraTransform ?? rasterViewTransformOf(_camera, _dimensions);
     _displayReferredCameraTransform = displayReferredCameraTransform;
@@ -625,6 +626,9 @@ base class SceneEncoder {
   // How this view rasterizes depth (reversed or not, fitted near), shared
   // with every other pass that draws into its depth buffers.
   late final DepthRaster _raster;
+
+  // The view's pixelDepthSlope, for slope-scaled depth offsets.
+  late final double _pixelSlope;
 
   // Whether this encodes a screen view's camera, for [MeshDrawSelector]s.
   final bool _primaryView;
@@ -1110,6 +1114,7 @@ base class SceneEncoder {
       view,
       objectSeed: item == null ? 0 : identityHashCode(item.sourceNode ?? item),
       materialSeed: identityHashCode(material),
+      raster: _raster,
     );
     _renderPass.bindUniform(
       slot,
@@ -1183,6 +1188,7 @@ base class SceneEncoder {
       _raster,
       material.depthLayer,
       material.tieBreakRank,
+      pixelSlope: _pixelSlope,
     );
     geometry.useVertexAttributes(material.vertexAttributesFor(materialVertex));
     // Morphed geometry takes the full bind, which also binds its morph stage.

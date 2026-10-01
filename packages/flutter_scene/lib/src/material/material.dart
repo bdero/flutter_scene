@@ -292,10 +292,14 @@ abstract class Material {
   /// one plane flicker (z-fighting), so give them different layers or keep
   /// them apart.
   ///
-  /// Each layer moves the surface a few depth-buffer steps toward the camera
-  /// in the vertex stage, so it costs nothing per fragment and a layer only
-  /// ever changes the winner between surfaces too close for the depth buffer
-  /// to tell apart. Clamped to `-8..8`. Shadow maps ignore it. Defaults to 0.
+  /// Each layer moves the surface toward the camera in the vertex stage by a
+  /// quarter of a pixel's worth of its own depth slope plus a few
+  /// depth-buffer steps (more far from the world origin, where float rounding
+  /// is coarser). That beats the rasterizer's rounding on a surface seen at a
+  /// grazing angle, costs nothing per fragment, and never moves anything on
+  /// screen by more than a fraction of a pixel. Curved layered meshes get a
+  /// larger offset near their silhouettes. Clamped to `-8..8`. Shadow maps
+  /// ignore it. Defaults to 0.
   int get depthLayer => _depthLayer;
   set depthLayer(int value) {
     _depthLayer = value.clamp(-kMaxDepthLayer, kMaxDepthLayer);

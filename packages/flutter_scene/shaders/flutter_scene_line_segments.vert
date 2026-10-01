@@ -62,9 +62,11 @@ void main() {
   vec3 n = dir_len > 1e-12 ? cross(dir / dir_len, perp) : vec3(0.0, 0.0, 1.0);
 
   v_position = pos;
+  vec4 clip_position = frame_info.camera_transform * vec4(pos, 1.0);
   gl_Position = ApplyDepthOffset(
-      frame_info.camera_transform * vec4(pos, 1.0), frame_info.depth_offset,
-      0.0);
+      clip_position, frame_info.depth_offset, 0.0,
+      DepthRoundingSteps(clip_position, frame_info.camera_transform, pos,
+                         frame_info.camera_position.xyz));
   v_viewvector = frame_info.camera_position.xyz - pos;
   v_normal = n;
   // u runs along the segment, v across the ribbon.

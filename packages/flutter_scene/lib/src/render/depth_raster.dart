@@ -8,13 +8,35 @@ import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 /// Depth-buffer steps one `Material.depthLayer` moves a surface toward the
-/// camera. Twice the practical minimum for 24-bit depth, so vertex-transform
-/// rounding between two coplanar surfaces cannot reorder them.
+/// camera, scaled up where float rounding of the vertex transform grows (see
+/// `DepthRoundingSteps` in depth_bias.glsl).
 const int kDepthLayerSteps = 8;
 
-/// Depth-buffer steps one automatic tie-break rank moves a surface (see
-/// `Scene.coplanarTieBreak`). Smaller than a layer, so explicit layers win.
-const int kTieBreakSteps = 2;
+/// Pixels of a surface's own depth gradient one `Material.depthLayer` moves
+/// it toward the camera, on top of [kDepthLayerSteps]. Rasterizer snapping
+/// and interpolation perturb depth by a fraction of a pixel's worth of the
+/// gradient (under a thirty-second on Apple GPUs), which on a grazing surface
+/// outweighs any count of steps; on screen a layer moves nothing by more than
+/// this share of a pixel.
+const double kDepthLayerPixels = 0.25;
+
+/// Depth-buffer steps one automatic tie-break rank moves a surface away from
+/// the camera (see `Scene.coplanarTieBreak`).
+const int kTieBreakSteps = 4;
+
+/// Pixels of depth gradient one automatic tie-break rank moves a surface
+/// away from the camera.
+const double kTieBreakPixels = 1.0 / 16.0;
+
+/// Distinct tie-break ranks: three by material times three by instance, so
+/// a pair that differs in either never lands on one depth.
+const int kTieBreakRanks = 9;
+
+/// Depth-buffer steps and pixels of depth gradient one unit of a probe nudge
+/// moves a surface (see `Scene.probeDepthConflicts`). A pair nudged apart by
+/// one unit each fights when closer than twice this, half a tie-break rank.
+const double kDepthNudgeSteps = 1.0;
+const double kDepthNudgePixels = 1.0 / 64.0;
 
 /// The largest `Material.depthLayer` magnitude.
 const int kMaxDepthLayer = 8;
@@ -107,6 +129,13 @@ class DepthRaster {
     }
   }
 
+  /// The slope-scaled offset that moves a surface [pixels] of its own depth
+  /// gradient toward the camera, for a view whose window depth changes by
+  /// [pixelSlope] per pixel per unit of the vertex stage's `DepthSlope` (see
+  /// [pixelDepthSlope]).
+  double slopeOffset(double pixels, double pixelSlope) =>
+      (reversed ? pixels : -pixels) * pixelSlope;
+
   /// The view-space size of one depth-buffer step at planar [distance] for a
   /// perspective projection whose near plane is [near].
   double worldStepAt(double distance, double near) {
@@ -137,26 +166,82 @@ class DepthRaster {
 @internal
 final Float32List currentDrawDepthOffset = Float32List(4);
 
+/// The slope-scaled depth offsets of the draw being encoded, read with
+/// [currentDrawDepthOffset], as [DepthRaster.slopeOffset] writes them: `[0]`
+/// the material's layer, `[1]` one per-instance tie-break rank, `[2]` the
+/// material's tie-break rank. The vertex stage caps the slope it scales the
+/// tie-break by lower than a layer's.
+@internal
+final Float32List currentDrawDepthSlope = Float32List(4);
+
 /// The far plane's clip depth over w for the pass being encoded (1 standard,
 /// 0 reversed), for vertex stages that cull past it themselves (splats).
 @internal
 double currentRasterFarClipDepth = 1.0;
 
-/// Sets [currentDrawDepthOffset] for a draw with a material's [layer] and
-/// tie-break [rank] under [raster].
+/// Sets [currentDrawDepthOffset] and [currentDrawDepthSlope] for a draw with
+/// a material's [layer] and tie-break [rank] under [raster], plus [nudge]
+/// units of [kDepthNudgeSteps] and [kDepthNudgePixels] (the depth conflict
+/// probe's margin test). [pixelSlope] is the view's (see [pixelDepthSlope]);
+/// zero leaves out the slope-scaled offset, for passes that must match the
+/// position-only velocity pass.
+///
+/// The tie-break pushes a layer-0 surface back by its rank, three per
+/// material rank plus its instance rank (which the vertex stage adds), so
+/// positive layers stay in front of every rank and negative layers are moved
+/// back past the deepest one.
 @internal
-void setCurrentDrawDepthOffset(DepthRaster raster, int layer, int rank) {
+void setCurrentDrawDepthOffset(
+  DepthRaster raster,
+  int layer,
+  int rank, {
+  double pixelSlope = 0.0,
+  double nudge = 0.0,
+}) {
   currentRasterFarClipDepth = raster.farClipDepth;
-  final tie = raster.tieBreak;
-  final steps =
-      layer * kDepthLayerSteps.toDouble() +
-      (tie && layer == 0 ? rank * kTieBreakSteps.toDouble() : 0.0);
-  raster.writeOffset(steps, currentDrawDepthOffset, 0);
+  final tie = raster.tieBreak && layer == 0;
+  final below = raster.tieBreak && layer < 0 ? kTieBreakRanks - 1.0 : 0.0;
+  final materialRanks = tie ? rank * 3.0 : 0.0;
   raster.writeOffset(
-    tie && layer == 0 ? kTieBreakSteps.toDouble() : 0.0,
+    layer * kDepthLayerSteps -
+        (below + materialRanks) * kTieBreakSteps +
+        nudge * kDepthNudgeSteps,
+    currentDrawDepthOffset,
+    0,
+  );
+  raster.writeOffset(
+    tie ? -kTieBreakSteps.toDouble() : 0.0,
     currentDrawDepthOffset,
     2,
   );
+  currentDrawDepthSlope[0] = raster.slopeOffset(
+    layer * kDepthLayerPixels -
+        below * kTieBreakPixels +
+        nudge * kDepthNudgePixels,
+    pixelSlope,
+  );
+  currentDrawDepthSlope[1] = raster.slopeOffset(
+    tie ? -kTieBreakPixels : 0.0,
+    pixelSlope,
+  );
+  currentDrawDepthSlope[2] = raster.slopeOffset(
+    -materialRanks * kTieBreakPixels,
+    pixelSlope,
+  );
+}
+
+/// How much window depth changes per pixel of screen distance per unit of
+/// the vertex stage's `DepthSlope`, for a view rasterizing with [projection]
+/// (its raster projection matrix) into a target [height] pixels tall: the
+/// depth row's constant over the focal length in pixels for perspective, the
+/// depth scale times world units per pixel for orthographic.
+@internal
+double pixelDepthSlope(Matrix4 projection, double height) {
+  final s = projection.storage;
+  final focal = s[5].abs() * height * 0.5;
+  if (!(focal > 0.0)) return 0.0;
+  final perspective = s[11] != 0.0;
+  return (perspective ? s[14] : s[10]).abs() / focal;
 }
 
 /// Clears [currentDrawDepthOffset], for passes that never offset depth
@@ -164,10 +249,8 @@ void setCurrentDrawDepthOffset(DepthRaster raster, int layer, int rank) {
 @internal
 void clearCurrentDrawDepthOffset() {
   currentRasterFarClipDepth = 1.0;
-  currentDrawDepthOffset[0] = 0.0;
-  currentDrawDepthOffset[1] = 0.0;
-  currentDrawDepthOffset[2] = 0.0;
-  currentDrawDepthOffset[3] = 0.0;
+  currentDrawDepthOffset.fillRange(0, 4, 0.0);
+  currentDrawDepthSlope.fillRange(0, 4, 0.0);
 }
 
 /// [matrix] with its depth row reversed (`row2 := row3 - row2`), so clip

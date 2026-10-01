@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/camera.dart' show buildRasterProjectionMatrix;
+import 'package:flutter_scene/src/depth_conflicts.dart';
 import 'package:flutter_scene/src/fmat/fmat.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/bvh.dart';
@@ -31,6 +32,15 @@ class _StubGeometry extends Geometry {
   }) {
     throw UnsupportedError('Stub geometry is not renderable');
   }
+}
+
+class _BoundedGeometry extends _StubGeometry {
+  _BoundedGeometry(this.bounds);
+
+  final Aabb3 bounds;
+
+  @override
+  Aabb3? get localBounds => bounds;
 }
 
 class _StubMaterial extends Material {
@@ -101,20 +111,64 @@ void main() {
     });
 
     test('the current draw offset combines a layer and a tie-break rank', () {
-      setCurrentDrawDepthOffset(const DepthRaster(), 1, 2);
-      expect(currentDrawDepthOffset[1], closeTo(-8 / 16777216, 1e-12));
+      const step = 1 / 16777216;
+      setCurrentDrawDepthOffset(const DepthRaster(), 1, 2, pixelSlope: 2.0);
+      expect(currentDrawDepthOffset[1], closeTo(-8 * step, 1e-12));
       expect(currentDrawDepthOffset[3], 0.0);
+      // A quarter pixel of slope toward the camera (standard depth: down).
+      expect(currentDrawDepthSlope[0], closeTo(-0.5, 1e-9));
+      expect(currentDrawDepthSlope[1], 0.0);
+      expect(currentDrawDepthSlope[2], 0.0);
 
-      setCurrentDrawDepthOffset(const DepthRaster(tieBreak: true), 0, 2);
-      expect(currentDrawDepthOffset[1], closeTo(-4 / 16777216, 1e-12));
-      expect(currentDrawDepthOffset[3], closeTo(-2 / 16777216, 1e-12));
+      // The tie-break pushes back three ranks per material rank, and one per
+      // instance rank in the vertex stage.
+      const tie = DepthRaster(tieBreak: true);
+      setCurrentDrawDepthOffset(tie, 0, 2, pixelSlope: 2.0);
+      expect(currentDrawDepthOffset[1], closeTo(24 * step, 1e-12));
+      expect(currentDrawDepthOffset[3], closeTo(4 * step, 1e-12));
+      expect(currentDrawDepthSlope[0], 0.0);
+      expect(currentDrawDepthSlope[1], closeTo(2 / 16, 1e-9));
+      expect(currentDrawDepthSlope[2], closeTo(2 * 6 / 16, 1e-9));
 
-      // An explicit layer overrides the automatic rank.
-      setCurrentDrawDepthOffset(const DepthRaster(tieBreak: true), 1, 2);
-      expect(currentDrawDepthOffset[1], closeTo(-8 / 16777216, 1e-12));
+      // An explicit layer overrides the automatic rank, and a negative one
+      // moves back past the deepest rank.
+      setCurrentDrawDepthOffset(tie, 1, 2);
+      expect(currentDrawDepthOffset[1], closeTo(-8 * step, 1e-12));
       expect(currentDrawDepthOffset[3], 0.0);
+      setCurrentDrawDepthOffset(tie, -1, 2);
+      expect(currentDrawDepthOffset[1], closeTo(40 * step, 1e-12));
+
+      // A probe nudge adds a step and a sixty-fourth of a pixel.
+      setCurrentDrawDepthOffset(const DepthRaster(), 0, 0, nudge: 1);
+      expect(currentDrawDepthOffset[1], closeTo(-step, 1e-12));
       clearCurrentDrawDepthOffset();
       expect(currentDrawDepthOffset, everyElement(0.0));
+      expect(currentDrawDepthSlope, everyElement(0.0));
+    });
+
+    test('pixel depth slope is the depth constant over the focal length', () {
+      final reversed = buildRasterProjectionMatrix(
+        PerspectiveProjection(fovRadiansY: math.pi / 2, near: 0.5, far: 400),
+        const ui.Size(1600, 900),
+        reversed: true,
+      )!;
+      // A 90 degree view 900 pixels tall has a 450 pixel focal length, and
+      // reversed depth is far * near / (far - near) over w.
+      expect(
+        pixelDepthSlope(reversed, 900),
+        closeTo(400 * 0.5 / 399.5 / 450, 1e-9),
+      );
+      final orthographic = buildRasterProjectionMatrix(
+        OrthographicProjection(
+          size: const OrthographicSize.height(10),
+          near: 0,
+          far: 100,
+        ),
+        const ui.Size(1600, 900),
+        reversed: false,
+      )!;
+      // 10 units over 900 pixels, with depth 1/100 per unit.
+      expect(pixelDepthSlope(orthographic, 900), closeTo(10 / 900 / 100, 1e-9));
     });
 
     test('world step size follows each convention', () {
@@ -359,6 +413,46 @@ void main() {
       expect(ahead, closeTo(20, 1e-9));
     });
 
+    test('a spread instanced set is bounded per instance', () {
+      // A ring of 1 m boxes 100 m around an eye below their bottoms: the
+      // aggregate bounds hold the eye's column, but every box is far away.
+      final instances = [
+        for (var i = 0; i < 16; i++)
+          Matrix4.translation(
+            Vector3(
+              math.sin(i / 16 * math.pi * 2) * 100,
+              10,
+              math.cos(i / 16 * math.pi * 2) * 100,
+            ),
+          ),
+      ];
+      final item =
+          RenderItem(
+              geometry: _BoundedGeometry(
+                Aabb3.minMax(Vector3.all(-0.5), Vector3.all(0.5)),
+              ),
+              material: _StubMaterial(),
+            )
+            ..visible = true
+            ..instanceTransforms = instances
+            ..worldBounds = Aabb3.minMax(
+              Vector3(-100.5, 9.5, -100.5),
+              Vector3(100.5, 10.5, 100.5),
+            );
+      final eye = Vector3(0, 0, 0);
+      final forward = Vector3(0, 0, 1);
+      final camera = PerspectiveCamera(
+        position: eye,
+        target: forward,
+        fovNear: 0.1,
+        fovFar: 1000,
+      );
+      final frustum = cullingFrustumOf(camera, const ui.Size(800, 600));
+      final bound = item.depthLowerBound(frustum, eye, forward, 0.7, 1e9);
+      // Far beyond the 9.5 m to the aggregate box.
+      expect(bound, greaterThan(50));
+    });
+
     test('the BVH query matches a brute-force minimum', () {
       final random = math.Random(42);
       final items = <RenderItem>[];
@@ -519,6 +613,150 @@ fragment { void Surface(inout MaterialInputs material) {} }
           throwsA(isA<FmatException>()),
         );
       }
+    });
+  });
+
+  group('depth conflict probe', () {
+    test('perturbing the depth row keeps the far plane and the screen', () {
+      final projection = PerspectiveProjection(near: 0.1, far: 500);
+      for (final reversed in [false, true]) {
+        final matrix = buildRasterProjectionMatrix(
+          projection,
+          const ui.Size(800, 600),
+          reversed: reversed,
+        )!;
+        final perturbed = perturbDepthRow(matrix, 0.03, reversed: reversed);
+        for (final z in [1.0, 40.0, 500.0]) {
+          final a = matrix.transform(Vector4(0.3, -0.2, z, 1));
+          final b = perturbed.transform(Vector4(0.3, -0.2, z, 1));
+          expect(b.x / b.w, closeTo(a.x / a.w, 1e-6));
+          expect(b.y / b.w, closeTo(a.y / a.w, 1e-6));
+        }
+        // The far plane maps where it did.
+        final far = perturbed.transform(Vector4(0, 0, 500, 1));
+        expect(far.z / far.w, closeTo(reversed ? 0.0 : 1.0, 1e-5));
+        // Mid-range depth moves.
+        final mid = matrix.transform(Vector4(0, 0, 40, 1));
+        final midPerturbed = perturbed.transform(Vector4(0, 0, 40, 1));
+        expect(
+          (midPerturbed.z / midPerturbed.w - mid.z / mid.w).abs(),
+          greaterThan(1e-6),
+        );
+      }
+    });
+
+    test('summarizes the pixels whose owner changes, by pair', () {
+      // A 4x2 image: ids 1 and 2 fight at two pixels, 3 holds, background
+      // changes to an id at a clip edge and is ignored.
+      final reference = Uint32List.fromList([1, 1, 2, 3, 0, 1, 2, 3]);
+      final variantA = Uint32List.fromList([2, 1, 2, 3, 3, 1, 2, 3]);
+      final variantB = Uint32List.fromList([1, 1, 1, 3, 0, 1, 2, 0]);
+      final pairs = summarizeIdConflicts(
+        comparisons: [
+          (first: reference, second: variantA, areaOnly: false),
+          (first: reference, second: variantB, areaOnly: false),
+        ],
+        width: 4,
+      );
+      expect(pairs.length, 1);
+      final summary = pairs.values.single;
+      expect(summary.count, 2);
+      expect(
+        [summary.minX, summary.minY, summary.maxX, summary.maxY],
+        [0, 0, 2, 0],
+      );
+    });
+
+    test('counts area changes, not moved lines', () {
+      // A 6x6 image: id 1 fills the left two columns and id 2 the rest. A
+      // second render moves the edge one column (a line) and flips a 2x3
+      // patch inside id 2 (a fight).
+      final reference = Uint32List.fromList([
+        for (var y = 0; y < 6; y++)
+          for (var x = 0; x < 6; x++) x < 2 ? 1 : 2,
+      ]);
+      final moved = Uint32List.fromList(reference);
+      for (var y = 0; y < 6; y++) {
+        moved[y * 6 + 2] = 1;
+      }
+      for (var y = 1; y < 4; y++) {
+        moved[y * 6 + 4] = 1;
+        moved[y * 6 + 5] = 1;
+      }
+      final pairs = summarizeIdConflicts(
+        comparisons: [(first: reference, second: moved, areaOnly: true)],
+        width: 6,
+      );
+      // The moved column's pixels have at most two changed neighbors and the
+      // patch's rim three; only its middle row, with five, counts.
+      final summary = pairs.values.single;
+      expect(summary.count, 2);
+      expect(
+        [summary.minX, summary.minY, summary.maxX, summary.maxY],
+        [4, 2, 5, 2],
+      );
+      expect(
+        summarizeIdConflicts(
+          comparisons: [(first: reference, second: moved, areaOnly: false)],
+          width: 6,
+        ).values.single.count,
+        12,
+      );
+    });
+
+    test('skips pairs of one appearance', () {
+      final reference = Uint32List.fromList([1, 2, 3]);
+      final variant = Uint32List.fromList([2, 1, 1]);
+      final pairs = summarizeIdConflicts(
+        comparisons: [(first: reference, second: variant, areaOnly: false)],
+        width: 3,
+        // Ids 1 and 2 share an appearance; 3 has its own.
+        appearances: const [0, 1, 1, 2],
+      );
+      expect(pairs.length, 1);
+      expect(pairs.keys.single, 1 + 3 * (1 << 24));
+    });
+
+    test('keys pairs exactly past 32-bit ids', () {
+      const big = 9000000;
+      final reference = Uint32List.fromList([big]);
+      final variant = Uint32List.fromList([7]);
+      final pairs = summarizeIdConflicts(
+        comparisons: [(first: reference, second: variant, areaOnly: false)],
+        width: 1,
+      );
+      final key = pairs.keys.single;
+      expect(key % (1 << 24), 7);
+      expect(key ~/ (1 << 24), big);
+    });
+
+    test('describes a report for a log', () {
+      expect(
+        const DepthConflictReport(
+          width: 10,
+          height: 10,
+          conflicts: [],
+        ).describe(),
+        contains('No depth conflicts'),
+      );
+      final node = Node(name: 'barriers');
+      final report = DepthConflictReport(
+        width: 100,
+        height: 50,
+        conflicts: [
+          DepthConflict(
+            nodeA: node,
+            nodeB: Node(name: 'paint'),
+            pixelCount: 120,
+            bounds: const ui.Rect.fromLTRB(0.1, 0.2, 0.3, 0.4),
+            distance: 42,
+          ),
+        ],
+      );
+      final text = report.describe();
+      expect(text, contains("'barriers' and 'paint' trade 120 pixels"));
+      expect(text, contains('2.40%'));
+      expect(report.conflictPixelCount, 120);
     });
   });
 }

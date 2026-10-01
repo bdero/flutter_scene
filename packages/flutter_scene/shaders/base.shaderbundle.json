@@ -123,6 +123,10 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_outline.frag"
   },
+  "DepthConflictOverlayFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_depth_conflict_overlay.frag"
+  },
   "GodRaysFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_god_rays.frag"
