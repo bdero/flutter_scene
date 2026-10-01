@@ -75,6 +75,11 @@ export 'src/builtin_queries.dart'
         registerBuiltinQueries,
         propertyValueToJson,
         resourceKindOf;
+export 'src/depth_layering.dart'
+    show
+        checkDepthLayering,
+        DocumentCoplanarOverlap,
+        findDocumentCoplanarOverlaps;
 
 // Events and per-client subscriptions.
 export 'src/events.dart'

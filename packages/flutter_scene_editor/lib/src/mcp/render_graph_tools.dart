@@ -10,6 +10,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:vector_math/vector_math.dart' show Vector3;
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
     show ScreenshotResult, ToolError;
 
@@ -205,9 +206,81 @@ class RenderGraphMcp {
     };
   }
 
+  /// Probes the live scene from the camera of the viewport last drawn for
+  /// surfaces that trade pixels as the camera moves (z-fighting), and lists
+  /// the faces its geometry overlaps in one plane. [options] carries `width`,
+  /// `height`, and `limit` when given.
+  Future<Map<String, Object?>> scanDepthConflicts(
+    Map<String, Object?> options,
+  ) async {
+    final scene = _scene;
+    final limit = (options['limit'] as int?) ?? 20;
+    final report = await scene.probeDepthConflicts(
+      width: (options['width'] as int?) ?? 960,
+      height: (options['height'] as int?) ?? 540,
+    );
+    final overlaps = scene.findCoplanarOverlaps();
+    Map<String, Object?> vector(Vector3 v) => {'x': v.x, 'y': v.y, 'z': v.z};
+    return {
+      'conflictPixels': report.conflictPixelCount,
+      'conflictFraction': report.conflictFraction,
+      'conflicts': [
+        for (final conflict in report.conflicts.take(limit))
+          {
+            'nodeA': _nodePath(conflict.nodeA),
+            'nodeB': _nodePath(conflict.nodeB),
+            'pixels': conflict.pixelCount,
+            'distance': conflict.distance,
+            'bounds': {
+              'left': conflict.bounds.left,
+              'top': conflict.bounds.top,
+              'right': conflict.bounds.right,
+              'bottom': conflict.bounds.bottom,
+            },
+          },
+      ],
+      'conflictCount': report.conflicts.length,
+      'coplanarOverlaps': [
+        for (final overlap in overlaps.take(limit))
+          {
+            'nodeA': _nodePath(overlap.nodeA),
+            'nodeB': _nodePath(overlap.nodeB),
+            if (overlap.instanceA != null) 'instanceA': overlap.instanceA,
+            if (overlap.instanceB != null) 'instanceB': overlap.instanceB,
+            'area': overlap.area,
+            'separation': overlap.separation,
+            'center': vector(overlap.center),
+            'normal': vector(overlap.normal),
+            if (overlap.hint != null) 'hint': overlap.hint,
+          },
+      ],
+      'coplanarOverlapCount': overlaps.length,
+      'summary': report.describe(limit: limit),
+    };
+  }
+
+  // A node's name path from its root, for tool output.
+  static String? _nodePath(Node? node) {
+    if (node == null) return null;
+    final names = <String>[];
+    Node? current = node;
+    while (current != null) {
+      final parent = current.parent;
+      names.add(
+        current.name.isNotEmpty
+            ? current.name
+            : (parent == null
+                  ? '(root)'
+                  : '#${parent.children.indexOf(current)}'),
+      );
+      current = parent;
+    }
+    return names.reversed.join('/');
+  }
+
   /// The debug-output registry with the active flag: the editor's buffer
   /// views, then the engine's surface views (grouped by `group`), then the
-  /// split and wireframe toggles.
+  /// split, wireframe, and depth conflict toggles.
   List<Map<String, Object?>> listModes() {
     final scene = _sceneProvider();
     final surfaceActive = scene?.debug.view.isActive ?? false;
@@ -244,11 +317,20 @@ class RenderGraphMcp {
         'active':
             scene?.debug.overlays.contains(DebugOverlay.wireframe) ?? false,
       },
+      {
+        'id': 'depth_conflicts',
+        'label': 'Depth conflict overlay (toggle)',
+        'group': 'toggle',
+        'active':
+            scene?.debug.overlays.contains(DebugOverlay.depthConflicts) ??
+            false,
+      },
     ];
   }
 
   /// Selects the viewport debug output. A buffer view and a surface view are
-  /// exclusive; `split` and `wireframe` toggle without changing the view.
+  /// exclusive; `split`, `wireframe`, and `depth_conflicts` toggle without
+  /// changing the view.
   Future<void> setMode(String id) async {
     final scene = _scene;
     if (id == 'split') {
@@ -256,11 +338,14 @@ class RenderGraphMcp {
       WidgetsBinding.instance.scheduleFrame();
       return;
     }
-    if (id == 'wireframe') {
+    final overlay = switch (id) {
+      'wireframe' => DebugOverlay.wireframe,
+      'depth_conflicts' => DebugOverlay.depthConflicts,
+      _ => null,
+    };
+    if (overlay != null) {
       final overlays = scene.debug.overlays;
-      if (!overlays.remove(DebugOverlay.wireframe)) {
-        overlays.add(DebugOverlay.wireframe);
-      }
+      if (!overlays.remove(overlay)) overlays.add(overlay);
       WidgetsBinding.instance.scheduleFrame();
       return;
     }

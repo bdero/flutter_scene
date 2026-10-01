@@ -115,6 +115,12 @@ typedef RenderGraphPixel =
 /// Captures a frame and scans every float target for NaN/Inf.
 typedef RenderGraphScan = Future<Map<String, Object?>> Function();
 
+/// Probes the viewport camera for surfaces that trade pixels as the camera
+/// moves (z-fighting). [options] carries `width`, `height`, and `limit` when
+/// given.
+typedef DepthConflictScan =
+    Future<Map<String, Object?>> Function(Map<String, Object?> options);
+
 /// The live scene's rendering statistics, the last frame plus [frames] of
 /// history.
 typedef RenderStatsReader = Map<String, Object?> Function(int frames);
@@ -317,6 +323,7 @@ class EditorToolSurface {
     this.renderGraphImage,
     this.renderGraphPixel,
     this.renderGraphScan,
+    this.depthConflictScan,
     this.readRenderStats,
     this.listDraws,
     this.readDraw,
@@ -455,6 +462,9 @@ class EditorToolSurface {
 
   /// The whole-frame non-finite scan.
   final RenderGraphScan? renderGraphScan;
+
+  /// The depth conflict (z-fighting) probe of the viewport camera.
+  final DepthConflictScan? depthConflictScan;
 
   /// Steady-state per-frame rendering statistics.
   final RenderStatsReader? readRenderStats;
@@ -865,6 +875,34 @@ class EditorToolSurface {
         inputSchema: {'type': 'object', 'properties': {}},
       ),
     ],
+    if (depthConflictScan != null)
+      const ToolDefinition(
+        name: 'scan_for_depth_conflicts',
+        description:
+            'Probe the viewport camera for surfaces that trade pixels as the '
+            'camera moves (z-fighting) and list each pair of nodes with the '
+            'pixels they trade and the distance, plus faces that overlap in '
+            'one plane. Drive conflicts to empty: separate or abut the '
+            'surfaces, or give an overlay a higher Material.depthLayer.',
+        inputSchema: {
+          'type': 'object',
+          'properties': {
+            'width': {
+              'type': 'integer',
+              'description': 'Probe width in pixels (default 960).',
+            },
+            'height': {
+              'type': 'integer',
+              'description': 'Probe height in pixels (default 540).',
+            },
+            'limit': {
+              'type': 'integer',
+              'description': 'Most pairs to list (default 20).',
+            },
+          },
+          'additionalProperties': false,
+        },
+      ),
     if (readRenderStats != null)
       const ToolDefinition(
         name: 'get_render_stats',
@@ -1659,6 +1697,19 @@ class EditorToolSurface {
           throw const ToolError('No render graph capture in this session');
         }
         return scanner();
+      case 'scan_for_depth_conflicts':
+        final scanner = depthConflictScan;
+        if (scanner == null) {
+          throw const ToolError('No live renderer in this session');
+        }
+        final options = <String, Object?>{};
+        for (final name in ['width', 'height', 'limit']) {
+          final value = _optionalInt(args, name);
+          if (value == null) continue;
+          if (value <= 0) throw ToolError('$name must be positive');
+          options[name] = value;
+        }
+        return scanner(options);
       case 'get_render_stats':
         final reader = readRenderStats;
         if (reader == null) {
