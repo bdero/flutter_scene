@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/fscene/fsceneb_async.dart';
 import 'package:flutter_scene/src/fscene/realize/component_codec.dart';
 import 'package:flutter_scene/src/fscene/realize/realize.dart';
 import 'package:flutter_scene/src/node.dart';
@@ -49,11 +50,18 @@ Node loadFscenebBytes(Uint8List bytes, {FsceneComponentRegistry? registry}) =>
 /// Parses a `.fsceneb` container from [bytes] and realizes it, first loading
 /// any external assets, encoded image payloads, and `fmat` materials it
 /// references (from [bundle], default `rootBundle`).
+///
+/// The container is parsed on a background isolate ([readFscenebAsync]), so a
+/// large scene does not stall the caller's frames while it inflates.
 Future<Node> loadFscenebBytesAsync(
   Uint8List bytes, {
   FsceneComponentRegistry? registry,
   AssetBundle? bundle,
-}) => realizeSceneAsync(readFsceneb(bytes), registry: registry, bundle: bundle);
+}) async => realizeSceneAsync(
+  await readFscenebAsync(bytes),
+  registry: registry,
+  bundle: bundle,
+);
 
 /// Loads a `.fsceneb` binary asset by [assetPath] and realizes it into a live
 /// node graph, loading any external assets / `fmat` materials it references.
