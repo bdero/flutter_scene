@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
@@ -112,8 +113,12 @@ class SmaaPass extends RenderGraphPass {
   static bool get isInitialized =>
       _areaTexture != null && _searchTexture != null;
 
-  /// Loads the precomputed SMAA area and search textures. Called by
-  /// `Scene.initializeStaticResources`, which rendering is gated on.
+  /// Loads the precomputed SMAA area and search textures. Requested by the
+  /// first scene (or view) whose effective anti-aliasing is SMAA, rather than
+  /// by `Scene.initializeStaticResources`: the tables are 362 KB of asset that
+  /// an app rendering with MSAA or FXAA never reads. A frame that asks for SMAA
+  /// before they land renders without it ([isInitialized] gates the pass), and
+  /// picks it up on the next frame.
   static Future<void> initializeStaticResources() async {
     if (isInitialized) {
       return;
@@ -138,6 +143,22 @@ class SmaaPass extends RenderGraphPass {
       height: 16,
       sourceChannels: 1,
     );
+  }
+
+  static Future<void>? _requested;
+
+  /// Starts the one-time load of the SMAA tables, idempotent and safe to call
+  /// from a frame. Errors are reported by the returned future only; a failed
+  /// load leaves [isInitialized] false, which keeps the pass out of the graph.
+  static void request() {
+    if (isInitialized) return;
+    _requested ??= initializeStaticResources().catchError((
+      Object error,
+      StackTrace stack,
+    ) {
+      _requested = null;
+      debugPrint('flutter_scene: could not load the SMAA tables: $error');
+    });
   }
 
   static gpu.Texture _uploadExpanded(

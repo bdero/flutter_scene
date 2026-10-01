@@ -112,18 +112,29 @@ class PhysicallyBasedMaterial extends Material {
   }
 
   /// Creates a material from normalized imported properties.
+  ///
+  /// Only a descriptor that uses one of the glTF extensions needs the physical
+  /// shader bundle; a plain metallic-roughness material draws with the base
+  /// bundle's `StandardFragment`, so importing one no longer reads the 4.4 MB
+  /// physical bundle.
   @internal
   static Future<PhysicallyBasedMaterial> fromDescriptor(
     PhysicalMaterialDescriptor descriptor,
   ) async {
-    await initializeStaticResources();
     final material = PhysicallyBasedMaterial();
     material._applyDescriptor(descriptor);
-    material._ensurePreparedVariant();
+    if (material._usesPhysicalVariant) {
+      await initializeStaticResources();
+      material._ensurePreparedVariant();
+    }
     return material;
   }
 
   /// Loads the shader variants shared by all physically based materials.
+  ///
+  /// Loaded on demand (from here, or from [_ensurePreparedVariant] when a
+  /// material grows into the physical path after construction) rather than by
+  /// `Scene.initializeStaticResources`.
   @internal
   static Future<void> initializeStaticResources() =>
       initializePhysicalMaterialResources();
@@ -1133,6 +1144,17 @@ class PhysicallyBasedMaterial extends Material {
     if (!_usesPhysicalVariant) {
       _preparedVariant = null;
       _materialDataDirty = false;
+      return;
+    }
+    if (!physicalMaterialResourcesReady) {
+      // A material that grew into the physical path after it was created (a
+      // `transmission` or `clearcoat` set on a plain one) asks for the bundle
+      // here. `Scene.isReadyToRender` turns false until it lands, so the next
+      // frames are skipped rather than drawn with the wrong shader; this frame,
+      // if one is already in flight, draws with the base standard shader, which
+      // is the same material minus the extension term. Stays dirty so the
+      // variant is prepared once the bundle is in.
+      requestPhysicalMaterialResources();
       return;
     }
     final lightmapped = _usesLightmapVariant;

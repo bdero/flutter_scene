@@ -192,10 +192,13 @@ abstract class Material {
     return _defaultEnvironmentMap ??= EnvironmentMap.studio();
   }
 
-  /// Builds the BRDF lookup texture and loads the physical shader variants.
+  /// Builds the shared BRDF/LTC lookup atlas.
   ///
   /// Called by the [Scene] constructor; rendering is gated on the returned
-  /// [Future] completing. The texture is built once and reused.
+  /// [Future] completing. The texture is built once and reused. The physical
+  /// material shaders are *not* loaded here: their 4.4 MB bundle is read on
+  /// demand (see `initializePhysicalMaterialResources`), so an app that draws
+  /// no [PhysicallyBasedMaterial] never reads it.
   static Future<void> initializeStaticResources() async {
     if (_brdfLutTexture == null) {
       final ltc = await rootBundle.load(
@@ -210,7 +213,6 @@ abstract class Material {
         dfgHalfData: dfg,
       );
     }
-    await PhysicallyBasedMaterial.initializeStaticResources();
   }
 
   /// Reads the precomputed DFG table, or integrates it off the current isolate

@@ -97,7 +97,12 @@ class ShadowCatcherMaterial extends Material {
        _softness = softness,
        _fadeStart = fadeStart,
        _fadeEnd = fadeEnd,
-       _mode = mode;
+       _mode = mode {
+    // The catcher's shader lives in the physical bundle, which is loaded on
+    // demand; request it here so it is in before the first draw prepares the
+    // variant (`Scene.isReadyToRender` stays false until it lands).
+    requestPhysicalMaterialResources();
+  }
 
   Color _shadowColor;
   double _shadowIntensity;
