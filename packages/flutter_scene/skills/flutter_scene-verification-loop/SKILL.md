@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-verification-loop
-version: 2
+version: 3
 description: Close the visual-iteration loop when building or debugging a flutter_scene 3D app so you see your own output and self-correct. Use whenever a change affects what renders (geometry, materials, lighting, shaders, post-processing) or a frame looks wrong (black, washed-out, see-through, missing geometry).
 ---
 
@@ -17,6 +17,10 @@ flutter_scene renders 3D. A rendering change you cannot see is a guess, and gues
 3. **Capture the frame AND read the console.** A screenshot alone hides errors that print; the console alone hides wrong pixels. Take both every time. Baseline path is a screenshot plus the run log; with the editor MCP it is `screenshot_viewport` plus `get_console`.
 4. **Localize before editing.** When something is wrong, find where it goes wrong before you touch code. Read an intermediate buffer, read a single pixel's exact value, or scan for non-finite values. A NaN or Inf propagates silently into black or garbage downstream, so the first pass that produced it is the culprit, not the pass where you see the black. `references/loop.md` has the tool table and a symptom to action map.
 5. **Correct, repeat.** Make one change, run the loop again. One change per iteration keeps cause and effect legible.
+
+## Flicker needs motion, not a screenshot
+
+Two surfaces that overlap in one plane trade pixels as the camera moves (z-fighting), and any single frame can look right. Wherever surfaces meet or lie on each other (paint on a road, a screen on a wall, barriers along a track, overlapping tiles), prove the scene clean with a number: `await scene.probeDepthConflicts(camera: camera)` from each camera the app uses, driving `report.conflicts` to empty (each entry names the two nodes, the pixels they trade, and the distance). `scene.debug.overlays.add(DebugOverlay.depthConflicts)` shows the same live in magenta, and the editor MCP's `scan_for_depth_conflicts` runs the probe for you. Without either, compare two frames a few centimetres of camera motion apart.
 
 ## The readiness gate (do not debug through it)
 

@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-kit
-version: 6
+version: 7
 description: Build interactive 3D gameplay, character controllers, camera rigs, dynamic day/night cycles, water surfaces, audio, pooling, and debug overlays in flutter_scene. Use when creating game mechanics, camera controls, NPC behaviors, atmospheric environments, or diagnostic HUDs.
 ---
 
@@ -28,6 +28,8 @@ import 'package:vector_math/vector_math.dart' as vm;
 `SpringArmComponent` attaches to a target character node and mounts a camera node at the arm's socket. It casts rays against the scene hierarchy to prevent geometry clipping, smoothly pulling the camera inward when colliding with walls.
 
 Note on offsets: `targetOffset` is applied in world space from the character node's origin, and `socketOffset` acts in the camera socket's local plane along X (right) and Y (up).
+
+Leave the mounted camera's near plane at its default. Every pass rasterizes with a near plane fitted to visible content each frame, so a chase or follow camera gets the depth precision of a much larger near without clipping the character when the arm pulls in. Raising `near` by hand clips the character at close range and gains nothing; the fit falls back to the authored value only when the camera sits inside an item's bounds (a sky sphere), so draw skies with `scene.skybox`.
 
 ```dart
 final characterNode = Node();

@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-procedural
-version: 3
+version: 4
 description: Build flutter_scene content from code instead of asset files. Use when generating terrain, scattering vegetation or crowds, building oceans and Gerstner waves, setting up procedural skies and trees, assembling modular kits, or driving a scene from noise and instancing rather than loading a .glb.
 ---
 
@@ -117,6 +117,10 @@ scene.add(node);
 ```
 
 `addInstance(matrix, {color})` returns an index; edit later with `setInstanceTransform(i, m)` or move the whole batch at once through `updateInstanceTransforms((list) { ... })`. Per-instance `color` is a linear RGBA multiplier. Keep instance edits orientation-preserving, a mirrored (negative-determinant) instance edited with `updateInstanceTransforms(recomputeWinding: false)` renders inside-out.
+
+## Repeated pieces must not overlap
+
+A fence, barrier, curb, or row of tiles repeated along a line flickers at every joint when each piece is longer than its spacing (8.4 m pieces every 8 m), because neighbors share faces in one plane and fight as the camera moves (z-fighting). Alternating colors make it obvious. Size each piece to exactly its spacing, stop perpendicular runs at a corner post instead of overlapping them, and scatter flat patches at one height without overlap. An overlay that lies on a surface (paint, a sign, a decal quad) gets `material.depthLayer = 1`. `scene.findCoplanarOverlaps()` lists any overlap left, with the length that fixes a repeated piece.
 
 ## The web noise trap
 
