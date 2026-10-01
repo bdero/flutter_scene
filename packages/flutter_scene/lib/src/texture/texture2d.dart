@@ -7,8 +7,7 @@ import '../asset_helpers.dart';
 import '../gpu/gpu.dart' as gpu;
 import '../render/mip_sampling_probe.dart';
 import 'encoded_image.dart';
-import 'mip_upload_web.dart'
-    if (dart.library.io) 'mip_upload_native.dart';
+import 'mip_upload_web.dart' if (dart.library.io) 'mip_upload_native.dart';
 import 'mipmap.dart';
 
 /// Something a material can sample: it yields the GPU texture to sample for the
@@ -182,11 +181,34 @@ class Texture2D implements TextureSource {
   }) => Texture2D._(texture, sampling.toSamplerOptions());
 
   /// Builds a texture from a decoded [image].
+  ///
+  /// Set [opaque] when every pixel of [image] is fully opaque. A texture that
+  /// then needs no mip chain wraps the image's own GPU texture
+  /// ([gpu.Texture.fromImage]) instead of reading its pixels back and
+  /// uploading them again, which on Vulkan and Metal costs a readback that
+  /// waits on the raster thread and a submission on the thread that draws.
+  /// The wrapper shares the image's storage and keeps it alive, so the caller
+  /// may dispose the image as soon as this returns. It is opt-in because the
+  /// image's texture is premultiplied, while the readback is straight alpha:
+  /// the same pixels only where alpha is 1. A backend that cannot hand the
+  /// image over (the web) reads it back regardless.
   static Future<Texture2D> fromImage(
     ui.Image image, {
     TextureContent content = TextureContent.color,
     TextureSampling sampling = const TextureSampling(),
+    bool opaque = false,
   }) async {
+    if (opaque && !(sampling.mipmaps && mipChainsAreSampled)) {
+      gpu.Texture? wrapped;
+      try {
+        wrapped = gpu.Texture.fromImage(gpu.gpuContext, image);
+      } on Object {
+        wrapped = null;
+      }
+      if (wrapped != null) {
+        return Texture2D._(wrapped, sampling.toSamplerOptions());
+      }
+    }
     final bytes = await image.toByteData(
       format: ui.ImageByteFormat.rawStraightRgba,
     );
