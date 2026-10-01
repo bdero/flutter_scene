@@ -2274,10 +2274,10 @@ base class Scene implements SceneGraph {
   /// Compares the faces of every drawn mesh and instance (meshes that keep
   /// their CPU data, up to 20,000 triangles each) and reports pairs from
   /// different nodes or instances that face the same way and overlap by
-  /// more than 0.01 m² in one plane. With a [camera] (the scene's primary
-  /// camera when omitted), it also reports pairs whose planes sit closer
-  /// than the depth buffer can separate at their distance from it, given the
-  /// scene's depth settings. Overlaps that draw identical pixels (one material
+  /// more than 0.01 m² in one plane. From a [camera] (the last on-screen
+  /// view's, then the primary camera, when omitted), it also reports pairs
+  /// whose planes sit closer than the depth buffer can separate at their
+  /// distance from it, given the scene's depth settings. Overlaps that draw identical pixels (one material
   /// and color) and pairs whose `Material.depthLayer` differs are left out,
   /// since neither flickers.
   ///
@@ -2285,7 +2285,7 @@ base class Scene implements SceneGraph {
   /// spacing, the fix. [probeDepthConflicts] finds the same fights by
   /// rendering, including ones in meshes this skips.
   List<coplanar.CoplanarOverlap> findCoplanarOverlaps({Camera? camera}) {
-    final view = camera ?? this.camera;
+    final view = camera ?? _probeCamera;
     double Function(double)? separationAt;
     if (view != null && view.projection.runtimeType == PerspectiveProjection) {
       final projection = view.projection as PerspectiveProjection;
@@ -2661,7 +2661,8 @@ base class Scene implements SceneGraph {
   /// offscreen at [width] by [height] (the view's aspect ratio is [width] over
   /// [height]) and waits for the GPU, so it takes a few frames' time; it is a
   /// verification tool, not something to run every frame. [camera] defaults
-  /// to the scene's primary camera.
+  /// to the camera of the last view drawn on screen, then the scene's
+  /// primary camera.
   Future<depth_conflicts.DepthConflictReport> probeDepthConflicts({
     Camera? camera,
     int width = 960,
@@ -2672,7 +2673,7 @@ base class Scene implements SceneGraph {
     await initializeStaticResources();
     renderScene.rebuildIfDirty();
     final view = RenderView(
-      camera: camera ?? this.camera ?? PerspectiveCamera(),
+      camera: camera ?? _probeCamera ?? PerspectiveCamera(),
       layerMask: layerMask,
     );
     final size = ui.Size(width.toDouble(), height.toDouble());
@@ -2690,6 +2691,15 @@ base class Scene implements SceneGraph {
       layerMask: layerMask,
       minPixels: minPixels,
     );
+  }
+
+  // The camera the depth checks look through by default: the last on-screen
+  // view's, since an app that hands `SceneView` a camera leaves [camera]
+  // unset, then the primary camera.
+  Camera? get _probeCamera {
+    final last = renderScene.lastViewCamera;
+    if (last is ViewportBoundCamera) return last.inner;
+    return last ?? camera;
   }
 
   /// The near plane screen view [viewIndex] last rasterized with under

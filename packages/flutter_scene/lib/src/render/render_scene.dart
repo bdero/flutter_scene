@@ -867,6 +867,10 @@ class RenderScene {
 
   Camera? _lastViewCamera;
 
+  /// The camera of the first on-screen view the last frame rendered (or of
+  /// its first view when all render offscreen), or null before a frame.
+  Camera? get lastViewCamera => _lastViewCamera;
+
   /// Records the views a frame renders, so [listenerCamera] can follow the
   /// first on-screen one (or the first view when all render offscreen).
   void recordRenderedViews(List<RenderView> views) {
