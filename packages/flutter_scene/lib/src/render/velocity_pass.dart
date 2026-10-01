@@ -145,6 +145,10 @@ class VelocityPass extends RenderGraphPass {
     renderPass.setDepthWriteEnable(false);
     renderPass.setColorBlendEnable(false);
     if (depthTexture != null) {
+      // TODO(depth-invariance): Metal compiles these shaders with fast math and
+      // no invariance, so this pass and the prepass may round one position
+      // differently and drop its motion vectors. Declare `invariant
+      // gl_Position` in both once Impeller preserves invariance at runtime.
       renderPass.setDepthCompareOperation(gpu.CompareFunction.equal);
     } else {
       renderPass.setDepthCompareOperation(gpu.CompareFunction.always);

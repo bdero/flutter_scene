@@ -68,6 +68,9 @@ class ShadowEncoder {
     _renderPass.setDepthWriteEnable(true);
     _renderPass.setColorBlendEnable(false);
     _renderPass.setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+    // TODO(shadow-slope-bias): set a slope-scaled caster bias with
+    // RenderPass.setDepthBias once Flutter GPU has it, so grazing casters stop
+    // relying on the receiver's shadowNormalBias alone.
     // Cull the complement of the faces that should cast: rendering front faces
     // (the default) means culling back faces, and vice versa. With base CCW
     // winding (flipped per-item for mirrored casters below), back-face culling
