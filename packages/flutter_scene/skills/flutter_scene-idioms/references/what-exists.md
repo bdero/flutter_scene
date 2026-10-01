@@ -220,8 +220,12 @@ Attach via `LodComponent`. Shadow/depth passes always draw level 0.
 
 ## Materials and textures
 
-`Material` (abstract): `name`, `doubleSided` (false), `depthBias` (0.0), `setFragmentShader`,
-`setFragmentShaderName(name, {cubeName})`, `setRadianceCubeFragmentShader`, `isOpaque()`.
+`Material` (abstract): `name`, `doubleSided` (false), `depthLayer` (0), `depthBias` (0.0),
+`setFragmentShader`, `setFragmentShaderName(name, {cubeName})`, `setRadianceCubeFragmentShader`,
+`isOpaque()`. `depthLayer` (-8..8) orders coplanar surfaces: a higher layer draws over a lower one
+in the same plane at any distance (an overlay on a wall or road gets 1). `depthBias` is a world-unit
+nudge toward the camera that buys fewer depth steps with distance; prefer `depthLayer`. `.fmat`
+spells the layer `depth_layer:`.
 
 ### UnlitMaterial
 
@@ -519,6 +523,23 @@ The engine-agnostic scene-document core is a separate package `scene` (0.2.0), r
 `package:flutter_scene/fscene.dart`. `flutter_scene_importer` and `flutter_gpu_shim` no longer exist
 (folded in). Physics and audio are separate barrels (`physics.dart`, `audio.dart`).
 
+## Depth precision and z-fighting
+
+Defaults that keep depth precise: `Scene.reversedDepth` (true; reversed float depth on Metal and
+browsers with clip control) and `Scene.fitNearPlane` (true; the near plane the passes rasterize with
+is fitted to visible content each frame, the authored near is the floor, and the public projection is
+untouched). `Scene.coplanarTieBreak` (false, experimental) gives unlayered materials and instances a
+stable order where they overlap exactly. See `depth-and-layering.md`.
+
+Finding fights: `scene.probeDepthConflicts({camera, width = 960, height = 540, layerMask, minPixels
+= 4})` -> `Future<DepthConflictReport>` (`conflicts` of `DepthConflict` with `nodeA`, `nodeB`,
+`pixelCount`, `bounds`, `distance`; `conflictPixelCount`; `describe()`), rendered from the camera.
+`scene.findCoplanarOverlaps({camera})` -> `List<CoplanarOverlap>` (`nodeA`, `nodeB`, `instanceA`,
+`instanceB`, `area`, `separation`, `center`, `normal`, `hint`, `exact`, `describe()`), from geometry
+with no rendering; debug builds run it once the scene settles and print a summary
+(`scene.debugCheckCoplanarOverlaps = false` silences it). `DebugOverlay.depthConflicts` marks fights
+live, and `SurfaceDebugChannel.depthGap` shows the gap two surfaces need at each pixel.
+
 ## Debugging the surface
 
-`Scene.debug` (a `SceneDebugSettings`): `view` is a `DebugView` over a `SurfaceDebugChannel` (geometry attributes, resolved surface channels, physical fields, object and material identity colors, validation flags, a `custom` channel fed by `material.debug` in a `.fmat`), with `gain`, a scalar range, and a `DebugRangePolicy`; `split` compares the view against the lit image; `overlays` holds `DebugOverlay.wireframe`. `Node.debugView` overrides or excludes a subtree. `DebugViewRegistry` lists every view by id for tools, and `Scene.debugViewId` selects one by id. Raw `ShaderMaterial`s opt in with `debugViews: true` after including `material_debug.glsl`; those that do not are drawn by a fallback that stripes the material channels.
+`Scene.debug` (a `SceneDebugSettings`): `view` is a `DebugView` over a `SurfaceDebugChannel` (geometry attributes, resolved surface channels, physical fields, object and material identity colors, validation flags, a `custom` channel fed by `material.debug` in a `.fmat`), with `gain`, a scalar range, and a `DebugRangePolicy`; `split` compares the view against the lit image; `overlays` holds `DebugOverlay.wireframe` and `DebugOverlay.depthConflicts`. `Node.debugView` overrides or excludes a subtree. `DebugViewRegistry` lists every view by id for tools, and `Scene.debugViewId` selects one by id. Raw `ShaderMaterial`s opt in with `debugViews: true` after including `material_debug.glsl`; those that do not are drawn by a fallback that stripes the material channels.

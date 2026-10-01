@@ -34,6 +34,7 @@ the MCP is actually connected for the current project.
 | `screenshot_viewport` | The viewport as a PNG, what the user sees. | EVERY iteration, paired with the console. |
 | `describe_scene` | The scene-graph tree (ids, paths, names, component types). | Confirming a node/mesh is actually in the scene. |
 | `scan_for_nans` | Capture a frame and scan every float render target for NaN/Inf in pass order. | A black or garbage frame with no error. Find where non-finite values start. |
+| `scan_for_depth_conflicts` | Probe the viewport camera for surfaces that trade pixels as the camera moves (z-fighting) and list the node pairs, pixel counts, and distances. | Stripes, speckles, or a surface that looks right only from some angles. |
 | `capture_render_graph` | Capture the next frame's graph with thumbnails. | You need to see intermediate buffers. |
 | `list_render_passes` | The executed passes in order with CPU timings and the buffer keys each read/wrote, plus target formats and sizes. No images. | Learning which pass owns which buffer, and the key names to read. |
 | `get_pass_output` | Render one captured buffer (a key like `scene_color`, `linear_depth`) as a PNG. NaN paints magenta, Inf yellow, negative blue. | Eyeballing an intermediate buffer to see which stage broke. |
@@ -126,6 +127,21 @@ routes a symptom to the right one.
    an older version). Widen or omit the bounds. Traps #8 and #24.
 4. A moved skinned mesh that will not move is the skinned-node transform being ignored by design; move
    the skeleton root instead. Trap #4.
+
+### Flickering stripes or speckles where surfaces meet
+
+1. Do not judge this from one frame. Run `scan_for_depth_conflicts` (editor MCP) or `await
+   scene.probeDepthConflicts(camera: camera)` in the app; each conflict names two nodes, the pixels
+   they trade, and the distance. `scene.debug.overlays.add(DebugOverlay.depthConflicts)` marks them
+   live in magenta.
+2. Two faces overlapping in one plane (repeated pieces longer than their spacing, overlapping patches
+   at one height, a duplicated node) fight at any distance; fix the content. `scene.findCoplanarOverlaps()`
+   lists the overlapping faces with the length that fixes a repeated piece.
+3. An overlay meant to lie on a surface (a screen, a sign, road paint) gets `material.depthLayer = 1`.
+4. Faces a few centimetres apart that fight only far away need a larger gap or a layer. The
+   `depthGap` debug view shows the gap each pixel needs. See the idioms skill's
+   `references/depth-and-layering.md`.
+5. Re-probe until the conflict list is empty.
 
 ### A value looks numerically wrong (not visually)
 
