@@ -54,9 +54,16 @@ class PerspectiveProjection extends CameraProjection {
   double fovRadiansY;
 
   /// Distance to the near clipping plane. Geometry closer is clipped away.
+  ///
+  /// Depth precision scales with the near plane, so a small one makes
+  /// distant surfaces a few centimeters apart flicker (z-fighting). A scene
+  /// rasterizes with the largest near plane that clips nothing visible, with
+  /// this as the floor (`Scene.fitNearPlane`), so leave it small enough that
+  /// nothing the camera approaches is clipped.
   double near;
 
-  /// Distance to the far clipping plane. Must be greater than [near].
+  /// Distance to the far clipping plane. Must be greater than [near]. It
+  /// barely affects depth precision; the near plane dominates.
   double far;
 
   @override

@@ -224,7 +224,8 @@ class Bvh {
   /// bounds hold for every item inside a node, so a node that cannot beat
   /// [best] is skipped whole.
   ///
-  /// [leafBound] returns an item's own bound, or infinity to ignore it.
+  /// [leafBound] returns an item's own bound, or infinity to ignore it. The
+  /// search ends as soon as the best bound reaches [floor].
   double nearestBound(
     Frustum frustum,
     Vector3 eye,
@@ -233,6 +234,7 @@ class Bvh {
     double Function(RenderItem item, double best) leafBound, {
     List<Plane> additionalPlanes = const [],
     double best = double.infinity,
+    double floor = double.negativeInfinity,
   }) {
     if (_nodeCount == 0) return best;
     final planeCount = 6 + additionalPlanes.length;
@@ -291,7 +293,10 @@ class Bvh {
       final left = children[node * 2];
       if (left < 0) {
         final bound = leafBound(_items[~left], best);
-        if (bound < best) best = bound;
+        if (bound < best) {
+          best = bound;
+          if (best <= floor) return best;
+        }
         continue;
       }
       // Visit the nearer child first, so a tight bound prunes the other.

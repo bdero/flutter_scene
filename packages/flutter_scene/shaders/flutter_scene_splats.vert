@@ -161,9 +161,12 @@ void main() {
   float radius2 = min(sigma_cut * sqrt(lambda2), max_radius);
 
   vec2 offset_px = corner.x * radius1 * axis1 + corner.y * radius2 * axis2;
+  vec3 center_world = (frame_info.model_transform * vec4(t0.xyz, 1.0)).xyz;
   gl_Position = ApplyDepthOffset(
       vec4(ndc.xy * clip.w + offset_px / half_viewport * clip.w, clip.zw),
-      vec4(frame_info.depth_offset.xy, 0.0, 0.0), 0.0);
+      vec4(frame_info.depth_offset.xy, 0.0, 0.0), 0.0,
+      DepthRoundingSteps(clip, frame_info.mvp_transform, center_world,
+                         frame_info.camera_position.xyz));
   v_quad = corner * sigma_cut;
 
   // The base (degree 0) color plus the view-dependent rest bands.

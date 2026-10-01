@@ -49,8 +49,12 @@ void main() {
   vec3 draw_position = ApplyDepthBias(
       cur_world.xyz, frame_info.current_view_projection,
       frame_info.camera_position.xyz, model_info.depth_bias.x);
+  vec4 clip_position =
+      frame_info.current_view_projection * vec4(draw_position, 1.0);
   gl_Position = ApplyDepthOffset(
-      frame_info.current_view_projection * vec4(draw_position, 1.0),
-      model_info.depth_offset, InstanceDepthRank(model_transform_3.xyz));
+      clip_position, model_info.depth_offset,
+      InstanceDepthRank(model_transform_3.xyz),
+      DepthRoundingSteps(clip_position, frame_info.current_view_projection,
+                         draw_position, frame_info.camera_position.xyz));
 }
 

@@ -1662,8 +1662,8 @@ class SkinnedGeometry extends Geometry {
       0.0,
       currentDrawDepthOffset[0],
       currentDrawDepthOffset[1],
-      0.0,
-      0.0,
+      currentDrawDepthSlope[0],
+      currentDrawDepthSlope[2],
     ]);
     final frameInfoView = transientsBuffer.emplace(
       frameInfoFloats.buffer.asByteData(),
@@ -1962,7 +1962,7 @@ final VertexLayoutDescriptor kUnskinnedSoADepthLayout = VertexLayoutDescriptor(
 // Reused across every call: this runs for every draw of every pass, and
 // [TransientWriter.emplace] copies the bytes out immediately, so a shared
 // scratch is safe and avoids a per-draw allocation.
-final Float32List _unskinnedFrameInfoScratch = Float32List(24);
+final Float32List _unskinnedFrameInfoScratch = Float32List(28);
 
 @internal
 void bindUnskinnedFrameInfo(
@@ -1980,7 +1980,8 @@ void bindUnskinnedFrameInfo(
     ..[17] = cameraPosition.y
     ..[18] = cameraPosition.z
     ..[19] = depthBias
-    ..setAll(20, currentDrawDepthOffset);
+    ..setAll(20, currentDrawDepthOffset)
+    ..setAll(24, currentDrawDepthSlope);
   pass.bindUniform(
     frameInfoSlot,
     transientsBuffer.emplace(ByteData.sublistView(scratch)),

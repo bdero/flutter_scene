@@ -28,6 +28,9 @@ uniform DebugViewInfo {
   // The view left of the split in a wipe between two views. x: channel id
   // (0 shows the lit result there). y: gain. z, w: scalar remap range.
   vec4 left;
+  // How the view stores depth, for the depth gap channel. x: 1 for reversed
+  // depth. y: 1 for float depth. zw unused.
+  vec4 depth;
 }
 debug_view_info;
 
@@ -50,6 +53,7 @@ vec2 debug_active_range;
 #define DEBUG_CHANNEL_FACE_ORIENTATION 11.0
 #define DEBUG_CHANNEL_UV0_CHECKER 12.0
 #define DEBUG_CHANNEL_UV1_CHECKER 13.0
+#define DEBUG_CHANNEL_DEPTH_GAP 14.0
 // Surface.
 #define DEBUG_CHANNEL_BASE_COLOR 20.0
 #define DEBUG_CHANNEL_ALPHA 21.0
@@ -111,9 +115,8 @@ vec3 DebugLinearToSRGB(vec3 c) {
              step(0.0031308, c));
 }
 
-// Scalar channel encoding: remap through the range, apply the out-of-range
-// policy, then the gain.
-vec3 DebugScalar(float v) {
+// A scalar remapped through the range with the out-of-range policy applied.
+float DebugScalarPosition(float v) {
   float lo = debug_active_range.x;
   float hi = debug_active_range.y;
   float t = (v - lo) / max(hi - lo, 1e-6);
@@ -125,7 +128,39 @@ vec3 DebugScalar(float v) {
   } else {
     t = clamp(t, 0.0, 1.0);
   }
-  return vec3(t * debug_active_view.z);
+  return t;
+}
+
+// Scalar channel encoding: remap through the range, apply the out-of-range
+// policy, then the gain.
+vec3 DebugScalar(float v) {
+  return vec3(DebugScalarPosition(v) * debug_active_view.z);
+}
+
+// The smallest gap two parallel surfaces need here to keep their depth
+// order: eight depth-buffer steps, or a sixteenth of a pixel of this
+// surface's own depth slope, whichever is larger (see Material.depthLayer).
+// Shown as a power of ten in meters through the scalar range, on a blue to
+// red ramp. 1 / gl_FragCoord.w is the planar view depth. Depth math in
+// highp (see PRECISION.md); a depth step underflows half precision.
+vec3 DebugDepthGap() {
+  highp float w = 1.0 / max(gl_FragCoord.w, 1e-12);
+  highp float z = gl_FragCoord.z;
+  highp float step_size;
+  if (debug_view_info.depth.x > 0.5 && debug_view_info.depth.y > 0.5) {
+    // Reversed float depth keeps a relative step everywhere.
+    step_size = w / 8388608.0;
+  } else if (debug_view_info.depth.x > 0.5) {
+    step_size = w / (16777216.0 * max(z, 1e-12));
+  } else {
+    step_size = w / (16777216.0 * max(1.0 - z, 1e-12));
+  }
+  highp float slope = max(abs(dFdx(w)), abs(dFdy(w)));
+  highp float gap = max(8.0 * step_size, slope / 16.0);
+  float t = DebugScalarPosition(log2(max(gap, 1e-12)) * 0.30103);
+  vec3 ramp = clamp(vec3(1.5) - abs(vec3(4.0 * t) - vec3(3.0, 2.0, 1.0)),
+                    vec3(0.0), vec3(1.0));
+  return ramp * debug_active_view.z;
 }
 
 // Direction encoding, unit vector to [0, 1].
@@ -321,6 +356,8 @@ vec4 DebugSurfaceOutputFor(MaterialInputs material) {
       out_color = DebugUvChecker(GetUV0());
     } else if (channel == DEBUG_CHANNEL_UV1_CHECKER) {
       out_color = DebugUvChecker(GetUV1());
+    } else if (channel == DEBUG_CHANNEL_DEPTH_GAP) {
+      out_color = DebugDepthGap();
     } else {
       out_color = DebugUnavailable();
     }

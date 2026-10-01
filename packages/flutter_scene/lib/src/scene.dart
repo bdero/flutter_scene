@@ -1,4 +1,4 @@
-import 'dart:async' show Completer, FutureExtensions, Timer;
+import 'dart:async' show Completer, FutureExtensions, Timer, scheduleMicrotask;
 import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -6,7 +6,14 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
+import 'package:flutter_scene/src/coplanar_overlaps.dart'
+    as coplanar
+    show CoplanarOverlap, describeCoplanarOverlaps, findCoplanarOverlaps;
+import 'package:flutter_scene/src/depth_conflicts.dart'
+    as depth_conflicts
+    show DepthConflictReport, probeDepthConflicts;
 import 'package:flutter_scene/src/render/depth_raster.dart';
+import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/near_fit.dart';
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
@@ -834,14 +841,16 @@ base class Scene implements SceneGraph {
   /// Whether exactly coplanar surfaces of different materials resolve to a
   /// stable winner instead of flickering (z-fighting).
   ///
-  /// Each material without an explicit `Material.depthLayer` gets a small
-  /// automatic rank from its creation order (and each instance one from its
-  /// position), a fraction of a layer, so overlapping faces in one plane
-  /// stop trading pixels as the camera moves. Explicit layers always win
-  /// over it. The rank is arbitrary, so an overlay that should show can end
-  /// up consistently hidden; prefer fixing the overlap or setting
-  /// `depthLayer`, and use this as a safety net for generated content.
-  /// Experimental. Defaults to false.
+  /// Each material without an explicit `Material.depthLayer` gets an
+  /// automatic rank from its creation order, and each instance one from its
+  /// position, and is pushed back from the camera by up to half a pixel of
+  /// its depth slope by rank, so overlapping faces in one plane stop trading
+  /// pixels as the camera moves. Positive layers always draw over every rank.
+  /// The rank is arbitrary, so an overlay that should show can end up
+  /// consistently hidden, and surfaces a sliver apart (a road a centimetre
+  /// above the ground, far off) can swap. Prefer fixing the overlap or
+  /// setting `depthLayer`, and use this as a safety net for generated
+  /// content. Experimental. Defaults to false.
   bool coplanarTieBreak = false;
 
   /// Whether perspective views rasterize with a near plane fitted to the
@@ -2220,8 +2229,83 @@ base class Scene implements SceneGraph {
 
     assert(() {
       _reportBlankFrame(ordered, regionEmpty: false, noViews: false);
+      _maybeReportCoplanarOverlaps();
       return true;
     }());
+  }
+
+  /// Whether a debug build checks the scene for surfaces that overlap in one
+  /// plane once it has held still for a moment, and prints what it finds
+  /// (see [findCoplanarOverlaps]). Runs again whenever nodes are added or
+  /// removed. Debug builds only; defaults to true.
+  bool debugCheckCoplanarOverlaps = true;
+
+  // The render-scene structure the coplanar check last ran on, the frames it
+  // has held still since, and the report it printed.
+  int _coplanarCheckedRevision = -1;
+  int _coplanarStableFrames = 0;
+  int _coplanarWatchedRevision = -1;
+  String? _coplanarLastReport;
+
+  // Debug-only. Runs the coplanar check after the scene's structure has held
+  // for a second of frames, off the frame itself.
+  void _maybeReportCoplanarOverlaps() {
+    if (!debugCheckCoplanarOverlaps) return;
+    final revision = renderScene.structureRevision;
+    if (revision != _coplanarWatchedRevision) {
+      _coplanarWatchedRevision = revision;
+      _coplanarStableFrames = 0;
+      return;
+    }
+    if (revision == _coplanarCheckedRevision) return;
+    if (++_coplanarStableFrames < 60) return;
+    _coplanarCheckedRevision = revision;
+    scheduleMicrotask(() {
+      final report = coplanar.describeCoplanarOverlaps(findCoplanarOverlaps());
+      if (report == null || report == _coplanarLastReport) return;
+      _coplanarLastReport = report;
+      debugPrint(report);
+    });
+  }
+
+  /// Finds surfaces that overlap in one plane and so flicker against each
+  /// other (z-fighting), from the scene's geometry, without rendering.
+  ///
+  /// Compares the faces of every drawn mesh and instance (meshes that keep
+  /// their CPU data, up to 20,000 triangles each) and reports pairs from
+  /// different nodes or instances that face the same way and overlap by
+  /// more than 0.01 m² in one plane. With a [camera] (the scene's primary
+  /// camera when omitted), it also reports pairs whose planes sit closer
+  /// than the depth buffer can separate at their distance from it, given the
+  /// scene's depth settings. Overlaps that draw identical pixels (one material
+  /// and color) and pairs whose `Material.depthLayer` differs are left out,
+  /// since neither flickers.
+  ///
+  /// Each overlap names its nodes and, for repeated pieces longer than their
+  /// spacing, the fix. [probeDepthConflicts] finds the same fights by
+  /// rendering, including ones in meshes this skips.
+  List<coplanar.CoplanarOverlap> findCoplanarOverlaps({Camera? camera}) {
+    final view = camera ?? this.camera;
+    double Function(double)? separationAt;
+    if (view != null && view.projection.runtimeType == PerspectiveProjection) {
+      final projection = view.projection as PerspectiveProjection;
+      final raster = DepthRaster(
+        reversed: reversedDepth,
+        floatDepth:
+            gpu.gpuContext.defaultDepthStencilFormat ==
+            gpu.PixelFormat.d32FloatS8UInt,
+      );
+      final near = fitNearPlane
+          ? (debugFittedNearPlane() ?? projection.near)
+          : projection.near;
+      separationAt = (distance) =>
+          kDepthLayerSteps * raster.worldStepAt(distance, near);
+    }
+    return coplanar.findCoplanarOverlaps(
+      renderScene.items,
+      eye: view?.position,
+      separationAt: separationAt,
+    );
   }
 
   // Debug-only. Detects a frame that issued zero draw calls and, once per
@@ -2559,6 +2643,55 @@ base class Scene implements SceneGraph {
     return _offscreenNearFits[key] ??= _NearFitState();
   }
 
+  /// Finds the surfaces that flicker against each other (z-fighting) in
+  /// [camera]'s view, and reports them by node.
+  ///
+  /// Renders an object-id image of the view several times, changing the
+  /// depth mapping by amounts too small to move anything on screen, nudging
+  /// surfaces two depth steps toward or away from the camera, and reversing
+  /// the draw order, and reports each pair of nodes whose pixels change
+  /// hands: what camera motion does to surfaces closer together than the
+  /// depth buffer can tell apart. It uses this scene's depth settings, so
+  /// `Material.depthLayer`, [reversedDepth], [fitNearPlane], and
+  /// [coplanarTieBreak] all count and a reported pair still flickers. A
+  /// single screenshot cannot show this, since a fight can resolve one way in
+  /// any one frame.
+  ///
+  /// Call it after the scene has rendered at least one frame. It renders
+  /// offscreen at [width] by [height] (the view's aspect ratio is [width] over
+  /// [height]) and waits for the GPU, so it takes a few frames' time; it is a
+  /// verification tool, not something to run every frame. [camera] defaults
+  /// to the scene's primary camera.
+  Future<depth_conflicts.DepthConflictReport> probeDepthConflicts({
+    Camera? camera,
+    int width = 960,
+    int height = 540,
+    int layerMask = kRenderLayerAll,
+    int minPixels = 4,
+  }) async {
+    await initializeStaticResources();
+    renderScene.rebuildIfDirty();
+    final view = RenderView(
+      camera: camera ?? this.camera ?? PerspectiveCamera(),
+      layerMask: layerMask,
+    );
+    final size = ui.Size(width.toDouble(), height.toDouble());
+    final bound = ViewportBoundCamera(
+      view.camera,
+      size,
+      raster: _depthRasterFor(view, size, -1),
+    );
+    return depth_conflicts.probeDepthConflicts(
+      renderScene: renderScene,
+      camera: bound,
+      width: width,
+      height: height,
+      transients: uniformTransients,
+      layerMask: layerMask,
+      minPixels: minPixels,
+    );
+  }
+
   /// The near plane screen view [viewIndex] last rasterized with under
   /// [fitNearPlane], or null before its first frame.
   @visibleForTesting
@@ -2584,6 +2717,8 @@ base class Scene implements SceneGraph {
       cosHalfAngle: cosHalfAngle,
       layerMask: view.layerMask,
       additionalPlanes: view.cullingPlanes,
+      // Nearer than this the fit keeps the authored plane anyway.
+      floor: projection.near / kNearFitSafety,
     );
     final fitted = fittedNearPlane(
       visibleDepth: result.depth,

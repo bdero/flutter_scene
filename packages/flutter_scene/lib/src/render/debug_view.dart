@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show internal;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -96,6 +97,21 @@ enum SurfaceDebugChannel {
 
   /// The same checker on the second UV set (the lightmap set).
   uv1Checker(13, 'uv1_checker', 'UV 1 checker', SurfaceDebugGroup.geometry),
+
+  /// The smallest gap two parallel surfaces need here to keep their depth
+  /// order, as a power of ten in meters on a blue to red ramp (default range
+  /// a hundredth of a millimeter to a meter): eight depth-buffer steps or a
+  /// sixteenth of a pixel of the surface's own depth slope, whichever is
+  /// larger. An overlay closer to its surface than this flickers
+  /// (z-fighting) unless its `Material.depthLayer` is higher.
+  depthGap(
+    14,
+    'depth_gap',
+    'Depth gap',
+    SurfaceDebugGroup.geometry,
+    rangeMin: -5.0,
+    rangeMax: 0.0,
+  ),
 
   baseColor(20, 'base_color', 'Base color', SurfaceDebugGroup.surface),
   alpha(21, 'alpha', 'Alpha', SurfaceDebugGroup.surface),
@@ -359,6 +375,13 @@ enum DebugOverlay {
   /// Every triangle edge as a line, drawn with each mesh's own vertex path
   /// so skinning, morphing, and instancing hold.
   wireframe,
+
+  /// A crawling magenta checkerboard over every patch two surfaces fight
+  /// over (z-fighting), found by redrawing the view with surfaces nudged a
+  /// sliver toward and away from the camera, which moves nothing on screen
+  /// (see `Scene.probeDepthConflicts`). Draws the view's geometry three more
+  /// times a frame.
+  depthConflicts,
 }
 
 /// The scene's debug views: one surface [view], an optional [split], and a
@@ -502,18 +525,20 @@ class DebugViewFrame {
   /// The view an item with [nodeOverride] shows.
   DebugView effectiveView(DebugView? nodeOverride) => nodeOverride ?? sceneView;
 
-  /// Float count of the `DebugViewInfo` uniform block (three vec4s).
-  static const int floatCount = 12;
+  /// Float count of the `DebugViewInfo` uniform block (four vec4s).
+  static const int floatCount = 16;
 
   /// Writes the `DebugViewInfo` block for one draw into [out].
   ///
   /// [objectSeed] and [materialSeed] feed the identity channels; small
   /// integers spread well through the shader's golden-ratio hue walk.
+  /// [raster] tells the depth gap channel how the view stores depth.
   void pack(
     Float32List out,
     DebugView view, {
     required int objectSeed,
     required int materialSeed,
+    DepthRaster raster = DepthRaster.standard,
   }) {
     out[0] = view.channel.shaderId.toDouble();
     out[1] = splitPixels;
@@ -528,6 +553,10 @@ class DebugViewFrame {
     out[9] = left?.gain ?? 1;
     out[10] = left?.rangeMin ?? 0;
     out[11] = left?.rangeMax ?? 1;
+    out[12] = raster.reversed ? 1 : 0;
+    out[13] = raster.floatDepth ? 1 : 0;
+    out[14] = 0;
+    out[15] = 0;
   }
 
   /// The block that turns the view off for a draw.
