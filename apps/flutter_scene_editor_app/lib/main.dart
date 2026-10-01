@@ -1349,6 +1349,7 @@ class _EditorHomeState extends State<_EditorHome> {
           renderGraphImage: _renderGraphMcp.passOutput,
           renderGraphPixel: _renderGraphMcp.readPixel,
           renderGraphScan: _renderGraphMcp.scanForNans,
+          depthConflictScan: _renderGraphMcp.scanDepthConflicts,
           readRenderStats: _renderGraphMcp.renderStats,
           listDraws: _renderGraphMcp.listDraws,
           readDraw: _renderGraphMcp.readDraw,

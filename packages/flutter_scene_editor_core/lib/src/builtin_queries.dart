@@ -11,6 +11,7 @@ import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'command.dart';
+import 'depth_layering.dart';
 import 'queries.dart';
 
 /// Registers every built-in query on [registry].
@@ -29,6 +30,7 @@ final List<QueryEntry> builtinQueries = [
   getResource,
   readPayload,
   getSelection,
+  checkDepthLayering,
   listCommands,
   listQueries,
 ];

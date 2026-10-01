@@ -379,6 +379,10 @@ void documentTests() {
             ScreenshotResult(pngBytes: Uint8List(0), width: 1, height: 1),
         renderGraphPixel: (key, x, y) async => {'key': key, 'x': x, 'y': y},
         renderGraphScan: () async => {'offenders': const []},
+        depthConflictScan: (options) async => {
+          'conflicts': const [],
+          'options': options,
+        },
         listDebugModes: () => [
           {'id': 'final', 'label': 'Final output', 'active': true},
         ],
@@ -393,9 +397,19 @@ void documentTests() {
           'get_pass_output',
           'read_pass_pixel',
           'scan_for_nans',
+          'scan_for_depth_conflicts',
           'list_viewport_debug_modes',
           'set_viewport_debug_mode',
         }),
+      );
+      final depth = await surface.dispatch('scan_for_depth_conflicts', {
+        'width': 640,
+        'limit': 5,
+      });
+      expect(depth['options'], {'width': 640, 'limit': 5});
+      await expectLater(
+        surface.dispatch('scan_for_depth_conflicts', {'height': 0}),
+        throwsA(isA<ToolError>()),
       );
       final imageTools = {
         for (final def in surface.bootstrapTools())

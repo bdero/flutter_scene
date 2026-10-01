@@ -1727,16 +1727,18 @@ class _DebugOutputButtonState extends State<_DebugOutputButton> {
           action: () =>
               scene.debug.split = scene.debug.split == null ? 0.5 : null,
         ),
-        _checkedItem(
-          label: 'Wireframe overlay',
-          checked: scene.debug.overlays.contains(DebugOverlay.wireframe),
-          action: () {
-            final overlays = scene.debug.overlays;
-            if (!overlays.remove(DebugOverlay.wireframe)) {
-              overlays.add(DebugOverlay.wireframe);
-            }
-          },
-        ),
+        for (final (label, overlay) in const [
+          ('Wireframe overlay', DebugOverlay.wireframe),
+          ('Depth conflicts (z-fighting)', DebugOverlay.depthConflicts),
+        ])
+          _checkedItem(
+            label: label,
+            checked: scene.debug.overlays.contains(overlay),
+            action: () {
+              final overlays = scene.debug.overlays;
+              if (!overlays.remove(overlay)) overlays.add(overlay);
+            },
+          ),
       ],
       child: Container(
         width: 28,
