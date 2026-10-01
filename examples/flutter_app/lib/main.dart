@@ -65,6 +65,7 @@ import 'example_widget_texture.dart';
 import 'example_split_screen.dart';
 import 'example_stress_tests.dart';
 import 'example_debug_views.dart';
+import 'example_depth_precision.dart';
 import 'example_raw_shader.dart';
 import 'example_toon.dart';
 import 'example_toon_fmat.dart';
@@ -375,6 +376,7 @@ class _MyAppState extends State<MyApp> {
       'fscene (prefab)': (context) => const ExampleFscenePrefab(),
       'fscene (stream)': (context) => const ExampleFsceneStream(),
       'Split Screen': (context) => const ExampleSplitScreen(),
+      'Depth Precision': (context) => const ExampleDepthPrecision(),
       'Stress Tests': (context) => const ExampleStressTests(),
     };
     // `--dart-define=EXAMPLE=<name>` opens straight into that example.
