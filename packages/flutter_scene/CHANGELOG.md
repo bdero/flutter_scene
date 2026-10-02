@@ -9,6 +9,10 @@
 * `Scene.coplanarTieBreak` (experimental) gives unlayered exact overlaps a stable winner.
 * Custom `ShaderMaterial` vertex shaders that write clip depth themselves (a sky at `z = w`) need `Scene.reversedDepth = false`; ones that use `camera_transform` are unaffected.
 
+* `loadScene` and the async `.fsceneb` loaders parse on a background isolate; `readFscenebAsync` is exported from `fscene.dart`.
+* Generated mip chains upload in one submission instead of one per level.
+* `Texture2D.fromImage(opaque: true)` wraps the image's GPU texture instead of reading it back, when no mip chain is needed.
+* `Scene.warmUp` waits for the raster thread before drawing, so OpenGL ES pipeline compiles no longer stall the UI thread behind a swap.
 * Generated scenes, textures, and materials rebuild when the flutter_scene code that writes them changes, so an upgrade no longer reuses outputs from the old importer, encoder, or `.fmat` compiler.
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
