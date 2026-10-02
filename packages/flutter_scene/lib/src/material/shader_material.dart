@@ -16,6 +16,8 @@ import 'package:flutter_scene/src/render/custom_render_pass.dart'
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
+import 'package:flutter_scene/src/shader_uniform_bindings.dart'
+    show defaultSamplerOptions, linearClampSamplerOptions, packUniformFloats;
 
 /// Scalar/vector type supplied once per instance to a raw shader pair.
 /// {@category Materials}
@@ -439,7 +441,7 @@ class ShaderMaterial extends Material {
   }) {
     setUniformBlock(
       name,
-      ByteData.sublistView(Float32List.fromList(floats)),
+      packUniformFloats(_blocksFor(stage)[name], floats),
       stage: stage,
     );
   }
@@ -523,25 +525,7 @@ class ShaderMaterial extends Material {
     // cube-layout twin and the bound environment uses that layout.
     final shader = fragmentShaderForLighting(lighting);
 
-    for (final entry in _uniformBlocks.entries) {
-      final slot = shader.cachedUniformSlot(entry.key);
-      assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.fragment));
-      pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
-    }
-
-    for (final entry in _textures.entries) {
-      // An empty render texture (no completed frame yet) binds the white
-      // placeholder so the sampler slot is never left dangling.
-      final resolved = _resolveShaderTexture(entry.value.source);
-      pass.bindTexture(
-        shader.cachedUniformSlot(entry.key),
-        Material.whitePlaceholder(resolved),
-        sampler:
-            entry.value.sampler ??
-            _shaderTextureSampler(entry.value.source) ??
-            gpu.SamplerOptions(),
-      );
-    }
+    _bindStage(pass, shader, transientsBuffer, ShaderStage.fragment);
 
     if (useEnvironment) {
       _bindEnvironmentTextures(pass, shader, lighting);
@@ -578,20 +562,36 @@ class ShaderMaterial extends Material {
     gpu.Shader vertexShader,
     TransientWriter transientsBuffer,
   ) {
-    for (final entry in _vertexUniformBlocks.entries) {
-      final slot = vertexShader.cachedUniformSlot(entry.key);
-      assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.vertex));
-      pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
+    _bindStage(pass, vertexShader, transientsBuffer, ShaderStage.vertex);
+  }
+
+  void _bindStage(
+    gpu.RenderPass pass,
+    gpu.Shader shader,
+    TransientWriter transientsBuffer,
+    ShaderStage stage,
+  ) {
+    final blocks = _blocksFor(stage);
+    // Keys and a lookup, since iterating `entries` allocates a MapEntry each.
+    for (final name in blocks.keys) {
+      final bytes = blocks[name]!;
+      final slot = shader.cachedUniformSlot(name);
+      assert(_checkBlock(slot, name, bytes, stage));
+      pass.bindUniform(slot, transientsBuffer.emplace(bytes));
     }
-    for (final entry in _vertexTextures.entries) {
-      final resolved = _resolveShaderTexture(entry.value.source);
+    final textures = _texturesFor(stage);
+    for (final name in textures.keys) {
+      final bound = textures[name]!;
+      // An empty render texture (no completed frame yet) binds the white
+      // placeholder so the sampler slot is never left dangling.
+      final resolved = _resolveShaderTexture(bound.source);
       pass.bindTexture(
-        vertexShader.cachedUniformSlot(entry.key),
+        shader.cachedUniformSlot(name),
         Material.whitePlaceholder(resolved),
         sampler:
-            entry.value.sampler ??
-            _shaderTextureSampler(entry.value.source) ??
-            gpu.SamplerOptions(),
+            bound.sampler ??
+            _shaderTextureSampler(bound.source) ??
+            defaultSamplerOptions,
       );
     }
   }
@@ -610,12 +610,7 @@ class ShaderMaterial extends Material {
     pass.bindTexture(
       shader.cachedUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.linear,
-        magFilter: gpu.MinMagFilter.linear,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: linearClampSamplerOptions,
     );
   }
 }
