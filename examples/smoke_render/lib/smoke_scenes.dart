@@ -751,6 +751,109 @@ UnlitMaterial _depthBiasMaterial(vm.Vector4 color, {double depthBias = 0}) =>
 
 /// The smoke scene set. Mostly procedural for determinism; the final scenes
 /// exercise a custom `.fmat` material compiled by the build hook.
+/// A cube of half extent [half] in the packed format `packed_vertex.vert`
+/// reads: float positions in one stream and, in another, one uint per vertex
+/// holding a signed 8-bit normal and [palette] in the top byte.
+UnskinnedGeometry _packedBox(double half, int palette) {
+  final positions = Float32List(24 * 3);
+  final packed = Uint32List(24);
+  final indices = Uint16List(36);
+  var v = 0;
+  var i = 0;
+  for (final axis in [0, 1, 2]) {
+    for (final sign in [1.0, -1.0]) {
+      final normal = [0.0, 0.0, 0.0]..[axis] = sign;
+      final u = (axis + 1) % 3;
+      final w = (axis + 2) % 3;
+      final first = v;
+      for (final (a, b) in [
+        (-1.0, -1.0),
+        (1.0, -1.0),
+        (1.0, 1.0),
+        (-1.0, 1.0),
+      ]) {
+        final p = [0.0, 0.0, 0.0]
+          ..[axis] = sign * half
+          ..[u] = a * half
+          ..[w] = b * half;
+        positions.setAll(v * 3, p);
+        var bits = palette << 24;
+        for (var c = 0; c < 3; c++) {
+          bits |= ((normal[c] * 127).round() + 128) << (c * 8);
+        }
+        packed[v++] = bits;
+      }
+      // Counter-clockwise seen from outside along the face normal.
+      final flip = sign < 0;
+      for (final corner in flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
+        indices[i++] = first + corner;
+      }
+    }
+  }
+  return UnskinnedGeometry()
+    ..setVertexLayout(
+      const VertexLayoutDescriptor(
+        buffers: [
+          VertexBufferDescriptor(
+            strideInBytes: 12,
+            attributes: [
+              VertexAttributeDescriptor(
+                name: 'position',
+                format: gpu.VertexFormat.float32x3,
+              ),
+            ],
+          ),
+          VertexBufferDescriptor(
+            strideInBytes: 4,
+            attributes: [
+              VertexAttributeDescriptor(
+                name: 'packed_normal_color',
+                format: gpu.VertexFormat.uint32,
+              ),
+            ],
+          ),
+          // The engine's 80-byte instance record: the model transform columns
+          // and the instance color.
+          VertexBufferDescriptor(
+            strideInBytes: 80,
+            stepMode: gpu.VertexStepMode.instance,
+            attributes: [
+              VertexAttributeDescriptor(
+                name: 'model_transform_0',
+                format: gpu.VertexFormat.float32x4,
+              ),
+              VertexAttributeDescriptor(
+                name: 'model_transform_1',
+                format: gpu.VertexFormat.float32x4,
+                offsetInBytes: 16,
+              ),
+              VertexAttributeDescriptor(
+                name: 'model_transform_2',
+                format: gpu.VertexFormat.float32x4,
+                offsetInBytes: 32,
+              ),
+              VertexAttributeDescriptor(
+                name: 'model_transform_3',
+                format: gpu.VertexFormat.float32x4,
+                offsetInBytes: 48,
+              ),
+              VertexAttributeDescriptor(
+                name: 'instance_color',
+                format: gpu.VertexFormat.float32x4,
+                offsetInBytes: 64,
+              ),
+            ],
+          ),
+        ],
+      ),
+    )
+    ..uploadVertexStreams([positions, packed], 24, indices: indices)
+    ..setLocalBounds(
+      vm.Aabb3.minMax(vm.Vector3.all(-half), vm.Vector3.all(half)),
+      vm.Sphere.centerRadius(vm.Vector3.zero(), half * math.sqrt(3)),
+    );
+}
+
 final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Diffuse-ish PBR under the default studio IBL.
   SmokeScene('pbr_cuboid', () {
@@ -2414,6 +2517,75 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3.zero(),
       ),
     );
+  }, preload: loadSmokeMaterials),
+
+  // A caller-defined vertex format: two boxes in a 16-byte packed vertex
+  // (a float position stream plus one packed uint per vertex) drawn by the
+  // engine's lit material, casting onto a mesh with no texture coordinates
+  // or colors. The left box declares a position-only depth vertex; the right
+  // one leaves depth to its full vertex shader. A backend that misreads the
+  // integer stream draws black or garbled boxes, and a broken depth path
+  // drops a shadow.
+  SmokeScene('packed_vertex_format', () {
+    // Dim ambient, so both shadows read against the ground.
+    final scene = Scene()..environmentIntensity = 0.3;
+    scene.add(
+      _directionalLightNode(
+        vm.Vector3(0.6, -1.0, 0.7),
+        DirectionalLight(castsShadow: true, shadowMaxDistance: 20.0),
+      ),
+    );
+    final lit = PhysicallyBasedMaterial()
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.8;
+    // Normals are generated; texture coordinates, colors, and tangents are
+    // absent, so they bind the shared default streams.
+    scene.add(
+      Node(
+        mesh: Mesh(
+          MeshGeometry.fromArrays(
+            positions: Float32List.fromList([
+              -1.6, 0, -1.3, //
+              1.6, 0, -1.3, //
+              -1.6, 0, 1.3, //
+              1.6, 0, 1.3, //
+            ]),
+            indices: const [0, 2, 1, 1, 2, 3],
+          ),
+          lit,
+        ),
+      ),
+    );
+    final library = _rawPairLibrary!;
+    final depthVertex = library['PackedVertexDepth']!;
+    for (final (x, z, palette, declaresDepth) in [
+      (0.75, -0.65, 0, true),
+      (-0.75, 0.65, 1, false),
+    ]) {
+      final geometry = _packedBox(0.3, palette)
+        ..setVertexShader(library['PackedVertex']!);
+      if (declaresDepth) {
+        geometry.setDepthOnlyVertex(
+          depthVertex,
+          positionStream: const VertexBufferDescriptor(
+            strideInBytes: 12,
+            attributes: [
+              VertexAttributeDescriptor(
+                name: 'position',
+                format: gpu.VertexFormat.float32x3,
+              ),
+            ],
+          ),
+        );
+      }
+      scene.add(
+        Node(mesh: Mesh(geometry, lit))
+          ..localTransform =
+              vm.Matrix4.translation(vm.Vector3(x, 0.3, z)) *
+              vm.Matrix4.rotationY(0.5),
+      );
+    }
+    return (scene: scene, camera: _shadowCamera());
   }, preload: loadSmokeMaterials),
 
   // A pre-baked KTX2 radiance cubemap loaded straight from file bytes, with no

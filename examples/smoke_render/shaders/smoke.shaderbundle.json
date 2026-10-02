@@ -10,5 +10,13 @@
     "ViewEdgesFragment": {
         "type": "fragment",
         "file": "shaders/view_edges.frag"
+    },
+    "PackedVertex": {
+        "type": "vertex",
+        "file": "shaders/packed_vertex.vert"
+    },
+    "PackedVertexDepth": {
+        "type": "vertex",
+        "file": "shaders/packed_vertex_depth.vert"
     }
 }
