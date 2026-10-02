@@ -46,7 +46,7 @@ List<WgslReflectedResource> _resources() => [
 const _matchingWgsl = '''
 @group(0u) @binding(64u) var<uniform> v : S;
 @group(0u) @binding(65u) var v_1 : texture_2d<f32>;
-@group(0u) @binding(66u) var v_2 : sampler;
+@group(0u) @binding(193u) var v_2 : sampler;
 ''';
 
 void main() {
@@ -78,8 +78,8 @@ void main() {
       final t = _FakeTranslator((_, _) => _matchingWgsl);
       WgslTranslationCache(t).get('Unlit', _spirv, _resources());
 
-      // albedo is a combined sampler at 65, so its sampler belongs at 66.
-      expect(t.samplerBindingCalls.single, {65: 66});
+      // albedo is a combined sampler at 65, so its sampler belongs at 65 + 128.
+      expect(t.samplerBindingCalls.single, {65: 193});
     });
 
     test('exposes the predicted bindings alongside the source', () {
@@ -90,7 +90,7 @@ void main() {
 
       expect(result.bindings['FragInfo']!.textureBinding, 64);
       expect(result.bindings['albedo']!.textureBinding, 65);
-      expect(result.bindings['albedo']!.samplerBinding, 66);
+      expect(result.bindings['albedo']!.samplerBinding, 193);
     });
 
     test('throws when the translator disagrees with the prediction', () {

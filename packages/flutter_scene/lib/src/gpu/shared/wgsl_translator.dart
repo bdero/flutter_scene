@@ -86,17 +86,11 @@ class WgslTranslationCache {
       return cached.translation;
     }
 
-    final bindings = WgslBindingMap.predict(resources);
-    final samplerBindings = <int, int>{
-      for (final r in resources)
-        if (r.kind == WgslResourceKind.combinedTextureSampler)
-          r.binding: bindings[r.name]!.samplerBinding!,
-    };
-
+    final bindings = WgslBindingMap.mapped(resources);
     final wgsl = _translator.translate(
       spirv,
       shaderName: shaderName,
-      samplerBindings: samplerBindings,
+      samplerBindings: bindings.samplerMappings,
     );
 
     // Cheap, and it turns a translator that changed its assignment policy into

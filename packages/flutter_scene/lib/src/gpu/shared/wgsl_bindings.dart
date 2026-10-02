@@ -115,6 +115,55 @@ class WgslBindingMap {
     return WgslBindingMap._(Map.unmodifiable(out));
   }
 
+  /// Where a split sampler sits relative to its texture under [mapped].
+  ///
+  /// impellerc numbers vertex resources from 0 and fragment resources from 64,
+  /// and the lit shader's sampler cap keeps both ranges well under 64 entries,
+  /// so `binding + 128` never lands on a texture, a uniform, or another
+  /// sampler, and stays far below WebGPU's `maxBindingsPerBindGroup` of 1000.
+  static const int splitSamplerOffset = 128;
+
+  /// The layout when the translator is handed [samplerMappings], which is what
+  /// the shim does.
+  ///
+  /// Supplying any sampler mapping turns off Tint's conflict resolution, so
+  /// every texture and uniform keeps its bundle binding and each split sampler
+  /// lands exactly where it is mapped. [predict] describes the unmapped policy
+  /// instead, and is what a stock `tint` run produces.
+  factory WgslBindingMap.mapped(
+    List<WgslReflectedResource> resources, {
+    int group = 0,
+  }) {
+    final out = <String, WgslBinding>{};
+    for (final r in resources) {
+      if (out.containsKey(r.name)) {
+        throw WgslBindingMismatch('duplicate resource name "${r.name}"');
+      }
+      if (r.binding >= splitSamplerOffset) {
+        throw WgslBindingMismatch(
+          '"${r.name}" is bound at ${r.binding}, at or past the split sampler '
+          'range that starts at $splitSamplerOffset',
+        );
+      }
+      out[r.name] = (
+        name: r.name,
+        group: group,
+        textureBinding: r.binding,
+        samplerBinding: r.kind == WgslResourceKind.combinedTextureSampler
+            ? r.binding + splitSamplerOffset
+            : null,
+      );
+    }
+    return WgslBindingMap._(Map.unmodifiable(out));
+  }
+
+  /// The translator's sampler mappings for this layout, each combined sampler's
+  /// bundle binding to its split sampler's slot.
+  Map<int, int> get samplerMappings => {
+    for (final b in bindings.values)
+      if (b.samplerBinding != null) b.textureBinding: b.samplerBinding!,
+  };
+
   /// The binding for [name], or null when the shader does not declare it.
   WgslBinding? operator [](String name) => bindings[name];
 
