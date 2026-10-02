@@ -17,6 +17,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_scene/scene.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/coplanar_overlaps.dart';
+// ignore: implementation_imports
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -195,6 +197,74 @@ void main() {
     // Forward depth (shadow maps, masks) keeps the 24-bit default on web, so
     // a float format's cost lands only on reversed camera passes.
     if (kIsWeb) expect(forward, gpu.PixelFormat.d24UnormS8Uint);
+  });
+
+  testWidgets('dense coplanar overlaps keep the lint in its slice', (
+    tester,
+  ) async {
+    await Scene.initializeStaticResources();
+    final scene = Scene();
+    // Two coplanar 100 by 100 grids, 20,000 triangles each, half overlapping.
+    MeshGeometry grid() {
+      const cells = 100;
+      const step = 0.1;
+      return MeshGeometry.fromArrays(
+        positions: Float32List.fromList([
+          for (var i = 0; i <= cells; i++)
+            for (var j = 0; j <= cells; j++) ...[i * step, 0.0, j * step],
+        ]),
+        indices: [
+          for (var i = 0; i < cells; i++)
+            for (var j = 0; j < cells; j++) ...[
+              i * (cells + 1) + j,
+              i * (cells + 1) + j + 1,
+              (i + 1) * (cells + 1) + j + 1,
+              i * (cells + 1) + j,
+              (i + 1) * (cells + 1) + j + 1,
+              (i + 1) * (cells + 1) + j,
+            ],
+        ],
+      );
+    }
+
+    scene.add(Node(name: 'a', mesh: Mesh(grid(), UnlitMaterial())));
+    scene.add(
+      Node(name: 'b', mesh: Mesh(grid(), UnlitMaterial()))
+        ..position = vm.Vector3(5, 0, 0),
+    );
+    await show(tester, scene, camera());
+
+    // The longest 2 ms slice of one scan, and how many slices it took.
+    ({int longest, int slices, int overlaps}) scanInSlices() {
+      // ignore: invalid_use_of_internal_member
+      final scan = CoplanarOverlapScan(scene.renderScene.items);
+      var longest = 0;
+      var slices = 0;
+      while (true) {
+        final watch = Stopwatch()..start();
+        final done = scan.advance(const Duration(milliseconds: 2));
+        watch.stop();
+        slices++;
+        if (watch.elapsedMicroseconds > longest) {
+          longest = watch.elapsedMicroseconds;
+        }
+        if (done) break;
+      }
+      return (longest: longest, slices: slices, overlaps: scan.result!.length);
+    }
+
+    // The first scan also pays for compiling the scan's code (debug builds
+    // run it on the JIT), so the measured one is a repeat.
+    scanInSlices();
+    final repeat = scanInSlices();
+    // ignore: avoid_print
+    print(
+      'DEPTH_TEST dense lint: slices=${repeat.slices} '
+      'longest=${repeat.longest / 1000} ms overlaps=${repeat.overlaps}',
+    );
+    expect(repeat.overlaps, 1);
+    // A 2 ms slice may run one bounded step past its budget.
+    if (!kIsWeb) expect(repeat.longest, lessThan(6000));
   });
 
   testWidgets('the coplanar lint gets through a dense mesh', (tester) async {

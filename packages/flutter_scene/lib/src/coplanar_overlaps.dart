@@ -157,9 +157,10 @@ class CoplanarOverlapScan {
       if (item.material.depthCompare == gpu.CompareFunction.always) continue;
       final geometry = item.geometry;
       if (geometry.primitiveType != gpu.PrimitiveType.triangle) continue;
-      final triangles = _localTriangles(geometry);
+      final local = _Triangles();
+      yield* _localTriangles(geometry, local);
+      final triangles = local.corners;
       if (triangles == null) continue;
-      yield null;
       final instances = item.instanceTransforms;
       if (instances == null) {
         yield* _collectGroups(
@@ -210,8 +211,8 @@ class CoplanarOverlapScan {
           if (separation >= limit!(distance)) continue;
         }
         if (a.item.material.depthLayer != b.item.material.depthLayer) continue;
-        final overlap = _overlapArea(a, b);
-        yield null;
+        final overlap = _Overlap();
+        yield* _measureOverlap(a, b, overlap);
         if (overlap.area < kCoplanarMinArea) continue;
         overlaps.add(
           CoplanarOverlap(
@@ -278,11 +279,25 @@ class _PlaneGroup {
   final Vector3 min = Vector3.all(double.infinity);
   final Vector3 max = Vector3.all(double.negativeInfinity);
   // World-space triangle corners, nine floats per triangle.
-  final List<double> corners = [];
+  final _Floats corners = _Floats();
   // The instance transform's translation and the item's geometry, for the
   // spacing hint.
   Vector3 origin = Vector3.zero();
   Matrix4 transform = Matrix4.identity();
+
+  void add(Vector3 p) {
+    corners.add3(p.x, p.y, p.z);
+    min.setValues(
+      math.min(min.x, p.x),
+      math.min(min.y, p.y),
+      math.min(min.z, p.z),
+    );
+    max.setValues(
+      math.max(max.x, p.x),
+      math.max(max.y, p.y),
+      math.max(max.z, p.z),
+    );
+  }
 
   double distanceTo(Vector3 eye) {
     final dx = eye.x < min.x
@@ -298,25 +313,50 @@ class _PlaneGroup {
   }
 }
 
-// Local-space triangle corners of [geometry], nine floats per triangle, or
-// null when it keeps no CPU data or is too dense to check.
-Float32List? _localTriangles(Geometry geometry) {
+// A growable run of doubles in typed storage, so a large group's corners
+// cost no allocation per value.
+class _Floats {
+  Float64List _data = Float64List(72);
+  int length = 0;
+
+  double operator [](int index) => _data[index];
+
+  void add3(double x, double y, double z) {
+    if (length + 3 > _data.length) {
+      _data = Float64List(_data.length * 2)..setRange(0, length, _data);
+    }
+    _data[length] = x;
+    _data[length + 1] = y;
+    _data[length + 2] = z;
+    length += 3;
+  }
+}
+
+// A geometry's local-space triangles, filled in by [_localTriangles].
+class _Triangles {
+  Float32List? corners;
+}
+
+// Local-space triangle corners of [geometry] into [out], nine floats per
+// triangle, yielding every thousand or so triangles; [out] stays empty when
+// the geometry keeps no CPU data or is too dense to check.
+Iterable<void> _localTriangles(Geometry geometry, _Triangles out) sync* {
   final data = geometry.cpuMeshData;
-  if (data.vertexCount == 0) return null;
+  if (data.vertexCount == 0) return;
   final positions = data.positions;
   final vertices = data.vertices;
   int? stride;
   if (positions == null) {
-    if (vertices == null) return null;
+    if (vertices == null) return;
     stride = vertices.lengthInBytes ~/ data.vertexCount;
     if (stride != kUnskinnedPerVertexSize && stride != kSkinnedPerVertexSize) {
-      return null;
+      return;
     }
   }
   final indices = data.indices;
   final count = indices == null ? data.vertexCount : data.indexCount;
   final triangleCount = count ~/ 3;
-  if (triangleCount == 0 || triangleCount > _kMaxTrianglesPerItem) return null;
+  if (triangleCount == 0 || triangleCount > _kMaxTrianglesPerItem) return;
   int indexAt(int i) {
     if (indices == null) return i;
     return data.indexType == gpu.IndexType.int16
@@ -324,21 +364,22 @@ Float32List? _localTriangles(Geometry geometry) {
         : indices.getUint32(i * 4, Endian.little);
   }
 
-  final out = Float32List(triangleCount * 9);
+  final corners = Float32List(triangleCount * 9);
   for (var i = 0; i < triangleCount * 3; i++) {
+    if (i % 3072 == 0) yield null;
     final v = indexAt(i);
     if (positions != null) {
-      out[i * 3] = positions[v * 3];
-      out[i * 3 + 1] = positions[v * 3 + 1];
-      out[i * 3 + 2] = positions[v * 3 + 2];
+      corners[i * 3] = positions[v * 3];
+      corners[i * 3 + 1] = positions[v * 3 + 1];
+      corners[i * 3 + 2] = positions[v * 3 + 2];
     } else {
       final o = v * stride!;
-      out[i * 3] = vertices!.getFloat32(o, Endian.little);
-      out[i * 3 + 1] = vertices.getFloat32(o + 4, Endian.little);
-      out[i * 3 + 2] = vertices.getFloat32(o + 8, Endian.little);
+      corners[i * 3] = vertices!.getFloat32(o, Endian.little);
+      corners[i * 3 + 1] = vertices.getFloat32(o + 4, Endian.little);
+      corners[i * 3 + 2] = vertices.getFloat32(o + 8, Endian.little);
     }
   }
-  return out;
+  out.corners = corners;
 }
 
 // Plane cells for grouping, over twice the grouping tolerances so a value
@@ -372,6 +413,7 @@ Iterable<void> _collectGroups(
 ) sync* {
   final cells = <int, List<_PlaneGroup>>{};
   final p0 = Vector3.zero(), p1 = Vector3.zero(), p2 = Vector3.zero();
+  final normal = Vector3.zero();
   final cosAngle = math.cos(kCoplanarAngleDegrees * degrees2Radians);
   // A mirroring transform flips the winding; keep the facing it renders.
   final mirrored = world.determinant() < 0;
@@ -389,19 +431,20 @@ Iterable<void> _collectGroups(
       ..transform3(p0)
       ..transform3(p1)
       ..transform3(p2);
-    final normal = (p1 - p0).cross(p2 - p0);
+    // The face normal, (p1 - p0) x (p2 - p0), without allocating.
+    final ex = p1.x - p0.x, ey = p1.y - p0.y, ez = p1.z - p0.z;
+    final fx = p2.x - p0.x, fy = p2.y - p0.y, fz = p2.z - p0.z;
+    normal.setValues(ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx);
     final length = normal.length;
     // Also skips a degenerate transform's non-finite positions.
     if (!(length >= 1e-9)) continue;
-    normal.scale(1.0 / length);
-    if (mirrored) normal.negate();
+    normal.scale((mirrored ? -1.0 : 1.0) / length);
     final offset = normal.dot(p0);
     if (!offset.isFinite) continue;
-    final values = [normal.x, normal.y, normal.z, offset];
     for (var d = 0; d < 4; d++) {
       final cell = d < 3 ? _kNormalCell : _kOffsetCell;
       final tolerance = d < 3 ? _kNormalTolerance : kCoplanarExactTolerance;
-      final position = values[d] / cell;
+      final position = (d < 3 ? normal[d] : offset) / cell;
       index[d] = position.floor();
       final fraction = position - index[d];
       reach[d] = fraction * cell < tolerance
@@ -435,7 +478,7 @@ Iterable<void> _collectGroups(
       }
     }
     if (group == null) {
-      group = _PlaneGroup(item, instance, normal, offset)
+      group = _PlaneGroup(item, instance, normal.clone(), offset)
         ..origin = (origin ??= world.getTranslation())
         ..transform = (transform ??= Matrix4.copy(world));
       cells
@@ -446,55 +489,50 @@ Iterable<void> _collectGroups(
           .add(group);
       groups.add(group);
     }
-    for (final p in [p0, p1, p2]) {
-      group.corners
-        ..add(p.x)
-        ..add(p.y)
-        ..add(p.z);
-      group.min.setValues(
-        math.min(group.min.x, p.x),
-        math.min(group.min.y, p.y),
-        math.min(group.min.z, p.z),
-      );
-      group.max.setValues(
-        math.max(group.max.x, p.x),
-        math.max(group.max.y, p.y),
-        math.max(group.max.z, p.z),
-      );
-    }
+    group
+      ..add(p0)
+      ..add(p1)
+      ..add(p2);
   }
 }
 
-// The area where [a] and [b] overlap in [a]'s plane, and its center.
-({double area, Vector3 center}) _overlapArea(_PlaneGroup a, _PlaneGroup b) {
+// Where two plane groups overlap, filled in by [_measureOverlap].
+class _Overlap {
+  double area = 0.0;
+  Vector3 center = Vector3.zero();
+}
+
+// Measures where [a] and [b] overlap in [a]'s plane into [out], yielding
+// between slices small enough for a frame. Few enough triangle pairs clip
+// exactly; denser groups take the overlap of their projected bounds, found
+// in one pass over each group's corners.
+Iterable<void> _measureOverlap(
+  _PlaneGroup a,
+  _PlaneGroup b,
+  _Overlap out,
+) sync* {
   final n = a.normal;
   // A basis in the plane.
   final helper = n.x.abs() < 0.9 ? Vector3(1, 0, 0) : Vector3(0, 1, 0);
   final u = n.cross(helper)..normalize();
   final v = n.cross(u)..normalize();
-  List<List<double>> project(_PlaneGroup g) {
-    final out = <List<double>>[];
-    for (var t = 0; t < g.corners.length; t += 9) {
-      final tri = <double>[];
-      for (var k = 0; k < 9; k += 3) {
-        final x = g.corners[t + k], y = g.corners[t + k + 1];
-        final z = g.corners[t + k + 2];
-        tri
-          ..add(x * u.x + y * u.y + z * u.z)
-          ..add(x * v.x + y * v.y + z * v.z);
-      }
-      out.add(tri);
-    }
-    return out;
-  }
-
-  final trisA = project(a);
-  final trisB = project(b);
+  final countA = a.corners.length ~/ 9;
+  final countB = b.corners.length ~/ 9;
   var area = 0.0;
   var cx = 0.0, cy = 0.0;
-  if (trisA.length * trisB.length <= _kMaxTrianglePairs) {
-    for (final ta in trisA) {
+  if (countA * countB <= _kMaxTrianglePairs) {
+    List<double> project(_PlaneGroup g, int t) => [
+      for (var k = t; k < t + 9; k += 3) ...[
+        g.corners[k] * u.x + g.corners[k + 1] * u.y + g.corners[k + 2] * u.z,
+        g.corners[k] * v.x + g.corners[k + 1] * v.y + g.corners[k + 2] * v.z,
+      ],
+    ];
+    final trisB = [for (var t = 0; t < countB; t++) project(b, t * 9)];
+    var pairs = 0;
+    for (var i = 0; i < countA; i++) {
+      final ta = project(a, i * 9);
       for (final tb in trisB) {
+        if (++pairs % 256 == 0) yield null;
         final clipped = clipConvexPolygons(ta, tb);
         final polygonArea = polygonAreaAndCentroid(clipped);
         area += polygonArea.area;
@@ -504,26 +542,52 @@ Iterable<void> _collectGroups(
     }
   } else {
     // Too dense to clip pairwise; take the overlap of the projected bounds.
-    double minOf(List<List<double>> tris, int axis) => tris
-        .expand((t) => [t[axis], t[axis + 2], t[axis + 4]])
-        .reduce(math.min);
-    double maxOf(List<List<double>> tris, int axis) => tris
-        .expand((t) => [t[axis], t[axis + 2], t[axis + 4]])
-        .reduce(math.max);
-    final x0 = math.max(minOf(trisA, 0), minOf(trisB, 0));
-    final x1 = math.min(maxOf(trisA, 0), maxOf(trisB, 0));
-    final y0 = math.max(minOf(trisA, 1), minOf(trisB, 1));
-    final y1 = math.min(maxOf(trisA, 1), maxOf(trisB, 1));
+    final bounds = Float64List(8);
+    yield* _projectedBounds(a, u, v, bounds, 0);
+    yield* _projectedBounds(b, u, v, bounds, 4);
+    final x0 = math.max(bounds[0], bounds[4]);
+    final x1 = math.min(bounds[1], bounds[5]);
+    final y0 = math.max(bounds[2], bounds[6]);
+    final y1 = math.min(bounds[3], bounds[7]);
     if (x1 > x0 && y1 > y0) {
       area = (x1 - x0) * (y1 - y0);
       cx = (x0 + x1) * 0.5 * area;
       cy = (y0 + y1) * 0.5 * area;
     }
   }
-  if (area <= 0) return (area: 0.0, center: Vector3.zero());
-  cx /= area;
-  cy /= area;
-  return (area: area, center: u * cx + v * cy + n * a.offset);
+  if (area <= 0) return;
+  out
+    ..area = area
+    ..center = u * (cx / area) + v * (cy / area) + n * a.offset;
+}
+
+// The bounds of [g]'s corners along [u] and [v] (min u, max u, min v, max v)
+// into [out] at [at], yielding every few thousand corners.
+Iterable<void> _projectedBounds(
+  _PlaneGroup g,
+  Vector3 u,
+  Vector3 v,
+  Float64List out,
+  int at,
+) sync* {
+  var minU = double.infinity, maxU = double.negativeInfinity;
+  var minV = double.infinity, maxV = double.negativeInfinity;
+  final corners = g.corners;
+  for (var k = 0; k < corners.length; k += 3) {
+    if (k % 6144 == 0) yield null;
+    final x = corners[k], y = corners[k + 1], z = corners[k + 2];
+    final pu = x * u.x + y * u.y + z * u.z;
+    final pv = x * v.x + y * v.y + z * v.z;
+    if (pu < minU) minU = pu;
+    if (pu > maxU) maxU = pu;
+    if (pv < minV) minV = pv;
+    if (pv > maxV) maxV = pv;
+  }
+  out
+    ..[at] = minU
+    ..[at + 1] = maxU
+    ..[at + 2] = minV
+    ..[at + 3] = maxV;
 }
 
 // "Pieces 8.4 m long placed 8.0 m apart": two instances of one geometry whose

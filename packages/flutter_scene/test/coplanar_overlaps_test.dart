@@ -68,6 +68,20 @@ Float32List _sphereTriangles({required int rings, required int segments}) {
   return Float32List.fromList(out);
 }
 
+// A [cells] by [cells] grid [size] meters across in the xz plane, facing +y.
+Float32List _gridTriangles(int cells, double size) {
+  final step = size / cells;
+  final out = <double>[];
+  for (var i = 0; i < cells; i++) {
+    for (var j = 0; j < cells; j++) {
+      final x0 = i * step, x1 = x0 + step, z0 = j * step, z1 = z0 + step;
+      out.addAll([x0, 0, z0, x0, 0, z1, x1, 0, z1]);
+      out.addAll([x0, 0, z0, x1, 0, z1, x1, 0, z0]);
+    }
+  }
+  return Float32List.fromList(out);
+}
+
 class _BoxGeometry extends _MeshGeometry {
   _BoxGeometry(this.size) : super(_boxTriangles(size));
 
@@ -216,6 +230,24 @@ void main() {
       scan.result!.map((o) => o.area).toList(),
       whole.map((o) => o.area).toList(),
     );
+  });
+
+  test('dense overlaps measure in slices from their bounds', () {
+    // Two coplanar 100 by 100 grids, 20,000 triangles each, overlapping by
+    // half: far past pairwise clipping, so the overlap comes from bounds.
+    final grid = _MeshGeometry(_gridTriangles(100, 10.0));
+    final scan = CoplanarOverlapScan([
+      _single(grid, _StubMaterial(), Vector3.zero()),
+      _single(grid, _StubMaterial(), Vector3(5, 0, 0)),
+    ]);
+    var slices = 0;
+    while (!scan.advance(Duration.zero)) {
+      slices++;
+    }
+    expect(slices, greaterThan(100));
+    final overlap = scan.result!.single;
+    expect(overlap.area, closeTo(50.0, 1e-3));
+    expect(overlap.center.x, closeTo(7.5, 1e-3));
   });
 
   test('a dense curved mesh groups its planes in linear time', () {
