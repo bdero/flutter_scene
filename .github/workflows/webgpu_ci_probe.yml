@@ -35,11 +35,14 @@ jobs:
           # No flags gives no adapter; --enable-unsafe-webgpu gives SwiftShader.
           # The other two put WebGL on the stack Dawn renders with, in case the
           # bitmap handoff needs both APIs on one device.
+          # Rendering works under --enable-unsafe-webgpu, but reading the
+          # canvas back returned zeros; these look for a configuration where
+          # the canvas export works too.
           runs=(
             "--enable-unsafe-webgpu|"
-            "--enable-unsafe-webgpu|--wasm"
-            "--enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan|"
-            "--enable-unsafe-webgpu --enable-unsafe-swiftshader --use-angle=swiftshader|"
+            "--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader|"
+            "--enable-unsafe-webgpu --disable-gpu-compositing|"
+            "--enable-unsafe-webgpu --enable-features=Vulkan,SkiaGraphite --use-vulkan=swiftshader|"
           )
           for run in "${runs[@]}"; do
             flags="${run%%|*}"
