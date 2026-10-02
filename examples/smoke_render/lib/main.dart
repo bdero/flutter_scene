@@ -15,7 +15,7 @@ Future<void> main() async {
   );
   // Geometry and material constructors touch the shader bundle, which must
   // be loaded first (the web backend has no synchronous load).
-  await Scene.initializeStaticResources();
+  await Scene.preload(smaa: true);
   await smoke.preload?.call();
   runApp(SmokeApp(smoke));
 }

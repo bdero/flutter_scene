@@ -47,7 +47,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
   });
 
   testWidgets('residentBytes sums the whole mip chain', (_) async {

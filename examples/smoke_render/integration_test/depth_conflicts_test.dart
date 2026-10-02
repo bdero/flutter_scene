@@ -72,7 +72,7 @@ void main() {
   }
 
   testWidgets('overlaps sharing a material still fight', (tester) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final scene = Scene();
     final shared = UnlitMaterial()..doubleSided = true;
     scene.add(
@@ -101,7 +101,7 @@ void main() {
   });
 
   testWidgets('a cutout covers only what it shows', (tester) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final scene = Scene();
     scene.add(
       Node(
@@ -138,7 +138,7 @@ void main() {
   });
 
   testWidgets('blended surfaces are reported, not tested', (tester) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final scene = Scene();
     scene.add(
       Node(
@@ -180,7 +180,7 @@ void main() {
   });
 
   testWidgets('motion while the probe waits does not count', (tester) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final scene = Scene();
     scene.add(
       Node(
@@ -229,7 +229,7 @@ void main() {
   });
 
   testWidgets('only reversed camera depth pays for float', (tester) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final reversed = gpu.reversedDepthStencilFormat;
     final forward = gpu.gpuContext.defaultDepthStencilFormat;
     // ignore: avoid_print
@@ -244,7 +244,7 @@ void main() {
   testWidgets('dense coplanar overlaps keep the lint in its slice', (
     tester,
   ) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final scene = Scene();
     // Two coplanar 100 by 100 grids, 20,000 triangles each, half overlapping.
     MeshGeometry grid() {
@@ -310,7 +310,7 @@ void main() {
   });
 
   testWidgets('the coplanar lint gets through a dense mesh', (tester) async {
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     final scene = Scene();
     // 16,128 triangles, nearly every one its own plane.
     scene.add(

@@ -77,7 +77,7 @@ void main() {
   testWidgets('shadow receiver culling is pixel-identical', (tester) async {
     await tester.pumpWidget(const SizedBox.expand());
     await tester.pump();
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
 
     final scenes = <_ParityScene>[if (!_skipCity) _buildCity()];
     final externalPaths = [
