@@ -614,7 +614,7 @@ class _DepthPrepassEncoder {
     }
     _renderPass.bindUniform(
       fragmentShader.cachedUniformSlot(_infoBlockName),
-      _transientsBuffer.emplace(ByteData.sublistView(_depthInfo)),
+      _transientsBuffer.emplace(scratchBytesOf(_depthInfo)),
     );
     if (surfaceShader != null) {
       item.material.bindDepthSurface(

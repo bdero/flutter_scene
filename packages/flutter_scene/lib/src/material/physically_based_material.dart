@@ -1683,7 +1683,7 @@ class PhysicallyBasedMaterial extends Material {
     textureTransforms[7] = transformedUvs ? 1.0 : 0.0;
     pass.bindUniform(
       shader.cachedUniformSlot('TextureTransforms'),
-      transientsBuffer.emplace(ByteData.sublistView(textureTransforms)),
+      transientsBuffer.emplace(scratchBytesOf(textureTransforms)),
     );
 
     _bindSlot(pass, shader, 'base_color_texture', baseColorTexture);

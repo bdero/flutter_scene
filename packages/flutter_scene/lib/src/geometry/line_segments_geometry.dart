@@ -163,7 +163,7 @@ class LineSegmentsGeometry extends Geometry {
       pass.bindVertexBuffer(instances, slot: 1);
     }
 
-    final frameInfo = Float32List(44);
+    final frameInfo = _frameInfoScratch..fillRange(0, 44, 0.0);
     frameInfo.setRange(0, 16, cameraTransform.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     frameInfo[32] = cameraPosition.x;
@@ -176,7 +176,7 @@ class LineSegmentsGeometry extends Geometry {
     frameInfo[41] = currentDrawDepthOffset[1];
     pass.bindUniform(
       vertexShader.cachedUniformSlot('FrameInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
+      transientsBuffer.emplace(scratchBytesOf(frameInfo)),
     );
   }
 
@@ -257,3 +257,6 @@ final VertexLayoutDescriptor _kLineSegmentsLayout = VertexLayoutDescriptor(
     ),
   ],
 );
+
+// Shared by every draw; emplace copies it out.
+final Float32List _frameInfoScratch = Float32List(44);
