@@ -451,22 +451,31 @@ base class RenderPass {
             'Vertex shader has no input named "${attribute.name}"',
           );
         }
-        if (attribute.format.name.startsWith('uint') ||
-            attribute.format.name.startsWith('sint')) {
-          throw UnimplementedError(
-            'Integer vertex formats are not implemented in the WebGL2 '
-            'backend',
+        gl.enableVertexAttribArray(input.location);
+        final name = attribute.format.name;
+        final unsigned = name.startsWith('uint');
+        if (unsigned || name.startsWith('sint')) {
+          // Integer inputs (`in uvec2`) need the I variant, which keeps the
+          // values integral instead of converting them to float.
+          gl.vertexAttribIPointer(
+            input.location,
+            attribute.format.componentCount,
+            unsigned
+                ? web.WebGL2RenderingContext.UNSIGNED_INT
+                : web.WebGL2RenderingContext.INT,
+            buffer.strideInBytes,
+            bufferView.offsetInBytes + attribute.offsetInBytes,
+          );
+        } else {
+          gl.vertexAttribPointer(
+            input.location,
+            attribute.format.componentCount,
+            web.WebGL2RenderingContext.FLOAT,
+            false,
+            buffer.strideInBytes,
+            bufferView.offsetInBytes + attribute.offsetInBytes,
           );
         }
-        gl.enableVertexAttribArray(input.location);
-        gl.vertexAttribPointer(
-          input.location,
-          attribute.format.componentCount,
-          web.WebGL2RenderingContext.FLOAT,
-          false,
-          buffer.strideInBytes,
-          bufferView.offsetInBytes + attribute.offsetInBytes,
-        );
         gl.vertexAttribDivisor(input.location, divisor);
       }
       return;
