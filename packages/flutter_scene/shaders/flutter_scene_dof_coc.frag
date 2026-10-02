@@ -48,7 +48,9 @@ void main() {
     // Karis weight 1/(1+Inf) collapse to 0 and c*w = Inf*0 = NaN, which the
     // gather then spreads into a black bokeh disc. Half-float max is well above
     // any legitimate bloom source, so this only bounds pathological pixels.
-    vec3 c = min(texture(scene_color, v_uv + o).rgb, vec3(65504.0));
+    // Floor first, so a NaN maps to 0 rather than to the ceiling.
+    vec3 c = min(max(texture(scene_color, v_uv + o).rgb, vec3(0.0)),
+                 vec3(65504.0));
     float w = 1.0 / (1.0 + max(c.r, max(c.g, c.b)));
     color += c * w;
     weight += w;
