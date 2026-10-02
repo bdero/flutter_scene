@@ -43,10 +43,18 @@ adb shell dumpsys SurfaceFlinger > "$diag/surfaceflinger_$backend.txt" 2>&1 || t
 ) > "$diag/host_resources_$backend.txt" 2>&1 &
 monitor_pid=$!
 
-# A large ring buffer instead of a live stream, so diagnostics add no steady
-# traffic to the adb transport; it is dumped once at the end.
-adb logcat -G 16M || true
+# Only the tags that explain a dead or wrong app stream live, which keeps the
+# traffic over the adb transport small. The crash buffer is dumped at the end.
+start_logcat() {
+  adb logcat -v time \
+    flutter:V AndroidRuntime:V DEBUG:V libc:V tombstoned:V \
+    ActivityManager:I ActivityTaskManager:I lowmemorykiller:V Zygote:W \
+    EGL_emulation:W OpenGLRenderer:W vulkan:W goldfish_vulkan:W '*:S' \
+    >> "$diag/logcat_$backend.txt" 2>&1 &
+  logcat_pid=$!
+}
 adb logcat -c || true
+start_logcat
 
 pull_captures() {
   adb exec-out run-as "$pkg" sh -c 'cd files/smoke 2>/dev/null && tar cf - *.png' 2>/dev/null |
@@ -106,6 +114,8 @@ if [ "$code" -ne 0 ]; then
   adb kill-server || true
   adb start-server || true
   if timeout 60 adb wait-for-device && [ "$(adb get-state 2>/dev/null)" = "device" ]; then
+    # The adb restart ended the stream; resume it for the retry.
+    start_logcat
     # Stop the app left running so the retry launches it fresh.
     adb shell am force-stop "$pkg" || true
     drive 2
@@ -115,7 +125,8 @@ if [ "$code" -ne 0 ]; then
   fi
 fi
 
-adb logcat -d -v time > "$diag/logcat_$backend.txt" 2>&1 || true
+adb logcat -d -b crash -v time > "$diag/logcat_crash_$backend.txt" 2>&1 || true
+kill "$logcat_pid" 2>/dev/null || true
 adb devices -l > "$diag/adb_devices_after_$backend.txt" 2>&1 || true
 sudo -n dmesg -T > "$diag/host_dmesg_$backend.txt" 2>&1 || true
 cat /proc/meminfo > "$diag/host_meminfo_after_$backend.txt" 2>&1 || true
