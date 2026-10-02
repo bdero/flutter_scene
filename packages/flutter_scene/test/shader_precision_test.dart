@@ -128,6 +128,17 @@ fragment {
     ]) {
       expect(inputs, contains(decl));
     }
+    // A texture read takes its sampler's precision, so data samplers must be
+    // highp too or the highp arithmetic above reads fp16 values.
+    final engine = _shader('material_engine_lighting.glsl');
+    for (final decl in [
+      'uniform highp sampler2D shadow_map;',
+      'uniform highp sampler2D punctual_lights;',
+      'uniform highp sampler2D punctual_index;',
+      'uniform highp sampler2D irradiance_field;',
+    ]) {
+      expect(engine, contains(decl));
+    }
     final shadows = _shader('material_shadow_sampling.glsl');
     for (final decl in [
       'highp float receiver_depth = proj.z',
