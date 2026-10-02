@@ -25,8 +25,11 @@ highp vec3 GetModelScale() { return frag_info.model_scale.xyz; }
 uniform RadianceSampler prefiltered_radiance;
 uniform sampler2D brdf_lut;
 #endif
+// Data samplers are highp. A texture read takes its sampler's precision, and
+// the `<impeller/...>` includes default sampler2D to mediump, which fp16 GPUs
+// and llvmpipe honor.
 #ifndef FLUTTER_SCENE_SKIP_SHADOWS
-uniform sampler2D shadow_map;
+uniform highp sampler2D shadow_map;
 #endif
 #if !defined(FLUTTER_SCENE_SHADOW_CATCHER) && !defined(FLUTTER_SCENE_CUSTOM_AMBIENT)
 // The environment's diffuse SH coefficients and, when the world-space
@@ -70,12 +73,12 @@ uniform sampler2D ssao_texture;
 //   3: spot angular offset, shadow slot (-1 = none), falloff exponent, unused
 //   4-7: a shadow-casting spot's world -> clip matrix, or a shadow-casting
 //        point light's face-depth mapping and sampling parameters
-uniform sampler2D punctual_lights;
+uniform highp sampler2D punctual_lights;
 // The per-object light-index buffer: a 2D RGBA32F texture whose texels (row
 // major, index in .r) are light rows into punctual_lights. Each object shades
 // the slice [radiance_blend.w, radiance_blend.w + radiance_blend.z). Read by
 // computed UV (punctual_dims.yz give its width/height). A white placeholder is
 // bound and never read when the per-object count is 0.
-uniform sampler2D punctual_index;
+uniform highp sampler2D punctual_index;
 #endif
 

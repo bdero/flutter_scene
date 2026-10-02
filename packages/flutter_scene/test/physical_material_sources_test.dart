@@ -98,7 +98,7 @@ void main() {
       uniforms,
       contains(
         '#ifndef FLUTTER_SCENE_SKIP_SHADOWS\n'
-        'uniform sampler2D shadow_map;\n'
+        'uniform highp sampler2D shadow_map;\n'
         '#endif',
       ),
     );
