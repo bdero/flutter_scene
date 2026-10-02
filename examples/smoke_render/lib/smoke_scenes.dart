@@ -2209,15 +2209,22 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
           ),
         )..position = vm.Vector3(0, 0, 195),
       );
-      // Fully cut away, so the probe must test its coverage, not its quad.
+      // An opaque-pass cutout fully cut away by its vertex alpha, so the
+      // probe must test its coverage, not its quad.
       scene.add(
         Node(
           name: 'cutout',
           mesh: Mesh(
-            PlaneGeometry(width: 4, depth: 4),
-            PhysicallyBasedMaterial()
-              ..baseColorFactor = vm.Vector4(1, 0, 0, 0)
-              ..alphaMode = AlphaMode.mask,
+            MeshGeometry.fromArrays(
+              positions: Float32List.fromList([
+                -2, 0, -2, -2, 0, 2, 2, 0, 2, 2, 0, -2, //
+              ]),
+              colors: Float32List.fromList([
+                for (var i = 0; i < 4; i++) ...[1.0, 0.0, 0.0, 0.0],
+              ]),
+              indices: const [0, 1, 2, 0, 2, 3],
+            ),
+            PhysicallyBasedMaterial()..alphaMode = AlphaMode.mask,
           ),
         )..position = vm.Vector3(-3, 0, 14),
       );

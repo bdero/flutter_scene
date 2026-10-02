@@ -2690,8 +2690,9 @@ base class Scene implements SceneGraph {
   /// single screenshot cannot show this, since a fight can resolve one way in
   /// any one frame. Every image is drawn from one snapshot of the scene, so
   /// motion while the probe waits for the GPU does not count. Alpha-masked
-  /// materials cover only what they show; a `.fmat` whose own `Surface()`
-  /// cuts it is listed in `DepthConflictReport.untested` instead.
+  /// materials cover only what they show. Blended surfaces, which never hide
+  /// what is behind them, and a `.fmat` whose own `Surface()` cuts it are
+  /// listed in `DepthConflictReport.untested` instead.
   ///
   /// Call it after the scene has rendered at least one frame. It renders
   /// offscreen at [width] by [height] (the view's aspect ratio is [width] over

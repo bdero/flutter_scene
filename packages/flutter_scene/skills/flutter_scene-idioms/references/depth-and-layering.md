@@ -40,7 +40,7 @@ Leave `near` at its default unless geometry clips. The engine rasterizes with th
 
 Check in motion, with numbers, not with a screenshot.
 
-- **`await scene.probeDepthConflicts()`** renders the view's object ids several times (reversed draw order, changed depth rounding, sub-pixel camera offsets, and surfaces nudged a sliver apart) and reports every pair of nodes whose pixels change hands. `report.conflicts` is empty when nothing fights; `report.describe()` is a short log with node paths, pixel counts, and distances. Probe from the cameras the app actually uses, after the scene has rendered a frame. Surfaces sharing a material still count, since vertex colors or texture coordinates can tell them apart. A `.fmat` cut by its own `Surface()` is listed in `report.untested` rather than tested.
+- **`await scene.probeDepthConflicts()`** renders the view's object ids several times (reversed draw order, changed depth rounding, sub-pixel camera offsets, and surfaces nudged a sliver apart) and reports every pair of nodes whose pixels change hands. `report.conflicts` is empty when nothing fights; `report.describe()` is a short log with node paths, pixel counts, and distances. Probe from the cameras the app actually uses, after the scene has rendered a frame. Surfaces sharing a material still count, since vertex colors or texture coordinates can tell them apart. Blended surfaces and a `.fmat` cut by its own `Surface()` are listed in `report.untested` rather than tested.
 
   ```dart
   final report = await scene.probeDepthConflicts(camera: camera);

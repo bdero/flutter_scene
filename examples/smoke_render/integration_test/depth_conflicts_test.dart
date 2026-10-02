@@ -112,13 +112,13 @@ void main() {
         ),
       ),
     );
+    // Opaque pass, cut away entirely by its vertex alpha.
     scene.add(
       Node(
         name: 'cutout',
         mesh: Mesh(
-          quad(vm.Vector4(1, 1, 1, 1)),
+          quad(vm.Vector4(1, 0, 0, 0)),
           PhysicallyBasedMaterial()
-            ..baseColorFactor = vm.Vector4(1, 0, 0, 0)
             ..alphaMode = AlphaMode.mask
             ..doubleSided = true,
         ),
@@ -135,6 +135,48 @@ void main() {
     // ignore: avoid_print
     print('DEPTH_TEST cutout: pixels=${report.conflictPixelCount}');
     expect(report.conflicts, isEmpty, reason: report.describe());
+  });
+
+  testWidgets('blended surfaces are reported, not tested', (tester) async {
+    await Scene.initializeStaticResources();
+    final scene = Scene();
+    scene.add(
+      Node(
+        name: 'opaque',
+        mesh: Mesh(
+          quad(vm.Vector4(1, 1, 1, 1)),
+          UnlitMaterial()..doubleSided = true,
+        ),
+      ),
+    );
+    // Fully transparent, so it changes no pixel over the opaque quad.
+    scene.add(
+      Node(
+        name: 'glass',
+        mesh: Mesh(
+          quad(vm.Vector4(1, 1, 1, 1)),
+          UnlitMaterial()
+            ..baseColorFactor = vm.Vector4(1, 1, 1, 0)
+            ..alphaMode = AlphaMode.blend
+            ..doubleSided = true,
+        ),
+      ),
+    );
+    final view = camera();
+    await show(tester, scene, view);
+
+    final report = await scene.probeDepthConflicts(
+      camera: view,
+      width: _size,
+      height: _size,
+    );
+    // ignore: avoid_print
+    print(
+      'DEPTH_TEST blended: pixels=${report.conflictPixelCount} '
+      'untested=${report.untested.map((n) => n.name).toList()}',
+    );
+    expect(report.conflicts, isEmpty, reason: report.describe());
+    expect(report.untested.map((n) => n.name), ['glass']);
   });
 
   testWidgets('motion while the probe waits does not count', (tester) async {
