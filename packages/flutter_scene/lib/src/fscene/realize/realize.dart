@@ -184,7 +184,7 @@ Node _realizeWith(
   // into mesh primitives) runs once every component exists.
   context.runAfterRealize();
 
-  final root = Node(name: 'root');
+  final root = Node(name: 'root')..isImportRoot = true;
   for (final rootId in document.roots) {
     final node = nodes[rootId];
     if (node == null) {

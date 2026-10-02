@@ -259,7 +259,7 @@ Future<Node> _buildScene(
   final root = Node(
     name: 'root',
     localTransform: Matrix4.identity()..setEntry(2, 2, -1.0),
-  );
+  )..isImportRoot = true;
   if (doc.materialsVariants.isNotEmpty) {
     root.addComponent(
       MaterialsVariantsComponent.internal(

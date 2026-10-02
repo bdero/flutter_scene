@@ -3,12 +3,14 @@ part of '../animation.dart';
 /// Resolves the node an animation channel named [nodeName] drives under
 /// [bindRoot].
 ///
-/// Descendants win over the bind root. Importers synthesize a root named
-/// `root`, and rigs often name a joint `root` too, so matching the bind root
-/// first would retarget that joint's channel onto the import root.
-Node? resolveAnimationTarget(Node bindRoot, String nodeName) =>
-    bindRoot.getChildByName(nodeName) ??
-    (bindRoot.name == nodeName ? bindRoot : null);
+/// The bind root matches its own name first unless the engine named it.
+/// Import roots are named `root`, and rigs often name a joint `root` too, so
+/// for those the joint wins.
+Node? resolveAnimationTarget(Node bindRoot, String nodeName) {
+  final selfMatch = bindRoot.name == nodeName;
+  if (selfMatch && !bindRoot.hasEngineAssignedName) return bindRoot;
+  return bindRoot.getChildByName(nodeName) ?? (selfMatch ? bindRoot : null);
+}
 
 class _ChannelBinding {
   AnimationChannel channel;

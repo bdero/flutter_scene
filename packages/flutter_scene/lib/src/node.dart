@@ -695,6 +695,15 @@ base class Node implements SceneGraph {
   Node? get parent => _parent;
   bool _isSceneRoot = false;
 
+  /// Whether an importer synthesized this node as an imported scene's root.
+  @internal
+  bool isImportRoot = false;
+
+  /// Whether the engine named this node (an import root or the scene root),
+  /// so its name may collide with an authored one.
+  @internal
+  bool get hasEngineAssignedName => isImportRoot || _isSceneRoot;
+
   /// The collection of [MeshPrimitive] objects that represent the 3D
   /// geometry and material properties of this node.
   ///
@@ -1486,6 +1495,7 @@ base class Node implements SceneGraph {
       mesh: mesh?.clone(),
     );
     result.isJoint = isJoint;
+    result.isImportRoot = isImportRoot;
     result._localTransformTrs = _localTransformTrs?.clone();
     result._morphWeights = _morphWeights == null
         ? null
