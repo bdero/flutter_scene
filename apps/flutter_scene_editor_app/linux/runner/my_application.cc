@@ -57,6 +57,10 @@ static void my_application_activate(GApplication* application) {
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
+  // Release engines ignore FLUTTER_ENGINE_SWITCH_* environment switches, so
+  // the editor enables Impeller and Flutter GPU on the project itself.
+  fl_dart_project_set_enable_impeller(project, TRUE);
+  fl_dart_project_set_enable_flutter_gpu(project, TRUE);
 
   FlView* view = fl_view_new(project);
   GdkRGBA background_color;

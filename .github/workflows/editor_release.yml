@@ -38,12 +38,11 @@ jobs:
       matrix:
         include:
           - { runner: macos-latest, platform: macos }
-          # Linux and Windows are held back from the first releases. They still
-          # build profile (not release) for Flutter GPU pending
-          # flutter/flutter#190872, and Windows is unsigned. Restore these once
-          # those are sorted.
-          # - { runner: ubuntu-latest, platform: linux }
-          # - { runner: windows-latest, platform: windows }
+          - { runner: ubuntu-latest, platform: linux }
+          # TODO(editor-windows-signing): the Windows build is unsigned, so
+          # SmartScreen warns on first launch. Sign it once a certificate or
+          # Trusted Signing account exists.
+          - { runner: windows-latest, platform: windows }
     defaults:
       run:
         shell: bash
