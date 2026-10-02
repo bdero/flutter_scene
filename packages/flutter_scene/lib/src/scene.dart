@@ -74,7 +74,11 @@ import 'render/render_graph.dart';
 import 'render/render_graph_capture.dart';
 import 'render/render_stats.dart';
 import 'scene_encoder.dart'
-    show deferredPipelineBuilds, pipelineCacheSize, withPipelineBuildBudget;
+    show
+        beginDrawFailureFrame,
+        deferredPipelineBuilds,
+        pipelineCacheSize,
+        withPipelineBuildBudget;
 import 'render/render_scene.dart';
 import 'render/planar_reflection.dart';
 import 'render/planar_reflection_pass.dart';
@@ -1931,6 +1935,7 @@ base class Scene implements SceneGraph {
     }
 
     renderStats.beginFrame();
+    beginDrawFailureFrame();
 
     // Blend the environment volumes over the base by the primary view's camera
     // position, before the environment, sky bake, and sun light are read.

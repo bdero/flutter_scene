@@ -550,17 +550,39 @@ gpu.RenderPipeline? tryResolvePipeline(
   }
 }
 
-// Pipelines a draw already failed with, so each failure is reported once.
-final Expando<bool> _refusedDrawPipelines = Expando();
+// A pipeline is rejected once its draws fail in this many frames with no
+// successful draw between. A shader the driver cannot build fails every
+// frame, while a one-off failure (a descriptor pool running dry on Vulkan)
+// does not recur.
+const int _kRejectAfterFailedFrames = 3;
+
+// Failure streaks for pipelines whose last draw failed, as (last failing
+// frame, failing frame count). Cleared by a successful draw, so it is empty,
+// and free to check, in steady state.
+final Map<gpu.RenderPipeline, (int, int)> _failingPipelines = {};
+
+int _drawFailureFrame = 0;
+
+// Pipelines whose failed draws were already reported, so a failure that
+// keeps recurring between successful draws is logged once.
+final Expando<bool> _reportedDrawFailures = Expando();
+
+/// Starts a new frame for the failed-draw streaks [drawOrRejectPipeline]
+/// keeps, so a pipeline drawn in several passes of one frame counts once.
+void beginDrawFailureFrame() {
+  if (_failingPipelines.isNotEmpty) _drawFailureFrame++;
+}
 
 /// Draws [geometry] on [pass], skipping the draw instead of throwing when the
 /// backend refuses it.
 ///
 /// GLES compiles and links the program at the first draw, so a shader the
 /// driver rejects fails here rather than in [tryResolvePipeline], and keeps
-/// failing every frame after. [pipeline], the one bound for the draw, is
+/// failing every frame after. Once [pipeline], the one bound for the draw,
+/// fails in several frames with no successful draw between, it is
 /// rejected like a failed build, so later frames skip its draws and the rest
-/// of the scene still renders.
+/// of the scene still renders. A failure that does not persist only skips
+/// the draw.
 void drawOrRejectPipeline(
   gpu.RenderPass pass,
   Geometry geometry,
@@ -572,20 +594,46 @@ void drawOrRejectPipeline(
     geometry.draw(pass, instanceCount: instanceCount);
   } on Exception catch (error) {
     if (pipeline == null) rethrow;
-    if (_refusedDrawPipelines[pipeline] ?? false) return;
-    _refusedDrawPipelines[pipeline] = true;
-    for (final entry in _pipelineCache.entries) {
-      if (!identical(entry.value, pipeline)) continue;
-      _pipelineCache.remove(entry.key);
-      _rejectedPipelines.add(entry.key);
-      break;
-    }
-    debugPrint(
-      'flutter_scene: skipping draws whose pipeline the backend refused ('
-      '${material != null ? '${fmatSourcePathOf(material) ?? material.runtimeType} on ' : ''}'
-      '${geometry.runtimeType}). $error',
-    );
+    _recordFailedDraw(pipeline, geometry, material, error);
+    return;
   }
+  if (_failingPipelines.isNotEmpty && pipeline != null) {
+    _failingPipelines.remove(pipeline);
+  }
+}
+
+void _recordFailedDraw(
+  gpu.RenderPipeline pipeline,
+  Geometry geometry,
+  Material? material,
+  Exception error,
+) {
+  final streak = _failingPipelines[pipeline];
+  if (streak != null && streak.$1 == _drawFailureFrame) return;
+  final failedFrames = (streak?.$2 ?? 0) + 1;
+  final subject =
+      '${material != null ? '${fmatSourcePathOf(material) ?? material.runtimeType} on ' : ''}'
+      '${geometry.runtimeType}';
+  if (failedFrames < _kRejectAfterFailedFrames) {
+    _failingPipelines[pipeline] = (_drawFailureFrame, failedFrames);
+    if (_reportedDrawFailures[pipeline] ?? false) return;
+    _reportedDrawFailures[pipeline] = true;
+    debugPrint(
+      'flutter_scene: skipped a draw the backend refused ($subject). $error',
+    );
+    return;
+  }
+  _failingPipelines.remove(pipeline);
+  for (final entry in _pipelineCache.entries) {
+    if (!identical(entry.value, pipeline)) continue;
+    _pipelineCache.remove(entry.key);
+    _rejectedPipelines.add(entry.key);
+    break;
+  }
+  debugPrint(
+    'flutter_scene: skipping draws whose pipeline the backend refused in '
+    '$failedFrames frames ($subject). $error',
+  );
 }
 
 /// Records draw calls for one frame's color pass into a single
