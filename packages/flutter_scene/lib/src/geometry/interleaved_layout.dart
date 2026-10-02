@@ -62,22 +62,15 @@ abstract final class InterleavedLayoutAdapter {
     Float32List? colors,
     Float32List? tangents,
   }) {
-    _checkLength('positions', positions.length, 3 * vertexCount);
-    if (normals != null) {
-      _checkLength('normals', normals.length, 3 * vertexCount);
-    }
-    if (texCoords != null) {
-      _checkLength('texCoords', texCoords.length, 2 * vertexCount);
-    }
-    if (texCoords1 != null) {
-      _checkLength('texCoords1', texCoords1.length, 2 * vertexCount);
-    }
-    if (colors != null) {
-      _checkLength('colors', colors.length, 4 * vertexCount);
-    }
-    if (tangents != null) {
-      _checkLength('tangents', tangents.length, 4 * vertexCount);
-    }
+    checkAttributeLengths(
+      positions: positions,
+      vertexCount: vertexCount,
+      normals: normals,
+      texCoords: texCoords,
+      texCoords1: texCoords1,
+      colors: colors,
+      tangents: tangents,
+    );
 
     final out = Float32List(vertexCount * floatsPerVertex);
     for (var v = 0; v < vertexCount; v++) {
@@ -334,7 +327,9 @@ abstract final class InterleavedLayoutAdapter {
   /// This is the structure-of-arrays counterpart to [packUnskinned]; it
   /// avoids building an interleaved buffer at all, so a structure-of-arrays
   /// source uploads each stream with no interleave/de-interleave round trip.
-  static UnskinnedAttributeStreams unskinnedAttributeStreams({
+  /// Throws when a supplied attribute list does not hold one element per
+  /// vertex.
+  static void checkAttributeLengths({
     required Float32List positions,
     required int vertexCount,
     Float32List? normals,
@@ -359,6 +354,26 @@ abstract final class InterleavedLayoutAdapter {
     if (tangents != null) {
       _checkLength('tangents', tangents.length, 4 * vertexCount);
     }
+  }
+
+  static UnskinnedAttributeStreams unskinnedAttributeStreams({
+    required Float32List positions,
+    required int vertexCount,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? texCoords1,
+    Float32List? colors,
+    Float32List? tangents,
+  }) {
+    checkAttributeLengths(
+      positions: positions,
+      vertexCount: vertexCount,
+      normals: normals,
+      texCoords: texCoords,
+      texCoords1: texCoords1,
+      colors: colors,
+      tangents: tangents,
+    );
 
     // Supplied attributes copy in bulk (setAll on typed data is a memmove);
     // only absent attributes walk per vertex to fill their defaults. Large

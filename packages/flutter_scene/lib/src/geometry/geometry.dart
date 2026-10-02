@@ -370,22 +370,45 @@ abstract class Geometry {
     List<VertexBufferDescriptor> customBuffers,
   ) => null;
 
-  // One zero-filled buffer serves every declared attribute a geometry lacks,
-  // grown to the largest stream asked of it.
-  static gpu.DeviceBuffer? _zeroBuffer;
-  static int _zeroBufferBytes = 0;
+  // Shared default-filled buffers, one per fill, each grown to the largest
+  // stream asked of it. They stand in for attributes a geometry lacks: the
+  // zero fill for declared custom attributes and absent texture coordinates
+  // or tangents, the others for absent normals and colors.
+  static final List<gpu.DeviceBuffer?> _defaultBuffers = List.filled(
+    _StreamFill.values.length,
+    null,
+  );
+  static final List<int> _defaultBufferBytes = List.filled(
+    _StreamFill.values.length,
+    0,
+  );
 
-  static gpu.BufferView _zeroAttributeStream(int bytes) {
+  static gpu.BufferView _zeroAttributeStream(int bytes) =>
+      _defaultAttributeStream(_StreamFill.zero, bytes);
+
+  static gpu.BufferView _defaultAttributeStream(_StreamFill fill, int bytes) {
     final size = bytes < 16 ? 16 : bytes;
-    if (_zeroBuffer == null || _zeroBufferBytes < size) {
+    var buffer = _defaultBuffers[fill.index];
+    if (buffer == null || _defaultBufferBytes[fill.index] < size) {
       final capacity = 1 << (size - 1).bitLength;
-      _zeroBuffer = gpu.gpuContext.createDeviceBuffer(
+      final floats = Float32List(capacity ~/ 4);
+      switch (fill) {
+        case _StreamFill.zero:
+          break;
+        case _StreamFill.unitZ:
+          for (var i = 2; i < floats.length; i += 3) {
+            floats[i] = 1.0;
+          }
+        case _StreamFill.one:
+          floats.fillRange(0, floats.length, 1.0);
+      }
+      buffer = _defaultBuffers[fill.index] = gpu.gpuContext.createDeviceBuffer(
         gpu.StorageMode.hostVisible,
         capacity,
-      )..overwrite(ByteData(capacity));
-      _zeroBufferBytes = capacity;
+      )..overwrite(ByteData.sublistView(floats));
+      _defaultBufferBytes[fill.index] = capacity;
     }
-    return gpu.BufferView(_zeroBuffer!, offsetInBytes: 0, lengthInBytes: size);
+    return gpu.BufferView(buffer, offsetInBytes: 0, lengthInBytes: size);
   }
 
   /// Whether this geometry carries any custom attribute streams (see
@@ -597,6 +620,46 @@ abstract class Geometry {
     }
   }
 
+  /// Uploads vertex [streams] in a caller-defined format, one per vertex
+  /// buffer slot in order, plus optional [indices].
+  ///
+  /// The bytes reach the GPU as given. Describe them with [setVertexLayout]
+  /// and read them with a vertex shader from [setVertexShader] (or a
+  /// `ShaderMaterial` vertex shader); see "Custom vertex formats" in
+  /// MATERIALS.md for what that shader must declare and write. Give the
+  /// depth-style passes a position-only path with [setDepthOnlyVertex].
+  ///
+  /// The engine cannot read a packed position, so it scans no bounds and
+  /// keeps no positions for raycasting. Call [setLocalBounds], or the mesh is
+  /// never culled. [bufferArena] shares one GPU block between many meshes.
+  /// {@category Geometry}
+  void uploadVertexStreams(
+    List<TypedData> streams,
+    int vertexCount, {
+    TypedData? indices,
+    gpu.IndexType indexType = gpu.IndexType.int16,
+    GeometryBufferArena? bufferArena,
+  }) {
+    if (streams.isEmpty) {
+      throw ArgumentError.value(streams, 'streams', 'must not be empty');
+    }
+    _cpuVertices = null;
+    _cpuPositions = null;
+    _cpuTexCoords = null;
+    _cpuTexCoords1 = null;
+    _cpuNormals = null;
+    _cpuColors = null;
+    _cpuTangents = null;
+    // Indices alone still feed the wireframe overlay's edge list.
+    _cpuIndices = indices == null ? null : _asByteData(indices);
+    _uploadsCallerStreams = true;
+    _uploadStreams(streams, vertexCount, indices, indexType, bufferArena);
+  }
+
+  // Whether the streams came from [uploadVertexStreams], so binding them
+  // without a declared layout is a caller error rather than a built-in one.
+  bool _uploadsCallerStreams = false;
+
   /// Packs [streams] (one tightly packed buffer per vertex slot) and any
   /// [indices] into host-visible [gpu.DeviceBuffer] storage, binding the
   /// streams via [setVertexStreams] and the indices via [setIndices]. Shared
@@ -626,16 +689,20 @@ abstract class Geometry {
   /// storage, `splitUnskinnedAttributes` and `.fscene` payloads are byte
   /// storage, and packed indices are their own width (see
   /// `InterleavedLayoutAdapter.indexUploadView`).
+  ///
+  /// A null stream binds the matching entry of [residentViews] instead, a
+  /// view already on the GPU (a shared default stream), and uploads nothing.
   void _uploadStreams(
-    List<TypedData> streams,
+    List<TypedData?> streams,
     int vertexCount,
     TypedData? indices,
     gpu.IndexType indexType,
-    GeometryBufferArena? bufferArena,
-  ) {
+    GeometryBufferArena? bufferArena, {
+    List<gpu.BufferView?>? residentViews,
+  }) {
     var vertexBytes = 0;
     for (final stream in streams) {
-      vertexBytes += stream.lengthInBytes;
+      vertexBytes += stream?.lengthInBytes ?? 0;
     }
 
     final totalBytes = vertexBytes + (indices?.lengthInBytes ?? 0);
@@ -654,7 +721,12 @@ abstract class Geometry {
 
     var offset = 0;
     final views = <gpu.BufferView>[];
-    for (final stream in streams) {
+    for (var i = 0; i < streams.length; i++) {
+      final stream = streams[i];
+      if (stream == null) {
+        views.add(residentViews![i]!);
+        continue;
+      }
       gpu.writeGeometryData(
         deviceBuffer,
         stream,
@@ -1186,7 +1258,16 @@ abstract class Geometry {
   // cause is still obvious. Debug-only; the built-in layouts always agree.
   bool _checkDeclaredLayout() {
     final layout = _vertexLayout;
-    if (layout == null) return true;
+    if (layout == null) {
+      if (_uploadsCallerStreams) {
+        throw StateError(
+          'Geometry: uploadVertexStreams supplied a caller-defined format, '
+          'but no layout describes it. Call setVertexLayout with one buffer '
+          'per stream, plus the instance-rate model transform.',
+        );
+      }
+      return true;
+    }
     final expected = vertexStreamCount + (bindsModelTransformInstance ? 1 : 0);
     if (layout.buffers.length != expected) {
       throw StateError(
@@ -1300,7 +1381,40 @@ abstract class Geometry {
   /// the depth passes drive it through [bind] like the color pass.
   @internal
   ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex =>
-      null;
+      _declaredDepthOnlyVertex;
+
+  ({gpu.Shader shader, VertexLayoutDescriptor layout})?
+  _declaredDepthOnlyVertex;
+
+  /// Assigns the position-only vertex [shader] the depth-style passes (shadow
+  /// maps, the depth prepass, the selection mask) draw this geometry with, or
+  /// clears it when [shader] is null.
+  ///
+  /// Those passes bind only the first vertex stream, at slot 0, and the
+  /// engine's instance-rate model transform at slot 1. [positionStream]
+  /// describes that first stream as [shader] reads it; the engine appends the
+  /// instance slot. Without a depth shader, a geometry with a declared
+  /// [setVertexLayout] draws depth through its full vertex shader and every
+  /// stream, which also works but fetches more per vertex.
+  /// {@category Geometry}
+  void setDepthOnlyVertex(
+    gpu.Shader? shader, {
+    VertexBufferDescriptor? positionStream,
+  }) {
+    if (shader == null) {
+      _declaredDepthOnlyVertex = null;
+      return;
+    }
+    if (positionStream == null) {
+      throw ArgumentError.notNull('positionStream');
+    }
+    _declaredDepthOnlyVertex = (
+      shader: shader,
+      layout: VertexLayoutDescriptor(
+        buffers: [positionStream, _kInstanceModelTransformBuffer],
+      ),
+    );
+  }
 }
 
 /// Geometry whose vertices use the unskinned 72-byte layout.
@@ -1365,7 +1479,23 @@ class UnskinnedGeometry extends Geometry {
     gpu.IndexType indexType = gpu.IndexType.int16,
     GeometryBufferArena? bufferArena,
     bool retainCpuData = true,
+    bool shareAbsentStreams = false,
   }) {
+    if (shareAbsentStreams && !retainCpuData) {
+      _uploadSharingAbsentStreams(
+        positions: positions,
+        vertexCount: vertexCount,
+        normals: normals,
+        texCoords: texCoords,
+        texCoords1: texCoords1,
+        colors: colors,
+        tangents: tangents,
+        indices: indices,
+        indexType: indexType,
+        bufferArena: bufferArena,
+      );
+      return;
+    }
     final streams = InterleavedLayoutAdapter.unskinnedAttributeStreams(
       positions: positions,
       vertexCount: vertexCount,
@@ -1405,6 +1535,53 @@ class UnskinnedGeometry extends Geometry {
         Float32List.sublistView(streams.position),
         vertexCount,
       );
+    }
+  }
+
+  // Uploads only the attributes given; each absent one binds a shared stream
+  // of its default value, so a mesh without colors (say) stores none.
+  void _uploadSharingAbsentStreams({
+    required Float32List positions,
+    required int vertexCount,
+    Float32List? normals,
+    Float32List? texCoords,
+    Float32List? texCoords1,
+    Float32List? colors,
+    Float32List? tangents,
+    TypedData? indices,
+    required gpu.IndexType indexType,
+    GeometryBufferArena? bufferArena,
+  }) {
+    InterleavedLayoutAdapter.checkAttributeLengths(
+      positions: positions,
+      vertexCount: vertexCount,
+      normals: normals,
+      texCoords: texCoords,
+      texCoords1: texCoords1,
+      colors: colors,
+      tangents: tangents,
+    );
+    gpu.BufferView? shared(Float32List? data, _StreamFill fill, int floats) =>
+        data != null
+        ? null
+        : Geometry._defaultAttributeStream(fill, vertexCount * floats * 4);
+    _uploadStreams(
+      [positions, normals, texCoords, texCoords1, colors, tangents],
+      vertexCount,
+      indices,
+      indexType,
+      bufferArena,
+      residentViews: [
+        null,
+        shared(normals, _StreamFill.unitZ, 3),
+        shared(texCoords, _StreamFill.zero, 2),
+        shared(texCoords1, _StreamFill.zero, 2),
+        shared(colors, _StreamFill.one, 4),
+        shared(tangents, _StreamFill.zero, 4),
+      ],
+    );
+    if (localBounds == null && vertexCount > 0) {
+      scanLocalBoundsFromPositions(positions, vertexCount);
     }
   }
 
@@ -1485,13 +1662,20 @@ class UnskinnedGeometry extends Geometry {
   // de-interleaved, so only the shader is cached.
   static gpu.Shader? _depthVertexShader;
 
+  // A declared layout means the first stream may not hold a float3 position,
+  // so the engine's position-only shader is only safe without one.
   @override
-  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex => (
-    shader: _depthVertexShader ??= baseShaderLibrary['UnskinnedDepthVertex']!,
-    layout: _isDeInterleaved
-        ? kUnskinnedSoADepthLayout
-        : kUnskinnedPositionOnlyLayout,
-  );
+  ({gpu.Shader shader, VertexLayoutDescriptor layout})? get depthOnlyVertex {
+    final declared = _declaredDepthOnlyVertex;
+    if (declared != null) return declared;
+    if (_vertexLayout != null) return null;
+    return (
+      shader: _depthVertexShader ??= baseShaderLibrary['UnskinnedDepthVertex']!,
+      layout: _isDeInterleaved
+          ? kUnskinnedSoADepthLayout
+          : kUnskinnedPositionOnlyLayout,
+    );
+  }
 
   @override
   void bind(
@@ -1527,6 +1711,11 @@ class UnskinnedGeometry extends Geometry {
 /// via [setJointsTexture].
 /// {@category Geometry}
 class SkinnedGeometry extends Geometry {
+  // The skinned FrameInfo, shared by every draw since emplace copies it out.
+  // The leading model transform stays identity.
+  static final Float32List _skinnedFrameInfoScratch = Float32List(44)
+    ..setAll(0, vm.Matrix4.identity().storage);
+
   gpu.Texture? _jointsTexture;
   int _jointsTextureWidth = 0;
 
@@ -1617,59 +1806,23 @@ class SkinnedGeometry extends Geometry {
     // would double-apply it (and glTF requires a skinned mesh node's
     // transform to be ignored). `modelTransform` is unused for skinned
     // geometry as a result.
-    final identityTransform = vm.Matrix4.identity();
-    final frameInfoSlot = boundShader.cachedUniformSlot('FrameInfo');
-    final frameInfoFloats = Float32List.fromList([
-      identityTransform.storage[0],
-      identityTransform.storage[1],
-      identityTransform.storage[2],
-      identityTransform.storage[3],
-      identityTransform.storage[4],
-      identityTransform.storage[5],
-      identityTransform.storage[6],
-      identityTransform.storage[7],
-      identityTransform.storage[8],
-      identityTransform.storage[9],
-      identityTransform.storage[10],
-      identityTransform.storage[11],
-      identityTransform.storage[12],
-      identityTransform.storage[13],
-      identityTransform.storage[14],
-      identityTransform.storage[15],
-      cameraTransform.storage[0],
-      cameraTransform.storage[1],
-      cameraTransform.storage[2],
-      cameraTransform.storage[3],
-      cameraTransform.storage[4],
-      cameraTransform.storage[5],
-      cameraTransform.storage[6],
-      cameraTransform.storage[7],
-      cameraTransform.storage[8],
-      cameraTransform.storage[9],
-      cameraTransform.storage[10],
-      cameraTransform.storage[11],
-      cameraTransform.storage[12],
-      cameraTransform.storage[13],
-      cameraTransform.storage[14],
-      cameraTransform.storage[15],
-      cameraPosition.x,
-      cameraPosition.y,
-      cameraPosition.z,
-      _jointsTexture != null ? 1 : 0,
-      _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0,
-      depthBias,
+    final frameInfo = _skinnedFrameInfoScratch
+      ..setAll(16, cameraTransform.storage)
+      ..[32] = cameraPosition.x
+      ..[33] = cameraPosition.y
+      ..[34] = cameraPosition.z
+      ..[35] = _jointsTexture != null ? 1 : 0
+      ..[36] = _jointsTexture != null ? _jointsTextureWidth.toDouble() : 1.0
+      ..[37] = depthBias
       // std140 places the depth offset vec4 at the next 16-byte boundary.
-      0.0,
-      0.0,
-      currentDrawDepthOffset[0],
-      currentDrawDepthOffset[1],
-      currentDrawDepthSlope[0],
-      currentDrawDepthSlope[2],
-    ]);
-    final frameInfoView = transientsBuffer.emplace(
-      frameInfoFloats.buffer.asByteData(),
+      ..[40] = currentDrawDepthOffset[0]
+      ..[41] = currentDrawDepthOffset[1]
+      ..[42] = currentDrawDepthSlope[0]
+      ..[43] = currentDrawDepthSlope[2];
+    pass.bindUniform(
+      boundShader.cachedUniformSlot('FrameInfo'),
+      transientsBuffer.emplace(scratchBytesOf(frameInfo)),
     );
-    pass.bindUniform(frameInfoSlot, frameInfoView);
   }
 }
 
@@ -1701,6 +1854,16 @@ extension on ({String name, gpu.VertexFormat format, bool provided}) {
 }
 
 // A geometry's custom streams resolved against one vertex attribute schema.
+// The value a shared default stream holds per vertex.
+enum _StreamFill {
+  // All components zero (texture coordinates, tangents, custom attributes).
+  zero,
+  // A `(0, 0, 1)` normal per vertex.
+  unitZ,
+  // All components one (opaque white color).
+  one,
+}
+
 class _ResolvedAttributes {
   _ResolvedAttributes(this.streams, this.layout);
 
@@ -1985,7 +2148,7 @@ void bindUnskinnedFrameInfo(
     ..setAll(24, currentDrawDepthSlope);
   pass.bindUniform(
     frameInfoSlot,
-    transientsBuffer.emplace(ByteData.sublistView(scratch)),
+    transientsBuffer.emplace(scratchBytesOf(scratch)),
   );
 }
 

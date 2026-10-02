@@ -565,18 +565,22 @@ class MeshGeometry extends UnskinnedGeometry {
       if (retainCpuData) _packedIndexBytes = packed.bytes;
       _packedIndices32Bit = packed.is32Bit;
     }
+    // The caller's own arrays, so an attribute it left out binds a shared
+    // default stream instead of a per-mesh copy of the default. The retained
+    // copies above already hold the defaults for readback.
     uploadUnskinnedAttributes(
-      positions: retainCpuData ? _cpuPositions : positions,
+      positions: positions,
       vertexCount: vertexCount,
-      normals: retainCpuData ? _cpuNormals : normals,
-      texCoords: retainCpuData ? _cpuTexCoords : texCoords,
-      texCoords1: retainCpuData ? _cpuTexCoords1 : texCoords1,
-      colors: retainCpuData ? _cpuColors : colors,
-      tangents: retainCpuData ? _cpuTangents : tangents,
+      normals: normals,
+      texCoords: texCoords,
+      texCoords1: texCoords1,
+      colors: colors,
+      tangents: tangents,
       indices: indexUpload,
       indexType: indexType,
       bufferArena: bufferArena,
-      retainCpuData: retainCpuData,
+      retainCpuData: false,
+      shareAbsentStreams: true,
     );
     // Raycast off this geometry's own attribute arrays instead of the
     // transient upload copies, so no extra position/texcoord copy lingers.
