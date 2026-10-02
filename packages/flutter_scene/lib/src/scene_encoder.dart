@@ -44,7 +44,6 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     this.fade,
     gpu.RenderPipeline pipeline,
     this.pipelineKey,
-    this.depth,
     this.windingFlipped,
   ) : _item = item,
       _geometry = geometry,
@@ -72,8 +71,11 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
   @override
   gpu.RenderPipeline get pipeline => _pipeline!;
   late int pipelineKey;
-  late double depth;
   late bool windingFlipped;
+
+  // View depth, NaN until the sort first needs it. Depth is the last
+  // tie-breaker, so most records never compute it.
+  double depth = double.nan;
 
   void reset(
     RenderItem item,
@@ -82,7 +84,6 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     double fade,
     gpu.RenderPipeline pipeline,
     int pipelineKey,
-    double depth,
     bool windingFlipped,
   ) {
     _item = item;
@@ -91,7 +92,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     this.fade = fade;
     _pipeline = pipeline;
     this.pipelineKey = pipelineKey;
-    this.depth = depth;
+    depth = double.nan;
     this.windingFlipped = windingFlipped;
     geometryKey = identityHashCode(geometry);
     materialKey = identityHashCode(material);
@@ -690,6 +691,9 @@ base class SceneEncoder {
        _debugView = debugView,
        _primaryView = primaryView {
     currentSceneEncoderViewport = _dimensions;
+    // Read once. A camera's getters may allocate, and both feed every draw.
+    _cameraPosition = _camera.position;
+    _cameraForward = _camera.forward;
     _raster = depthRasterOf(_camera);
     _pixelSlope = pixelDepthSlopeOf(_camera, _dimensions);
     _pixelScale = pixelWorldScaleOf(_camera, _dimensions);
@@ -709,6 +713,8 @@ base class SceneEncoder {
   }
 
   final Camera _camera;
+  late final Vector3 _cameraPosition;
+  late final Vector3 _cameraForward;
 
   // How this view rasterizes depth (reversed or not, fitted near), shared
   // with every other pass that draws into its depth buffers.
@@ -911,7 +917,6 @@ base class SceneEncoder {
           fade,
           pipeline,
           identityHashCode(pipeline),
-          _depthOf(item.worldTransform, geometry),
           item.windingFor(geometry),
         ),
       );
@@ -991,7 +996,6 @@ base class SceneEncoder {
     double fade,
     gpu.RenderPipeline pipeline,
     int pipelineKey,
-    double depth,
     bool windingFlipped,
   ) {
     if (_opaqueRecordPool.isEmpty) {
@@ -1002,7 +1006,6 @@ base class SceneEncoder {
         fade,
         pipeline,
         pipelineKey,
-        depth,
         windingFlipped,
       );
     }
@@ -1013,7 +1016,6 @@ base class SceneEncoder {
       fade,
       pipeline,
       pipelineKey,
-      depth,
       windingFlipped,
     );
   }
@@ -1087,7 +1089,7 @@ base class SceneEncoder {
         : lodScreenSize(
             center: worldBounds.center,
             radius: radius,
-            cameraPosition: _camera.position,
+            cameraPosition: _cameraPosition,
             fovRadiansY: 2.0 * math.atan(projection.scaleY),
           );
     return lod.resolve(size);
@@ -1097,14 +1099,23 @@ base class SceneEncoder {
     return sceneSortDepth(
       worldTransform,
       geometry?.localBounds,
-      _camera.position,
-      _camera.forward,
+      _cameraPosition,
+      _cameraForward,
+    );
+  }
+
+  double _opaqueDepth(_OpaqueRecord record) {
+    final cached = record.depth;
+    if (!cached.isNaN) return cached;
+    return record.depth = _depthOf(
+      record.item.worldTransform,
+      record.geometry,
     );
   }
 
   double _depthOfPoint(double x, double y, double z) {
-    final position = _camera.position;
-    final forward = _camera.forward;
+    final position = _cameraPosition;
+    final forward = _cameraForward;
     return (x - position.x) * forward.x +
         (y - position.y) * forward.y +
         (z - position.z) * forward.z;
@@ -1294,7 +1305,7 @@ base class SceneEncoder {
           _transientsBuffer,
           shader,
           _drawCameraTransform,
-          _camera.position,
+          _cameraPosition,
           depthBias: depthBias,
         );
         _boundFrameInfoShader = shader;
@@ -1307,7 +1318,7 @@ base class SceneEncoder {
         _transientsBuffer,
         worldTransform,
         _drawCameraTransform,
-        _camera.position,
+        _cameraPosition,
         shaderOverride: materialVertex,
         depthBias: depthBias,
       );
@@ -1408,7 +1419,7 @@ base class SceneEncoder {
       item,
       geometry,
       MeshDrawPass.color,
-      _camera.position,
+      _cameraPosition,
       _primaryView,
     );
     try {
@@ -1527,7 +1538,7 @@ base class SceneEncoder {
             item,
             geometry,
             MeshDrawPass.color,
-            _camera.position,
+            _cameraPosition,
             _primaryView,
           );
     try {
@@ -1800,7 +1811,7 @@ base class SceneEncoder {
       if (byChannels != 0) return byChannels;
       final byFade = a.fade.compareTo(b.fade);
       if (byFade != 0) return byFade;
-      return a.depth.compareTo(b.depth);
+      return _opaqueDepth(a).compareTo(_opaqueDepth(b));
     });
     sortWatch?.stop();
     final encodeWatch = profileRendering ? (Stopwatch()..start()) : null;
@@ -2221,7 +2232,7 @@ base class SceneEncoder {
           instanceWindingFlipped: record.item.instanceWindingFlipped,
           instanceIndices: record.item.visibleInstanceIndices,
           sortBackToFrontFrom: record.item.sortTransparentInstances
-              ? _camera.position
+              ? _cameraPosition
               : null,
           packedWorldData: record.windingFlipped == record.item.windingFlipped
               ? record.item.instanceWorldData
@@ -2351,7 +2362,7 @@ base class SceneEncoder {
           instanceWindingFlipped: record.item.instanceWindingFlipped,
           instanceIndices: record.item.visibleInstanceIndices,
           sortBackToFrontFrom: record.item.sortTransparentInstances
-              ? _camera.position
+              ? _cameraPosition
               : null,
           packedWorldData: record.windingFlipped == record.item.windingFlipped
               ? record.item.instanceWorldData
