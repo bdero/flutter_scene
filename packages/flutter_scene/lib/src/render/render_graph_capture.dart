@@ -23,6 +23,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shader_reflection/shader_reflection.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// The process-wide opt-in for render graph debugging (capture and the
 /// custom-pass blackboard peek). Off by default so shipping apps tree-shake
@@ -899,7 +900,7 @@ class RenderGraphCapturer implements RenderGraphObserver, DrawRecorder {
     renderPass.setCullMode(gpu.CullMode.none);
     bindVertexBufferCompat(renderPass, _quadView, 6);
     renderPass.bindTexture(
-      _copyFragment.getUniformSlot('source_texture'),
+      _copyFragment.cachedUniformSlot('source_texture'),
       source,
       sampler: _samplerFor(source.format),
     );

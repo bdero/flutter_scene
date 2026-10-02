@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 // Fullscreen NDC quad (6 vec2s), shared by the face renders and the equirect
 // assembly.
@@ -174,7 +175,7 @@ void _assembleEquirect(
   bindVertexBufferCompat(pass, _quadView, 6);
   for (var i = 0; i < 6; i++) {
     pass.bindTexture(
-      fragmentShader.getUniformSlot(_faceSamplerNames[i]),
+      fragmentShader.cachedUniformSlot(_faceSamplerNames[i]),
       faces[i],
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
@@ -188,7 +189,7 @@ void _assembleEquirect(
   // sampled edge direction lands on the outermost texel center.
   final faceInfo = Float32List(4)..[0] = _faceOverscan(faceResolution);
   pass.bindUniform(
-    fragmentShader.getUniformSlot('CubeFaceInfo'),
+    fragmentShader.cachedUniformSlot('CubeFaceInfo'),
     uniformTransients.emplace(ByteData.sublistView(faceInfo)),
   );
   drawCompat(pass, 6);
@@ -223,7 +224,7 @@ void _projectSh(gpu.Texture equirect, gpu.Texture sh) {
   pass.setPrimitiveType(gpu.PrimitiveType.triangle);
   bindVertexBufferCompat(pass, _quadView, 6);
   pass.bindTexture(
-    fragmentShader.getUniformSlot('source_equirect'),
+    fragmentShader.cachedUniformSlot('source_equirect'),
     equirect,
     sampler: gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.linear,

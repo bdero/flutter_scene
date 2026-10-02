@@ -26,6 +26,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/constants.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart' as vm;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Unskinned geometry with morph targets.
 ///
@@ -297,7 +298,7 @@ mixin _MorphBlending on Geometry {
 
     final texture = _morphTexture ??= _buildMorphTexture(packing);
     pass.bindTexture(
-      shader.getUniformSlot('morph_texture'),
+      shader.cachedUniformSlot('morph_texture'),
       texture,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.nearest,
@@ -321,7 +322,7 @@ mixin _MorphBlending on Geometry {
       scratch[4 + i * 4 + 1] = active[i].weight;
     }
     pass.bindUniform(
-      shader.getUniformSlot('MorphInfo'),
+      shader.cachedUniformSlot('MorphInfo'),
       transientsBuffer.emplace(ByteData.sublistView(scratch)),
     );
   }

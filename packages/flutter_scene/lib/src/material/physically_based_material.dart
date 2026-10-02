@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// How a [PhysicallyBasedMaterial]'s alpha channel is interpreted,
 /// matching glTF's `alphaMode`.
@@ -1629,7 +1630,7 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[162] = lightListCount.toDouble();
     fragInfo[163] = lightListOffset.toDouble();
     pass.bindUniform(
-      shader.getUniformSlot("FragInfo"),
+      shader.cachedUniformSlot("FragInfo"),
       transientsBuffer.emplace(_fragInfoBytes),
     );
 
@@ -1681,7 +1682,7 @@ class PhysicallyBasedMaterial extends Material {
         occlusionTextureTexCoord != 0;
     textureTransforms[7] = transformedUvs ? 1.0 : 0.0;
     pass.bindUniform(
-      shader.getUniformSlot('TextureTransforms'),
+      shader.cachedUniformSlot('TextureTransforms'),
       transientsBuffer.emplace(ByteData.sublistView(textureTransforms)),
     );
 
@@ -1775,7 +1776,7 @@ class PhysicallyBasedMaterial extends Material {
   }) {
     final resolved = resolveTextureSource(source);
     pass.bindTexture(
-      shader.getUniformSlot(name),
+      shader.cachedUniformSlot(name),
       normal
           ? Material.normalPlaceholder(resolved)
           : Material.whitePlaceholder(resolved),
@@ -1824,11 +1825,11 @@ class PhysicallyBasedMaterial extends Material {
       baseColorTextureTexCoord,
     );
     pass.bindUniform(
-      shader.getUniformSlot('MaskInfo'),
+      shader.cachedUniformSlot('MaskInfo'),
       transientsBuffer.emplace(ByteData.sublistView(params)),
     );
     pass.bindTexture(
-      shader.getUniformSlot('mask_texture'),
+      shader.cachedUniformSlot('mask_texture'),
       Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
       sampler: textureSourceSampler(baseColorTexture) ?? _repeatSampler,
     );

@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Draws every visible mesh's triangle edges as lines into [pass], on top of
 /// the scene it just finished, depth-tested against the scene's own depth.
@@ -165,7 +166,7 @@ class _WireframeEncoder {
     }
     _pass.setPrimitiveType(gpu.PrimitiveType.line);
     _pass.bindUniform(
-      _fragment.getUniformSlot('MaskInfo'),
+      _fragment.cachedUniformSlot('MaskInfo'),
       _transients.emplace(ByteData.sublistView(_color)),
     );
 

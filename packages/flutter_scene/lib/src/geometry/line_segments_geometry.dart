@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// A batch of thick, disconnected line segments, each expanded into a
 /// camera-facing quad of a fixed world-space width in the vertex shader and
@@ -174,7 +175,7 @@ class LineSegmentsGeometry extends Geometry {
     frameInfo[40] = currentDrawDepthOffset[0];
     frameInfo[41] = currentDrawDepthOffset[1];
     pass.bindUniform(
-      vertexShader.getUniformSlot('FrameInfo'),
+      vertexShader.cachedUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
     );
   }

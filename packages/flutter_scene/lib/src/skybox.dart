@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// A sky that exposes a directional sun, so the engine can drive a matching
 /// shadow-casting directional light from it.
@@ -201,13 +202,13 @@ class ShaderSkySource extends SkySource {
     final shader = shaderForEnvironment(environment);
     for (final entry in _uniformBlocks.entries) {
       pass.bindUniform(
-        shader.getUniformSlot(entry.key),
+        shader.cachedUniformSlot(entry.key),
         transientsBuffer.emplace(entry.value),
       );
     }
     for (final entry in _textures.entries) {
       pass.bindTexture(
-        shader.getUniformSlot(entry.key),
+        shader.cachedUniformSlot(entry.key),
         entry.value.texture,
         sampler: entry.value.sampler ?? gpu.SamplerOptions(),
       );
@@ -220,7 +221,7 @@ class ShaderSkySource extends SkySource {
         cubeShader: usesRadianceCubeVariant(environment),
       );
       pass.bindTexture(
-        shader.getUniformSlot('brdf_lut'),
+        shader.cachedUniformSlot('brdf_lut'),
         Material.getBrdfLutTexture(),
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,

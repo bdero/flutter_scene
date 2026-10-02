@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// How a billboard quad orients itself toward the camera.
 /// {@category Geometry}
@@ -228,7 +229,7 @@ class BillboardGeometry extends Geometry {
     frameInfo[44] = currentDrawDepthOffset[0];
     frameInfo[45] = currentDrawDepthOffset[1];
     pass.bindUniform(
-      vertexShader.getUniformSlot('FrameInfo'),
+      vertexShader.cachedUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
     );
   }

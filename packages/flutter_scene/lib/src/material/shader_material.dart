@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/render/custom_render_pass.dart'
     show RenderInput;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Scalar/vector type supplied once per instance to a raw shader pair.
 /// {@category Materials}
@@ -523,7 +524,7 @@ class ShaderMaterial extends Material {
     final shader = fragmentShaderForLighting(lighting);
 
     for (final entry in _uniformBlocks.entries) {
-      final slot = shader.getUniformSlot(entry.key);
+      final slot = shader.cachedUniformSlot(entry.key);
       assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.fragment));
       pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
     }
@@ -533,7 +534,7 @@ class ShaderMaterial extends Material {
       // placeholder so the sampler slot is never left dangling.
       final resolved = _resolveShaderTexture(entry.value.source);
       pass.bindTexture(
-        shader.getUniformSlot(entry.key),
+        shader.cachedUniformSlot(entry.key),
         Material.whitePlaceholder(resolved),
         sampler:
             entry.value.sampler ??
@@ -578,14 +579,14 @@ class ShaderMaterial extends Material {
     TransientWriter transientsBuffer,
   ) {
     for (final entry in _vertexUniformBlocks.entries) {
-      final slot = vertexShader.getUniformSlot(entry.key);
+      final slot = vertexShader.cachedUniformSlot(entry.key);
       assert(_checkBlock(slot, entry.key, entry.value, ShaderStage.vertex));
       pass.bindUniform(slot, transientsBuffer.emplace(entry.value));
     }
     for (final entry in _vertexTextures.entries) {
       final resolved = _resolveShaderTexture(entry.value.source);
       pass.bindTexture(
-        vertexShader.getUniformSlot(entry.key),
+        vertexShader.cachedUniformSlot(entry.key),
         Material.whitePlaceholder(resolved),
         sampler:
             entry.value.sampler ??
@@ -607,7 +608,7 @@ class ShaderMaterial extends Material {
       cubeShader: usesRadianceCubeVariant(lighting),
     );
     pass.bindTexture(
-      shader.getUniformSlot('brdf_lut'),
+      shader.cachedUniformSlot('brdf_lut'),
       Material.getBrdfLutTexture(),
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,

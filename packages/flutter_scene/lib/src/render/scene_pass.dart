@@ -33,6 +33,7 @@ import 'package:flutter_scene/src/scene_encoder.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the current scene-color texture.
 ///
@@ -772,7 +773,7 @@ class ScenePass extends RenderGraphPass {
     const names = ['id_nudged', 'id_opposite', 'id_reordered'];
     for (var i = 0; i < 3; i++) {
       pass.bindTexture(
-        _conflictOverlayShader.getUniformSlot(names[i]),
+        _conflictOverlayShader.cachedUniformSlot(names[i]),
         ids[i],
         sampler: _nearestClamp,
       );
@@ -782,7 +783,7 @@ class ScenePass extends RenderGraphPass {
       ..[1] = 6.0
       ..[2] = 0.85;
     pass.bindUniform(
-      _conflictOverlayShader.getUniformSlot('DepthConflictInfo'),
+      _conflictOverlayShader.cachedUniformSlot('DepthConflictInfo'),
       transients.emplace(ByteData.sublistView(info)),
     );
     drawCompat(pass, 6);
@@ -895,7 +896,7 @@ class ScenePass extends RenderGraphPass {
     pass.setCullMode(gpu.CullMode.none);
     bindVertexBufferCompat(pass, _quadView, 6);
     pass.bindTexture(
-      _copyFragmentShader.getUniformSlot('source_texture'),
+      _copyFragmentShader.cachedUniformSlot('source_texture'),
       source,
     );
     drawCompat(pass, 6);
@@ -937,7 +938,7 @@ class ScenePass extends RenderGraphPass {
         ),
       );
       pass.bindTexture(
-        _copyFragmentShader.getUniformSlot('source_texture'),
+        _copyFragmentShader.cachedUniformSlot('source_texture'),
         mip,
         sampler: _linearClamp,
       );
@@ -964,7 +965,7 @@ class ScenePass extends RenderGraphPass {
     pass.setCullMode(gpu.CullMode.none);
     bindVertexBufferCompat(pass, _quadView, 6);
     pass.bindTexture(
-      _transmissionFilterShader.getUniformSlot('source'),
+      _transmissionFilterShader.cachedUniformSlot('source'),
       source,
       sampler: _linearClamp,
     );
@@ -972,7 +973,7 @@ class ScenePass extends RenderGraphPass {
       ..[0] = 1.0 / source.width
       ..[1] = 1.0 / source.height;
     pass.bindUniform(
-      _transmissionFilterShader.getUniformSlot('BloomFilterInfo'),
+      _transmissionFilterShader.cachedUniformSlot('BloomFilterInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(filterInfo)),
     );
     drawCompat(pass, 6);

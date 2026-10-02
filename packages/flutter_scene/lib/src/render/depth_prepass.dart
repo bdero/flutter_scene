@@ -27,6 +27,7 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key under which [DepthPrepass] publishes the
 /// camera linear-depth texture: planar view-space depth (world units) in
@@ -603,7 +604,7 @@ class _DepthPrepassEncoder {
       // A surface fragment takes its roughness from Surface() instead.
       if (surfaceShader == null) {
         _renderPass.bindTexture(
-          fragmentShader.getUniformSlot('metallic_roughness_texture'),
+          fragmentShader.cachedUniformSlot('metallic_roughness_texture'),
           Material.whitePlaceholder(item.material.reflectionRoughnessTexture),
           sampler:
               item.material.reflectionRoughnessTextureSampler ??
@@ -612,7 +613,7 @@ class _DepthPrepassEncoder {
       }
     }
     _renderPass.bindUniform(
-      fragmentShader.getUniformSlot(_infoBlockName),
+      fragmentShader.cachedUniformSlot(_infoBlockName),
       _transientsBuffer.emplace(ByteData.sublistView(_depthInfo)),
     );
     if (surfaceShader != null) {

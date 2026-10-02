@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 // Fullscreen NDC quad (6 vec2s).
 final gpu.DeviceBuffer _quad = gpu.gpuContext.createDeviceBufferWithCopy(
@@ -49,12 +50,12 @@ void encodeShComposite(
   pass.setPrimitiveType(gpu.PrimitiveType.triangle);
   bindVertexBufferCompat(pass, _quadView, 6);
   pass.bindTexture(
-    fragmentShader.getUniformSlot('sh_primary'),
+    fragmentShader.cachedUniformSlot('sh_primary'),
     primary,
     sampler: _nearestClamp,
   );
   pass.bindTexture(
-    fragmentShader.getUniformSlot('sh_secondary'),
+    fragmentShader.cachedUniformSlot('sh_secondary'),
     secondary,
     sampler: _nearestClamp,
   );

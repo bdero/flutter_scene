@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/material/physically_based_material.dart'
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/irradiance_field.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Packs the engine lighting half of the shared `FragInfo` uniform block and
 /// binds the image-based-lighting and shadow samplers.
@@ -343,7 +344,7 @@ class EngineLightingUniforms {
     if (_memoPassIs(pass) && identical(_viewInfoMemo[shader], lighting)) {
       return;
     }
-    final slot = shader.getUniformSlot('ViewInfo');
+    final slot = shader.cachedUniformSlot('ViewInfo');
     if (slot.sizeInBytes == null) return;
     _viewInfoMemo[shader] = lighting;
     final forward = lighting.cameraForward;
@@ -413,7 +414,7 @@ class EngineLightingUniforms {
     }
     // buffer[1] left 0 (disabled) when there is no active fog.
     pass.bindUniform(
-      shader.getUniformSlot('FogInfo'),
+      shader.cachedUniformSlot('FogInfo'),
       transientsBuffer.emplace(ByteData.sublistView(buffer)),
     );
   }
@@ -509,12 +510,12 @@ class EngineLightingUniforms {
         return true;
       }());
       pass.bindTexture(
-        shader.getUniformSlot('prefiltered_radiance'),
+        shader.cachedUniformSlot('prefiltered_radiance'),
         Material.getBlackPlaceholderTexture(),
         sampler: _radianceSampler(false),
       );
       pass.bindUniform(
-        shader.getUniformSlot('RadianceLayoutInfo'),
+        shader.cachedUniformSlot('RadianceLayoutInfo'),
         _layoutAtlas,
       );
       return;
@@ -524,7 +525,7 @@ class EngineLightingUniforms {
     // band atlas has a single level, where the mip filter is inert, and both
     // repeat horizontally (longitude wraps) and clamp vertically.
     pass.bindTexture(
-      shader.getUniformSlot('prefiltered_radiance'),
+      shader.cachedUniformSlot('prefiltered_radiance'),
       env.prefilteredRadiance,
       sampler: cubeLayout ? _cubeSampler : _radianceSampler(mipLayout),
     );
@@ -534,7 +535,7 @@ class EngineLightingUniforms {
     // and binding one anyway is rejected.
     if (!cubeLayout) {
       pass.bindUniform(
-        shader.getUniformSlot('RadianceLayoutInfo'),
+        shader.cachedUniformSlot('RadianceLayoutInfo'),
         mipLayout ? _layoutMip : _layoutAtlas,
       );
     }
@@ -595,14 +596,14 @@ class EngineLightingUniforms {
     if (bindEnvironment) {
       bindPrefilteredRadiance(pass, shader, env, cubeShader: cubeShader);
       pass.bindTexture(
-        shader.getUniformSlot('brdf_lut'),
+        shader.cachedUniformSlot('brdf_lut'),
         Material.getBrdfLutTexture(),
         sampler: _clampLinearSampler,
       );
     }
     if (bindShadows) {
       pass.bindTexture(
-        shader.getUniformSlot('shadow_map'),
+        shader.cachedUniformSlot('shadow_map'),
         Material.whitePlaceholder(lighting.shadowMap),
         // The atlas is fp32. GLES devices may support rendering/sampling float
         // textures without GL_OES_texture_float_linear, making linear filtering
@@ -621,7 +622,7 @@ class EngineLightingUniforms {
     if (bindDiffuseSh && bindEnvironment) {
       final field = lighting.irradianceField;
       pass.bindTexture(
-        shader.getUniformSlot('irradiance_field'),
+        shader.cachedUniformSlot('irradiance_field'),
         field?.atlas ?? lighting.diffuseShTexture ?? env.diffuseShTexture,
         sampler: field != null ? _clampLinearSampler : _nearestClampSampler,
       );
@@ -645,12 +646,12 @@ class EngineLightingUniforms {
     // reached items; the shader never reads them because the per-object count is
     // 0.
     pass.bindTexture(
-      shader.getUniformSlot('punctual_lights'),
+      shader.cachedUniformSlot('punctual_lights'),
       Material.whitePlaceholder(lighting.punctualParamsTexture),
       sampler: _nearestClampSampler,
     );
     pass.bindTexture(
-      shader.getUniformSlot('punctual_index'),
+      shader.cachedUniformSlot('punctual_index'),
       Material.whitePlaceholder(lighting.punctualIndexTexture),
       sampler: _nearestClampSampler,
     );
@@ -660,7 +661,7 @@ class EngineLightingUniforms {
     // ssao_params.x regardless.
     if (bindSsao) {
       pass.bindTexture(
-        shader.getUniformSlot('ssao_texture'),
+        shader.cachedUniformSlot('ssao_texture'),
         Material.whitePlaceholder(lighting.ssaoMap),
         sampler: _clampLinearSampler,
       );
@@ -684,23 +685,23 @@ class EngineLightingUniforms {
     if (shadowMap != null) {
       // fp32 atlas; PCF is explicit in the shader, so nearest is portable.
       pass.bindTexture(
-        shader.getUniformSlot('shadow_map'),
+        shader.cachedUniformSlot('shadow_map'),
         shadowMap,
         sampler: _nearestSampler,
       );
       pass.bindTexture(
-        shader.getUniformSlot('punctual_lights'),
+        shader.cachedUniformSlot('punctual_lights'),
         Material.whitePlaceholder(lighting.punctualParamsTexture),
         sampler: _nearestClampSampler,
       );
       pass.bindTexture(
-        shader.getUniformSlot('punctual_index'),
+        shader.cachedUniformSlot('punctual_index'),
         Material.whitePlaceholder(lighting.punctualIndexTexture),
         sampler: _nearestClampSampler,
       );
     }
     pass.bindTexture(
-      shader.getUniformSlot('ssao_texture'),
+      shader.cachedUniformSlot('ssao_texture'),
       Material.whitePlaceholder(lighting.ssaoMap),
       sampler: _clampLinearSampler,
     );
@@ -751,7 +752,7 @@ class EngineLightingUniforms {
     gpu.SamplerOptions? sampler,
   }) {
     pass.bindTexture(
-      shader.getUniformSlot('lightmap_texture'),
+      shader.cachedUniformSlot('lightmap_texture'),
       texture ?? Material.getBlackPlaceholderTexture(),
       sampler: sampler ?? _clampLinearSampler,
     );
@@ -763,7 +764,7 @@ class EngineLightingUniforms {
       rgbm: rgbm,
     );
     pass.bindUniform(
-      shader.getUniformSlot('LightmapInfo'),
+      shader.cachedUniformSlot('LightmapInfo'),
       transientsBuffer.emplace(ByteData.sublistView(_lightmapInfoScratch)),
     );
   }
@@ -781,21 +782,21 @@ class EngineLightingUniforms {
   ) {
     if (sceneInputs.contains(RenderInput.opaqueSceneColor)) {
       pass.bindTexture(
-        shader.getUniformSlot('scene_opaque_color'),
+        shader.cachedUniformSlot('scene_opaque_color'),
         Material.whitePlaceholder(lighting.opaqueSceneColor),
         sampler: _clampLinearSampler,
       );
     }
     if (sceneInputs.contains(RenderInput.filteredSceneColor)) {
       pass.bindTexture(
-        shader.getUniformSlot('scene_filtered_color'),
+        shader.cachedUniformSlot('scene_filtered_color'),
         Material.whitePlaceholder(lighting.filteredSceneColor),
         sampler: _clampLinearSampler,
       );
     }
     if (sceneInputs.contains(RenderInput.depth)) {
       pass.bindTexture(
-        shader.getUniformSlot('scene_depth'),
+        shader.cachedUniformSlot('scene_depth'),
         Material.whitePlaceholder(lighting.sceneDepthLinear),
         sampler: _nearestClampSampler,
       );
@@ -819,7 +820,7 @@ class EngineLightingUniforms {
     Lighting lighting,
     TransientWriter transientsBuffer,
   ) {
-    final slot = shader.getUniformSlot('SceneInputInfo');
+    final slot = shader.cachedUniformSlot('SceneInputInfo');
     if (slot.sizeInBytes == null) return;
 
     final info = Float32List(24);
@@ -880,7 +881,7 @@ class EngineLightingUniforms {
   }) {
     if (cubeShader != null && cubeShader != primary.usesCubeRadianceLayout) {
       pass.bindTexture(
-        shader.getUniformSlot('prefiltered_radiance_b'),
+        shader.cachedUniformSlot('prefiltered_radiance_b'),
         Material.getBlackPlaceholderTexture(),
         sampler: _radianceSampler(false),
       );
@@ -900,7 +901,7 @@ class EngineLightingUniforms {
       return true;
     }());
     pass.bindTexture(
-      shader.getUniformSlot('prefiltered_radiance_b'),
+      shader.cachedUniformSlot('prefiltered_radiance_b'),
       source.prefilteredRadiance,
       sampler: source.usesCubeRadianceLayout
           ? _cubeSampler

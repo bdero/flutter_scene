@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Whether hand-uploaded mip chains sample correctly on this device, measured
 /// by [probePlatformMipSampling]. Null until the probe runs (or where it does
@@ -162,7 +163,7 @@ Future<bool> measureMipSampling() async {
   renderPass.bindPipeline(resolvePipeline(vertexShader, fragmentShader));
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
   renderPass.bindTexture(
-    fragmentShader.getUniformSlot('source_texture'),
+    fragmentShader.cachedUniformSlot('source_texture'),
     source,
     sampler: gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.linear,

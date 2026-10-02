@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 const gpu.PixelFormat _hdrFormat = gpu.PixelFormat.r16g16b16a16Float;
 
@@ -219,13 +220,13 @@ class DofPass extends RenderGraphPass {
     bindVertexBufferCompat(renderPass, _quadView, 6);
     for (final entry in uniforms.entries) {
       renderPass.bindUniform(
-        fragment.getUniformSlot(entry.key),
+        fragment.cachedUniformSlot(entry.key),
         context.transientsBuffer.emplace(ByteData.sublistView(entry.value)),
       );
     }
     for (final entry in textures.entries) {
       renderPass.bindTexture(
-        fragment.getUniformSlot(entry.key),
+        fragment.cachedUniformSlot(entry.key),
         entry.value,
         sampler: _linearClamp,
       );

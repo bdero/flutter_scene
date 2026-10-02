@@ -12,6 +12,7 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the bloom texture [BloomPass] produces.
 /// The resolve pass reads it and adds it to the HDR scene color.
@@ -273,16 +274,16 @@ class BloomPass extends RenderGraphPass {
           ? 1.0
           : targetSize.width / targetSize.height;
     renderPass.bindUniform(
-      _lensFlareShader.getUniformSlot('LensFlareInfo'),
+      _lensFlareShader.cachedUniformSlot('LensFlareInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _lensFlareShader.getUniformSlot('source'),
+      _lensFlareShader.cachedUniformSlot('source'),
       source,
       sampler: _linearClamp,
     );
     renderPass.bindTexture(
-      _lensFlareShader.getUniformSlot('base'),
+      _lensFlareShader.cachedUniformSlot('base'),
       base,
       sampler: _linearClamp,
     );
@@ -347,11 +348,11 @@ class BloomPass extends RenderGraphPass {
       ..[6] = source.width.toDouble()
       ..[7] = source.height.toDouble();
     renderPass.bindUniform(
-      _thresholdShader.getUniformSlot('BloomThresholdInfo'),
+      _thresholdShader.cachedUniformSlot('BloomThresholdInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _thresholdShader.getUniformSlot('source'),
+      _thresholdShader.cachedUniformSlot('source'),
       source,
       sampler: _linearClamp,
     );
@@ -378,11 +379,11 @@ class BloomPass extends RenderGraphPass {
       ..[1] = 1.0 / sourceSize.height
       ..[2] = _settings.scatter;
     renderPass.bindUniform(
-      _downsampleShader.getUniformSlot('BloomFilterInfo'),
+      _downsampleShader.cachedUniformSlot('BloomFilterInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _downsampleShader.getUniformSlot('source'),
+      _downsampleShader.cachedUniformSlot('source'),
       source,
       sampler: _linearClamp,
     );
@@ -416,16 +417,16 @@ class BloomPass extends RenderGraphPass {
       ..[2] = weights.source
       ..[3] = weights.base;
     renderPass.bindUniform(
-      _upsampleShader.getUniformSlot('BloomUpsampleInfo'),
+      _upsampleShader.cachedUniformSlot('BloomUpsampleInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _upsampleShader.getUniformSlot('source'),
+      _upsampleShader.cachedUniformSlot('source'),
       source,
       sampler: _linearClamp,
     );
     renderPass.bindTexture(
-      _upsampleShader.getUniformSlot('base'),
+      _upsampleShader.cachedUniformSlot('base'),
       base,
       sampler: _linearClamp,
     );

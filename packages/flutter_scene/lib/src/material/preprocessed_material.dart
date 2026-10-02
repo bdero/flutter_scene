@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:vector_math/vector_math.dart' show Vector3;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// A material driven by a `.fmat` custom-material shader and its sidecar
 /// metadata (produced at build time by `buildMaterials`).
@@ -196,7 +197,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     );
     parameters.bind(pass, shader, transientsBuffer);
     pass.bindUniform(
-      shader.getUniformSlot('FragmentKeepAlive'),
+      shader.cachedUniformSlot('FragmentKeepAlive'),
       transientsBuffer.emplace(_zeroKeepAlive),
     );
   }
@@ -209,7 +210,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     Vector3 position,
     Vector3 forward,
   ) {
-    final slot = shader.getUniformSlot(name);
+    final slot = shader.cachedUniformSlot(name);
     final size = slot.sizeInBytes;
     if (size == null || size == 0) return;
     final data = ByteData(size);
@@ -383,7 +384,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     // so the optimizer cannot strip a declared attribute when a Vertex() hook
     // replaces the outputs, and zero makes it invisible.
     pass.bindUniform(
-      vertexShader.getUniformSlot('VertexKeepAlive'),
+      vertexShader.cachedUniformSlot('VertexKeepAlive'),
       transientsBuffer.emplace(_zeroKeepAlive),
     );
   }
@@ -453,7 +454,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
     if (shadingModel == FmatShadingModel.shadowCatcher) {
       _packEngineFragInfo(lighting, lighting.environmentMap);
       pass.bindUniform(
-        shader.getUniformSlot('FragInfo'),
+        shader.cachedUniformSlot('FragInfo'),
         transientsBuffer.emplace(_fragInfoBytes),
       );
       // The catcher's generated fragment samples only the shadow atlas, the
@@ -473,7 +474,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       if (lit || _sceneInputs.isNotEmpty) {
         _packEngineFragInfo(lighting, env);
         pass.bindUniform(
-          shader.getUniformSlot('FragInfo'),
+          shader.cachedUniformSlot('FragInfo'),
           transientsBuffer.emplace(_fragInfoBytes),
         );
         if (_sceneInputs.isNotEmpty) {
@@ -541,7 +542,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
         _sceneInputs.isNotEmpty ||
         _usesPlanarReflection) {
       pass.bindUniform(
-        shader.getUniformSlot('FragmentKeepAlive'),
+        shader.cachedUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),
       );
     }
@@ -573,11 +574,11 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       info[16] = 1.0;
     }
     pass.bindUniform(
-      shader.getUniformSlot('PlanarReflectionInfo'),
+      shader.cachedUniformSlot('PlanarReflectionInfo'),
       transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     pass.bindTexture(
-      shader.getUniformSlot('planar_reflection'),
+      shader.cachedUniformSlot('planar_reflection'),
       frame?.texture ?? Material.getBlackPlaceholderTexture(),
       sampler: _planarReflectionSampler,
     );
@@ -619,12 +620,12 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
       ..[9] = math.sin(rotation)
       ..[10] = _depthMaskTexCoord.toDouble();
     pass.bindUniform(
-      shader.getUniformSlot('MaskInfo'),
+      shader.cachedUniformSlot('MaskInfo'),
       transientsBuffer.emplace(ByteData.sublistView(values)),
     );
     final source = _depthMaskTexture;
     pass.bindTexture(
-      shader.getUniformSlot('mask_texture'),
+      shader.cachedUniformSlot('mask_texture'),
       Material.whitePlaceholder(resolveTextureSource(source)),
       sampler: textureSourceSampler(source) ?? _depthMaskSampler,
     );

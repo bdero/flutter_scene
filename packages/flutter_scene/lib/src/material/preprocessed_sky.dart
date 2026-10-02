@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/material/environment.dart';
 import 'package:flutter_scene/src/material/material_parameters.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// A sky driven by a `.fmat` sky shader (`sky { vec3 Sky(vec3 direction) }`)
 /// and its sidecar metadata (produced at build time by `buildMaterials`).
@@ -71,7 +72,7 @@ class PreprocessedSky extends ShaderSkySource implements HotReloadableFmat {
     // the radiance samplers live even when the author never samples them).
     if (parameters.hasAnyParameters || useEnvironment) {
       pass.bindUniform(
-        shader.getUniformSlot('FragmentKeepAlive'),
+        shader.cachedUniformSlot('FragmentKeepAlive'),
         transientsBuffer.emplace(_zeroKeepAlive),
       );
     }

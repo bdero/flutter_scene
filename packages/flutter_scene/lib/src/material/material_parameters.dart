@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/fmat/fmat_ast.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 class _ParamSlot {
   _ParamSlot(this.type, this.offsetBytes, {this.sourceColor = false});
@@ -70,7 +71,7 @@ class MaterialParameters {
   ) {
     final blockName =
         (metadata['uniform_block'] as String?) ?? 'MaterialParams';
-    final slot = shader.getUniformSlot(blockName);
+    final slot = shader.cachedUniformSlot(blockName);
     final sizeInBytes = slot.sizeInBytes ?? 0;
 
     final layout = <String, _ParamSlot>{};
@@ -225,7 +226,7 @@ class MaterialParameters {
   void updateFromMetadata(gpu.Shader shader, Map<String, Object?> metadata) {
     final newBlockName =
         (metadata['uniform_block'] as String?) ?? 'MaterialParams';
-    final slot = shader.getUniformSlot(newBlockName);
+    final slot = shader.cachedUniformSlot(newBlockName);
 
     final newLayout = <String, _ParamSlot>{};
     final newDefaults = <String, Object>{};
@@ -592,7 +593,7 @@ class MaterialParameters {
   ) {
     if (_block.lengthInBytes > 0) {
       pass.bindUniform(
-        shader.getUniformSlot(_blockName),
+        shader.cachedUniformSlot(_blockName),
         transientsBuffer.emplace(_block),
       );
     }
@@ -608,7 +609,7 @@ class MaterialParameters {
     for (final entry in _samplers.entries) {
       final slot = entry.value;
       pass.bindTexture(
-        shader.getUniformSlot(entry.key),
+        shader.cachedUniformSlot(entry.key),
         slot.texture ?? _placeholder(slot.defaultPlaceholder),
         sampler: slot.sampler ?? _defaultSampler,
       );

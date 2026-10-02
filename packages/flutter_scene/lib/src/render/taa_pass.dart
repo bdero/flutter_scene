@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/render/velocity_pass.dart'
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 final gpu.SamplerOptions _nearestClamp = gpu.SamplerOptions(
   minFilter: gpu.MinMagFilter.nearest,
@@ -214,32 +215,32 @@ class TaaPass extends RenderGraphPass {
     infoData[38] = projection.orthographicFlag;
 
     renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('TaaInfo'),
+      _fragmentShader.cachedUniformSlot('TaaInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(infoData)),
     );
 
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('current_color'),
+      _fragmentShader.cachedUniformSlot('current_color'),
       currentColor,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('history_color'),
+      _fragmentShader.cachedUniformSlot('history_color'),
       readHistory,
       sampler: _linearClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('velocity_texture'),
+      _fragmentShader.cachedUniformSlot('velocity_texture'),
       velocity,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('current_depth'),
+      _fragmentShader.cachedUniformSlot('current_depth'),
       depthNormal,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('previous_depth'),
+      _fragmentShader.cachedUniformSlot('previous_depth'),
       prevDepth,
       sampler: _nearestClamp,
     );
@@ -269,7 +270,7 @@ class TaaPass extends RenderGraphPass {
       depthCopyPass.bindPipeline(copyPipeline);
       bindVertexBufferCompat(depthCopyPass, _taaFullscreenView, 6);
       depthCopyPass.bindTexture(
-        baseShaderLibrary['CopyFragment']!.getUniformSlot('source_texture'),
+        baseShaderLibrary['CopyFragment']!.cachedUniformSlot('source_texture'),
         depthNormal,
         sampler: _nearestClamp,
       );

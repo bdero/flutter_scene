@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Runs one custom [PostEffect] as a full-screen pass.
 ///
@@ -81,7 +82,7 @@ class PostEffectPass extends RenderGraphPass {
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(
-      shader.getUniformSlot('input_color'),
+      shader.cachedUniformSlot('input_color'),
       input,
       sampler: _linearClamp,
     );
@@ -98,7 +99,7 @@ class PostEffectPass extends RenderGraphPass {
         ..[3] = h == 0 ? 0.0 : 1.0 / h
         ..[4] = _time;
       renderPass.bindUniform(
-        shader.getUniformSlot('PostFrameInfo'),
+        shader.cachedUniformSlot('PostFrameInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),
       );
     }

@@ -21,6 +21,7 @@ import 'package:flutter_scene/src/shader_uniform_bindings.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Packs the `PostShadowInfo` std140 block a depth-aware custom pass reads
 /// (exposed as [RenderPassContext.shadowInfo]) from the frame's [cascades],
@@ -430,7 +431,7 @@ class RenderPassContext {
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(
-      fragmentShader.getUniformSlot('input_color'),
+      fragmentShader.cachedUniformSlot('input_color'),
       input,
       sampler: _linearClamp,
     );
@@ -445,7 +446,7 @@ class RenderPassContext {
         ..[3] = h == 0 ? 0.0 : 1.0 / h
         ..[4] = _time;
       renderPass.bindUniform(
-        fragmentShader.getUniformSlot('PostFrameInfo'),
+        fragmentShader.cachedUniformSlot('PostFrameInfo'),
         _context.transientsBuffer.emplace(ByteData.sublistView(info)),
       );
     }
