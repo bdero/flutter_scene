@@ -12,7 +12,8 @@ import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
-import 'package:flutter_scene/src/scene_encoder.dart' show tryResolvePipeline;
+import 'package:flutter_scene/src/scene_encoder.dart'
+    show drawOrRejectPipeline, tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
@@ -416,7 +417,7 @@ class ShadowEncoder {
                 ? gpu.WindingOrder.counterClockwise
                 : gpu.WindingOrder.clockwise,
           );
-          geometry.draw(_renderPass);
+          drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
         }
         return;
       }
@@ -439,8 +440,10 @@ class ShadowEncoder {
                 ? gpu.WindingOrder.counterClockwise
                 : gpu.WindingOrder.clockwise,
           );
-          geometry.draw(
+          drawOrRejectPipeline(
             _renderPass,
+            geometry,
+            _boundPipeline,
             instanceCount: visible?.length ?? instances.length,
           );
           return;
@@ -518,7 +521,7 @@ class ShadowEncoder {
           ? gpu.WindingOrder.counterClockwise
           : gpu.WindingOrder.clockwise,
     );
-    geometry.draw(_renderPass);
+    drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
   }
 
   static final Matrix4 _identityTransform = Matrix4.identity();
@@ -536,7 +539,12 @@ class ShadowEncoder {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       }
       _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-      geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+      drawOrRejectPipeline(
+        _renderPass,
+        geometry,
+        _boundPipeline,
+        instanceCount: packed.ccwCount,
+      );
     }
     if (packed.cwCount > 0) {
       if (withColor) {
@@ -545,7 +553,12 @@ class ShadowEncoder {
         bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       }
       _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-      geometry.draw(_renderPass, instanceCount: packed.cwCount);
+      drawOrRejectPipeline(
+        _renderPass,
+        geometry,
+        _boundPipeline,
+        instanceCount: packed.cwCount,
+      );
     }
   }
 }
