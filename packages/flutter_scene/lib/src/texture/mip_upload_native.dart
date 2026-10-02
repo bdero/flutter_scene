@@ -3,17 +3,11 @@ import 'dart:typed_data';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/mipmap.dart';
 
-/// Uploads [levels] (base first) into [texture], one GPU submission for the
-/// whole chain.
+/// Uploads [levels] (base first) into [texture] in one submission.
 ///
-/// `gpu.Texture.overwrite` is a complete upload on its own: it allocates a
-/// staging buffer, records a blit pass into a command buffer of its own, and
-/// submits it. On the backends that queue GPU work from the calling thread
-/// (Vulkan, Metal) that is a command pool, a descriptor pool, a fence and a
-/// queue submission *per mip level*, all on the thread that draws. Copying
-/// every level out of one staging buffer through one command buffer pays that
-/// once: Flutter GPU batches contiguous `copyBufferToTexture` calls into a
-/// single blit pass.
+/// Each `gpu.Texture.overwrite` is its own staging buffer, blit pass, and
+/// submission, so a per-level loop pays that once per level. Contiguous
+/// `copyBufferToTexture` calls on one command buffer share a single blit pass.
 void uploadLevelsInto(gpu.Texture texture, List<MipLevel> levels) {
   if (levels.length == 1) {
     texture.overwrite(ByteData.sublistView(levels[0].pixels));

@@ -543,9 +543,8 @@ final class SceneRegistry {
     // Evict so a hot reload re-reads the changed asset.
     bundle.evict(key);
     final data = await bundle.load(key);
-    // Off the calling isolate: the inflate and parse of a scene container is
-    // hundreds of milliseconds for a texture-heavy scene, and a load runs
-    // while something is on screen.
+    // Inflating a texture-heavy container takes hundreds of milliseconds, so
+    // keep it off the frames on screen.
     return readFscenebAsync(
       data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
     );
