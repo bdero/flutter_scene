@@ -136,14 +136,14 @@ class DepthPrepass extends RenderGraphPass {
           ? TransientTextureDescriptor(
               width: width,
               height: height,
-              format: gpu.gpuContext.defaultDepthStencilFormat,
+              format: depthRasterOf(_camera).depthStencilFormat,
               enableShaderReadUsage: false,
               debugName: 'depth_prepass_depth',
             )
           : TransientTextureDescriptor.depth(
               width: width,
               height: height,
-              format: gpu.gpuContext.defaultDepthStencilFormat,
+              format: depthRasterOf(_camera).depthStencilFormat,
               debugName: 'depth_prepass_depth',
             ),
     );

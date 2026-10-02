@@ -13,6 +13,17 @@ Future<ui.Image> presentTextureAsImage(
   );
 }
 
+/// The depth-stencil format for passes that rasterize reversed depth (near
+/// at 1, far at 0), where float depth keeps distant surfaces apart. Native
+/// keeps the context default, which is float on Metal.
+PixelFormat get reversedDepthStencilFormat {
+  // TODO(float-depth): Vulkan and GLES default to D24S8, which reversed depth
+  // cannot improve. Take d32FloatS8UInt where Flutter GPU reports it
+  // attachable (supportsTextureFormat accepts every format today) and, on
+  // GLES, once Impeller takes [0, 1] clip depth through GL_EXT_clip_control.
+  return gpuContext.defaultDepthStencilFormat;
+}
+
 /// The buffers one mesh upload needs. Native has no per-role restriction, so
 /// this is the single shared buffer it always was, indices after vertices.
 ({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})

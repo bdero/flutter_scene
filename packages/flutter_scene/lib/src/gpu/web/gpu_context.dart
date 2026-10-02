@@ -83,11 +83,9 @@ base class GpuContext {
 
   PixelFormat get defaultStencilFormat => PixelFormat.s8UInt;
 
-  // Float depth only pays off with [0, 1] clip depth; under the remap a
-  // float buffer holds no more than 24 bits would.
-  PixelFormat get defaultDepthStencilFormat => _clipDepthZeroToOne
-      ? PixelFormat.d32FloatS8UInt
-      : PixelFormat.d24UnormS8Uint;
+  // Forward depth (shadow maps, masks) gains nothing from float, so only
+  // reversedDepthStencilFormat pays for it.
+  PixelFormat get defaultDepthStencilFormat => PixelFormat.d24UnormS8Uint;
 
   int get minimumUniformByteAlignment => 256;
 
@@ -429,6 +427,14 @@ bool writeGeometryData(
   source,
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+/// The depth-stencil format for passes that rasterize reversed depth (near
+/// at 1, far at 0): float while EXT_clip_control puts clip depth in [0, 1],
+/// else the context default, since under the `[-1, 1]` remap a float buffer
+/// holds no more than 24 bits would.
+PixelFormat get reversedDepthStencilFormat => gpuContext.clipDepthZeroToOne
+    ? PixelFormat.d32FloatS8UInt
+    : gpuContext.defaultDepthStencilFormat;
 
 /// The buffers one mesh upload needs: [vertexBytes] of vertex streams and
 /// [indexBytes] of indices. On web they are two role-typed buffers, because
