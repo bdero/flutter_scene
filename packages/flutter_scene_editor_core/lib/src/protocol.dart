@@ -15,7 +15,7 @@ abstract final class EditorProtocol {
   static const int major = 1;
 
   /// Bumped when verbs or capabilities are added.
-  static const int minor = 0;
+  static const int minor = 1;
 
   /// `major.minor`.
   static const String version = '$major.$minor';

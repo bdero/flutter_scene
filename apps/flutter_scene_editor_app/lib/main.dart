@@ -16,13 +16,22 @@ import 'package:flutter/src/foundation/_features.dart' show isWindowingEnabled;
 import 'package:flutter/src/widgets/_window.dart';
 import 'package:flutter_scene_editor/flutter_scene_editor.dart';
 import 'package:flutter_scene_editor_core/flutter_scene_editor_core.dart'
-    show CommandException, EditorHost, EventBus, QueryHost, ViewHost;
+    show
+        CommandException,
+        EditorHost,
+        EventBus,
+        QueryBlob,
+        QueryEntry,
+        QueryHost,
+        QueryResult,
+        ViewHost;
 import 'package:flutter_scene_codegen/flutter_scene_codegen.dart';
 import 'package:scene/schema.dart';
 import 'package:scene/scene.dart'
     show EditorCameraSpec, EditorStateSpec, LocalId;
 import 'package:vector_math/vector_math.dart' show Aabb3;
-import 'package:flutter_scene_mcp/flutter_scene_mcp.dart' show ToolError;
+import 'package:flutter_scene_mcp/flutter_scene_mcp.dart'
+    show ScreenshotResult, ToolError;
 import 'package:flutter_scene_mcp/socket_host.dart';
 
 void main() {
@@ -188,10 +197,44 @@ class _EditorHomeState extends State<_EditorHome> {
     ..flushScheduler = ((flush) =>
         WidgetsBinding.instance.addPostFrameCallback((_) => flush()));
 
+  Future<ScreenshotResult> _captureViewport() {
+    final dpr = View.of(context).devicePixelRatio;
+    return viewportScreenshot(_viewportKey, pixelRatio: dpr)();
+  }
+
+  // The capture screenshot_viewport uses, as a query, so extensions read
+  // what the user sees through the protocol rather than a tool.
+  // TODO(async-queries): move the render graph reads (capture, pass output,
+  // pixel, NaN scan, draw list, draw detail) over as frame queries too.
+  late final _viewportImageQuery = QueryEntry.frame(
+    name: 'viewportImage',
+    category: 'View',
+    doc:
+        'The viewport as the user sees it, a PNG captured after the next '
+        'frame.',
+    fetch: (ctx, params) async {
+      final shot = await _captureViewport();
+      return QueryResult(
+        {'image': 'viewport', 'width': shot.width, 'height': shot.height},
+        blobs: [
+          QueryBlob(
+            id: 'viewport',
+            bytes: shot.pngBytes,
+            mimeType: 'image/png',
+          ),
+        ],
+      );
+    },
+  );
+
   void _configureController(EditorController controller) {
     controller.session.viewHost = _EditorViewHost(this);
     controller.session.host = _EditorHostImpl(this);
     controller.session.queryHost = _EditorQueryHost(controller);
+    final queries = controller.session.queries;
+    if (queries.lookup(_viewportImageQuery.name) == null) {
+      queries.register(_viewportImageQuery);
+    }
     // The same bus across every document, so a client's subscription survives
     // an open instead of dying with the session it was made against.
     controller.session.events = _events;
@@ -1208,10 +1251,7 @@ class _EditorHomeState extends State<_EditorHome> {
         // rendered scene (and the panels), not just the document.
         () => EditorToolSurface(
           () => _controller?.session,
-          screenshot: () {
-            final dpr = View.of(context).devicePixelRatio;
-            return viewportScreenshot(_viewportKey, pixelRatio: dpr)();
-          },
+          screenshot: _captureViewport,
           windowScreenshot: () {
             final dpr = View.of(context).devicePixelRatio;
             return viewportScreenshot(_windowKey, pixelRatio: dpr)();

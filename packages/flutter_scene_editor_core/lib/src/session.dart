@@ -280,6 +280,27 @@ class EditorSession {
     return entry.read(_queryContext(), params);
   }
 
+  /// Answers the query named [name] with [params], whatever its kind.
+  ///
+  /// A document query answers through [ask]; a frame query awaits the
+  /// renderer. Throws as [ask] does.
+  Future<QueryResult> request(
+    String name, [
+    Map<String, Object?> params = const {},
+  ]) async {
+    final entry = queries.lookup(name);
+    if (entry == null) throw ArgumentError('Unknown query: $name');
+    if (entry.kind != QueryKind.frame) return ask(name, params);
+    try {
+      return await entry.fetch!(_queryContext(), params);
+    } on QueryException {
+      rethrow;
+    } on Object catch (error) {
+      // As with application commands, callers see one kind of error.
+      throw QueryException('$name failed, $error');
+    }
+  }
+
   QueryContext _queryContext() => QueryContext(
     document: document,
     query: query,

@@ -1220,8 +1220,9 @@ class EditorToolSurface {
       description:
           'Read the document through a named query. Queries answer in bulk '
           '(a whole subtree, a whole resource, a whole payload), so prefer '
-          'one query over many small reads. Binary comes back base64-encoded '
-          'under "blobs".',
+          'one query over many small reads. A "frame" kind query reads the '
+          'rendered scene and needs a running editor. Binary comes back '
+          'base64-encoded under "blobs".',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -1887,12 +1888,13 @@ class EditorToolSurface {
             'name': entry.name,
             'category': entry.category,
             'description': entry.doc,
+            'kind': entry.kind.name,
             'inputSchema': querySchema(entry)['inputSchema'],
           },
     ];
   }
 
-  Map<String, Object?> _runQuery(Map<String, Object?> args) {
+  Future<Map<String, Object?>> _runQuery(Map<String, Object?> args) async {
     final name = args['query'];
     if (name is! String || name.isEmpty) {
       throw const ToolError('run_query needs a string "query"');
@@ -1901,7 +1903,7 @@ class EditorToolSurface {
         (args['params'] as Map?)?.cast<String, Object?>() ?? const {};
     final QueryResult result;
     try {
-      result = session.ask(name, params);
+      result = await session.request(name, params);
     } on QueryException catch (e) {
       throw ToolError(e.message);
     } on ArgumentError catch (e) {

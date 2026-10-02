@@ -502,8 +502,74 @@ void main() {
   test('an unknown query is an error, not an empty answer', () {
     final session = EditorSession.empty();
     expect(() => session.ask('noSuchQuery'), throwsArgumentError);
+    expect(session.request('noSuchQuery'), throwsArgumentError);
+  });
+
+  test('request answers a document query as ask does', () async {
+    final session = EditorSession.empty();
+    _node(session, 'Root');
+    final asked = session.ask('nodeSubtree').body;
+    final requested = (await session.request('nodeSubtree')).body;
+    expect(jsonEncode(requested), jsonEncode(asked));
+  });
+
+  test('a frame query awaits the renderer, and ask refuses it', () async {
+    final session = EditorSession.empty();
+    session.queries.register(_viewportImage(() async => [1, 2, 3]));
+
+    expect(() => session.ask('viewportImage'), throwsA(isA<QueryException>()));
+    final result = await session.request('viewportImage');
+    expect(result.body['image'], 'viewport');
+    expect(result.blobs.single.bytes, [1, 2, 3]);
+    expect(result.blobs.single.mimeType, 'image/png');
+  });
+
+  test('a renderer failure surfaces as a query error', () async {
+    final session = EditorSession.empty();
+    session.queries.register(
+      _viewportImage(() async => throw StateError('no frame')),
+    );
+    await expectLater(
+      session.request('viewportImage'),
+      throwsA(
+        isA<QueryException>().having(
+          (e) => e.message,
+          'message',
+          contains('no frame'),
+        ),
+      ),
+    );
+  });
+
+  test('the schema says which reads need the renderer', () {
+    final session = EditorSession.empty();
+    session.queries.register(_viewportImage(() async => const []));
+    expect(
+      querySchema(session.queries.lookup('nodeSubtree')!)['kind'],
+      'document',
+    );
+    expect(
+      querySchema(session.queries.lookup('viewportImage')!)['kind'],
+      'frame',
+    );
   });
 }
+
+QueryEntry _viewportImage(Future<List<int>> Function() capture) =>
+    QueryEntry.frame(
+      name: 'viewportImage',
+      doc: 'The viewport.',
+      fetch: (ctx, params) async => QueryResult(
+        {'image': 'viewport'},
+        blobs: [
+          QueryBlob(
+            id: 'viewport',
+            bytes: Uint8List.fromList(await capture()),
+            mimeType: 'image/png',
+          ),
+        ],
+      ),
+    );
 
 class _FixedBounds implements QueryHost {
   _FixedBounds(this.bounds);

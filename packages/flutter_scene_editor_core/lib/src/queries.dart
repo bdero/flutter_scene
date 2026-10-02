@@ -62,9 +62,8 @@ class QueryResult {
 /// The read counterpart to the hosts commands act through. A headless session
 /// has none, and a query answering without one says so rather than guessing.
 ///
-/// TODO(async-queries): [QueryEntry.read] is synchronous, so capture and
-/// render-graph reads, which wait on a frame, cannot join this seam yet and
-/// stay tools. Letting a query return a future is what moves them over.
+/// Reads that wait on the renderer are not host methods. The app declares
+/// them as [QueryKind.frame] queries and registers them itself.
 abstract interface class QueryHost {
   /// World-space bounds of [id] and everything under it, or null when none
   /// of it draws.
@@ -123,16 +122,53 @@ class QueryException implements Exception {
   String toString() => 'QueryException: $message';
 }
 
+/// What a query reads, which decides how it is answered.
+enum QueryKind {
+  /// Reads the document. Synchronous, so the answer is one consistent
+  /// snapshot, and answerable headless.
+  document,
+
+  /// Reads the rendered scene. Asynchronous, since it may wait on a frame,
+  /// and registered only by an app that renders.
+  frame,
+}
+
 /// A registered read.
 class QueryEntry {
-  /// Declares a query.
+  /// Declares a document query.
   const QueryEntry({
     required this.name,
     required this.doc,
     required this.read,
     this.paramSchema = const [],
     this.category = '',
-  });
+  }) : kind = QueryKind.document,
+       fetch = null;
+
+  /// Declares a query over the rendered scene. Answer it with
+  /// `EditorSession.request`; `ask` refuses it.
+  const QueryEntry.frame({
+    required this.name,
+    required this.doc,
+    required Future<QueryResult> Function(QueryContext, Map<String, Object?>)
+    this.fetch,
+    this.paramSchema = const [],
+    this.category = '',
+  }) : kind = QueryKind.frame,
+       read = _refuseSync;
+
+  static QueryResult _refuseSync(
+    QueryContext ctx,
+    Map<String, Object?> params,
+  ) => throw const QueryException(
+    'This query reads the rendered scene; call request instead of ask',
+  );
+
+  /// What this query reads.
+  final QueryKind kind;
+
+  /// The asynchronous body, set only for [QueryKind.frame].
+  final Future<QueryResult> Function(QueryContext, Map<String, Object?>)? fetch;
 
   /// The stable query name (for example `nodeSubtree`).
   final String name;
@@ -181,5 +217,6 @@ Map<String, Object> querySchema(QueryEntry entry) => {
   'name': entry.name,
   'description': entry.doc,
   if (entry.category.isNotEmpty) 'category': entry.category,
+  'kind': entry.kind.name,
   'inputSchema': paramJsonSchema(entry.paramSchema),
 };

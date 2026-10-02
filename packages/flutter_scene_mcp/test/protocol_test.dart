@@ -159,6 +159,39 @@ void main() {
     expect((queries.first as Map)['inputSchema'], isA<Map<String, Object?>>());
   });
 
+  test('run_query awaits a frame query and reports its kind', () async {
+    final session = _session();
+    session.queries.register(
+      QueryEntry.frame(
+        name: 'viewportImage',
+        doc: 'The viewport.',
+        fetch: (ctx, params) async => QueryResult(
+          {'image': 'viewport'},
+          blobs: [
+            QueryBlob(
+              id: 'viewport',
+              bytes: Uint8List.fromList([7, 8]),
+              mimeType: 'image/png',
+            ),
+          ],
+        ),
+      ),
+    );
+    final surface = EditorToolSurface.of(session);
+
+    final found = await surface.dispatch('search_queries', {
+      'query': 'viewportImage',
+    });
+    expect(((found['queries'] as List).single as Map)['kind'], 'frame');
+
+    final result = await surface.dispatch('run_query', {
+      'query': 'viewportImage',
+    });
+    final blob = (result['blobs'] as Map)['viewport'] as Map;
+    expect(blob['mimeType'], 'image/png');
+    expect(base64Decode(blob['base64'] as String), [7, 8]);
+  });
+
   test('a bad query name is an error the client can act on', () async {
     await expectLater(
       EditorToolSurface.of(

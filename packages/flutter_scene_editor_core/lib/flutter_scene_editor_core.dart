@@ -68,6 +68,7 @@ export 'src/queries.dart'
         QueryHost,
         QueryException,
         QueryEntry,
+        QueryKind,
         QueryRegistry,
         querySchema;
 export 'src/builtin_queries.dart'
