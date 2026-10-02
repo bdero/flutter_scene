@@ -175,7 +175,13 @@ ProcessResult _run(
   bool check = true,
 }) {
   stdout.writeln('+ $executable ${args.join(' ')}');
-  final result = Process.runSync(executable, args, workingDirectory: cwd);
+  // `flutter` is a .bat on Windows, which resolves only through a shell.
+  final result = Process.runSync(
+    executable,
+    args,
+    workingDirectory: cwd,
+    runInShell: Platform.isWindows && executable == 'flutter',
+  );
   if (check && result.exitCode != 0) {
     _fail('$executable failed:\n${result.stdout}\n${result.stderr}');
   }
