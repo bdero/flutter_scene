@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -28,6 +30,10 @@ class ShadowCascadeCacheEntry {
   /// The static-content signature the tile was rendered with; a mismatch
   /// marks the tile stale (refreshed amortized).
   int renderedSignature = 0;
+
+  /// The normalized light direction the tile was rendered with; a mismatch
+  /// marks the tile stale (refreshed amortized).
+  final Vector3 direction = Vector3.zero();
 
   /// Whether the tile has ever been rendered with the current parameters.
   bool hasContent = false;
@@ -69,9 +75,11 @@ class ShadowCachePlan {
 /// pass composites them into each frame's atlas and draws only the dynamic
 /// casters on top. Tiles are fit with [slackFactor] extra radius so the
 /// camera can move and turn inside the slack before a cascade must
-/// re-render, and content-stale tiles (a static caster appeared or vanished)
-/// refresh at most [maxAmortizedRefreshes] per frame, nearest cascade first,
-/// so streaming worlds never pay for every cascade at once.
+/// re-render. Stale tiles (a static caster appeared or vanished, or the light
+/// turned by up to [maxDirectionLagDegrees]) refresh at most
+/// [maxAmortizedRefreshes] per frame, nearest cascade first, so streaming
+/// worlds and a stepped sun never pay for every cascade at once. A stale tile
+/// keeps sampling through the matrix it was rendered with until it refreshes.
 class DirectionalShadowCache {
   /// How much larger than the ideal bounding sphere each tile is rendered.
   /// Costs ~13% effective resolution; buys re-render-free camera movement
@@ -81,14 +89,21 @@ class DirectionalShadowCache {
   /// Upper bound on stale-but-usable tile refreshes per frame.
   static const int maxAmortizedRefreshes = 1;
 
+  /// How far the light may turn from a tile's direction before that tile
+  /// re-renders immediately instead of amortized.
+  static const double maxDirectionLagDegrees = 5.0;
+
+  static final double _minDirectionLagCos = math.cos(
+    maxDirectionLagDegrees * math.pi / 180.0,
+  );
+
   final List<ShadowCascadeCacheEntry> _entries = [];
-  final Vector3 _lightDir = Vector3.zero();
   int _resolution = 0;
   ShadowCasterFaces _casterFaces = ShadowCasterFaces.front;
   int _casterChannelMask = 0xFF;
 
   /// The depth attachment every tile refresh renders with, allocated lazily by
-  /// the shadow pass and dropped with the tiles.
+  /// the shadow pass and dropped with the tiles on a resolution change.
   ///
   /// Backends cache a framebuffer per color texture (flutter/flutter#192538),
   /// so a tile must keep the depth it was first rendered with for as long as
@@ -100,8 +115,9 @@ class DirectionalShadowCache {
   /// returns the effective cascades to sample with.
   ///
   /// [staticSignature] fingerprints the static caster set; any change marks
-  /// every tile stale. A change to the light basis or shadow parameters
-  /// rebuilds the cache outright.
+  /// every tile stale, as does a small turn of [lightDirection]. A larger turn
+  /// or a change to the shadow parameters re-renders every tile this frame,
+  /// keeping the tile textures unless the resolution changed.
   ShadowCachePlan plan({
     required DirectionalLight light,
     required Vector3 lightDirection,
@@ -114,18 +130,28 @@ class DirectionalShadowCache {
         resolution != _resolution ||
         light.shadowCasterFaces != _casterFaces ||
         light.shadowCasterChannelMask != _casterChannelMask ||
-        _entries.length != idealCascades.length ||
-        (dir - _lightDir).length2 > 1e-10;
+        _entries.length != idealCascades.length;
     if (paramsChanged) {
-      _entries.clear();
-      tileDepth = null;
-      for (var i = 0; i < idealCascades.length; i++) {
+      if (resolution != _resolution) {
+        for (final entry in _entries) {
+          entry.tile = null;
+        }
+        tileDepth = null;
+      }
+      // Kept entries keep their tile textures, which still pair with
+      // [tileDepth].
+      if (_entries.length > idealCascades.length) {
+        _entries.length = idealCascades.length;
+      }
+      for (final entry in _entries) {
+        entry.hasContent = false;
+      }
+      while (_entries.length < idealCascades.length) {
         _entries.add(ShadowCascadeCacheEntry());
       }
       _resolution = resolution;
       _casterFaces = light.shadowCasterFaces;
       _casterChannelMask = light.shadowCasterChannelMask;
-      _lightDir.setFrom(dir);
     }
 
     final refreshes = <ShadowTileRefresh>[];
@@ -137,18 +163,23 @@ class DirectionalShadowCache {
       final center = ideal.center ?? Vector3.zero();
       // A tile is reusable while the ideal sphere still fits inside its
       // slack box; the radius only changes with camera/shadow parameters.
+      final directionCos = entry.direction.dot(dir);
       final fits =
           entry.hasContent &&
+          directionCos >= _minDirectionLagCos &&
           (ideal.radius - entry.radius).abs() <= entry.radius * 1e-3 &&
           (center - entry.center).length <= entry.radius * (slackFactor - 1.0);
+      final stale =
+          entry.renderedSignature != staticSignature ||
+          entry.direction.distanceToSquared(dir) > 1e-10;
       var refresh = false;
       if (!fits) {
-        // Unusable (first render, coverage drift, or parameter change):
-        // must render this frame or the cascade has no shadows.
+        // Unusable (first render, coverage drift, a large turn, or a
+        // parameter change): must render this frame or the cascade has no
+        // shadows.
         refresh = true;
-      } else if (entry.renderedSignature != staticSignature &&
-          amortized < maxAmortizedRefreshes) {
-        // Usable but stale content: refresh a bounded number per frame,
+      } else if (stale && amortized < maxAmortizedRefreshes) {
+        // Usable but stale: refresh a bounded number per frame,
         // nearest cascade first (this loop runs near-to-far).
         refresh = true;
         amortized++;
@@ -165,6 +196,7 @@ class DirectionalShadowCache {
           ),
         );
         entry.renderedSignature = staticSignature;
+        entry.direction.setFrom(dir);
         entry.hasContent = true;
         refreshes.add(ShadowTileRefresh(i, entry));
       }
