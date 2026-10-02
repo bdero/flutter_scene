@@ -159,4 +159,22 @@ fragment {
     // The BRDF terms that can exceed fp16 clamp to its range.
     expect(_shader('pbr.glsl'), contains('kMediumpFloatMax'));
   });
+
+  test('the specular BRDF stays finite in half precision', () {
+    // Inf from these terms meets a zero radiance channel as NaN, which the
+    // post passes turn into screen-filling bloom.
+    expect(
+      _shader('pbr.glsl'),
+      contains('highp float VisibilitySmithGGXCorrelated('),
+    );
+    final lighting = _shader('material_lighting.glsl');
+    expect(
+      lighting,
+      contains('min(distribution * visibility, kMediumpFloatMax)'),
+    );
+    expect(
+      lighting,
+      contains('out_color = min(out_color, vec3(kMediumpFloatMax));'),
+    );
+  });
 }
