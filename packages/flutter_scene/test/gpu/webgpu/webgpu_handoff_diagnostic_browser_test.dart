@@ -32,18 +32,20 @@ void main() {
     print('DIAG probe $probe');
   });
 
-  /// Renders a clear into a canvas configured for WebGPU and returns it.
-  web.OffscreenCanvas clearedCanvas(WebGpuDevice d, {bool copySrc = false}) {
-    final canvas = web.OffscreenCanvas(_w, _h);
-    final ctx = canvas.getContext('webgpu')! as GPUCanvasContext;
-    final config = _obj({
-      'device': d.device,
-      'format': d.preferredCanvasFormat,
-      'alphaMode': 'premultiplied',
-      // COPY_SRC (0x01) | RENDER_ATTACHMENT (0x10)
-      if (copySrc) 'usage': 0x11,
-    });
-    ctx.callMethod('configure'.toJS, config);
+  /// Configures [ctx] for WebGPU and clears its current texture.
+  void clearContext(
+    WebGpuDevice d,
+    GPUCanvasContext ctx, {
+    String alphaMode = 'premultiplied',
+  }) {
+    ctx.callMethod(
+      'configure'.toJS,
+      _obj({
+        'device': d.device,
+        'format': d.preferredCanvasFormat,
+        'alphaMode': alphaMode,
+      }),
+    );
     final target = ctx.getCurrentTexture();
     final encoder = d.device.createCommandEncoder();
     encoder
@@ -61,7 +63,30 @@ void main() {
         )
         .end();
     d.device.queue.submit([encoder.finish()].toJS);
+  }
+
+  /// Renders a clear into a canvas configured for WebGPU and returns it.
+  web.OffscreenCanvas clearedCanvas(
+    WebGpuDevice d, {
+    String alphaMode = 'premultiplied',
+  }) {
+    final canvas = web.OffscreenCanvas(_w, _h);
+    clearContext(
+      d,
+      canvas.getContext('webgpu')! as GPUCanvasContext,
+      alphaMode: alphaMode,
+    );
     return canvas;
+  }
+
+  /// Reads the first pixel of [source] back through a 2D canvas.
+  Uint8List readVia2d(JSObject source) {
+    final readback = web.OffscreenCanvas(_w, _h);
+    final ctx2d =
+        readback.getContext('2d')! as web.OffscreenCanvasRenderingContext2D;
+    ctx2d.callMethod('drawImage'.toJS, source, 0.toJS, 0.toJS);
+    final data = ctx2d.getImageData(0, 0, _w, _h).data.toDart;
+    return Uint8List.fromList(data.buffer.asUint8List(0, 4));
   }
 
   String firstPixel(Uint8List rgba) =>
@@ -125,12 +150,7 @@ void main() {
   test('2. The transferred bitmap carries the pixels (2D canvas)', () async {
     if (!probe.available) return markTestSkipped('$probe');
     final bitmap = clearedCanvas(probe.device!).transferToImageBitmap();
-    final readback = web.OffscreenCanvas(_w, _h);
-    final ctx2d =
-        readback.getContext('2d')! as web.OffscreenCanvasRenderingContext2D;
-    ctx2d.drawImage(bitmap, 0, 0);
-    final data = ctx2d.getImageData(0, 0, _w, _h).data.toDart;
-    final rgba = Uint8List.fromList(data.buffer.asUint8List(0, 4));
+    final rgba = readVia2d(bitmap);
     print('DIAG 2 bitmap via 2d canvas ${firstPixel(rgba)}');
     expect(rgba[0], closeTo(64, 1.5));
   });
@@ -144,6 +164,31 @@ void main() {
     );
     final rgba = data!.buffer.asUint8List();
     print('DIAG 3 createImageFromImageBitmap ${firstPixel(rgba)}');
+    expect(rgba[0], closeTo(64, 1.5));
+  });
+
+  test('5. A DOM canvas instead of an OffscreenCanvas', () async {
+    if (!probe.available) return markTestSkipped('$probe');
+    final canvas = web.document.createElement('canvas') as web.HTMLCanvasElement
+      ..width = _w
+      ..height = _h;
+    clearContext(
+      probe.device!,
+      canvas.getContext('webgpu')! as GPUCanvasContext,
+    );
+    final rgba = readVia2d(canvas);
+    print('DIAG 5 dom canvas via 2d ${firstPixel(rgba)}');
+    expect(rgba[0], closeTo(64, 1.5));
+  });
+
+  test('6. An opaque canvas', () async {
+    if (!probe.available) return markTestSkipped('$probe');
+    final bitmap = clearedCanvas(
+      probe.device!,
+      alphaMode: 'opaque',
+    ).transferToImageBitmap();
+    final rgba = readVia2d(bitmap);
+    print('DIAG 6 opaque bitmap via 2d ${firstPixel(rgba)}');
     expect(rgba[0], closeTo(64, 1.5));
   });
 
