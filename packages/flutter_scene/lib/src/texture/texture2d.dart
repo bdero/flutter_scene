@@ -183,15 +183,12 @@ class Texture2D implements TextureSource {
   /// Builds a texture from a decoded [image].
   ///
   /// Set [opaque] when every pixel of [image] is fully opaque. A texture that
-  /// then needs no mip chain wraps the image's own GPU texture
-  /// ([gpu.Texture.fromImage]) instead of reading its pixels back and
-  /// uploading them again, which on Vulkan and Metal costs a readback that
-  /// waits on the raster thread and a submission on the thread that draws.
-  /// The wrapper shares the image's storage and keeps it alive, so the caller
-  /// may dispose the image as soon as this returns. It is opt-in because the
-  /// image's texture is premultiplied, while the readback is straight alpha:
-  /// the same pixels only where alpha is 1. A backend that cannot hand the
-  /// image over (the web) reads it back regardless.
+  /// then needs no mip chain wraps the image's own GPU texture instead of
+  /// reading it back and uploading it again. The wrapper keeps the image's
+  /// storage alive, so [image] may still be disposed. It is opt-in because the
+  /// image's texture is premultiplied and the readback is straight alpha, which
+  /// only agree where alpha is 1. Backends that cannot wrap the image (the web)
+  /// read it back regardless.
   static Future<Texture2D> fromImage(
     ui.Image image, {
     TextureContent content = TextureContent.color,

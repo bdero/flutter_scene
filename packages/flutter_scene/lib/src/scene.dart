@@ -1834,22 +1834,11 @@ base class Scene implements SceneGraph {
     if (views.isEmpty) {
       return;
     }
-    // Rendezvous with the raster thread before drawing anything.
-    //
-    // The warm-up frame's first draw is what compiles a pipeline, and on the
-    // OpenGL ES backend the engine builds a pipeline by posting a task to the
-    // raster thread and *blocking* the calling (UI) thread on its result --
-    // see `flutter::gpu::RenderPass::GetOrCreatePipeline` in
-    // `flutter/lib/gpu/render_pass.cc`, whose own comment warns it "could hang
-    // the UI thread long enough to miss a frame". If the raster thread is
-    // inside `eglSwapBuffers` waiting for the display to release a buffer, the
-    // UI thread inherits that whole wait: on a Mali/BLAST device that is
-    // hundreds of milliseconds, and it is spent with Dart frozen.
-    //
-    // Waiting for the raster thread here costs the same wall clock but does
-    // not block Dart: the completion callback of an empty command buffer only
-    // runs once the raster thread has drained its queue, so the draws below
-    // find it idle and the pipeline round-trips return immediately.
+    // On GLES the engine compiles a pipeline on the raster thread and blocks
+    // this thread on the result
+    // (`flutter::gpu::RenderPass::GetOrCreatePipeline`), so a raster thread
+    // parked in `eglSwapBuffers` would freeze Dart for the whole swap. Await
+    // it first so the compiles find it idle.
     await awaitRasterThread();
     // Encode one real frame into a discarded recording. The GPU passes (and so
     // the pipeline compilations and resource uploads) are submitted during
@@ -1883,8 +1872,7 @@ base class Scene implements SceneGraph {
     // building. A view paced by GPU backpressure re-presents its last image
     // and resolves no pipelines, so it proves nothing.
     for (var slice = 0; slice < 1000; slice++) {
-      // Every slice compiles pipelines, and the raster thread may be back in
-      // eglSwapBuffers after the yield below, so rendezvous before each one.
+      // Each slice compiles pipelines after a yield, so rendezvous again.
       if (slice > 0) await awaitRasterThread();
       final paced = _pacedFrameCount;
       withPipelineBuildBudget(sliceBudget, encode);
