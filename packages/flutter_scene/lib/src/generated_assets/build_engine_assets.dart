@@ -178,8 +178,11 @@ Future<void> _buildBaseShaderBundle({
       owner: _engineOwner,
       target: target,
     );
-    // Recorded again too, or the sweep in save() deletes it.
-    if (wgslUri != null && File.fromUri(wgslUri).existsSync()) {
+    // Recorded again too, or the sweep in save() deletes it; dropped when the
+    // switch is off, or a recorded sidecar outlives it.
+    if (wgslUri == null) {
+      tree.drop(GeneratedAssetFamily.wgsl, 'base', target: target);
+    } else if (File.fromUri(wgslUri).existsSync()) {
       tree.recordFile(
         family: GeneratedAssetFamily.wgsl,
         id: 'base',

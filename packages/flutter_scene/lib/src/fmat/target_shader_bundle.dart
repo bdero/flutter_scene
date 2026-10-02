@@ -175,7 +175,9 @@ Future<void> buildTargetShaderBundleJson({
     owner: owner,
     target: target,
   );
-  if (wgsl.existsSync()) {
+  if (!wgsl.existsSync()) {
+    tree.drop(GeneratedAssetFamily.wgsl, id, target: target);
+  } else {
     final wgslUri = tree.fileUri(
       GeneratedAssetFamily.wgsl,
       nameId: id,
