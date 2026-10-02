@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -386,6 +387,29 @@ double sceneSortDepth(
 final Map<(gpu.Shader, gpu.Shader, int), gpu.RenderPipeline> _pipelineCache =
     {};
 
+// [_pipelineCache] as nested identity maps, so a per-draw hit builds no
+// record key. Kept in step with the cache on insert and eviction.
+final Map<gpu.Shader, Map<gpu.Shader, Map<int, gpu.RenderPipeline>>>
+_pipelineIndex = HashMap.identity();
+
+gpu.RenderPipeline? _cachedPipeline(
+  gpu.Shader vertexShader,
+  gpu.Shader fragmentShader,
+  int layoutId,
+) => _pipelineIndex[vertexShader]?[fragmentShader]?[layoutId];
+
+/// The already-built pipeline for this shader pair and layout, or null.
+///
+/// Lets a per-draw caller skip [tryResolvePipeline] and the debug closure it
+/// takes when the pipeline exists.
+@internal
+gpu.RenderPipeline? cachedRenderPipeline(
+  gpu.Shader vertexShader,
+  gpu.Shader fragmentShader,
+  VertexLayoutDescriptor? vertexLayout,
+) =>
+    _cachedPipeline(vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
+
 /// Pipeline keys the backend refused to build, so a rejected pairing is not
 /// retried every frame. Keyed exactly like [_pipelineCache] and evicted with
 /// it, so one bad shader variant does not disable the variants that build, and
@@ -443,9 +467,10 @@ gpu.RenderPipeline resolvePipeline(
   VertexLayoutDescriptor? vertexLayout,
   String Function()? debugContext,
 }) {
-  final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
-  final cached = _pipelineCache[key];
+  final layoutId = vertexLayoutId(vertexLayout);
+  final cached = _cachedPipeline(vertexShader, fragmentShader, layoutId);
   if (cached != null) return cached;
+  final key = (vertexShader, fragmentShader, layoutId);
   activeRenderCounters.pipelineBuilds++;
   final stopwatch = kDebugMode || profileRendering
       ? (Stopwatch()..start())
@@ -472,6 +497,8 @@ gpu.RenderPipeline resolvePipeline(
       );
     }
   }
+  (_pipelineIndex[vertexShader] ??= HashMap.identity())[fragmentShader] ??= {};
+  _pipelineIndex[vertexShader]![fragmentShader]![layoutId] = pipeline;
   return _pipelineCache[key] = pipeline;
 }
 
@@ -513,6 +540,11 @@ void evictPipelinesForShaders(Set<gpu.Shader> shaders) {
   _rejectedPipelines.removeWhere(
     (key) => shaders.contains(key.$1) || shaders.contains(key.$2),
   );
+  _pipelineIndex.clear();
+  _pipelineCache.forEach((key, pipeline) {
+    final byFragment = _pipelineIndex[key.$1] ??= HashMap.identity();
+    (byFragment[key.$2] ??= {})[key.$3] = pipeline;
+  });
 }
 
 /// [resolvePipeline], returning null instead of throwing when the backend
@@ -532,7 +564,11 @@ gpu.RenderPipeline? tryResolvePipeline(
   VertexLayoutDescriptor? vertexLayout,
   String Function()? debugContext,
 }) {
-  final key = (vertexShader, fragmentShader, vertexLayoutId(vertexLayout));
+  final layoutId = vertexLayoutId(vertexLayout);
+  // A built pipeline is never rejected or deferred.
+  final cached = _cachedPipeline(vertexShader, fragmentShader, layoutId);
+  if (cached != null) return cached;
+  final key = (vertexShader, fragmentShader, layoutId);
   if (_rejectedPipelines.contains(key)) return null;
   if (_deferBuild(key)) return null;
   try {
@@ -871,23 +907,26 @@ base class SceneEncoder {
     final materialVertex = material.materialVertexShader(
       geometry.materialVertexVariant,
     );
-    final pipeline = tryResolvePipeline(
-      materialVertex ?? geometry.vertexShader,
-      fallback
-          ? _debugFallbackShader
-          : material.fragmentShaderForLighting(_lighting),
-      // A material declaring `instance_attributes` widens the instance-rate
-      // slot, and its custom vertex `attributes` pick the geometry streams, so
-      // the pipeline depends on the material as well as the geometry.
-      vertexLayout: geometry.instancedVertexLayoutFor(
-        material.instanceAttributes,
-        material.vertexAttributesFor(materialVertex),
-      ),
-      debugContext: () =>
-          '${fmatSourcePathOf(material) ?? material.runtimeType} on '
-          '${geometry.runtimeType}'
-          '${geometry.hasCustomAttributes ? ' with custom vertex attributes' : ''}',
+    final vertexShader = materialVertex ?? geometry.vertexShader;
+    final fragmentShader = fallback
+        ? _debugFallbackShader
+        : material.fragmentShaderForLighting(_lighting);
+    // A material declaring `instance_attributes` widens the instance-rate
+    // slot, and its custom vertex `attributes` pick the geometry streams, so
+    // the pipeline depends on the material as well as the geometry.
+    final vertexLayout = geometry.instancedVertexLayoutFor(
+      material.instanceAttributes,
+      material.vertexAttributesFor(materialVertex),
     );
+    final pipeline =
+        cachedRenderPipeline(vertexShader, fragmentShader, vertexLayout) ??
+        _resolveRecordPipeline(
+          vertexShader,
+          fragmentShader,
+          vertexLayout,
+          material,
+          geometry,
+        );
     if (pipeline == null) {
       activeRenderCounters.pipelineRejected++;
       activeDrawRecorder?.onSkip(item, DrawSkipReason.pipelineRejected);
@@ -933,6 +972,24 @@ base class SceneEncoder {
       _translucentRecords,
     );
   }
+
+  // The pipeline-cache miss path of [_record]. Its debug closure lives here
+  // so the per-draw path does not allocate a capture context.
+  gpu.RenderPipeline? _resolveRecordPipeline(
+    gpu.Shader vertexShader,
+    gpu.Shader fragmentShader,
+    VertexLayoutDescriptor? vertexLayout,
+    Material material,
+    Geometry geometry,
+  ) => tryResolvePipeline(
+    vertexShader,
+    fragmentShader,
+    vertexLayout: vertexLayout,
+    debugContext: () =>
+        '${fmatSourcePathOf(material) ?? material.runtimeType} on '
+        '${geometry.runtimeType}'
+        '${geometry.hasCustomAttributes ? ' with custom vertex attributes' : ''}',
+  );
 
   // Appends one back-to-front record to [target]. Keeps instanced draws in a
   // single record; their instances are sorted while the transform buffer is

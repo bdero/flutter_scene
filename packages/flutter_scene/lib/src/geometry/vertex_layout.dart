@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
@@ -163,5 +165,13 @@ final Map<VertexLayoutDescriptor, int> _layoutIds = {};
 /// caches include this in their key so two layouts on one vertex shader do
 /// not collide.
 @internal
-int vertexLayoutId(VertexLayoutDescriptor? layout) =>
-    layout == null ? 0 : (_layoutIds[layout] ??= _layoutIds.length + 1);
+int vertexLayoutId(VertexLayoutDescriptor? layout) {
+  if (layout == null) return 0;
+  // Geometries hold their descriptors, so the identity lookup skips the
+  // structural hash on every draw after the first.
+  return _layoutIdsByIdentity[layout] ??= (_layoutIds[layout] ??=
+      _layoutIds.length + 1);
+}
+
+final Map<VertexLayoutDescriptor, int> _layoutIdsByIdentity =
+    HashMap.identity();
