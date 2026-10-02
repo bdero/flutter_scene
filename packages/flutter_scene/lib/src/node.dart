@@ -1524,8 +1524,10 @@ base class Node implements SceneGraph {
     if (restPoseOf != null) {
       for (final animation in _animations) {
         for (final channel in animation.channels) {
-          final nodeName = channel.bindTarget.nodeName;
-          final target = nodeName == name ? this : getChildByName(nodeName);
+          final target = resolveAnimationTarget(
+            this,
+            channel.bindTarget.nodeName,
+          );
           if (target == null) continue;
           final pose = restPoseOf(target);
           if (pose != null) target.localTransform = pose;
