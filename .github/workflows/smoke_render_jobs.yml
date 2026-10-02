@@ -161,14 +161,43 @@ jobs:
         run: flutter --version
       - run: flutter config --enable-native-assets
       - run: flutter pub get
+      - name: Engine revision
+        id: engine
+        run: echo "revision=$(flutter --version --machine | jq -r .engineRevision)" >> "$GITHUB_OUTPUT"
+      # Gradle downloads and the engine's compiled shaders carry over between
+      # runs. Every generated output is stamped with its inputs' content and the
+      # engine identity, so a stale restore is rebuilt, never reused.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-gradle-${{ hashFiles('examples/smoke_render/android/**/*.gradle*', 'examples/smoke_render/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-gradle-
+      - uses: actions/cache@v6
+        with:
+          path: |
+            packages/flutter_scene/flutter_scene_generated
+            examples/smoke_render/flutter_scene_generated
+          key: android-scene-generated-${{ matrix.backend }}-${{ steps.engine.outputs.revision }}-${{ hashFiles('packages/flutter_scene/shaders/**', 'examples/smoke_render/shaders/**', 'examples/smoke_render/assets/**') }}
+          restore-keys: |
+            android-scene-generated-${{ matrix.backend }}-${{ steps.engine.outputs.revision }}-
+            android-scene-generated-${{ matrix.backend }}-
+      # Built before the emulator boots, so the build has the whole runner and
+      # the drive's time caps cover only the tests.
+      - name: Build smoke APK
+        working-directory: examples/smoke_render
+        run: >
+          flutter build apk --debug
+          --flavor ${{ matrix.backend }}
+          --target=integration_test/smoke_test.dart
+          --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
       - name: Enable KVM access
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      # Keep host pressure and process evidence when SwiftShader or the emulator
-      # is terminated without an Android crash report.
       - name: Render smoke scenes
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -184,57 +213,8 @@ jobs:
           # emulator bug (#314), then drop the pin once a fixed build ships.
           emulator-build: 13823996
           emulator-options: ${{ matrix.emulator_options }}
-          script: >
-            flutter devices &&
-            (adb shell getprop ro.hardware.vulkan || true) &&
-            (adb shell getprop ro.opengles.version || true) &&
-            adb shell svc power stayon true &&
-            (adb shell wm dismiss-keyguard || true) &&
-            mkdir -p examples/smoke_render/build/android-diagnostics &&
-            (adb devices -l > examples/smoke_render/build/android-diagnostics/adb_devices_before_${{ matrix.backend }}.txt 2>&1 || true) &&
-            (adb shell getprop > examples/smoke_render/build/android-diagnostics/getprop_${{ matrix.backend }}.txt 2>&1 || true) &&
-            (adb shell dumpsys SurfaceFlinger > examples/smoke_render/build/android-diagnostics/surfaceflinger_${{ matrix.backend }}.txt 2>&1 || true) &&
-            (host_monitor() { while true; do
-            date -u +%FT%TZ;
-            free -m;
-            cat /proc/pressure/memory;
-            cat /sys/fs/cgroup/memory.events 2>/dev/null || true;
-            ps -eo pid,ppid,rss,vsz,%mem,%cpu,stat,comm,args --sort=-rss | head -n 20;
-            sleep 2;
-            done; };
-            host_monitor > examples/smoke_render/build/android-diagnostics/host_resources_${{ matrix.backend }}.txt 2>&1 &
-            echo $! > /tmp/smoke-host-monitor.pid) &&
-            adb logcat -c &&
-            (adb logcat -v time > examples/smoke_render/build/android-diagnostics/logcat_${{ matrix.backend }}.txt 2>&1 & echo $! > /tmp/smoke-logcat.pid) &&
-            cd examples/smoke_render &&
-            (drive() { timeout 1200 flutter drive
-            --driver=test_driver/integration_test.dart
-            --target=integration_test/smoke_test.dart
-            -d emulator-5554
-            --flavor ${{ matrix.backend }}
-            --dart-define=SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND=${{ matrix.expected_backend }}
-            --enable-impeller
-            --enable-flutter-gpu; };
-            drive;
-            drive_code=$?;
-            if [ "$drive_code" -ne 0 ] && ! ls build/smoke/*.png >/dev/null 2>&1; then
-            echo "flutter drive failed (status $drive_code) before rendering any frames; restarting adb and retrying once.";
-            adb kill-server || true;
-            adb start-server || true;
-            if timeout 30 adb wait-for-device && [ "$(adb get-state 2>/dev/null)" = "device" ]; then
-            drive;
-            drive_code=$?;
-            else
-            echo "The emulator did not reconnect within 30 seconds; skipping retry.";
-            fi;
-            fi;
-            (adb devices -l > build/android-diagnostics/adb_devices_after_${{ matrix.backend }}.txt 2>&1 || true);
-            (sudo dmesg -T > build/android-diagnostics/host_dmesg_${{ matrix.backend }}.txt 2>&1 || true);
-            (cat /sys/fs/cgroup/memory.events > build/android-diagnostics/host_memory_events_${{ matrix.backend }}.txt 2>&1 || true);
-            (cat /proc/meminfo > build/android-diagnostics/host_meminfo_after_${{ matrix.backend }}.txt 2>&1 || true);
-            kill "$(cat /tmp/smoke-host-monitor.pid)" || true;
-            kill "$(cat /tmp/smoke-logcat.pid)" || true;
-            exit "$drive_code")
+          # Caps, retry, capture pulls, and diagnostics live in the script.
+          script: bash examples/smoke_render/tool/android_drive.sh ${{ matrix.backend }} build/app/outputs/flutter-apk/app-${{ matrix.backend }}-debug.apk
       - name: Upload Android diagnostics
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7

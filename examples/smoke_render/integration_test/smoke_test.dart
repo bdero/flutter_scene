@@ -21,6 +21,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:smoke_render/smoke_scenes.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'capture_store.dart';
+
 const _expectedAndroidImpellerBackend = String.fromEnvironment(
   'SMOKE_EXPECTED_ANDROID_IMPELLER_BACKEND',
 );
@@ -53,6 +55,11 @@ void main() {
   for (final smoke in kSmokeScenes) {
     if (_onlyScene.isNotEmpty && smoke.id != _onlyScene) continue;
     testWidgets('${smoke.id} renders a sane frame', (tester) async {
+      if (await alreadyPassed(smoke.id)) {
+        // ignore: avoid_print
+        print('SMOKE ${smoke.id}: passed in an earlier attempt, skipped');
+        return;
+      }
       // Let Flutter render one ordinary frame before touching flutter_scene.
       // Android GLES can race GPU context setup if Scene initialization uploads
       // textures before the first frame has established the backend context.
@@ -123,7 +130,9 @@ void main() {
 
       // Hand the PNG to the host driver (writes it outside the app sandbox).
       // Platform is distinguished by the Argos build-name, not the filename.
-      captures['${smoke.id}.png'] = base64Encode(png.buffer.asUint8List());
+      final pngBytes = png.buffer.asUint8List();
+      captures['${smoke.id}.png'] = base64Encode(pngBytes);
+      await storeCapture('${smoke.id}.png', pngBytes);
 
       final stats = _frameStats(rgba, image.width, image.height);
       final colorPass = _colorPassCounters(scene);
@@ -316,6 +325,7 @@ void main() {
               'ambient occlusion changes abruptly at the right viewport edge',
         );
       }
+      await markPassed(smoke.id);
     });
   }
 
