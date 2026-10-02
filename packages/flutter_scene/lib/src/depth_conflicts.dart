@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:vector_math/vector_math.dart';
 
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/raster_sync.dart';
 import 'package:flutter_scene/src/node.dart';
@@ -62,6 +63,7 @@ class DepthConflictReport {
     required this.width,
     required this.height,
     required this.conflicts,
+    this.untested = const [],
   });
 
   /// The probe image's size in pixels.
@@ -70,6 +72,11 @@ class DepthConflictReport {
 
   /// The fighting pairs, most pixels first. Empty when nothing fights.
   final List<DepthConflict> conflicts;
+
+  /// Nodes the probe cannot test, because their visible coverage comes from
+  /// their own material code (a `.fmat` cutout's `Surface()`). They still
+  /// hide what is behind them, but pairs that involve them are not reported.
+  final List<Node> untested;
 
   /// The pixels involved in any conflict.
   int get conflictPixelCount =>
@@ -81,8 +88,21 @@ class DepthConflictReport {
   /// A short report for a log or an agent: a summary line and the largest
   /// [limit] pairs.
   String describe({int limit = 8}) {
+    String? untestedLine;
+    if (untested.isNotEmpty) {
+      final names = [
+        for (final node in untested.take(limit)) "'${debugNodePath(node)}'",
+        if (untested.length > limit) '${untested.length - limit} more',
+      ].join(', ');
+      untestedLine =
+          '${untested.length} node${untested.length == 1 ? '' : 's'} with '
+          'cutouts from material code went untested ($names).';
+    }
     if (conflicts.isEmpty) {
-      return 'No depth conflicts in a ${width}x$height probe.';
+      return [
+        'No depth conflicts in a ${width}x$height probe.',
+        ?untestedLine,
+      ].join('\n');
     }
     final lines = [
       '${conflicts.length} depth conflict${conflicts.length == 1 ? '' : 's'} '
@@ -92,6 +112,7 @@ class DepthConflictReport {
           'the one that belongs on top a higher Material.depthLayer.',
       for (final conflict in conflicts.take(limit)) '  ${conflict.describe()}',
       if (conflicts.length > limit) '  and ${conflicts.length - limit} more',
+      ?untestedLine,
     ];
     return lines.join('\n');
   }
@@ -149,10 +170,13 @@ Matrix4 perturbDepthRow(
 /// fitted near plane all count.
 ///
 /// Projection volumes (decals, tested `always`) and items that draw nothing
-/// are skipped.
+/// are skipped. Every other item gets its own id, even one sharing another's
+/// material, since vertex colors, texture coordinates, and normals can still
+/// tell their pixels apart.
 ///
-/// Items drawing with one material and no per-instance color share an
-/// appearance, since their overlaps draw identical pixels whoever wins.
+/// An item whose coverage comes from its own material code ([untested])
+/// draws as background (id 0): it hides what is behind it, but no comparison
+/// counts a pixel it holds, since the id pass cannot reproduce its cutout.
 @internal
 class DepthConflictIds {
   DepthConflictIds({
@@ -162,16 +186,17 @@ class DepthConflictIds {
     this.layerMask = kRenderLayerAll,
   }) : frustum = cullingFrustumOf(camera, size),
        _pixelSlope = pixelDepthSlopeOf(camera, size) {
-    final groups = Map<Object, int>.identity();
     renderScene.cull(frustum, (item) {
       if (!item.drawsColor || (item.layers & layerMask) == 0) return;
       if (!_include(item) || _ids.containsKey(item)) return;
+      if (_coverageUnknown(item)) {
+        _ids[item] = 0;
+        untested.add(item);
+        return;
+      }
       items.add(item);
       _ids[item] = items.length;
-      final Object key = item.instanceColors == null ? item.material : item;
-      appearances.add(groups.putIfAbsent(key, () => groups.length + 1));
     });
-    appearanceCount = groups.length;
   }
 
   final RenderScene renderScene;
@@ -185,15 +210,19 @@ class DepthConflictIds {
   final List<RenderItem> items = [];
   final Map<RenderItem, int> _ids = {};
 
-  /// The appearance of each id, from 1, with background (id 0) at 0.
-  final List<int> appearances = [0];
-
-  /// How many appearances the items have.
-  late final int appearanceCount;
+  /// Drawn items whose coverage the id pass cannot reproduce, drawn as
+  /// background.
+  final List<RenderItem> untested = [];
 
   static bool _include(RenderItem item) =>
       !item.material.drawsNothing &&
       item.material.depthCompare != gpu.CompareFunction.always;
+
+  // A cutout `.fmat` cuts its depth passes with its own `Surface()`, which a
+  // flat id fragment cannot run. Engine alpha masks are reproduced.
+  static bool _coverageUnknown(RenderItem item) =>
+      !item.material.depthAlphaMasked &&
+      item.material.depthSurfaceShader(DepthSurfaceKind.linearDepth) != null;
 
   static Vector4 _idColor(int id) => Vector4(
     (id & 0xff) / 255.0,
@@ -204,49 +233,45 @@ class DepthConflictIds {
 
   Vector4 _colorOf(RenderItem item) => _idColor(_ids[item] ?? 0);
 
-  Vector4 _appearanceColorOf(RenderItem item) =>
-      _idColor(appearances[_ids[item] ?? 0]);
-
-  /// How many bits the appearances span, so [bitNudge] separates every pair
-  /// of appearances in that many pairs of images.
-  int get appearanceBits {
+  /// How many bits the ids span, so [bitNudge] separates every pair of ids
+  /// in that many pairs of images.
+  int get idBits {
     var bits = 1;
-    while ((1 << bits) <= appearanceCount) {
+    while ((1 << bits) <= items.length) {
       bits++;
     }
     return bits;
   }
 
   /// A nudge for [draw] that moves each item one nudge unit toward the
-  /// camera when [bit] of its appearance is [sign], and as far away when it
-  /// is not (see `kDepthNudgeSteps` and `kDepthNudgePixels`).
-  double Function(int appearance) bitNudge(int bit, {required bool sign}) =>
-      (appearance) => ((appearance >> bit) & 1 == 1) == sign ? 1.0 : -1.0;
+  /// camera when [bit] of its id is [sign], and as far away when it is not
+  /// (see `kDepthNudgeSteps` and `kDepthNudgePixels`). Background stays put.
+  double Function(int id) bitNudge(int bit, {required bool sign}) =>
+      (id) => id == 0 ? 0.0 : (((id >> bit) & 1 == 1) == sign ? 1.0 : -1.0);
 
-  /// Nudges for [draw] indexed by appearance, one of five levels from minus
-  /// to plus one nudge unit each, drawn from [random].
+  /// Nudges for [draw] indexed by id, one of five levels from minus to plus
+  /// one nudge unit each, drawn from [random].
   List<double> randomNudges(math.Random random) => [
     0.0,
-    for (var i = 0; i < appearanceCount; i++) (random.nextInt(5) - 2) * 0.5,
+    for (var i = 0; i < items.length; i++) (random.nextInt(5) - 2) * 0.5,
   ];
 
-  /// Draws the id image into [target] (RGBA8) with [depth] (the context's
-  /// default depth-stencil format), through [viewProjection] or the view's
+  /// Draws the id image into [target] (RGBA8) with [depth] (the view
+  /// raster's depth-stencil format), through [viewProjection] or the view's
   /// own raster transform.
   ///
   /// A [nudge] moves each item that many nudge units toward the camera (away
-  /// when negative), by its appearance. Drawn again with the nudges negated,
-  /// a pair nudged apart swaps owners wherever the two are closer than their
+  /// when negative), by its id. Drawn again with the nudges negated, a pair
+  /// nudged apart swaps owners wherever the two are closer than their
   /// difference, which is where they fight as the camera moves; silhouettes
-  /// never move. [byAppearance] fills appearances rather than ids.
+  /// never move.
   void draw({
     required gpu.Texture target,
     required gpu.Texture depth,
     required TransientWriter transients,
     Matrix4? viewProjection,
     bool reverseOrder = false,
-    double Function(int appearance)? nudge,
-    bool byAppearance = false,
+    double Function(int id)? nudge,
   }) {
     renderObjectMask(
       target: target,
@@ -258,15 +283,13 @@ class DepthConflictIds {
       transientsBuffer: transients,
       layerMask: layerMask,
       filter: const NodeFilter.all(),
-      colorOf: byAppearance ? _appearanceColorOf : _colorOf,
+      colorOf: _colorOf,
       raster: camera.raster,
       frustum: frustum,
       reverseOrder: reverseOrder,
       materialCulling: true,
       include: _include,
-      nudge: nudge == null
-          ? null
-          : (item) => nudge(appearances[_ids[item] ?? 0]),
+      nudge: nudge == null ? null : (item) => nudge(_ids[item] ?? 0),
       pixelSlope: _pixelSlope,
       fullVertex: true,
     );
@@ -293,8 +316,8 @@ class DepthConflictIds {
 
 /// Renders an exact object-id image of [camera]'s view several times (with
 /// the draw order reversed, under [kDepthConflictPerturbations] and
-/// [kDepthConflictJitters], and with appearances nudged apart one bit at a
-/// time) and reports the pairs of items whose pixels change owner.
+/// [kDepthConflictJitters], and with ids nudged apart one bit at a time) and
+/// reports the pairs of items whose pixels change owner.
 @internal
 Future<DepthConflictReport> probeDepthConflicts({
   required RenderScene renderScene,
@@ -313,96 +336,112 @@ Future<DepthConflictReport> probeDepthConflicts({
   );
   final items = ids.items;
 
-  final color = gpu.gpuContext.createTexture(
-    gpu.StorageMode.devicePrivate,
-    width,
-    height,
-    format: gpu.PixelFormat.r8g8b8a8UNormInt,
-    enableRenderTargetUsage: true,
-    enableShaderReadUsage: true,
-  );
+  // One depth buffer serves every image; each draw clears it.
   final depth = gpu.gpuContext.createTexture(
     gpu.StorageMode.deviceTransient,
     width,
     height,
-    format: gpu.gpuContext.defaultDepthStencilFormat,
+    format: camera.raster.depthStencilFormat,
     enableRenderTargetUsage: true,
   );
 
-  Future<Uint32List> render({
+  // Every image is drawn before any is read back, so they all see one
+  // scene: an animation or camera update that runs while the readbacks
+  // await cannot reach a draw and pass for a fight.
+  gpu.Texture render({
     Matrix4? viewProjection,
     bool reverseOrder = false,
-    double Function(int appearance)? nudge,
-  }) async {
+    double Function(int id)? nudge,
+  }) {
+    final target = gpu.gpuContext.createTexture(
+      gpu.StorageMode.devicePrivate,
+      width,
+      height,
+      format: gpu.PixelFormat.r8g8b8a8UNormInt,
+      enableRenderTargetUsage: true,
+      enableShaderReadUsage: true,
+    );
     ids.draw(
-      target: color,
+      target: target,
       depth: depth,
       transients: transients,
       viewProjection: viewProjection,
       reverseOrder: reverseOrder,
       nudge: nudge,
     );
-    await awaitRasterThread();
-    final image = color.asImage();
+    return target;
+  }
+
+  final reference = render();
+  final drawn = <({gpu.Texture first, gpu.Texture second, bool areaOnly})>[
+    (first: reference, second: render(reverseOrder: true), areaOnly: false),
+    for (final perturbed in ids.perturbedViewProjections())
+      (
+        first: reference,
+        second: render(viewProjection: perturbed),
+        areaOnly: false,
+      ),
+    for (final jittered in ids.jitteredViewProjections())
+      (
+        first: reference,
+        second: render(viewProjection: jittered),
+        areaOnly: true,
+      ),
+    for (var bit = 0; bit < ids.idBits; bit++)
+      (
+        first: render(nudge: ids.bitNudge(bit, sign: true)),
+        second: render(nudge: ids.bitNudge(bit, sign: false)),
+        areaOnly: true,
+      ),
+  ];
+  // The view as the images saw it, for placing conflicts after the awaits.
+  final eye = Vector3.copy(camera.position);
+  final inverse = Matrix4.inverted(camera.getViewTransform(ids.size));
+  final perspective =
+      camera.projection.getProjectionMatrixForViewport(ids.size).storage[11] !=
+      0.0;
+  final untested = [
+    for (final item in ids.untested)
+      if (item.sourceNode case final Node node) node,
+  ];
+
+  await awaitRasterThread();
+  final words = Map<gpu.Texture, Uint32List>.identity();
+  Future<Uint32List> read(gpu.Texture texture) async {
+    final cached = words[texture];
+    if (cached != null) return cached;
+    final image = texture.asImage();
     try {
       final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (bytes == null) {
         throw StateError('Could not read back the depth conflict probe.');
       }
       // One id per pixel: RGB, with alpha masked off.
-      final words = Uint32List(width * height);
-      for (var i = 0; i < words.length; i++) {
+      final values = Uint32List(width * height);
+      for (var i = 0; i < values.length; i++) {
         final o = i * 4;
-        words[i] =
+        values[i] =
             bytes.getUint8(o) |
             (bytes.getUint8(o + 1) << 8) |
             (bytes.getUint8(o + 2) << 16);
       }
-      return words;
+      return words[texture] = values;
     } finally {
       image.dispose();
     }
   }
 
-  final reference = await render();
   final comparisons = <IdComparison>[
-    (
-      first: reference,
-      second: await render(reverseOrder: true),
-      areaOnly: false,
-    ),
-    for (final perturbed in ids.perturbedViewProjections())
+    for (final pair in drawn)
       (
-        first: reference,
-        second: await render(viewProjection: perturbed),
-        areaOnly: false,
-      ),
-    for (final jittered in ids.jitteredViewProjections())
-      (
-        first: reference,
-        second: await render(viewProjection: jittered),
-        areaOnly: true,
+        first: await read(pair.first),
+        second: await read(pair.second),
+        areaOnly: pair.areaOnly,
       ),
   ];
-  for (var bit = 0; bit < ids.appearanceBits; bit++) {
-    comparisons.add((
-      first: await render(nudge: ids.bitNudge(bit, sign: true)),
-      second: await render(nudge: ids.bitNudge(bit, sign: false)),
-      areaOnly: true,
-    ));
-  }
 
-  final pairs = summarizeIdConflicts(
-    comparisons: comparisons,
-    width: width,
-    appearances: ids.appearances,
-  );
+  final pairs = summarizeIdConflicts(comparisons: comparisons, width: width);
   final conflicts = <DepthConflict>[];
-  final eye = camera.position;
-  final inverse = Matrix4.inverted(camera.getViewTransform(ids.size));
-  final perspective =
-      camera.projection.getProjectionMatrixForViewport(ids.size).storage[11] !=
-      0.0;
   // How far the view ray through pixel (x, y) travels to the nearer item's
   // bounds, measured from the eye.
   double? rayDistance(int x, int y, RenderItem a, RenderItem b) {
@@ -463,6 +502,7 @@ Future<DepthConflictReport> probeDepthConflicts({
     width: width,
     height: height,
     conflicts: conflicts,
+    untested: untested,
   );
 }
 
@@ -514,13 +554,12 @@ const int kDepthConflictAreaNeighbors = 4;
 /// Pairs of ids that own one pixel in the first image of a comparison and
 /// another in the second, keyed `low + high * 2^24`. Each pixel counts once,
 /// for the first comparison that disagrees on it. Pixels where either side
-/// is background (0) are a clip boundary, not a fight, and are skipped, as
-/// are pairs of one appearance (`appearances[id]`) that draw alike.
+/// is background (0) are a clip boundary or an untested surface, not a
+/// fight, and are skipped.
 @visibleForTesting
 Map<int, IdConflictSummary> summarizeIdConflicts({
   required List<IdComparison> comparisons,
   required int width,
-  List<int>? appearances,
 }) {
   final pairs = <int, IdConflictSummary>{};
   if (comparisons.isEmpty) return pairs;
@@ -529,8 +568,7 @@ Map<int, IdConflictSummary> summarizeIdConflicts({
   bool changed(IdComparison comparison, int i) {
     final a = comparison.first[i];
     final b = comparison.second[i];
-    if (a == b || a == 0 || b == 0) return false;
-    return appearances == null || appearances[a] != appearances[b];
+    return a != b && a != 0 && b != 0;
   }
 
   // Whether enough of pixel i's neighbors changed too.

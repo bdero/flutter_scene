@@ -2186,9 +2186,10 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
     );
   }),
   // Overlays flush on their surfaces at depth layer 1 (a screen on its
-  // backing, road paint on a long ground plane seen at a grazing angle) and
-  // window bands 4 cm proud of towers 150 m away, under the engine's depth
-  // defaults. The probe must find nothing fighting on any backend.
+  // backing, road paint on a long ground plane seen at a grazing angle),
+  // window bands 4 cm proud of towers 150 m away, and an alpha-masked patch
+  // on the road that shows nothing, under the engine's depth defaults. The
+  // probe must find nothing fighting on any backend.
   SmokeScene(
     'depth_layering',
     () {
@@ -2207,6 +2208,18 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             flat(0.22, 0.22, 0.24),
           ),
         )..position = vm.Vector3(0, 0, 195),
+      );
+      // Fully cut away, so the probe must test its coverage, not its quad.
+      scene.add(
+        Node(
+          name: 'cutout',
+          mesh: Mesh(
+            PlaneGeometry(width: 4, depth: 4),
+            PhysicallyBasedMaterial()
+              ..baseColorFactor = vm.Vector4(1, 0, 0, 0)
+              ..alphaMode = AlphaMode.mask,
+          ),
+        )..position = vm.Vector3(-3, 0, 14),
       );
       final paint = flat(0.95, 0.92, 0.8, layer: 1);
       for (var z = 2.0; z < 200; z += 6) {

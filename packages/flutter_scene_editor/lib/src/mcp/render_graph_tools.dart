@@ -240,6 +240,9 @@ class RenderGraphMcp {
           },
       ],
       'conflictCount': report.conflicts.length,
+      // Cutouts from material code the probe cannot reproduce.
+      if (report.untested.isNotEmpty)
+        'untested': [for (final node in report.untested) _nodePath(node)],
       'coplanarOverlaps': [
         for (final overlap in overlaps.take(limit))
           {

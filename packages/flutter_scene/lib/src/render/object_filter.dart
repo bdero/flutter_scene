@@ -95,7 +95,8 @@ void renderObjectMask({
   // normals.
   double pixelSlope = 0.0,
   // Draws unskinned geometry through its full vertex stage rather than the
-  // position-only one, to reproduce the color pass's depth exactly.
+  // position-only one, to reproduce the color pass's depth exactly, and cuts
+  // alpha-masked materials to their coverage as the depth passes do.
   bool fullVertex = false,
 }) {
   final renderTarget = gpu.RenderTarget.singleColor(
@@ -177,6 +178,8 @@ class _ObjectMaskEncoder {
   final bool _fullVertex;
 
   static final gpu.Shader _maskShader = baseShaderLibrary['MaskFragment']!;
+  static final gpu.Shader _maskedMaskShader =
+      baseShaderLibrary['MaskMaskedFragment']!;
   static final Vector4 _white = Vector4(1, 1, 1, 1);
 
   final Frustum frustum;
@@ -208,9 +211,12 @@ class _ObjectMaskEncoder {
         ? item.material.vertexAttributesFor(materialVertex)
         : VertexAttributeSchema.none;
     geometry.useVertexAttributes(attributes);
+    // The masked fragment reads the full-vertex varyings.
+    final masked = _fullVertex && item.material.depthAlphaMasked;
+    final fragmentShader = masked ? _maskedMaskShader : _maskShader;
     final pipeline = resolvePipeline(
       activeVertex,
-      _maskShader,
+      fragmentShader,
       vertexLayout:
           depthVertex?.layout ??
           geometry.instancedVertexLayoutFor(null, attributes),
@@ -237,9 +243,16 @@ class _ObjectMaskEncoder {
       ..[2] = highlight.z
       ..[3] = highlight.w == 0 ? 1.0 : highlight.w;
     _renderPass.bindUniform(
-      _maskShader.getUniformSlot('MaskInfo'),
+      fragmentShader.getUniformSlot(masked ? 'MaskColor' : 'MaskInfo'),
       _transientsBuffer.emplace(ByteData.sublistView(color)),
     );
+    if (masked) {
+      item.material.bindDepthAlphaMask(
+        _renderPass,
+        fragmentShader,
+        _transientsBuffer,
+      );
+    }
 
     // Layers order coplanar surfaces the way the color pass does.
     setCurrentDrawDepthOffset(
