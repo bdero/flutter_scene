@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/widgets.dart' hide Animation;
+import 'package:flutter/widgets.dart' hide Animation, Matrix4;
 import 'package:flutter_scene/scene.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/animation.dart'
+    show AnimationChannel, AnimationProperty, BindKey, PropertyResolver;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/components/materials_variants_component.dart'
     show MaterialsVariantBinding;
@@ -10,6 +13,7 @@ import 'package:flutter_scene/src/components/materials_variants_component.dart'
 import 'package:flutter_scene/src/widgets/declarative.dart'
     show SceneAnimationBinder, SceneModelLoadGate;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart' hide Colors;
 
 /// SceneModel widget tests. Sources override [SceneModelSource.createNode]
 /// to produce GPU-free hand-built node trees, so the full
@@ -120,6 +124,45 @@ Node _buildDefaultTemplate({List<String> variants = const ['a', 'b']}) {
   root.addParsedAnimation(Animation(name: 'Wave'));
   return root;
 }
+
+/// A spine chain whose bones are named [names] (hips first), standing on
+/// Y, with an optional clip that bends the second bone.
+Node _chainTemplate(List<String> names, {String? clipName}) {
+  final root = Node(name: 'root');
+  var parent = root;
+  for (var i = 0; i < names.length; i++) {
+    final bone = Node(
+      name: names[i],
+      localTransform: Matrix4.translationValues(0, i == 0 ? 1.0 : 0.2, 0),
+    );
+    parent.add(bone);
+    parent = bone;
+  }
+  if (clipName != null) {
+    final bend = Quaternion.axisAngle(Vector3(0, 0, 1), 0.8);
+    root.addParsedAnimation(
+      Animation(
+        name: clipName,
+        channels: [
+          AnimationChannel(
+            bindTarget: BindKey(
+              nodeName: names[1],
+              property: AnimationProperty.rotation,
+            ),
+            resolver: PropertyResolver.makeRotationTimeline(
+              [0, 1],
+              [bend, bend],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  return root;
+}
+
+const _libraryBones = ['Hips', 'Spine', 'Neck', 'Head'];
+const _modelBones = ['pelvis', 'spine', 'neck', 'head'];
 
 void main() {
   late Node sceneRoot;
@@ -450,6 +493,37 @@ void main() {
     });
   });
 
+  group('animation source', () {
+    testWidgets('plays a library clip retargeted onto the model', (
+      tester,
+    ) async {
+      final roots = <Node>[];
+      await tester.pumpWidget(
+        host([
+          SceneModel.from(
+            _FakeSource(
+              'dancer',
+              buildTemplate: () => _chainTemplate(_modelBones),
+            ),
+            animationSource: _FakeSource(
+              'moves',
+              buildTemplate: () =>
+                  _chainTemplate(_libraryBones, clipName: 'Walk'),
+            ),
+            animations: const [SceneAnimationSpec('Walk')],
+            onLoaded: roots.add,
+          ),
+        ]),
+      );
+      await tester.pump();
+      await tester.pump();
+      final spine = roots.single.getChildByName('spine')!;
+      final rest = spine.localTransform.clone();
+      sceneRoot.scenePrePass(0.5);
+      expect(spine.localTransform, isNot(rest));
+    });
+  });
+
   group('component lifecycle', () {
     testWidgets('a stable component survives unmount and remount', (
       tester,
@@ -542,6 +616,48 @@ void main() {
       ]);
       expect(binder.clips.containsKey('Nope'), isFalse);
       expect(binder.clips.containsKey('Spin'), isTrue);
+    });
+
+    test('names the model lacks come from the library, retargeted', () {
+      final model = _chainTemplate(_modelBones);
+      final library = _chainTemplate(_libraryBones, clipName: 'Walk');
+      binder
+        ..bind(model)
+        ..setLibrary(library)
+        ..apply(const [SceneAnimationSpec('Walk')]);
+      expect(binder.clips.containsKey('Walk'), isTrue);
+      final spine = model.getChildByName('spine')!;
+      final rest = spine.localTransform.clone();
+      model.scenePrePass(0.5);
+      expect(spine.localTransform, isNot(rest));
+    });
+
+    test('a name the model has itself wins over the library', () {
+      // The model's own Walk is empty; the library's would bend the spine.
+      final model = _chainTemplate(_modelBones)
+        ..addParsedAnimation(Animation(name: 'Walk'));
+      binder
+        ..bind(model)
+        ..setLibrary(_chainTemplate(_libraryBones, clipName: 'Walk'))
+        ..apply(const [SceneAnimationSpec('Walk')]);
+      final spine = model.getChildByName('spine')!;
+      final rest = spine.localTransform.clone();
+      model.scenePrePass(0.5);
+      expect(spine.localTransform, rest);
+    });
+
+    test('dropping the library removes the clips it supplied', () {
+      final model = _chainTemplate(_modelBones);
+      binder
+        ..bind(model)
+        ..setLibrary(_chainTemplate(_libraryBones, clipName: 'Walk'))
+        ..apply(const [SceneAnimationSpec('Walk')]);
+      final walk = binder.clips['Walk']!;
+      binder.setLibrary(null);
+      expect(binder.clips.containsKey('Walk'), isFalse);
+      expect(walk.playing, isFalse);
+      binder.apply(const [SceneAnimationSpec('Walk')]);
+      expect(binder.clips.containsKey('Walk'), isFalse);
     });
 
     test('specs are value-equal', () {

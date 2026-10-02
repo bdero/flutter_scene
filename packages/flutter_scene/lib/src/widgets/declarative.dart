@@ -35,7 +35,12 @@ import 'package:flutter/widgets.dart'
 import 'package:vector_math/vector_math.dart' show Matrix4, Quaternion, Vector3;
 
 import 'package:flutter_scene/src/animation.dart'
-    show AnimationClip, DecomposedTransform;
+    show
+        Animation,
+        AnimationClip,
+        AnimationRetargeter,
+        DecomposedTransform,
+        RetargetRig;
 import 'package:flutter_scene/src/components/component.dart';
 import 'package:flutter_scene/src/components/materials_variants_component.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart';
@@ -684,6 +689,13 @@ class SceneAnimationBinder {
   final Set<String> _warnedUnknown = {};
   Map<String, SceneAnimationSpec> _applied = const {};
   Node? _modelRoot;
+  Node? _library;
+  AnimationRetargeter? _retargeter;
+  final Set<String> _fromLibrary = {};
+
+  /// Whether an animation library is still loading, so names it may provide
+  /// are not reported unknown yet.
+  bool awaitingLibrary = false;
 
   /// The clips created so far, keyed by animation name.
   Map<String, AnimationClip> get clips => Map.unmodifiable(_clips);
@@ -692,8 +704,47 @@ class SceneAnimationBinder {
   void bind(Node? modelRoot) {
     _modelRoot = modelRoot;
     _clips.clear();
+    _fromLibrary.clear();
+    _retargeter = null;
     _warnedUnknown.clear();
     _applied = const {};
+  }
+
+  /// Uses [library]'s animations, retargeted onto the bound model, for spec
+  /// names the model lacks (or none when null). Clips taken from a previous
+  /// library are removed; the next [apply] recreates them.
+  void setLibrary(Node? library) {
+    if (identical(library, _library)) return;
+    _library = library;
+    _retargeter = null;
+    _warnedUnknown.clear();
+    final root = _modelRoot;
+    for (final name in _fromLibrary) {
+      final clip = _clips.remove(name);
+      if (clip == null) continue;
+      clip.stop();
+      root?.removeAnimationClip(clip);
+    }
+    _applied = {
+      for (final entry in _applied.entries)
+        if (!_fromLibrary.contains(entry.key)) entry.key: entry.value,
+    };
+    _fromLibrary.clear();
+  }
+
+  /// [name] from the model, or from the library retargeted onto the model.
+  Animation? _resolve(Node root, String name) {
+    final own = root.findAnimationByName(name);
+    if (own != null) return own;
+    final library = _library;
+    final clip = library?.findAnimationByName(name);
+    if (library == null || clip == null) return null;
+    final retargeter = _retargeter ??= AnimationRetargeter(
+      source: RetargetRig.fromNode(library),
+      target: RetargetRig.fromNode(root),
+    );
+    _fromLibrary.add(name);
+    return retargeter.retarget(clip);
   }
 
   /// Diffs [specs] against the previously applied set.
@@ -714,12 +765,12 @@ class SceneAnimationBinder {
     for (final spec in specs) {
       var clip = _clips[spec.name];
       if (clip == null) {
-        final animation = root.findAnimationByName(spec.name);
+        final animation = _resolve(root, spec.name);
         if (animation == null) {
-          if (_warnedUnknown.add(spec.name)) {
+          if (!awaitingLibrary && _warnedUnknown.add(spec.name)) {
             debugPrint(
               'SceneModel: unknown animation "${spec.name}" (available: '
-              '${root.parsedAnimations.map((a) => a.name).toList()}).',
+              '${[...root.parsedAnimations, ...?_library?.parsedAnimations].map((a) => a.name).toList()}).',
             );
           }
           continue;
@@ -891,7 +942,8 @@ class _ModelTemplateEntry {
 ///
 /// [animations] declares which imported animations play and how (see
 /// [SceneAnimationSpec]); rebuilding with changed specs applies the
-/// differences to the underlying clips.
+/// differences to the underlying clips. [animationSource] adds another
+/// model's animations, retargeted onto this model's rig.
 ///
 /// Models are cached and shared: widgets whose sources have equal cache keys
 /// load and import once, and each mounts its own clone of the shared
@@ -917,6 +969,7 @@ class SceneModel extends _SceneNodeWidgetBase {
     super.key,
     this.variant,
     this.animations = const [],
+    this.animationSource,
     this.placeholder,
     this.error,
     this.onLoaded,
@@ -937,6 +990,7 @@ class SceneModel extends _SceneNodeWidgetBase {
     super.key,
     this.variant,
     this.animations = const [],
+    this.animationSource,
     this.placeholder,
     this.error,
     this.onLoaded,
@@ -970,6 +1024,13 @@ class SceneModel extends _SceneNodeWidgetBase {
   /// The animations to play, declared by name. See [SceneAnimationSpec].
   final List<SceneAnimationSpec> animations;
 
+  /// A model whose animations [animations] may also name, retargeted onto
+  /// this model's skeleton (see [AnimationRetargeter]). Use it to share one
+  /// clip library across characters with different rigs. The library is
+  /// loaded through the same shared cache but never mounted; names this
+  /// model has itself take precedence.
+  final SceneModelSource? animationSource;
+
   /// The `KHR_materials_variants` variant to select, or null for the
   /// model's default materials. Unknown names log a warning and keep the
   /// defaults.
@@ -995,6 +1056,8 @@ class _SceneModelState extends State<SceneModel>
   Object? _loadError;
   int _loadGeneration = 0;
   _ModelTemplateLease? _heldTemplateLease;
+  _ModelTemplateLease? _libraryLease;
+  int _libraryGeneration = 0;
   bool _warnedUnknownVariant = false;
   final SceneAnimationBinder _animations = SceneAnimationBinder();
 
@@ -1016,6 +1079,50 @@ class _SceneModelState extends State<SceneModel>
   void initState() {
     super.initState();
     _load();
+    _loadLibrary();
+  }
+
+  // TODO(retarget-library-hot-reload): an asset hot reload of the animation
+  // source evicts its template, but this widget keeps the lease it holds
+  // until the source key changes. Register it with the hot reload
+  // coordinator the way the model is.
+  Future<void> _loadLibrary() async {
+    final generation = ++_libraryGeneration;
+    final source = widget.animationSource;
+    if (source == null) return;
+    final lease = _ModelTemplateCache.acquire(source);
+    _animations.awaitingLibrary = true;
+    try {
+      final library = await lease.template;
+      if (!mounted || generation != _libraryGeneration) {
+        _ModelTemplateCache.release(lease);
+        return;
+      }
+      _libraryLease = lease;
+      _animations
+        ..awaitingLibrary = false
+        ..setLibrary(library)
+        ..apply(widget.animations);
+    } catch (e) {
+      _ModelTemplateCache.release(lease);
+      if (!mounted || generation != _libraryGeneration) return;
+      _animations
+        ..awaitingLibrary = false
+        ..apply(widget.animations);
+      debugPrint('SceneModel: animation source failed to load: $e');
+    }
+  }
+
+  void _releaseLibrary() {
+    _libraryGeneration++;
+    final held = _libraryLease;
+    if (held != null) {
+      _ModelTemplateCache.release(held);
+      _libraryLease = null;
+    }
+    _animations
+      ..awaitingLibrary = false
+      ..setLibrary(null);
   }
 
   Future<void> _load() async {
@@ -1122,6 +1229,7 @@ class _SceneModelState extends State<SceneModel>
   @override
   void dispose() {
     _resetModel();
+    _releaseLibrary();
     // Unconditional: disposal means no later generation will ever run to
     // settle the gate itself, so it must complete now regardless of which
     // generation was in flight.
@@ -1153,6 +1261,11 @@ class _SceneModelState extends State<SceneModel>
   void didUpdateWidget(SceneModel oldWidget) {
     super.didUpdateWidget(oldWidget);
     didUpdateProps(oldWidget);
+    if (widget.animationSource?.cacheKey !=
+        oldWidget.animationSource?.cacheKey) {
+      _releaseLibrary();
+      _loadLibrary();
+    }
     if (widget.source.cacheKey != oldWidget.source.cacheKey) {
       setState(_resetModel);
       _load();
