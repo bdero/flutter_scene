@@ -35,25 +35,23 @@ jobs:
           # No flags gives no adapter; --enable-unsafe-webgpu gives SwiftShader.
           # The other two put WebGL on the stack Dawn renders with, in case the
           # bitmap handoff needs both APIs on one device.
-          # Rendering works under --enable-unsafe-webgpu, but reading the
-          # canvas back returned zeros; these look for a configuration where
-          # the canvas export works too.
+          # Without Vulkan SwiftShader, Chrome renders WebGPU but every read of
+          # its canvas returns zeros; with it, the whole handoff works. This
+          # confirms the working set under both renderers and both tests.
           runs=(
-            "--enable-unsafe-webgpu|"
             "--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader|"
-            "--enable-unsafe-webgpu --disable-gpu-compositing|"
-            "--enable-unsafe-webgpu --enable-features=Vulkan,SkiaGraphite --use-vulkan=swiftshader|"
+            "--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader|--wasm"
           )
           for run in "${runs[@]}"; do
             flags="${run%%|*}"
             mode="${run##*|}"
             echo "::group::flags=[$flags] $mode"
             CHROME_EXTRA_FLAGS="$flags" flutter test --platform chrome $mode \
-              test/gpu/webgpu/webgpu_handoff_diagnostic_browser_test.dart > out.txt 2>&1
+              test/gpu/webgpu/ > out.txt 2>&1
             status=$?
             cat out.txt
             echo "::endgroup::"
-            line=$(grep -h -o -E "DIAG [^\[]*" out.txt | sort -u | tr '\n' ' ')
+            line=$(grep -h -o -E "(DIAG|WEBGPU_[A-Z]+) [^\[]*|All tests passed|Some tests failed" out.txt | sort -u | tr '\n' ' ')
             echo "RESULT flags=[$flags] mode=[${mode:-canvaskit}] exit=$status $line" | tee -a results.txt
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
