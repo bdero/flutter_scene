@@ -730,17 +730,17 @@ fragment { void Surface(inout MaterialInputs material) {} }
       );
     });
 
-    test('skips pairs of one appearance', () {
-      final reference = Uint32List.fromList([1, 2, 3]);
-      final variant = Uint32List.fromList([2, 1, 1]);
+    test('counts every pair of ids, but never background', () {
+      // Untested surfaces draw as background (0), like empty pixels.
+      final reference = Uint32List.fromList([1, 2, 0, 3]);
+      final variant = Uint32List.fromList([2, 1, 3, 0]);
       final pairs = summarizeIdConflicts(
         comparisons: [(first: reference, second: variant, areaOnly: false)],
-        width: 3,
-        // Ids 1 and 2 share an appearance; 3 has its own.
-        appearances: const [0, 1, 1, 2],
+        width: 4,
       );
       expect(pairs.length, 1);
-      expect(pairs.keys.single, 1 + 3 * (1 << 24));
+      expect(pairs.keys.single, 1 + 2 * (1 << 24));
+      expect(pairs.values.single.count, 2);
     });
 
     test('keys pairs exactly past 32-bit ids', () {

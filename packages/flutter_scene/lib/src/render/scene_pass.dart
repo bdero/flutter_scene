@@ -733,11 +733,10 @@ class ScenePass extends RenderGraphPass {
             transients: context.transientsBuffer,
             reverseOrder: i == 2,
             nudge: switch (i) {
-              0 => (appearance) => first[appearance],
-              1 => (appearance) => -first[appearance],
-              _ => (appearance) => second[appearance],
+              0 => (id) => first[id],
+              1 => (id) => -first[id],
+              _ => (id) => second[id],
             },
-            byAppearance: true,
           );
           return target;
         }(),
