@@ -63,10 +63,13 @@ float DistributionGGX(vec3 normal, vec3 half_vector, float roughness) {
 //
 // This is the sqrt-free fast approximation from Filament, recommended for
 // mobile. `roughness` is perceptual roughness.
-float VisibilitySmithGGXCorrelated(float n_dot_v, float n_dot_l,
-                                   float roughness) {
-  float alpha = roughness * roughness;
-  float ggx = mix(2.0 * n_dot_l * n_dot_v, n_dot_l + n_dot_v, alpha);
+highp float VisibilitySmithGGXCorrelated(highp float n_dot_v,
+                                         highp float n_dot_l,
+                                         highp float roughness) {
+  // highp: at grazing angles the denominator falls below the half-float
+  // range, so the term flushes to Inf.
+  highp float alpha = roughness * roughness;
+  highp float ggx = mix(2.0 * n_dot_l * n_dot_v, n_dot_l + n_dot_v, alpha);
   return 0.5 / max(ggx, 1e-5);
 }
 

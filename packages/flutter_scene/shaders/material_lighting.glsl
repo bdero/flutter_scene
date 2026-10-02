@@ -307,8 +307,9 @@ highp vec3 EvaluateAnalyticLightTerms(MaterialInputs material, vec3 light_vector
   vec3 specular_fresnel = reflectance;
   if (h_len_sq > 1e-8) {
     vec3 half_vector = h * inversesqrt(h_len_sq);
-    float distribution = DistributionGGX(normal, half_vector, roughness);
-    float visibility =
+    highp float distribution =
+        DistributionGGX(normal, half_vector, roughness);
+    highp float visibility =
         VisibilitySmithGGXCorrelated(n_dot_v_safe, n_dot_l, roughness);
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     float anisotropy = clamp(material.anisotropy, 0.0, 1.0);
@@ -329,7 +330,10 @@ highp vec3 EvaluateAnalyticLightTerms(MaterialInputs material, vec3 light_vector
     specular_fresnel =
         FresnelSchlick(max(dot(half_vector, camera_normal), 0.0), reflectance);
     // `visibility` already folds in 1 / (4 * NoL * NoV).
-    specular = distribution * visibility * specular_fresnel * specular_scale;
+    // The product overflows half precision at sharp peaks, and the Inf
+    // turns into NaN against any zero channel of the radiance.
+    specular = min(distribution * visibility, kMediumpFloatMax) *
+               specular_fresnel * specular_scale;
   }
   vec3 diffuse =
       (vec3(1.0) - specular_fresnel) * (1.0 - metallic) * albedo * (1.0 / kPi);
@@ -1101,6 +1105,9 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // scaled by environment_intensity) so far geometry dissolves into the sky
   // behind it, matching the unfogged skybox at the horizon. Only sampled when
   // fog and its sky-color influence are on, so it is free otherwise.
+  // The target is half float; anything larger is stored as Inf, which the
+  // reflection, depth of field and bloom passes turn into NaN or max blobs.
+  out_color = min(out_color, vec3(kMediumpFloatMax));
   highp vec3 sky_fog_color = fog.color.rgb;
 #ifndef FLUTTER_SCENE_CUSTOM_AMBIENT
   if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
