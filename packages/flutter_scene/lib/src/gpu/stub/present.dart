@@ -5,6 +5,9 @@ Future<ui.Image> presentTextureAsImage(
   bool transferOwnership = false,
 }) => _stub();
 
+PixelFormat get reversedDepthStencilFormat =>
+    gpuContext.defaultDepthStencilFormat;
+
 /// The buffers one mesh upload needs. Native has no per-role restriction, so
 /// this is the single shared buffer it always was, indices after vertices.
 ({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})

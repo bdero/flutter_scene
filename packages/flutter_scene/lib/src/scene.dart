@@ -2292,7 +2292,7 @@ base class Scene implements SceneGraph {
       final raster = DepthRaster(
         reversed: reversedDepth,
         floatDepth:
-            gpu.gpuContext.defaultDepthStencilFormat ==
+            DepthRaster.depthStencilFormatFor(reversed: reversedDepth) ==
             gpu.PixelFormat.d32FloatS8UInt,
       );
       final near = fitNearPlane
@@ -2623,7 +2623,7 @@ base class Scene implements SceneGraph {
       reversed: reversedDepth,
       near: near,
       floatDepth:
-          gpu.gpuContext.defaultDepthStencilFormat ==
+          DepthRaster.depthStencilFormatFor(reversed: reversedDepth) ==
           gpu.PixelFormat.d32FloatS8UInt,
       tieBreak: coplanarTieBreak,
     );

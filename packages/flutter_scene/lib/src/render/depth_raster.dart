@@ -83,6 +83,19 @@ class DepthRaster {
   /// winner instead of flickering.
   final bool tieBreak;
 
+  /// The depth-stencil format of the camera depth attachments this raster
+  /// draws into ([depthStencilFormatFor]).
+  gpu.PixelFormat get depthStencilFormat =>
+      depthStencilFormatFor(reversed: reversed);
+
+  /// The depth-stencil format of camera passes with [reversed] depth: the
+  /// backend's format for reversed depth (float where that gains precision),
+  /// else the context default that shadow maps and masks also use.
+  static gpu.PixelFormat depthStencilFormatFor({required bool reversed}) =>
+      reversed
+      ? gpu.reversedDepthStencilFormat
+      : gpu.gpuContext.defaultDepthStencilFormat;
+
   /// The value a camera depth attachment clears to (the far plane).
   double get clearDepth => reversed ? 0.0 : 1.0;
 

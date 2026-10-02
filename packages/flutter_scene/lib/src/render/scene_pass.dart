@@ -251,12 +251,7 @@ class ScenePass extends RenderGraphPass {
       TransientTextureDescriptor(
         width: width,
         height: height,
-        // TODO(float-depth): Vulkan and native GLES default to D24S8, which
-        // reversed depth cannot improve. Take d32FloatS8UInt where Flutter GPU
-        // reports it attachable (supportsTextureFormat accepts every format
-        // today) and, on GLES, once Impeller takes [0, 1] clip depth through
-        // GL_EXT_clip_control. DepthRaster.floatDepth follows this format.
-        format: gpu.gpuContext.defaultDepthStencilFormat,
+        format: depthRasterOf(_camera).depthStencilFormat,
         sampleCount: _enableMsaa ? 4 : 1,
         storageMode: keepDepth
             ? gpu.StorageMode.devicePrivate
@@ -717,7 +712,7 @@ class ScenePass extends RenderGraphPass {
       TransientTextureDescriptor.depth(
         width: width,
         height: height,
-        format: gpu.gpuContext.defaultDepthStencilFormat,
+        format: depthRasterOf(camera).depthStencilFormat,
         debugName: 'depth_conflict_depth',
       ),
     );
