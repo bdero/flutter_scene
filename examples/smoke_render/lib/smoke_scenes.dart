@@ -968,7 +968,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       }
 
       // The back wall spans the full outer width and the side walls stop at
-      // its front face, so the walls abut rather than overlap: overlapping
+      // its front face, so the walls abut rather than overlap. Overlapping
       // corners would put two tops in one plane, which flicker (z-fighting)
       // and resolve differently from one depth setup to the next.
       box(vm.Vector3(3.4, 0.3, 3.4), vm.Vector3(0, -0.15, 0), white);
