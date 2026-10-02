@@ -73,9 +73,11 @@ class DepthConflictReport {
   /// The fighting pairs, most pixels first. Empty when nothing fights.
   final List<DepthConflict> conflicts;
 
-  /// Nodes the probe cannot test, because their visible coverage comes from
-  /// their own material code (a `.fmat` cutout's `Surface()`). They still
-  /// hide what is behind them, but pairs that involve them are not reported.
+  /// Nodes the probe cannot test. Blended surfaces show by however much
+  /// they cover, which an id image cannot hold, and never hide what is behind
+  /// them, so they are left out entirely. A `.fmat` cut by its own
+  /// `Surface()` still hides what is behind it, but pairs that involve it are
+  /// not reported.
   final List<Node> untested;
 
   /// The pixels involved in any conflict.
@@ -95,8 +97,8 @@ class DepthConflictReport {
         if (untested.length > limit) '${untested.length - limit} more',
       ].join(', ');
       untestedLine =
-          '${untested.length} node${untested.length == 1 ? '' : 's'} with '
-          'cutouts from material code went untested ($names).';
+          '${untested.length} blended or custom-cutout '
+          'node${untested.length == 1 ? '' : 's'} went untested ($names).';
     }
     if (conflicts.isEmpty) {
       return [
@@ -174,9 +176,11 @@ Matrix4 perturbDepthRow(
 /// material, since vertex colors, texture coordinates, and normals can still
 /// tell their pixels apart.
 ///
-/// An item whose coverage comes from its own material code ([untested])
-/// draws as background (id 0): it hides what is behind it, but no comparison
-/// counts a pixel it holds, since the id pass cannot reproduce its cutout.
+/// Some items are [untested]. A blended item is not drawn: it never hides
+/// what is behind it, and an id image cannot hold how much it shows. An item
+/// whose coverage comes from its own material code draws as background (id
+/// 0): it hides what is behind it, but no comparison counts a pixel it holds,
+/// since the id pass cannot reproduce its cutout.
 @internal
 class DepthConflictIds {
   DepthConflictIds({
@@ -189,7 +193,7 @@ class DepthConflictIds {
     renderScene.cull(frustum, (item) {
       if (!item.drawsColor || (item.layers & layerMask) == 0) return;
       if (!_include(item) || _ids.containsKey(item)) return;
-      if (_coverageUnknown(item)) {
+      if (!item.material.isOpaque() || _coverageUnknown(item)) {
         _ids[item] = 0;
         untested.add(item);
         return;
@@ -210,13 +214,18 @@ class DepthConflictIds {
   final List<RenderItem> items = [];
   final Map<RenderItem, int> _ids = {};
 
-  /// Drawn items whose coverage the id pass cannot reproduce, drawn as
-  /// background.
+  /// Items the id pass cannot test: blended ones, left out, and ones whose
+  /// coverage it cannot reproduce, drawn as background.
   final List<RenderItem> untested = [];
 
   static bool _include(RenderItem item) =>
       !item.material.drawsNothing &&
       item.material.depthCompare != gpu.CompareFunction.always;
+
+  // What the id pass draws: blended surfaces never write the depth that
+  // decides what the opaque scene shows.
+  static bool _draws(RenderItem item) =>
+      _include(item) && item.material.isOpaque();
 
   // A cutout `.fmat` cuts its depth passes with its own `Surface()`, which a
   // flat id fragment cannot run. Engine alpha masks are reproduced.
@@ -288,7 +297,7 @@ class DepthConflictIds {
       frustum: frustum,
       reverseOrder: reverseOrder,
       materialCulling: true,
-      include: _include,
+      include: _draws,
       nudge: nudge == null ? null : (item) => nudge(_ids[item] ?? 0),
       pixelSlope: _pixelSlope,
       fullVertex: true,
