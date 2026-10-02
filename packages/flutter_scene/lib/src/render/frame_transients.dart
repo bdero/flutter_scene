@@ -380,17 +380,17 @@ class TransientArena implements FrameTransients {
       return _emplaceOversize(bytes);
     }
 
+    // Same math as [planEmplacement], inlined so the per-draw path builds no
+    // record.
     var block = _open.isEmpty ? null : _open.last;
     var offset = 0;
     if (block != null) {
-      final plan = planEmplacement(
-        cursor: block.cursor,
-        alignment: _alignment,
-        length: length,
-        blockLength: block.length,
-      );
-      offset = plan.offset;
-      if (plan.rollOver) block = null;
+      final alignment = _alignment;
+      final misalignment = block.cursor % alignment;
+      offset = misalignment == 0
+          ? block.cursor
+          : block.cursor + alignment - misalignment;
+      if (offset + length > block.length) block = null;
     }
     if (block == null) {
       block = _acquireBlock(blockLengthInBytes);
@@ -398,13 +398,7 @@ class TransientArena implements FrameTransients {
       offset = 0;
     }
 
-    block.staging.buffer
-        .asUint8List(block.staging.offsetInBytes)
-        .setRange(
-          offset,
-          offset + length,
-          bytes.buffer.asUint8List(bytes.offsetInBytes, length),
-        );
+    block.stage(offset, bytes);
     block.cursor = offset + length;
     return gpu.BufferView(
       block.device,
@@ -417,13 +411,7 @@ class TransientArena implements FrameTransients {
     final capacity = _oversizeSizeClass(bytes.lengthInBytes);
     final block = _acquireBlock(capacity, oversize: true);
     _open.add(block);
-    block.staging.buffer
-        .asUint8List(block.staging.offsetInBytes)
-        .setRange(
-          0,
-          bytes.lengthInBytes,
-          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
-        );
+    block.stage(0, bytes);
     block.cursor = bytes.lengthInBytes;
     return gpu.BufferView(
       block.device,
@@ -498,12 +486,41 @@ class TransientArena implements FrameTransients {
 }
 
 class _TransientBlock {
-  _TransientBlock(this.device, this.staging, this.length, this.oversize);
+  _TransientBlock(this.device, this.staging, this.length, this.oversize)
+    : _stagingBytes = staging.buffer.asUint8List(
+        staging.offsetInBytes,
+        staging.lengthInBytes,
+      );
+
+  /// Writes up to this many bytes word by word, below the cost of the source
+  /// view a bulk copy needs. Uniform blocks land here.
+  static const int _wordCopyLimit = 256;
 
   final gpu.DeviceBuffer device;
   final ByteData staging;
+  final Uint8List _stagingBytes;
   final int length;
   final bool oversize;
+
+  /// Copies [bytes] into the staging at [offset].
+  void stage(int offset, ByteData bytes) {
+    final length = bytes.lengthInBytes;
+    if (length <= _wordCopyLimit && length & 3 == 0) {
+      for (var i = 0; i < length; i += 4) {
+        staging.setUint32(
+          offset + i,
+          bytes.getUint32(i, Endian.host),
+          Endian.host,
+        );
+      }
+      return;
+    }
+    _stagingBytes.setRange(
+      offset,
+      offset + length,
+      bytes.buffer.asUint8List(bytes.offsetInBytes, length),
+    );
+  }
 
   /// Bytes staged so far while open; reset when sealed.
   int cursor = 0;
