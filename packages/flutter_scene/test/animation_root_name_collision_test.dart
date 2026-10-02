@@ -2,6 +2,7 @@
 /// synthesize an import root also named `root` (the runtime one carries the
 /// glTF Z flip), and channels used to resolve to the bind root before its
 /// descendants, so the joint's animation overwrote the import root instead.
+/// Bind roots the engine did not name keep matching themselves first.
 library;
 
 import 'dart:convert';
@@ -134,6 +135,7 @@ void main() {
   test('a joint named root animates under a bind root named root', () {
     final joint = Node(name: 'root')..add(Node(name: 'hip'));
     final importRoot = Node(name: 'root', localTransform: _zFlip())
+      ..isImportRoot = true
       ..add(Node(name: 'Armature')..add(joint));
 
     importRoot.createAnimationClip(_moveAnimation('root')).play();
@@ -145,6 +147,36 @@ void main() {
       joint.localTransform.getTranslation(),
       _closeToVector(Vector3(0.5, 1, 1.5)),
     );
+  });
+
+  test('an authored bind root still matches itself first', () async {
+    final importRoot = await importGltf(
+      _rootJointGltf(),
+      resolveUri: (_) async => Uint8List(0),
+    );
+    final joint = importRoot.getChildByName('root')!;
+    // An attached model's import root, also named root.
+    final attachment = Node(name: 'root')..isImportRoot = true;
+    joint.add(attachment);
+
+    joint.createAnimationClip(importRoot.findAnimationByName('Move')!).play();
+    joint.scenePrePass(0.5);
+
+    expect(
+      joint.localTransform.getTranslation(),
+      _closeToVector(Vector3(0.5, 1, 1.5)),
+    );
+    expect(attachment.localTransform, Matrix4.identity());
+  });
+
+  test('a cloned import root still prefers the root joint', () async {
+    final original = await importGltf(
+      _rootJointGltf(),
+      resolveUri: (_) async => Uint8List(0),
+    );
+    final importRoot = original.clone();
+    expect(importRoot.isImportRoot, isTrue);
+    _expectJointAnimates(importRoot);
   });
 
   test('a channel still binds the bind root when no descendant matches', () {
@@ -189,7 +221,9 @@ void main() {
 
   test('hot reload rest poses skip the import root', () {
     final joint = Node(name: 'root');
-    final importRoot = Node(name: 'root', localTransform: _zFlip())..add(joint);
+    final importRoot = Node(name: 'root', localTransform: _zFlip())
+      ..isImportRoot = true
+      ..add(joint);
     final animation = _moveAnimation('root');
     importRoot.addParsedAnimation(animation);
     importRoot.createAnimationClip(animation);
