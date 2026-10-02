@@ -32,24 +32,26 @@ jobs:
           CHROME_EXECUTABLE: ${{ github.workspace }}/tools/webgpu_ci_probe/chrome_with_flags.sh
         run: |
           set +e
-          variants=(
-            ""
-            "--enable-unsafe-webgpu"
-            "--enable-unsafe-webgpu --enable-features=Vulkan"
-            "--enable-unsafe-webgpu --enable-features=Vulkan --use-webgpu-adapter=swiftshader"
-            "--enable-unsafe-webgpu --enable-unsafe-swiftshader --enable-features=Vulkan --use-angle=swiftshader --use-webgpu-adapter=swiftshader"
+          # No flags gives no adapter; --enable-unsafe-webgpu gives SwiftShader.
+          # The other two put WebGL on the stack Dawn renders with, in case the
+          # bitmap handoff needs both APIs on one device.
+          runs=(
+            "--enable-unsafe-webgpu|"
+            "--enable-unsafe-webgpu|--wasm"
+            "--enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan|"
+            "--enable-unsafe-webgpu --enable-unsafe-swiftshader --use-angle=swiftshader|"
           )
-          for flags in "${variants[@]}"; do
-            for mode in "" "--wasm"; do
-              echo "::group::flags=[$flags] $mode"
-              CHROME_EXTRA_FLAGS="$flags" flutter test --platform chrome $mode \
-                test/gpu/webgpu/webgpu_skeleton_browser_test.dart > out.txt 2>&1
-              status=$?
-              cat out.txt
-              echo "::endgroup::"
-              line=$(grep -h -E "WEBGPU_PROBE|WEBGPU_PRESENT" out.txt | tr '\n' ' ')
-              echo "RESULT flags=[$flags] mode=[${mode:-canvaskit}] exit=$status $line" | tee -a results.txt
-            done
+          for run in "${runs[@]}"; do
+            flags="${run%%|*}"
+            mode="${run##*|}"
+            echo "::group::flags=[$flags] $mode"
+            CHROME_EXTRA_FLAGS="$flags" flutter test --platform chrome $mode \
+              test/gpu/webgpu/webgpu_handoff_diagnostic_browser_test.dart > out.txt 2>&1
+            status=$?
+            cat out.txt
+            echo "::endgroup::"
+            line=$(grep -h -o -E "DIAG [^\[]*" out.txt | sort -u | tr '\n' ' ')
+            echo "RESULT flags=[$flags] mode=[${mode:-canvaskit}] exit=$status $line" | tee -a results.txt
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat results.txt >> "$GITHUB_STEP_SUMMARY"
