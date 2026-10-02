@@ -169,7 +169,7 @@ class CapturedResource {
     final texture = thumbnail;
     if (texture == null) return false;
     try {
-      final image = texture.asImage();
+      final image = gpu.gpuHost.textureToImage(texture);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (data == null) return false;
