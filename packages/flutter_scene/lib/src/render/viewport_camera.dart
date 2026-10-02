@@ -83,18 +83,26 @@ class ViewportBoundCamera extends Camera {
 DepthRaster depthRasterOf(Camera camera) =>
     camera is ViewportBoundCamera ? camera.raster : DepthRaster.standard;
 
+// The projection passes drawing for [camera] into a [dimensions] target
+// rasterize with.
+Matrix4 _rasterProjectionOf(Camera camera, ui.Size dimensions) =>
+    camera is ViewportBoundCamera
+    ? rasterProjectionMatrix(
+        camera.projection.inner,
+        camera.projection.viewportSize,
+        camera.raster,
+      )
+    : camera.projection.getProjectionMatrixForViewport(dimensions);
+
 /// The [pixelDepthSlope] of passes drawing for [camera] into a [dimensions]
 /// target.
-double pixelDepthSlopeOf(Camera camera, ui.Size dimensions) {
-  final projection = camera is ViewportBoundCamera
-      ? rasterProjectionMatrix(
-          camera.projection.inner,
-          camera.projection.viewportSize,
-          camera.raster,
-        )
-      : camera.projection.getProjectionMatrixForViewport(dimensions);
-  return pixelDepthSlope(projection, dimensions.height);
-}
+double pixelDepthSlopeOf(Camera camera, ui.Size dimensions) =>
+    pixelDepthSlope(_rasterProjectionOf(camera, dimensions), dimensions.height);
+
+/// The [pixelWorldScale] of passes drawing for [camera] into a [dimensions]
+/// target.
+double pixelWorldScaleOf(Camera camera, ui.Size dimensions) =>
+    pixelWorldScale(_rasterProjectionOf(camera, dimensions), dimensions.height);
 
 /// The view-projection a pass drawing for [camera] into a [dimensions] target
 /// rasterizes with.
