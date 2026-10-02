@@ -13,6 +13,8 @@ import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
+import 'package:flutter_scene/src/shader_uniform_bindings.dart'
+    show defaultSamplerOptions, linearClampSamplerOptions, packUniformFloats;
 
 /// A sky that exposes a directional sun, so the engine can drive a matching
 /// shadow-casting directional light from it.
@@ -161,7 +163,7 @@ class ShaderSkySource extends SkySource {
   /// Convenience wrapper around [setUniformBlock] that packs a list of floats.
   /// The caller is still responsible for std140 padding.
   void setUniformBlockFromFloats(String name, List<double> floats) {
-    setUniformBlock(name, ByteData.sublistView(Float32List.fromList(floats)));
+    setUniformBlock(name, packUniformFloats(_uniformBlocks[name], floats));
   }
 
   /// Reads back a previously-set uniform block, or `null` when none is set.
@@ -200,17 +202,19 @@ class ShaderSkySource extends SkySource {
     // The variant the sky is drawn with, matching the pipeline the encoder
     // built for this environment's radiance layout.
     final shader = shaderForEnvironment(environment);
-    for (final entry in _uniformBlocks.entries) {
+    // Keys and a lookup, since iterating `entries` allocates a MapEntry each.
+    for (final name in _uniformBlocks.keys) {
       pass.bindUniform(
-        shader.cachedUniformSlot(entry.key),
-        transientsBuffer.emplace(entry.value),
+        shader.cachedUniformSlot(name),
+        transientsBuffer.emplace(_uniformBlocks[name]!),
       );
     }
-    for (final entry in _textures.entries) {
+    for (final name in _textures.keys) {
+      final bound = _textures[name]!;
       pass.bindTexture(
-        shader.cachedUniformSlot(entry.key),
-        entry.value.texture,
-        sampler: entry.value.sampler ?? gpu.SamplerOptions(),
+        shader.cachedUniformSlot(name),
+        bound.texture,
+        sampler: bound.sampler ?? defaultSamplerOptions,
       );
     }
     if (useEnvironment) {
@@ -223,12 +227,7 @@ class ShaderSkySource extends SkySource {
       pass.bindTexture(
         shader.cachedUniformSlot('brdf_lut'),
         Material.getBrdfLutTexture(),
-        sampler: gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
-          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        ),
+        sampler: linearClampSamplerOptions,
       );
     }
   }

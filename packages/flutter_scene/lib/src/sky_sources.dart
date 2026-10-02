@@ -2,6 +2,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/environment.dart';
@@ -23,6 +24,10 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 /// `Scene.initializeStaticResources` completes.
 /// {@category Lighting and environment}
 class GradientSkySource extends ShaderSkySource implements SunSky {
+  // The uniform block, rewritten in place each bind.
+  final Float32List _info = Float32List(20);
+  late final ByteData _infoBytes = ByteData.sublistView(_info);
+
   GradientSkySource({
     Vector3? zenithColor,
     Vector3? horizonColor,
@@ -75,18 +80,13 @@ class GradientSkySource extends ShaderSkySource implements SunSky {
     TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
-    setUniformBlockFromFloats('GradientSkyInfo', <double>[
-      ...zenithColor.storage,
-      1.0,
-      ...horizonColor.storage,
-      1.0,
-      ...groundColor.storage,
-      1.0,
-      ...sunDirection.storage,
-      sunSharpness,
-      ...sunColor.storage,
-      1.0,
-    ]);
+    final info = _info;
+    _put3(info, 0, zenithColor, 1.0);
+    _put3(info, 4, horizonColor, 1.0);
+    _put3(info, 8, groundColor, 1.0);
+    _put3(info, 12, sunDirection, sunSharpness);
+    _put3(info, 16, sunColor, 1.0);
+    setUniformBlock('GradientSkyInfo', _infoBytes);
     super.bind(pass, transientsBuffer, environment);
   }
 }
@@ -107,6 +107,10 @@ class GradientSkySource extends ShaderSkySource implements SunSky {
 /// `Scene.initializeStaticResources` completes.
 /// {@category Lighting and environment}
 class PhysicalSkySource extends ShaderSkySource implements SunSky {
+  // The uniform block, rewritten in place each bind.
+  final Float32List _info = Float32List(20);
+  late final ByteData _infoBytes = ByteData.sublistView(_info);
+
   PhysicalSkySource({
     Vector3? sunDirection,
     this.sunAngularRadius = 0.0175,
@@ -173,20 +177,24 @@ class PhysicalSkySource extends ShaderSkySource implements SunSky {
     TransientWriter transientsBuffer,
     EnvironmentMap environment,
   ) {
-    setUniformBlockFromFloats('PhysicalSkyInfo', <double>[
-      ...sunDirection.storage,
-      sunAngularRadius,
-      ...rayleighColor.storage,
-      rayleighCoefficient,
-      ...mieColor.storage,
-      mieCoefficient,
-      turbidity,
-      mieEccentricity,
-      energy,
-      0.0,
-      ...groundColor.storage,
-      1.0,
-    ]);
+    final info = _info;
+    _put3(info, 0, sunDirection, sunAngularRadius);
+    _put3(info, 4, rayleighColor, rayleighCoefficient);
+    _put3(info, 8, mieColor, mieCoefficient);
+    info[12] = turbidity;
+    info[13] = mieEccentricity;
+    info[14] = energy;
+    info[15] = 0.0;
+    _put3(info, 16, groundColor, 1.0);
+    setUniformBlock('PhysicalSkyInfo', _infoBytes);
     super.bind(pass, transientsBuffer, environment);
   }
+}
+
+// Writes [v] and then [w] into [out] at [offset], one std140 vec4.
+void _put3(Float32List out, int offset, Vector3 v, double w) {
+  out[offset] = v.x;
+  out[offset + 1] = v.y;
+  out[offset + 2] = v.z;
+  out[offset + 3] = w;
 }
