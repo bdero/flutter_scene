@@ -807,7 +807,13 @@ void _registerOutputs({
         owner: owner,
         target: target,
       );
-    if (wgslFile != null && wgslFile.existsSync()) {
+    if (wgslFile == null || !wgslFile.existsSync()) {
+      tree.drop(
+        GeneratedAssetFamily.material,
+        '$bundleName#wgsl',
+        target: target,
+      );
+    } else {
       tree.recordFile(
         family: GeneratedAssetFamily.material,
         id: '$bundleName#wgsl',
