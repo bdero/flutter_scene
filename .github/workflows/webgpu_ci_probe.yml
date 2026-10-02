@@ -1,0 +1,56 @@
+name: WebGPU CI probe
+
+# Answers whether headless Chrome on a GPU-less ubuntu-latest runner exposes a
+# WebGPU device, and with which flags, by running the skeleton browser test
+# under each flag set.
+# TODO(webgpu-ci-lane): fold the working flag set into the web smoke lane and
+# delete this workflow and tools/webgpu_ci_probe/.
+
+on:
+  push:
+    branches: [bdero/webgpu-web-backend]
+    paths:
+      - .github/workflows/webgpu_ci_probe.yml
+      - tools/webgpu_ci_probe/**
+      - packages/flutter_scene/lib/src/gpu/webgpu/**
+      - packages/flutter_scene/test/gpu/webgpu/**
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - run: flutter --version && google-chrome --version
+      - run: flutter pub get
+      - name: Probe flag sets
+        working-directory: packages/flutter_scene
+        env:
+          CHROME_EXECUTABLE: ${{ github.workspace }}/tools/webgpu_ci_probe/chrome_with_flags.sh
+        run: |
+          set +e
+          variants=(
+            ""
+            "--enable-unsafe-webgpu"
+            "--enable-unsafe-webgpu --enable-features=Vulkan"
+            "--enable-unsafe-webgpu --enable-features=Vulkan --use-webgpu-adapter=swiftshader"
+            "--enable-unsafe-webgpu --enable-unsafe-swiftshader --enable-features=Vulkan --use-angle=swiftshader --use-webgpu-adapter=swiftshader"
+          )
+          for flags in "${variants[@]}"; do
+            for mode in "" "--wasm"; do
+              echo "::group::flags=[$flags] $mode"
+              CHROME_EXTRA_FLAGS="$flags" flutter test --platform chrome $mode \
+                test/gpu/webgpu/webgpu_skeleton_browser_test.dart > out.txt 2>&1
+              status=$?
+              cat out.txt
+              echo "::endgroup::"
+              line=$(grep -h -E "WEBGPU_PROBE|WEBGPU_PRESENT" out.txt | tr '\n' ' ')
+              echo "RESULT flags=[$flags] mode=[${mode:-canvaskit}] exit=$status $line" | tee -a results.txt
+            done
+          done
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat results.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
