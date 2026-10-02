@@ -518,10 +518,18 @@ void _packageWindows(
       '${_distDir(appDir)}\\'
       'flutter_scene_editor-$version-windows-${_arch()}.zip';
   if (File(archive).existsSync()) File(archive).deleteSync();
-  _run('powershell', [
-    '-NoProfile',
-    '-Command',
-    'Compress-Archive -Path "$bundle\\*" -DestinationPath "$archive"',
+  // Windows' own bsdtar, not Git's GNU tar (which cannot write zip) and not
+  // Compress-Archive (whose entry names use backslashes, against the spec).
+  final systemRoot = Platform.environment['SystemRoot'] ?? r'C:\Windows';
+  _run('$systemRoot\\System32\\tar.exe', [
+    '-a',
+    '-c',
+    '-f',
+    archive,
+    '-C',
+    bundle,
+    for (final entity in Directory(bundle).listSync())
+      entity.path.split(Platform.pathSeparator).last,
   ]);
   _printSha256(archive);
 }
