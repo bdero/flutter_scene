@@ -187,7 +187,14 @@ class WgslBindingMap {
 enum WgslDeclarationKind { uniform, texture, sampler, other }
 
 /// A `@group(G) @binding(B) var ...` declaration parsed out of WGSL source.
-typedef WgslDeclaration = ({int group, int binding, WgslDeclarationKind kind});
+///
+/// [type] is the declared WGSL type, such as `texture_2d<f32>` or `sampler`.
+typedef WgslDeclaration = ({
+  int group,
+  int binding,
+  WgslDeclarationKind kind,
+  String type,
+});
 
 final _declaration = RegExp(
   r'@group\((\d+)u?\)\s*@binding\((\d+)u?\)\s*var(?:<([^>]*)>)?\s*[A-Za-z_]\w*\s*:\s*([^;]+);',
@@ -213,6 +220,7 @@ List<WgslDeclaration> parseWgslDeclarations(String wgsl) {
       group: int.parse(m.group(1)!),
       binding: int.parse(m.group(2)!),
       kind: kind,
+      type: type,
     ));
   }
   return out;
