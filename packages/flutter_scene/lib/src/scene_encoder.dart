@@ -606,6 +606,7 @@ base class SceneEncoder {
     currentSceneEncoderViewport = _dimensions;
     _raster = depthRasterOf(_camera);
     _pixelSlope = pixelDepthSlopeOf(_camera, _dimensions);
+    _pixelScale = pixelWorldScaleOf(_camera, _dimensions);
     _cameraTransform =
         cameraTransform ?? rasterViewTransformOf(_camera, _dimensions);
     _displayReferredCameraTransform = displayReferredCameraTransform;
@@ -629,6 +630,9 @@ base class SceneEncoder {
 
   // The view's pixelDepthSlope, for slope-scaled depth offsets.
   late final double _pixelSlope;
+
+  // The view's pixelWorldScale, for the depth gap debug view.
+  late final double _pixelScale;
 
   // Whether this encodes a screen view's camera, for [MeshDrawSelector]s.
   final bool _primaryView;
@@ -1115,6 +1119,7 @@ base class SceneEncoder {
       objectSeed: item == null ? 0 : identityHashCode(item.sourceNode ?? item),
       materialSeed: identityHashCode(material),
       raster: _raster,
+      pixelScale: _pixelScale,
     );
     _renderPass.bindUniform(
       slot,

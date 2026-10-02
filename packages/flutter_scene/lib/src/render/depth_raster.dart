@@ -257,6 +257,15 @@ double pixelDepthSlope(Matrix4 projection, double height) {
   return (perspective ? s[14] : s[10]).abs() / focal;
 }
 
+/// The world size of one pixel for a view rasterizing with [projection] into
+/// a target [height] pixels tall: per unit of planar view depth (one over the
+/// focal length in pixels) for perspective, in world units for orthographic.
+@internal
+double pixelWorldScale(Matrix4 projection, double height) {
+  final focal = projection.storage[5].abs() * height * 0.5;
+  return focal > 0.0 ? 1.0 / focal : 0.0;
+}
+
 /// Clears [currentDrawDepthOffset], for passes that never offset depth
 /// (shadow maps).
 @internal

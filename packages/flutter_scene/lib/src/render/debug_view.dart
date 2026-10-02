@@ -532,13 +532,15 @@ class DebugViewFrame {
   ///
   /// [objectSeed] and [materialSeed] feed the identity channels; small
   /// integers spread well through the shader's golden-ratio hue walk.
-  /// [raster] tells the depth gap channel how the view stores depth.
+  /// [raster] tells the depth gap channel how the view stores depth, and
+  /// [pixelScale] (see `pixelWorldScale`) how large its pixels are.
   void pack(
     Float32List out,
     DebugView view, {
     required int objectSeed,
     required int materialSeed,
     DepthRaster raster = DepthRaster.standard,
+    double pixelScale = 0.0,
   }) {
     out[0] = view.channel.shaderId.toDouble();
     out[1] = splitPixels;
@@ -555,7 +557,7 @@ class DebugViewFrame {
     out[11] = left?.rangeMax ?? 1;
     out[12] = raster.reversed ? 1 : 0;
     out[13] = raster.floatDepth ? 1 : 0;
-    out[14] = 0;
+    out[14] = pixelScale;
     out[15] = 0;
   }
 

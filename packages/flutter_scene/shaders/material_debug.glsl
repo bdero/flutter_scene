@@ -29,8 +29,9 @@ uniform DebugViewInfo {
   // (0 shows the lit result there). y: gain. z, w: scalar remap range.
   vec4 left;
   // How the view stores depth, for the depth gap channel. x: 1 for reversed
-  // depth. y: 1 for float depth. zw unused.
-  vec4 depth;
+  // depth. y: 1 for float depth. z: the world size of a pixel, per unit of
+  // planar depth for perspective, in world units for orthographic. w unused.
+  highp vec4 depth;
 }
 debug_view_info;
 
@@ -143,6 +144,11 @@ vec3 DebugScalar(float v) {
 // Shown as a power of ten in meters through the scalar range, on a blue to
 // red ramp. 1 / gl_FragCoord.w is the planar view depth. Depth math in
 // highp (see PRECISION.md); a depth step underflows half precision.
+//
+// The slope comes from the geometric normal rather than derivatives: this
+// runs inside branches no compiler can prove uniform, and a gradient there
+// makes ANGLE's Direct3D compiler flatten every branch around it, lighting
+// included.
 vec3 DebugDepthGap() {
   highp float w = 1.0 / max(gl_FragCoord.w, 1e-12);
   highp float z = gl_FragCoord.z;
@@ -155,7 +161,17 @@ vec3 DebugDepthGap() {
   } else {
     step_size = w / (16777216.0 * max(1.0 - z, 1e-12));
   }
-  highp float slope = max(abs(dFdx(w)), abs(dFdy(w)));
+  // Planar depth change per pixel on this surface's plane:
+  // w^2 |N perp| s / |N . (P - E)| for perspective, s |N perp| / |N . F| for
+  // orthographic, with s the pixel size and N perp across the view axis F.
+  highp vec3 n = GetWorldNormal();
+  highp vec3 forward = view_info.camera_forward.xyz;
+  highp float facing = dot(n, forward);
+  highp float across = sqrt(max(1.0 - facing * facing, 0.0));
+  highp float scale = debug_view_info.depth.z;
+  highp float slope = view_info.camera_forward.w > 0.5
+      ? scale * across / max(abs(facing), 1e-6)
+      : w * w * scale * across / max(abs(dot(n, v_viewvector)), 1e-6);
   highp float gap = max(8.0 * step_size, slope / 16.0);
   float t = DebugScalarPosition(log2(max(gap, 1e-12)) * 0.30103);
   vec3 ramp = clamp(vec3(1.5) - abs(vec3(4.0 * t) - vec3(3.0, 2.0, 1.0)),
