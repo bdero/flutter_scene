@@ -17,11 +17,16 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter_scene/src/node.dart';
+import 'package:flutter_scene/src/skin.dart';
 import 'package:flutter_scene/src/math_extensions.dart';
 import 'package:vector_math/vector_math.dart';
 
 part 'animation/animation.dart';
 part 'animation/animation_clip.dart';
 part 'animation/animation_player.dart';
+part 'animation/animation_retargeter.dart';
 part 'animation/animation_transform.dart';
+part 'animation/humanoid_bone.dart';
+part 'animation/humanoid_mapper.dart';
 part 'animation/property_resolver.dart';
+part 'animation/retarget_rig.dart';

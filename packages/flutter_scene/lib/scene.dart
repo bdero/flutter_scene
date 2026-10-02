@@ -23,7 +23,16 @@
 /// project (see the package README).
 library;
 
-export 'src/animation.dart' show Animation, AnimationClip, AnimationPlayer;
+export 'src/animation.dart'
+    show
+        Animation,
+        AnimationClip,
+        AnimationPlayer,
+        AnimationRetargeter,
+        HumanoidBone,
+        RetargetReport,
+        RetargetRig,
+        RootTranslation;
 
 export 'src/geometry/billboard_geometry.dart'
     show BillboardFacing, BillboardGeometry;

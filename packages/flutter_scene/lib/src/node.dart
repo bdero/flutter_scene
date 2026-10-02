@@ -1097,6 +1097,12 @@ base class Node implements SceneGraph {
 
   AnimationPlayer? _animationPlayer;
 
+  /// The animation player clips created on this node blend through, or null
+  /// before the first [createAnimationClip]. Exposed so other engine code can
+  /// read the bind pose it recorded.
+  @internal
+  AnimationPlayer? get internalAnimationPlayer => _animationPlayer;
+
   /// Searches this node's descendants for the first child whose [Node.name]
   /// matches [name].
   ///

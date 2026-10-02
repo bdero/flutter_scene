@@ -88,6 +88,14 @@ class Animation {
           }) ??
           0.0;
 
+  /// An animation whose length is [endTime] regardless of its channels, so
+  /// a rewrite that drops tracks keeps the original's loop length.
+  Animation._withEndTime({
+    required this.name,
+    required this.channels,
+    required double endTime,
+  }) : _endTime = endTime;
+
   /// Time of the last keyframe across all channels, in seconds.
   ///
   /// [AnimationClip.advance] uses this to clamp playback time and
