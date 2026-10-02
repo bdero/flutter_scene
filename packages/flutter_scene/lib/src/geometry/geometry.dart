@@ -625,7 +625,7 @@ abstract class Geometry {
   ///
   /// The bytes reach the GPU as given. Describe them with [setVertexLayout]
   /// and read them with a vertex shader from [setVertexShader] (or a
-  /// `ShaderMaterial` vertex shader); see "Custom vertex formats" in
+  /// `ShaderMaterial` vertex shader); see "A packed vertex format" in
   /// MATERIALS.md for what that shader must declare and write. Give the
   /// depth-style passes a position-only path with [setDepthOnlyVertex].
   ///
@@ -1721,6 +1721,14 @@ class SkinnedGeometry extends Geometry {
   static final Float32List _skinnedFrameInfoScratch = Float32List(44)
     ..setAll(0, vm.Matrix4.identity().storage);
 
+  static final gpu.SamplerOptions _jointsSampler = gpu.SamplerOptions(
+    minFilter: gpu.MinMagFilter.nearest,
+    magFilter: gpu.MinMagFilter.nearest,
+    mipFilter: gpu.MipFilter.nearest,
+    widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+  );
+
   gpu.Texture? _jointsTexture;
   int _jointsTextureWidth = 0;
 
@@ -1793,13 +1801,7 @@ class SkinnedGeometry extends Geometry {
     pass.bindTexture(
       boundShader.cachedUniformSlot('joints_texture'),
       _jointsTexture!,
-      sampler: gpu.SamplerOptions(
-        minFilter: gpu.MinMagFilter.nearest,
-        magFilter: gpu.MinMagFilter.nearest,
-        mipFilter: gpu.MipFilter.nearest,
-        widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
-        heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
-      ),
+      sampler: _jointsSampler,
     );
 
     bindGeometryBuffers(pass);
