@@ -63,6 +63,13 @@ bool _reportedMissingEdges = false;
 /// the fill they trace instead of z-fighting with it at any distance.
 const int _wireframeDepthLayers = 2;
 
+/// World-space distance the lines are also pulled toward the camera. A line
+/// rasterizes its depth along the edge rather than across the face, so it
+/// differs from the fill by up to half a pixel of the surface's depth slope,
+/// which the step-only offset of the position-only vertex path cannot cover
+/// on precise depth.
+const double _wireframeDepthBias = 0.004;
+
 class _WireframeEncoder {
   _WireframeEncoder(
     this._pass,
@@ -176,7 +183,7 @@ class _WireframeEncoder {
           activeVertex,
           _cameraTransform,
           _cameraPosition,
-          depthBias: material.depthBias,
+          depthBias: material.depthBias + _wireframeDepthBias,
         );
       } else {
         geometry.bind(
@@ -186,7 +193,7 @@ class _WireframeEncoder {
           _cameraTransform,
           _cameraPosition,
           shaderOverride: materialVertex,
-          depthBias: material.depthBias,
+          depthBias: material.depthBias + _wireframeDepthBias,
         );
       }
       if (materialVertex != null) {
