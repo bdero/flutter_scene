@@ -37,8 +37,16 @@ if ! grep -q "add_subdirectory(flutter_scene_tint_wrapper)" "$DAWN_SRC/CMakeList
     >> "$DAWN_SRC/CMakeLists.txt"
 fi
 
+# A static C++ runtime on Linux, so the binary runs on distributions older
+# than the build machine.
+HOST_ARGS=()
+if [ "$(uname -s)" = "Linux" ]; then
+  HOST_ARGS+=("-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc")
+fi
+
 # shellcheck disable=SC2086
 cmake -S "$DAWN_SRC" -B "$OUT" -G Ninja \
+  ${HOST_ARGS[@]+"${HOST_ARGS[@]}"} \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_SCAN_FOR_MODULES=OFF \
   -DFLUTTER_SCENE_TINT_REVISION="$REV" \

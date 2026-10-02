@@ -26,9 +26,9 @@ jobs:
         include:
           # One universal binary serves both macOS hosts.
           - { runner: macos-latest, host: macos-universal, extra: '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0' }
-          # 22.04 for an older glibc floor; libstdc++ is linked statically.
-          - { runner: ubuntu-22.04, host: linux-x64, extra: '-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc' }
-          - { runner: ubuntu-22.04-arm, host: linux-arm64, extra: '-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc' }
+          # 22.04 for an older glibc floor; build.sh links libstdc++ statically.
+          - { runner: ubuntu-22.04, host: linux-x64, extra: '' }
+          - { runner: ubuntu-22.04-arm, host: linux-arm64, extra: '' }
           - { runner: windows-latest, host: windows-x64, extra: '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' }
     defaults:
       run:
