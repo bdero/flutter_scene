@@ -10,6 +10,8 @@ import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
 
 import 'dart:ui' as ui;
 
+import 'package:flutter_scene/src/geometry/vertex_layout.dart'
+    show VertexLayoutDescriptor;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart';
 
@@ -22,7 +24,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart'
-    show drawOrRejectPipeline, tryResolvePipeline;
+    show cachedRenderPipeline, drawOrRejectPipeline, tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
@@ -555,14 +557,12 @@ class _DepthPrepassEncoder {
         ? item.material.vertexAttributesFor(materialVertex)
         : VertexAttributeSchema.none;
     geometry.useVertexAttributes(attributes);
-    final pipeline = tryResolvePipeline(
-      activeVertex,
-      fragmentShader,
-      vertexLayout:
-          depthVertex?.layout ??
-          geometry.instancedVertexLayoutFor(instanceSchema, attributes),
-      debugContext: () => 'depth prepass ${geometry.runtimeType}',
-    );
+    final vertexLayout =
+        depthVertex?.layout ??
+        geometry.instancedVertexLayoutFor(instanceSchema, attributes);
+    final pipeline =
+        cachedRenderPipeline(activeVertex, fragmentShader, vertexLayout) ??
+        _resolvePipeline(activeVertex, fragmentShader, vertexLayout, geometry);
     // A sliced warm-up builds this pipeline in a later slice.
     if (pipeline == null) return;
     if (!identical(_boundPipeline, pipeline)) {
@@ -825,6 +825,20 @@ class _DepthPrepassEncoder {
   }
 
   static final Matrix4 _identityTransform = Matrix4.identity();
+
+  // The pipeline-cache miss path. Its debug closure lives here so the
+  // per-draw path does not allocate a capture context.
+  gpu.RenderPipeline? _resolvePipeline(
+    gpu.Shader vertexShader,
+    gpu.Shader fragmentShader,
+    VertexLayoutDescriptor? vertexLayout,
+    Geometry geometry,
+  ) => tryResolvePipeline(
+    vertexShader,
+    fragmentShader,
+    vertexLayout: vertexLayout,
+    debugContext: () => 'depth prepass ${geometry.runtimeType}',
+  );
 
   void _drawPacked(
     Geometry geometry,

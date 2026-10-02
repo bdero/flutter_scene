@@ -1,6 +1,8 @@
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/geometry/geometry.dart'
     show Geometry, bindUnskinnedFrameInfo;
+import 'package:flutter_scene/src/geometry/vertex_layout.dart'
+    show VertexLayoutDescriptor;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/light.dart' show ShadowCasterFaces;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
@@ -13,7 +15,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/scene_encoder.dart'
-    show drawOrRejectPipeline, tryResolvePipeline;
+    show cachedRenderPipeline, drawOrRejectPipeline, tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
@@ -293,14 +295,12 @@ class ShadowEncoder {
     geometry.useVertexAttributes(attributes);
     // A caster whose pipeline cannot build skips its own draw rather than
     // throwing out of the whole shadow pass.
-    final pipeline = tryResolvePipeline(
-      activeVertex,
-      fragmentShader,
-      vertexLayout:
-          depthVertex?.layout ??
-          geometry.instancedVertexLayoutFor(instanceSchema, attributes),
-      debugContext: () => 'shadow caster ${geometry.runtimeType}',
-    );
+    final vertexLayout =
+        depthVertex?.layout ??
+        geometry.instancedVertexLayoutFor(instanceSchema, attributes);
+    final pipeline =
+        cachedRenderPipeline(activeVertex, fragmentShader, vertexLayout) ??
+        _resolvePipeline(activeVertex, fragmentShader, vertexLayout, geometry);
     // A sliced warm-up builds this pipeline in a later slice.
     if (pipeline == null) return;
     if (!identical(_boundPipeline, pipeline)) {
@@ -525,6 +525,20 @@ class ShadowEncoder {
   }
 
   static final Matrix4 _identityTransform = Matrix4.identity();
+
+  // The pipeline-cache miss path. Its debug closure lives here so the
+  // per-draw path does not allocate a capture context.
+  gpu.RenderPipeline? _resolvePipeline(
+    gpu.Shader vertexShader,
+    gpu.Shader fragmentShader,
+    VertexLayoutDescriptor? vertexLayout,
+    Geometry geometry,
+  ) => tryResolvePipeline(
+    vertexShader,
+    fragmentShader,
+    vertexLayout: vertexLayout,
+    debugContext: () => 'shadow caster ${geometry.runtimeType}',
+  );
 
   void _drawPacked(
     Geometry geometry,
