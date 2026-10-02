@@ -22,17 +22,33 @@ import 'package:flutter_scene/src/skin.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-void _visitMutable<T>(List<T> items, void Function(T item) visit) {
+/// Visits [items] in order while tolerating mutation by [visit].
+///
+/// Pass [index] and [justVisited] to resume after the caller visited
+/// `items[index]` itself and found the list changed.
+void _visitMutable<T extends Object>(
+  List<T> items,
+  void Function(T item) visit, {
+  int index = 0,
+  T? justVisited,
+}) {
   HashSet<T>? visited;
-  var index = 0;
-  while (index < items.length) {
-    final item = items[index];
-    final tracked = visited;
-    if (tracked != null && tracked.contains(item)) {
-      index++;
-      continue;
+  var resumed = justVisited;
+  while (resumed != null || index < items.length) {
+    final T item;
+    if (resumed != null) {
+      item = resumed;
+      resumed = null;
+    } else {
+      item = items[index];
+      final tracked = visited;
+      if (tracked != null && tracked.contains(item)) {
+        index++;
+        continue;
+      }
+      visit(item);
     }
-    visit(item);
+    final tracked = visited;
 
     // Unmutated and detachment paths stay linear and allocation-free.
     // Insertion before the cursor creates identity tracking.
@@ -1565,7 +1581,17 @@ base class Node implements SceneGraph {
     _effectiveVisible = ancestorsVisible && visible;
 
     // Components tick whenever the node is mounted, independent of visibility.
-    _visitMutable(_components, (component) => component.tick(deltaSeconds));
+    // These loops stay closure-free while nothing mutates the lists; a
+    // mutation hands the rest of the walk to [_visitMutable].
+    for (var i = 0; i < _components.length; i++) {
+      final component = _components[i];
+      component.tick(deltaSeconds);
+      if (i < _components.length && identical(_components[i], component)) {
+        continue;
+      }
+      _tickComponentsFrom(i, component, deltaSeconds);
+      break;
+    }
 
     if (_effectiveVisible) {
       _animationPlayer?.update(deltaSeconds);
@@ -1584,9 +1610,32 @@ base class Node implements SceneGraph {
         instancedMeshComponent.hideRenderItem();
       }
     }
+    for (var i = 0; i < children.length; i++) {
+      final child = children[i];
+      child.scenePrePass(deltaSeconds, _effectiveVisible);
+      if (i < children.length && identical(children[i], child)) continue;
+      _prePassChildrenFrom(i, child, deltaSeconds);
+      break;
+    }
+  }
+
+  // The closures live here, off the per-node path, so [scenePrePass] does
+  // not allocate a capture context.
+  void _tickComponentsFrom(int index, Component visited, double dt) {
+    _visitMutable(
+      _components,
+      (component) => component.tick(dt),
+      index: index,
+      justVisited: visited,
+    );
+  }
+
+  void _prePassChildrenFrom(int index, Node visited, double dt) {
     _visitMutable(
       children,
-      (child) => child.scenePrePass(deltaSeconds, _effectiveVisible),
+      (child) => child.scenePrePass(dt, _effectiveVisible),
+      index: index,
+      justVisited: visited,
     );
   }
 
