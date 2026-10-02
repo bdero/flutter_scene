@@ -248,12 +248,21 @@ _Tools _resolveTools(String appDir) {
   if (impellerc == null) {
     // Platform.resolvedExecutable is <sdk>/bin/cache/dart-sdk/bin/dart when
     // run through the Flutter SDK's dart; walk back to the cache.
-    final segments = File(
-      Platform.resolvedExecutable,
-    ).absolute.uri.pathSegments;
-    final cutoff = segments.lastIndexOf('dart-sdk');
-    if (cutoff > 0) {
-      final cache = segments.sublist(0, cutoff).join('/');
+    // Walk parents rather than rebuilding a path from URI segments, which
+    // yields `/D:/...` on Windows.
+    Directory? cacheDir;
+    for (
+      var dir = File(Platform.resolvedExecutable).absolute.parent;
+      dir.parent.path != dir.path;
+      dir = dir.parent
+    ) {
+      if (dir.path.split(Platform.pathSeparator).last == 'dart-sdk') {
+        cacheDir = dir.parent;
+        break;
+      }
+    }
+    if (cacheDir != null) {
+      final cache = cacheDir.path;
       for (final host in const [
         'darwin-x64',
         'linux-x64',
@@ -261,7 +270,7 @@ _Tools _resolveTools(String appDir) {
         'windows-x64',
         'windows-arm64',
       ]) {
-        final candidate = '/$cache/artifacts/engine/$host/$exeName';
+        final candidate = '$cache/artifacts/engine/$host/$exeName';
         if (File(candidate).existsSync()) {
           impellerc = candidate;
           break;
