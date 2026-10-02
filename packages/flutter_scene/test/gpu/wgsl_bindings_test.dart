@@ -95,6 +95,39 @@ void main() {
     });
   });
 
+  group('WgslBindingMap.mapped', () {
+    test(
+      'keeps bundle bindings and parks samplers 128 above their texture',
+      () {
+        final map = WgslBindingMap.mapped([
+          _ubo('FragInfo', 64),
+          _tex('a', 65),
+          _tex('b', 66),
+        ]);
+        expect(map['FragInfo']!.textureBinding, 64);
+        expect(map['a']!.textureBinding, 65);
+        expect(map['a']!.samplerBinding, 193);
+        expect(map['b']!.textureBinding, 66);
+        expect(map['b']!.samplerBinding, 194);
+        expect(map.samplerMappings, {65: 193, 66: 194});
+      },
+    );
+
+    test('adjacent textures never collide with a sampler', () {
+      final map = WgslBindingMap.mapped([
+        for (var i = 0; i < 15; i++) _tex('t$i', 64 + i),
+      ]);
+      expect(map.occupiedBindings.toSet(), hasLength(30));
+    });
+
+    test('rejects a resource inside the sampler range', () {
+      expect(
+        () => WgslBindingMap.mapped([_tex('far', 130)]),
+        throwsA(isA<WgslBindingMismatch>()),
+      );
+    });
+  });
+
   group('parseWgslDeclarations', () {
     const wgsl = '''
 diagnostic(off, derivative_uniformity);
