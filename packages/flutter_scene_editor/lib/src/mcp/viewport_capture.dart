@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_scene/scene.dart' show Scene;
 import 'package:flutter_scene_mcp/flutter_scene_mcp.dart';
 
 /// Builds a [ViewportScreenshot] that captures the viewport's
@@ -25,6 +26,12 @@ ViewportScreenshot viewportScreenshot(
   Duration frameTimeout = const Duration(seconds: 10),
 }) {
   return () async {
+    // A material that just took on clearcoat or another extension holds the
+    // viewport's previous frame until its shaders load. A failed load is
+    // reported where it started and the capture goes ahead.
+    try {
+      await Scene.preload();
+    } catch (_) {}
     // Capture after the next painted frame, so a mutation made just before
     // the screenshot (an agent moving the camera, then looking) is in the
     // image. The boundary otherwise serves whatever frame painted last.
