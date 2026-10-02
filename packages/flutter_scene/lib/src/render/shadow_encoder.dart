@@ -325,55 +325,14 @@ class ShadowEncoder {
     // Shadow maps take no depth layers or tie-break offsets.
     clearCurrentDrawDepthOffset();
 
-    // Binds the vertex/index buffers and the per-frame uniform for one draw.
-    // The light-space matrix takes the place of the camera transform (the depth
-    // fragment shader ignores camera_position, but a material's Vertex() hook
-    // reads it, so the real camera position is bound).
-    void bindDraw(Matrix4 worldTransform) {
-      if (depthVertex != null) {
-        geometry.bindPositionStream(_renderPass);
-        bindUnskinnedFrameInfo(
-          _renderPass,
-          _transientsBuffer,
-          activeVertex,
-          _lightSpaceMatrix,
-          _cameraPosition,
-          depthBias: 0.0,
-        );
-      } else {
-        geometry.bind(
-          _renderPass,
-          _transientsBuffer,
-          worldTransform,
-          _lightSpaceMatrix,
-          _cameraPosition,
-          shaderOverride: materialVertex,
-          depthBias: 0.0,
-        );
-      }
-      if (materialVertex != null) {
-        item.material.bindVertexStage(
-          _renderPass,
-          materialVertex,
-          _transientsBuffer,
-        );
-      }
-      if (surfaceShader != null) {
-        item.material.bindDepthSurface(
-          _renderPass,
-          fragmentShader,
-          _transientsBuffer,
-          cameraPosition: _cameraPosition,
-          cameraForward: _shadowForward,
-        );
-      } else if (masked) {
-        item.material.bindDepthAlphaMask(
-          _renderPass,
-          fragmentShader,
-          _transientsBuffer,
-        );
-      }
-    }
+    _drawItem = item;
+    _drawGeometry = geometry;
+    _drawDepthPath = depthVertex != null;
+    _drawVertex = activeVertex;
+    _drawMaterialVertex = materialVertex;
+    _drawSurfaceShader = surfaceShader;
+    _drawMasked = masked;
+    _drawFragment = fragmentShader;
 
     // The instance-rate model transform sits in the slot after the bound
     // vertex streams: slot 1 on the position-only path, slot
@@ -382,7 +341,7 @@ class ShadowEncoder {
     final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
 
     if (batches != null) {
-      bindDraw(_identityTransform);
+      _bindDraw(_identityTransform);
       final PackedInstances packed = depthVertex == null
           ? packInstanceDataBatches(
               batches,
@@ -409,7 +368,7 @@ class ShadowEncoder {
         for (final instanceTransform in instances.take(
           visible?.length ?? instances.length,
         )) {
-          bindDraw(item.worldTransform * instanceTransform);
+          _bindDraw(item.worldTransform * instanceTransform);
           final flip =
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
@@ -421,7 +380,7 @@ class ShadowEncoder {
         }
         return;
       }
-      bindDraw(item.worldTransform);
+      _bindDraw(item.worldTransform);
       final packedWorldData = item.instanceWorldData;
       final packedWinding = item.instanceWorldWindingFlipped;
       if (depthVertex == null &&
@@ -493,7 +452,7 @@ class ShadowEncoder {
       return;
     }
 
-    bindDraw(item.worldTransform);
+    _bindDraw(item.worldTransform);
     // Skip the model-transform instance buffer for geometry that supplies its
     // own per-instance buffer (see the color encoder), or it clobbers the
     // stream slot.
@@ -525,6 +484,74 @@ class ShadowEncoder {
   }
 
   static final Matrix4 _identityTransform = Matrix4.identity();
+
+  // Per-draw state for [_bindDraw], set by the encode path. Fields rather
+  // than a local closure, which would allocate on every draw.
+  RenderItem? _drawItem;
+  Geometry? _drawGeometry;
+  bool _drawDepthPath = false;
+  gpu.Shader? _drawVertex;
+  gpu.Shader? _drawMaterialVertex;
+  gpu.Shader? _drawSurfaceShader;
+  bool _drawMasked = false;
+  gpu.Shader? _drawFragment;
+
+  // Binds the vertex/index buffers and the per-frame uniform for one draw.
+  // The light-space matrix takes the place of the camera transform (the depth
+  // fragment shader ignores camera_position, but a material's Vertex() hook
+  // reads it, so the real camera position is bound).
+  void _bindDraw(Matrix4 worldTransform) {
+    final item = _drawItem!;
+    final geometry = _drawGeometry!;
+    final activeVertex = _drawVertex!;
+    final materialVertex = _drawMaterialVertex;
+    final surfaceShader = _drawSurfaceShader;
+    final masked = _drawMasked;
+    final fragmentShader = _drawFragment!;
+    if (_drawDepthPath) {
+      geometry.bindPositionStream(_renderPass);
+      bindUnskinnedFrameInfo(
+        _renderPass,
+        _transientsBuffer,
+        activeVertex,
+        _lightSpaceMatrix,
+        _cameraPosition,
+        depthBias: 0.0,
+      );
+    } else {
+      geometry.bind(
+        _renderPass,
+        _transientsBuffer,
+        worldTransform,
+        _lightSpaceMatrix,
+        _cameraPosition,
+        shaderOverride: materialVertex,
+        depthBias: 0.0,
+      );
+    }
+    if (materialVertex != null) {
+      item.material.bindVertexStage(
+        _renderPass,
+        materialVertex,
+        _transientsBuffer,
+      );
+    }
+    if (surfaceShader != null) {
+      item.material.bindDepthSurface(
+        _renderPass,
+        fragmentShader,
+        _transientsBuffer,
+        cameraPosition: _cameraPosition,
+        cameraForward: _shadowForward,
+      );
+    } else if (masked) {
+      item.material.bindDepthAlphaMask(
+        _renderPass,
+        fragmentShader,
+        _transientsBuffer,
+      );
+    }
+  }
 
   // The pipeline-cache miss path. Its debug closure lives here so the
   // per-draw path does not allocate a capture context.
