@@ -114,10 +114,9 @@ class PhysicallyBasedMaterial extends Material {
 
   /// Creates a material from normalized imported properties.
   ///
-  /// Only a descriptor that uses one of the glTF extensions needs the physical
-  /// shader bundle; a plain metallic-roughness material draws with the base
-  /// bundle's `StandardFragment`, so importing one no longer reads the 4.4 MB
-  /// physical bundle.
+  /// Waits for the physical shader bundle only when the descriptor uses an
+  /// extension; a plain metallic-roughness material draws with the base
+  /// bundle's standard shader.
   @internal
   static Future<PhysicallyBasedMaterial> fromDescriptor(
     PhysicalMaterialDescriptor descriptor,
@@ -132,10 +131,6 @@ class PhysicallyBasedMaterial extends Material {
   }
 
   /// Loads the shader variants shared by all physically based materials.
-  ///
-  /// Loaded on demand (from here, or from [_ensurePreparedVariant] when a
-  /// material grows into the physical path after construction) rather than by
-  /// `Scene.initializeStaticResources`.
   @internal
   static Future<void> initializeStaticResources() =>
       initializePhysicalMaterialResources();
@@ -1005,6 +1000,7 @@ class PhysicallyBasedMaterial extends Material {
     final previousTransmission = _usesTransmissionVariant;
     _variantKey = _computeVariantKey();
     _updateStandardShaderNames();
+    _requestPhysicalAssetsIfNeeded();
     if (previousTransmission != _usesTransmissionVariant) {
       markMaterialSceneInputsChanged();
     }
@@ -1086,6 +1082,19 @@ class PhysicallyBasedMaterial extends Material {
 
   bool get _usesPhysicalVariant => (_variantKey & 0x7f) != 0;
 
+  // Starts the physical bundle loading as soon as a feature needs it, usually
+  // during setup, so it is in before the first frame.
+  void _requestPhysicalAssetsIfNeeded() {
+    if (_usesPhysicalVariant && !physicalMaterialResourcesReady) {
+      requestPhysicalMaterialResources();
+    }
+  }
+
+  @internal
+  @override
+  bool get awaitsDeferredResources =>
+      _usesPhysicalVariant && !physicalMaterialResourcesReady;
+
   /// The bit [variantKey] sets when a baked lightmap is bound.
   @internal
   @visibleForTesting
@@ -1148,13 +1157,9 @@ class PhysicallyBasedMaterial extends Material {
       return;
     }
     if (!physicalMaterialResourcesReady) {
-      // A material that grew into the physical path after it was created (a
-      // `transmission` or `clearcoat` set on a plain one) asks for the bundle
-      // here. `Scene.isReadyToRender` turns false until it lands, so the next
-      // frames are skipped rather than drawn with the wrong shader; this frame,
-      // if one is already in flight, draws with the base standard shader, which
-      // is the same material minus the extension term. Stays dirty so the
-      // variant is prepared once the bundle is in.
+      // Draws with the standard shader until the bundle arrives. A scene holds
+      // its frames while the load is in flight, so this shows only if the load
+      // failed or a capture runs during it. Stays dirty to prepare later.
       requestPhysicalMaterialResources();
       return;
     }
@@ -1373,6 +1378,7 @@ class PhysicallyBasedMaterial extends Material {
     doubleSided = descriptor.doubleSided;
     _variantKey = _computeVariantKey();
     _updateStandardShaderNames();
+    _requestPhysicalAssetsIfNeeded();
     _materialDataDirty = true;
   }
 

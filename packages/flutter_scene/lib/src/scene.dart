@@ -45,7 +45,10 @@ import 'light.dart';
 import 'material/environment.dart';
 import 'material/material.dart';
 import 'material/physical_material_variant.dart'
-    show physicalMaterialResourcesPending;
+    show
+        initializePhysicalMaterialResources,
+        physicalMaterialResourcesLoad,
+        physicalMaterialResourcesPending;
 import 'memory_pressure.dart';
 import 'mesh.dart';
 import 'node.dart';
@@ -216,15 +219,73 @@ base class Scene implements SceneGraph {
   /// Rendering is gated on this: a `SceneView` shows its loading widget, and a
   /// direct [render] call is skipped, until it is `true`. Await
   /// [initializeStaticResources] (or use a `SceneView` with a `loadingBuilder`)
-  /// to react to it.
-  ///
-  /// Also false while a lazily loaded resource a live material needs is still
-  /// on its way: the physical material bundle, requested by the first material
-  /// that takes the physical path. A scene whose materials never do never
-  /// waits for it.
+  /// to react to it. Resources that load on first use are not covered; see
+  /// [preload].
   /// {@category Assets and loading}
-  static bool get isReadyToRender =>
-      _readyToRender && !physicalMaterialResourcesPending;
+  static bool get isReadyToRender => _readyToRender;
+
+  /// Loads engine resources that otherwise load the first time something needs
+  /// them, along with [initializeStaticResources], so a loading screen absorbs
+  /// the cost.
+  ///
+  /// [physicalMaterials] loads the shaders behind [PhysicallyBasedMaterial]'s
+  /// extensions (clearcoat, sheen, transmission, and the rest) and
+  /// [ShadowCatcherMaterial]. [smaa] loads the tables [AntiAliasingMode.smaa]
+  /// needs. Without this, a scene holds its last frame while one of its
+  /// materials waits for those shaders, and renders without SMAA until the
+  /// tables arrive. Await it before a one-shot render or capture that uses
+  /// either.
+  ///
+  /// Safe to call more than once. Retries a load that failed, and completes
+  /// with its error.
+  /// {@category Assets and loading}
+  static Future<void> preload({
+    bool physicalMaterials = true,
+    bool smaa = false,
+  }) async {
+    await Future.wait([
+      initializeStaticResources(),
+      if (physicalMaterials) initializePhysicalMaterialResources(),
+      if (smaa) SmaaPass.initializeStaticResources(),
+    ]);
+  }
+
+  // The on-demand loads this scene already repaints for, so a frame that asks
+  // again does not chain another listener.
+  final Set<Future<void>> _repaintOnLoad = {};
+
+  // Repaints once [load] lands, so a scene that paints on demand picks up what
+  // it was waiting for.
+  void _repaintWhenLoaded(Future<void>? load) {
+    if (load == null || !_repaintOnLoad.add(load)) return;
+    load.whenComplete(() {
+      _repaintOnLoad.remove(load);
+      _repaintRequested.notify();
+    });
+  }
+
+  static bool _awaitsDeferredResources(Material material) =>
+      material.awaitsDeferredResources;
+
+  // Whether one of this scene's materials is waiting on the physical bundle.
+  // Only walks the materials while a load is in flight.
+  bool get _awaitingPhysicalResources =>
+      physicalMaterialResourcesPending &&
+      renderScene.anyMaterial(_awaitsDeferredResources);
+
+  /// Completes once the on-demand loads this scene's content has started have
+  /// settled, so a reveal or warm-up sees the materials as they will draw.
+  /// Never fails; a failed load is reported where it started.
+  @internal
+  Future<void> deferredResourcesSettled() async {
+    final physical = _awaitingPhysicalResources
+        ? physicalMaterialResourcesLoad
+        : null;
+    final smaa = effectiveAntiAliasingMode == AntiAliasingMode.smaa
+        ? SmaaPass.request()
+        : null;
+    await Future.wait([?physical, ?smaa]);
+  }
 
   /// Computes the linear exposure multiplier for a physical pinhole
   /// camera, the way photographers reason about it: [aperture] (f-stops),
@@ -273,7 +334,7 @@ base class Scene implements SceneGraph {
   set antiAliasingMode(AntiAliasingMode value) {
     _antiAliasingMode = value;
     if (_resolveAntiAliasingMode(value) == AntiAliasingMode.smaa) {
-      SmaaPass.request();
+      _repaintWhenLoaded(SmaaPass.request());
     }
     final supported = value != AntiAliasingMode.msaa || _offscreenMsaaSupported;
     if (!supported && !_warnedUnsupportedAntiAliasing) {
@@ -460,12 +521,9 @@ base class Scene implements SceneGraph {
         Future.wait([
               loadBaseShaderLibrary(),
               Material.initializeStaticResources(),
-              // The SMAA tables (362 KB, expanded to RGBA8 and uploaded on
-              // the CPU) and the physical material bundle (4.4 MB) are not
-              // here: both are requested by the first frame / material that
-              // needs them (see SmaaPass.request and
-              // initializePhysicalMaterialResources), so a scene using
-              // neither does not pay for them to show its first frame.
+              // The physical material shaders and the SMAA tables load on
+              // first use or through preload, so a scene using neither never
+              // pays for them.
             ])
             // Needs the shader library, so it runs after the load and before
             // rendering unblocks (environment radiance builds consult it).
@@ -1186,6 +1244,16 @@ base class Scene implements SceneGraph {
         'Scene.initializeStaticResources() first.',
       );
     }
+    assert(() {
+      if (_awaitingPhysicalResources) {
+        debugPrint(
+          'Scene.captureEnvironment ran while the physical material shaders '
+          'were still loading, so materials that need them drew without '
+          'them. Await Scene.preload() first.',
+        );
+      }
+      return true;
+    }());
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
@@ -1284,6 +1352,16 @@ base class Scene implements SceneGraph {
         'Scene.initializeStaticResources() first.',
       );
     }
+    assert(() {
+      if (_awaitingPhysicalResources) {
+        debugPrint(
+          'Scene.bakeIrradianceField ran while the physical material shaders '
+          'were still loading, so materials that need them drew without '
+          'them. Await Scene.preload() first.',
+        );
+      }
+      return true;
+    }());
     renderScene.rebuildIfDirty();
     final lightComponent = renderScene.primaryDirectionalLight;
     final spotShadowFrame = collectSpotShadows(renderScene.spotLights);
@@ -1950,6 +2028,14 @@ base class Scene implements SceneGraph {
       return;
     }
 
+    // A material waiting on the physical shaders would draw with the wrong
+    // one, so hold the previous frame until they land.
+    if (_awaitingPhysicalResources) {
+      _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _presentHeldFrame(views, canvas, drawArea);
+      return;
+    }
+
     renderStats.beginFrame();
     beginDrawFailureFrame();
 
@@ -2529,6 +2615,36 @@ base class Scene implements SceneGraph {
   // rebuild, environment resolve, host-buffer reset) is done once by the
   // caller; this builds and submits one view's render graph and composites
   // the result.
+  // Draws each screen view's previous image in place of a new frame, or
+  // nothing for a view that has not drawn one yet. Texture views keep theirs.
+  void _presentHeldFrame(
+    List<RenderView> views,
+    ui.Canvas canvas,
+    ui.Rect drawArea,
+  ) {
+    final screenViews = [
+      for (final view in views)
+        if (view.target == null) view,
+    ]..sort((a, b) => a.order.compareTo(b.order));
+    for (var i = 0; i < screenViews.length; i++) {
+      final view = screenViews[i];
+      final previous = surface.lastSwapchainColorTexture(i);
+      final viewArea = _viewDrawArea(drawArea, view.viewport);
+      if (previous == null || viewArea.isEmpty) continue;
+      canvas.drawImageRect(
+        previous.asImage(),
+        ui.Rect.fromLTWH(
+          0,
+          0,
+          previous.width.toDouble(),
+          previous.height.toDouble(),
+        ),
+        viewArea,
+        ui.Paint()..filterQuality = view.filterQuality ?? filterQuality,
+      );
+    }
+  }
+
   void _renderViewToCanvas({
     required RenderView view,
     required ui.Canvas canvas,
@@ -2921,7 +3037,7 @@ base class Scene implements SceneGraph {
     final enableMsaa = effectiveAa == AntiAliasingMode.msaa;
     final enableFxaa = effectiveAa == AntiAliasingMode.fxaa && !debugActive;
     if (effectiveAa == AntiAliasingMode.smaa) {
-      SmaaPass.request();
+      _repaintWhenLoaded(SmaaPass.request());
     }
     final enableSmaa =
         effectiveAa == AntiAliasingMode.smaa &&

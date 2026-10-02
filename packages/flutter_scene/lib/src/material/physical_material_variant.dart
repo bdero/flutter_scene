@@ -2,7 +2,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, internal, visibleForTesting;
+    show
+        ErrorDescription,
+        FlutterError,
+        FlutterErrorDetails,
+        debugPrint,
+        internal,
+        visibleForTesting;
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:vector_math/vector_math.dart';
 
@@ -46,7 +52,11 @@ String physicalBundleUnusableMessage(String key) =>
 
 Future<_PhysicalAssets>? _physicalAssetsFuture;
 _PhysicalAssets? _physicalAssets;
-bool _physicalAssetsRequested = false;
+
+// Set when a load a material asked for fails, so the materials that keep
+// asking every frame do not reload and re-report it. An explicit
+// [initializePhysicalMaterialResources] clears it.
+bool _physicalAssetsFailed = false;
 
 final class _PhysicalAssets {
   const _PhysicalAssets(this.library, this.metadata);
@@ -66,7 +76,6 @@ Future<_PhysicalAssets> _loadPhysicalAssetsAndResetOnFailure() async {
   } catch (_) {
     _physicalAssetsFuture = null;
     _physicalAssets = null;
-    _physicalAssetsRequested = false;
     rethrow;
   }
 }
@@ -133,62 +142,102 @@ Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
 
 /// Loads the internal shader variants used by physically based materials.
 ///
-/// Called on demand rather than from `Scene.initializeStaticResources`: the
-/// bundle is 4.4 MB and an app whose materials never take the physical path
-/// (or take it only for some of them) should not read it to draw its first
-/// frame. Everything that needs it either awaits this, or requests it and
-/// leaves `Scene.isReadyToRender` false until it lands (see
-/// [physicalMaterialResourcesPending]).
+/// The bundle loads on first use rather than with
+/// `Scene.initializeStaticResources`, so an app whose materials never take the
+/// physical path never reads it. This is the explicit form (`Scene.preload`),
+/// which retries after a failure and throws it. Materials use
+/// [requestPhysicalMaterialResources].
 @internal
 Future<void> initializePhysicalMaterialResources() async {
-  _physicalAssetsRequested = true;
+  _physicalAssetsFailed = false;
   await _loadPhysicalAssets();
 }
 
-/// Starts the one-time load of the physical bundle without awaiting it, for a
-/// caller that cannot be asynchronous (a material constructor, a bind).
+/// Starts the physical bundle loading without awaiting it, for a material that
+/// has just started needing it.
 ///
-/// A failed load is reported here and leaves nothing requested, so
-/// `Scene.isReadyToRender` does not latch off; the material that needs the
-/// bundle raises the real error when it tries to prepare itself.
+/// A failure is reported once through [FlutterError.reportError] and not
+/// retried from here; the materials then draw without it.
 @internal
 void requestPhysicalMaterialResources() {
-  if (_physicalAssets != null) return;
-  initializePhysicalMaterialResources().catchError((
-    Object error,
-    StackTrace stack,
-  ) {
-    debugPrint(
-      'flutter_scene: could not load the physical material shaders: $error',
-    );
-  });
+  if (_physicalAssets != null ||
+      _physicalAssetsFuture != null ||
+      _physicalAssetsFailed) {
+    return;
+  }
+  _loadPhysicalAssets().then<void>(
+    (_) {},
+    onError: (Object error, StackTrace stack) {
+      _physicalAssetsFailed = true;
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'flutter_scene',
+          context: ErrorDescription(
+            'while loading the physical material shaders. Materials that need '
+            'them draw with the standard shader, and shadow catchers draw '
+            'nothing',
+          ),
+        ),
+      );
+    },
+  );
 }
 
-/// Whether the physical bundle has been asked for and has not arrived yet, so
-/// a material that needs it cannot be prepared. `Scene.isReadyToRender` is
-/// false while this holds, which keeps the first frame off the screen until a
-/// scene that does use the physical path can draw it correctly.
+/// Whether the physical bundle is loading and has not arrived yet.
 @internal
 bool get physicalMaterialResourcesPending =>
-    _physicalAssetsRequested && _physicalAssets == null;
+    _physicalAssetsFuture != null && _physicalAssets == null;
+
+/// Completes when an in-flight physical bundle load settles, successfully or
+/// not, or null when none is in flight. Never completes with an error.
+@internal
+Future<void>? get physicalMaterialResourcesLoad {
+  if (!physicalMaterialResourcesPending) return null;
+  final load = _physicalAssetsFuture!;
+  if (!identical(load, _settledLoadSource)) {
+    _settledLoadSource = load;
+    _settledLoad = load.then<void>((_) {}, onError: (Object _) {});
+  }
+  return _settledLoad;
+}
+
+// The same settled future for one load, so callers can tell repeat asks apart.
+Future<_PhysicalAssets>? _settledLoadSource;
+Future<void>? _settledLoad;
 
 /// Whether the physical bundle is loaded and materials can be prepared from
 /// it synchronously.
 @internal
-bool get physicalMaterialResourcesReady => _physicalAssets != null;
+bool get physicalMaterialResourcesReady =>
+    debugPhysicalMaterialResourcesReadyOverride ?? _physicalAssets != null;
+
+/// Overrides [physicalMaterialResourcesReady] for tests that exercise a
+/// material's behavior once the bundle is in, with no GPU to load it.
+@visibleForTesting
+bool? debugPhysicalMaterialResourcesReadyOverride;
+
+/// Forgets the loaded bundle and any recorded failure, for tests.
+@visibleForTesting
+void resetPhysicalMaterialResourcesForTesting() {
+  debugPhysicalMaterialResourcesReadyOverride = null;
+  _physicalAssetsFuture = null;
+  _physicalAssets = null;
+  _physicalAssetsFailed = false;
+}
 
 /// The loaded physical-bundle shader library and combined sidecar, for the
 /// engine materials that ride the same bundle (the shadow catcher). Throws
-/// until the on-demand load requested by the first such material has landed.
+/// until the bundle has loaded.
 @internal
 ({gpu.ShaderLibrary library, Map<String, Object?> metadata})
 requirePhysicalBundleAssets() {
   final assets = _physicalAssets;
   if (assets == null) {
     throw StateError(
-      'Physical material resources are not ready. They load on demand, when '
-      'the first material needs them, and Scene.isReadyToRender is false '
-      'until they land.',
+      'Physical material resources are not ready. They load when the first '
+      'material needs them; await Scene.preload() to load them up front.',
     );
   }
   return (library: assets.library, metadata: assets.metadata);
@@ -227,9 +276,8 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
     final assets = _physicalAssets;
     if (assets == null) {
       throw StateError(
-        'Physical material resources are not ready. They load on demand, when '
-        'the first material needs them, and Scene.isReadyToRender is false '
-        'until they land.',
+        'Physical material resources are not ready. They load when the first '
+        'material needs them; await Scene.preload() to load them up front.',
       );
     }
     gpu.Shader require(String name) {

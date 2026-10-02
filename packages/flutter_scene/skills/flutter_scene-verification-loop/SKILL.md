@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-verification-loop
-version: 3
+version: 4
 description: Close the visual-iteration loop when building or debugging a flutter_scene 3D app so you see your own output and self-correct. Use whenever a change affects what renders (geometry, materials, lighting, shaders, post-processing) or a frame looks wrong (black, washed-out, see-through, missing geometry).
 ---
 
@@ -31,6 +31,8 @@ Flutter Scene is not ready to render. Skipping frame.
 ```
 
 If you see that line, the scene is not broken, it is not ready. Wait for readiness (build geometry and materials inside `initializeStaticResources().then(...)`, gate the widget on `Scene.isReadyToRender`) before you diagnose anything else. A black frame while that line prints is the gate, not your code.
+
+A second, quieter gate: the shaders behind `PhysicallyBasedMaterial` extensions (clearcoat, sheen, transmission, and the rest) and `ShadowCatcherMaterial` load on first use, and the scene holds its previous frame (or draws nothing, before its first) until they land. Await `Scene.preload()` before a capture so it shows the scene as it now is.
 
 ## Judge blind, never self-score (the load-bearing rule)
 
