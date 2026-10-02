@@ -172,7 +172,9 @@ class DirectionalLight {
   ///
   /// Disable this for a light whose direction changes every frame. Rebuilding
   /// and replaying cached tiles would add work compared with rendering all
-  /// casters directly into the frame atlas.
+  /// casters directly into the frame atlas. A light that turns in small,
+  /// occasional steps (a stepped sun) can keep it on; each step refreshes the
+  /// cached cascades one per frame, so far cascades lag the turn briefly.
   bool cacheStaticShadows;
 
   /// World-space width of the band at the far shadow cascade's edge

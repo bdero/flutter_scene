@@ -88,7 +88,25 @@ void main() {
     expect(p3.refreshes, isEmpty);
   });
 
-  test('a light direction change rebuilds everything', () {
+  test('a small light turn refreshes amortized, nearest cascade first', () {
+    plan(idealCascades());
+    // A 2 degree step, inside the lag tolerance.
+    light.direction = Quaternion.axisAngle(
+      Vector3(0, 0, 1),
+      2.0 * degrees2Radians,
+    ).rotated(light.direction);
+    final p1 = plan(idealCascades());
+    expect(p1.refreshes.length, DirectionalShadowCache.maxAmortizedRefreshes);
+    expect(p1.refreshes.single.cascadeIndex, 0);
+    // The far cascade still samples through its old matrix.
+    final oldFar = Matrix4.copy(p1.cascades[1].lightSpaceMatrix);
+    final p2 = plan(idealCascades());
+    expect(p2.refreshes.single.cascadeIndex, 1);
+    expect(p2.cascades[1].lightSpaceMatrix, isNot(oldFar));
+    expect(plan(idealCascades()).refreshes, isEmpty);
+  });
+
+  test('a large light turn re-renders everything', () {
     plan(idealCascades());
     light.direction = Vector3(-0.5, -1.0, 0.1).normalized();
     final p = plan(idealCascades());
