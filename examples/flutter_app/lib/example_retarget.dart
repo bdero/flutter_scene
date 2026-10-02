@@ -423,8 +423,10 @@ Animation _walkCycle(Node figure) {
   final tracks = <String, vm.Quaternion Function(double phase)>{
     'LeftUpLeg': (p) => about(x, -0.55 * sin(p)),
     'RightUpLeg': (p) => about(x, 0.55 * sin(p)),
-    'LeftLeg': (p) => about(x, 0.9 * max(0, sin(p - 1.2))),
-    'RightLeg': (p) => about(x, 0.9 * max(0, -sin(p - 1.2))),
+    // Knees bend through the forward swing, just after the foot leaves the
+    // ground, and stay straight while it sweeps back under the body.
+    'LeftLeg': (p) => about(x, 0.9 * max(0, cos(p + 0.4))),
+    'RightLeg': (p) => about(x, 0.9 * max(0, -cos(p + 0.4))),
     'LeftFoot': (p) => about(x, -0.25 * sin(p)),
     'RightFoot': (p) => about(x, 0.25 * sin(p)),
     'Spine': (p) => about(y, 0.12 * sin(p)),
@@ -433,8 +435,9 @@ Animation _walkCycle(Node figure) {
     // Arms come down from the T-pose and swing against the legs.
     'LeftArm': (p) => about(x, 0.5 * sin(p)) * about(z, -1.25),
     'RightArm': (p) => about(x, -0.5 * sin(p)) * about(z, 1.25),
-    'LeftForeArm': (p) => about(y, 0.35 + 0.25 * sin(p)),
-    'RightForeArm': (p) => about(y, -0.35 + 0.25 * sin(p)),
+    // Elbows bend the forearm forward, more as the arm swings forward.
+    'LeftForeArm': (p) => about(y, -0.4 + 0.25 * sin(p)),
+    'RightForeArm': (p) => about(y, 0.4 + 0.25 * sin(p)),
   };
   final hips = figure.getChildByName('Hips')!.localTransform.getTranslation();
   return Animation(
