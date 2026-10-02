@@ -641,38 +641,11 @@ class _DepthPrepassEncoder {
       item.material.depthLayer,
       item.material.tieBreakRank,
     );
-    void bindDraw(Matrix4 worldTransform) {
-      if (depthVertex != null) {
-        geometry.bindPositionStream(_renderPass);
-        bindUnskinnedFrameInfo(
-          _renderPass,
-          _transientsBuffer,
-          activeVertex,
-          _cameraTransform,
-          _cameraPosition,
-          depthBias: item.material.depthBias,
-        );
-      } else {
-        geometry.bind(
-          _renderPass,
-          _transientsBuffer,
-          worldTransform,
-          _cameraTransform,
-          _cameraPosition,
-          shaderOverride: materialVertex,
-          depthBias: item.material.depthBias,
-        );
-      }
-      // Feed the material's parameters to its vertex variant so the same
-      // displacement runs here as in the color pass.
-      if (materialVertex != null) {
-        item.material.bindVertexStage(
-          _renderPass,
-          materialVertex,
-          _transientsBuffer,
-        );
-      }
-    }
+    _drawItem = item;
+    _drawGeometry = geometry;
+    _drawDepthPath = depthVertex != null;
+    _drawVertex = activeVertex;
+    _drawMaterialVertex = materialVertex;
 
     // The instance-rate model transform sits in the slot after the bound
     // vertex streams. The depth-only path binds just the position stream
@@ -682,7 +655,7 @@ class _DepthPrepassEncoder {
     final instanceSlot = depthVertex != null ? 1 : geometry.vertexStreamCount;
 
     if (batches != null) {
-      bindDraw(_identityTransform);
+      _bindDraw(_identityTransform);
       final PackedInstances packed = depthVertex == null
           ? packInstanceDataBatches(
               batches,
@@ -710,7 +683,7 @@ class _DepthPrepassEncoder {
         for (var slot = 0; slot < count; slot++) {
           final instanceIndex = visible?[slot] ?? slot;
           final instanceTransform = instances[instanceIndex];
-          bindDraw(item.worldTransform * instanceTransform);
+          _bindDraw(item.worldTransform * instanceTransform);
           final flip =
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
@@ -722,7 +695,7 @@ class _DepthPrepassEncoder {
         }
         return;
       }
-      bindDraw(item.worldTransform);
+      _bindDraw(item.worldTransform);
       final packedWorldData = item.instanceWorldData;
       final packedWinding = item.instanceWorldWindingFlipped;
       if (depthVertex == null &&
@@ -795,7 +768,7 @@ class _DepthPrepassEncoder {
       return;
     }
 
-    bindDraw(item.worldTransform);
+    _bindDraw(item.worldTransform);
     // Skip the model-transform instance buffer for geometry that supplies its
     // own per-instance buffer (see the color encoder), or it clobbers the
     // stream slot.
@@ -825,6 +798,52 @@ class _DepthPrepassEncoder {
   }
 
   static final Matrix4 _identityTransform = Matrix4.identity();
+
+  // Per-draw state for [_bindDraw], set by the encode path. Fields rather
+  // than a local closure, which would allocate on every draw.
+  RenderItem? _drawItem;
+  Geometry? _drawGeometry;
+  bool _drawDepthPath = false;
+  gpu.Shader? _drawVertex;
+  gpu.Shader? _drawMaterialVertex;
+
+  // Binds the vertex/index buffers and the per-frame uniforms for one draw.
+  void _bindDraw(Matrix4 worldTransform) {
+    final item = _drawItem!;
+    final geometry = _drawGeometry!;
+    final activeVertex = _drawVertex!;
+    final materialVertex = _drawMaterialVertex;
+    if (_drawDepthPath) {
+      geometry.bindPositionStream(_renderPass);
+      bindUnskinnedFrameInfo(
+        _renderPass,
+        _transientsBuffer,
+        activeVertex,
+        _cameraTransform,
+        _cameraPosition,
+        depthBias: item.material.depthBias,
+      );
+    } else {
+      geometry.bind(
+        _renderPass,
+        _transientsBuffer,
+        worldTransform,
+        _cameraTransform,
+        _cameraPosition,
+        shaderOverride: materialVertex,
+        depthBias: item.material.depthBias,
+      );
+    }
+    // Feed the material's parameters to its vertex variant so the same
+    // displacement runs here as in the color pass.
+    if (materialVertex != null) {
+      item.material.bindVertexStage(
+        _renderPass,
+        materialVertex,
+        _transientsBuffer,
+      );
+    }
+  }
 
   // The pipeline-cache miss path. Its debug closure lives here so the
   // per-draw path does not allocate a capture context.
