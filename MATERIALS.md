@@ -1238,6 +1238,51 @@ is simpler and needs no layout (it also works on skinned meshes):
 geometry.setCustomAttribute('phase', phaseValues, components: 1);
 ```
 
+## A packed vertex format
+
+A mesh can carry its own vertex format end to end, for example 16 bytes a
+vertex instead of the standard 72. Upload the streams as raw bytes, one per
+slot, and describe them:
+
+```dart
+final geometry = UnskinnedGeometry()
+  ..setVertexLayout(layout) // one buffer per stream, then the instance record
+  ..setVertexShader(library['PackedVertex']!)
+  ..uploadVertexStreams([positions, packed], vertexCount, indices: indices)
+  ..setLocalBounds(aabb, sphere);
+```
+
+`uploadVertexStreams` sends the bytes as given, so the engine keeps no CPU
+copy for raycasting and scans no bounds; set them, or the mesh is never
+culled. Integer formats (`VertexFormat.uint32`, read as `in uint`) are
+supported on every backend.
+
+A vertex shader set on the geometry with `setVertexShader` runs under any
+material, including the engine's lit one, so it must write all seven standard
+varyings in the order above. Its last layout buffer is the engine's 80-byte
+instance record, the four `model_transform_*` columns and `instance_color`.
+
+The depth-style passes (shadow maps, the depth prepass, the selection mask)
+draw such a geometry through that same full vertex shader unless you give it
+a position-only one:
+
+```dart
+geometry.setDepthOnlyVertex(
+  library['PackedVertexDepth']!,
+  positionStream: VertexBufferDescriptor(
+    strideInBytes: 12,
+    attributes: [
+      VertexAttributeDescriptor(name: 'position', format: VertexFormat.float32x3),
+    ],
+  ),
+);
+```
+
+That shader reads only the first stream and a 64-byte instance record (the
+four `model_transform_*` columns), and writes the same seven varyings.
+`examples/smoke_render/shaders/packed_vertex.vert` and
+`packed_vertex_depth.vert` are a worked pair.
+
 See `examples/flutter_app/lib/example_raw_shader.dart` with
 `shaders/example_ripple.vert` and `.frag` for a worked pair.
 

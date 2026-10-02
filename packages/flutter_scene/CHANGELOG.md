@@ -40,6 +40,12 @@
 * Depth of field spreads an out-of-focus foreground object's blur past its silhouette over its full blur radius, while the in-focus background beside it stays sharp.
 * `SceneView.maxFrameRate` caps rendering at an even cadence, every other refresh for 60 on a 120 Hz display.
 * Transient GPU buffers are recycled by idle age, so a loaded scene stops allocating per frame.
+* `Geometry.uploadVertexStreams` uploads vertex streams in a caller-defined format, and `Geometry.setDepthOnlyVertex` gives such a mesh a position-only shader for shadows and the depth prepass.
+* A geometry with a declared vertex layout draws depth through its own vertex shader instead of the engine's position-only one, which misread any first stream that was not a float position.
+* Integer vertex formats work on the web backend.
+* `MeshGeometry` attributes left out at construction bind shared default streams instead of uploading per-mesh defaults.
+* A light that turns by a few degrees refreshes cached shadow cascades one per frame instead of re-rendering all of them in one frame, and keeps their textures.
+* Encoding a frame allocates far less per draw and per node (uniform slots, pipeline lookups, sort depth, transient staging, uniform scratches).
 * A view keeps render targets for its two most recent sizes, so a render scale toggling between two resolutions no longer reallocates.
 * Lit `.fmat` materials can set `directional_light: false` to compile out the directional light.
 * Fixed unlit `.fmat` materials drawing nothing on Impeller Vulkan. Their shader carried an unread radiance block that collided with the vertex stage's frame block in the pipeline layout, which some drivers reject; the block is now compiled out where nothing reads it.
