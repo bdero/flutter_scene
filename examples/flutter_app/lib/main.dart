@@ -41,6 +41,7 @@ import 'example_fscene_import.dart';
 import 'example_fscene_prefab.dart';
 import 'example_fscene_stream.dart';
 import 'example_lod.dart';
+import 'example_retarget.dart';
 import 'example_logo.dart';
 import 'example_materialize.dart';
 import 'example_multiplayer.dart';
@@ -284,6 +285,7 @@ class _MyAppState extends State<MyApp> {
     examples = {
       'Car': (context) => const ExampleCar(),
       'Animation': (context) => const ExampleAnimation(),
+      'Retargeting': (context) => const ExampleRetarget(),
       'Flutter Logo': (context) => const ExampleLogo(),
       'Multiplayer': (context) => const ExampleMultiplayer(),
       'Configurator': (context) => const ExampleConfigurator(),

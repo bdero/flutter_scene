@@ -1,5 +1,8 @@
 ## 0.24.0
 
+* `AnimationRetargeter` rewrites a clip authored on one skeleton to play on another with different bone names, proportions, and rest orientations, exactly and once per clip. `RetargetRig` captures a rig's rest and auto-maps humanoids onto `HumanoidBone` slots.
+* `SceneModel.animationSource` plays another model's animations on this one, retargeted onto its rig.
+
 * `Material.depthLayer` (`.fmat` `depth_layer:`) orders surfaces that share a plane. A higher layer draws over a lower one at any distance, so signs, screens, and road paint laid on a surface stop flickering (z-fighting).
 * Scenes store reversed float depth where the device supports it (Metal, and WebGL2 with `EXT_clip_control`) and rasterize with a near plane fitted to visible content each frame, so distant surfaces centimetres apart stay distinct. `Scene.reversedDepth` and `Scene.fitNearPlane` turn each off; projections and picking keep the authored planes.
 * `PerspectiveProjection` and `PerspectiveCamera` accept an infinite far plane (`.fscene` `infiniteFar`).

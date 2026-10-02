@@ -518,6 +518,16 @@ Animation (`Animation`, `AnimationClip`, `AnimationPlayer` exported):
   translation})`, `AnimationProperty` = `translation` | `rotation` | `scale`.
 - Declarative: `SceneModel(assetPath, animations: [SceneAnimationSpec(name, {playing = true, loop =
   true, weight = 1.0, speed = 1.0})])`. Note `SceneModel` loads via the runtime glTF path.
+- Retargeting (a clip authored on one rig played on another with different bone names, proportions,
+  or rest orientations): `AnimationRetargeter(source: RetargetRig.fromNode(library), target:
+  RetargetRig.fromNode(hero))`, then `hero.createAnimationClip(retargeter.retarget(clip))`. Bones pair
+  by `boneMap` (source name to target name), then shared `HumanoidBone` slot (auto-mapped from
+  Mixamo, VRM, VRoid, UE, Rigify, and Meshy names; check `rig.missingRequired`/`humanoidIssues`),
+  then identical name. `rootTranslation: RootTranslation.scaleByHipHeight` (default) | `copy` |
+  `none`; non-root translation and scale drop unless `keepNonRootTranslation`/`keepScale`;
+  `alignStance: true` for an A-pose against a T-pose. `retargeter.report` lists pairs and losses.
+  Declarative: `SceneModel(..., animationSource: AssetModelSource('library.glb'))` lets specs name the
+  library's clips. Without retargeting, a clip on a differently oriented rig twists it silently.
 
 The engine-agnostic scene-document core is a separate package `scene` (0.2.0), re-exported through
 `package:flutter_scene/fscene.dart`. `flutter_scene_importer` and `flutter_gpu_shim` no longer exist
