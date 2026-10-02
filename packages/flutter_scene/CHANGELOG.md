@@ -124,6 +124,7 @@
 * The CPU mip build is roughly twice as fast for color and normal textures: the content switch moved out of the per-texel loop, the normal filter's taps are unrolled, and the sRGB decode reads a 256-entry table instead of calling `pow` three times per texel. A 2048-square color chain drops from 141ms to 55ms.
 * Radiance prefiltering fills one roughness band per frame instead of submitting the whole atlas as a single draw. That draw was ~850ms of GPU work on a Mali-G57, and because it lands inside a Flutter frame the display froze until the driver's buffer-queue timeout; a cold start that built two environments spent 1.7 seconds of 3.1 frozen. The texture is returned immediately and sharpens over the following frames, and `EnvironmentMap.radianceComplete` waits for the finished result.
 * The radiance prefilter takes its mirror band directly rather than integrating a delta lobe 256 times, and generates its samples from a rank-1 lattice instead of a float-emulated radical inverse whose loop cost more than the texture fetches it fed. Together about half the prefilter's GPU cost, with no change to the rendered result.
+* Fixed animating glTF rigs with a joint named `root`, whose channels drove the import root instead, dropping the Z flip and leaving the joint still.
 
 ## 0.23.0
 

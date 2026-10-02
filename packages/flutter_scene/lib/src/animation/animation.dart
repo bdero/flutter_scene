@@ -22,7 +22,7 @@ enum AnimationProperty {
 /// subtree (including cloned subtrees).
 class BindKey implements Comparable<BindKey> {
   /// Name of the [Node] this channel targets, matched via
-  /// [Node.getChildByName].
+  /// [Node.getChildByName] and falling back to the bind root itself.
   final String nodeName;
 
   /// Which component of the node's transform this channel drives.

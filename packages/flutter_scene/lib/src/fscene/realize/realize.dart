@@ -371,9 +371,7 @@ void _serializeAnimations(
           continue;
       }
       final nodeName = channel.bindTarget.nodeName;
-      final target = nodeName == root.name
-          ? root
-          : root.getChildByName(nodeName);
+      final target = engine.resolveAnimationTarget(root, nodeName);
       channels.add(
         AnimationChannelSpec(
           // An unresolved target keeps a dangling id; the name fallback
