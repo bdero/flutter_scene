@@ -17,6 +17,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// [data] as a [ByteData], without copying when it already is one.
 ///
@@ -1596,7 +1597,7 @@ class SkinnedGeometry extends Geometry {
     final boundShader = shaderOverride ?? vertexShader;
 
     pass.bindTexture(
-      boundShader.getUniformSlot('joints_texture'),
+      boundShader.cachedUniformSlot('joints_texture'),
       _jointsTexture!,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.nearest,
@@ -1617,7 +1618,7 @@ class SkinnedGeometry extends Geometry {
     // transform to be ignored). `modelTransform` is unused for skinned
     // geometry as a result.
     final identityTransform = vm.Matrix4.identity();
-    final frameInfoSlot = boundShader.getUniformSlot('FrameInfo');
+    final frameInfoSlot = boundShader.cachedUniformSlot('FrameInfo');
     final frameInfoFloats = Float32List.fromList([
       identityTransform.storage[0],
       identityTransform.storage[1],
@@ -1973,7 +1974,7 @@ void bindUnskinnedFrameInfo(
   vm.Vector3 cameraPosition, {
   double depthBias = 0.0,
 }) {
-  final frameInfoSlot = shader.getUniformSlot('FrameInfo');
+  final frameInfoSlot = shader.cachedUniformSlot('FrameInfo');
   final scratch = _unskinnedFrameInfoScratch
     ..setAll(0, cameraTransform.storage)
     ..[16] = cameraPosition.x

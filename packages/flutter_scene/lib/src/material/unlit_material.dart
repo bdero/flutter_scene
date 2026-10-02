@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/material/physically_based_material.dart'
 
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// A material that draws geometry with a flat color or texture, ignoring
 /// scene lighting.
@@ -104,7 +105,7 @@ class UnlitMaterial extends Material {
       displayReferred ? 1.0 : 0.0, // display_referred
     ]);
     pass.bindUniform(
-      fragmentShader.getUniformSlot("FragInfo"),
+      fragmentShader.cachedUniformSlot("FragInfo"),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
     );
     final transform = _textureTransformScratch
@@ -116,11 +117,11 @@ class UnlitMaterial extends Material {
       ..[5] = math.sin(baseColorTextureTransform.rotation)
       ..[6] = baseColorTextureTexCoord.clamp(0, 1).toDouble();
     pass.bindUniform(
-      fragmentShader.getUniformSlot('TextureTransform'),
+      fragmentShader.cachedUniformSlot('TextureTransform'),
       transientsBuffer.emplace(ByteData.sublistView(transform)),
     );
     pass.bindTexture(
-      fragmentShader.getUniformSlot('base_color_texture'),
+      fragmentShader.cachedUniformSlot('base_color_texture'),
       Material.whitePlaceholder(resolveTextureSource(baseColorTexture)),
       sampler:
           textureSourceSampler(baseColorTexture) ??

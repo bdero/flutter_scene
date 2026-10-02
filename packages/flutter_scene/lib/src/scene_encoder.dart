@@ -32,6 +32,7 @@ import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// A deferred opaque draw. Holds the [RenderItem] (instanced or not), its
 /// resolved pipeline, a per-pipeline grouping key, and the camera
@@ -1107,10 +1108,7 @@ base class SceneEncoder {
   double _opaqueDepth(_OpaqueRecord record) {
     final cached = record.depth;
     if (!cached.isNaN) return cached;
-    return record.depth = _depthOf(
-      record.item.worldTransform,
-      record.geometry,
-    );
+    return record.depth = _depthOf(record.item.worldTransform, record.geometry);
   }
 
   double _depthOfPoint(double x, double y, double z) {
@@ -1193,7 +1191,7 @@ base class SceneEncoder {
         _lighting,
       );
     }
-    final slot = shader.getUniformSlot('DebugViewInfo');
+    final slot = shader.cachedUniformSlot('DebugViewInfo');
     final view = _effectiveDebugView(item);
     if (!view.isActive) {
       if (identical(_debugViewBoundMaterial, material) &&

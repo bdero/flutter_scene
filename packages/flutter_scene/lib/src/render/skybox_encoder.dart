@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/skybox.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 // Two triangles of NDC positions covering the whole render target (6 vec2s).
 final gpu.DeviceBuffer _fullscreenQuad = gpu.gpuContext
@@ -182,7 +183,7 @@ void bindSkyboxFrameInfo(
   frameInfo[34] = cameraPosition.z;
   frameInfo[35] = farClipDepth;
   renderPass.bindUniform(
-    vertexShader.getUniformSlot('SkyboxFrameInfo'),
+    vertexShader.cachedUniformSlot('SkyboxFrameInfo'),
     transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
   );
 }
@@ -209,7 +210,7 @@ void _bindEnvironmentSource(
   skyboxInfo[3] = environment.backgroundIsLinear ? 1.0 : 0.0;
   skyboxInfo[4] = blend.clamp(0.0, 1.0);
   renderPass.bindUniform(
-    fragmentShader.getUniformSlot('SkyboxInfo'),
+    fragmentShader.cachedUniformSlot('SkyboxInfo'),
     transientsBuffer.emplace(ByteData.sublistView(skyboxInfo)),
   );
 
@@ -232,7 +233,7 @@ void _bindEnvironmentSource(
   // The full-res source equirect for a sharp background (a dummy when the
   // environment has none; the SkyboxInfo flag gates its use).
   renderPass.bindTexture(
-    fragmentShader.getUniformSlot('environment_background'),
+    fragmentShader.cachedUniformSlot('environment_background'),
     environment.backgroundTexture,
     sampler: gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.linear,

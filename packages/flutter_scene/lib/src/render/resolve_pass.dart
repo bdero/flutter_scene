@@ -14,6 +14,7 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/tone_mapping.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the display-referred color the resolve
 /// pass produces. After-tone-mapping custom effects read it and republish
@@ -117,11 +118,11 @@ class ResolvePass extends RenderGraphPass {
       bloomEnabled: _postProcess.bloom.enabled && !_debugSkipsPost,
     );
     renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('ResolveInfo'),
+      _fragmentShader.cachedUniformSlot('ResolveInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('scene_color'),
+      _fragmentShader.cachedUniformSlot('scene_color'),
       hdrColor,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
@@ -136,7 +137,7 @@ class ResolvePass extends RenderGraphPass {
         context.blackboard.get<gpu.Texture>(kBloomTextureBlackboardKey) ??
         Material.getWhitePlaceholderTexture();
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('bloom_color'),
+      _fragmentShader.cachedUniformSlot('bloom_color'),
       bloomTexture,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.linear,
@@ -152,7 +153,7 @@ class ResolvePass extends RenderGraphPass {
         context.blackboard.get<gpu.Texture>(kAutoExposureFactorBlackboardKey) ??
         Material.getWhitePlaceholderTexture();
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('exposure_factor'),
+      _fragmentShader.cachedUniformSlot('exposure_factor'),
       exposureFactor,
       sampler: gpu.SamplerOptions(
         minFilter: gpu.MinMagFilter.nearest,
@@ -164,7 +165,7 @@ class ResolvePass extends RenderGraphPass {
     // The film-look grading LUT, or a neutral placeholder when no look is
     // set (lut_params.x stays 0 and the sample is skipped).
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('grading_lut'),
+      _fragmentShader.cachedUniformSlot('grading_lut'),
       _postProcess.colorGrading.lut?.texture ??
           Material.getWhitePlaceholderTexture(),
       sampler: gpu.SamplerOptions(

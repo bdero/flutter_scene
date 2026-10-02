@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart' show Vector4;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Quality settings for SMAA anti-aliasing. Active when
 /// `Scene.antiAliasingMode` is `AntiAliasingMode.smaa`. The defaults mirror
@@ -212,11 +213,14 @@ class SmaaPass extends RenderGraphPass {
       renderPass.bindPipeline(resolvePipeline(_vertexShader, _edgesShader));
       bindVertexBufferCompat(renderPass, _quadView, 6);
       renderPass.bindTexture(
-        _edgesShader.getUniformSlot('scene_color'),
+        _edgesShader.cachedUniformSlot('scene_color'),
         input,
         sampler: _linearClamp,
       );
-      renderPass.bindUniform(_edgesShader.getUniformSlot('SmaaInfo'), infoView);
+      renderPass.bindUniform(
+        _edgesShader.cachedUniformSlot('SmaaInfo'),
+        infoView,
+      );
       drawCompat(renderPass, 6);
       rendererSubmissions.submit(commandBuffer);
     }
@@ -244,22 +248,22 @@ class SmaaPass extends RenderGraphPass {
       renderPass.bindPipeline(resolvePipeline(_vertexShader, _weightsShader));
       bindVertexBufferCompat(renderPass, _quadView, 6);
       renderPass.bindTexture(
-        _weightsShader.getUniformSlot('edges_texture'),
+        _weightsShader.cachedUniformSlot('edges_texture'),
         edges,
         sampler: _linearClamp,
       );
       renderPass.bindTexture(
-        _weightsShader.getUniformSlot('area_texture'),
+        _weightsShader.cachedUniformSlot('area_texture'),
         _areaTexture!,
         sampler: _linearClamp,
       );
       renderPass.bindTexture(
-        _weightsShader.getUniformSlot('search_texture'),
+        _weightsShader.cachedUniformSlot('search_texture'),
         _searchTexture!,
         sampler: _nearestClamp,
       );
       renderPass.bindUniform(
-        _weightsShader.getUniformSlot('SmaaInfo'),
+        _weightsShader.cachedUniformSlot('SmaaInfo'),
         infoView,
       );
       drawCompat(renderPass, 6);
@@ -275,16 +279,19 @@ class SmaaPass extends RenderGraphPass {
       renderPass.bindPipeline(resolvePipeline(_vertexShader, _blendShader));
       bindVertexBufferCompat(renderPass, _quadView, 6);
       renderPass.bindTexture(
-        _blendShader.getUniformSlot('scene_color'),
+        _blendShader.cachedUniformSlot('scene_color'),
         input,
         sampler: _linearClamp,
       );
       renderPass.bindTexture(
-        _blendShader.getUniformSlot('blend_texture'),
+        _blendShader.cachedUniformSlot('blend_texture'),
         weights,
         sampler: _linearClamp,
       );
-      renderPass.bindUniform(_blendShader.getUniformSlot('SmaaInfo'), infoView);
+      renderPass.bindUniform(
+        _blendShader.cachedUniformSlot('SmaaInfo'),
+        infoView,
+      );
       drawCompat(renderPass, 6);
       rendererSubmissions.submit(commandBuffer);
     }

@@ -22,6 +22,7 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the screen-space velocity buffer.
 const String kVelocityBlackboardKey = 'velocity';
@@ -215,11 +216,11 @@ class VelocityPass extends RenderGraphPass {
         item.material.tieBreakRank,
       );
       renderPass.bindUniform(
-        vertexShader.getUniformSlot('VelocityFrameInfo'),
+        vertexShader.cachedUniformSlot('VelocityFrameInfo'),
         frameInfoView,
       );
       renderPass.bindUniform(
-        _fragmentShader.getUniformSlot('VelocityFrameInfo'),
+        _fragmentShader.cachedUniformSlot('VelocityFrameInfo'),
         frameInfoView,
       );
 
@@ -232,18 +233,18 @@ class VelocityPass extends RenderGraphPass {
         skinnedModelInfo[35] = item.material.depthBias;
         skinnedModelInfo.setRange(36, 40, currentDrawDepthOffset);
         renderPass.bindUniform(
-          vertexShader.getUniformSlot('VelocitySkinnedModelInfo'),
+          vertexShader.cachedUniformSlot('VelocitySkinnedModelInfo'),
           context.transientsBuffer.emplace(
             ByteData.sublistView(skinnedModelInfo),
           ),
         );
         renderPass.bindTexture(
-          vertexShader.getUniformSlot('current_joints_texture'),
+          vertexShader.cachedUniformSlot('current_joints_texture'),
           item.jointsTexture!,
           sampler: _nearestClamp,
         );
         renderPass.bindTexture(
-          vertexShader.getUniformSlot('previous_joints_texture'),
+          vertexShader.cachedUniformSlot('previous_joints_texture'),
           item.previousJointsTexture ?? item.jointsTexture!,
           sampler: _nearestClamp,
         );
@@ -261,7 +262,7 @@ class VelocityPass extends RenderGraphPass {
         unskinnedModelInfo.setRange(32, 36, currentDrawDepthOffset);
         unskinnedModelInfo[36] = item.material.depthBias;
         renderPass.bindUniform(
-          vertexShader.getUniformSlot('VelocityModelInfo'),
+          vertexShader.cachedUniformSlot('VelocityModelInfo'),
           context.transientsBuffer.emplace(
             ByteData.sublistView(unskinnedModelInfo),
           ),

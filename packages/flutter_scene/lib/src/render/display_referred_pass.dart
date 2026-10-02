@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the display-referred layer [ScenePass]
 /// draws, which [DisplayReferredCompositePass] blends onto the resolved image.
@@ -97,12 +98,12 @@ class DisplayReferredCompositePass extends RenderGraphPass {
     renderPass.bindPipeline(resolvePipeline(_vertexShader, _fragmentShader));
     bindVertexBufferCompat(renderPass, _quadView, 6);
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('display_color'),
+      _fragmentShader.cachedUniformSlot('display_color'),
       display,
       sampler: _linearClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('display_referred_color'),
+      _fragmentShader.cachedUniformSlot('display_referred_color'),
       layer ?? Material.getTransparentPlaceholderTexture(),
       sampler: _linearClamp,
     );

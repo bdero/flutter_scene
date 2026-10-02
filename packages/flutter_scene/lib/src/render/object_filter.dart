@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/material/vertex_attributes.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Selects which scene nodes an object-filtered draw includes.
 ///
@@ -243,7 +244,7 @@ class _ObjectMaskEncoder {
       ..[2] = highlight.z
       ..[3] = highlight.w == 0 ? 1.0 : highlight.w;
     _renderPass.bindUniform(
-      fragmentShader.getUniformSlot(masked ? 'MaskColor' : 'MaskInfo'),
+      fragmentShader.cachedUniformSlot(masked ? 'MaskColor' : 'MaskInfo'),
       _transientsBuffer.emplace(ByteData.sublistView(color)),
     );
     if (masked) {

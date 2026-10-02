@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the 1x1 adapted exposure-factor texture
 /// [AutoExposurePass] produces. The resolve pass samples it and multiplies
@@ -203,11 +204,11 @@ class AutoExposurePass extends RenderGraphPass {
       target: _state.next,
       bind: (renderPass) {
         renderPass.bindUniform(
-          _adaptShader.getUniformSlot('AutoExposureAdaptInfo'),
+          _adaptShader.cachedUniformSlot('AutoExposureAdaptInfo'),
           context.transientsBuffer.emplace(ByteData.sublistView(info)),
         );
         renderPass.bindTexture(
-          _adaptShader.getUniformSlot('previous_adapted'),
+          _adaptShader.cachedUniformSlot('previous_adapted'),
           _state.previous,
           sampler: _nearestClamp,
         );
@@ -235,7 +236,7 @@ class AutoExposurePass extends RenderGraphPass {
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
     renderPass.bindTexture(
-      shader.getUniformSlot(sourceSlot),
+      shader.cachedUniformSlot(sourceSlot),
       source,
       sampler: sampler ?? _linearClamp,
     );

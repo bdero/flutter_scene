@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/splats/splat_data.dart';
 import 'package:flutter_scene/src/splats/splat_sort_service.dart';
 import 'package:flutter_scene/src/splats/splat_sorter.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// How a crop box filters the splats of a `SplatComponent`.
 /// {@category Gaussian splatting}
@@ -334,14 +335,14 @@ class SplatGeometry extends Geometry {
     );
 
     pass.bindTexture(
-      vertexShader.getUniformSlot('splat_params_texture'),
+      vertexShader.cachedUniformSlot('splat_params_texture'),
       splats.paramsTexture,
       sampler: _dataSampler,
     );
     // The SH slot must always be bound; a set with no rest coefficients
     // binds the params texture as a placeholder (degree 0 never samples it).
     pass.bindTexture(
-      vertexShader.getUniformSlot('splat_sh_texture'),
+      vertexShader.cachedUniformSlot('splat_sh_texture'),
       splats.shTexture ?? splats.paramsTexture,
       sampler: _dataSampler,
     );
@@ -393,7 +394,7 @@ class SplatGeometry extends Geometry {
     frameInfo[77] = currentDrawDepthOffset[1];
     frameInfo[78] = currentRasterFarClipDepth;
     pass.bindUniform(
-      vertexShader.getUniformSlot('FrameInfo'),
+      vertexShader.cachedUniformSlot('FrameInfo'),
       transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
     );
   }

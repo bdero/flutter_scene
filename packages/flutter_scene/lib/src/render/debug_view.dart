@@ -5,6 +5,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Which family a [SurfaceDebugChannel] belongs to, for grouping a menu and
 /// for hiding a family a material does not carry.
@@ -576,7 +577,7 @@ class DebugViewFrame {
     gpu.Shader shader,
   ) {
     pass.bindUniform(
-      shader.getUniformSlot('DebugViewInfo'),
+      shader.cachedUniformSlot('DebugViewInfo'),
       transients.emplace(ByteData.sublistView(inactive)),
     );
   }

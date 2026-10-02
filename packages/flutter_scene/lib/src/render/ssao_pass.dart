@@ -16,6 +16,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:vector_math/vector_math.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key under which [SsaoBlurPass] publishes the
 /// final ambient-occlusion texture (occlusion factor in `.r`, 1 =
@@ -187,7 +188,7 @@ class SsaoPass extends RenderGraphPass {
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
     renderPass.bindTexture(
-      _downsampleShader.getUniformSlot('source'),
+      _downsampleShader.cachedUniformSlot('source'),
       source,
       sampler: _nearestClamp,
     );
@@ -332,32 +333,32 @@ class SsaoPass extends RenderGraphPass {
       (_ssgiReprojection ?? Matrix4.identity()).copyIntoArray(info, 24);
     }
     renderPass.bindUniform(
-      fragmentShader.getUniformSlot(groundTruth ? 'GtaoInfo' : 'SsaoInfo'),
+      fragmentShader.cachedUniformSlot(groundTruth ? 'GtaoInfo' : 'SsaoInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     renderPass.bindTexture(
-      fragmentShader.getUniformSlot('depth_mip1'),
+      fragmentShader.cachedUniformSlot('depth_mip1'),
       mip1,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      fragmentShader.getUniformSlot('depth_mip2'),
+      fragmentShader.cachedUniformSlot('depth_mip2'),
       mip2,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      fragmentShader.getUniformSlot('depth_mip3'),
+      fragmentShader.cachedUniformSlot('depth_mip3'),
       mip3,
       sampler: _nearestClamp,
     );
     renderPass.bindTexture(
-      fragmentShader.getUniformSlot('linear_depth'),
+      fragmentShader.cachedUniformSlot('linear_depth'),
       baseDepth,
       sampler: _nearestClamp,
     );
     if (groundTruth) {
       renderPass.bindTexture(
-        fragmentShader.getUniformSlot('scene_radiance'),
+        fragmentShader.cachedUniformSlot('scene_radiance'),
         _sceneRadiance ?? Material.getBlackPlaceholderTexture(),
         sampler: _linearClamp,
       );
@@ -442,16 +443,16 @@ class SsaoBlurPass extends RenderGraphPass {
         ..[5] = axisY
         ..[6] = ambientOcclusionCarriesBentNormals(_settings) ? 1.0 : 0.0;
       renderPass.bindUniform(
-        _fragmentShader.getUniformSlot('BlurInfo'),
+        _fragmentShader.cachedUniformSlot('BlurInfo'),
         context.transientsBuffer.emplace(ByteData.sublistView(info)),
       );
       renderPass.bindTexture(
-        _fragmentShader.getUniformSlot('ao_texture'),
+        _fragmentShader.cachedUniformSlot('ao_texture'),
         source,
         sampler: _linearClamp,
       );
       renderPass.bindTexture(
-        _fragmentShader.getUniformSlot('linear_depth'),
+        _fragmentShader.cachedUniformSlot('linear_depth'),
         linearDepth,
         sampler: _nearestClamp,
       );
@@ -527,7 +528,7 @@ class SceneColorHistoryPass extends RenderGraphPass {
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _fullscreenQuad(), 6);
     renderPass.bindTexture(
-      _copyShader.getUniformSlot('source_texture'),
+      _copyShader.cachedUniformSlot('source_texture'),
       source,
       sampler: _nearestClamp,
     );

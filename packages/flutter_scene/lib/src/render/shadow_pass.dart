@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/render/spot_shadow.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/scene_encoder.dart'
     show deferredPipelineBuilds, resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key under which [ShadowPass] publishes the shadow
 /// map atlas (a depth-in-`.r` fp32 texture). The downstream scene pass reads it
@@ -471,7 +472,7 @@ class ShadowPass extends RenderGraphPass {
     pass.setDepthCompareOperation(gpu.CompareFunction.always);
     bindVertexBufferCompat(pass, _quadView, 6);
     pass.bindTexture(
-      _copyFragmentShader.getUniformSlot('source_texture'),
+      _copyFragmentShader.cachedUniformSlot('source_texture'),
       source,
     );
     drawCompat(pass, 6);

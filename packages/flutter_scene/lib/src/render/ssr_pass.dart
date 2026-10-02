@@ -13,6 +13,7 @@ import 'package:flutter_scene/src/screen_space_reflections.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 // Two triangles of NDC positions covering the screen (6 vec2s).
 gpu.BufferView _fullscreenQuad() {
@@ -152,16 +153,16 @@ class SsrPass extends RenderGraphPass {
     tracePass.setColorBlendEnable(false);
     bindVertexBufferCompat(tracePass, _fullscreenQuad(), 6);
     tracePass.bindUniform(
-      _fragmentShader.getUniformSlot('SsrInfo'),
+      _fragmentShader.cachedUniformSlot('SsrInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     tracePass.bindTexture(
-      _fragmentShader.getUniformSlot('input_color'),
+      _fragmentShader.cachedUniformSlot('input_color'),
       sceneColor,
       sampler: _linearClamp,
     );
     tracePass.bindTexture(
-      _fragmentShader.getUniformSlot('linear_depth'),
+      _fragmentShader.cachedUniformSlot('linear_depth'),
       linearDepth,
       sampler: _nearestClamp,
     );
@@ -189,16 +190,16 @@ class SsrPass extends RenderGraphPass {
     compositePass.setColorBlendEnable(false);
     bindVertexBufferCompat(compositePass, _fullscreenQuad(), 6);
     compositePass.bindUniform(
-      _compositeShader.getUniformSlot('CompositeInfo'),
+      _compositeShader.cachedUniformSlot('CompositeInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(compositeInfo)),
     );
     compositePass.bindTexture(
-      _compositeShader.getUniformSlot('input_color'),
+      _compositeShader.cachedUniformSlot('input_color'),
       sceneColor,
       sampler: _linearClamp,
     );
     compositePass.bindTexture(
-      _compositeShader.getUniformSlot('ssr_reflection'),
+      _compositeShader.cachedUniformSlot('ssr_reflection'),
       reflection,
       sampler: _linearClamp,
     );

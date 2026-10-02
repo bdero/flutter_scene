@@ -10,6 +10,7 @@ import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/radiance_layout.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/gpu/raster_sync.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 // The layout constants and the cube face bases live in radiance_layout.dart so
 // the pure-Dart importer can share them without pulling in the GPU.
@@ -426,7 +427,7 @@ void prefilterEquirectRadianceCubeFace(
   renderPass.bindPipeline(resolvePipeline(vertexShader, fragmentShader));
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
   renderPass.bindTexture(
-    fragmentShader.getUniformSlot('source_equirect'),
+    fragmentShader.cachedUniformSlot('source_equirect'),
     sourceEquirect,
     sampler: gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.linear,
@@ -458,7 +459,7 @@ void prefilterEquirectRadianceCubeFace(
     ..[15] = sourceEquirect.height.toDouble()
     ..[16] = (sourceEquirect.mipLevelCount - 1).toDouble();
   renderPass.bindUniform(
-    fragmentShader.getUniformSlot('PrefilterCubeInfo'),
+    fragmentShader.cachedUniformSlot('PrefilterCubeInfo'),
     uniformTransients.emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);
@@ -551,7 +552,7 @@ void _prefilterPass(
   renderPass.bindPipeline(resolvePipeline(vertexShader, fragmentShader));
   bindVertexBufferCompat(renderPass, _fullscreenQuadView, 6);
   renderPass.bindTexture(
-    fragmentShader.getUniformSlot('source_equirect'),
+    fragmentShader.cachedUniformSlot('source_equirect'),
     sourceEquirect,
     sampler: gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.linear,
@@ -569,7 +570,7 @@ void _prefilterPass(
     ..[2] = mipLayout ? 1.0 : 0.0
     ..[3] = forceMirror ? 1.0 : 0.0;
   renderPass.bindUniform(
-    fragmentShader.getUniformSlot('PrefilterInfo'),
+    fragmentShader.cachedUniformSlot('PrefilterInfo'),
     uniformTransients.emplace(ByteData.sublistView(info)),
   );
   drawCompat(renderPass, 6);

@@ -15,6 +15,7 @@ import 'package:flutter_scene/src/render/resolve_pass.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Render-graph blackboard key for the selection mask: highlighted objects
 /// drawn flat in their highlight color (coverage in alpha), everything else 0.
@@ -168,12 +169,12 @@ class SelectionOutlinePass extends RenderGraphPass {
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('scene_color'),
+      _fragmentShader.cachedUniformSlot('scene_color'),
       sceneColor,
       sampler: _linearClamp,
     );
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('selection_mask'),
+      _fragmentShader.cachedUniformSlot('selection_mask'),
       mask,
       sampler: _linearClamp,
     );
@@ -186,7 +187,7 @@ class SelectionOutlinePass extends RenderGraphPass {
       ..[1] = h == 0 ? 0.0 : 1.0 / h
       ..[2] = _thickness;
     renderPass.bindUniform(
-      _fragmentShader.getUniformSlot('OutlineInfo'),
+      _fragmentShader.cachedUniformSlot('OutlineInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
 

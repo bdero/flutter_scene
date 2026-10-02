@@ -11,6 +11,7 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 
 import 'package:vector_math/vector_math.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Selects how a sprite's color is blended into the scene.
 /// {@category Materials}
@@ -118,11 +119,11 @@ class SpriteMaterial extends Material {
     fragInfo[8] = viewport.width > 0 ? 1.0 / viewport.width : 0.0;
     fragInfo[9] = viewport.height > 0 ? 1.0 / viewport.height : 0.0;
     pass.bindUniform(
-      fragmentShader.getUniformSlot('FragInfo'),
+      fragmentShader.cachedUniformSlot('FragInfo'),
       transientsBuffer.emplace(ByteData.sublistView(fragInfo)),
     );
     pass.bindTexture(
-      fragmentShader.getUniformSlot('base_color_texture'),
+      fragmentShader.cachedUniformSlot('base_color_texture'),
       Material.whitePlaceholder(resolveTextureSource(colorTexture)),
       sampler: textureSourceSampler(colorTexture) ?? sampler,
     );

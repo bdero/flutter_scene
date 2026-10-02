@@ -7,6 +7,7 @@ import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/scene_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Copies the linear HDR scene color into [_output] verbatim, ending a
 /// capture render (environment probes) before any post-processing or the
@@ -58,7 +59,7 @@ class SceneColorBlitPass extends RenderGraphPass {
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
     renderPass.bindTexture(
-      _fragmentShader.getUniformSlot('source_texture'),
+      _fragmentShader.cachedUniformSlot('source_texture'),
       input,
       sampler: _nearestClamp,
     );

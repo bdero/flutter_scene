@@ -19,6 +19,7 @@ import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/src/render/shadow_pass.dart';
 import 'package:flutter_scene/src/scene_encoder.dart' show resolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 /// Refreshes the footprint shadow caches of baked-mode [ShadowCatcherMaterial]
 /// items, right after the shadow atlas renders so the scene pass samples a
@@ -306,7 +307,7 @@ class ShadowCatcherBakePass extends RenderGraphPass {
     pass.setCullMode(gpu.CullMode.none);
     bindVertexBufferCompat(pass, _quadView, 6);
     pass.bindTexture(
-      _blurFragmentShader.getUniformSlot('source_texture'),
+      _blurFragmentShader.cachedUniformSlot('source_texture'),
       source,
       sampler: _linearClamp,
     );
@@ -314,7 +315,7 @@ class ShadowCatcherBakePass extends RenderGraphPass {
       ..[0] = axis.x / source.width
       ..[1] = axis.y / source.height;
     pass.bindUniform(
-      _blurFragmentShader.getUniformSlot('CatcherBlurInfo'),
+      _blurFragmentShader.cachedUniformSlot('CatcherBlurInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
     );
     drawCompat(pass, 6);
