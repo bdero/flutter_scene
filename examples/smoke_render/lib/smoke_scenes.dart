@@ -2903,10 +2903,10 @@ class SmokeSceneViewState extends State<SmokeSceneView> {
     _scene = setup.scene;
     _camera = setup.camera;
 
-    // The first paint happens before flutter_scene's static resources finish
-    // loading and is skipped; this view is otherwise static, so trigger one
-    // repaint when initialization completes so the scene actually renders.
-    Scene.initializeStaticResources().then((_) {
+    // The first paint happens before flutter_scene's resources finish loading
+    // and is skipped; this view is otherwise static, so trigger one repaint
+    // once they have, including the ones that otherwise load on first use.
+    Scene.preload(smaa: true).then((_) {
       if (mounted) setState(() {});
     });
   }

@@ -74,7 +74,7 @@ void main() {
       // flutter_scene gates rendering on this future. Wait before building the
       // smoke scene: Geometry/Material constructors touch the shader bundle,
       // which must be loaded before SmokeSceneView constructs them.
-      await Scene.initializeStaticResources();
+      await Scene.preload(smaa: true);
       await smoke.preload?.call();
 
       await tester.pumpWidget(
@@ -339,7 +339,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     await loadEtc1sFixtures();
 
     // Compared in-test, not uploaded to Argos: which formats run differs by
@@ -467,7 +467,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
     await loadSmokeMaterials();
 
     final setup = buildNoiseParityScene();
@@ -716,7 +716,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
 
     final setup = buildDepthPairingScene();
     final scene = setup.scene..antiAliasingMode = AntiAliasingMode.msaa;
@@ -795,7 +795,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await Scene.initializeStaticResources();
+    await Scene.preload(smaa: true);
 
     final material = UnlitMaterial()
       ..alphaMode = AlphaMode.opaque
