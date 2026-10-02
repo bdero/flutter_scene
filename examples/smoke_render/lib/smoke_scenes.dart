@@ -752,19 +752,19 @@ UnlitMaterial _depthBiasMaterial(vm.Vector4 color, {double depthBias = 0}) =>
 /// The smoke scene set. Mostly procedural for determinism; the final scenes
 /// exercise a custom `.fmat` material compiled by the build hook.
 /// A cube of half extent [half] in the packed format `packed_vertex.vert`
-/// reads: float positions in one stream and, in another, one uint per vertex
-/// holding a signed 8-bit normal and [palette] in the top byte.
+/// reads: float positions in one stream and, in another, one code per vertex,
+/// the face index plus eight times [palette].
 UnskinnedGeometry _packedBox(double half, int palette) {
   final positions = Float32List(24 * 3);
-  final packed = Uint32List(24);
+  final codes = Float32List(24);
   final indices = Uint16List(36);
   var v = 0;
   var i = 0;
   for (final axis in [0, 1, 2]) {
     for (final sign in [1.0, -1.0]) {
-      final normal = [0.0, 0.0, 0.0]..[axis] = sign;
       final u = (axis + 1) % 3;
       final w = (axis + 2) % 3;
+      final face = axis * 2 + (sign > 0 ? 0 : 1);
       final first = v;
       for (final (a, b) in [
         (-1.0, -1.0),
@@ -777,15 +777,10 @@ UnskinnedGeometry _packedBox(double half, int palette) {
           ..[u] = a * half
           ..[w] = b * half;
         positions.setAll(v * 3, p);
-        var bits = palette << 24;
-        for (var c = 0; c < 3; c++) {
-          bits |= ((normal[c] * 127).round() + 128) << (c * 8);
-        }
-        packed[v++] = bits;
+        codes[v++] = (face + palette * 8).toDouble();
       }
       // Counter-clockwise seen from outside along the face normal.
-      final flip = sign < 0;
-      for (final corner in flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
+      for (final corner in sign < 0 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
         indices[i++] = first + corner;
       }
     }
@@ -807,8 +802,8 @@ UnskinnedGeometry _packedBox(double half, int palette) {
             strideInBytes: 4,
             attributes: [
               VertexAttributeDescriptor(
-                name: 'packed_normal_color',
-                format: gpu.VertexFormat.uint32,
+                name: 'packed_face',
+                format: gpu.VertexFormat.float32,
               ),
             ],
           ),
@@ -847,7 +842,7 @@ UnskinnedGeometry _packedBox(double half, int palette) {
         ],
       ),
     )
-    ..uploadVertexStreams([positions, packed], 24, indices: indices)
+    ..uploadVertexStreams([positions, codes], 24, indices: indices)
     ..setLocalBounds(
       vm.Aabb3.minMax(vm.Vector3.all(-half), vm.Vector3.all(half)),
       vm.Sphere.centerRadius(vm.Vector3.zero(), half * math.sqrt(3)),
@@ -2520,11 +2515,11 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   }, preload: loadSmokeMaterials),
 
   // A caller-defined vertex format: two boxes in a 16-byte packed vertex
-  // (a float position stream plus one packed uint per vertex) drawn by the
+  // (a float position stream plus one packed code per vertex) drawn by the
   // engine's lit material, casting onto a mesh with no texture coordinates
   // or colors. The left box declares a position-only depth vertex; the right
   // one leaves depth to its full vertex shader. A backend that misreads the
-  // integer stream draws black or garbled boxes, and a broken depth path
+  // second stream draws black or garbled boxes, and a broken depth path
   // drops a shadow.
   SmokeScene('packed_vertex_format', () {
     // Dim ambient, so both shadows read against the ground.

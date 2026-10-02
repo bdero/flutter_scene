@@ -632,7 +632,12 @@ abstract class Geometry {
   /// The engine cannot read a packed position, so it scans no bounds and
   /// keeps no positions for raycasting. Call [setLocalBounds], or the mesh is
   /// never culled. [bufferArena] shares one GPU block between many meshes.
+  ///
+  /// Integer vertex formats do not draw on Impeller's OpenGL ES backend yet.
   /// {@category Geometry}
+  // TODO(gles-integer-attributes): Impeller's GLES backend rejects 32-bit
+  // integer vertex formats (ToVertexAttribType in formats_gles.h). Drop the
+  // caveat above once it binds them with glVertexAttribIPointer.
   void uploadVertexStreams(
     List<TypedData> streams,
     int vertexCount, {
