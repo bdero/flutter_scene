@@ -45,9 +45,9 @@ final checkDepthLayering = QueryEntry(
       'flicker against each other (z-fighting) at any distance. Covers '
       'procedural cuboids and planes and unskinned triangle meshes. Each '
       'overlap names its nodes, area, and center, and for repeated pieces '
-      'longer than their spacing, the length that fixes them. Pairs that '
-      'share a material, or whose materials set different depthLayer '
-      'values, are left out, since neither flickers.',
+      'longer than their spacing, the length that fixes them. Pairs whose '
+      'materials set different depthLayer values are left out, since the '
+      'layer resolves them.',
   category: 'Scene',
   paramSchema: const [
     ParamSpec(
@@ -135,9 +135,10 @@ class DocumentCoplanarOverlap {
 }
 
 /// Every pair of faces of different meshes in [document] that overlap in one
-/// plane by at least [minArea] square meters, largest first. Pairs sharing a
-/// material, or whose materials set different `depthLayer` values, and
-/// hidden nodes are left out.
+/// plane by at least [minArea] square meters, largest first. Pairs whose
+/// materials set different `depthLayer` values, and hidden nodes, are left
+/// out. Meshes sharing a material still count, since vertex colors, texture
+/// coordinates, or normals can still tell their pixels apart.
 List<DocumentCoplanarOverlap> findDocumentCoplanarOverlaps(
   SceneDocument document, {
   double minArea = 0.01,
@@ -205,7 +206,6 @@ List<DocumentCoplanarOverlap> findDocumentCoplanarOverlaps(
       if (b.min.x > a.max.x + _kPlaneTolerance) break;
       if (identical(a.source, b.source)) continue;
       if (a.source.node == b.source.node) continue;
-      if (a.source.material == b.source.material) continue;
       if (a.source.layer != b.source.layer) continue;
       if (a.normal.dot(b.normal) < cosAngle) continue;
       if ((a.offset - b.offset).abs() >= _kPlaneTolerance) continue;
@@ -383,16 +383,33 @@ class _PlaneGroup {
   final List<double> corners = [];
 }
 
+// Plane cells for grouping, over twice the grouping tolerances so a value
+// is near at most one cell edge: unit normals within _kAngleDegrees differ by
+// under 0.035 per component, and grouped offsets by under _kPlaneTolerance.
+const double _kNormalCell = 1.0 / 8.0;
+const double _kNormalTolerance = 0.035;
+const double _kOffsetCell = 0.01;
+
+// One key per cell: normal indices span [-9, 9], offsets any integer.
+int _cellKey(int x, int y, int z, int offset) =>
+    ((offset * 19 + x + 9) * 19 + y + 9) * 19 + z + 9;
+
+// Groups one primitive's triangles by world plane. Each plane lives in the
+// cell of its first triangle; a triangle searches its own cell, and the
+// neighbor across any cell edge it sits within tolerance of, so the search
+// stays local without splitting a plane at a cell edge.
 void _collectGroups(
   List<_PlaneGroup> groups,
   _Source source,
   Matrix4 world,
   Float64List triangles,
 ) {
-  final local = <_PlaneGroup>[];
+  final cells = <int, List<_PlaneGroup>>{};
   final cosAngle = math.cos(_kAngleDegrees * degrees2Radians);
   final mirrored = world.determinant() < 0;
   final p = [Vector3.zero(), Vector3.zero(), Vector3.zero()];
+  final index = Int32List(4);
+  final reach = Int32List(4);
   for (var t = 0; t < triangles.length; t += 9) {
     for (var k = 0; k < 3; k++) {
       p[k]
@@ -405,20 +422,56 @@ void _collectGroups(
     }
     final normal = (p[1] - p[0]).cross(p[2] - p[0]);
     final length = normal.length;
-    if (length < 1e-9) continue;
+    // Also skips a degenerate transform's non-finite positions.
+    if (!(length >= 1e-9)) continue;
     normal.scale(mirrored ? -1.0 / length : 1.0 / length);
     final offset = normal.dot(p[0]);
+    if (!offset.isFinite) continue;
+    final values = [normal.x, normal.y, normal.z, offset];
+    for (var d = 0; d < 4; d++) {
+      final cell = d < 3 ? _kNormalCell : _kOffsetCell;
+      final tolerance = d < 3 ? _kNormalTolerance : _kPlaneTolerance;
+      final position = values[d] / cell;
+      index[d] = position.floor();
+      final fraction = position - index[d];
+      reach[d] = fraction * cell < tolerance
+          ? -1
+          : ((1 - fraction) * cell < tolerance ? 1 : 0);
+    }
     _PlaneGroup? group;
-    for (final candidate in local) {
-      if (candidate.normal.dot(normal) >= cosAngle &&
-          (candidate.offset - offset).abs() < _kPlaneTolerance) {
-        group = candidate;
-        break;
+    search:
+    for (var dx = 0; dx < (reach[0] == 0 ? 1 : 2); dx++) {
+      for (var dy = 0; dy < (reach[1] == 0 ? 1 : 2); dy++) {
+        for (var dz = 0; dz < (reach[2] == 0 ? 1 : 2); dz++) {
+          for (var dO = 0; dO < (reach[3] == 0 ? 1 : 2); dO++) {
+            final candidates =
+                cells[_cellKey(
+                  index[0] + dx * reach[0],
+                  index[1] + dy * reach[1],
+                  index[2] + dz * reach[2],
+                  index[3] + dO * reach[3],
+                )];
+            if (candidates == null) continue;
+            for (final candidate in candidates) {
+              if (candidate.normal.dot(normal) >= cosAngle &&
+                  (candidate.offset - offset).abs() < _kPlaneTolerance) {
+                group = candidate;
+                break search;
+              }
+            }
+          }
+        }
       }
     }
     if (group == null) {
       group = _PlaneGroup(source, normal, offset, world);
-      local.add(group);
+      cells
+          .putIfAbsent(
+            _cellKey(index[0], index[1], index[2], index[3]),
+            () => [],
+          )
+          .add(group);
+      groups.add(group);
     }
     for (final corner in p) {
       group.corners
@@ -429,7 +482,6 @@ void _collectGroups(
       Vector3.max(group.max, corner, group.max);
     }
   }
-  groups.addAll(local);
 }
 
 // The area where [a] and [b] overlap in [a]'s plane, and its center.

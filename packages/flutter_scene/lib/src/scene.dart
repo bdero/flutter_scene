@@ -1,4 +1,4 @@
-import 'dart:async' show Completer, FutureExtensions, Timer, scheduleMicrotask;
+import 'dart:async' show Completer, FutureExtensions, Timer;
 import 'dart:developer';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -8,7 +8,7 @@ import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/coplanar_overlaps.dart'
     as coplanar
-    show CoplanarOverlap, describeCoplanarOverlaps, findCoplanarOverlaps;
+    show CoplanarOverlap, CoplanarOverlapScan, describeCoplanarOverlaps;
 import 'package:flutter_scene/src/depth_conflicts.dart'
     as depth_conflicts
     show DepthConflictReport, probeDepthConflicts;
@@ -2236,36 +2236,44 @@ base class Scene implements SceneGraph {
 
   /// Whether a debug build checks the scene for surfaces that overlap in one
   /// plane once it has held still for a moment, and prints what it finds
-  /// (see [findCoplanarOverlaps]). Runs again whenever nodes are added or
-  /// removed. Debug builds only; defaults to true.
+  /// (see [findCoplanarOverlaps]). The check runs a couple of milliseconds
+  /// per frame until it is through the scene, and again whenever nodes are
+  /// added or removed. Debug builds only; defaults to true.
   bool debugCheckCoplanarOverlaps = true;
 
   // The render-scene structure the coplanar check last ran on, the frames it
-  // has held still since, and the report it printed.
+  // has held still since, the check in progress, and the report it printed.
   int _coplanarCheckedRevision = -1;
   int _coplanarStableFrames = 0;
   int _coplanarWatchedRevision = -1;
+  coplanar.CoplanarOverlapScan? _coplanarScan;
   String? _coplanarLastReport;
 
+  // How long the coplanar check may run per frame.
+  static const Duration _coplanarSlice = Duration(milliseconds: 2);
+
   // Debug-only. Runs the coplanar check after the scene's structure has held
-  // for a second of frames, off the frame itself.
+  // for a second of frames, a slice per frame so a large scene never stalls
+  // one.
   void _maybeReportCoplanarOverlaps() {
     if (!debugCheckCoplanarOverlaps) return;
     final revision = renderScene.structureRevision;
     if (revision != _coplanarWatchedRevision) {
       _coplanarWatchedRevision = revision;
       _coplanarStableFrames = 0;
+      _coplanarScan = null;
       return;
     }
     if (revision == _coplanarCheckedRevision) return;
     if (++_coplanarStableFrames < 60) return;
+    final scan = _coplanarScan ??= _coplanarOverlapScan();
+    if (!scan.advance(_coplanarSlice)) return;
+    _coplanarScan = null;
     _coplanarCheckedRevision = revision;
-    scheduleMicrotask(() {
-      final report = coplanar.describeCoplanarOverlaps(findCoplanarOverlaps());
-      if (report == null || report == _coplanarLastReport) return;
-      _coplanarLastReport = report;
-      debugPrint(report);
-    });
+    final report = coplanar.describeCoplanarOverlaps(scan.result!);
+    if (report == null || report == _coplanarLastReport) return;
+    _coplanarLastReport = report;
+    debugPrint(report);
   }
 
   /// Finds surfaces that overlap in one plane and so flicker against each
@@ -2277,14 +2285,21 @@ base class Scene implements SceneGraph {
   /// more than 0.01 m² in one plane. From a [camera] (the last on-screen
   /// view's, then the primary camera, when omitted), it also reports pairs
   /// whose planes sit closer than the depth buffer can separate at their
-  /// distance from it, given the scene's depth settings. Overlaps that draw
-  /// identical pixels (one material and color) and pairs whose
-  /// `Material.depthLayer` differs are left out, since neither flickers.
+  /// distance from it, given the scene's depth settings. Pairs whose
+  /// `Material.depthLayer` differs are left out, since the layer resolves
+  /// them; pairs sharing a material are not, since vertex colors, texture
+  /// coordinates, or normals can still tell their pixels apart.
   ///
   /// Each overlap names its nodes and, for repeated pieces longer than their
   /// spacing, the fix. [probeDepthConflicts] finds the same fights by
   /// rendering, including ones in meshes this skips.
   List<coplanar.CoplanarOverlap> findCoplanarOverlaps({Camera? camera}) {
+    final scan = _coplanarOverlapScan(camera: camera);
+    scan.advance();
+    return scan.result!;
+  }
+
+  coplanar.CoplanarOverlapScan _coplanarOverlapScan({Camera? camera}) {
     final view = camera ?? _probeCamera;
     double Function(double)? separationAt;
     if (view != null && view.projection.runtimeType == PerspectiveProjection) {
@@ -2301,7 +2316,7 @@ base class Scene implements SceneGraph {
       separationAt = (distance) =>
           kDepthLayerSteps * raster.worldStepAt(distance, near);
     }
-    return coplanar.findCoplanarOverlaps(
+    return coplanar.CoplanarOverlapScan(
       renderScene.items,
       eye: view?.position,
       separationAt: separationAt,
