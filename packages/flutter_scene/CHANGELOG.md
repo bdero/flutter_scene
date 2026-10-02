@@ -19,7 +19,7 @@
 * Generated scenes, textures, and materials rebuild when the flutter_scene code that writes them changes, so an upgrade no longer reuses outputs from the old importer, encoder, or `.fmat` compiler.
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
-* A draw the backend refuses (an OpenGL ES driver that cannot compile a shader) is skipped and reported once instead of throwing out of `paint` every frame (#444).
+* A draw the backend refuses is skipped instead of throwing out of `paint`, and a pipeline that keeps failing (an OpenGL ES driver that cannot compile its shader) is dropped and reported once (#444).
 * Fixed a crash on M3 and newer Macs and recent iPhones (macOS and iOS 26+) when drawing a lit material with directional shadows; the lit shaders no longer inline their lighting twice (#436).
 * Fixed bloom stamping a grid of square copies around bright highlights and popping as they moved. The first mip averages each texel's whole source footprint, the upsample tent no longer spreads its taps apart, `BloomSettings.scatter` weights the wider mips instead, and the resolve magnifies bloom with a B-spline.
 * Fixed a native crash on Impeller Vulkan when cached static shadows re-rendered after a resize, a render-target release, or from a second view (#431).
