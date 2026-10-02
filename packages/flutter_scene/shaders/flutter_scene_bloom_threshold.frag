@@ -3,20 +3,21 @@
 // un-premultiplied linear HDR radiance.
 //
 // The first mip can be many times smaller than the scene, so each texel
-// averages a grid of bilinear taps spanning its whole source footprint.
+// averages its whole source footprint as an exact box: every source texel the
+// box touches is weighted by how much of it the box covers. Adjacent boxes
+// tile the source, so a highlight contributes the same total at any position.
 // A single tap would catch a small highlight at full strength or miss it
 // entirely depending on its sub-pixel position, which pops as things move
 // and stamps blocky copies through the blur chain.
 uniform BloomThresholdInfo {
   float threshold;
   float knee;
-  // Taps per axis, spaced at most one source texel apart so their bilinear
-  // footprints overlap into an even box.
-  float taps;
+  // 0 for a plain box average (the second stage of a two-stage prefilter).
+  float apply_threshold;
   float _pad0;
   // Source texels per bloom texel, per axis.
   vec2 footprint;
-  vec2 source_texel;
+  vec2 source_size;
 }
 threshold_info;
 
@@ -37,6 +38,9 @@ vec3 Threshold(vec2 uv) {
   // full strength across the screen.
   vec3 color = s.a > 0.0 ? min(max(s.rgb / s.a, vec3(0.0)), vec3(65504.0))
                          : vec3(0.0);
+  if (threshold_info.apply_threshold < 0.5) {
+    return color;
+  }
   float brightness = max(color.r, max(color.g, color.b));
 
   // Soft knee around the threshold so the bloom fades in gradually.
@@ -50,22 +54,28 @@ vec3 Threshold(vec2 uv) {
 }
 
 void main() {
-  int taps = int(threshold_info.taps);
-  vec2 spacing = threshold_info.footprint / threshold_info.taps;
-  vec2 origin = v_uv + threshold_info.source_texel *
-                           (0.5 * spacing - 0.5 * threshold_info.footprint);
+  vec2 size = threshold_info.source_size;
+  // This texel's box, in source texels.
+  vec2 lo = v_uv * size - 0.5 * threshold_info.footprint;
+  vec2 hi = lo + threshold_info.footprint;
+  vec2 first = floor(lo);
+  ivec2 taps = ivec2(ceil(hi) - first);
   vec3 sum = vec3(0.0);
   for (int y = 0; y < kMaxTaps; y++) {
-    if (y >= taps) {
+    if (y >= taps.y) {
       break;
     }
+    float ty = first.y + float(y);
+    float wy = min(hi.y, ty + 1.0) - max(lo.y, ty);
     for (int x = 0; x < kMaxTaps; x++) {
-      if (x >= taps) {
+      if (x >= taps.x) {
         break;
       }
-      sum += Threshold(origin + threshold_info.source_texel *
-                                    (spacing * vec2(float(x), float(y))));
+      float tx = first.x + float(x);
+      float wx = min(hi.x, tx + 1.0) - max(lo.x, tx);
+      sum += Threshold((vec2(tx, ty) + 0.5) / size) * (wx * wy);
     }
   }
-  frag_color = vec4(sum / (threshold_info.taps * threshold_info.taps), 1.0);
+  frag_color = vec4(
+      sum / (threshold_info.footprint.x * threshold_info.footprint.y), 1.0);
 }

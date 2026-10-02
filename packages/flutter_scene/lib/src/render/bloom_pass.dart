@@ -21,18 +21,13 @@ const String kBloomTextureBlackboardKey = 'bloom_texture';
 const int _kMipCount = 6;
 
 /// Most prefilter taps per axis, matching kMaxTaps in the threshold shader.
-/// Covers a scene up to 16 times wider than the first bloom mip.
+/// A box spans up to one more texel than its footprint, so one pass covers a
+/// footprint up to one less than this.
 @visibleForTesting
 const int kMaxBloomThresholdTaps = 16;
 
 // Scatter at which every mip contributes equally.
 const double _kNeutralScatter = 0.7;
-
-/// Prefilter taps per axis for a first mip [footprint] source texels wide,
-/// spaced at most one texel apart.
-@visibleForTesting
-int bloomThresholdTaps(double footprint) =>
-    footprint.ceil().clamp(1, kMaxBloomThresholdTaps);
 
 /// Weight of each coarser bloom mip relative to the one above it.
 @visibleForTesting
@@ -40,15 +35,36 @@ double bloomLevelWeight(double scatter) => math
     .pow(2.0, (scatter.clamp(0.0, 1.0) - _kNeutralScatter) * 2.5)
     .toDouble();
 
-/// Scale that brings [levels] mips weighted by [levelWeight] back to the
-/// brightness of the equal-weight chain.
+/// How many times larger than the first bloom mip the prefilter's
+/// intermediate target is, or 1 when a [footprint] fits the tap budget in one
+/// pass.
 @visibleForTesting
-double bloomLevelScale(double levelWeight, int levels) {
-  var sum = 0.0;
-  for (var j = 0; j < levels; j++) {
-    sum += math.pow(levelWeight, j);
+int bloomPrefilterScale(double footprint) =>
+    (footprint / (kMaxBloomThresholdTaps - 1)).ceil().clamp(
+      1,
+      kMaxBloomThresholdTaps - 1,
+    );
+
+/// Weights the upsample writing mip [level] of [levels] gives the blurred
+/// coarser mip ([source]) and this level's downsample ([base]).
+///
+/// Each intermediate mip is a weighted average of its inputs, so half-float
+/// storage cannot overflow at high scatter. The finest level scales back to
+/// the brightness of the equal-weight chain.
+@visibleForTesting
+({double source, double base}) bloomUpsampleWeights(
+  double levelWeight,
+  int level,
+  int levels,
+) {
+  // Combined weight of the coarser mips, relative to this level's.
+  var coarser = 0.0;
+  for (var j = levels - level - 2; j >= 0; j--) {
+    coarser = 1.0 + levelWeight * coarser;
   }
-  return levels / sum;
+  coarser *= levelWeight;
+  final scale = level == 0 ? levels / (1.0 + coarser) : 1.0 / (1.0 + coarser);
+  return (source: coarser * scale, base: scale);
 }
 
 // Largest side (px) the first bloom mip is allowed to be. The mip chain
@@ -153,8 +169,7 @@ class BloomPass extends RenderGraphPass {
       height = (height / 2).floor();
     }
 
-    // Threshold the scene into the first mip.
-    _drawThreshold(context, scene, down[0], sizes[0]);
+    _drawPrefilter(context, scene, down[0], sizes[0]);
 
     // Downsample down the chain.
     for (var i = 1; i < down.length; i++) {
@@ -175,8 +190,7 @@ class BloomPass extends RenderGraphPass {
     // it. The coarsest level needs no pass; it is its own downsample mip.
     //
     // Scatter weights each coarser (wider) mip by levelWeight relative to the
-    // one above it, and the last step renormalizes so total brightness
-    // matches the equal-weight chain at any scatter.
+    // one above it (see bloomUpsampleWeights).
     final levelWeight = bloomLevelWeight(_settings.scatter);
 
     final up = List<gpu.Texture?>.filled(down.length, null);
@@ -196,8 +210,7 @@ class BloomPass extends RenderGraphPass {
         sourceSize: sizes[i + 1],
         base: down[i],
         target: target,
-        levelWeight: levelWeight,
-        scale: i == 0 ? bloomLevelScale(levelWeight, down.length) : 1.0,
+        weights: bloomUpsampleWeights(levelWeight, i, down.length),
       );
       up[i] = target;
     }
@@ -217,10 +230,10 @@ class BloomPass extends RenderGraphPass {
           debugName: 'bloom_flare',
         ),
       );
-      // up[2] still carries its levels' scatter weighting.
+      // up[2] averages its levels; scale it to their equal-weight sum.
       _drawLensFlare(
         context,
-        sourceScale: bloomLevelScale(levelWeight, down.length - 2),
+        sourceScale: (down.length - 2).toDouble(),
         source: up[2]!,
         base: result,
         target: composite,
@@ -277,12 +290,45 @@ class BloomPass extends RenderGraphPass {
     rendererSubmissions.submit(commandBuffer);
   }
 
-  void _drawThreshold(
+  // Thresholds [source] into the first mip. A source too large for the tap
+  // budget thresholds into an integer multiple of the mip first, which a
+  // one-tap-per-texel box pass then reduces exactly.
+  void _drawPrefilter(
     RenderGraphContext context,
     gpu.Texture source,
     gpu.Texture target,
     ui.Size targetSize,
   ) {
+    final scale = bloomPrefilterScale(
+      math.max(
+        source.width / targetSize.width,
+        source.height / targetSize.height,
+      ),
+    );
+    if (scale == 1) {
+      _drawThreshold(context, source, target, targetSize, threshold: true);
+      return;
+    }
+    final size = targetSize * scale.toDouble();
+    final intermediate = context.texturePool.acquire(
+      TransientTextureDescriptor.color(
+        width: size.width.toInt(),
+        height: size.height.toInt(),
+        format: _hdrFormat,
+        debugName: 'bloom_prefilter',
+      ),
+    );
+    _drawThreshold(context, source, intermediate, size, threshold: true);
+    _drawThreshold(context, intermediate, target, targetSize, threshold: false);
+  }
+
+  void _drawThreshold(
+    RenderGraphContext context,
+    gpu.Texture source,
+    gpu.Texture target,
+    ui.Size targetSize, {
+    required bool threshold,
+  }) {
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
       gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: target)),
@@ -292,17 +338,14 @@ class BloomPass extends RenderGraphPass {
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final knee = _settings.threshold * 0.5 + 1e-4;
-    final footprintX = source.width / targetSize.width;
-    final footprintY = source.height / targetSize.height;
-    final taps = bloomThresholdTaps(math.max(footprintX, footprintY));
     final info = Float32List(8)
       ..[0] = _settings.threshold
       ..[1] = knee
-      ..[2] = taps.toDouble()
-      ..[4] = footprintX
-      ..[5] = footprintY
-      ..[6] = 1.0 / source.width
-      ..[7] = 1.0 / source.height;
+      ..[2] = threshold ? 1.0 : 0.0
+      ..[4] = source.width / targetSize.width
+      ..[5] = source.height / targetSize.height
+      ..[6] = source.width.toDouble()
+      ..[7] = source.height.toDouble();
     renderPass.bindUniform(
       _thresholdShader.getUniformSlot('BloomThresholdInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
@@ -347,18 +390,17 @@ class BloomPass extends RenderGraphPass {
     rendererSubmissions.submit(commandBuffer);
   }
 
-  // Tent-blurs [source] (the smaller mip), weights it by [levelWeight], and
-  // adds [base] (the downsample one size larger) in the shader, writing a
-  // cleared target scaled by [scale]. No loaded attachment, so backends that
-  // re-clear a reload cannot drop the accumulation.
+  // Tent-blurs [source] (the smaller mip) and adds [base] (the downsample one
+  // size larger) in the shader, each scaled by [weights], writing a cleared
+  // target. No loaded attachment, so backends that re-clear a reload cannot
+  // drop the accumulation.
   void _drawUpsample(
     RenderGraphContext context, {
     required gpu.Texture source,
     required ui.Size sourceSize,
     required gpu.Texture base,
     required gpu.Texture target,
-    required double levelWeight,
-    required double scale,
+    required ({double source, double base}) weights,
   }) {
     final commandBuffer = gpu.gpuContext.createCommandBuffer();
     final renderPass = commandBuffer.createRenderPass(
@@ -371,8 +413,8 @@ class BloomPass extends RenderGraphPass {
     final info = Float32List(4)
       ..[0] = 1.0 / sourceSize.width
       ..[1] = 1.0 / sourceSize.height
-      ..[2] = levelWeight
-      ..[3] = scale;
+      ..[2] = weights.source
+      ..[3] = weights.base;
     renderPass.bindUniform(
       _upsampleShader.getUniformSlot('BloomUpsampleInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
