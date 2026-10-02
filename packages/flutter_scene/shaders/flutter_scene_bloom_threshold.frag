@@ -17,10 +17,12 @@ out vec4 frag_color;
 
 void main() {
   vec4 s = texture(source, v_uv);
-  // Clamp to a finite HDR ceiling first: an infinite radiance sample makes the
-  // contribution below Inf/Inf = NaN, which the downsample then spreads into a
-  // black bloom tile. Half-float max is far above any real bloom source.
-  vec3 color = s.a > 0.0 ? min(s.rgb / s.a, vec3(65504.0)) : vec3(0.0);
+  // Bound to [0, half-float max] before anything else: an infinite sample makes
+  // the contribution below Inf/Inf = NaN. The floor comes first so a NaN maps
+  // to 0; min(NaN, x) returns x on most GPUs, which would bloom a NaN pixel at
+  // full strength across the screen.
+  vec3 color = s.a > 0.0 ? min(max(s.rgb / s.a, vec3(0.0)), vec3(65504.0))
+                         : vec3(0.0);
   float brightness = max(color.r, max(color.g, color.b));
 
   // Soft knee around the threshold so the bloom fades in gradually.
