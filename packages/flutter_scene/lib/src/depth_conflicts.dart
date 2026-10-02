@@ -419,7 +419,7 @@ Future<DepthConflictReport> probeDepthConflicts({
   Future<Uint32List> read(gpu.Texture texture) async {
     final cached = words[texture];
     if (cached != null) return cached;
-    final image = texture.asImage();
+    final image = gpu.gpuHost.textureToImage(texture);
     try {
       final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (bytes == null) {

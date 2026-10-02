@@ -2558,7 +2558,12 @@ base class Scene implements SceneGraph {
       final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);
       final paint = ui.Paint()
         ..filterQuality = view.filterQuality ?? filterQuality;
-      canvas.drawImageRect(previous.asImage(), srcRect, drawArea, paint);
+      canvas.drawImageRect(
+        gpu.gpuHost.textureToImage(previous),
+        srcRect,
+        drawArea,
+        paint,
+      );
       return;
     }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
 import 'package:flutter_scene/src/render_texture.dart';
 
@@ -117,7 +118,7 @@ class _RenderTextureViewState extends State<RenderTextureView> {
           child: texture == null
               ? null
               : RawImage(
-                  image: texture.asImage(),
+                  image: gpu.gpuHost.textureToImage(texture),
                   fit: widget.fit,
                   filterQuality: widget.filterQuality,
                 ),
