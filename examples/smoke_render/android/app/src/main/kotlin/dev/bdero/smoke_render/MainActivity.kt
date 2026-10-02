@@ -14,6 +14,12 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "dev.bdero.smoke_render/android_manifest",
         ).setMethodCallHandler { call, result ->
+            // The smoke test writes each capture here as it renders, and CI pulls
+            // them with `run-as`, so a run that dies late keeps its frames.
+            if (call.method == "getFilesDir") {
+                result.success(filesDir.absolutePath)
+                return@setMethodCallHandler
+            }
             if (call.method != "getApplicationMetadataValue") {
                 result.notImplemented()
                 return@setMethodCallHandler
