@@ -92,7 +92,7 @@ void main() {
   vec4 clip_position =
       frame_info.current_view_projection * vec4(draw_position, 1.0);
   gl_Position = ApplyDepthOffset(
-      clip_position, model_info.depth_offset, 0.0,
-      DepthRoundingSteps(clip_position, frame_info.current_view_projection,
-                         draw_position, frame_info.camera_position.xyz));
+      clip_position, vec4(model_info.depth_offset.xy, 0.0, 0.0), vec3(0.0),
+      frame_info.current_view_projection, draw_position,
+      frame_info.camera_position.xyz);
 }

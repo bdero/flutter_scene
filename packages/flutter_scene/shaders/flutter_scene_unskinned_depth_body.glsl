@@ -66,10 +66,8 @@ void main() {
       frame_info.camera_position, frame_info.depth_bias);
   vec4 clip_position = frame_info.camera_transform * vec4(draw_position, 1.0);
   gl_Position = ApplyDepthOffset(
-      clip_position, frame_info.depth_offset,
-      InstanceDepthRank(model_transform_3.xyz),
-      DepthRoundingSteps(clip_position, frame_info.camera_transform,
-                         draw_position, frame_info.camera_position));
+      clip_position, frame_info.depth_offset, model_transform_3.xyz,
+      frame_info.camera_transform, draw_position, frame_info.camera_position);
   v_viewvector = frame_info.camera_position - vertex.world_position;
   v_normal = vec3(0.0);
   v_texture_coords = vec2(0.0);

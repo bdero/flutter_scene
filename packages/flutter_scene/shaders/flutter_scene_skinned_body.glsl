@@ -132,11 +132,8 @@ void main() {
   gl_Position = ApplySlopedDepthOffset(
       clip_position, vec4(frame_info.depth_offset.xy, 0.0, 0.0),
       vec4(frame_info.depth_offset.z, 0.0, frame_info.depth_offset.w, 0.0),
-      0.0,
-      DepthRoundingSteps(clip_position, frame_info.camera_transform,
-                         draw_position, frame_info.camera_position),
-      DepthSlopes(vertex.world_normal, draw_position,
-                  frame_info.camera_transform, frame_info.camera_position));
+      vec3(0.0), frame_info.camera_transform, draw_position,
+      frame_info.camera_position, vertex.world_normal);
   v_viewvector = frame_info.camera_position - vertex.world_position;
   // Unit length before interpolation (UnitOrZero, normal_transform.glsl).
   v_normal = UnitOrZero(vertex.world_normal);

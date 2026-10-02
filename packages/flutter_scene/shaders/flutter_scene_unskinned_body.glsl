@@ -88,11 +88,8 @@ void main() {
   vec4 clip_position = frame_info.camera_transform * vec4(draw_position, 1.0);
   gl_Position = ApplySlopedDepthOffset(
       clip_position, frame_info.depth_offset, frame_info.depth_slope,
-      InstanceDepthRank(model_transform_3.xyz),
-      DepthRoundingSteps(clip_position, frame_info.camera_transform,
-                         draw_position, frame_info.camera_position),
-      DepthSlopes(vertex.world_normal, draw_position,
-                  frame_info.camera_transform, frame_info.camera_position));
+      model_transform_3.xyz, frame_info.camera_transform, draw_position,
+      frame_info.camera_position, vertex.world_normal);
   v_viewvector = frame_info.camera_position - vertex.world_position;
   // Unit length before interpolation (UnitOrZero, normal_transform.glsl).
   v_normal = UnitOrZero(vertex.world_normal);
