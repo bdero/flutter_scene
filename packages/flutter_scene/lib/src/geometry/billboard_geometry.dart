@@ -211,7 +211,7 @@ class BillboardGeometry extends Geometry {
       pass.bindVertexBuffer(instanceTransients.emplace(liveBytes), slot: 1);
     }
 
-    final frameInfo = Float32List(48);
+    final frameInfo = _frameInfoScratch..fillRange(0, 48, 0.0);
     frameInfo.setRange(0, 16, cameraTransform.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     frameInfo[32] = cameraPosition.x;
@@ -230,7 +230,7 @@ class BillboardGeometry extends Geometry {
     frameInfo[45] = currentDrawDepthOffset[1];
     pass.bindUniform(
       vertexShader.cachedUniformSlot('FrameInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
+      transientsBuffer.emplace(scratchBytesOf(frameInfo)),
     );
   }
 
@@ -340,3 +340,6 @@ final VertexLayoutDescriptor _kBillboardLayout = VertexLayoutDescriptor(
     ),
   ],
 );
+
+// Shared by every draw; emplace copies it out.
+final Float32List _frameInfoScratch = Float32List(48);

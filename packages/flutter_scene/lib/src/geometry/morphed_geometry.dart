@@ -323,7 +323,7 @@ mixin _MorphBlending on Geometry {
     }
     pass.bindUniform(
       shader.cachedUniformSlot('MorphInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(scratch)),
+      transientsBuffer.emplace(scratchBytesOf(scratch)),
     );
   }
 

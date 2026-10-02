@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -128,6 +129,15 @@ abstract interface class TransientWriter {
   /// frame.
   gpu.BufferView emplace(ByteData bytes);
 }
+
+final Expando<ByteData> _scratchBytes = Expando('scratch bytes');
+
+/// A byte view of the long-lived [scratch], made once and reused, for
+/// emplacing the same scratch list every draw without a view per call.
+///
+/// Only pass a list that outlives the call. Each new list leaves an entry.
+ByteData scratchBytesOf(TypedData scratch) =>
+    _scratchBytes[scratch] ??= ByteData.sublistView(scratch);
 
 /// A [TransientWriter] with the renderer's per-frame lifecycle. Implemented
 /// by [TransientArena] (deferred-execution backends) and

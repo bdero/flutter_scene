@@ -1275,7 +1275,7 @@ base class SceneEncoder {
     );
     _renderPass.bindUniform(
       slot,
-      _transientsBuffer.emplace(ByteData.sublistView(_debugViewScratch)),
+      _transientsBuffer.emplace(scratchBytesOf(_debugViewScratch)),
     );
     // A per-draw block; the next draw with this material must rebind.
     _debugViewBoundMaterial = null;

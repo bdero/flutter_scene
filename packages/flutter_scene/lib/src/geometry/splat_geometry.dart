@@ -348,7 +348,7 @@ class SplatGeometry extends Geometry {
     );
 
     final viewport = currentSceneEncoderViewport;
-    final frameInfo = Float32List(80);
+    final frameInfo = _frameInfoScratch..fillRange(0, 80, 0.0);
     frameInfo.setRange(0, 16, mvp.storage);
     frameInfo.setRange(16, 32, modelTransform.storage);
     final cropInverse = _cropInverse;
@@ -395,7 +395,7 @@ class SplatGeometry extends Geometry {
     frameInfo[78] = currentRasterFarClipDepth;
     pass.bindUniform(
       vertexShader.cachedUniformSlot('FrameInfo'),
-      transientsBuffer.emplace(ByteData.sublistView(frameInfo)),
+      transientsBuffer.emplace(scratchBytesOf(frameInfo)),
     );
   }
 
@@ -432,3 +432,6 @@ final VertexLayoutDescriptor _kSplatLayout = VertexLayoutDescriptor(
     ),
   ],
 );
+
+// Shared by every draw; emplace copies it out.
+final Float32List _frameInfoScratch = Float32List(80);
