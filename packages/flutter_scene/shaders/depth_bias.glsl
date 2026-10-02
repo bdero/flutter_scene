@@ -58,15 +58,26 @@ float DepthRoundingSteps(vec4 clip, mat4 camera_transform,
 }
 
 // Moves `clip` toward the camera by a whole number of depth-buffer steps,
-// scaled by `rounding_steps` (DepthRoundingSteps). `offset.xy` is the draw's
-// offset and `offset.zw` one instance rank's, each as (relative z scale,
-// multiple of w) from DepthRaster.writeOffset. Applied after projection, so
-// the shift holds in depth units at any distance.
-vec4 ApplyDepthOffset(vec4 clip, vec4 offset, float instance_rank,
-                      float rounding_steps) {
-  vec2 total = (offset.xy + offset.zw * instance_rank) * rounding_steps;
-  clip.z = clip.z * (1.0 + total.x) + total.y * clip.w;
-  return clip;
+// scaled by DepthRoundingSteps. `offset.xy` is the draw's offset and
+// `offset.zw` that of one rank of the instance at `instance_origin`, each as
+// (relative z scale, multiple of w) from DepthRaster.writeOffset. Applied
+// after projection, so the shift holds in depth units at any distance. A
+// draw with no offset (all zero, the default) skips the per-vertex work.
+vec4 ApplyDepthOffset(vec4 clip, vec4 offset, vec3 instance_origin,
+                      mat4 camera_transform, vec3 world_position,
+                      vec3 camera_position) {
+  vec4 result = clip;
+  if (any(notEqual(offset, vec4(0.0)))) {
+    float rank = 0.0;
+    if (any(notEqual(offset.zw, vec2(0.0)))) {
+      rank = InstanceDepthRank(instance_origin);
+    }
+    vec2 total = (offset.xy + offset.zw * rank) *
+                 DepthRoundingSteps(clip, camera_transform, world_position,
+                                    camera_position);
+    result.z = clip.z * (1.0 + total.x) + total.y * clip.w;
+  }
+  return result;
 }
 
 // How steep a view DepthSlopes credits a layer offset (x) and a tie-break
@@ -108,22 +119,37 @@ vec2 DepthSlopes(vec3 world_normal, vec3 world_position,
 }
 
 // ApplyDepthOffset plus slope-scaled offsets, the vertex-stage form of a
-// polygon offset's slope factor, in window depth per unit of DepthSlopes,
-// from DepthRaster.slopeOffset. `slope.x` is the draw's layer offset, scaled
-// by `depth_slopes.x`; `slope.z` its tie-break offset and `slope.y` one
-// instance rank's, scaled by `depth_slopes.y`. Rasterizer snapping and
+// polygon offset's slope factor, in window depth per unit of DepthSlopes
+// (for the surface through `world_position` with `world_normal`), from
+// DepthRaster.slopeOffset. `slope.x` is the draw's layer offset, scaled by
+// the layer slope; `slope.z` its tie-break offset and `slope.y` one instance
+// rank's, scaled by the tie-break slope. Rasterizer snapping and
 // interpolation perturb a surface's depth by a fraction of a pixel's worth
 // of its own depth gradient, which on a grazing surface is far more than any
 // fixed count of depth steps, so coplanar surfaces only stay ordered by an
-// offset that scales with that gradient.
+// offset that scales with that gradient. All zero skips the work.
 vec4 ApplySlopedDepthOffset(vec4 clip, vec4 offset, vec4 slope,
-                            float instance_rank, float rounding_steps,
-                            vec2 depth_slopes) {
-  vec2 total = (offset.xy + offset.zw * instance_rank) * rounding_steps;
-  float sloped = slope.x * depth_slopes.x +
-                 (slope.z + slope.y * instance_rank) * depth_slopes.y;
-  clip.z = clip.z * (1.0 + total.x) + (total.y + sloped) * clip.w;
-  return clip;
+                            vec3 instance_origin, mat4 camera_transform,
+                            vec3 world_position, vec3 camera_position,
+                            vec3 world_normal) {
+  vec4 result = clip;
+  if (any(notEqual(offset, vec4(0.0))) || any(notEqual(slope, vec4(0.0)))) {
+    float rank = 0.0;
+    if (any(notEqual(offset.zw, vec2(0.0))) || slope.y != 0.0) {
+      rank = InstanceDepthRank(instance_origin);
+    }
+    vec2 total = (offset.xy + offset.zw * rank) *
+                 DepthRoundingSteps(clip, camera_transform, world_position,
+                                    camera_position);
+    float sloped = 0.0;
+    if (any(notEqual(slope, vec4(0.0)))) {
+      vec2 slopes = DepthSlopes(world_normal, world_position,
+                                camera_transform, camera_position);
+      sloped = slope.x * slopes.x + (slope.z + slope.y * rank) * slopes.y;
+    }
+    result.z = clip.z * (1.0 + total.x) + (total.y + sloped) * clip.w;
+  }
+  return result;
 }
 
 #endif  // DEPTH_BIAS_GLSL_
