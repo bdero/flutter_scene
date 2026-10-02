@@ -27,6 +27,7 @@ import '../importer/build_cache.dart';
 import 'engine_identity.dart';
 import 'generated_assets.dart';
 import 'generated_tree.dart';
+import 'wgsl_sidecar.dart' show webGpuShadersRequested;
 
 /// The package flutter_scene's engine assets are recorded as belonging to.
 const String _engineOwner = 'flutter_scene';
@@ -156,19 +157,39 @@ Future<void> _buildBaseShaderBundle({
     variant: await engineIdentity(),
     target: target,
   );
+  final wgslUri = webGpuShadersRequested(buildInput)
+      ? tree.fileUri(
+          GeneratedAssetFamily.wgsl,
+          nameId: 'base',
+          extension: '.wgsl.json',
+          variant: await engineIdentity(),
+          target: target,
+        )
+      : null;
   if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
     outputUri,
+    ?wgslUri,
   ], target: target)) {
-    tree
-      ..recordFile(
-        family: GeneratedAssetFamily.shaderBundle,
+    tree.recordFile(
+      family: GeneratedAssetFamily.shaderBundle,
+      id: 'base',
+      uri: outputUri,
+      stamp: stamp,
+      owner: _engineOwner,
+      target: target,
+    );
+    // Recorded again too, or the sweep in save() deletes it.
+    if (wgslUri != null && File.fromUri(wgslUri).existsSync()) {
+      tree.recordFile(
+        family: GeneratedAssetFamily.wgsl,
         id: 'base',
-        uri: outputUri,
+        uri: wgslUri,
         stamp: stamp,
         owner: _engineOwner,
         target: target,
-      )
-      ..save();
+      );
+    }
+    tree.save();
     return;
   }
 
