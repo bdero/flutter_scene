@@ -1,8 +1,9 @@
 // Bloom upsample: a 3x3 tent filter, one source texel wide, that blurs the
 // smaller mip as it is added back up the chain. Spreading the taps further
 // apart would widen the bloom but leave gaps between them, stamping a grid of
-// copies around every highlight, so scatter instead weights the wider mips
-// (level_weight) and the final level renormalizes (scale).
+// copies around every highlight, so scatter instead weights the wider mips.
+// Both weights keep each intermediate a weighted average, so half floats
+// cannot overflow.
 //
 // The larger mip one level up is added here in the shader (base) rather than
 // blended into a loaded attachment, so the target is always cleared and
@@ -10,8 +11,8 @@
 // accumulation).
 uniform BloomUpsampleInfo {
   vec2 texel_size;
-  float level_weight;
-  float scale;
+  float source_weight;
+  float base_weight;
 }
 upsample_info;
 
@@ -34,9 +35,8 @@ void main() {
   sum += texture(source, v_uv + t * vec2(-1.0, 1.0)).rgb;
   sum += texture(source, v_uv + t * vec2(0.0, 1.0)).rgb * 2.0;
   sum += texture(source, v_uv + t * vec2(1.0, 1.0)).rgb;
-  sum *= upsample_info.level_weight / 16.0;
+  sum *= upsample_info.source_weight / 16.0;
+  sum += texture(base, v_uv).rgb * upsample_info.base_weight;
 
-  sum += texture(base, v_uv).rgb;
-
-  frag_color = vec4(sum * upsample_info.scale, 1.0);
+  frag_color = vec4(sum, 1.0);
 }
