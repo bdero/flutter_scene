@@ -70,7 +70,7 @@ void main() {
     expect(result.body['summary'], contains('flicker (z-fighting)'));
   });
 
-  test('abutting pieces, one material, and separate layers do not fight', () {
+  test('abutting pieces and separate layers do not fight', () {
     final session = EditorSession.empty();
     final abutting = _cuboid(session, Vector3(0.5, 0.9, 8.0));
     final a = _material(session);
@@ -79,16 +79,23 @@ void main() {
     _meshNode(session, 'b', abutting, b, Vector3(0, 0, 8));
 
     final long = _cuboid(session, Vector3(0.5, 0.9, 8.4));
-    final shared = _material(session);
-    _meshNode(session, 'c', long, shared, Vector3(10, 0, 0));
-    _meshNode(session, 'd', long, shared, Vector3(10, 0, 8));
-
     final base = _material(session);
     final overlay = _material(session, layer: 1);
     _meshNode(session, 'wall', long, base, Vector3(20, 0, 0));
     _meshNode(session, 'screen', long, overlay, Vector3(20, 0, 8));
 
     expect(session.ask('checkDepthLayering').body['overlapCount'], 0);
+  });
+
+  test('pieces sharing a material still overlap', () {
+    // Vertex colors, texture coordinates, or normals can still tell their
+    // pixels apart, so one material does not make an overlap invisible.
+    final session = EditorSession.empty();
+    final long = _cuboid(session, Vector3(0.5, 0.9, 8.4));
+    final shared = _material(session);
+    _meshNode(session, 'c', long, shared, Vector3(10, 0, 0));
+    _meshNode(session, 'd', long, shared, Vector3(10, 0, 8));
+    expect(session.ask('checkDepthLayering').body['overlapCount'], 4);
   });
 
   test('hidden nodes and planes', () {

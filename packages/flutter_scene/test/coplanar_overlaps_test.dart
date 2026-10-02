@@ -1,6 +1,7 @@
 // CPU tests for the coplanar overlap lint. Stub geometry reports box
 // triangles as its retained CPU data, so no GPU is needed.
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_scene/scene.dart';
@@ -42,10 +43,44 @@ Float32List _boxTriangles(Vector3 size) {
   return Float32List.fromList(out);
 }
 
-class _BoxGeometry extends Geometry {
-  _BoxGeometry(this.size) : _positions = _boxTriangles(size);
+// A unit sphere of [rings] by [segments] quads, as triangles.
+Float32List _sphereTriangles({required int rings, required int segments}) {
+  Vector3 at(int ring, int segment) {
+    final theta = ring / rings * 3.141592653589793;
+    final phi = segment / segments * 2 * 3.141592653589793;
+    return Vector3(
+      math.sin(theta) * math.cos(phi),
+      math.cos(theta),
+      math.sin(theta) * math.sin(phi),
+    );
+  }
+
+  final out = <double>[];
+  for (var r = 0; r < rings; r++) {
+    for (var s = 0; s < segments; s++) {
+      final a = at(r, s), b = at(r + 1, s);
+      final c = at(r + 1, s + 1), d = at(r, s + 1);
+      for (final p in [a, b, c, a, c, d]) {
+        out.addAll([p.x, p.y, p.z]);
+      }
+    }
+  }
+  return Float32List.fromList(out);
+}
+
+class _BoxGeometry extends _MeshGeometry {
+  _BoxGeometry(this.size) : super(_boxTriangles(size));
 
   final Vector3 size;
+
+  @override
+  Aabb3? get localBounds => Aabb3.minMax(-size / 2, size / 2);
+}
+
+// Retained CPU triangles, unindexed.
+class _MeshGeometry extends Geometry {
+  _MeshGeometry(this._positions);
+
   final Float32List _positions;
 
   @override
@@ -69,7 +104,7 @@ class _BoxGeometry extends Geometry {
   );
 
   @override
-  Aabb3? get localBounds => Aabb3.minMax(-size / 2, size / 2);
+  Aabb3? get localBounds => Aabb3.minMax(Vector3.all(-1), Vector3.all(1));
 
   @override
   void bind(
@@ -149,15 +184,50 @@ void main() {
     );
   });
 
-  test('one material and color overlapping is invisible', () {
+  test('surfaces sharing a material still overlap', () {
+    // Vertex colors, texture coordinates, or normals can still tell their
+    // pixels apart, so one material does not make an overlap invisible.
     final piece = _BoxGeometry(Vector3(0.5, 0.9, 8.4));
     final material = _StubMaterial();
     expect(
       findCoplanarOverlaps([
         _instanced(piece, material, [Vector3(0, 0.45, 0), Vector3(0, 0.45, 8)]),
       ]),
-      isEmpty,
+      isNotEmpty,
     );
+  });
+
+  test('a sliced scan finds what a whole one does', () {
+    final piece = _BoxGeometry(Vector3(0.5, 0.9, 8.4));
+    final items = [
+      _instanced(piece, _StubMaterial(), [
+        for (var i = 0; i < 40; i++) Vector3(0, 0.45, i * 8.0),
+      ]),
+    ];
+    final whole = findCoplanarOverlaps(items);
+    final scan = CoplanarOverlapScan(items);
+    var slices = 0;
+    while (!scan.advance(Duration.zero)) {
+      slices++;
+    }
+    expect(slices, greaterThan(1));
+    expect(scan.result!.length, whole.length);
+    expect(
+      scan.result!.map((o) => o.area).toList(),
+      whole.map((o) => o.area).toList(),
+    );
+  });
+
+  test('a dense curved mesh groups its planes in linear time', () {
+    // A sphere, nearly every triangle its own plane. Searching every plane
+    // per triangle took over 100 million comparisons at this size.
+    final sphere = _MeshGeometry(_sphereTriangles(rings: 64, segments: 128));
+    debugCoplanarPlaneComparisons = 0;
+    final overlaps = findCoplanarOverlaps([
+      _single(sphere, _StubMaterial(), Vector3.zero()),
+    ]);
+    expect(overlaps, isEmpty);
+    expect(debugCoplanarPlaneComparisons, lessThan(16 * 16128));
   });
 
   test('a layer resolves an overlay flush with its surface', () {

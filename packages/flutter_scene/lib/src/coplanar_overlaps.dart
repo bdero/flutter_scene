@@ -99,85 +99,138 @@ const int _kMaxTrianglePairs = 4096;
 
 /// Finds faces from different items (or instances) that overlap in one plane,
 /// or that sit closer than [separationAt] allows at their distance from
-/// [eye]. Items with the same material and instance color overlap invisibly
-/// and are skipped, as are pairs whose `Material.depthLayer` differs, which
-/// the layer resolves.
+/// [eye]. Pairs whose `Material.depthLayer` differs are skipped, since the
+/// layer resolves them.
 @internal
 List<CoplanarOverlap> findCoplanarOverlaps(
   Iterable<RenderItem> items, {
   Vector3? eye,
   double Function(double distance)? separationAt,
 }) {
-  final groups = <_PlaneGroup>[];
-  for (final item in items) {
-    if (!item.drawsColor || item.material.drawsNothing) continue;
-    if (item.material.depthCompare == gpu.CompareFunction.always) continue;
-    final geometry = item.geometry;
-    if (geometry.primitiveType != gpu.PrimitiveType.triangle) continue;
-    final triangles = _localTriangles(geometry);
-    if (triangles == null) continue;
-    final instances = item.instanceTransforms;
-    if (instances == null) {
-      _collectGroups(groups, item, null, item.worldTransform, triangles);
-    } else {
-      final world = Matrix4.zero();
-      for (var i = 0; i < instances.length; i++) {
-        world
-          ..setFrom(item.worldTransform)
-          ..multiply(instances[i]);
-        _collectGroups(groups, item, i, world, triangles);
-      }
-    }
+  final scan = CoplanarOverlapScan(items, eye: eye, separationAt: separationAt);
+  scan.advance();
+  return scan.result!;
+}
+
+/// [findCoplanarOverlaps] in slices, so a caller on the UI isolate can spread
+/// a large scene's scan over frames. It works on the items as they stand at
+/// each slice; [result] holds the overlaps once [advance] reports the end.
+@internal
+class CoplanarOverlapScan {
+  CoplanarOverlapScan(
+    Iterable<RenderItem> items, {
+    Vector3? eye,
+    double Function(double distance)? separationAt,
+  }) {
+    _steps = _scan(
+      List.of(items),
+      eye == null ? null : Vector3.copy(eye),
+      separationAt,
+    ).iterator;
   }
 
-  // Sort and sweep along x for groups whose bounds overlap.
-  groups.sort((a, b) => a.min.x.compareTo(b.min.x));
-  final cosAngle = math.cos(kCoplanarAngleDegrees * degrees2Radians);
-  final limit = eye == null ? null : separationAt;
-  final overlaps = <CoplanarOverlap>[];
-  for (var i = 0; i < groups.length; i++) {
-    final a = groups[i];
-    // Bounds are apart by at most the planes' separation where faces overlap,
-    // and the separation that still fights shrinks toward the eye, so a's
-    // own distance bounds the sweep.
-    final slack = limit == null
-        ? kCoplanarExactTolerance
-        : math.max(kCoplanarExactTolerance, limit(a.distanceTo(eye!)));
-    for (var j = i + 1; j < groups.length; j++) {
-      final b = groups[j];
-      if (b.min.x > a.max.x + slack) break;
-      if (identical(a.item, b.item) && a.instance == b.instance) continue;
-      if (a.normal.dot(b.normal) < cosAngle) continue;
-      final separation = (a.offset - b.offset).abs();
-      if (separation >= slack) continue;
-      final pad = separation + kCoplanarExactTolerance;
-      if (b.min.y > a.max.y + pad || b.max.y < a.min.y - pad) continue;
-      if (b.min.z > a.max.z + pad || b.max.z < a.min.z - pad) continue;
-      if (separation >= kCoplanarExactTolerance) {
-        final distance = math.min(a.distanceTo(eye!), b.distanceTo(eye));
-        if (separation >= limit!(distance)) continue;
-      }
-      if (_invisibleOverlap(a, b)) continue;
-      if (a.item.material.depthLayer != b.item.material.depthLayer) continue;
-      final overlap = _overlapArea(a, b);
-      if (overlap.area < kCoplanarMinArea) continue;
-      overlaps.add(
-        CoplanarOverlap(
-          nodeA: a.item.sourceNode is Node ? a.item.sourceNode as Node : null,
-          nodeB: b.item.sourceNode is Node ? b.item.sourceNode as Node : null,
-          instanceA: a.instance,
-          instanceB: b.instance,
-          area: overlap.area,
-          separation: separation,
-          center: overlap.center,
-          normal: a.normal.clone(),
-          hint: _pitchHint(a, b),
-        ),
-      );
+  late final Iterator<void> _steps;
+  List<CoplanarOverlap>? _result;
+
+  /// The overlaps, largest first, once the scan has finished.
+  List<CoplanarOverlap>? get result => _result;
+
+  /// Runs the scan for about [budget] (to the end without one) and returns
+  /// whether it has finished.
+  bool advance([Duration? budget]) {
+    final watch = budget == null ? null : (Stopwatch()..start());
+    while (_result == null && _steps.moveNext()) {
+      if (watch != null && watch.elapsed >= budget!) break;
     }
+    return _result != null;
   }
-  overlaps.sort((x, y) => y.area.compareTo(x.area));
-  return overlaps;
+
+  // Yields between slices of work small enough to stay well inside a frame.
+  Iterable<void> _scan(
+    List<RenderItem> items,
+    Vector3? eye,
+    double Function(double distance)? separationAt,
+  ) sync* {
+    final groups = <_PlaneGroup>[];
+    for (final item in items) {
+      if (!item.drawsColor || item.material.drawsNothing) continue;
+      if (item.material.depthCompare == gpu.CompareFunction.always) continue;
+      final geometry = item.geometry;
+      if (geometry.primitiveType != gpu.PrimitiveType.triangle) continue;
+      final triangles = _localTriangles(geometry);
+      if (triangles == null) continue;
+      yield null;
+      final instances = item.instanceTransforms;
+      if (instances == null) {
+        yield* _collectGroups(
+          groups,
+          item,
+          null,
+          item.worldTransform,
+          triangles,
+        );
+      } else {
+        final world = Matrix4.zero();
+        for (var i = 0; i < instances.length; i++) {
+          world
+            ..setFrom(item.worldTransform)
+            ..multiply(instances[i]);
+          yield* _collectGroups(groups, item, i, world, triangles);
+        }
+      }
+    }
+
+    // Sort and sweep along x for groups whose bounds overlap.
+    groups.sort((a, b) => a.min.x.compareTo(b.min.x));
+    final cosAngle = math.cos(kCoplanarAngleDegrees * degrees2Radians);
+    final limit = eye == null ? null : separationAt;
+    final overlaps = <CoplanarOverlap>[];
+    var work = 0;
+    for (var i = 0; i < groups.length; i++) {
+      final a = groups[i];
+      // Bounds are apart by at most the planes' separation where faces
+      // overlap, and the separation that still fights shrinks toward the
+      // eye, so a's own distance bounds the sweep.
+      final slack = limit == null
+          ? kCoplanarExactTolerance
+          : math.max(kCoplanarExactTolerance, limit(a.distanceTo(eye!)));
+      for (var j = i + 1; j < groups.length; j++) {
+        if (++work % 1024 == 0) yield null;
+        final b = groups[j];
+        if (b.min.x > a.max.x + slack) break;
+        if (identical(a.item, b.item) && a.instance == b.instance) continue;
+        if (a.normal.dot(b.normal) < cosAngle) continue;
+        final separation = (a.offset - b.offset).abs();
+        if (separation >= slack) continue;
+        final pad = separation + kCoplanarExactTolerance;
+        if (b.min.y > a.max.y + pad || b.max.y < a.min.y - pad) continue;
+        if (b.min.z > a.max.z + pad || b.max.z < a.min.z - pad) continue;
+        if (separation >= kCoplanarExactTolerance) {
+          final distance = math.min(a.distanceTo(eye!), b.distanceTo(eye));
+          if (separation >= limit!(distance)) continue;
+        }
+        if (a.item.material.depthLayer != b.item.material.depthLayer) continue;
+        final overlap = _overlapArea(a, b);
+        yield null;
+        if (overlap.area < kCoplanarMinArea) continue;
+        overlaps.add(
+          CoplanarOverlap(
+            nodeA: a.item.sourceNode is Node ? a.item.sourceNode as Node : null,
+            nodeB: b.item.sourceNode is Node ? b.item.sourceNode as Node : null,
+            instanceA: a.instance,
+            instanceB: b.instance,
+            area: overlap.area,
+            separation: separation,
+            center: overlap.center,
+            normal: a.normal.clone(),
+            hint: _pitchHint(a, b),
+          ),
+        );
+      }
+    }
+    overlaps.sort((x, y) => y.area.compareTo(x.area));
+    _result = overlaps;
+  }
 }
 
 /// A summary of [overlaps] for the debug log, grouped by node pair, or null
@@ -288,20 +341,47 @@ Float32List? _localTriangles(Geometry geometry) {
   return out;
 }
 
-// Groups [triangles] (local space) of one item-instance by world plane.
-void _collectGroups(
+// Plane cells for grouping, over twice the grouping tolerances so a value
+// is near at most one cell edge: unit normals within kCoplanarAngleDegrees
+// differ by under 0.035 per component, and grouped offsets by under
+// kCoplanarExactTolerance.
+const double _kNormalCell = 1.0 / 8.0;
+const double _kNormalTolerance = 0.035;
+const double _kOffsetCell = 0.01;
+
+/// Plane comparisons the grouping has made, for tests that check it stays
+/// linear in triangles.
+@visibleForTesting
+int debugCoplanarPlaneComparisons = 0;
+
+// One key per cell: normal indices span [-9, 9], offsets any integer.
+int _cellKey(int x, int y, int z, int offset) =>
+    ((offset * 19 + x + 9) * 19 + y + 9) * 19 + z + 9;
+
+// Groups [triangles] (local space) of one item-instance by world plane,
+// yielding every few hundred triangles. Each plane lives in the cell of its
+// first triangle; a triangle searches its own cell, and the neighbor across
+// any cell edge it sits within tolerance of, so the search stays local
+// without splitting a plane at a cell edge.
+Iterable<void> _collectGroups(
   List<_PlaneGroup> groups,
   RenderItem item,
   int? instance,
   Matrix4 world,
   Float32List triangles,
-) {
-  final local = <_PlaneGroup>[];
+) sync* {
+  final cells = <int, List<_PlaneGroup>>{};
   final p0 = Vector3.zero(), p1 = Vector3.zero(), p2 = Vector3.zero();
   final cosAngle = math.cos(kCoplanarAngleDegrees * degrees2Radians);
   // A mirroring transform flips the winding; keep the facing it renders.
   final mirrored = world.determinant() < 0;
+  final index = Int32List(4);
+  final reach = Int32List(4);
+  // Shared by this item-instance's groups, for the spacing hint.
+  Matrix4? transform;
+  Vector3? origin;
   for (var t = 0; t < triangles.length; t += 9) {
+    if (t % 2304 == 0) yield null;
     p0.setValues(triangles[t], triangles[t + 1], triangles[t + 2]);
     p1.setValues(triangles[t + 3], triangles[t + 4], triangles[t + 5]);
     p2.setValues(triangles[t + 6], triangles[t + 7], triangles[t + 8]);
@@ -311,23 +391,60 @@ void _collectGroups(
       ..transform3(p2);
     final normal = (p1 - p0).cross(p2 - p0);
     final length = normal.length;
-    if (length < 1e-9) continue;
+    // Also skips a degenerate transform's non-finite positions.
+    if (!(length >= 1e-9)) continue;
     normal.scale(1.0 / length);
     if (mirrored) normal.negate();
     final offset = normal.dot(p0);
+    if (!offset.isFinite) continue;
+    final values = [normal.x, normal.y, normal.z, offset];
+    for (var d = 0; d < 4; d++) {
+      final cell = d < 3 ? _kNormalCell : _kOffsetCell;
+      final tolerance = d < 3 ? _kNormalTolerance : kCoplanarExactTolerance;
+      final position = values[d] / cell;
+      index[d] = position.floor();
+      final fraction = position - index[d];
+      reach[d] = fraction * cell < tolerance
+          ? -1
+          : ((1 - fraction) * cell < tolerance ? 1 : 0);
+    }
     _PlaneGroup? group;
-    for (final candidate in local) {
-      if (candidate.normal.dot(normal) >= cosAngle &&
-          (candidate.offset - offset).abs() < kCoplanarExactTolerance) {
-        group = candidate;
-        break;
+    search:
+    for (var dx = 0; dx < (reach[0] == 0 ? 1 : 2); dx++) {
+      for (var dy = 0; dy < (reach[1] == 0 ? 1 : 2); dy++) {
+        for (var dz = 0; dz < (reach[2] == 0 ? 1 : 2); dz++) {
+          for (var dO = 0; dO < (reach[3] == 0 ? 1 : 2); dO++) {
+            final candidates =
+                cells[_cellKey(
+                  index[0] + dx * reach[0],
+                  index[1] + dy * reach[1],
+                  index[2] + dz * reach[2],
+                  index[3] + dO * reach[3],
+                )];
+            if (candidates == null) continue;
+            for (final candidate in candidates) {
+              debugCoplanarPlaneComparisons++;
+              if (candidate.normal.dot(normal) >= cosAngle &&
+                  (candidate.offset - offset).abs() < kCoplanarExactTolerance) {
+                group = candidate;
+                break search;
+              }
+            }
+          }
+        }
       }
     }
     if (group == null) {
       group = _PlaneGroup(item, instance, normal, offset)
-        ..origin = world.getTranslation()
-        ..transform = Matrix4.copy(world);
-      local.add(group);
+        ..origin = (origin ??= world.getTranslation())
+        ..transform = (transform ??= Matrix4.copy(world));
+      cells
+          .putIfAbsent(
+            _cellKey(index[0], index[1], index[2], index[3]),
+            () => [],
+          )
+          .add(group);
+      groups.add(group);
     }
     for (final p in [p0, p1, p2]) {
       group.corners
@@ -346,23 +463,6 @@ void _collectGroups(
       );
     }
   }
-  groups.addAll(local);
-}
-
-// Same material, same instance color: the overlap draws identical pixels.
-bool _invisibleOverlap(_PlaneGroup a, _PlaneGroup b) {
-  if (!identical(a.item.material, b.item.material)) return false;
-  final colorsA = a.item.instanceColors;
-  final colorsB = b.item.instanceColors;
-  if (colorsA == null && colorsB == null) return true;
-  final colorA = colorsA == null || a.instance == null
-      ? null
-      : colorsA[a.instance!];
-  final colorB = colorsB == null || b.instance == null
-      ? null
-      : colorsB[b.instance!];
-  if (colorA == null || colorB == null) return colorA == colorB;
-  return (colorA - colorB).length2 < 1e-8;
 }
 
 // The area where [a] and [b] overlap in [a]'s plane, and its center.
