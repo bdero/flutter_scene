@@ -550,6 +550,44 @@ gpu.RenderPipeline? tryResolvePipeline(
   }
 }
 
+// Pipelines a draw already failed with, so each failure is reported once.
+final Expando<bool> _refusedDrawPipelines = Expando();
+
+/// Draws [geometry] on [pass], skipping the draw instead of throwing when the
+/// backend refuses it.
+///
+/// GLES compiles and links the program at the first draw, so a shader the
+/// driver rejects fails here rather than in [tryResolvePipeline], and keeps
+/// failing every frame after. [pipeline], the one bound for the draw, is
+/// rejected like a failed build, so later frames skip its draws and the rest
+/// of the scene still renders.
+void drawOrRejectPipeline(
+  gpu.RenderPass pass,
+  Geometry geometry,
+  gpu.RenderPipeline? pipeline, {
+  int instanceCount = 1,
+  Material? material,
+}) {
+  try {
+    geometry.draw(pass, instanceCount: instanceCount);
+  } on Exception catch (error) {
+    if (pipeline == null) rethrow;
+    if (_refusedDrawPipelines[pipeline] ?? false) return;
+    _refusedDrawPipelines[pipeline] = true;
+    for (final entry in _pipelineCache.entries) {
+      if (!identical(entry.value, pipeline)) continue;
+      _pipelineCache.remove(entry.key);
+      _rejectedPipelines.add(entry.key);
+      break;
+    }
+    debugPrint(
+      'flutter_scene: skipping draws whose pipeline the backend refused ('
+      '${material != null ? '${fmatSourcePathOf(material) ?? material.runtimeType} on ' : ''}'
+      '${geometry.runtimeType}). $error',
+    );
+  }
+}
+
 /// Records draw calls for one frame's color pass into a single
 /// `gpu.RenderPass`.
 ///
@@ -1250,12 +1288,22 @@ base class SceneEncoder {
     }
   }
 
-  void _drawGeometry(Geometry geometry, {int instanceCount = 1}) {
+  void _drawGeometry(
+    Geometry geometry,
+    Material material, {
+    int instanceCount = 1,
+  }) {
     if (profileRendering) {
       _encodedDraws++;
       _encodedInstances += instanceCount;
     }
-    geometry.draw(_renderPass, instanceCount: instanceCount);
+    drawOrRejectPipeline(
+      _renderPass,
+      geometry,
+      _boundPipeline,
+      instanceCount: instanceCount,
+      material: material,
+    );
   }
 
   // Tells the capture recorder what the next draws are, at the cost of one
@@ -1395,7 +1443,7 @@ base class SceneEncoder {
           : gpu.WindingOrder.clockwise,
     );
     _setPrimitiveType(geometry.primitiveType);
-    _drawGeometry(geometry);
+    _drawGeometry(geometry, material);
   }
 
   /// Draws an opaque instanced item with hardware instancing: the instance
@@ -1526,7 +1574,7 @@ base class SceneEncoder {
         _setWindingOrder(
           flip ? gpu.WindingOrder.counterClockwise : gpu.WindingOrder.clockwise,
         );
-        _drawGeometry(geometry);
+        _drawGeometry(geometry, material);
       }
       return;
     }
@@ -1550,6 +1598,7 @@ base class SceneEncoder {
         );
         _drawGeometry(
           geometry,
+          material,
           instanceCount: instanceIndices?.length ?? instances.length,
         );
         return;
@@ -1591,12 +1640,12 @@ base class SceneEncoder {
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
       _setWindingOrder(gpu.WindingOrder.clockwise);
-      _drawGeometry(geometry, instanceCount: packed.ccwCount);
+      _drawGeometry(geometry, material, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
       _bindPackedInstances(packed.cw, instanceSlot);
       _setWindingOrder(gpu.WindingOrder.counterClockwise);
-      _drawGeometry(geometry, instanceCount: packed.cwCount);
+      _drawGeometry(geometry, material, instanceCount: packed.cwCount);
     }
   }
 
@@ -1651,12 +1700,12 @@ base class SceneEncoder {
     if (packed.ccwCount > 0) {
       _bindPackedInstances(packed.ccw, instanceSlot);
       _setWindingOrder(gpu.WindingOrder.clockwise);
-      _drawGeometry(geometry, instanceCount: packed.ccwCount);
+      _drawGeometry(geometry, material, instanceCount: packed.ccwCount);
     }
     if (packed.cwCount > 0) {
       _bindPackedInstances(packed.cw, instanceSlot);
       _setWindingOrder(gpu.WindingOrder.counterClockwise);
-      _drawGeometry(geometry, instanceCount: packed.cwCount);
+      _drawGeometry(geometry, material, instanceCount: packed.cwCount);
     }
   }
 

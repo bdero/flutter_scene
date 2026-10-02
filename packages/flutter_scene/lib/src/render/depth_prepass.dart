@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 import 'dart:math' as math;
+
 import 'package:flutter_scene/src/render/viewport_camera.dart';
 import 'package:flutter_scene/src/render/depth_raster.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart' show DepthSurfaceKind;
 import 'package:flutter_scene/src/mesh_draw.dart';
 import 'package:flutter_scene/src/render/instance_packing.dart';
 import 'package:flutter_scene/src/render/mesh_draw_selection.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -19,7 +21,8 @@ import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/render_graph.dart';
 import 'package:flutter_scene/src/render/render_layers.dart';
 import 'package:flutter_scene/src/render/render_scene.dart';
-import 'package:flutter_scene/src/scene_encoder.dart' show tryResolvePipeline;
+import 'package:flutter_scene/src/scene_encoder.dart'
+    show drawOrRejectPipeline, tryResolvePipeline;
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/instance_batching.dart';
@@ -714,7 +717,7 @@ class _DepthPrepassEncoder {
                 ? gpu.WindingOrder.counterClockwise
                 : gpu.WindingOrder.clockwise,
           );
-          geometry.draw(_renderPass);
+          drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
         }
         return;
       }
@@ -738,8 +741,10 @@ class _DepthPrepassEncoder {
                 ? gpu.WindingOrder.counterClockwise
                 : gpu.WindingOrder.clockwise,
           );
-          geometry.draw(
+          drawOrRejectPipeline(
             _renderPass,
+            geometry,
+            _boundPipeline,
             instanceCount: visible?.length ?? instances.length,
           );
           return;
@@ -815,7 +820,7 @@ class _DepthPrepassEncoder {
           ? gpu.WindingOrder.counterClockwise
           : gpu.WindingOrder.clockwise,
     );
-    geometry.draw(_renderPass);
+    drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
   }
 
   static final Matrix4 _identityTransform = Matrix4.identity();
@@ -833,7 +838,12 @@ class _DepthPrepassEncoder {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       }
       _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
-      geometry.draw(_renderPass, instanceCount: packed.ccwCount);
+      drawOrRejectPipeline(
+        _renderPass,
+        geometry,
+        _boundPipeline,
+        instanceCount: packed.ccwCount,
+      );
     }
     if (packed.cwCount > 0) {
       if (withColor) {
@@ -842,7 +852,12 @@ class _DepthPrepassEncoder {
         bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       }
       _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
-      geometry.draw(_renderPass, instanceCount: packed.cwCount);
+      drawOrRejectPipeline(
+        _renderPass,
+        geometry,
+        _boundPipeline,
+        instanceCount: packed.cwCount,
+      );
     }
   }
 }
