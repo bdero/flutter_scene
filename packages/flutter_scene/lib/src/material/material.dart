@@ -197,9 +197,8 @@ abstract class Material {
   ///
   /// Called by the [Scene] constructor; rendering is gated on the returned
   /// [Future] completing. The texture is built once and reused. The physical
-  /// material shaders are *not* loaded here: their 4.4 MB bundle is read on
-  /// demand (see `initializePhysicalMaterialResources`), so an app that draws
-  /// no [PhysicallyBasedMaterial] never reads it.
+  /// material shaders load separately, on first use or through
+  /// `Scene.preload`.
   static Future<void> initializeStaticResources() async {
     if (_brdfLutTexture == null) {
       final ltc = await rootBundle.load(
@@ -647,6 +646,12 @@ abstract class Material {
   /// `shadowIntensity == 0` as a true early-out.
   @internal
   bool get drawsNothing => false;
+
+  /// Whether this material needs a resource that is still loading (the
+  /// physical shader bundle) to draw correctly. A scene holds its frames while
+  /// any of its materials says so.
+  @internal
+  bool get awaitsDeferredResources => false;
 
   /// The depth test geometry drawn with this material uses in the translucent
   /// pass. `lessEqual` (the default) occludes against the opaque scene;

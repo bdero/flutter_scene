@@ -424,6 +424,8 @@ input_color` at `in vec2 v_uv`. `PostInsertion` = `beforeTonemap` (linear HDR pr
 timeout})`, `captureEnvironment({required position, faceResolution = 128, equirectWidth = 512,
 layerMask})` -> `EnvironmentMap` (one-shot static capture; use `ReflectionProbeComponent` for a
 node-anchored, parallax-corrected, auto-blended probe). Statics: `Scene.initializeStaticResources()`,
+`Scene.preload({physicalMaterials = true, smaa = false})` (loads the shaders behind PBR extensions
+and `ShadowCatcherMaterial`, and the SMAA tables, which otherwise load on first use),
 `Scene.isReadyToRender`, `Scene.physicalCameraExposure`, `Scene.isAntiAliasingModeSupported`,
 `Scene.effectiveAntiAliasingMode`.
 

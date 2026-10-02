@@ -1094,6 +1094,20 @@ class RenderScene {
     return inputs;
   }
 
+  /// Whether any registered item's material (or LOD level's) satisfies [test],
+  /// visible or not.
+  bool anyMaterial(bool Function(Material material) test) {
+    for (final item in items) {
+      if (test(item.material)) return true;
+      final lod = item.lod;
+      if (lod == null) continue;
+      for (final level in lod.levels) {
+        if (test(level.material)) return true;
+      }
+    }
+    return false;
+  }
+
   /// Collects material inputs without view-dependent culling.
   Set<RenderInput> collectAllMaterialInputs() {
     final inputs = <RenderInput>{};

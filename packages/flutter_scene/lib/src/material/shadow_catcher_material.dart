@@ -98,9 +98,7 @@ class ShadowCatcherMaterial extends Material {
        _fadeStart = fadeStart,
        _fadeEnd = fadeEnd,
        _mode = mode {
-    // The catcher's shader lives in the physical bundle, which is loaded on
-    // demand; request it here so it is in before the first draw prepares the
-    // variant (`Scene.isReadyToRender` stays false until it lands).
+    // The catcher's shader rides the physical bundle, so start it loading now.
     requestPhysicalMaterialResources();
   }
 
@@ -256,8 +254,15 @@ class ShadowCatcherMaterial extends Material {
   @override
   bool get depthPrepassParticipates => true;
 
+  // Without the physical bundle there is no shader to draw with, so the
+  // catcher stays out of every pass until it loads (or for good if it failed).
   @override
-  bool get drawsNothing => _shadowIntensity == 0;
+  bool get drawsNothing =>
+      _shadowIntensity == 0 || !physicalMaterialResourcesReady;
+
+  @internal
+  @override
+  bool get awaitsDeferredResources => !physicalMaterialResourcesReady;
 
   @override
   gpu.Shader get fragmentShader => _prepared.fragmentShader;

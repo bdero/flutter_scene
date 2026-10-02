@@ -16,7 +16,7 @@
 * Fixed shadows striping on half-precision GPUs (Mali, Adreno, software GL) since material shaders default to mediump; the shadow map and punctual light data samplers are declared highp again (#234).
 * Fixed lit materials writing NaN at sharp specular highlights viewed at grazing angles on half-precision GPUs, which reflections, depth of field and bloom spread into screen-filling flashes.
 * The bloom and depth of field prefilters map a NaN pixel to black instead of to the half-float maximum, so a stray NaN from any shader can no longer flood the screen with bloom.
-* The physical material shader bundle and the SMAA tables load on first use instead of delaying every scene's first frame.
+* The shaders behind `PhysicallyBasedMaterial` extensions and `ShadowCatcherMaterial`, and the SMAA tables, load on first use instead of delaying every scene's first frame; `Scene.preload` loads them up front.
 * Generated scenes, textures, and materials rebuild when the flutter_scene code that writes them changes, so an upgrade no longer reuses outputs from the old importer, encoder, or `.fmat` compiler.
 * Custom vertex attributes no longer have to match between mesh and material. A declared attribute the mesh lacks reads zero instead of crashing or reading garbage, and materials that do not declare a mesh's attribute draw it instead of skipping it (#440).
 * `.fmat` samplers declared with `hint: default_black` or `hint: default_transparent` sample a black or transparent placeholder until a texture is set; both used to sample white.
