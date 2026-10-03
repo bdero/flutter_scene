@@ -311,24 +311,29 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
   /// The material's parameters, set by name. See [MaterialParameters].
   final MaterialParameters parameters;
 
+  bool _depthMasked = false;
   TextureSource? _depthMaskTexture;
   TextureTransform _depthMaskTransform = TextureTransform();
   double _depthMaskCutoff = 0.5;
   double _depthMaskAlpha = 1.0;
   int _depthMaskTexCoord = 0;
 
-  /// Configures cutout coverage for the camera-depth and shadow passes.
+  /// Configures cutout coverage for the depth-writing passes: the camera
+  /// depth, the shadow maps, and the main pass's coverage pre-draw, which is
+  /// what cuts the surface out on screen.
   ///
-  /// Call with null [texture] to disable masked depth. The color shader must
-  /// apply the same cutoff to produce matching coverage.
+  /// [masked] defaults to whether a [texture] is given; pass true to mask by
+  /// the constant and vertex-color alpha alone (sampling white).
   @protected
   void configureDepthAlphaMask({
+    bool? masked,
     required TextureSource? texture,
     TextureTransform? transform,
     int texCoord = 0,
     double cutoff = 0.5,
     double alpha = 1.0,
   }) {
+    _depthMasked = masked ?? texture != null;
     _depthMaskTexture = texture;
     _depthMaskTransform = transform ?? TextureTransform();
     _depthMaskTexCoord = texCoord.clamp(0, 1);
@@ -589,7 +594,7 @@ class PreprocessedMaterial extends Material implements HotReloadableFmat {
 
   @override
   @internal
-  bool get depthAlphaMasked => _depthMaskTexture != null;
+  bool get depthAlphaMasked => _depthMasked;
 
   static final gpu.SamplerOptions _depthMaskSampler = gpu.SamplerOptions(
     minFilter: gpu.MinMagFilter.linear,

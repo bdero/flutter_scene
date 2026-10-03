@@ -323,6 +323,7 @@ class PhysicalMaterialVariant extends PreprocessedMaterial {
         descriptor.baseColor.a >= 1.0;
     _apply(descriptor);
     configureDepthAlphaMask(
+      masked: descriptor.alphaMode == AlphaMode.mask,
       texture: descriptor.alphaMode == AlphaMode.mask
           ? descriptor.baseColorTexture.source
           : null,

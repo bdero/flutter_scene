@@ -1,5 +1,7 @@
 ## 0.24.0
 
+* Opaque materials no longer `discard`, so mobile GPUs keep early depth testing and hidden-surface removal on for every opaque draw (frames 2.5 to 6x faster on a Mali-G57). Alpha-masked and LOD cross-fading draws cut out through a depth pre-draw instead; translucent cross-fades fade by opacity.
+* An alpha-masked `PhysicalMaterial` without a base color texture masks its shadows and depth by its vertex and factor alpha.
 * `Material.depthLayer` (`.fmat` `depth_layer:`) orders surfaces that share a plane. A higher layer draws over a lower one at any distance, so signs, screens, and road paint laid on a surface stop flickering (z-fighting).
 * Scenes store reversed float depth where the device supports it (Metal, and WebGL2 with `EXT_clip_control`) and rasterize with a near plane fitted to visible content each frame, so distant surfaces centimetres apart stay distinct. `Scene.reversedDepth` and `Scene.fitNearPlane` turn each off; projections and picking keep the authored planes.
 * `PerspectiveProjection` and `PerspectiveCamera` accept an infinite far plane (`.fscene` `infiniteFar`).

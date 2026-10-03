@@ -2287,6 +2287,78 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ),
     );
   }),
+  // Opaque surfaces that cut themselves out: a card masked by its texture's
+  // alpha (a grid of round holes), and an object held mid level-of-detail
+  // cross-fade between a lit sphere and an unlit cube. Both take the main
+  // pass's coverage pre-draw, so the gray backdrop must show through the holes
+  // and through each level's half of the dither.
+  SmokeScene('coverage_cutouts', () {
+    const size = 64;
+    final pixels = Uint8List(size * size * 4);
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        final i = (y * size + x) * 4;
+        final dx = (x % 16) - 7.5, dy = (y % 16) - 7.5;
+        pixels[i] = 235;
+        pixels[i + 1] = 190;
+        pixels[i + 2] = 40;
+        pixels[i + 3] = dx * dx + dy * dy < 20 ? 0 : 255;
+      }
+    }
+    final card = PhysicallyBasedMaterial()
+      ..alphaMode = AlphaMode.mask
+      ..baseColorTexture = Texture2D.fromPixels(pixels, size, size)
+      ..metallicFactor = 0.0
+      ..roughnessFactor = 0.8;
+    final scene = Scene();
+    scene.add(
+      Node(
+          mesh: Mesh(
+            PlaneGeometry(width: 5, depth: 5),
+            UnlitMaterial()..baseColorFactor = vm.Vector4(0.3, 0.3, 0.3, 1),
+          ),
+        )
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(0, 0, -1)) *
+            vm.Matrix4.rotationX(math.pi / 2),
+    );
+    scene.add(
+      Node(mesh: Mesh(PlaneGeometry(width: 1.1, depth: 1.1), card))
+        ..localTransform =
+            vm.Matrix4.translation(vm.Vector3(-0.6, 0, 0)) *
+            vm.Matrix4.rotationX(math.pi / 2),
+    );
+    // A blend band this wide puts the object's size inside it, so both
+    // levels draw with complementary dithers.
+    scene.add(
+      Node()
+        ..position = vm.Vector3(0.6, 0, 0)
+        ..addComponent(
+          LodComponent([
+            LodLevel(
+              geometry: SphereGeometry(radius: 0.45),
+              material: PhysicallyBasedMaterial()
+                ..baseColorFactor = vm.Vector4(0.9, 0.15, 0.1, 1)
+                ..roughnessFactor = 0.5,
+              screenSize: 0.4,
+            ),
+            LodLevel(
+              geometry: CuboidGeometry(vm.Vector3.all(0.6)),
+              material: UnlitMaterial()
+                ..baseColorFactor = vm.Vector4(0.1, 0.35, 0.95, 1),
+              screenSize: 0.0,
+            ),
+          ], blendRange: 0.9),
+        ),
+    );
+    return (
+      scene: scene,
+      camera: PerspectiveCamera(
+        position: vm.Vector3(0, 0, 3.2),
+        target: vm.Vector3.zero(),
+      ),
+    );
+  }, fullCoverage: true),
   // Overlays flush on their surfaces at depth layer 1 (a screen on its
   // backing, road paint on a long ground plane seen at a grazing angle),
   // window bands 4 cm proud of towers 150 m away, and an alpha-masked patch

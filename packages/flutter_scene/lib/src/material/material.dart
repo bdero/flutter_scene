@@ -321,13 +321,21 @@ abstract class Material {
   static int _tieBreakCounter = 0;
   static int _nextTieBreakRank() => _tieBreakCounter++ % 3;
 
-  /// Per-draw level-of-detail cross-fade coverage, set by the encoder right
-  /// before [bind] and written into the material's `FragInfo.fade`. 1 draws
-  /// every fragment; a value in (0, 1) keeps that dithered fraction and a
-  /// negative value keeps the complement (see lod_fade.glsl). Only the
-  /// built-in lit and unlit materials honor it.
+  /// Per-draw level-of-detail cross-fade coverage for a blended draw, set by
+  /// the encoder right before [bind] and written into the material's
+  /// `FragInfo.fade`, which scales its opacity. 1 draws at full opacity; a
+  /// value in (0, 1) or its negative complement (see lod_fade.glsl) draws at
+  /// that fraction. Opaque draws always bind 1, since their dithered coverage
+  /// comes from the main pass's coverage pre-draw. Only materials with
+  /// [lodCrossFades] honor it.
   @internal
   double lodFade = 1.0;
+
+  /// Whether this material cross-fades between levels of detail. An opaque
+  /// draw of one that is mid-fade takes the coverage pre-draw, which dithers
+  /// it against the adjacent level. The built-in lit and unlit materials do.
+  @internal
+  bool get lodCrossFades => false;
 
   /// The owning render item's punctual-light slice, set by the encoder right
   /// before [bind] and written into `FragInfo.radiance_blend.zw`. The lit

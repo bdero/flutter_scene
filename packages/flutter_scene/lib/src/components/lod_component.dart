@@ -48,7 +48,8 @@ class LodComponent extends MeshComponent {
   /// [blendRange] above `0` cross-fades adjacent levels with a screen-space
   /// dither across a band that wide (as a fraction of each threshold) instead
   /// of hard-switching, removing the pop. Cross-fade is honored by the
-  /// built-in lit and unlit materials.
+  /// built-in lit and unlit materials; a translucent level fades its opacity
+  /// instead of dithering.
   LodComponent(
     List<LodLevel> levels, {
     double lodBias = 1.0,

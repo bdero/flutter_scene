@@ -1,4 +1,6 @@
-// Screen-door dither for level-of-detail cross-fades.
+// Screen-door dither for level-of-detail cross-fades. Opaque draws apply it
+// in the main pass's coverage pre-draw (flutter_scene_coverage.frag), so the
+// lit shaders carry no discard; translucent draws take LodFadeOpacity.
 //
 // [coverage] of 1 keeps every fragment. A value in (0, 1) keeps that fraction
 // of fragments in a stable screen-space dither pattern and discards the rest;
@@ -23,4 +25,10 @@ void ApplyLodFade(float coverage) {
   if (dither >= coverage) {
     discard;
   }
+}
+
+// The opacity a blended draw takes for cross-fade [coverage]: the fraction of
+// fragments the dither would keep.
+float LodFadeOpacity(float coverage) {
+  return coverage >= 1.0 ? 1.0 : abs(coverage);
 }

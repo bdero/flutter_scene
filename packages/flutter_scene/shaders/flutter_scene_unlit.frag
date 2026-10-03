@@ -41,7 +41,6 @@ vec3 SRGBToLinear(vec3 color) {
 }
 
 void main() {
-  ApplyLodFade(frag_info.fade);
   vec4 vertex_color = mix(vec4(1), v_color, frag_info.vertex_color_weight);
   highp vec2 uv = MaterialTextureUv(texture_transform.uv_transform,
                               texture_transform.uv_rotation);
@@ -83,4 +82,5 @@ void main() {
   } else {
     frag_color = shaded;
   }
+  frag_color *= LodFadeOpacity(frag_info.fade);
 }

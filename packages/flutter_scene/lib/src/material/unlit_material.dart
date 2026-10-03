@@ -66,6 +66,9 @@ class UnlitMaterial extends Material {
   @override
   bool isOpaque() => alphaMode == AlphaMode.opaque;
 
+  @override
+  bool get lodCrossFades => true;
+
   /// Treats [baseColorTexture] and [baseColorFactor] as display-referred
   /// (final screen values) instead of scene-referred radiance.
   ///
