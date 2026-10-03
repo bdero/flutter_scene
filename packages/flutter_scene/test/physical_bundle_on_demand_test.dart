@@ -6,9 +6,29 @@ library;
 
 import 'package:flutter/foundation.dart';
 // ignore: implementation_imports
+import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/material/physical_material_variant.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/render/render_scene.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vector_math/vector_math.dart';
+
+class _StubGeometry extends Geometry {
+  @override
+  void bind(
+    gpu.RenderPass pass,
+    TransientWriter transientsBuffer,
+    Matrix4 modelTransform,
+    Matrix4 cameraTransform,
+    Vector3 cameraPosition, {
+    gpu.Shader? shaderOverride,
+    double depthBias = 0.0,
+  }) {
+    throw UnsupportedError('Stub geometry is not renderable');
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,6 +80,22 @@ void main() {
     await physicalMaterialResourcesLoad;
     // ignore: invalid_use_of_internal_member
     expect(catcher.drawsNothing, isTrue);
+  });
+
+  test('swapping in a shadow catcher hides its item before the next '
+      'tick', () {
+    final renderScene = RenderScene();
+    final root = Node()..debugMountInto(renderScene);
+    final geometry = _StubGeometry();
+    final node = Node(mesh: Mesh(geometry, PhysicallyBasedMaterial()));
+    root.add(node);
+    root.scenePrePass(0);
+    expect(renderScene.items.single.visible, isTrue);
+
+    // A capture right after the swap must not reach the catcher's unprepared
+    // shader.
+    node.mesh = Mesh(geometry, ShadowCatcherMaterial());
+    expect(renderScene.items.single.visible, isFalse);
   });
 
   test('a failed request is reported once and not retried', () async {
