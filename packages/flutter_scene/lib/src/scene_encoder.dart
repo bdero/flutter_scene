@@ -806,7 +806,22 @@ base class SceneEncoder {
       ..[8] = 1.0,
   );
   static final Float32List _coverageInfoScratch = Float32List(4);
+  static final ByteData _coverageInfoBytes = ByteData.sublistView(
+    _coverageInfoScratch,
+  );
   static final gpu.SamplerOptions _coverageMaskSampler = gpu.SamplerOptions();
+
+  // Stencil for the coverage pre-draw (mark what it keeps), its color draw
+  // (shade only marked pixels and clear them), and every other draw.
+  static final gpu.StencilConfig _markCoverage = gpu.StencilConfig(
+    depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+  );
+  static final gpu.StencilConfig _testCoverage = gpu.StencilConfig(
+    compareFunction: gpu.CompareFunction.equal,
+    depthFailureOperation: gpu.StencilOperation.zero,
+    depthStencilPassOperation: gpu.StencilOperation.zero,
+  );
+  static final gpu.StencilConfig _noStencil = gpu.StencilConfig();
 
   // Whether the opaque flush is encoding a run's coverage pre-draw.
   bool _coveragePass = false;
@@ -1384,7 +1399,7 @@ base class SceneEncoder {
     _coverageInfoScratch[0] = fade;
     _renderPass.bindUniform(
       shader.getUniformSlot('CoverageInfo'),
-      _transientsBuffer.emplace(ByteData.sublistView(_coverageInfoScratch)),
+      _transientsBuffer.emplace(_coverageInfoBytes),
     );
     if (material.depthAlphaMasked) {
       material.bindDepthAlphaMask(_renderPass, shader, _transientsBuffer);
@@ -1984,20 +1999,27 @@ base class SceneEncoder {
           );
         }
       }
-      // A surface that cuts itself out first draws its coverage, writing depth
-      // only where it is kept, then shades exactly those pixels with an equal
-      // depth test. The opaque shaders never discard, which keeps early depth
+      // A surface that cuts itself out first draws its coverage, writing
+      // depth and a stencil mark only where it is kept, then shades exactly
+      // the marked pixels (clearing the mark) with an equal depth test. The
+      // mark keeps a coplanar surface drawn earlier, whose depth can equal
+      // this one's, from passing the equal test where this surface is cut
+      // away. The opaque shaders never discard, which keeps early depth
       // testing and hidden-surface removal on for every other draw. The
       // coverage carries the cross-fade, so the color draw shades at full
       // coverage.
       final coverage = record.coveragePipeline;
       if (coverage != null) {
         _coveragePass = true;
+        _renderPass.setStencilReference(1);
+        _renderPass.setStencilConfig(_markCoverage);
         _encodeOpaqueRun(index, end, coverage, record.fade, batchBreak);
         _coveragePass = false;
+        _renderPass.setStencilConfig(_testCoverage);
         _renderPass.setDepthCompareOperation(gpu.CompareFunction.equal);
         _renderPass.setDepthWriteEnable(false);
         _encodeOpaqueRun(index, end, record.pipeline, 1.0, batchBreak);
+        _renderPass.setStencilConfig(_noStencil);
         _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
         _renderPass.setDepthWriteEnable(true);
       } else {
