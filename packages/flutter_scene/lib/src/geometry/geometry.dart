@@ -1391,6 +1391,39 @@ abstract class Geometry {
   ({gpu.Shader shader, VertexLayoutDescriptor layout})?
   _declaredDepthOnlyVertex;
 
+  /// The layout the velocity pass reads this geometry's positions with, its
+  /// first stream (a float3 `position`) and the instance-rate model
+  /// transform, or null when that stream holds no position the pass's
+  /// engine shader can read, so the draw gets no motion vectors.
+  // TODO(custom-velocity-vertex): let a caller-formatted geometry supply a
+  // velocity vertex shader, so a packed position still gets motion vectors.
+  @internal
+  VertexLayoutDescriptor? get velocityPositionLayout {
+    if (_vertexLayout == null) {
+      return depthOnlyVertex?.layout ?? kUnskinnedPositionOnlyLayout;
+    }
+    final first = _declaredDepthOnlyVertex == null
+        ? _vertexLayout!.buffers.first
+        : _declaredDepthOnlyVertex!.layout.buffers.first;
+    if (identical(first, _velocityLayoutSource)) return _velocityLayout;
+    _velocityLayoutSource = first;
+    final readable =
+        first.stepMode == gpu.VertexStepMode.vertex &&
+        first.attributes.any(
+          (attribute) =>
+              attribute.name == 'position' &&
+              attribute.format == gpu.VertexFormat.float32x3,
+        );
+    return _velocityLayout = readable
+        ? VertexLayoutDescriptor(
+            buffers: [first, _kInstanceModelTransformBuffer],
+          )
+        : null;
+  }
+
+  VertexBufferDescriptor? _velocityLayoutSource;
+  VertexLayoutDescriptor? _velocityLayout;
+
   /// Assigns the position-only vertex [shader] the depth-style passes (shadow
   /// maps, the depth prepass, the selection mask) draw this geometry with, or
   /// clears it when [shader] is null.
