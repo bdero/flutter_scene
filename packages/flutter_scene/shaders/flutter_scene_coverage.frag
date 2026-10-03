@@ -1,7 +1,8 @@
 // The main pass's coverage pre-draw for an opaque surface that cuts itself
-// out (an alpha mask or a level-of-detail cross-fade). It writes depth only
-// where the surface is kept, and the color draw that follows shades with an
-// equal depth test, so the lit shaders need no discard. A discard turns off
+// out (an alpha mask or a level-of-detail cross-fade). It writes depth and a
+// stencil mark only where the surface is kept, and the color draw that
+// follows shades the marked pixels with an equal depth test, so the lit
+// shaders need no discard. A discard turns off
 // early depth testing and hidden-surface removal for every draw of a shader
 // on tiled GPUs; here it costs only the draws that cut out.
 //

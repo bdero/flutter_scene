@@ -2330,6 +2330,43 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             vm.Matrix4.translation(vm.Vector3(-0.6, 0, 0)) *
             vm.Matrix4.rotationX(math.pi / 2),
     );
+    // A green quad, then a fully cut-away red twin with identical geometry,
+    // so every pixel of the twin ties the green's depth exactly. The cut-away
+    // twin must leave the green showing, not pass an equal depth test on it.
+    MeshGeometry twin() => MeshGeometry.fromArrays(
+      positions: Float32List.fromList([
+        -0.5, 0, -0.2, -0.5, 0, 0.2, 0.5, 0, 0.2, 0.5, 0, -0.2, //
+      ]),
+      colors: Float32List.fromList([
+        for (var i = 0; i < 4; i++) ...[1.0, 1.0, 1.0, 0.0],
+      ]),
+      indices: const [0, 1, 2, 0, 2, 3],
+    );
+    final twinTransform =
+        vm.Matrix4.translation(vm.Vector3(0, -0.85, 0)) *
+        vm.Matrix4.rotationX(math.pi / 2);
+    scene.add(
+      Node(
+          mesh: Mesh(
+            twin(),
+            UnlitMaterial()
+              ..baseColorFactor = vm.Vector4(0.1, 0.8, 0.2, 1)
+              ..vertexColorWeight = 0.0,
+          ),
+        )
+        ..renderOrder = -1
+        ..localTransform = twinTransform,
+    );
+    scene.add(
+      Node(
+        mesh: Mesh(
+          twin(),
+          PhysicallyBasedMaterial()
+            ..alphaMode = AlphaMode.mask
+            ..baseColorFactor = vm.Vector4(1, 0, 0, 1),
+        ),
+      )..localTransform = twinTransform,
+    );
     // A blend band this wide puts the object's size inside it, so both
     // levels draw with complementary dithers.
     scene.add(

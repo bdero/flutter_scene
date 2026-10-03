@@ -191,6 +191,7 @@ base class RenderPass {
     final gl = _gpuContext._gl;
     gl.disable(web.WebGL2RenderingContext.CULL_FACE);
     gl.frontFace(web.WebGL2RenderingContext.CCW);
+    gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
   }
 
   final GpuContext _gpuContext;
@@ -362,6 +363,8 @@ base class RenderPass {
         clearMask |= web.WebGL2RenderingContext.DEPTH_BUFFER_BIT;
       }
       if (depth.stencilLoadAction == LoadAction.clear) {
+        // Like depthMask, glClear(STENCIL) respects the stencil write mask.
+        gl.stencilMask(0xFF);
         gl.clearStencil(depth.stencilClearValue);
         clearMask |= web.WebGL2RenderingContext.STENCIL_BUFFER_BIT;
       }
@@ -896,15 +899,69 @@ base class RenderPass {
     gl.depthFunc(_glCompare(compareFunction));
   }
 
+  StencilConfig _stencilFront = StencilConfig();
+  StencilConfig _stencilBack = StencilConfig();
+  int _stencilReference = 0;
+
   void setStencilReference(int referenceValue) {
-    /* not implemented; flutter_scene does not use stencil */
+    _stencilReference = referenceValue;
+    _applyStencil();
   }
+
   void setStencilConfig(
     StencilConfig configuration, {
     StencilFace targetFace = StencilFace.both,
   }) {
-    /* not implemented; flutter_scene does not use stencil */
+    if (targetFace != StencilFace.back) _stencilFront = configuration;
+    if (targetFace != StencilFace.front) _stencilBack = configuration;
+    _applyStencil();
   }
+
+  static bool _stencilInactive(StencilConfig c) =>
+      c.compareFunction == CompareFunction.always &&
+      c.stencilFailureOperation == StencilOperation.keep &&
+      c.depthFailureOperation == StencilOperation.keep &&
+      c.depthStencilPassOperation == StencilOperation.keep;
+
+  // GL holds the stencil state globally; the test is only enabled while a
+  // config can reject or write, as Impeller's GLES backend does.
+  void _applyStencil() {
+    final gl = _gpuContext._gl;
+    if (_stencilInactive(_stencilFront) && _stencilInactive(_stencilBack)) {
+      gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
+      return;
+    }
+    gl.enable(web.WebGL2RenderingContext.STENCIL_TEST);
+    for (final (face, config) in [
+      (web.WebGL2RenderingContext.FRONT, _stencilFront),
+      (web.WebGL2RenderingContext.BACK, _stencilBack),
+    ]) {
+      gl.stencilFuncSeparate(
+        face,
+        _glCompare(config.compareFunction),
+        _stencilReference,
+        config.readMask & 0xFF,
+      );
+      gl.stencilOpSeparate(
+        face,
+        _glStencilOp(config.stencilFailureOperation),
+        _glStencilOp(config.depthFailureOperation),
+        _glStencilOp(config.depthStencilPassOperation),
+      );
+      gl.stencilMaskSeparate(face, config.writeMask & 0xFF);
+    }
+  }
+
+  static int _glStencilOp(StencilOperation op) => switch (op) {
+    StencilOperation.keep => web.WebGL2RenderingContext.KEEP,
+    StencilOperation.zero => web.WebGL2RenderingContext.ZERO,
+    StencilOperation.setToReferenceValue => web.WebGL2RenderingContext.REPLACE,
+    StencilOperation.incrementClamp => web.WebGL2RenderingContext.INCR,
+    StencilOperation.decrementClamp => web.WebGL2RenderingContext.DECR,
+    StencilOperation.invert => web.WebGL2RenderingContext.INVERT,
+    StencilOperation.incrementWrap => web.WebGL2RenderingContext.INCR_WRAP,
+    StencilOperation.decrementWrap => web.WebGL2RenderingContext.DECR_WRAP,
+  };
 
   void setCullMode(CullMode cullMode) {
     final gl = _gpuContext._gl;
