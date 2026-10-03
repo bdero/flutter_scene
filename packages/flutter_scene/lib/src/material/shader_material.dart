@@ -17,7 +17,7 @@ import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
 import 'package:flutter_scene/src/shader_uniform_bindings.dart'
-    show defaultSamplerOptions, linearClampSamplerOptions, packUniformFloats;
+    show PackedFloatBlocks, defaultSamplerOptions, linearClampSamplerOptions;
 
 /// Scalar/vector type supplied once per instance to a raw shader pair.
 /// {@category Materials}
@@ -278,6 +278,8 @@ class ShaderMaterial extends Material {
   final Map<String, ByteData> _uniformBlocks = {};
   final Map<String, _BoundTexture> _textures = {};
   final Map<String, ByteData> _vertexUniformBlocks = {};
+  final PackedFloatBlocks _packed = PackedFloatBlocks();
+  final PackedFloatBlocks _vertexPacked = PackedFloatBlocks();
   final Map<String, _BoundTexture> _vertexTextures = {};
   final Map<MeshVariant, gpu.Shader> _vertexShaders = {};
   final InstanceAttributeSchema? _instanceAttributes;
@@ -319,6 +321,9 @@ class ShaderMaterial extends Material {
   /// when this material declared none.
   @override
   InstanceAttributeSchema? get instanceAttributes => _instanceAttributes;
+
+  PackedFloatBlocks _packedFor(ShaderStage stage) =>
+      stage == ShaderStage.vertex ? _vertexPacked : _packed;
 
   Map<String, ByteData> _blocksFor(ShaderStage stage) =>
       stage == ShaderStage.vertex ? _vertexUniformBlocks : _uniformBlocks;
@@ -423,6 +428,7 @@ class ShaderMaterial extends Material {
     ByteData? bytes, {
     ShaderStage stage = ShaderStage.fragment,
   }) {
+    _packedFor(stage).release(name);
     final blocks = _blocksFor(stage);
     if (bytes == null) {
       blocks.remove(name);
@@ -439,11 +445,8 @@ class ShaderMaterial extends Material {
     List<double> floats, {
     ShaderStage stage = ShaderStage.fragment,
   }) {
-    setUniformBlock(
-      name,
-      packUniformFloats(_blocksFor(stage)[name], floats),
-      stage: stage,
-    );
+    final blocks = _blocksFor(stage);
+    blocks[name] = _packedFor(stage).pack(name, blocks[name], floats);
   }
 
   /// Read back a previously-set uniform block, or `null` when none
@@ -451,7 +454,10 @@ class ShaderMaterial extends Material {
   ByteData? getUniformBlock(
     String name, {
     ShaderStage stage = ShaderStage.fragment,
-  }) => _blocksFor(stage)[name];
+  }) {
+    _packedFor(stage).release(name);
+    return _blocksFor(stage)[name];
+  }
 
   /// All currently-bound fragment uniform block names, in insertion order.
   Iterable<String> get uniformBlockNames => _uniformBlocks.keys;

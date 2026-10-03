@@ -14,7 +14,7 @@ import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
 import 'package:flutter_scene/src/shader_uniform_bindings.dart'
-    show defaultSamplerOptions, linearClampSamplerOptions, packUniformFloats;
+    show PackedFloatBlocks, defaultSamplerOptions, linearClampSamplerOptions;
 
 /// A sky that exposes a directional sun, so the engine can drive a matching
 /// shadow-casting directional light from it.
@@ -149,10 +149,12 @@ class ShaderSkySource extends SkySource {
 
   final Map<String, ByteData> _uniformBlocks = {};
   final Map<String, _SkyTexture> _textures = {};
+  final PackedFloatBlocks _packed = PackedFloatBlocks();
 
   /// Assigns the byte contents of a uniform block by name. [bytes] must match
   /// the block's std140 layout; pass `null` to clear the binding.
   void setUniformBlock(String name, ByteData? bytes) {
+    _packed.release(name);
     if (bytes == null) {
       _uniformBlocks.remove(name);
     } else {
@@ -163,11 +165,14 @@ class ShaderSkySource extends SkySource {
   /// Convenience wrapper around [setUniformBlock] that packs a list of floats.
   /// The caller is still responsible for std140 padding.
   void setUniformBlockFromFloats(String name, List<double> floats) {
-    setUniformBlock(name, packUniformFloats(_uniformBlocks[name], floats));
+    _uniformBlocks[name] = _packed.pack(name, _uniformBlocks[name], floats);
   }
 
   /// Reads back a previously-set uniform block, or `null` when none is set.
-  ByteData? getUniformBlock(String name) => _uniformBlocks[name];
+  ByteData? getUniformBlock(String name) {
+    _packed.release(name);
+    return _uniformBlocks[name];
+  }
 
   /// All currently-bound uniform block names, in insertion order.
   Iterable<String> get uniformBlockNames => _uniformBlocks.keys;

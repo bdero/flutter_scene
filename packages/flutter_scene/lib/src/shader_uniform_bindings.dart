@@ -16,23 +16,33 @@ final gpu.SamplerOptions linearClampSamplerOptions = gpu.SamplerOptions(
   heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
 );
 
-final Expando<bool> _packedFloatBlocks = Expando('packed float blocks');
+/// Uniform blocks one binding packed from floats itself.
+///
+/// The next pack of the same size reuses its block in place, so a block
+/// refreshed every frame stops allocating. A block stops being reused once a
+/// caller supplies its own or reads it back, since others may then hold it.
+class PackedFloatBlocks {
+  final Map<String, ByteData> _owned = {};
 
-/// Packs [floats] into a uniform block, reusing [previous] when an earlier
-/// call made it at the same size, so a block refreshed every frame stops
-/// allocating. Never writes into a block the caller supplied.
-ByteData packUniformFloats(ByteData? previous, List<double> floats) {
-  final length = floats.length * 4;
-  final reuse =
-      previous != null &&
-      previous.lengthInBytes == length &&
-      _packedFloatBlocks[previous] == true;
-  final bytes = reuse ? previous : ByteData(length);
-  for (var i = 0; i < floats.length; i++) {
-    bytes.setFloat32(i * 4, floats[i], Endian.host);
+  /// Packs [floats] for [name], into this binding's own block when [current]
+  /// (the block now bound under [name]) is still it.
+  ByteData pack(String name, ByteData? current, List<double> floats) {
+    final length = floats.length * 4;
+    final owned = _owned[name];
+    final bytes =
+        owned != null &&
+            identical(owned, current) &&
+            owned.lengthInBytes == length
+        ? owned
+        : _owned[name] = ByteData(length);
+    for (var i = 0; i < floats.length; i++) {
+      bytes.setFloat32(i * 4, floats[i], Endian.host);
+    }
+    return bytes;
   }
-  if (!reuse) _packedFloatBlocks[bytes] = true;
-  return bytes;
+
+  /// Stops reusing [name]'s block.
+  void release(String name) => _owned.remove(name);
 }
 
 /// Stores caller-supplied uniform blocks and textures keyed by name and
@@ -44,8 +54,10 @@ ByteData packUniformFloats(ByteData? previous, List<double> floats) {
 class ShaderUniformBindings {
   final Map<String, ByteData> _uniformBlocks = {};
   final Map<String, _BoundTexture> _textures = {};
+  final PackedFloatBlocks _packed = PackedFloatBlocks();
 
   void setUniformBlock(String name, ByteData? bytes) {
+    _packed.release(name);
     if (bytes == null) {
       _uniformBlocks.remove(name);
     } else {
@@ -54,10 +66,13 @@ class ShaderUniformBindings {
   }
 
   void setUniformBlockFromFloats(String name, List<double> floats) {
-    setUniformBlock(name, packUniformFloats(_uniformBlocks[name], floats));
+    _uniformBlocks[name] = _packed.pack(name, _uniformBlocks[name], floats);
   }
 
-  ByteData? getUniformBlock(String name) => _uniformBlocks[name];
+  ByteData? getUniformBlock(String name) {
+    _packed.release(name);
+    return _uniformBlocks[name];
+  }
 
   Iterable<String> get uniformBlockNames => _uniformBlocks.keys;
 
