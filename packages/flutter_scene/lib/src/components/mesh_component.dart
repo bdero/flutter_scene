@@ -63,6 +63,9 @@ class MeshComponent extends Component {
         markMaterialSceneInputsChanged();
       }
       item.material = material;
+      // Now, not at the next tick, so a capture before it never reaches a
+      // material that cannot draw yet.
+      item.visible = !material.drawsNothing;
       staticShadowChanged |= item.shadowStatic && item.castsShadows;
     }
     if (staticShadowChanged) {

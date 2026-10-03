@@ -19,6 +19,9 @@ class _FakeMaterial implements Material {
   Set<RenderInput> get sceneInputs => const {};
 
   @override
+  bool get drawsNothing => false;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
