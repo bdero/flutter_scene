@@ -2,8 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_scene/src/camera.dart';
-import 'package:flutter_scene/src/geometry/geometry.dart'
-    show SkinnedGeometry, kUnskinnedPositionOnlyLayout;
+import 'package:flutter_scene/src/geometry/geometry.dart' show SkinnedGeometry;
 import 'package:flutter_scene/src/geometry/vertex_layout.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/importer/constants.dart'
@@ -198,8 +197,9 @@ class VelocityPass extends RenderGraphPass {
           : _unskinnedVertexShader;
       final vertexLayout = isSkinned
           ? _kSkinnedVelocityLayout
-          : (item.geometry.depthOnlyVertex?.layout ??
-                kUnskinnedPositionOnlyLayout);
+          : item.geometry.velocityPositionLayout;
+      // A packed first stream has no position this shader can read.
+      if (vertexLayout == null) return;
       final pipeline = resolvePipeline(
         vertexShader,
         _fragmentShader,
