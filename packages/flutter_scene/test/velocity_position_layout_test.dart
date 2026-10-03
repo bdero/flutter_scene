@@ -14,9 +14,8 @@ const _instance = VertexBufferDescriptor(
 );
 
 UnskinnedGeometry _declared(VertexBufferDescriptor first) =>
-    UnskinnedGeometry()..setVertexLayout(
-      VertexLayoutDescriptor(buffers: [first, _instance]),
-    );
+    UnskinnedGeometry()
+      ..setVertexLayout(VertexLayoutDescriptor(buffers: [first, _instance]));
 
 void main() {
   test('reads a declared float position stream', () {
