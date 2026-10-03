@@ -2310,7 +2310,9 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
       ..baseColorTexture = Texture2D.fromPixels(pixels, size, size)
       ..metallicFactor = 0.0
       ..roughnessFactor = 0.8;
-    final scene = Scene();
+    // FXAA, which `auto` picks on lower-tier backends, blends the one-pixel
+    // dither away, so the dither itself is what this frame compares.
+    final scene = Scene()..antiAliasingMode = AntiAliasingMode.none;
     scene.add(
       Node(
           mesh: Mesh(
