@@ -524,7 +524,7 @@ class _SceneViewState extends State<SceneView>
     if (!mounted || generation != _revealGeneration) return;
     // Shaders the content started loading on first use (the physical
     // materials) decide which pipelines warm-up compiles.
-    await _scene.deferredResourcesSettled();
+    await _scene.deferredResourcesSettled(_warmUpViews());
     if (!mounted || generation != _revealGeneration) return;
     // Compile the pipelines the first frame needs while the loading widget is
     // still up, so the reveal frame does not stall.

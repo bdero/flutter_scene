@@ -273,17 +273,26 @@ base class Scene implements SceneGraph {
       physicalMaterialResourcesPending &&
       renderScene.anyMaterial(_awaitsDeferredResources);
 
-  /// Completes once the on-demand loads this scene's content has started have
-  /// settled, so a reveal or warm-up sees the materials as they will draw.
+  /// Completes once the on-demand loads this scene's content and [views] need
+  /// have settled, so a reveal or warm-up sees the frame as it will draw.
   /// Never fails; a failed load is reported where it started.
   @internal
-  Future<void> deferredResourcesSettled() async {
+  Future<void> deferredResourcesSettled([
+    List<RenderView> views = const [],
+  ]) async {
     final physical = _awaitingPhysicalResources
         ? physicalMaterialResourcesLoad
         : null;
-    final smaa = effectiveAntiAliasingMode == AntiAliasingMode.smaa
-        ? SmaaPass.request()
-        : null;
+    final wantsSmaa =
+        effectiveAntiAliasingMode == AntiAliasingMode.smaa ||
+        [...this.views, ...views].any(
+          (view) =>
+              _resolveAntiAliasingMode(
+                view.antiAliasingMode ?? _antiAliasingMode,
+              ) ==
+              AntiAliasingMode.smaa,
+        );
+    final smaa = wantsSmaa ? SmaaPass.request() : null;
     await Future.wait([?physical, ?smaa]);
   }
 
@@ -1906,7 +1915,8 @@ base class Scene implements SceneGraph {
   ///
   /// A `SceneView` with `warmUp: true` calls this before it reveals the scene.
   /// Awaiting it is optional and safe to repeat. It awaits
-  /// [initializeStaticResources] first. On backends that compile pipelines
+  /// [initializeStaticResources] first, and whatever on-demand shaders and
+  /// tables the scene and [views] have started loading (see [preload]). On backends that compile pipelines
   /// lazily on first draw (the common case) this front-loads that cost; on a
   /// backend that compiles asynchronously it kicks compilation off without
   /// blocking on completion.
@@ -1932,6 +1942,8 @@ base class Scene implements SceneGraph {
     if (views.isEmpty) {
       return;
     }
+    // A frame held for on-demand shaders compiles nothing.
+    await deferredResourcesSettled(views);
     // On GLES the engine compiles a pipeline on the raster thread and blocks
     // this thread on the result
     // (`flutter::gpu::RenderPass::GetOrCreatePipeline`), so a raster thread
@@ -2028,14 +2040,6 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    // A material waiting on the physical shaders would draw with the wrong
-    // one, so hold the previous frame until they land.
-    if (_awaitingPhysicalResources) {
-      _repaintWhenLoaded(physicalMaterialResourcesLoad);
-      _presentHeldFrame(views, canvas, drawArea);
-      return;
-    }
-
     renderStats.beginFrame();
     beginDrawFailureFrame();
 
@@ -2113,6 +2117,17 @@ base class Scene implements SceneGraph {
       _tick((nowMillis - lastMillis) / 1000.0);
     }
     _tickedThisFrame = false;
+
+    // A material waiting on the physical shaders would draw with the wrong
+    // one, so hold the previous frame until they land. After the tick, which
+    // can give a material a feature that needs them.
+    if (_awaitingPhysicalResources) {
+      _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _presentHeldFrame(views, canvas, drawArea);
+      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+      rendererSubmissions.endFrame();
+      return;
+    }
 
     // A frame whose screen views will re-present their previous images skips
     // the texture views too. Rendering them anyway keeps the GPU a frame
