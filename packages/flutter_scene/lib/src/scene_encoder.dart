@@ -665,6 +665,7 @@ void _recordFailedDraw(
   for (final entry in _pipelineCache.entries) {
     if (!identical(entry.value, pipeline)) continue;
     _pipelineCache.remove(entry.key);
+    _pipelineIndex[entry.key.$1]?[entry.key.$2]?.remove(entry.key.$3);
     _rejectedPipelines.add(entry.key);
     break;
   }
