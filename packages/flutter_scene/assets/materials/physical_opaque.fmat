@@ -128,8 +128,8 @@ fragment {
                  material_params.base_color_factor.rgb;
     float alpha = base.a * vertex_color.a *
                   material_params.base_color_factor.a;
+    // MASK renders opaque; the main pass's coverage pre-draw cuts it out.
     if (material_params.alpha_mode == 1) {
-      if (alpha < material_params.alpha_cutoff) discard;
       alpha = 1.0;
     }
     material.base_color = vec4(color, alpha);

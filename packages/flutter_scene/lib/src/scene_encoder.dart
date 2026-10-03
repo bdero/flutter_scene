@@ -45,6 +45,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     Material material,
     this.fade,
     gpu.RenderPipeline pipeline,
+    this.coveragePipeline,
     this.pipelineKey,
     this.windingFlipped,
   ) : _item = item,
@@ -72,6 +73,9 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
   gpu.RenderPipeline? _pipeline;
   @override
   gpu.RenderPipeline get pipeline => _pipeline!;
+  // The coverage pre-draw's pipeline for a surface that cuts itself out, or
+  // null when the draw covers its whole geometry.
+  gpu.RenderPipeline? coveragePipeline;
   late int pipelineKey;
   late bool windingFlipped;
 
@@ -85,6 +89,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     Material material,
     double fade,
     gpu.RenderPipeline pipeline,
+    gpu.RenderPipeline? coveragePipeline,
     int pipelineKey,
     bool windingFlipped,
   ) {
@@ -93,6 +98,7 @@ base class _OpaqueRecord implements OpaqueBatchRecord {
     _material = material;
     this.fade = fade;
     _pipeline = pipeline;
+    this.coveragePipeline = coveragePipeline;
     this.pipelineKey = pipelineKey;
     depth = double.nan;
     this.windingFlipped = windingFlipped;
@@ -781,6 +787,29 @@ base class SceneEncoder {
   bool _debugViewBoundFallback = false;
   static final gpu.Shader _debugFallbackShader =
       baseShaderLibrary['DebugSurfaceFragment']!;
+  static final gpu.Shader _coverageShader =
+      baseShaderLibrary['CoverageFragment']!;
+
+  // Whether an opaque draw of [material] at cross-fade coverage [fade] cuts
+  // itself out, and so takes the coverage pre-draw.
+  static bool _cutsOut(Material material, double fade) =>
+      material.depthAlphaMasked || (fade != 1.0 && material.lodCrossFades);
+
+  // MaskInfo for a cross-fade without an alpha mask: a cutoff no alpha falls
+  // below, over the white placeholder.
+  static final ByteData _noMaskInfo = ByteData.sublistView(
+    Float32List(12)
+      ..[0] = -1.0
+      ..[1] = 1.0
+      ..[6] = 1.0
+      ..[7] = 1.0
+      ..[8] = 1.0,
+  );
+  static final Float32List _coverageInfoScratch = Float32List(4);
+  static final gpu.SamplerOptions _coverageMaskSampler = gpu.SamplerOptions();
+
+  // Whether the opaque flush is encoding a run's coverage pre-draw.
+  bool _coveragePass = false;
   final List<Plane> _cullingPlanes;
   final bool _cullInstances;
   // Not final because opaque and translucent draws can use separate passes.
@@ -950,6 +979,25 @@ base class SceneEncoder {
     }
 
     if (material.isOpaque()) {
+      gpu.RenderPipeline? coveragePipeline;
+      if (!fallback && _cutsOut(material, fade)) {
+        coveragePipeline = tryResolvePipeline(
+          materialVertex ?? geometry.vertexShader,
+          _coverageShader,
+          vertexLayout: geometry.instancedVertexLayoutFor(
+            material.instanceAttributes,
+            material.vertexAttributesFor(materialVertex),
+          ),
+          debugContext: () =>
+              'coverage pre-draw for '
+              '${fmatSourcePathOf(material) ?? material.runtimeType}',
+        );
+        if (coveragePipeline == null) {
+          activeRenderCounters.pipelineRejected++;
+          activeDrawRecorder?.onSkip(item, DrawSkipReason.pipelineRejected);
+          return;
+        }
+      }
       _opaqueRecords.add(
         _obtainOpaqueRecord(
           item,
@@ -957,6 +1005,7 @@ base class SceneEncoder {
           material,
           fade,
           pipeline,
+          coveragePipeline,
           identityHashCode(pipeline),
           item.windingFor(geometry),
         ),
@@ -1054,6 +1103,7 @@ base class SceneEncoder {
     Material material,
     double fade,
     gpu.RenderPipeline pipeline,
+    gpu.RenderPipeline? coveragePipeline,
     int pipelineKey,
     bool windingFlipped,
   ) {
@@ -1064,6 +1114,7 @@ base class SceneEncoder {
         material,
         fade,
         pipeline,
+        coveragePipeline,
         pipelineKey,
         windingFlipped,
       );
@@ -1074,6 +1125,7 @@ base class SceneEncoder {
       material,
       fade,
       pipeline,
+      coveragePipeline,
       pipelineKey,
       windingFlipped,
     );
@@ -1235,6 +1287,7 @@ base class SceneEncoder {
   // active (once per material run, the shared off block); an active view
   // binds per draw, since the identity seeds are per item.
   void _bindDebugView(Material material, RenderItem? item, bool fallback) {
+    if (_coveragePass) return;
     if (!fallback && !material.participatesInDebugViews) return;
     final shader = fallback
         ? _debugFallbackShader
@@ -1300,13 +1353,15 @@ base class SceneEncoder {
         _boundMaterialLightChannelMask == lightChannelMask) {
       return;
     }
-    material.lodFade = fade;
-    if (fallback) {
-      // The fallback debug shader has none of the material's fragment slots;
-      // only the pass state and the vertex stage bind.
+    if (_coveragePass || fallback) {
+      // The coverage pre-draw and the fallback debug shader have none of the
+      // material's fragment slots; only the pass state and the vertex stage
+      // are the material's.
       _renderPass.setCullMode(material.renderCullMode);
       _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      if (_coveragePass) _bindCoverage(material, fade);
     } else {
+      material.lodFade = fade;
       material.bind(_renderPass, _transientsBuffer, _lighting);
     }
     _boundWindingOrder = null;
@@ -1320,6 +1375,30 @@ base class SceneEncoder {
     _boundMaterialLightOffset = lightOffset;
     _boundMaterialLightCount = lightCount;
     _boundMaterialLightChannelMask = lightChannelMask;
+  }
+
+  // Binds the coverage pre-draw's fragment inputs: the cross-fade [fade] and
+  // the material's alpha mask, or a mask that keeps everything.
+  void _bindCoverage(Material material, double fade) {
+    final shader = _coverageShader;
+    _coverageInfoScratch[0] = fade;
+    _renderPass.bindUniform(
+      shader.getUniformSlot('CoverageInfo'),
+      _transientsBuffer.emplace(ByteData.sublistView(_coverageInfoScratch)),
+    );
+    if (material.depthAlphaMasked) {
+      material.bindDepthAlphaMask(_renderPass, shader, _transientsBuffer);
+      return;
+    }
+    _renderPass.bindUniform(
+      shader.getUniformSlot('MaskInfo'),
+      _transientsBuffer.emplace(_noMaskInfo),
+    );
+    _renderPass.bindTexture(
+      shader.getUniformSlot('mask_texture'),
+      Material.whitePlaceholder(null),
+      sampler: _coverageMaskSampler,
+    );
   }
 
   void _setWindingOrder(gpu.WindingOrder windingOrder) {
@@ -1441,7 +1520,9 @@ base class SceneEncoder {
         geometry: geometry,
         material: material,
         vertexShader: materialVertex ?? geometry.vertexShader,
-        fragmentShader: material.fragmentShaderForLighting(_lighting),
+        fragmentShader: _coveragePass
+            ? _coverageShader
+            : material.fragmentShaderForLighting(_lighting),
         pipeline: pipeline,
         batchedItems: batchedItems,
         batchBreak: batchBreak,
@@ -1902,58 +1983,27 @@ base class SceneEncoder {
             windingFlipped: _opaqueRecords[batchIndex].windingFlipped,
           );
         }
-        _encodeInstancedBatches(
-          record.pipeline,
-          record.geometry,
-          record.material,
-          _batchPool.batches,
-          record.fade,
-          item: item,
-          batchedItems: end - index,
-          batchBreak: batchBreak,
-        );
-        index = end;
-        continue;
       }
-
-      final instances = item.instanceTransforms;
-      if (instances != null) {
-        _encodeInstanced(
-          record.pipeline,
-          item.worldTransform,
-          record.geometry,
-          record.material,
-          instances,
-          item.instanceColors!,
-          record.windingFlipped,
-          record.fade,
-          instanceWindingFlipped: item.instanceWindingFlipped,
-          instanceIndices: item.visibleInstanceIndices,
-          packedWorldData: record.windingFlipped == item.windingFlipped
-              ? item.instanceWorldData
-              : null,
-          packedWorldWindingFlipped:
-              record.windingFlipped == item.windingFlipped
-              ? item.instanceWorldWindingFlipped
-              : null,
-          attributeData: item.instanceAttributeData,
-          attributeFloats: item.instanceAttributeFloats,
-          item: item,
-          batchBreak: batchBreak,
-        );
+      // A surface that cuts itself out first draws its coverage, writing depth
+      // only where it is kept, then shades exactly those pixels with an equal
+      // depth test. The opaque shaders never discard, which keeps early depth
+      // testing and hidden-surface removal on for every other draw. The
+      // coverage carries the cross-fade, so the color draw shades at full
+      // coverage.
+      final coverage = record.coveragePipeline;
+      if (coverage != null) {
+        _coveragePass = true;
+        _encodeOpaqueRun(index, end, coverage, record.fade, batchBreak);
+        _coveragePass = false;
+        _renderPass.setDepthCompareOperation(gpu.CompareFunction.equal);
+        _renderPass.setDepthWriteEnable(false);
+        _encodeOpaqueRun(index, end, record.pipeline, 1.0, batchBreak);
+        _renderPass.setDepthCompareOperation(_raster.nearerOrEqual);
+        _renderPass.setDepthWriteEnable(true);
       } else {
-        _encode(
-          record.pipeline,
-          item.worldTransform,
-          record.geometry,
-          record.material,
-          record.windingFlipped,
-          record.fade,
-          item: item,
-          batchBreak: batchBreak,
-        );
+        _encodeOpaqueRun(index, end, record.pipeline, 1.0, batchBreak);
       }
-      index++;
+      index = end;
     }
     encodeWatch?.stop();
     if (profileRendering) {
@@ -1966,6 +2016,68 @@ base class SceneEncoder {
       _opaqueRecordPool.add(record);
     }
     _opaqueRecords.clear();
+  }
+
+  // Encodes the opaque records [index, end) (one batchable run) with
+  // [pipeline] at cross-fade coverage [fade].
+  void _encodeOpaqueRun(
+    int index,
+    int end,
+    gpu.RenderPipeline pipeline,
+    double fade,
+    BatchBreakReason batchBreak,
+  ) {
+    final record = _opaqueRecords[index];
+    final item = record.item;
+    if (end > index + 1) {
+      _encodeInstancedBatches(
+        pipeline,
+        record.geometry,
+        record.material,
+        _batchPool.batches,
+        fade,
+        item: item,
+        batchedItems: end - index,
+        batchBreak: batchBreak,
+      );
+      return;
+    }
+    final instances = item.instanceTransforms;
+    if (instances != null) {
+      _encodeInstanced(
+        pipeline,
+        item.worldTransform,
+        record.geometry,
+        record.material,
+        instances,
+        item.instanceColors!,
+        record.windingFlipped,
+        fade,
+        instanceWindingFlipped: item.instanceWindingFlipped,
+        instanceIndices: item.visibleInstanceIndices,
+        packedWorldData: record.windingFlipped == item.windingFlipped
+            ? item.instanceWorldData
+            : null,
+        packedWorldWindingFlipped: record.windingFlipped == item.windingFlipped
+            ? item.instanceWorldWindingFlipped
+            : null,
+        attributeData: item.instanceAttributeData,
+        attributeFloats: item.instanceAttributeFloats,
+        item: item,
+        batchBreak: batchBreak,
+      );
+      return;
+    }
+    _encode(
+      pipeline,
+      item.worldTransform,
+      record.geometry,
+      record.material,
+      record.windingFlipped,
+      fade,
+      item: item,
+      batchBreak: batchBreak,
+    );
   }
 
   void _recordProfile(

@@ -1807,6 +1807,9 @@ class PhysicallyBasedMaterial extends Material {
   bool get depthAlphaMasked => alphaMode == AlphaMode.mask;
 
   @override
+  bool get lodCrossFades => true;
+
+  @override
   void bindDepthAlphaMask(
     gpu.RenderPass pass,
     gpu.Shader shader,

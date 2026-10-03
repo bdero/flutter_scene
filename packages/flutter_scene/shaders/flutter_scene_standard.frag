@@ -55,14 +55,11 @@ void Surface(inout MaterialInputs material) {
   vec3 albedo = SRGBToLinear(base_color_srgb.rgb) * vertex_color.rgb *
                 frag_info.color.rgb;
   float alpha = base_color_srgb.a * vertex_color.a * frag_info.color.a;
-  // MASK alpha mode: discard fragments below the cutoff, render the
-  // rest fully opaque (glTF treats MASK output as binary). Done here, before
-  // the normal-map derivatives, so the discard's effect on screen-space
-  // derivatives matches the original monolithic shader.
+  // MASK alpha mode renders fully opaque (glTF treats MASK output as binary).
+  // The cutout itself comes from the main pass's coverage pre-draw, so this
+  // shader never discards; a discard would turn off early depth testing and
+  // hidden-surface removal for every draw on tiled GPUs.
   if (frag_info.alpha_mode == 1.0) {
-    if (alpha < frag_info.alpha_cutoff) {
-      discard;
-    }
     alpha = 1.0;
   }
   material.base_color = vec4(albedo, alpha);
@@ -115,7 +112,6 @@ void Surface(inout MaterialInputs material) {
 }
 
 void main() {
-  ApplyLodFade(frag_info.fade);
   MaterialInputs material = InitMaterialInputs();
   Surface(material);
   // The surface debug view when one is active, the lit result otherwise, or
@@ -135,4 +131,5 @@ void main() {
         ? DebugViewSplit(DebugSurfaceOutput(material), lit)
         : lit;
   }
+  frag_color *= LodFadeOpacity(frag_info.fade);
 }
