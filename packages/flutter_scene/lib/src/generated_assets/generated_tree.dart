@@ -314,6 +314,13 @@ final class GeneratedAssetTree {
     ),
   );
 
+  /// Drops the [family]/[id] entry for [target] and deletes its output, for an
+  /// output a build stopped producing (a sidecar whose switch was turned off).
+  void drop(GeneratedAssetFamily family, String id, {String? target}) {
+    final entry = _manifest.remove(family, id, target: target);
+    if (entry != null) _deleteIfPresent(_root.resolve(entry.file));
+  }
+
   /// Records the output at [uri] (which must be inside the generated tree).
   void recordFile({
     required GeneratedAssetFamily family,
