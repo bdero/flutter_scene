@@ -39,6 +39,7 @@ dependencies:
   # Offline glTF import (build hook + CLI) arg parsing. Build-time only.
   args: ^2.5.0
   collection: ^1.19.0
+  crypto: ^3.0.0
   data_assets: ^0.20.0
   # Reader for the bundled GPU shim's shader-bundle flatbuffer.
   flat_buffers: ^25.9.23
