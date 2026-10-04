@@ -1005,9 +1005,7 @@ SkySourceSpec? _serializeSkySource(SkySource source) {
     // resource pool to reference and are skipped with a warning.
     return FmatSkySpec(
       AssetRef(sourcePath),
-      properties: serializeFmatParameterOverrides(
-        source.parameters.assignedValues,
-      ),
+      properties: serializeFmatParameterOverrides(source.parameters),
     );
   }
   if (source is GradientSkySource) {

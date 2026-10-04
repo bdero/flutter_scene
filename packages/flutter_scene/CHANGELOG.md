@@ -130,6 +130,7 @@
 * Fixed animating glTF rigs with a joint named `root`, whose channels drove the import root instead, dropping the Z flip and leaving the joint still.
 * On web, `EnvironmentMap.fromEquirectImageAsset` and `imageFromBytes(maxWidth:)` no longer fail with "ImageDescriptor.width is not supported".
 * The Dart noise (`FastNoiseLite`, `noiseCurl3`, particle turbulence) now matches native exactly on web; 3D OpenSimplex2 previously returned huge values there, driving particles to NaN.
+* On web, an int `.fmat` parameter saved into an `.fscene` document keeps its int type instead of becoming a double.
 
 ## 0.23.0
 

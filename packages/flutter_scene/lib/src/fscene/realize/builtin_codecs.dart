@@ -476,7 +476,7 @@ class MeshCodec extends ComponentCodec {
             asset: AssetRef(sourcePath),
             properties: {
               ...serializeFmatParameterOverrides(
-                m.parameters.assignedValues,
+                m.parameters,
                 resolveTexture: (texture) =>
                     _serializeTexture(texture, context),
               ),
