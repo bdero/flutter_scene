@@ -348,7 +348,7 @@ jobs:
 
   # The web lane again on the WebGPU backend: SwiftShader's Vulkan under
   # headless Chrome (without the Vulkan flags every canvas read returns zeros),
-  # and WGSL sidecars from a Tint built here until a release exists.
+  # with WGSL sidecars translated by the released flutter_scene_tint.
   web-webgpu:
     name: ${{ inputs.argos_prefix }}web-webgpu (${{ inputs.label }})
     runs-on: ubuntu-latest
@@ -366,23 +366,8 @@ jobs:
       - name: Flutter and engine revision
         run: flutter --version
       - run: flutter config --enable-native-assets
-      - uses: actions/cache/restore@v6
-        id: tint-cache
-        with:
-          path: ${{ runner.temp }}/tint
-          key: tint-${{ runner.os }}-${{ hashFiles('tools/tint_cli/**') }}
-      - uses: seanmiddleditch/gha-setup-ninja@v6
-        if: ${{ steps.tint-cache.outputs.cache-hit != 'true' }}
-      - name: Build flutter_scene_tint
-        run: tools/webgpu_smoke/ensure_tint.sh "$RUNNER_TEMP/tint"
-      # Saved before rendering, so a failed render still keeps the build.
-      - uses: actions/cache/save@v6
-        if: ${{ steps.tint-cache.outputs.cache-hit != 'true' }}
-        with:
-          path: ${{ runner.temp }}/tint
-          key: tint-${{ runner.os }}-${{ hashFiles('tools/tint_cli/**') }}
       - name: Opt in to WGSL sidecars
-        run: tools/webgpu_smoke/opt_in.sh "$RUNNER_TEMP/tint/flutter_scene_tint"
+        run: tools/webgpu_smoke/opt_in.sh
       - run: flutter pub get
       - uses: nanasess/setup-chromedriver@v3
       - name: Render smoke scenes

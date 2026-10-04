@@ -45,22 +45,8 @@ jobs:
         with:
           channel: master
       - run: flutter config --enable-native-assets
-      - uses: actions/cache/restore@v6
-        id: tint-cache
-        with:
-          path: ${{ runner.temp }}/tint
-          key: tint-${{ runner.os }}-${{ hashFiles('tools/tint_cli/**') }}
-      - uses: seanmiddleditch/gha-setup-ninja@v6
-        if: ${{ steps.tint-cache.outputs.cache-hit != 'true' }}
-      - name: Build flutter_scene_tint
-        run: tools/webgpu_smoke/ensure_tint.sh "$RUNNER_TEMP/tint"
-      - uses: actions/cache/save@v6
-        if: ${{ steps.tint-cache.outputs.cache-hit != 'true' }}
-        with:
-          path: ${{ runner.temp }}/tint
-          key: tint-${{ runner.os }}-${{ hashFiles('tools/tint_cli/**') }}
       - name: Opt in to WGSL sidecars
-        run: tools/webgpu_smoke/opt_in.sh "$RUNNER_TEMP/tint/flutter_scene_tint"
+        run: tools/webgpu_smoke/opt_in.sh
       - run: flutter pub get
       - uses: nanasess/setup-chromedriver@v3
       - name: Render on WebGL2 and on WebGPU
