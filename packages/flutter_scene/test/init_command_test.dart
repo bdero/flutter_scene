@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_scene/src/fmat/init_command.dart';

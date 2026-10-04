@@ -1,6 +1,7 @@
 // Covers the .fscene JSON encoding: canonical write, tolerant (JSONC) read,
 // round-trip fidelity, the version/migration framework, and feature gating.
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'dart:math';
 
@@ -122,6 +123,9 @@ void _expectSameStructure(SceneDocument a, SceneDocument b) {
     expect(bn.transform.toMatrix4(), an.transform.toMatrix4());
   }
 }
+
+const String _webNumbers =
+    'The web has one number type, so 1.0 and -0.0 encode as the ints 1 and 0.';
 
 void main() {
   test('prefab member components round-trip', () {
@@ -285,11 +289,11 @@ void main() {
         () => canonicalJson(double.infinity),
         throwsA(isA<FsceneEncodeException>()),
       );
-    });
+    }, skip: kIsWeb ? _webNumbers : null);
 
     test('normalizes negative zero', () {
       expect(canonicalJson(-0.0).trim(), '0.0');
-    });
+    }, skip: kIsWeb ? _webNumbers : null);
   });
 
   group('stripJsonc', () {

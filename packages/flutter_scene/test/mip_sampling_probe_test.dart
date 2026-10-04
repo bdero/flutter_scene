@@ -11,14 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/mip_sampling_probe.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 // Under `flutter test` the bundle asset can be absent, and static
 // initialization now reports that failure instead of completing normally, so
@@ -69,7 +62,7 @@ void main() {
     });
   });
 
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'mip sampling probe (skipped: no GPU device)',
       () {},

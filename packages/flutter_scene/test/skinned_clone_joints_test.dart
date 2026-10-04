@@ -15,14 +15,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/render_scene.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 /// Records every [setJointsTexture] call so the test can assert which
 /// skeleton each draw would bind.
@@ -69,7 +62,7 @@ Node _skinnedTemplate(Geometry geometry) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  final gpuAvailable = _gpuAvailable();
+  final hasGpu = gpuAvailable();
 
   RenderItem itemOf(RenderScene renderScene, Node node) =>
       renderScene.items.singleWhere((item) => identical(item.sourceNode, node));
@@ -100,7 +93,7 @@ void main() {
     expect(itemB.jointsTexture, isNotNull);
     expect(itemA.jointsTexture, isNot(same(itemB.jointsTexture)));
     expect(itemA.jointsTextureWidth, greaterThan(0));
-  }, skip: gpuAvailable ? false : 'no GPU context in this environment');
+  }, skip: hasGpu ? false : 'no GPU context in this environment');
 
   test('applyJointsTexture binds each item\'s own skeleton per draw', () {
     final renderScene = RenderScene();
@@ -124,7 +117,7 @@ void main() {
       (itemA.jointsTexture, itemA.jointsTextureWidth),
       (itemB.jointsTexture, itemB.jointsTextureWidth),
     ]);
-  }, skip: gpuAvailable ? false : 'no GPU context in this environment');
+  }, skip: hasGpu ? false : 'no GPU context in this environment');
 
   test('applyJointsTexture is a no-op for unskinned items', () {
     final geometry = _RecordingGeometry();

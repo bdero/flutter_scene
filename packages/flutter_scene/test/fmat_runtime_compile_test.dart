@@ -1,6 +1,9 @@
 // FmatRuntimeCompiler against the SDK cache's impellerc: bundle output, the
 // sidecar shape, disk caching, and the error paths. Runs only when impellerc
 // resolves (CI without engine artifacts skips).
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

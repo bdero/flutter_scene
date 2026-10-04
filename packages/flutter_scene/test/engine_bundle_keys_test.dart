@@ -1,5 +1,6 @@
 /// The engine's two shader bundles can arrive two ways, and the app's own copy
 /// must always win over the one in flutter_scene's package directory.
+@TestOn('vm')
 library;
 
 import 'dart:convert';

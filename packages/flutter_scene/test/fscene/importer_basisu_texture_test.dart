@@ -2,6 +2,9 @@
 // transcoded to RGBA8 by the same pure-Dart decoder the runtime importer uses,
 // so a cooked .fsceneb keeps the texture instead of dropping it.
 
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

@@ -22,6 +22,8 @@ import 'package:flutter_scene/src/gpu/gpu.dart'
     show IndexType, RenderPass, Shader;
 import 'package:vector_math/vector_math.dart';
 
+import 'support/gpu_available.dart';
+
 /// A bare [Geometry] whose only purpose is to exercise the CPU-side raycast
 /// data contract without a GPU upload.
 class _RaycastDataGeometry extends Geometry {
@@ -35,15 +37,6 @@ class _RaycastDataGeometry extends Geometry {
     gpu.Shader? shaderOverride,
     double depthBias = 0.0,
   }) {}
-}
-
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
 }
 
 /// A unit quad in the XY plane at z = 0, facing +Z, with v = 0 at the top
@@ -325,7 +318,7 @@ void main() {
     });
   });
 
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test('scene raycast integration requires a GPU context', () {
       markTestSkipped('No Impeller GPU context');
     });

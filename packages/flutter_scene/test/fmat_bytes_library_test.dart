@@ -1,6 +1,9 @@
 // FmatBytesLibrary over runtime-compiled bundles: building live materials
 // and skies from bytes, provenance stamping, and in-place refresh. Needs a
 // GPU context (run with --enable-flutter-gpu) plus impellerc; skips otherwise.
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,6 +14,8 @@ import 'package:flutter_scene/src/fmat/material_registry.dart'
     show fmatSourcePathOf;
 import 'package:flutter_scene/src/fmat/runtime_compile.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/gpu_available.dart';
 
 const _surfaceA = '''
 material {
@@ -67,15 +72,6 @@ sky {
 }
 ''';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
 void main() async {
   TestWidgetsFlutterBinding.ensureInitialized();
   Uri? impellerc;
@@ -84,7 +80,7 @@ void main() async {
   } catch (_) {
     impellerc = null;
   }
-  final gpu = _gpuAvailable();
+  final gpu = gpuAvailable();
   final skip = !gpu
       ? 'no GPU context in this environment'
       : impellerc == null

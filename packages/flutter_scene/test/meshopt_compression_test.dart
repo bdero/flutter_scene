@@ -14,6 +14,9 @@
 //   two_triangles_exponential_plain.glb       -vpf -vnf
 //   two_triangles_exponential_compressed.glb  -vpf -vnf -c
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

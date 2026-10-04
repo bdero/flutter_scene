@@ -4,6 +4,9 @@
 // document animation builder decodes weights channels. Byte parity against
 // the shared packer follows the project's import-verification method.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

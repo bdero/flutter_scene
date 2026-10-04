@@ -6,14 +6,7 @@ import 'package:flutter/material.dart' hide Material;
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 void main() {
   testWidgets('occupies no layout space and lays the child out at the '
@@ -180,7 +173,7 @@ void main() {
   testWidgets('captures publish a texture matching the capture size', (
     tester,
   ) async {
-    if (!_gpuAvailable()) {
+    if (!gpuAvailable()) {
       markTestSkipped('No Impeller GPU context');
       return;
     }

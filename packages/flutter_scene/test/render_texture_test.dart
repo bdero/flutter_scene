@@ -11,14 +11,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 void main() {
   group('update policy', () {
@@ -108,7 +101,7 @@ void main() {
     expect(find.byType(RenderTextureView), findsOneWidget);
   });
 
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'render integration (skipped: no GPU device)',
       () {},

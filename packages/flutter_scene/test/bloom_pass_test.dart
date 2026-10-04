@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_scene/src/render/bloom_pass.dart';

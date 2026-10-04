@@ -9,6 +9,9 @@
 // rgba8 --raw` output, levels concatenated base first; the decoder must
 // match it byte for byte.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:scene/scene.dart';
@@ -524,6 +525,20 @@ Future<void> _settle(bool Function() done) async {
   }
 }
 
+/// The asset manifest keys: the binary one, and the web's, which wraps the
+/// same bytes as a base64 JSON string.
+bool _isManifest(String key) =>
+    key == 'AssetManifest.bin' || key == 'AssetManifest.bin.json';
+
+ByteData _manifest(String key, Map<String, Object> entries) {
+  final bin = const StandardMessageCodec().encodeMessage(entries)!;
+  if (key == 'AssetManifest.bin') return bin;
+  final json = jsonEncode(
+    base64.encode(bin.buffer.asUint8List(bin.offsetInBytes, bin.lengthInBytes)),
+  );
+  return ByteData.sublistView(utf8.encode(json));
+}
+
 final class _BytesAssetBundle extends CachingAssetBundle {
   _BytesAssetBundle(this.assets);
 
@@ -539,12 +554,11 @@ final class _BytesAssetBundle extends CachingAssetBundle {
 
   @override
   Future<ByteData> load(String key) async {
-    if (key == 'AssetManifest.bin') {
+    if (_isManifest(key)) {
       manifestLoads++;
-      final manifest = <String, Object>{
+      return _manifest(key, {
         for (final asset in assets.keys) asset: <Object>[],
-      };
-      return const StandardMessageCodec().encodeMessage(manifest)!;
+      });
     }
     if (failLoads) throw StateError('Asset read failed: $key');
     final bytes = assets[key];
@@ -585,11 +599,7 @@ final class _DeferredSceneBundle extends CachingAssetBundle {
 
   @override
   Future<ByteData> load(String key) async {
-    if (key == 'AssetManifest.bin') {
-      return const StandardMessageCodec().encodeMessage({
-        sceneKey: <Object>[],
-      })!;
-    }
+    if (_isManifest(key)) return _manifest(key, {sceneKey: <Object>[]});
     if (key != sceneKey) throw StateError('Unknown test asset: $key');
     _sceneRead.complete();
     return _sceneBytes.future;

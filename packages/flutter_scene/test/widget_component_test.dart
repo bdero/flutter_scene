@@ -7,14 +7,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 Future<void> _settle(
   WidgetTester tester,
@@ -30,7 +23,7 @@ Future<void> _settle(
 }
 
 void main() {
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test('widget component suite requires a GPU context', () {
       markTestSkipped('No Impeller GPU context');
     });

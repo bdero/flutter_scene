@@ -1,6 +1,7 @@
 /// A shader bundle is only valid for the engine that consumes it, so every
 /// compiled output records which engine compiled it and is rebuilt when that
 /// changes. One shared pub cache across two Flutter versions depends on this.
+@TestOn('vm')
 library;
 
 import 'dart:io';

@@ -14,6 +14,8 @@ import 'package:flutter_scene/src/render/render_graph_capture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
+import 'support/gpu_available.dart';
+
 class _ThrowingWriter implements TransientWriter {
   @override
   gpu.BufferView emplace(ByteData bytes) =>
@@ -29,15 +31,6 @@ class _FakePass extends RenderGraphPass {
 
   @override
   void execute(RenderGraphContext context) => body();
-}
-
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
 }
 
 void main() {
@@ -184,7 +177,7 @@ void main() {
   });
 
   testWidgets('captures a rendered scene\'s draws', (tester) async {
-    if (!_gpuAvailable()) return;
+    if (!gpuAvailable()) return;
     await Scene.initializeStaticResources();
     Scene.debugAllowRenderGraphCapture = true;
     final scene = Scene();

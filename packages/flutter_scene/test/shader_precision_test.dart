@@ -3,6 +3,9 @@
 // checks keep the header and the highp declarations from regressing, since
 // no CI backend runs fp16 and a lost qualifier only shows on a phone.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_scene/src/fmat/fmat.dart';

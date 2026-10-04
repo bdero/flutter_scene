@@ -1,6 +1,9 @@
 // Checks the ETC1S encoder. The .rgba goldens for its fixtures are basisu's
 // decodes of them (tool/etc1s_goldens.mjs).
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

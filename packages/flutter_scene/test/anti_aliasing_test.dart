@@ -6,17 +6,10 @@
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 void main() {
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'anti-aliasing suite (skipped: no GPU device)',
       () {},

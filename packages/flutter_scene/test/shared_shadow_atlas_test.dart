@@ -8,14 +8,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 Scene _scene({required bool sun, MeshDrawSelector? selector}) {
   final mesh = Mesh(CuboidGeometry(Vector3.all(1)), PhysicallyBasedMaterial());
@@ -69,7 +62,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('views in one frame share spot shadow tiles', () async {
-    if (!_gpuAvailable()) return;
+    if (!gpuAvailable()) return;
     await Scene.initializeStaticResources();
     final draws = _shadowDraws(_scene(sun: false));
     expect(draws, hasLength(2));
@@ -78,7 +71,7 @@ void main() {
   });
 
   test('views with directional cascades render their own', () async {
-    if (!_gpuAvailable()) return;
+    if (!gpuAvailable()) return;
     await Scene.initializeStaticResources();
     final draws = _shadowDraws(_scene(sun: true));
     expect(draws, hasLength(2));
@@ -86,7 +79,7 @@ void main() {
   });
 
   test('shared shadow casters draw from the screen view camera', () async {
-    if (!_gpuAvailable()) return;
+    if (!gpuAvailable()) return;
     await Scene.initializeStaticResources();
     final cameras = <Vector3>[];
     final draws = _shadowDraws(

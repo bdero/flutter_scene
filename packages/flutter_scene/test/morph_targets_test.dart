@@ -3,6 +3,9 @@
 // top-N weight selection, the delta-texture packing layout, node weight
 // defaults/overrides, and weights-channel playback. No GPU needed.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

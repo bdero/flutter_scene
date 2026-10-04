@@ -11,14 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import '../support/gpu_available.dart';
 
 MaterialResource _serializedMaterial(Material material) {
   final root = Node()
@@ -31,7 +24,7 @@ MaterialResource _serializedMaterial(Material material) {
 }
 
 void main() {
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'unlit display-referred round trip',
       () {},

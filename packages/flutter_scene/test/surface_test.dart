@@ -2,18 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  final gpu = _gpuAvailable();
+  final gpu = gpuAvailable();
   const a = Size(64, 32);
   const b = Size(48, 24);
   const c = Size(32, 16);

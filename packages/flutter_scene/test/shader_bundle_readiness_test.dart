@@ -2,6 +2,7 @@
 /// it just returns null. That used to leave the scene reporting itself ready
 /// and drawing a black frame, with the only clue in the engine's own log. The
 /// load now fails, and says which of the two causes it is and how to clear it.
+@TestOn('vm')
 library;
 
 import 'dart:convert';

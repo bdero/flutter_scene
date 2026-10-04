@@ -14,14 +14,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/render/sh_composite.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 // Minimal float32 to float16 bit conversion for the small positive values
 // used here (no subnormals, infinities, or NaNs).
@@ -53,7 +46,7 @@ gpu.Texture _shSource(double red) {
 }
 
 void main() {
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'sh composite (skipped: no GPU device)',
       () {},

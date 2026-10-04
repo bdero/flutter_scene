@@ -3,6 +3,9 @@
 // verified in the example app; here we check the importer emits KTX2 payloads,
 // that the container shrinks, and that the payload decodes back to the image.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

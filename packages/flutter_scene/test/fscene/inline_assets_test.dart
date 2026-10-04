@@ -3,6 +3,9 @@
 // (which references imported images by path) become a `.fsceneb` whose textures
 // travel as embedded bytes (no asset-bundle lookup at runtime).
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

@@ -30,6 +30,10 @@ class _StubGeometry extends Geometry {
   }
 }
 
+/// The web fetches generated assets over HTTP, bypassing the test asset bundle, and a widget test never completes the request.
+const String _webFetch =
+    'The web fetches generated assets over HTTP, bypassing the test asset bundle, and a widget test never completes the request.';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -69,7 +73,7 @@ void main() {
     expect(physicalMaterialResourcesPending, isFalse);
     expect(physicalMaterialResourcesReady, isFalse);
     expect(physicalMaterialResourcesLoad, isNull);
-  });
+  }, skip: kIsWeb ? _webFetch : null);
 
   test('a shadow catcher asks for the bundle and draws nothing without '
       'it', () async {
@@ -80,7 +84,7 @@ void main() {
     await physicalMaterialResourcesLoad;
     // ignore: invalid_use_of_internal_member
     expect(catcher.drawsNothing, isTrue);
-  });
+  }, skip: kIsWeb ? _webFetch : null);
 
   test('swapping in a shadow catcher hides its item before the next '
       'tick', () {
@@ -111,12 +115,12 @@ void main() {
     expect(physicalMaterialResourcesPending, isFalse);
     await pumpEventQueue();
     expect(reported, hasLength(1));
-  });
+  }, skip: kIsWeb ? _webFetch : null);
 
   test('an explicit load retries after a failure and throws it', () async {
     requestPhysicalMaterialResources();
     await physicalMaterialResourcesLoad;
     await expectLater(initializePhysicalMaterialResources(), throwsA(anything));
     expect(physicalMaterialResourcesPending, isFalse);
-  });
+  }, skip: kIsWeb ? _webFetch : null);
 }

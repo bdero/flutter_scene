@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'package:flutter_scene/src/generated_assets/build_engine_assets.dart';
 import 'package:flutter_test/flutter_test.dart';
 

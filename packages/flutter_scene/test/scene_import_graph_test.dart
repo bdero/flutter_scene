@@ -2,6 +2,9 @@
 // free of `dart:io` and of the hook-only sources, so the package keeps compiling
 // for web (dart2js rejects the 64-bit hash constants) and for wasm.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

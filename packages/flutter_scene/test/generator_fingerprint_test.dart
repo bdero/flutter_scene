@@ -3,6 +3,9 @@
 
 // ignore_for_file: implementation_imports
 
+@TestOn('vm')
+library;
+
 import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_test/flutter_test.dart';
 
