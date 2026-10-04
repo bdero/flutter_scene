@@ -73,18 +73,14 @@ Future<Uint8List> bytesFromAsset(
 /// {@category Assets and loading}
 Future<ui.Image> imageFromBytes(Uint8List bytes, {int? maxWidth}) async {
   final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-  final ui.Codec codec;
-  ui.ImageDescriptor? descriptor;
-  if (maxWidth == null) {
-    codec = await ui.instantiateImageCodecFromBuffer(buffer);
-  } else {
-    descriptor = await ui.ImageDescriptor.encoded(buffer);
-    codec = await descriptor.instantiateCodec(
-      targetWidth: descriptor.width <= maxWidth ? null : maxWidth,
-    );
-  }
+  // Not ImageDescriptor, which the web engine does not implement.
+  final codec = await ui.instantiateImageCodecWithSize(
+    buffer,
+    getTargetSize: (width, height) => maxWidth == null || width <= maxWidth
+        ? const ui.TargetImageSize()
+        : ui.TargetImageSize(width: maxWidth),
+  );
   final frame = await codec.getNextFrame();
-  descriptor?.dispose();
   return frame.image;
 }
 
