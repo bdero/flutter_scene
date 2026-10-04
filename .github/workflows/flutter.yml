@@ -99,3 +99,29 @@ jobs:
       - name: Run tests
         working-directory: ${{ matrix.package }}
         run: flutter test --enable-impeller
+
+  # flutter_scene's Dart code ships to the web too, where an int is a double
+  # (exact only to 53 bits) and bitwise results are unsigned. Test files that
+  # need the VM (dart:io, FFI, build hooks) say so with @TestOn('vm'), and are
+  # left out of the run, since the web runner compiles every file it is given
+  # into one program.
+  web_test:
+    name: Test flutter_scene on web (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dart2js, dart2wasm]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+      - name: Resolve workspace dependencies
+        run: flutter pub get
+      - name: Run tests in Chrome
+        working-directory: packages/flutter_scene
+        run: |
+          files=$(grep -rL --include='*_test.dart' "@TestOn('vm')" test | sort)
+          flutter test --platform chrome ${{ matrix.compiler == 'dart2wasm' && '--wasm' || '' }} $files
