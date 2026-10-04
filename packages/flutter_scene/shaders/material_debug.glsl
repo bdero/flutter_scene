@@ -230,14 +230,25 @@ vec3 DebugUvChecker(vec2 uv) {
   return mix(vec3(0.6, 0.0, 0.0), mix(grid, tint, 0.35), in_range);
 }
 
+// IEEE bit tests rather than isnan/isinf, which fast math may fold to false
+// and WGSL cannot express at all.
+bvec3 DebugIsNan(vec3 v) {
+  return greaterThan(floatBitsToUint(v) & uvec3(0x7fffffffu),
+                     uvec3(0x7f800000u));
+}
+
+bvec3 DebugIsInf(vec3 v) {
+  return equal(floatBitsToUint(v) & uvec3(0x7fffffffu), uvec3(0x7f800000u));
+}
+
 // Flags on the RenderDoc scheme: red for NaN, green for infinity, blue for a
 // negative color, and the given base tone otherwise.
 vec3 DebugNonFinite(MaterialInputs material, vec3 base) {
   vec3 probe = material.base_color.rgb + material.normal + material.emissive +
                vec3(material.metallic + material.roughness +
                     material.occlusion);
-  bool nan = any(isnan(probe));
-  bool inf = any(isinf(probe));
+  bool nan = any(DebugIsNan(probe));
+  bool inf = any(DebugIsInf(probe));
   bool negative = min(min(material.base_color.r, material.base_color.g),
                       material.base_color.b) < 0.0 ||
                   min(min(material.emissive.r, material.emissive.g),
