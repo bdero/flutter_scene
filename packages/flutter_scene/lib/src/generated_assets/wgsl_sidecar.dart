@@ -19,6 +19,7 @@ import 'package:hooks/hooks.dart';
 
 import '../gpu/shared/wgsl_bindings.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
+import 'spirv_constant_arrays.dart';
 import 'tint_binary.dart';
 
 /// The pubspec user-define that turns WGSL translation on.
@@ -29,6 +30,10 @@ const String kWebGpuEnv = 'FLUTTER_SCENE_WEBGPU';
 
 /// The sidecar format revision, bumped when its shape changes.
 const int kWgslSidecarFormat = 2;
+
+/// Names the SPIR-V preprocessing ahead of the translator, recorded beside
+/// its revision. Bump it when the preprocessing changes what Tint sees.
+const String kSpirvPreprocessing = 'hoist-constant-arrays-1';
 
 /// Whether [input]'s package asked for WGSL sidecars.
 bool webGpuShadersRequested(BuildInput input) =>
@@ -113,7 +118,7 @@ Future<String> buildWgslSidecar(
     };
     jobs.add((
       name: name,
-      spirv: Uint8List.fromList(words),
+      spirv: hoistConstantArrays(Uint8List.fromList(words)),
       samplerBindings: map.samplerMappings,
     ));
   }
@@ -151,7 +156,7 @@ Future<String> buildWgslSidecar(
   }
   return const JsonEncoder.withIndent(' ').convert({
     'format': kWgslSidecarFormat,
-    'translator': translator.revision,
+    'translator': '${translator.revision}, $kSpirvPreprocessing',
     'bundle': shippedBundleHash,
     'shaders': shaders,
   });

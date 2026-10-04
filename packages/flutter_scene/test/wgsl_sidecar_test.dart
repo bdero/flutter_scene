@@ -92,7 +92,7 @@ void main() {
     final sidecar = jsonDecode(json) as Map<String, Object?>;
     expect(sidecar['format'], kWgslSidecarFormat);
     expect(sidecar['bundle'], 'abc');
-    expect(sidecar['translator'], 'fake 1');
+    expect(sidecar['translator'], 'fake 1, $kSpirvPreprocessing');
     final lit = (sidecar['shaders'] as Map)['Lit'] as Map;
     expect(lit['stage'], 'fragment');
     expect(lit['wgsl'], _goodWgsl);
