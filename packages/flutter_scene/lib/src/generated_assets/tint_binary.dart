@@ -20,12 +20,12 @@ const String kTintUserDefine = 'flutter_scene_tint';
 const String kTintEnv = 'FLUTTER_SCENE_TINT';
 
 /// The release the download comes from.
-const String kTintReleaseTag = 'flutter_scene_tint-1';
+const String kTintReleaseTag = 'flutter_scene_tint-0.1.0';
 
 /// Per-host release asset and its sha256.
 ///
 /// TODO(tint-release): fill in from the release's `tint_binaries.json` once
-/// `flutter_scene_tint-1` is published. Until then every host needs the local
+/// `flutter_scene_tint-0.1.0` is published. Until then every host needs the local
 /// override, and resolution fails with instructions instead of downloading.
 const Map<String, ({String file, String sha256})> kTintBinaries = {};
 

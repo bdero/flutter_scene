@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to build and attach binaries to (e.g. flutter_scene_tint-1)'
+        description: 'Release tag to build and attach binaries to (e.g. flutter_scene_tint-0.1.0)'
         required: true
 
 jobs:
@@ -108,6 +108,6 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "$TAG" \
+            gh release create "$TAG" --title "$TAG" --latest=false \
               --notes "flutter_scene_tint built from Dawn $(grep -E '^DAWN_REVISION=' tools/tint_cli/build.sh | cut -d= -f2)."
           gh release upload "$TAG" dist/* --clobber

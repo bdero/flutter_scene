@@ -6,7 +6,7 @@
 #   tools/webgpu_smoke/ensure_tint.sh OUT_DIR
 #
 # TODO(tint-release): download the released binary instead, once
-# flutter_scene_tint-1 is published.
+# flutter_scene_tint-0.1.0 is published.
 set -euo pipefail
 
 OUT="$1"
