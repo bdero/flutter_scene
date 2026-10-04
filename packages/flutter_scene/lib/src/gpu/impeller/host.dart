@@ -48,5 +48,8 @@ class GpuHost {
   }
 }
 
+/// Readies the GPU backend. Flutter GPU needs nothing beyond the engine.
+Future<void> initializeGpuBackend() async {}
+
 /// The active backend's host integration.
 const GpuHost gpuHost = GpuHost._();

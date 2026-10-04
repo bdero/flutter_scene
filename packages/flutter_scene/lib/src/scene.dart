@@ -526,37 +526,40 @@ base class Scene implements SceneGraph {
       return _initializeStaticResources!;
     }
     listenForMemoryPressure();
-    _initializeStaticResources =
-        Future.wait([
-              loadBaseShaderLibrary(),
-              Material.initializeStaticResources(),
-              // The physical material shaders and the SMAA tables load on
-              // first use or through preload, so a scene using neither never
-              // pays for them.
-            ])
-            // Needs the shader library, so it runs after the load and before
-            // rendering unblocks (environment radiance builds consult it).
-            .then((_) => probePlatformMipSampling())
-            .then((_) {
-              _readyToRender = true;
-            })
-            .onError<Object>((e, stacktrace) {
-              // Only a successful load marks the scene ready to render;
-              // rendering with these resources missing throws mid-frame.
-              // The memoized future is reset so a later call retries.
-              log(
-                'Failed to initialize static Flutter Scene resources',
-                error: e,
-                stackTrace: stacktrace,
-              );
-              _initializeStaticResources = null;
-              // Rethrow so an awaiting caller sees the real cause. Completing
-              // normally here left the failure visible only through
-              // `dart:developer` log(), which web does not surface, and sent
-              // the developer to the baseShaderLibrary getter's "await
-              // initializeStaticResources()" instead, the call they just made.
-              Error.throwWithStackTrace(e, stacktrace);
-            });
+    _initializeStaticResources = gpu
+        .initializeGpuBackend()
+        .then(
+          (_) => Future.wait([
+            loadBaseShaderLibrary(),
+            Material.initializeStaticResources(),
+            // The physical material shaders and the SMAA tables load on
+            // first use or through preload, so a scene using neither never
+            // pays for them.
+          ]),
+        )
+        // Needs the shader library, so it runs after the load and before
+        // rendering unblocks (environment radiance builds consult it).
+        .then((_) => probePlatformMipSampling())
+        .then((_) {
+          _readyToRender = true;
+        })
+        .onError<Object>((e, stacktrace) {
+          // Only a successful load marks the scene ready to render;
+          // rendering with these resources missing throws mid-frame.
+          // The memoized future is reset so a later call retries.
+          log(
+            'Failed to initialize static Flutter Scene resources',
+            error: e,
+            stackTrace: stacktrace,
+          );
+          _initializeStaticResources = null;
+          // Rethrow so an awaiting caller sees the real cause. Completing
+          // normally here left the failure visible only through
+          // `dart:developer` log(), which web does not surface, and sent
+          // the developer to the baseShaderLibrary getter's "await
+          // initializeStaticResources()" instead, the call they just made.
+          Error.throwWithStackTrace(e, stacktrace);
+        });
     return _initializeStaticResources!;
   }
 

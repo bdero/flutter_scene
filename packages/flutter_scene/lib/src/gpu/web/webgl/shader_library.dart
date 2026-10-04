@@ -1,4 +1,4 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// Matches `uniform TypeName instanceName;` declarations (plain uniform
 /// structs). Sampler uniforms like `uniform highp sampler2D foo;` are
@@ -12,13 +12,13 @@ final RegExp _uniformDecl = RegExp(
 /// assets (parsing the flatbuffer, transpiling the `opengl_es` variant to
 /// GLSL ES 3.00, and compiling it), and also offers a web-only
 /// `fromInlineMap` for bundle-less smoke pipelines.
-base class ShaderLibrary {
-  ShaderLibrary._(this._shaders);
+final class WebGlShaderLibrary extends ShaderLibrary {
+  WebGlShaderLibrary._(this._shaders);
 
-  final Map<String, Shader> _shaders;
+  final Map<String, WebGlShader> _shaders;
 
   /// Shaders loaded from each `.shaderbundle` asset, tracked weakly by their
-  /// bundle entry name so [reinitializeShaderLibraryAsync] can recompile the
+  /// bundle entry name so [_reinitializeShaderLibraryAsync] can recompile the
   /// live ones in place on hot reload. Weak per shader: a shader stays
   /// tracked exactly as long as something (a material, a pipeline) holds it,
   /// regardless of whether its [ShaderLibrary] wrapper is still alive.
@@ -27,25 +27,8 @@ base class ShaderLibrary {
 
   /// Look up a compiled shader by the name it was given in the bundle (or
   /// in the inline map).
+  @override
   Shader? operator [](String name) => _shaders[name];
-
-  /// flutter_gpu's `fromAsset` is synchronous (native FFI). Web asset
-  /// loading is inherently async, so this throws; use the top-level
-  /// [loadShaderLibraryAsync] instead.
-  static ShaderLibrary? fromAsset(String assetName) {
-    throw UnimplementedError(
-      'ShaderLibrary.fromAsset is synchronous and unsupported on web. '
-      'Use loadShaderLibraryAsync(assetName) instead.',
-    );
-  }
-
-  /// Mirrors flutter_gpu's in-place shader hot reload on native. The web
-  /// backend compiles its own GLSL, so the reload is asynchronous; this
-  /// fires it and returns. Await [reinitializeShaderLibraryAsync] instead
-  /// when ordering matters (evicting pipelines after the recompile).
-  static void reinitialize(String assetKey) {
-    unawaited(reinitializeShaderLibraryAsync(assetKey));
-  }
 
   /// Load and compile a `.shaderbundle` asset, revalidated so a browser cache
   /// never pairs an old bundle with new Dart code.
@@ -60,7 +43,7 @@ base class ShaderLibrary {
       data.lengthInBytes,
     );
     final bundle = fb.ShaderBundle(bytes);
-    final shaders = <String, Shader>{};
+    final shaders = <String, WebGlShader>{};
     for (final entry in bundle.shaders ?? const <fb.Shader>[]) {
       final name = entry.name;
       final backend = entry.openglEs;
@@ -74,14 +57,14 @@ base class ShaderLibrary {
         ));
       }
     }
-    return ShaderLibrary._(shaders);
+    return WebGlShaderLibrary._(shaders);
   }
 
-  static Shader _buildFromBackend(fb.BackendShader backend) {
+  static WebGlShader _buildFromBackend(fb.BackendShader backend) {
     final stage = backend.stage == fb.ShaderStage.kFragment
         ? ShaderStage.fragment
         : ShaderStage.vertex;
-    final shader = Shader._(gpuContext, stage);
+    final shader = WebGlShader._(webGlContext, stage);
     _populateFromBackend(shader, backend);
     return shader;
   }
@@ -90,7 +73,7 @@ base class ShaderLibrary {
   /// object and rebuilds the reflection state, keeping the [Shader]'s
   /// identity so materials and pipeline-cache keys stay valid.
   static void _populateFromBackend(Shader shader, fb.BackendShader backend) {
-    shader._entrypoint = backend.entrypoint;
+    shader.webGl._entrypoint = backend.entrypoint;
 
     final sourceBytes = backend.shader;
     if (sourceBytes == null || sourceBytes.isEmpty) {
@@ -100,17 +83,17 @@ base class ShaderLibrary {
       utf8.decode(sourceBytes),
       isFragment: shader.stage == ShaderStage.fragment,
     );
-    if (shader.stage == ShaderStage.vertex && gpuContext.clipDepthZeroToOne) {
+    if (shader.stage == ShaderStage.vertex && webGlContext.clipDepthZeroToOne) {
       source = stripClipSpaceDepthRemap(source);
     }
-    shader._compile(source);
+    shader.webGl._compile(source);
 
     // Rebuild the reflection state from scratch (a reload may have changed
     // the uniforms, inputs, or samplers).
-    shader._structInstanceNames.clear();
-    shader._vertexInputs.clear();
-    shader._uniformStructs.clear();
-    shader._textureBindings.clear();
+    shader.webGl._structInstanceNames.clear();
+    shader.webGl._vertexInputs.clear();
+    shader.webGl._uniformStructs.clear();
+    shader.webGl._textureBindings.clear();
 
     // Parse `uniform TypeName instanceName;` so we can map reflected struct
     // type names to the instance names GL uniform lookups expect. Skips
@@ -119,7 +102,7 @@ base class ShaderLibrary {
       final type = m.group(1)!;
       final instance = m.group(2)!;
       if (type.startsWith('sampler') || type.startsWith('highp')) continue;
-      shader._structInstanceNames[type] = instance;
+      shader.webGl._structInstanceNames[type] = instance;
     }
 
     // Vertex inputs (+ derived stride).
@@ -129,13 +112,13 @@ base class ShaderLibrary {
       if (name == null) continue;
       final components = input.vecSize;
       final offset = input.offset;
-      shader._vertexInputs.add(
+      shader.webGl._vertexInputs.add(
         _VertexInput(name, input.location, components, offset),
       );
       final end = offset + components * 4;
       if (end > stride) stride = end;
     }
-    shader._vertexStride = stride;
+    shader.webGl._vertexStride = stride;
 
     // Uniform structs.
     for (final s
@@ -157,7 +140,7 @@ base class ShaderLibrary {
           ),
         );
       }
-      shader._uniformStructs[name] = _UniformStruct(
+      shader.webGl._uniformStructs[name] = _UniformStruct(
         name,
         s.sizeInBytes,
         members,
@@ -169,7 +152,7 @@ base class ShaderLibrary {
         in backend.uniformTextures ?? const <fb.ShaderUniformTexture>[]) {
       final name = t.name;
       if (name == null) continue;
-      shader._textureBindings.add(_TextureBinding(name));
+      shader.webGl._textureBindings.add(_TextureBinding(name));
     }
   }
 
@@ -182,9 +165,9 @@ base class ShaderLibrary {
   static ShaderLibrary fromInlineMap(
     Map<String, ({String source, ShaderStage stage})> shaders,
   ) {
-    final compiled = <String, Shader>{};
+    final compiled = <String, WebGlShader>{};
     shaders.forEach((name, entry) {
-      final s = Shader._(gpuContext, entry.stage);
+      final s = WebGlShader._(webGlContext, entry.stage);
       s._compile(
         transpileGlslEs100To300(
           entry.source,
@@ -193,15 +176,15 @@ base class ShaderLibrary {
       );
       compiled[name] = s;
     });
-    return ShaderLibrary._(compiled);
+    return WebGlShaderLibrary._(compiled);
   }
 }
 
 /// Asynchronously load and compile a `.shaderbundle` asset. The canonical
 /// loading entry point on web (where synchronous asset reads aren't
 /// possible).
-Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) async {
-  final library = await ShaderLibrary._loadFromAsset(assetName);
+Future<ShaderLibrary?> _loadShaderLibraryAsync(String assetName) async {
+  final library = await WebGlShaderLibrary._loadFromAsset(assetName);
   if (library != null) {
     registerShaderLibrarySource(
       library,
@@ -213,8 +196,8 @@ Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) async {
 
 /// Loads a shader bundle directly from [bytes].
 // TODO(shader-byte-reload): register byte-backed shaders with a reload source.
-Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async {
-  final library = ShaderLibrary._loadFromBytes(bytes);
+Future<ShaderLibrary?> _loadShaderLibraryFromBytesAsync(ByteData bytes) async {
+  final library = WebGlShaderLibrary._loadFromBytes(bytes);
   registerShaderLibrarySource(library, ShaderLibrarySource(bytes: bytes));
   return library;
 }
@@ -224,8 +207,8 @@ Future<ShaderLibrary?> loadShaderLibraryFromBytesAsync(ByteData bytes) async {
 /// material references and pipeline-cache keys stay valid). The web
 /// counterpart of flutter_gpu's `ShaderLibrary.reinitialize`; await it
 /// before evicting cached pipelines so rebuilt pipelines link the new code.
-Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
-  final tracked = ShaderLibrary._shadersByAsset[assetKey];
+Future<void> _reinitializeShaderLibraryAsync(String assetKey) async {
+  final tracked = WebGlShaderLibrary._shadersByAsset[assetKey];
   if (tracked == null) {
     debugPrint(
       'flutter_scene (web): no shaders were loaded from "$assetKey"; '
@@ -235,7 +218,7 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
   }
   tracked.removeWhere((entry) => entry.shader.target == null);
   if (tracked.isEmpty) {
-    ShaderLibrary._shadersByAsset.remove(assetKey);
+    WebGlShaderLibrary._shadersByAsset.remove(assetKey);
     return;
   }
 
@@ -252,7 +235,7 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
       if (record.name != name) continue;
       final shader = record.shader.target;
       if (shader == null) continue;
-      ShaderLibrary._populateFromBackend(shader, backend);
+      WebGlShaderLibrary._populateFromBackend(shader, backend);
       recompiled++;
     }
   }
@@ -266,7 +249,7 @@ Future<void> reinitializeShaderLibraryAsync(String assetKey) async {
 /// (shader identities are preserved so material references and pipeline-cache
 /// keys stay valid; entries new to the bundle are added). Returns an error
 /// description, or null on success.
-Future<String?> reinitializeShaderLibraryFromBytesAsync(
+Future<String?> _reinitializeShaderLibraryFromBytesAsync(
   ShaderLibrary library,
   ByteData bytes,
 ) async {
@@ -279,11 +262,13 @@ Future<String?> reinitializeShaderLibraryFromBytesAsync(
       final name = entry.name;
       final backend = entry.openglEs;
       if (name == null || backend == null) continue;
-      final existing = library._shaders[name];
+      final existing = library.webGl._shaders[name];
       if (existing != null) {
-        ShaderLibrary._populateFromBackend(existing, backend);
+        WebGlShaderLibrary._populateFromBackend(existing, backend);
       } else {
-        library._shaders[name] = ShaderLibrary._buildFromBackend(backend);
+        library.webGl._shaders[name] = WebGlShaderLibrary._buildFromBackend(
+          backend,
+        );
       }
     }
     return null;
@@ -294,6 +279,6 @@ Future<String?> reinitializeShaderLibraryFromBytesAsync(
 
 /// Compile a map of inline GLSL ES 1.00 sources into a ShaderLibrary.
 /// Web-specific; on native targets this throws.
-ShaderLibrary compileShaderLibraryInline(
+ShaderLibrary _compileShaderLibraryInline(
   Map<String, ({String source, ShaderStage stage})> shaders,
-) => ShaderLibrary.fromInlineMap(shaders);
+) => WebGlShaderLibrary.fromInlineMap(shaders);

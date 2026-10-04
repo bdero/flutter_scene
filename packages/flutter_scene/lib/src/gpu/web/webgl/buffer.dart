@@ -1,17 +1,4 @@
-part of '_gpu.dart';
-
-/// A reference to a byte range within a GPU-resident [DeviceBuffer].
-class BufferView {
-  const BufferView(
-    this.buffer, {
-    required this.offsetInBytes,
-    required this.lengthInBytes,
-  });
-
-  final DeviceBuffer buffer;
-  final int offsetInBytes;
-  final int lengthInBytes;
-}
+part of '_webgl.dart';
 
 /// A region of GPU-resident memory backed by WebGL2 buffer object(s).
 ///
@@ -29,13 +16,13 @@ class BufferView {
 /// is web-only and limited to buffers actually used as both.
 ///
 /// A caller that knows a buffer's single role does not need any of that; see
-/// [DeviceBuffer._initializeTyped] and [createGeometryBuffers].
-base class DeviceBuffer {
-  DeviceBuffer._initialize(
-    GpuContext gpuContext,
+/// [WebGlDeviceBuffer._initializeTyped] and [_createGeometryBuffers].
+final class WebGlDeviceBuffer extends DeviceBuffer {
+  WebGlDeviceBuffer._initialize(
+    WebGlContext webGlContext,
     this.storageMode,
     this.sizeInBytes,
-  ) : _gpuContext = gpuContext,
+  ) : _gpuContext = webGlContext,
       _typedTarget = null {
     _staging = Uint8List(sizeInBytes);
     _valid = true;
@@ -48,14 +35,14 @@ base class DeviceBuffer {
   /// be bound as BOTH kinds. When the caller commits to one, there is nothing
   /// to defer: the GL data store is allocated here, [overwrite] goes straight
   /// to `bufferSubData` from the caller's bytes, and no CPU copy is kept.
-  DeviceBuffer._initializeTyped(
-    GpuContext gpuContext,
+  WebGlDeviceBuffer._initializeTyped(
+    WebGlContext webGlContext,
     this.sizeInBytes,
     int target,
-  ) : _gpuContext = gpuContext,
+  ) : _gpuContext = webGlContext,
       storageMode = StorageMode.hostVisible,
       _typedTarget = target {
-    final gl = gpuContext._gl;
+    final gl = webGlContext._gl;
     final buffer = gl.createBuffer();
     if (buffer == null) {
       throw StateError('Failed to create WebGL buffer');
@@ -91,10 +78,10 @@ base class DeviceBuffer {
     gl.bindBuffer(target, buffer);
   }
 
-  final GpuContext _gpuContext;
+  final WebGlContext _gpuContext;
   late final Uint8List _staging;
 
-  /// Non-null for a buffer created by [DeviceBuffer._initializeTyped].
+  /// Non-null for a buffer created by [WebGlDeviceBuffer._initializeTyped].
   final int? _typedTarget;
 
   /// A float view over the whole staging buffer, used by the uniform upload
@@ -107,9 +94,12 @@ base class DeviceBuffer {
   web.WebGLBuffer? _glOtherBuffer;
   bool _valid = false;
 
+  @override
   final StorageMode storageMode;
+  @override
   final int sizeInBytes;
 
+  @override
   bool get isValid => _valid;
 
   int get _usage => storageMode == StorageMode.devicePrivate
@@ -164,6 +154,7 @@ base class DeviceBuffer {
 
   /// Overwrite a byte range. Source bytes must fit at the destination
   /// offset. Returns true on success.
+  @override
   bool overwrite(ByteData sourceBytes, {int destinationOffsetInBytes = 0}) {
     if (storageMode != StorageMode.hostVisible) {
       throw Exception(
@@ -276,6 +267,7 @@ base class DeviceBuffer {
 
   /// On native this flushes host-coherent caches. WebGL2 has no equivalent;
   /// `bufferSubData` is immediately visible to the GL implementation.
+  @override
   void flush({int offsetInBytes = 0, int lengthInBytes = -1}) {}
 }
 
@@ -296,11 +288,10 @@ base class DeviceBuffer {
 /// buffer-ghosting cost of rewriting live GL buffers only affects direct
 /// shim consumers who emplace against in-flight frames, matching what
 /// flutter_gpu does natively.
-base class HostBuffer {
-  static const int kDefaultBlockLengthInBytes = 1024000;
+final class WebGlHostBuffer extends HostBuffer {
   static const int _kFrameCount = 4;
 
-  HostBuffer._initialize(
+  WebGlHostBuffer._initialize(
     this._gpuContext, {
     this.blockLengthInBytes = HostBuffer.kDefaultBlockLengthInBytes,
   }) {
@@ -309,11 +300,13 @@ base class HostBuffer {
     }
   }
 
-  final GpuContext _gpuContext;
+  final WebGlContext _gpuContext;
 
   /// The length of each [DeviceBuffer] block.
+  @override
   final int blockLengthInBytes;
 
+  @override
   int get frameCount => _kFrameCount;
 
   int _frameCursor = 0;
@@ -362,6 +355,7 @@ base class HostBuffer {
   }
 
   /// Append byte data and return a view at the resulting GPU offset.
+  @override
   BufferView emplace(ByteData bytes) {
     final view = _allocateEmplacement(bytes);
     if (!view.buffer.overwrite(
@@ -380,6 +374,7 @@ base class HostBuffer {
 
   /// Resets the bump allocator to the beginning of the next frame's first
   /// [DeviceBuffer] block.
+  @override
   void reset() {
     _frameCursor = (_frameCursor + 1) % frameCount;
     _bufferCursor = 0;

@@ -1,4 +1,4 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// Reflected metadata for one member of a uniform struct.
 class _UniformMember {
@@ -60,13 +60,17 @@ class _VertexInput {
   final int offsetInBytes;
 }
 
-base class UniformSlot {
-  UniformSlot._(this.shader, this.uniformName);
-  final Shader shader;
+final class WebGlUniformSlot extends UniformSlot {
+  WebGlUniformSlot._(this.shader, this.uniformName);
+  @override
+  final WebGlShader shader;
+  @override
   final String uniformName;
 
+  @override
   int? get sizeInBytes => shader._uniformStructs[uniformName]?.sizeInBytes;
 
+  @override
   int? getMemberOffsetInBytes(String memberName) {
     final s = shader._uniformStructs[uniformName];
     if (s == null) return null;
@@ -77,10 +81,11 @@ base class UniformSlot {
   }
 }
 
-base class Shader {
-  Shader._(this._gpuContext, this.stage);
+final class WebGlShader extends Shader {
+  WebGlShader._(this._gpuContext, this.stage);
 
-  final GpuContext _gpuContext;
+  final WebGlContext _gpuContext;
+  @override
   final ShaderStage stage;
 
   web.WebGLShader? _glShader;
@@ -127,8 +132,9 @@ base class Shader {
   // ignore: library_private_types_in_public_api
   List<_TextureBinding> get textureBindings => _textureBindings;
 
+  @override
   UniformSlot getUniformSlot(String uniformName) =>
-      UniformSlot._(this, uniformName);
+      WebGlUniformSlot._(this, uniformName);
 
   /// Compile [source] (already in the target GLSL ES dialect) into this
   /// shader's `_glShader`. Internal use; callers (ShaderLibrary loader,

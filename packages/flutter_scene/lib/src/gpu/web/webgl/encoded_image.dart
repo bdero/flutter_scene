@@ -1,4 +1,4 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// Decodes [encoded] (any format the browser reads) and uploads it as an
 /// RGBA8 texture straight into this backend's own WebGL context, building
@@ -12,14 +12,14 @@ part of '_gpu.dart';
 ///
 /// Every backend exposes this entry point; one with no such path returns
 /// null and the caller decodes through `dart:ui` instead.
-Future<Texture?> createTextureFromEncodedImage(
+Future<Texture?> _createTextureFromEncodedImage(
   Uint8List encoded, {
   MipContent content = MipContent.color,
   bool mipmaps = true,
   int? maxMipLevels,
   int? maxSize,
 }) async {
-  final context = gpuContext;
+  final context = webGlContext;
   final gl = context._gl;
 
   web.ImageBitmapOptions options({int? width, int? height}) {
@@ -65,9 +65,12 @@ Future<Texture?> createTextureFromEncodedImage(
       height,
       mipLevelCount: levels,
     );
-    context._bindTextureForSetup(texture.glTarget, texture._texture);
+    context._bindTextureForSetup(
+      texture.webGl.glTarget,
+      texture.webGl._texture,
+    );
     gl.texSubImage2D(
-      texture.glTarget,
+      texture.webGl.glTarget,
       0,
       0,
       0,

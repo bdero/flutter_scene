@@ -1,9 +1,9 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// A linked WebGL program built from a vertex + fragment shader pair, plus
 /// cached reflection state used by RenderPass when binding resources.
-base class RenderPipeline {
-  RenderPipeline._(
+final class WebGlRenderPipeline extends RenderPipeline {
+  WebGlRenderPipeline._(
     this._gpuContext,
     this.vertexShader,
     this.fragmentShader, {
@@ -50,9 +50,11 @@ base class RenderPipeline {
     _buildUniformCaches();
   }
 
-  final GpuContext _gpuContext;
-  final Shader vertexShader;
-  final Shader fragmentShader;
+  final WebGlContext _gpuContext;
+  @override
+  final WebGlShader vertexShader;
+  @override
+  final WebGlShader fragmentShader;
   // ignore: unused_field
   final VertexLayout? _vertexLayout;
 
