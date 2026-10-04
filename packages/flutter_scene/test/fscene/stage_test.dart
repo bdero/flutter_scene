@@ -381,7 +381,7 @@ void main() {
       };
       applyFmatParameterOverrides(p, overrides);
 
-      final serialized = serializeFmatParameterOverrides(p.assignedValues);
+      final serialized = serializeFmatParameterOverrides(p);
       expect((serialized['gloss'] as DoubleValue).value, 0.5);
       expect((serialized['steps'] as IntValue).value, 4);
       expect((serialized['dir'] as Vec3Value).value, Vector3(1, 2, 3));

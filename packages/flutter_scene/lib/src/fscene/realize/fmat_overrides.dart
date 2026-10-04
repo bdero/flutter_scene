@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart';
 
 import 'package:scene/scene.dart';
+import 'package:flutter_scene/src/fmat/fmat_ast.dart' show FmatType;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/material/material_parameters.dart';
 
@@ -67,22 +68,23 @@ void applyFmatParameterOverrides(
   }
 }
 
-/// Maps the values recorded by `MaterialParameters.assignedValues` back to
+/// Maps the values recorded by [MaterialParameters.assignedValues] back to
 /// their serialized [PropertyValue] form, the reverse of
 /// [applyFmatParameterOverrides]. A texture value is resolved through
 /// [resolveTexture]; when that is absent (or returns null) the texture is
 /// skipped with a warning.
 Map<String, PropertyValue> serializeFmatParameterOverrides(
-  Map<String, Object> assignedValues, {
+  MaterialParameters parameters, {
   LocalId? Function(gpu.Texture texture)? resolveTexture,
 }) {
   final properties = <String, PropertyValue>{};
-  assignedValues.forEach((name, value) {
+  parameters.assignedValues.forEach((name, value) {
     switch (value) {
-      case double v:
-        properties[name] = DoubleValue(v);
-      case int v:
-        properties[name] = IntValue(v);
+      // By declaration, since on the web a whole double is also an int.
+      case num v when parameters.hasParameterOfType(name, FmatType.int_):
+        properties[name] = IntValue(v.toInt());
+      case num v:
+        properties[name] = DoubleValue(v.toDouble());
       case Vector2 v:
         properties[name] = Vec2Value(v.clone());
       case Vector3 v:
