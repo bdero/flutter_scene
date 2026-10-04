@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/src/gpu/shared/encoded_image_types.dart';
 import 'package:flutter_scene/src/gpu/web/_gpu.dart' as gpu;
+import 'package:flutter_scene/src/gpu/web/webgl/_webgl.dart' as webgl;
 import 'package:flutter_scene/src/texture/mipmap.dart';
 import 'package:web/web.dart' as web;
 
@@ -240,14 +241,15 @@ class _MipsTabState extends State<MipsTab> {
   }
 
   Uint8List _readLevel(gpu.Texture texture, int level, int width, int height) {
-    final gl = gpu.gpuContext.gl;
+    // Reads mips back through GL, so this tab is WebGL2 only.
+    final gl = (gpu.gpuContext as webgl.WebGlContext).gl;
     final fbo = gl.createFramebuffer();
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(
       web.WebGL2RenderingContext.FRAMEBUFFER,
       web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
       web.WebGL2RenderingContext.TEXTURE_2D,
-      texture.glTexture,
+      (texture as webgl.WebGlTexture).glTexture,
       level,
     );
     final out = Uint8List(width * height * 4).toJS;
