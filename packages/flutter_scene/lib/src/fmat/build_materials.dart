@@ -316,7 +316,7 @@ Future<void> _buildMaterials({
   // output keyed to it is separated by target. Several builds share one tree.
   final target = shaderBundleTargetKey(buildInput);
 
-  final frameworkShaders = await frameworkShaderInclude();
+  final frameworkShaders = await engineShaderIncludeDirectory(buildInput);
 
   // Generated GLSL and the synthesized manifest live under the package's build
   // directory; they are regenerated each run.

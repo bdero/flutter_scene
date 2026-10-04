@@ -4,6 +4,10 @@
 /// `package:hooks` off the wasm dependency graph.
 library;
 
+/// The GLSL ES version flutter_scene compiles its shaders for in the OpenGL ES
+/// dialect.
+const int engineGlesLanguageVersion = 300;
+
 /// Throws on web/wasm; see the library doc above. The native signature takes
 /// `BuildInput` / `BuildOutputBuilder` from `package:hooks`; this stub uses
 /// `Object` instead so it pulls in no `dart:io`.
