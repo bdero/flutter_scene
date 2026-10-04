@@ -14,13 +14,19 @@ uniform BloomThresholdInfo {
   float knee;
   // 0 for a plain box average (the second stage of a two-stage prefilter).
   float apply_threshold;
-  // Luminance above which a tap's contribution is scaled down to this
-  // limit (0 = no limit), so an isolated extreme pixel (a mirror glint of a
-  // small light) cannot flood the bloom while ordinary HDR passes through.
-  float firefly_limit;
+  // Firefly suppression (0 = off): within each aligned 2x2 group of source
+  // texels, a tap is weighted by 1 / (1 + luminance / this scale), so an
+  // isolated extreme pixel (a mirror glint of a small light) cannot flood
+  // the bloom or flicker as it moves, while a uniformly bright region keeps
+  // its full brightness.
+  float firefly_scale;
   // Source texels per bloom texel, per axis.
   vec2 footprint;
   vec2 source_size;
+  // Soft highlight compression (0 = off): a color whose brightest channel is
+  // b is scaled by 1 / (1 + b / this), so no source texel blooms brighter
+  // than this while ordinary highlights pass nearly unchanged.
+  float highlight;
 }
 threshold_info;
 
@@ -45,6 +51,11 @@ vec3 Threshold(vec2 uv) {
     return color;
   }
   float brightness = max(color.r, max(color.g, color.b));
+  if (threshold_info.highlight > 0.0) {
+    float compression = 1.0 / (1.0 + brightness / threshold_info.highlight);
+    color *= compression;
+    brightness *= compression;
+  }
 
   // Soft knee around the threshold so the bloom fades in gradually.
   float knee = threshold_info.knee;
@@ -56,35 +67,59 @@ vec3 Threshold(vec2 uv) {
   return color * contribution;
 }
 
+// Source texel groups per axis: a box of up to kMaxTaps texels straddles at
+// most this many aligned 2x2 groups.
+const int kMaxGroups = kMaxTaps / 2 + 1;
+
 void main() {
   vec2 size = threshold_info.source_size;
   // This texel's box, in source texels.
   vec2 lo = v_uv * size - 0.5 * threshold_info.footprint;
   vec2 hi = lo + threshold_info.footprint;
-  vec2 first = floor(lo);
-  ivec2 taps = ivec2(ceil(hi) - first);
-  float limit = threshold_info.apply_threshold > 0.5
-      ? threshold_info.firefly_limit
+  // The aligned 2x2 groups the box touches. Groups align to even source
+  // texels, so neighboring bloom texels group a shared texel the same way.
+  vec2 first_group = floor(floor(lo) * 0.5);
+  ivec2 groups = ivec2(floor((ceil(hi) - 1.0) * 0.5) - first_group) + 1;
+  float scale = threshold_info.apply_threshold > 0.5
+      ? threshold_info.firefly_scale
       : 0.0;
   vec3 sum = vec3(0.0);
-  for (int y = 0; y < kMaxTaps; y++) {
-    if (y >= taps.y) {
+  for (int gy = 0; gy < kMaxGroups; gy++) {
+    if (gy >= groups.y) {
       break;
     }
-    float ty = first.y + float(y);
-    float wy = min(hi.y, ty + 1.0) - max(lo.y, ty);
-    for (int x = 0; x < kMaxTaps; x++) {
-      if (x >= taps.x) {
+    for (int gx = 0; gx < kMaxGroups; gx++) {
+      if (gx >= groups.x) {
         break;
       }
-      float tx = first.x + float(x);
-      float wx = min(hi.x, tx + 1.0) - max(lo.x, tx);
-      vec3 tap = Threshold((vec2(tx, ty) + 0.5) / size);
-      float luminance = dot(tap, vec3(0.2126, 0.7152, 0.0722));
-      if (limit > 0.0 && luminance > limit) {
-        tap *= limit / luminance;
+      // The group's Karis-weighted average, carried by the box coverage of
+      // its texels. Unweighted, this is exactly the box average.
+      vec3 group_sum = vec3(0.0);
+      float group_weight = 0.0;
+      float group_coverage = 0.0;
+      for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 2; i++) {
+          vec2 t = (first_group + vec2(float(gx), float(gy))) * 2.0 +
+                   vec2(float(i), float(j));
+          float wx = min(hi.x, t.x + 1.0) - max(lo.x, t.x);
+          float wy = min(hi.y, t.y + 1.0) - max(lo.y, t.y);
+          if (wx <= 0.0 || wy <= 0.0) {
+            continue;
+          }
+          vec3 tap = Threshold((t + 0.5) / size);
+          float coverage = wx * wy;
+          float weight = coverage;
+          if (scale > 0.0) {
+            weight /= 1.0 + dot(tap, vec3(0.2126, 0.7152, 0.0722)) / scale;
+          }
+          group_sum += tap * weight;
+          group_weight += weight;
+          group_coverage += coverage;
+        }
       }
-      sum += tap * (wx * wy);
+      if (group_weight > 0.0) {
+        sum += group_sum * (group_coverage / group_weight);
+      }
     }
   }
   frag_color = vec4(

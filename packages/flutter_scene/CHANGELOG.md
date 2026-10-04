@@ -1,6 +1,7 @@
 ## 0.24.0
 
-* `BloomSettings.fireflyLimit` (default 50) caps how much one extreme pixel can bloom, so a mirror glint of a small intense light no longer floods the frame or strobes; ordinary bloom is unchanged.
+* Bloom weights an isolated extreme pixel down against its neighbors before blurring (`BloomSettings.fireflySuppression`, on by default), so a mirror glint of a small intense light no longer floods the frame or strobes, while bright regions bloom in full.
+* `BloomSettings.highlight` (default 1000) softly compresses extreme pixels before they bloom, so ordinary highlights pass nearly unchanged but no pixel floods the frame. 0 turns it off.
 * `PointLight.radius` and `SpotLight.radius` give a light a physical size, so glossy reflections widen to the emitter instead of peaking at a point, and the near-field falloff stops at its surface.
 * Opaque materials no longer `discard`, so mobile GPUs keep early depth testing and hidden-surface removal on for every opaque draw (frames 2.5 to 6x faster on a Mali-G57). Alpha-masked and LOD cross-fading draws cut out through a depth pre-draw instead; translucent cross-fades fade by opacity.
 * An alpha-masked `PhysicalMaterial` without a base color texture masks its shadows and depth by its vertex and factor alpha.
