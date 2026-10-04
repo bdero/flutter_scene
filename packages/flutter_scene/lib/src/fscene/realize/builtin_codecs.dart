@@ -1077,6 +1077,14 @@ class PointLightCodec extends DeclarativeComponentCodec<PointLightComponent> {
       get: (c) => c.light.falloffExponent,
       set: (c, v) => c.light.falloffExponent = v,
     ),
+    ComponentField.number(
+      'radius',
+      defaultValue: 0.0,
+      doc: 'Emitter radius; glossy reflections widen to its size.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 1)],
+      get: (c) => c.light.radius,
+      set: (c, v) => c.light.radius = v,
+    ),
     ComponentField.boolean(
       'castsShadow',
       defaultValue: false,
@@ -1220,6 +1228,14 @@ class SpotLightCodec extends DeclarativeComponentCodec<SpotLightComponent> {
       constraints: const [Range.nonNegative(), SoftRange(0, 4)],
       get: (c) => c.light.falloffExponent,
       set: (c, v) => c.light.falloffExponent = v,
+    ),
+    ComponentField.number(
+      'radius',
+      defaultValue: 0.0,
+      doc: 'Emitter radius; glossy reflections widen to its size.',
+      constraints: const [Range.nonNegative(), SoftRange(0, 1)],
+      get: (c) => c.light.radius,
+      set: (c, v) => c.light.radius = v,
     ),
     ComponentField.number(
       'innerConeAngle',

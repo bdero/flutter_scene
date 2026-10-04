@@ -887,6 +887,10 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     highp vec4 l1 = FetchPunctualTexel(light_row, 1); // color.rgb, inverse range
     float type = l0.w;
     highp vec3 radiance = l1.rgb;
+    // A sized point or spot light (radius in texel 3.w) widens the specular
+    // lobe by its apparent half-angle, so a glossy surface reflects a bulb
+    // rather than a point of unbounded radiance.
+    float light_roughness = roughness;
     if (type > 2.5) {
 #ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
       // TODO(custom-ambient-area-lights): the LTC tables ride brdf_lut, which
@@ -981,8 +985,18 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
       light_context.shadow_slot = l3.y;
 #endif
+      // The source radius floors the distance, so a surface inside the
+      // bulb is not lit beyond its surface.
+      highp float source_radius = l3.w;
       highp float distance_attenuation =
-          (window * window) / max(pow(dist_sq, l3.z * 0.5), 1e-4);
+          (window * window) /
+          max(pow(max(dist_sq, source_radius * source_radius), l3.z * 0.5),
+              1e-4);
+      if (source_radius > 0.0) {
+        float widened = roughness * roughness +
+                        source_radius * 0.5 * inversesqrt(max(dist_sq, 1e-8));
+        light_roughness = sqrt(min(widened, 1.0));
+      }
       radiance *= distance_attenuation;
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
       light_context.distance_attenuation = distance_attenuation;
@@ -1036,15 +1050,16 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     highp vec3 punctual_specular;
     direct_diffuse += EvaluateAnalyticLightTerms(
         material, punctual_light_vector, radiance, normal, camera_normal,
-        albedo, metallic, roughness, reflectance, n_dot_v, material.specular,
-        anisotropic_tangent, anisotropic_bitangent, punctual_specular);
+        albedo, metallic, light_roughness, reflectance, n_dot_v,
+        material.specular, anisotropic_tangent, anisotropic_bitangent,
+        punctual_specular);
     direct_specular += punctual_specular;
 #endif
 #else
     direct += EvaluateAnalyticLight(
         material, punctual_light_vector, radiance, normal, camera_normal,
-        albedo, metallic, roughness, reflectance, n_dot_v, material.specular,
-        anisotropic_tangent, anisotropic_bitangent);
+        albedo, metallic, light_roughness, reflectance, n_dot_v,
+        material.specular, anisotropic_tangent, anisotropic_bitangent);
 #endif
 #ifdef FLUTTER_SCENE_PHYSICAL_MATERIAL
     coat_direct += EvaluateClearcoatLight(
