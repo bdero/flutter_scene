@@ -1,4 +1,4 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// Global graphics context. Lazily creates a shared `OffscreenCanvas` +
 /// `WebGL2RenderingContext` the first time it's accessed; all resources
@@ -7,8 +7,8 @@ part of '_gpu.dart';
 /// Mirrors `package:flutter_gpu`'s `GpuContext`. The shim's web GpuContext
 /// is `base class`-shaped for API parity but doesn't extend any
 /// platform-specific native wrapper.
-base class GpuContext {
-  GpuContext._createDefault() {
+final class WebGlContext extends GpuContext {
+  WebGlContext._createDefault() {
     _canvas = web.OffscreenCanvas(1, 1);
     // antialias:false makes the default framebuffer single-sampled, so we
     // can blitFramebuffer single-sample render targets onto it for present.
@@ -61,7 +61,7 @@ base class GpuContext {
   late final web.WebGL2RenderingContext _gl;
 
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
-  /// buffer), in least-recently-used order; see RenderPass._applyVertexState.
+  /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
   static const int _kMaxCachedVaos = 512;
   final Map<String, web.WebGLVertexArrayObject> _vaoCache =
       <String, web.WebGLVertexArrayObject>{};
@@ -79,23 +79,30 @@ base class GpuContext {
   /// shim's own internal tests.
   web.WebGL2RenderingContext get gl => _gl;
 
+  @override
   PixelFormat get defaultColorFormat => PixelFormat.r8g8b8a8UNormInt;
 
+  @override
   PixelFormat get defaultStencilFormat => PixelFormat.s8UInt;
 
   // Forward depth (shadow maps, masks) gains nothing from float, so only
-  // reversedDepthStencilFormat pays for it.
+  // _reversedDepthStencilFormat pays for it.
+  @override
   PixelFormat get defaultDepthStencilFormat => PixelFormat.d24UnormS8Uint;
 
+  @override
   int get minimumUniformByteAlignment => 256;
 
+  @override
   bool get doesSupportOffscreenMSAA => true;
 
   // WebGL2 framebufferTexture2D accepts any allocated mip level.
+  @override
   bool get doesSupportFramebufferRenderMipmap => true;
 
   // texStorage2D allocates complete mip chains; per-level overwrite plus
   // mipmap min filters sample correctly.
+  @override
   bool get doesSupportManuallyMippedTextures => true;
 
   final Map<TextureCompressionFamily, bool> _compressionSupport = {};
@@ -103,6 +110,7 @@ base class GpuContext {
   /// Reports block-compression support by probing (and enabling) the matching
   /// WebGL2 compressed-texture extension. Enabling it here makes the compressed
   /// internal formats valid for the `createTexture` / `overwrite` upload path.
+  @override
   bool supportsTextureCompression(TextureCompressionFamily family) {
     return _compressionSupport.putIfAbsent(family, () {
       final name = switch (family) {
@@ -151,19 +159,20 @@ base class GpuContext {
     _gl.bindTexture(target, texture);
   }
 
+  @override
   DeviceBuffer createDeviceBuffer(StorageMode storageMode, int sizeInBytes) {
     if (storageMode == StorageMode.deviceTransient) {
       throw Exception(
         'DeviceBuffers cannot be set to StorageMode.deviceTransient',
       );
     }
-    return DeviceBuffer._initialize(this, storageMode, sizeInBytes);
+    return WebGlDeviceBuffer._initialize(this, storageMode, sizeInBytes);
   }
 
   /// Web-only. A host-visible buffer committed to ONE GL role: vertex
   /// (`index: false`) or index (`index: true`) data. Skips the staging mirror
   /// and the lazy first-bind upload a generic buffer needs; see
-  /// [DeviceBuffer._initializeTyped]. [createGeometryBuffers] is built from
+  /// [WebGlDeviceBuffer._initializeTyped]. [_createGeometryBuffers] is built from
   /// it, and so can a caller that manages its own [BufferView]s.
   ///
   /// The GL store is hinted STATIC_DRAW, which suits geometry written once at
@@ -173,7 +182,7 @@ base class GpuContext {
   // TODO(web-buffers): Reuse a geometry's buffers when it re-uploads at the
   // same size, instead of allocating a new pair and dropping the old one.
   DeviceBuffer createTypedDeviceBuffer(int sizeInBytes, {required bool index}) {
-    return DeviceBuffer._initializeTyped(
+    return WebGlDeviceBuffer._initializeTyped(
       this,
       sizeInBytes,
       index
@@ -182,8 +191,9 @@ base class GpuContext {
     );
   }
 
+  @override
   DeviceBuffer createDeviceBufferWithCopy(ByteData data) {
-    final buffer = DeviceBuffer._initialize(
+    final buffer = WebGlDeviceBuffer._initialize(
       this,
       StorageMode.hostVisible,
       data.lengthInBytes,
@@ -192,12 +202,17 @@ base class GpuContext {
     return buffer;
   }
 
+  @override
   HostBuffer createHostBuffer({
     int blockLengthInBytes = HostBuffer.kDefaultBlockLengthInBytes,
   }) {
-    return HostBuffer._initialize(this, blockLengthInBytes: blockLengthInBytes);
+    return WebGlHostBuffer._initialize(
+      this,
+      blockLengthInBytes: blockLengthInBytes,
+    );
   }
 
+  @override
   Texture createTexture(
     StorageMode storageMode,
     int width,
@@ -215,7 +230,7 @@ base class GpuContext {
         (sampleCount == 1
             ? TextureType.texture2D
             : TextureType.texture2DMultisample);
-    return Texture._initialize(
+    return WebGlTexture._initialize(
       this,
       storageMode,
       format,
@@ -230,34 +245,34 @@ base class GpuContext {
     );
   }
 
-  CommandBuffer createCommandBuffer() => CommandBuffer._(this);
+  @override
+  CommandBuffer createCommandBuffer() => WebGlCommandBuffer._(this);
 
   // Linked-program cache. Program linking is expensive and some callers
   // create a pipeline per draw per frame; native flutter_gpu absorbs that,
   // so the shim must too. Keyed by shader identity plus compile generation,
   // so a hot-reloaded shader relinks while untouched pairs stay cached.
-  final Map<(Shader, Shader, int, int), RenderPipeline> _pipelineCache = {};
+  final Map<(WebGlShader, WebGlShader, int, int), WebGlRenderPipeline>
+  _pipelineCache = {};
 
+  @override
   RenderPipeline createRenderPipeline(
     Shader vertexShader,
     Shader fragmentShader, {
     VertexLayout? vertexLayout,
   }) {
+    final vertex = vertexShader.webGl;
+    final fragment = fragmentShader.webGl;
     if (vertexLayout != null) {
       // Custom layouts are rare (inline smoke pipelines); don't cache.
-      return RenderPipeline._(
+      return WebGlRenderPipeline._(
         this,
-        vertexShader,
-        fragmentShader,
+        vertex,
+        fragment,
         vertexLayout: vertexLayout,
       );
     }
-    final key = (
-      vertexShader,
-      fragmentShader,
-      vertexShader._generation,
-      fragmentShader._generation,
-    );
+    final key = (vertex, fragment, vertex._generation, fragment._generation);
     final cached = _pipelineCache[key];
     if (cached != null) return cached;
     if (_pipelineCache.length >= 512) {
@@ -268,11 +283,7 @@ base class GpuContext {
       }
       _pipelineCache.clear();
     }
-    return _pipelineCache[key] = RenderPipeline._(
-      this,
-      vertexShader,
-      fragmentShader,
-    );
+    return _pipelineCache[key] = WebGlRenderPipeline._(this, vertex, fragment);
   }
 
   // Framebuffer cache, keyed by the attachment textures. A pass previously
@@ -339,7 +350,7 @@ base class GpuContext {
       web.WebGL2RenderingContext.READ_FRAMEBUFFER,
       web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
       web.WebGL2RenderingContext.TEXTURE_2D,
-      texture.glTexture,
+      texture.webGl.glTexture,
       0,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
@@ -400,7 +411,7 @@ base class GpuContext {
 }
 
 /// The default graphics context. Lazily initialized.
-final GpuContext gpuContext = GpuContext._createDefault();
+final WebGlContext webGlContext = WebGlContext._createDefault();
 
 /// Blit [texture]'s contents onto the GpuContext's `OffscreenCanvas` and
 /// return it as a `ui.Image` for display in a Flutter widget. Web-only;
@@ -408,22 +419,22 @@ final GpuContext gpuContext = GpuContext._createDefault();
 ///
 /// Bridge helper between offscreen-rendered Textures and Flutter widgets
 /// until the swapchain / on-screen presentation story lands in Phase 5.
-Future<ui.Image> presentTextureAsImage(
+Future<ui.Image> _presentTextureAsImage(
   Texture texture, {
   bool transferOwnership = false,
-}) => gpuContext._presentTextureAsImage(
+}) => webGlContext._presentTextureAsImage(
   texture,
   transferOwnership: transferOwnership,
 );
 
-/// Writes mesh data into a buffer from [createGeometryBuffers] (or an arena's).
+/// Writes mesh data into a buffer from [_createGeometryBuffers] (or an arena's).
 /// [source] keeps its element type so the web backend can hand it to GL as-is;
 /// see [DeviceBuffer.overwriteTypedData].
-bool writeGeometryData(
+bool _writeGeometryData(
   DeviceBuffer buffer,
   TypedData source, {
   required int destinationOffsetInBytes,
-}) => buffer.overwriteTypedData(
+}) => buffer.webGl.overwriteTypedData(
   source,
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
@@ -432,9 +443,9 @@ bool writeGeometryData(
 /// at 1, far at 0): float while EXT_clip_control puts clip depth in [0, 1],
 /// else the context default, since under the `[-1, 1]` remap a float buffer
 /// holds no more than 24 bits would.
-PixelFormat get reversedDepthStencilFormat => gpuContext.clipDepthZeroToOne
+PixelFormat get _reversedDepthStencilFormat => webGlContext.clipDepthZeroToOne
     ? PixelFormat.d32FloatS8UInt
-    : gpuContext.defaultDepthStencilFormat;
+    : webGlContext.defaultDepthStencilFormat;
 
 /// The buffers one mesh upload needs: [vertexBytes] of vertex streams and
 /// [indexBytes] of indices. On web they are two role-typed buffers, because
@@ -442,14 +453,17 @@ PixelFormat get reversedDepthStencilFormat => gpuContext.clipDepthZeroToOne
 /// [DeviceBuffer] costs a staging mirror and a second full upload.
 /// [indexBaseOffset] is where the indices start inside [index].
 ({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})
-createGeometryBuffers(int vertexBytes, int indexBytes) {
-  final vertex = gpuContext.createTypedDeviceBuffer(vertexBytes, index: false);
+_createGeometryBuffers(int vertexBytes, int indexBytes) {
+  final vertex = webGlContext.createTypedDeviceBuffer(
+    vertexBytes,
+    index: false,
+  );
   return (
     vertex: vertex,
     // Non-indexed geometry never binds an index buffer; do not allocate one.
     index: indexBytes == 0
         ? vertex
-        : gpuContext.createTypedDeviceBuffer(indexBytes, index: true),
+        : webGlContext.createTypedDeviceBuffer(indexBytes, index: true),
     indexBaseOffset: 0,
   );
 }

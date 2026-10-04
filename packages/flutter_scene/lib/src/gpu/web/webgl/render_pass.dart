@@ -1,166 +1,4 @@
-part of '_gpu.dart';
-
-// ---------------------------------------------------------------------------
-// Render-target value types (mirroring flutter_gpu).
-// ---------------------------------------------------------------------------
-
-base class ColorAttachment {
-  ColorAttachment({
-    this.loadAction = LoadAction.clear,
-    this.storeAction = StoreAction.store,
-    vm.Vector4? clearValue,
-    required this.texture,
-    this.mipLevel = 0,
-    this.slice = 0,
-    this.resolveTexture,
-  }) : clearValue = clearValue ?? vm.Vector4.zero();
-
-  LoadAction loadAction;
-  StoreAction storeAction;
-  vm.Vector4 clearValue;
-  Texture texture;
-
-  /// The mip level of [texture] to render into.
-  int mipLevel;
-
-  /// The slice of [texture] to render into. Cubemap textures are not
-  /// supported on the web backend, so this must be 0.
-  // TODO(rendertarget): cubemap slices on the web backend.
-  int slice;
-
-  Texture? resolveTexture;
-}
-
-base class DepthStencilAttachment {
-  DepthStencilAttachment({
-    this.depthLoadAction = LoadAction.clear,
-    this.depthStoreAction = StoreAction.dontCare,
-    this.depthClearValue = 0.0,
-    this.stencilLoadAction = LoadAction.clear,
-    this.stencilStoreAction = StoreAction.dontCare,
-    this.stencilClearValue = 0,
-    required this.texture,
-    this.mipLevel = 0,
-    this.slice = 0,
-  });
-
-  LoadAction depthLoadAction;
-  StoreAction depthStoreAction;
-  double depthClearValue;
-  LoadAction stencilLoadAction;
-  StoreAction stencilStoreAction;
-  int stencilClearValue;
-  Texture texture;
-
-  /// The mip level of [texture] to render into.
-  int mipLevel;
-
-  /// The slice of [texture] to render into. Cubemap textures are not
-  /// supported on the web backend, so this must be 0.
-  int slice;
-}
-
-base class StencilConfig {
-  StencilConfig({
-    this.compareFunction = CompareFunction.always,
-    this.stencilFailureOperation = StencilOperation.keep,
-    this.depthFailureOperation = StencilOperation.keep,
-    this.depthStencilPassOperation = StencilOperation.keep,
-    this.readMask = 0xFFFFFFFF,
-    this.writeMask = 0xFFFFFFFF,
-  });
-
-  CompareFunction compareFunction;
-  StencilOperation stencilFailureOperation;
-  StencilOperation depthFailureOperation;
-  StencilOperation depthStencilPassOperation;
-  int readMask;
-  int writeMask;
-}
-
-enum StencilFace { both, front, back }
-
-base class ColorBlendEquation {
-  ColorBlendEquation({
-    this.colorBlendOperation = BlendOperation.add,
-    this.sourceColorBlendFactor = BlendFactor.one,
-    this.destinationColorBlendFactor = BlendFactor.oneMinusSourceAlpha,
-    this.alphaBlendOperation = BlendOperation.add,
-    this.sourceAlphaBlendFactor = BlendFactor.one,
-    this.destinationAlphaBlendFactor = BlendFactor.oneMinusSourceAlpha,
-  });
-
-  BlendOperation colorBlendOperation;
-  BlendFactor sourceColorBlendFactor;
-  BlendFactor destinationColorBlendFactor;
-  BlendOperation alphaBlendOperation;
-  BlendFactor sourceAlphaBlendFactor;
-  BlendFactor destinationAlphaBlendFactor;
-}
-
-base class SamplerOptions {
-  SamplerOptions({
-    this.minFilter = MinMagFilter.nearest,
-    this.magFilter = MinMagFilter.nearest,
-    this.mipFilter = MipFilter.nearest,
-    this.widthAddressMode = SamplerAddressMode.clampToEdge,
-    this.heightAddressMode = SamplerAddressMode.clampToEdge,
-    this.maxAnisotropy = 1,
-  });
-
-  MinMagFilter minFilter;
-  MinMagFilter magFilter;
-  MipFilter mipFilter;
-  SamplerAddressMode widthAddressMode;
-  SamplerAddressMode heightAddressMode;
-
-  /// The maximum anisotropy clamp used when sampling. The default value of 1
-  /// disables anisotropic filtering. Mirrors `package:flutter_gpu`; applied via
-  /// `EXT_texture_filter_anisotropic` and clamped to the device maximum.
-  int maxAnisotropy;
-}
-
-base class DepthRange {
-  DepthRange({this.zNear = 0.0, this.zFar = 1.0});
-  double zNear;
-  double zFar;
-}
-
-base class Scissor {
-  Scissor({this.x = 0, this.y = 0, this.width = 0, this.height = 0});
-  int x, y, width, height;
-}
-
-base class Viewport {
-  Viewport({
-    this.x = 0,
-    this.y = 0,
-    this.width = 0,
-    this.height = 0,
-    DepthRange? depthRange,
-  }) : depthRange = depthRange ?? DepthRange();
-
-  int x, y, width, height;
-  DepthRange depthRange;
-}
-
-base class RenderTarget {
-  const RenderTarget({
-    this.colorAttachments = const <ColorAttachment>[],
-    this.depthStencilAttachment,
-  });
-
-  RenderTarget.singleColor(
-    ColorAttachment colorAttachment, {
-    DepthStencilAttachment? depthStencilAttachment,
-  }) : this(
-         colorAttachments: [colorAttachment],
-         depthStencilAttachment: depthStencilAttachment,
-       );
-
-  final List<ColorAttachment> colorAttachments;
-  final DepthStencilAttachment? depthStencilAttachment;
-}
+part of '_webgl.dart';
 
 // ---------------------------------------------------------------------------
 // RenderPass: records bind / state / draw calls and immediately issues them
@@ -174,8 +12,8 @@ const String _staleBundleHint =
     'If the app was just rebuilt, a cache in front of the server (a service '
     'worker, a CDN) may be serving a shader bundle from the previous build.';
 
-base class RenderPass {
-  RenderPass._(this._gpuContext, this._target) {
+final class WebGlRenderPass extends RenderPass {
+  WebGlRenderPass._(this._gpuContext, this._target) {
     _bindFramebuffer();
     // A scissor is per pass too, and would clip the load action's clear.
     _gpuContext._gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
@@ -194,10 +32,10 @@ base class RenderPass {
     gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
   }
 
-  final GpuContext _gpuContext;
+  final WebGlContext _gpuContext;
   final RenderTarget _target;
 
-  RenderPipeline? _boundPipeline;
+  WebGlRenderPipeline? _boundPipeline;
   web.WebGLVertexArrayObject? _vao;
 
   /// Vertex-stream bindings recorded since the last [clearBindings], applied
@@ -292,8 +130,8 @@ base class RenderPass {
       gl.framebufferTexture2D(
         web.WebGL2RenderingContext.FRAMEBUFFER,
         web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
-        color.glSliceTarget(slice),
-        color.glTexture,
+        color.webGl.glSliceTarget(slice),
+        color.webGl.glTexture,
         mipLevel,
       );
     } else {
@@ -305,7 +143,7 @@ base class RenderPass {
         web.WebGL2RenderingContext.FRAMEBUFFER,
         web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
         web.WebGL2RenderingContext.RENDERBUFFER,
-        color.glRenderbuffer,
+        color.webGl.glRenderbuffer,
       );
     }
 
@@ -315,7 +153,7 @@ base class RenderPass {
           web.WebGL2RenderingContext.FRAMEBUFFER,
           web.WebGL2RenderingContext.DEPTH_STENCIL_ATTACHMENT,
           web.WebGL2RenderingContext.TEXTURE_2D,
-          depth.glTexture,
+          depth.webGl.glTexture,
           0,
         );
       } else {
@@ -323,7 +161,7 @@ base class RenderPass {
           web.WebGL2RenderingContext.FRAMEBUFFER,
           web.WebGL2RenderingContext.DEPTH_STENCIL_ATTACHMENT,
           web.WebGL2RenderingContext.RENDERBUFFER,
-          depth.glRenderbuffer,
+          depth.webGl.glRenderbuffer,
         );
       }
     }
@@ -376,16 +214,18 @@ base class RenderPass {
 
   // ---- public API ----------------------------------------------------------
 
+  @override
   void bindPipeline(RenderPipeline pipeline) {
     final gl = _gpuContext._gl;
-    _boundPipeline = pipeline;
-    gl.useProgram(pipeline._program);
+    _boundPipeline = pipeline.webGl;
+    gl.useProgram(pipeline.webGl._program);
     // Give every active uniform block a valid (zeroed) buffer up front, so a
     // block the caller never binds does not raise a used-but-unbound uniform
     // buffer error on this backend. Explicit bindUniform calls override it.
-    pipeline._bindDefaultUniformBlocks();
+    pipeline.webGl._bindDefaultUniformBlocks();
   }
 
+  @override
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) {
     final pipeline = _boundPipeline;
     if (pipeline == null) {
@@ -438,7 +278,9 @@ base class RenderPass {
   void _applyVertexBinding(BufferView bufferView, int slot) {
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
-    bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
+    bufferView.buffer.webGl._bindForTarget(
+      web.WebGL2RenderingContext.ARRAY_BUFFER,
+    );
 
     final layout = pipeline.vertexLayout;
     if (layout != null) {
@@ -560,11 +402,11 @@ base class RenderPass {
         _applyVertexBinding(view, slot);
       }
       // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
-      indexView?.buffer._bindForTarget(
+      indexView?.buffer.webGl._bindForTarget(
         web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
       );
       cache[cacheKey] = vao;
-      if (cache.length > GpuContext._kMaxCachedVaos) {
+      if (cache.length > WebGlContext._kMaxCachedVaos) {
         final oldest = cache.keys.first;
         gl.deleteVertexArray(cache.remove(oldest)!);
       }
@@ -574,6 +416,7 @@ base class RenderPass {
     }
   }
 
+  @override
   void bindIndexBuffer(BufferView bufferView, IndexType indexType) {
     // Deferred: ELEMENT_ARRAY_BUFFER binding is VAO state, applied (through
     // the VAO cache) when the draw is issued.
@@ -581,12 +424,13 @@ base class RenderPass {
     _indexType = indexType;
   }
 
+  @override
   void bindUniform(UniformSlot slot, BufferView bufferView) {
     final pipeline = _boundPipeline;
     if (pipeline == null) {
       throw StateError('bindUniform called before bindPipeline');
     }
-    final struct = slot.shader._uniformStructs[slot.uniformName];
+    final struct = slot.shader.webGl._uniformStructs[slot.uniformName];
     if (struct == null) {
       // Match the native backend, which throws when the shader has no uniform
       // slot of this name. Swallowing it silently binds nothing and the draw
@@ -610,7 +454,7 @@ base class RenderPass {
     // UNIFORM_BUFFER_OFFSET_ALIGNMENT.
     final blockBinding = pipeline._structBlockBindings[struct.name];
     if (blockBinding != null) {
-      final glBuffer = bufferView.buffer._bindForTarget(
+      final glBuffer = bufferView.buffer.webGl._bindForTarget(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
       );
       // Bind at least the driver-reported block data size; the emplaced
@@ -633,7 +477,7 @@ base class RenderPass {
       return;
     }
 
-    final floats = bufferView.buffer._stagingFloats;
+    final floats = bufferView.buffer.webGl._stagingFloats;
     final base = bufferView.offsetInBytes;
     final locations = pipeline._structLocations[struct.name];
     for (var i = 0; i < struct.members.length; i++) {
@@ -711,6 +555,7 @@ base class RenderPass {
     }
   }
 
+  @override
   void bindTexture(
     UniformSlot slot,
     Texture texture, {
@@ -737,17 +582,17 @@ base class RenderPass {
     }
 
     final gl = _gpuContext._gl;
-    final target = texture.glTarget;
+    final target = texture.webGl.glTarget;
     gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
-    gl.bindTexture(target, texture.glTexture);
+    gl.bindTexture(target, texture.webGl.glTexture);
     _boundTextureUnits[unit] = target;
     if (sampler != null) {
       // Sampler parameters are per-texture-object GL state; skip the ones
       // already applied to this texture. Per-draw texParameteri calls are
       // validated in the browser's GPU process and add up across draws.
       final minFilter = _glMinFilter(sampler, texture);
-      if (texture._lastMinFilter != minFilter) {
-        texture._lastMinFilter = minFilter;
+      if (texture.webGl._lastMinFilter != minFilter) {
+        texture.webGl._lastMinFilter = minFilter;
         gl.texParameteri(
           target,
           web.WebGL2RenderingContext.TEXTURE_MIN_FILTER,
@@ -757,8 +602,8 @@ base class RenderPass {
       final magFilter = sampler.magFilter == MinMagFilter.nearest
           ? web.WebGL2RenderingContext.NEAREST
           : web.WebGL2RenderingContext.LINEAR;
-      if (texture._lastMagFilter != magFilter) {
-        texture._lastMagFilter = magFilter;
+      if (texture.webGl._lastMagFilter != magFilter) {
+        texture.webGl._lastMagFilter = magFilter;
         gl.texParameteri(
           target,
           web.WebGL2RenderingContext.TEXTURE_MAG_FILTER,
@@ -766,8 +611,8 @@ base class RenderPass {
         );
       }
       final wrapS = _glAddressMode(sampler.widthAddressMode);
-      if (texture._lastWrapS != wrapS) {
-        texture._lastWrapS = wrapS;
+      if (texture.webGl._lastWrapS != wrapS) {
+        texture.webGl._lastWrapS = wrapS;
         gl.texParameteri(
           target,
           web.WebGL2RenderingContext.TEXTURE_WRAP_S,
@@ -775,8 +620,8 @@ base class RenderPass {
         );
       }
       final wrapT = _glAddressMode(sampler.heightAddressMode);
-      if (texture._lastWrapT != wrapT) {
-        texture._lastWrapT = wrapT;
+      if (texture.webGl._lastWrapT != wrapT) {
+        texture.webGl._lastWrapT = wrapT;
         gl.texParameteri(
           target,
           web.WebGL2RenderingContext.TEXTURE_WRAP_T,
@@ -787,8 +632,8 @@ base class RenderPass {
       if (sampler.maxAnisotropy > 1 && maxAniso > 1) {
         // EXT_texture_filter_anisotropic: TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE.
         final anisotropy = sampler.maxAnisotropy.clamp(1, maxAniso).toDouble();
-        if (texture._lastAnisotropy != anisotropy) {
-          texture._lastAnisotropy = anisotropy;
+        if (texture.webGl._lastAnisotropy != anisotropy) {
+          texture.webGl._lastAnisotropy = anisotropy;
           gl.texParameterf(target, 0x84FE, anisotropy);
         }
       }
@@ -828,6 +673,7 @@ base class RenderPass {
     }
   }
 
+  @override
   void clearBindings() {
     // Drops every per-draw resource binding, leaving the bound pipeline in
     // place (matching flutter_gpu, where the pipeline persists until the next
@@ -861,6 +707,7 @@ base class RenderPass {
     _pendingVertexBindings.clear();
   }
 
+  @override
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
     final gl = _gpuContext._gl;
     if (enable) {
@@ -870,6 +717,7 @@ base class RenderPass {
     }
   }
 
+  @override
   void setColorBlendEquation(
     ColorBlendEquation equation, {
     int colorAttachmentIndex = 0,
@@ -887,10 +735,12 @@ base class RenderPass {
     );
   }
 
+  @override
   void setDepthWriteEnable(bool enable) {
     _gpuContext._gl.depthMask(enable);
   }
 
+  @override
   void setDepthCompareOperation(CompareFunction compareFunction) {
     final gl = _gpuContext._gl;
     // GL skips depth writes while the test is disabled, so `always` keeps
@@ -903,11 +753,13 @@ base class RenderPass {
   StencilConfig _stencilBack = StencilConfig();
   int _stencilReference = 0;
 
+  @override
   void setStencilReference(int referenceValue) {
     _stencilReference = referenceValue;
     _applyStencil();
   }
 
+  @override
   void setStencilConfig(
     StencilConfig configuration, {
     StencilFace targetFace = StencilFace.both,
@@ -963,6 +815,7 @@ base class RenderPass {
     StencilOperation.decrementWrap => web.WebGL2RenderingContext.DECR_WRAP,
   };
 
+  @override
   void setCullMode(CullMode cullMode) {
     final gl = _gpuContext._gl;
     switch (cullMode) {
@@ -977,14 +830,17 @@ base class RenderPass {
     }
   }
 
+  @override
   void setPolygonMode(PolygonMode polygonMode) {
     /* not implemented; WebGL2 has no glPolygonMode */
   }
 
+  @override
   void setPrimitiveType(PrimitiveType primitiveType) {
     _primitiveType = primitiveType;
   }
 
+  @override
   void setWindingOrder(WindingOrder windingOrder) {
     // Inverted relative to the requested order: the generated GLES vertex
     // shaders multiply gl_Position.y by `_impeller_y_flip = -1`, which mirrors
@@ -1063,12 +919,14 @@ base class RenderPass {
     }
   }
 
+  @override
   void setScissor(Scissor scissor) {
     final gl = _gpuContext._gl;
     gl.enable(web.WebGL2RenderingContext.SCISSOR_TEST);
     gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
   }
 
+  @override
   void setViewport(Viewport viewport) {
     final gl = _gpuContext._gl;
     gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
@@ -1090,7 +948,9 @@ base class RenderPass {
     }
     final perVertex = bufferView.lengthInBytes ~/ vertexCount;
     final components = perVertex ~/ 4;
-    bufferView.buffer._bindForTarget(web.WebGL2RenderingContext.ARRAY_BUFFER);
+    bufferView.buffer.webGl._bindForTarget(
+      web.WebGL2RenderingContext.ARRAY_BUFFER,
+    );
     gl.enableVertexAttribArray(location);
     gl.vertexAttribPointer(
       location,
@@ -1102,6 +962,7 @@ base class RenderPass {
     );
   }
 
+  @override
   void draw(int vertexCount, {int instanceCount = 1}) {
     final gl = _gpuContext._gl;
     if (_boundPipeline == null) {
@@ -1122,6 +983,7 @@ base class RenderPass {
     }
   }
 
+  @override
   void drawIndexed(int indexCount, {int instanceCount = 1}) {
     final gl = _gpuContext._gl;
     if (_boundPipeline == null) {
@@ -1189,7 +1051,7 @@ base class RenderPass {
       web.WebGL2RenderingContext.DRAW_FRAMEBUFFER,
       web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
       web.WebGL2RenderingContext.TEXTURE_2D,
-      resolve.glTexture,
+      resolve.webGl.glTexture,
       0,
     );
     gl.blitFramebuffer(

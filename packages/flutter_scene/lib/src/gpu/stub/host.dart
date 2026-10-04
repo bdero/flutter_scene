@@ -25,3 +25,6 @@ class GpuHost {
 
 /// The active backend's host integration.
 const GpuHost gpuHost = GpuHost._();
+
+/// Readies the GPU backend; web acquires its device here.
+Future<void> initializeGpuBackend() async {}

@@ -1,14 +1,15 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// A WebGL2-backed offscreen render target that can be snapshotted into a
 /// `ui.Image` for display by Flutter.
 ///
 /// Only exists to validate the WebGL2 -> ui.Image bridge on CanvasKit and
 /// Skwasm. The surface API will likely change once that's confirmed.
-class Surface {
-  Surface({required int width, required int height})
+final class WebGlSurface extends Surface {
+  WebGlSurface({required int width, required int height})
     : _width = width,
-      _height = height {
+      _height = height,
+      super.base() {
     _canvas = web.OffscreenCanvas(width, height);
     final gl = _canvas.getContext('webgl2') as web.WebGL2RenderingContext?;
     if (gl == null) {
@@ -33,14 +34,17 @@ class Surface {
   late final _WebGLLoseContext? _loseContextExt;
 
   /// True once the underlying WebGL2 context has been lost.
+  @override
   bool isLost = false;
 
   /// Fired when the WebGL2 context is lost. The surface should be considered
   /// unusable until [onContextRestored] fires.
+  @override
   void Function()? onContextLost;
 
   /// Fired when the WebGL2 context is restored. All GPU resources owned by
   /// the surface are gone and must be re-created by the caller.
+  @override
   void Function()? onContextRestored;
 
   void _onLost(web.Event event) {
@@ -54,10 +58,13 @@ class Surface {
     onContextRestored?.call();
   }
 
+  @override
   int get width => _width;
+  @override
   int get height => _height;
   web.WebGL2RenderingContext get gl => _gl;
 
+  @override
   void clearToColor(double r, double g, double b, double a) {
     _gl.clearColor(r, g, b, a);
     _gl.clear(web.WebGL2RenderingContext.COLOR_BUFFER_BIT);
@@ -68,6 +75,7 @@ class Surface {
   /// When [transferOwnership] is true, the engine takes ownership of the
   /// underlying texture and can avoid an intermediate copy. The surface
   /// becomes unusable afterwards.
+  @override
   FutureOr<ui.Image> snapshot({bool transferOwnership = false}) {
     return ui_web.createImageFromTextureSource(
       _canvas as JSAny,
@@ -79,6 +87,7 @@ class Surface {
 
   /// Force a WebGL context loss for testing purposes. Returns true if the
   /// `WEBGL_lose_context` extension was available and the loss was triggered.
+  @override
   bool forceContextLoss() {
     final ext = _loseContextExt;
     if (ext == null) return false;
@@ -91,6 +100,7 @@ class Surface {
   /// to ignore the request — wait for the `onContextRestored` callback before
   /// assuming recovery; for guaranteed recovery, dispose this Surface and
   /// create a new one.
+  @override
   bool forceContextRestore() {
     final ext = _loseContextExt;
     if (ext == null) return false;
@@ -98,6 +108,7 @@ class Surface {
     return true;
   }
 
+  @override
   void dispose() {
     // OffscreenCanvas + GL context are GC'd. Listeners are unowned and will
     // be cleaned up when the canvas is collected.

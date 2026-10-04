@@ -1,4 +1,4 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 /// Builds a texture's mip chain on the GPU with the engine's 2x2 box filter
 /// (linear light for color, raw for data, renormalized for normals), so a
@@ -9,7 +9,7 @@ part of '_gpu.dart';
 class _MipGenerator {
   _MipGenerator(this._context);
 
-  final GpuContext _context;
+  final WebGlContext _context;
   web.WebGLProgram? _program;
   web.WebGLVertexArrayObject? _vao;
   web.WebGLUniformLocation? _sourceLocation;
@@ -116,7 +116,7 @@ void main() {
     gl.uniform1i(_sourceLocation, _context._setupTextureUnit);
     gl.uniform1i(_modeLocation, _mode(content));
     // The source is sampled from, and copied into, on the setup unit.
-    _context._bindTextureForSetup(target, texture._texture);
+    _context._bindTextureForSetup(target, texture.webGl._texture);
     gl.bindFramebuffer(fb, fbo);
     for (var level = 1; level < texture.mipLevelCount; level++) {
       final width = (texture.width >> level).clamp(1, texture.width).toInt();

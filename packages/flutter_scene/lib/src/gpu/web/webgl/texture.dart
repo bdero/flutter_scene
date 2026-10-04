@@ -1,4 +1,4 @@
-part of '_gpu.dart';
+part of '_webgl.dart';
 
 class _GlFormat {
   const _GlFormat(
@@ -101,8 +101,8 @@ bool _isDepthOrStencilFormat(PixelFormat format) {
   }
 }
 
-base class Texture {
-  Texture._initialize(
+final class WebGlTexture extends Texture {
+  WebGlTexture._initialize(
     this._gpuContext,
     this.storageMode,
     this.format,
@@ -195,7 +195,7 @@ base class Texture {
   /// share textures across contexts. Always throws, mirroring flutter_gpu's
   /// contract for an image that is not backed by a compatible GPU texture;
   /// callers fall back to `Image.toByteData` plus [overwrite].
-  factory Texture.fromImage(GpuContext gpuContext, ui.Image image) {
+  static Never fromImage() {
     throw Exception(
       'Texture.fromImage could not wrap the image because it is not backed '
       'by a compatible GPU texture. The web backend cannot share textures '
@@ -203,16 +203,26 @@ base class Texture {
     );
   }
 
-  final GpuContext _gpuContext;
+  final WebGlContext _gpuContext;
+  @override
   final StorageMode storageMode;
+  @override
   final PixelFormat format;
+  @override
   final int width;
+  @override
   final int height;
+  @override
   final int sampleCount;
+  @override
   final TextureType textureType;
+  @override
   final bool enableRenderTargetUsage;
+  @override
   final bool enableShaderReadUsage;
+  @override
   final bool enableShaderWriteUsage;
+  @override
   final int mipLevelCount;
 
   // Sampler state last applied to this texture (GL sampler parameters are
@@ -229,6 +239,7 @@ base class Texture {
   web.WebGLRenderbuffer? _renderbuffer;
   bool _valid = false;
 
+  @override
   bool get isValid => _valid;
   bool get isDepthOrStencil => _isDepthOrStencilFormat(format);
 
@@ -250,17 +261,13 @@ base class Texture {
       ? web.WebGL2RenderingContext.TEXTURE_CUBE_MAP_POSITIVE_X + slice
       : web.WebGL2RenderingContext.TEXTURE_2D;
 
+  @override
   int get sliceCount => textureType == TextureType.textureCube ? 6 : 1;
 
-  static int fullMipCount(int width, int height) {
-    if (width < 1 || height < 1) return 1;
-    final smallest = width < height ? width : height;
-    final count = smallest.bitLength - 1;
-    return count > 0 ? count : 1;
-  }
-
+  @override
   int get bytesPerTexel => _glFormat.bytesPerTexel;
 
+  @override
   int getMipLevelSizeInBytes(int mipLevel) {
     final mipWidth = (width >> mipLevel).clamp(1, width).toInt();
     final mipHeight = (height >> mipLevel).clamp(1, height).toInt();
@@ -273,8 +280,10 @@ base class Texture {
     return bytesPerTexel * mipWidth * mipHeight;
   }
 
+  @override
   int getBaseMipLevelSizeInBytes() => getMipLevelSizeInBytes(0);
 
+  @override
   void overwrite(ByteData sourceBytes, {int mipLevel = 0, int slice = 0}) {
     if (sampleCount != 1) {
       throw Exception('Cannot overwrite a multisample texture');
@@ -360,6 +369,7 @@ base class Texture {
   /// `Canvas.drawImageRect`. Matches flutter_gpu's synchronous `asImage`,
   /// which is what flutter_scene's `Scene.render(camera, canvas)` paint
   /// path relies on.
+  @override
   ui.Image asImage() {
     if (!enableShaderReadUsage) {
       throw Exception('Only shader-readable textures can be used as UI images');
