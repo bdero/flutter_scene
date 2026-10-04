@@ -134,12 +134,16 @@ class BloomSettings {
   /// Spread of the blur, from `0` to `1`. Higher values bloom wider.
   double scatter = 0.7;
 
-  /// HDR luminance (above [threshold]) at which a pixel's bloom
-  /// contribution stops growing, so an isolated extreme pixel (a mirror glint
-  /// of a small, intense light) cannot flood the frame or flicker as it
-  /// moves. Pixels below the limit bloom exactly as without it. `0` turns
-  /// the limit off.
-  double fireflyLimit = 50.0;
+  /// Whether an isolated extreme pixel is weighted down against its
+  /// neighbors before it blooms, so a mirror glint of a small, intense light
+  /// cannot flood the frame or strobe as it moves. A uniformly bright region,
+  /// however intense, keeps its full bloom.
+  bool fireflySuppression = true;
+
+  /// The brightness a source pixel softly compresses toward before it blooms,
+  /// so an extreme highlight cannot flood the frame. Values well below it pass
+  /// nearly unchanged. 0 turns compression off.
+  double highlight = 1000.0;
 
   /// Screen-space lens flares, generated inside the bloom chain. Only run
   /// while bloom is [enabled].

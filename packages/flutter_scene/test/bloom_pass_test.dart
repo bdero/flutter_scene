@@ -55,19 +55,41 @@ void main() {
     }
   });
 
-  test('the firefly limit is on by default and only caps the threshold', () {
-    expect(BloomSettings().fireflyLimit, 50.0);
+  test(
+    'firefly suppression is on by default and only weights the threshold',
+    () {
+      expect(BloomSettings().fireflySuppression, isTrue);
+      final source = File(
+        'shaders/flutter_scene_bloom_threshold.frag',
+      ).readAsStringSync();
+      // The plain box stage of a two-stage prefilter averages unweighted.
+      expect(
+        source,
+        contains(
+          'float scale = threshold_info.apply_threshold > 0.5\n'
+          '      ? threshold_info.firefly_scale',
+        ),
+      );
+      // Weights stay local to aligned 2x2 groups, so a uniformly bright region
+      // keeps its full brightness.
+      expect(source, contains('const int kMaxGroups = kMaxTaps / 2 + 1;'));
+    },
+  );
+
+  test('highlights compress softly toward 1000 before they bloom', () {
+    expect(BloomSettings().highlight, 1000.0);
     final source = File(
       'shaders/flutter_scene_bloom_threshold.frag',
     ).readAsStringSync();
-    // The plain box stage of a two-stage prefilter passes taps unchanged.
-    expect(
-      source,
-      contains(
-        'float limit = threshold_info.apply_threshold > 0.5\n'
-        '      ? threshold_info.firefly_limit',
-      ),
+    // Compression runs before the threshold, and only in the thresholded stage.
+    final early = source.indexOf('if (threshold_info.apply_threshold < 0.5)');
+    final compress = source.indexOf(
+      '1.0 / (1.0 + brightness / threshold_info.highlight)',
     );
+    final soft = source.indexOf('// Soft knee around the threshold');
+    expect(early, isNonNegative);
+    expect(compress, greaterThan(early));
+    expect(soft, greaterThan(compress));
   });
 
   test('the threshold shader loop bound matches the Dart cap', () {

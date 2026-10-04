@@ -145,7 +145,7 @@ uniform FragInfo {
   // analytic direct lights. y is the multi-bounce amount (how much occluded
   // indirect diffuse converges toward the albedo instead of black). z is 1
   // when the occlusion texture's gba channels carry a packed view-space bent
-  // normal. w is reserved.
+  // normal. w is 1 when its g channel carries the sun contact shadow.
   vec4 ssao_lighting;
   // xyz: the draw's model scale (world-space lengths of the model transform's
   // basis vectors), for scaling local-space lengths like the transmission

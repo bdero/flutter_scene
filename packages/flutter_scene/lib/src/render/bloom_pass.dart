@@ -21,6 +21,11 @@ const String kBloomTextureBlackboardKey = 'bloom_texture';
 // Number of mip levels in the bloom chain, starting at the (capped) base.
 const int _kMipCount = 6;
 
+/// The luminance scale of bloom firefly suppression: a source texel is weighted
+/// by `1 / (1 + luminance / scale)` within its 2x2 group.
+@visibleForTesting
+double bloomFireflyScale = 4.0;
+
 /// Most prefilter taps per axis, matching kMaxTaps in the threshold shader.
 /// A box spans up to one more texel than its footprint, so one pass covers a
 /// footprint up to one less than this.
@@ -263,7 +268,7 @@ class BloomPass extends RenderGraphPass {
     renderPass.setColorBlendEnable(false);
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
-    final info = Float32List(8)
+    final info = Float32List(12)
       ..[0] = flare.intensity * sourceScale
       ..[1] = flare.ghostCount.clamp(0, 8).toDouble()
       ..[2] = flare.ghostSpacing
@@ -339,15 +344,16 @@ class BloomPass extends RenderGraphPass {
     bindVertexBufferCompat(renderPass, _quadView, 6);
 
     final knee = _settings.threshold * 0.5 + 1e-4;
-    final info = Float32List(8)
+    final info = Float32List(12)
       ..[0] = _settings.threshold
       ..[1] = knee
       ..[2] = threshold ? 1.0 : 0.0
-      ..[3] = math.max(_settings.fireflyLimit, 0.0)
+      ..[3] = _settings.fireflySuppression ? bloomFireflyScale : 0.0
       ..[4] = source.width / targetSize.width
       ..[5] = source.height / targetSize.height
       ..[6] = source.width.toDouble()
-      ..[7] = source.height.toDouble();
+      ..[7] = source.height.toDouble()
+      ..[8] = math.max(_settings.highlight, 0.0);
     renderPass.bindUniform(
       _thresholdShader.cachedUniformSlot('BloomThresholdInfo'),
       context.transientsBuffer.emplace(ByteData.sublistView(info)),
