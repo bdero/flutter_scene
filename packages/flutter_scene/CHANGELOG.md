@@ -30,6 +30,7 @@
 * Lit, unlit, and `.fmat` shaders build about twice as fast in browsers on Windows, close to 0.23, where a new material could stall its first frame for tens of seconds. Regressed in 0.24.0.
 * The surface debug views' material channels are compiled in only when the app sets `hooks: user_defines: flutter_scene: debug_views: true` (plus `flutter_scene_debug_views: true` under the app's name if its hook builds materials or engine assets). Without it a view shows the geometry and identity channels and prints how to turn the rest on.
 * `buildMaterials` and `buildEngineAssets` take `debugViews`.
+* Experimental WebGPU backend for web builds, enabled with `--dart-define=flutter_scene.webgpu=true` plus `flutter_scene_webgpu: true` under `hooks: user_defines:` for flutter_scene and the app. WebGL2 stays the default.
 
 ## 0.24.0
 

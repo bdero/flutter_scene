@@ -1,0 +1,189 @@
+/// Acquiring a WebGPU device, and the facts backend selection needs about it.
+library;
+
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
+import 'package:web/web.dart' as web;
+
+import 'webgpu_interop.dart';
+
+/// Why [WebGpuDevice.request] returned no device.
+enum WebGpuUnavailableReason {
+  /// `navigator.gpu` is absent (browser, flag, or insecure context).
+  noApi,
+
+  /// `requestAdapter` resolved to null.
+  noAdapter,
+
+  /// Only a software adapter exists and the caller did not accept one.
+  fallbackAdapterRejected,
+
+  /// `requestDevice` rejected.
+  deviceRequestFailed,
+}
+
+/// The outcome of a [WebGpuDevice.request], usable or not.
+final class WebGpuProbe {
+  const WebGpuProbe._({
+    this.device,
+    this.reason,
+    this.detail = '',
+    this.adapterSummary = '',
+    this.isFallbackAdapter = false,
+  });
+
+  final WebGpuDevice? device;
+  final WebGpuUnavailableReason? reason;
+
+  /// Error text from a failed request, for the selection log line.
+  final String detail;
+
+  /// Vendor, architecture, and description, as the adapter reports them.
+  final String adapterSummary;
+
+  /// Whether the adapter is a software implementation (SwiftShader).
+  final bool isFallbackAdapter;
+
+  bool get available => device != null;
+
+  @override
+  String toString() => available
+      ? 'WebGPU available ($adapterSummary'
+            '${isFallbackAdapter ? ', fallback adapter' : ''})'
+      : 'WebGPU unavailable: ${reason!.name}'
+            '${detail.isEmpty ? '' : ' ($detail)'}'
+            '${adapterSummary.isEmpty ? '' : ' [$adapterSummary]'}';
+}
+
+/// A WebGPU device and the adapter facts the shim reads from it.
+final class WebGpuDevice {
+  WebGpuDevice._(this.gpu, this.adapter, this.device);
+
+  final GPU gpu;
+  final GPUAdapter adapter;
+  final GPUDevice device;
+
+  /// The swapchain format the browser prefers (`bgra8unorm` or `rgba8unorm`).
+  String get preferredCanvasFormat => gpu.getPreferredCanvasFormat();
+
+  /// Optional features the backend asks for whenever the adapter has them.
+  static const List<String> wantedFeatures = [
+    'float32-filterable',
+    'float32-blendable',
+    'depth32float-stencil8',
+    'texture-compression-bc',
+    'texture-compression-etc2',
+    'texture-compression-astc',
+  ];
+
+  /// Limits raised to the adapter's maximum. The engine's widest shader pairs
+  /// need more uniform blocks and texture slots than WebGPU's defaults.
+  static const List<String> raisedLimits = [
+    'maxDynamicUniformBuffersPerPipelineLayout',
+    'maxUniformBuffersPerShaderStage',
+    'maxSampledTexturesPerShaderStage',
+    'maxSamplersPerShaderStage',
+    'maxVertexAttributes',
+    'maxVertexBuffers',
+    'maxInterStageShaderVariables',
+  ];
+
+  /// Whether the device was created with [feature].
+  bool hasFeature(String feature) => device.features.has(feature);
+
+  /// Requests an adapter and a device.
+  ///
+  /// A software adapter is rejected unless [allowFallbackAdapter], since
+  /// WebGL2 through ANGLE may still be hardware on the same machine.
+  static Future<WebGpuProbe> request({
+    bool allowFallbackAdapter = false,
+  }) async {
+    final api = web.window.navigator.gpuOrNull;
+    if (api == null || !api.isA<JSObject>()) {
+      return const WebGpuProbe._(reason: WebGpuUnavailableReason.noApi);
+    }
+    final gpu = api as GPU;
+
+    final GPUAdapter? adapter;
+    try {
+      adapter = await gpu
+          .requestAdapter(
+            GPURequestAdapterOptions(powerPreference: 'high-performance'),
+          )
+          .toDart;
+    } catch (e) {
+      return WebGpuProbe._(
+        reason: WebGpuUnavailableReason.noAdapter,
+        detail: '$e',
+      );
+    }
+    if (adapter == null) {
+      return const WebGpuProbe._(reason: WebGpuUnavailableReason.noAdapter);
+    }
+
+    final summary = _adapterSummary(adapter);
+    final fallback = _isFallback(adapter);
+    if (fallback && !allowFallbackAdapter) {
+      return WebGpuProbe._(
+        reason: WebGpuUnavailableReason.fallbackAdapterRejected,
+        adapterSummary: summary,
+        isFallbackAdapter: true,
+      );
+    }
+
+    final features = [
+      for (final feature in wantedFeatures)
+        if (adapter.features.has(feature)) feature,
+    ];
+    // Only names this browser knows; an unknown limit rejects the request.
+    final limits = JSObject();
+    for (final name in raisedLimits) {
+      final value = adapter.limits.getProperty<JSAny?>(name.toJS);
+      if (value != null && value.isA<JSNumber>()) {
+        limits.setProperty(name.toJS, value);
+      }
+    }
+    try {
+      final device = await adapter
+          .requestDevice(
+            GPUDeviceDescriptor(
+              requiredFeatures: [for (final f in features) f.toJS].toJS,
+              requiredLimits: limits,
+            ),
+          )
+          .toDart;
+      return WebGpuProbe._(
+        device: WebGpuDevice._(gpu, adapter, device),
+        adapterSummary: summary,
+        isFallbackAdapter: fallback,
+      );
+    } catch (e) {
+      return WebGpuProbe._(
+        reason: WebGpuUnavailableReason.deviceRequestFailed,
+        detail: '$e',
+        adapterSummary: summary,
+        isFallbackAdapter: fallback,
+      );
+    }
+  }
+
+  static String _adapterSummary(GPUAdapter adapter) {
+    final info = adapter.info;
+    return [
+      info.vendor,
+      info.architecture,
+      info.description,
+    ].where((s) => s.isNotEmpty).join(' / ');
+  }
+
+  static bool _isFallback(GPUAdapter adapter) {
+    final fromInfo = adapter.info.isFallbackAdapter;
+    if (fromInfo != null) return fromInfo;
+    // Older Chrome exposes the flag on the adapter only.
+    final legacy = adapter.getProperty<JSAny?>('isFallbackAdapter'.toJS);
+    return legacy != null &&
+        legacy.isA<JSBoolean>() &&
+        (legacy as JSBoolean).toDart;
+  }
+}
