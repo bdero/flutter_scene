@@ -97,7 +97,10 @@ Future<void> buildTargetShaderBundleJson({
     // flutter_scene's own shaders/ goes last, so a raw shader can
     // `#include <scene_inputs.glsl>` (or the noise library) without the caller
     // resolving the package, and a same-named file of the caller's still wins.
-    includeDirectories: [...includeDirectories, await frameworkShaderInclude()],
+    includeDirectories: [
+      ...includeDirectories,
+      await engineShaderIncludeDirectory(buildInput),
+    ],
     assetMode: switch (assetMode) {
       TargetShaderBundleAssetMode.generatedTree =>
         ShaderBundleAssetMode.legacyOnly,
