@@ -1,23 +1,17 @@
-name: WebGPU CI probe
+name: WebGPU branch checks
 
-# Answers whether headless Chrome on a GPU-less ubuntu-latest runner exposes a
-# WebGPU device, and with which flags, by running the skeleton browser test
-# under each flag set.
-# TODO(webgpu-ci-lane): fold the working flag set into the web smoke lane and
-# delete this workflow and tools/webgpu_ci_probe/.
+# The WebGPU backend's browser tests, and the WebGPU smoke lane compared with
+# WebGL2, on pushes to the backend's branch. The smoke render workflow runs
+# the same lane (web-webgpu and web-parity) for pull requests and master.
+# TODO(webgpu-ci-lane): delete this workflow once the branch merges; move the
+# browser tests into flutter.yml.
 
 on:
   push:
     branches: [bdero/webgpu-web-backend]
-    paths:
-      - .github/workflows/webgpu_ci_probe.yml
-      - tools/webgpu_ci_probe/**
-      - packages/flutter_scene/lib/src/gpu/webgpu/**
-      - packages/flutter_scene/lib/src/gpu/web/**
-      - packages/flutter_scene/test/gpu/webgpu/**
 
 jobs:
-  probe:
+  browser-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -27,34 +21,77 @@ jobs:
           channel: master
       - run: flutter --version && google-chrome --version
       - run: flutter pub get
-      - name: Probe flag sets
+      - name: WebGPU browser tests
         working-directory: packages/flutter_scene
         env:
           CHROME_EXECUTABLE: ${{ github.workspace }}/tools/webgpu_ci_probe/chrome_with_flags.sh
+          # Without Vulkan SwiftShader, Chrome renders WebGPU but every read
+          # of its canvas returns zeros.
+          CHROME_EXTRA_FLAGS: --enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
         run: |
-          set +e
-          # No flags gives no adapter; --enable-unsafe-webgpu gives SwiftShader.
-          # The other two put WebGL on the stack Dawn renders with, in case the
-          # bitmap handoff needs both APIs on one device.
-          # Without Vulkan SwiftShader, Chrome renders WebGPU but every read of
-          # its canvas returns zeros; with it, the whole handoff works. This
-          # confirms the working set under both renderers and both tests.
-          runs=(
-            "--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader|"
-            "--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader|--wasm"
-          )
-          for run in "${runs[@]}"; do
-            flags="${run%%|*}"
-            mode="${run##*|}"
-            echo "::group::flags=[$flags] $mode"
-            CHROME_EXTRA_FLAGS="$flags" flutter test --platform chrome $mode \
-              --dart-define=flutter_scene.webgpu=true test/gpu/webgpu/ > out.txt 2>&1
-            status=$?
-            cat out.txt
+          for mode in "" --wasm; do
+            echo "::group::${mode:-canvaskit}"
+            flutter test --platform chrome $mode \
+              --dart-define=flutter_scene.webgpu=true test/gpu/webgpu/
             echo "::endgroup::"
-            line=$(grep -h -o -E "(DIAG|WEBGPU_[A-Z]+) [^\[]*|All tests passed|Some tests failed|[A-Za-z][^:]*\[E\]" out.txt | sort -u | tr '\n' ' ')
-            echo "RESULT flags=[$flags] mode=[${mode:-canvaskit}] exit=$status $line" | tee -a results.txt
           done
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat results.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - run: flutter config --enable-native-assets
+      - uses: actions/cache/restore@v6
+        id: tint-cache
+        with:
+          path: ${{ runner.temp }}/tint
+          key: tint-${{ runner.os }}-${{ hashFiles('tools/tint_cli/**') }}
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+        if: ${{ steps.tint-cache.outputs.cache-hit != 'true' }}
+      - name: Build flutter_scene_tint
+        run: tools/webgpu_smoke/ensure_tint.sh "$RUNNER_TEMP/tint"
+      - uses: actions/cache/save@v6
+        if: ${{ steps.tint-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: ${{ runner.temp }}/tint
+          key: tint-${{ runner.os }}-${{ hashFiles('tools/tint_cli/**') }}
+      - name: Opt in to WGSL sidecars
+        run: tools/webgpu_smoke/opt_in.sh "$RUNNER_TEMP/tint/flutter_scene_tint"
+      - run: flutter pub get
+      - uses: nanasess/setup-chromedriver@v3
+      - name: Render on WebGL2 and on WebGPU
+        working-directory: examples/smoke_render
+        run: |
+          chromedriver --port=4444 &
+          render() {
+            rm -rf build/smoke
+            flutter drive \
+              --driver=test_driver/integration_test.dart \
+              --target=integration_test/smoke_test.dart \
+              -d web-server --browser-name=chrome --headless --driver-port=4444 \
+              "$@"
+          }
+          status=0
+          render || status=$?
+          mkdir -p "$GITHUB_WORKSPACE/frames" && cp -r build/smoke "$GITHUB_WORKSPACE/frames/webgl2"
+          render --dart-define=flutter_scene.webgpu=true \
+            --web-browser-flag=--enable-unsafe-webgpu \
+            --web-browser-flag=--enable-features=Vulkan \
+            --web-browser-flag=--use-vulkan=swiftshader || status=$?
+          cp -r build/smoke "$GITHUB_WORKSPACE/frames/webgpu"
+          exit $status
+      - run: pip install --quiet pillow numpy
+        if: ${{ !cancelled() }}
+      - name: Compare WebGPU against WebGL2
+        if: ${{ !cancelled() }}
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: smoke-frames
+          path: frames
+          if-no-files-found: ignore
