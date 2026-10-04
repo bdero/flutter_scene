@@ -17,13 +17,10 @@
 // hash/prime mixing. On native (64-bit ints) this is exact and
 // `test/noise_test.dart` pins the outputs.
 //
-// TODO(noise-web): this is NOT web-safe. On the web Dart `int` is a JS double
-// (exact only to 53 bits), so a 32-bit-by-32-bit multiply like
-// `hash * 0x27d4eb2d` overflows and loses its low bits before `.toSigned(32)`
-// can wrap, and the 3D lattice math overflows outright. The fix is a
-// Math.imul-style 32-bit multiply (split into 16-bit halves) at every
-// hash/prime multiply site. Until then the GLSL side (noise.glsl, which runs
-// with real 32-bit ints on every GPU backend) is the web-correct path.
+// On the web Dart `int` is a JS double (exact only to 53 bits) and bitwise
+// results are unsigned, so 32-bit products go through `_mul32` (a
+// `Math.imul`-style split multiply) and bitwise values used as numbers go
+// through `_i32`. `test/noise_test.dart` pins the outputs and runs on both.
 //
 // Gradient lookup tables (`_gradients2D`, `_randVecs2D`, `_gradients3D`,
 // `_randVecs3D`) and the prime/hash constants are transcribed verbatim from the
@@ -436,8 +433,8 @@ class FastNoiseLite {
     final double x0 = xi - t;
     final double y0 = yi - t;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
 
     double n0, n1, n2;
 
@@ -497,17 +494,17 @@ class FastNoiseLite {
     double y0 = y - j;
     double z0 = z - k;
 
-    int xNSign = (-1.0 - x0).toInt() | 1;
-    int yNSign = (-1.0 - y0).toInt() | 1;
-    int zNSign = (-1.0 - z0).toInt() | 1;
+    int xNSign = _i32((-1.0 - x0).toInt() | 1);
+    int yNSign = _i32((-1.0 - y0).toInt() | 1);
+    int zNSign = _i32((-1.0 - z0).toInt() | 1);
 
     double ax0 = xNSign * -x0;
     double ay0 = yNSign * -y0;
     double az0 = zNSign * -z0;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
-    k = _i32(k * _primeZ);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
+    k = _mul32(k, _primeZ);
 
     double value = 0;
     double a = (0.6 - x0 * x0) - (y0 * y0 + z0 * z0);
@@ -607,8 +604,8 @@ class FastNoiseLite {
     final double xi = x - i;
     final double yi = y - j;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
     final int i1 = _i32(i + _primeX);
     final int j1 = _i32(j + _primeY);
 
@@ -742,9 +739,9 @@ class FastNoiseLite {
     final double yi = y - j;
     final double zi = z - k;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
-    k = _i32(k * _primeZ);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
+    k = _mul32(k, _primeZ);
     final int seed2 = _i32(seed + 1293373);
 
     final int xNMask = (-0.5 - xi).toInt();
@@ -785,17 +782,17 @@ class FastNoiseLite {
           z1,
         );
 
-    final double xAFlipMask0 = ((xNMask | 1) << 1) * x1;
-    final double yAFlipMask0 = ((yNMask | 1) << 1) * y1;
-    final double zAFlipMask0 = ((zNMask | 1) << 1) * z1;
-    final double xAFlipMask1 = (-2 - (xNMask << 2)) * x1 - 1.0;
-    final double yAFlipMask1 = (-2 - (yNMask << 2)) * y1 - 1.0;
-    final double zAFlipMask1 = (-2 - (zNMask << 2)) * z1 - 1.0;
+    final double xAFlipMask0 = _i32(_i32(xNMask | 1) << 1) * x1;
+    final double yAFlipMask0 = _i32(_i32(yNMask | 1) << 1) * y1;
+    final double zAFlipMask0 = _i32(_i32(zNMask | 1) << 1) * z1;
+    final double xAFlipMask1 = (-2 - _i32(xNMask << 2)) * x1 - 1.0;
+    final double yAFlipMask1 = (-2 - _i32(yNMask << 2)) * y1 - 1.0;
+    final double zAFlipMask1 = (-2 - _i32(zNMask << 2)) * z1 - 1.0;
 
     bool skip5 = false;
     final double a2 = xAFlipMask0 + a0;
     if (a2 > 0) {
-      final double x2 = x0 - (xNMask | 1);
+      final double x2 = x0 - _i32(xNMask | 1);
       final double y2 = y0;
       final double z2 = z0;
       value +=
@@ -814,8 +811,8 @@ class FastNoiseLite {
       final double a3 = yAFlipMask0 + zAFlipMask0 + a0;
       if (a3 > 0) {
         final double x3 = x0;
-        final double y3 = y0 - (yNMask | 1);
-        final double z3 = z0 - (zNMask | 1);
+        final double y3 = y0 - _i32(yNMask | 1);
+        final double z3 = z0 - _i32(zNMask | 1);
         value +=
             (a3 * a3) *
             (a3 * a3) *
@@ -832,7 +829,7 @@ class FastNoiseLite {
 
       final double a4 = xAFlipMask1 + a1;
       if (a4 > 0) {
-        final double x4 = (xNMask | 1) + x1;
+        final double x4 = _i32(xNMask | 1) + x1;
         final double y4 = y1;
         final double z4 = z1;
         value +=
@@ -855,7 +852,7 @@ class FastNoiseLite {
     final double a6 = yAFlipMask0 + a0;
     if (a6 > 0) {
       final double x6 = x0;
-      final double y6 = y0 - (yNMask | 1);
+      final double y6 = y0 - _i32(yNMask | 1);
       final double z6 = z0;
       value +=
           (a6 * a6) *
@@ -872,9 +869,9 @@ class FastNoiseLite {
     } else {
       final double a7 = xAFlipMask0 + zAFlipMask0 + a0;
       if (a7 > 0) {
-        final double x7 = x0 - (xNMask | 1);
+        final double x7 = x0 - _i32(xNMask | 1);
         final double y7 = y0;
-        final double z7 = z0 - (zNMask | 1);
+        final double z7 = z0 - _i32(zNMask | 1);
         value +=
             (a7 * a7) *
             (a7 * a7) *
@@ -892,7 +889,7 @@ class FastNoiseLite {
       final double a8 = yAFlipMask1 + a1;
       if (a8 > 0) {
         final double x8 = x1;
-        final double y8 = (yNMask | 1) + y1;
+        final double y8 = _i32(yNMask | 1) + y1;
         final double z8 = z1;
         value +=
             (a8 * a8) *
@@ -915,7 +912,7 @@ class FastNoiseLite {
     if (aA > 0) {
       final double xA = x0;
       final double yA = y0;
-      final double zA = z0 - (zNMask | 1);
+      final double zA = z0 - _i32(zNMask | 1);
       value +=
           (aA * aA) *
           (aA * aA) *
@@ -931,8 +928,8 @@ class FastNoiseLite {
     } else {
       final double aB = xAFlipMask0 + yAFlipMask0 + a0;
       if (aB > 0) {
-        final double xB = x0 - (xNMask | 1);
-        final double yB = y0 - (yNMask | 1);
+        final double xB = x0 - _i32(xNMask | 1);
+        final double yB = y0 - _i32(yNMask | 1);
         final double zB = z0;
         value +=
             (aB * aB) *
@@ -952,7 +949,7 @@ class FastNoiseLite {
       if (aC > 0) {
         final double xC = x1;
         final double yC = y1;
-        final double zC = (zNMask | 1) + z1;
+        final double zC = _i32(zNMask | 1) + z1;
         value +=
             (aC * aC) *
             (aC * aC) *
@@ -973,8 +970,8 @@ class FastNoiseLite {
       final double a5 = yAFlipMask1 + zAFlipMask1 + a1;
       if (a5 > 0) {
         final double x5 = x1;
-        final double y5 = (yNMask | 1) + y1;
-        final double z5 = (zNMask | 1) + z1;
+        final double y5 = _i32(yNMask | 1) + y1;
+        final double z5 = _i32(zNMask | 1) + z1;
         value +=
             (a5 * a5) *
             (a5 * a5) *
@@ -993,9 +990,9 @@ class FastNoiseLite {
     if (!skip9) {
       final double a9 = xAFlipMask1 + zAFlipMask1 + a1;
       if (a9 > 0) {
-        final double x9 = (xNMask | 1) + x1;
+        final double x9 = _i32(xNMask | 1) + x1;
         final double y9 = y1;
-        final double z9 = (zNMask | 1) + z1;
+        final double z9 = _i32(zNMask | 1) + z1;
         value +=
             (a9 * a9) *
             (a9 * a9) *
@@ -1014,8 +1011,8 @@ class FastNoiseLite {
     if (!skipD) {
       final double aD = xAFlipMask1 + yAFlipMask1 + a1;
       if (aD > 0) {
-        final double xD = (xNMask | 1) + x1;
-        final double yD = (yNMask | 1) + y1;
+        final double xD = _i32(xNMask | 1) + x1;
+        final double yD = _i32(yNMask | 1) + y1;
         final double zD = z1;
         value +=
             (aD * aD) *
@@ -1310,8 +1307,8 @@ class FastNoiseLite {
     final double xs = _interpQuintic(xd0);
     final double ys = _interpQuintic(yd0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
 
@@ -1345,9 +1342,9 @@ class FastNoiseLite {
     final double ys = _interpQuintic(yd0);
     final double zs = _interpQuintic(zd0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
-    z0 = _i32(z0 * _primeZ);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
+    z0 = _mul32(z0, _primeZ);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
     final int z1 = _i32(z0 + _primeZ);
@@ -1388,8 +1385,8 @@ class FastNoiseLite {
     final double xs = _interpHermite(x - x0);
     final double ys = _interpHermite(y - y0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
 
@@ -1416,9 +1413,9 @@ class FastNoiseLite {
     final double ys = _interpHermite(y - y0);
     final double zs = _interpHermite(z - z0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
-    z0 = _i32(z0 * _primeZ);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
+    z0 = _mul32(z0, _primeZ);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
     final int z1 = _i32(z0 + _primeZ);
@@ -1752,8 +1749,8 @@ class FastNoiseLite {
     final double xs = _interpHermite(xf - x0);
     final double ys = _interpHermite(yf - y0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
 
@@ -1805,9 +1802,9 @@ class FastNoiseLite {
     final double ys = _interpHermite(yf - y0);
     final double zs = _interpHermite(zf - z0);
 
-    x0 = _i32(x0 * _primeX);
-    y0 = _i32(y0 * _primeY);
-    z0 = _i32(z0 * _primeZ);
+    x0 = _mul32(x0, _primeX);
+    y0 = _mul32(y0, _primeY);
+    z0 = _mul32(z0, _primeZ);
     final int x1 = _i32(x0 + _primeX);
     final int y1 = _i32(y0 + _primeY);
     final int z1 = _i32(z0 + _primeZ);
@@ -1878,8 +1875,8 @@ class FastNoiseLite {
     final double x0 = xi - t;
     final double y0 = yi - t;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
 
     double vx = 0;
     double vy = 0;
@@ -1965,17 +1962,17 @@ class FastNoiseLite {
     double y0 = y - j;
     double z0 = z - k;
 
-    int xNSign = (-x0 - 1.0).toInt() | 1;
-    int yNSign = (-y0 - 1.0).toInt() | 1;
-    int zNSign = (-z0 - 1.0).toInt() | 1;
+    int xNSign = _i32((-x0 - 1.0).toInt() | 1);
+    int yNSign = _i32((-y0 - 1.0).toInt() | 1);
+    int zNSign = _i32((-z0 - 1.0).toInt() | 1);
 
     double ax0 = xNSign * -x0;
     double ay0 = yNSign * -y0;
     double az0 = zNSign * -z0;
 
-    i = _i32(i * _primeX);
-    j = _i32(j * _primeY);
-    k = _i32(k * _primeZ);
+    i = _mul32(i, _primeX);
+    j = _mul32(j, _primeY);
+    k = _mul32(k, _primeZ);
 
     double vx = 0;
     double vy = 0;
@@ -2060,10 +2057,20 @@ class FastNoiseLite {
 
 /// Wraps an integer to 32-bit signed width, matching C# `int` overflow.
 ///
-/// FastNoiseLite's hashing depends on 32-bit two's-complement overflow. Dart
-/// ints are 64-bit on native and 53-bit doubles on the web, so every multiply
-/// and add in the hashing path is funneled through this so native and web agree.
+/// Also turns the web's unsigned bitwise results back into signed ones, so a
+/// `-1 | 1` used as a sign is -1 there too.
 int _i32(int v) => v.toSigned(32);
+
+/// `a * b` with 32-bit signed wraparound, like C#'s unchecked `int` multiply.
+///
+/// On the web a 32-by-32-bit product overflows the 53 exact bits of a double
+/// before [_i32] could wrap it, so the multiply is split into 16-bit halves
+/// whose partial products stay exact (as `Math.imul` does).
+int _mul32(int a, int b) {
+  final lo = (a & 0xffff) * b;
+  final hi = (((a >> 16) & 0xffff) * b) & 0xffff;
+  return (lo + (hi << 16)).toSigned(32);
+}
 
 // --- Math helpers ----------------------------------------------------------
 
@@ -2094,20 +2101,20 @@ const int _primeZ = 1720413743;
 
 int _hash2(int seed, int xPrimed, int yPrimed) {
   int hash = _i32(seed ^ xPrimed ^ yPrimed);
-  hash = _i32(hash * 0x27d4eb2d);
+  hash = _mul32(hash, 0x27d4eb2d);
   return hash;
 }
 
 int _hash3(int seed, int xPrimed, int yPrimed, int zPrimed) {
   int hash = _i32(seed ^ xPrimed ^ yPrimed ^ zPrimed);
-  hash = _i32(hash * 0x27d4eb2d);
+  hash = _mul32(hash, 0x27d4eb2d);
   return hash;
 }
 
 double _valCoord2(int seed, int xPrimed, int yPrimed) {
   int hash = _hash2(seed, xPrimed, yPrimed);
 
-  hash = _i32(hash * hash);
+  hash = _mul32(hash, hash);
   hash = _i32(hash ^ _i32(hash << 19));
   return hash * (1 / 2147483648.0);
 }
@@ -2115,7 +2122,7 @@ double _valCoord2(int seed, int xPrimed, int yPrimed) {
 double _valCoord3(int seed, int xPrimed, int yPrimed, int zPrimed) {
   int hash = _hash3(seed, xPrimed, yPrimed, zPrimed);
 
-  hash = _i32(hash * hash);
+  hash = _mul32(hash, hash);
   hash = _i32(hash ^ _i32(hash << 19));
   return hash * (1 / 2147483648.0);
 }
