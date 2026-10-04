@@ -28,14 +28,15 @@ const String kWebGpuUserDefine = 'flutter_scene_webgpu';
 const String kWebGpuEnv = 'FLUTTER_SCENE_WEBGPU';
 
 /// The sidecar format revision, bumped when its shape changes.
-const int kWgslSidecarFormat = 1;
+const int kWgslSidecarFormat = 2;
 
 /// Whether [input]'s package asked for WGSL sidecars.
 bool webGpuShadersRequested(BuildInput input) =>
     input.userDefines[kWebGpuUserDefine] == true ||
     Platform.environment.containsKey(kWebGpuEnv);
 
-/// The sidecar's file name next to the bundle it describes.
+/// The sidecar's path next to the bundle it describes. The runtime finds it
+/// the same way, from the bundle's asset key.
 String wgslSidecarPathFor(String bundlePath) => '$bundlePath.wgsl.json';
 
 /// One shader to translate.
@@ -94,6 +95,7 @@ Future<String> buildWgslSidecar(
   final jobs = <WgslTranslationJob>[];
   final maps = <String, WgslBindingMap>{};
   final stages = <String, String>{};
+  final reflections = <String, fb.BackendShader>{};
   for (final shader in bundle.shaders ?? const <fb.Shader>[]) {
     final name = shader.name;
     final vulkan = shader.vulkan;
@@ -103,6 +105,7 @@ Future<String> buildWgslSidecar(
     final resources = reflectedResources(vulkan);
     final map = WgslBindingMap.mapped(resources);
     maps[name] = map;
+    reflections[name] = vulkan;
     stages[name] = switch (vulkan.stage) {
       fb.ShaderStage.kVertex => 'vertex',
       fb.ShaderStage.kFragment => 'fragment',
@@ -136,18 +139,12 @@ Future<String> buildWgslSidecar(
       failures.add('${job.name}: ${e.message}');
       continue;
     }
-    shaders[job.name] = {
-      'stage': stages[job.name],
-      'wgsl': source,
-      'bindings': {
-        for (final b in map.bindings.values)
-          b.name: {
-            'group': b.group,
-            'binding': b.textureBinding,
-            if (b.samplerBinding != null) 'sampler': b.samplerBinding,
-          },
-      },
-    };
+    shaders[job.name] = _sidecarEntry(
+      stage: stages[job.name]!,
+      wgsl: source,
+      map: map,
+      reflection: reflections[job.name]!,
+    );
   }
   if (failures.isNotEmpty) {
     throw WgslSidecarException(failures.join('\n'));
@@ -159,6 +156,65 @@ Future<String> buildWgslSidecar(
     'shaders': shaders,
   });
 }
+
+/// One shader's sidecar entry: its WGSL plus the reflection the WebGPU
+/// backend binds by, read from the same Vulkan entry the WGSL came from, so
+/// struct offsets and bindings match the WGSL by construction.
+Map<String, Object?> _sidecarEntry({
+  required String stage,
+  required String wgsl,
+  required WgslBindingMap map,
+  required fb.BackendShader reflection,
+}) => {
+  'stage': stage,
+  // Tint names every entry point `main`.
+  'entryPoint': 'main',
+  'wgsl': wgsl,
+  'inputs': [
+    for (final input in reflection.inputs ?? const <fb.ShaderInput>[])
+      if (input.name != null)
+        {
+          'name': input.name,
+          'location': input.location,
+          'vecSize': input.vecSize,
+          'offset': input.offset,
+        },
+  ],
+  'uniforms': [
+    for (final s
+        in reflection.uniformStructs ?? const <fb.ShaderUniformStruct>[])
+      if (s.name != null)
+        {
+          'name': s.name,
+          'group': map[s.name!]!.group,
+          'binding': map[s.name!]!.textureBinding,
+          'size': s.sizeInBytes,
+          'fields': [
+            for (final f in s.fields ?? const <fb.ShaderUniformStructField>[])
+              if (f.name != null)
+                {
+                  'name': f.name,
+                  'offset': f.offsetInBytes,
+                  'vecSize': f.vecSize,
+                  'columns': f.columns,
+                  'arrayElements': f.arrayElements,
+                  'size': f.totalSizeInBytes,
+                },
+          ],
+        },
+  ],
+  'textures': [
+    for (final t
+        in reflection.uniformTextures ?? const <fb.ShaderUniformTexture>[])
+      if (t.name != null)
+        {
+          'name': t.name,
+          'group': map[t.name!]!.group,
+          'binding': map[t.name!]!.textureBinding,
+          'sampler': map[t.name!]!.samplerBinding,
+        },
+  ],
+};
 
 /// Runs the native `flutter_scene_tint` binary over a batch.
 final class TintProcessTranslator implements WgslBatchTranslator {

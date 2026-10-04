@@ -96,11 +96,21 @@ void main() {
     final lit = (sidecar['shaders'] as Map)['Lit'] as Map;
     expect(lit['stage'], 'fragment');
     expect(lit['wgsl'], _goodWgsl);
-    expect(lit['bindings'], {
-      'FragInfo': {'group': 0, 'binding': 64},
-      'albedo': {'group': 0, 'binding': 65, 'sampler': 193},
-      'normals': {'group': 0, 'binding': 66, 'sampler': 194},
-    });
+    expect(lit['entryPoint'], 'main');
+    expect(lit['uniforms'], [
+      {
+        'name': 'FragInfo',
+        'group': 0,
+        'binding': 64,
+        'size': 16,
+        'fields': <Object?>[],
+      },
+    ]);
+    expect(lit['textures'], [
+      {'name': 'albedo', 'group': 0, 'binding': 65, 'sampler': 193},
+      {'name': 'normals', 'group': 0, 'binding': 66, 'sampler': 194},
+    ]);
+    expect(lit['inputs'], <Object?>[]);
   });
 
   test('fails naming the shader when Tint moves a binding', () async {

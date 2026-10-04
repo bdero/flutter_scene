@@ -12,6 +12,7 @@ import '../generated_assets/generated_file_names.dart';
 import '../generated_assets/generated_tree.dart';
 import '../generated_assets/tint_binary.dart' show kTintReleaseTag;
 import '../generated_assets/wgsl_sidecar.dart';
+import '../gpu/shared/sidecar_hash.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 import '../importer/build_cache.dart' show buildCacheRevision;
 import 'framework_shaders.dart';
@@ -122,7 +123,7 @@ Future<void> buildTargetShaderBundleJson({
       await buildWgslSidecar(
         untrimmed,
         translator,
-        shippedBundleHash: fnv1aHex(bytes),
+        shippedBundleHash: sidecarBundleHash(bytes),
       ),
     );
   } else if (wgsl.existsSync()) {
@@ -178,13 +179,7 @@ Future<void> buildTargetShaderBundleJson({
   if (!wgsl.existsSync()) {
     tree.drop(GeneratedAssetFamily.wgsl, id, target: target);
   } else {
-    final wgslUri = tree.fileUri(
-      GeneratedAssetFamily.wgsl,
-      nameId: id,
-      extension: '.wgsl.json',
-      variant: variant,
-      target: target,
-    );
+    final wgslUri = Uri.file(wgslSidecarPathFor(copyUri.toFilePath()));
     writeGeneratedBytes(wgslUri, wgsl.readAsBytesSync());
     tree.recordFile(
       family: GeneratedAssetFamily.wgsl,

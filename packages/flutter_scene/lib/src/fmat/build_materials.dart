@@ -358,15 +358,7 @@ Future<void> _buildMaterials({
   // builds do not carry it yet.
   // TODO(webgpu-data-assets): register the WGSL as a data asset too.
   final wgslFile = webGpuShadersRequested(buildInput) && tree != null
-      ? File.fromUri(
-          tree.fileUri(
-            GeneratedAssetFamily.material,
-            nameId: bundleName,
-            extension: '.wgsl.json',
-            variant: variant,
-            target: target,
-          ),
-        )
+      ? File(wgslSidecarPathFor(shippedBundleFile.path))
       : null;
 
   final sidecars = <String, Object?>{};

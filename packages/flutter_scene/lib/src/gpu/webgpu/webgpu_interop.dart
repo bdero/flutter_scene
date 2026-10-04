@@ -123,7 +123,22 @@ extension type GPUBuffer._(JSObject _) implements JSObject {
 
 extension type GPUSampler._(JSObject _) implements JSObject {}
 
-extension type GPUShaderModule._(JSObject _) implements JSObject {}
+extension type GPUShaderModule._(JSObject _) implements JSObject {
+  external JSPromise<GPUCompilationInfo> getCompilationInfo();
+}
+
+extension type GPUCompilationInfo._(JSObject _) implements JSObject {
+  external JSArray<GPUCompilationMessage> get messages;
+}
+
+extension type GPUCompilationMessage._(JSObject _) implements JSObject {
+  external String get message;
+
+  /// `error`, `warning`, or `info`.
+  external String get type;
+  external int get lineNum;
+  external int get linePos;
+}
 
 extension type GPURenderPipeline._(JSObject _) implements JSObject {
   external JSObject getBindGroupLayout(int index);
