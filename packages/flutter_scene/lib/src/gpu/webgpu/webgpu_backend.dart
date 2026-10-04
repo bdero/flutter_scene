@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -48,6 +49,24 @@ JSObject _obj(Map<String, Object?> fields) => fields.jsify()! as JSObject;
 /// A WebGPU sequence, such as an extent or origin.
 JSObject _arr(List<Object?> items) => items.jsify()! as JSObject;
 
+/// Prints WebGPU errors no error scope caught, which otherwise reach only the
+/// browser console. The first few, since one bad draw repeats every frame.
+void _reportUncapturedErrors(GPUDevice device) {
+  var reported = 0;
+  (device as web.EventTarget).addEventListener(
+    'uncapturederror',
+    (web.Event event) {
+      if (reported++ >= 20) return;
+      final error = event.getProperty<JSObject?>('error'.toJS);
+      final message = error?.getProperty<JSString?>('message'.toJS)?.toDart;
+      debugPrint(
+        'flutter_scene (WebGPU): ${message ?? 'unknown error'}'
+        '${reported == 20 ? ' (further errors not printed)' : ''}',
+      );
+    }.toJS,
+  );
+}
+
 final class _WebGpuBackend extends WebBackend {
   _WebGpuContext? _context;
 
@@ -65,7 +84,10 @@ final class _WebGpuBackend extends WebBackend {
             'to use WebGL2.',
           )),
     );
-    if (kDebugMode) debugPrint('flutter_scene: WebGPU backend, $probe');
+    if (kDebugMode) {
+      debugPrint('flutter_scene: WebGPU backend, $probe');
+      _reportUncapturedErrors(probe.device!.device);
+    }
   }
 
   @override
