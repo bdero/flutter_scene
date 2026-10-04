@@ -22,12 +22,30 @@ const String kTintEnv = 'FLUTTER_SCENE_TINT';
 /// The release the download comes from.
 const String kTintReleaseTag = 'flutter_scene_tint-0.1.0';
 
-/// Per-host release asset and its sha256.
-///
-/// TODO(tint-release): fill in from the release's `tint_binaries.json` once
-/// `flutter_scene_tint-0.1.0` is published. Until then every host needs the local
-/// override, and resolution fails with instructions instead of downloading.
-const Map<String, ({String file, String sha256})> kTintBinaries = {};
+/// Per-host release asset and its sha256, from the release's
+/// `tint_binaries.json` (Dawn cd2d5a66).
+const Map<String, ({String file, String sha256})> kTintBinaries = {
+  'darwin-arm64': (
+    file: 'flutter_scene_tint-macos-universal',
+    sha256: 'f4717167c607d2f1f065f396d493de38d84684746b917ca5aa7eb4db0ad08ce5',
+  ),
+  'darwin-x64': (
+    file: 'flutter_scene_tint-macos-universal',
+    sha256: 'f4717167c607d2f1f065f396d493de38d84684746b917ca5aa7eb4db0ad08ce5',
+  ),
+  'linux-arm64': (
+    file: 'flutter_scene_tint-linux-arm64',
+    sha256: 'efcf5c8eeaee16ae788b36d083e462c15f286d87e5214386e75f6c851dc6f278',
+  ),
+  'linux-x64': (
+    file: 'flutter_scene_tint-linux-x64',
+    sha256: 'b91221f61c687e674701d5e050a529939c8870bf840696cd9a0a468f39fb1419',
+  ),
+  'windows-x64': (
+    file: 'flutter_scene_tint-windows-x64.exe',
+    sha256: 'affc4c91a52739305705735b708eb64e9c380a17fcfe9d8371a895dd167857e7',
+  ),
+};
 
 /// Thrown when no usable binary can be found.
 final class TintBinaryException implements Exception {
