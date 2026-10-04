@@ -1,0 +1,113 @@
+name: flutter_scene_tint binaries
+
+# Builds the native SPIR-V to WGSL translator flutter_scene's build hook
+# downloads, for every host a developer builds on, and publishes it as a
+# GitHub release with a sha256 manifest. A tag containing "citest" builds and
+# smoke-tests everything but skips the release.
+
+on:
+  push:
+    tags:
+      - 'flutter_scene_tint-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and attach binaries to (e.g. flutter_scene_tint-0.1.0)'
+        required: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One universal binary serves both macOS hosts.
+          - { runner: macos-latest, host: macos-universal, extra: '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0' }
+          # 22.04 for an older glibc floor; build.sh links libstdc++ statically.
+          - { runner: ubuntu-22.04, host: linux-x64, extra: '' }
+          - { runner: ubuntu-22.04-arm, host: linux-arm64, extra: '' }
+          - { runner: windows-latest, host: windows-x64, extra: '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seanmiddleditch/gha-setup-ninja@v6
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - name: Check out Dawn
+        run: |
+          rev=$(grep -E '^DAWN_REVISION=' tools/tint_cli/build.sh | cut -d= -f2)
+          git init -q "$RUNNER_TEMP/dawn"
+          git -C "$RUNNER_TEMP/dawn" fetch -q --depth 1 https://dawn.googlesource.com/dawn "$rev"
+          git -C "$RUNNER_TEMP/dawn" checkout -q FETCH_HEAD
+      - name: Build
+        env:
+          DAWN_SRC: ${{ runner.temp }}/dawn
+          CMAKE_EXTRA_ARGS: ${{ matrix.extra }}
+        run: tools/tint_cli/build.sh "$RUNNER_TEMP/tint_out"
+      - name: Smoke test
+        run: |
+          bin="$RUNNER_TEMP/tint_out/flutter_scene_tint"
+          [ -f "$bin.exe" ] && bin="$bin.exe"
+          fixture="tools/tint_cli/test/trivial_fragment.spv"
+          printf '%s\t%s\t\n' "$fixture" "$RUNNER_TEMP/trivial.wgsl" > "$RUNNER_TEMP/manifest.tsv"
+          "$bin" translate "$RUNNER_TEMP/manifest.tsv"
+          grep -q '@fragment' "$RUNNER_TEMP/trivial.wgsl"
+          if [ "${{ runner.os }}" = "macOS" ]; then lipo -info "$bin"; fi
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          ext=""; [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
+          cp "$RUNNER_TEMP/tint_out/flutter_scene_tint$ext" "dist/flutter_scene_tint-${{ matrix.host }}$ext"
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.host }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, 'citest') && !contains(inputs.tag, 'citest') }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write manifest
+        run: |
+          rev=$(grep -E '^DAWN_REVISION=' tools/tint_cli/build.sh | cut -d= -f2)
+          python3 - "$rev" <<'PY'
+          import hashlib, json, os, sys
+          files = {
+              'darwin-arm64': 'flutter_scene_tint-macos-universal',
+              'darwin-x64': 'flutter_scene_tint-macos-universal',
+              'linux-x64': 'flutter_scene_tint-linux-x64',
+              'linux-arm64': 'flutter_scene_tint-linux-arm64',
+              'windows-x64': 'flutter_scene_tint-windows-x64.exe',
+          }
+          out = {'dawnRevision': sys.argv[1], 'binaries': {}}
+          for host, name in files.items():
+              data = open(os.path.join('dist', name), 'rb').read()
+              out['binaries'][host] = {'file': name, 'sha256': hashlib.sha256(data).hexdigest()}
+          json.dump(out, open('dist/tint_binaries.json', 'w'), indent=2, sort_keys=True)
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG" --latest=false \
+              --notes "flutter_scene_tint built from Dawn $(grep -E '^DAWN_REVISION=' tools/tint_cli/build.sh | cut -d= -f2)."
+          gh release upload "$TAG" dist/* --clobber
