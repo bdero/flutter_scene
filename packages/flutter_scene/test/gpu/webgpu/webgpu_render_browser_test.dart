@@ -37,7 +37,9 @@ fn main(@location(0u) corner : vec2<f32>) -> Out {
 ''';
 
 const _fragmentWgsl = '''
-struct Tint { color : vec4<f32> }
+// The trailing vec3 makes the reflected size 28 while WGSL pads the struct
+// to 32, as impellerc reflects an .fmat block of 60 bytes padded to 64.
+struct Tint { color : vec4<f32>, unused : vec3<f32> }
 @group(0u) @binding(64u) var<uniform> tint : Tint;
 @group(0u) @binding(65u) var albedo : texture_2d<f32>;
 @group(0u) @binding(193u) var albedo_sampler : sampler;
@@ -83,7 +85,7 @@ String _sidecar() => jsonEncode({
           'name': 'Tint',
           'group': 0,
           'binding': 64,
-          'size': 16,
+          'size': 28,
           'fields': [
             {'name': 'color', 'offset': 0},
           ],

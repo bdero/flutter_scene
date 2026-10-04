@@ -469,10 +469,14 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
   late List<_SampledTexture> _sampled;
 
   /// The size a uniform block at [binding] binds with, from either stage.
+  ///
+  /// Rounded up to 16 bytes: the reflection can stop at the last member
+  /// (60 bytes, say) while WGSL pads a uniform struct to its 16-byte
+  /// alignment, and WebGPU rejects a binding smaller than the padded struct.
   int uniformSize(int binding) {
     for (final shader in [vertexShader, fragmentShader]) {
       for (final block in shader.uniforms.values) {
-        if (block.binding == binding) return block.size;
+        if (block.binding == binding) return (block.size + 15) & ~15;
       }
     }
     return 16;
