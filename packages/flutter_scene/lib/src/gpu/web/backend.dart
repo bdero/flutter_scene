@@ -1,12 +1,22 @@
 part of '_gpu.dart';
 
-// The web shim's API as backend-neutral interfaces. The members are exactly
-// what flutter_scene calls (the stub's surface), so a backend is complete when
-// these are.
+// The web shim's API as backend-neutral interfaces, and the switch that picks
+// which backend implements them. The members are exactly what flutter_scene
+// calls (the stub's surface), so a backend is complete when these are.
+
+/// Builds against the WebGPU backend instead of WebGL2.
+///
+/// Const, so the backend left out is tree-shaken. A conditional import cannot
+/// make this choice: the web compilers ignore environment tests in import
+/// conditions.
+// TODO(webgpu-runtime-selection): add the `auto` probe that picks WebGPU at
+// startup when the device supports it, falling back to WebGL2.
+const bool useWebGpuBackend = bool.fromEnvironment('flutter_scene.webgpu');
 
 /// Everything a web backend provides beyond its resource classes.
 abstract base class WebBackend {
-  /// Readies the backend. Must complete before [context] is read.
+  /// Readies the backend; WebGPU acquires its device here. Must complete
+  /// before [context] is read.
   Future<void> initialize();
 
   GpuContext get context;
@@ -49,7 +59,9 @@ abstract base class WebBackend {
   Surface createSurface({required int width, required int height});
 }
 
-final WebBackend _backend = createWebGlBackend();
+final WebBackend _backend = useWebGpuBackend
+    ? createWebGpuBackend()
+    : createWebGlBackend();
 
 /// Readies the selected backend. `Scene.initializeStaticResources` awaits it
 /// before anything touches [gpuContext].

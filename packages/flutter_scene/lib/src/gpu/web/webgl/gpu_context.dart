@@ -206,10 +206,7 @@ final class WebGlContext extends GpuContext {
   HostBuffer createHostBuffer({
     int blockLengthInBytes = HostBuffer.kDefaultBlockLengthInBytes,
   }) {
-    return WebGlHostBuffer._initialize(
-      this,
-      blockLengthInBytes: blockLengthInBytes,
-    );
+    return BumpHostBuffer(this, blockLengthInBytes: blockLengthInBytes);
   }
 
   @override
