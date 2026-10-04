@@ -1,7 +1,7 @@
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show internal, visibleForTesting;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/render/draw_recorder.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
@@ -312,6 +312,11 @@ class TransientTexturePool {
     }
     return bytes;
   }
+
+  /// The number of textures the pool holds across every descriptor's ring.
+  @internal
+  int get heldTextureCount =>
+      _rings.values.fold(0, (count, ring) => count + ring.nonNulls.length);
 }
 
 /// Per-frame state handed to every [RenderGraphPass] when the graph

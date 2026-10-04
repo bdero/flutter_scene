@@ -43,8 +43,9 @@ class Surface {
   static const int _liveSweepThreshold = 16;
 
   /// Every constructed surface, weakly. A [Scene] owns its surface for as long
-  /// as it lives and has no disposal hook, so strong references here would pin
-  /// a discarded scene's render targets for the life of the process.
+  /// as it lives and may be dropped without [Scene.dispose], so strong
+  /// references here would pin a discarded scene's render targets for the
+  /// life of the process.
   static final List<WeakReference<Surface>> _live = [];
 
   final List<_ViewSurface> _views = [];
@@ -149,6 +150,20 @@ class Surface {
     _forEachLive((_) => count++);
     return count;
   }
+
+  /// The number of textures every view's rings and transient pools hold.
+  @visibleForTesting
+  int get debugHeldTextureCount =>
+      _views.fold(0, (count, view) => count + view.heldTextureCount);
+
+  /// Drops every view's rings and transient pools, so their textures are
+  /// unreachable from this surface. A later frame allocates them again.
+  void dispose() {
+    for (final view in _views) {
+      view.dispose();
+    }
+    _views.clear();
+  }
 }
 
 /// One output size's render targets: the swapchain color ring and the
@@ -244,5 +259,22 @@ class _ViewSurface {
     sized.cursor = (sized.cursor + 1) % Surface._maxFramesInFlight;
     _lastIssued = result;
     return result;
+  }
+
+  int get heldTextureCount {
+    var count = 0;
+    for (final sized in _sizes) {
+      count += sized.swapchainColors.length + sized.pool.heldTextureCount;
+    }
+    return count;
+  }
+
+  void dispose() {
+    for (final sized in _sizes) {
+      sized.pool.clear();
+      sized.swapchainColors.clear();
+    }
+    _sizes.clear();
+    _lastIssued = null;
   }
 }

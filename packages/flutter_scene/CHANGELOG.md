@@ -1,3 +1,7 @@
+## 0.24.2
+
+* `Scene.dispose` releases the render targets a scene keeps across frames (each view's output ring and attachment pool, and the temporal, global illumination, exposure, shadow, probe and reflection history), so a dropped scene's GPU memory frees at the call instead of when the scene is collected. A disposed scene throws a `StateError` on render.
+
 ## 0.24.1
 
 * On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.

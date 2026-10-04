@@ -763,6 +763,68 @@ base class Scene implements SceneGraph {
   /// Handles the creation and management of render targets for this [Scene].
   final Surface surface = Surface();
 
+  bool _disposed = false;
+
+  /// Whether [dispose] has run.
+  bool get isDisposed => _disposed;
+
+  /// Releases the render targets this scene keeps across frames: each view's
+  /// output ring and transient attachment pool, and the history textures of
+  /// temporal anti-aliasing, global illumination, auto exposure,
+  /// screen-space indirect light, cached shadows, probe captures, and planar
+  /// reflections.
+  ///
+  /// The textures become unreachable from the scene at this call rather than
+  /// when the scene itself is collected. The scene graph is left as it is. A
+  /// pending [captureRenderGraph] completes with a [StateError], and a later
+  /// [render], [renderViews], [warmUp], [captureRenderGraph],
+  /// [captureEnvironment], [bakeIrradianceField], or a bake stepper taken
+  /// before the call throws a [StateError]. Calling dispose again does nothing.
+  void dispose() {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    surface.dispose();
+    _taaState?.dispose();
+    _taaState = null;
+    _irradianceField.dispose();
+    _autoExposureState = null;
+    _directionalShadowCache = null;
+    _ssgiHistoryColor = null;
+    _ssgiHistoryViewProjection = null;
+    _probeCapturePool?.clear();
+    _probeCapturePool = null;
+    for (final reflector in renderScene.planarReflectorComponents) {
+      reflector.internalDistributeFrame(null);
+    }
+    _planarCaptureResources.clear();
+    debugLastPlanarCapturePasses = const [];
+    final pending = _pendingGraphCapture;
+    _pendingGraphCapture = null;
+    pending?.completer.completeError(
+      StateError('The scene was disposed before a frame was captured'),
+    );
+  }
+
+  /// The history holders that keep textures across frames, by name.
+  @visibleForTesting
+  Set<String> get debugHeldHistoryTargets => {
+    if (_taaState != null) 'taa',
+    if (_irradianceField.layout != null) 'irradiance',
+    if (_autoExposureState != null) 'autoExposure',
+    if (_directionalShadowCache != null) 'shadowCache',
+    if (_ssgiHistoryColor != null) 'ssgi',
+    if (_probeCapturePool != null) 'probe',
+    if (_planarCaptureResources.isNotEmpty) 'planar',
+  };
+
+  void _checkNotDisposed(String operation) {
+    if (_disposed) {
+      throw StateError('Scene.$operation called after Scene.dispose');
+    }
+  }
+
   /// Transient-uniform allocator, created once and reused every frame.
   /// The image-based-lighting environment, or null to use the engine's
   /// default (the built-in procedural [EnvironmentMap.studio], built
@@ -1262,6 +1324,7 @@ base class Scene implements SceneGraph {
     int equirectWidth = 512,
     int layerMask = 0xFFFFFFFF,
   }) {
+    _checkNotDisposed('captureEnvironment');
     if (!isReadyToRender) {
       throw StateError(
         'Scene.captureEnvironment requires the engine resources; await '
@@ -1377,6 +1440,7 @@ base class Scene implements SceneGraph {
     int probesPerStep = 8,
     int layerMask = 0xFFFFFFFF,
   }) {
+    _checkNotDisposed('bakeIrradianceField');
     if (!isReadyToRender) {
       throw StateError(
         'Scene.bakeIrradianceField requires the engine resources; await '
@@ -1447,7 +1511,35 @@ base class Scene implements SceneGraph {
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
-      renderView: _renderViewToTexture,
+      renderView:
+          ({
+            required view,
+            required outputColor,
+            required pixelSize,
+            required pool,
+            required environmentMap,
+            required transientsBuffer,
+            required lightComponent,
+            required punctualLighting,
+            required spotShadowFrame,
+            required pointShadowFrame,
+            captureLinearColor = false,
+          }) {
+            _checkNotDisposed('bakeIrradianceField');
+            _renderViewToTexture(
+              view: view,
+              outputColor: outputColor,
+              pixelSize: pixelSize,
+              pool: pool,
+              environmentMap: environmentMap,
+              transientsBuffer: transientsBuffer,
+              lightComponent: lightComponent,
+              punctualLighting: punctualLighting,
+              spotShadowFrame: spotShadowFrame,
+              pointShadowFrame: pointShadowFrame,
+              captureLinearColor: captureLinearColor,
+            );
+          },
     );
   }
 
@@ -1585,6 +1677,7 @@ base class Scene implements SceneGraph {
     RenderGraphCaptureRequest request = const RenderGraphCaptureRequest(),
     Duration timeout = const Duration(seconds: 5),
   }) {
+    _checkNotDisposed('captureRenderGraph');
     if (!debugAllowRenderGraphCapture) {
       throw StateError(
         'Render graph capture is disabled; set '
@@ -1967,6 +2060,7 @@ base class Scene implements SceneGraph {
     bool includeOffscreen = false,
     Duration? sliceBudget,
   }) async {
+    _checkNotDisposed('warmUp');
     await initializeStaticResources();
     if (views.isEmpty) {
       return;
@@ -2047,6 +2141,7 @@ base class Scene implements SceneGraph {
     ui.Rect? region,
     double? pixelRatio,
   }) {
+    _checkNotDisposed('renderViews');
     renderScene.recordRenderedViews(views);
     if (!isReadyToRender) {
       debugPrint('Flutter Scene is not ready to render. Skipping frame.');
