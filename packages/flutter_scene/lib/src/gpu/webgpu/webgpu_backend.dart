@@ -1,11 +1,11 @@
 /// The WebGPU implementation of the web GPU shim, selected with
 /// `--dart-define=flutter_scene.webgpu=true`.
 ///
-/// The device, context, buffers, textures, samplers, mip generation, and
-/// shader libraries from WGSL sidecars work; pipelines, passes, and present
-/// do not yet.
-// TODO(webgpu-backend): implement pipelines, passes, and present, in that
-// order (see
+/// The device, context, buffers, textures, samplers, mip generation, shader
+/// libraries from WGSL sidecars, and render pipelines work; passes and
+/// present do not yet.
+// TODO(webgpu-backend): implement command buffers and render passes, then
+// present (see
 // notes/web-backend/webgpu_web_backend_handoff.md in the development root).
 library;
 
@@ -15,13 +15,15 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
-    show FlutterError, debugPrint, visibleForTesting;
+    show FlutterError, debugPrint, kDebugMode, visibleForTesting;
 import 'package:web/web.dart' as web;
 
 import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/encoded_image_types.dart';
+import '../shared/gpu_sample_types.dart';
 import '../shared/sidecar_hash.dart';
 import '../shared/shader_library_sources.dart';
+import '../shared/wgsl_bindings.dart' show parseWgslDeclarations;
 import '../web/_gpu.dart';
 import 'webgpu_device.dart';
 import 'webgpu_interop.dart';
@@ -31,6 +33,7 @@ part 'context.dart';
 part 'encoded_image.dart';
 part 'formats.dart';
 part 'mips.dart';
+part 'pipeline.dart';
 part 'readback.dart';
 part 'samplers.dart';
 part 'shader_library.dart';

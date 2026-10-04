@@ -58,10 +58,15 @@ extension type GPUSupportedLimits._(JSObject _) implements JSObject {
   external int get maxSamplersPerShaderStage;
   external int get maxUniformBufferBindingSize;
   external int get minUniformBufferOffsetAlignment;
+  external int get maxDynamicUniformBuffersPerPipelineLayout;
+  external int get maxUniformBuffersPerShaderStage;
 }
 
 extension type GPUDeviceDescriptor._(JSObject _) implements JSObject {
-  external factory GPUDeviceDescriptor({JSArray<JSString> requiredFeatures});
+  external factory GPUDeviceDescriptor({
+    JSArray<JSString> requiredFeatures,
+    JSObject requiredLimits,
+  });
 }
 
 extension type GPUDevice._(JSObject _) implements JSObject {
@@ -76,6 +81,8 @@ extension type GPUDevice._(JSObject _) implements JSObject {
   external GPUShaderModule createShaderModule(JSObject descriptor);
   external GPURenderPipeline createRenderPipeline(JSObject descriptor);
   external GPUBindGroup createBindGroup(JSObject descriptor);
+  external GPUBindGroupLayout createBindGroupLayout(JSObject descriptor);
+  external GPUPipelineLayout createPipelineLayout(JSObject descriptor);
   external void pushErrorScope(String filter);
   external JSPromise<GPUError?> popErrorScope();
   external void destroy();
@@ -145,6 +152,16 @@ extension type GPURenderPipeline._(JSObject _) implements JSObject {
 }
 
 extension type GPUBindGroup._(JSObject _) implements JSObject {}
+
+extension type GPUBindGroupLayout._(JSObject _) implements JSObject {}
+
+extension type GPUPipelineLayout._(JSObject _) implements JSObject {}
+
+/// `GPUShaderStage` flags.
+abstract final class GPUShaderStage {
+  static const int vertex = 0x1;
+  static const int fragment = 0x2;
+}
 
 extension type GPUDeviceLostInfo._(JSObject _) implements JSObject {
   external String get reason;

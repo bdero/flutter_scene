@@ -70,10 +70,23 @@ final class WebGpuDevice {
   /// Optional features the backend asks for whenever the adapter has them.
   static const List<String> wantedFeatures = [
     'float32-filterable',
+    'float32-blendable',
     'depth32float-stencil8',
     'texture-compression-bc',
     'texture-compression-etc2',
     'texture-compression-astc',
+  ];
+
+  /// Limits raised to the adapter's maximum. The engine's widest shader pairs
+  /// need more uniform blocks and texture slots than WebGPU's defaults.
+  static const List<String> raisedLimits = [
+    'maxDynamicUniformBuffersPerPipelineLayout',
+    'maxUniformBuffersPerShaderStage',
+    'maxSampledTexturesPerShaderStage',
+    'maxSamplersPerShaderStage',
+    'maxVertexAttributes',
+    'maxVertexBuffers',
+    'maxInterStageShaderVariables',
   ];
 
   /// Whether the device was created with [feature].
@@ -123,11 +136,20 @@ final class WebGpuDevice {
       for (final feature in wantedFeatures)
         if (adapter.features.has(feature)) feature,
     ];
+    // Only names this browser knows; an unknown limit rejects the request.
+    final limits = JSObject();
+    for (final name in raisedLimits) {
+      final value = adapter.limits.getProperty<JSAny?>(name.toJS);
+      if (value != null && value.isA<JSNumber>()) {
+        limits.setProperty(name.toJS, value);
+      }
+    }
     try {
       final device = await adapter
           .requestDevice(
             GPUDeviceDescriptor(
               requiredFeatures: [for (final f in features) f.toJS].toJS,
+              requiredLimits: limits,
             ),
           )
           .toDart;

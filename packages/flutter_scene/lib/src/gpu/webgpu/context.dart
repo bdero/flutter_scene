@@ -9,6 +9,13 @@ final class _WebGpuContext extends GpuContext {
   late final _SamplerCache samplers = _SamplerCache(device);
   late final _MipGenerator mipGenerator = _MipGenerator(device);
 
+  /// Whether 32-bit float targets blend, and filter when sampled.
+  late final bool float32Blendable = device.hasFeature('float32-blendable');
+  late final bool float32Filterable = device.hasFeature('float32-filterable');
+
+  /// Bind group layouts by their canonical entries.
+  final Map<String, _BindingLayout> bindingLayouts = {};
+
   @override
   PixelFormat get defaultColorFormat => PixelFormat.r8g8b8a8UNormInt;
 
@@ -104,6 +111,27 @@ final class _WebGpuContext extends GpuContext {
         TextureCompressionFamily.astcHdr => false,
       };
 
+  /// The bind group layout for [entries], shared by every pipeline whose
+  /// entries match, so their bind groups are interchangeable.
+  _BindingLayout _bindingLayoutFor(List<Map<String, Object?>> entries) {
+    final key = jsonEncode(entries);
+    final cached = bindingLayouts[key];
+    if (cached != null) return cached;
+    final layout = device.device.createBindGroupLayout(
+      _obj({'entries': entries}),
+    );
+    final pipelineLayout = device.device.createPipelineLayout(
+      _obj({
+        'bindGroupLayouts': [layout],
+      }),
+    );
+    return bindingLayouts[key] = _BindingLayout(key, layout, pipelineLayout, [
+      for (final e in entries)
+        if ((e['buffer'] as Map?)?['hasDynamicOffset'] == true)
+          e['binding']! as int,
+    ]);
+  }
+
   @override
   CommandBuffer createCommandBuffer() => _unimplemented('CommandBuffer');
 
@@ -112,5 +140,10 @@ final class _WebGpuContext extends GpuContext {
     Shader vertexShader,
     Shader fragmentShader, {
     VertexLayout? vertexLayout,
-  }) => _unimplemented('RenderPipeline');
+  }) => _WebGpuRenderPipeline(
+    this,
+    vertexShader as _WebGpuShader,
+    fragmentShader as _WebGpuShader,
+    vertexLayout,
+  );
 }
