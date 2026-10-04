@@ -3,6 +3,9 @@
 // etc1s_features_rgba_64 was encoded by basisu (`-ktx2 -mipmap -q 128`) from
 // a synthetic image aimed at each conversion branch.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

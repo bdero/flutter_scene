@@ -3,6 +3,9 @@
 // test/fixtures/zstd/ were compressed from inputs regenerated here, at the
 // level the file name carries (l3, l19; `nocheck` is level 3 with --no-check).
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

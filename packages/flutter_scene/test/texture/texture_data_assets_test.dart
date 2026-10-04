@@ -2,6 +2,9 @@
 // containers and registering them as DataAssets) and the TextureRegistry's
 // source-path resolution. Mirrors the buildScenes coverage.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

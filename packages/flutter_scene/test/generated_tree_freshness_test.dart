@@ -2,6 +2,9 @@
 // adding, deleting, and moving one, plus the stat-fingerprint rule that keeps a
 // multi-gigabyte source from being read on every build.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';

@@ -2,6 +2,7 @@
 // output, decoding std140 uniform bytes through it, compile-log diagnostics,
 // and (GPU-gated) mapping the base library's shaders back to their names.
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -9,6 +10,8 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/web/shader_bundle_generated.dart' as fb;
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/gpu_available.dart';
 
 Uint8List _bundle() {
   final fragInfo = fb.ShaderUniformStructObjectBuilder(
@@ -97,14 +100,9 @@ Uint8List _bundle() {
   ).toBytes();
 }
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+/// Builds fixture bundles with the generated flatbuffer builder, which writes uint64 fields that dart2js cannot.
+const String _webUint64 =
+    'Builds fixture bundles with the generated flatbuffer builder, which writes uint64 fields that dart2js cannot.';
 
 void main() {
   test('parses reflection and per-backend output', () {
@@ -142,7 +140,7 @@ void main() {
     // The running platform's backend is preferred; any backend otherwise.
     expect(fragment.current, isNotNull);
     expect(info.toJson(includeSource: true)['shaders'], hasLength(2));
-  });
+  }, skip: kIsWeb ? _webUint64 : null);
 
   test('decodes std140 bytes through the field layout', () {
     final block = ShaderBundleInfo.parse(_bundle())['TestFragment']!
@@ -182,7 +180,7 @@ void main() {
     final short = decodeUniformBlock(block, ByteData(8));
     expect(short[0].values, [0.0, 0.0]);
     expect(short[1].values, isEmpty);
-  });
+  }, skip: kIsWeb ? _webUint64 : null);
 
   test('matches emplaced buffers to declared blocks', () {
     final frag = ShaderBundleInfo.parse(_bundle())['TestFragment']!
@@ -240,7 +238,7 @@ void main() {
     final settled = matchUniformBlocks([frameInfo, frag], [64, 80]);
     expect(settled[0].map((b) => b.name), ['FragInfo']);
     expect(settled[1].map((b) => b.name), ['FrameInfo']);
-  });
+  }, skip: kIsWeb ? _webUint64 : null);
 
   test('parses compiler diagnostics and windows the source', () {
     const log = '''
@@ -274,7 +272,7 @@ lib/foo.frag:7:3: error: use of undeclared identifier 'bar'
   });
 
   test('maps the base library shaders back to their names', () async {
-    if (!_gpuAvailable()) return;
+    if (!gpuAvailable()) return;
     await loadBaseShaderLibrary();
     final library = baseShaderLibrary;
     final info = await ShaderReflection.loadBundleInfo(library);

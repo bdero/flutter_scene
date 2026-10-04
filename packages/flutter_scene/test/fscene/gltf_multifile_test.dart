@@ -7,6 +7,9 @@
 //
 // Runs only when the source GLB corpus is present (CI without it skips).
 
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

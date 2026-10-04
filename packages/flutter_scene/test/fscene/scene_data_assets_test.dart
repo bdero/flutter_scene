@@ -2,6 +2,9 @@
 // to .fsceneb packages, and registering them as DataAssets. Mirrors the
 // buildModels coverage. Runs only when the source GLB corpus is present.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:data_assets/data_assets.dart';

@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';

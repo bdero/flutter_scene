@@ -2,6 +2,9 @@
 // command writes must build cleanly against one. Declaring a directory that
 // does not exist fails the build with "Flutter failed to list directory".
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_scene/src/fmat/build_materials.dart';

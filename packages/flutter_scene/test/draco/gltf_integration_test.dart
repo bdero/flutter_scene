@@ -2,6 +2,9 @@
 // primitive must produce the same vertex and index bytes as packing the
 // reference-decoded copy of the same asset.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

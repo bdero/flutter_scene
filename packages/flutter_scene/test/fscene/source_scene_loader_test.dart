@@ -3,6 +3,9 @@
 // document-relative references to project-relative keys the overlay bundle
 // serves.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

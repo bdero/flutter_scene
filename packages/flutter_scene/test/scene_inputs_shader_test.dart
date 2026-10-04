@@ -3,6 +3,9 @@
 // gates and the screen mapping out of), so nothing but a test keeps them
 // meaning the same thing.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

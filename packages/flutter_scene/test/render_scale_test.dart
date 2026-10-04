@@ -8,14 +8,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 void main() {
   test('RenderView scale and filter default to inherit (null)', () {
@@ -31,7 +24,7 @@ void main() {
     );
   });
 
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'render scale suite (skipped: no GPU device)',
       () {},

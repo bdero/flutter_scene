@@ -1,5 +1,8 @@
 // Checks the upload format per device and the levels the decode produces.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

@@ -7,17 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:scene/scene.dart';
 import 'package:vector_math/vector_math.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import '../support/gpu_available.dart';
 
 void main() {
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'material depth bias round trip',
       () {},

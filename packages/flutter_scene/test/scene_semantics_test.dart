@@ -10,6 +10,7 @@
 // semantics refresh runs from the scene painter regardless, so these tests
 // exercise the real per-frame path.
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -111,6 +112,8 @@ Future<void> _settleSemantics(WidgetTester tester) async {
   await tester.pump();
 }
 
+// The widget surface tests below skip on the web: they render frames, which
+// needs shader bundles a browser test cannot load.
 void main() {
   group('Camera.worldToScreen', () {
     test('round-trips screenPointToRay', () {
@@ -577,7 +580,7 @@ void main() {
     await _settleSemantics(tester);
     expect(find.semantics.byLabel('Panel button'), findsNothing);
     handle.dispose();
-  });
+  }, skip: kIsWeb);
 
   testWidgets('occlusionHiding drops an occluded widget surface subtree', (
     tester,
@@ -621,7 +624,7 @@ void main() {
     await _settleSemantics(tester);
     expect(find.semantics.byLabel('Panel button'), findsOne);
     handle.dispose();
-  });
+  }, skip: kIsWeb);
 
   testWidgets('a side-facing rotated widget surface exposes its semantics', (
     tester,
@@ -669,7 +672,7 @@ void main() {
     await _settleSemantics(tester);
     expect(find.semantics.byLabel('Panel button'), findsOne);
     handle.dispose();
-  });
+  }, skip: kIsWeb);
 
   testWidgets('a multi-widget surface exposes every child under MaterialApp', (
     tester,
@@ -733,5 +736,5 @@ void main() {
       findsOne,
     );
     handle.dispose();
-  });
+  }, skip: kIsWeb);
 }

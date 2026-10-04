@@ -63,11 +63,12 @@ void main() {
     );
     listeners.add(first);
 
-    listeners.beforeTick(1);
+    // Fractional ticks, since the web prints a whole double without `.0`.
+    listeners.beforeTick(0.5);
     // The dispatch in progress is unaffected; the change applies next tick.
-    expect(log, ['self tick 1.0']);
-    listeners.beforeTick(2);
-    expect(log, ['self tick 1.0', 'late tick 2.0']);
+    expect(log, ['self tick 0.5']);
+    listeners.beforeTick(1.5);
+    expect(log, ['self tick 0.5', 'late tick 1.5']);
   });
 
   test('beforeFixedStep precedes every component fixed walk', () {

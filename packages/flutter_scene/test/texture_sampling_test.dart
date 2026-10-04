@@ -4,19 +4,11 @@
 /// defaults for a texture it did not build, which is GPU-gated.
 library;
 
-import 'package:flutter_scene/scene.dart' show Scene;
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import 'support/gpu_available.dart';
 
 // 8x8 so the mipped case has levels to ask for (the allocator caps a 4x4 at 2).
 gpu.Texture _texture({required int mipLevelCount}) =>
@@ -55,7 +47,7 @@ void main() {
   });
 
   group('GpuTextureSource default sampler', () {
-    if (!_gpuAvailable()) {
+    if (!gpuAvailable()) {
       // ignore: avoid_print
       print('GPU unavailable - skipping.');
       return;

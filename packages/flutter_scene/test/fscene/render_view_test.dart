@@ -10,14 +10,7 @@ import 'package:flutter_scene/src/fscene/realize/stage.dart';
 import 'package:flutter_scene/src/fscene/realize/views.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+import '../support/gpu_available.dart';
 
 // Builds: world (root) -> eye (camera), plus a render texture targeted by
 // a view from the eye.
@@ -92,7 +85,7 @@ void main() {
     expect(restored.stage.filterQuality, 'high');
   });
 
-  if (!_gpuAvailable()) {
+  if (!gpuAvailable()) {
     test(
       'render view realize suite (skipped: no GPU device)',
       () {},

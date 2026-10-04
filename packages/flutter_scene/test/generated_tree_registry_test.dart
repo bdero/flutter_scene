@@ -2,6 +2,9 @@
 // registries resolve a source path to a tree asset key, and a data asset for the
 // same source still wins.
 
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 
 import 'package:flutter/services.dart';

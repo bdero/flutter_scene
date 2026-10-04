@@ -3,6 +3,9 @@
 // resolves) a cross-backend compile of every generated variant within the
 // fragment sampler budget.
 
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

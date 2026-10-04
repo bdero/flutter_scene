@@ -2,6 +2,7 @@
 /// (every project on the machine, for flutter_scene's own tree in the pub cache)
 /// adds outputs for its own target. Target outputs therefore live in a directory
 /// per target, listed with a platform filter, so an app ships only its own.
+@TestOn('vm')
 library;
 
 import 'dart:io';

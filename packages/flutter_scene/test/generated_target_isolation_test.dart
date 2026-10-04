@@ -5,6 +5,7 @@
 /// compiled for one backend is unreadable on another. Every such output is
 /// separated by target, in its file name and in the manifest, and the runtime
 /// reads back only the target it runs on.
+@TestOn('vm')
 library;
 
 import 'dart:convert';

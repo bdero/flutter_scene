@@ -4,6 +4,9 @@
 // morphed entries compile (with the expected uniforms) on every backend
 // impellerc targets.
 
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

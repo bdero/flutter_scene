@@ -11,11 +11,13 @@ void main() {
       return;
     }
 
+    // The coefficients are stored as float32, so only float32 precision
+    // holds.
     const sh0Basis = 0.28209479177387814;
     final coefficient = environment.diffuseSphericalHarmonics.first;
-    expect(coefficient.x * sh0Basis, closeTo(0.2, 1e-9));
-    expect(coefficient.y * sh0Basis, closeTo(0.4, 1e-9));
-    expect(coefficient.z * sh0Basis, closeTo(0.8, 1e-9));
+    expect(coefficient.x * sh0Basis, closeTo(0.2, 1e-6));
+    expect(coefficient.y * sh0Basis, closeTo(0.4, 1e-6));
+    expect(coefficient.z * sh0Basis, closeTo(0.8, 1e-6));
     for (final higherBand in environment.diffuseSphericalHarmonics.skip(1)) {
       expect(higherBand, Vector3.zero());
     }

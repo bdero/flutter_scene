@@ -3,6 +3,9 @@
 // matching *_decoded.glb, produced by the reference decoder (see
 // test/fixtures/draco/generate.sh).
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

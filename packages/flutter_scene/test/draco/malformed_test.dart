@@ -1,6 +1,9 @@
 // Malformed and truncated Draco streams must fail with a clean
 // FormatException, never an index error or a wrong-type crash.
 
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 

@@ -10,6 +10,9 @@
 // Runs against the SDK cache's impellerc, like fmat_runtime_compile_test.
 // Skips when it is not found.
 
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
