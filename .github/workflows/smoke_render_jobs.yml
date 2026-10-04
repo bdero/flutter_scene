@@ -309,6 +309,13 @@ jobs:
             --driver=test_driver/integration_test.dart \
             --target=integration_test/smoke_test.dart \
             -d web-server --browser-name=chrome --headless --driver-port=4444
+      - name: Keep frames for the WebGPU parity check
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-web-frames
+          path: examples/smoke_render/build/smoke
+          if-no-files-found: ignore
       - name: Upload to Argos
         id: argos
         if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
@@ -353,6 +360,128 @@ jobs:
           [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
           curl -sf -H "Content-Type: application/json" \
             -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
+
+  # The web lane again on the WebGPU backend: SwiftShader's Vulkan under
+  # headless Chrome (without the Vulkan flags every canvas read returns zeros),
+  # with WGSL sidecars translated by the released flutter_scene_tint.
+  web-webgpu:
+    name: ${{ inputs.argos_prefix }}web-webgpu (${{ inputs.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref != '' }}
+        with:
+          ref: ${{ inputs.checkout_ref }}
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref == '' }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ inputs.flutter_channel }}
+      - name: Flutter and engine revision
+        run: flutter --version
+      - run: flutter config --enable-native-assets
+      - name: Opt in to WGSL sidecars
+        run: tools/webgpu_smoke/opt_in.sh
+      - run: flutter pub get
+      - uses: nanasess/setup-chromedriver@v3
+      - name: Render smoke scenes
+        working-directory: examples/smoke_render
+        run: |
+          chromedriver --port=4444 &
+          flutter drive \
+            --driver=test_driver/integration_test.dart \
+            --target=integration_test/smoke_test.dart \
+            -d web-server --browser-name=chrome --headless --driver-port=4444 \
+            --dart-define=flutter_scene.webgpu=true \
+            --web-browser-flag=--enable-unsafe-webgpu \
+            --web-browser-flag=--enable-features=Vulkan \
+            --web-browser-flag=--use-vulkan=swiftshader
+      - name: Keep frames for the WebGPU parity check
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-web-webgpu-frames
+          path: examples/smoke_render/build/smoke
+          if-no-files-found: ignore
+      - name: Upload to Argos
+        id: argos
+        if: ${{ !cancelled() && (github.event_name != 'push' || inputs.upload_argos_on_push) }}
+        working-directory: examples/smoke_render
+        env:
+          ARGOS_TOKEN: ${{ secrets.ARGOS_TOKEN }}
+        run: |
+          # Never upload an empty/partial build: a failed render must not
+          # overwrite the Argos baseline (see the android job, and
+          # notes/ci/argos_visual_baseline_tracking.md).
+          if [ ! -d build/smoke ] || ! find build/smoke -type f -name '*.png' | grep -q .; then
+            echo "No smoke screenshots found; skipping Argos upload."
+            exit 0
+          fi
+          reference_args=()
+          if [ -n "${{ inputs.reference_branch }}" ]; then
+            reference_args=(--reference-branch "${{ inputs.reference_branch }}")
+            if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              export ARGOS_BRANCH="${{ inputs.reference_branch }}"
+              export ARGOS_COMMIT="$(git rev-parse HEAD)"
+            fi
+          fi
+          status=0
+          out=$(npx --yes @argos-ci/cli upload build/smoke --project "$ARGOS_PROJECT" --build-name "${{ inputs.argos_prefix }}web-webgpu" "${reference_args[@]}" 2>&1) || status=$?
+          echo "$out"
+          # The grep misses when the upload printed no URL; that miss must not
+          # fail the step, which runs with pipefail on windows.
+          url=$(printf '%s' "$out" | grep -oE 'https://app\.argos-ci\.com/[^[:space:]]+' | head -1) || true
+          echo "build_url=$url" >> "$GITHUB_OUTPUT"
+          # Tokenless auth covers fork PRs, so every run can upload. A failed
+          # upload means no visual diff at all and must not pass silently.
+          exit "$status"
+      - name: Notify Discord on failure
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ARGOS_URL: ${{ steps.argos.outputs.build_url }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && exit 0
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          CONTENT="Smoke render failed (${{ inputs.argos_prefix }}web-webgpu, ${{ inputs.label }}). Run: $RUN_URL"
+          [ -n "$ARGOS_URL" ] && CONTENT="$CONTENT  |  Argos: $ARGOS_URL"
+          curl -sf -H "Content-Type: application/json" \
+            -d "{\"content\": \"$CONTENT\"}" "$DISCORD_WEBHOOK_URL" || true
+
+  # WebGPU must render what WebGL2 renders. Both lanes run SwiftShader, so
+  # the frames differ by rasterizer rounding only.
+  web-parity:
+    name: ${{ inputs.argos_prefix }}web-parity (${{ inputs.label }})
+    needs: [web, web-webgpu]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref != '' }}
+        with:
+          ref: ${{ inputs.checkout_ref }}
+      - uses: actions/checkout@v7
+        if: ${{ inputs.checkout_ref == '' }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-web-frames
+          path: frames/webgl2
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-web-webgpu-frames
+          path: frames/webgpu
+      - run: pip install --quiet pillow numpy
+      - name: Compare WebGPU against WebGL2
+        run: python3 tools/webgpu_smoke/compare_frames.py frames/webgl2 frames/webgpu --diff-dir frames/diff
+      - name: Keep the differences
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.argos_prefix }}smoke-web-parity-diff
+          path: frames/diff
+          if-no-files-found: ignore
 
   windows:
     name: ${{ inputs.argos_prefix }}windows (${{ inputs.label }})
