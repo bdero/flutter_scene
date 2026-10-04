@@ -10,6 +10,9 @@ import '../generated_assets/engine_identity.dart';
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_file_names.dart';
 import '../generated_assets/generated_tree.dart';
+import '../generated_assets/tint_binary.dart' show kTintReleaseTag;
+import '../generated_assets/wgsl_sidecar.dart';
+import '../gpu/shared/sidecar_hash.dart';
 import '../gpu/web/shader_bundle_generated.dart' as fb;
 import '../importer/build_cache.dart' show buildCacheRevision;
 import 'framework_shaders.dart';
@@ -107,11 +110,25 @@ Future<void> buildTargetShaderBundleJson({
     glesLanguageVersion: glesLanguageVersion,
   );
   final output = File.fromUri(result.outputFile);
-  final bytes = trimShaderBundle(
-    output.readAsBytesSync(),
-    shaderBundleBackendsForBuild(buildInput),
-  );
+  final untrimmed = output.readAsBytesSync();
+  final backends = shaderBundleBackendsForBuild(buildInput);
+  final bytes = trimShaderBundle(untrimmed, backends);
   output.writeAsBytesSync(bytes);
+  // Translated before trimming, since a web build keeps no Vulkan SPIR-V.
+  final wgsl = File(wgslSidecarPathFor(output.path));
+  if (webGpuShadersRequested(buildInput) &&
+      backends.contains(ShaderBundleBackend.openglEs)) {
+    final translator = await TintProcessTranslator.resolve(buildInput);
+    wgsl.writeAsStringSync(
+      await buildWgslSidecar(
+        untrimmed,
+        translator,
+        shippedBundleHash: sidecarBundleHash(bytes),
+      ),
+    );
+  } else if (wgsl.existsSync()) {
+    wgsl.deleteSync();
+  }
 
   if (!copyToGeneratedTree) return;
 
@@ -151,16 +168,29 @@ Future<void> buildTargetShaderBundleJson({
     target: target,
   );
   writeGeneratedBytes(copyUri, bytes);
-  tree
-    ..recordFile(
-      family: GeneratedAssetFamily.shaderBundle,
+  tree.recordFile(
+    family: GeneratedAssetFamily.shaderBundle,
+    id: id,
+    uri: copyUri,
+    stamp: stamp ?? fnv1aHex(bytes),
+    owner: owner,
+    target: target,
+  );
+  if (!wgsl.existsSync()) {
+    tree.drop(GeneratedAssetFamily.wgsl, id, target: target);
+  } else {
+    final wgslUri = Uri.file(wgslSidecarPathFor(copyUri.toFilePath()));
+    writeGeneratedBytes(wgslUri, wgsl.readAsBytesSync());
+    tree.recordFile(
+      family: GeneratedAssetFamily.wgsl,
       id: id,
-      uri: copyUri,
+      uri: wgslUri,
       stamp: stamp ?? fnv1aHex(bytes),
       owner: owner,
       target: target,
-    )
-    ..save();
+    );
+  }
+  tree.save();
 }
 
 /// Returns the backend set needed by [buildInput].
@@ -224,10 +254,12 @@ String? _targetOSName(BuildInput buildInput) {
 ///
 /// The engine belongs in the stamp because a shader bundle is only valid for
 /// the engine that consumes it, so switching Flutter versions must recompile
-/// even when every shader source is untouched. [what] names the bundle.
+/// even when every shader source is untouched. [what] names the bundle. The
+/// WGSL switch is in it too, so turning `flutter_scene_webgpu` on recompiles.
 Future<String> shaderBundleStamp(BuildInput buildInput, String what) async =>
     'rev=$buildCacheRevision $what target=${shaderBundleTargetKey(buildInput)} '
-    '${await engineIdentity()}';
+    '${await engineIdentity()}'
+    '${webGpuShadersRequested(buildInput) ? ' wgsl=$kTintReleaseTag' : ''}';
 
 /// Stable build-cache key for the selected shader backends. Recorded on every
 /// output that is only valid for them, and matched against
