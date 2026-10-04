@@ -127,3 +127,31 @@ jobs:
         run: |
           files=$(grep -rL --include='*_test.dart' "@TestOn('vm')" test | sort)
           flutter test --platform chrome ${{ matrix.compiler == 'dart2wasm' && '--wasm' || '' }} $files
+
+  # The WebGPU backend's browser tests, on a GPU-less runner through
+  # SwiftShader. Without the Vulkan flags Chrome renders WebGPU but every read
+  # of its canvas returns zeros.
+  webgpu_test:
+    name: Test the WebGPU backend (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [dart2js, dart2wasm]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+      - name: Resolve workspace dependencies
+        run: flutter pub get
+      - name: Run WebGPU tests in Chrome
+        working-directory: packages/flutter_scene
+        env:
+          CHROME_EXECUTABLE: ${{ github.workspace }}/tools/webgpu_smoke/chrome_with_flags.sh
+          CHROME_EXTRA_FLAGS: --enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
+        run: >-
+          flutter test --platform chrome
+          ${{ matrix.compiler == 'dart2wasm' && '--wasm' || '' }}
+          --dart-define=flutter_scene.webgpu=true test/gpu/webgpu/
