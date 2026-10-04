@@ -1,14 +1,8 @@
 /// The WebGPU implementation of the web GPU shim, selected with
 /// `--dart-define=flutter_scene.webgpu=true`.
-///
-/// The device, context, buffers, textures, samplers, mip generation, shader
-/// libraries from WGSL sidecars, and render pipelines work; passes and
-/// present do not yet.
-// TODO(webgpu-backend): implement command buffers and render passes, then
-// present (see
-// notes/web-backend/webgpu_web_backend_handoff.md in the development root).
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
@@ -20,21 +14,26 @@ import 'package:web/web.dart' as web;
 
 import '../../generated_assets/generated_asset_fetch_web.dart';
 import '../shared/encoded_image_types.dart';
+import '../shared/gpu_capabilities.dart';
 import '../shared/gpu_sample_types.dart';
 import '../shared/sidecar_hash.dart';
 import '../shared/shader_library_sources.dart';
-import '../shared/wgsl_bindings.dart' show parseWgslDeclarations;
+import '../shared/wgsl_bindings.dart'
+    show WgslBindingMap, parseWgslDeclarations;
 import '../web/_gpu.dart';
 import 'webgpu_device.dart';
 import 'webgpu_interop.dart';
+import 'webgpu_presenter.dart';
 
 part 'buffer.dart';
 part 'context.dart';
 part 'encoded_image.dart';
 part 'formats.dart';
+part 'host.dart';
 part 'mips.dart';
 part 'pipeline.dart';
 part 'readback.dart';
+part 'render_pass.dart';
 part 'samplers.dart';
 part 'shader_library.dart';
 part 'texture.dart';
@@ -48,11 +47,6 @@ JSObject _obj(Map<String, Object?> fields) => fields.jsify()! as JSObject;
 
 /// A WebGPU sequence, such as an extent or origin.
 JSObject _arr(List<Object?> items) => items.jsify()! as JSObject;
-
-Never _unimplemented(String what) => throw UnimplementedError(
-  'The WebGPU backend does not implement $what yet. Build without '
-  '--dart-define=flutter_scene.webgpu=true to use WebGL2.',
-);
 
 final class _WebGpuBackend extends WebBackend {
   _WebGpuContext? _context;
@@ -71,6 +65,7 @@ final class _WebGpuBackend extends WebBackend {
             'to use WebGL2.',
           )),
     );
+    if (kDebugMode) debugPrint('flutter_scene: WebGPU backend, $probe');
   }
 
   @override
@@ -81,11 +76,15 @@ final class _WebGpuBackend extends WebBackend {
       ));
 
   @override
-  GpuHost get host => _unimplemented('GpuHost');
+  late final GpuHost host = _WebGpuHost(this);
 
   @override
   Texture textureFromImage(GpuContext gpuContext, ui.Image image) =>
-      _unimplemented('Texture.fromImage');
+      throw Exception(
+        'Texture.fromImage could not wrap the image because it is not backed '
+        'by a compatible GPU texture. The web backend cannot share textures '
+        'with the framework; read the image back and upload it instead.',
+      );
 
   @override
   Future<ShaderLibrary?> loadShaderLibraryAsync(String assetName) =>
@@ -142,7 +141,7 @@ final class _WebGpuBackend extends WebBackend {
   Future<ui.Image> presentTextureAsImage(
     Texture texture, {
     bool transferOwnership = false,
-  }) => _unimplemented('presentTextureAsImage');
+  }) async => _textureToImageSync(texture as _WebGpuTexture);
 
   @override
   PixelFormat get reversedDepthStencilFormat =>
@@ -172,5 +171,5 @@ final class _WebGpuBackend extends WebBackend {
 
   @override
   Surface createSurface({required int width, required int height}) =>
-      _unimplemented('Surface');
+      _WebGpuSurface(WebGpuPresenter(context.device), width, height);
 }

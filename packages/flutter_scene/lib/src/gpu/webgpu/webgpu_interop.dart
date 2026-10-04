@@ -212,8 +212,27 @@ extension type GPUCommandEncoder._(JSObject _) implements JSObject {
 
 extension type GPURenderPassEncoder._(JSObject _) implements JSObject {
   external void setPipeline(GPURenderPipeline pipeline);
-  external void setBindGroup(int index, GPUBindGroup bindGroup);
-  external void draw(int vertexCount);
+  external void setBindGroup(
+    int index,
+    GPUBindGroup bindGroup, [
+    JSUint32Array dynamicOffsetsData,
+    int dynamicOffsetsDataStart,
+    int dynamicOffsetsDataLength,
+  ]);
+  external void setVertexBuffer(int slot, GPUBuffer buffer, int offset);
+  external void setIndexBuffer(GPUBuffer buffer, String format, int offset);
+  external void setViewport(
+    double x,
+    double y,
+    double width,
+    double height,
+    double minDepth,
+    double maxDepth,
+  );
+  external void setScissorRect(int x, int y, int width, int height);
+  external void setStencilReference(int reference);
+  external void draw(int vertexCount, [int instanceCount]);
+  external void drawIndexed(int indexCount, [int instanceCount]);
   external void end();
 }
 
@@ -257,5 +276,6 @@ extension type GPUCanvasConfiguration._(JSObject _) implements JSObject {
     GPUDevice device,
     String format,
     String alphaMode,
+    JSArray<JSString> viewFormats,
   });
 }

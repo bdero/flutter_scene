@@ -8,10 +8,49 @@ final class _WebGpuContext extends GpuContext {
 
   late final _SamplerCache samplers = _SamplerCache(device);
   late final _MipGenerator mipGenerator = _MipGenerator(device);
+  late final WebGpuPresenter presenter = WebGpuPresenter(device);
 
   /// Whether 32-bit float targets blend, and filter when sampled.
   late final bool float32Blendable = device.hasFeature('float32-blendable');
   late final bool float32Filterable = device.hasFeature('float32-filterable');
+
+  /// Scratch for `setBindGroup`'s dynamic offsets, JS-backed so passing it
+  /// costs no copy.
+  final JSUint32Array dynamicOffsetsJs = JSUint32Array.withLength(64);
+  late final Uint32List dynamicOffsets = dynamicOffsetsJs.toDart;
+
+  _WebGpuDeviceBuffer? _zeroUniforms;
+
+  /// A zeroed buffer of at least [size] bytes, bound to a uniform block the
+  /// renderer never binds, which reads zeros as on WebGL2.
+  _WebGpuDeviceBuffer zeroUniformBuffer(int size) {
+    final current = _zeroUniforms;
+    if (current != null && current.sizeInBytes >= size) return current;
+    return _zeroUniforms = _WebGpuDeviceBuffer.geometry(
+      this,
+      size < 4096 ? 4096 : size,
+    );
+  }
+
+  final Map<String, _WebGpuTexture> _blankTextures = {};
+
+  /// An opaque black texture of [viewDimension], bound to a texture the
+  /// renderer never binds; GL samples an unbound unit the same way.
+  _WebGpuTexture blankTexture(String viewDimension) =>
+      _blankTextures[viewDimension] ??= () {
+        final cube = viewDimension == 'cube';
+        final texture = createTexture(
+          StorageMode.hostVisible,
+          1,
+          1,
+          textureType: cube ? TextureType.textureCube : TextureType.texture2D,
+          enableRenderTargetUsage: false,
+        );
+        for (var slice = 0; slice < texture.sliceCount; slice++) {
+          texture.overwrite(ByteData(4)..setUint8(3, 255), slice: slice);
+        }
+        return texture as _WebGpuTexture;
+      }();
 
   /// Bind group layouts by their canonical entries.
   final Map<String, _BindingLayout> bindingLayouts = {};
@@ -127,13 +166,22 @@ final class _WebGpuContext extends GpuContext {
     );
     return bindingLayouts[key] = _BindingLayout(key, layout, pipelineLayout, [
       for (final e in entries)
-        if ((e['buffer'] as Map?)?['hasDynamicOffset'] == true)
-          e['binding']! as int,
+        (
+          binding: e['binding']! as int,
+          kind: e.containsKey('buffer')
+              ? _EntryKind.uniform
+              : e.containsKey('texture')
+              ? _EntryKind.texture
+              : _EntryKind.sampler,
+          dynamic: (e['buffer'] as Map?)?['hasDynamicOffset'] == true,
+          nonFiltering: (e['sampler'] as Map?)?['type'] == 'non-filtering',
+          viewDimension: (e['texture'] as Map?)?['viewDimension'] as String?,
+        ),
     ]);
   }
 
   @override
-  CommandBuffer createCommandBuffer() => _unimplemented('CommandBuffer');
+  CommandBuffer createCommandBuffer() => _WebGpuCommandBuffer(this);
 
   @override
   RenderPipeline createRenderPipeline(

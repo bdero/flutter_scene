@@ -101,6 +101,15 @@ final class _WebGpuTexture extends Texture {
     }),
   );
 
+  final Map<int, GPUTextureView> _attachmentViews = {};
+
+  /// [levelView], cached, for a pass attachment.
+  GPUTextureView attachmentView(int mipLevel, int slice) =>
+      _attachmentViews[mipLevel | slice << 8] ??= levelView(
+        mipLevel,
+        slice: slice,
+      );
+
   /// A single-level, single-slice view, for a render attachment or a mip
   /// generation source.
   GPUTextureView levelView(int mipLevel, {int slice = 0}) => texture.createView(
@@ -175,5 +184,5 @@ final class _WebGpuTexture extends Texture {
   }
 
   @override
-  ui.Image asImage() => _unimplemented('Texture.asImage');
+  ui.Image asImage() => _textureToImageSync(this);
 }

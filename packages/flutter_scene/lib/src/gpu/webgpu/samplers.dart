@@ -12,7 +12,14 @@ final class _SamplerCache {
   /// The sampler for [options]. With [nonFiltering], every filter is nearest:
   /// the copy a filtering sampler is swapped for when the bound texture
   /// cannot be filtered (see `gpu_sample_types.dart`).
-  GPUSampler get(SamplerOptions options, {bool nonFiltering = false}) {
+  GPUSampler get(SamplerOptions options, {bool nonFiltering = false}) =>
+      byKey(keyOf(options, nonFiltering: nonFiltering));
+
+  /// The sampler for a [keyOf] result.
+  GPUSampler byKey(int key) => _samplers[key] ??= _create(key);
+
+  /// A small int naming the sampler [get] returns, for cache keys.
+  static int keyOf(SamplerOptions options, {bool nonFiltering = false}) {
     final minFilter = nonFiltering ? MinMagFilter.nearest : options.minFilter;
     final magFilter = nonFiltering ? MinMagFilter.nearest : options.magFilter;
     final mipFilter = nonFiltering ? MipFilter.nearest : options.mipFilter;
@@ -23,25 +30,25 @@ final class _SamplerCache {
         magFilter == MinMagFilter.linear &&
         mipFilter == MipFilter.linear;
     final anisotropy = allLinear ? options.maxAnisotropy.clamp(1, 16) : 1;
-    final key =
-        minFilter.index |
+    return minFilter.index |
         magFilter.index << 1 |
         mipFilter.index << 2 |
         options.widthAddressMode.index << 3 |
         options.heightAddressMode.index << 5 |
         anisotropy << 7;
-    return _samplers[key] ??= _device.device.createSampler(
-      _obj({
-        'addressModeU': _addressMode(options.widthAddressMode),
-        'addressModeV': _addressMode(options.heightAddressMode),
-        'addressModeW': 'clamp-to-edge',
-        'minFilter': minFilter.name,
-        'magFilter': magFilter.name,
-        'mipmapFilter': mipFilter.name,
-        'maxAnisotropy': anisotropy,
-      }),
-    );
   }
+
+  GPUSampler _create(int key) => _device.device.createSampler(
+    _obj({
+      'addressModeU': _addressMode(SamplerAddressMode.values[(key >> 3) & 3]),
+      'addressModeV': _addressMode(SamplerAddressMode.values[(key >> 5) & 3]),
+      'addressModeW': 'clamp-to-edge',
+      'minFilter': MinMagFilter.values[key & 1].name,
+      'magFilter': MinMagFilter.values[(key >> 1) & 1].name,
+      'mipmapFilter': MipFilter.values[(key >> 2) & 1].name,
+      'maxAnisotropy': key >> 7,
+    }),
+  );
 
   static String _addressMode(SamplerAddressMode mode) => switch (mode) {
     SamplerAddressMode.clampToEdge => 'clamp-to-edge',

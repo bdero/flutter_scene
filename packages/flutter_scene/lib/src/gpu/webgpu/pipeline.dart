@@ -354,19 +354,67 @@ String _blendFactor(BlendFactor factor) => switch (factor) {
   BlendFactor.oneMinusBlendAlpha => 'one-minus-constant',
 };
 
+/// What fills one entry of a bind group layout.
+enum _EntryKind { uniform, texture, sampler }
+
+/// One entry of a [_BindingLayout], as a pass fills it.
+typedef _LayoutEntry = ({
+  int binding,
+  _EntryKind kind,
+
+  /// A uniform addressed by dynamic offset.
+  bool dynamic,
+
+  /// A sampler bound as non-filtering, or a texture's view dimension.
+  bool nonFiltering,
+  String? viewDimension,
+});
+
 /// A realized bind group layout, and what a pass needs to fill a group for it.
 final class _BindingLayout {
-  _BindingLayout(this.key, this.layout, this.pipelineLayout, this.dynamic);
+  _BindingLayout(this.key, this.layout, this.pipelineLayout, this.entries)
+    : dynamic = [
+        for (final e in entries)
+          if (e.dynamic) e.binding,
+      ];
 
   /// The canonical descriptor text it was deduplicated by.
   final String key;
   final GPUBindGroupLayout layout;
   final GPUPipelineLayout pipelineLayout;
 
+  /// Entries in ascending binding order.
+  final List<_LayoutEntry> entries;
+
   /// Uniform bindings addressed by dynamic offset, ascending, which is the
   /// order `setBindGroup` takes their offsets in. Others bind at a fixed
   /// offset, so their bind group changes with the buffer range.
   final List<int> dynamic;
+
+  /// Bind groups made for this layout, by the resources in them.
+  final Map<_GroupKey, GPUBindGroup> groups = {};
+}
+
+/// The resources of one bind group: Dart objects and ints only, so it hashes
+/// without touching JS.
+final class _GroupKey {
+  _GroupKey(this.parts) : hashCode = Object.hashAll(parts);
+
+  final List<Object> parts;
+
+  @override
+  final int hashCode;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! _GroupKey || other.hashCode != hashCode) return false;
+    final a = other.parts;
+    if (a.length != parts.length) return false;
+    for (var i = 0; i < parts.length; i++) {
+      if (!identical(a[i], parts[i]) && a[i] != parts[i]) return false;
+    }
+    return true;
+  }
 }
 
 /// One GPURenderPipeline of a [_WebGpuRenderPipeline].
@@ -419,6 +467,16 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
   int _fragmentGeneration = -1;
   late List<Map<String, Object?>> _vertexBuffers;
   late List<_SampledTexture> _sampled;
+
+  /// The size a uniform block at [binding] binds with, from either stage.
+  int uniformSize(int binding) {
+    for (final shader in [vertexShader, fragmentShader]) {
+      for (final block in shader.uniforms.values) {
+        if (block.binding == binding) return block.size;
+      }
+    }
+    return 16;
+  }
 
   /// The textures this pipeline samples, in signature order. A pass resolves
   /// one [GpuSampleSlot] per entry.
