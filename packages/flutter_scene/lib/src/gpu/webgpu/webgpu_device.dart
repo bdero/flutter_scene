@@ -67,6 +67,18 @@ final class WebGpuDevice {
   /// The swapchain format the browser prefers (`bgra8unorm` or `rgba8unorm`).
   String get preferredCanvasFormat => gpu.getPreferredCanvasFormat();
 
+  /// Optional features the backend asks for whenever the adapter has them.
+  static const List<String> wantedFeatures = [
+    'float32-filterable',
+    'depth32float-stencil8',
+    'texture-compression-bc',
+    'texture-compression-etc2',
+    'texture-compression-astc',
+  ];
+
+  /// Whether the device was created with [feature].
+  bool hasFeature(String feature) => device.features.has(feature);
+
   /// Requests an adapter and a device.
   ///
   /// A software adapter is rejected unless [allowFallbackAdapter], since
@@ -107,8 +119,18 @@ final class WebGpuDevice {
       );
     }
 
+    final features = [
+      for (final feature in wantedFeatures)
+        if (adapter.features.has(feature)) feature,
+    ];
     try {
-      final device = await adapter.requestDevice().toDart;
+      final device = await adapter
+          .requestDevice(
+            GPUDeviceDescriptor(
+              requiredFeatures: [for (final f in features) f.toJS].toJS,
+            ),
+          )
+          .toDart;
       return WebGpuProbe._(
         device: WebGpuDevice._(gpu, adapter, device),
         adapterSummary: summary,

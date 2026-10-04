@@ -15,5 +15,6 @@ import 'webgl/_webgl.dart' show createWebGlBackend;
 
 part 'backend.dart';
 part 'formats.dart';
+part 'host_buffer.dart';
 part 'types.dart';
 part 'vertex_layout.dart';

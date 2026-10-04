@@ -13,6 +13,7 @@ on:
       - .github/workflows/webgpu_ci_probe.yml
       - tools/webgpu_ci_probe/**
       - packages/flutter_scene/lib/src/gpu/webgpu/**
+      - packages/flutter_scene/lib/src/gpu/web/**
       - packages/flutter_scene/test/gpu/webgpu/**
 
 jobs:
@@ -47,11 +48,11 @@ jobs:
             mode="${run##*|}"
             echo "::group::flags=[$flags] $mode"
             CHROME_EXTRA_FLAGS="$flags" flutter test --platform chrome $mode \
-              test/gpu/webgpu/ > out.txt 2>&1
+              --dart-define=flutter_scene.webgpu=true test/gpu/webgpu/ > out.txt 2>&1
             status=$?
             cat out.txt
             echo "::endgroup::"
-            line=$(grep -h -o -E "(DIAG|WEBGPU_[A-Z]+) [^\[]*|All tests passed|Some tests failed" out.txt | sort -u | tr '\n' ' ')
+            line=$(grep -h -o -E "(DIAG|WEBGPU_[A-Z]+) [^\[]*|All tests passed|Some tests failed|[A-Za-z][^:]*\[E\]" out.txt | sort -u | tr '\n' ' ')
             echo "RESULT flags=[$flags] mode=[${mode:-canvaskit}] exit=$status $line" | tee -a results.txt
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
