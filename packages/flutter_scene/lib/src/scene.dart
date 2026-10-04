@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/hot_reload/hot_reload_coordinator.dart';
 import 'package:flutter_scene/src/coplanar_overlaps.dart'
@@ -2209,6 +2210,14 @@ base class Scene implements SceneGraph {
     uniformTransients.beginFrame();
     instanceTransients.beginFrame();
     beginRetainedInstanceFrame();
+    // Scenes painting in one display frame pace together, so one does not
+    // count another's work this frame as a frame behind and starve.
+    final scheduler = SchedulerBinding.instance;
+    rendererSubmissions.beginFrame(
+      scheduler.schedulerPhase == SchedulerPhase.persistentCallbacks
+          ? scheduler.currentSystemFrameTimeStamp
+          : null,
+    );
     final TransientWriter transientsBuffer = uniformTransients;
 
     // Advance the scene once per frame (not once per view): tick components
@@ -2242,7 +2251,7 @@ base class Scene implements SceneGraph {
         _hasPresentedFrame &&
         _pendingGraphCapture == null &&
         views.any((view) => view.target == null) &&
-        rendererSubmissions.framesInFlight >= maxGpuFramesInFlight;
+        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
     // A paced frame renders nothing, so the adaptive controller measures the
     // period between rendered frames rather than the vsync it ticks at.
     if (!pacingFrame) _tickAdaptiveQuality();
@@ -2809,7 +2818,7 @@ base class Scene implements SceneGraph {
         previous != null &&
         previous.width == pixelSize.width.toInt() &&
         previous.height == pixelSize.height.toInt() &&
-        rendererSubmissions.framesInFlight >= maxGpuFramesInFlight) {
+        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight) {
       _pacedFrameCount++;
       _holdPace();
       final srcRect = ui.Rect.fromLTWH(0, 0, pixelSize.width, pixelSize.height);

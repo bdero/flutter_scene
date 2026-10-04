@@ -37,23 +37,50 @@ class GpuSubmissionTracker {
   // Ids of the last submission of recent frames, oldest first. A frame that
   // submitted nothing (one the scene paced by re-presenting) adds no entry.
   final List<int> _frameEnds = [];
+  // The display frame each of [_frameEnds] rendered for.
+  final List<Object?> _frameKeys = [];
   static const int _frameHistory = 8;
+  Object? _displayFrame;
+
+  /// Starts a render for the display frame [key]. Renders sharing a non-null
+  /// key (several scenes painting in one vsync) end as one frame, and
+  /// [priorFramesInFlight] leaves that frame out, so each of them makes the
+  /// same pacing decision.
+  void beginFrame(Object? key) {
+    _displayFrame = key;
+  }
 
   /// Marks the end of a frame's submissions, so [framesInFlight] can count
   /// whole frames the GPU has not finished.
   void endFrame() {
     if (_frameEnds.isNotEmpty && _frameEnds.last == _lastId) return;
     if (_pending.isEmpty && _frameEnds.isEmpty) return;
+    if (_displayFrame != null &&
+        _frameKeys.isNotEmpty &&
+        _frameKeys.last == _displayFrame) {
+      _frameEnds.last = _lastId;
+      return;
+    }
     _frameEnds.add(_lastId);
-    if (_frameEnds.length > _frameHistory) _frameEnds.removeAt(0);
+    _frameKeys.add(_displayFrame);
+    if (_frameEnds.length > _frameHistory) {
+      _frameEnds.removeAt(0);
+      _frameKeys.removeAt(0);
+    }
   }
 
   /// Ended frames whose last submission has not completed.
-  int get framesInFlight {
+  int get framesInFlight => _countInFlight(null);
+
+  /// [framesInFlight] without the current display frame's own renders.
+  int get priorFramesInFlight => _countInFlight(_displayFrame);
+
+  int _countInFlight(Object? skip) {
     final done = completedThrough;
     var count = 0;
-    for (final end in _frameEnds) {
-      if (end > done) count++;
+    for (var i = 0; i < _frameEnds.length; i++) {
+      if (skip != null && _frameKeys[i] == skip) continue;
+      if (_frameEnds[i] > done) count++;
     }
     return count;
   }
