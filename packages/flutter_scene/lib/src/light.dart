@@ -595,6 +595,7 @@ class PointLight {
     this.intensity = 1.0,
     this.range = 0.0,
     this.falloffExponent = 2.0,
+    this.radius = 0.0,
     this.castsShadow = false,
     this.shadowMapResolution = 512,
     this.shadowNear = 0.1,
@@ -623,6 +624,12 @@ class PointLight {
   /// touching distant scenery). `0` disables the distance falloff, leaving
   /// only the [range] window; negative values are clamped to `0`.
   double falloffExponent;
+
+  /// World-space radius of the emitter (a bulb's size). Glossy reflections
+  /// widen to the light's apparent size, so a near-mirror shows a small disc
+  /// of bounded brightness instead of a point of unbounded radiance, and the
+  /// inverse-square falloff stops growing inside it. `0` is a point source.
+  double radius;
 
   /// Whether this light casts a shadow. When true, the renderer renders six
   /// perspective depth faces around the light if the scene's point-shadow
@@ -816,6 +823,7 @@ class SpotLight {
     this.intensity = 1.0,
     this.range = 0.0,
     this.falloffExponent = 2.0,
+    this.radius = 0.0,
     Vector3? direction,
     this.innerConeAngle = 0.0,
     this.outerConeAngle = math.pi / 4.0,
@@ -844,6 +852,9 @@ class SpotLight {
 
   /// The distance-falloff exponent (see [PointLight.falloffExponent]).
   double falloffExponent;
+
+  /// World-space radius of the emitter (see [PointLight.radius]).
+  double radius;
 
   /// The cone's aim, in the owning node's local space. Need not be unit
   /// length. Rotated to world by the node's transform.

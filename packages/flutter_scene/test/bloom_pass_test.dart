@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:flutter_scene/scene.dart' show BloomSettings;
 import 'package:flutter_scene/src/render/bloom_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -52,6 +53,21 @@ void main() {
       expect(footprint / scale + 1, lessThanOrEqualTo(kMaxBloomThresholdTaps));
       expect(scale + 1, lessThanOrEqualTo(kMaxBloomThresholdTaps));
     }
+  });
+
+  test('the firefly limit is on by default and only caps the threshold', () {
+    expect(BloomSettings().fireflyLimit, 50.0);
+    final source = File(
+      'shaders/flutter_scene_bloom_threshold.frag',
+    ).readAsStringSync();
+    // The plain box stage of a two-stage prefilter passes taps unchanged.
+    expect(
+      source,
+      contains(
+        'float limit = threshold_info.apply_threshold > 0.5\n'
+        '      ? threshold_info.firefly_limit',
+      ),
+    );
   });
 
   test('the threshold shader loop bound matches the Dart cap', () {

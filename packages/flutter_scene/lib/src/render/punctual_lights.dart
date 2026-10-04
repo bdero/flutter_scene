@@ -815,6 +815,7 @@ class PunctualLightBuffer {
       // face-depth parameters for shadow-casting point lights.
       floats[base + 13] = -1.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.0);
+      floats[base + 15] = math.max(light.radius, 0.0);
       cullables.add(
         CullableLight(
           row,
@@ -852,6 +853,7 @@ class PunctualLightBuffer {
       // matrix for shadow-casting spots.
       floats[base + 13] = -1.0;
       floats[base + 14] = math.max(light.falloffExponent, 0.0);
+      floats[base + 15] = math.max(light.radius, 0.0);
       cullables.add(
         CullableLight(
           row,

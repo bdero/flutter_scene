@@ -14,7 +14,10 @@ uniform BloomThresholdInfo {
   float knee;
   // 0 for a plain box average (the second stage of a two-stage prefilter).
   float apply_threshold;
-  float _pad0;
+  // Luminance above which a tap's contribution is scaled down to this
+  // limit (0 = no limit), so an isolated extreme pixel (a mirror glint of a
+  // small light) cannot flood the bloom while ordinary HDR passes through.
+  float firefly_limit;
   // Source texels per bloom texel, per axis.
   vec2 footprint;
   vec2 source_size;
@@ -60,6 +63,9 @@ void main() {
   vec2 hi = lo + threshold_info.footprint;
   vec2 first = floor(lo);
   ivec2 taps = ivec2(ceil(hi) - first);
+  float limit = threshold_info.apply_threshold > 0.5
+      ? threshold_info.firefly_limit
+      : 0.0;
   vec3 sum = vec3(0.0);
   for (int y = 0; y < kMaxTaps; y++) {
     if (y >= taps.y) {
@@ -73,7 +79,12 @@ void main() {
       }
       float tx = first.x + float(x);
       float wx = min(hi.x, tx + 1.0) - max(lo.x, tx);
-      sum += Threshold((vec2(tx, ty) + 0.5) / size) * (wx * wy);
+      vec3 tap = Threshold((vec2(tx, ty) + 0.5) / size);
+      float luminance = dot(tap, vec3(0.2126, 0.7152, 0.0722));
+      if (limit > 0.0 && luminance > limit) {
+        tap *= limit / luminance;
+      }
+      sum += tap * (wx * wy);
     }
   }
   frag_color = vec4(

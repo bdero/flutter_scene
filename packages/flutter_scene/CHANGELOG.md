@@ -1,5 +1,7 @@
 ## 0.24.0
 
+* `BloomSettings.fireflyLimit` (default 50) caps how much one extreme pixel can bloom, so a mirror glint of a small intense light no longer floods the frame or strobes; ordinary bloom is unchanged.
+* `PointLight.radius` and `SpotLight.radius` give a light a physical size, so glossy reflections widen to the emitter instead of peaking at a point, and the near-field falloff stops at its surface.
 * Opaque materials no longer `discard`, so mobile GPUs keep early depth testing and hidden-surface removal on for every opaque draw (frames 2.5 to 6x faster on a Mali-G57). Alpha-masked and LOD cross-fading draws cut out through a depth pre-draw instead; translucent cross-fades fade by opacity.
 * An alpha-masked `PhysicalMaterial` without a base color texture masks its shadows and depth by its vertex and factor alpha.
 * `Material.depthLayer` (`.fmat` `depth_layer:`) orders surfaces that share a plane. A higher layer draws over a lower one at any distance, so signs, screens, and road paint laid on a surface stop flickering (z-fighting).

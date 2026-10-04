@@ -343,6 +343,7 @@ class BloomPass extends RenderGraphPass {
       ..[0] = _settings.threshold
       ..[1] = knee
       ..[2] = threshold ? 1.0 : 0.0
+      ..[3] = math.max(_settings.fireflyLimit, 0.0)
       ..[4] = source.width / targetSize.width
       ..[5] = source.height / targetSize.height
       ..[6] = source.width.toDouble()
