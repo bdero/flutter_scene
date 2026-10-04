@@ -3,6 +3,9 @@
 // sampler mappings, and how its output is verified and recorded.
 //
 // ignore_for_file: implementation_imports
+@TestOn('vm')
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 

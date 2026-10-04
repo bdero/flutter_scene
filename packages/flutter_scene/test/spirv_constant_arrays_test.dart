@@ -1,4 +1,7 @@
 // ignore_for_file: implementation_imports
+@TestOn('vm')
+library;
+
 import 'dart:io';
 import 'dart:typed_data';
 
