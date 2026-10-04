@@ -56,6 +56,31 @@ void main() {
       expect(tracker.framesInFlight, 0);
     });
 
+    test('renders in one display frame pace together', () {
+      final tracker = GpuSubmissionTracker();
+      // Two scenes paint in display frame 1.
+      tracker.beginFrame(1);
+      final a = tracker.record();
+      tracker.endFrame();
+      expect(tracker.priorFramesInFlight, 0, reason: "the first's own frame");
+      final b = tracker.record();
+      tracker.endFrame();
+      expect(tracker.framesInFlight, 1, reason: 'one frame, not two');
+      // Both see frame 1 as a frame behind in display frame 2.
+      tracker.beginFrame(2);
+      expect(tracker.priorFramesInFlight, 1);
+      tracker.complete(a);
+      tracker.complete(b);
+      expect(tracker.priorFramesInFlight, 0);
+      // Unkeyed renders each count as their own frame.
+      tracker.beginFrame(null);
+      tracker.record();
+      tracker.endFrame();
+      tracker.record();
+      tracker.endFrame();
+      expect(tracker.priorFramesInFlight, 2);
+    });
+
     test('completion listeners run after a submission completes', () {
       final tracker = GpuSubmissionTracker();
       var fired = 0;
