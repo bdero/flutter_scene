@@ -1,6 +1,7 @@
 ## 0.24.1
 
 * On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.
+* Experimental WebGPU backend for web builds, enabled with `--dart-define=flutter_scene.webgpu=true` plus `flutter_scene_webgpu: true` under `hooks: user_defines:` for flutter_scene and the app. WebGL2 stays the default.
 
 ## 0.24.0
 

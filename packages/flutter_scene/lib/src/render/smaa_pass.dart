@@ -149,6 +149,9 @@ class SmaaPass extends RenderGraphPass {
   }
 
   static Future<void> _loadTables() async {
+    // The upload below is synchronous, and a lazy request can arrive before
+    // the backend has its device.
+    await gpu.initializeGpuBackend();
     final area = await rootBundle.load(
       'packages/flutter_scene/assets/smaa_area.bin',
     );
