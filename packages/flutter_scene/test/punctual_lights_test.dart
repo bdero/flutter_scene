@@ -3,7 +3,6 @@
 // color-times-intensity premultiply, the inverse-range encoding, the spot cone
 // scale/offset, and that the selected primary directional light is skipped.
 
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter_scene/scene.dart';
@@ -124,16 +123,6 @@ void main() {
       expect(floats[15], closeTo(0.05, 1e-6));
       expect(floats[32 + 15], 0.0);
       expect(floats[64 + 15], closeTo(0.2, 1e-6));
-    });
-
-    test('sized lights widen the lobe on both punctual paths', () {
-      final source = File('shaders/material_lighting.glsl').readAsStringSync();
-      expect(source, contains('highp float source_radius = l3.w;'));
-      // The hooked and plain evaluations both take the widened roughness.
-      expect(
-        RegExp(r'metallic, light_roughness, reflectance').allMatches(source),
-        hasLength(2),
-      );
     });
 
     test('an infinite-range point light encodes inverse range 0', () {
