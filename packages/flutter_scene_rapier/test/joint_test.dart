@@ -387,15 +387,34 @@ void main() {
     expect(armBody.readSimulationPose().$1.y, lessThan(4.3));
   });
 
-  test('a joint without a sibling body throws', () {
+  test('a joint mounted before its sibling body waits, then binds', () {
     final root = _boot();
-    final (otherNode, _) = _body(root, Vector3.zero(), BodyType.fixed);
+    final world = root.getComponent<PhysicsWorld>()!;
+    final (anchorNode, _) = _body(root, Vector3(0, 5, 0), BodyType.fixed);
 
-    final node = Node();
-    final joint = FixedJoint(otherNode: otherNode);
-    node.addComponent(joint);
-    root.add(node);
-    expect(joint.mount, throwsStateError);
+    final hangNode = Node(
+      localTransform: Matrix4.translation(Vector3(2, 5, 0)),
+    );
+    final joint = FixedJoint(
+      otherNode: anchorNode,
+      localAnchorA: Vector3.zero(),
+      localAnchorB: Vector3(2, 0, 0),
+    );
+    hangNode.addComponent(joint);
+    root.add(hangNode);
+    expect(joint.mount, returnsNormally);
+
+    // The body arriving completes the joint, so it holds against gravity.
+    final hangBody = RigidBody(type: BodyType.dynamic_, mass: 1);
+    hangNode.addComponent(hangBody);
+    hangNode.addComponent(Collider(shape: SphereShape(radius: 0.5)));
+    hangBody.mount();
+    hangNode.getComponents<Collider>().first.mount();
+
+    for (var i = 0; i < 120; i++) {
+      world.step(1.0 / 60.0);
+    }
+    expect(hangBody.readSimulationPose().$1.y, closeTo(5.0, 0.1));
   });
 
   test('onUnmount releases the constraint', () {
