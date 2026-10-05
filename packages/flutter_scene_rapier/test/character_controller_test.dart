@@ -209,7 +209,7 @@ void main() {
     expect(freed.translation.x, greaterThan(0.15));
   });
 
-  test('mounting without a collider on the node throws', () {
+  test('a controller mounted before its collider waits, then binds', () {
     final root = _boot();
     final node = Node(localTransform: Matrix4.translation(Vector3(0, 1, 0)));
     node.addComponent(RigidBody(type: BodyType.kinematic));
@@ -217,8 +217,18 @@ void main() {
     node.addComponent(controller);
     root.add(node);
     node.getComponents<RigidBody>().first.mount();
-    expect(controller.mount, throwsStateError);
-    // Never mounted, so moving throws too.
+    expect(controller.mount, returnsNormally);
+    // Not bound yet, so moving throws.
     expect(() => controller.move(Vector3(0.1, 0, 0)), throwsStateError);
+
+    // The collider arriving completes the controller.
+    node.addComponent(
+      Collider(shape: CapsuleShape(radius: 0.3, halfHeight: 0.5)),
+    );
+    node.getComponents<Collider>().first.mount();
+    expect(
+      controller.move(Vector3(0.1, 0, 0)).translation.x,
+      greaterThan(0.05),
+    );
   });
 }
