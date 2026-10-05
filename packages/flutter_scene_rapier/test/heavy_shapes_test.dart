@@ -66,18 +66,20 @@ void main() {
     expect(ballBody.readSimulationPose().$1.y, greaterThan(-1.0));
   });
 
-  test('trimesh cooks a single-triangle floor and stops a falling ball', () {
+  // A triangle mesh collides from its front (counter-clockwise) face only,
+  // which the internal-edge fix needs. The same floor wound each way.
+  double dropOntoTriangle(List<int> triangle) {
     final root = _boot();
     final world = root.getComponent<PhysicsWorld>()!;
-
-    final vertices = Float32List.fromList([-10, 0, -10, 10, 0, -10, 0, 0, 10]);
-    final indices = Uint32List.fromList([0, 1, 2]);
 
     final floorNode = Node();
     floorNode.addComponent(RigidBody(type: BodyType.fixed));
     floorNode.addComponent(
       Collider(
-        shape: TriMeshShape(vertices: vertices, indices: indices),
+        shape: TriMeshShape(
+          vertices: Float32List.fromList([-10, 0, -10, 10, 0, -10, 0, 0, 10]),
+          indices: Uint32List.fromList(triangle),
+        ),
       ),
     );
     root.add(floorNode);
@@ -97,7 +99,15 @@ void main() {
     for (var i = 0; i < 240; i++) {
       world.step(1.0 / 60.0);
     }
-    expect(ballBody.readSimulationPose().$1.y, greaterThan(-1.0));
+    return ballBody.readSimulationPose().$1.y;
+  }
+
+  test('trimesh stops a falling ball on its front face', () {
+    expect(dropOntoTriangle([0, 2, 1]), greaterThan(-1.0));
+  });
+
+  test('trimesh lets a falling ball through its back face', () {
+    expect(dropOntoTriangle([0, 1, 2]), lessThan(-1.0));
   });
 
   test('heightfield cooks a flat plane and stops a falling ball', () {
