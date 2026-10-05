@@ -2,6 +2,8 @@
 
 * Widen the `flutter_scene` constraint to `^0.24.0` and the `scene` constraint to `^0.4.0`.
 * Require `box3d` 0.1.2, which allows `code_assets` 2.x.
+* Add an example, and fix the README quick start, which lacked the `package:flutter_scene/physics.dart` import.
+* Document that a triangle mesh collider collides from its front (counter-clockwise) face only.
 
 ## 0.2.1
 
