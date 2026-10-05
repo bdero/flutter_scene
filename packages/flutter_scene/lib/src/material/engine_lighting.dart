@@ -206,6 +206,10 @@ class EngineLightingUniforms {
     fragInfo[dielectricF0Index] = defaultDielectricF0;
     fragInfo[dielectricF0Index + 1] = defaultDielectricF0;
     fragInfo[dielectricF0Index + 2] = defaultDielectricF0;
+    // dielectric_f0.w: the view depth where directional shadows end.
+    fragInfo[dielectricF0Index + 3] = cascades.isEmpty
+        ? 0.0
+        : cascades.last.splitDistance;
     // The irradiance field at [176..195]. A zero intensity in gi_grid.w
     // disables the whole receiver, so a scene without the field pays nothing
     // beyond these writes.

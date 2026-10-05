@@ -273,7 +273,18 @@ float SampleShadow(highp vec3 world_pos, vec3 n) {
   _TRY_CASCADE(2)
   _TRY_CASCADE(3)
   // Weight no cascade covered reads as lit.
-  return shadow_sum + (1.0 - weight);
+  float shadow = shadow_sum + (1.0 - weight);
+  // Fade to lit by view depth before the shadow distance, at least
+  // shadow_fade wide and a tenth of the distance. The tiles reach past it,
+  // and a cached tile re-centres in steps, so without this the shadows of
+  // distant surfaces would switch off a strip at a time as the camera moves.
+  highp float limit = frag_info.dielectric_f0.w;
+  if (limit > 0.0) {
+    highp float width = max(frag_info.shadow_fade, limit * 0.1);
+    shadow = mix(shadow, 1.0,
+                 smoothstep(limit - width, limit, GetFragmentViewDepth()));
+  }
+  return shadow;
 }
 #undef _TRY_CASCADE
 #endif

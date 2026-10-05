@@ -761,13 +761,32 @@ void main() {
     // reads as lit. Together these make zero overlap exactly today's path.
     expect(lighting, contains('return band > 0.0 ? ramp.x * ramp.y : 1.0;'));
     expect(lighting, contains('min(CascadeBlendWeight(uv, margin, band),'));
-    expect(lighting, contains('return shadow_sum + (1.0 - weight);'));
+    expect(lighting, contains('float shadow = shadow_sum + (1.0 - weight);'));
     // The weight guard replaces the old `found` flag, so a full cascade ends
     // the walk instead of a second lookup.
     expect(lighting, contains('if (weight < 1.0 && count > IDX)'));
     // An early return inside the blend would emit a loop here (see the
     // Direct3D note on SampleShadow), so the helper must stay a select.
     expect(lighting, isNot(contains('if (band <= 0.0) return')));
+  });
+
+  test('directional shadows fade out by view depth before their distance', () {
+    final sampling = File(
+      'shaders/material_shadow_sampling.glsl',
+    ).readAsStringSync();
+    // The limit rides dielectric_f0.w, so no uniform is added.
+    expect(
+      sampling,
+      contains('highp float limit = frag_info.dielectric_f0.w;'),
+    );
+    expect(
+      sampling,
+      contains('smoothstep(limit - width, limit, GetFragmentViewDepth())'),
+    );
+    final packing = File(
+      'lib/src/material/engine_lighting.dart',
+    ).readAsStringSync();
+    expect(packing, contains('cascades.last.splitDistance'));
   });
 
   test('anisotropy affects analytic and image-based lighting', () {

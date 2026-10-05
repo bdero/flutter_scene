@@ -156,7 +156,9 @@ uniform FragInfo {
   // xyz: the dielectric specular reflectance at normal incidence for the
   // standard (non-physical) shader path, clamp(((ior - 1) / (ior + 1))^2 *
   // specular_color * specular_factor, 0, 1), 0.04 for a default material.
-  // The physical path derives its own from material inputs. w unused.
+  // The physical path derives its own from material inputs. w: the view
+  // depth where directional shadows end (0 without a shadow), which they
+  // fade out toward.
   vec4 dielectric_f0;
   // World-space irradiance field. gi_grid.xyz is the probe spacing and
   // gi_grid.w the field's intensity, 0 disabling the whole receiver.
