@@ -177,9 +177,10 @@ class DirectionalLight {
   /// cached cascades one per frame, so far cascades lag the turn briefly.
   bool cacheStaticShadows;
 
-  /// World-space width of the band at the far shadow cascade's edge
-  /// over which shadowing fades back to lit, so the shadow distance
-  /// limit is soft rather than a hard cutoff. `0` disables the fade.
+  /// World-space width over which shadowing fades back to lit before the
+  /// shadow distance, so its limit is soft rather than a hard cutoff. The
+  /// fade is at least a tenth of [shadowMaxDistance] deep, and the far
+  /// cascade's tile edge fades over this width too.
   double shadowFadeRange;
 
   /// World-space radius of the shadow penumbra. Larger values give a
@@ -193,7 +194,8 @@ class DirectionalLight {
   int shadowCascadeCount;
 
   /// View distance, in world units, out to which [computeCascades]
-  /// spreads the shadow cascades. Beyond it surfaces are unshadowed.
+  /// spreads the shadow cascades. Shadows fade out approaching it (see
+  /// [shadowFadeRange]) and surfaces beyond it are unshadowed.
   double shadowMaxDistance;
 
   /// Blends the cascade split spacing between logarithmic (`1.0`) and

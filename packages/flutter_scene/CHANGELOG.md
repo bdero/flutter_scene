@@ -5,6 +5,7 @@
 * Temporal anti-aliasing's `objectMotion` works on the web. Its velocity shaders failed to link on WebGL2, so every frame threw.
 * An object that stops moving no longer keeps reporting its last step in the velocity buffer, so temporal anti-aliasing stops reprojecting it as if it still moved.
 * Scenes drawn in the same frame pace the GPU together, so a second `SceneView` (a portal or picture-in-picture view) no longer freezes on its last image while the first one renders. Regressed in 0.24.0.
+* Directional shadows fade to lit over the last tenth of `shadowMaxDistance` (at least `shadowFadeRange`), so distant shadows no longer switch off a strip at a time as the camera moves and the cached shadow tiles re-centre.
 
 ## 0.24.1
 
