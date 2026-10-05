@@ -338,7 +338,8 @@ class MeshData {
   /// The shape holds its own copy of the positions and indices, so the
   /// snapshot can be discarded afterwards. Triangle meshes are hollow and
   /// carry no volume, so they collide as static environment geometry; use
-  /// [toConvexHullShape] for a dynamic body.
+  /// [toConvexHullShape] for a dynamic body. Each triangle collides from its
+  /// front face, the counter-clockwise side it renders from.
   ///
   /// Throws a [StateError] when this snapshot is not a triangle list or
   /// has no triangles.

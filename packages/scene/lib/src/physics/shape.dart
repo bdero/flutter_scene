@@ -60,6 +60,10 @@ class ConvexHullShape extends Shape {
 
 /// A triangle mesh defined by [vertices] (packed `xyz` triplets) and
 /// [indices] (groups of three vertex indices forming one triangle each).
+///
+/// A triangle collides from its front face only, the side its corners wind
+/// counter-clockwise around, which is also the side it renders from. A body
+/// behind a face passes through it.
 /// {@category Physics}
 class TriMeshShape extends Shape {
   final Float32List vertices;

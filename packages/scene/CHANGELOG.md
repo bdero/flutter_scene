@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- `TriMeshShape` documents that a triangle collides from its front (counter-clockwise) face only.
+
 ## 0.4.0
 
 - `GizmoOrthographicVolume` draws an orthographic camera's view volume, sized by a bound fit mode, extents, zoom, and offset.

@@ -8,6 +8,8 @@
 // flutter_scene; these tests call them directly because the test root is
 // not part of a live RenderScene (which would need a Flutter GPU context).
 
+import 'dart:typed_data';
+
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/physics.dart';
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
@@ -202,5 +204,37 @@ void main() {
     // point is 1.0 below the body origin. Resting on the floor puts the body
     // origin near y = 1.0.
     expect(node.globalTransform.getTranslation().y, closeTo(1.0, 0.15));
+  });
+
+  // A triangle mesh collides from its front (counter-clockwise) face only,
+  // the same contract the Rapier backend keeps. The same floor wound each way.
+  double dropOntoTriangle(List<int> triangle) {
+    final root = _bootWorld(gravity: Vector3(0, -10, 0));
+    final world = root.getComponent<PhysicsWorld>()!;
+    _addBody(
+      root,
+      type: BodyType.fixed,
+      shape: TriMeshShape(
+        vertices: Float32List.fromList([-10, 0, -10, 10, 0, -10, 0, 0, 10]),
+        indices: Uint32List.fromList(triangle),
+      ),
+      position: Vector3.zero(),
+    );
+    final (ball, _) = _addBody(
+      root,
+      type: BodyType.dynamic_,
+      shape: SphereShape(radius: 0.5),
+      position: Vector3(0, 5, 0),
+    );
+    run(world);
+    return ball.globalTransform.getTranslation().y;
+  }
+
+  test('a trimesh stops a falling ball on its front face', () {
+    expect(dropOntoTriangle([0, 2, 1]), greaterThan(-1.0));
+  });
+
+  test('a trimesh lets a falling ball through its back face', () {
+    expect(dropOntoTriangle([0, 1, 2]), lessThan(-1.0));
   });
 }
