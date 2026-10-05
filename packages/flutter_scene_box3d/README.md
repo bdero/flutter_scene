@@ -17,7 +17,8 @@ scene advances physics on a fixed timestep and interpolates transforms for
 you.
 
 ```dart
-import 'package:flutter_scene/scene.dart' hide Material;
+import 'package:flutter_scene/physics.dart';
+import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene_box3d/flutter_scene_box3d.dart';
 import 'package:vector_math/vector_math.dart';
 
@@ -59,6 +60,10 @@ Scene queries run through `world.raycast`, `world.raycastAll`,
 Sphere, box, capsule, cylinder, convex hull, triangle mesh, height field,
 and compound. A collider's `localPose` is baked into the shape geometry; a
 non-identity pose on a cylinder or height field is not supported yet.
+
+A triangle mesh collider collides from its front face only, the side its
+corners wind counter-clockwise around, which is also the side it renders
+from.
 
 ## Joints
 
