@@ -405,7 +405,7 @@ Impeller and Flutter GPU aren't available on the web, so `flutter_scene` ships a
 
 ## Sponsors
 
-Scene's development is funded by its sponsors, listed in full at [fscene.dev/sponsors](https://fscene.dev/sponsors/).
+Scene's development is funded by its sponsors, listed in full at [fscene.dev/sponsors](https://fscene.dev/sponsors/). Anyone can sponsor through [GitHub Sponsors](https://github.com/sponsors/bdero), from $5 a month. Company tiers are at [fscene.dev/sponsors](https://fscene.dev/sponsors/).
 
 ### Silver
 
