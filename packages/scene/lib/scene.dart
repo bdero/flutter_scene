@@ -59,7 +59,8 @@ export 'src/specs.dart'
         TorusGeometrySpec,
         TransformSpec,
         TrsTransform;
-export 'src/scene_document.dart' show SceneDocument, currentFsceneVersion;
+export 'src/scene_document.dart'
+    show SceneDocument, UnknownChunk, currentFsceneVersion;
 export 'src/property_value.dart'
     show
         AssetRef,

@@ -1,4 +1,4 @@
-## 0.1.0-dev
+## 0.1.0
 
 * Typed actions (`ButtonAction`, `AxisAction`, `VectorAction`, `DeltaAction`) bound to physical controls through named slots in an `ActionSet`.
 * Composite and gated bindings (`DpadBinding`, `AxisPairBinding`, `ChordBinding`, `GatedBinding`) with processors (`Deadzone`, `Scale`, `Invert`, `ResponseCurve`, `PerSecond`, `SwapAxes`), tunable sensitivity, inversion, and deadzones.
