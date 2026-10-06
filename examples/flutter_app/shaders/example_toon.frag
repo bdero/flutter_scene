@@ -28,11 +28,16 @@ toon_info;
 
 uniform sampler2D base_color_texture;
 
+// Every engine varying, in order, including the ones this shader does not
+// read. Metal and Vulkan match stages by location, so leaving one out shifts
+// the rest and the pipeline fails to build.
 in vec3 v_position;
 in vec3 v_normal;
 in vec3 v_viewvector;
 in vec2 v_texture_coords;
+in vec2 v_texture_coords_1;
 in vec4 v_color;
+in vec4 v_tangent;
 
 out vec4 frag_color;
 
