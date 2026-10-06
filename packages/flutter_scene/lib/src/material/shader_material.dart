@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, setEquals, visibleForTesting;
+    show debugPrint, internal, setEquals, visibleForTesting;
 
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 
@@ -9,6 +9,7 @@ import 'package:flutter_scene/src/light.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
+import 'package:flutter_scene/src/material/shader_interface.dart';
 import 'package:flutter_scene/src/material/shader_stage.dart';
 import 'package:flutter_scene/src/fmat/fmat_ast.dart' show FmatType;
 import 'package:flutter_scene/src/render/custom_render_pass.dart'
@@ -167,6 +168,19 @@ class ShaderMaterial extends Material {
     setVertexShader(skinnedVertexShader, variant: MeshVariant.skinned);
     setVertexShader(depthVertexShader, variant: MeshVariant.depth);
   }
+
+  // Reads the stage interfaces of the libraries this material's shaders came
+  // from, so the pipeline build can check them. The scene holds its frames
+  // until that lands rather than drawing a pairing it has not checked.
+  @override
+  void setFragmentShader(gpu.Shader shader) {
+    super.setFragmentShader(shader);
+    requestStageInterfaces();
+  }
+
+  @internal
+  @override
+  bool get awaitsDeferredResources => stageInterfacesPending;
 
   /// Whether the engine should bind the active environment's IBL textures
   /// (`prefiltered_radiance`, `brdf_lut`) when the fragment shader
@@ -354,6 +368,7 @@ class ShaderMaterial extends Material {
       return;
     }
     _vertexShaders[variant] = shader;
+    requestStageInterfaces();
   }
 
   /// The vertex shader assigned for [variant], or null when the engine's

@@ -1,3 +1,7 @@
+## 0.24.1
+
+* On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.
+
 ## 0.24.0
 
 * Bloom weights an isolated extreme pixel down against its neighbors before blurring (`BloomSettings.fireflySuppression`, on by default), so a mirror glint of a small intense light no longer floods the frame or strobes, while bright regions bloom in full.
