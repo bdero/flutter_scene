@@ -130,6 +130,12 @@ class _EditorHomeState extends State<_EditorHome> {
   // TODO(path-provider): resolve through path_provider if this app ever
   // targets more than macOS; only macos/ scaffolding is committed today.
   Directory _settingsDirectory() {
+    // Windows has no HOME; local (not roaming) app data, since managed SDKs
+    // live here.
+    final localAppData = Platform.environment['LOCALAPPDATA'];
+    if (Platform.isWindows && localAppData != null) {
+      return Directory('$localAppData/FlutterSceneEditor');
+    }
     final home = Platform.environment['HOME'] ?? '.';
     return Directory('$home/Library/Application Support/FlutterSceneEditor');
   }
