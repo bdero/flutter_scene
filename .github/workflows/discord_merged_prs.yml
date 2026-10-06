@@ -1,0 +1,59 @@
+name: Discord merged PRs
+
+# Posts merged pull requests to the Discord #merged-prs channel. Only merges
+# post, since a merge needs a maintainer.
+#
+# pull_request_target gives fork merges the webhook secret and always runs this
+# file from master. That is safe only because nothing here checks out or runs
+# pull request code.
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [master]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Post to Discord
+    if: github.event.pull_request.merged == true && github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send the merge card
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_MERGED_PRS_WEBHOOK_URL }}
+        # Pull request text only passes through jq, never ${{ }} expansion, and
+        # the empty allowed_mentions keeps any card from pinging.
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_MERGED_PRS_WEBHOOK_URL is not set, skipping."
+            exit 0
+          fi
+          jq '
+            .pull_request as $pr
+            | {
+                allowed_mentions: {parse: []},
+                embeds: [{
+                  title: ("#\($pr.number) \($pr.title)" | .[0:256]),
+                  url: $pr.html_url,
+                  color: 8540383,
+                  author: {
+                    name: $pr.user.login,
+                    url: $pr.user.html_url,
+                    icon_url: $pr.user.avatar_url
+                  },
+                  description: (
+                    if $pr.additions != null
+                    then "+\($pr.additions) -\($pr.deletions) in \($pr.changed_files) file\(if $pr.changed_files == 1 then "" else "s" end)"
+                    else null end
+                  ),
+                  footer: {text: "\(.repository.name) · merged by \($pr.merged_by.login)"},
+                  timestamp: $pr.merged_at
+                } | with_entries(select(.value != null))]
+              }
+          ' "$GITHUB_EVENT_PATH" > payload.json
+          curl --silent --show-error --fail-with-body --retry 3 \
+            -H "Content-Type: application/json" \
+            --data @payload.json "$DISCORD_WEBHOOK_URL"
