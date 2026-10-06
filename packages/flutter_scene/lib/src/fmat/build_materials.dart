@@ -11,8 +11,7 @@ import 'package:flutter_scene/src/importer/build_hooks.dart'
 import '../generated_assets/engine_identity.dart' show engineIdentity;
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
-import '../generated_assets/wgsl_sidecar.dart'
-    show webGpuShadersRequested, wgslSidecarPathFor;
+import '../generated_assets/wgsl_sidecar.dart' show wgslSidecarPathFor;
 import 'fmat.dart';
 import 'fmat_emitter.dart'
     show
@@ -357,7 +356,7 @@ Future<void> _buildMaterials({
   // The WebGPU backend's WGSL, only under flutter_scene_webgpu. Data-asset
   // builds do not carry it yet.
   // TODO(webgpu-data-assets): register the WGSL as a data asset too.
-  final wgslFile = webGpuShadersRequested(buildInput) && tree != null
+  final wgslFile = wgslSidecarsForBuild(buildInput) && tree != null
       ? File(wgslSidecarPathFor(shippedBundleFile.path))
       : null;
 

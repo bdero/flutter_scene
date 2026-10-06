@@ -27,7 +27,7 @@ import '../importer/build_cache.dart';
 import 'engine_identity.dart';
 import 'generated_assets.dart';
 import 'generated_tree.dart';
-import 'wgsl_sidecar.dart' show webGpuShadersRequested, wgslSidecarPathFor;
+import 'wgsl_sidecar.dart' show wgslSidecarPathFor;
 
 /// The package flutter_scene's engine assets are recorded as belonging to.
 const String _engineOwner = 'flutter_scene';
@@ -157,7 +157,7 @@ Future<void> _buildBaseShaderBundle({
     variant: await engineIdentity(),
     target: target,
   );
-  final wgslUri = webGpuShadersRequested(buildInput)
+  final wgslUri = wgslSidecarsForBuild(buildInput)
       ? Uri.file(wgslSidecarPathFor(outputUri.toFilePath()))
       : null;
   if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
