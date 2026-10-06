@@ -419,14 +419,31 @@ final class _GroupKey {
 
 /// One GPURenderPipeline of a [_WebGpuRenderPipeline].
 final class _PipelineVariant {
-  _PipelineVariant(this.pipeline, this.bindings, this.validation);
+  _PipelineVariant(this.pipeline, this.bindings, this.validation) {
+    validation.then((message) => error = message);
+  }
 
   final GPURenderPipeline pipeline;
   final _BindingLayout bindings;
 
-  /// The validation error building it raised, or null; checked in debug
-  /// builds only, where a failure is also printed.
-  final Future<String?>? validation;
+  /// The validation error building it raised, or null.
+  final Future<String?> validation;
+
+  /// [validation]'s error once it resolves. Null while the check is pending,
+  /// since WebGPU validates a pipeline asynchronously.
+  String? error;
+}
+
+/// Thrown from a draw whose pipeline WebGPU refuses, before anything is
+/// encoded, so the renderer skips the draw (and, if it keeps failing, the
+/// pipeline) instead of losing the whole command buffer to it.
+final class _RefusedPipeline implements Exception {
+  _RefusedPipeline(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// A texture a pipeline samples, in the order its sample signature lists it.
@@ -465,6 +482,9 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
   final Map<_VariantKey, _PipelineVariant> _variants = {};
   int _vertexGeneration = -1;
   int _fragmentGeneration = -1;
+
+  /// Why the fragment shader cannot meet the vertex shader, or null.
+  String? _interfaceMismatch;
   late List<Map<String, Object?>> _vertexBuffers;
   late List<_SampledTexture> _sampled;
 
@@ -501,6 +521,7 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
         for (final slot in shader.textures)
           if (slot.shape != null) (shader: shader, slot: slot),
     ];
+    _interfaceMismatch = _checkVaryings();
     _variants.clear();
     _vertexGeneration = vertexShader.generation;
     _fragmentGeneration = fragmentShader.generation;
@@ -514,18 +535,48 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
     List<GpuSampleSlot> slots,
   ) {
     _refresh();
+    if (_interfaceMismatch case final mismatch?) {
+      throw _RefusedPipeline(mismatch);
+    }
     final key = _VariantKey(
       state,
       target,
       GpuSampleSignature(slots),
       float32Blendable: _context.float32Blendable,
     );
-    return _variants[key] ??= _build(key, slots);
+    final variant = _variants[key] ??= _build(key, slots);
+    // A variant still pending validation is drawn with. Skipping it would
+    // leave a one-shot render (an environment prefilter, a capture) with
+    // nothing in it, and the stage interface, the usual reason a pairing is
+    // refused, is checked up front instead.
+    if (variant.error case final error?) {
+      throw _RefusedPipeline(
+        'The pipeline for "${vertexShader.name}" and "${fragmentShader.name}" '
+        'is invalid: $error',
+      );
+    }
+    return variant;
+  }
+
+  /// Why [fragmentShader] reads a varying [vertexShader] does not write, at
+  /// its location and with its type and interpolation, or null when every
+  /// one lines up.
+  String? _checkVaryings() {
+    final written = vertexShader.varyings;
+    for (final MapEntry(key: location, value: read)
+        in fragmentShader.varyings.entries) {
+      final match = written[location];
+      if (match == read) continue;
+      return 'The fragment shader "${fragmentShader.name}" reads $read at '
+          'location $location, which the vertex shader "${vertexShader.name}" '
+          '${match == null ? 'does not write' : 'writes as $match'}.';
+    }
+    return null;
   }
 
   _PipelineVariant _build(_VariantKey key, List<GpuSampleSlot> slots) {
     final device = _context.device.device;
-    if (kDebugMode) device.pushErrorScope('validation');
+    device.pushErrorScope('validation');
     final bindings = _context._bindingLayoutFor(_layoutEntries(slots));
     final pipeline = device.createRenderPipeline(
       _obj({
@@ -547,17 +598,9 @@ final class _WebGpuRenderPipeline extends RenderPipeline {
         'multisample': {'count': key.target.samples},
       }),
     );
-    Future<String?>? validation;
-    if (kDebugMode) {
-      validation = device.popErrorScope().toDart.then((error) {
-        if (error == null) return null;
-        debugPrint(
-          'flutter_scene (WebGPU): the pipeline for "${vertexShader.name}" '
-          'and "${fragmentShader.name}" is invalid: ${error.message}',
-        );
-        return error.message;
-      });
-    }
+    final validation = device.popErrorScope().toDart.then(
+      (error) => error?.message,
+    );
     return _PipelineVariant(pipeline, bindings, validation);
   }
 
@@ -744,7 +787,7 @@ GpuSampleSlot _defaultSampleSlot(_TextureSlot slot, {required bool f32}) =>
   Object bindGroupLayout,
   String layoutKey,
   List<int> dynamicBindings,
-  Future<String?>? validation,
+  Future<String?> validation,
 })
 webGpuPipelineVariant(
   RenderPipeline pipeline, {
