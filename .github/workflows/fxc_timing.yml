@@ -1,0 +1,55 @@
+name: fxc timing
+
+on:
+  push:
+    branches: [bdero/fxc-timing]
+  workflow_dispatch:
+
+jobs:
+  time:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        angle: [d3d11, d3d11-warp]
+    defaults:
+      run:
+        shell: bash
+        working-directory: fxc_timing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Time compile, link, and first draw
+        run: |
+          CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
+          "$CHROME" --version || true
+          wmic cpu get name || true
+          RUNS=2 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
+            0.23.0 0.24.0 fix 2> chrome_stderr.log | tee results.jsonl
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ANGLE ${{ matrix.angle }}"
+            echo '| variant | run | renderer | compile ms | link ms | first draw ms | total ms | error |'
+            echo '|---|---|---|---|---|---|---|---|'
+            node -e '
+              for (const r of require("./results.json"))
+                console.log(`| ${r.variant} | ${r.run} | ${r.renderer} | ${Math.round(r.compileMs)} | ${Math.round(r.linkMs)} | ${Math.round(r.firstDrawMs)} | ${Math.round(r.totalMs)} | ${r.error ?? r.glError} |`)'
+            echo
+            echo 'stderr lines mentioning HLSL compile issues:'
+            echo '```'
+            grep -iE "x35[0-9]{2}|unroll|hlsl|d3dcompile|failed to compile" chrome_stderr.log | head -40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fxc-timing-${{ matrix.angle }}
+          path: |
+            fxc_timing/results.json
+            fxc_timing/chrome_stderr.log
