@@ -22,7 +22,7 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 import 'package:flutter_scene/src/gpu/shared/shader_library_sources.dart'
     show knownShaderLibraries;
 import 'package:flutter_scene/src/shader_reflection/shader_reflection.dart';
-import 'package:flutter_scene/src/shaders.dart';
+import 'package:flutter_scene/src/shaders.dart' show loadedBaseShaderLibrary;
 
 /// One varying at a stage boundary, as the compiled MSL declares it.
 @immutable
@@ -158,13 +158,22 @@ void markEngineShaderLibrary(gpu.ShaderLibrary library) {
   _engineLibraries[library] = true;
 }
 
+final Expando<bool> _awaitingShaders = Expando<bool>('stageInterfaceAwaiting');
+
 /// Starts loading the reflection of every app shader library loaded so far,
 /// so the next pipeline build can read a ShaderMaterial's stage interfaces.
 ///
-/// Engine libraries are skipped, since the pairs they take part in are known
-/// (see [standardVaryings]). Does nothing where the check does not run.
-void requestStageInterfaces() {
+/// Each of [shaders] whose reflection is not loaded yet has its pipelines
+/// deferred until the load lands (see [stageInterfaceDeferred]). Engine
+/// libraries are skipped, since the pairs they take part in are known (see
+/// [standardVaryings]). Does nothing where the check does not run.
+void requestStageInterfaces([Iterable<gpu.Shader?> shaders = const []]) {
   if (!checksStageInterfaces) return;
+  for (final shader in shaders) {
+    if (shader != null && ShaderReflection.infoFor(shader) == null) {
+      _awaitingShaders[shader] = true;
+    }
+  }
   final loads = <Future<void>>[
     for (final library in knownShaderLibraries())
       if (library is gpu.ShaderLibrary &&
@@ -185,12 +194,31 @@ void requestStageInterfaces() {
   });
 }
 
+/// Whether the pipeline pairing [vertexShader] with [fragmentShader] waits on
+/// reflection [requestStageInterfaces] is still loading for one of them.
+///
+/// Its draw is skipped rather than rejected, so the pairing is checked once
+/// the load lands. Every path that builds a pipeline goes through this, so a
+/// capture or bake that runs before the load cannot build a pairing nobody
+/// has checked.
+bool stageInterfaceDeferred(
+  gpu.Shader vertexShader,
+  gpu.Shader fragmentShader,
+) =>
+    _interfaceLoad != null &&
+    (_awaitsReflection(fragmentShader) || _awaitsReflection(vertexShader));
+
+bool _awaitsReflection(gpu.Shader shader) =>
+    _awaitingShaders[shader] == true &&
+    ShaderReflection.infoFor(shader) == null;
+
 // The standard vertex shaders, keyed by the base library they came from so a
 // reloaded library is read again.
 (gpu.ShaderLibrary, Set<gpu.Shader>)? _standardVertexShaders;
 
 bool _isStandardVertexShader(gpu.Shader shader) {
-  final library = baseShaderLibrary;
+  final library = loadedBaseShaderLibrary;
+  if (library == null) return false;
   var cached = _standardVertexShaders;
   if (cached == null || !identical(cached.$1, library)) {
     cached = _standardVertexShaders = (

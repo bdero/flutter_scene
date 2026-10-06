@@ -1273,6 +1273,13 @@ base class Scene implements SceneGraph {
           'them. Await Scene.preload() first.',
         );
       }
+      if (_awaitingStageInterfaces) {
+        debugPrint(
+          'Scene.captureEnvironment ran while the shader reflection a '
+          'ShaderMaterial is checked against was still loading, so its '
+          'draws were skipped. Await Scene.preload() first.',
+        );
+      }
       return true;
     }());
     renderScene.rebuildIfDirty();
@@ -1379,6 +1386,13 @@ base class Scene implements SceneGraph {
           'Scene.bakeIrradianceField ran while the physical material shaders '
           'were still loading, so materials that need them drew without '
           'them. Await Scene.preload() first.',
+        );
+      }
+      if (_awaitingStageInterfaces) {
+        debugPrint(
+          'Scene.bakeIrradianceField ran while the shader reflection a '
+          'ShaderMaterial is checked against was still loading, so its '
+          'draws were skipped. Await Scene.preload() first.',
         );
       }
       return true;
