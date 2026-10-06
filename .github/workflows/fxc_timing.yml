@@ -8,7 +8,7 @@ on:
 jobs:
   time:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -26,10 +26,9 @@ jobs:
       - name: Time compile, link, and first draw
         run: |
           CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
-          "$CHROME" --version || true
-          wmic cpu get name || true
+          powershell -NoProfile -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion; (Get-CimInstance Win32_Processor).Name"
           RUNS=2 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
-            0.23.0 0.24.0 fix 2> chrome_stderr.log | tee results.jsonl
+            0.23.0 0.24.0 fix 2> chrome_stderr.log
       - name: Summary
         if: always()
         run: |
@@ -38,7 +37,7 @@ jobs:
             echo '| variant | run | renderer | compile ms | link ms | first draw ms | total ms | error |'
             echo '|---|---|---|---|---|---|---|---|'
             node -e '
-              for (const r of require("./results.json"))
+              for (const r of require("fs").readFileSync("results.jsonl","utf8").split(/\r?\n/).filter(l => l.startsWith("{")).map(JSON.parse))
                 console.log(`| ${r.variant} | ${r.run} | ${r.renderer} | ${Math.round(r.compileMs)} | ${Math.round(r.linkMs)} | ${Math.round(r.firstDrawMs)} | ${Math.round(r.totalMs)} | ${r.error ?? r.glError} |`)'
             echo
             echo 'stderr lines mentioning HLSL compile issues:'
@@ -52,4 +51,5 @@ jobs:
           name: fxc-timing-${{ matrix.angle }}
           path: |
             fxc_timing/results.json
+            fxc_timing/results.jsonl
             fxc_timing/chrome_stderr.log

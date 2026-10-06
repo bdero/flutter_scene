@@ -126,6 +126,7 @@ for (const variant of variants) {
     await browser.close();
     const row = { variant, angle, run, ...r };
     console.log(JSON.stringify(row));
+    fs.appendFileSync(outFile + 'l', JSON.stringify(row) + '\n');
     results.push(row);
   }
 }
