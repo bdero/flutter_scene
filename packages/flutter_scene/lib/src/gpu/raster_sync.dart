@@ -35,11 +35,19 @@ import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
 /// Completes immediately rather than throwing when there is no GPU context
 /// yet, and gives up after [timeout] rather than hanging on a backend that
 /// never reports completion.
+///
+/// The engine reports completion in real time, so [timeout] is real time too:
+/// its timer runs in the root zone. A zone with its own clock, such as the
+/// fake clock of a widget test, neither owns that timer nor fires it early,
+/// so a test that ends before the engine answers leaves no timer of its own
+/// pending.
 Future<void> awaitRasterThread({
   Duration timeout = const Duration(seconds: 2),
 }) {
   final completer = Completer<void>();
+  Timer? giveUp;
   void done() {
+    giveUp?.cancel();
     if (!completer.isCompleted) {
       completer.complete();
     }
@@ -54,7 +62,10 @@ Future<void> awaitRasterThread({
     // Neither needs the rendezvous.
     done();
   }
-  return completer.future.timeout(timeout, onTimeout: () {});
+  if (!completer.isCompleted) {
+    giveUp = Zone.root.createTimer(timeout, done);
+  }
+  return completer.future;
 }
 
 /// Paces a producer against presented frames.
