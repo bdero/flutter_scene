@@ -300,8 +300,11 @@ void main() {
         final glsl = compileFmat(source, fileName: 'probe.fmat').glsl;
         expect(glsl, contains('#include <material_debug.glsl>'));
         expect(glsl, contains('vec4 MaterialOutput(MaterialInputs material)'));
-        expect(glsl, contains('float debug_mode = DebugViewMode();'));
-        expect(glsl, contains('DebugViewSplit(DebugSurfaceOutput(material)'));
+        expect(glsl, contains('if (DebugViewNeedsShaded()) {'));
+        expect(
+          glsl,
+          contains('frag_color = DebugViewOutput(material, shaded);'),
+        );
         expect('MaterialOutput(material)'.allMatches(glsl), hasLength(1));
       }
     });
@@ -315,6 +318,26 @@ void main() {
       expect('MaterialOutput(material)'.allMatches(glsl), hasLength(1));
       final standard = _readShader('flutter_scene_standard.frag');
       expect('EvaluateLighting(material)'.allMatches(standard), hasLength(1));
+    });
+
+    // Each call also inlines the whole debug view. Four copies made the
+    // standard shader's link take twice as long under ANGLE's D3D11 backend.
+    test('the debug view is evaluated at one call site', () {
+      for (final name in [
+        'flutter_scene_standard.frag',
+        'flutter_scene_unlit.frag',
+      ]) {
+        final source = _readShader(name);
+        expect(source, isNot(contains('DebugSurfaceOutput(')), reason: name);
+        expect(
+          'DebugViewOutput('.allMatches(source),
+          hasLength(1),
+          reason: name,
+        );
+      }
+      final glsl = compileFmat(_litFmat, fileName: 'probe.fmat').glsl;
+      expect(glsl, isNot(contains('DebugSurfaceOutput(')));
+      expect('DebugViewOutput('.allMatches(glsl), hasLength(1));
     });
 
     test('a material can write the custom channel', () {

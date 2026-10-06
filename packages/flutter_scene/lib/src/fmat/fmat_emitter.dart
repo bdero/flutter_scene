@@ -530,29 +530,20 @@ void _writeDepthSurfaceMain(
 
 /// Writes the tail of a material's `main()`: the surface debug view when one
 /// is active, the shaded `MaterialOutput` otherwise, or two outputs selected
-/// per pixel for a split (against the shaded result or another view). Every
-/// branch is under uniform control flow; the split evaluates both sides and
-/// selects, so the lit path never runs under a per-pixel branch.
+/// per pixel for a split (against the shaded result or another view). The
+/// shaded path runs under a uniform branch, never a per-pixel one.
 ///
-/// `MaterialOutput` has exactly one call site. Every call is inlined, so a
-/// second one duplicates the whole lighting and shadow code, which pushed
-/// the shadowed variants past what Apple's M3 and newer GPU compilers can
-/// build under fast math.
+/// `MaterialOutput` and the debug view each have exactly one call site.
+/// Every call is inlined, so a second one duplicates that code. A second
+/// lighting copy pushed the shadowed variants past what Apple's M3 and newer
+/// GPU compilers can build under fast math, and extra debug view copies
+/// doubled the link time under ANGLE's D3D11 backend.
 void _writeDebugViewSelect(StringBuffer sb) {
-  sb.writeln('  float debug_mode = DebugViewMode();');
-  sb.writeln('  if (debug_mode > 2.5) {');
-  sb.writeln('    frag_color = DebugViewSplit(DebugSurfaceOutput(material),');
-  sb.writeln(
-    '                                DebugSurfaceOutputLeft(material));',
-  );
-  sb.writeln('  } else if (debug_mode > 0.5 && debug_mode < 1.5) {');
-  sb.writeln('    frag_color = DebugSurfaceOutput(material);');
-  sb.writeln('  } else {');
-  sb.writeln('    vec4 shaded = MaterialOutput(material);');
-  sb.writeln('    frag_color = debug_mode > 1.5');
-  sb.writeln('        ? DebugViewSplit(DebugSurfaceOutput(material), shaded)');
-  sb.writeln('        : shaded;');
+  sb.writeln('  vec4 shaded = vec4(0.0);');
+  sb.writeln('  if (DebugViewNeedsShaded()) {');
+  sb.writeln('    shaded = MaterialOutput(material);');
   sb.writeln('  }');
+  sb.writeln('  frag_color = DebugViewOutput(material, shaded);');
 }
 
 /// A scalar GLSL expression reading one component of [p] through the

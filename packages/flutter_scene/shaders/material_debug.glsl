@@ -467,4 +467,34 @@ vec4 DebugSurfaceOutputLeft(MaterialInputs material) {
   return DebugSurfaceOutputFor(material);
 }
 
+// Whether this draw shows the shaded result anywhere: no view is active, or a
+// split puts it left of the line. Uniform, so the caller can guard the
+// lighting with it.
+bool DebugViewNeedsShaded() {
+  float mode = DebugViewMode();
+  return mode < 0.5 || (mode > 1.5 && mode < 2.5);
+}
+
+// The final color: the active view where it shows, `shaded` elsewhere.
+// DebugSurfaceOutputFor has this one call site, with the view picked per
+// pixel as data. Every call is inlined, and each copy roughly doubled the
+// HLSL the D3D compiler behind ANGLE has to build (seconds per pipeline).
+vec4 DebugViewOutput(MaterialInputs material, vec4 shaded) {
+  float mode = DebugViewMode();
+  bool right = gl_FragCoord.x >= debug_view_info.view.y;
+  vec4 debug = vec4(0.0);
+  if (mode > 0.5) {
+    bool use_left = mode > 2.5 && !right;
+    debug_active_view = use_left
+        ? vec4(debug_view_info.left.x, debug_view_info.view.y,
+               debug_view_info.left.y, debug_view_info.view.w)
+        : debug_view_info.view;
+    debug_active_range =
+        use_left ? debug_view_info.left.zw : debug_view_info.params.xy;
+    debug = DebugSurfaceOutputFor(material);
+  }
+  bool show_debug = mode > 0.5 && (mode < 1.5 || mode > 2.5 || right);
+  return show_debug ? debug : shaded;
+}
+
 #endif // MATERIAL_DEBUG_GLSL_

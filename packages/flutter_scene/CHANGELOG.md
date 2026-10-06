@@ -2,6 +2,7 @@
 
 * On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.
 * An alpha-masked or LOD cross-fading mesh whose layers overlap shades its nearest layer again, instead of leaving a hole wherever a farther layer comes first in its index order. Regressed in 0.24.0.
+* Lit, unlit, and `.fmat` shaders build about a third faster in browsers on Windows, where a new material could stall its first frame for tens of seconds. The surface debug views no longer inline a copy per use. Regressed in 0.24.0.
 
 ## 0.24.0
 
