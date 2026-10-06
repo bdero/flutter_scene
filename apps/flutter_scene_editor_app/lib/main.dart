@@ -610,6 +610,58 @@ class _EditorHomeState extends State<_EditorHome> {
   }
 
   Future<void> _newProject() async {
+    final installation = await _projectInstallation();
+    if (!mounted) return;
+    final choice = await showNewProjectDialog(
+      context,
+      installation: installation,
+      installManaged: _buildInfo.isKnown
+          ? () => _managedCheckouts.create(_buildInfo)
+          : null,
+      onInstalled: _registerManagedCheckout,
+      managedVersion: _buildInfo.frameworkVersion,
+      flutterSceneVersion: _buildInfo.flutterSceneVersion,
+    );
+    if (choice == null) return;
+    if (choice.useExisting) return _wrapExistingProject();
+    final project = choice.project!;
+    _setProject(project);
+    unawaited(_openProjectScene(project));
+  }
+
+  /// The installation New Project creates apps with, the first healthy one
+  /// matching the editor's Flutter revision (the selected one preferred).
+  /// Null when none matches, so the editor's managed SDK gets installed. A
+  /// build with unknown identity takes any healthy installation.
+  Future<FlutterInstallation?> _projectInstallation() async {
+    final selected = _settings.selectedInstallation;
+    for (final candidate in [
+      ?selected,
+      ..._settings.flutterInstallations.where((c) => c.id != selected?.id),
+    ]) {
+      final validation = await _inspector.validate(candidate, _buildInfo);
+      if (validation.severity == InstallationSeverity.ok) return candidate;
+    }
+    return null;
+  }
+
+  /// Registers a managed SDK New Project installed, selecting it when no
+  /// installation is selected so the new app can build right away.
+  void _registerManagedCheckout(FlutterInstallation installation) {
+    _inspector.invalidate(installation.flutterBin);
+    _settings.flutterInstallations
+      ..removeWhere((candidate) => candidate.id == installation.id)
+      ..add(installation);
+    final selectionChanged = _settings.selectedInstallation == null;
+    if (selectionChanged) _settings.selectedInstallationId = installation.id;
+    _persistSettings();
+    if (selectionChanged) _onInstallationSelectionChanged();
+    if (mounted) setState(() {});
+  }
+
+  /// Wraps an existing Flutter app (a directory with a pubspec) in an
+  /// fproject.
+  Future<void> _wrapExistingProject() async {
     final directory = await getDirectoryPath();
     if (directory == null) return;
     try {
