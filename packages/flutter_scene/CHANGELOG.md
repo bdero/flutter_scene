@@ -1,6 +1,7 @@
 ## 0.24.1
 
 * On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.
+* An alpha-masked mesh whose layers overlap (a visor over an inner shell, or a double-sided shell) shades its nearest layer again, instead of leaving a hole wherever a farther layer drew first. Regressed in 0.24.0.
 
 ## 0.24.0
 
