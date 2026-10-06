@@ -2367,6 +2367,35 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         ),
       )..localTransform = twinTransform,
     );
+    // One masked mesh with a wide cyan layer behind a narrow magenta one,
+    // the farther layer first in index order. The color draw reaches the cyan
+    // layer first where they overlap and fails its equal depth test there;
+    // the magenta layer must still shade.
+    List<double> band(double halfWidth, double z) => [
+      -halfWidth, 0.65, z, halfWidth, 0.65, z, //
+      halfWidth, 1.05, z, -halfWidth, 1.05, z, //
+    ];
+    List<double> tint(double r, double g, double b) => [
+      for (var i = 0; i < 4; i++) ...[r, g, b, 1.0],
+    ];
+    scene.add(
+      Node(
+        mesh: Mesh(
+          MeshGeometry.fromArrays(
+            positions: Float32List.fromList([
+              ...band(0.7, -0.3),
+              ...band(0.3, 0),
+            ]),
+            colors: Float32List.fromList([...tint(0, 1, 1), ...tint(1, 0, 1)]),
+            indices: const [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7],
+          ),
+          PhysicallyBasedMaterial()
+            ..alphaMode = AlphaMode.mask
+            ..doubleSided = true
+            ..roughnessFactor = 0.8,
+        ),
+      ),
+    );
     // A blend band this wide puts the object's size inside it, so both
     // levels draw with complementary dithers.
     scene.add(

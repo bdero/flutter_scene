@@ -236,6 +236,23 @@ void main() {
           reason: 'a draw after the full geometry bind kept its depth bias',
         );
       }
+      if (smoke.id == 'coverage_cutouts') {
+        // The magenta layer of the self-overlapping masked mesh is the only
+        // magenta in the frame, and lies wholly in front of its cyan layer.
+        var magenta = 0;
+        for (var p = 0; p < rgba.lengthInBytes; p += 4) {
+          final r = rgba.getUint8(p), g = rgba.getUint8(p + 1);
+          final b = rgba.getUint8(p + 2);
+          if (r > 100 && b > 100 && g < r ~/ 2 && g < b ~/ 2) magenta++;
+        }
+        // ignore: avoid_print
+        print('SMOKE coverage_cutouts: magenta=$magenta');
+        expect(
+          magenta,
+          greaterThan(image.width * image.height ~/ 200),
+          reason: 'a farther layer of a masked mesh hid its nearer layer',
+        );
+      }
       if (smoke.id == 'irradiance_field') {
         // Both colored walls are emissive and nothing else lights the scene,
         // so the floor's color is entirely bounce light carried by the probe

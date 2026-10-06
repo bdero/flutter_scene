@@ -824,7 +824,9 @@ base class SceneEncoder {
   static final gpu.SamplerOptions _coverageMaskSampler = gpu.SamplerOptions();
 
   // Stencil for the coverage pre-draw (mark what it keeps), its color draw
-  // (shade only marked pixels and clear them), and every other draw.
+  // (shade only marked pixels and clear them), and every other draw. A color
+  // fragment failing the equal depth test keeps the mark, which belongs to
+  // the run's nearest surface there and is cleared when that surface shades.
   static final gpu.StencilConfig _markCoverage = gpu.StencilConfig(
     depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
   );
