@@ -27,8 +27,8 @@ jobs:
         run: |
           CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
           powershell -NoProfile -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion; (Get-CimInstance Win32_Processor).Name"
-          RUNS=2 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
-            0.23.0 0.24.0 nodebug onedebug 2> chrome_stderr.log
+          RUNS=3 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
+            0.23.0 0.24.0 fix2 2> chrome_stderr.log
       - name: Summary
         if: always()
         run: |
