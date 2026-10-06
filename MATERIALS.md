@@ -823,6 +823,12 @@ in vec4 v_color;           // per-vertex color, white when the model has none
 in vec4 v_tangent;         // world-space tangent and bitangent sign
 ```
 
+Declare all seven, in this order, even the ones your shader does not read.
+Metal and Vulkan match a fragment input to a vertex output by location, so
+leaving one out shifts every later input onto the wrong output and the pipeline
+fails to build. On Flutter 3.47 that failure crashes the app rather than
+skipping the draw.
+
 The model scale is no longer one of the interpolated outputs (lit materials
 read it from `FragInfo.model_scale`, which the `.fmat` `GetModelScale()`
 accessor wraps). A raw shader pair that needs it computes it from the model
