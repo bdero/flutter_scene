@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 
@@ -37,6 +38,18 @@ const _onlyScene = String.fromEnvironment('SMOKE_ONLY');
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final captures = <String, String>{};
+
+  // Android CI runs the app without a host driver and polls these instead.
+  var finished = 0;
+  tearDown(() => recordFinishedTests(++finished));
+  unawaited(
+    binding.allTestsPassed.future.then(
+      (passed) => storeSummary(passed, {
+        for (final failure in binding.failureMethodsDetails)
+          failure.methodName: failure.details ?? '',
+      }),
+    ),
+  );
 
   if (_expectedAndroidImpellerBackend.isNotEmpty) {
     testWidgets('Android requests the expected Impeller backend', (_) async {

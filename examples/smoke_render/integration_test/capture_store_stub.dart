@@ -7,3 +7,8 @@ Future<void> storeCapture(String name, Uint8List png) async {}
 Future<bool> alreadyPassed(String id) async => false;
 
 Future<void> markPassed(String id) async {}
+
+Future<void> recordFinishedTests(int count) async {}
+
+/// The host driver reports the verdict instead.
+Future<void> storeSummary(bool passed, Map<String, String> failures) async {}

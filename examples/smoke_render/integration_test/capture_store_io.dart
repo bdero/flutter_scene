@@ -8,9 +8,8 @@ Future<Directory>? _dir;
 
 /// Writes [png] to `<filesDir>/smoke/<name>` on Android as soon as it renders.
 ///
-/// The host driver otherwise receives every frame in one report at the end, so
-/// a run that dies late (a killed drive, a dropped adb transport) would lose
-/// them all. CI pulls this directory with `run-as` after each attempt.
+/// CI launches the app without a host driver and pulls this directory with
+/// `run-as`, so a run that dies late keeps what it drew.
 Future<void> storeCapture(String name, Uint8List png) async {
   if (!Platform.isAndroid) return;
   final dir = await (_dir ??= _open());
@@ -34,6 +33,27 @@ Future<void> markPassed(String id) async {
   if (!Platform.isAndroid) return;
   final dir = await (_dir ??= _open());
   await File('${dir.path}/$id.passed').create();
+}
+
+/// Records how many tests have finished, which CI polls to tell a slow run
+/// from a stalled one.
+Future<void> recordFinishedTests(int count) async {
+  if (!Platform.isAndroid) return;
+  final dir = await (_dir ??= _open());
+  await File('${dir.path}/progress').writeAsString('$count', flush: true);
+}
+
+/// Writes the suite's verdict, `passed` or `failed` on the first line and then
+/// each failure, which CI reads in place of a host driver's report so a lost
+/// connection to the app cannot change the outcome.
+Future<void> storeSummary(bool passed, Map<String, String> failures) async {
+  if (!Platform.isAndroid) return;
+  final dir = await (_dir ??= _open());
+  final text = StringBuffer(passed ? 'passed' : 'failed');
+  failures.forEach((test, details) => text.write('\n\n$test\n$details'));
+  final tmp = File('${dir.path}/summary.tmp');
+  await tmp.writeAsString('$text\n', flush: true);
+  await tmp.rename('${dir.path}/summary');
 }
 
 Future<Directory> _open() async {
