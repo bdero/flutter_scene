@@ -144,8 +144,15 @@ Future<String> buildWgslSidecar(
       failures.add('${job.name}: ${e.message}');
       continue;
     }
+    final stage = stages[job.name]!;
+    final entryPoint = wgslEntryPoint(source, stage);
+    if (entryPoint == null) {
+      failures.add('${job.name}: no @$stage entry point in the WGSL');
+      continue;
+    }
     shaders[job.name] = _sidecarEntry(
-      stage: stages[job.name]!,
+      stage: stage,
+      entryPoint: entryPoint,
       wgsl: source,
       map: map,
       reflection: reflections[job.name]!,
@@ -162,18 +169,26 @@ Future<String> buildWgslSidecar(
   });
 }
 
+/// The name of [wgsl]'s `@[stage]` entry point. Tint keeps the SPIR-V entry
+/// point's name (`main` for GLSL, the manifest's `entry_point` for HLSL),
+/// renaming it only to dodge a WGSL reserved word, so the output is read
+/// rather than assumed.
+String? wgslEntryPoint(String wgsl, String stage) => RegExp(
+  '@$stage\\b[^{;]*?\\bfn\\s+([A-Za-z_][A-Za-z0-9_]*)',
+).firstMatch(wgsl)?.group(1);
+
 /// One shader's sidecar entry: its WGSL plus the reflection the WebGPU
 /// backend binds by, read from the same Vulkan entry the WGSL came from, so
 /// struct offsets and bindings match the WGSL by construction.
 Map<String, Object?> _sidecarEntry({
   required String stage,
+  required String entryPoint,
   required String wgsl,
   required WgslBindingMap map,
   required fb.BackendShader reflection,
 }) => {
   'stage': stage,
-  // Tint names every entry point `main`.
-  'entryPoint': 'main',
+  'entryPoint': entryPoint,
   'wgsl': wgsl,
   'inputs': [
     for (final input in reflection.inputs ?? const <fb.ShaderInput>[])
