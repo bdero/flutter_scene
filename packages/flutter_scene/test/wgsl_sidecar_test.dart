@@ -59,6 +59,11 @@ const _goodWgsl = '''
 @group(0u) @binding(193u) var v_2 : sampler;
 @group(0u) @binding(66u) var v_3 : texture_2d<f32>;
 @group(0u) @binding(194u) var v_4 : sampler;
+
+@fragment
+fn main() -> @location(0) vec4<f32> {
+  return vec4<f32>();
+}
 ''';
 
 final class _FakeTranslator implements WgslBatchTranslator {
@@ -132,6 +137,42 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('records the entry point the WGSL names', () async {
+    final json = await buildWgslSidecar(
+      _bundle(),
+      _FakeTranslator(_goodWgsl.replaceFirst('fn main', 'fn custom')),
+      shippedBundleHash: 'abc',
+    );
+    final shaders = (jsonDecode(json) as Map<String, Object?>)['shaders'];
+    expect(((shaders as Map)['Lit'] as Map)['entryPoint'], 'custom');
+  });
+
+  test('fails naming the shader when the WGSL has no entry point', () async {
+    expect(
+      buildWgslSidecar(
+        _bundle(),
+        _FakeTranslator(_goodWgsl.replaceFirst('@fragment', '@vertex')),
+        shippedBundleHash: 'abc',
+      ),
+      throwsA(
+        isA<WgslSidecarException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('Lit'), contains('@fragment')),
+        ),
+      ),
+    );
+  });
+
+  test('reads entry points across attributes and line breaks', () {
+    expect(wgslEntryPoint('@vertex\nfn vs_main(', 'vertex'), 'vs_main');
+    expect(
+      wgslEntryPoint('@compute @workgroup_size(8, 8)\nfn c(', 'compute'),
+      'c',
+    );
+    expect(wgslEntryPoint('@fragment\nfn f(', 'vertex'), isNull);
   });
 
   test('refuses a bundle already trimmed of its SPIR-V', () async {
