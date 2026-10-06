@@ -116,8 +116,7 @@ Future<void> buildTargetShaderBundleJson({
   output.writeAsBytesSync(bytes);
   // Translated before trimming, since a web build keeps no Vulkan SPIR-V.
   final wgsl = File(wgslSidecarPathFor(output.path));
-  if (webGpuShadersRequested(buildInput) &&
-      backends.contains(ShaderBundleBackend.openglEs)) {
+  if (wgslSidecarsForBuild(buildInput)) {
     final translator = await TintProcessTranslator.resolve(buildInput);
     wgsl.writeAsStringSync(
       await buildWgslSidecar(
@@ -193,6 +192,17 @@ Future<void> buildTargetShaderBundleJson({
   tree.save();
 }
 
+/// Whether [buildInput] writes WGSL sidecars: the WebGPU opt-in is on and the
+/// target takes the GLES-only set, the one the web, their only reader, loads.
+/// Every check for an expected sidecar goes through here, so a build that
+/// never writes one does not count it missing and recompile.
+bool wgslSidecarsForBuild(BuildInput buildInput) {
+  if (!webGpuShadersRequested(buildInput)) return false;
+  final backends = shaderBundleBackendsForBuild(buildInput);
+  return backends.length == 1 &&
+      backends.contains(ShaderBundleBackend.openglEs);
+}
+
 /// Returns the backend set needed by [buildInput].
 ///
 /// A config with no code assets names no target OS, which is web and also the
@@ -259,7 +269,7 @@ String? _targetOSName(BuildInput buildInput) {
 Future<String> shaderBundleStamp(BuildInput buildInput, String what) async =>
     'rev=$buildCacheRevision $what target=${shaderBundleTargetKey(buildInput)} '
     '${await engineIdentity()}'
-    '${webGpuShadersRequested(buildInput) ? ' wgsl=$kTintReleaseTag' : ''}';
+    '${wgslSidecarsForBuild(buildInput) ? ' wgsl=$kTintReleaseTag' : ''}';
 
 /// Stable build-cache key for the selected shader backends. Recorded on every
 /// output that is only valid for them, and matched against
