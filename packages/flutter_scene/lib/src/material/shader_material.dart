@@ -175,7 +175,13 @@ class ShaderMaterial extends Material {
   @override
   void setFragmentShader(gpu.Shader shader) {
     super.setFragmentShader(shader);
-    requestStageInterfaces();
+    requestStageInterfaces([shader]);
+  }
+
+  @override
+  void setRadianceCubeFragmentShader(gpu.Shader? shader) {
+    super.setRadianceCubeFragmentShader(shader);
+    requestStageInterfaces([shader]);
   }
 
   @internal
@@ -368,7 +374,7 @@ class ShaderMaterial extends Material {
       return;
     }
     _vertexShaders[variant] = shader;
-    requestStageInterfaces();
+    requestStageInterfaces([shader]);
   }
 
   /// The vertex shader assigned for [variant], or null when the engine's

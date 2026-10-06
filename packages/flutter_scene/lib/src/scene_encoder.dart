@@ -578,6 +578,9 @@ gpu.RenderPipeline? tryResolvePipeline(
   final key = (vertexShader, fragmentShader, layoutId);
   if (_rejectedPipelines.contains(key)) return null;
   if (_deferBuild(key)) return null;
+  // A ShaderMaterial pairing whose reflection is still loading cannot be
+  // checked yet, so its draw waits rather than risking a refusal.
+  if (stageInterfaceDeferred(vertexShader, fragmentShader)) return null;
   // A pairing whose stage interfaces do not line up would be refused by the
   // backend, which crashes at the draw on Flutter 3.47, so catch it first.
   final interfaceProblem = stageInterfaceProblem(vertexShader, fragmentShader);
