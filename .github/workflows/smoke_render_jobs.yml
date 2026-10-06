@@ -198,6 +198,21 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The emulator action downloads the system image once and fails the job on
+      # a corrupt download. Installing it here first, with retries, makes the
+      # action's own install a no-op.
+      - name: Install the emulator system image
+        run: |
+          image="system-images;android-35;google_apis;x86_64"
+          dir="$ANDROID_HOME/system-images/android-35/google_apis/x86_64"
+          for attempt in 1 2 3; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "$image" > /dev/null || true
+            if [ -f "$dir/package.xml" ] && [ -f "$dir/system.img" ]; then exit 0; fi
+            echo "System image install attempt $attempt failed; retrying."
+            rm -rf "$dir"
+            sleep 10
+          done
+          exit 1
       - name: Render smoke scenes
         uses: reactivecircus/android-emulator-runner@v2
         with:
