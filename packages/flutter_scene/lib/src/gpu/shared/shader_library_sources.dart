@@ -20,9 +20,16 @@ final Expando<ShaderLibrarySource> _sources = Expando<ShaderLibrarySource>(
 final List<WeakReference<Object>> _known = [];
 
 /// Records that [library] was loaded from [source]. Keyed by identity, so a
-/// cached library reloaded under the same key keeps its entry.
+/// cached library reloaded under the same key keeps its entry and its first
+/// source: the reflection cache reads a replaced source as a rewritten bundle,
+/// and a hot reload of the key bumps its generation instead.
 void registerShaderLibrarySource(Object library, ShaderLibrarySource source) {
-  if (_sources[library] == null) _known.add(WeakReference(library));
+  final current = _sources[library];
+  if (current == null) {
+    _known.add(WeakReference(library));
+  } else if (source.assetKey != null && current.assetKey == source.assetKey) {
+    return;
+  }
   _sources[library] = source;
 }
 
