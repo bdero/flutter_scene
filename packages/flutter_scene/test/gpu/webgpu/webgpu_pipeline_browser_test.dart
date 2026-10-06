@@ -96,6 +96,34 @@ String _sidecar({String fragment = _fragmentWgsl}) => jsonEncode({
         {'name': 'albedo', 'group': 0, 'binding': 65, 'sampler': 193},
       ],
     },
+    // Reads the vertex stage's uv as the wrong type.
+    'RetypedFragment': {
+      'stage': 'fragment',
+      'entryPoint': 'main',
+      'wgsl': '''
+@fragment
+fn main(@location(0u) @interpolate(flat) uv : vec2<u32>) -> @location(0u) vec4<f32> {
+  return vec4<f32>(vec2<f32>(uv), 0.0, 1.0);
+}
+''',
+      'inputs': <Object?>[],
+      'uniforms': <Object?>[],
+      'textures': <Object?>[],
+    },
+    // Lines up with the vertex stage, but no color target takes a uint.
+    'UintFragment': {
+      'stage': 'fragment',
+      'entryPoint': 'main',
+      'wgsl': '''
+@fragment
+fn main() -> @location(0u) vec4<u32> {
+  return vec4<u32>(1u);
+}
+''',
+      'inputs': <Object?>[],
+      'uniforms': <Object?>[],
+      'textures': <Object?>[],
+    },
     // Reads a varying the vertex stage never writes.
     'MismatchedFragment': {
       'stage': 'fragment',
@@ -121,11 +149,10 @@ Future<Object> _valid(
     Object bindGroupLayout,
     String layoutKey,
     List<int> dynamicBindings,
-    Future<String?>? validation,
+    Future<String?> validation,
   })
   built,
 ) async {
-  expect(built.validation, isNotNull, reason: 'validation runs in debug');
   expect(await built.validation, isNull);
   return built.variant;
 }
@@ -160,14 +187,38 @@ void main() {
     expect(built.layoutKey, contains('"type":"filtering"'));
   });
 
-  test('an invalid pipeline reports its validation error', () async {
-    final built = webGpuPipelineVariant(
-      gpu.gpuContext.createRenderPipeline(
-        vertex,
-        library['MismatchedFragment']!,
-      ),
+  test('a varying the vertex stage does not write refuses the pairing', () {
+    Matcher refused(String reason) => throwsA(
+      isA<Exception>().having((e) => '$e', 'message', contains(reason)),
     );
+    expect(
+      () => webGpuPipelineVariant(
+        gpu.gpuContext.createRenderPipeline(
+          vertex,
+          library['MismatchedFragment']!,
+        ),
+      ),
+      refused('location 5, which the vertex shader "TestVertex" does not'),
+    );
+    expect(
+      () => webGpuPipelineVariant(
+        gpu.gpuContext.createRenderPipeline(
+          vertex,
+          library['RetypedFragment']!,
+        ),
+      ),
+      refused('writes as vec2<f32> perspective, center'),
+    );
+  });
+
+  test('an invalid pipeline is refused once validation reports it', () async {
+    final invalid = gpu.gpuContext.createRenderPipeline(
+      vertex,
+      library['UintFragment']!,
+    );
+    final built = webGpuPipelineVariant(invalid);
     expect(await built.validation, isNotNull);
+    expect(() => webGpuPipelineVariant(invalid), throwsA(isA<Exception>()));
   });
 
   test('variants are cached by state and share bind group layouts', () async {

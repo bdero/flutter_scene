@@ -63,6 +63,11 @@ final class _WebGpuShader extends Shader {
   /// location. A layout must feed exactly these, with a matching scalar.
   final Map<int, String> declaredInputs = {};
 
+  /// The varyings at the stage boundary by location, as their WGSL type and
+  /// interpolation: what a vertex shader writes, or what a fragment shader
+  /// reads. A pipeline is valid only if the second is a subset of the first.
+  final Map<int, String> varyings = {};
+
   /// Bytes per vertex implied by the inputs, for a pipeline built without an
   /// explicit layout.
   int vertexStride = 0;
@@ -150,6 +155,13 @@ final class _WebGpuShader extends Shader {
     declaredInputs
       ..clear()
       ..addAll(stage == ShaderStage.vertex ? _entryInputs(wgsl) : const {});
+    varyings
+      ..clear()
+      ..addAll(
+        stage == ShaderStage.vertex
+            ? _vertexOutputs(wgsl)
+            : _fragmentInputs(wgsl),
+      );
     generation++;
   }
 }
@@ -164,7 +176,44 @@ Map<int, String> _entryInputs(String wgsl) {
   };
 }
 
+/// The `@location` members of the struct a Tint-emitted vertex entry point
+/// returns.
+Map<int, String> _vertexOutputs(String wgsl) {
+  final returned = _vertexReturn.firstMatch(wgsl)?.group(1);
+  if (returned == null) return const {};
+  final body = RegExp(
+    'struct\\s+$returned\\s*\\{([^}]*)\\}',
+  ).firstMatch(wgsl)?.group(1);
+  return body == null ? const {} : _varyings(body);
+}
+
+/// The `@location` parameters of a Tint-emitted fragment entry point.
+Map<int, String> _fragmentInputs(String wgsl) {
+  final params = _fragmentEntry.firstMatch(wgsl)?.group(1);
+  return params == null ? const {} : _varyings(params);
+}
+
+Map<int, String> _varyings(String declarations) => {
+  for (final m in _varying.allMatches(declarations))
+    int.parse(m.group(1)!): '${m.group(3)}${_interpolation(m.group(2))}',
+};
+
+/// An `@interpolate` argument list in a form two equal declarations share,
+/// with the defaults WebGPU fills in written out.
+String _interpolation(String? arguments) {
+  final parts = (arguments ?? 'perspective').replaceAll(' ', '').split(',');
+  if (parts.first == 'flat') return ' flat';
+  return ' ${parts.first}, ${parts.length > 1 ? parts[1] : 'center'}';
+}
+
 final _vertexEntry = RegExp(r'@vertex\s*fn\s+\w+\s*\(([^{]*)\)\s*(?:->|\{)');
+final _vertexReturn = RegExp(r'@vertex\s*fn\s+\w+\s*\([^{]*\)\s*->\s*(\w+)');
+final _fragmentEntry = RegExp(
+  r'@fragment\s*fn\s+\w+\s*\(([^{]*)\)\s*(?:->|\{)',
+);
+final _varying = RegExp(
+  r'@location\((\d+)u?\)\s*(?:@interpolate\(([^)]*)\)\s*)?\w+\s*:\s*([\w<>]+)',
+);
 final _locationParam = RegExp(
   r'@location\((\d+)u?\)\s*(?:@interpolate\([^)]*\)\s*)?\w+\s*:\s*([\w<>]+)',
 );
