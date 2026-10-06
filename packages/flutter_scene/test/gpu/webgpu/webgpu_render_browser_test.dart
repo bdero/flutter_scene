@@ -95,8 +95,31 @@ String _sidecar() => jsonEncode({
         {'name': 'albedo', 'group': 0, 'binding': 65, 'sampler': 193},
       ],
     },
+    // Reads a varying QuadVertex never writes.
+    'MismatchedFragment': _bareFragment('''
+@fragment
+fn main(@location(5u) v : vec4<f32>) -> @location(0u) vec4<f32> {
+  return v;
+}
+'''),
+    // Lines up with QuadVertex, but no color target takes a uint.
+    'UintFragment': _bareFragment('''
+@fragment
+fn main() -> @location(0u) vec4<u32> {
+  return vec4<u32>(1u);
+}
+'''),
   },
 });
+
+Map<String, Object?> _bareFragment(String wgsl) => {
+  'stage': 'fragment',
+  'entryPoint': 'main',
+  'wgsl': wgsl,
+  'inputs': <Object?>[],
+  'uniforms': <Object?>[],
+  'textures': <Object?>[],
+};
 
 ByteData _floats(List<double> values) =>
     ByteData.sublistView(Float32List.fromList(values));
@@ -109,6 +132,7 @@ void main() {
     return;
   }
 
+  late gpu.ShaderLibrary library;
   late gpu.Shader vertex;
   late gpu.Shader fragment;
   late gpu.RenderPipeline pipeline;
@@ -117,7 +141,7 @@ void main() {
 
   setUpAll(() async {
     await gpu.initializeGpuBackend();
-    final library = await webGpuShaderLibraryFromSidecar(_bundle, _sidecar());
+    library = await webGpuShaderLibraryFromSidecar(_bundle, _sidecar());
     vertex = library['QuadVertex']!;
     fragment = library['TintFragment']!;
     pipeline = gpu.gpuContext.createRenderPipeline(vertex, fragment);
@@ -287,6 +311,51 @@ void main() {
     );
     commands.submit();
     expect(await pixel(resolve, 1, 2), [0, 255, 0, 255]);
+  });
+
+  test('a refused draw throws and spares the rest of the frame', () async {
+    /// Draws a red quad, then [refused] over it, and reads the result.
+    Future<List<int>> frame(gpu.RenderPipeline refused, Matcher draw) async {
+      final color = target();
+      final host = gpu.gpuContext.createHostBuffer();
+      final commands = gpu.gpuContext.createCommandBuffer();
+      final pass = commands.createRenderPass(
+        gpu.RenderTarget.singleColor(gpu.ColorAttachment(texture: color)),
+      );
+      quad(pass, host, color: const [1, 0, 0, 1]);
+      pass
+        ..bindPipeline(refused)
+        ..bindVertexBuffer(corners)
+        ..bindUniform(
+          vertex.getUniformSlot('Quad'),
+          host.emplace(_floats([-1, -1, 1, 1, 0.5, 0, 0, 0])),
+        );
+      expect(() => pass.draw(4), draw);
+      commands.submit();
+      return pixel(color, 1, 1);
+    }
+
+    const red = [255, 0, 0, 255];
+    final refused = throwsA(isA<Exception>());
+
+    // Caught from the WGSL before the pipeline is built, so even the first
+    // frame keeps its red quad.
+    final mismatched = gpu.gpuContext.createRenderPipeline(
+      vertex,
+      library['MismatchedFragment']!,
+    );
+    expect(await frame(mismatched, refused), red);
+    expect(await frame(mismatched, refused), red);
+
+    // Only WebGPU's asynchronous validation catches this one, so the first
+    // frame draws with it (and loses its command buffer); once validation
+    // has reported, later frames refuse it.
+    final invalid = gpu.gpuContext.createRenderPipeline(
+      vertex,
+      library['UintFragment']!,
+    );
+    await frame(invalid, returnsNormally);
+    expect(await frame(invalid, refused), red);
   });
 
   test(
