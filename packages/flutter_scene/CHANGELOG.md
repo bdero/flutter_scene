@@ -1,7 +1,7 @@
 ## 0.24.1
 
 * On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.
-* An alpha-masked or cross-fading mesh whose farther triangles come first in its index order no longer loses the nearer triangles drawn over them: the coverage color draw keeps the coverage mark when a fragment fails its equal depth test.
+* An alpha-masked or LOD cross-fading mesh whose layers overlap shades its nearest layer again, instead of leaving a hole wherever a farther layer comes first in its index order. Regressed in 0.24.0.
 
 ## 0.24.0
 

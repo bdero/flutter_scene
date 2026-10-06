@@ -12,19 +12,12 @@ import 'package:flutter_scene/src/fmat/fmat.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
 
+import 'support/gpu_available.dart';
+
 // The source with `//` comments removed, so prose mentioning discard does not
 // count.
 String _code(String source) =>
     source.split('\n').map((line) => line.split('//').first).join('\n');
-
-bool _gpuAvailable() {
-  try {
-    Scene();
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
 
 const _size = ui.Size(100, 100);
 
@@ -76,7 +69,7 @@ Future<List<int>> _overlappingQuadsCentre(AlphaMode alphaMode) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  final noGpu = _gpuAvailable()
+  final noGpu = gpuAvailable()
       ? null
       : 'Requires a GPU device: --enable-impeller --enable-flutter-gpu.';
 
