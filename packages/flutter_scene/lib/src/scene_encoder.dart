@@ -17,6 +17,7 @@ import 'package:flutter_scene/src/fmat/material_registry.dart'
 import 'package:flutter_scene/src/material/instance_attributes.dart';
 import 'package:flutter_scene/src/material/material.dart';
 import 'package:flutter_scene/src/material/engine_lighting.dart';
+import 'package:flutter_scene/src/material/shader_interface.dart';
 import 'package:flutter_scene/src/render/projection_params.dart';
 import 'package:flutter_scene/src/render/custom_render_pass.dart';
 import 'package:flutter_scene/src/render/depth_raster.dart';
@@ -577,6 +578,14 @@ gpu.RenderPipeline? tryResolvePipeline(
   final key = (vertexShader, fragmentShader, layoutId);
   if (_rejectedPipelines.contains(key)) return null;
   if (_deferBuild(key)) return null;
+  // A pairing whose stage interfaces do not line up would be refused by the
+  // backend, which crashes at the draw on Flutter 3.47, so catch it first.
+  final interfaceProblem = stageInterfaceProblem(vertexShader, fragmentShader);
+  if (interfaceProblem != null) {
+    _rejectedPipelines.add(key);
+    debugPrint(interfaceProblem);
+    return null;
+  }
   try {
     return resolvePipeline(
       vertexShader,

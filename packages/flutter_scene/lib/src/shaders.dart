@@ -3,6 +3,8 @@ import 'package:flutter/services.dart' show AssetBundle;
 import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
+import 'package:flutter_scene/src/material/shader_interface.dart'
+    show markEngineShaderLibrary;
 
 gpu.ShaderLibrary? _baseShaderLibrary;
 
@@ -104,6 +106,7 @@ Future<void> _loadBaseShaderLibrary(AssetBundle? bundle) async {
   if (lib[baseShaderBundleProbeName] == null) {
     throw Exception(baseShaderBundleUnusableMessage(key));
   }
+  markEngineShaderLibrary(lib);
   _baseShaderLibrary = lib;
 }
 

@@ -14,6 +14,8 @@ import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/material/preprocessed_material.dart';
 import 'package:flutter_scene/src/material/preprocessed_sky.dart';
+import 'package:flutter_scene/src/material/shader_interface.dart'
+    show markEngineShaderLibrary;
 
 const String _indexAssetSuffix = '.index.json';
 const String _indexAssetPrefix = '/flutter_scene/fmat/';
@@ -377,6 +379,7 @@ final class FmatMaterialRegistry {
     if (library == null) {
       throw StateError('Could not load shader bundle asset "$assetKey".');
     }
+    markEngineShaderLibrary(library);
     return library;
   }
 

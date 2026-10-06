@@ -23,6 +23,8 @@ import 'engine_lighting.dart';
 import 'physical_material.dart';
 import 'physically_based_material.dart' show AlphaMode, TextureTransform;
 import 'preprocessed_material.dart';
+import 'package:flutter_scene/src/material/shader_interface.dart'
+    show markEngineShaderLibrary;
 
 /// Nothing generated the bundle, which means the build ran without hooks.
 const _missingMessage =
@@ -123,6 +125,7 @@ Future<_PhysicalAssets> _loadPhysicalAssetsUncached() async {
     );
   }
   final library = await gpu.loadShaderLibraryAsync(keys.bundle);
+  if (library != null) markEngineShaderLibrary(library);
   if (library == null) {
     throw StateError(
       'Could not load the physical shader bundle "${keys.bundle}". It is '

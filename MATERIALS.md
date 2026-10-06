@@ -1206,7 +1206,9 @@ catch is that the engine's shader writes only the engine varyings. If your
 fragment shader reads a varying your own vertex shader writes, the fallback
 pairs it with a vertex shader that never writes it, and pipeline creation fails
 on the backend. A debug build warns and names the missing variant when this is
-about to happen. So either supply every variant your scene draws, or keep the
+about to happen. On Apple platforms the engine also compares every pairing's
+varyings before building its pipeline, and skips a mismatched draw with a
+message naming the varying rather than letting the backend refuse it. So either supply every variant your scene draws, or keep the
 fragment shader to the engine varyings.
 
 ## Your own vertex layout

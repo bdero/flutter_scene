@@ -49,6 +49,8 @@ import 'material/physical_material_variant.dart'
         initializePhysicalMaterialResources,
         physicalMaterialResourcesLoad,
         physicalMaterialResourcesPending;
+import 'material/shader_interface.dart'
+    show stageInterfacesLoad, stageInterfacesPending;
 import 'memory_pressure.dart';
 import 'mesh.dart';
 import 'node.dart';
@@ -234,7 +236,9 @@ base class Scene implements SceneGraph {
   /// needs. Without this, a scene holds its last frame while one of its
   /// materials waits for those shaders, and renders without SMAA until the
   /// tables arrive. Await it before a one-shot render or capture that uses
-  /// either.
+  /// either. It also waits for the shader reflection a [ShaderMaterial]
+  /// created beforehand reads to check its stage interfaces on Apple
+  /// platforms.
   ///
   /// Safe to call more than once. Retries a load that failed, and completes
   /// with its error.
@@ -247,6 +251,7 @@ base class Scene implements SceneGraph {
       initializeStaticResources(),
       if (physicalMaterials) initializePhysicalMaterialResources(),
       if (smaa) SmaaPass.initializeStaticResources(),
+      ?stageInterfacesLoad,
     ]);
   }
 
@@ -273,6 +278,12 @@ base class Scene implements SceneGraph {
       physicalMaterialResourcesPending &&
       renderScene.anyMaterial(_awaitsDeferredResources);
 
+  // Whether one of this scene's materials is waiting on the shader reflection
+  // a ShaderMaterial's stage interface check reads.
+  bool get _awaitingStageInterfaces =>
+      stageInterfacesPending &&
+      renderScene.anyMaterial(_awaitsDeferredResources);
+
   /// Completes once the on-demand loads this scene's content and [views] need
   /// have settled, so a reveal or warm-up sees the frame as it will draw.
   /// Never fails; a failed load is reported where it started.
@@ -283,6 +294,7 @@ base class Scene implements SceneGraph {
     final physical = _awaitingPhysicalResources
         ? physicalMaterialResourcesLoad
         : null;
+    final interfaces = _awaitingStageInterfaces ? stageInterfacesLoad : null;
     final wantsSmaa =
         effectiveAntiAliasingMode == AntiAliasingMode.smaa ||
         [...this.views, ...views].any(
@@ -293,7 +305,7 @@ base class Scene implements SceneGraph {
               AntiAliasingMode.smaa,
         );
     final smaa = wantsSmaa ? SmaaPass.request() : null;
-    await Future.wait([?physical, ?smaa]);
+    await Future.wait([?physical, ?interfaces, ?smaa]);
   }
 
   /// Computes the linear exposure multiplier for a physical pinhole
@@ -2119,10 +2131,12 @@ base class Scene implements SceneGraph {
     _tickedThisFrame = false;
 
     // A material waiting on the physical shaders would draw with the wrong
-    // one, so hold the previous frame until they land. After the tick, which
-    // can give a material a feature that needs them.
-    if (_awaitingPhysicalResources) {
+    // one, and one waiting on its interface check would draw a pairing that
+    // may crash, so hold the previous frame until they land. After the tick,
+    // which can give a material a feature that needs them.
+    if (_awaitingPhysicalResources || _awaitingStageInterfaces) {
       _repaintWhenLoaded(physicalMaterialResourcesLoad);
+      _repaintWhenLoaded(stageInterfacesLoad);
       _presentHeldFrame(views, canvas, drawArea);
       renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
       rendererSubmissions.endFrame();
