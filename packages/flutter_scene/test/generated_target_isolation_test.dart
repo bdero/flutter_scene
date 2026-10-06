@@ -18,6 +18,7 @@ import 'package:flutter_scene/src/generated_assets/generated_asset_lookup.dart';
 import 'package:flutter_scene/src/generated_assets/generated_assets.dart';
 import 'package:flutter_scene/src/generated_assets/generated_tree.dart';
 import 'package:flutter_scene/src/generated_assets/runtime_target.dart';
+import 'package:flutter_scene/src/generated_assets/wgsl_sidecar.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks/hooks.dart';
 
@@ -27,11 +28,13 @@ import 'package:hooks/hooks.dart';
 /// Passing [rawTargetOS] writes that value over the name [targetOS] produced,
 /// standing in for an embedder whose platform the protocol cannot name. It is
 /// untyped, and null removes the key, so a config that names something other
-/// than an OS, or names nothing, can be built as well.
+/// than an OS, or names nothing, can be built as well. [webGpu] sets the
+/// `flutter_scene_webgpu` user-define.
 BuildInput _input(
   Uri packageRoot, {
   OS? targetOS,
   Object? rawTargetOS = _keepTargetOS,
+  bool webGpu = false,
 }) {
   final builder = BuildInputBuilder()
     ..setupShared(
@@ -39,6 +42,14 @@ BuildInput _input(
       packageName: 'app',
       outputDirectoryShared: packageRoot.resolve('.dart_tool/hook/'),
       outputFile: packageRoot.resolve('.dart_tool/hook/output.json'),
+      userDefines: webGpu
+          ? PackageUserDefines(
+              workspacePubspec: PackageUserDefinesSource(
+                defines: {kWebGpuUserDefine: true},
+                basePath: packageRoot,
+              ),
+            )
+          : null,
     )
     ..setupBuildInput();
   builder.config.setupBuild(linkingEnabled: false);
@@ -124,6 +135,26 @@ void main() {
       isNot(shaderBundleTargetKey(_input(temp.uri))),
     );
   });
+
+  test(
+    'only a GLES-only build under the opt-in expects WGSL sidecars',
+    () {
+      expect(wgslSidecarsForBuild(_input(temp.uri, webGpu: true)), isTrue);
+      expect(wgslSidecarsForBuild(_input(temp.uri)), isFalse);
+      // A native target never writes one, so counting it missing would
+      // recompile on every hook rerun.
+      for (final os in [OS.macOS, OS.iOS, OS.android]) {
+        expect(
+          wgslSidecarsForBuild(_input(temp.uri, targetOS: os, webGpu: true)),
+          isFalse,
+          reason: '$os',
+        );
+      }
+    },
+    skip: Platform.environment.containsKey(kWebGpuEnv)
+        ? '$kWebGpuEnv turns the opt-in on for every input'
+        : false,
+  );
 
   test(
     'a native build\'s data-only pass is indistinguishable from a web build',
