@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        angle: [d3d11, d3d11-warp]
+        angle: [d3d11]
     defaults:
       run:
         shell: bash
@@ -28,7 +28,7 @@ jobs:
           CHROME="/c/Program Files/Google/Chrome/Application/chrome.exe"
           powershell -NoProfile -Command "(Get-Item 'C:\Program Files\Google\Chrome\Application\chrome.exe').VersionInfo.ProductVersion; (Get-CimInstance Win32_Processor).Name"
           RUNS=2 node time_link.mjs "$CHROME" results.json ${{ matrix.angle }} \
-            0.23.0 0.24.0 fix 2> chrome_stderr.log
+            0.23.0 0.24.0 nodebug onedebug 2> chrome_stderr.log
       - name: Summary
         if: always()
         run: |
