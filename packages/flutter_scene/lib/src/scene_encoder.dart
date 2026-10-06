@@ -830,7 +830,6 @@ base class SceneEncoder {
   );
   static final gpu.StencilConfig _testCoverage = gpu.StencilConfig(
     compareFunction: gpu.CompareFunction.equal,
-    depthFailureOperation: gpu.StencilOperation.zero,
     depthStencilPassOperation: gpu.StencilOperation.zero,
   );
   static final gpu.StencilConfig _noStencil = gpu.StencilConfig();
