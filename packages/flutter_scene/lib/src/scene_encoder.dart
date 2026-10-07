@@ -1310,8 +1310,73 @@ base class SceneEncoder {
       return false;
     }
     if (material.participatesInDebugViews) _warnDebugViewsCompiledOut();
+    // A split against the lit image keeps the material's own draw, and the
+    // view side draws again through the fallback (see _litSplitViewPipeline).
+    if (_debugView.splitsAgainstLit) return false;
     return geometry.emitsStandardVaryings;
   }
+
+  // The fallback pipeline for the view side of a split against the lit
+  // image, when [material] cannot draw the view itself, or null. The draw
+  // functions then draw twice, the material's own pipeline left of the split
+  // and this one right of it. The cut-out pre-draw writes coverage, not
+  // color, so it draws once.
+  gpu.RenderPipeline? _litSplitViewPipeline(
+    RenderItem? item,
+    Material material,
+    Geometry geometry,
+  ) {
+    final frame = _debugView;
+    if (frame == null || _coveragePass || !frame.splitsAgainstLit) return null;
+    if (!_effectiveDebugView(item).isActive ||
+        material.drawsDebugViews(_lighting) ||
+        !geometry.emitsStandardVaryings) {
+      return null;
+    }
+    final materialVertex = material.materialVertexShader(
+      geometry.materialVertexVariant,
+    );
+    return tryResolvePipeline(
+      materialVertex ?? geometry.vertexShader,
+      _debugFallbackShader,
+      vertexLayout: geometry.instancedVertexLayoutFor(
+        material.instanceAttributes,
+        material.vertexAttributesFor(materialVertex),
+      ),
+      debugContext: () =>
+          'debug view fallback for '
+          '${fmatSourcePathOf(material) ?? material.runtimeType}',
+    );
+  }
+
+  // The first pixel column right of the split. A pixel shows the view when
+  // its center is at or right of the split, as in material_debug.glsl.
+  int get _splitColumn => (_debugView!.splitPixels - 0.5).ceil().clamp(
+    0,
+    _dimensions.width.toInt(),
+  );
+
+  void _scissorLitSide() => _renderPass.setScissor(
+    gpu.Scissor(width: _splitColumn, height: _dimensions.height.toInt()),
+  );
+
+  void _scissorViewSide() {
+    final width = _dimensions.width.toInt();
+    _renderPass.setScissor(
+      gpu.Scissor(
+        x: _splitColumn,
+        width: width - _splitColumn,
+        height: _dimensions.height.toInt(),
+      ),
+    );
+  }
+
+  void _scissorFullTarget() => _renderPass.setScissor(
+    gpu.Scissor(
+      width: _dimensions.width.toInt(),
+      height: _dimensions.height.toInt(),
+    ),
+  );
 
   static bool _warnedDebugViewsCompiledOut = false;
 
@@ -1635,8 +1700,34 @@ base class SceneEncoder {
     double fade, {
     RenderItem? item,
     BatchBreakReason batchBreak = BatchBreakReason.none,
+    bool? debugFallback,
   }) {
-    final fallback = _usesDebugFallback(item, material, geometry);
+    final viewSide = debugFallback == null
+        ? _litSplitViewPipeline(item, material, geometry)
+        : null;
+    if (viewSide != null) {
+      for (final (side, sidePipeline) in [
+        (false, pipeline),
+        (true, viewSide),
+      ]) {
+        side ? _scissorViewSide() : _scissorLitSide();
+        _encodeSingle(
+          sidePipeline,
+          worldTransform,
+          geometry,
+          material,
+          windingFlipped,
+          fade,
+          item: item,
+          batchBreak: batchBreak,
+          debugFallback: side,
+        );
+      }
+      _scissorFullTarget();
+      return;
+    }
+    final fallback =
+        debugFallback ?? _usesDebugFallback(item, material, geometry);
     // Bindings persist across draws within a pass, and every draw binds its
     // full slot set, so clearing is only needed when the pipeline (and with
     // it the shaders' slot layouts) changes; a stale entry from a different
@@ -1718,7 +1809,41 @@ base class SceneEncoder {
     int attributeFloats = 0,
     RenderItem? item,
     BatchBreakReason batchBreak = BatchBreakReason.none,
+    bool? debugFallback,
   }) {
+    final viewSide = debugFallback == null
+        ? _litSplitViewPipeline(item, material, geometry)
+        : null;
+    if (viewSide != null) {
+      for (final (side, sidePipeline) in [
+        (false, pipeline),
+        (true, viewSide),
+      ]) {
+        side ? _scissorViewSide() : _scissorLitSide();
+        _encodeInstanced(
+          sidePipeline,
+          nodeTransform,
+          geometry,
+          material,
+          instances,
+          colors,
+          windingFlipped,
+          fade,
+          instanceWindingFlipped: instanceWindingFlipped,
+          instanceIndices: instanceIndices,
+          sortBackToFrontFrom: sortBackToFrontFrom,
+          packedWorldData: packedWorldData,
+          packedWorldWindingFlipped: packedWorldWindingFlipped,
+          attributeData: attributeData,
+          attributeFloats: attributeFloats,
+          item: item,
+          batchBreak: batchBreak,
+          debugFallback: side,
+        );
+      }
+      _scissorFullTarget();
+      return;
+    }
     final selection = item == null
         ? MeshDrawSelection.all
         : beginMeshDraw(
@@ -1749,6 +1874,7 @@ base class SceneEncoder {
         item: item,
         batchBreak: batchBreak,
         instanceLimit: selection.instanceCount,
+        debugFallback: debugFallback,
       );
     } finally {
       endMeshDraw(geometry);
@@ -1774,6 +1900,7 @@ base class SceneEncoder {
     RenderItem? item,
     BatchBreakReason batchBreak = BatchBreakReason.none,
     int? instanceLimit,
+    bool? debugFallback,
   }) {
     checkInstanceRecordWidth(material.instanceAttributes, attributeFloats);
     if (!identical(_boundPipeline, pipeline)) {
@@ -1793,7 +1920,8 @@ base class SceneEncoder {
         batchBreak: batchBreak,
       );
     }
-    final fallback = _usesDebugFallback(item, material, geometry);
+    final fallback =
+        debugFallback ?? _usesDebugFallback(item, material, geometry);
     _bindMaterial(material, materialVertex, fade, fallback: fallback);
     _bindDebugView(material, item, fallback);
     _setPrimitiveType(geometry.primitiveType);
@@ -1904,10 +2032,35 @@ base class SceneEncoder {
     RenderItem? item,
     int batchedItems = 1,
     BatchBreakReason batchBreak = BatchBreakReason.none,
+    bool? debugFallback,
   }) {
     // Cross-node batching synthesizes instances, so a material declaring
     // per-instance attributes is kept out of it (see opaqueBatchEnd).
     assert(material.instanceAttributes == null);
+    final viewSide = debugFallback == null
+        ? _litSplitViewPipeline(item, material, geometry)
+        : null;
+    if (viewSide != null) {
+      for (final (side, sidePipeline) in [
+        (false, pipeline),
+        (true, viewSide),
+      ]) {
+        side ? _scissorViewSide() : _scissorLitSide();
+        _encodeInstancedBatches(
+          sidePipeline,
+          geometry,
+          material,
+          batches,
+          fade,
+          item: item,
+          batchedItems: batchedItems,
+          batchBreak: batchBreak,
+          debugFallback: side,
+        );
+      }
+      _scissorFullTarget();
+      return;
+    }
     if (!identical(_boundPipeline, pipeline)) {
       _clearBindings();
     }
@@ -1926,7 +2079,8 @@ base class SceneEncoder {
         batchBreak: batchBreak,
       );
     }
-    final fallback = _usesDebugFallback(item, material, geometry);
+    final fallback =
+        debugFallback ?? _usesDebugFallback(item, material, geometry);
     _bindMaterial(material, materialVertex, fade, fallback: fallback);
     // TODO(debug-views): a cross-node batch carries the first item's object
     // seed, so its members share one object color.

@@ -124,6 +124,27 @@ void main() {
   });
 
   group('DebugViewFrame', () {
+    test('splits against the lit image only when nothing is left of it', () {
+      DebugViewFrame frame(double split, DebugView? left) => DebugViewFrame(
+        sceneView: const DebugView(channel: SurfaceDebugChannel.worldNormal),
+        splitPixels: split,
+        splitView: left,
+        hasNodeOverrides: false,
+        overlays: const {},
+        wireframeColor: Vector4(1, 1, 1, 1),
+      );
+      expect(frame(-1, null).splitsAgainstLit, isFalse);
+      expect(frame(256, null).splitsAgainstLit, isTrue);
+      expect(frame(256, DebugView.none).splitsAgainstLit, isTrue);
+      expect(
+        frame(
+          256,
+          const DebugView(channel: SurfaceDebugChannel.uv0),
+        ).splitsAgainstLit,
+        isFalse,
+      );
+    });
+
     test('packs the block the shader reads', () {
       final frame = DebugViewFrame(
         sceneView: const DebugView(

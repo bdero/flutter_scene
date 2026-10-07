@@ -537,6 +537,10 @@ class DebugViewFrame {
   /// The view left of the split, or null for the lit result.
   final DebugView? splitView;
 
+  /// Whether the lit result shows left of the split.
+  bool get splitsAgainstLit =>
+      splitPixels >= 0 && !(splitView?.isActive ?? false);
+
   /// Whether any node overrides the scene view this frame, which makes the
   /// effective view a per-item question.
   final bool hasNodeOverrides;
