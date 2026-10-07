@@ -771,15 +771,18 @@ base class Scene implements SceneGraph {
   /// Releases the render targets this scene keeps across frames: each view's
   /// output ring and transient attachment pool, and the history textures of
   /// temporal anti-aliasing, global illumination, auto exposure,
-  /// screen-space indirect light, cached shadows, probe captures, and planar
-  /// reflections.
+  /// screen-space indirect light, cached shadows, punctual lights, probe
+  /// captures, and planar reflections.
   ///
-  /// The textures become unreachable from the scene at this call rather than
-  /// when the scene itself is collected. The scene graph is left as it is. A
-  /// pending [captureRenderGraph] completes with a [StateError], and a later
-  /// [render], [renderViews], [warmUp], [captureRenderGraph],
-  /// [captureEnvironment], [bakeIrradianceField], or a bake stepper taken
-  /// before the call throws a [StateError]. Calling dispose again does nothing.
+  /// The textures become unreachable from the scene at this call, even if the
+  /// scene object lives on. The GPU memory itself frees once those textures
+  /// are collected. The scene graph is left as it is.
+  ///
+  /// A pending [captureRenderGraph] completes with a [StateError], and a
+  /// [warmUp] in progress stops. A later [render], [renderViews], [warmUp],
+  /// [captureRenderGraph], [captureEnvironment], [bakeIrradianceField], or a
+  /// bake stepper taken before the call throws a [StateError]. Calling dispose
+  /// again does nothing.
   void dispose() {
     if (_disposed) {
       return;
@@ -789,6 +792,7 @@ base class Scene implements SceneGraph {
     _taaState?.dispose();
     _taaState = null;
     _irradianceField.dispose();
+    _punctualLightBuffer.releaseTextures();
     _autoExposureState = null;
     _directionalShadowCache = null;
     _ssgiHistoryColor = null;
@@ -815,6 +819,7 @@ base class Scene implements SceneGraph {
     if (_autoExposureState != null) 'autoExposure',
     if (_directionalShadowCache != null) 'shadowCache',
     if (_ssgiHistoryColor != null) 'ssgi',
+    if (_punctualLightBuffer.debugHoldsTextures) 'punctualLights',
     if (_probeCapturePool != null) 'probe',
     if (_planarCaptureResources.isNotEmpty) 'planar',
   };
@@ -1511,35 +1516,7 @@ base class Scene implements SceneGraph {
       punctualLighting: punctualLighting,
       spotShadowFrame: spotShadowFrame,
       pointShadowFrame: pointShadowFrame,
-      renderView:
-          ({
-            required view,
-            required outputColor,
-            required pixelSize,
-            required pool,
-            required environmentMap,
-            required transientsBuffer,
-            required lightComponent,
-            required punctualLighting,
-            required spotShadowFrame,
-            required pointShadowFrame,
-            captureLinearColor = false,
-          }) {
-            _checkNotDisposed('bakeIrradianceField');
-            _renderViewToTexture(
-              view: view,
-              outputColor: outputColor,
-              pixelSize: pixelSize,
-              pool: pool,
-              environmentMap: environmentMap,
-              transientsBuffer: transientsBuffer,
-              lightComponent: lightComponent,
-              punctualLighting: punctualLighting,
-              spotShadowFrame: spotShadowFrame,
-              pointShadowFrame: pointShadowFrame,
-              captureLinearColor: captureLinearColor,
-            );
-          },
+      renderView: _renderViewToTexture,
     );
   }
 
@@ -2062,7 +2039,7 @@ base class Scene implements SceneGraph {
   }) async {
     _checkNotDisposed('warmUp');
     await initializeStaticResources();
-    if (views.isEmpty) {
+    if (views.isEmpty || _disposed) {
       return;
     }
     // A frame held for on-demand shaders compiles nothing.
@@ -2073,6 +2050,7 @@ base class Scene implements SceneGraph {
     // parked in `eglSwapBuffers` would freeze Dart for the whole swap. Await
     // it first so the compiles find it idle.
     await awaitRasterThread();
+    if (_disposed) return;
     // Encode one real frame into a discarded recording. The GPU passes (and so
     // the pipeline compilations and resource uploads) are submitted during
     // rendering; only the final canvas blit is thrown away. A small area is
@@ -2107,6 +2085,7 @@ base class Scene implements SceneGraph {
     for (var slice = 0; slice < 1000; slice++) {
       // Each slice compiles pipelines after a yield, so rendezvous again.
       if (slice > 0) await awaitRasterThread();
+      if (_disposed) return;
       final paced = _pacedFrameCount;
       withPipelineBuildBudget(sliceBudget, encode);
       if (_pacedFrameCount == paced && deferredPipelineBuilds == 0) return;
@@ -3136,6 +3115,11 @@ base class Scene implements SceneGraph {
     // its result). Never set for a linear-color capture.
     bool capturePlanarReflections = false,
   }) {
+    // The entry points check first with their own names; this catches a bake
+    // stepper taken before dispose.
+    if (_disposed) {
+      throw StateError('A disposed Scene cannot render');
+    }
     // A capture frame observes the pool from graph construction on, so
     // display-chain and custom-pass destinations acquired before execute are
     // attributed and identified by their descriptor debug names.

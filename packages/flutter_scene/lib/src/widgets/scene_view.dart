@@ -171,7 +171,8 @@ class SceneView extends StatefulWidget {
        );
 
   /// The scene to render, owned and mutated by the application. Null when
-  /// the view owns its scene ([SceneView.declarative]).
+  /// the view owns its scene ([SceneView.declarative]), which it disposes
+  /// when it is disposed. An app-owned scene is the app's to dispose.
   final Scene? scene;
 
   /// Declarative scene widgets mounted at the scene root (via [SceneScope]).
@@ -452,6 +453,7 @@ class _SceneViewState extends State<SceneView>
     } else if (_ownedScene != null) {
       // Switched from the declarative form to an app-owned scene; drop the
       // owned scene so a later switch back starts fresh.
+      _ownedScene!.dispose();
       _ownedScene = null;
       _ownedDefaultEnvironment = null;
     }
@@ -699,6 +701,7 @@ class _SceneViewState extends State<SceneView>
     _ticker?.dispose();
     _repaint.dispose();
     _elapsed.dispose();
+    _ownedScene?.dispose();
     super.dispose();
   }
 

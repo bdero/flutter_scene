@@ -177,6 +177,14 @@ class _TextureRing {
     );
   }
 
+  bool get isEmpty => _ring.every((texture) => texture == null);
+
+  /// Drops every texture, so the next [acquire] allocates again.
+  void clear() {
+    _ring.fillRange(0, _ring.length, null);
+    _contents.fillRange(0, _contents.length, null);
+  }
+
   /// [acquire], then writes [data] unless the slot already holds exactly
   /// that. Some drivers (Android's Vulkan) upload synchronously, and light
   /// data rarely changes from frame to frame, so this saves a stall a frame
@@ -479,6 +487,20 @@ class PunctualLightBuffer {
     }
     return true;
   }
+
+  /// Drops every texture the buffer keeps across frames.
+  void releaseTextures() {
+    _paramsRing.clear();
+    _indexRing.clear();
+    _froxelRing.clear();
+    _cachedFroxels = null;
+    _froxelCacheEpoch = -1;
+  }
+
+  /// Whether any ring holds a texture.
+  @internal
+  bool get debugHoldsTextures =>
+      !_paramsRing.isEmpty || !_indexRing.isEmpty || !_froxelRing.isEmpty;
 
   final Vector3 _cachePosition = Vector3.zero();
   final Vector3 _cacheForward = Vector3.zero();
