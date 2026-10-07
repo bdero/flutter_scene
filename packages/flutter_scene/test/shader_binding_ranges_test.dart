@@ -70,10 +70,14 @@ void main() async {
 
   /// Compiles [source] for Vulkan and returns every fragment resource whose
   /// binding sits below the fragment base, as `name@binding`.
-  Future<List<String>> lowBindings(File source) async {
+  Future<List<String>> lowBindings(
+    File source, {
+    bool debugViews = false,
+  }) async {
     final out = tmp.path;
     final result = await Process.run(impellerc!.toFilePath(), [
       '--vulkan',
+      if (debugViews) '--define=$kDebugViewsDefine',
       '--input=${source.path}',
       '--include=${Directory('shaders').absolute.path}',
       '--include=${impellerc.resolve('./shader_lib').toFilePath()}',
@@ -111,15 +115,20 @@ void main() async {
     expect(frags, isNotEmpty);
   });
 
-  for (final frag in frags) {
-    final name = frag.uri.pathSegments.last;
-    test(
-      '$name reflects no fragment resource below the binding base',
-      () async {
-        expect(await lowBindings(frag), isEmpty);
-      },
-      skip: skip,
-    );
+  // Both builds: the debug views read blocks (ViewInfo) that some materials
+  // read nowhere else, so compiling them out can leave a block unread.
+  for (final debugViews in [false, true]) {
+    final suffix = debugViews ? ' with debug views' : '';
+    for (final frag in frags) {
+      final name = frag.uri.pathSegments.last;
+      test(
+        '$name$suffix reflects no fragment resource below the binding base',
+        () async {
+          expect(await lowBindings(frag, debugViews: debugViews), isEmpty);
+        },
+        skip: skip,
+      );
+    }
   }
 
   final sources = {
@@ -130,16 +139,22 @@ void main() async {
       'assets/materials/shadow_catcher.fmat',
     ).readAsStringSync(),
   };
-  for (final entry in sources.entries) {
-    test(
-      'emitted ${entry.key} .fmat reflects no resource below the base',
-      () async {
-        final glsl = emitFragmentGlsl(parseFmat(entry.value));
-        final file = File('${tmp.path}/${entry.key}.frag')
-          ..writeAsStringSync(glsl);
-        expect(await lowBindings(file), isEmpty);
-      },
-      skip: skip,
-    );
+  for (final debugViews in [false, true]) {
+    final suffix = debugViews ? ' with debug views' : '';
+    for (final entry in sources.entries) {
+      test(
+        'emitted ${entry.key} .fmat$suffix reflects no resource below the base',
+        () async {
+          final glsl = emitFragmentGlsl(
+            parseFmat(entry.value),
+            defines: [if (debugViews) kDebugViewsDefine],
+          );
+          final file = File('${tmp.path}/${entry.key}.frag')
+            ..writeAsStringSync(glsl);
+          expect(await lowBindings(file), isEmpty);
+        },
+        skip: skip,
+      );
+    }
   }
 }

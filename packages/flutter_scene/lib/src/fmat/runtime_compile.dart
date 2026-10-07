@@ -21,6 +21,7 @@ import 'package:flutter_scene/src/fmat/fmat_emitter.dart'
     show
         depthSurfaceEntryName,
         emitFragmentGlsl,
+        kDebugViewsDefine,
         kRadianceCubeDefine,
         materialHasDepthSurface,
         materialSamplesEnvironment,
@@ -86,6 +87,7 @@ final class FmatRuntimeCompiler {
     required this.includeDirectories,
     Uri? shaderLibDirectory,
     Directory? cacheDirectory,
+    this.debugViews = false,
   }) : shaderLibDirectory =
            shaderLibDirectory ?? impellerc.resolve('./shader_lib'),
        cacheDirectory =
@@ -107,6 +109,12 @@ final class FmatRuntimeCompiler {
   /// Where generated GLSL, compiled bundles, and cache metadata live.
   final Directory cacheDirectory;
 
+  /// Whether the surface debug views are compiled in. Match the engine's own
+  /// shaders, so a live-edited material shows the views the rest do.
+  final bool debugViews;
+
+  late final List<String> _shadedDefines = [if (debugViews) kDebugViewsDefine];
+
   bool? _supportsDepfile;
 
   /// Compiles `.fmat` [source]. [fileName] labels parse errors. Throws
@@ -120,7 +128,8 @@ final class FmatRuntimeCompiler {
     final key = contentHash(
       utf8.encode(
         '$_cacheFormat\n$_toolStamp\n$shaderLibDirectory\n'
-        '${includeDirectories.join(' ')}\n$sourceHash',
+        '${includeDirectories.join(' ')}\ndebug_views=$debugViews\n'
+        '$sourceHash',
       ),
     );
     final entryDir = Directory('${cacheDirectory.path}/$key');
@@ -156,7 +165,13 @@ final class FmatRuntimeCompiler {
     final manifest = <String, Object?>{
       entryName: {
         'type': 'fragment',
-        'file': _writeShader(genDir, '$entryName.frag', compiled.glsl),
+        'file': _writeShader(
+          genDir,
+          '$entryName.frag',
+          debugViews
+              ? emitFragmentGlsl(compiled.material, defines: _shadedDefines)
+              : compiled.glsl,
+        ),
       },
       if (needsCube)
         cubeEntry: {
@@ -166,7 +181,7 @@ final class FmatRuntimeCompiler {
             '$cubeEntry.frag',
             emitFragmentGlsl(
               compiled.material,
-              defines: const [kRadianceCubeDefine],
+              defines: [..._shadedDefines, kRadianceCubeDefine],
             ),
           ),
         },

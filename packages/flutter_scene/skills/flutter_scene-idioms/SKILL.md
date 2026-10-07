@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-idioms
-version: 14
+version: 15
 description: Write correct flutter_scene code. Use this whenever building 3D with the flutter_scene Dart/Flutter engine (rendering a scene, geometry, materials, lighting, loading a .glb model, animation, custom shaders). It corrects the wrong assumptions models carry from three.js, Godot, and Unity, and names the APIs and traps that are specific to this engine.
 ---
 
@@ -112,7 +112,7 @@ Low-end and GLES-class GPUs (Raspberry Pi, web, integrated Linux) get a budget, 
   - An overlay that lies on a surface (a sign or screen on a wall, road paint, a decal quad, a rug) gets `material.depthLayer = 1` and wins at any distance; an overlay on that overlay gets 2. Place it flush or a few millimetres off, not at a guessed gap.
   - Leave the camera's near plane at its default unless geometry clips. The engine fits the plane it rasterizes with to visible content every frame.
   - Prove it in motion. `await scene.probeDepthConflicts()` names every pair of nodes that trades pixels from a camera; drive its `conflicts` to empty. `scene.debug.overlays.add(DebugOverlay.depthConflicts)` marks fights live in magenta, and debug builds print overlapping coplanar faces once the scene holds still.
-- **When pixels look wrong, look at the surface before guessing.** `scene.debug.view = const DebugView(channel: SurfaceDebugChannel.roughness)` (or `uv0`, `worldNormal`, `baseColor`, `validation`, any `SurfaceDebugChannel`) replaces the lit result with that value on every material, `scene.debug.split = 0.5` compares it against the lit half, `scene.debug.overlays.add(DebugOverlay.wireframe)` traces the mesh, and `node.debugView = DebugView.none` excludes a subtree. Works at runtime in any build. A `.fmat` shows any intermediate through `material.debug` and the `custom` channel.
+- **When pixels look wrong, look at the surface before guessing.** `scene.debug.view = const DebugView(channel: SurfaceDebugChannel.roughness)` (or `uv0`, `worldNormal`, `baseColor`, `validation`, any `SurfaceDebugChannel`) replaces the lit result with that value on every material, `scene.debug.split = 0.5` compares it against the lit half, `scene.debug.overlays.add(DebugOverlay.wireframe)` traces the mesh, and `node.debugView = DebugView.none` excludes a subtree. The material channels need the views compiled in, which costs shader build time, so they are off by default: set `hooks: user_defines: flutter_scene: debug_views: true` in the app's pubspec (the workspace root's in a pub workspace), plus `flutter_scene_debug_views: true` under the app's own name if its hook calls `buildMaterials` or `buildEngineAssets`, and rebuild. Without it only the geometry and identity channels draw, and the app prints how to turn them on. A `.fmat` shows any intermediate through `material.debug` and the `custom` channel.
 
 ## More depth
 

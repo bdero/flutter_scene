@@ -8,13 +8,15 @@ import 'package:flutter_scene/src/importer/build_cache.dart';
 import 'package:flutter_scene/src/importer/build_hooks.dart'
     show discoveryDependencyDirectories;
 
-import '../generated_assets/engine_identity.dart' show engineIdentity;
+import '../generated_assets/engine_identity.dart'
+    show debugViewsVariantSuffix, engineIdentity;
 import '../generated_assets/generated_assets.dart';
 import '../generated_assets/generated_tree.dart';
 import 'fmat.dart';
 import 'fmat_emitter.dart'
     show
         depthSurfaceEntryName,
+        kDebugViewsDefine,
         kLightmapDefine,
         kRadianceCubeDefine,
         materialHasDepthSurface,
@@ -179,6 +181,11 @@ const _frameworkShaderFiles = <String>[
 /// puts flutter_scene's `shaders/` directory on `impellerc`'s include path (via
 /// `buildShaderBundleJson`'s `includeDirectories`), so no framework files are
 /// copied into the consumer's project.
+///
+/// [debugViews] compiles the surface debug views into the materials. It
+/// defaults to the app's `flutter_scene_debug_views` hook user-define (a hook
+/// cannot read flutter_scene's own `debug_views`), so set both. Without it the
+/// materials draw through the fallback debug shader while a view is active.
 Future<void> buildMaterials({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
@@ -186,6 +193,7 @@ Future<void> buildMaterials({
   String bundleName = 'materials',
   String discoveryRoot = 'assets/',
   MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
+  bool? debugViews,
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -193,6 +201,7 @@ Future<void> buildMaterials({
   bundleName: bundleName,
   discoveryRoot: discoveryRoot,
   assetMode: assetMode,
+  debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
 );
 
 /// Builds flutter_scene's bundled physical material shaders.
@@ -209,6 +218,7 @@ Future<void> buildBundledPhysicalMaterials({
   MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
   bool pruneGeneratedTree = true,
   String? fileVariant,
+  bool debugViews = false,
 }) => _buildMaterials(
   buildInput: buildInput,
   buildOutput: buildOutput,
@@ -230,6 +240,7 @@ Future<void> buildBundledPhysicalMaterials({
   owner: owner,
   pruneGeneratedTree: pruneGeneratedTree,
   fileVariant: fileVariant,
+  debugViews: debugViews,
 );
 
 Future<void> _buildMaterials({
@@ -245,6 +256,7 @@ Future<void> _buildMaterials({
   String? owner,
   bool pruneGeneratedTree = true,
   String? fileVariant,
+  bool debugViews = false,
 }) async {
   // ignore: deprecated_member_use_from_same_package
   if (assetMode == MaterialAssetMode.legacyOnly) {
@@ -320,7 +332,11 @@ Future<void> _buildMaterials({
         .resolve('build/shaderbundles/$bundleName.shaderbundle')
         .toFilePath(),
   );
-  final variant = fileVariant ?? await engineIdentity();
+  // Builds with and without the debug views sharing one tree write different
+  // files instead of racing on one.
+  final variant =
+      '${fileVariant ?? await engineIdentity()}'
+      '${debugViews ? debugViewsVariantSuffix : ''}';
   final shippedBundleFile = tree == null
       ? bundleFile
       : File.fromUri(
@@ -365,7 +381,7 @@ Future<void> _buildMaterials({
     await shaderBundleStamp(
       buildInput,
       'fmat package=$assetOwner bundle=$bundleName '
-      'shadows=$generateShadowVariants '
+      'shadows=$generateShadowVariants debug_views=$debugViews '
       'lightmaps=${(lightmapVariantMaterials.toList()..sort()).join(',')}',
     ),
   );
@@ -461,6 +477,7 @@ Future<void> _buildMaterials({
         generateLightmapVariant:
             lightmapVariantMaterials.contains(entryName) &&
             compiled.material.shadingModel != FmatShadingModel.unlit,
+        debugViews: debugViews,
       );
       for (final variant in fragmentVariants.entries) {
         final variantEntryName = variant.key;
@@ -635,16 +652,20 @@ Map<String, String> emitFragmentShaderVariants(
   FmatCompilation compiled, {
   required bool generateShadowVariant,
   bool generateLightmapVariant = false,
+  bool debugViews = false,
 }) {
   final material = compiled.material;
   final entryName = material.name;
+  // The surface debug views are compiled into the shaded entries only; the
+  // depth surfaces never show them.
+  final base = [if (debugViews) kDebugViewsDefine];
   // The outermost axis, so a Lightmap entry still gets its Shadow and Cube
   // twins. Only materials expected to carry a bake generate it; it doubles
   // the entries of the ones that do.
   final byLightmap = <String, List<String>>{
-    entryName: const [],
+    entryName: base,
     if (generateLightmapVariant)
-      lightmapEntryName(entryName): const [kLightmapDefine],
+      lightmapEntryName(entryName): [...base, kLightmapDefine],
   };
   // The unsuffixed entry is the no-shadow fast path. The Shadow entry keeps
   // the complete sampler layout used when the scene binds a shadow atlas.

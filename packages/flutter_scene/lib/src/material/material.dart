@@ -25,6 +25,7 @@ import 'package:flutter_scene/src/render_texture.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/texture/texture2d.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
+import 'package:flutter_scene/src/render/uniform_slots.dart';
 
 int _sceneInputsRevision = 0;
 
@@ -704,6 +705,20 @@ abstract class Material {
   /// channels and stripes everything else.
   @internal
   bool get participatesInDebugViews => false;
+
+  /// Whether this material draws the surface debug views itself under
+  /// [lighting]: it participates, and the shader it draws with was built with
+  /// them (flutter_scene's `debug_views` hook user-define, or the shader's own
+  /// `FLUTTER_SCENE_DEBUG_VIEWS`). Otherwise an active view draws it through
+  /// the fallback debug shader. Both decisions, the shader and whether to bind
+  /// `DebugViewInfo`, must come from here.
+  @internal
+  bool drawsDebugViews(Lighting lighting) =>
+      participatesInDebugViews &&
+      fragmentShaderForLighting(
+            lighting,
+          ).cachedUniformSlot('DebugViewInfo').sizeInBytes !=
+          null;
 
   /// Per-frame engine inputs this material samples, produced only when a
   /// visible material asks for them: [RenderInput.depth] binds the linear

@@ -2,7 +2,9 @@
 
 * On Apple platforms, a `ShaderMaterial` whose fragment shader reads a varying its vertex shader does not write at that location and type is skipped with a message naming the varying, instead of crashing the app on Flutter 3.47. `Scene.preload` also waits for the shader reflection the check reads.
 * An alpha-masked or LOD cross-fading mesh whose layers overlap shades its nearest layer again, instead of leaving a hole wherever a farther layer comes first in its index order. Regressed in 0.24.0.
-* Lit, unlit, and `.fmat` shaders build about a third faster in browsers on Windows, where a new material could stall its first frame for tens of seconds. The surface debug views no longer inline a copy per use. Regressed in 0.24.0.
+* Lit, unlit, and `.fmat` shaders build about twice as fast in browsers on Windows, close to 0.23, where a new material could stall its first frame for tens of seconds. Regressed in 0.24.0.
+* The surface debug views' material channels are compiled in only when the app sets `hooks: user_defines: flutter_scene: debug_views: true` (plus `flutter_scene_debug_views: true` under the app's name if its hook builds materials or engine assets). Without it a view shows the geometry and identity channels and prints how to turn the rest on.
+* `buildMaterials` and `buildEngineAssets` take `debugViews`.
 
 ## 0.24.0
 

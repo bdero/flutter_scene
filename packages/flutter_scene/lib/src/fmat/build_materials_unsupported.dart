@@ -30,6 +30,7 @@ Never buildMaterials({
   List<String>? materials,
   String bundleName = 'materials',
   MaterialAssetMode assetMode = MaterialAssetMode.generatedTree,
+  bool? debugViews,
 }) => throw UnsupportedError(
   'buildMaterials runs at build time on native platforms only.',
 );

@@ -24,6 +24,11 @@ import 'package:flutter_gpu_shaders/environment.dart';
 /// short read, so this costs nothing per build.
 Future<String> engineIdentity() async => _cached ??= await _resolve();
 
+/// Appended to a file variant when the surface debug views are compiled in, so
+/// builds with and without them sharing one generated tree write different
+/// files.
+const String debugViewsVariantSuffix = ' debug_views';
+
 String? _cached;
 
 /// Overrides the identity, for tests that need a stamp change without an SDK.

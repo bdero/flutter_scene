@@ -16,6 +16,8 @@ import 'package:flutter_scene/scene.dart'
     show PreprocessedMaterial, PreprocessedSky;
 import 'package:flutter_scene/src/fmat/fmat_bytes_library.dart';
 import 'package:flutter_scene/src/fmat/runtime_compile.dart';
+import 'package:flutter_scene/src/render/debug_view.dart'
+    show engineDebugViewsCompiledIn;
 import 'package:scene/scene.dart' show AssetRef;
 
 import '../toolchains/flutter_installation.dart';
@@ -487,6 +489,7 @@ class EditorFmatLibrary {
         includeDirectories: [toolchain.frameworkShaders],
         shaderLibDirectory: toolchain.shaderLib,
         cacheDirectory: cacheDir,
+        debugViews: engineDebugViewsCompiledIn(),
       );
       return _compiler;
     } catch (e) {
