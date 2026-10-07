@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart'
-    show PreprocessedMaterial, PreprocessedSky;
+    show PreprocessedMaterial, PreprocessedSky, Scene;
 import 'package:flutter_scene/src/fmat/fmat_bytes_library.dart';
 import 'package:flutter_scene/src/fmat/runtime_compile.dart';
 import 'package:flutter_scene/src/render/debug_view.dart'
@@ -484,6 +484,9 @@ class EditorFmatLibrary {
       final cacheDir = Directory(
         '${Directory.systemTemp.path}/flutter_scene_editor/fmat_cache',
       )..createSync(recursive: true);
+      // The debug view probe reads the engine's shader library, which a cold
+      // open may still be loading.
+      await Scene.initializeStaticResources();
       _compiler = FmatRuntimeCompiler(
         impellerc: toolchain.impellerc,
         includeDirectories: [toolchain.frameworkShaders],
