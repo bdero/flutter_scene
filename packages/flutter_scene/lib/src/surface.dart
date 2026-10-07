@@ -158,6 +158,7 @@ class Surface {
 
   /// Drops every view's rings and transient pools, so their textures are
   /// unreachable from this surface. A later frame allocates them again.
+  @internal
   void dispose() {
     for (final view in _views) {
       view.dispose();

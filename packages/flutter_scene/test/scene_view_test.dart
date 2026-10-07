@@ -251,4 +251,31 @@ void main() {
     // would trip the test binding's debug assertions.
     await tester.pumpWidget(_sized(const SizedBox()));
   });
+
+  testWidgets('disposes the scene it owns, not an app-owned one', (
+    tester,
+  ) async {
+    final appScene = _tryScene();
+    if (appScene == null) {
+      markTestSkipped('No Impeller GPU context');
+      return;
+    }
+    Scene scopeScene() =>
+        tester.widget<SceneScope>(find.byType(SceneScope)).scene;
+
+    await tester.pumpWidget(_sized(const SceneView.declarative()));
+    final owned = scopeScene();
+    await tester.pumpWidget(_sized(const SizedBox()));
+    expect(owned.isDisposed, isTrue);
+
+    // Switching to an app-owned scene drops the owned one.
+    await tester.pumpWidget(_sized(const SceneView.declarative()));
+    final replaced = scopeScene();
+    await tester.pumpWidget(_sized(SceneView(appScene)));
+    expect(replaced.isDisposed, isTrue);
+    expect(appScene.isDisposed, isFalse);
+
+    await tester.pumpWidget(_sized(const SizedBox()));
+    expect(appScene.isDisposed, isFalse);
+  });
 }
