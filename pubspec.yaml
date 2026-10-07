@@ -24,9 +24,19 @@ workspace:
   - examples/editor_example
   - apps/flutter_scene_editor_app
 
-# The smoke-render app has a data-assets lane (see examples/smoke_render/README.md).
-# User defines are read from the workspace root, so the switch lives here.
-# hooks:
-#   user_defines:
-#     smoke_render:
-#       data_assets: true
+# User defines are read from the workspace root, so every switch lives here.
+# The editor and the smoke matrix's debug_view scene need the surface debug
+# views compiled in: flutter_scene's own hook reads debug_views, and an app
+# hook that builds engine assets or materials reads flutter_scene_debug_views
+# under the app's name. The smoke-render app also has a data-assets lane (see
+# examples/smoke_render/README.md), switched on with data_assets: true.
+hooks:
+  user_defines:
+    flutter_scene:
+      debug_views: true
+    smoke_render:
+      flutter_scene_debug_views: true
+    example_app:
+      flutter_scene_debug_views: true
+    editor_example:
+      flutter_scene_debug_views: true

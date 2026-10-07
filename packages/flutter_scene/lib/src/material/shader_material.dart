@@ -202,11 +202,12 @@ class ShaderMaterial extends Material {
   /// rasterizer.
   gpu.WindingOrder windingOrder;
 
-  /// Whether the fragment shader includes `material_debug.glsl` and selects
-  /// its output through `DebugViewMode()` and `DebugSurfaceOutput()`, so the
-  /// scene's surface debug views can show its resolved surface. Defaults to
-  /// `false`, in which case an active view draws this material through the
-  /// engine's fallback debug shader (geometry and identity channels only).
+  /// Whether the fragment shader defines `FLUTTER_SCENE_DEBUG_VIEWS`,
+  /// includes `material_debug.glsl`, and selects its output through
+  /// `DebugViewOutput()`, so the scene's surface debug views can show its
+  /// resolved surface. Defaults to `false`, in which case an active view draws
+  /// this material through the engine's fallback debug shader (geometry and
+  /// identity channels only).
   final bool debugViews;
 
   @override

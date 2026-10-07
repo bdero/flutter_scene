@@ -194,6 +194,28 @@ void main() async {
     }
   }, skip: skip);
 
+  test('compiles the debug views in only when asked', () async {
+    bool declaresDebugBlock(FmatCompileResult result) => utf8
+        .decode(
+          Uint8List.sublistView(result.shaderBundle),
+          allowMalformed: true,
+        )
+        .contains('DebugViewInfo');
+    final without = await compiler.compile(_surface, fileName: 'test.fmat');
+    expect(declaresDebugBlock(without), isFalse);
+    final debugCompiler = FmatRuntimeCompiler(
+      impellerc: impellerc ?? Uri.file('/nonexistent'),
+      includeDirectories: [Directory('shaders').absolute.uri],
+      cacheDirectory: cacheDir,
+      debugViews: true,
+    );
+    final withViews = await debugCompiler.compile(
+      _surface,
+      fileName: 'test.fmat',
+    );
+    expect(declaresDebugBlock(withViews), isTrue);
+  }, skip: skip);
+
   test('compiles a sky material', () async {
     final result = await compiler.compile(_sky, fileName: 'sky.fmat');
     final metadata = (result.sidecar['RuntimeTestSky'] as Map)

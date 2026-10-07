@@ -1305,9 +1305,31 @@ base class SceneEncoder {
     Geometry geometry,
   ) {
     if (_debugView == null) return false;
-    return _effectiveDebugView(item).isActive &&
-        !material.participatesInDebugViews &&
-        geometry.emitsStandardVaryings;
+    if (!_effectiveDebugView(item).isActive ||
+        material.drawsDebugViews(_lighting)) {
+      return false;
+    }
+    if (material.participatesInDebugViews) _warnDebugViewsCompiledOut();
+    return geometry.emitsStandardVaryings;
+  }
+
+  static bool _warnedDebugViewsCompiledOut = false;
+
+  // A material that would show a view itself was built without the views.
+  static void _warnDebugViewsCompiledOut() {
+    if (_warnedDebugViewsCompiledOut) return;
+    _warnedDebugViewsCompiledOut = true;
+    debugPrint(
+      'flutter_scene: surface debug views are compiled out of this build, so '
+      'materials show only the geometry and identity channels. Set '
+      "flutter_scene's debug_views hook user-define in the app's pubspec to "
+      "compile them in, plus flutter_scene_debug_views under the app's own "
+      'name if its hook builds materials or engine assets:\n'
+      '  hooks:\n'
+      '    user_defines:\n'
+      '      flutter_scene:\n'
+      '        debug_views: true',
+    );
   }
 
   // Binds the DebugViewInfo block for the draw about to be recorded. Every
@@ -1316,7 +1338,7 @@ base class SceneEncoder {
   // binds per draw, since the identity seeds are per item.
   void _bindDebugView(Material material, RenderItem? item, bool fallback) {
     if (_coveragePass) return;
-    if (!fallback && !material.participatesInDebugViews) return;
+    if (!fallback && !material.drawsDebugViews(_lighting)) return;
     final shader = fallback
         ? _debugFallbackShader
         : material.fragmentShaderForLighting(_lighting);

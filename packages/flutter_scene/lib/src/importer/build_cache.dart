@@ -41,8 +41,8 @@ const String kStrictHashEnv = 'FLUTTER_SCENE_STRICT_HASH';
 /// surprises for hand-edited `.fscene`, `.fmat`, and `.glsl` files.
 const int kSmallSourceBytes = 1 << 20;
 
-/// The two build-hook switches, read from the app's user defines with an
-/// environment fallback.
+/// The build-hook switches, read from the app's user defines (the first two
+/// with an environment fallback).
 ///
 /// The build system passes a hook a **filtered** environment (an allowlist for
 /// compiler discovery), so an environment variable set on a `flutter build` never
@@ -61,6 +61,7 @@ final class HookOptions {
   const HookOptions({
     this.strictHashing = false,
     this.rebuildEverything = false,
+    this.debugViews = false,
   });
 
   /// Reads the options declared for the package [input] is building.
@@ -71,6 +72,11 @@ final class HookOptions {
       'flutter_scene_rebuild_assets',
       kDisableBuildCacheEnv,
     ),
+    // flutter_scene's own hook reads `debug_views` under its own name; an app
+    // hook building engine assets or materials reads the prefixed form.
+    debugViews:
+        input.userDefines['debug_views'] == true ||
+        input.userDefines['flutter_scene_debug_views'] == true,
   );
 
   static bool _flag(BuildInput input, String define, String environment) =>
@@ -82,6 +88,9 @@ final class HookOptions {
 
   /// Redo every conversion, whatever the stamps say.
   final bool rebuildEverything;
+
+  /// Compile the surface debug views into the engine's shaders and materials.
+  final bool debugViews;
 }
 
 /// Whether the cache is disabled via [kDisableBuildCacheEnv].

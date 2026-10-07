@@ -153,6 +153,11 @@ String radianceCubeEntryName(String entryName) => '${entryName}Cube';
 /// `PreprocessedMaterial`.
 const String kLightmapDefine = 'FLUTTER_SCENE_LIGHTMAP';
 
+/// Compiles the surface debug views into a material's shaded entries (see
+/// `material_debug.glsl`). Without it a material draws through the fallback
+/// debug shader while a view is active.
+const String kDebugViewsDefine = 'FLUTTER_SCENE_DEBUG_VIEWS';
+
 /// The bundle entry name of [entryName]'s baked-lightmap twin.
 String lightmapEntryName(String entryName) => '${entryName}Lightmap';
 

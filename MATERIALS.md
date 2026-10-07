@@ -661,10 +661,28 @@ void Surface(inout MaterialInputs material) {
 }
 ```
 
-A raw `ShaderMaterial` opts in by including the hook and selecting its output
-the same way, then constructing with `debugViews: true`:
+The material channels lengthen every material's shader build, so they are
+compiled in only when the app sets flutter_scene's `debug_views` hook
+user-define (the workspace root's pubspec, in a pub workspace):
+
+```yaml
+hooks:
+  user_defines:
+    flutter_scene:
+      debug_views: true
+```
+
+That covers the engine's materials and its bundled physical materials. An app
+whose own hook calls `buildMaterials` or `buildEngineAssets` also sets
+`flutter_scene_debug_views: true` under its own package name, since a hook
+cannot read another package's user-defines.
+
+A raw `ShaderMaterial` opts in by defining `FLUTTER_SCENE_DEBUG_VIEWS`,
+including the hook, and selecting its output through it, then constructing
+with `debugViews: true`:
 
 ```glsl
+#define FLUTTER_SCENE_DEBUG_VIEWS
 #include <material_varyings.glsl>
 #include <material_inputs.glsl>
 #include <material_debug.glsl>
@@ -672,24 +690,22 @@ the same way, then constructing with `debugViews: true`:
 void main() {
   MaterialInputs material = InitMaterialInputs();
   // ...fill material...
-  vec4 shaded = /* your lit color, linear premultiplied */;
-  float debug_mode = DebugViewMode();
-  if (debug_mode > 1.5) {
-    frag_color = DebugViewSplit(DebugSurfaceOutput(material), shaded);
-  } else if (debug_mode > 0.5) {
-    frag_color = DebugSurfaceOutput(material);
-  } else {
-    frag_color = shaded;
+  vec4 shaded = vec4(0.0);
+  if (DebugViewNeedsShaded()) {
+    shaded = /* your lit color, linear premultiplied */;
   }
+  frag_color = DebugViewOutput(material, shaded);
 }
 ```
 
-A raw shader that does not opt in is drawn through the engine's fallback
-debug shader while a view is active, which serves the geometry and identity
-channels from the varyings and paints magenta stripes for everything that
-needs the surface description. Keep the three branches as written: the split
-is a per-pixel test, and evaluating both sides before selecting keeps every
-texture sample under uniform control flow.
+Without the define the debug functions compile to inert stubs, so the same
+source builds either way. A material whose shader lacks the views (a raw
+shader that never opted in, or any material in a build without the
+user-define) is drawn through the engine's fallback debug shader while a view
+is active, which serves the geometry and identity channels from the varyings
+and paints magenta stripes for everything that needs the surface description.
+Keep the shaded result under the `DebugViewNeedsShaded()` branch: it is
+uniform, so the lighting never runs under the per-pixel split test.
 
 ---
 

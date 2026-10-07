@@ -5,7 +5,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 // ignore: implementation_imports
+import 'package:flutter_scene/src/fmat/build_materials.dart'
+    show emitFragmentShaderVariants;
+// ignore: implementation_imports
 import 'package:flutter_scene/src/fmat/fmat.dart';
+// ignore: implementation_imports
+import 'package:flutter_scene/src/generated_assets/build_engine_assets.dart'
+    show wrapDebugViewsManifest;
 // ignore: implementation_imports
 import 'package:flutter_scene/src/geometry/geometry.dart';
 // ignore: implementation_imports
@@ -291,6 +297,84 @@ void main() {
       expect(info[36], 0.0);
       expect(info[38], 1.0);
       expect(info[39], 0.5);
+    });
+  });
+
+  group('debug_views build option', () {
+    test('both builds of material_debug.glsl define the same functions', () {
+      final source = _readShader('material_debug.glsl');
+      final split = source.indexOf('#else  // FLUTTER_SCENE_DEBUG_VIEWS');
+      expect(split, greaterThan(0));
+      final compiledIn = source.substring(0, split);
+      final compiledOut = source.substring(split);
+      for (final name in [
+        'DebugViewMode',
+        'DebugViewSplit',
+        'DebugSurfaceOutput',
+        'DebugSurfaceOutputLeft',
+        'DebugViewNeedsShaded',
+        'DebugViewOutput',
+      ]) {
+        final declaration = RegExp('\\b$name\\(');
+        expect(compiledIn, contains(declaration), reason: name);
+        expect(compiledOut, contains(declaration), reason: name);
+      }
+      expect(compiledOut, isNot(contains('DebugViewInfo {')));
+    });
+
+    test('a material compiles the views into its shaded entries only', () {
+      final compiled = compileFmat(_litFmat, fileName: 'probe.fmat');
+      final plain = emitFragmentShaderVariants(
+        compiled,
+        generateShadowVariant: true,
+      );
+      expect(
+        plain.values.where(
+          (glsl) => glsl.contains('FLUTTER_SCENE_DEBUG_VIEWS'),
+        ),
+        isEmpty,
+      );
+      final withViews = emitFragmentShaderVariants(
+        compiled,
+        generateShadowVariant: true,
+        debugViews: true,
+      );
+      expect(withViews.keys, plain.keys);
+      for (final MapEntry(:key, :value) in withViews.entries) {
+        expect(
+          value.contains('#define FLUTTER_SCENE_DEBUG_VIEWS'),
+          !key.contains('Depth'),
+          reason: key,
+        );
+      }
+    });
+
+    test('the engine bundle wraps its fragment entries', () {
+      final root = Directory.systemTemp.createTempSync('debug_views_wrap_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final wrapped = wrapDebugViewsManifest({
+        'StandardFragment': {
+          'type': 'fragment',
+          'file': 'shaders/flutter_scene_standard.frag',
+        },
+        'UnskinnedVertex': {
+          'type': 'vertex',
+          'file': 'shaders/flutter_scene_unskinned.vert',
+        },
+      }, root.uri);
+      expect(
+        (wrapped['UnskinnedVertex'] as Map)['file'],
+        'shaders/flutter_scene_unskinned.vert',
+      );
+      final wrapperPath =
+          (wrapped['StandardFragment'] as Map)['file'] as String;
+      // A wrapper named like its original would include itself.
+      expect(wrapperPath.split('/').last, isNot('flutter_scene_standard.frag'));
+      expect(
+        File.fromUri(root.uri.resolve(wrapperPath)).readAsStringSync(),
+        '#define FLUTTER_SCENE_DEBUG_VIEWS\n'
+        '#include <flutter_scene_standard.frag>\n',
+      );
     });
   });
 

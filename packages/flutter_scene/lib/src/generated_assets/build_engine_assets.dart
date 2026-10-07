@@ -12,6 +12,21 @@
 ///
 /// [buildEngineAssets] is the app-side override: the same build, into the app's
 /// own tree, from the app's hook.
+///
+/// The surface debug views are compiled out unless the app sets flutter_scene's
+/// `debug_views` hook user-define in its pubspec (the workspace root's, in a
+/// pub workspace). An app hook calling [buildEngineAssets] reads
+/// `flutter_scene_debug_views` under the app's own name instead, since a hook
+/// sees only its own package's defines:
+///
+/// ```yaml
+/// hooks:
+///   user_defines:
+///     flutter_scene:
+///       debug_views: true
+///     my_app:
+///       flutter_scene_debug_views: true
+/// ```
 library;
 
 import 'dart:convert';
@@ -52,7 +67,11 @@ const int _glesLanguageVersion = 300;
 Future<void> buildOwnEngineAssets({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-}) => _build(buildInput: buildInput, buildOutput: buildOutput);
+}) => _build(
+  buildInput: buildInput,
+  buildOutput: buildOutput,
+  debugViews: HookOptions.of(buildInput).debugViews,
+);
 
 /// Builds the engine's shaders into the app's generated tree, from the app's
 /// `hook/build.dart` (which `dart run flutter_scene:init` writes for you).
@@ -60,20 +79,31 @@ Future<void> buildOwnEngineAssets({
 /// Optional. flutter_scene's own hook already builds them; this puts the
 /// outputs in the app's tree instead, which is what an app wants when it
 /// prefers to own every generated asset it ships.
+///
+/// [debugViews] compiles the surface debug views in. It defaults to the app's
+/// `flutter_scene_debug_views` hook user-define, since an app hook cannot read
+/// flutter_scene's own.
 Future<void> buildEngineAssets({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
-}) => _build(buildInput: buildInput, buildOutput: buildOutput);
+  bool? debugViews,
+}) => _build(
+  buildInput: buildInput,
+  buildOutput: buildOutput,
+  debugViews: debugViews ?? HookOptions.of(buildInput).debugViews,
+);
 
 Future<void> _build({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
+  required bool debugViews,
 }) async {
   final root = await _flutterSceneRoot();
   await _buildBaseShaderBundle(
     buildInput: buildInput,
     buildOutput: buildOutput,
     sourceRoot: root,
+    debugViews: debugViews,
   );
   await buildBundledPhysicalMaterials(
     buildInput: buildInput,
@@ -83,6 +113,7 @@ Future<void> _build({
     assetMode: MaterialAssetMode.generatedTree,
     // Engine-compiled like the base bundle, so its name separates engines too.
     fileVariant: await engineIdentity(),
+    debugViews: debugViews,
   );
 }
 
@@ -104,6 +135,7 @@ Future<void> _buildBaseShaderBundle({
   required BuildInput buildInput,
   required BuildOutputBuilder buildOutput,
   required Uri sourceRoot,
+  required bool debugViews,
 }) async {
   final shaders = sourceRoot.resolve('shaders/');
   final manifestFile = File.fromUri(sourceRoot.resolve(_baseBundleManifest));
@@ -128,7 +160,10 @@ Future<void> _buildBaseShaderBundle({
 
   final options = HookOptions.of(buildInput);
   final stampBuffer = StringBuffer(
-    await shaderBundleStamp(buildInput, 'engine bundle=base'),
+    await shaderBundleStamp(
+      buildInput,
+      'engine bundle=base debug_views=$debugViews',
+    ),
   );
   for (final file in sources) {
     stampBuffer.write(
@@ -149,11 +184,14 @@ Future<void> _buildBaseShaderBundle({
   // sharing this directory then write different files instead of racing on
   // one, and the sweep drops the one no longer named by the manifest.
   final target = shaderBundleTargetKey(buildInput);
+  final variant =
+      '${await engineIdentity()}'
+      '${debugViews ? debugViewsVariantSuffix : ''}';
   final outputUri = tree.fileUri(
     GeneratedAssetFamily.shaderBundle,
     nameId: 'base',
     extension: '.shaderbundle',
-    variant: await engineIdentity(),
+    variant: variant,
     target: target,
   );
   if (tree.isFresh(GeneratedAssetFamily.shaderBundle, 'base', stamp, [
@@ -177,23 +215,29 @@ Future<void> _buildBaseShaderBundle({
   // for its own hook; an app's hook building these needs the entries rebased to
   // absolute paths first.
   var manifestPath = _baseBundleManifest;
-  if (buildInput.packageRoot != sourceRoot) {
-    final rebased = rebaseShaderBundleManifest(
-      (jsonDecode(manifestFile.readAsStringSync()) as Map)
-          .cast<String, Object?>(),
-      sourceRoot,
-      packageRoot: buildInput.packageRoot,
-    );
+  if (buildInput.packageRoot != sourceRoot || debugViews) {
+    var manifest = (jsonDecode(manifestFile.readAsStringSync()) as Map)
+        .cast<String, Object?>();
+    if (buildInput.packageRoot != sourceRoot) {
+      manifest = rebaseShaderBundleManifest(
+        manifest,
+        sourceRoot,
+        packageRoot: buildInput.packageRoot,
+      );
+    }
+    if (debugViews) {
+      manifest = wrapDebugViewsManifest(manifest, buildInput.packageRoot);
+    }
     manifestPath = 'build/flutter_scene_engine/base.shaderbundle.json';
-    final rebasedFile = File.fromUri(
+    final manifestOut = File.fromUri(
       buildInput.packageRoot.resolve(manifestPath),
     );
-    guardGeneratedWrite(rebasedFile.uri, () {
-      rebasedFile.parent.createSync(recursive: true);
+    guardGeneratedWrite(manifestOut.uri, () {
+      manifestOut.parent.createSync(recursive: true);
     });
     writeGeneratedString(
-      rebasedFile.uri,
-      const JsonEncoder.withIndent('  ').convert(rebased),
+      manifestOut.uri,
+      const JsonEncoder.withIndent('  ').convert(manifest),
     );
   }
 
@@ -207,8 +251,45 @@ Future<void> _buildBaseShaderBundle({
     assetMode: TargetShaderBundleAssetMode.generatedTree,
     owner: _engineOwner,
     stamp: stamp,
-    fileVariant: await engineIdentity(),
+    fileVariant: variant,
   );
+}
+
+/// The directory, relative to the building package's root, holding the
+/// fragment wrappers that compile the debug views in.
+const String _debugViewsWrapperDir = 'build/flutter_scene_engine/debug_views/';
+
+/// Points every fragment entry of [manifest] at a wrapper that defines
+/// `FLUTTER_SCENE_DEBUG_VIEWS` and includes the original by name, written under
+/// [packageRoot]. The compiler takes no defines per bundle, and the original
+/// resolves through the shaders directory on the include path. A wrapper keeps
+/// a different name from its original, or the include would find the wrapper
+/// itself.
+Map<String, Object?> wrapDebugViewsManifest(
+  Map<String, Object?> manifest,
+  Uri packageRoot,
+) {
+  final wrapped = <String, Object?>{};
+  for (final MapEntry(:key, :value) in manifest.entries) {
+    final entry = (value as Map).cast<String, Object?>();
+    if (entry['type'] != 'fragment') {
+      wrapped[key] = entry;
+      continue;
+    }
+    final original = (entry['file'] as String).split('/').last;
+    final stem = original.substring(0, original.lastIndexOf('.'));
+    final wrapperPath = '$_debugViewsWrapperDir${stem}_debug_views.frag';
+    final wrapper = File.fromUri(packageRoot.resolve(wrapperPath));
+    guardGeneratedWrite(wrapper.uri, () {
+      wrapper.parent.createSync(recursive: true);
+    });
+    writeGeneratedString(
+      wrapper.uri,
+      '#define FLUTTER_SCENE_DEBUG_VIEWS\n#include <$original>\n',
+    );
+    wrapped[key] = {...entry, 'file': wrapperPath};
+  }
+  return wrapped;
 }
 
 /// Rewrites a shader-bundle manifest's `file` entries so they resolve from
