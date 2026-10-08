@@ -2220,13 +2220,29 @@ base class Scene implements SceneGraph {
     );
     final TransientWriter transientsBuffer = uniformTransients;
 
+    // A frame whose screen views will re-present their previous images skips
+    // the texture views too. Rendering them anyway keeps the GPU a frame
+    // behind, so the screen views would pace indefinitely.
+    final pacingFrame =
+        maxGpuFramesInFlight > 0 &&
+        _hasPresentedFrame &&
+        _pendingGraphCapture == null &&
+        views.any((view) => view.target == null) &&
+        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
+    // When every screen view can re-present, the frame holds before any
+    // per-frame upload: on Vulkan each texture upload is a synchronous submit
+    // that waits for the GPU backlog, which pacing exists to avoid.
+    final holdFrame = pacingFrame && _canPresentHeldFrame(views, drawArea, dpr);
+
     // Advance the scene once per frame (not once per view): tick components
     // and animations and refresh the flat render list before the passes
     // iterate it. Skipped when update() already ran the tick this frame.
     if (!_tickedThisFrame) {
       final nowMillis = DateTime.now().millisecondsSinceEpoch;
       final lastMillis = _lastTickMillis ?? nowMillis;
+      renderScene.holdingFrame = holdFrame;
       _tick((nowMillis - lastMillis) / 1000.0);
+      renderScene.holdingFrame = false;
     }
     _tickedThisFrame = false;
 
@@ -2243,15 +2259,17 @@ base class Scene implements SceneGraph {
       return;
     }
 
-    // A frame whose screen views will re-present their previous images skips
-    // the texture views too. Rendering them anyway keeps the GPU a frame
-    // behind, so the screen views would pace indefinitely.
-    final pacingFrame =
-        maxGpuFramesInFlight > 0 &&
-        _hasPresentedFrame &&
-        _pendingGraphCapture == null &&
-        views.any((view) => view.target == null) &&
-        rendererSubmissions.priorFramesInFlight >= maxGpuFramesInFlight;
+    if (holdFrame) {
+      for (final view in views) {
+        if (view.target == null) _pacedFrameCount++;
+      }
+      _holdPace();
+      _presentHeldFrame(views, canvas, drawArea);
+      renderStats.endFrame(pipelineCacheSize: pipelineCacheSize);
+      rendererSubmissions.endFrame();
+      return;
+    }
+
     // A paced frame renders nothing, so the adaptive controller measures the
     // period between rendered frames rather than the vsync it ticks at.
     if (!pacingFrame) _tickAdaptiveQuality();
@@ -2746,6 +2764,34 @@ base class Scene implements SceneGraph {
   // the result.
   // Draws each screen view's previous image in place of a new frame, or
   // nothing for a view that has not drawn one yet. Texture views keep theirs.
+  // Whether every screen view has a previous image at the size it would
+  // render this frame, so the whole frame can re-present (see
+  // _renderViewToCanvas, which paces per view by the same test).
+  bool _canPresentHeldFrame(
+    List<RenderView> views,
+    ui.Rect drawArea,
+    double dpr,
+  ) {
+    final screenViews = [
+      for (final view in views)
+        if (view.target == null) view,
+    ]..sort((a, b) => a.order.compareTo(b.order));
+    for (var i = 0; i < screenViews.length; i++) {
+      final view = screenViews[i];
+      final viewArea = _viewDrawArea(drawArea, view.viewport);
+      if (viewArea.isEmpty) continue;
+      final scale =
+          dpr * (view.renderScale ?? _renderScale) * adaptiveRenderScale;
+      final previous = surface.lastSwapchainColorTexture(i);
+      if (previous == null ||
+          previous.width != (viewArea.width * scale).ceil() ||
+          previous.height != (viewArea.height * scale).ceil()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _presentHeldFrame(
     List<RenderView> views,
     ui.Canvas canvas,
