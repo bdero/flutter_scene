@@ -2,10 +2,13 @@
 //
 // Outputs object-space motion delta beyond camera motion in RG, and 1.0 mask in B.
 
+// Mirrors the vertex stage's block member for member and in precision;
+// WebGL2 refuses to link the program otherwise.
 uniform VelocityFrameInfo {
-  mat4 current_view_projection;
-  mat4 previous_view_projection;
-  vec4 current_previous_jitter; // xy: current jitter NDC, zw: previous jitter NDC
+  highp mat4 current_view_projection;
+  highp mat4 previous_view_projection;
+  highp vec4 current_previous_jitter; // xy: current jitter NDC, zw: previous jitter NDC
+  highp vec4 camera_position;         // xyz: world-space eye
 } frame_info;
 
 in vec4 v_current_clip;
