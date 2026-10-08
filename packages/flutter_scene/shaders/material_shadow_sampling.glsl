@@ -263,28 +263,31 @@ float SampleShadow(highp vec3 world_pos, vec3 n) {
   // cascadeOverlap. At 0 every _TRY_CASCADE takes the full weight, so the
   // first containing cascade wins outright and the later ones are skipped.
   float band = frag_info.directional_light_color.w * 0.5;
-  // Unrolled with literal cascade indices: see _TRY_CASCADE. A single `return`
-  // (no early return inside a loop) also avoids a nested-loop pattern that
-  // crashes a Direct3D shader compiler.
-  float shadow_sum = 0.0;
-  float weight = 0.0;
-  _TRY_CASCADE(0)
-  _TRY_CASCADE(1)
-  _TRY_CASCADE(2)
-  _TRY_CASCADE(3)
-  // Weight no cascade covered reads as lit.
-  float shadow = shadow_sum + (1.0 - weight);
   // Fade to lit by view depth before the shadow distance, at least
   // shadow_fade wide and a tenth of the distance. The tiles reach past it,
   // and a cached tile re-centres in steps, so without this the shadows of
   // distant surfaces would switch off a strip at a time as the camera moves.
   highp float limit = frag_info.dielectric_f0.w;
+  float fade = 0.0;
   if (limit > 0.0) {
     highp float width = max(frag_info.shadow_fade, limit * 0.1);
-    shadow = mix(shadow, 1.0,
-                 smoothstep(limit - width, limit, GetFragmentViewDepth()));
+    fade = smoothstep(limit - width, limit, GetFragmentViewDepth());
   }
-  return shadow;
+  float shadow_sum = 0.0;
+  float weight = 0.0;
+  // A fully faded fragment would discard its taps, so it skips them.
+  // Unrolled with literal cascade indices: see _TRY_CASCADE. A single `return`
+  // (no early return inside a loop) also avoids a nested-loop pattern that
+  // crashes a Direct3D shader compiler.
+  if (fade < 1.0) {
+    _TRY_CASCADE(0)
+    _TRY_CASCADE(1)
+    _TRY_CASCADE(2)
+    _TRY_CASCADE(3)
+  }
+  // Weight no cascade covered reads as lit.
+  float shadow = shadow_sum + (1.0 - weight);
+  return mix(shadow, 1.0, fade);
 }
 #undef _TRY_CASCADE
 #endif

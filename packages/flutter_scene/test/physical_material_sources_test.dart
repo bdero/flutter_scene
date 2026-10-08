@@ -783,6 +783,12 @@ void main() {
       sampling,
       contains('smoothstep(limit - width, limit, GetFragmentViewDepth())'),
     );
+    // Past the fade the cascades are not sampled at all.
+    expect(sampling, contains('if (fade < 1.0) {'));
+    expect(
+      sampling.indexOf('if (fade < 1.0) {'),
+      lessThan(sampling.indexOf('    _TRY_CASCADE(0)')),
+    );
     final packing = File(
       'lib/src/material/engine_lighting.dart',
     ).readAsStringSync();
