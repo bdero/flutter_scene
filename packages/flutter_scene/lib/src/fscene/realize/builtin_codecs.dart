@@ -741,6 +741,8 @@ class MeshCodec extends ComponentCodec {
     final properties = <String, PropertyValue>{
       'baseColor': _color(m.baseColorFactor),
       'doubleSided': BoolValue(m.doubleSided),
+      if (m.alphaMode != AlphaMode.opaque)
+        'alphaMode': StringValue(m.alphaMode.name),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
       if (m.depthLayer != 0) 'depthLayer': IntValue(m.depthLayer),
       if (m.displayReferred) 'displayReferred': BoolValue(true),
