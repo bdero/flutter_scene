@@ -3,7 +3,7 @@
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/light.dart'
-    show debugDisableLeanLighting, leanLightingAllowed;
+    show debugDisableLeanLighting, leanLightingAllowed, shadingTierOverride;
 import 'package:flutter_test/flutter_test.dart';
 
 bool _allowed({
@@ -51,6 +51,14 @@ void main() {
   test('the debug override forces the full entries', () {
     debugDisableLeanLighting = true;
     addTearDown(() => debugDisableLeanLighting = false);
+    expect(_allowed(), isFalse);
+  });
+
+  test('a warm-up override forces either tier', () {
+    addTearDown(() => shadingTierOverride = null);
+    shadingTierOverride = true;
+    expect(_allowed(fog: Fog()..enabled = true), isTrue);
+    shadingTierOverride = false;
     expect(_allowed(), isFalse);
   });
 }
