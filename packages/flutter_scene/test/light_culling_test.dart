@@ -1,7 +1,8 @@
 // Covers assignLightsToItems: ranged lights reach only the items their
 // influence AABB overlaps (scattered through the BVH), infinite-influence
 // lights reach every item, unbounded items receive every light, and each
-// item's list keeps the closest lights when capped at maxPerItem.
+// item's list keeps the closest lights when capped at maxPerItem. Items with
+// identical lists share one slice of the index buffer.
 
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/gpu/gpu.dart' as gpu;
@@ -188,22 +189,26 @@ void main() {
     expect(result.overflowed, isTrue);
   });
 
-  test('offsets pack items back to back', () {
+  test('items with identical lists share one slice', () {
     final a = _itemAt(0);
-    final b = _itemAt(0); // same spot, both overlap the light
-    final items = [a, b];
+    final b = _itemAt(0); // same spot, same light list
+    final c = _itemAt(10); // reaches only the far light
+    final items = [a, b, c];
     final bvh = Bvh.build(items);
-    final light = CullableLight(4, lightInfluenceBounds(Vector3.zero(), 1.0));
+    final near = CullableLight(4, lightInfluenceBounds(Vector3.zero(), 1.0));
+    final far = CullableLight(5, lightInfluenceBounds(Vector3(10, 0, 0), 1.0));
     final result = assignLightsToItems(
       items: items,
       bvh: bvh,
-      lights: [light],
+      lights: [near, far],
       maxPerItem: 16,
     );
     expect(a.lightListOffset, 0);
     expect(a.lightListCount, 1);
-    expect(b.lightListOffset, 1);
+    expect(b.lightListOffset, 0);
     expect(b.lightListCount, 1);
-    expect(result.indices, [4, 4]);
+    expect(c.lightListOffset, 1);
+    expect(c.lightListCount, 1);
+    expect(result.indices, [4, 5]);
   });
 }
