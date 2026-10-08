@@ -74,7 +74,9 @@ Future<SceneDiff> reloadScene(
     final node = tagNodeId(
       Node(name: spec.name)
         ..layers = spec.layers
-        ..visible = spec.visible,
+        ..visible = spec.visible
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode)
+        ..renderOrder = spec.renderOrder,
       id,
     );
     applyTransformSpec(node, spec.transform);
@@ -104,6 +106,7 @@ Future<SceneDiff> reloadScene(
     if (change.name) node.name = spec.name;
     if (change.layers) node.layers = spec.layers;
     if (change.visible) node.visible = spec.visible;
+    if (change.renderOrder) node.renderOrder = spec.renderOrder;
     if (change.reparented) {
       node.detach();
       parentFor(change.id).add(node);

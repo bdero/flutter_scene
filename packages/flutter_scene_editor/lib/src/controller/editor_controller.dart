@@ -927,6 +927,16 @@ class EditorController extends ChangeNotifier {
     return run('setNodeShadowCasting', {'nodeId': id.toToken(), 'mode': mode});
   }
 
+  /// Sets where node [id]'s meshes draw within their pass (an override when
+  /// [id] is prefab content).
+  Future<void> setNodeRenderOrderRouted(LocalId id, double order) {
+    if (!isEditableNode(id)) return Future.value();
+    if (isPrefabMember(id)) {
+      return _override(memberOrigin(id)!, 'renderOrder', order);
+    }
+    return run('setNodeRenderOrder', {'nodeId': id.toToken(), 'order': order});
+  }
+
   /// Sets node [id]'s transform (overrides per supplied component when [id] is
   /// prefab content).
   Future<void> setNodeTransformRouted(
@@ -1510,6 +1520,7 @@ class EditorController extends ChangeNotifier {
     ChangeSlot.visible,
     ChangeSlot.layers,
     ChangeSlot.shadowCastingMode,
+    ChangeSlot.renderOrder,
     ChangeSlot.name,
   };
 
@@ -1739,7 +1750,8 @@ class EditorController extends ChangeNotifier {
       Node(name: spec.name)
         ..layers = spec.layers
         ..visible = spec.visible
-        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode),
+        ..shadowCastingMode = shadowCastingModeFromName(spec.shadowCastingMode)
+        ..renderOrder = spec.renderOrder,
       id,
     );
     applyTransformSpec(live, spec.transform);
@@ -1843,7 +1855,8 @@ class EditorController extends ChangeNotifier {
           ..visible = spec.visible
           ..shadowCastingMode = shadowCastingModeFromName(
             spec.shadowCastingMode,
-          ),
+          )
+          ..renderOrder = spec.renderOrder,
         spec.id,
       );
       applyTransformSpec(node, spec.transform);
@@ -2124,6 +2137,9 @@ class EditorController extends ChangeNotifier {
           spec.shadowCastingMode,
         );
         return true;
+      case PrefabOverrideAspect.renderOrder:
+        live.renderOrder = spec.renderOrder;
+        return true;
       case PrefabOverrideAspect.transform:
         live.localTransform = spec.transform.toMatrix4();
         return true;
@@ -2340,6 +2356,9 @@ class EditorController extends ChangeNotifier {
             docNode.shadowCastingMode,
           );
           composedNode?.shadowCastingMode = docNode.shadowCastingMode;
+        case ChangeSlot.renderOrder:
+          live?.renderOrder = docNode.renderOrder;
+          composedNode?.renderOrder = docNode.renderOrder;
         case ChangeSlot.name:
           composedNode?.name = docNode.name;
         default:

@@ -363,6 +363,7 @@ Map<String, Object?> _nodeJson(
   'visible': node.visible,
   'layers': node.layers,
   'shadowCastingMode': node.shadowCastingMode,
+  'renderOrder': node.renderOrder,
   'transform': _transformJson(node.transform),
   if (node.skin != null) 'skin': node.skin!.toToken(),
   // The instance delta is deep (overrides, attachments, removals, member
