@@ -6,7 +6,7 @@
 ## 0.24.2
 
 * Lit materials draw with a lean shader when the scene uses no irradiance field, fog, rect area lights, environment cross-fade, parallax reflection box, ambient occlusion, or point-light shadows. It stops the full shader spilling registers on mobile GPUs (frames 1.5 to 1.8x faster on a Mali-G57) and adds about 250 KB compressed to each platform's shader bundle.
-* `Scene.warmUp` takes `allShadingTiers`, which also compiles the shader tier the scene is not using, so turning one of those features on or off later does not stall a frame.
+* `Scene.warmUp` takes `allShadingTiers` (and `SceneView` takes `warmUpAllShadingTiers`), which also compiles the shader tier the scene is not using, so turning one of those features on or off later does not stall a frame.
 * `Scene.dispose` drops the render targets and history textures a scene keeps across frames, so they no longer wait on the scene object being collected. A disposed scene throws a `StateError` on render.
 * `SceneView.declarative` disposes the scene it owns when it unmounts.
 * Temporal anti-aliasing's `objectMotion` works on the web. Its velocity shaders failed to link on WebGL2, so every frame threw.

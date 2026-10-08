@@ -113,6 +113,7 @@ class SceneView extends StatefulWidget {
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
     this.warmUp = false,
+    this.warmUpAllShadingTiers = false,
     this.debugWidgetInput = false,
     this.children = const [],
   }) : environment = null,
@@ -159,6 +160,7 @@ class SceneView extends StatefulWidget {
     this.loadingBuilder,
     this.revealMinDuration = Duration.zero,
     this.warmUp = false,
+    this.warmUpAllShadingTiers = false,
     this.debugWidgetInput = false,
     this.children = const [],
   }) : scene = null,
@@ -278,6 +280,12 @@ class SceneView extends StatefulWidget {
   /// view even without a [loading] group or [loadingBuilder]. Populate the
   /// scene before warm-up runs (loads tracked by [loading] are awaited first).
   final bool warmUp;
+
+  /// With [warmUp], also compile the lit shader tier the scene is not using
+  /// yet (see [Scene.warmUp]'s `allShadingTiers`), so turning fog, ambient
+  /// occlusion, or another tier-switching feature on or off later does not
+  /// stall a frame. Lengthens warm-up.
+  final bool warmUpAllShadingTiers;
 
   /// Resolves the camera for a single-view frame.
   ///
@@ -535,6 +543,7 @@ class _SceneViewState extends State<SceneView>
       await _scene.warmUp(
         _warmUpViews(),
         sliceBudget: const Duration(milliseconds: 50),
+        allShadingTiers: widget.warmUpAllShadingTiers,
       );
       if (!mounted || generation != _revealGeneration) return;
     }
