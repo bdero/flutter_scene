@@ -198,6 +198,13 @@ class MeshComponent extends Component {
           _boundsVersions[index] == item.geometry.localBoundsVersion;
     }
     if (staticStateUnchanged) {
+      // Still since the last refresh, so last frame's motion is spent;
+      // otherwise a node that stops keeps reporting its final step.
+      for (final item in _renderItems) {
+        if (!item.isMoving) continue;
+        item.isMoving = false;
+        item.previousWorldTransform.setFrom(item.worldTransform);
+      }
       return;
     }
     final worldTransform = node.globalTransform;
