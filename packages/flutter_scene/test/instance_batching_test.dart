@@ -141,6 +141,24 @@ void main() {
         1,
       );
       expect(opaqueBatchEnd([candidate(), candidate(lightListCount: 1)], 0), 1);
+      // Froxel-lit fragments read their lights from the view's grid, so the
+      // items' own lists no longer split the run.
+      expect(
+        opaqueBatchEnd(
+          [candidate(), candidate(lightListOffset: 1, lightListCount: 2)],
+          0,
+          froxelLighting: true,
+        ),
+        2,
+      );
+      expect(
+        opaqueBatchBreakReason(
+          candidate(),
+          candidate(lightListOffset: 1),
+          froxelLighting: true,
+        ),
+        BatchBreakReason.none,
+      );
       expect(opaqueBatchEnd([candidate(), candidate(fade: 0.5)], 0), 1);
       // The primary directional rides a per-draw uniform, so items on
       // different light channels cannot share one instanced draw.

@@ -20,7 +20,14 @@ abstract interface class OpaqueBatchRecord {
   bool get hasDrawSelector;
 }
 
-int opaqueBatchEnd(List<OpaqueBatchRecord> records, int start) {
+/// The end of the batch starting at [start]. Under [froxelLighting] each
+/// fragment reads its lights from the view's froxel grid, so the items' own
+/// light lists do not split batches.
+int opaqueBatchEnd(
+  List<OpaqueBatchRecord> records,
+  int start, {
+  bool froxelLighting = false,
+}) {
   final first = records[start];
   // Skinned and morphed items carry per-item state (skeleton, weights)
   // bound outside the instance buffer, so they draw unbatched. Batching also
@@ -37,19 +44,25 @@ int opaqueBatchEnd(List<OpaqueBatchRecord> records, int start) {
     return start + 1;
   }
   var end = start + 1;
-  while (end < records.length && _canBatchOpaque(first, records[end])) {
+  while (end < records.length &&
+      _canBatchOpaque(first, records[end], froxelLighting)) {
     end++;
   }
   return end;
 }
 
-bool _canBatchOpaque(OpaqueBatchRecord first, OpaqueBatchRecord next) {
+bool _canBatchOpaque(
+  OpaqueBatchRecord first,
+  OpaqueBatchRecord next,
+  bool froxelLighting,
+) {
   return identical(first.pipeline, next.pipeline) &&
       identical(first.geometry, next.geometry) &&
       identical(first.material, next.material) &&
       first.fade == next.fade &&
-      first.lightListOffset == next.lightListOffset &&
-      first.lightListCount == next.lightListCount &&
+      (froxelLighting ||
+          (first.lightListOffset == next.lightListOffset &&
+              first.lightListCount == next.lightListCount)) &&
       first.lightChannelMask == next.lightChannelMask &&
       next.jointsTexture == null &&
       next.morphWeights == null &&
@@ -61,8 +74,9 @@ bool _canBatchOpaque(OpaqueBatchRecord first, OpaqueBatchRecord next) {
 /// asks.
 BatchBreakReason opaqueBatchBreakReason(
   OpaqueBatchRecord first,
-  OpaqueBatchRecord? next,
-) {
+  OpaqueBatchRecord? next, {
+  bool froxelLighting = false,
+}) {
   if (first.geometry.instancedVertexLayout == null) {
     return BatchBreakReason.unbatchableGeometry;
   }
@@ -83,8 +97,9 @@ BatchBreakReason opaqueBatchBreakReason(
     return BatchBreakReason.differentMaterial;
   }
   if (first.fade != next.fade) return BatchBreakReason.differentLodFade;
-  if (first.lightListOffset != next.lightListOffset ||
-      first.lightListCount != next.lightListCount) {
+  if (!froxelLighting &&
+      (first.lightListOffset != next.lightListOffset ||
+          first.lightListCount != next.lightListCount)) {
     return BatchBreakReason.differentLights;
   }
   if (first.lightChannelMask != next.lightChannelMask) {
