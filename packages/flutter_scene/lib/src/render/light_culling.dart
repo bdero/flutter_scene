@@ -126,6 +126,9 @@ LightCullResult assignLightsToItems({
   final lightsByIndex = <int, CullableLight>{
     for (final light in lights) light.index: light,
   };
+  // Items with identical lists share one slice, so instancing can merge them
+  // (batches require equal slices).
+  final slicesByHash = <int, List<int>>{};
   var overflowedItems = 0;
   for (final item in items) {
     final scratch = item.lightScratch;
@@ -138,13 +141,43 @@ LightCullResult assignLightsToItems({
       count = maxPerItem;
       overflowedItems++;
     }
-    item.lightListOffset = flat.length;
+    var hash = count;
+    for (var i = 0; i < count; i++) {
+      hash = 0x3fffffff & (hash * 31 + scratch[i]);
+    }
+    final candidates = slicesByHash[hash];
+    final shared = candidates == null
+        ? -1
+        : _findSlice(flat, candidates, scratch, count);
     item.lightListCount = count;
+    if (shared >= 0) {
+      item.lightListOffset = shared;
+      continue;
+    }
+    item.lightListOffset = flat.length;
+    (slicesByHash[hash] ??= <int>[]).add(flat.length);
     for (var i = 0; i < count; i++) {
       flat.add(scratch[i]);
     }
   }
   return LightCullResult(flat, overflowedItems);
+}
+
+// The offset of the slice in [flat] at one of [offsets] that holds the first
+// [count] entries of [list], or -1.
+int _findSlice(List<int> flat, List<int> offsets, List<int> list, int count) {
+  for (final offset in offsets) {
+    if (offset + count > flat.length) continue;
+    var equal = true;
+    for (var i = 0; i < count; i++) {
+      if (flat[offset + i] != list[i]) {
+        equal = false;
+        break;
+      }
+    }
+    if (equal) return offset;
+  }
+  return -1;
 }
 
 // Every light reaches every item, so the items differ only by channel mask.
