@@ -406,6 +406,7 @@ abstract class Material {
     _noShadowFragmentShaderName = null;
     _noShadowRadianceCubeFragmentShader = null;
     _noShadowRadianceCubeFragmentShaderName = null;
+    _leanShaders = null;
   }
 
   /// Assigns the fragment shader by [name] from [baseShaderLibrary].
@@ -436,6 +437,55 @@ abstract class Material {
     _noShadowFragmentShader = null;
     _noShadowRadianceCubeFragmentShaderName = noShadowCubeName;
     _noShadowRadianceCubeFragmentShader = null;
+    _leanShaders = null;
+  }
+
+  _LeanFragmentShaders? _leanShaders;
+
+  /// Assigns the `FLUTTER_SCENE_LEAN_LIGHTING` twins of the four entries
+  /// named by [setFragmentShaderName], by name from [baseShaderLibrary].
+  /// Call after [setFragmentShaderName], which clears them.
+  ///
+  /// The twins keep their full entries' binding interface, so every binding
+  /// decision stays the same; only the shader differs.
+  @internal
+  void setLeanFragmentShaderNames(
+    String name, {
+    required String cubeName,
+    required String noShadowName,
+    required String noShadowCubeName,
+  }) {
+    _leanShaders = _LeanFragmentShaders(
+      name,
+      cubeName,
+      noShadowName,
+      noShadowCubeName,
+    );
+  }
+
+  /// The environment this material lights a draw with: its own override, or
+  /// the scene's.
+  @internal
+  EnvironmentMap drawEnvironment(Lighting lighting) => lighting.environmentMap;
+
+  /// Whether [fragmentShaderForLighting] picks a lean twin for [lighting]:
+  /// the material carries twins, every feature they compile out is off this
+  /// frame ([Lighting.allowsLeanShading]), and the draw's environment has no
+  /// parallax box. A bundle built without the twins keeps the full entries.
+  // TODO(lean-lighting-fallback): draw with the full entry while a lean
+  // pipeline has not been built yet and build it within a frame budget (or
+  // asynchronously once Flutter GPU exposes it), so turning a feature off
+  // mid-game does not stall a frame on the lean pipeline build.
+  // TODO(lean-lighting-pruning): a hook user-define that leaves the full or
+  // the lean entries out of the bundle for apps that never need them.
+  @internal
+  bool usesLeanVariant(Lighting lighting) {
+    final lean = _leanShaders;
+    if (lean == null || !lean.available || !lighting.allowsLeanShading) {
+      return false;
+    }
+    final env = drawEnvironment(lighting);
+    return env.parallaxBoxCenter == null || env.parallaxBoxHalfExtents == null;
   }
 
   gpu.Shader? _radianceCubeFragmentShader;
@@ -520,7 +570,14 @@ abstract class Material {
   @internal
   gpu.Shader fragmentShaderForLighting(Lighting lighting) {
     final noShadow = usesNoShadowVariant(lighting);
-    if (usesRadianceCubeVariant(lighting)) {
+    final cube = usesRadianceCubeVariant(lighting);
+    if (usesLeanVariant(lighting)) {
+      final lean = _leanShaders!;
+      return cube
+          ? (noShadow ? lean.noShadowCube! : lean.cube!)
+          : (noShadow ? lean.noShadow! : lean.base!);
+    }
+    if (cube) {
       return noShadow
           ? noShadowRadianceCubeFragmentShader!
           : radianceCubeFragmentShader!;
@@ -828,4 +885,35 @@ abstract class Material {
     gpu.Shader shader,
     TransientWriter transientsBuffer,
   ) {}
+}
+
+// The lean twins of a material's four standard entries, resolved on first use.
+class _LeanFragmentShaders {
+  _LeanFragmentShaders(
+    this._name,
+    this._cubeName,
+    this._noShadowName,
+    this._noShadowCubeName,
+  );
+
+  final String _name;
+  final String _cubeName;
+  final String _noShadowName;
+  final String _noShadowCubeName;
+
+  gpu.Shader? _base;
+  gpu.Shader? _cube;
+  gpu.Shader? _noShadow;
+  gpu.Shader? _noShadowCube;
+
+  gpu.Shader? get base => _base ??= baseShaderLibrary[_name];
+  gpu.Shader? get cube => _cube ??= baseShaderLibrary[_cubeName];
+  gpu.Shader? get noShadow => _noShadow ??= baseShaderLibrary[_noShadowName];
+  gpu.Shader? get noShadowCube =>
+      _noShadowCube ??= baseShaderLibrary[_noShadowCubeName];
+
+  /// Whether the bundle carries all four. Asked only at draw time, after the
+  /// base bundle has loaded.
+  late final bool available =
+      base != null && cube != null && noShadow != null && noShadowCube != null;
 }

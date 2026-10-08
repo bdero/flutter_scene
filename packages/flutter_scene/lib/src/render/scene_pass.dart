@@ -374,6 +374,7 @@ class ScenePass extends RenderGraphPass {
       pointShadowTileCount: shadowMap == null
           ? 0
           : _punctualLighting.pointShadowTileCount,
+      rectAreaLightCount: _punctualLighting.rectAreaLightCount,
       spotShadowDepthBias: _punctualLighting.spotShadowDepthBias,
       spotShadowNormalBias: _punctualLighting.spotShadowNormalBias,
       spotShadowSoftness: _punctualLighting.spotShadowSoftness,

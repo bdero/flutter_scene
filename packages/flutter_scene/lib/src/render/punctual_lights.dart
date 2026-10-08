@@ -71,6 +71,7 @@ class PunctualLighting {
     required this.indexHeight,
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
+    this.rectAreaLightCount = 0,
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
@@ -86,6 +87,7 @@ class PunctualLighting {
       indexHeight = 0,
       spotShadowCount = 0,
       pointShadowTileCount = 0,
+      rectAreaLightCount = 0,
       spotShadowDepthBias = 0.0,
       spotShadowNormalBias = 0.0,
       spotShadowSoftness = 0.0,
@@ -108,6 +110,9 @@ class PunctualLighting {
 
   /// Number of light rows in [paramsTexture].
   final int paramsCount;
+
+  /// How many of those rows are rect area lights.
+  final int rectAreaLightCount;
 
   /// Dimensions of [indexTexture], for the shader's fetch-coordinate math.
   final int indexWidth;
@@ -423,6 +428,7 @@ class PunctualLightBuffer {
         indexHeight: 0,
         spotShadowCount: spotTileCount,
         pointShadowTileCount: pointTileCount,
+        rectAreaLightCount: areas.length,
         spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
         spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
         spotShadowSoftness: spotShadows?.softness ?? 0.0,
@@ -447,6 +453,7 @@ class PunctualLightBuffer {
       indexHeight: indexHeight,
       spotShadowCount: spotTileCount,
       pointShadowTileCount: pointTileCount,
+      rectAreaLightCount: areas.length,
       spotShadowDepthBias: spotShadows?.depthBias ?? 0.0,
       spotShadowNormalBias: spotShadows?.normalBias ?? 0.0,
       spotShadowSoftness: spotShadows?.softness ?? 0.0,

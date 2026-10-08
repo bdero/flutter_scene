@@ -67,6 +67,38 @@
     "type": "fragment",
     "file": "shaders/flutter_scene_standard_lightmap_no_shadow_cube.frag"
   },
+  "StandardLeanFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean.frag"
+  },
+  "StandardLeanCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_cube.frag"
+  },
+  "StandardLeanNoShadowFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_no_shadow.frag"
+  },
+  "StandardLeanNoShadowCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_no_shadow_cube.frag"
+  },
+  "StandardLightmapLeanFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_lightmap.frag"
+  },
+  "StandardLightmapLeanCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_lightmap_cube.frag"
+  },
+  "StandardLightmapLeanNoShadowFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_lightmap_no_shadow.frag"
+  },
+  "StandardLightmapLeanNoShadowCubeFragment": {
+    "type": "fragment",
+    "file": "shaders/flutter_scene_standard_lean_lightmap_no_shadow_cube.frag"
+  },
   "DepthOnlyFragment": {
     "type": "fragment",
     "file": "shaders/flutter_scene_depth_only.frag"
