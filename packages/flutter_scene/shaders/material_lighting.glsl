@@ -9,6 +9,16 @@
 // (as `frag_info`), the world-space varyings `v_position` and `v_viewvector`,
 // the `prefiltered_radiance`, `brdf_lut`, and `shadow_map` samplers, the
 // MaterialInputs struct (material_inputs.glsl), and pbr.glsl + texture.glsl.
+//
+// FLUTTER_SCENE_LEAN_LIGHTING compiles out the features a scene can leave off
+// (irradiance field, fog, rect area lights, environment cross-fade, parallax
+// box reflections, screen-space occlusion and its bent-cone specular term,
+// point-light shadows). Even unused, they size the register allocation, and
+// on mobile GPUs the full program spills. The engine selects the lean entries
+// only when every compiled-out feature is off for the draw (see
+// Lighting.allowsLeanShading). Every sampler and block stays declared, through
+// never-taken reads where the code that used it is gone, so both tiers keep
+// one binding interface.
 
 // Distance fog (the FogInfo block + ApplyFog), applied to the final lit color.
 #include <fog.glsl>
@@ -409,7 +419,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   vec3 ao_bent_normal = vec3(0.0);
   float ao_bent_valid = 0.0;
   vec4 ssao_sample = vec4(1.0);
-#ifndef FLUTTER_SCENE_SKIP_SSAO
+#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+  // Keeps ssao_texture declared (the engine binds it); never taken.
+  if (frag_info.ssao_params.x > 1e30) {
+    occlusion = texture(ssao_texture, vec2(0.0)).r;
+  }
+#endif
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
   if (frag_info.ssao_params.x > 0.5) {
     highp vec2 screen_uv = gl_FragCoord.xy * frag_info.ssao_params.zw;
     // TODO(flutter_scene): the occlusion target is stored top-down like the
@@ -545,9 +561,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   mat3 environment_transform = mat3(frag_info.environment_transform);
   vec3 env_normal = environment_transform *
                     (ao_bent_valid > 0.5 ? ao_bent_normal : normal);
+#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+  vec3 env_reflection = environment_transform * reflection_normal;
+#else
   vec3 env_reflection =
       environment_transform *
       ParallaxCorrectReflection(v_position, reflection_normal);
+#endif
 #ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
   // The material supplies all of its indirect light (Composite()), so the
   // engine environment is neither declared nor sampled.
@@ -579,6 +599,14 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                         env_reflection, roughness);
   // Cross-fade a secondary environment in (area transitions) when active. Both
   // share the bound layout, so the same samplers' _b pair is read.
+#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+  const float env_blend = 0.0;
+  // Keeps prefiltered_radiance_b bound to its own slot; never taken.
+  if (frag_info.radiance_blend.x > 1e30) {
+    prefiltered_color += SampleRadianceEnv(prefiltered_radiance_b,
+                                           env_reflection, roughness);
+  }
+#else
   float env_blend = frag_info.radiance_blend.x;
   if (env_blend > 0.0) {
 #ifndef FLUTTER_SCENE_LIGHTMAP
@@ -606,6 +634,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #endif
     prefiltered_color = mix(prefiltered_color, prefiltered_b, env_blend);
   }
+#endif  // FLUTTER_SCENE_LEAN_LIGHTING
   // environment_intensity scales the image-based lighting; a bake carries its
   // own lightmap_intensity instead.
 #ifndef FLUTTER_SCENE_LIGHTMAP
@@ -628,6 +657,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // a camera-dependent normal makes it flicker like z-fighting. The field's
   // stored radiance already carries the environment intensity, so it is not
   // scaled again here.
+#ifndef FLUTTER_SCENE_LEAN_LIGHTING
   float gi_coverage = IrradianceFieldCoverage(v_position);
   if (gi_coverage > 0.0) {
     highp vec3 gi = SampleIrradianceField(v_position, normal, camera_normal);
@@ -640,6 +670,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     transmitted_irradiance = mix(transmitted_irradiance, gi_back, gi_coverage);
 #endif
   }
+#endif  // FLUTTER_SCENE_LEAN_LIGHTING
 #endif
 #endif  // FLUTTER_SCENE_CUSTOM_AMBIENT
 
@@ -695,10 +726,13 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // enabled; otherwise the specular lobe uses the same occlusion (the
   // historical behavior).
   float specular_occlusion;
+#ifndef FLUTTER_SCENE_LEAN_LIGHTING
   if (frag_info.ssao_params.y > 1.5 && ao_bent_valid > 0.5) {
     specular_occlusion = ComputeBentConeOcclusion(
         ao_bent_normal, reflect(-camera_normal, normal), occlusion, roughness);
-  } else if (frag_info.ssao_params.y > 0.5) {
+  } else
+#endif
+  if (frag_info.ssao_params.y > 0.5) {
     specular_occlusion = ComputeSpecularOcclusion(n_dot_v, occlusion,
                                                   roughness);
   } else {
@@ -745,6 +779,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
           : 1.0;
 #endif
 #if !defined(FLUTTER_SCENE_SKIP_SSAO) && \
+    !defined(FLUTTER_SCENE_LEAN_LIGHTING) && \
     !defined(FLUTTER_SCENE_NO_DIRECTIONAL_LIGHT)
   // Screen-space contact shadow for the sun, marched by the occlusion pass.
   // Applies whether or not a shadow map is active, grounding small contacts
@@ -765,7 +800,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       (indirect_diffuse * diffuse_occlusion +
        indirect_specular * specular_occlusion) *
       ambient_shadow;
-#ifndef FLUTTER_SCENE_SKIP_SSAO
+#if !defined(FLUTTER_SCENE_SKIP_SSAO) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
   // Screen-space bounce: the occlusion pass's gathered radiance lights the
   // diffuse lobe. Its own bitfield already resolved visibility, so only the
   // baked occlusion map applies.
@@ -891,6 +926,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     // lobe by its apparent half-angle, so a glossy surface reflects a bulb
     // rather than a point of unbounded radiance.
     float light_roughness = roughness;
+#ifndef FLUTTER_SCENE_LEAN_LIGHTING
     if (type > 2.5) {
 #ifdef FLUTTER_SCENE_CUSTOM_AMBIENT
       // TODO(custom-ambient-area-lights): the LTC tables ride brdf_lut, which
@@ -949,7 +985,9 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
       }
 #endif
 #endif
-    } else {
+    } else
+#endif  // FLUTTER_SCENE_LEAN_LIGHTING
+    {
     vec3 punctual_light_vector;
 #ifdef FLUTTER_SCENE_LIGHTING_HOOKS
     light_context.color = radiance;
@@ -1025,7 +1063,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
         }
 #endif
       }
-#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+#if !defined(FLUTTER_SCENE_SKIP_SHADOWS) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
       else if (type > 0.5 && l3.y > -0.5 &&
                frag_info.spot_shadow_params.x > 0.5) {
         // Point shadow, when this light's cube faces ride the shared atlas
@@ -1124,7 +1162,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // reflection, depth of field and bloom passes turn into NaN or max blobs.
   out_color = min(out_color, vec3(kMediumpFloatMax));
   highp vec3 sky_fog_color = fog.color.rgb;
-#ifndef FLUTTER_SCENE_CUSTOM_AMBIENT
+#if !defined(FLUTTER_SCENE_CUSTOM_AMBIENT) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
   if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
     // Sample the sharpest prefiltered level: the fog color should match the
     // crisp skybox as closely as the environment resolution allows, so avoid
@@ -1133,6 +1171,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     vec3 sky_dir = environment_transform * -GetViewDirection();
     sky_fog_color = SampleRadianceEnv(prefiltered_radiance, sky_dir,
         kSkyFogRoughness);
+#ifndef FLUTTER_SCENE_LEAN_LIGHTING
     if (env_blend > 0.0) {
       sky_fog_color = mix(
           sky_fog_color,
@@ -1140,6 +1179,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                             sky_dir, kSkyFogRoughness),
           env_blend);
     }
+#endif
     sky_fog_color *= frag_info.environment_intensity;
   }
 #endif
@@ -1149,6 +1189,10 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // LightingResult if a physical material ever needs hooks.
   return ApplyFog(composite, sky_fog_color);
 #else
+#ifdef FLUTTER_SCENE_LEAN_LIGHTING
+  return vec4(out_color, 1.0) * alpha;
+#else
   return ApplyFog(vec4(out_color, 1.0) * alpha, sky_fog_color);
+#endif
 #endif
 }

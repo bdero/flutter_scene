@@ -1009,6 +1009,29 @@ class ShadowCascade {
   final double radius;
 }
 
+/// Forces the full lit entries everywhere, so parity tests can render the
+/// same frame with and without the lean tier.
+bool debugDisableLeanLighting = false;
+
+/// Whether a frame with these features may draw with the lean lit entries:
+/// every feature `FLUTTER_SCENE_LEAN_LIGHTING` compiles out must be off.
+@internal
+bool leanLightingAllowed({
+  required bool irradianceField,
+  required Fog? fog,
+  required int rectAreaLightCount,
+  required bool environmentBlending,
+  required bool ambientOcclusion,
+  required int pointShadowTileCount,
+}) =>
+    !debugDisableLeanLighting &&
+    !irradianceField &&
+    (fog == null || !fog.enabled || fog.mode == FogMode.none) &&
+    rectAreaLightCount == 0 &&
+    !environmentBlending &&
+    !ambientOcclusion &&
+    pointShadowTileCount == 0;
+
 /// The lighting state handed to a [Material] when it binds for a draw.
 ///
 /// Bundles the image-based-lighting [EnvironmentMap] (and the scene's
@@ -1034,6 +1057,7 @@ class Lighting {
     this.froxels,
     this.spotShadowCount = 0,
     this.pointShadowTileCount = 0,
+    this.rectAreaLightCount = 0,
     this.spotShadowDepthBias = 0.0,
     this.spotShadowNormalBias = 0.0,
     this.spotShadowSoftness = 0.0,
@@ -1070,6 +1094,24 @@ class Lighting {
   /// The scene's distance fog, or null when fog is off for this frame. Applied
   /// per-fragment by every material in linear HDR before tone mapping.
   final Fog? fog;
+
+  /// The rect area lights packed into the punctual light data this frame.
+  @internal
+  final int rectAreaLightCount;
+
+  /// Whether every feature the lean lit entries compile out is off this frame
+  /// (see `FLUTTER_SCENE_LEAN_LIGHTING` in `material_lighting.glsl`), so a
+  /// draw may use them. The draw's environment must also carry no parallax
+  /// box (see [Material.usesLeanVariant]).
+  @internal
+  bool get allowsLeanShading => leanLightingAllowed(
+    irradianceField: irradianceField != null,
+    fog: fog,
+    rectAreaLightCount: rectAreaLightCount,
+    environmentBlending: environmentMapB != null && environmentBlend > 0.0,
+    ambientOcclusion: ssaoMap != null || ssaoIndirectLight,
+    pointShadowTileCount: pointShadowTileCount,
+  );
 
   /// A secondary environment cross-faded with [environmentMap] by
   /// [environmentBlend], or null when a single environment is in effect.
