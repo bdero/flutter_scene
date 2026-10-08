@@ -100,7 +100,11 @@ workflows:
     name: Smoke render (macOS, Metal)
     instance_type: mac_mini_m2
     max_build_duration: 45
-    environment: *smoke_environment
+    environment:
+      <<: *smoke_environment
+      # Pinned like the iOS lane. From 2026-10-08 every build asking for
+      # `latest` on mac_mini_m2 stayed queued until its 60 minute cancel.
+      xcode: 26.5
     cache: *smoke_cache
     scripts:
       - *script_select_channel
