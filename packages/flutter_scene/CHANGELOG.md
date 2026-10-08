@@ -3,6 +3,7 @@
 * `Scene.dispose` drops the render targets and history textures a scene keeps across frames, so they no longer wait on the scene object being collected. A disposed scene throws a `StateError` on render.
 * `SceneView.declarative` disposes the scene it owns when it unmounts.
 * Temporal anti-aliasing's `objectMotion` works on the web. Its velocity shaders failed to link on WebGL2, so every frame threw.
+* An object that stops moving no longer keeps reporting its last step in the velocity buffer, so temporal anti-aliasing stops reprojecting it as if it still moved.
 
 ## 0.24.1
 
