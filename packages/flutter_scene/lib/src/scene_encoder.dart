@@ -2167,13 +2167,19 @@ base class SceneEncoder {
       item.applyJointsTexture(record.geometry);
       item.applyMorphWeights(record.geometry);
 
-      final end = opaqueBatchEnd(_opaqueRecords, index);
+      final froxelLighting = _lighting.froxels != null;
+      final end = opaqueBatchEnd(
+        _opaqueRecords,
+        index,
+        froxelLighting: froxelLighting,
+      );
       // Only a capture asks why a run ended; steady state skips the walk.
       final batchBreak = activeDrawRecorder == null
           ? BatchBreakReason.none
           : opaqueBatchBreakReason(
               _opaqueRecords[end - 1],
               end < _opaqueRecords.length ? _opaqueRecords[end] : null,
+              froxelLighting: froxelLighting,
             );
       if (end > index + 1) {
         activeRenderCounters.batches++;
