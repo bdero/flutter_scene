@@ -24,7 +24,11 @@ void applyFmatParameterOverrides(
 }) {
   for (final entry in properties.entries) {
     final name = entry.key;
-    if (name == 'depthBias' || name == 'depthLayer') continue;
+    if (name == 'depthBias' ||
+        name == 'depthLayer' ||
+        name == 'renderOrder') {
+      continue;
+    }
     try {
       switch (entry.value) {
         case BoolValue(:final value):

@@ -101,7 +101,8 @@ class RenderItem {
   /// not intersect (`layers & layerMask == 0`).
   int layers = kRenderLayerAll;
 
-  /// The owning node's [Node.renderOrder], the first sort key of its pass.
+  /// The owning node's [Node.renderOrder], sorted right after the
+  /// material's render order.
   double renderOrder = 0.0;
 
   /// The owning node's light channels (an 8-bit bitmask), refreshed each

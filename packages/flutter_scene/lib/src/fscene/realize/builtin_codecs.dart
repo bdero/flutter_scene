@@ -483,6 +483,8 @@ class MeshCodec extends ComponentCodec {
               if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
               if (m.depthLayer != m.declaredDepthLayer)
                 'depthLayer': IntValue(m.depthLayer),
+              if (m.renderOrder != m.declaredRenderOrder)
+                'renderOrder': DoubleValue(m.renderOrder),
             },
           ),
         )
@@ -504,6 +506,7 @@ class MeshCodec extends ComponentCodec {
       'alphaCutoff': DoubleValue(m.alphaCutoff),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
       if (m.depthLayer != 0) 'depthLayer': IntValue(m.depthLayer),
+      if (m.renderOrder != 0) 'renderOrder': DoubleValue(m.renderOrder),
       if (physical) ...{
         'specular': DoubleValue(m.specular),
         'specularColor': _color(m.specularColor),
@@ -745,6 +748,7 @@ class MeshCodec extends ComponentCodec {
         'alphaMode': StringValue(m.alphaMode.name),
       if (m.depthBias != 0) 'depthBias': DoubleValue(m.depthBias),
       if (m.depthLayer != 0) 'depthLayer': IntValue(m.depthLayer),
+      if (m.renderOrder != 0) 'renderOrder': DoubleValue(m.renderOrder),
       if (m.displayReferred) 'displayReferred': BoolValue(true),
     };
     _textureProperty(
