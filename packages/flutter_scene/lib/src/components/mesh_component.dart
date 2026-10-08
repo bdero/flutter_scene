@@ -214,12 +214,15 @@ class MeshComponent extends Component {
     // A skinned node uploads its joint matrices once per frame. The texture
     // rides on the render items, not the geometry, so nodes sharing one
     // skinned geometry (clones) each draw with their own skeleton; the
-    // render passes apply it to the geometry per draw.
+    // render passes apply it to the geometry per draw. A held frame draws
+    // nothing, so it keeps the last upload (on Vulkan an upload is a
+    // synchronous submit that waits for the GPU backlog).
     final skin = node.skin;
-    final jointsTexture = skin?.getJointsTexture();
+    final renderScene = node.internalRenderScene;
+    final uploadJoints = skin != null && !(renderScene?.holdingFrame ?? false);
+    final jointsTexture = uploadJoints ? skin.getJointsTexture() : null;
     final jointsTextureWidth = skin?.getTextureWidth() ?? 0;
 
-    final renderScene = node.internalRenderScene;
     final frustumCulled = node.frustumCulled;
     final layers = node.layers;
     final lightChannelMask = node.lightChannelMask;
@@ -263,7 +266,7 @@ class MeshComponent extends Component {
       item.shadowCastingMode = effectiveShadowMode;
       item.primitiveCastsShadow = primitive.castsShadow;
       item.highlightColor = highlightColor;
-      if (skin != null) {
+      if (uploadJoints) {
         item.previousJointsTexture = skin.getPreviousJointsTexture();
         item.jointsTexture = jointsTexture;
         item.jointsTextureWidth = jointsTextureWidth;

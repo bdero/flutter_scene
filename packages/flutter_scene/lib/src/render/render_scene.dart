@@ -639,6 +639,10 @@ class RenderScene {
   /// Every registered render item, in no particular order.
   final List<RenderItem> items = [];
 
+  /// Whether the frame being ticked re-presents its previous image, so the
+  /// pre-pass skips per-frame GPU uploads nothing will draw.
+  bool holdingFrame = false;
+
   /// The directional lights contributed by mounted
   /// [DirectionalLightComponent]s, in registration order.
   final List<DirectionalLightComponent> directionalLights = [];
