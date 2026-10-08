@@ -472,10 +472,12 @@ abstract class Material {
   /// the material carries twins, every feature they compile out is off this
   /// frame ([Lighting.allowsLeanShading]), and the draw's environment has no
   /// parallax box. A bundle built without the twins keeps the full entries.
-  // TODO(lean-lighting-fallback): draw with the full entry while a lean
-  // pipeline has not been built yet and build it within a frame budget (or
-  // asynchronously once Flutter GPU exposes it), so turning a feature off
-  // mid-game does not stall a frame on the lean pipeline build.
+  // TODO(lean-lighting-fallback): draw with the full entry until the lean
+  // pipeline is ready once Flutter GPU can build a pipeline off the calling
+  // thread and report when it is done. Today the backend pipeline is created
+  // inside the first draw that uses it, so there is nothing to wait on; a
+  // runtime tier switch costs that draw's frame unless warmUp compiled both
+  // tiers (Scene.warmUp's allShadingTiers).
   // TODO(lean-lighting-pruning): a hook user-define that leaves the full or
   // the lean entries out of the bundle for apps that never need them.
   @internal

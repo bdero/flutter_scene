@@ -1024,13 +1024,21 @@ bool leanLightingAllowed({
   required bool ambientOcclusion,
   required int pointShadowTileCount,
 }) =>
-    !debugDisableLeanLighting &&
-    !irradianceField &&
-    (fog == null || !fog.enabled || fog.mode == FogMode.none) &&
-    rectAreaLightCount == 0 &&
-    !environmentBlending &&
-    !ambientOcclusion &&
-    pointShadowTileCount == 0;
+    shadingTierOverride ??
+    (!debugDisableLeanLighting &&
+        !irradianceField &&
+        (fog == null || !fog.enabled || fog.mode == FogMode.none) &&
+        rectAreaLightCount == 0 &&
+        !environmentBlending &&
+        !ambientOcclusion &&
+        pointShadowTileCount == 0);
+
+/// Forces every eligible draw onto the lean (true) or full (false) lit entries
+/// regardless of the frame's features, or null to decide per frame. Set only
+/// around a warm-up frame whose image is discarded, to compile a tier's
+/// pipelines before the scene needs them.
+@internal
+bool? shadingTierOverride;
 
 /// The lighting state handed to a [Material] when it binds for a draw.
 ///

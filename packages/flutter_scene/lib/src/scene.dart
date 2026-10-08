@@ -2032,11 +2032,20 @@ base class Scene implements SceneGraph {
   /// instead of blocking for the whole compile (Android declares an app
   /// that ignores input for ten seconds not responding). A single build
   /// longer than the budget still runs whole.
+  ///
+  /// Lit materials draw with a lean shader while the scene uses none of the
+  /// features it leaves out (fog, ambient occlusion, rect area lights, the
+  /// irradiance field, environment cross-fades, parallax reflection boxes, and
+  /// point-light shadows), and with the full shader otherwise. Set
+  /// [allShadingTiers] to compile both now, so turning one of those features
+  /// on or off later does not stall a frame on its first draw. It roughly
+  /// doubles the lit pipelines warm-up compiles.
   /// {@category Assets and loading}
   Future<void> warmUp(
     List<RenderView> views, {
     bool includeOffscreen = false,
     Duration? sliceBudget,
+    bool allShadingTiers = false,
   }) async {
     _checkNotDisposed('warmUp');
     await initializeStaticResources();
@@ -2057,19 +2066,33 @@ base class Scene implements SceneGraph {
     // rendering; only the final canvas blit is thrown away. A small area is
     // enough because pipeline identity is resolution-independent.
     void encode() {
-      // A zero step, so warm-up frames never move the scene's clock before
-      // the first real frame (render then skips its wall-clock tick).
-      update(0.0);
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
       _warmUpIncludeOffscreen = includeOffscreen;
+      // The tier frames follow the first while its GPU work still runs, and a
+      // paced frame encodes nothing, so pacing is off while they encode.
+      final framesInFlight = maxGpuFramesInFlight;
+      if (allShadingTiers) maxGpuFramesInFlight = 0;
       try {
-        renderViews(
-          views,
-          canvas,
-          region: const ui.Rect.fromLTWH(0, 0, 64, 64),
-        );
+        // With allShadingTiers, the frame also encodes once under each lit
+        // tier, so a later feature toggle that switches tiers finds its
+        // pipelines built.
+        for (final tier
+            in allShadingTiers ? const [null, true, false] : const [null]) {
+          shadingTierOverride = tier;
+          // A zero step, so warm-up frames never move the scene's clock
+          // before the first real frame (render then skips its wall-clock
+          // tick).
+          update(0.0);
+          renderViews(
+            views,
+            canvas,
+            region: const ui.Rect.fromLTWH(0, 0, 64, 64),
+          );
+        }
       } finally {
+        shadingTierOverride = null;
+        maxGpuFramesInFlight = framesInFlight;
         _warmUpIncludeOffscreen = false;
         recorder.endRecording().dispose();
       }
