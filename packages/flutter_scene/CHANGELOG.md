@@ -2,11 +2,11 @@
 
 * A frame that re-presents its previous image while the GPU catches up no longer uploads joint matrices or light data first. On Vulkan each upload waited for the GPU backlog, so a GPU-bound scene with skinned meshes or moving lights blocked the UI thread for about a frame of GPU time (230 ms down to 40 ms at p95 on a Galaxy A16).
 * Meshes lit by point and spot lights batch into instanced draws again. Every item got its own light list, so any ranged light split every batch; items with identical lists now share one, and froxel-lit views ignore the lists.
+* Lit materials draw with a lean shader when the scene uses no irradiance field, fog, rect area lights, environment cross-fade, parallax reflection box, ambient occlusion, or point-light shadows. It stops the full shader spilling registers on mobile GPUs (frames 1.5 to 1.8x faster on a Mali-G57) and adds about 250 KB compressed to each platform's shader bundle.
+* `Scene.warmUp` takes `allShadingTiers` (and `SceneView` takes `warmUpAllShadingTiers`), which also compiles the shader tier the scene is not using, so turning one of those features on or off later does not stall a frame.
 
 ## 0.24.2
 
-* Lit materials draw with a lean shader when the scene uses no irradiance field, fog, rect area lights, environment cross-fade, parallax reflection box, ambient occlusion, or point-light shadows. It stops the full shader spilling registers on mobile GPUs (frames 1.5 to 1.8x faster on a Mali-G57) and adds about 250 KB compressed to each platform's shader bundle.
-* `Scene.warmUp` takes `allShadingTiers` (and `SceneView` takes `warmUpAllShadingTiers`), which also compiles the shader tier the scene is not using, so turning one of those features on or off later does not stall a frame.
 * `Scene.dispose` drops the render targets and history textures a scene keeps across frames, so they no longer wait on the scene object being collected. A disposed scene throws a `StateError` on render.
 * `SceneView.declarative` disposes the scene it owns when it unmounts.
 * Temporal anti-aliasing's `objectMotion` works on the web. Its velocity shaders failed to link on WebGL2, so every frame threw.
