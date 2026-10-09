@@ -98,7 +98,8 @@ class FlyCameraController extends CameraController {
     );
   }
 
-  Vector3 get _right => Vector3(math.cos(_yaw), 0.0, -math.sin(_yaw));
+  /// Unit horizontal direction to the camera's right.
+  Vector3 get right => Vector3(-math.cos(_yaw), 0.0, math.sin(_yaw));
 
   /// Sets movement intent from an input system, a gamepad, or touch controls.
   ///
@@ -171,11 +172,9 @@ class FlyCameraController extends CameraController {
       if (_heldKeys.contains(LogicalKeyboardKey.keyE)) alongUp += 1.0;
       if (_heldKeys.contains(LogicalKeyboardKey.keyQ)) alongUp -= 1.0;
     }
-    // [_right] points toward the screen's left, so rightward motion subtracts
-    // it.
     final targetVelocity = Vector3.zero()
       ..addScaled(moveForward, alongForward)
-      ..addScaled(_right, -alongRight)
+      ..addScaled(right, alongRight)
       ..addScaled(Vector3(0.0, 1.0, 0.0), alongUp);
     final boosted =
         _boostInput ||

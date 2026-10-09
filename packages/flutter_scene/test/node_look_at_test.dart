@@ -2,6 +2,8 @@
 // forward axis at a world-space target, matching the inverse of an equivalent
 // PerspectiveCamera view.
 
+import 'dart:ui' show Size;
+
 import 'package:flutter_scene/scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vector_math/vector_math.dart';
@@ -119,6 +121,72 @@ void main() {
       expect(forward.x, closeTo(want.x, 1e-5));
       expect(forward.y, closeTo(want.y, 1e-5));
       expect(forward.z, closeTo(want.z, 1e-5));
+      expect((node.forward - forward).length, lessThan(1e-5));
+      expect(
+        (node.right - _column(world, 0).normalized()).length,
+        lessThan(1e-5),
+      );
+      expect((node.up - _column(world, 1).normalized()).length, lessThan(1e-5));
+    });
+  });
+
+  group('Camera and Node basis getters', () {
+    test(
+      'Camera.right and horizontalRight point to screen-right from both -Z and +Z',
+      () {
+        const viewport = Size(800, 600);
+
+        // Default camera on -Z looking along +Z.
+        final fromNegZ = PerspectiveCamera(
+          position: Vector3(0.0, 2.0, -6.0),
+          target: Vector3.zero(),
+        );
+        expect(fromNegZ.right.x, closeTo(1.0, 1e-5));
+        expect(fromNegZ.horizontalRight.x, closeTo(1.0, 1e-5));
+        expect(fromNegZ.horizontalForward.z, closeTo(1.0, 1e-5));
+        final uvNegZ = fromNegZ.projectToScreenUv(
+          fromNegZ.target + fromNegZ.right,
+          viewport,
+        )!;
+        expect(uvNegZ.x, greaterThan(0.5));
+
+        // Camera on +Z looking back along -Z.
+        final fromPosZ = PerspectiveCamera(
+          position: Vector3(0.0, 4.0, 8.0),
+          target: Vector3.zero(),
+        );
+        expect(fromPosZ.right.x, closeTo(-1.0, 1e-5));
+        expect(fromPosZ.horizontalRight.x, closeTo(-1.0, 1e-5));
+        expect(fromPosZ.horizontalForward.z, closeTo(-1.0, 1e-5));
+        final uvPosZ = fromPosZ.projectToScreenUv(
+          fromPosZ.target + fromPosZ.right,
+          viewport,
+        )!;
+        expect(uvPosZ.x, greaterThan(0.5));
+
+        // NodeCamera agrees with PerspectiveCamera on forward, right, and up.
+        final node = Node()..lookAtFrom(fromPosZ.position, fromPosZ.target);
+        final component = CameraComponent();
+        node.addComponent(component);
+        final nodeCam = component.toCamera();
+        expect((nodeCam.forward - fromPosZ.forward).length, lessThan(1e-5));
+        expect((nodeCam.right - fromPosZ.right).length, lessThan(1e-5));
+        expect(
+          (nodeCam.horizontalRight - fromPosZ.horizontalRight).length,
+          lessThan(1e-5),
+        );
+      },
+    );
+
+    test('Camera.horizontalForward falls back cleanly for a top-down view', () {
+      final topDown = PerspectiveCamera(
+        position: Vector3(0.0, 10.0, 0.0),
+        target: Vector3.zero(),
+        up: Vector3(0.0, 0.0, 1.0),
+      );
+      expect(topDown.right.x, closeTo(1.0, 1e-5));
+      expect(topDown.horizontalForward.z, closeTo(1.0, 1e-5));
+      expect(topDown.horizontalRight.x, closeTo(1.0, 1e-5));
     });
   });
 }

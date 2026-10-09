@@ -93,6 +93,32 @@ abstract class Camera {
   /// [forward].
   Vector3 get up;
 
+  /// The world-space direction pointing toward the right edge of the view
+  /// (unit length), computed as `up.cross(forward).normalized()`.
+  Vector3 get right => up.cross(forward).normalized();
+
+  /// The camera's look direction projected onto the horizontal `XZ` ground
+  /// plane (unit length), for ground-relative movement and panning.
+  ///
+  /// When the camera looks straight up or down along `Y`, falls back to the
+  /// top-of-screen direction (`right.cross(Vector3(0, 1, 0))`).
+  Vector3 get horizontalForward {
+    final flat = Vector3(forward.x, 0.0, forward.z);
+    if (flat.length2 > 1e-12) {
+      return flat..normalize();
+    }
+    final fallback = right.cross(Vector3(0.0, 1.0, 0.0));
+    return fallback.length2 > 1e-12
+        ? (fallback..normalize())
+        : Vector3(0.0, 0.0, 1.0);
+  }
+
+  /// The world-space horizontal direction pointing toward the right edge of
+  /// the view on the `XZ` ground plane (unit length), computed as
+  /// `Vector3(0, 1, 0).cross(horizontalForward).normalized()`.
+  Vector3 get horizontalRight =>
+      Vector3(0.0, 1.0, 0.0).cross(horizontalForward)..normalize();
+
   /// The lens projection paired with this camera's view.
   CameraProjection get projection;
 

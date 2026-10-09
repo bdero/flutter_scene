@@ -523,6 +523,30 @@ base class Node implements SceneGraph {
     return _worldTransform;
   }
 
+  /// The world-space direction this node's local `+Z` axis points along (unit
+  /// length), the forward axis [lookAt] aims.
+  /// {@category Scene graph}
+  Vector3 get forward {
+    final world = globalTransform.storage;
+    return Vector3(world[8], world[9], world[10]).normalized();
+  }
+
+  /// The world-space direction this node's local `+X` axis points along (unit
+  /// length), pointing right when viewed along [forward] with [up] upward.
+  /// {@category Scene graph}
+  Vector3 get right {
+    final world = globalTransform.storage;
+    return Vector3(world[0], world[1], world[2]).normalized();
+  }
+
+  /// The world-space direction this node's local `+Y` axis points along (unit
+  /// length).
+  /// {@category Scene graph}
+  Vector3 get up {
+    final world = globalTransform.storage;
+    return Vector3(world[4], world[5], world[6]).normalized();
+  }
+
   /// Orients this node so its forward axis (local `+Z`) points at [target] in
   /// world space, keeping [up] as the reference up (defaults to `+Y`). Only
   /// the node's rotation changes; its world position and scale are preserved.
