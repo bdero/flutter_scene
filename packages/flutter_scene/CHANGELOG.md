@@ -1,3 +1,7 @@
+## 0.24.4
+
+* Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
+
 ## 0.24.3
 
 * A frame that re-presents its previous image while the GPU catches up no longer uploads joint matrices or light data first. On Vulkan each upload waited for the GPU backlog, so a GPU-bound scene with skinned meshes or moving lights blocked the UI thread for about a frame of GPU time (230 ms down to 40 ms at p95 on a Galaxy A16).
