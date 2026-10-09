@@ -483,9 +483,11 @@ abstract class Material {
   @internal
   bool usesLeanVariant(Lighting lighting) {
     final lean = _leanShaders;
-    if (lean == null || !lean.available || !lighting.allowsLeanShading) {
-      return false;
-    }
+    if (lean == null || !lean.available) return false;
+    // A warm-up override forces its tier past the per-draw checks too.
+    final override = shadingTierOverride;
+    if (override != null) return override;
+    if (!lighting.allowsLeanShading) return false;
     final env = drawEnvironment(lighting);
     return env.parallaxBoxCenter == null || env.parallaxBoxHalfExtents == null;
   }

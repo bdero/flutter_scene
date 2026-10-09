@@ -2074,11 +2074,11 @@ base class Scene implements SceneGraph {
       final framesInFlight = maxGpuFramesInFlight;
       if (allShadingTiers) maxGpuFramesInFlight = 0;
       try {
-        // With allShadingTiers, the frame also encodes once under each lit
-        // tier, so a later feature toggle that switches tiers finds its
-        // pipelines built.
+        // With allShadingTiers, the frame encodes once under each lit tier
+        // (one of them is the frame's own), so a later feature toggle that
+        // switches tiers finds its pipelines built.
         for (final tier
-            in allShadingTiers ? const [null, true, false] : const [null]) {
+            in allShadingTiers ? const [true, false] : const [null]) {
           shadingTierOverride = tier;
           // A zero step, so warm-up frames never move the scene's clock
           // before the first real frame (render then skips its wall-clock
