@@ -1171,7 +1171,6 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
     vec3 sky_dir = environment_transform * -GetViewDirection();
     sky_fog_color = SampleRadianceEnv(prefiltered_radiance, sky_dir,
         kSkyFogRoughness);
-#ifndef FLUTTER_SCENE_LEAN_LIGHTING
     if (env_blend > 0.0) {
       sky_fog_color = mix(
           sky_fog_color,
@@ -1179,7 +1178,6 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
                             sky_dir, kSkyFogRoughness),
           env_blend);
     }
-#endif
     sky_fog_color *= frag_info.environment_intensity;
   }
 #endif
