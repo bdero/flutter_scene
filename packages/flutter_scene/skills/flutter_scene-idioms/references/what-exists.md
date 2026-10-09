@@ -31,6 +31,9 @@ Transform API (0.22.0 added the component properties; older docs say only `local
 | `localTransform` | `Matrix4` get/set | Getter returns the LIVE matrix; in-place edit throws in debug on next read. Assign a fresh matrix. |
 | `mutateLocalTransform(void Function(Matrix4) edit)` | method | Edits in place AND dirties the cache. Correct raw-matrix path. |
 | `globalTransform` | `Matrix4` get/set | Cached world transform; setter solves for the needed local. |
+| `forward` | `Vector3` get | Unit world-space direction of the node's local `+Z` axis (the axis `lookAt` aims). |
+| `right` | `Vector3` get | Unit world-space direction of the node's local `+X` axis (screen-right when viewed along `forward`). |
+| `up` | `Vector3` get | Unit world-space direction of the node's local `+Y` axis. |
 | `lookAt(target, {up})` | method | Orients the node's forward axis (local +Z) at a world-space target; preserves world position and scale. |
 | `lookAtFrom(eye, target, {up})` | method | Positions at `eye` and aims +Z at `target` in one call (the imperative camera one-liner). |
 | `Node.lookAtTransform(eye, target, {up})` | static -> `Matrix4` | The `lookAt` basis as a local transform, for `Node(localTransform:)` and declarative `transform:`. |
@@ -69,7 +72,7 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
   1000.0})`. Field names are `fovNear`/`fovFar`, NOT `near`/`far`.
 - `PerspectiveCamera.framing(Aabb3 bounds, {direction, fovRadiansY, up, margin = 1.1})`.
 - `PerspectiveProjection({fovRadiansY, near = 0.1, far = 1000.0})` and abstract `CameraProjection`,
-  `Camera`. Camera helpers: `screenPointToRay`, `worldToScreen`, `getViewMatrix`, `getFrustum`.
+  `Camera`. Camera basis getters (`position`, `forward`, `up`, `right`, `horizontalForward`, `horizontalRight`) and helpers (`screenPointToRay`, `worldToScreen`, `getViewMatrix`, `getFrustum`). `right` and `horizontalRight` use `up.cross(forward)` so they always point toward the right edge of the view in the engine's left-handed view space.
 - `OrthographicCamera({OrthographicProjection? projection, Vector3? position, target, up})` and
   `OrthographicCamera.framing(bounds, {direction, up, margin})`.
 - `OrthographicProjection({OrthographicSize size = OrthographicSize.height(10), zoom = 1.0,
@@ -85,8 +88,8 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
   `toCamera()` gives a `NodeCamera`. Camera node must not be scaled.
 - Interactive cameras: `CameraController` components attached to the camera node. `OrbitCameraController`
   (turntable around `target`; `orbitBy`/`dollyBy`/`panBy`/`frame`), `FlyCameraController` (WASD + drag
-  free flight; `moveVertical: false` = grounded first-person; `look`, `setMoveInput`), `FollowCameraController`
-  (third-person easing behind `followTarget` node; `orbitBy`/`dollyBy`). All ease with frame-rate
+  free flight; `moveVertical: false` = grounded first-person; `look`, `setMoveInput`, `forward`, `right`), `FollowCameraController`
+  (third-person easing behind `followTarget` node; `orbitBy`/`dollyBy`, `forward`, `right`). All ease with frame-rate
   independent `smoothing` (settle seconds), clamp pitch short of vertical, and write the node via
   `lookAtFrom`. Wire input with the `CameraControls({required controller, enabled, autofocus, child})`
   widget (Focus + gestures + wheel); `SceneView` has no camera-input params by design.

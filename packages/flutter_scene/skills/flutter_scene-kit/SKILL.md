@@ -1,6 +1,6 @@
 ---
 name: flutter_scene-kit
-version: 7
+version: 8
 description: Build interactive 3D gameplay, character controllers, camera rigs, dynamic day/night cycles, water surfaces, audio, pooling, and debug overlays in flutter_scene. Use when creating game mechanics, camera controls, NPC behaviors, atmospheric environments, or diagnostic HUDs.
 ---
 
@@ -12,6 +12,7 @@ When choosing components, consider existing engine alternatives:
 - For physics-driven character navigation with collider capsules, wall sliding, and autostep, use `KinematicCharacterController` from `package:flutter_scene/physics.dart`.
 - For interactive mouse/touch orbit cameras with inertia, use `OrbitCameraController` or `FollowCameraController`.
 - For framing a standalone `PerspectiveCamera`, use `PerspectiveCamera.framing`. Use `BoundsFraming` when computing a transform for a `NodeCamera` mounted in the scene graph.
+- When driving custom camera-relative movement or ground panning (WASD strafing, RTS/strategy camera drag), read `camera.horizontalRight` and `camera.horizontalForward` (or `camera.right` and `node.right`). Never write `forward.cross(up)`, which points screen-left in `flutter_scene`'s left-handed (`+Z` forward) view space and horizontally inverts `A`/`D` and drag controls.
 
 ## Imports
 

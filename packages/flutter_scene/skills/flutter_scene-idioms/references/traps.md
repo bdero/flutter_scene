@@ -217,15 +217,11 @@ crosses and angular probes are not supported. Still silent.
 
 ## 14. Hand-built triangles wound clockwise
 
-**Mistake.** Generating triangles with clockwise winding instead of the standard Counter-Clockwise (CCW)
-right-handed convention when feeding `MeshGeometry.fromArrays` or `GeometryBuilder`.
+**Mistake.** Generating triangles with clockwise winding instead of counter-clockwise (CCW) winding around the outward normal when feeding `MeshGeometry.fromArrays` or `GeometryBuilder`.
 
-**Symptom.** The mesh is invisible from outside and visible from inside; a closed shape looks hollow
-or inside-out; lighting is inverted where it shows. ("See-through faces.")
+**Symptom.** The mesh is invisible from outside and visible from inside; a closed shape looks hollow or inside-out; lighting is inverted where it shows. ("See-through faces.")
 
-**Do instead.** flutter_scene's front faces wind COUNTER-CLOCKWISE (CCW) in model space, matching glTF
-and standard 3D conventions. Ensure triangle indices wind CCW around the outward face normal, or omit
-`normals` and let `GeometryBuilder` derive them from your winding. Still silent.
+**Do instead.** flutter_scene's front faces wind COUNTER-CLOCKWISE (CCW) in model space around the outward face normal, matching glTF. Ensure triangle indices wind CCW when viewed from outside the surface, or omit `normals` and let `GeometryBuilder` derive them from your winding. Still silent.
 
 ---
 
@@ -606,6 +602,16 @@ reads as a platform quirk).
 **Do instead.** Use opaque (alpha 255) environment sources. The widget-alpha double-multiply is a
 backend difference you cannot fully control from the API; keep widget content opaque where you can.
 Still silent.
+
+---
+
+## 41. Computing a camera or node right vector with `forward.cross(up)` or `+Z` orbit tangents
+
+**Mistake.** Writing `final right = forward.cross(up).normalized()`, or placing an orbit camera at `target + Vector3(d * sin(azimuth), y, d * cos(azimuth))` and using `Vector3(cos(azimuth), 0, -sin(azimuth))` as its horizontal right vector.
+
+**Symptom.** Horizontal camera strafing (`A`/`D`) and click-drag panning move in the exact opposite horizontal direction from expected, while vertical movement (`W`/`S` and vertical drag) works normally.
+
+**Do instead.** `flutter_scene`'s view space is left-handed (`+Z` forward into the screen, `+Y` up, `+X` right), while `package:vector_math`'s `cross()` is right-handed, so `forward.cross(up)` yields `-right` (screen-left). Likewise, when a camera sits on the `+Z` side of the origin looking along `-Z`, world `+X` is on the left of the screen (`right = Vector3(-cos(azimuth), 0, sin(azimuth))`). Read `camera.right`, `camera.horizontalRight`, `camera.horizontalForward`, or `node.right` directly, or compute `up.cross(forward).normalized()`. Prefer `OrbitCameraController`, `FollowCameraController`, or `FlyCameraController` over hand-rolled spherical camera math.
 
 ---
 

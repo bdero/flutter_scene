@@ -225,6 +225,26 @@ void main() {
       c.update(0.05);
       expect(_pos(node).y, closeTo(0.0, 1e-6)); // no vertical drift
     });
+
+    test(
+      'right points toward screen-right and matches D-key strafe direction',
+      () {
+        final node = Node();
+        final c = FlyCameraController(
+          position: Vector3.zero(),
+          yaw: 0.4,
+          pitch: -0.2,
+          speed: 4.0,
+          smoothing: 0.0,
+          movementSmoothing: 0.0,
+        );
+        node.addComponent(c);
+        c.handleKeyEvent(_down(LogicalKeyboardKey.keyD));
+        c.update(0.05);
+        expect((c.right - node.right).length, lessThan(1e-5));
+        expect((_pos(node).normalized() - c.right).length, lessThan(1e-5));
+      },
+    );
   });
 
   group('FollowCameraController', () {

@@ -126,16 +126,13 @@ class NodeCamera extends Camera {
   Vector3 get position => _worldTransform.getTranslation();
 
   @override
-  Vector3 get forward {
-    final transform = _worldTransform;
-    return Vector3(transform[8], transform[9], transform[10]).normalized();
-  }
+  Vector3 get forward => node.forward;
 
   @override
-  Vector3 get up {
-    final transform = _worldTransform;
-    return Vector3(transform[4], transform[5], transform[6]).normalized();
-  }
+  Vector3 get right => node.right;
+
+  @override
+  Vector3 get up => node.up;
 
   @override
   Matrix4 getViewMatrix() {
