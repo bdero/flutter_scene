@@ -2128,6 +2128,9 @@ base class SceneEncoder {
   /// when the scene pass snapshots the opaque color between them.
   void flushOpaque() {
     _phase = DrawPhase.opaque;
+    // Froxel-lit fragments read their lights from the view's grid, so the
+    // items' own light lists neither order nor split the opaque runs.
+    final froxelLighting = _lighting.froxels != null;
     final sortWatch = profileRendering ? (Stopwatch()..start()) : null;
     _opaqueRecords.sort((a, b) {
       final byOrder = a.item.renderOrder.compareTo(b.item.renderOrder);
@@ -2138,14 +2141,16 @@ base class SceneEncoder {
       if (byMaterial != 0) return byMaterial;
       final byGeometry = a.geometryKey.compareTo(b.geometryKey);
       if (byGeometry != 0) return byGeometry;
-      final byLightOffset = a.item.lightListOffset.compareTo(
-        b.item.lightListOffset,
-      );
-      if (byLightOffset != 0) return byLightOffset;
-      final byLightCount = a.item.lightListCount.compareTo(
-        b.item.lightListCount,
-      );
-      if (byLightCount != 0) return byLightCount;
+      if (!froxelLighting) {
+        final byLightOffset = a.item.lightListOffset.compareTo(
+          b.item.lightListOffset,
+        );
+        if (byLightOffset != 0) return byLightOffset;
+        final byLightCount = a.item.lightListCount.compareTo(
+          b.item.lightListCount,
+        );
+        if (byLightCount != 0) return byLightCount;
+      }
       final byChannels = a.item.lightChannelMask.compareTo(
         b.item.lightChannelMask,
       );
@@ -2167,7 +2172,6 @@ base class SceneEncoder {
       item.applyJointsTexture(record.geometry);
       item.applyMorphWeights(record.geometry);
 
-      final froxelLighting = _lighting.froxels != null;
       final end = opaqueBatchEnd(
         _opaqueRecords,
         index,

@@ -73,8 +73,15 @@ base class Skin {
   int _jointsTextureRingCursor = 0;
   int _jointsTextureDimension = 0;
 
-  /// Computes the joint matrices for the current frame and uploads them as
-  /// a square `RGBA32F` GPU texture.
+  // Whether the current slot holds matrices that are not uploaded yet, and
+  // the reused staging floats they sit in.
+  bool _uploadPending = false;
+  Float32List? _jointMatrixFloats;
+
+  /// Computes the joint matrices for the current frame into the next ring
+  /// slot and returns that slot's square `RGBA32F` GPU texture. The upload
+  /// waits for [flushJointsUpload], so a frame that draws nothing (one that
+  /// re-presents its previous image) never pays for it.
   ///
   /// Each joint occupies four texels (one matrix). The texture's edge
   /// length is rounded up to the next power of two, with a floor of four so
@@ -90,11 +97,17 @@ base class Skin {
     if (dimensionSize != _jointsTextureDimension) {
       _jointsTextureRing.fillRange(0, _jointsTextureRing.length, null);
       _jointsTextureDimension = dimensionSize;
+      _jointMatrixFloats = null;
+      _uploadPending = false;
     }
 
-    // Advance to the next ring slot, allocating it on first use.
-    _jointsTextureRingCursor =
-        (_jointsTextureRingCursor + 1) % _jointsTextureRingSize;
+    // Advance to the next ring slot, allocating it on first use. A slot whose
+    // upload never ran is reused, so the previous slot stays the last one the
+    // GPU was given.
+    if (!_uploadPending) {
+      _jointsTextureRingCursor =
+          (_jointsTextureRingCursor + 1) % _jointsTextureRingSize;
+    }
     final gpu.Texture texture = _jointsTextureRing[_jointsTextureRingCursor] ??=
         gpu.gpuContext.createTexture(
           gpu.StorageMode.hostVisible,
@@ -103,15 +116,17 @@ base class Skin {
           format: gpu.PixelFormat.r32g32b32a32Float,
         );
     // 64 bytes per matrix. 4 bytes per pixel.
-    Float32List jointMatrixFloats = Float32List(
-      dimensionSize * dimensionSize * 4,
-    );
-    // Initialize with identity matrices.
-    for (int i = 0; i < jointMatrixFloats.length; i += 16) {
-      jointMatrixFloats[i] = 1.0;
-      jointMatrixFloats[i + 5] = 1.0;
-      jointMatrixFloats[i + 10] = 1.0;
-      jointMatrixFloats[i + 15] = 1.0;
+    final floatCount = dimensionSize * dimensionSize * 4;
+    var jointMatrixFloats = _jointMatrixFloats;
+    if (jointMatrixFloats == null) {
+      jointMatrixFloats = _jointMatrixFloats = Float32List(floatCount);
+      // Identity in every slot; a null joint keeps it.
+      for (int i = 0; i < floatCount; i += 16) {
+        jointMatrixFloats[i] = 1.0;
+        jointMatrixFloats[i + 5] = 1.0;
+        jointMatrixFloats[i + 10] = 1.0;
+        jointMatrixFloats[i + 15] = 1.0;
+      }
     }
 
     for (int jointIndex = 0; jointIndex < joints.length; jointIndex++) {
@@ -137,9 +152,19 @@ base class Skin {
       final floatOffset = jointIndex * 16;
       jointMatrixFloats.setRange(floatOffset, floatOffset + 16, matrix.storage);
     }
-
-    texture.overwrite(jointMatrixFloats.buffer.asByteData());
+    _uploadPending = true;
     return texture;
+  }
+
+  /// Uploads the matrices the last [getJointsTexture] computed, if they are
+  /// not uploaded yet. On Vulkan an upload is a synchronous submit that waits
+  /// for the GPU backlog, so the scene runs it only for frames that draw.
+  void flushJointsUpload() {
+    if (!_uploadPending) return;
+    _uploadPending = false;
+    _jointsTextureRing[_jointsTextureRingCursor]!.overwrite(
+      _jointMatrixFloats!.buffer.asByteData(),
+    );
   }
 
   /// The edge length, in texels, of the joints texture produced by

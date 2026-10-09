@@ -2240,9 +2240,7 @@ base class Scene implements SceneGraph {
     if (!_tickedThisFrame) {
       final nowMillis = DateTime.now().millisecondsSinceEpoch;
       final lastMillis = _lastTickMillis ?? nowMillis;
-      renderScene.holdingFrame = holdFrame;
       _tick((nowMillis - lastMillis) / 1000.0);
-      renderScene.holdingFrame = false;
     }
     _tickedThisFrame = false;
 
@@ -2269,6 +2267,10 @@ base class Scene implements SceneGraph {
       rendererSubmissions.endFrame();
       return;
     }
+
+    // The frame draws from here on, so the joint matrices the tick computed
+    // (here or in update()) upload now, not on frames held above.
+    renderScene.flushJointUploads();
 
     // A paced frame renders nothing, so the adaptive controller measures the
     // period between rendered frames rather than the vsync it ticks at.
@@ -2756,14 +2758,6 @@ base class Scene implements SceneGraph {
     );
   }
 
-  // Renders one [view] into [drawArea] on [canvas], using that view's own
-  // swapchain texture and transient texture pool (so simultaneous views in a
-  // frame do not share render targets). The per-frame work (tick, spatial
-  // rebuild, environment resolve, host-buffer reset) is done once by the
-  // caller; this builds and submits one view's render graph and composites
-  // the result.
-  // Draws each screen view's previous image in place of a new frame, or
-  // nothing for a view that has not drawn one yet. Texture views keep theirs.
   // Whether every screen view has a previous image at the size it would
   // render this frame, so the whole frame can re-present (see
   // _renderViewToCanvas, which paces per view by the same test).
@@ -2792,6 +2786,8 @@ base class Scene implements SceneGraph {
     return true;
   }
 
+  // Draws each screen view's previous image in place of a new frame, or
+  // nothing for a view that has not drawn one yet. Texture views keep theirs.
   void _presentHeldFrame(
     List<RenderView> views,
     ui.Canvas canvas,
@@ -2820,6 +2816,12 @@ base class Scene implements SceneGraph {
     }
   }
 
+  // Renders one [view] into [drawArea] on [canvas], using that view's own
+  // swapchain texture and transient texture pool (so simultaneous views in a
+  // frame do not share render targets). The per-frame work (tick, spatial
+  // rebuild, environment resolve, host-buffer reset) is done once by the
+  // caller; this builds and submits one view's render graph and composites
+  // the result.
   void _renderViewToCanvas({
     required RenderView view,
     required ui.Canvas canvas,

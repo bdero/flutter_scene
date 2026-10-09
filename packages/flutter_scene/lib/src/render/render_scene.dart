@@ -5,6 +5,7 @@ import 'package:vector_math/vector_math.dart';
 
 import 'package:flutter/foundation.dart' show ValueNotifier, internal;
 import 'package:flutter_scene/src/render/debug_view.dart';
+import 'package:flutter_scene/src/skin.dart';
 import 'package:flutter_scene/src/camera.dart';
 import 'package:flutter_scene/src/components/camera_component.dart';
 import 'package:flutter_scene/src/components/directional_light_component.dart';
@@ -639,9 +640,19 @@ class RenderScene {
   /// Every registered render item, in no particular order.
   final List<RenderItem> items = [];
 
-  /// Whether the frame being ticked re-presents its previous image, so the
-  /// pre-pass skips per-frame GPU uploads nothing will draw.
-  bool holdingFrame = false;
+  /// Skins whose joint matrices this frame's pre-pass computed but has not
+  /// uploaded yet (see [flushJointUploads]).
+  final Set<Skin> pendingJointUploads = {};
+
+  /// Uploads the pending joint matrices. The scene calls this only once it
+  /// knows the frame draws, so a frame that re-presents its previous image
+  /// never waits on the uploads (each is a synchronous submit on Vulkan).
+  void flushJointUploads() {
+    for (final skin in pendingJointUploads) {
+      skin.flushJointsUpload();
+    }
+    pendingJointUploads.clear();
+  }
 
   /// The directional lights contributed by mounted
   /// [DirectionalLightComponent]s, in registration order.
