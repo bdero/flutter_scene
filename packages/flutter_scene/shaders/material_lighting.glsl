@@ -11,7 +11,7 @@
 // MaterialInputs struct (material_inputs.glsl), and pbr.glsl + texture.glsl.
 //
 // FLUTTER_SCENE_LEAN_LIGHTING compiles out the features a scene can leave off
-// (irradiance field, fog, rect area lights, environment cross-fade, parallax
+// (irradiance field, rect area lights, environment cross-fade, parallax
 // box reflections, screen-space occlusion and its bent-cone specular term,
 // point-light shadows). Even unused, they size the register allocation, and
 // on mobile GPUs the full program spills. The engine selects the lean entries
@@ -1162,7 +1162,7 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // reflection, depth of field and bloom passes turn into NaN or max blobs.
   out_color = min(out_color, vec3(kMediumpFloatMax));
   highp vec3 sky_fog_color = fog.color.rgb;
-#if !defined(FLUTTER_SCENE_CUSTOM_AMBIENT) && !defined(FLUTTER_SCENE_LEAN_LIGHTING)
+#if !defined(FLUTTER_SCENE_CUSTOM_AMBIENT)
   if (fog.params0.y > 0.5 && fog.params0.w > 0.0) {
     // Sample the sharpest prefiltered level: the fog color should match the
     // crisp skybox as closely as the environment resolution allows, so avoid
@@ -1187,15 +1187,8 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   // LightingResult if a physical material ever needs hooks.
   return ApplyFog(composite, sky_fog_color);
 #else
-#ifdef FLUTTER_SCENE_LEAN_LIGHTING
-  highp vec4 lean_color = vec4(out_color, 1.0) * alpha;
-  // Keeps FogInfo bound to its own slot on every backend; never taken.
-  if (fog.params0.y > 1e30) {
-    lean_color.rgb += sky_fog_color;
-  }
-  return lean_color;
-#else
+  // Fog stays in the lean entries: it runs after the lighting, when little is
+  // still live, so it barely adds to the register allocation.
   return ApplyFog(vec4(out_color, 1.0) * alpha, sky_fog_color);
-#endif
 #endif
 }

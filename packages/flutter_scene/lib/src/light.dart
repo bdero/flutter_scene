@@ -1018,7 +1018,6 @@ bool debugDisableLeanLighting = false;
 @internal
 bool leanLightingAllowed({
   required bool irradianceField,
-  required Fog? fog,
   required int rectAreaLightCount,
   required bool environmentBlending,
   required bool ambientOcclusion,
@@ -1027,7 +1026,6 @@ bool leanLightingAllowed({
     shadingTierOverride ??
     (!debugDisableLeanLighting &&
         !irradianceField &&
-        (fog == null || !fog.enabled || fog.mode == FogMode.none) &&
         rectAreaLightCount == 0 &&
         !environmentBlending &&
         !ambientOcclusion &&
@@ -1114,7 +1112,6 @@ class Lighting {
   @internal
   bool get allowsLeanShading => leanLightingAllowed(
     irradianceField: irradianceField != null,
-    fog: fog,
     rectAreaLightCount: rectAreaLightCount,
     environmentBlending: environmentMapB != null && environmentBlend > 0.0,
     ambientOcclusion: ssaoMap != null || ssaoIndirectLight,
