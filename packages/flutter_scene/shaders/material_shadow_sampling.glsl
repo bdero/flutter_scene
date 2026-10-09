@@ -19,7 +19,7 @@ highp float ShadowTapDepth(vec2 p, float ca, float sa, highp float radius,
                    vec2(1.0 - frag_info.shadow_texel_size));
   highp vec2 atlas_uv = vec2((float(cascade) + cuv.x) * inv_count, cuv.y);
   atlas_uv.y = 1.0 - atlas_uv.y;
-  return texture(shadow_map, atlas_uv).r;
+  return textureLod(shadow_map, atlas_uv, 0.0).r;
 }
 
 float ShadowTap(vec2 p, float ca, float sa, highp float radius, highp vec2 uv,
@@ -35,7 +35,7 @@ float ShadowTap(vec2 p, float ca, float sa, highp float radius, highp vec2 uv,
   // is v=0, so flip V to sample the matching row. This is intrinsic to the
   // top-down storage (not a backend Y-flip workaround), so it is unconditional.
   atlas_uv.y = 1.0 - atlas_uv.y;
-  highp float caster_depth = texture(shadow_map, atlas_uv).r;
+  highp float caster_depth = textureLod(shadow_map, atlas_uv, 0.0).r;
   return receiver_depth <= caster_depth ? 1.0 : 0.0;
 }
 
@@ -56,10 +56,10 @@ float ShadowTapBilinear(vec2 p, highp float radius, highp vec2 uv, int cascade,
   highp vec2 step_uv = vec2(frag_info.shadow_texel_size * inv_count,
                       frag_info.shadow_texel_size);
 
-  highp float d00 = texture(shadow_map, atlas_uv00).r;
-  highp float d10 = texture(shadow_map, atlas_uv00 + vec2(step_uv.x, 0.0)).r;
-  highp float d01 = texture(shadow_map, atlas_uv00 + vec2(0.0, step_uv.y)).r;
-  highp float d11 = texture(shadow_map, atlas_uv00 + step_uv).r;
+  highp float d00 = textureLod(shadow_map, atlas_uv00, 0.0).r;
+  highp float d10 = textureLod(shadow_map, atlas_uv00 + vec2(step_uv.x, 0.0), 0.0).r;
+  highp float d01 = textureLod(shadow_map, atlas_uv00 + vec2(0.0, step_uv.y), 0.0).r;
+  highp float d11 = textureLod(shadow_map, atlas_uv00 + step_uv, 0.0).r;
 
   float s00 = receiver_depth <= d00 ? 1.0 : 0.0;
   float s10 = receiver_depth <= d10 ? 1.0 : 0.0;
@@ -305,7 +305,7 @@ highp vec4 FetchPunctualTexel(int light_index, int col) {
   // 8 texels per light row: 0.0625 = 0.5 / 8 centers the first column.
   highp vec2 uv = vec2((float(col) + 0.5) * 0.125,
                  (float(light_index) + 0.5) / frag_info.punctual_dims.x);
-  return texture(punctual_lights, uv);
+  return textureLod(punctual_lights, uv, 0.0);
 }
 
 // Reads the full texel of entry `j` in the light-index texture (`j` decomposed
@@ -317,7 +317,7 @@ highp vec4 FetchPunctualEntry(int j) {
   highp float fj = float(j);
   highp vec2 uv = vec2((mod(fj, width) + 0.5) / width,
                  (floor(fj / width) + 0.5) / frag_info.punctual_dims.z);
-  return texture(punctual_index, uv);
+  return textureLod(punctual_index, uv, 0.0);
 }
 
 // Reads entry `j` of the per-object light-index buffer (or a froxel record),
@@ -374,7 +374,7 @@ float SpotShadowTap(highp vec2 uv, highp float tile, highp float total,
                     highp float receiver) {
   highp vec2 atlas_uv = vec2((tile + clamp(uv.x, 0.0, 1.0)) / total,
                        1.0 - clamp(uv.y, 0.0, 1.0));
-  return receiver <= texture(shadow_map, atlas_uv).r ? 1.0 : 0.0;
+  return receiver <= textureLod(shadow_map, atlas_uv, 0.0).r ? 1.0 : 0.0;
 }
 
 // Number of ring taps around the center for the spot-shadow PCF.
@@ -432,7 +432,7 @@ float PointShadowTap(highp vec2 uv, highp float tile, highp float qx,
   highp vec2 cuv = clamp(uv, vec2(half_texel), vec2(1.0 - half_texel));
   highp vec2 tile_uv = vec2(qx, 1.0 - qy) * 0.5 + cuv * 0.5;
   highp vec2 atlas_uv = vec2((tile + tile_uv.x) / total, 1.0 - tile_uv.y);
-  return receiver <= texture(shadow_map, atlas_uv).r ? 1.0 : 0.0;
+  return receiver <= textureLod(shadow_map, atlas_uv, 0.0).r ? 1.0 : 0.0;
 }
 
 // Point-shadow visibility (1 lit .. 0 shadowed) for the shadow-casting point
