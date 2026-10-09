@@ -2034,7 +2034,7 @@ base class Scene implements SceneGraph {
   /// longer than the budget still runs whole.
   ///
   /// Lit materials draw with a lean shader while the scene uses none of the
-  /// features it leaves out (fog, ambient occlusion, rect area lights, the
+  /// features it leaves out (ambient occlusion, rect area lights, the
   /// irradiance field, environment cross-fades, parallax reflection boxes, and
   /// point-light shadows), and with the full shader otherwise. Set
   /// [allShadingTiers] to compile both now, so turning one of those features

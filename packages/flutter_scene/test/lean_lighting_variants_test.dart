@@ -51,6 +51,15 @@ Map<String, String> _interfaceOf(fb.BackendShader backend) => {
 };
 
 void main() {
+  test('the lean entries keep fog', () {
+    // Fog runs after the lighting, so the lean tier applies it rather than
+    // falling back to the full entries in every fogged scene.
+    final lighting = File('shaders/material_lighting.glsl').readAsStringSync();
+    final tail = lighting.substring(lighting.lastIndexOf('sky_fog_color ='));
+    expect(tail, isNot(contains('#ifdef FLUTTER_SCENE_LEAN_LIGHTING')));
+    expect(tail, contains('return ApplyFog('));
+  });
+
   test('every standard entry has a lean twin', () {
     final manifest =
         jsonDecode(File('shaders/base.shaderbundle.json').readAsStringSync())

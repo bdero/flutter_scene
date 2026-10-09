@@ -282,8 +282,8 @@ class SceneView extends StatefulWidget {
   final bool warmUp;
 
   /// With [warmUp], also compile the lit shader tier the scene is not using
-  /// yet (see [Scene.warmUp]'s `allShadingTiers`), so turning fog, ambient
-  /// occlusion, or another tier-switching feature on or off later does not
+  /// yet (see [Scene.warmUp]'s `allShadingTiers`), so turning ambient
+  /// occlusion or another tier-switching feature on or off later does not
   /// stall a frame. Lengthens warm-up.
   final bool warmUpAllShadingTiers;
 

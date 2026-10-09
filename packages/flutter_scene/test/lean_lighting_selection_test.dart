@@ -1,21 +1,18 @@
 // Covers when a frame may draw with the lean lit entries: only while every
 // feature they compile out is off, and never under the debug override.
 
-import 'package:flutter_scene/scene.dart';
 import 'package:flutter_scene/src/light.dart'
     show debugDisableLeanLighting, leanLightingAllowed, shadingTierOverride;
 import 'package:flutter_test/flutter_test.dart';
 
 bool _allowed({
   bool irradianceField = false,
-  Fog? fog,
   int rectAreaLightCount = 0,
   bool environmentBlending = false,
   bool ambientOcclusion = false,
   int pointShadowTileCount = 0,
 }) => leanLightingAllowed(
   irradianceField: irradianceField,
-  fog: fog,
   rectAreaLightCount: rectAreaLightCount,
   environmentBlending: environmentBlending,
   ambientOcclusion: ambientOcclusion,
@@ -25,19 +22,6 @@ bool _allowed({
 void main() {
   test('a frame with none of the compiled-out features allows lean', () {
     expect(_allowed(), isTrue);
-  });
-
-  test('fog only blocks lean while it applies', () {
-    expect(_allowed(fog: Fog()), isTrue);
-    expect(
-      _allowed(
-        fog: Fog()
-          ..enabled = true
-          ..mode = FogMode.none,
-      ),
-      isTrue,
-    );
-    expect(_allowed(fog: Fog()..enabled = true), isFalse);
   });
 
   test('each compiled-out feature blocks lean', () {
@@ -57,7 +41,7 @@ void main() {
   test('a warm-up override forces either tier', () {
     addTearDown(() => shadingTierOverride = null);
     shadingTierOverride = true;
-    expect(_allowed(fog: Fog()..enabled = true), isTrue);
+    expect(_allowed(ambientOcclusion: true), isTrue);
     shadingTierOverride = false;
     expect(_allowed(), isFalse);
   });
