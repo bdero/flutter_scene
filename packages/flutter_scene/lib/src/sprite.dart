@@ -10,7 +10,7 @@ import 'package:vector_math/vector_math.dart';
 /// A `Sprite` wraps a one-instance [BillboardGeometry] and a [SpriteMaterial]
 /// into a [Mesh] you assign to a node (`node.mesh = sprite.mesh`). The owning
 /// node's transform positions and scales it in the world; [width]/[height]
-/// are the quad's size in world units before that transform. Mutating any
+/// are the quad's size before that transform. Mutating any
 /// property updates the quad in place.
 ///
 /// For many sprites (impostor forests, particle-like effects), drive a
@@ -51,14 +51,14 @@ class Sprite {
   Vector4 _color;
   double _rotation;
 
-  /// Quad width in world units (before the node transform).
+  /// Quad width before the node transform.
   double get width => _width;
   set width(double value) {
     _width = value;
     _refresh();
   }
 
-  /// Quad height in world units (before the node transform).
+  /// Quad height before the node transform.
   double get height => _height;
   set height(double value) {
     _height = value;
