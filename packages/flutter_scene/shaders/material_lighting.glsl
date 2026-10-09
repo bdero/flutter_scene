@@ -1190,7 +1190,12 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
   return ApplyFog(composite, sky_fog_color);
 #else
 #ifdef FLUTTER_SCENE_LEAN_LIGHTING
-  return vec4(out_color, 1.0) * alpha;
+  highp vec4 lean_color = vec4(out_color, 1.0) * alpha;
+  // Keeps FogInfo bound to its own slot on every backend; never taken.
+  if (fog.params0.y > 1e30) {
+    lean_color.rgb += sky_fog_color;
+  }
+  return lean_color;
 #else
   return ApplyFog(vec4(out_color, 1.0) * alpha, sky_fog_color);
 #endif
