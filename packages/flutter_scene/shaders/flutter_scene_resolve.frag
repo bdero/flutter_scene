@@ -170,6 +170,10 @@ float GrainNoise(vec3 p) {
 // Alpha below which a pixel's color counts as light added over the content
 // behind the scene rather than as a surface covering it. Additive draws and
 // bloom leave light at zero alpha, which coverage alone cannot carry.
+// TODO(additive-coverage): additive light over a pixel covered above this
+// floor (fire inside a faint smoke sprite) folds into the surface and caps at
+// its alpha. Drawing additive translucents into their own target when the
+// background is transparent would keep that light separate.
 const float kCoverageFloor = 1.0 / 64.0;
 // Alpha at or above which a pixel hides everything behind the scene.
 const float kOpaque = 0.999;
