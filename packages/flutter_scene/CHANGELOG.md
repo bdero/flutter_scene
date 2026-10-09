@@ -1,7 +1,10 @@
-## 0.24.2
+## 0.24.3
 
 * A frame that re-presents its previous image while the GPU catches up no longer uploads joint matrices or light data first. On Vulkan each upload waited for the GPU backlog, so a GPU-bound scene with skinned meshes or moving lights blocked the UI thread for about a frame of GPU time (230 ms down to 40 ms at p95 on a Galaxy A16).
 * Meshes lit by point and spot lights batch into instanced draws again. Every item got its own light list, so any ranged light split every batch; items with identical lists now share one, and froxel-lit views ignore the lists.
+
+## 0.24.2
+
 * `Scene.dispose` drops the render targets and history textures a scene keeps across frames, so they no longer wait on the scene object being collected. A disposed scene throws a `StateError` on render.
 * `SceneView.declarative` disposes the scene it owns when it unmounts.
 * Temporal anti-aliasing's `objectMotion` works on the web. Its velocity shaders failed to link on WebGL2, so every frame threw.
