@@ -66,8 +66,8 @@ class SmokeScene {
   /// 60 Hz cadence, and the smoke lanes render well below that.
   final int warmupFrames;
 
-  /// Whether the scene geometry completely covers the viewport, meaning corners
-  /// are geometry rather than the background clear color.
+  /// Whether drawn content reaches the corners, meaning they are geometry or
+  /// glow (bloom over the transparent background) rather than the clear color.
   final bool fullCoverage;
 
   /// When set, the scene is probed for depth conflicts (z-fighting) after the
@@ -1501,7 +1501,8 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   // Lens flares off the bloom chain: a single intense emissive card in a
   // dim scene must bloom and cast a ghost chain through the screen center
   // plus a halo ring. Guards the whole bloom pyramid (its only golden) and
-  // the flare ghost/halo/dispersion math across backends.
+  // the flare ghost/halo/dispersion math across backends. The glow carries
+  // over the transparent background to the corners.
   SmokeScene('lens_flare', () {
     final scene = Scene();
     scene.environmentIntensity = 0.05;
@@ -1540,7 +1541,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
         target: vm.Vector3(-0.1, 0.55, 0),
       ),
     );
-  }),
+  }, fullCoverage: true),
   // Low-roughness metallic: sensitive to IBL/reflections breaking (would go
   // dark or flat).
   SmokeScene('pbr_metallic', () {
