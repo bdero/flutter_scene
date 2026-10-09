@@ -20,9 +20,6 @@ composite;
 in vec2 v_uv;
 out vec4 frag_color;
 
-// Un-premultiplies a sampled premultiplied-alpha color.
-vec3 Unpremultiply(vec4 c) { return c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
-
 void main() {
   vec4 refl = texture(ssr_reflection, v_uv);
 
@@ -34,9 +31,8 @@ void main() {
   }
 
   vec4 base = texture(input_color, v_uv);
-  vec3 base_rgb = Unpremultiply(base);
-  // Premultiplied over: base * (1 - strength) + reflected*strength (refl.rgb
-  // is already the reflected color premultiplied by strength).
-  vec3 out_rgb = base_rgb * (1.0 - refl.a) + refl.rgb;
-  frag_color = vec4(out_rgb * base.a, base.a);
+  // Premultiplied over within the surface's coverage: base * (1 - strength) +
+  // reflected * strength (refl.rgb is already premultiplied by strength).
+  // Staying premultiplied lets light at zero alpha pass through.
+  frag_color = vec4(base.rgb * (1.0 - refl.a) + refl.rgb * base.a, base.a);
 }

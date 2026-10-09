@@ -53,11 +53,16 @@ void main() {
   // be unpremultiplied before recombining and repremultiplied after, or
   // coverage edges fringe with alpha-weighted color.
   vec4 center_tap = texture(input_color, v_uv + offset);
-  vec3 color = vec3(
-      Unpremultiply(texture(input_color, v_uv + offset + chroma_offset)).r,
-      Unpremultiply(center_tap).g,
-      Unpremultiply(texture(input_color, v_uv + offset - chroma_offset)).b);
+  vec4 red_tap = texture(input_color, v_uv + offset + chroma_offset);
+  vec4 blue_tap = texture(input_color, v_uv + offset - chroma_offset);
+  vec3 color = vec3(Unpremultiply(red_tap).r, Unpremultiply(center_tap).g,
+                    Unpremultiply(blue_tap).b);
   float alpha = center_tap.a;
 
-  frag_color = vec4(color * alpha, alpha);
+  // Light at zero alpha (bloom and additive draws over a transparent
+  // background) has no coverage to unpremultiply by, so it recombines as is,
+  // fading over near zero alpha like the resolve pass.
+  vec3 light = vec3(red_tap.r, center_tap.g, blue_tap.b);
+  float coverage = clamp(alpha * 64.0, 0.0, 1.0);
+  frag_color = vec4(mix(light, color * alpha, coverage), alpha);
 }

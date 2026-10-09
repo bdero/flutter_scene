@@ -1,6 +1,8 @@
 // Bloom prefilter: extracts the bright part of the scene color with a
-// soft-knee threshold, writing it into the first bloom mip. Works on
-// un-premultiplied linear HDR radiance.
+// soft-knee threshold, writing it into the first bloom mip. Works on the
+// premultiplied linear HDR color, the light each pixel actually holds, so
+// light at zero alpha (additive draws over a transparent background) blooms
+// too.
 //
 // The first mip can be many times smaller than the scene, so each texel
 // averages its whole source footprint as an exact box: every source texel the
@@ -45,8 +47,7 @@ vec3 Threshold(vec2 uv) {
   // the contribution below Inf/Inf = NaN. The floor comes first so a NaN maps
   // to 0; min(NaN, x) returns x on most GPUs, which would bloom a NaN pixel at
   // full strength across the screen.
-  vec3 color = s.a > 0.0 ? min(max(s.rgb / s.a, vec3(0.0)), vec3(65504.0))
-                         : vec3(0.0);
+  vec3 color = min(max(s.rgb, vec3(0.0)), vec3(65504.0));
   if (threshold_info.apply_threshold < 0.5) {
     return color;
   }
