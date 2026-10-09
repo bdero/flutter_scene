@@ -1,5 +1,7 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'package:flutter_scene/src/render/depth_raster.dart';
@@ -10,6 +12,18 @@ import 'package:flutter_scene/src/gpu/render_pass_compat.dart';
 import 'package:flutter_scene/src/shaders.dart';
 import 'package:flutter_scene/src/render/frame_transients.dart';
 import 'package:flutter_scene/src/render/uniform_slots.dart';
+
+/// The factor a node's [transform] applies to billboard sizes, its smallest
+/// basis-vector length. Local bounds padded by an instance's size stay
+/// conservative under it on every axis.
+@visibleForTesting
+double billboardSizeScale(vm.Matrix4 transform) {
+  final s = transform.storage;
+  final x = s[0] * s[0] + s[1] * s[1] + s[2] * s[2];
+  final y = s[4] * s[4] + s[5] * s[5] + s[6] * s[6];
+  final z = s[8] * s[8] + s[9] * s[9] + s[10] * s[10];
+  return math.sqrt(math.min(x, math.min(y, z)));
+}
 
 /// How a billboard quad orients itself toward the camera.
 /// {@category Geometry}
@@ -33,9 +47,11 @@ enum BillboardFacing {
 ///
 /// Each instance carries a center, a size, an in-plane rotation, a linear
 /// RGBA color, a flipbook frame, and a velocity (used only by
-/// [BillboardFacing.velocityStretched]). The center is in the geometry's
-/// local space; the owning node's transform places and orients the whole
-/// batch. Pair it with a `SpriteMaterial` (or any material whose fragment
+/// [BillboardFacing.velocityStretched]). Centers and sizes are in the
+/// geometry's local space, so the owning node's transform places, orients,
+/// and scales the whole batch. Under a non-uniform scale, sizes take the
+/// smallest axis scale, so quads stay square to the camera and stretching a
+/// node to widen a spawn area does not enlarge its sprites. Pair it with a `SpriteMaterial` (or any material whose fragment
 /// shader reads `v_uv` and `v_color`).
 ///
 /// Write instance data into [instanceData] (a flat [Float32List] of
@@ -87,7 +103,7 @@ class BillboardGeometry extends Geometry {
   /// the nearest cell, so low-rate flipbooks still animate smoothly.
   bool flipbookBlend = false;
 
-  /// World units of extra length added per unit of speed in
+  /// Extra length added per unit of world-space speed in
   /// [BillboardFacing.velocityStretched].
   double velocityStretch = 0.0;
 
@@ -217,7 +233,7 @@ class BillboardGeometry extends Geometry {
     frameInfo[32] = cameraPosition.x;
     frameInfo[33] = cameraPosition.y;
     frameInfo[34] = cameraPosition.z;
-    // [35] padding
+    frameInfo[35] = billboardSizeScale(modelTransform);
     frameInfo[36] = worldUp.x;
     frameInfo[37] = worldUp.y;
     frameInfo[38] = worldUp.z;

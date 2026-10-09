@@ -1,7 +1,8 @@
 uniform FrameInfo {
   mat4 camera_transform; // view-projection
   mat4 model_transform;  // emitter / node world transform
-  vec4 camera_position;  // world-space camera position (xyz)
+  vec4 camera_position;  // xyz: world-space camera position.
+                         // w: the node's scale, applied to instance sizes.
   vec4 world_up;         // xyz: world up axis for the billboard basis.
                          // w: 1 to crossfade adjacent flipbook frames.
   // x: facing mode (0 spherical, 1 axis-locked, 2 velocity-stretched).
@@ -21,7 +22,7 @@ in vec2 quad_uv;
 
 // Per-instance attributes (slot 1).
 in vec3 i_center;   // position in the geometry's local space
-in vec2 i_size;     // width/height in world units
+in vec2 i_size;     // width/height in the geometry's local units
 in float i_rotation; // in-plane rotation, radians
 in vec4 i_color;    // linear RGBA tint
 in float i_frame;   // flipbook frame index
@@ -53,7 +54,8 @@ void main() {
 
   vec3 right;
   vec3 up;
-  vec2 scaled = corner * i_size;
+  vec2 size = i_size * frame_info.camera_position.w;
+  vec2 scaled = corner * size;
 
   if (facing == kVelocityStretched) {
     vec3 world_vel = mat3(frame_info.model_transform) * i_velocity;
@@ -68,7 +70,7 @@ void main() {
           ? right / rl
           : normalize(cross(up, world_up));
       // Stretch the long axis (corner.y) by speed; rotation is ignored here.
-      scaled = vec2(corner.x * i_size.x, corner.y * (i_size.y + speed * stretch));
+      scaled = vec2(corner.x * size.x, corner.y * (size.y + speed * stretch));
     } else {
       vec3 fwd = to_eye;
       right = normalize(cross(world_up, fwd));

@@ -1,6 +1,7 @@
 ## 0.24.4
 
 * Additive sprites and `.fmat` materials, bloom, and lens flares show over the content behind a scene with a transparent background, adding light to it. They were discarded wherever nothing opaque was drawn.
+* Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis. A shrunken batch near the frame edge is no longer culled while still on screen.
 
 ## 0.24.3
 

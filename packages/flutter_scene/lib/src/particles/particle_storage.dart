@@ -61,7 +61,8 @@ class ParticleStorage {
   /// In-plane rotation (radians) and its rate of change (radians/second).
   final Float32List rotation, angularVelocity;
 
-  /// Current rendered size (world units) and the size set at spawn, which
+  /// Current rendered size (the emitter node's local units, so its scale
+  /// applies) and the size set at spawn, which
   /// size-over-life scales.
   final Float32List size, baseSize;
 
