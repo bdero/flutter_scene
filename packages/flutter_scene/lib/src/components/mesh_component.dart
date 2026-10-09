@@ -211,17 +211,16 @@ class MeshComponent extends Component {
     final transformChanged = worldTransformVersion != _worldTransformVersion;
     final windingFlipped = node.windingFlipped;
 
-    // A skinned node uploads its joint matrices once per frame. The texture
+    // A skinned node computes its joint matrices once per frame. The texture
     // rides on the render items, not the geometry, so nodes sharing one
     // skinned geometry (clones) each draw with their own skeleton; the
-    // render passes apply it to the geometry per draw. A held frame draws
-    // nothing, so it keeps the last upload (on Vulkan an upload is a
-    // synchronous submit that waits for the GPU backlog).
+    // render passes apply it to the geometry per draw. The upload waits for
+    // the scene to commit to drawing the frame (RenderScene.flushJointUploads).
     final skin = node.skin;
     final renderScene = node.internalRenderScene;
-    final uploadJoints = skin != null && !(renderScene?.holdingFrame ?? false);
-    final jointsTexture = uploadJoints ? skin.getJointsTexture() : null;
+    final jointsTexture = skin?.getJointsTexture();
     final jointsTextureWidth = skin?.getTextureWidth() ?? 0;
+    if (skin != null) renderScene?.pendingJointUploads.add(skin);
 
     final frustumCulled = node.frustumCulled;
     final layers = node.layers;
@@ -266,7 +265,7 @@ class MeshComponent extends Component {
       item.shadowCastingMode = effectiveShadowMode;
       item.primitiveCastsShadow = primitive.castsShadow;
       item.highlightColor = highlightColor;
-      if (uploadJoints) {
+      if (skin != null) {
         item.previousJointsTexture = skin.getPreviousJointsTexture();
         item.jointsTexture = jointsTexture;
         item.jointsTextureWidth = jointsTextureWidth;
