@@ -4,6 +4,7 @@
 * Meshes lit by point and spot lights batch into instanced draws again. Every item got its own light list, so any ranged light split every batch; items with identical lists now share one, and froxel-lit views ignore the lists.
 * Lit materials draw with a lean shader when the scene uses no irradiance field, rect area lights, environment cross-fade, parallax reflection box, ambient occlusion, or point-light shadows. It stops the full shader spilling registers on mobile GPUs (frames 1.5 to 1.8x faster on a Mali-G57) and adds about 250 KB compressed to each platform's shader bundle.
 * `Scene.warmUp` takes `allShadingTiers` (and `SceneView` takes `warmUpAllShadingTiers`), which also compiles the shader tier the scene is not using, so turning one of those features on or off later does not stall a frame.
+* `Camera.right`, `Camera.horizontalForward`, and `Camera.horizontalRight`, plus `Node.forward`, `Node.right`, and `Node.up`, give the world-space basis for movement and aiming without deriving it by hand.
 
 ## 0.24.2
 
