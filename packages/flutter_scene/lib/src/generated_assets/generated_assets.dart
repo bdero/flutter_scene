@@ -137,7 +137,10 @@ enum GeneratedAssetFamily {
   scene('scene'),
   material('material'),
   texture('texture'),
-  shaderBundle('shaderbundle');
+  shaderBundle('shaderbundle'),
+
+  /// A bundle's WGSL sidecar, for the WebGPU web backend.
+  wgsl('wgsl');
 
   const GeneratedAssetFamily(this.prefix);
 
