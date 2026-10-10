@@ -1129,19 +1129,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
   SmokeScene('area_light', () {
     final scene = Scene();
     scene.environmentIntensity = 0.05;
-    // Aims a node's local +Z (the panel emission axis) at [target].
-    vm.Matrix4 aim(vm.Vector3 position, vm.Vector3 target) {
-      final forward = (target - position).normalized();
-      final right = vm.Vector3(0, 1, 0).cross(forward)..normalize();
-      final up = forward.cross(right).normalized();
-      return vm.Matrix4.columns(
-        vm.Vector4(right.x, right.y, right.z, 0),
-        vm.Vector4(up.x, up.y, up.z, 0),
-        vm.Vector4(forward.x, forward.y, forward.z, 0),
-        vm.Vector4(position.x, position.y, position.z, 1),
-      );
-    }
-
+    // Each panel emits along its node's local -Z, so lookAtFrom aims it.
     final floor = PhysicallyBasedMaterial()
       ..baseColorFactor = vm.Vector4(0.08, 0.08, 0.09, 1.0)
       ..metallicFactor = 0.3
@@ -1169,10 +1157,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             ),
           ),
         )
-        ..localTransform = aim(
-          vm.Vector3(-1.4, 1.3, 1.0),
-          vm.Vector3(0, 0.45, 0),
-        ),
+        ..lookAtFrom(vm.Vector3(-1.4, 1.3, 1.0), vm.Vector3(0, 0.45, 0)),
     );
     scene.add(
       Node()
@@ -1186,10 +1171,7 @@ final List<SmokeScene> kSmokeScenes = <SmokeScene>[
             ),
           ),
         )
-        ..localTransform = aim(
-          vm.Vector3(1.5, 1.1, -0.6),
-          vm.Vector3(0, 0.45, 0),
-        ),
+        ..lookAtFrom(vm.Vector3(1.5, 1.1, -0.6), vm.Vector3(0, 0.45, 0)),
     );
     return (
       scene: scene,
