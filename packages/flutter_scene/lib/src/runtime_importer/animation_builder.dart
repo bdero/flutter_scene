@@ -17,7 +17,6 @@ Animation buildAnimation({
   required List<GltfBufferView> bufferViews,
   required Uint8List bufferData,
   required List<Node> engineNodes,
-  required GltfCoordinatePolicy coordinatePolicy,
 }) {
   final channels = <AnimationChannel>[];
   for (final channel in gltfAnimation.channels) {
@@ -55,13 +54,10 @@ Animation buildAnimation({
             : sourceValues.length ~/ (times.length * (isCubic ? 3 : 1)),
       _ => 3,
     };
-    final values = coordinatePolicy.convertAnimationValues(
-      selectGltfKeyframeValues(
-        sourceValues,
-        componentCount: componentCount,
-        cubicSpline: isCubic,
-      ),
-      targetPath: channel.targetPath,
+    final values = selectGltfKeyframeValues(
+      sourceValues,
+      componentCount: componentCount,
+      cubicSpline: isCubic,
     );
 
     switch (channel.targetPath) {

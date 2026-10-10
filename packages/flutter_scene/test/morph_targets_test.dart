@@ -134,14 +134,13 @@ _syntheticMorphFixture() {
   );
 }
 
-MorphTargetData _dataFromFixture({GltfCoordinatePolicy? policy}) {
+MorphTargetData _dataFromFixture() {
   final fixture = _syntheticMorphFixture();
   final packed = packGltfPrimitive(
     primitive: fixture.primitive,
     accessors: fixture.accessors,
     bufferViews: fixture.bufferViews,
     bufferData: fixture.bufferData,
-    coordinatePolicy: policy ?? GltfCoordinatePolicy.runtimeBoundary,
   );
   final morph = packed.morphTargets!;
   return MorphTargetData(
@@ -162,7 +161,6 @@ void main() {
         accessors: fixture.accessors,
         bufferViews: fixture.bufferViews,
         bufferData: fixture.bufferData,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       );
       final morph = packed.morphTargets!;
       expect(morph.targetCount, 2);
@@ -187,23 +185,19 @@ void main() {
       expect(morph.tangentDeltas, isNull);
     });
 
-    test(
-      'a native-baking policy preserves right-handed delta Z like the base vertices',
-      () {
-        final fixture = _syntheticMorphFixture();
-        final packed = packGltfPrimitive(
-          primitive: fixture.primitive,
-          accessors: fixture.accessors,
-          bufferViews: fixture.bufferViews,
-          bufferData: fixture.bufferData,
-          coordinatePolicy: GltfCoordinatePolicy.bakeNative,
-        );
-        final morph = packed.morphTargets!;
-        expect(morph.positionDeltas.sublist(3, 6), [0.5, 0, 0.25]);
-        expect(morph.positionDeltas.sublist(9, 12), [0, 0, 1]);
-        expect(morph.normalDeltas!.sublist(9, 12), [1, 0, -1]);
-      },
-    );
+    test('packing preserves right-handed delta Z like the base vertices', () {
+      final fixture = _syntheticMorphFixture();
+      final packed = packGltfPrimitive(
+        primitive: fixture.primitive,
+        accessors: fixture.accessors,
+        bufferViews: fixture.bufferViews,
+        bufferData: fixture.bufferData,
+      );
+      final morph = packed.morphTargets!;
+      expect(morph.positionDeltas.sublist(3, 6), [0.5, 0, 0.25]);
+      expect(morph.positionDeltas.sublist(9, 12), [0, 0, 1]);
+      expect(morph.normalDeltas!.sublist(9, 12), [1, 0, -1]);
+    });
 
     test('an unmorphed primitive packs no morph data', () {
       final fixture = _syntheticMorphFixture();
@@ -212,7 +206,6 @@ void main() {
         accessors: fixture.accessors,
         bufferViews: fixture.bufferViews,
         bufferData: fixture.bufferData,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       );
       expect(packed.morphTargets, isNull);
     });
@@ -304,7 +297,6 @@ void main() {
         accessors: doc.accessors,
         bufferViews: doc.bufferViews,
         bufferData: container.binaryChunk,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       );
       final morph = packed.morphTargets!;
       expect(morph.targetCount, 2);
@@ -319,7 +311,6 @@ void main() {
         bufferViews: doc.bufferViews,
         bufferData: container.binaryChunk,
         engineNodes: engineNodes,
-        coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
       );
       final channel = animation.channels.single;
       expect(channel.bindTarget.property, engine.AnimationProperty.weights);
@@ -345,7 +336,6 @@ void main() {
           accessors: doc.accessors,
           bufferViews: doc.bufferViews,
           bufferData: container.binaryChunk,
-          coordinatePolicy: GltfCoordinatePolicy.runtimeBoundary,
         );
         expect(packed.morphTargets!.targetCount, 1);
         expect(packed.morphTargets!.vertexCount, packed.vertexCount);
