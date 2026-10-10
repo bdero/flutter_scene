@@ -24,9 +24,7 @@ void applyFmatParameterOverrides(
 }) {
   for (final entry in properties.entries) {
     final name = entry.key;
-    if (name == 'depthBias' ||
-        name == 'depthLayer' ||
-        name == 'renderOrder') {
+    if (name == 'depthBias' || name == 'depthLayer' || name == 'renderOrder') {
       continue;
     }
     try {

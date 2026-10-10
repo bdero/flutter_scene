@@ -8,7 +8,7 @@
 * `.fscene` documents keep an `UnlitMaterial`'s `alphaMode`, so a translucent unlit material no longer reloads opaque.
 * Physical materials realized from a `.fscene` keep their `depthBias` and `depthLayer`.
 * Nodes added by a `.fscene` hot reload keep their shadow casting mode.
-* Update `flutter_scene-idioms` skill (v16) with render order and stacked translucent overlays.
+* Update `flutter_scene-idioms` skill (v17) with render order and stacked translucent overlays.
 
 ## 0.24.3
 
