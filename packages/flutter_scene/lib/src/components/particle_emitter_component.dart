@@ -57,10 +57,15 @@ class ParticleEmitterComponent extends MeshComponent {
   BillboardFacing get facing => _geometry.facing;
   set facing(BillboardFacing value) => _geometry.facing = value;
 
-  /// World units of extra length added per unit of speed when [facing] is
+  /// Extra length added per unit of world-space speed when [facing] is
   /// [BillboardFacing.velocityStretched].
   double get velocityStretch => _geometry.velocityStretch;
   set velocityStretch(double value) => _geometry.velocityStretch = value;
+
+  /// Whether particle sizes scale with the node (the default). When false,
+  /// sizes are in world units whatever the node's scale.
+  bool get scaleSizesWithNode => _geometry.scaleSizesWithNode;
+  set scaleSizesWithNode(bool value) => _geometry.scaleSizesWithNode = value;
 
   /// Flipbook atlas columns and rows for the material's texture. `1 x 1` (the
   /// default) samples the whole texture; pair a larger grid with a
