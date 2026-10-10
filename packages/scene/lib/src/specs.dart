@@ -698,6 +698,7 @@ class EnvironmentResource extends ResourceSpec {
     this.agxWhite = 16.29,
     this.agxContrast = 1.25,
     this.environmentRotationY = 0.0,
+    this.environmentMirrorZ = false,
     this.radianceCubeSize,
     this.skybox,
     this.skyEnvironment,
@@ -729,6 +730,13 @@ class EnvironmentResource extends ResourceSpec {
 
   /// Rotation around the world Y axis applied when sampling the environment.
   double environmentRotationY;
+
+  /// Whether the environment is mirrored across the XY plane before
+  /// [environmentRotationY] applies, so a world direction `(x, y, z)` samples
+  /// it at `(x, y, -z)`. Reverses an equirect's longitude. Documents written
+  /// before format version 6 migrate with this set, since their content is
+  /// reflected across Z and the environment image is not.
+  bool environmentMirrorZ;
 
   /// The reflection/ambient cubemap size, or null for the engine default.
   int? radianceCubeSize;

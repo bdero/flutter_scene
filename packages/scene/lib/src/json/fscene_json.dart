@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:vector_math/vector_math.dart';
 
@@ -45,9 +46,11 @@ final List<FsceneMigration> _builtInMigrations = [
   _migrateV4ToV5,
   // 5 -> 6 migrated the engine coordinate system from left-handed (+Z forward)
   // to right-handed (-Z forward). Version 5 documents reflect node transforms,
-  // bounds, and directional vectors across Z in the JSON manifest and flag
+  // bounds, and directional vectors across Z in the JSON manifest, flag
   // binary geometry, skin, and animation payloads with legacyLeftHanded so
-  // their buffers are reflected during realization.
+  // their buffers are reflected during realization, and mirror every
+  // environment resource (environmentMirrorZ) so image and procedural skies
+  // keep their place relative to the reflected content.
   _migrateV5ToV6,
 ];
 
@@ -123,6 +126,71 @@ void _migratePhysicsShapeV5ToV6(Object? shapeTagged) {
   }
 }
 
+const Set<String> _jointTypesV5 = {
+  'fixedJoint',
+  'sphericalJoint',
+  'revoluteJoint',
+  'prismaticJoint',
+  'genericJoint',
+};
+
+const Set<String> _emitterTypesV5 = {'particleEmitter', 'meshParticleEmitter'};
+
+/// The reflected form of a prefab override's tagged [value] at
+/// `components.<type>.<path...>`, or null when the property carries no Z
+/// component. Mirrors the property table in [_migrateComponentV5ToV6].
+// TODO(legacy-left-handed): an override replacing a whole collider `shape`
+// map is left as authored; its convexHull/triMesh payloads are not tagged.
+Map<String, dynamic>? _reflectOverrideValueV5ToV6(
+  String type,
+  List<String> path,
+  Map<dynamic, dynamic> value,
+) {
+  if (path.isEmpty) return null;
+  final prop = path.first;
+  bool vec3() => path.length == 1 && value['v3'] is List;
+  bool quat() => path.length == 1 && value['q'] is List;
+  bool mat4() => path.length == 1 && value['m4'] is List;
+  Map<String, dynamic> v3() => {'v3': _reflectVec3ZList(value['v3'] as List)};
+  Map<String, dynamic> q() => {'q': _reflectQuatXYList(value['q'] as List)};
+  Map<String, dynamic> m4() => {
+    'm4': _reflectMatrix4ZList(value['m4'] as List),
+  };
+  if (type == 'directionalLight' && prop == 'localDirection' && vec3()) {
+    return v3();
+  }
+  if (type == 'spotLight' && prop == 'direction' && vec3()) return v3();
+  if (type == 'collider' && prop == 'localPose' && mat4()) return m4();
+  if (type == 'physicsWorld' && prop == 'gravity' && vec3()) return v3();
+  if (type == 'characterController' && prop == 'up' && vec3()) return v3();
+  if (_jointTypesV5.contains(type)) {
+    const anchors = {
+      'localAnchorA',
+      'localAnchorB',
+      'localAxisA',
+      'localAxisB',
+    };
+    if (anchors.contains(prop) && vec3()) return v3();
+    if ((prop == 'localBasisA' || prop == 'localBasisB') && quat()) return q();
+  }
+  if (_emitterTypesV5.contains(type)) {
+    if (prop == 'gravity' && vec3()) return v3();
+    if (prop == 'shape' &&
+        path.length == 2 &&
+        path[1] == 'direction' &&
+        value['v3'] is List) {
+      return v3();
+    }
+    if (prop == 'modules' &&
+        path.length == 3 &&
+        (path[2] == 'acceleration' || path[2] == 'scroll') &&
+        value['v3'] is List) {
+      return v3();
+    }
+  }
+  return null;
+}
+
 void _migrateComponentV5ToV6(Object? comp) {
   if (comp is! Map) return;
   final type = comp['type'];
@@ -136,6 +204,10 @@ void _migrateComponentV5ToV6(Object? comp) {
     case 'collider':
       _reflectTaggedMatrix4Z(props, 'localPose');
       _migratePhysicsShapeV5ToV6(props['shape']);
+    case 'physicsWorld':
+      _reflectTaggedVec3Z(props, 'gravity');
+    case 'characterController':
+      _reflectTaggedVec3Z(props, 'up');
     case 'fixedJoint':
     case 'sphericalJoint':
     case 'revoluteJoint':
@@ -164,14 +236,6 @@ void _migrateComponentV5ToV6(Object? comp) {
           }
         }
       }
-  }
-}
-
-void _migrateSkyHolderV5ToV6(Object? holder) {
-  if (holder is! Map) return;
-  final source = holder['source'];
-  if (source is Map && source['sunDirection'] is List) {
-    source['sunDirection'] = _reflectVec3ZList(source['sunDirection'] as List);
   }
 }
 
@@ -204,8 +268,11 @@ Map<String, dynamic> _migrateV5ToV6(Map<String, dynamic> json) {
           }
         }
       } else if (kind == 'environment') {
-        _migrateSkyHolderV5ToV6(res['skybox']);
-        _migrateSkyHolderV5ToV6(res['skyEnvironment']);
+        // The shaders apply the environment transform to every environment
+        // and skybox sample, so one mirror covers equirect images, the studio
+        // default, and procedural skies (whose sun directions therefore stay
+        // as authored).
+        res['environmentMirrorZ'] = true;
       }
     }
   }
@@ -251,6 +318,16 @@ Map<String, dynamic> _migrateV5ToV6(Map<String, dynamic> json) {
               ov['value'] = {'q': _reflectQuatXYList(value['q'] as List)};
             } else if (path == 'transform.matrix' && value['m4'] is List) {
               ov['value'] = {'m4': _reflectMatrix4ZList(value['m4'] as List)};
+            } else if (path is String && path.startsWith('components.')) {
+              final parts = path.split('.');
+              if (parts.length >= 3) {
+                final reflected = _reflectOverrideValueV5ToV6(
+                  parts[1],
+                  parts.sublist(2),
+                  value,
+                );
+                if (reflected != null) ov['value'] = reflected;
+              }
             }
           }
         }
@@ -291,8 +368,17 @@ Map<String, dynamic> _migrateV5ToV6(Map<String, dynamic> json) {
   final editor = json['editor'];
   if (editor is Map) {
     final camera = editor['camera'];
-    if (camera is Map && camera['target'] is List) {
-      camera['target'] = _reflectVec3ZList(camera['target'] as List);
+    if (camera is Map) {
+      if (camera['target'] is List) {
+        camera['target'] = _reflectVec3ZList(camera['target'] as List);
+      }
+      // The orbit eye sits at target + (sin a, ., cos a) * r, so the
+      // reflected eye is azimuth pi - a (wrapped to [-pi, pi)).
+      if (camera['azimuth'] is num) {
+        var azimuth = math.pi - (camera['azimuth'] as num).toDouble();
+        azimuth -= 2 * math.pi * ((azimuth + math.pi) / (2 * math.pi)).floor();
+        camera['azimuth'] = azimuth;
+      }
     }
   }
 
@@ -590,6 +676,7 @@ Map<String, dynamic> _encodeLook({
   required double agxWhite,
   required double agxContrast,
   required double environmentRotationY,
+  required bool environmentMirrorZ,
   required int? radianceCubeSize,
   required SkyboxSpec? skybox,
   required SkyEnvironmentSpec? skyEnvironment,
@@ -621,6 +708,7 @@ Map<String, dynamic> _encodeLook({
   if (agxWhite != 16.29) 'agxWhite': agxWhite,
   if (agxContrast != 1.25) 'agxContrast': agxContrast,
   if (environmentRotationY != 0.0) 'environmentRotationY': environmentRotationY,
+  if (environmentMirrorZ) 'environmentMirrorZ': true,
   if (radianceCubeSize != null) 'radianceCubeSize': radianceCubeSize,
   if (overridesEffects) 'effects': _encodeEnvironmentEffects(effects),
   if (skybox != null)
@@ -1076,6 +1164,7 @@ Object _encodeResource(ResourceSpec r, String Function(LocalId) idKey) {
           agxWhite: r.agxWhite,
           agxContrast: r.agxContrast,
           environmentRotationY: r.environmentRotationY,
+          environmentMirrorZ: r.environmentMirrorZ,
           radianceCubeSize: r.radianceCubeSize,
           skybox: r.skybox,
           skyEnvironment: r.skyEnvironment,
@@ -1902,6 +1991,7 @@ const Set<String> _environmentKeys = {
   'agxWhite',
   'agxContrast',
   'environmentRotationY',
+  'environmentMirrorZ',
   'radianceCubeSize',
   'skybox',
   'skyEnvironment',
@@ -1973,6 +2063,7 @@ ResourceSpec _decodeResource(LocalId id, Map<String, dynamic> json) {
         agxWhite: _d(json['agxWhite'] ?? 16.29),
         agxContrast: _d(json['agxContrast'] ?? 1.25),
         environmentRotationY: _d(json['environmentRotationY'] ?? 0.0),
+        environmentMirrorZ: json['environmentMirrorZ'] == true,
         radianceCubeSize: (json['radianceCubeSize'] as num?)?.toInt(),
         skybox: _decodeSkybox(json['skybox']),
         skyEnvironment: _decodeSkyEnvironment(json['skyEnvironment']),
