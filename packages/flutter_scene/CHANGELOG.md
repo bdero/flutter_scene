@@ -4,6 +4,7 @@
 * Billboard, `Sprite`, and particle sizes scale with their node, so scaling an effect node scales its sprites along with their spacing and speed. A non-uniform scale sizes them by its smallest axis, ignoring an axis flattened to a disc. `BillboardGeometry.scaleSizesWithNode` (and `ParticleEmitterComponent.scaleSizesWithNode`) keeps sizes in world units instead.
 * A billboard batch on a scaled node is no longer culled while still on screen.
 * Shadowed and punctual-lit materials no longer run every shadow cascade and filter for every pixel on Windows (ANGLE). A shadowed scene on a ROG Ally went from 93 ms to 41 ms a frame.
+* Lit materials with shadows and point or spot lights draw faster on mobile GPUs. Shadow filters only run their full kernel at shadow edges, lights that miss a pixel are skipped, and unused emissive and occlusion reads are dropped. A shadowed, point-lit scene on OpenGL ES on a Galaxy A16 went from 7.9 to 10.8 fps.
 
 ## 0.24.3
 
