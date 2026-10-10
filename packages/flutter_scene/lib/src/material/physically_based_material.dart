@@ -1638,7 +1638,9 @@ class PhysicallyBasedMaterial extends Material {
     fragInfo[122] = roughnessFactor;
     fragInfo[123] = normalTexture != null ? 1.0 : 0.0;
     fragInfo[124] = normalScale;
-    fragInfo[125] = occlusionStrength;
+    // Without a texture the occlusion is 1 at any strength; 0 lets the shader
+    // skip the read.
+    fragInfo[125] = occlusionTexture != null ? occlusionStrength : 0.0;
     fragInfo[132] = alphaMode.index.toDouble();
     fragInfo[133] = alphaCutoff;
     fragInfo[138] = specularAntiAliasingVariance;
