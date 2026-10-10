@@ -274,6 +274,7 @@ class MeshComponent extends Component {
       item.morphWeights = morphWeights;
       // Grow the bounds before this frame culls against them.
       if (morphWeights != null) item.geometry.coverMorphWeights(morphWeights);
+      if (transformChanged) item.geometry.coverWorldTransform(worldTransform);
       if (staticShadowChanged) renderScene?.markStaticShadowDirty();
 
       final boundsVersion = item.geometry.localBoundsVersion;
