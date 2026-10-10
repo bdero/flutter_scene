@@ -143,9 +143,9 @@ abstract class AudioEngine extends Component {
       final transform = listenerNode.globalTransform;
       final position = transform.getTranslation();
       final rotation = transform.getRotation();
-      // Matches the camera convention. The listener node's local +Z is
+      // Matches the camera convention. The listener node's local -Z is
       // the facing direction and +Y is up.
-      final forward = rotation.transform(Vector3(0, 0, 1))..normalize();
+      final forward = rotation.transform(Vector3(0, 0, -1))..normalize();
       final up = rotation.transform(Vector3(0, 1, 0))..normalize();
       final velocity = _listenerVelocity.derive(
         listenerNode,

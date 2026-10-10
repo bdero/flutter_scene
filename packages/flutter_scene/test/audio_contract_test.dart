@@ -236,7 +236,8 @@ void main() {
 
       engine.frameSync(1 / 60, fallbackCamera: FakeCamera());
       expect(engine.listenerPosition, Vector3(5, 0, 0));
-      expect(engine.listenerForward!.z, closeTo(1.0, 1e-6));
+      // An unrotated listener faces local -Z, the camera convention.
+      expect(engine.listenerForward!.z, closeTo(-1.0, 1e-6));
       expect(engine.listenerUp!.y, closeTo(1.0, 1e-6));
 
       // Velocity is finite-differenced across frames.
