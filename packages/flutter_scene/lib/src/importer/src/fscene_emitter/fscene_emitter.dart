@@ -34,7 +34,7 @@ import '../../texture_roles.dart';
 import '../gltf/accessor.dart';
 import '../gltf/animation_pointer.dart';
 import '../gltf/bounds_baker.dart';
-import '../gltf/coordinate_policy.dart';
+import '../gltf/keyframe_values.dart';
 import '../../gltf_light_units.dart';
 import '../gltf/primitive_packer.dart';
 import '../gltf/types.dart';
@@ -187,14 +187,7 @@ SceneDocument buildSceneDocument(
   // payload chunk).
   final skinIds = [
     for (final skin in doc.skins)
-      _buildSkin(
-        document,
-        skin,
-        doc,
-        bufferData,
-        nodeIds,
-        GltfCoordinatePolicy.bakeNative,
-      ),
+      _buildSkin(document, skin, doc, bufferData, nodeIds),
   ];
 
   // Nodes.
@@ -265,14 +258,7 @@ SceneDocument buildSceneDocument(
 
   // Animations (one keyframe timeline/value payload per channel).
   for (final animation in doc.animations) {
-    _buildAnimation(
-      document,
-      animation,
-      doc,
-      bufferData,
-      nodeIds,
-      GltfCoordinatePolicy.bakeNative,
-    );
+    _buildAnimation(document, animation, doc, bufferData, nodeIds);
   }
 
   // `-split<N>` node-name hints split level-spanning meshes into grid-cell
@@ -288,14 +274,11 @@ LocalId _buildSkin(
   GltfDocument doc,
   Uint8List bufferData,
   List<LocalId> nodeIds,
-  GltfCoordinatePolicy coordinatePolicy,
 ) {
   final Float32List matrices;
   if (skin.inverseBindMatrices != null) {
     final accessor = doc.accessors[skin.inverseBindMatrices!];
-    matrices = coordinatePolicy.convertMatrices(
-      readAccessorAsFloat32(accessor, doc.bufferViews, bufferData),
-    );
+    matrices = readAccessorAsFloat32(accessor, doc.bufferViews, bufferData);
   } else {
     // Spec default: identity per joint, column-major.
     matrices = Float32List(skin.joints.length * 16);
@@ -330,7 +313,6 @@ void _buildAnimation(
   GltfDocument doc,
   Uint8List bufferData,
   List<LocalId> nodeIds,
-  GltfCoordinatePolicy coordinatePolicy,
 ) {
   final channels = <AnimationChannelSpec>[];
   final pathChannels = <AnimationPathChannelSpec>[];
@@ -391,17 +373,9 @@ void _buildAnimation(
       componentCount: componentCount,
       cubicSpline: cubic,
     );
-    // Tangents convert as the values they shape do.
     LocalId? payload(Float32List? floats) => floats == null
         ? null
-        : _floatPayload(
-            document,
-            coordinatePolicy.convertAnimationValues(
-              floats,
-              targetPath: channel.targetPath,
-            ),
-            PayloadEncoding.floats,
-          );
+        : _floatPayload(document, floats, PayloadEncoding.floats);
 
     channels.add(
       AnimationChannelSpec(
@@ -589,13 +563,12 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
 }
 
 TransformSpec _transform(GltfNode node) {
-  const policy = GltfCoordinatePolicy.bakeNative;
   if (node.matrix != null) {
-    return MatrixTransform(policy.convertTransform(node.matrix!));
+    return MatrixTransform(node.matrix!.clone());
   }
   return TrsTransform(
-    translation: policy.convertPosition(node.translation ?? Vector3.zero()),
-    rotation: policy.convertRotation(node.rotation ?? Quaternion.identity()),
+    translation: (node.translation ?? Vector3.zero()).clone(),
+    rotation: (node.rotation ?? Quaternion.identity()).clone(),
     scale: (node.scale ?? Vector3(1, 1, 1)).clone(),
   );
 }
@@ -615,7 +588,6 @@ LocalId _buildGeometry(
     accessors: doc.accessors,
     bufferViews: doc.bufferViews,
     bufferData: bufferData,
-    coordinatePolicy: GltfCoordinatePolicy.bakeNative,
     includeSkinning: includeSkinning,
   );
   final morph = packed.morphTargets;

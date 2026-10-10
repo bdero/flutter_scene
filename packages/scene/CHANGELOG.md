@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- `.fscene` format version 6 stores right-handed coordinates (`-Z` forward). Versions 2 through 5 migrate on read: node transforms, bounds, light, joint, particle, physics, and character-controller vectors, prefab overrides of those properties, and the editor camera azimuth reflect across Z.
+- `GeometryResource`, `SkinSpec`, `AnimationSpec`, and convex-hull and triangle-mesh collider shapes carry `legacyLeftHanded` after migration so the realizer reflects their payloads.
+- `EnvironmentResource.environmentMirrorZ` mirrors the environment across the XY plane before `environmentRotationY`. Migrated documents set it so image and procedural skies keep their place relative to the reflected content.
+- `currentFsceneVersion` is 6; older readers refuse format 6 documents.
+
 ## 0.4.3
 
 - `AnimationChannelSpec.interpolation` and `AnimationPathChannelSpec.interpolation` (`AnimationInterpolation`, one of `step`, `linear`, or `cubicSpline`) carry how a channel moves between keyframes, delta-serialized, and a change to one sets `SceneDiff.animationsChanged`. A cubic spline keeps its tangents in separate `inTangents` and `outTangents` payloads, so `keyframes` always holds values and an older reader plays the channel as linear.

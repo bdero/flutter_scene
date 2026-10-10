@@ -18,7 +18,6 @@ Animation buildAnimation({
   required Uint8List bufferData,
   required List<Node> engineNodes,
   required List<GltfPunctualLight> lights,
-  required GltfCoordinatePolicy coordinatePolicy,
 }) {
   final channels = <AnimationChannel>[];
   for (final channel in gltfAnimation.channels) {
@@ -72,10 +71,7 @@ Animation buildAnimation({
       _ => 3,
     };
     final keyframes = splitGltfKeyframes(
-      coordinatePolicy.convertAnimationValues(
-        sourceValues,
-        targetPath: channel.targetPath,
-      ),
+      sourceValues,
       componentCount: componentCount,
       cubicSpline: isCubic,
     );
