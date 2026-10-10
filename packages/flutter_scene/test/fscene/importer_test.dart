@@ -236,11 +236,10 @@ void main() {
       final document = importGlbToSceneDocument(_splitHintGlb());
       final node = document.nodes.values.singleWhere((n) => n.name == 'Ground');
       expect(node.components.where((c) => c.type == 'mesh'), isEmpty);
-      // Two triangles a world apart on x; native coordinates negate z, so
-      // the z in [0, 1] source geometry bins into the z-1 cell.
+      // Two triangles a world apart on x; z in [0, 1] bins into the z0 cell.
       final names = [for (final c in node.children) document.nodes[c]!.name]
         ..sort();
-      expect(names, ['Ground_x0_z-1', 'Ground_x2_z-1']);
+      expect(names, ['Ground_x0_z0', 'Ground_x2_z0']);
       // Re-importing reproduces the same split with the same ids, so the
       // hint is safe to leave on a source asset.
       final again = importGlbToSceneDocument(_splitHintGlb());
@@ -369,10 +368,10 @@ void main() {
             // BoundsSpec vectors store float32; quantize the baker's doubles.
             expect(bounds!.min.x, _f32(union.minX));
             expect(bounds.min.y, _f32(union.minY));
-            expect(bounds.min.z, _f32(-union.maxZ));
+            expect(bounds.min.z, _f32(union.minZ));
             expect(bounds.max.x, _f32(union.maxX));
             expect(bounds.max.y, _f32(union.maxY));
-            expect(bounds.max.z, _f32(-union.minZ));
+            expect(bounds.max.z, _f32(union.maxZ));
             checked++;
           }
         }
@@ -448,10 +447,10 @@ void main() {
         expect(bounds, isNotNull);
         expect(bounds!.min.x, _f32(min[0]));
         expect(bounds.min.y, _f32(min[1]));
-        expect(bounds.min.z, _f32(-max[2]));
+        expect(bounds.min.z, _f32(min[2]));
         expect(bounds.max.x, _f32(max[0]));
         expect(bounds.max.y, _f32(max[1]));
-        expect(bounds.max.z, _f32(-min[2]));
+        expect(bounds.max.z, _f32(max[2]));
         checked++;
       }
       expect(checked, greaterThan(0));

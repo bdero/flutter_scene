@@ -83,7 +83,7 @@ void main() {
       );
 
       expect(camera.radius, 10);
-      expect(camera.azimuth, lessThan(0.4));
+      expect(camera.azimuth, greaterThan(0.4));
       expect(camera.elevation, lessThan(0.3));
     });
   });
@@ -111,7 +111,7 @@ void main() {
     expect(camera.azimuth, 0.4);
 
     await gesture.moveBy(const Offset(3, 0));
-    expect(camera.azimuth, greaterThan(0.4));
+    expect(camera.azimuth, lessThan(0.4));
     await gesture.up();
   });
 }

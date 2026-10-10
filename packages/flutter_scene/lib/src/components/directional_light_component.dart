@@ -11,7 +11,7 @@ import 'package:flutter_scene/src/node.dart';
 /// its light with the scene's render layer so the renderer can find it,
 /// and unregisters it when the node leaves the scene.
 ///
-/// Light travels along the owning node's local +Z axis. The node's world-space
+/// Light travels along the owning node's local -Z axis. The node's world-space
 /// rotation aims the light; its translation and scale have no effect. The
 /// default constructor checks [DirectionalLight.direction] only when the
 /// component is created. Later mutations of that field remain ignored.
@@ -90,7 +90,8 @@ class DirectionalLightComponent extends Component {
     if (localDirection != null) {
       return node.globalTransform.rotate3(localDirection.clone()).normalized();
     }
-    return (node.globalTransform.getRotation() * Vector3(0, 0, 1))..normalize();
+    return (node.globalTransform.getRotation() * Vector3(0, 0, -1))
+      ..normalize();
   }
 
   /// Clones carry the light, sharing the light object like other clone

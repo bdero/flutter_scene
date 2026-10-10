@@ -21,7 +21,7 @@ void main() {
       expect(dir.y, lessThan(-0.7));
     });
 
-    test('aims directional light along +Z into the scene', () {
+    test('aims directional light along -Z into the scene', () {
       final sunLight = DirectionalLight();
       final sunNode = Node()..addComponent(DirectionalLightComponent(sunLight));
       final root = Node();
@@ -36,8 +36,8 @@ void main() {
 
       cycle.update(0.1);
 
-      // Light travels along local +Z; at noon, +Z should point downwards into the ground
-      final forward = (sunNode.globalTransform * vm.Vector4(0, 0, 1, 0)).xyz;
+      // Light travels along local -Z; at noon, -Z should point downwards into the ground
+      final forward = (sunNode.globalTransform * vm.Vector4(0, 0, -1, 0)).xyz;
       expect(forward.y, lessThan(-0.7));
 
       final pos = sunNode.position;
@@ -60,7 +60,7 @@ void main() {
 
       cycle.update(0.1);
 
-      final forward = (sunNode.globalTransform * vm.Vector4(0, 0, 1, 0)).xyz;
+      final forward = (sunNode.globalTransform * vm.Vector4(0, 0, -1, 0)).xyz;
       expect(forward.y, closeTo(-1.0, 0.001));
     });
 

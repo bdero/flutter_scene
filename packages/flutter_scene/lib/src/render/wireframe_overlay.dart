@@ -84,7 +84,7 @@ class _WireframeEncoder {
     _pass.setDepthWriteEnable(false);
     _pass.setDepthCompareOperation(_raster.nearerOrEqual);
     _pass.setCullMode(gpu.CullMode.none);
-    _pass.setWindingOrder(gpu.WindingOrder.clockwise);
+    _pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
     _pass.setColorBlendEnable(true);
     _pass.setColorBlendEquation(
       gpu.ColorBlendEquation(

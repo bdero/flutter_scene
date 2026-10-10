@@ -40,7 +40,7 @@ class FreeLookCamera {
     return vm.Vector3(-sin(yaw) * cp, sin(pitch), -cos(yaw) * cp);
   }
 
-  vm.Vector3 get right => vm.Vector3(-cos(yaw), 0, sin(yaw));
+  vm.Vector3 get right => vm.Vector3(cos(yaw), 0, -sin(yaw));
 
   PerspectiveCamera get camera => PerspectiveCamera(
     position: position.clone(),
@@ -63,7 +63,7 @@ class FreeLookCamera {
   }
 
   void look(Offset delta) {
-    yaw += delta.dx * lookSensitivity;
+    yaw -= delta.dx * lookSensitivity;
     pitch = (pitch - delta.dy * lookSensitivity).clamp(-pitchLimit, pitchLimit);
   }
 

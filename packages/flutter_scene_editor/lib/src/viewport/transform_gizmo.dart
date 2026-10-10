@@ -374,12 +374,12 @@ class GizmoController {
     if (delta > pi) delta -= 2 * pi;
     if (delta < -pi) delta += 2 * pi;
     _lastAngle = a;
-    // Screen y is down, so a clockwise screen drag is negative math angle;
+    // Screen y is down, so a clockwise screen drag is positive screen angle;
     // flip by whether the axis points toward or away from the camera so the
     // rotation tracks the pointer.
     final viewDir = (origin - camera.position)..normalize();
     final facing = axisVec.dot(viewDir) >= 0 ? 1.0 : -1.0;
-    angle += -delta * facing;
+    angle += delta * facing;
   }
 
   void _updateScale(Offset pos, int axis) {

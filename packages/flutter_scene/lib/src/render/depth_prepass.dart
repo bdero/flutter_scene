@@ -360,7 +360,7 @@ class _DepthPrepassEncoder {
     // Winding and culling are matched to each material per draw in [submit]
     // (winding follows the node/instance parity, culling follows the material's
     // own mode), so the same faces the color pass draws contribute depth.
-    _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+    _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
     // The camera axes are constant across the pass. Pack them once and
     // rebind per draw (clearBindings drops the binding between draws). The
     // normal-writing path also needs the right/up axes to rotate the world
@@ -704,8 +704,8 @@ class _DepthPrepassEncoder {
               item.windingFlipped != (instanceTransform.determinant() < 0);
           _renderPass.setWindingOrder(
             flip
-                ? gpu.WindingOrder.counterClockwise
-                : gpu.WindingOrder.clockwise,
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
           );
           drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
         }
@@ -728,8 +728,8 @@ class _DepthPrepassEncoder {
         if (flipped != null) {
           _renderPass.setWindingOrder(
             flipped
-                ? gpu.WindingOrder.counterClockwise
-                : gpu.WindingOrder.clockwise,
+                ? gpu.WindingOrder.clockwise
+                : gpu.WindingOrder.counterClockwise,
           );
           drawOrRejectPipeline(
             _renderPass,
@@ -807,8 +807,8 @@ class _DepthPrepassEncoder {
     }
     _renderPass.setWindingOrder(
       item.windingFlipped
-          ? gpu.WindingOrder.counterClockwise
-          : gpu.WindingOrder.clockwise,
+          ? gpu.WindingOrder.clockwise
+          : gpu.WindingOrder.counterClockwise,
     );
     drawOrRejectPipeline(_renderPass, geometry, _boundPipeline);
   }
@@ -887,7 +887,7 @@ class _DepthPrepassEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.ccw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
       drawOrRejectPipeline(
         _renderPass,
         geometry,
@@ -901,7 +901,7 @@ class _DepthPrepassEncoder {
       } else {
         bindInstanceTransforms(_renderPass, packed.cw, slot: instanceSlot);
       }
-      _renderPass.setWindingOrder(gpu.WindingOrder.counterClockwise);
+      _renderPass.setWindingOrder(gpu.WindingOrder.clockwise);
       drawOrRejectPipeline(
         _renderPass,
         geometry,
