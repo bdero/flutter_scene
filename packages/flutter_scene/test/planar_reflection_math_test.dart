@@ -122,9 +122,14 @@ void main() {
         source: source,
         plane: Plane.normalconstant(Vector3(0.2, 0.9, -0.1).normalized(), 0.4),
       ).getViewMatrix();
-      // A proper rotation-plus-translation has determinant +1; an improper
-      // (mirroring) view would flip every triangle's winding.
-      expect(view.determinant(), closeTo(1.0, 1e-6));
+      // The reflected camera uses the same look-at view convention as the
+      // source camera (determinant -1 mapping right-handed world space to
+      // +Z-forward view space), so triangle winding is preserved.
+      expect(
+        view.determinant(),
+        closeTo(source.getViewMatrix().determinant(), 1e-6),
+      );
+      expect(view.determinant(), closeTo(-1.0, 1e-6));
     });
 
     test('on-plane points project mirror-symmetrically in both cameras', () {

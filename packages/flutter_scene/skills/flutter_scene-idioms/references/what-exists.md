@@ -67,12 +67,12 @@ material)`; `Mesh.clone()` (shallow, shares geometry+material); `Mesh.localBound
 
 ### Camera
 
-- `PerspectiveCamera({double fovRadiansY = 45 * degrees2Radians, Vector3? position /*(0,0,-5)*/,
+- `PerspectiveCamera({double fovRadiansY = 45 * degrees2Radians, Vector3? position /*(0,0,5)*/,
   Vector3? target /*(0,0,0)*/, Vector3? up /*(0,1,0)*/, double fovNear = 0.1, double fovFar =
   1000.0})`. Field names are `fovNear`/`fovFar`, NOT `near`/`far`.
 - `PerspectiveCamera.framing(Aabb3 bounds, {direction, fovRadiansY, up, margin = 1.1})`.
 - `PerspectiveProjection({fovRadiansY, near = 0.1, far = 1000.0})` and abstract `CameraProjection`,
-  `Camera`. Camera basis getters (`position`, `forward`, `up`, `right`, `horizontalForward`, `horizontalRight`) and helpers (`screenPointToRay`, `worldToScreen`, `getViewMatrix`, `getFrustum`). `right` and `horizontalRight` use `up.cross(forward)` so they always point toward the right edge of the view in the engine's left-handed view space.
+  `Camera`. Camera basis getters (`position`, `forward`, `up`, `right`, `horizontalForward`, `horizontalRight`) and helpers (`screenPointToRay`, `worldToScreen`, `getViewMatrix`, `getFrustum`). `right` and `horizontalRight` use `forward.cross(up)` in the engine's right-handed world space (`+X` right, `+Y` up, `+Z` out of the screen, `-Z` forward).
 - `OrthographicCamera({OrthographicProjection? projection, Vector3? position, target, up})` and
   `OrthographicCamera.framing(bounds, {direction, up, margin})`.
 - `OrthographicProjection({OrthographicSize size = OrthographicSize.height(10), zoom = 1.0,

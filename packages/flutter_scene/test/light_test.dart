@@ -10,8 +10,8 @@ import 'package:vector_math/vector_math.dart';
 
 Matrix4 _referenceLookAt(Vector3 position, Vector3 target, Vector3 up) {
   final forward = (target - position).normalized();
-  final right = up.cross(forward).normalized();
-  final newUp = forward.cross(right).normalized();
+  final right = forward.cross(up).normalized();
+  final newUp = right.cross(forward).normalized();
   return Matrix4(
     right.x,
     newUp.x,
@@ -132,8 +132,8 @@ void main() {
       final cascades = light.computeCascades(camera, aspectRatio);
 
       final forward = (camera.target - camera.position).normalized();
-      final right = camera.up.cross(forward).normalized();
-      final up = forward.cross(right).normalized();
+      final right = forward.cross(camera.up).normalized();
+      final up = right.cross(forward).normalized();
       final tanV = tan(camera.fovRadiansY * 0.5);
       final tanH = tanV * aspectRatio;
 

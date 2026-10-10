@@ -150,9 +150,9 @@ class ThirdPersonControllerComponent extends Component {
 
     if (!_yawSeeded) {
       _yawSeeded = true;
-      final forward = node.globalTransform.getColumn(2).xyz;
-      if (forward.length2 > 1e-12) {
-        _currentYaw = math.atan2(forward.x, forward.z);
+      final back = node.globalTransform.getColumn(2).xyz;
+      if (back.length2 > 1e-12) {
+        _currentYaw = math.atan2(back.x, back.z);
       }
     }
 
@@ -230,16 +230,11 @@ class ThirdPersonControllerComponent extends Component {
     final inputLen = _moveInput.length;
 
     if (inputLen > 0.01) {
-      var inputX = _moveInput.x;
-      var inputZ = _moveInput.y;
-      if (_cameraHeadingYaw != null) {
-        final sinY = math.sin(_cameraHeadingYaw!);
-        final cosY = math.cos(_cameraHeadingYaw!);
-        final rotatedX = inputX * cosY + inputZ * sinY;
-        final rotatedZ = -inputX * sinY + inputZ * cosY;
-        inputX = rotatedX;
-        inputZ = rotatedZ;
-      }
+      final headingYaw = _cameraHeadingYaw ?? 0.0;
+      final sinY = math.sin(headingYaw);
+      final cosY = math.cos(headingYaw);
+      final inputX = _moveInput.x * cosY - _moveInput.y * sinY;
+      final inputZ = -_moveInput.x * sinY - _moveInput.y * cosY;
       final desiredVel = vm.Vector2(inputX, inputZ).normalized() * targetSpeed;
       final desiredVelX = desiredVel.x;
       final desiredVelZ = desiredVel.y;
@@ -249,7 +244,7 @@ class ThirdPersonControllerComponent extends Component {
       velocity.x += (desiredVelX - velocity.x) * t;
       velocity.z += (desiredVelZ - velocity.z) * t;
 
-      final targetYaw = math.atan2(desiredVelX, desiredVelZ);
+      final targetYaw = math.atan2(-desiredVelX, -desiredVelZ);
       var angleDiff = targetYaw - _currentYaw;
       while (angleDiff > math.pi) {
         angleDiff -= 2 * math.pi;

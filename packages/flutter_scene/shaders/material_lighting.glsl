@@ -936,11 +936,11 @@ highp vec4 EvaluateLighting(MaterialInputs material) {
 #else
       // Rect area light. Texel 2 carries the world right axis and width,
       // texel 3 the up axis and height; the light emits along
-      // cross(right, up). The LTC form factor bakes in the cosine lobe and
-      // inverse-square falloff, so only the range window applies here.
+      // -cross(right, up) (local -Z). The LTC form factor bakes in the cosine
+      // lobe and inverse-square falloff, so only the range window applies here.
       highp vec4 a2 = FetchPunctualTexel(light_row, 2);
       highp vec4 a3 = FetchPunctualTexel(light_row, 3);
-      highp vec3 half_w = a2.xyz * (a2.w * 0.5);
+      highp vec3 half_w = -a2.xyz * (a2.w * 0.5);
       highp vec3 half_h = a3.xyz * (a3.w * 0.5);
       highp vec3 c0 = l0.xyz - half_w - half_h;
       highp vec3 c1 = l0.xyz + half_w - half_h;

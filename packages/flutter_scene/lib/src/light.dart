@@ -149,7 +149,7 @@ class DirectionalLight {
   ///
   /// This aims the scene-level [Scene.directionalLight] convenience. The
   /// default [DirectionalLightComponent] ignores it and uses its node's local
-  /// +Z axis. Use [DirectionalLightComponent.aimed] for another local axis.
+  /// -Z axis. Use [DirectionalLightComponent.aimed] for another local axis.
   Vector3 direction;
 
   /// Linear RGB color of the light.
@@ -379,8 +379,8 @@ class DirectionalLight {
     // Camera basis and the projection's lateral extents (half-fov tangents,
     // or half sizes when orthographic).
     final forward = camera.forward;
-    final right = camera.up.cross(forward)..normalize();
-    final up = forward.cross(right)..normalize();
+    final right = forward.cross(camera.up)..normalize();
+    final up = right.cross(forward)..normalize();
     final tanRadius2 =
         projection.scaleX * projection.scaleX +
         projection.scaleY * projection.scaleY;
@@ -490,17 +490,17 @@ class DirectionalLight {
     final fy = lightDir.y;
     final fz = lightDir.z;
     final useZUp = fy.abs() > 0.99;
-    final rx0 = useZUp ? -fy : fz;
-    final ry0 = useZUp ? fx : 0.0;
-    final rz0 = useZUp ? 0.0 : -fx;
+    final rx0 = useZUp ? fy : -fz;
+    final ry0 = useZUp ? -fx : 0.0;
+    final rz0 = useZUp ? 0.0 : fx;
     final inverseRightLength =
         1.0 / math.sqrt(rx0 * rx0 + ry0 * ry0 + rz0 * rz0);
     final rx = rx0 * inverseRightLength;
     final ry = ry0 * inverseRightLength;
     final rz = rz0 * inverseRightLength;
-    final ux = fy * rz - fz * ry;
-    final uy = fz * rx - fx * rz;
-    final uz = fx * ry - fy * rx;
+    final ux = ry * fz - rz * fy;
+    final uy = rz * fx - rx * fz;
+    final uz = rx * fy - ry * fx;
 
     final inverseRadius = 1.0 / sphereRadius;
     final inverseDepth =
@@ -547,8 +547,8 @@ class DirectionalLight {
 
   static Matrix4 _lookAt(Vector3 position, Vector3 target, Vector3 up) {
     final forward = (target - position).normalized();
-    final right = up.cross(forward).normalized();
-    final newUp = forward.cross(right).normalized();
+    final right = forward.cross(up).normalized();
+    final newUp = right.cross(forward).normalized();
     return Matrix4(
       right.x,
       newUp.x,
@@ -738,9 +738,9 @@ class PointLight {
     Vector3(0, 0, 1), Vector3(0, 0, -1), //
   ];
   static final List<Vector3> _pointFaceRight = [
-    Vector3(0, 0, -1), Vector3(0, 0, 1), //
-    Vector3(-1, 0, 0), Vector3(1, 0, 0), //
+    Vector3(0, 0, 1), Vector3(0, 0, -1), //
     Vector3(1, 0, 0), Vector3(-1, 0, 0), //
+    Vector3(-1, 0, 0), Vector3(1, 0, 0), //
   ];
   static final List<Vector3> _pointFaceUp = [
     Vector3(0, 1, 0), Vector3(0, 1, 0), //
@@ -755,7 +755,7 @@ class PointLight {
 ///
 /// Attach one by adding a `RectAreaLightComponent` to a node. The rectangle
 /// lies in the node's local XY plane, [width] along local X and [height]
-/// along local Y, emitting along local +Z (matching the directional-light
+/// along local Y, emitting along local -Z (matching the directional-light
 /// aim convention). One-sided; the back face emits nothing. Area lights cast
 /// no shadows.
 /// {@category Lighting and environment}

@@ -1135,7 +1135,7 @@ class _KitStageState extends State<_KitStage> {
 
   void _handlePointerMove(Offset delta, Offset localPos, Size? size) {
     if (widget.scenario == _KitScenario.characterCamera) {
-      widget.settings.cameraOrbitYaw += delta.dx * 0.005;
+      widget.settings.cameraOrbitYaw -= delta.dx * 0.005;
       widget.settings.cameraOrbitPitch =
           (widget.settings.cameraOrbitPitch + delta.dy * 0.005).clamp(
             -0.35,
@@ -1159,9 +1159,7 @@ class _KitStageState extends State<_KitStage> {
     final aspect = size.width / size.height;
 
     final camPos = _cameraNode.globalTransform.getTranslation();
-    final camForward = (_cameraNode.globalTransform * vm.Vector4(0, 0, 1, 0))
-        .xyz
-        .normalized();
+    final camForward = _cameraNode.forward;
     final camRight = (_cameraNode.globalTransform * vm.Vector4(1, 0, 0, 0)).xyz
         .normalized();
     final camUp = (_cameraNode.globalTransform * vm.Vector4(0, 1, 0, 0)).xyz

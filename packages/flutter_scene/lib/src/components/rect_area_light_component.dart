@@ -7,7 +7,7 @@ import 'package:flutter_scene/src/node.dart';
 /// An engine [Component] that places a [RectAreaLight] in the scene.
 ///
 /// The rectangle lies in the owning node's local XY plane and emits along
-/// local +Z; the node's world transform positions and aims it.
+/// local -Z; the node's world transform positions and aims it.
 /// {@category Scene graph}
 class RectAreaLightComponent extends Component {
   /// Creates a component that lights the scene with [light].

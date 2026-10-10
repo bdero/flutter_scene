@@ -218,11 +218,27 @@ sim.Shape? decodePhysicsShape(PropertyValue? value, SceneDocument document) {
       );
     case 'convexHull':
       final points = _readFloatsPayload(document, m['points']);
-      return points == null ? null : sim.ConvexHullShape(points: points);
+      if (points == null) return null;
+      if (readBool(m, 'legacyLeftHanded', document.formatVersion < 6)) {
+        for (var i = 2; i < points.length; i += 3) {
+          points[i] = -points[i];
+        }
+      }
+      return sim.ConvexHullShape(points: points);
     case 'triMesh':
       final vertices = _readFloatsPayload(document, m['vertices']);
       final indices = _readIndicesPayload(document, m['indices']);
       if (vertices == null || indices == null) return null;
+      if (readBool(m, 'legacyLeftHanded', document.formatVersion < 6)) {
+        for (var i = 2; i < vertices.length; i += 3) {
+          vertices[i] = -vertices[i];
+        }
+        for (var i = 0; i + 2 < indices.length; i += 3) {
+          final tmp = indices[i + 1];
+          indices[i + 1] = indices[i + 2];
+          indices[i + 2] = tmp;
+        }
+      }
       return sim.TriMeshShape(vertices: vertices, indices: indices);
     case 'heightField':
       final heights = _readFloatsPayload(document, m['heights']);

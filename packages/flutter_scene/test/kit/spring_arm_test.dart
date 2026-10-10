@@ -91,7 +91,7 @@ void main() {
 
       expect(pos.x, closeTo(11.0, 0.001));
       expect(pos.y, closeTo(2.0, 0.001));
-      expect(pos.z, closeTo(5.0, 0.001));
+      expect(pos.z, closeTo(15.0, 0.001));
     });
 
     test('drives camera node under parent transform without drift', () {
@@ -165,10 +165,10 @@ void main() {
       arm.update(0.1);
 
       final socketPos = (arm.socketTransform * vm.Vector4(0, 0, 0, 1)).xyz;
-      // Socket should be offset by -Z (behind character along world forward), not +X
+      // Socket should be offset by +Z (behind character along world -Z forward), not +X
       expect(socketPos.x, closeTo(5.0, 0.01));
       expect(socketPos.y, closeTo(1.5, 0.01));
-      expect(socketPos.z, closeTo(1.0, 0.01));
+      expect(socketPos.z, closeTo(9.0, 0.01));
     });
 
     test('empirical simulation of movement and camera dragging', () {

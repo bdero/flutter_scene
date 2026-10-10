@@ -99,7 +99,7 @@ class FlyCameraController extends CameraController {
   }
 
   /// Unit horizontal direction to the camera's right.
-  Vector3 get right => Vector3(-math.cos(_yaw), 0.0, math.sin(_yaw));
+  Vector3 get right => Vector3(math.cos(_yaw), 0.0, -math.sin(_yaw));
 
   /// Sets movement intent from an input system, a gamepad, or touch controls.
   ///
@@ -120,7 +120,7 @@ class FlyCameraController extends CameraController {
   /// Rotates the view by a drag delta (logical pixels). Horizontal drags turn,
   /// vertical drags pitch (clamped short of vertical).
   void look(Offset delta) {
-    _yawGoal += delta.dx * lookSensitivity;
+    _yawGoal -= delta.dx * lookSensitivity;
     _pitchGoal = (_pitchGoal - delta.dy * lookSensitivity).clamp(
       -pitchLimit,
       pitchLimit,

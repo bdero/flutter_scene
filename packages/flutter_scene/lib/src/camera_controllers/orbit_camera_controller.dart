@@ -122,8 +122,8 @@ class OrbitCameraController extends CameraController {
   void panBy(Offset fraction) {
     final forward = (_targetGoal - _eyeFor(_targetGoal, _distance))
         .normalized();
-    final right = Vector3(0.0, 1.0, 0.0).cross(forward)..normalize();
-    final up = forward.cross(right)..normalize();
+    final right = forward.cross(Vector3(0.0, 1.0, 0.0))..normalize();
+    final up = right.cross(forward)..normalize();
     final shift =
         (right * -fraction.dx + up * fraction.dy) * (_distance * panSpeed);
     _targetGoal += shift;
@@ -208,7 +208,7 @@ class OrbitCameraController extends CameraController {
   Vector3 _eyeFor(Vector3 pivot, double distance) {
     final horizontal = math.cos(_polar) * distance;
     return pivot +
-        Vector3(-math.sin(_azimuth), 0.0, -math.cos(_azimuth)) * horizontal +
+        Vector3(math.sin(_azimuth), 0.0, math.cos(_azimuth)) * horizontal +
         Vector3(0.0, math.sin(_polar) * distance, 0.0);
   }
 }

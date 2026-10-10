@@ -189,14 +189,17 @@ void main() {
     );
   });
 
-  test('runtime import keeps the Z flip and animates the root joint', () async {
-    final importRoot = await importGltf(
-      _rootJointGltf(),
-      resolveUri: (_) async => Uint8List(0),
-    );
-    expect(importRoot.localTransform, _zFlip());
-    _expectJointAnimates(importRoot);
-  });
+  test(
+    'runtime import keeps identity root transform and animates the root joint',
+    () async {
+      final importRoot = await importGltf(
+        _rootJointGltf(),
+        resolveUri: (_) async => Uint8List(0),
+      );
+      expect(importRoot.localTransform, Matrix4.identity());
+      _expectJointAnimates(importRoot);
+    },
+  );
 
   test('offline realize animates the root joint', () {
     _expectJointAnimates(

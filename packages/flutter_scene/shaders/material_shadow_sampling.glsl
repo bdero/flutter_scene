@@ -456,13 +456,13 @@ float SamplePointShadow(int light_row, highp float base_tile,
   highp vec3 local;
   if (a.x >= a.y && a.x >= a.z) {
     face = v.x >= 0.0 ? 0.0 : 1.0;
-    local = v.x >= 0.0 ? vec3(-v.z, v.y, v.x) : vec3(v.z, v.y, -v.x);
+    local = v.x >= 0.0 ? vec3(v.z, v.y, v.x) : vec3(-v.z, v.y, -v.x);
   } else if (a.y >= a.z) {
     face = v.y >= 0.0 ? 2.0 : 3.0;
-    local = v.y >= 0.0 ? vec3(-v.x, v.z, v.y) : vec3(v.x, v.z, -v.y);
+    local = v.y >= 0.0 ? vec3(v.x, v.z, v.y) : vec3(-v.x, v.z, -v.y);
   } else {
     face = v.z >= 0.0 ? 4.0 : 5.0;
-    local = v.z >= 0.0 ? vec3(v.x, v.y, v.z) : vec3(-v.x, v.y, -v.z);
+    local = v.z >= 0.0 ? vec3(-v.x, v.y, v.z) : vec3(v.x, v.y, -v.z);
   }
   if (local.z <= 0.0) {
     return 1.0;

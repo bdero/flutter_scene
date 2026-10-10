@@ -649,8 +649,8 @@ abstract class Material {
 
   /// Binds this material's render-pass state, uniforms, and textures.
   ///
-  /// The base implementation enables back-face culling with clockwise
-  /// winding on the Y-down rasterizer (accepting model-space CCW front faces).
+  /// The base implementation enables back-face culling with counter-clockwise
+  /// winding (accepting right-handed model-space CCW front faces).
   /// Subclasses must call `super.bind` and then bind any per-material uniforms
   /// and textures expected by their fragment shader. [lighting] carries the
   /// IBL [EnvironmentMap] (and its intensity) plus the analytic lights and
@@ -661,7 +661,7 @@ abstract class Material {
     Lighting lighting,
   ) {
     pass.setCullMode(renderCullMode);
-    pass.setWindingOrder(gpu.WindingOrder.clockwise);
+    pass.setWindingOrder(gpu.WindingOrder.counterClockwise);
   }
 
   /// The face-culling mode geometry drawn with this material renders with.

@@ -471,7 +471,7 @@ ComponentSpec? _lightComponent(GltfPunctualLight light) {
       return ComponentSpec('pointLight', properties: properties);
     case 'spot':
       properties
-        ..['direction'] = Vec3Value(Vector3(0, 0, 1))
+        ..['direction'] = Vec3Value(Vector3(0, 0, -1))
         ..['range'] = DoubleValue(light.range ?? 0)
         ..['innerConeAngle'] = DoubleValue(light.innerConeAngle)
         ..['outerConeAngle'] = DoubleValue(light.outerConeAngle)
@@ -644,8 +644,8 @@ BoundsSpec? _primitiveBounds(
   }
   if (box.isEmpty) return null;
   return BoundsSpec(
-    min: Vector3(box.minX, box.minY, -box.maxZ),
-    max: Vector3(box.maxX, box.maxY, -box.minZ),
+    min: Vector3(box.minX, box.minY, box.minZ),
+    max: Vector3(box.maxX, box.maxY, box.maxZ),
   );
 }
 
@@ -657,8 +657,8 @@ BoundsSpec? _restBounds(GltfMeshPrimitive primitive, GltfDocument doc) {
   final max = accessor.max;
   if (min != null && min.length >= 3 && max != null && max.length >= 3) {
     return BoundsSpec(
-      min: Vector3(min[0], min[1], -max[2]),
-      max: Vector3(max[0], max[1], -min[2]),
+      min: Vector3(min[0], min[1], min[2]),
+      max: Vector3(max[0], max[1], max[2]),
     );
   }
   // No spec-provided bounds; the realizer scans positions on upload.
